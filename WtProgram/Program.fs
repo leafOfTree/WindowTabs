@@ -12,7 +12,7 @@ open System.Threading
 open System.Windows.Forms
 open Microsoft.FSharp.Reflection
 open Bemo.Win32
-open Bemo.Licensing
+//open Bemo.Licensing
 open Newtonsoft.Json
 open Newtonsoft.Json.Linq
 open Microsoft.Win32

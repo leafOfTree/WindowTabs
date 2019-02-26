@@ -31,22 +31,22 @@ type Settings(isStandAlone) as this =
 
     member this.fileExists : bool = File.Exists(this.path) 
 
-    member this.settingsString 
+    member this.settingsString
         with get() = 
             if cachedSettingsString.IsNone then 
                 cachedSettingsString <- (if this.fileExists then Some(File.ReadAllText(this.path)) else None)
             cachedSettingsString
 
-        and set(newSettings) =
+        and set(newSettings : string option) =
             let settingsDir = Path.GetDirectoryName(this.path)
             if Directory.Exists(settingsDir).not then
                 Directory.CreateDirectory(settingsDir).ignore
-            File.WriteAllText(this.path, newSettings)
+            File.WriteAllText(this.path, newSettings.Value)
             this.clearCaches()
             
     member this.settingsJson
         with get() = this.settingsString.map(JObject.Parse).def(JObject())
-        and set(settingsJson:JObject) = this.settingsString <- settingsJson.ToString()
+        and set(settingsJson:JObject) = this.settingsString <- Some(settingsJson.ToString())
 
     member this.defaultTabAppearance =
         {

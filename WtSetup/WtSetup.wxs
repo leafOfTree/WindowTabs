@@ -1,0 +1,33 @@
+﻿<?xml version="1.0"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+   <Product Id="C59F060C-D728-412B-B837-ED2A11A3BAFE"
+            Name="WindowTabs"
+            Language="1033"
+            Version="0.0.70"
+            Manufacturer="Regis Martinez"
+            UpgradeCode="6763D234-BCFA-4172-8190-756DEE9CF2B1">
+
+      <Package Compressed="yes"/>
+
+      <Media Id="1" Cabinet="product.cab" EmbedCab="yes"/>
+
+      <!-- needs program menu addition, + path installation request, + ... -->
+      <Directory Name="SourceDir" Id="TARGETDIR">
+         <Directory Name="ProgramFilesFolder" Id="ProgramFilesFolder">
+            <Directory Name="WindowTabs" Id="_1">
+               <Component Id="_1" Guid="3C67513D-01DD-4637-8A68-80971EB9504F">
+                  <File Source="Banner.bmp"/>
+                  <File Source="..\WtProgram\Resources\Bemo.ico"/>
+                  <File Source="..\WtProgram\bin\Release\WindowTabs.exe"/>
+                  <File Source="..\WtProgram\bin\Release\WindowTabs.exe.config"/>
+               </Component>
+            </Directory>
+         </Directory>
+      </Directory>
+
+      <Feature Id="_1" Level="1">
+         <ComponentRef Id="_1"/>
+      </Feature>
+
+   </Product>
+</Wix>
