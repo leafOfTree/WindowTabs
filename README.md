@@ -1,12 +1,11 @@
 # WindowTabs
 
-WindowTabs is a utility which brings browser-style tabbed window management to the desktop. I created this utility in 2009 and 
-provided a free and paid version. I'm now open sourcing it since I no longer have time to maintain it.
+WindowTabs is a utility which brings browser-style tabbed window management to the desktop.
 
-## Installation
-Install [WindowTabs.msi](http://windowtabs.com/WindowTabs.msi) and then run it, you should see tabs appear on the upper left corner 
-of your open windows. 
+It was originally developped by Maurice Flanagan in 2009 and was back then provided as a free and paid version. 
+The author has now open-sourced the utility. See the original repository here : https://github.com/mauricef/WindowTabs
 
-## Support
-I no longer provide support for WindowTabs.
+I forked the source code to make learn from it. This is not a maintained version. My fork currently compiles with VS2017 community edition.
+
+Installer doesn't builds (yet).
 
