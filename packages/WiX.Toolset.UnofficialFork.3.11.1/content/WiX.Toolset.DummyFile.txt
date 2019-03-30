@@ -1,0 +1,2 @@
+This file is used to invoke the PowerShell scripts during NuGet package installation.
+It should be removed automatically after the package is installed. If this file is still present in your project, you can safely delete it.
