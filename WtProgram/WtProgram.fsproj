@@ -9,7 +9,7 @@
     <OutputType>WinExe</OutputType>
     <RootNamespace>WindowTabs</RootNamespace>
     <AssemblyName>WindowTabs</AssemblyName>
-    <TargetFrameworkVersion>v4.6.2</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
     <Name>WtProgram</Name>
     <TargetFrameworkProfile />
     <SccProjectName>&lt;Project Location In Database&gt;</SccProjectName>
@@ -143,8 +143,8 @@
     <Reference Include="Aga.Controls">
       <HintPath>..\Aga.Controls.dll</HintPath>
     </Reference>
-    <Reference Include="FSharp.Core">
-      <HintPath>..\packages\FSharp.Core.4.6.2\lib\net45\FSharp.Core.dll</HintPath>
+    <Reference Include="FSharp.Core, Version=4.3.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
+      <Private>True</Private>
     </Reference>
     <Reference Include="FSharp.PowerPack">
       <HintPath>..\packages\FSPowerPack.Core.Community.3.0.0.0\lib\Net40\FSharp.PowerPack.dll</HintPath>
