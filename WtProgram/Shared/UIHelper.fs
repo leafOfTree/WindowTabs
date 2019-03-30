@@ -217,13 +217,17 @@ type HotKeyOnlyEditor() as this =
         member this.changed = hkChanged.Publish
 
 module UIHelper =
+    open System.Resources
+    open System.Reflection
+
     let label text =
         let label = Label()
         label.AutoSize <- true
         label.Text <- text
         label.TextAlign <- ContentAlignment.MiddleLeft
         label
-
+        
+    let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
     
 
     let form (fields:List2<_>) =
@@ -238,7 +242,8 @@ module UIHelper =
             t
 
         fields.enumerate.iter <| fun (i,(text, control:Control)) ->
-            let label = label text
+            let caption = resources.GetString text
+            let label = label caption
             control.Dock <- DockStyle.Fill
             label.Margin <- Padding(0,5,0,5)
             panel.Controls.Add(label)

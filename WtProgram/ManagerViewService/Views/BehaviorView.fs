@@ -5,6 +5,8 @@ open System.IO
 open System.Windows.Forms
 open Bemo.Win32
 open Bemo.Win32.Forms
+open System.Resources
+open System.Reflection
 
 
 type HotKeyView() =
@@ -15,15 +17,18 @@ type HotKeyView() =
                     with get() = unbox<'a>(Services.settings.getValue(name))
                     and set(value) = Services.settings.setValue(name, box(value))
         }
+        
+    let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
 
     let switchTabs =
         let hotKeys = List2([
-            ("nextTab", "Next Tab")
-            ("prevTab", "Previous Tab")
+            ("nextTab", "nextTab")
+            ("prevTab", "prevTab")
         ])
 
         let editors = hotKeys.enumerate.fold (Map2()) <| fun editors (i,(key, text)) ->
-            let label = UIHelper.label text
+            let caption = resources.GetString text
+            let label = UIHelper.label caption
             let editor = HotKeyEditor() :> IPropEditor
             editor.control.Margin <- Padding(0,5,0,5)
             label.Margin <- Padding(0,5,0,5)
@@ -48,12 +53,12 @@ type HotKeyView() =
             text, editor.control
 
         let fields = fields.prependList(List2([
-            ("Run WindowTabs at startup", settingsCheckbox "runAtStartup")
-            ("Fade out tabs on inactive windows", settingsCheckbox "hideInactiveTabs")
-            ("Enable tabs for all programs by default", checkBox(prop<IFilterService, bool>(Services.filter, "isTabbingEnabledForAllProcessesByDefault")))
-            ("Combine icons in taskbar by default", settingsCheckbox "combineIconsInTaskbar")
-            ("Replace ALT+TAB with WindowTabs task switcher.", settingsCheckbox "replaceAltTab")
-            ("Group windows in task switcher.", settingsCheckbox "groupWindowsInSwitcher")
+            ("runAtStartup", settingsCheckbox "runAtStartup")
+            ("hideInactiveTabs", settingsCheckbox "hideInactiveTabs")
+            ("isTabbingEnabledForAllProcessesByDefault", checkBox(prop<IFilterService, bool>(Services.filter, "isTabbingEnabledForAllProcessesByDefault")))
+            ("combineIconsInTaskbar", settingsCheckbox "combineIconsInTaskbar")
+            ("replaceAltTab", settingsCheckbox "replaceAltTab")
+            ("groupWindowsInSwitcher", settingsCheckbox "groupWindowsInSwitcher")
         ]))
 
         "Switch Tabs", UIHelper.form fields
@@ -77,6 +82,6 @@ type HotKeyView() =
 
     interface ISettingsView with
         member x.key = SettingsViewType.HotKeySettings
-        member x.title = "Behavior"
+        member x.title = resources.GetString("Behavior")
         member x.control = table :> Control
 

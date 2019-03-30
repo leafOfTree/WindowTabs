@@ -2,3 +2,9 @@ Release/
 Debug/
 
 *.sdf
+/.vs/WindowTabs/v15
+/UpgradeLog.htm
+/WtProgram/obj
+/packages/WiX.Toolset.UnofficialFork.3.11.1/tools
+/packages/WiX.Toolset.UnofficialFork.3.11.1/content
+/packages/WiX.Toolset.UnofficialFork.3.11.1/.signature.p7s

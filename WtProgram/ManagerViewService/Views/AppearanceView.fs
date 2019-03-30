@@ -6,6 +6,8 @@ open System.Windows.Forms
 open Bemo.Win32
 open Bemo.Win32.Forms
 open Microsoft.FSharp.Reflection
+open System.Resources
+open System.Reflection
 
 type AppearanceProperty = {
     displayText : string
@@ -27,6 +29,8 @@ type AppearanceView() as this =
     
     let hkConfig key displayText = 
         { displayText=displayText; key=key; propertyType=HotKeyProperty }
+        
+    let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
 
     let properties = List2([
         intConfig "tabHeight" "Height"
@@ -58,7 +62,7 @@ type AppearanceView() as this =
         let label =
             let label = Label()
             label.AutoSize <- true
-            label.Text <- prop.displayText
+            label.Text <- resources.GetString(prop.displayText)
             label.TextAlign <- ContentAlignment.MiddleLeft
             label
         let editor = 
@@ -89,7 +93,7 @@ type AppearanceView() as this =
 
     let buttonPanel =
         let btn = Button()
-        btn.Text <- "Reset"
+        btn.Text <- resources.GetString("Reset")
         btn.Click.Add <| fun _ ->
             let appearance = Services.program.defaultTabAppearanceInfo
             setEditorValues appearance
@@ -114,6 +118,6 @@ type AppearanceView() as this =
         
     interface ISettingsView with
         member x.key = SettingsViewType.AppearanceSettings
-        member x.title = "Appearance"
+        member x.title = resources.GetString("Appearance")
         member x.control = panel :> Control
 

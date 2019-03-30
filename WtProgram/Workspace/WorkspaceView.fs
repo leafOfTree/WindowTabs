@@ -9,6 +9,8 @@ open Newtonsoft.Json
 open Newtonsoft.Json.Linq
 open Aga.Controls
 open Aga.Controls.Tree
+open System.Resources
+open System.Reflection
 
 [<AllowNullLiteral>]
 type WorkspaceNode(model:Dynamic) as this =
@@ -35,6 +37,8 @@ type WorkspaceNode(model:Dynamic) as this =
 
 type WorkspaceView() as this =
     let Cell = CellScope()
+    
+    let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
 
     member this.wm = Cell.cacheProp this <| fun() ->
         let wm = WorkspaceModel()
@@ -43,13 +47,13 @@ type WorkspaceView() as this =
         wm
 
     member this.nameColumn = Cell.cacheProp this <| fun() ->
-        TreeColumn("Name", 150)
+        TreeColumn(resources.GetString("Name"), 150)
 
     member this.matchTypeColumn = Cell.cacheProp this <| fun() ->
-        TreeColumn("Match Type", 75)
+        TreeColumn(resources.GetString("MatchType"), 75)
 
     member this.titleColumn = Cell.cacheProp this <| fun() ->
-        TreeColumn("Title", 350)
+        TreeColumn(resources.GetString("Title"), 350)
         
     member this.model = Cell.cacheProp this <| fun() -> 
         let model = TreeModel()
@@ -113,13 +117,13 @@ type WorkspaceView() as this =
         tree
 
     member this.newButton : ToolStripButton = Cell.cacheProp this <| fun() ->
-        let btn = ToolStripButton("New")
+        let btn = ToolStripButton(resources.GetString("New"))
         btn.Image <- Services.openImage("add.png")
         btn.Click.Add <| fun _ -> this.onNewButton()
         btn
 
     member this.restoreButton : ToolStripButton = Cell.cacheProp this <| fun() ->
-        let btn = ToolStripButton("Restore")
+        let btn = ToolStripButton(resources.GetString("Restore"))
         btn.Image <- Services.openImage("restore.png")
         btn.Click.Add <| fun _ -> this.onRestoreButton()
         this.wm.canRestoreChanged.Add <| fun(canRestore) -> 
@@ -127,13 +131,13 @@ type WorkspaceView() as this =
         btn
 
     member this.removeButton : ToolStripButton = Cell.cacheProp this <| fun() ->
-        let btn = ToolStripButton("Remove")
+        let btn = ToolStripButton(resources.GetString("Remove"))
         btn.Image <- Services.openImage("delete.png")
         btn.Click.Add <| fun _ -> this.onRemoveButton()
         btn
 
     member this.editButton : ToolStripButton = Cell.cacheProp this <| fun() ->
-        let btn = ToolStripButton("Edit")
+        let btn = ToolStripButton(resources.GetString("Edit"))
         btn.Image <- Services.openImage("edit.png")
         btn.Click.Add <| fun _ -> this.onEditButton()
         btn
@@ -187,5 +191,5 @@ type WorkspaceView() as this =
 
     interface ISettingsView with
         member x.key = SettingsViewType.LayoutSettings
-        member x.title = "Workspace"
+        member x.title = resources.GetString("Workspace")
         member x.control = this.panel :> Control

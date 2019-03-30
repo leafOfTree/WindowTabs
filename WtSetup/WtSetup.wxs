@@ -18,8 +18,8 @@
                <Component Id="_1" Guid="3C67513D-01DD-4637-8A68-80971EB9504F">
                   <File Source="Banner.bmp"/>
                   <File Source="..\WtProgram\Resources\Bemo.ico"/>
-                  <File Source="..\WtProgram\bin\Release\WindowTabs.exe"/>
-                  <File Source="..\WtProgram\bin\Release\WindowTabs.exe.config"/>
+                  <File Source="$(var.WtProgram.TargetDir)\WindowTabs.exe"/>
+                  <File Source="$(var.WtProgram.TargetDir)\WindowTabs.exe.config"/>
                </Component>
             </Directory>
          </Directory>

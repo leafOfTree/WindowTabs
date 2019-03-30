@@ -1,9 +1,13 @@
 ﻿namespace Bemo
 open System
 open System.Windows.Forms
+open System.Reflection
+open System.Resources
 
 type NotifyIconPlugin() as this =
     let Cell = CellScope()
+    
+    let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
 
     member this.icon = Cell.cacheProp this <| fun() ->
         let notifyIcon = new NotifyIcon()
@@ -27,12 +31,13 @@ type NotifyIconPlugin() as this =
             ToolTipIcon.Info
         )
 
+
     interface IPlugin with
         member this.init() =
-            this.addItem("Settings...", fun() -> Services.managerView.show())
-            this.addItem("Feedback...", Forms.openFeedback)
+            this.addItem(resources.GetString("Settings"), fun() -> Services.managerView.show())
+            //this.addItem(resources.GetString("Feedback"), Forms.openFeedback) // 404 Not Found.
             this.contextMenuItems.Add("-").ignore
-            this.addItem("Close WindowTabs", fun() -> Services.program.shutdown())
+            this.addItem(resources.GetString("CloseWindowTabs"), fun() -> Services.program.shutdown())
             Services.program.newVersion.Add this.onNewVersion
 
     interface IDisposable with
