@@ -5,7 +5,7 @@ WindowTabs is a utility which brings browser-style tabbed window management to t
 It was originally developped by Maurice Flanagan in 2009 and was back then provided as a free and paid version.   
 The author has now open-sourced the utility. See the original repository here : https://github.com/mauricef/WindowTabs
 
-I forked from payaneco repository which forked from redgis. And it just compiles and runs successfully in my Win7 64bit.
+I forked from payaneco repository which forked from redgis. And it just compiles and runs successfully on my Win7 64bit.
 
 <img alt="screenshot" src="https://raw.githubusercontent.com/leafOfTree/leafOfTree.github.io/master/windowtabs-screenshot.png" width="600" />
 
