@@ -27,7 +27,7 @@ I forked from payaneco repository which forked from redgis. And it just compiles
 
 ## Changes
 
-- Fix: Desktop `Programs` title missing issue.
+- Fix: desktop `Programs` title missing issue.
 
 ## Refs
 
