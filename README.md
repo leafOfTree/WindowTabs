@@ -5,10 +5,34 @@ WindowTabs is a utility which brings browser-style tabbed window management to t
 It was originally developped by Maurice Flanagan in 2009 and was back then provided as a free and paid version.   
 The author has now open-sourced the utility. See the original repository here : https://github.com/mauricef/WindowTabs
 
-And Mr./Ms. redgis forked and migrated to VS2017 / .NET 4.0. See also the forked repository here : https://github.com/redgis/WindowTabs
+I forked from payaneco repository which forked from redgis. And it just compiles and runs successfully in my Win7 64bit.
 
-I forked the source code to study. My fork currently compiles with VS2017 community edition.
+<img alt="screenshot" src="https://raw.githubusercontent.com/leafOfTree/leafOfTree.github.io/master/windowtabs-screenshot.png" width="600" />
 
-I installed [WiX Toolset build tools](http://wixtoolset.org/) V3.11.1. Then I can compile WtSetup.wixproj and make an installer.  
-But it doesn't work on my Windows 10 64bit environments.
+## Compile
 
+> Test env: Win7, 64bit
+
+- Install
+
+    - [VS2019 community edition](https://visualstudio.microsoft.com/). `.Net` needs to be selected in the installer.
+
+    - [WiX Toolset build tools](http://wixtoolset.org/)
+
+- Compile
+
+    Open WindowTabs project and press `Start`, it will compile to `WindowTabs\WtProgram\bin\Debug\WindowTabs.exe`.
+
+    If you choose `Release`configurations, you will get a release version `WindowTabs\WtProgram\bin\Release\WindowTabs.exe`
+
+## Changes
+
+- Fix: Desktop `Programs` title missing issue.
+
+## Refs
+
+[Origin: mauricef/WindowTabs](https://github.com/mauricef/WindowTabs)
+
+[redgis/WindowTabs](https://github.com/redgis/WindowTabs)
+
+[payaneco/WindowTabs](https://github.com/payaneco/WindowTabs)
