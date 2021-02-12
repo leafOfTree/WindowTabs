@@ -114,6 +114,7 @@ type WorkspaceView() as this =
         tree.Model <- this.model
         tree.Dock <- DockStyle.Fill
         tree.SelectionChanged.Add <| this.onTreeSelectionChanged
+        tree.Font <- SystemFonts.CaptionFont
         tree
 
     member this.newButton : ToolStripButton = Cell.cacheProp this <| fun() ->

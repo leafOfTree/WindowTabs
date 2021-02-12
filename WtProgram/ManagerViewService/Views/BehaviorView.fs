@@ -74,6 +74,7 @@ type HotKeyView() =
             group.Dock <- DockStyle.Fill
             group.AutoSize <- true
             group.Text <- text
+            group.Font <- SystemFonts.CaptionFont
             group.Controls.Add(control)
             group :> Control
         let table = UIHelper.hbox controls

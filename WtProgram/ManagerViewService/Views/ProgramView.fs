@@ -106,6 +106,7 @@ type ProgramView() as this=
             control.LeftMargin <- 3
             control)
         tree.Model <- model
+        tree.Font <- SystemFonts.CaptionFont
         tree,model
     let panel = 
         let panel = Panel()

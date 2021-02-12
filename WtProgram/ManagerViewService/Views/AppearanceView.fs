@@ -64,6 +64,7 @@ type AppearanceView() as this =
             label.AutoSize <- true
             label.Text <- resources.GetString(prop.displayText)
             label.TextAlign <- ContentAlignment.MiddleLeft
+            label.Font <- SystemFonts.CaptionFont
             label
         let editor = 
             match prop.propertyType with
