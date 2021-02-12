@@ -45,6 +45,7 @@ type FilterService() as this =
             fun() -> this.isValidOwner(window)
             //Win32 Dialogue class
             fun() -> window.className <> "#32770"
+            fun() -> window.className <> "ApplicationFrameWindow"
             fun() -> this.isBanned(window).not
             fun() -> this.isOnScreenOrMinimized(window)
             ])
