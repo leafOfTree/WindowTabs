@@ -23,6 +23,7 @@ type DesktopManagerForm() =
                 else
                     base.OnKeyDown(e)
         }
+    let font = SystemFonts.CaptionFont
 
     let form = 
         let form = Form()
@@ -32,6 +33,7 @@ type DesktopManagerForm() =
             control.Dock <- DockStyle.Fill
             page.Controls.Add(control)
             page.Dock <- DockStyle.Fill
+            page.Font <- font
             tabControl.TabPages.Add(page)
         tabControl.Dock <- DockStyle.Fill
         form.Controls.Add(tabControl)
@@ -41,6 +43,7 @@ type DesktopManagerForm() =
         form.Text <- title
         form.Icon <- Services.openIcon("Bemo.ico")
         form.TopMost <- true
+        form.Font <- font
         form
 
     member this.show() =
