@@ -50,6 +50,7 @@ type WindowNode(window:Window) =
 
 type ProgramView() as this=
     let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
+    let font = Font(resources.GetString("Font"), 10f)
 
     let invoker = InvokerService.invoker
     let toolBar = 
@@ -60,10 +61,12 @@ type ProgramView() as this=
             btn.Click.Add <| fun _ -> this.populateNodes()
             btn
         ts.Items.Add(refreshBtn).ignore
+        ts.Font <- font
         ts
     let statusBar = 
         let sb = StatusBar()
         sb.Text <- "Ready"
+        sb.Font <- font
         sb
     let tree,model = 
         let tree = TreeViewAdv()
@@ -75,7 +78,7 @@ type ProgramView() as this=
         let addCheckBoxColumn colText propName =
             let content = resources.GetString(propName)
             let parentColumn =
-                let col = TreeColumn(content, 100)
+                let col = TreeColumn(content, 120)
                 col.TextAlign <- HorizontalAlignment.Center
                 col
             tree.Columns.Add(parentColumn)
@@ -85,7 +88,7 @@ type ProgramView() as this=
                 control.IsVisibleValueNeeded.Add <| fun e ->
                     let node = tree.GetPath(e.Node).LastNode :?> INode
                     e.Value <- node.showSettings
-                control.LeftMargin <- 40
+                control.LeftMargin <- 50
                 control.EditEnabled <- true
                 control.DataPropertyName <- propName
                 control)
@@ -106,7 +109,7 @@ type ProgramView() as this=
             control.LeftMargin <- 3
             control)
         tree.Model <- model
-        tree.Font <- SystemFonts.CaptionFont
+        tree.Font <- font
         tree,model
     let panel = 
         let panel = Panel()

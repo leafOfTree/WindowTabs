@@ -39,6 +39,7 @@ type WorkspaceView() as this =
     let Cell = CellScope()
     
     let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
+    let font = Font(resources.GetString("Font"), 10f)
 
     member this.wm = Cell.cacheProp this <| fun() ->
         let wm = WorkspaceModel()
@@ -47,10 +48,10 @@ type WorkspaceView() as this =
         wm
 
     member this.nameColumn = Cell.cacheProp this <| fun() ->
-        TreeColumn(resources.GetString("Name"), 150)
+        TreeColumn(resources.GetString("Name"), 200)
 
     member this.matchTypeColumn = Cell.cacheProp this <| fun() ->
-        TreeColumn(resources.GetString("MatchType"), 75)
+        TreeColumn(resources.GetString("MatchType"), 100)
 
     member this.titleColumn = Cell.cacheProp this <| fun() ->
         TreeColumn(resources.GetString("Title"), 350)
@@ -114,7 +115,7 @@ type WorkspaceView() as this =
         tree.Model <- this.model
         tree.Dock <- DockStyle.Fill
         tree.SelectionChanged.Add <| this.onTreeSelectionChanged
-        tree.Font <- SystemFonts.CaptionFont
+        tree.Font <- font
         tree
 
     member this.newButton : ToolStripButton = Cell.cacheProp this <| fun() ->
@@ -153,6 +154,7 @@ type WorkspaceView() as this =
         ts.Items.Add(this.restoreButton).ignore
         ts.Items.Add(this.editButton).ignore
         ts.Items.Add(this.removeButton).ignore
+        ts.Font <- font
         ts
 
     member this.findNode(node:TreeNodeAdv) =

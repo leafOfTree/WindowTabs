@@ -23,20 +23,20 @@ It should work on both Win7 and Win10.
 
     - [WiX Toolset build tools V3.11.2](http://wixtoolset.org/releases)
 
-    - [Wix Toolset Visual Studio 2019 Extension](https://marketplace.visualstudio.com/items?itemName=WixToolset.WixToolsetVisualStudio2019Extension)(Optional for Win7)
+    - [Wix Toolset Visual Studio 2019 Extension](https://marketplace.visualstudio.com/items?itemName=WixToolset.WixToolsetVisualStudio2019Extension)
 
 - Compile
 
-    Lanuch Visual Studio, Open WindowTabs project and press `Start`, it will compile to `WindowTabs\WtProgram\bin\Debug\WindowTabs.exe`.
+    Lanuch Visual Studio, open WindowTabs project and press `Start`, then it will compile to `WindowTabs\WtProgram\bin\Debug\WindowTabs.exe`.
 
-    If you choose `Release` configurations, you will get a release version `WindowTabs\WtProgram\bin\Release\WindowTabs.exe`
+    If you choose `Release` configurations, you will get a release version `WindowTabs\WtProgram\bin\Release\WindowTabs.exe`.
 
 ## Changes
 
-- Adjust: settings form font
-- Fix: empty tab for File Explorer
-- Update: packages for Win10
-- Fix: desktop `Programs` title missing issue.
+- Adjust settings font and display
+- Fix extra empty tab for File Explorer
+- Update packages for Win10
+- Fix desktop `Programs` title missing issue.
 
 ## Refs
 

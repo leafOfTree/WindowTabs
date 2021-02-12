@@ -31,6 +31,7 @@ type AppearanceView() as this =
         { displayText=displayText; key=key; propertyType=HotKeyProperty }
         
     let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
+    let font = Font(resources.GetString("Font"), 10f)
 
     let properties = List2([
         intConfig "tabHeight" "Height"
@@ -57,14 +58,13 @@ type AppearanceView() as this =
         panel.ColumnCount <- 2
         panel
 
-   
     let editors = properties.enumerate.fold (Map2()) <| fun editors (i,prop) ->
         let label =
             let label = Label()
             label.AutoSize <- true
             label.Text <- resources.GetString(prop.displayText)
             label.TextAlign <- ContentAlignment.MiddleLeft
-            label.Font <- SystemFonts.CaptionFont
+            label.Font <- font
             label
         let editor = 
             match prop.propertyType with
@@ -99,6 +99,7 @@ type AppearanceView() as this =
             let appearance = Services.program.defaultTabAppearanceInfo
             setEditorValues appearance
             this.applyAppearance()
+        btn.Font <- font
         btn
 
     do  

@@ -228,4 +228,7 @@
   <data name="Workspace" xml:space="preserve">
     <value>Workspace</value>
   </data>
+  <data name="Font" xml:space="preserve">
+    <value>Segoe UI</value>
+  </data>
 </root>

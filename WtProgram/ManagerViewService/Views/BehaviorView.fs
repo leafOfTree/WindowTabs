@@ -68,13 +68,14 @@ type HotKeyView() =
         ])
 
     let table = 
+        let font = Font(resources.GetString("Font"), 10f)
         let controls = sections.map <| fun(text,control) ->
             control.Dock <- DockStyle.Fill
             let group = GroupBox()
             group.Dock <- DockStyle.Fill
             group.AutoSize <- true
             group.Text <- text
-            group.Font <- SystemFonts.CaptionFont
+            group.Font <- font
             group.Controls.Add(control)
             group :> Control
         let table = UIHelper.hbox controls

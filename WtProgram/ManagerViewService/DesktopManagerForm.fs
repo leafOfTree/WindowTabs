@@ -4,8 +4,11 @@ open System.Drawing
 open System.IO
 open System.Windows.Forms
 open Bemo.Win32.Forms
+open System.Resources
+open System.Reflection
 
 type DesktopManagerForm() =
+    let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
     let title = sprintf "WindowTabs Settings (version %s)"  (Services.program.version)
     let tabs = List2([
         ProgramView() :> ISettingsView
@@ -23,7 +26,7 @@ type DesktopManagerForm() =
                 else
                     base.OnKeyDown(e)
         }
-    let font = SystemFonts.CaptionFont
+    let font = Font(resources.GetString("Font"), 10f)
 
     let form = 
         let form = Form()

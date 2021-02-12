@@ -11,6 +11,7 @@ open System.Reflection
 
 type DiagnosticsView() as this =
     let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
+    let font = Font(resources.GetString("Font"), 10f)
 
     let textBox =
         let tb = TextBox()
@@ -18,6 +19,7 @@ type DiagnosticsView() as this =
         tb.Multiline <- true
         tb.ScrollBars <- ScrollBars.Both
         tb.Dock <- DockStyle.Fill
+        tb.Font <- font
         tb
     let toolBar = 
         let ts = ToolStrip()
@@ -37,11 +39,13 @@ type DiagnosticsView() as this =
             btn
         ts.Items.Add(refreshBtn).ignore
         ts.Items.Add(copyBtn).ignore
+        ts.Font <- font
         ts
     let statusBar = 
         let sb = StatusBar()
         sb.Text <- "Ready"
         sb.Dock <- DockStyle.Bottom
+        sb.Font <- font
         sb
     let panel = 
         let p = Panel()
