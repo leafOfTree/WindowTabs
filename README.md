@@ -7,8 +7,10 @@ The author has now open-sourced the utility. See the original repository here : 
 
 I forked from payaneco repository which forked from redgis. Now it compiles and runs successfully on both Win7 and Win10.
 
+<p>
 <img alt="screenshot" src="https://raw.githubusercontent.com/leafOfTree/leafOfTree.github.io/master/WindowTabs-win7.jpg" width="300" />
 <img alt="screenshot" src="https://raw.githubusercontent.com/leafOfTree/leafOfTree.github.io/master/WindowTabs-Win10.PNG" width="300" />
+</p>
 
 It's recommended to compile the exe file by yourself. If not, you could find the prebuilt file at https://github.com/leafOfTree/WindowTabs/releases.
 
