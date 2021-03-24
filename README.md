@@ -1,11 +1,11 @@
 # WindowTabs
 
-WindowTabs is a utility which brings browser-style tabbed window management to the desktop.
+A utility which brings browser-style tabbed window management to the desktop.
 
 <p>
 <img alt="screenshot" src="https://raw.githubusercontent.com/leafOfTree/leafOfTree.github.io/master/WindowTabs-example.png" width="300" />
 <img alt="screenshot" src="https://raw.githubusercontent.com/leafOfTree/leafOfTree.github.io/master/WindowTabs-win7.jpg" width="300" />
-<img alt="screenshot" src="https://raw.githubusercontent.com/leafOfTree/leafOfTree.github.io/master/WindowTabs-Win10.PNG" width="300" />
+<img alt="screenshot" src="https://raw.githubusercontent.com/leafOfTree/leafOfTree.github.io/master/WindowTabs-Win10.PNG" width="300" style="margin-left: -5px" />
 </p>
 
 ## History
