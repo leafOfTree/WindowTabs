@@ -9,10 +9,10 @@ A utility which brings browser-style tabbed window management to the desktop.
 </p>
 
 ## History
-It was developed by Maurice Flanagan in 2009 and was provided as a free and paid version originally.   
-The author has open-sourced it since no longer has time to maintain it. See the original repository: [mauricef/WindowTabs](https://github.com/mauricef/WindowTabs).
+It was developed by Maurice Flanagan in 2009 and was provided as free and paid versions originally.   
+The author who no longer has time to maintain it has open-sourced it. See the original repository: [mauricef/WindowTabs](https://github.com/mauricef/WindowTabs).
 
-I forked from [payaneco's repository](https://github.com/payaneco/WindowTabs) which forked from [redgis'](https://github.com/redgis/WindowTabs). Now it compiles and runs successfully on both Win7 and Win10.
+I forked from [payaneco's repository](https://github.com/payaneco/WindowTabs) which forked from [redgis'](https://github.com/redgis/WindowTabs). Now, it compiles and runs successfully on both Win7 and Win10.
 
 ## Download
 
@@ -30,7 +30,7 @@ It should work on both Win7 and Win10.
 
 - Install
 
-    - [Visual Studio 2019 community edition](https://visualstudio.microsoft.com/). 
+    - [Visual Studio 2019 community edition](https://visualstudio.microsoft.com/)
 
         `.NET desktop development` needs to be selected in the installer.
 
@@ -46,14 +46,14 @@ It should work on both Win7 and Win10.
 
 ## Changes
 
-- Adjust settings font and display
-- Fix extra empty tab for File Explorer
-- Update packages for Win10
-- Fix desktop `Programs` title missing issue
+- Adjust settings font and display.
+- Fix extra empty tab for File Explorer.
+- Update packages for Win10.
+- Fix desktop `Programs` title missing issue.
 
 ## Refs
 
-- [mauricef/WindowTabs](https://github.com/mauricef/WindowTabs) the origin repository
+- [mauricef/WindowTabs](https://github.com/mauricef/WindowTabs) the original repository
 
 - [redgis/WindowTabs](https://github.com/redgis/WindowTabs)
 
