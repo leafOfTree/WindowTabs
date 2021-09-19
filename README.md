@@ -40,9 +40,9 @@ It should work on both Win7 and Win10.
 
 - Compile
 
-    Lanuch Visual Studio, open this project, and press `Start`. Then it will compile to `WindowTabs\WtProgram\bin\Debug\WindowTabs.exe`.
+    Lanuch Visual Studio, open this project, and Click `Start`. Then it will compile to `WindowTabs\WtProgram\bin\Debug\WindowTabs.exe`.
 
-    If you choose the `Release` configurations, you will get a release version `WindowTabs\WtProgram\bin\Release\WindowTabs.exe`.
+    If you choose the `Release` configuration, you will get a release version `WindowTabs\WtProgram\bin\Release\WindowTabs.exe`.
 
 ## Changes
 
