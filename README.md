@@ -46,6 +46,7 @@ It should work on both Win7 and Win10.
 
 ## Changes
 
+- Fix null exception on toggling Fade out... option.
 - Adjust settings font and display.
 - Fix extra empty tab for File Explorer.
 - Update packages for Win10.
