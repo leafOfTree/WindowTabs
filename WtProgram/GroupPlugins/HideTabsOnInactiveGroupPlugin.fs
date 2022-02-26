@@ -7,6 +7,8 @@ type HideTabsOnInactiveGroupPlugin() =
 
     member this.group = Services.get<WindowGroup>()
 
+    member this.hasGroup = Services.has<WindowGroup>()
+
     member this.tabStrip = Services.get<TabStrip>()
 
     member this.shouldShowCompact = 
@@ -32,8 +34,9 @@ type HideTabsOnInactiveGroupPlugin() =
         member this.init() =
             Services.dragDrop.registerNotification(this :> IDragDropNotification)
             Services.settings.notifyValue "hideInactiveTabs" <| fun(_) ->
-                this.group.invokeAsync <| fun() ->
-                    this.onShowCompactChanged()
+                if this.hasGroup then
+                    this.group.invokeAsync <| fun() ->
+                        this.onShowCompactChanged()
             this.group.zorder.changed.Add <| fun() ->
                 this.onShowCompactChanged()
             this.group.isForeground.changed.Add <| fun() ->

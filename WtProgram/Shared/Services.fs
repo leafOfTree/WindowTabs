@@ -118,9 +118,13 @@ type ServiceProvider() =
         let service = 
             if ServiceProvider.localServices.ContainsKey(t) then
                 ServiceProvider.localServices.Item(t)
-            else 
+            else
                 services.Item(t)
         unbox<'a>(service)
+
+    member this.has<'a>() =
+        let t = typeof<'a>
+        ServiceProvider.localServices.ContainsKey(t) || services.ContainsKey(t)
 
 type WtServiceProvider() =
     inherit ServiceProvider()
