@@ -13,6 +13,7 @@ type Settings(isStandAlone) as this =
     let mutable hasExistingSettings = false
     let settingChangedEvent = Event<string* obj>()
     let valueCache = Dictionary<string, obj>()
+    let fileName = "WindowTabsSettings.txt"
 
     do
         hasExistingSettings <- this.fileExists
@@ -23,11 +24,14 @@ type Settings(isStandAlone) as this =
         cachedSettingsRec <- None
         valueCache.Clear()
 
+    member this.useRelativePath =
+        isStandAlone || File.Exists(Path.Combine(".", fileName))
+
     member this.path =
         let path = 
-            if isStandAlone then "."
+            if this.useRelativePath then "."
             else Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WindowTabs")
-        Path.Combine(path, "WindowTabsSettings.txt")
+        Path.Combine(path, fileName)
 
     member this.fileExists : bool = File.Exists(this.path) 
 
