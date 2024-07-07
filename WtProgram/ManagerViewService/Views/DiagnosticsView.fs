@@ -52,6 +52,7 @@ type DiagnosticsView() as this =
             btn
         ts.Items.Add(refreshBtn).ignore
         ts.Items.Add(copyBtn).ignore
+        ts.Items.Add(new ToolStripSeparator()).ignore
         ts.Items.Add(copySettingsFileBtn).ignore
         ts.Font <- font
         ts
