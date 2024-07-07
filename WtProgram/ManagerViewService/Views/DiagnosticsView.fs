@@ -37,8 +37,22 @@ type DiagnosticsView() as this =
                 textBox.Copy()
                 MessageBox.Show("Please paste (CTRL + V) into an email and send to 'support@windowtabs.com'", "Copied to clipboard").ignore
             btn
+        let copySettingsFileBtn =
+            let btn = ToolStripButton("Copy settings file to WindowTabs.exe path")
+            btn.Click.Add <| fun _ -> 
+                let fileName = "WindowTabsSettings.txt"
+                let settingsFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WindowTabs")
+                let settingsFile = Path.Combine(settingsFolder, fileName)
+                let targetFile = Path.Combine(".", fileName)
+                try
+                    File.Copy(settingsFile, targetFile, false)
+                    MessageBox.Show("Restart WindowTabs.exe to use settings file of the same path", "Copied").ignore
+                with ex ->
+                    MessageBox.Show("Error: copy failed. Details: " + ex.Message, "Copy failed").ignore
+            btn
         ts.Items.Add(refreshBtn).ignore
         ts.Items.Add(copyBtn).ignore
+        ts.Items.Add(copySettingsFileBtn).ignore
         ts.Font <- font
         ts
     let statusBar = 
