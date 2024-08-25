@@ -46,6 +46,14 @@ It should work on both Win7 and Win10.
 
 ## Changes
 
+2024
+
+- Add option to deactivate `ctrl+1`... hotkeys
+- Add `New window` item to tab context menu
+- Support settings file at the same path of exe file
+
+2023
+
 - Recognize ApplicationFrameWindow based Apps like Photo, Mail.
 - Fix null exception on toggling Fade out... option.
 - Adjust settings font and display.
