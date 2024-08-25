@@ -2,6 +2,7 @@
 open System
 open System.Drawing
 open System.Windows.Forms
+open System.Diagnostics
 open Bemo.Win32.Forms
 
 type TabStripDecorator(group:WindowGroup) as this =
@@ -130,7 +131,7 @@ type TabStripDecorator(group:WindowGroup) as this =
     member private this.onCloseAllWindows() =
         group.windows.items.iter this.onCloseWindow
 
-    member private  this.contextMenu(hwnd) =
+    member private this.contextMenu(hwnd) =
         let checked(isChecked) = if isChecked then List2([MenuFlags.MF_CHECKED]) else List2()
         let grayed(isGrayed) = if isGrayed then List2([MenuFlags.MF_GRAYED]) else List2()
         let iconOnlyItem = CmiRegular({
@@ -173,6 +174,14 @@ type TabStripDecorator(group:WindowGroup) as this =
                 image = None
                 click = fun() ->
                     group.bb.write("autoHide", isEnabled.not)
+            })
+
+        let newWindowItem = 
+            CmiRegular({
+                text = "New window"
+                flags = List2()
+                image = None
+                click = fun() -> Process.Start(processPath) |> ignore
             })
 
         let combineIconsInTaskbar =
@@ -257,6 +266,8 @@ type TabStripDecorator(group:WindowGroup) as this =
             })
 
         List2([
+            Some(newWindowItem)
+            Some(CmiSeparator)
             Some(iconOnlyItem)
             Some(alignmentItem)
             Some(autoHideItem)
