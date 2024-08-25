@@ -59,6 +59,7 @@ type HotKeyView() =
             ("combineIconsInTaskbar", settingsCheckbox "combineIconsInTaskbar")
             ("replaceAltTab", settingsCheckbox "replaceAltTab")
             ("groupWindowsInSwitcher", settingsCheckbox "groupWindowsInSwitcher")
+            ("enableCtrlNumberHotKey", settingsCheckbox "enableCtrlNumberHotKey")
         ]))
 
         "Switch Tabs", UIHelper.form fields

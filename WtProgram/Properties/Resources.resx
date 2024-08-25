@@ -162,6 +162,9 @@
   <data name="groupWindowsInSwitcher" xml:space="preserve">
     <value>Group windows in task switcher.</value>
   </data>
+  <data name="enableCtrlNumberHotKey" xml:space="preserve">
+    <value>Enable Ctrl+1, ...Ctrl+9 to active tab</value>
+  </data>
   <data name="Height" xml:space="preserve">
     <value>Height</value>
   </data>

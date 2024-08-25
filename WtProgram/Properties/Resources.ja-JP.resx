@@ -162,6 +162,9 @@
   <data name="groupWindowsInSwitcher" xml:space="preserve">
     <value>タスク切替でウィンドウをグループ化する</value>
   </data>
+  <data name="enableCtrlNumberHotKey" xml:space="preserve">
+    <value>Ctrl+1、... Ctrl+9 でタブをアクティブ化を有効にする</value>
+  </data>
   <data name="Height" xml:space="preserve">
     <value>高さ</value>
   </data>

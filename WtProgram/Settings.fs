@@ -85,6 +85,7 @@ type Settings(isStandAlone) as this =
                     combineIconsInTaskbar = settingsJson.getBool("combineIconsInTaskbar").def(hasExistingSettings)
                     replaceAltTab = settingsJson.getBool("replaceAltTab").def(false)
                     groupWindowsInSwitcher = settingsJson.getBool("groupWindowsInSwitcher").def(false)
+                    enableCtrlNumberHotKey = settingsJson.getBool("enableCtrlNumberHotKey").def(true)
                     version = settingsJson.getString("version").def(String.Empty)
                     tabAppearance =
                         let appearanceObject = settingsJson.getObject("tabAppearance").def(JObject())
@@ -111,6 +112,7 @@ type Settings(isStandAlone) as this =
             settingsJson.setBool("combineIconsInTaskbar", settings.combineIconsInTaskbar)
             settingsJson.setBool("replaceAltTab", settings.replaceAltTab)
             settingsJson.setBool("groupWindowsInSwitcher", settings.groupWindowsInSwitcher)
+            settingsJson.setBool("enableCtrlNumberHotKey", settings.enableCtrlNumberHotKey)
             settingsJson.setStringArray("includedPaths", settings.includedPaths.items)
             settingsJson.setStringArray("excludedPaths", settings.excludedPaths.items)
             settingsJson.setStringArray("autoGroupingPaths", settings.autoGroupingPaths.items)

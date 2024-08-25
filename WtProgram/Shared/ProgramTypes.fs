@@ -28,7 +28,8 @@ type SettingsRec = {
     hideInactiveTabs: bool
     enableTabbingByDefault: bool
     replaceAltTab: bool
-    groupWindowsInSwitcher : bool
+    groupWindowsInSwitcher: bool
+    enableCtrlNumberHotKey: bool
     combineIconsInTaskbar: bool
     }
 
