@@ -68,3 +68,5 @@ It should work on both Win7 and Win10.
 - [redgis/WindowTabs](https://github.com/redgis/WindowTabs)
 
 - [payaneco/WindowTabs](https://github.com/payaneco/WindowTabs)
+
+- [leafoftree/WindowTabs](https://github.com/leafOfTree/WindowTabs)
