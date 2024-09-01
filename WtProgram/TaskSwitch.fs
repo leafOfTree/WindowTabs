@@ -130,14 +130,12 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>) as this =
         t.Interval <- 500
         t.Tick.Add <| fun _ -> 
             doShowPeek.set(true)
-            this.peekSelected(true)
             t.Stop()
         t
 
     let setIndex index =
         switchIndex.set(index)
         form.select(index)
-        this.peekSelected(true)
 
     let doSwitch next =
         peekTimer.Stop()
@@ -172,7 +170,6 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>) as this =
     member this.switchNext() = doSwitch true
     member this.switchPrev() = doSwitch false
     member this.switchEnd(cancel:bool) =
-        this.peekSelected false
         peekTimer.Stop()
         doShowPeek.set(false)
         if cancel.not then
@@ -184,11 +181,6 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>) as this =
     member this.selectedHwnd =
         let (TaskWindowItem(hwnd,_)) = windows.at(switchIndex.value)
         hwnd
-
-    member this.peekSelected (peek:bool) =
-        if peek.not || doShowPeek.value then
-            if os.isWin7OrHigher then
-                DwmApi.DwmpActivateLivePreview(peek, this.selectedHwnd, form.hwnd, true).ignore
 
     member this.ended = endedEvent.Publish
 
