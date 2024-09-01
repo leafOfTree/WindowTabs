@@ -28,7 +28,8 @@ type TaskWindowNode(item) as this=
     let (TaskWindowItem(hwnd,isGroup)) = item
     let window = os.windowFromHwnd(hwnd)
     let image = 
-        let image = Img(window.iconBig.ToBitmap()).resize(Sz(32,32))
+        let icon = if window.iconBig.Width > window.iconSmall.Width then window.iconBig else window.iconSmall
+        let image = Img(icon.ToBitmap()).resize(Sz(32,32))
         if isGroup then
             let badge = Img(Services.openIcon("Bemo.ico").ToBitmap()).resize(Sz(16,16)).bitmap
             let g = image.graphics
