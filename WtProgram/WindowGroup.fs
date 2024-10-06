@@ -185,10 +185,15 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>) as this =
         this.setZorder(zorderCell.value.moveToEnd((=)hwnd))
 
     member this.isRenamed hwnd = Services.program.getWindowNameOverride(hwnd).IsSome
+
+    member private this.getLastName (text: string) = 
+        let separators = [| '\\'; '/' |]
+        let parts = text.Split(separators, System.StringSplitOptions.RemoveEmptyEntries)
+        if parts.Length > 0 then parts.[parts.Length - 1] else text
     
     member private this.hwndText hwnd = 
         let window = this.os.windowFromHwnd(hwnd)
-        let text = Services.program.getWindowNameOverride(hwnd).def(window.text)
+        let text = Services.program.getWindowNameOverride(hwnd).def(this.getLastName(window.text))
         if System.Diagnostics.Debugger.IsAttached then sprintf "%X - %s" hwnd text else text
 
     member private this.getTabInfo(hwnd) =
@@ -499,5 +504,3 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>) as this =
     member this.flash = flashEvent.Publish
     member this.removed = removedEvent.Publish
     member this.lorder = this.ts.lorder.map(fun(Tab(hwnd)) -> hwnd)
-
-    
