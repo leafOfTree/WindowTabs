@@ -145,10 +145,10 @@ type Desktop(notify:IDesktopNotification) as this =
             let windowPt = windowPt.sub(workspaceOffset)
             window.setPlacement({
                 window.placement with
-                showCmd = ShowWindowCommands.SW_SHOWNORMAL
-                rcNormalPosition = Rect(
-                    windowPt,
-                    window.placement.rcNormalPosition.size)
+                    showCmd = ShowWindowCommands.SW_SHOWNORMAL
+                    rcNormalPosition = Rect(
+                        windowPt,
+                        window.placement.rcNormalPosition.size)
             })  
             notify.dragDrop(hwnd)
             

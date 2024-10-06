@@ -514,11 +514,11 @@ and
         let corner = Pt(corner.x-1, corner.y-1)
         this.setPlacement({
             this.placement with
-            showCmd = ShowWindowCommands.SW_SHOWNOACTIVATE
-            rcNormalPosition = Rect(
-                corner,
-                if size.IsSome then size.Value else this.placement.rcNormalPosition.size
-            )
+                showCmd = ShowWindowCommands.SW_SHOWNOACTIVATE
+                rcNormalPosition = Rect(
+                    corner,
+                    if size.IsSome then size.Value else this.placement.rcNormalPosition.size
+                )
         }) 
 
     override this.Equals(yobj) =

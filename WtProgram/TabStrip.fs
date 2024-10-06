@@ -304,10 +304,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member this.setTabBgColor((tab, color)) =
             match color with
-        | Some(color) -> 
-            tabBgColor.map(fun m -> m.add tab color)
-        | None -> 
-            tabBgColor.map(fun m -> m.remove tab)
+            | Some(color) -> 
+                tabBgColor.map(fun m -> m.add tab color)
+            | None -> 
+                tabBgColor.map(fun m -> m.remove tab)
         
     member this.setTabAppearance(appearance) = appearanceCell.set(Some(appearance))
             
@@ -347,9 +347,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.renderTs(top) =
         let ts = this.ts
         let ts = 
-            {
-                ts with
-                zorder = 
+            { ts with
+                zorder =    
                     match top with
                     | Some(top) -> ts.zorder.moveToEnd((=)top)
                     | None -> ts.zorder
