@@ -99,6 +99,7 @@ type TaskSwitchForm(control:ITaskSwitchListControl) as this =
         f.Size <- formSize
         f.ControlBox <- false
         f.Controls.Add(control.control)
+        f.FormBorderStyle <- FormBorderStyle.None
         let window = os.windowFromHwnd(f.Handle)
         f    
 
@@ -214,9 +215,10 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop) as this=
             None
         else
             None
-
+    
     member this.windows =
-        let windowsInZorder = os.windowsInZorder.where(fun w -> w.isAltTabWindow && w.pid.isCurrentProcess.not)
+        let windowsInZorder = os.windowsInZorder.where(fun w -> 
+            w.isAltTabWindow && w.pid.isCurrentProcess.not && not(String.IsNullOrEmpty w.text) && w.text <> "Microsoft Text Input Application")
         let groupWindowsInSwitcher = settings.settings.groupWindowsInSwitcher
         if groupWindowsInSwitcher then
             let hwndToGroup =
