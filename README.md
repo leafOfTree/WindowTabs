@@ -30,23 +30,36 @@ It should work on both Win7 and Win10.
 
 - Install
 
-    - [Visual Studio 2019 community edition](https://visualstudio.microsoft.com/)
+    - [Visual Studio 2022 community edition](https://visualstudio.microsoft.com/)
 
         `.NET desktop development` needs to be selected in the installer.
 
-    - [WiX Toolset build tools V3.11.2](http://wixtoolset.org/releases)
+    - [WiX Toolset build tools V3.14.1](https://wixtoolset.org/docs/wix3/)
 
-    - [Wix Toolset Visual Studio 2019 Extension](https://marketplace.visualstudio.com/items?itemName=WixToolset.WixToolsetVisualStudio2019Extension)
+    - [Wix Toolset Visual Studio 2022 Extension](https://marketplace.visualstudio.com/items?itemName=WixToolset.WixToolsetVisualStudio2022Extension)
 
-- Compile
+> You have to close Visual Studio to install the extension. Visual Studio 2019 still works.
 
-    Lanuch Visual Studio, open this project, and Click `Start`. Then it will compile to `WindowTabs\WtProgram\bin\Debug\WindowTabs.exe`.
+- Compile and Release
 
-    If you choose the `Release` configuration, you will get a release version `WindowTabs\WtProgram\bin\Release\WindowTabs.exe`.
+    Lanuch Visual Studio, open this project by "File > Open > Project/Solution", select "WindowTabs.sln".
+
+    If you choose the `Release` configuration and click `Start`, you will get a release version `WindowTabs\WtProgram\bin\Release\WindowTabs.exe`.
+
+- Debug
+    Choose `Debug` configuration and it will compile to `WindowTabs\WtProgram\bin\Debug\WindowTabs.exe`.
+
+    Tips: Move your cursor to left gray column and click on it to add a breakpoint on current line. Then start debug and you can see runtime details.
 
 ## Changes
 
 2024
+
+- Support Visual Studio 2022
+
+- Remove task window peek (perview) to fix task switch error
+- Use the last file name as tab name
+- UI improvement on icon and task switch form border
 
 - Add option to deactivate `ctrl+1`... hotkeys
 - Add `New window` item to tab context menu
