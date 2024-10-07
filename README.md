@@ -1,7 +1,5 @@
 # WindowTabs
 
-<a href="https://github.com/leafOfTree/WindowTabs/releases">![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/leafoftree/windowtabs/total)</a>
-
 A utility that brings browser-style tabbed window management to the desktop.
 
 <p>
@@ -17,6 +15,8 @@ The author who no longer has time to maintain it has open-sourced it. See the or
 This repository is a fork of [payaneco's repository](https://github.com/payaneco/WindowTabs) which is from [redgis'](https://github.com/redgis/WindowTabs). Now, it compiles and runs successfully on both Win7 and Win10.
 
 ## Download
+
+<a href="https://github.com/leafOfTree/WindowTabs/releases">![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/leafoftree/windowtabs/total)</a>
 
 It's recommended that you compile the exe file as below. If not, please find my prebuilt files at [releases](https://github.com/leafOfTree/WindowTabs/releases).
 
