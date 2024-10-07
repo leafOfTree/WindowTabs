@@ -2,7 +2,7 @@
 
 <a href="https://github.com/leafOfTree/WindowTabs/releases">![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/leafoftree/windowtabs/total)</a>
 
-A utility which brings browser-style tabbed window management to the desktop.
+A utility that brings browser-style tabbed window management to the desktop.
 
 <p>
 <img alt="screenshot" src="https://raw.githubusercontent.com/leafOfTree/leafOfTree.github.io/master/WindowTabs-example.png" width="260" />
@@ -11,14 +11,14 @@ A utility which brings browser-style tabbed window management to the desktop.
 </p>
 
 ## History
-It was developed by Maurice Flanagan in 2009 and was provided as free and paid versions originally.   
+It was originally developed by Maurice Flanagan in 2009 and was provided as free and paid versions.
 The author who no longer has time to maintain it has open-sourced it. See the original repository: [mauricef/WindowTabs](https://github.com/mauricef/WindowTabs).
 
 This repository is a fork of [payaneco's repository](https://github.com/payaneco/WindowTabs) which is from [redgis'](https://github.com/redgis/WindowTabs). Now, it compiles and runs successfully on both Win7 and Win10.
 
 ## Download
 
-It's recommended to compile the exe file as below. If not, you could find my prebuilt files at [releases](https://github.com/leafOfTree/WindowTabs/releases).
+It's recommended that you compile the exe file as below. If not, please find my prebuilt files at [releases](https://github.com/leafOfTree/WindowTabs/releases).
 
 ## Compilation
 
@@ -44,15 +44,15 @@ It should work on both Win7 and Win10.
 
 - Compile and Release
 
-    Lanuch Visual Studio, open this project by "File > Open > Project/Solution", select "WindowTabs.sln".
+    Launch Visual Studio, open this project by "File > Open > Project/Solution", and select "WindowTabs.sln".
 
     If you choose the `Release` configuration and click `Start`, you will get a release version `WindowTabs\WtProgram\bin\Release\WindowTabs.exe`.
 
 - Debug
 
-    Choose `Debug` configuration and it will compile to `WindowTabs\WtProgram\bin\Debug\WindowTabs.exe`.
+    Choose the `Debug` configuration and it will compile to `WindowTabs\WtProgram\bin\Debug\WindowTabs.exe`.
 
-    Tips: Move your cursor to left gray column and click on it to add a breakpoint on current line. Then start debug and you can see runtime details.
+    Tips: Move your cursor to left gray column and click on it to add a breakpoint on the current line. Then start `Debug` and you can see runtime details.
 
 ## Changes
 
@@ -60,7 +60,7 @@ It should work on both Win7 and Win10.
 
 - Support Visual Studio 2022
 
-- Remove task window peek (perview) to fix task switch error
+- Remove task window peek (preview) to fix task switch error
 - Use the last file name as tab name
 - UI improvement on icon and task switch form border
 
@@ -70,10 +70,10 @@ It should work on both Win7 and Win10.
 
 2023
 
-- Recognize ApplicationFrameWindow based Apps like Photo, Mail.
+- Recognize ApplicationFrameWindow based Apps like Photo and Mail.
 - Fix null exception on toggling Fade out... option.
 - Adjust settings font and display.
-- Fix extra empty tab for File Explorer.
+- Fix the extra empty tab for File Explorer.
 - Update packages for Win10.
 - Fix desktop `Programs` title missing issue.
 
