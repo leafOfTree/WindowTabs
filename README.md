@@ -1,6 +1,6 @@
 # WindowTabs
 
-<a href="https://github.com/leafOfTree/WindowTabs">![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/leafoftree/windowtabs/total)</a>
+<a href="https://github.com/leafOfTree/WindowTabs/releases">![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/leafoftree/windowtabs/total)</a>
 
 A utility which brings browser-style tabbed window management to the desktop.
 
