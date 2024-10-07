@@ -1,5 +1,7 @@
 # WindowTabs
 
+<a href="https://github.com/leafOfTree/WindowTabs">![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/leafoftree/windowtabs/total)</a>
+
 A utility which brings browser-style tabbed window management to the desktop.
 
 <p>
@@ -47,6 +49,7 @@ It should work on both Win7 and Win10.
     If you choose the `Release` configuration and click `Start`, you will get a release version `WindowTabs\WtProgram\bin\Release\WindowTabs.exe`.
 
 - Debug
+
     Choose `Debug` configuration and it will compile to `WindowTabs\WtProgram\bin\Debug\WindowTabs.exe`.
 
     Tips: Move your cursor to left gray column and click on it to add a breakpoint on current line. Then start debug and you can see runtime details.
