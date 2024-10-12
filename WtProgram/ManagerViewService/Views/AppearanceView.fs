@@ -73,7 +73,7 @@ type AppearanceView() as this =
             | HotKeyProperty -> HotKeyEditor() :> IPropEditor
 
         editor.control.Dock <- DockStyle.Fill
-        editor.control.Margin <- Padding(0,5,0,5)
+        editor.control.Margin <- Padding(10,5,0,5)
         label.Margin <- Padding(0,5,0,5)
         panel.Controls.Add(label)
         panel.Controls.Add(editor.control)
@@ -99,7 +99,7 @@ type AppearanceView() as this =
             let appearance = Services.program.defaultTabAppearanceInfo
             setEditorValues appearance
             this.applyAppearance()
-        btn.Font <- font
+        btn.Font <- SystemFonts.DefaultFont
         btn
 
     do  

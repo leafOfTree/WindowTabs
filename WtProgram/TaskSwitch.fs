@@ -6,6 +6,8 @@ open System.Windows.Forms
 open Bemo.Win32
 open Aga.Controls
 open Aga.Controls.Tree
+open System.Resources
+open System.Reflection
 
 type ITaskSwitchGroup =
     abstract member hwnd : IntPtr
@@ -40,6 +42,8 @@ type TaskWindowNode(item) as this=
     member this.IconImage with get() = image
 
 type TaskSwitchTreeViewControl(windows:List2<TaskWindowItem>) =
+    let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
+    let font = Font(resources.GetString("Font"), 10f)
     let nameColumn = TreeColumn("Name", 200)
         
     let nodes = windows.map <| fun window -> TaskWindowNode(window)
@@ -51,7 +55,9 @@ type TaskSwitchTreeViewControl(windows:List2<TaskWindowItem>) =
         tree.ShowLines <- false
         tree.ShowPlusMinus <- false
         tree.Columns.Add(nameColumn)
-        tree.RowHeight <- 36
+        tree.RowHeight <- 48
+        tree.Font <- font
+        tree.BorderStyle <- BorderStyle.None
         tree.NodeControls.Add(
             let control = NodeControls.NodeIcon()
             control.ParentColumn <- nameColumn
@@ -59,7 +65,7 @@ type TaskSwitchTreeViewControl(windows:List2<TaskWindowItem>) =
             control.DataPropertyName <- "IconImage"
             control)
         tree.NodeControls.Add(
-            let control = NodeControls.NodeTextBox()
+            let control = SmoothNodeTextBox()
             control.Trimming <- StringTrimming.EllipsisCharacter
             control.DisplayHiddenContentInToolTip <- true
             control.ParentColumn <- nameColumn
@@ -99,7 +105,7 @@ type TaskSwitchForm(control:ITaskSwitchListControl) as this =
         f.Size <- formSize
         f.ControlBox <- false
         f.Controls.Add(control.control)
-        f.FormBorderStyle <- FormBorderStyle.None
+        f.FormBorderStyle <- FormBorderStyle.Fixed3D
         let window = os.windowFromHwnd(f.Handle)
         f    
 
@@ -218,7 +224,11 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop) as this=
     
     member this.windows =
         let windowsInZorder = os.windowsInZorder.where(fun w -> 
-            w.isAltTabWindow && w.pid.isCurrentProcess.not && not(String.IsNullOrEmpty w.text) && w.text <> "Microsoft Text Input Application")
+            w.isAltTabWindow 
+            && w.pid.isCurrentProcess.not 
+            && not(String.IsNullOrEmpty w.text) 
+            && w.text <> "Microsoft Text Input Application"
+            && w.className <> "Windows.UI.Core.CoreWindow")
         let groupWindowsInSwitcher = settings.settings.groupWindowsInSwitcher
         if groupWindowsInSwitcher then
             let hwndToGroup =

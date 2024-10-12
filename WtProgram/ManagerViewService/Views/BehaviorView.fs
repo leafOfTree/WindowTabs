@@ -20,6 +20,30 @@ type HotKeyView() =
         
     let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
 
+    let checkBox (prop:IProperty<bool>) = 
+        let checkbox = BoolEditor() :> IPropEditor
+        checkbox.value <- box(prop.value)
+        checkbox.changed.Add <| fun() -> prop.value <- unbox<bool>(checkbox.value)
+        checkbox.control
+
+    let settingsCheckbox key = checkBox(settingsProperty(key))
+
+    let basicForm = 
+        let fields = List2([
+            ("runAtStartup", settingsCheckbox "runAtStartup")
+            ("hideInactiveTabs", settingsCheckbox "hideInactiveTabs")
+            ("isTabbingEnabledForAllProcessesByDefault", checkBox(prop<IFilterService, bool>(Services.filter, "isTabbingEnabledForAllProcessesByDefault")))
+        ])
+        "Basics", UIHelper.form fields
+
+    let taskForm = 
+        let fields = List2([
+            ("combineIconsInTaskbar", settingsCheckbox "combineIconsInTaskbar")
+            ("replaceAltTab", settingsCheckbox "replaceAltTab")
+            ("groupWindowsInSwitcher", settingsCheckbox "groupWindowsInSwitcher")
+        ])
+        "Tasks", UIHelper.form fields
+
     let switchTabs =
         let hotKeys = List2([
             ("nextTab", "nextTab")
@@ -53,18 +77,14 @@ type HotKeyView() =
             text, editor.control
 
         let fields = fields.prependList(List2([
-            ("runAtStartup", settingsCheckbox "runAtStartup")
-            ("hideInactiveTabs", settingsCheckbox "hideInactiveTabs")
-            ("isTabbingEnabledForAllProcessesByDefault", checkBox(prop<IFilterService, bool>(Services.filter, "isTabbingEnabledForAllProcessesByDefault")))
-            ("combineIconsInTaskbar", settingsCheckbox "combineIconsInTaskbar")
-            ("replaceAltTab", settingsCheckbox "replaceAltTab")
-            ("groupWindowsInSwitcher", settingsCheckbox "groupWindowsInSwitcher")
             ("enableCtrlNumberHotKey", settingsCheckbox "enableCtrlNumberHotKey")
         ]))
 
         "Switch Tabs", UIHelper.form fields
 
     let sections = List2([
+        basicForm
+        taskForm
         switchTabs
         ])
 
@@ -73,13 +93,14 @@ type HotKeyView() =
         let controls = sections.map <| fun(text,control) ->
             control.Dock <- DockStyle.Fill
             let group = GroupBox()
-            group.Dock <- DockStyle.Fill
+            group.Dock <- DockStyle.Top
+            group.Margin <- Padding(10)
             group.AutoSize <- true
             group.Text <- text
             group.Font <- font
             group.Controls.Add(control)
             group :> Control
-        let table = UIHelper.hbox controls
+        let table = UIHelper.vbox controls
         table.Dock <- DockStyle.Fill
         table
 

@@ -258,7 +258,7 @@ type SuperBarPlugin() as this =
                 let tbButtonInfo = {
                     text = this.ts.tabInfo(topTab).text
                     bounds = previewBounds
-                    icon = this.ts.tabInfo(topTab).iconBig
+                    icon = this.ts.tabInfo(topTab).iconSmall
                     activate = fun() -> this.invokeAsync <| fun() ->
                         this.tabActivate(Tab(this.zorder.head), true)
                     toggleMinimizeRestore = fun() -> 

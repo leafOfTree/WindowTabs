@@ -1,7 +1,9 @@
 ﻿namespace Bemo
 open System
 open System.Drawing
+open System.Drawing.Text
 open System.Windows.Forms
+open Aga.Controls.Tree
 open Bemo.Win32
 
 [<AllowNullLiteral>]
@@ -216,6 +218,14 @@ type HotKeyOnlyEditor() as this =
         member this.control = textBox :> Control
         member this.changed = hkChanged.Publish
 
+type SmoothNodeTextBox() = 
+    inherit NodeControls.NodeTextBox()
+
+    override this.Draw(node, context) =
+        context.Graphics.TextRenderingHint <- TextRenderingHint.ClearTypeGridFit
+        base.Draw(node, context)
+
+
 module UIHelper =
     open System.Resources
     open System.Reflection
@@ -239,6 +249,8 @@ module UIHelper =
             //t.Padding <- Padding(10)
             t.RowCount <- fields.length
             t.ColumnCount <- 2
+            // Make control align right
+            t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 10f)) |> ignore
             t
 
         fields.enumerate.iter <| fun (i,(text, control:Control)) ->

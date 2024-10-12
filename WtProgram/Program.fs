@@ -349,14 +349,12 @@ type Program() as this =
             
 
     member this.run(plugins:List2<IPlugin>) =  
-        
         if System.Diagnostics.Debugger.IsAttached.not then
             if mutex.WaitOne(TimeSpan.FromSeconds(0.5), false).not then
                 MessageBox.Show("Another instance of WindowTabs is running, please close it before running this instance.", "WindowTabs is already running.").ignore
                 exit(0)
 
         Application.EnableVisualStyles()
-
         Services.register(this :> IProgram)
         Services.register(FilterService() :> IFilterService)
         Services.register(ManagerViewService() :> IManagerView)
@@ -371,6 +369,7 @@ type Program() as this =
             | :? IDisposable as d -> d.Dispose()
             | _ -> ()
 
+Application.SetCompatibleTextRenderingDefault(false)
 let program = Program()
 program.run(List2<obj>([
     InputManagerPlugin(Set2(List2([WindowMessages.WM_MOUSEWHEEL])))

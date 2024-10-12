@@ -38,6 +38,7 @@ type DesktopManagerForm() =
             page.Dock <- DockStyle.Fill
             page.Font <- font
             tabControl.TabPages.Add(page)
+            page.BackColor <- Color.White
         tabControl.Dock <- DockStyle.Fill
         form.Controls.Add(tabControl)
         form.FormBorderStyle <- FormBorderStyle.SizableToolWindow
@@ -47,6 +48,7 @@ type DesktopManagerForm() =
         form.Icon <- Services.openIcon("Bemo.ico")
         form.TopMost <- true
         form.Font <- font
+        form.BackColor <- Color.White
         form
 
     member this.show() =
