@@ -148,7 +148,8 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>) as this =
 
     do
         form.show()
-        setIndex 0
+        if windows.length > 0 then
+            setIndex 0
         
         form.inputControl.LostFocus.Add <| fun e ->
             this.switchEnd(true)
@@ -166,7 +167,7 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>) as this =
     member this.switchNext() = doSwitch true
     member this.switchPrev() = doSwitch false
     member this.switchEnd(cancel:bool) =
-        if cancel.not then
+        if cancel.not && windows.length > 0 then
             let (TaskWindowItem(hwnd,_)) = windows.at(switchIndex.value)
             os.windowFromHwnd(hwnd).setForegroundOrRestore(false)
         form.hide()
@@ -228,7 +229,8 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop) as this=
             && w.pid.isCurrentProcess.not 
             && not(String.IsNullOrEmpty w.text) 
             && w.text <> "Microsoft Text Input Application"
-            && w.className <> "Windows.UI.Core.CoreWindow")
+            && w.className <> "Windows.UI.Core.CoreWindow"
+        )
         let groupWindowsInSwitcher = settings.settings.groupWindowsInSwitcher
         if groupWindowsInSwitcher then
             let hwndToGroup =
