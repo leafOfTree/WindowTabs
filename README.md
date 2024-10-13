@@ -22,7 +22,7 @@ You can compile the exe file as below. Or find my prebuilt files at [releases](h
 
 ## Usage
 
-- Run `WindowTabs.exe`. It will be running in background
+- Run `WindowTabs.exe`. It will be running in background.
 
 - Set which window group and tab are enabled and other configurations.
     - Use notify icon at lower right corner
