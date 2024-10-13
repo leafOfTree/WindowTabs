@@ -18,7 +18,15 @@ This repository is a fork of [payaneco's repository](https://github.com/payaneco
 
 <a href="https://github.com/leafOfTree/WindowTabs/releases">![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/leafoftree/windowtabs/total)</a>
 
-It's recommended that you compile the exe file as below. If not, please find my prebuilt files at [releases](https://github.com/leafOfTree/WindowTabs/releases).
+You can compile the exe file as below. Or find my prebuilt files at [releases](https://github.com/leafOfTree/WindowTabs/releases).
+
+## Usage
+
+- Run `WindowTabs.exe`. It will be running in background
+
+- Set which window group and tab are enabled and other configurations.
+    - Use notify icon at lower right corner
+    - Right click the tab title
 
 ## Compilation
 
@@ -68,6 +76,10 @@ Tips
 ## Changes
 
 2024
+
+- Improve UI - layout, color, and font
+- Support close all tabs from taskbar button rightclick menu
+- Fix WindowTabs's alt+tab collapse when there is no open window
 
 - Support Visual Studio 2022
 
