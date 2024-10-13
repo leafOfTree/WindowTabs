@@ -12,6 +12,7 @@ type TbButton = {
     activate : unit -> unit
     toggleMinimizeRestore: unit -> unit
     tabs : List2<string * TbButtonTab>
+    close : unit -> unit
     }
 
 and TbButtonTab = {
@@ -71,6 +72,7 @@ type TaskBarButton(info) as this =
                 | WindowMessages.WM_SYSCOMMAND ->
                     match msg.wParam.ToInt32() with
                     | SystemMenuCommandValues.SC_CLOSE ->
+                        config().close()
                         0
                     | SystemMenuCommandValues.SC_RESTORE ->
                         config().toggleMinimizeRestore()
@@ -291,6 +293,11 @@ type SuperBarPlugin() as this =
                             text = this.ts.tabInfo(tab).text
                             icon = this.ts.tabInfo(tab).iconSmall
                         }
+                    close = fun() ->
+                        this.ts.lorder.iter <| fun tab ->
+                            let (Tab(hwnd)) = tab
+                            this.os.windowFromHwnd(hwnd).close()
+                        
                     }
 
                 let button = 
