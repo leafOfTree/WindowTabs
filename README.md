@@ -52,7 +52,18 @@ It should work on both Win7 and Win10.
 
     Choose the `Debug` configuration and it will compile to `WindowTabs\WtProgram\bin\Debug\WindowTabs.exe`.
 
-    Tips: Move your cursor to left gray column and click on it to add a breakpoint on the current line. Then start `Debug` and you can see runtime details.
+Tips
+
+- Move your cursor to left gray column and click on it to add a breakpoint on the current line. Then start `Debug` and you can see runtime details.
+- You can also debug using `System.Diagnostics.Debug.WriteLine("IterateIcons Stopped");` in code
+
+## Project Files
+
+- Entry point: `Program.fs` this.run
+- Tray icon (Notify icon): `NotifyIconPlugin.fs` this.icon
+- Popup Window: `DesktopManagerForm.fs`. Its tabs are under `ManagerViewService/Views/`
+- Tree: `treeviewadv/`. Probably from https://sourceforge.net/projects/treeviewadv/
+- Taskbar group: `SuperBarPlugin.fs`
 
 ## Changes
 
