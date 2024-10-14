@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/leafOfTree/leafOfTree.github.io/master/windowtabs.png" width="32" height="32" alt="icon" align="left"/>
+
 # WindowTabs
 
 A utility that brings browser-style tabbed window management to the desktop.
