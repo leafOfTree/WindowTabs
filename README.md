@@ -20,19 +20,19 @@ This repository is a fork of [payaneco's repository](https://github.com/payaneco
 
 <a href="https://github.com/leafOfTree/WindowTabs/releases">![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/leafoftree/windowtabs/total)</a>
 
-You can compile the exe file as below. Or find my prebuilt files at [releases](https://github.com/leafOfTree/WindowTabs/releases).
+You can compile the `exe` file as below, or download my prebuilt files from the [releases](https://github.com/leafOfTree/WindowTabs/releases) page.
 
 ## Usage
 
-- Run `WindowTabs.exe`. It will be running in background.
+- Run `WindowTabs.exe`. It will run in the background.
 
-- Set which window group and tab are enabled and other configurations.
-    - Use notify icon at lower right corner
-    - Right click the tab title
+- Configure which window group and tab are enabled, along with other settings.
+    - Right click the notification icon in the lower right corner.
+    - Right click the tab title.
 
 ## Compilation
 
-It should work on both Win7 and Win10.
+Tested on Win10.
 
 - Clone
 
