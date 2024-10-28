@@ -26,13 +26,13 @@ You can compile the `exe` file as below, or download my prebuilt files from the 
 
 - Run `WindowTabs.exe`. It will run in the background.
 
-- Configure which window group and tab are enabled, along with other settings.
+- Configure for which window group and tab are enabled, along with other settings.
     - Right click on the notification icon at the bottom right corner.
     - Right click on the tab title.
 
 ## Compilation
 
-Tested on Win10, Visual Studio 2019 or 2022.
+Tested on Win10 with Visual Studio 2019 or 2022.
 
 - Clone
 
@@ -64,14 +64,14 @@ Tested on Win10, Visual Studio 2019 or 2022.
 
 Tips
 
-- Move your cursor to left gray column and click on it to add a breakpoint on the current line. Then start `Debug` and you can see runtime details.
-- You can also debug using `System.Diagnostics.Debug.WriteLine("IterateIcons Stopped");` in code
+- In code eidtor, click on the left gray column to add a breakpoint on the current line. Then start `Debug` and you can see runtime details.
+- You can also debug using `System.Diagnostics.Debug.WriteLine("Hello, world");` in code
 
 ## Project Files
 
 - Entry point: `Program.fs` this.run
 - Tray icon (Notify icon): `NotifyIconPlugin.fs` this.icon
-- Popup Window: `DesktopManagerForm.fs`. Its tabs are under `ManagerViewService/Views/`
+- Settings Window: `DesktopManagerForm.fs`. Its tabs are under `ManagerViewService/Views/`
 - Tree: `treeviewadv/`. Probably from https://sourceforge.net/projects/treeviewadv/
 - Taskbar group: `SuperBarPlugin.fs`
 
