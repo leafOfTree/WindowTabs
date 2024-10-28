@@ -32,7 +32,7 @@ You can compile the `exe` file as below, or download my prebuilt files from the 
 
 ## Compilation
 
-Tested on Win10.
+Tested on Win10, Visual Studio 2019 or 2022.
 
 - Clone
 
@@ -50,7 +50,7 @@ Tested on Win10.
 
     - [Wix Toolset Visual Studio 2022 Extension](https://marketplace.visualstudio.com/items?itemName=WixToolset.WixToolsetVisualStudio2022Extension)
 
-> You have to close Visual Studio to install the extension. Visual Studio 2019 still works.
+> You need to close Visual Studio to install the extension. Visual Studio 2019 and its Wix extension still work.
 
 - Compile and Release
 
