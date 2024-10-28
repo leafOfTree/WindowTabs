@@ -27,8 +27,8 @@ You can compile the `exe` file as below, or download my prebuilt files from the 
 - Run `WindowTabs.exe`. It will run in the background.
 
 - Configure which window group and tab are enabled, along with other settings.
-    - Right click the notification icon in the lower right corner.
-    - Right click the tab title.
+    - Right click on the notification icon at the bottom right corner.
+    - Right click on the tab title.
 
 ## Compilation
 
