@@ -78,6 +78,7 @@ type HotKeyView() =
 
         let fields = fields.prependList(List2([
             ("enableCtrlNumberHotKey", settingsCheckbox "enableCtrlNumberHotKey")
+            ("enableHoverActivate", settingsCheckbox "enableHoverActivate")
         ]))
 
         "Switch Tabs", UIHelper.form fields

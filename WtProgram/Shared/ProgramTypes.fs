@@ -31,6 +31,7 @@ type SettingsRec = {
     groupWindowsInSwitcher: bool
     enableCtrlNumberHotKey: bool
     combineIconsInTaskbar: bool
+    enableHoverActivate: bool
     }
 
 type ILicenseManager =

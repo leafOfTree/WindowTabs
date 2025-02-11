@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Collections
 open System.Drawing
@@ -11,6 +11,7 @@ open Bemo.Win32.Forms
 
 type ITabStripMonitor =
     abstract member tabClick : (MouseButton * Tab * TabPart * MouseAction * Pt) -> unit
+    abstract member tabActivate : (Tab) -> unit
     abstract member tabClose : Tab -> unit
     abstract member tabMoved : Tab * int -> unit
     abstract member windowMsg : Win32Message -> unit
@@ -130,6 +131,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             if this.window.hasCapture.not then 
                 this.window.trackMouseLeave()
             hoverCell.set(this.hit)
+            let enableHoverActivate = Services.settings.getValue("enableHoverActivate").cast<bool>()
+            if enableHoverActivate then 
+                this.hit.iter <| fun(hitTab, hitPart) ->
+                    monitor.tabActivate(hitTab)
         | MouseClick(pt, btn, action) ->
             this.setPt(Some(pt))
             this.hit.iter <| fun(hitTab, hitPart) ->

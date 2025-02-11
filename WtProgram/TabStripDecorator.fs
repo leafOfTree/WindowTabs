@@ -347,6 +347,9 @@ type TabStripDecorator(group:WindowGroup) as this =
                 | MouseMiddle ->
                     group.tabActivate(tab, false)
             | _ -> ()
+    
+        member x.tabActivate((tab)) = 
+            group.tabActivate(tab, false)
             
         member x.tabMoved(Tab(hwnd), index) =
             group.onTabMoved(hwnd, index)
