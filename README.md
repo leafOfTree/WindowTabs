@@ -64,16 +64,17 @@ Tested on Win10 with Visual Studio 2019 or 2022.
 
 Tips
 
-- In code eidtor, click on the left gray column to add a breakpoint on the current line. Then start `Debug` and you can see runtime details.
-- You can also debug using `System.Diagnostics.Debug.WriteLine("Hello, world");` in code
+- In Visual Studio editor, click on the left gray column to add a breakpoint on the current line. Then start `Debug` and you can see runtime details.
+- You can also debug using `System.Diagnostics.Debug.WriteLine("Hello, world");` in code to print logs
 
-## Project Files
+## Project Structure
 
 - Entry point: `Program.fs` this.run
 - Tray icon (Notify icon): `NotifyIconPlugin.fs` this.icon
 - Settings Window: `DesktopManagerForm.fs`. Its tabs are under `ManagerViewService/Views/`
 - Tree: `treeviewadv/`. Probably from https://sourceforge.net/projects/treeviewadv/
 - Taskbar group: `SuperBarPlugin.fs`
+- GUI framework: WinForms
 
 ## Changes
 
