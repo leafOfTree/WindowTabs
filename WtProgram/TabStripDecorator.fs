@@ -47,7 +47,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 capturedHwnd.Value.iter <| fun capturedHwnd ->
                     if hwnd = capturedHwnd then
                         this.onCloseWindow hwnd
-            | MouseMove ->
+            | MouseMove, _ ->
                 capturedHwnd := Some(hwnd)
             | _ -> ()
         
