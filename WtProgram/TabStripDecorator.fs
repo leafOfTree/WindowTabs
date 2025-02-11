@@ -48,6 +48,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                     if hwnd = capturedHwnd then
                         this.onCloseWindow hwnd
             | MouseMove, _ ->
+                // todo: add an option to enable mouse hover to activate the tab
                 capturedHwnd := Some(hwnd)
             | _ -> ()
         
