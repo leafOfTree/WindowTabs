@@ -18,7 +18,7 @@ This repository is a fork of [payaneco's repository](https://github.com/payaneco
 
 <a href="https://github.com/leafOfTree/WindowTabs/releases">![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/leafoftree/windowtabs/total)</a>
 
-You can compile the `exe` file as below, or download my prebuilt files from the [releases](https://github.com/leafOfTree/WindowTabs/releases) page.
+You can download my prebuilt files from the [releases](https://github.com/leafOfTree/WindowTabs/releases) page. You can also compile the `exe` file as below, 
 
 ## Usage
 
@@ -46,9 +46,9 @@ Tested on Win10 with Visual Studio 2019 or 2022.
 
     - [WiX Toolset build tools V3.14.1](https://wixtoolset.org/docs/wix3/)
 
-    - [Wix Toolset Visual Studio 2022 Extension](https://marketplace.visualstudio.com/items?itemName=WixToolset.WixToolsetVisualStudio2022Extension)
+    - [WiX Toolset Visual Studio 2022 Extension](https://marketplace.visualstudio.com/items?itemName=WixToolset.WixToolsetVisualStudio2022Extension)
 
-> You need to close Visual Studio to install the extension. Visual Studio 2019 and its Wix extension still work.
+> You need to close Visual Studio first to install the extension. Visual Studio 2019 and its WiX extension also work.
 
 - Compile and Release
 
