@@ -35,7 +35,18 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let showInsideCell = Cell.create(false)
     let isInAltTabCell = Cell.create(false)
     let iconOnlyCell = Cell.create(false)
-    let alignment = Cell.create(Map2(List2([(TabUp,TabLeft);(TabDown,TabCenter)])))
+    let alignmentMap = 
+        Map.ofList [
+            "Left", TabLeft
+            "Center", TabCenter
+            "Right", TabRight
+        ]
+    let alignmentDefault = 
+        let alignmentDefault = Services.settings.getValue("alignment").cast<string>()
+        match alignmentMap.TryFind alignmentDefault with
+        | Some align -> align
+        | None -> TabCenter
+    let alignment = Cell.create(Map2(List2([(TabUp,alignmentDefault);(TabDown,alignmentDefault)])))
     let capturedCell = Cell.create(None : Option<Tab*TabPart>)
     let hoverCell = Cell.create(None : Option<Tab*TabPart>)
     let slideCell = Cell.create(None)
@@ -68,7 +79,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
         Cell.listen <| fun() ->
             this.update()
-       
+
     member private this.inAltSwitch = isInAltTabCell.value
 
     member private this.layeredWindow = layeredWindowCell.value.Value

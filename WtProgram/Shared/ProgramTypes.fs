@@ -32,6 +32,8 @@ type SettingsRec = {
     enableCtrlNumberHotKey: bool
     combineIconsInTaskbar: bool
     enableHoverActivate: bool
+    autoHide: bool
+    alignment: string
     }
 
 type ILicenseManager =

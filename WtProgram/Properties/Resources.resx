@@ -168,6 +168,12 @@
   <data name="enableHoverActivate" xml:space="preserve">
     <value>Enable mouse hover to activate tab</value>
   </data>
+  <data name="autoHide" xml:space="preserve">
+    <value>Auto hide tab when maximized</value>
+  </data>
+  <data name="alignment" xml:space="preserve">
+    <value>Align tabs</value>
+  </data>
   <data name="Height" xml:space="preserve">
     <value>Height</value>
   </data>
