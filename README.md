@@ -76,6 +76,11 @@ Tips
 
 ## Changes
 
+2025
+
+- Support mouse hover to active tab
+- Add options to save default values of auto hide and align tabs
+
 2024
 
 - Improve UI - layout, color, and font
