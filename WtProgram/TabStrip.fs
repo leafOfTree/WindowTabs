@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Collections
 open System.Drawing
@@ -11,6 +11,7 @@ open Bemo.Win32.Forms
 
 type ITabStripMonitor =
     abstract member tabClick : (MouseButton * Tab * TabPart * MouseAction * Pt) -> unit
+    abstract member tabActivate : (Tab) -> unit
     abstract member tabClose : Tab -> unit
     abstract member tabMoved : Tab * int -> unit
     abstract member windowMsg : Win32Message -> unit
@@ -34,7 +35,18 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let showInsideCell = Cell.create(false)
     let isInAltTabCell = Cell.create(false)
     let iconOnlyCell = Cell.create(false)
-    let alignment = Cell.create(Map2(List2([(TabUp,TabLeft);(TabDown,TabCenter)])))
+    let alignmentMap = 
+        Map.ofList [
+            "Left", TabLeft
+            "Center", TabCenter
+            "Right", TabRight
+        ]
+    let alignmentDefault = 
+        let alignmentDefault = Services.settings.getValue("alignment").cast<string>()
+        match alignmentMap.TryFind alignmentDefault with
+        | Some align -> align
+        | None -> TabCenter
+    let alignment = Cell.create(Map2(List2([(TabUp,alignmentDefault);(TabDown,alignmentDefault)])))
     let capturedCell = Cell.create(None : Option<Tab*TabPart>)
     let hoverCell = Cell.create(None : Option<Tab*TabPart>)
     let slideCell = Cell.create(None)
@@ -67,7 +79,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
         Cell.listen <| fun() ->
             this.update()
-       
+
     member private this.inAltSwitch = isInAltTabCell.value
 
     member private this.layeredWindow = layeredWindowCell.value.Value
@@ -130,6 +142,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             if this.window.hasCapture.not then 
                 this.window.trackMouseLeave()
             hoverCell.set(this.hit)
+            let enableHoverActivate = Services.settings.getValue("enableHoverActivate").cast<bool>()
+            if enableHoverActivate then 
+                this.hit.iter <| fun(hitTab, hitPart) ->
+                    monitor.tabActivate(hitTab)
         | MouseClick(pt, btn, action) ->
             this.setPt(Some(pt))
             this.hit.iter <| fun(hitTab, hitPart) ->

@@ -86,7 +86,10 @@ type Settings(isStandAlone) as this =
                     replaceAltTab = settingsJson.getBool("replaceAltTab").def(false)
                     groupWindowsInSwitcher = settingsJson.getBool("groupWindowsInSwitcher").def(false)
                     enableCtrlNumberHotKey = settingsJson.getBool("enableCtrlNumberHotKey").def(true)
+                    enableHoverActivate = settingsJson.getBool("enableHoverActivate").def(false)
+                    autoHide = settingsJson.getBool("autoHide").def(true)
                     version = settingsJson.getString("version").def(String.Empty)
+                    alignment = settingsJson.getString("alignment").def("Center")
                     tabAppearance =
                         let appearanceObject = settingsJson.getObject("tabAppearance").def(JObject())
                         appearanceObject.items.fold this.defaultTabAppearance <| fun appearance (key,value) ->
@@ -105,6 +108,7 @@ type Settings(isStandAlone) as this =
             let settingsJson = this.settingsJson
             settingsJson.setString("version", settings.version)
             settingsJson.setString("licenseKey", settings.licenseKey)
+            settingsJson.setString("alignment", settings.alignment)
             settings.ticket.iter <| fun ticket -> settingsJson.setString("ticket", ticket)
             settingsJson.setBool("runAtStartup", settings.runAtStartup)
             settingsJson.setBool("hideInactiveTabs", settings.hideInactiveTabs)
@@ -113,6 +117,8 @@ type Settings(isStandAlone) as this =
             settingsJson.setBool("replaceAltTab", settings.replaceAltTab)
             settingsJson.setBool("groupWindowsInSwitcher", settings.groupWindowsInSwitcher)
             settingsJson.setBool("enableCtrlNumberHotKey", settings.enableCtrlNumberHotKey)
+            settingsJson.setBool("enableHoverActivate", settings.enableHoverActivate)
+            settingsJson.setBool("autoHide", settings.autoHide)
             settingsJson.setStringArray("includedPaths", settings.includedPaths.items)
             settingsJson.setStringArray("excludedPaths", settings.excludedPaths.items)
             settingsJson.setStringArray("autoGroupingPaths", settings.autoGroupingPaths.items)

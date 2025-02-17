@@ -28,11 +28,37 @@ type HotKeyView() =
 
     let settingsCheckbox key = checkBox(settingsProperty(key))
 
+    let dropDown (prop:IProperty<string>, items: string list) = 
+        let combo = new ComboBox()
+
+        // First add items
+        combo.Items.AddRange(items |> List.toArray |> Array.map box)
+        
+        // Then set initial value if exists, otherwise select first item
+        let initialIndex = 
+            match items |> List.tryFindIndex ((=) prop.value) with
+            | Some index -> index
+            | None -> if combo.Items.Count > 0 then 0 else -1
+        
+        if initialIndex >= 0 then
+            combo.SelectedIndex <- initialIndex
+            
+        combo.SelectedIndexChanged.Add(fun _ ->
+            if combo.SelectedIndex >= 0 then
+                prop.value <- combo.SelectedItem.ToString()
+        )
+
+        combo :> Control
+
+    let settingsDropDown key value = dropDown(settingsProperty(key), value)
+
     let basicForm = 
         let fields = List2([
             ("runAtStartup", settingsCheckbox "runAtStartup")
             ("hideInactiveTabs", settingsCheckbox "hideInactiveTabs")
             ("isTabbingEnabledForAllProcessesByDefault", checkBox(prop<IFilterService, bool>(Services.filter, "isTabbingEnabledForAllProcessesByDefault")))
+            ("autoHide", settingsCheckbox "autoHide")
+            ("alignment", settingsDropDown "alignment" ["Left"; "Center"; "Right"])
         ])
         "Basics", UIHelper.form fields
 
@@ -63,14 +89,6 @@ type HotKeyView() =
             editor.value <- Services.program.getHotKey(key)
             editor.changed.Add <| fun() ->
                 Services.program.setHotKey key (unbox<int>(editor.value))
-        
-        let checkBox (prop:IProperty<bool>) = 
-            let checkbox = BoolEditor() :> IPropEditor
-            checkbox.value <- box(prop.value)
-            checkbox.changed.Add <| fun() -> prop.value <- unbox<bool>(checkbox.value)
-            checkbox.control
-
-        let settingsCheckbox key = checkBox(settingsProperty(key))
 
         let fields = hotKeys.map <| fun(key,text) ->
             let editor = editors.find key
@@ -78,6 +96,7 @@ type HotKeyView() =
 
         let fields = fields.prependList(List2([
             ("enableCtrlNumberHotKey", settingsCheckbox "enableCtrlNumberHotKey")
+            ("enableHoverActivate", settingsCheckbox "enableHoverActivate")
         ]))
 
         "Switch Tabs", UIHelper.form fields

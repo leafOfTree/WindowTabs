@@ -165,6 +165,15 @@
   <data name="enableCtrlNumberHotKey" xml:space="preserve">
     <value>Ctrl+1、... Ctrl+9 でタブをアクティブ化を有効にする</value>
   </data>
+  <data name="enableHoverActivate" xml:space="preserve">
+    <value>マウスホバーでタブを有効にする</value>
+  </data>
+  <data name="autoHide" xml:space="preserve">
+    <value>最大化時にタブを自動的に隠す</value>
+  </data>
+  <data name="alignment" xml:space="preserve">
+    <value>タブの配置</value>
+  </data>
   <data name="Height" xml:space="preserve">
     <value>高さ</value>
   </data>
