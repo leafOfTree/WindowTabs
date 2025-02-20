@@ -12,7 +12,7 @@ A utility that brings browser-style tabbed window management to the desktop.
 It was originally developed by Maurice Flanagan in 2009 and was provided as free and paid versions.
 The author who no longer has time to maintain it has open-sourced it. See the original repository: [mauricef/WindowTabs](https://github.com/mauricef/WindowTabs).
 
-This repository is a fork of [payaneco's repository](https://github.com/payaneco/WindowTabs) which is from [redgis'](https://github.com/redgis/WindowTabs). Now, it compiles and runs successfully on both Win7 and Win10.
+This repository is a fork of [payaneco's repository](https://github.com/payaneco/WindowTabs) which is from [redgis'](https://github.com/redgis/WindowTabs). Now, it compiles and runs successfully on Win7, Win10 and Win11.
 
 ## Download
 
@@ -78,7 +78,7 @@ Tips
 
 2025
 
-- Support mouse hover to active tab
+- Support mouse hover to activate tab
 - Add options to save default values of auto hide and align tabs
 
 2024
