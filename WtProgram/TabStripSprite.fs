@@ -265,7 +265,7 @@ type TabStripSprite<'id> when 'id : equality = {
         match this.alignment with
         | TabLeft -> 0.0
         | TabCenter -> widthOfEmptySpace / 2.0
-        | TabRight -> widthOfEmptySpace
+        | TabRight -> widthOfEmptySpace - 60.0
             
     member this.tabLocation tab =
         match this.slide with
