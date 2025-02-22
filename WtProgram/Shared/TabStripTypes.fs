@@ -52,6 +52,7 @@ and TabAppearanceInfo = {
     tabActiveBgColor: Color
     tabFlashBgColor: Color
     tabBorderColor: Color
+    tabTextColor : Color
     tabHeightOffset : int
     tabIndentFlipped : int
     tabIndentNormal : int

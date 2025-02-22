@@ -195,6 +195,9 @@
   <data name="Max Width" xml:space="preserve">
     <value>最長幅</value>
   </data>
+  <data name="Text Color" xml:space="preserve">
+    <value>色</value>
+  </data>
   <data name="Name" xml:space="preserve">
     <value>名称</value>
   </data>

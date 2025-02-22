@@ -37,6 +37,7 @@ type AppearanceView() as this =
         intConfig "tabHeight" "Height"
         intConfig "tabMaxWidth" "Max Width"
         intConfig "tabOverlap" "Overlap"
+        colorConfig "tabTextColor" "Text Color"
         colorConfig "tabNormalBgColor" "Background Normal"
         colorConfig "tabHighlightBgColor" "Background Highlight"
         colorConfig "tabActiveBgColor" "Background Active"

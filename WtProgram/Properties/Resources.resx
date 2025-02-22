@@ -195,6 +195,9 @@
   <data name="Max Width" xml:space="preserve">
     <value>Max Width</value>
   </data>
+  <data name="Text Color" xml:space="preserve">
+    <value>Color</value>
+  </data>
   <data name="Name" xml:space="preserve">
     <value>Name</value>
   </data>

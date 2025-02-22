@@ -62,6 +62,7 @@ type Settings(isStandAlone) as this =
             tabActiveBgColor = Color.FromRGB(0xFAFCFE)
             tabBorderColor = Color.FromRGB(0x3A70B1)
             tabFlashBgColor = Color.FromRGB(0xFFBBBB)
+            tabTextColor = Color.FromRGB(0x000000)
             tabHeightOffset = 1
             tabIndentFlipped = 80
             tabIndentNormal = 3 
