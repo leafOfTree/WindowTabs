@@ -93,6 +93,8 @@ type IProgram =
     abstract member setAutoGroupingEnabled : string -> bool -> unit
     abstract member tabAppearanceInfo : TabAppearanceInfo
     abstract member defaultTabAppearanceInfo : TabAppearanceInfo
+    abstract member darkModeTabAppearanceInfo : TabAppearanceInfo
+    abstract member darkModeBlueTabAppearanceInfo : TabAppearanceInfo
     [<ServiceMethod(async=true)>]
     abstract member ping : unit -> unit
     abstract member setHotKey: string -> int -> unit

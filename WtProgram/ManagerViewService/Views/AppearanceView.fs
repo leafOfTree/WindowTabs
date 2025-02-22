@@ -93,22 +93,51 @@ type AppearanceView() as this =
 
     let appearance = Services.program.tabAppearanceInfo
 
+    let font = Font(resources.GetString("Font"), 9f)
+
     let buttonPanel =
-        let btn = Button()
-        btn.Text <- resources.GetString("Reset")
-        btn.Click.Add <| fun _ ->
+        let container = new FlowLayoutPanel()
+        container.FlowDirection <- FlowDirection.LeftToRight
+        container.AutoSize <- true
+        container.WrapContents <- false
+        container.Anchor <- AnchorStyles.Right
+
+        let resetBtn = Button()
+        resetBtn.Text <- resources.GetString("Reset")
+        resetBtn.Font <- font
+        resetBtn.Click.Add <| fun _ ->
             let appearance = Services.program.defaultTabAppearanceInfo
             setEditorValues appearance
             this.applyAppearance()
-        btn.Font <- SystemFonts.DefaultFont
-        btn
+        
+        let darkBtn = Button()
+        darkBtn.Text <- resources.GetString("DarkMode")
+        darkBtn.Font <- font
+        darkBtn.Click.Add <| fun _ ->
+            let appearance = Services.program.darkModeTabAppearanceInfo
+            setEditorValues appearance
+            this.applyAppearance()
+
+        let darkBlueBtn = Button()
+        darkBlueBtn.AutoSize <- true
+        
+        darkBlueBtn.Text <- resources.GetString("DarkModeBlue")
+        darkBlueBtn.Font <- font
+        darkBlueBtn.Click.Add <| fun _ ->
+            let appearance = Services.program.darkModeBlueTabAppearanceInfo
+            setEditorValues appearance
+            this.applyAppearance()
+        
+        container.Controls.Add(darkBtn)
+        container.Controls.Add(darkBlueBtn)
+        container.Controls.Add(resetBtn)
+        container
 
     do  
         panel.Controls.Add(buttonPanel)
         let btnRow = properties.length
         panel.SetRow(buttonPanel, btnRow)
         panel.SetColumn(buttonPanel, 1)
-        buttonPanel.Anchor <- AnchorStyles.Top ||| AnchorStyles.Right
         setEditorValues appearance
         editors.items.map(snd).iter <| fun editor ->
             editor.changed.Add <| fun() -> this.applyAppearance()

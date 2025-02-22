@@ -316,6 +316,12 @@ type Program() as this =
             settingsManager.settings.tabAppearance
 
         member x.defaultTabAppearanceInfo = settingsManager.defaultTabAppearance
+
+        member x.darkModeTabAppearanceInfo = 
+            settingsManager.darkModeTabAppearance
+
+        member x.darkModeBlueTabAppearanceInfo = 
+            settingsManager.darkModeBlueTabAppearance
             
         member x.getHotKey key = 
             let hotKeys = settingsManager.settingsJson.getObject("hotKeys").def(JObject())
