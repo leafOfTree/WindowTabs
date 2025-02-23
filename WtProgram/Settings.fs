@@ -3,6 +3,7 @@ open System
 open System.Drawing
 open System.Collections.Generic
 open System.IO
+open System.Windows.Forms
 open Microsoft.FSharp.Reflection
 open Newtonsoft.Json
 open Newtonsoft.Json.Linq
@@ -49,7 +50,13 @@ type Settings(isStandAlone) as this =
             this.clearCaches()
             
     member this.settingsJson
-        with get() = this.settingsString.map(JObject.Parse).def(JObject())
+        with get() = 
+            try
+                this.settingsString.map(JObject.Parse).def(JObject())
+            with ex ->
+                let errorMessage = "Error loading settings.\n\nFix or remove the file "  + this.path + ".\n\nDetails: " + ex.Message
+                MessageBox.Show(errorMessage, "Settings Error", MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
+                failwith "Error parsing settings json"
         and set(settingsJson:JObject) = this.settingsString <- Some(settingsJson.ToString())
 
     member this.defaultTabAppearance =
@@ -108,35 +115,51 @@ type Settings(isStandAlone) as this =
         with get() =
             if cachedSettingsRec.IsNone then 
                 let settingsJson = this.settingsJson
-                let settings = {
-                    includedPaths = Set2(settingsJson.getStringArray("includedPaths").def(List2()))
-                    excludedPaths = Set2(settingsJson.getStringArray("excludedPaths").def(List2()))
-                    autoGroupingPaths = Set2(settingsJson.getStringArray("autoGroupingPaths").def(List2()))
-                    licenseKey = settingsJson.getString("licenseKey").def("")
-                    ticket = settingsJson.getString("ticket")
-                    runAtStartup = settingsJson.getBool("runAtStartup").def(hasExistingSettings.not)
-                    hideInactiveTabs = settingsJson.getBool("hideInactiveTabs").def(hasExistingSettings.not)
-                    enableTabbingByDefault = settingsJson.getBool("enableTabbingByDefault").def(hasExistingSettings.not)
-                    combineIconsInTaskbar = settingsJson.getBool("combineIconsInTaskbar").def(hasExistingSettings)
-                    replaceAltTab = settingsJson.getBool("replaceAltTab").def(false)
-                    groupWindowsInSwitcher = settingsJson.getBool("groupWindowsInSwitcher").def(false)
-                    enableCtrlNumberHotKey = settingsJson.getBool("enableCtrlNumberHotKey").def(true)
-                    enableHoverActivate = settingsJson.getBool("enableHoverActivate").def(false)
-                    autoHide = settingsJson.getBool("autoHide").def(true)
-                    version = settingsJson.getString("version").def(String.Empty)
-                    alignment = settingsJson.getString("alignment").def("Center")
-                    tabAppearance =
-                        let appearanceObject = settingsJson.getObject("tabAppearance").def(JObject())
-                        appearanceObject.items.fold this.defaultTabAppearance <| fun appearance (key,value) ->
-                            let value = 
-                                let value = (value :?> JValue).Value
-                                let fieldType = Serialize.getFieldType (appearance.GetType()) key
-                                if fieldType = typeof<Int32> then box(unbox<Int64>(value).Int32)
-                                elif fieldType = typeof<Color> then box(Color.FromRGB(Int32.Parse(unbox<string>(value), Globalization.NumberStyles.HexNumber)))
-                                else failwith "UNKNOWN TYPE"
-                            Serialize.writeField appearance key value :?> TabAppearanceInfo
-                }
-                cachedSettingsRec <- Some(settings)
+                try
+                    let settings = {
+                        includedPaths = Set2(settingsJson.getStringArray("includedPaths").def(List2()))
+                        excludedPaths = Set2(settingsJson.getStringArray("excludedPaths").def(List2()))
+                        autoGroupingPaths = Set2(settingsJson.getStringArray("autoGroupingPaths").def(List2()))
+                        licenseKey = settingsJson.getString("licenseKey").def("")
+                        ticket = settingsJson.getString("ticket")
+                        runAtStartup = settingsJson.getBool("runAtStartup").def(hasExistingSettings.not)
+                        hideInactiveTabs = settingsJson.getBool("hideInactiveTabs").def(hasExistingSettings.not)
+                        enableTabbingByDefault = settingsJson.getBool("enableTabbingByDefault").def(hasExistingSettings.not)
+                        combineIconsInTaskbar = settingsJson.getBool("combineIconsInTaskbar").def(hasExistingSettings)
+                        replaceAltTab = settingsJson.getBool("replaceAltTab").def(false)
+                        groupWindowsInSwitcher = settingsJson.getBool("groupWindowsInSwitcher").def(false)
+                        enableCtrlNumberHotKey = settingsJson.getBool("enableCtrlNumberHotKey").def(true)
+                        enableHoverActivate = settingsJson.getBool("enableHoverActivate").def(false)
+                        autoHide = settingsJson.getBool("autoHide").def(true)
+                        version = settingsJson.getString("version").def(String.Empty)
+                        alignment = settingsJson.getString("alignment").def("Center")
+                        tabAppearance =
+                            let appearanceObject = settingsJson.getObject("tabAppearance").def(JObject())
+                            appearanceObject.items.fold this.defaultTabAppearance <| fun appearance (key,value) ->
+                            try
+                                let value =
+                                    let rawValue = (value :?> JValue).Value
+                                    let fieldType = Serialize.getFieldType (appearance.GetType()) key
+                                    if fieldType = typeof<Int32> then 
+                                        box(unbox<Int64>(rawValue).Int32)
+                                    elif fieldType = typeof<Color> then 
+                                        let colorStr = unbox<string>(rawValue)
+                                        box(Color.FromRGB(Int32.Parse(colorStr, Globalization.NumberStyles.HexNumber)))
+                                    else 
+                                        failwith "UNKNOWN APPEARANCE FIELD TYPE"
+
+                                Serialize.writeField appearance key value :?> TabAppearanceInfo
+                            with ex ->
+                                let errorMessage = "Error loading Appearance setting '" + key + "'. Using default value."
+                                MessageBox.Show(errorMessage, "Appearance Setting Error", MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
+                                appearance 
+                    }
+                    cachedSettingsRec <- Some(settings)
+                with ex ->
+                    let errorMessage = "Error loading settings.\n\nFix or remove the file "  + this.path + ".\n\nDetails: " + ex.Message
+                    MessageBox.Show(errorMessage, "Settings Error", MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
+                    failwith "Error parsing settings json"
+                    
             cachedSettingsRec.Value
 
         and set(settings) =
