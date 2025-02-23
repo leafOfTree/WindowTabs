@@ -87,12 +87,12 @@ type Settings(isStandAlone) as this =
 
     member this.darkModeBlueTabAppearance =
         {
-            tabTextColor = Color.FromRGB(0xE0E0E0)       
-            tabNormalBgColor = Color.FromRGB(0x1F2937)   
-            tabHighlightBgColor = Color.FromRGB(0x273548)
-            tabActiveBgColor = Color.FromRGB(0x111827)   
-            tabBorderColor = Color.FromRGB(0x374151)     
-            tabFlashBgColor = Color.FromRGB(0x991B1B)    
+            tabTextColor = Color.FromRGB(0xE0E0E0)         
+            tabNormalBgColor = Color.FromRGB(0x111827)    
+            tabHighlightBgColor = Color.FromRGB(0x4B5970)  
+            tabActiveBgColor = Color.FromRGB(0x273548)     
+            tabBorderColor = Color.FromRGB(0x374151)       
+            tabFlashBgColor = Color.FromRGB(0x991B1B)      
 
             tabHeight = -1
             tabMaxWidth = -1
