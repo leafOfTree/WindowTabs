@@ -28,6 +28,10 @@ You can download my prebuilt files from the [releases](https://github.com/leafOf
     - Right click on the notification icon at the bottom right corner.
     - Right click on the tab title.
 
+## Contribution
+
+Any help is very welcome. Feel free to create issues or pull requests. If you'd like to fix issues, you can pick [any open issue](https://github.com/leafOfTree/WindowTabs/issues?q=is%3Aissue%20state%3Aopen).
+
 ## Compilation
 
 Tested on Win10 with Visual Studio 2019 or 2022.
