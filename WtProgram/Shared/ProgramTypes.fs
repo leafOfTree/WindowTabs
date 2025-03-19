@@ -34,6 +34,7 @@ type SettingsRec = {
     enableHoverActivate: bool
     autoHide: bool
     alignment: string
+    scrollModifierKey: string
     }
 
 type ILicenseManager =

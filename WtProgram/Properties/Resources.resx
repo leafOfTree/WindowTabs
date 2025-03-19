@@ -240,6 +240,9 @@
   <data name="runAtStartup" xml:space="preserve">
     <value>Run WindowTabs at startup</value>
   </data>
+  <data name="scrollModifierKey" xml:space="preserve">
+    <value>Modifier key for switching tabs with mouse wheel</value>
+  </data>
   <data name="Settings" xml:space="preserve">
     <value>Settings...</value>
   </data>
@@ -251,5 +254,8 @@
   </data>
   <data name="Font" xml:space="preserve">
     <value>Segoe UI</value>
+  </data>
+  <data name="enableScrollModifier" xml:space="preserve">
+    <value>Enable mouse wheel to switch tabs</value>
   </data>
 </root>

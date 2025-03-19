@@ -133,6 +133,8 @@ type Settings(isStandAlone) as this =
                         autoHide = settingsJson.getBool("autoHide").def(true)
                         version = settingsJson.getString("version").def(String.Empty)
                         alignment = settingsJson.getString("alignment").def("Center")
+                        enableScrollModifier = settingsJson.getBool("enableScrollModifier").def(true)
+                        scrollModifierKey = settingsJson.getString("scrollModifierKey").def("Shift")
                         tabAppearance =
                             let appearanceObject = settingsJson.getObject("tabAppearance").def(JObject())
                             appearanceObject.items.fold this.defaultTabAppearance <| fun appearance (key,value) ->
@@ -167,6 +169,8 @@ type Settings(isStandAlone) as this =
             settingsJson.setString("version", settings.version)
             settingsJson.setString("licenseKey", settings.licenseKey)
             settingsJson.setString("alignment", settings.alignment)
+            settingsJson.setBool("enableScrollModifier", settings.enableScrollModifier)
+            settingsJson.setString("scrollModifierKey", settings.scrollModifierKey)
             settings.ticket.iter <| fun ticket -> settingsJson.setString("ticket", ticket)
             settingsJson.setBool("runAtStartup", settings.runAtStartup)
             settingsJson.setBool("hideInactiveTabs", settings.hideInactiveTabs)
