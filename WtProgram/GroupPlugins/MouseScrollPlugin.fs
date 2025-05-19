@@ -8,7 +8,7 @@ type MouseScrollPlugin() as this =
     member this.settings = Services.get<ISettings>()
 
     member this.isModifierKeyPressed() =
-        let modifierKey = this.settings.getValue("scrollModifierKey") :?> string
+        let modifierKey = this.settings.getValue("scrollModifier") :?> string
         match modifierKey.ToLower() with
         | "none" -> false
         | "shift" -> Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_SHIFT)

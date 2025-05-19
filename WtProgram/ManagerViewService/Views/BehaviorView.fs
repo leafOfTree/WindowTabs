@@ -97,18 +97,11 @@ type HotKeyView() =
         let fields = fields.prependList(List2([
             ("enableCtrlNumberHotKey", settingsCheckbox "enableCtrlNumberHotKey")
             ("enableHoverActivate", settingsCheckbox "enableHoverActivate")
-            ("enableScrollModifier", settingsCheckbox "enableScrollModifier")
-            ("scrollModifierKey", settingsDropDown "scrollModifierKey" ["None"; "Shift"; "Ctrl"; "Alt"; "Win"])
+            ("scrollModifier", settingsDropDown "scrollModifier" ["None"; "Shift"; "Ctrl"; "Alt"; "Win"])
         ]))
 
         let fields = fields.map <| fun(key,control) ->
             resources.GetString(key), control
-
-        // Add event handler to enable/disable the dropdown based on the checkbox
-        let scrollModifierCheckbox = fields.find (fun (k,_) -> k = "enableScrollModifier") |> snd
-        let scrollModifierDropdown = fields.find (fun (k,_) -> k = "scrollModifierKey") |> snd
-        (scrollModifierCheckbox :?> CheckBox).CheckedChanged.Add <| fun _ ->
-            scrollModifierDropdown.Enabled <- (scrollModifierCheckbox :?> CheckBox).Checked
 
         "Switch Tabs", UIHelper.form fields
 

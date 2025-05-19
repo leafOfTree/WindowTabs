@@ -240,7 +240,7 @@
   <data name="runAtStartup" xml:space="preserve">
     <value>Run WindowTabs at startup</value>
   </data>
-  <data name="scrollModifierKey" xml:space="preserve">
+  <data name="scrollModifier" xml:space="preserve">
     <value>Modifier key for switching tabs with mouse wheel</value>
   </data>
   <data name="Settings" xml:space="preserve">
