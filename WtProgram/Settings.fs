@@ -131,6 +131,7 @@ type Settings(isStandAlone) as this =
                         enableCtrlNumberHotKey = settingsJson.getBool("enableCtrlNumberHotKey").def(true)
                         enableHoverActivate = settingsJson.getBool("enableHoverActivate").def(false)
                         autoHide = settingsJson.getBool("autoHide").def(true)
+                        enableShiftScroll = settingsJson.getBool("enableShiftScroll").def(true)
                         version = settingsJson.getString("version").def(String.Empty)
                         alignment = settingsJson.getString("alignment").def("Center")
                         tabAppearance =
@@ -177,6 +178,7 @@ type Settings(isStandAlone) as this =
             settingsJson.setBool("enableCtrlNumberHotKey", settings.enableCtrlNumberHotKey)
             settingsJson.setBool("enableHoverActivate", settings.enableHoverActivate)
             settingsJson.setBool("autoHide", settings.autoHide)
+            settingsJson.setBool("enableShiftScroll", settings.enableShiftScroll)
             settingsJson.setStringArray("includedPaths", settings.includedPaths.items)
             settingsJson.setStringArray("excludedPaths", settings.excludedPaths.items)
             settingsJson.setStringArray("autoGroupingPaths", settings.autoGroupingPaths.items)
