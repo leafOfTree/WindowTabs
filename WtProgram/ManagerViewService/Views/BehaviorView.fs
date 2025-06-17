@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Drawing
 open System.IO
@@ -17,10 +17,10 @@ type HotKeyView() =
                     with get() = unbox<'a>(Services.settings.getValue(name))
                     and set(value) = Services.settings.setValue(name, box(value))
         }
-
+        
     let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
 
-    let checkBox (prop:IProperty<bool>) =
+    let checkBox (prop:IProperty<bool>) = 
         let checkbox = BoolEditor() :> IPropEditor
         checkbox.value <- box(prop.value)
         checkbox.changed.Add <| fun() -> prop.value <- unbox<bool>(checkbox.value)
@@ -28,21 +28,21 @@ type HotKeyView() =
 
     let settingsCheckbox key = checkBox(settingsProperty(key))
 
-    let dropDown (prop:IProperty<string>, items: string list) =
+    let dropDown (prop:IProperty<string>, items: string list) = 
         let combo = new ComboBox()
 
         // First add items
         combo.Items.AddRange(items |> List.toArray |> Array.map box)
-
+        
         // Then set initial value if exists, otherwise select first item
-        let initialIndex =
+        let initialIndex = 
             match items |> List.tryFindIndex ((=) prop.value) with
             | Some index -> index
             | None -> if combo.Items.Count > 0 then 0 else -1
-
+        
         if initialIndex >= 0 then
             combo.SelectedIndex <- initialIndex
-
+            
         combo.SelectedIndexChanged.Add(fun _ ->
             if combo.SelectedIndex >= 0 then
                 prop.value <- combo.SelectedItem.ToString()
@@ -52,7 +52,7 @@ type HotKeyView() =
 
     let settingsDropDown key value = dropDown(settingsProperty(key), value)
 
-    let basicForm =
+    let basicForm = 
         let fields = List2([
             ("runAtStartup", settingsCheckbox "runAtStartup")
             ("hideInactiveTabs", settingsCheckbox "hideInactiveTabs")
@@ -62,7 +62,7 @@ type HotKeyView() =
         ])
         "Basics", UIHelper.form fields
 
-    let taskForm =
+    let taskForm = 
         let fields = List2([
             ("combineIconsInTaskbar", settingsCheckbox "combineIconsInTaskbar")
             ("replaceAltTab", settingsCheckbox "replaceAltTab")
@@ -97,7 +97,7 @@ type HotKeyView() =
         let fields = fields.prependList(List2([
             ("enableCtrlNumberHotKey", settingsCheckbox "enableCtrlNumberHotKey")
             ("enableHoverActivate", settingsCheckbox "enableHoverActivate")
-            ("enableShiftScroll", settingsCheckbox "enableShiftScroll") // Added this line
+            ("enableShiftScroll", settingsCheckbox "enableShiftScroll")
         ]))
 
         "Switch Tabs", UIHelper.form fields
@@ -108,7 +108,7 @@ type HotKeyView() =
         switchTabs
         ])
 
-    let table =
+    let table = 
         let font = Font(resources.GetString("Font"), 10f)
         let controls = sections.map <| fun(text,control) ->
             control.Dock <- DockStyle.Fill
