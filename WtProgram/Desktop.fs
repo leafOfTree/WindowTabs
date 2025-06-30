@@ -11,9 +11,10 @@ type GroupInfo(enableSuperBar) as this =
     let mutable _isExited = false
     let desktopInvoker = InvokerService.invoker
     let enableCtrlNumberHotKey = Services.settings.getValue("enableCtrlNumberHotKey").cast<bool>()
+    let enableShiftScroll = Services.settings.getValue("enableShiftScroll").cast<bool>()
     let (_group, invoker) = ThreadHelper.startOnThreadAndWait <| fun() ->
         let plugins = List2<_>([
-            Some(MouseScrollPlugin().cast<IPlugin>())
+            (if enableShiftScroll then Some(MouseScrollPlugin().cast<IPlugin>()) else None)
             (if enableCtrlNumberHotKey then Some(NumericTabHotKeyPlugin().cast<IPlugin>()) else None)
             Some(HideTabsOnInactiveGroupPlugin().cast<IPlugin>())
             (if enableSuperBar then Some(SuperBarPlugin().cast<IPlugin>()) else None)

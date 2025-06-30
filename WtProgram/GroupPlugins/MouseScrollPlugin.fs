@@ -5,15 +5,13 @@ open System.Runtime.InteropServices
 type MouseScrollPlugin() as this =
     
     member this.wtGroup = Services.get<WindowGroup>()
-    member this.settings = Services.get<ISettings>()
 
     member this.onMouseLL(msg, pt, data:IntPtr) =
         match msg with
         | WindowMessages.WM_MOUSEWHEEL ->
             let wheelDelta = data.hiword
-            let enableShiftScroll = this.settings.getValue("enableShiftScroll") :?> bool
             let doSwitch =
-                if enableShiftScroll && Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_SHIFT) then
+                if Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_SHIFT) then
                     this.wtGroup.isPointInGroup(pt)
                 else
                     this.wtGroup.isPointInTs(pt)
