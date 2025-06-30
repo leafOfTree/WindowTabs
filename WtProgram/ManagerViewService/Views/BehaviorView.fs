@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Drawing
 open System.IO
@@ -97,6 +97,7 @@ type HotKeyView() =
         let fields = fields.prependList(List2([
             ("enableCtrlNumberHotKey", settingsCheckbox "enableCtrlNumberHotKey")
             ("enableHoverActivate", settingsCheckbox "enableHoverActivate")
+            ("enableShiftScroll", settingsCheckbox "enableShiftScroll")
         ]))
 
         "Switch Tabs", UIHelper.form fields
@@ -127,4 +128,3 @@ type HotKeyView() =
         member x.key = SettingsViewType.HotKeySettings
         member x.title = resources.GetString("Behavior")
         member x.control = table :> Control
-
