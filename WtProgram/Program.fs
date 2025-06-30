@@ -44,7 +44,7 @@ type ProgramVersion(parts:List2<int>)=
         this.compare(v2) > 0
 
 type Program() as this =
-    let version = "2025.02.23"
+    let version = "2025.06.30"
     let isStandAlone = System.Diagnostics.Debugger.IsAttached 
 
     let mutex = new Mutex(false, "BemoSoftware.WindowTabs")

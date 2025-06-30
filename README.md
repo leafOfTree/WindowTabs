@@ -82,6 +82,8 @@ Tips
 
 2025
 
+- Add an option to toggle whether `shift+scroll` switches tabs in Behavior
+
 - Add text color option in Appearnce
 - Add buttons to use preset theme colors: dark mode and blue variant in Appearnce
 - Fix tabs overlap the minimize button when aligning right
