@@ -33,6 +33,7 @@ type SettingsRec = {
     combineIconsInTaskbar: bool
     enableHoverActivate: bool
     autoHide: bool
+    enableShiftScroll: bool
     alignment: string
     }
 

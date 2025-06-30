@@ -168,6 +168,9 @@
   <data name="enableHoverActivate" xml:space="preserve">
     <value>Enable mouse hover to activate tab</value>
   </data>
+  <data name="enableShiftScroll" xml:space="preserve">
+    <value>Enable Shift+Scroll to switch tabs</value>
+  </data>
   <data name="autoHide" xml:space="preserve">
     <value>Auto hide tab when maximized</value>
   </data>
