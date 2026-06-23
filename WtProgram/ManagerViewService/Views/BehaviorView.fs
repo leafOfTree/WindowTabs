@@ -95,7 +95,7 @@ type HotKeyView() =
             text, editor.control
 
         let fields = fields.prependList(List2([
-            ("enableCtrlNumberHotKey", settingsCheckbox "enableCtrlNumberHotKey")
+            ("enableAltNumberHotKey", settingsCheckbox "enableAltNumberHotKey")
             ("enableHoverActivate", settingsCheckbox "enableHoverActivate")
             ("enableShiftScroll", settingsCheckbox "enableShiftScroll")
         ]))

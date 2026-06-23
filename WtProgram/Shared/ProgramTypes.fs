@@ -29,7 +29,7 @@ type SettingsRec = {
     enableTabbingByDefault: bool
     replaceAltTab: bool
     groupWindowsInSwitcher: bool
-    enableCtrlNumberHotKey: bool
+    enableAltNumberHotKey: bool
     combineIconsInTaskbar: bool
     enableHoverActivate: bool
     autoHide: bool

@@ -10,11 +10,11 @@ type GroupInfo(enableSuperBar) as this =
     let windowsCell = Cell.create(List2())
     let mutable _isExited = false
     let desktopInvoker = InvokerService.invoker
-    let enableCtrlNumberHotKey = Services.settings.getValue("enableCtrlNumberHotKey").cast<bool>()
+    let enableAltNumberHotKey = Services.settings.getValue("enableAltNumberHotKey").cast<bool>()
     let (_group, invoker) = ThreadHelper.startOnThreadAndWait <| fun() ->
         let plugins = List2<_>([
             Some(MouseScrollPlugin().cast<IPlugin>())
-            (if enableCtrlNumberHotKey then Some(NumericTabHotKeyPlugin().cast<IPlugin>()) else None)
+            (if enableAltNumberHotKey then Some(NumericTabHotKeyPlugin().cast<IPlugin>()) else None)
             Some(HideTabsOnInactiveGroupPlugin().cast<IPlugin>())
             (if enableSuperBar then Some(SuperBarPlugin().cast<IPlugin>()) else None)
             ])
