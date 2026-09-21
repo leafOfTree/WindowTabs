@@ -17,7 +17,7 @@
     <SccAuxPath>&lt;Source Control Database&gt;</SccAuxPath>
     <SccLocalPath>&lt;Local Binding Root of Project&gt;</SccLocalPath>
     <Win32Resource>.\app.res</Win32Resource>
-    <TargetFSharpCoreVersion>2.3.0.0</TargetFSharpCoreVersion>
+    <TargetFSharpCoreVersion>6.0.0.0</TargetFSharpCoreVersion>
     <MinimumVisualStudioVersion Condition="'$(MinimumVisualStudioVersion)' == ''">11</MinimumVisualStudioVersion>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
@@ -143,7 +143,7 @@
   <ItemGroup>
 
     <Reference Include="FSharp.Core">
-      <HintPath>..\packages\FSharp.Core.4.3.0.0.Microsoft.Signed.3.0.0.1\lib\net40\FSharp.Core.dll</HintPath>
+      <HintPath>..\packages\FSharp.Core.6.0.7\lib\netstandard2.0\FSharp.Core.dll</HintPath>
     </Reference>
     <Reference Include="Interop.SHDocVw">
       <HintPath>..\Interop.SHDocVw.dll</HintPath>
