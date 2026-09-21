@@ -172,11 +172,17 @@ type OS() as this=
                     dispose()
         }
 
+    // Caller owns the returned region and should dispose it. The accumulator and
+    // the per-monitor regions are dead once union has produced the next one.
     member this.screenRegion =
         Mon.all.fold (Rgn()) <| fun rgn mon ->
-            rgn.union(Rgn(mon.displayRect))
+            use previous = rgn
+            use monitorRegion = Rgn(mon.displayRect)
+            previous.union(monitorRegion)
 
-    member this.isOnScreen (bounds:Rect) = this.screenRegion.containsRect(bounds)
+    member this.isOnScreen (bounds:Rect) =
+        use region = this.screenRegion
+        region.containsRect(bounds)
 
     member this.capture =
         let hwnd = WinUserApi.GetCapture()

@@ -11,10 +11,6 @@ type WindowDecorator = {
     decoratorIndentNormal : int
     } with
 
-    member private this.screenRegion =
-        this.monitorBounds.fold (Rgn()) <| fun screenRegion monitorBounds ->
-            let monitorRegion = Rgn(monitorBounds)
-            screenRegion.union(monitorRegion)
 
     member private this.indent(isCentered) = if isCentered then this.decoratorIndentFlipped else this.decoratorIndentNormal
 
@@ -35,12 +31,12 @@ type WindowDecorator = {
         )
 
     member this.shouldShowInside = 
-        let decoratorOutsideRegion = Rgn(this.outsideBounds)
-        let decoratorInsideRegion = Rgn(this.insideBounds)
+        use decoratorOutsideRegion = Rgn(this.outsideBounds)
+        use decoratorInsideRegion = Rgn(this.insideBounds)
         this.monitorBounds.any <| fun monitorBounds ->
-            let monitorRegion = Rgn(monitorBounds)
-            let onMonitorInsideRegion = monitorRegion.intersect(decoratorInsideRegion)
-            let onMonitorOutsideRegion = monitorRegion.intersect(decoratorOutsideRegion)
+            use monitorRegion = Rgn(monitorBounds)
+            use onMonitorInsideRegion = monitorRegion.intersect(decoratorInsideRegion)
+            use onMonitorOutsideRegion = monitorRegion.intersect(decoratorOutsideRegion)
             onMonitorInsideRegion.box.height > onMonitorOutsideRegion.box.height
 
     member this.bounds : Rect =

@@ -132,6 +132,12 @@ module RectExtensions =
 [<NoEquality>]
 [<NoComparison>]
 type Rgn(hRgn:IntPtr) as this=
+    let mutable released = false
+    let release() =
+        if not released then
+            released <- true
+            WinGdiApi.DeleteObject(hRgn).ignore
+
     new(rect:Rect) = Rgn(WinGdiApi.CreateRectRgn(rect.left, rect.top, rect.right, rect.bottom))
     new() = Rgn(Rect())
     member this.h = hRgn
@@ -145,9 +151,23 @@ type Rgn(hRgn:IntPtr) as this=
     member this.sub(rgn:Rgn) = this.combine(rgn, CombineRgnStyles.RGN_DIFF)
     member this.box = Win32Helper.GetRgnBox(this.h).Rect
     member this.isEmpty = this.box.isEmpty
-    member this.containsRect(bounds:Rect) = this.intersect(Rgn(bounds)).isEmpty.not
+    member this.containsRect(bounds:Rect) =
+        use boundsRegion = Rgn(bounds)
+        use intersection = this.intersect(boundsRegion)
+        intersection.isEmpty.not
     member this.rects = List2(Seq.ofArray(Win32Helper.RectsFromRegion(this.h))).map(fun r -> r.Rect)
-    override this.Finalize() = WinGdiApi.DeleteObject(hRgn).ignore
+
+    // Regions are GDI objects, capped at 10000 per process by default, and this
+    // type allocates several per hit test. Leaving them to the finalizer let the
+    // count run past 6000 under a few thousand hit tests before a collection, so
+    // callers now release them deterministically. Finalize stays as a safety net
+    // for any path that forgets.
+    member this.Dispose() =
+        release()
+        GC.SuppressFinalize(this)
+    interface IDisposable with
+        member this.Dispose() = this.Dispose()
+    override this.Finalize() = release()
 
 [<NoComparison>]
 type Mon(hMonitor:IntPtr) as this=
@@ -169,7 +189,9 @@ type Mon(hMonitor:IntPtr) as this=
         | :? Mon as yobj -> this.hMonitor = yobj.hMonitor
         | _ -> false
     override this.GetHashCode() = hash this.hMonitor
-    override this.Finalize() = WinGdiApi.DeleteObject(hMonitor).ignore
+    // No finalizer here: an HMONITOR is not a GDI object, so DeleteObject never
+    // had anything to release, and a finalizer on a type allocated this often
+    // only forced every instance through an extra GC generation.
 
 
 [<NoEquality>]

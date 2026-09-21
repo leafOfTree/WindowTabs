@@ -60,7 +60,10 @@ type FilterService() as this =
     member this.screenRegion = os.screenRegion
 
     member this.isOnScreenOrMinimized(window:Window) =
-        window.isMinimized || this.screenRegion.containsRect(window.bounds)
+        if window.isMinimized then true
+        else
+            use region = this.screenRegion
+            region.containsRect(window.bounds)
     
     member this.getIsTabbingEnabledForProcess(processPath) =
         if this.isTabbingEnabledForAllProcessesByDefault then
