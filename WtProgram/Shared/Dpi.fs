@@ -29,9 +29,10 @@ module Dpi =
     /// 1.0 at 100%, 1.25 at 125%, 1.5 at 150%.
     let factor = lazy (float (dpi.Force() / baseline))
 
-    /// Logical pixels to physical pixels.
+    /// Logical pixels to physical pixels. Negative values scale too: the tab
+    /// overlap is allowed to go negative, where it reads as a gap.
     let scale (value:int) =
-        if value <= 0 then value
+        if value = 0 then 0
         else int (Math.Round(float value * factor.Force()))
 
     /// Same, for values that are already fractional.
@@ -49,7 +50,13 @@ module DpiExtensions =
             { this with
                 tabHeight = Dpi.scale this.tabHeight
                 tabMaxWidth = Dpi.scale this.tabMaxWidth
-                tabOverlap = Dpi.scale this.tabOverlap
+                // Clamped to zero. A positive overlap belongs to the bezier
+                // trapezoid the tabs used to be: its slanted edges were mostly
+                // transparent, so the tab underneath still showed through. A
+                // rounded rectangle overlaps opaquely and simply swallows the
+                // close button of the tab below it. Negative values still work
+                // and read as a gap between tabs.
+                tabOverlap = min (Dpi.scale this.tabOverlap) 0
                 tabHeightOffset = Dpi.scale this.tabHeightOffset
                 tabIndentFlipped = Dpi.scale this.tabIndentFlipped
                 tabIndentNormal = Dpi.scale this.tabIndentNormal }
