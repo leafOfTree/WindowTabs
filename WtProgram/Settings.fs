@@ -208,7 +208,7 @@ type Settings(isStandAlone) as this =
             settingChangedEvent.Trigger(key, value)
 
         member x.getValue(key) = 
-            match valueCache.GetValue(key) with
+            match valueCache.tryFind(key) with
             | None ->
                 let settings = x.settings
                 let value = Serialize.readField settings key

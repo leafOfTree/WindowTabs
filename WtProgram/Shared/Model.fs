@@ -22,7 +22,7 @@ type ModelObject() as this =
 
     member this.get(key) = 
         if values.ContainsKey(key) then
-            values.GetValue(key).Value
+            values.tryFind(key).Value
         else
             null
 
