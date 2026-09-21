@@ -132,15 +132,22 @@ type TabSprite<'id> = {
 
     member private this.borderPen = new Pen(new SolidBrush(this.appearance.tabBorderColor), 1.0f)
 
-    // Only the two ends of the strip are rounded; every corner inside it is
-    // square. Two rounded corners facing each other cannot meet, so any rounded
-    // corner in the middle leaves a notch of title bar showing through - which
-    // is what rounding by state rather than by position produced, wherever the
-    // active tab happened to sit. Rounded outer ends make the whole strip read
-    // as one shape, with the tabs inside it divided by hairlines.
-    member private this.borderPath =
+    // The insets exist because GDI+ puts pixel centres on integer coordinates
+    // once antialiasing is on, so column k spans k-0.5 to k+0.5. Two things
+    // follow, and both were wrong before:
+    //
+    // A fill run from 0 to w covers only half of the first and last columns,
+    // leaving every tab with a half transparent edge for the title bar to bleed
+    // through. Running it half a pixel wide on each side, where the clip
+    // discards the excess, makes those columns solid.
+    //
+    // A stroke is solid only when it is centred on a column's centre, which
+    // means an integer. Centred at w it lands on a column outside the bitmap
+    // and is clipped away completely - the tab came out outlined on its left
+    // but not its right. Centred at w - 1 it lands on the last column, and at
+    // 0.5 it would straddle two columns at half strength each.
+    member private this.shapePath (l:float32) (t:float32) (rgt:float32) =
         let path = new GraphicsPath()
-        let w = float32 this.size.width
         let h = float32 this.size.height
         let r = float32 (min this.cornerRadius (this.size.height / 2))
         let rl = if this.roundLeft then r else 0.0f
@@ -150,18 +157,25 @@ type TabSprite<'id> = {
             // Up the left side, across the top, down the right side. The bottom
             // edge is left open where the tab meets the window, so FillPath
             // closes it but DrawPath never strokes across the join.
-            path.AddLine(0.0f, h, 0.0f, rl)
-            if rl > 0.0f then path.AddArc(0.0f, 0.0f, rl * 2.0f, rl * 2.0f, 180.0f, 90.0f)
-            path.AddLine(rl, 0.0f, w - rr, 0.0f)
-            if rr > 0.0f then path.AddArc(w - rr * 2.0f, 0.0f, rr * 2.0f, rr * 2.0f, 270.0f, 90.0f)
-            path.AddLine(w, rr, w, h)
+            path.AddLine(l, h, l, t + rl)
+            if rl > 0.0f then path.AddArc(l, t, rl * 2.0f, rl * 2.0f, 180.0f, 90.0f)
+            path.AddLine(l + rl, t, rgt - rr, t)
+            if rr > 0.0f then path.AddArc(rgt - rr * 2.0f, t, rr * 2.0f, rr * 2.0f, 270.0f, 90.0f)
+            path.AddLine(rgt, t + rr, rgt, h)
         | TabDown ->
-            path.AddLine(0.0f, 0.0f, 0.0f, h - rl)
-            if rl > 0.0f then path.AddArc(0.0f, h - rl * 2.0f, rl * 2.0f, rl * 2.0f, 180.0f, -90.0f)
-            path.AddLine(rl, h, w - rr, h)
-            if rr > 0.0f then path.AddArc(w - rr * 2.0f, h - rr * 2.0f, rr * 2.0f, rr * 2.0f, 90.0f, -90.0f)
-            path.AddLine(w, h - rr, w, 0.0f)
+            let b = h - t
+            path.AddLine(l, 0.0f, l, b - rl)
+            if rl > 0.0f then path.AddArc(l, b - rl * 2.0f, rl * 2.0f, rl * 2.0f, 180.0f, -90.0f)
+            path.AddLine(l + rl, b, rgt - rr, b)
+            if rr > 0.0f then path.AddArc(rgt - rr * 2.0f, b - rr * 2.0f, rr * 2.0f, rr * 2.0f, 90.0f, -90.0f)
+            path.AddLine(rgt, b - rr, rgt, 0.0f)
         path
+
+    member private this.fillPath =
+        this.shapePath -0.5f -0.5f (float32 this.size.width + 0.5f)
+
+    member private this.strokePath =
+        this.shapePath 0.0f 0.0f (float32 this.size.width - 1.0f)
 
     member private this.iconSize = Dpi.scaleSize(Sz(16, 16))
 
@@ -201,15 +215,15 @@ type TabSprite<'id> = {
         member this.image =
             let img = Img(this.size)
             let g = img.graphics
-            do g.FillPath(this.bgBrush, this.borderPath)
+            do g.FillPath(this.bgBrush, this.fillPath)
             // Only the active tab is outlined. Outlining every tab was what
             // made the strip read as busy: a browser separates inactive tabs
             // with a hairline instead.
             if this.isTop then
-                do g.DrawPath(this.borderPen, this.borderPath)
+                do g.DrawPath(this.borderPen, this.strokePath)
             elif this.showLeftSeparator then
                 let inset = float32 this.size.height * 0.28f
-                let x = 0.5f
+                let x = 0.0f
                 use pen = new Pen(this.appearance.tabBorderColor, 1.0f)
                 do g.DrawLine(pen, x, inset, x, float32 this.size.height - inset)
             if this.onlyIcon.not then
