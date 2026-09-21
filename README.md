@@ -34,7 +34,7 @@ Any help is very welcome. Feel free to create issues or pull requests. If you'd 
 
 ## Compilation
 
-Tested on Win10 with Visual Studio 2019 or 2022.
+Tested on Win10 and Win11 with Visual Studio 2022 or 2026.
 
 - Clone
 
@@ -44,15 +44,9 @@ Tested on Win10 with Visual Studio 2019 or 2022.
 
 - Install
 
-    - [Visual Studio 2022 community edition](https://visualstudio.microsoft.com/)
+    - [Visual Studio community edition](https://visualstudio.microsoft.com/)
 
-        `.NET desktop development` needs to be selected in the installer.
-
-    - [WiX Toolset build tools V3.14.1](https://wixtoolset.org/docs/wix3/)
-
-    - [WiX Toolset Visual Studio 2022 Extension](https://marketplace.visualstudio.com/items?itemName=WixToolset.WixToolsetVisualStudio2022Extension)
-
-> You need to close Visual Studio first to install the extension. Visual Studio 2019 and its WiX extension also work.
+        `.NET desktop development` needs to be selected in the installer. It provides the F# compiler and the .NET Framework 4.8 targeting pack, which are the only requirements.
 
 - Compile and Release
 
@@ -81,6 +75,8 @@ Tips
 ## Changes
 
 2025
+
+- Support Visual Studio 2026: retarget to .NET Framework 4.8 and drop the unused WiX installer project
 
 - Add an option to toggle whether `shift+scroll` switches tabs in Behavior
 
