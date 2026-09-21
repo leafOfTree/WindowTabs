@@ -79,6 +79,10 @@ Tips
 
 - Support Visual Studio 2026: retarget to .NET Framework 4.8 and drop the unused WiX installer project
 
+- Update Newtonsoft.Json from 4.0.5 (2012) to 13.0.4
+
+- Sort the process list in Programs case insensitively, so `chrome.exe` no longer sorts after `WindowTabs.exe`
+
 - Release GDI region handles deterministically instead of waiting for the garbage collector, removing a source of instability during long sessions with many windows
 
 - Fix a rare silent loss of tabs and window groups caused by hash collisions in the internal collections; drop the unmaintained FSharp.PowerPack dependency, shrinking the executable by about 410 KB

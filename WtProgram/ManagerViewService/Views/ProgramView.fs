@@ -146,7 +146,10 @@ type ProgramView() as this=
             
             invoker.asyncInvoke <| fun() ->
                 model.Nodes.Clear()
-                procNodes.sortBy(fun n -> n.Text).iter <| fun node -> model.Nodes.Add(node)
+                // Case insensitive: F# compares strings ordinally, which sorts
+                // every capitalised executable ahead of every lowercase one -
+                // Code.exe and WindowTabs.exe before chrome.exe.
+                procNodes.sortBy(fun n -> n.Text.ToLowerInvariant()).iter <| fun node -> model.Nodes.Add(node)
                 statusBar.Text <- "Ready"
 
     interface ISettingsView with
