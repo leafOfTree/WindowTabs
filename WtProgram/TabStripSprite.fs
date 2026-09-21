@@ -85,6 +85,10 @@ type TabSprite<'id> = {
     direction: TabDirection
     hover: TabPart option
     captured: TabPart option
+    // Browser style: adjacent inactive tabs are told apart by a hairline rather
+    // than by each having its own outline. Suppressed next to the active or
+    // hovered tab, whose fill already separates it.
+    showLeftSeparator: bool
     } with
 
     member private this.iconSprite =
@@ -180,7 +184,16 @@ type TabSprite<'id> = {
             let img = Img(this.size)
             let g = img.graphics
             do g.FillPath(this.bgBrush, this.borderPath)
-            do g.DrawPath(this.borderPen, this.borderPath)
+            // Only the active tab is outlined. Outlining every tab was what
+            // made the strip read as busy: a browser separates inactive tabs
+            // with a hairline instead.
+            if this.isTop then
+                do g.DrawPath(this.borderPen, this.borderPath)
+            elif this.showLeftSeparator then
+                let inset = float32 this.size.height * 0.28f
+                let x = 0.5f
+                use pen = new Pen(this.appearance.tabBorderColor, 1.0f)
+                do g.DrawLine(pen, x, inset, x, float32 this.size.height - inset)
             if this.onlyIcon.not then
                 //the text can't be drawn as a separate bitmap because clearcase fonts
                 //can't be drawn by gdi+ to a transparent background, need to draw directly on the tab background
@@ -219,6 +232,20 @@ type TabStripSprite<'id> when 'id : equality = {
     member private this.tabOverlap = float(this.appearance.tabOverlap)
     member private this.tabMaxLen = float(this.appearance.tabMaxWidth)
 
+    // A tab is "plain" when nothing about it is already drawing a fill that
+    // sets it apart from its neighbour.
+    member private this.isPlain (tab:'id) =
+        let isActive =
+            match this.zorder.tryHead with
+            | Some(top) -> top = tab
+            | None -> false
+        let isHovered =
+            match this.hover, this.captured with
+            | Some(id, _), _ when id = tab -> true
+            | _, Some(id, _) when id = tab -> true
+            | _ -> false
+        isActive.not && isHovered.not
+
     member private this.tabSprite (tab:'id) =
         {
             TabSprite.id = tab
@@ -231,6 +258,13 @@ type TabStripSprite<'id> when 'id : equality = {
             size = this.tabSize
             onlyIcon = this.onlyIcons
             direction = this.direction
+            showLeftSeparator =
+                // Never before the first tab, and never where either side is
+                // already set apart by its own fill.
+                match this.lorder.list |> List.tryFindIndex (fun t -> t = tab) with
+                | Some(index) when index > 0 ->
+                    this.isPlain(tab) && this.isPlain(this.lorder.at(index - 1))
+                | _ -> false
             hover = 
                 match this.hover with
                 | Some(id, part) when id = tab -> Some(part)
