@@ -27,6 +27,7 @@ You can download my prebuilt files from the [releases](https://github.com/leafOf
 - Configure for which window group and tab are enabled, along with other settings.
     - Right click on the notification icon at the bottom right corner.
     - Right click on the tab title.
+- If WindowTabs crashes, it writes `WindowTabsCrash.log` next to `WindowTabs.exe`, or to `%AppData%\WindowTabs` when that folder is not writable. Attaching it to an issue makes the problem much easier to track down.
 
 ## Contribution
 
@@ -77,6 +78,12 @@ Tips
 2025
 
 - Support Visual Studio 2026: retarget to .NET Framework 4.8 and drop the unused WiX installer project
+
+- Write unhandled exceptions to `WindowTabsCrash.log` so crash reports are actionable
+
+- Add version and product metadata to the executable
+
+- Remove dead projects (WtDesktop, WtGroup, WtLauncher, Settings) and unused code
 
 - Add an option to toggle whether `shift+scroll` switches tabs in Behavior
 
