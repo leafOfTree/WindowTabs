@@ -109,7 +109,10 @@ type TabSprite<'id> = {
     // run-up on each side; rounded corners need only enough room to breathe.
     member private this.edgeWidth = Dpi.scale 10
 
-    member private this.cornerRadius = Dpi.scale 6
+    // Proportional to the tab, the way a browser draws it: Edge measures about
+    // 9px of corner on a 42px tab. A fixed radius looks tight on a tall tab and
+    // swallows a short one.
+    member private this.cornerRadius = max (Dpi.scale 4) (this.size.height * 30 / 100)
 
     member private this.bgBrush =
         let color = 
@@ -171,6 +174,13 @@ type TabSprite<'id> = {
         let x = this.iconLocation.x + this.iconSize.width + Dpi.scale 5
         Pt(x, 0)
 
+    // Browser behaviour: the close button only appears on the active tab and on
+    // whichever tab the pointer is over. The space it occupies is reserved
+    // either way - see textSize - so a label never reflows as the pointer moves
+    // across the strip.
+    member this.showCloseButton =
+        this.onlyIcon.not && (this.isTop || this.hover.IsSome || this.captured.IsSome)
+
     member this.textSize =
         let width = this.size.width - this.textLocation.x - this.edgeWidth - this.closeButtonSize.width
         let width = max 1 width
@@ -211,7 +221,7 @@ type TabSprite<'id> = {
         member this.children = 
             List2([
                 Some(this.iconLocation,this.iconSprite) 
-                (if this.onlyIcon then None else Some(this.closeButtonLocation, this.closeButtonSprite))
+                (if this.showCloseButton then Some(this.closeButtonLocation, this.closeButtonSprite) else None)
                 ]).choose(id)
 
 type TabStripSprite<'id> when 'id : equality = {
