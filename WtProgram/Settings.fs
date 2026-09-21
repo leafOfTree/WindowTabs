@@ -59,16 +59,24 @@ type Settings(isStandAlone) as this =
                 failwith "Error parsing settings json"
         and set(settingsJson:JObject) = this.settingsString <- Some(settingsJson.ToString())
 
+    // Neutral greys rather than the original Aero blue: the tab shape is now a
+    // rounded rectangle, and a saturated border around every tab reads as busy
+    // against the title bars these are drawn over. Active is white so it merges
+    // with the window it belongs to, inactive sits clearly below the backdrop.
+    //
+    // tabOverlap is 0 because rounded corners cannot overlap the way the old
+    // bezier trapezoid could - overlapping tabs eat each other's corners. See
+    // the migration in Program for what happens to existing settings.
     member this.defaultTabAppearance =
         {
             tabHeight = 25
             tabMaxWidth = 200
-            tabOverlap = 20
-            tabTextColor = Color.FromRGB(0x000000)
-            tabNormalBgColor = Color.FromRGB(0x9FC4F0)
-            tabHighlightBgColor = Color.FromRGB(0xBDD5F4)
-            tabActiveBgColor = Color.FromRGB(0xFAFCFE)
-            tabBorderColor = Color.FromRGB(0x3A70B1)
+            tabOverlap = 0
+            tabTextColor = Color.FromRGB(0x1F1F1F)
+            tabNormalBgColor = Color.FromRGB(0xD6D6D6)
+            tabHighlightBgColor = Color.FromRGB(0xE6E6E6)
+            tabActiveBgColor = Color.FromRGB(0xFFFFFF)
+            tabBorderColor = Color.FromRGB(0xBFBFBF)
             tabFlashBgColor = Color.FromRGB(0xFFBBBB)
             tabHeightOffset = 1
             tabIndentFlipped = 80

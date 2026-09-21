@@ -8,3 +8,13 @@ Debug/
 .vs
 WtProgram/obj
 CppProperties.json
+
+# NuGet restore recreates these from packages.config on every build. Only the
+# assemblies the projects reference by HintPath are committed.
+packages/**/*.nupkg
+packages/**/*.xml
+packages/**/*.p7s
+packages/**/Icon.png
+packages/**/contentFiles/
+packages/**/*.resources.dll
+packages/FSharp.Core.6.0.7/lib/netstandard2.1/

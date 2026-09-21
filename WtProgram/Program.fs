@@ -74,9 +74,23 @@ type Program() as this =
    
     let isFirstRun = settingsManager.fileExists.not
 
+    // The old default tab overlap. Tabs used to be bezier trapezoids, drawn to
+    // slide under one another; the rounded rectangles that replaced them cannot
+    // overlap without eating each other's corners.
+    let legacyTabOverlap = 20
+
     let originalVersion = 
         let original = settingsManager.settings.version
-        settingsManager.update <| fun s -> { s with version = version }
+        settingsManager.update <| fun s ->
+            // Runs once, on the startup that first sees a new version: an
+            // overlap the user picked after upgrading must not be reset on the
+            // next launch. An overlap they chose themselves is left alone, even
+            // though it will look tighter than it used to.
+            let appearance =
+                if original <> String.Empty && original <> version && s.tabAppearance.tabOverlap = legacyTabOverlap
+                then { s.tabAppearance with tabOverlap = 0 }
+                else s.tabAppearance
+            { s with version = version; tabAppearance = appearance }
         original 
 
     let registerShellHooks =

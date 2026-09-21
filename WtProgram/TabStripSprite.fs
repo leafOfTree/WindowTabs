@@ -22,24 +22,48 @@ type IconSprite = {
 type CloseButtonSprite = {
     hover: bool
     captured: bool
+    foreColor: Color
     size: Sz
     }
     with
+    // Derived from the tab's text colour so the button stays legible on a dark
+    // palette as well as a light one. The old version painted a filled circle,
+    // dark red on hover, which read as a 2010 era affordance.
     member private this.bgColor =
+        let c = this.foreColor
         match this.hover, this.captured with
-        | true, true -> Some(Color.DimGray)
-        | true, false -> Some(Color.DarkRed)
+        | true, true -> Some(Color.FromArgb(60, int c.R, int c.G, int c.B))
+        | true, false -> Some(Color.FromArgb(34, int c.R, int c.G, int c.B))
         | _ -> None
-    member private this.penColor = if this.bgColor.IsSome then Color.White else Color.Gray
-    member private this.pen = new Pen(this.penColor, 2.0f)
+    member private this.penColor =
+        let c = this.foreColor
+        if this.hover then Color.FromArgb(230, int c.R, int c.G, int c.B)
+        else Color.FromArgb(150, int c.R, int c.G, int c.B)
+    member private this.pen = new Pen(this.penColor, float32 (max 1 (Dpi.scale 1)) * 1.2f)
     interface ISprite with
         member this.image = 
-            let crossOffest = 3
             let bitmap = Img(this.size)
             let g = bitmap.graphics
-            g.FillEllipse(new SolidBrush(this.bgColor.def(Color.FromArgb(1, 1, 1, 1))), Rect(Pt.empty, this.size).Rectangle)
-            g.DrawLine(this.pen, crossOffest, crossOffest, this.size.width - crossOffest, this.size.height - crossOffest)
-            g.DrawLine(this.pen, crossOffest, this.size.height - crossOffest, this.size.width - crossOffest, crossOffest)
+            match this.bgColor with
+            | Some(bg) ->
+                use path = new GraphicsPath()
+                let r = float32 (max 2 (Dpi.scale 4))
+                let d = r * 2.0f
+                let w = float32 this.size.width
+                let h = float32 this.size.height
+                path.AddArc(0.0f, 0.0f, d, d, 180.0f, 90.0f)
+                path.AddArc(w - d, 0.0f, d, d, 270.0f, 90.0f)
+                path.AddArc(w - d, h - d, d, d, 0.0f, 90.0f)
+                path.AddArc(0.0f, h - d, d, d, 90.0f, 90.0f)
+                path.CloseFigure()
+                g.FillPath(new SolidBrush(bg), path)
+            | None -> ()
+            // Inset so the cross sits inside the hover square rather than
+            // filling it corner to corner.
+            let inset = float32 this.size.width * 0.32f
+            let far = float32 this.size.width - inset
+            g.DrawLine(this.pen, inset, inset, far, far)
+            g.DrawLine(this.pen, inset, far, far, inset)
             bitmap
         member this.children = List2()
 
@@ -72,37 +96,16 @@ type TabSprite<'id> = {
     member private this.closeButtonSprite = 
         {
             CloseButtonSprite.size = this.closeButtonSize
+            foreColor = this.appearance.tabTextColor
             hover = this.hover = Some(TabClose)
             captured = this.captured = Some(TabClose)
         } :> ISprite
        
-    member private this.edgeWidth = 18
+    // Horizontal padding inside the tab. The old bezier edges needed 18px of
+    // run-up on each side; rounded corners need only enough room to breathe.
+    member private this.edgeWidth = Dpi.scale 10
 
-    member private this.renderTabEdge(path:GraphicsPath, startPoint:PointF, endPoint:PointF) =
-        let width = endPoint.X - startPoint.X
-        let height = endPoint.Y - startPoint.Y
-        let xInc = width / float32(3)
-        let xCurveInc = xInc / float32(3)
-        let yCurveInc = height / float32(3)
-        let bezPoints =
-            [|
-                startPoint
-                PointF(startPoint.X + xInc, startPoint.Y)
-                PointF(startPoint.X + xInc + xCurveInc, startPoint.Y + yCurveInc)
-                PointF(startPoint.X + xInc + float32(2) * xCurveInc, startPoint.Y + float32(2) * yCurveInc)
-                PointF(startPoint.X + float32(2) * xInc, startPoint.Y + float32(3) * yCurveInc)
-                PointF(startPoint.X + float32(3) * xInc, startPoint.Y + float32(3) * yCurveInc)
-            |]
-        do path.AddBezier(
-            bezPoints.[0],
-            bezPoints.[1],
-            bezPoints.[2],
-            bezPoints.[3])
-        do path.AddBezier(
-            bezPoints.[2],
-            bezPoints.[3],
-            bezPoints.[4],
-            bezPoints.[5])
+    member private this.cornerRadius = Dpi.scale 6
 
     member private this.bgBrush =
         let color = 
@@ -119,24 +122,41 @@ type TabSprite<'id> = {
 
     member private this.borderPen = new Pen(new SolidBrush(this.appearance.tabBorderColor), 1.0f)
 
+    // A rounded rectangle, rounded only on the edge that faces away from the
+    // window: a tab above a title bar is rounded at the top and flush at the
+    // bottom, where it meets the window it belongs to. The path is left open
+    // along that flush edge, so FillPath closes it but DrawPath never strokes
+    // a line across the join.
     member private this.borderPath =
         let path = new GraphicsPath()
-        let bottom,top =
-            match this.direction with
-            | TabUp -> float32(this.size.height),float32(0)
-            | TabDown -> float32(-1), float32(this.size.height - 1)
-        do this.renderTabEdge(path, PointF(float32(0), bottom), PointF(float32(this.edgeWidth), top))
-        do path.AddLine(Point(this.edgeWidth, int(top)), Point(this.size.width - this.edgeWidth, int(top)))
-        do this.renderTabEdge(path, PointF(float32(this.size.width) - float32(this.edgeWidth), top), PointF(float32(this.size.width), bottom))
+        let w = float32 this.size.width
+        let h = float32 this.size.height
+        let r = float32 (max 1 (min this.cornerRadius (this.size.height / 2)))
+        let d = r * 2.0f
+        match this.direction with
+        | TabUp ->
+            path.AddLine(0.0f, h, 0.0f, r)
+            path.AddArc(0.0f, 0.0f, d, d, 180.0f, 90.0f)
+            path.AddLine(r, 0.0f, w - r, 0.0f)
+            path.AddArc(w - d, 0.0f, d, d, 270.0f, 90.0f)
+            path.AddLine(w, r, w, h)
+        | TabDown ->
+            path.AddLine(0.0f, 0.0f, 0.0f, h - r)
+            path.AddArc(0.0f, h - d, d, d, 180.0f, -90.0f)
+            path.AddLine(r, h, w - r, h)
+            path.AddArc(w - d, h - d, d, d, 90.0f, -90.0f)
+            path.AddLine(w, h - r, w, 0.0f)
         path
 
     member private this.iconSize = Dpi.scaleSize(Sz(16, 16))
 
     member private this.iconLocation =
-        let y = (this.size.height - 16) / 2
+        // Centre against the icon's own height. This used to divide by a
+        // hardcoded 16, which left the icon off centre once it was scaled.
+        let y = (this.size.height - this.iconSize.height) / 2
         Pt(this.edgeWidth, y)
 
-    member private this.closeButtonSize = Sz(13, 13)
+    member private this.closeButtonSize = Dpi.scaleSize(Sz(16, 16))
 
     member private this.closeButtonLocation =
         let x = this.size.width - this.edgeWidth - this.closeButtonSize.width

@@ -79,6 +79,8 @@ Tips
 
 - Support Visual Studio 2026: retarget to .NET Framework 4.8 and drop the unused WiX installer project
 
+- Redesign the tab strip: rounded corners instead of the old bezier trapezoid, a neutral grey palette in place of the Aero blue, and a close button that follows the text colour so it stays legible on dark themes. Upgrading resets the tab overlap to 0 only if it was still on the old default of 20
+
 - Declare the process DPI aware, so tabs and labels are drawn at the real pixel size instead of being bitmap-stretched by Windows. On a display at 125% scaling everything the app draws was previously blurred by the compositor
 
 - Update Newtonsoft.Json from 4.0.5 (2012) to 13.0.4
