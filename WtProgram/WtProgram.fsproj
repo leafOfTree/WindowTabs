@@ -141,9 +141,7 @@
     <EmbeddedResource Include="Properties\Resources.ja-JP.resx" />
   </ItemGroup>
   <ItemGroup>
-    <Reference Include="Aga.Controls">
-      <HintPath>..\Aga.Controls.dll</HintPath>
-    </Reference>
+
     <Reference Include="FSharp.Core">
       <HintPath>..\packages\FSharp.Core.4.3.0.0.Microsoft.Signed.3.0.0.1\lib\net40\FSharp.Core.dll</HintPath>
     </Reference>
@@ -161,6 +159,11 @@
     <Reference Include="System.Drawing" />
 
     <Reference Include="System.Windows.Forms" />
+    <ProjectReference Include="..\treeviewadv\Aga.Controls\Aga.Controls.csproj">
+      <Name>Aga.Controls</Name>
+      <Project>{e73bb233-d88b-44a7-a98f-d71ee158381d}</Project>
+      <Private>True</Private>
+    </ProjectReference>
     <ProjectReference Include="..\Win32\Win32.csproj">
       <Name>Win32</Name>
       <Project>{08d5e815-cc69-4d6e-83bd-ef119618ea9c}</Project>
