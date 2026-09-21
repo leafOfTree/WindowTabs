@@ -79,6 +79,8 @@ Tips
 
 - Support Visual Studio 2026: retarget to .NET Framework 4.8 and drop the unused WiX installer project
 
+- Fix a rare silent loss of tabs and window groups caused by hash collisions in the internal collections; drop the unmaintained FSharp.PowerPack dependency, shrinking the executable by about 410 KB
+
 - Write unhandled exceptions to `WindowTabsCrash.log` so crash reports are actionable
 
 - Add version and product metadata to the executable
