@@ -89,6 +89,9 @@ type TabSprite<'id> = {
     // than by each having its own outline. Suppressed next to the active or
     // hovered tab, whose fill already separates it.
     showLeftSeparator: bool
+    // Position in the strip, not state: only the two ends are rounded.
+    roundLeft: bool
+    roundRight: bool
     } with
 
     member private this.iconSprite =
@@ -109,20 +112,10 @@ type TabSprite<'id> = {
     // run-up on each side; rounded corners need only enough room to breathe.
     member private this.edgeWidth = Dpi.scale 10
 
-    // Only the tab that is filled to stand out gets a shape. A plain tab is a
-    // flat rectangle, so two of them sit flush and the hairline between them is
-    // the only divider - without this, two facing rounded corners leave a
-    // notch of title bar showing between every pair of tabs. It is also what a
-    // browser does: its inactive tabs have no shape at all.
-    member private this.isPlain =
-        this.isTop.not && this.hover.IsNone && this.captured.IsNone
-
     // Proportional to the tab, the way a browser draws it: Edge measures about
     // 9px of corner on a 42px tab. A fixed radius looks tight on a tall tab and
     // swallows a short one.
-    member private this.cornerRadius =
-        if this.isPlain then 0
-        else max (Dpi.scale 4) (this.size.height * 30 / 100)
+    member private this.cornerRadius = max (Dpi.scale 4) (this.size.height * 30 / 100)
 
     member private this.bgBrush =
         let color = 
@@ -139,39 +132,35 @@ type TabSprite<'id> = {
 
     member private this.borderPen = new Pen(new SolidBrush(this.appearance.tabBorderColor), 1.0f)
 
-    // A rounded rectangle, rounded only on the edge that faces away from the
-    // window: a tab above a title bar is rounded at the top and flush at the
-    // bottom, where it meets the window it belongs to. The path is left open
-    // along that flush edge, so FillPath closes it but DrawPath never strokes
-    // a line across the join.
+    // Only the two ends of the strip are rounded; every corner inside it is
+    // square. Two rounded corners facing each other cannot meet, so any rounded
+    // corner in the middle leaves a notch of title bar showing through - which
+    // is what rounding by state rather than by position produced, wherever the
+    // active tab happened to sit. Rounded outer ends make the whole strip read
+    // as one shape, with the tabs inside it divided by hairlines.
     member private this.borderPath =
         let path = new GraphicsPath()
         let w = float32 this.size.width
         let h = float32 this.size.height
         let r = float32 (min this.cornerRadius (this.size.height / 2))
-        let d = r * 2.0f
-        match this.direction, r > 0.0f with
-        | TabUp, false ->
-            // Square: three sides, left open along the edge that meets the window.
-            path.AddLine(0.0f, h, 0.0f, 0.0f)
-            path.AddLine(0.0f, 0.0f, w, 0.0f)
-            path.AddLine(w, 0.0f, w, h)
-        | TabDown, false ->
-            path.AddLine(0.0f, 0.0f, 0.0f, h)
-            path.AddLine(0.0f, h, w, h)
-            path.AddLine(w, h, w, 0.0f)
-        | TabUp, true ->
-            path.AddLine(0.0f, h, 0.0f, r)
-            path.AddArc(0.0f, 0.0f, d, d, 180.0f, 90.0f)
-            path.AddLine(r, 0.0f, w - r, 0.0f)
-            path.AddArc(w - d, 0.0f, d, d, 270.0f, 90.0f)
-            path.AddLine(w, r, w, h)
-        | TabDown, true ->
-            path.AddLine(0.0f, 0.0f, 0.0f, h - r)
-            path.AddArc(0.0f, h - d, d, d, 180.0f, -90.0f)
-            path.AddLine(r, h, w - r, h)
-            path.AddArc(w - d, h - d, d, d, 90.0f, -90.0f)
-            path.AddLine(w, h - r, w, 0.0f)
+        let rl = if this.roundLeft then r else 0.0f
+        let rr = if this.roundRight then r else 0.0f
+        match this.direction with
+        | TabUp ->
+            // Up the left side, across the top, down the right side. The bottom
+            // edge is left open where the tab meets the window, so FillPath
+            // closes it but DrawPath never strokes across the join.
+            path.AddLine(0.0f, h, 0.0f, rl)
+            if rl > 0.0f then path.AddArc(0.0f, 0.0f, rl * 2.0f, rl * 2.0f, 180.0f, 90.0f)
+            path.AddLine(rl, 0.0f, w - rr, 0.0f)
+            if rr > 0.0f then path.AddArc(w - rr * 2.0f, 0.0f, rr * 2.0f, rr * 2.0f, 270.0f, 90.0f)
+            path.AddLine(w, rr, w, h)
+        | TabDown ->
+            path.AddLine(0.0f, 0.0f, 0.0f, h - rl)
+            if rl > 0.0f then path.AddArc(0.0f, h - rl * 2.0f, rl * 2.0f, rl * 2.0f, 180.0f, -90.0f)
+            path.AddLine(rl, h, w - rr, h)
+            if rr > 0.0f then path.AddArc(w - rr * 2.0f, h - rr * 2.0f, rr * 2.0f, rr * 2.0f, 90.0f, -90.0f)
+            path.AddLine(w, h - rr, w, 0.0f)
         path
 
     member private this.iconSize = Dpi.scaleSize(Sz(16, 16))
@@ -263,6 +252,8 @@ type TabStripSprite<'id> when 'id : equality = {
 
     // A tab is "plain" when nothing about it is already drawing a fill that
     // sets it apart from its neighbour.
+    member private this.indexOf (tab:'id) = this.lorder.list |> List.tryFindIndex (fun t -> t = tab)
+
     member private this.isPlain (tab:'id) =
         let isActive =
             match this.zorder.tryHead with
@@ -290,10 +281,18 @@ type TabStripSprite<'id> when 'id : equality = {
             showLeftSeparator =
                 // Never before the first tab, and never where either side is
                 // already set apart by its own fill.
-                match this.lorder.list |> List.tryFindIndex (fun t -> t = tab) with
+                match this.indexOf tab with
                 | Some(index) when index > 0 ->
                     this.isPlain(tab) && this.isPlain(this.lorder.at(index - 1))
                 | _ -> false
+            roundLeft =
+                match this.indexOf tab with
+                | Some(index) -> index = 0
+                | None -> false
+            roundRight =
+                match this.indexOf tab with
+                | Some(index) -> index = this.lorder.length - 1
+                | None -> false
             hover = 
                 match this.hover with
                 | Some(id, part) when id = tab -> Some(part)
