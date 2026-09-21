@@ -109,10 +109,20 @@ type TabSprite<'id> = {
     // run-up on each side; rounded corners need only enough room to breathe.
     member private this.edgeWidth = Dpi.scale 10
 
+    // Only the tab that is filled to stand out gets a shape. A plain tab is a
+    // flat rectangle, so two of them sit flush and the hairline between them is
+    // the only divider - without this, two facing rounded corners leave a
+    // notch of title bar showing between every pair of tabs. It is also what a
+    // browser does: its inactive tabs have no shape at all.
+    member private this.isPlain =
+        this.isTop.not && this.hover.IsNone && this.captured.IsNone
+
     // Proportional to the tab, the way a browser draws it: Edge measures about
     // 9px of corner on a 42px tab. A fixed radius looks tight on a tall tab and
     // swallows a short one.
-    member private this.cornerRadius = max (Dpi.scale 4) (this.size.height * 30 / 100)
+    member private this.cornerRadius =
+        if this.isPlain then 0
+        else max (Dpi.scale 4) (this.size.height * 30 / 100)
 
     member private this.bgBrush =
         let color = 
@@ -138,16 +148,25 @@ type TabSprite<'id> = {
         let path = new GraphicsPath()
         let w = float32 this.size.width
         let h = float32 this.size.height
-        let r = float32 (max 1 (min this.cornerRadius (this.size.height / 2)))
+        let r = float32 (min this.cornerRadius (this.size.height / 2))
         let d = r * 2.0f
-        match this.direction with
-        | TabUp ->
+        match this.direction, r > 0.0f with
+        | TabUp, false ->
+            // Square: three sides, left open along the edge that meets the window.
+            path.AddLine(0.0f, h, 0.0f, 0.0f)
+            path.AddLine(0.0f, 0.0f, w, 0.0f)
+            path.AddLine(w, 0.0f, w, h)
+        | TabDown, false ->
+            path.AddLine(0.0f, 0.0f, 0.0f, h)
+            path.AddLine(0.0f, h, w, h)
+            path.AddLine(w, h, w, 0.0f)
+        | TabUp, true ->
             path.AddLine(0.0f, h, 0.0f, r)
             path.AddArc(0.0f, 0.0f, d, d, 180.0f, 90.0f)
             path.AddLine(r, 0.0f, w - r, 0.0f)
             path.AddArc(w - d, 0.0f, d, d, 270.0f, 90.0f)
             path.AddLine(w, r, w, h)
-        | TabDown ->
+        | TabDown, true ->
             path.AddLine(0.0f, 0.0f, 0.0f, h - r)
             path.AddArc(0.0f, h - d, d, d, 180.0f, -90.0f)
             path.AddLine(r, h, w - r, h)
