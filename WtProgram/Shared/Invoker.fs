@@ -13,9 +13,6 @@ type Invoker() as this =
 
     let lockDispose f = lock this <| fun() -> if form.IsDisposed.not then f()
 
-    do
-        printfn "Invoker for %d" (System.Threading.Thread.CurrentThread.ManagedThreadId)
-    
     member this.invokeRequired = form.InvokeRequired
 
     member this.invoke f= 

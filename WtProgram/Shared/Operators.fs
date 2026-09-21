@@ -24,16 +24,6 @@ module BaseExtensions =
             stream.Position <- 0L
             new Icon(stream)
 
-    type System.Drawing.Bitmap with
-        member this.toIcon() =
-            let hBitmap = this.GetHbitmap()
-            let hIcon = this.GetHicon()
-            let icon = Icon.FromHandle(hIcon)
-            printfn "%A %A" hBitmap hIcon
-            //need to make a copy otherwise you need to keep bitmap inscope so hbitmap remains valid
-            let iconCopy = icon.clone()
-            GC.KeepAlive(this)
-            iconCopy
 
     type System.IntPtr with
         member this.hasFlag (f:IntPtr) = this &&& f = f
@@ -100,7 +90,6 @@ module BaseExtensions =
         member this.iter f = Option.iter f this
 
     type System.Object with
-        member this.print() = printfn "%A" this
         member this.ignore = ()
         member this.cast<'a>() = unbox<'a>(this)
 
@@ -184,26 +173,6 @@ module List2 =
     type List2<'a> with
         //this does not work if its part of List2 class, constrains return to List2<'a>
         member this.map f = List2<'b>(List.map f this.list)
-        member this.pmap f =
-            let mutex = new System.Threading.Mutex()
-            let completedEvent = new System.Threading.EventWaitHandle(false, EventResetMode.ManualReset)
-            let results = ref (List2())
-            let doTask(i, item) =
-                let result = f(item)
-                let completed = ref false
-                mutex.WaitOne() |> ignore
-                results := (!results).append((i,result))
-                if results.Value.length = this.length then
-                    completed := true
-                mutex.ReleaseMutex()
-                if !completed then
-                    completedEvent.Set() |> ignore
-            this.iteri <| fun i item -> 
-                ThreadPool.QueueUserWorkItem(Threading.WaitCallback(fun _ -> doTask(i, item))) |> ignore
-            
-            completedEvent.WaitOne() |> ignore
-            results.Value.sortBy(fst).map(snd)
-
         member this.choose f = List2<'b>(List.choose f this.list)
         member this.collect f = List2<'b>(List.collect (f >> (fun (l:List2<_>) -> l.list)) this.list)
         member this.enumerate = List2<int*'a>(List.mapi (fun i item -> (i,item)) this.list)

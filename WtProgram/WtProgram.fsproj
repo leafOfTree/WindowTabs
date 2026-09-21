@@ -71,6 +71,7 @@
     </PostBuildEvent>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="AssemblyInfo.fs" />
     <Compile Include="Shared/Operators.fs" />
     <Compile Include="Shared/Dynamic.fs" />
     <Compile Include="Shared/Observable.fs" />
@@ -170,9 +171,7 @@
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Drawing" />
-    <Reference Include="System.ValueTuple">
-      <HintPath>..\packages\System.ValueTuple.4.3.0\lib\portable-net40+sl4+win8+wp8\System.ValueTuple.dll</HintPath>
-    </Reference>
+
     <Reference Include="System.Windows.Forms" />
     <ProjectReference Include="..\Win32\Win32.csproj">
       <Name>Win32</Name>
