@@ -79,6 +79,8 @@ Tips
 
 - Support Visual Studio 2026: retarget to .NET Framework 4.8 and drop the unused WiX installer project
 
+- Declare the process DPI aware, so tabs and labels are drawn at the real pixel size instead of being bitmap-stretched by Windows. On a display at 125% scaling everything the app draws was previously blurred by the compositor
+
 - Update Newtonsoft.Json from 4.0.5 (2012) to 13.0.4
 
 - Sort the process list in Programs case insensitively, so `chrome.exe` no longer sorts after `WindowTabs.exe`

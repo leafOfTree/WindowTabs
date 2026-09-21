@@ -96,7 +96,7 @@ type Desktop(notify:IDesktopNotification) as this =
         group.cast<IGroup>() 
 
     member private this.windowOffset = 
-        let tabAppearance = Services.program.tabAppearanceInfo
+        let tabAppearance = Services.program.tabAppearanceInfo.scaled
         Pt(-tabAppearance.tabIndentNormal, tabAppearance.tabHeight - (tabAppearance.tabHeightOffset + 1))
           
     member this.findGroupContainingHwnd hwnd : IGroup option =  

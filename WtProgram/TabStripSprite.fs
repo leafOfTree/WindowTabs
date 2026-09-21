@@ -130,7 +130,7 @@ type TabSprite<'id> = {
         do this.renderTabEdge(path, PointF(float32(this.size.width) - float32(this.edgeWidth), top), PointF(float32(this.size.width), bottom))
         path
 
-    member private this.iconSize = Sz(16, 16)
+    member private this.iconSize = Dpi.scaleSize(Sz(16, 16))
 
     member private this.iconLocation =
         let y = (this.size.height - 16) / 2
@@ -144,7 +144,7 @@ type TabSprite<'id> = {
         Pt(x, y)
 
     member this.textLocation =
-        let x = this.iconLocation.x + this.iconSize.width + 5
+        let x = this.iconLocation.x + this.iconSize.width + Dpi.scale 5
         Pt(x, 0)
 
     member this.textSize =

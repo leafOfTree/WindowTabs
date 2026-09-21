@@ -312,6 +312,9 @@ type Program() as this =
             else
                 this.saveSettingsAndUpdateAppWindows <| fun s -> { s with autoGroupingPaths = s.autoGroupingPaths.remove procPath }
   
+        // Logical pixels. The Appearance page both displays and saves this,
+        // so scaling here would persist scaled values and compound them on
+        // every load. Drawing code scales at the point of use instead.
         member x.tabAppearanceInfo = 
             settingsManager.settings.tabAppearance
 

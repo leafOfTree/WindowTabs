@@ -74,8 +74,10 @@ type OS() as this=
     member this.getTaskbar() = if this.isWin7OrHigher then Some(ShellApi.GetTaskbar()) else None
     
     member this.isWin7OrHigher =
-        System.Environment.OSVersion.Version.Major >= 6 &&
-        System.Environment.OSVersion.Version.Minor >= 1
+        // Major > 6 matters once the manifest declares a supportedOS: Windows
+        // then reports 10.0, and a plain "Minor >= 1" would read as false.
+        let version = System.Environment.OSVersion.Version
+        version.Major > 6 || (version.Major = 6 && version.Minor >= 1)
     
     member this.lockForeground() = WinUserApi.LockSetForegroundWindow(1)
     member this.unlockForeground() = WinUserApi.LockSetForegroundWindow(2).ignore

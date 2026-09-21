@@ -128,7 +128,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>) as this =
     member this.windows : Set2<IntPtr> = windowsCell.value
 
     
-    member this.tabAppearance = Services.settings.getValue("tabAppearance").cast<TabAppearanceInfo>()
+    // .scaled converts the stored logical pixels to physical ones. The stored
+    // record stays logical because Settings writes it back to the settings file.
+    member this.tabAppearance = Services.settings.getValue("tabAppearance").cast<TabAppearanceInfo>().scaled
 
     member private this.withUpdate f =
         Cell.beginUpdate()

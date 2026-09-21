@@ -1,4 +1,4 @@
-namespace Bemo
+﻿namespace Bemo
 open System
 open System.Collections
 open System.Drawing
@@ -120,7 +120,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             transparent = this.transparent
             appearance = 
                 if this.isIconOnly then
-                    { this.appearance with tabMaxWidth = 50 }
+                    { this.appearance with tabMaxWidth = Dpi.scale 50 }
                 else
                     this.appearance
         }

@@ -16,7 +16,8 @@
     <SccProvider>Mercurial Source Control Package</SccProvider>
     <SccAuxPath>&lt;Source Control Database&gt;</SccAuxPath>
     <SccLocalPath>&lt;Local Binding Root of Project&gt;</SccLocalPath>
-    <Win32Resource>.\app.res</Win32Resource>
+    <ApplicationIcon>Resources\Bemo.ico</ApplicationIcon>
+    <Win32Manifest>app.manifest</Win32Manifest>
     <TargetFSharpCoreVersion>6.0.0.0</TargetFSharpCoreVersion>
     <MinimumVisualStudioVersion Condition="'$(MinimumVisualStudioVersion)' == ''">11</MinimumVisualStudioVersion>
   </PropertyGroup>
@@ -81,6 +82,7 @@
     <Compile Include="Shared/Drawing.fs" />
     <Compile Include="Shared/Sprite.fs" />
     <Compile Include="Shared\TabStripTypes.fs" />
+    <Compile Include="Shared/Dpi.fs" />
     <Compile Include="Shared/Win32.fs" />
     <Compile Include="Shared\ProgramTypes.fs" />
     <Compile Include="Shared/DragDrop.fs" />
@@ -136,6 +138,7 @@
     <None Include="App.config">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="app.manifest" />
     <Content Include="packages.config" />
     <EmbeddedResource Include="Properties\Resources.resx" />
     <EmbeddedResource Include="Properties\Resources.ja-JP.resx" />
