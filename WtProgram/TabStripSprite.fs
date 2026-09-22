@@ -146,36 +146,37 @@ type TabSprite<'id> = {
     // and is clipped away completely - the tab came out outlined on its left
     // but not its right. Centred at w - 1 it lands on the last column, and at
     // 0.5 it would straddle two columns at half strength each.
-    member private this.shapePath (l:float32) (t:float32) (rgt:float32) =
+    member private this.shapePath (l:float32) (t:float32) (rgt:float32) (btm:float32) =
         let path = new GraphicsPath()
-        let h = float32 this.size.height
         let r = float32 (min this.cornerRadius (this.size.height / 2))
         let rl = if this.roundLeft then r else 0.0f
         let rr = if this.roundRight then r else 0.0f
         match this.direction with
         | TabUp ->
-            // Up the left side, across the top, down the right side. The bottom
-            // edge is left open where the tab meets the window, so FillPath
-            // closes it but DrawPath never strokes across the join.
-            path.AddLine(l, h, l, t + rl)
+            // Up the left side, across the top, down the right side, and closed
+            // along the bottom. A browser leaves that edge open so the active
+            // tab runs into the page below it, but these tabs are drawn over a
+            // window they are not part of, so an open edge just reads as a box
+            // with a side missing.
+            path.AddLine(l, btm, l, t + rl)
             if rl > 0.0f then path.AddArc(l, t, rl * 2.0f, rl * 2.0f, 180.0f, 90.0f)
             path.AddLine(l + rl, t, rgt - rr, t)
             if rr > 0.0f then path.AddArc(rgt - rr * 2.0f, t, rr * 2.0f, rr * 2.0f, 270.0f, 90.0f)
-            path.AddLine(rgt, t + rr, rgt, h)
+            path.AddLine(rgt, t + rr, rgt, btm)
         | TabDown ->
-            let b = h - t
-            path.AddLine(l, 0.0f, l, b - rl)
-            if rl > 0.0f then path.AddArc(l, b - rl * 2.0f, rl * 2.0f, rl * 2.0f, 180.0f, -90.0f)
-            path.AddLine(l + rl, b, rgt - rr, b)
-            if rr > 0.0f then path.AddArc(rgt - rr * 2.0f, b - rr * 2.0f, rr * 2.0f, rr * 2.0f, 90.0f, -90.0f)
-            path.AddLine(rgt, b - rr, rgt, 0.0f)
+            path.AddLine(l, t, l, btm - rl)
+            if rl > 0.0f then path.AddArc(l, btm - rl * 2.0f, rl * 2.0f, rl * 2.0f, 180.0f, -90.0f)
+            path.AddLine(l + rl, btm, rgt - rr, btm)
+            if rr > 0.0f then path.AddArc(rgt - rr * 2.0f, btm - rr * 2.0f, rr * 2.0f, rr * 2.0f, 90.0f, -90.0f)
+            path.AddLine(rgt, btm - rr, rgt, t)
+        path.CloseFigure()
         path
 
     member private this.fillPath =
-        this.shapePath -0.5f -0.5f (float32 this.size.width + 0.5f)
+        this.shapePath -0.5f -0.5f (float32 this.size.width + 0.5f) (float32 this.size.height + 0.5f)
 
     member private this.strokePath =
-        this.shapePath 0.0f 0.0f (float32 this.size.width - 1.0f)
+        this.shapePath 0.0f 0.0f (float32 this.size.width - 1.0f) (float32 this.size.height - 1.0f)
 
     member private this.iconSize = Dpi.scaleSize(Sz(16, 16))
 
