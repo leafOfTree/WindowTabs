@@ -126,6 +126,7 @@
     <Compile Include="DesktopPlugins/ExceptionHandlerPlugin.fs" />
     <Compile Include="Program.fs" />
     <EmbeddedResource Include="Resources\Bemo.ico" />
+    <EmbeddedResource Include="Resources\BemoLight.ico" />
     <EmbeddedResource Include="Resources\workspace.png" />
     <EmbeddedResource Include="Resources\add.png" />
     <EmbeddedResource Include="Resources\delete.png" />
