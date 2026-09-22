@@ -55,6 +55,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let layeredWindowCell = Cell.create(None)
     let eventHandlersCell = Cell.create(Set2())
     let tabBgColor = Cell.create(Map2())
+    let mutable shadowWindow : TabShadowWindow option = None
+    let mutable shadowRefreshPending = false
+    let shadowRefreshMessage = 0x8000 + 67
     let hwndRef = ref IntPtr.Zero
     let isShrunkCell = Cell.create(false)
 
@@ -74,6 +77,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 WindowsExtendedStyles.WS_EX_TOOLWINDOW
             Some(_os.createWindow this.wndProc style styleExe)
         hwndRef := layeredWindowCell.value.Value.hwnd
+        shadowWindow <- Some(new TabShadowWindow(_os, hwndRef.Value))
         
         isMouseOverExport.init()
 
@@ -187,6 +191,16 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             monitor.windowMsg(msg)
 
         match msg.msg with
+        | message when message = shadowRefreshMessage ->
+            shadowRefreshPending <- false
+            shadowWindow |> Option.iter (fun shadow -> shadow.sync())
+            0
+        | WindowMessages.WM_WINDOWPOSCHANGED
+        | WindowMessages.WM_SHOWWINDOW ->
+            let result = msg.def()
+            shadowWindow |> Option.iter (fun shadow -> shadow.sync())
+            this.refreshShadow()
+            result
         | WindowMessages.WM_MOUSEACTIVATE ->
             MouseActivateReturnCodes.MA_NOACTIVATE
         | WindowMessages.WM_MOUSEMOVE ->
@@ -213,9 +227,18 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     
     member private this.update() = 
         if this.visible then 
-            this.window.update(this.render, this.location, this.alpha)
+            let image = this.render
+            try
+                this.window.update(image, this.location, this.alpha)
+                shadowWindow |> Option.iter (fun shadow ->
+                    if this.isShrunk || this.isEmpty then shadow.hide()
+                    else shadow.update(image, this.alpha, this.direction))
+            finally
+                image.bitmap.Dispose()
             GC.Collect()
-        else this.window.hide()
+        else
+            shadowWindow |> Option.iter (fun shadow -> shadow.hide())
+            this.window.hide()
     
     member private this.render : Img = 
         try
@@ -233,6 +256,14 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         let result = f()
         Cell.endUpdate()
         result
+
+    // Run after Windows finishes activation/owner popup bookkeeping. Coalescing
+    // prevents resize/move message bursts from producing redundant refreshes.
+    member this.refreshShadow() =
+        if this.hwnd <> IntPtr.Zero && shadowWindow.IsSome && not shadowRefreshPending then
+            shadowRefreshPending <- true
+            if not (WinUserApi.PostMessage(this.hwnd, shadowRefreshMessage, IntPtr.Zero, IntPtr.Zero)) then
+                shadowRefreshPending <- false
 
     member this.hwnd = hwndRef.Value
     
@@ -372,6 +403,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         ts.render
 
     member this.destroy() = 
+        shadowWindow |> Option.iter (fun shadow -> (shadow :> IDisposable).Dispose())
+        shadowWindow <- None
         eventHandlersCell.value.items.iter(fun d -> d.Dispose())
         layeredWindowCell.value.iter <| fun w -> (w :?> IDisposable).Dispose()
         this.window.destroy()

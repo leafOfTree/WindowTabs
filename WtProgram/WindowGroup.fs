@@ -226,6 +226,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>) as this =
 
     member private this.setTsParent(parentHwnd) =
         this.os.windowFromHwnd(this.ts.hwnd).setParent(this.os.windowFromHwnd(parentHwnd))
+        this.ts.refreshShadow()
         
     member this.isIconOnly 
         with get() = this.ts.isIconOnly
@@ -303,10 +304,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>) as this =
         | ShellEvent.HSHELL_REDRAW ->
             if this.windows.contains(hwnd) then
                 this.flashTab(Tab(hwnd), false)
+                this.setTabInfo(hwnd)
         | ShellEvent.HSHELL_WINDOWACTIVATED 
         | ShellEvent.HSHELL_RUDEAPPACTIVATED ->
             if this.windows.contains(hwnd) then
                 this.saveZorder()
+                this.setTabInfo(hwnd)
         | _ -> ()
         Cell.endUpdate()
         
@@ -386,6 +389,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>) as this =
         | WinEvent.EVENT_SYSTEM_FOREGROUND ->
             this.foreground <- hwnd
             this.saveZorder()
+            this.ts.refreshShadow()
         | _ -> ()
       
     member this.addWindow(hwnd, withDelay) = this.withUpdate <| fun() ->
