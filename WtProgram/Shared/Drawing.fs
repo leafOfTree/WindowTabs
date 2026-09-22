@@ -235,7 +235,9 @@ type Ico(icon:Icon) =
     member this.icon = icon
     static member fromHandle hicon =
         try
-            Some(Icon.FromHandle(hicon))
+            // Copy the borrowed handle: the application may replace/destroy it.
+            use borrowed = Icon.FromHandle(hicon)
+            Some(borrowed.Clone() :?> Icon)
         with _ -> None
 
 [<AutoOpen>]

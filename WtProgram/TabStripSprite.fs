@@ -12,9 +12,11 @@ type IconSprite = {
     interface ISprite with
         member this.image = 
             let bitmap = Img(this.size)
-            let g = bitmap.graphics
+            use g = bitmap.graphics
             try
-                do  g.DrawIcon(this.icon, 0, 0)
+                // WM_GETICON can return a 32/40px icon even for ICON_SMALL.
+                // Scale the whole icon; drawing at its native size clips it.
+                g.DrawIcon(this.icon, Rectangle(0, 0, this.size.width, this.size.height))
             with | e -> ()
             bitmap
         member this.children = List2()

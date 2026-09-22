@@ -146,18 +146,35 @@ namespace Bemo
             POINT dstLocation = POINT.FromPoint(location);
             WinUserApi.UpdateLayeredWindow(hwnd, IntPtr.Zero, ref dstLocation, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0, IntPtr.Zero, 0);
         }
-        public static IntPtr GetWindowIcon(IntPtr handle, int iconType)
+        private static IntPtr QueryWindowIcon(IntPtr handle, int iconType)
         {
             IntPtr icon;
-            icon = WinUserApi.SendMessage(handle, WindowMessages.WM_GETICON, (IntPtr)iconType, IntPtr.Zero);
+            // Foreign windows can be busy or hung. Never block the tab UI indefinitely.
+            if (WinUserApi.SendMessageTimeout(handle, WindowMessages.WM_GETICON,
+                (IntPtr)iconType, IntPtr.Zero, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG,
+                100, out icon) == IntPtr.Zero)
+                return IntPtr.Zero;
+            return icon;
+        }
+
+        public static IntPtr GetWindowIcon(IntPtr handle, int iconType)
+        {
+            bool small = iconType != IconTypeCodes.ICON_BIG;
+            IntPtr icon = QueryWindowIcon(handle, iconType);
+            if (icon == IntPtr.Zero && small && iconType != IconTypeCodes.ICON_SMALL2)
+                icon = QueryWindowIcon(handle, IconTypeCodes.ICON_SMALL2);
+            // Preserve a successful ICON_SMALL2 result.
             if (icon == IntPtr.Zero)
-            {
-                if (iconType == IconTypeCodes.ICON_SMALL)
-                {
-                    icon = WinUserApi.SendMessage(handle, WindowMessages.WM_GETICON, (IntPtr)IconTypeCodes.ICON_SMALL2, IntPtr.Zero);
-                }
-                icon = WinUserApi.GetClassLong(handle, iconType == IconTypeCodes.ICON_SMALL ? ClassLongFieldOffset.GCL_HICONSM : ClassLongFieldOffset.GCL_HICON);
-            }
+                icon = WinUserApi.GetClassLong(handle,
+                    small ? ClassLongFieldOffset.GCL_HICONSM : ClassLongFieldOffset.GCL_HICON);
+            // Some applications only publish one size. Drawing scales it for the tab.
+            if (icon == IntPtr.Zero)
+                icon = QueryWindowIcon(handle, small ? IconTypeCodes.ICON_BIG : IconTypeCodes.ICON_SMALL);
+            if (icon == IntPtr.Zero && !small)
+                icon = QueryWindowIcon(handle, IconTypeCodes.ICON_SMALL2);
+            if (icon == IntPtr.Zero)
+                icon = WinUserApi.GetClassLong(handle,
+                    small ? ClassLongFieldOffset.GCL_HICON : ClassLongFieldOffset.GCL_HICONSM);
             return icon;
         }
         public static String GetWindowText(IntPtr handle)
