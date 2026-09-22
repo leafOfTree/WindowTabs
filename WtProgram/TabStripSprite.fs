@@ -130,22 +130,12 @@ type TabSprite<'id> = {
                 else inactive
         SolidBrush(color)
 
-    member private this.borderPen = new Pen(new SolidBrush(this.appearance.tabBorderColor), 1.0f)
-
-    // The insets exist because GDI+ puts pixel centres on integer coordinates
-    // once antialiasing is on, so column k spans k-0.5 to k+0.5. Two things
-    // follow, and both were wrong before:
-    //
-    // A fill run from 0 to w covers only half of the first and last columns,
-    // leaving every tab with a half transparent edge for the title bar to bleed
-    // through. Running it half a pixel wide on each side, where the clip
-    // discards the excess, makes those columns solid.
-    //
-    // A stroke is solid only when it is centred on a column's centre, which
-    // means an integer. Centred at w it lands on a column outside the bitmap
-    // and is clipped away completely - the tab came out outlined on its left
-    // but not its right. Centred at w - 1 it lands on the last column, and at
-    // 0.5 it would straddle two columns at half strength each.
+    // The inset exists because GDI+ puts pixel centres on integer coordinates
+    // once antialiasing is on, so column k spans k-0.5 to k+0.5, and a fill run
+    // from 0 to w covers only half of the first and last columns. That left
+    // every tab with a half transparent edge for the title bar to bleed
+    // through. Running it half a pixel wide of the bitmap on each side, where
+    // the clip discards the excess, makes those columns solid.
     member private this.shapePath (l:float32) (t:float32) (rgt:float32) (btm:float32) =
         let path = new GraphicsPath()
         let r = float32 (min this.cornerRadius (this.size.height / 2))
@@ -174,9 +164,6 @@ type TabSprite<'id> = {
 
     member private this.fillPath =
         this.shapePath -0.5f -0.5f (float32 this.size.width + 0.5f) (float32 this.size.height + 0.5f)
-
-    member private this.strokePath =
-        this.shapePath 0.0f 0.0f (float32 this.size.width - 1.0f) (float32 this.size.height - 1.0f)
 
     member private this.iconSize = Dpi.scaleSize(Sz(16, 16))
 
@@ -217,12 +204,11 @@ type TabSprite<'id> = {
             let img = Img(this.size)
             let g = img.graphics
             do g.FillPath(this.bgBrush, this.fillPath)
-            // Only the active tab is outlined. Outlining every tab was what
-            // made the strip read as busy: a browser separates inactive tabs
-            // with a hairline instead.
-            if this.isTop then
-                do g.DrawPath(this.borderPen, this.strokePath)
-            elif this.showLeftSeparator then
+            // No outline on any tab, the way a browser draws them: the active
+            // tab is told apart by its fill, and a hairline divides adjacent
+            // plain tabs. An outline round the active tab made it read as a box
+            // sitting on the title bar rather than one tab among several.
+            if this.showLeftSeparator then
                 let inset = float32 this.size.height * 0.28f
                 let x = 0.0f
                 use pen = new Pen(this.appearance.tabBorderColor, 1.0f)
