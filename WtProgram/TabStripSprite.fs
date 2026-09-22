@@ -208,6 +208,16 @@ type TabSprite<'id> = {
             // tab is told apart by its fill, and a hairline divides adjacent
             // plain tabs. An outline round the active tab made it read as a box
             // sitting on the title bar rather than one tab among several.
+            //
+            // No shadow or edge shading either, which was tried at some length.
+            // There is nowhere for it to go. Below the tabs is the window they
+            // belong to - and with a maximized window the strip is placed inside
+            // that window's title bar, so there is no surface beneath them at
+            // all - which makes anything drawn there a line ruled across the
+            // title bar rather than depth. Shading their own edges instead only
+            // moves the line inside the tab. The strip has one spare row at top
+            // and bottom and none at the sides, so there is no room for a
+            // gradient soft enough to read as anything else.
             if this.showLeftSeparator then
                 let inset = float32 this.size.height * 0.28f
                 let x = 0.0f
