@@ -107,16 +107,17 @@ type SettingsToggle() as this =
         path.AddArc(x+w-h,y,h,h,270.0f,180.0f)
         path.CloseFigure()
         let checkedColor = if SystemInformation.HighContrast then SystemColors.Highlight else accent
-        use fill = new SolidBrush(if not this.Enabled then palette.hover elif this.Checked then checkedColor elif hovering then palette.hover else this.BackColor)
-        use pen = new Pen(if SystemInformation.HighContrast then SystemColors.WindowText else neutral)
+        let offColor =
+            if SystemInformation.HighContrast then SystemColors.Control
+            elif dark then Color.FromRGB(if hovering then 0x555555 else 0x424242)
+            else Color.FromRGB(if hovering then 0xC7C7C7 else 0xD8D8D8)
+        use fill = new SolidBrush(if not this.Enabled then palette.hover elif this.Checked then checkedColor else offColor)
         e.Graphics.FillPath(fill,path)
-        e.Graphics.DrawPath(pen,path)
         let inset = float32(Dpi.scale 3)
         let diameter = h-inset*2.0f
         let left = if this.Checked then x+w-diameter-inset else x+inset
         use knob = new SolidBrush(if SystemInformation.HighContrast then (if this.Checked then SystemColors.HighlightText else SystemColors.WindowText) elif not this.Enabled then palette.muted elif this.Checked then Color.White else neutral)
         e.Graphics.FillEllipse(knob,left,y+inset,diameter,diameter)
-        if this.Focused && this.ShowFocusCues then ControlPaint.DrawFocusRectangle(e.Graphics,this.ClientRectangle)
 
 type SettingsThemeTile(mode:string) as this =
     inherit RadioButton()
@@ -179,19 +180,14 @@ type SettingsThemeTile(mode:string) as this =
             TextRenderer.DrawText(e.Graphics,this.Text,this.Font,label,(if this.Checked && this.Enabled then p.text else p.muted),
                 TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter)
             if this.Focused && this.ShowFocusCues then ControlPaint.DrawFocusRectangle(e.Graphics,label,p.text,this.BackColor)
-/// A regular popup window avoids the native combo's system-controlled opening animation.
+/// A menu-style popup keeps the settings window active when dismissed outside.
 type SettingsChoicePopup() as this =
-    inherit Form()
+    inherit ToolStripDropDown()
     do
-        this.FormBorderStyle <- FormBorderStyle.None
-        this.ShowInTaskbar <- false
-        this.StartPosition <- FormStartPosition.Manual
-        this.AutoScaleMode <- AutoScaleMode.None
-        this.DoubleBuffered <- true
+        this.AutoClose <- true
+        this.AutoSize <- false
         this.Padding <- Padding(Dpi.scale 6)
-    override this.OnDeactivate(e) =
-        base.OnDeactivate(e)
-        this.Close()
+        this.DropShadowEnabled <- false
     override this.OnSizeChanged(e) =
         base.OnSizeChanged(e)
         if this.Width>0 && this.Height>0 then
@@ -199,8 +195,11 @@ type SettingsChoicePopup() as this =
             let old = this.Region
             this.Region <- new Region(shape)
             if not(isNull old) then old.Dispose()
+    override this.OnPaintBackground(e) =
+        e.Graphics.Clear(this.BackColor)
     override this.OnPaint(e) =
-        base.OnPaint(e)
+        // ToolStripDropDown's renderer draws a light system border by default.
+        e.Graphics.Clear(this.BackColor)
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         use shape = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 10))
         use pen = new Pen((SettingsColors.current()).border)
@@ -212,6 +211,7 @@ type SettingsCombo(items:string[]) as this =
     let mutable selected = -1
     let mutable hovering = false
     let mutable popup : SettingsChoicePopup option = None
+    let mutable suppressNextClick = false
     do
         this.Size <- Size(Dpi.scale 180,Dpi.scale 34)
         this.FlatStyle <- FlatStyle.Flat
@@ -240,11 +240,16 @@ type SettingsCombo(items:string[]) as this =
                                    AccessibleName=this.AccessibleName)
             list.Items.AddRange(items |> Array.map box)
             let mutable hovered = -1
+            let mutable keyboardNavigation = false
+            let invalidateRow index =
+                if index>=0 && index<list.Items.Count then
+                    list.Invalidate(list.GetItemRectangle(index))
             list.DrawItem.Add(fun e ->
                 if e.Index>=0 then
                     use background = new SolidBrush(p.hover)
                     e.Graphics.FillRectangle(background,e.Bounds)
-                    let active = if hovered>=0 then e.Index=hovered else (e.State &&& DrawItemState.Selected)<>enum 0
+                    let active = e.Index=hovered ||
+                                 (keyboardNavigation && hovered<0 && (e.State &&& DrawItemState.Selected)<>enum 0)
                     if active then
                         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
                         use shape = SettingsShapes.rounded (RectangleF(float32 e.Bounds.X,float32 e.Bounds.Y,float32 e.Bounds.Width,float32 e.Bounds.Height)) (float32(Dpi.scale 6))
@@ -259,54 +264,82 @@ type SettingsCombo(items:string[]) as this =
                 let value = list.SelectedIndex
                 window.Close()
                 if commit && value>=0 then this.SelectedIndex <- value
-                if not this.IsDisposed then this.Focus() |> ignore
+                if commit && not this.IsDisposed then this.Focus() |> ignore
             list.MouseMove.Add(fun e ->
                 let index = list.IndexFromPoint(e.Location)
-                if index<>hovered then hovered <- index; list.Invalidate())
-            list.MouseLeave.Add(fun _ -> hovered <- -1; list.Invalidate())
+                if index<>hovered || keyboardNavigation then
+                    let previous = hovered
+                    hovered <- index
+                    keyboardNavigation <- false
+                    invalidateRow previous
+                    invalidateRow index
+                    invalidateRow list.SelectedIndex)
+            list.MouseLeave.Add(fun _ ->
+                let previous = hovered
+                hovered <- -1
+                invalidateRow previous)
             list.MouseClick.Add(fun e ->
                 let index = list.IndexFromPoint(e.Location)
                 if e.Button=MouseButtons.Left && index>=0 then
                     list.SelectedIndex <- index
                     finish true)
             list.KeyDown.Add(fun e ->
+                keyboardNavigation <- true
                 hovered <- -1
-                list.Invalidate()
+                invalidateRow list.SelectedIndex
                 if e.KeyCode=Keys.Enter || e.KeyCode=Keys.Space then finish true; e.SuppressKeyPress <- true
                 elif e.KeyCode=Keys.Escape then finish false; e.SuppressKeyPress <- true
                 elif e.KeyCode=Keys.Tab then
                     finish false
                     this.Parent.SelectNextControl(this,not e.Shift,true,true,true) |> ignore
                     e.SuppressKeyPress <- true)
-            window.Controls.Add(list)
+            let listHost = new ToolStripControlHost(list,AutoSize=false,Margin=Padding.Empty,Padding=Padding.Empty)
+            window.Items.Add(listHost) |> ignore
             let area = Screen.FromControl(this).WorkingArea
             let labelWidth = items |> Array.map(fun text -> TextRenderer.MeasureText(text,this.Font).Width) |> Array.max
             // Native handle creation can change item metrics at non-100% DPI.
             // Realize the list first, then size the client area using its final row height.
-            window.Handle |> ignore
             list.Handle |> ignore
             list.ItemHeight <- max (Dpi.scale 34) (list.Font.Height+Dpi.scale 12)
-            window.ClientSize <- Size(min area.Width (max this.Width (labelWidth+Dpi.scale 58)),
-                                      min (area.Height-Dpi.scale 12) (items.Length*list.ItemHeight+window.Padding.Vertical+2))
-            window.PerformLayout()
+            window.Size <- Size(min area.Width (max this.Width (labelWidth+Dpi.scale 58)),
+                                min (area.Height-Dpi.scale 12) (items.Length*list.ItemHeight+window.Padding.Vertical+2))
+            listHost.Size <- Size(window.Width-window.Padding.Horizontal,window.Height-window.Padding.Vertical)
+            list.Size <- listHost.Size
             list.SelectedIndex <- max 0 selected
             list.TopIndex <- 0
             let anchor = this.PointToScreen(Point(0,this.Height+Dpi.scale 4))
             let y = if anchor.Y+window.Height<=area.Bottom then anchor.Y else this.PointToScreen(Point.Empty).Y-window.Height-Dpi.scale 4
             window.Location <- Point(max area.Left (min (area.Right-window.Width) (anchor.X+this.Width-window.Width)),max area.Top y)
             popup <- Some window
-            window.Disposed.Add(fun _ -> popup <- None; if not this.IsDisposed then this.Invalidate())
+            window.Closed.Add(fun e ->
+                if e.CloseReason=ToolStripDropDownCloseReason.AppClicked &&
+                   this.RectangleToScreen(this.ClientRectangle).Contains(Cursor.Position) then
+                    suppressNextClick <- true
+                popup <- None
+                if not this.IsDisposed then this.Invalidate())
             Some window
         else None
     member this.OpenDropDown() =
         match this.CreateDropDown() with
         | Some window ->
-            window.Show(this.FindForm())
-            window.SelectNextControl(null,true,true,true,false) |> ignore
+            window.Show(window.Location)
+            let list = (window.Items.[0] :?> ToolStripControlHost).Control
+            list.Focus() |> ignore
         | None -> ()
+    override this.OnMouseDown(e) =
+        match popup with
+        | Some window when e.Button=MouseButtons.Left && window.Visible ->
+            suppressNextClick <- true
+            window.Close()
+        | _ -> ()
+        base.OnMouseDown(e)
     override this.OnClick(e) =
         base.OnClick(e)
-        this.OpenDropDown()
+        if suppressNextClick then suppressNextClick <- false
+        else
+            match popup with
+            | Some window when window.Visible -> window.Close()
+            | _ -> this.OpenDropDown()
     override this.OnKeyDown(e) =
         if e.KeyCode=Keys.F4 || (e.Alt && e.KeyCode=Keys.Down) then
             this.OpenDropDown()
@@ -320,7 +353,7 @@ type SettingsCombo(items:string[]) as this =
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         use shape = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 8))
         use fill = new SolidBrush(if hovering && this.Enabled then p.selection else p.hover)
-        use border = new Pen(if this.Focused then p.muted else p.border)
+        use border = new Pen(p.border)
         e.Graphics.FillPath(fill,shape)
         e.Graphics.DrawPath(border,shape)
         let foreground = if this.Enabled then p.text else p.muted
@@ -329,8 +362,6 @@ type SettingsCombo(items:string[]) as this =
         let x,y = this.Width-Dpi.scale 17,this.Height/2
         use arrow = new Pen(foreground,1.3f)
         e.Graphics.DrawLines(arrow,[|Point(x-Dpi.scale 4,y-Dpi.scale 2);Point(x,y+Dpi.scale 2);Point(x+Dpi.scale 4,y-Dpi.scale 2)|])
-        if this.Focused && this.ShowFocusCues then
-            ControlPaint.DrawFocusRectangle(e.Graphics,Rectangle(4,4,this.Width-8,this.Height-8),foreground,this.BackColor)
 
 /// A small themed scrollbar; keeps native white scrollbar chrome out of dark pages.
 type SettingsScrollBar() as this =

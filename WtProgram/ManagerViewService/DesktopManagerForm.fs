@@ -6,6 +6,17 @@ open System.Windows.Forms
 module SettingsWindowNative =
     [<System.Runtime.InteropServices.DllImport("user32.dll", CharSet=System.Runtime.InteropServices.CharSet.Unicode, EntryPoint="SendMessageW")>]
     extern IntPtr SetCue(IntPtr hwnd, int message, IntPtr wParam, string text)
+/// Panels and labels do not normally take focus when clicked, so clear search
+/// focus before dispatching a click elsewhere inside the settings window.
+type SettingsSearchFocusFilter(form:Form, search:TextBox) =
+    interface IMessageFilter with
+        member _.PreFilterMessage(message:byref<Message>) =
+            if (message.Msg=0x201 || message.Msg=0x204) &&
+               search.Focused && form.Bounds.Contains(Cursor.Position) then
+                let target = Control.FromHandle(message.HWnd)
+                if not (obj.ReferenceEquals(target,search)) then
+                    form.ActiveControl <- null
+            false
 /// Page metadata is available without constructing native controls or loading application data.
 type SettingsPageRegistration(key:SettingsViewType, title:string, create:unit -> ISettingsView) =
     let view = lazy(create())
@@ -34,14 +45,14 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
     let navigation = new Panel(Dock=DockStyle.Left,Width=Dpi.scale 208,Padding=Padding(Dpi.scale 12),Tag="sidebar")
     let links = new TableLayoutPanel(Dock=DockStyle.Top,AutoSize=true,ColumnCount=1)
     let body = new Panel(Dock=DockStyle.Fill)
-    let header = new Panel(Dock=DockStyle.Top,Height=Dpi.scale 86,Padding=Padding(Dpi.scale 24,Dpi.scale 20,Dpi.scale 24,0))
-    let title = new Label(Dock=DockStyle.Fill,Font=SettingsUi.titleFont,TextAlign=ContentAlignment.MiddleLeft,UseMnemonic=false)
     let host = new Panel(Dock=DockStyle.Fill)
     let search = new TextBox(Font=SettingsUi.bodyFont,BorderStyle=BorderStyle.None,
-                             AccessibleName=t "Search settings" "搜索设置")
+                             AccessibleName=t "Search settings" "搜索设置",Tag="search-input")
+    let searchFocusFilter = new SettingsSearchFocusFilter(form,search) :> IMessageFilter
     let searchResults = new Panel(Dock=DockStyle.Fill,Padding=Padding(Dpi.scale 32,Dpi.scale 8,Dpi.scale 32,Dpi.scale 16))
     let results = new ListBox(Dock=DockStyle.Fill,BorderStyle=BorderStyle.None,
-                             Font=SettingsUi.bodyFont,IntegralHeight=false,HorizontalScrollbar=true,
+                             Font=SettingsUi.bodyFont,IntegralHeight=false,
+                             DrawMode=DrawMode.OwnerDrawFixed,ItemHeight=Dpi.scale 58,Cursor=Cursors.Hand,
                              AccessibleName=t "Search results" "搜索结果")
     let emptyResults = new Label(Dock=DockStyle.Top,AutoSize=true,Tag="muted",
                                  Text=t "No matching settings." "没有找到匹配的设置。")
@@ -67,19 +78,21 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         match pages |> List.tryFind (fun page -> page.key=key) with
         | None -> ()
         | Some page ->
-            host.SuspendLayout()
-            host.Controls.Clear()
-            page.control.Dock <- DockStyle.Fill
-            host.Controls.Add(page.control)
-            title.Text <- captions key page.title
-            activePage <- key
-            for other,button in buttons do
-                let tag = if other.key=key then "nav-active" else "nav"
-                if string button.Tag<>tag then
-                    button.Tag <- tag
-                    SettingsUi.apply button
-            if themedPages.Add(key) then SettingsUi.apply page.control
-            host.ResumeLayout(true)
+            if activePage=key && page.isCreated && page.control.Parent=host && page.control.Visible then () else
+                host.SuspendLayout()
+                for control in host.Controls do control.Visible <- false
+                page.control.Dock <- DockStyle.Fill
+                if page.control.Parent<>host then host.Controls.Add(page.control)
+                page.control.Visible <- true
+                page.control.BringToFront()
+                activePage <- key
+                for other,button in buttons do
+                    let tag = if other.key=key then "nav-active" else "nav"
+                    if string button.Tag<>tag then
+                        button.Tag <- tag
+                        button.Invalidate()
+                if themedPages.Add(key) then SettingsUi.apply page.control
+                host.ResumeLayout(true)
     do
         form.AutoScaleMode <- AutoScaleMode.None
         form.StartPosition <- FormStartPosition.CenterScreen
@@ -89,17 +102,19 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         form.Size <- Size(Dpi.scale 980,Dpi.scale 760)
         use iconStream = typeof<DesktopManagerForm>.Assembly.GetManifestResourceStream("Bemo.ico")
         form.Icon <- new Icon(iconStream)
-        let searchBox = new Panel(Width=Dpi.scale 160,Height=Dpi.scale 40,
-                                  Padding=Padding(Dpi.scale 12,Dpi.scale 10,Dpi.scale 12,Dpi.scale 8),
-                                  Margin=Padding(0,Dpi.scale 4,0,Dpi.scale 8))
+        let searchBox = new Panel(Width=Dpi.scale 164,Height=Dpi.scale 36,
+                                  Padding=Padding(Dpi.scale 12,Dpi.scale 7,Dpi.scale 12,Dpi.scale 6),
+                                  Margin=Padding(0,Dpi.scale 4,0,Dpi.scale 8),Tag="search-box")
         search.Dock <- DockStyle.Top
         search.HandleCreated.Add(fun _ ->
-            SettingsWindowNative.SetCue(search.Handle,0x1501,IntPtr.Zero,t "Search settings" "搜索设置") |> ignore)
+            SettingsWindowNative.SetCue(search.Handle,0x1501,IntPtr.Zero,t "Search" "搜索") |> ignore)
         searchBox.Controls.Add(search)
         searchBox.Paint.Add(fun e ->
             e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
             use path = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(searchBox.Width-1),float32(searchBox.Height-1))) (float32(Dpi.scale 8))
+            use fill = new SolidBrush(searchBox.BackColor)
             use pen = new Pen((SettingsColors.current()).border)
+            e.Graphics.FillPath(fill,path)
             e.Graphics.DrawPath(pen,path))
         SettingsUi.add links searchBox
         let navigationTitle = new Label(Text=t "Settings" "设置",Font=SettingsUi.bodyFont,
@@ -123,14 +138,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         footer.Controls.Add(brand)
         navigation.Controls.Add(links)
         navigation.Controls.Add(footer)
-        let alignHeader() =
-            let width = max 120 (min (Dpi.scale 760) (body.ClientSize.Width-Dpi.scale 78))
-            let left = max (Dpi.scale 32) ((body.ClientSize.Width-Dpi.scale 14-width)/2)
-            header.Padding <- Padding(left,Dpi.scale 16,Dpi.scale 32,0)
-        body.SizeChanged.Add(fun _ -> alignHeader())
-        header.Controls.Add(title)
         body.Controls.Add(host)
-        body.Controls.Add(header)
         form.Controls.Add(body)
         form.Controls.Add(navigation)
 
@@ -138,24 +146,44 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         let mutable matches : SettingDefinition array = [||]
         searchResults.Controls.Add(results)
         searchResults.Controls.Add(emptyResults)
+        results.DrawItem.Add(fun e ->
+            if e.Index>=0 && e.Index<matches.Length then
+                let item = matches.[e.Index]
+                let p = SettingsColors.current()
+                let selected = (e.State &&& DrawItemState.Selected) <> enum 0
+                use background = new SolidBrush(if selected then p.selection else p.background)
+                e.Graphics.FillRectangle(background,e.Bounds)
+                let left = e.Bounds.Left+Dpi.scale 14
+                let right = e.Bounds.Width-Dpi.scale 28
+                TextRenderer.DrawText(e.Graphics,SettingsCatalog.localize item.caption,SettingsUi.rowFont,
+                    Rectangle(left,e.Bounds.Top+Dpi.scale 7,right,Dpi.scale 23),p.text,
+                    TextFormatFlags.NoPrefix ||| TextFormatFlags.EndEllipsis)
+                let description = SettingsCatalog.localize item.description
+                let context = captions item.page "" + (if description="" then "" else "  ·  " + description)
+                TextRenderer.DrawText(e.Graphics,context,SettingsUi.bodyFont,
+                    Rectangle(left,e.Bounds.Top+Dpi.scale 31,right,Dpi.scale 20),p.muted,
+                    TextFormatFlags.NoPrefix ||| TextFormatFlags.EndEllipsis)
+                use separator = new Pen(p.border)
+                e.Graphics.DrawLine(separator,e.Bounds.Left,e.Bounds.Bottom-1,e.Bounds.Right,e.Bounds.Bottom-1))
         let updateSearch() =
             let query = search.Text.Trim()
             if query = "" then
-                if searchResults.Parent = host then select activePage
+                if searchResults.Parent = host && searchResults.Visible then select activePage
             else
                 matches <- entries |> Array.filter(SettingsCatalog.matches query)
                 results.BeginUpdate()
                 try
                     results.Items.Clear()
-                    results.Items.AddRange(matches |> Array.map(fun item -> box(captions item.page ""+" · "+SettingsCatalog.localize item.caption)))
+                    results.Items.AddRange(matches |> Array.map(fun item -> box(SettingsCatalog.localize item.caption)))
                 finally results.EndUpdate()
                 emptyResults.Visible <- matches.Length=0
                 results.Visible <- matches.Length>0
-                if searchResults.Parent <> host then
+                if searchResults.Parent <> host || not searchResults.Visible then
                     host.SuspendLayout()
-                    host.Controls.Clear()
-                    host.Controls.Add(searchResults)
-                    title.Text <- t "Search settings" "搜索设置"
+                    for control in host.Controls do control.Visible <- false
+                    if searchResults.Parent<>host then host.Controls.Add(searchResults)
+                    searchResults.Visible <- true
+                    searchResults.BringToFront()
                     SettingsUi.apply searchResults
                     host.ResumeLayout(true)
         let navigateResult() =
@@ -180,12 +208,13 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         results.KeyDown.Add(fun e ->
             if e.KeyCode=Keys.Enter then navigateResult(); e.SuppressKeyPress <- true)
         search.KeyDown.Add(fun e ->
-            if e.KeyCode=Keys.Down && results.Items.Count>0 && searchResults.Parent=host then
+            if e.KeyCode=Keys.Down && results.Items.Count>0 && searchResults.Parent=host && searchResults.Visible then
                 results.Focus() |> ignore
                 results.SelectedIndex <- 0
                 e.SuppressKeyPress <- true)
         search.TextChanged.Add(fun _ -> if not suppressSearch then updateSearch())
         form.KeyPreview <- true
+        Application.AddMessageFilter(searchFocusFilter)
         form.KeyDown.Add(fun e ->
             if e.Control && e.KeyCode=Keys.F then
                 search.Focus() |> ignore
@@ -196,6 +225,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 e.SuppressKeyPress <- true)
         select (if pages |> List.exists (fun page -> page.key=GeneralSettings) then GeneralSettings else pages.Head.key)
         SettingsUi.apply form
+        form.HandleCreated.Add(fun _ -> SettingsUi.apply form)
         let mutable lastPalette = SettingsUi.palette()
         ThemeBinding.watch form (fun () ->
             let palette = SettingsUi.palette()
@@ -203,14 +233,22 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 lastPalette <- palette
                 themedPages.Clear()
                 SettingsUi.apply form
-                if searchResults.Parent <> host then themedPages.Add(activePage) |> ignore)
+                if searchResults.Parent <> host || not searchResults.Visible then themedPages.Add(activePage) |> ignore)
         form.FormClosed.Add(fun _ ->
+            Application.RemoveMessageFilter(searchFocusFilter)
             searchResults.Dispose()
             match views with
             | Some supplied -> for page in supplied do page.control.Dispose()
             | None ->
                 for page in pages do
                     if page.isCreated then page.control.Dispose())
-    member _.show() = form.Show(); form.Activate()
-    member _.showView(view) = select view; form.Show(); form.Activate()
+    member _.show() =
+        if form.WindowState=FormWindowState.Minimized then form.WindowState <- FormWindowState.Normal
+        form.Show()
+        form.Activate()
+    member _.showView(view) =
+        select view
+        if form.WindowState=FormWindowState.Minimized then form.WindowState <- FormWindowState.Normal
+        form.Show()
+        form.Activate()
     member _.window = form

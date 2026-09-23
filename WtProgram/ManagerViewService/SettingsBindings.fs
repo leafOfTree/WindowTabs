@@ -12,22 +12,9 @@ module SettingsBindings =
         check.CheckedChanged.Add(fun _ -> Services.settings.setValue(key,box check.Checked))
         check
 
-    let themeChoice() =
-        let modes = [|SystemTheme;LightTheme;DarkTheme|]
-        let combo = choice [|text "Use system setting" "跟随系统";text "Light" "浅色";text "Dark" "深色"|]
-        let mutable refreshing = false
-        let refresh() =
-            refreshing <- true
-            combo.SelectedIndex <- modes |> Array.findIndex ((=) Services.settings.appearance.mode)
-            refreshing <- false
-        refresh()
-        combo.SelectedIndexChanged.Add(fun _ ->
-            if not refreshing && combo.SelectedIndex >= 0 then
-                Services.settings.updateAppearance(fun s -> {s with mode=modes.[combo.SelectedIndex]}))
-        ThemeBinding.watch combo refresh
-        combo
     let themeTiles() =
         let table = new TableLayoutPanel(ColumnCount=3,RowCount=1,Height=Dpi.scale 158,Margin=Padding(0,0,0,Dpi.scale 12))
+        table.Name <- "theme"
         for _ in 1..3 do table.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f/3.0f)) |> ignore
         let mutable refreshing = false
         let choices =

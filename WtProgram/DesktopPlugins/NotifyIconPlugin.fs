@@ -39,7 +39,8 @@ type NotifyIconPlugin() as this =
         notifyIcon.Text <- "WindowTabs (version " + Services.program.version + ")"
         notifyIcon.Icon <- iconForTaskbar()
         notifyIcon.ContextMenu <- new ContextMenu()
-        notifyIcon.DoubleClick.Add <| fun _ -> Services.managerView.show()
+        notifyIcon.MouseClick.Add <| fun e ->
+            if e.Button = MouseButtons.Left then Services.managerView.show()
         // Switching between light and dark mode does not restart the process,
         // so the icon has to be replaced while it is on screen.
         SystemEvents.UserPreferenceChanged.Add <| fun e ->

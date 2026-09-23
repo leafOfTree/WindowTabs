@@ -12,7 +12,7 @@ module SettingsCatalog =
     let localize (en,zh) =
         if Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName="zh" then zh else en
     let all = [
-        { id="theme"; page=GeneralSettings; caption=("Theme","主题"); description=("Applies to your tabs and the settings window.","同时应用于标签条和设置窗口。"); keywords="theme system light dark 系统 浅色 深色" }
+        { id="theme"; page=AppearanceSettings; caption=("Theme","主题"); description=("Choose system, light, or dark mode.","选择跟随系统、浅色或深色模式。"); keywords="theme system light dark 系统 浅色 深色" }
         { id="launch-at-sign-in"; page=GeneralSettings; caption=("Launch at sign-in","登录时启动"); description=("Keep WindowTabs available when Windows starts.","登录 Windows 后自动运行 WindowTabs。"); keywords="launch-at-sign-in startup autostart 开机 自启动" }
         { id="enable-tabs-for-new-apps"; page=GeneralSettings; caption=("Enable tabs for new apps","为新应用启用标签"); description=("Individual overrides are available in App rules.","可在“应用规则”中单独调整每个应用。"); keywords="enable-tabs-for-new-apps" }
         { id="dim-inactive-groups"; page=GeneralSettings; caption=("Dim inactive groups","淡化非活动分组"); description=("Reduce the opacity of tabs outside the active group.","降低非活动分组标签的透明度。"); keywords="dim-inactive-groups" }

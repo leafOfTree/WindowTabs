@@ -29,7 +29,7 @@ module SettingsUi =
             elif isNull item.Parent then false else inSidebar item.Parent
         let background =
             if tag="card" then p.background
-            elif inCard control || tag="surface" then p.surface
+            elif inCard control || tag="surface" || tag="search-box" || tag="search-input" then p.surface
             elif inSidebar control then
                 if SystemInformation.HighContrast then p.background
                 elif darkMode then Color.FromRGB(0x1F2023) else Color.FromRGB(0xF1F1F1)
@@ -48,7 +48,7 @@ module SettingsUi =
                 button.BackColor <- if tag = "nav-active" then p.selection else p.background
                 button.ForeColor <- if tag = "nav-active" && SystemInformation.HighContrast then SystemColors.HighlightText else p.text
             else button.BackColor <- p.surface
-        | :? TextBoxBase as editor -> editor.BackColor <- p.surface
+        | :? TextBoxBase as editor -> editor.BackColor <- if tag="search-input" then background else p.surface
         | :? NumericUpDown as editor -> editor.BackColor <- p.surface
         | :? ComboBox as editor -> editor.BackColor <- p.surface
         | :? ToolStrip as strip ->
