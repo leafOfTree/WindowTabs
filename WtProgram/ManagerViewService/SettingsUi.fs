@@ -27,7 +27,7 @@ module SettingsUi =
             if tag="surface" || tag="search-box" || tag="search-input" then p.surface
             elif inSidebar control then
                 if SystemInformation.HighContrast then p.background
-                elif darkMode then Color.FromRGB(0x161615) else Color.FromRGB(0xF2F1ED)
+                elif darkMode then Color.FromRGB(0x161615) else Color.FromRGB(0xFCFCFB)
             else p.background
         if tag <> "color-swatch" then
             control.BackColor <- background

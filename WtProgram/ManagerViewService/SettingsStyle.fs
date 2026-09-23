@@ -19,9 +19,9 @@ module SettingsColors =
               muted=Color.FromRGB(0x8C8A84); border=Color.FromRGB(0x30302E); hover=Color.FromRGB(0x30302F)
               accent=Color.FromRGB(0x3B82F6); selection=Color.FromRGB(0x373735) }
         else
-            { background=Color.FromRGB(0xFAF9F6); surface=Color.White; text=Color.FromRGB(0x262624)
-              muted=Color.FromRGB(0x73716B); border=Color.FromRGB(0xE5E3DE); hover=Color.FromRGB(0xEEECE7)
-              accent=Color.FromRGB(0x0067C0); selection=Color.FromRGB(0xE4E2DC) }
+            { background=Color.White; surface=Color.White; text=Color.FromRGB(0x191919)
+              muted=Color.FromRGB(0x898883); border=Color.FromRGB(0xE5E5E5); hover=Color.FromRGB(0xF3F3F3)
+              accent=Color.FromRGB(0x2D79D7); selection=Color.FromRGB(0xE3E3E3) }
 
 module SettingsShapes =
     let rounded (rect:RectangleF) radius =
