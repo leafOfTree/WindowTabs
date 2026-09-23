@@ -4,6 +4,27 @@ open System.Drawing
 open System.Windows.Forms
 open System.Runtime.InteropServices
 
+type SettingsSearchBox() as this =
+    inherit Panel()
+    do
+        this.DoubleBuffered <- true
+        this.ResizeRedraw <- true
+        this.Tag <- "search-box"
+    override this.OnPaintBackground(e) =
+        let p = SettingsColors.current()
+        e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
+        if this.Width>2 && this.Height>2 then
+            e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+            use path = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 8))
+            use fill = new SolidBrush(p.surface)
+            let border =
+                if SystemInformation.HighContrast then p.border
+                elif ThemeService.currentIsDark() then Color.FromRGB(0x3B3B39)
+                else Color.FromRGB(0xD6D6D3)
+            use pen = new Pen(border)
+            e.Graphics.FillPath(fill,path)
+            e.Graphics.DrawPath(pen,path)
+
 type SettingsCard() as this =
     inherit TableLayoutPanel()
     do
@@ -116,7 +137,7 @@ type SettingsThemeTile(mode:string) as this =
         this.FlatStyle <- FlatStyle.Flat
         this.FlatAppearance.BorderSize <- 0
         this.Dock <- DockStyle.Fill
-        this.Height <- Dpi.scale 158
+        this.Height <- Dpi.scale 92
         this.Margin <- Padding(Dpi.scale 4,0,Dpi.scale 4,0)
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
     override this.OnCheckedChanged(e) = base.OnCheckedChanged(e); this.Invalidate()
@@ -128,6 +149,7 @@ type SettingsThemeTile(mode:string) as this =
         if bounds.Width>0.0f && bounds.Height>0.0f then
             use shape = SettingsShapes.rounded bounds (float32(Dpi.scale 10))
             let drawMini dark =
+                let mini value = float32(Dpi.scale value) * bounds.Height / float32(Dpi.scale 124)
                 let colors = if dark then Theme.dark else Theme.light
                 let background = if dark then Color.FromRGB(0x373737) else Color.FromRGB(0xE4E4E4)
                 use bg = new SolidBrush(background)
@@ -139,18 +161,18 @@ type SettingsThemeTile(mode:string) as this =
                 use window = SettingsShapes.rounded (RectangleF(left,top,width,height)) (float32(Dpi.scale 7))
                 use body = new SolidBrush(if dark then Color.FromRGB(0x242424) else Color.White)
                 e.Graphics.FillPath(body,window)
-                let tabY = top + float32(Dpi.scale 8)
+                let tabY = top + mini 8
                 let tabWidth = (width-float32(Dpi.scale 14))/3.0f
                 for i in 0..2 do
                     use brush = new SolidBrush(if i=0 then colors.tabActiveBgColor elif i=1 then colors.tabHighlightBgColor else colors.tabNormalBgColor)
                     let x = left + float32(Dpi.scale 7) + float32 i*tabWidth
-                    use tab = SettingsShapes.rounded (RectangleF(x,tabY,tabWidth-1.0f,float32(Dpi.scale 16))) (float32(Dpi.scale 3))
+                    use tab = SettingsShapes.rounded (RectangleF(x,tabY,tabWidth-1.0f,mini 16)) (mini 3)
                     e.Graphics.FillPath(brush,tab)
                     use text = new Pen(colors.tabTextColor,2.0f)
-                    e.Graphics.DrawLine(text,x+5.0f,tabY+8.0f,x+tabWidth-6.0f,tabY+8.0f)
-                use line = new Pen((if dark then Color.FromRGB(0x555555) else Color.FromRGB(0xD7D7D7)),float32(Dpi.scale 4))
+                    e.Graphics.DrawLine(text,x+5.0f,tabY+mini 8,x+tabWidth-6.0f,tabY+mini 8)
+                use line = new Pen((if dark then Color.FromRGB(0x555555) else Color.FromRGB(0xD7D7D7)),mini 4)
                 for i in 0..2 do
-                    let y = top + float32(Dpi.scale (36+i*14))
+                    let y = top + mini (36+i*14)
                     e.Graphics.DrawLine(line,left+float32(Dpi.scale 12),y,left+width*(if i=1 then 0.64f else 0.82f),y)
             let state = e.Graphics.Save()
             e.Graphics.SetClip(shape)

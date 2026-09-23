@@ -13,8 +13,11 @@ module SettingsBindings =
         check
 
     let themeTiles() =
-        let table = new TableLayoutPanel(ColumnCount=3,RowCount=1,Height=Dpi.scale 158,Margin=Padding(0,0,0,Dpi.scale 12))
+        let table = new TableLayoutPanel(ColumnCount=3,RowCount=1,Height=Dpi.scale 92,
+                                        MinimumSize=Size(0,Dpi.scale 92),MaximumSize=Size(Dpi.scale 450,Dpi.scale 92),
+                                        Margin=Padding(0,0,0,Dpi.scale 8))
         table.Name <- "theme"
+        table.RowStyles.Add(RowStyle(SizeType.Absolute,float32(Dpi.scale 92))) |> ignore
         for _ in 1..3 do table.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f/3.0f)) |> ignore
         let mutable refreshing = false
         let choices =

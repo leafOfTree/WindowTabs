@@ -26,7 +26,6 @@ module SettingsCatalog =
         { id="switch-tabs-by-number"; page=HotKeySettings; caption=("Switch tabs by number","按数字切换标签"); description=("Use Ctrl + number to select a tab. Restart WindowTabs after changing this option.","使用 Ctrl + 数字选择标签。修改此项后需重启 WindowTabs。"); keywords="switch-tabs-by-number" }
         { id="activate-on-hover"; page=HotKeySettings; caption=("Activate on hover","悬停时激活"); description=("Switch windows when the pointer rests on a tab.","鼠标悬停在标签上时切换窗口。"); keywords="activate-on-hover" }
         { id="shift-scroll"; page=HotKeySettings; caption=("Shift + scroll","Shift + 滚轮"); description=("Hold Shift and scroll over a grouped window to switch tabs.","在分组窗口内按住 Shift 并滚动滚轮以切换标签。"); keywords="shift-scroll" }
-        { id="use-custom-palettes"; page=AppearanceSettings; caption=("Use custom palettes","使用自定义配色"); description=("Keep separate light and dark colours. Turning this off keeps your saved palettes.","分别保存浅色和深色方案；关闭此选项不会删除自定义颜色。"); keywords="use-custom-palettes" }
         { id="tabTextColor"; page=AppearanceSettings; caption=("Text and close button","文字与关闭按钮"); description=("",""); keywords="tabTextColor" }
         { id="tabNormalBgColor"; page=AppearanceSettings; caption=("Inactive tab","非活动标签"); description=("",""); keywords="tabNormalBgColor" }
         { id="tabActiveBgColor"; page=AppearanceSettings; caption=("Active tab","活动标签"); description=("",""); keywords="tabActiveBgColor" }

@@ -102,25 +102,14 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         form.Size <- Size(Dpi.scale 980,Dpi.scale 760)
         use iconStream = typeof<DesktopManagerForm>.Assembly.GetManifestResourceStream("Bemo.ico")
         form.Icon <- new Icon(iconStream)
-        let searchBox = new Panel(Width=Dpi.scale 164,Height=Dpi.scale 36,
+        let searchBox = new SettingsSearchBox(Width=Dpi.scale 164,Height=Dpi.scale 36,
                                   Padding=Padding(Dpi.scale 12,Dpi.scale 7,Dpi.scale 12,Dpi.scale 6),
-                                  Margin=Padding(0,Dpi.scale 4,0,Dpi.scale 8),Tag="search-box")
+                                  Margin=Padding(0,Dpi.scale 4,0,Dpi.scale 16))
         search.Dock <- DockStyle.Top
         search.HandleCreated.Add(fun _ ->
             SettingsWindowNative.SetCue(search.Handle,0x1501,IntPtr.Zero,t "Search" "搜索") |> ignore)
         searchBox.Controls.Add(search)
-        searchBox.Paint.Add(fun e ->
-            e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-            use path = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(searchBox.Width-1),float32(searchBox.Height-1))) (float32(Dpi.scale 8))
-            use fill = new SolidBrush(searchBox.BackColor)
-            use pen = new Pen((SettingsColors.current()).border)
-            e.Graphics.FillPath(fill,path)
-            e.Graphics.DrawPath(pen,path))
         SettingsUi.add links searchBox
-        let navigationTitle = new Label(Text=t "Settings" "设置",Font=SettingsUi.bodyFont,
-                                        AutoSize=true,Dock=DockStyle.Top,Tag="muted")
-        navigationTitle.Margin <- Padding(Dpi.scale 12,Dpi.scale 20,0,Dpi.scale 12)
-        SettingsUi.add links navigationTitle
         for page,button in buttons do
             SettingsUi.add links button
             button.Click.Add(fun _ ->

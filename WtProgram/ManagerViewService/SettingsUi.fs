@@ -54,6 +54,7 @@ module SettingsUi =
         | _ -> ()
         for child in control.Controls do applyPalette p darkMode child
         match control with
+        | :? SettingsInputFrame as editor -> editor.ApplyTheme()
         | :? Form as form when form.IsHandleCreated ->
             try
                 let mutable dark = if darkMode && not SystemInformation.HighContrast then 1 else 0
@@ -71,7 +72,7 @@ module SettingsUi =
         applyPalette (palette()) (ThemeService.currentIsDark()) control
 
     let button caption =
-        let button = new Button(Text=caption, AutoSize=true, MinimumSize=Size(Dpi.scale 100,Dpi.scale 32))
+        let button = new SettingsActionButton(Text=caption, AutoSize=true, MinimumSize=Size(Dpi.scale 100,Dpi.scale 34))
         button.Padding <- Padding(Dpi.scale 10,Dpi.scale 3,Dpi.scale 10,Dpi.scale 3)
         button.Font <- bodyFont
         button
@@ -103,15 +104,16 @@ module SettingsUi =
 
     let row (table:TableLayoutPanel) caption description (editor:Control) =
         let row = new TableLayoutPanel(AutoSize=true,ColumnCount=2,Padding=Padding(0,Dpi.scale 8,0,Dpi.scale 8),Margin=Padding.Empty)
-        row.MinimumSize <- Size(0,Dpi.scale 56)
+        row.MinimumSize <- Size(0,Dpi.scale (if String.IsNullOrWhiteSpace(description) then 44 else 56))
         row.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
         row.ColumnStyles.Add(ColumnStyle(SizeType.Absolute,float32(Dpi.scale 194))) |> ignore
-        let labels = new TableLayoutPanel(AutoSize=true,ColumnCount=1,Dock=DockStyle.Fill,Margin=Padding(0,0,Dpi.scale 16,0))
+        let labels = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=1,
+                                         Anchor=(AnchorStyles.Left ||| AnchorStyles.Right),Margin=Padding(0,0,Dpi.scale 16,0))
         labels.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
         let name = new Label(Text=caption,AutoSize=true,Dock=DockStyle.Fill,Font=rowFont,UseMnemonic=false,Margin=Padding.Empty)
         let detail = new Label(Text=description,AutoSize=true,Dock=DockStyle.Fill,Tag="muted",UseMnemonic=false,Margin=Padding(0,Dpi.scale 4,0,0))
         labels.Controls.Add(name,0,0)
-        if description <> "" then labels.Controls.Add(detail,0,1)
+        if not (String.IsNullOrWhiteSpace(description)) then labels.Controls.Add(detail,0,1)
         labels.SizeChanged.Add(fun _ ->
             let width=max 40 (labels.ClientSize.Width-Dpi.scale 8)
             name.MaximumSize <- Size(width,0)

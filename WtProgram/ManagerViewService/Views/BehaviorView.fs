@@ -10,7 +10,7 @@ type HotKeyView() =
         editor.control.Width <- Dpi.scale 180
         editor.value <- Services.program.getHotKey(key)
         editor.changed.Add(fun () -> Services.program.setHotKey key (unbox<int> editor.value))
-        editor.control
+        new SettingsTextInput(editor.control,Font=SettingsUi.bodyFont) :> Control
     do
         SettingsUi.note table (t "Select a shortcut field and press your preferred key combination." "选中快捷键输入框，然后按下希望使用的组合键。")
         let keyboard = SettingsUi.sectionCard table (t "Keyboard" "键盘")

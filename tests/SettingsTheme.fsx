@@ -32,6 +32,14 @@ let main() =
         check (settings.settings.appearance.mode=SystemTheme) "New installs must follow system"
         check (not settings.settings.appearance.useCustomColors) "Default colours misclassified as custom"
         check (Theme.sameColors settings.defaultTabAppearance Theme.light) "KnownColor/ARGB comparison failed"
+        for palette in [Theme.darkPalette;Theme.bluePalette] do
+            check (palette.tabActiveBgColor.GetBrightness()<palette.tabHighlightBgColor.GetBrightness() &&
+                   palette.tabHighlightBgColor.GetBrightness()<palette.tabNormalBgColor.GetBrightness()) "Dark states should become lighter from active to hovered to inactive"
+        let oldDark = {Theme.darkPalette with tabNormalBgColor=Color.FromArgb(0x20,0x20,0x20);tabActiveBgColor=Color.FromArgb(0x45,0x45,0x45)}
+        let oldBlue = {Theme.bluePalette with tabNormalBgColor=Color.FromArgb(0x11,0x18,0x27);tabHighlightBgColor=Color.FromArgb(0x4B,0x59,0x70);tabActiveBgColor=Color.FromArgb(0x27,0x35,0x48)}
+        check (Theme.upgradeDarkPalette oldDark=Theme.darkPalette && Theme.upgradeDarkPalette oldBlue=Theme.bluePalette) "Old preset migration failed"
+        let userPalette = {oldDark with tabTextColor=Color.Coral}
+        check (Theme.upgradeDarkPalette userPalette=userPalette) "Preset migration replaced user colours"
         let geometry = {Theme.light with tabHeight=37;tabMaxWidth=281;tabOverlap= -7;tabIndentNormal=11}
         let custom = {Theme.light with tabActiveBgColor=Color.Purple}
         for mode,systemDark,expected in ["system",true,Theme.dark;"system",false,Theme.light;"light",true,Theme.light;"dark",false,Theme.dark] do
@@ -174,17 +182,20 @@ let main() =
         check (form.BackColor=SettingsUi.palette().background) "Live theme update missed form"
         snapshot "settings-general-dark"
         // Construct the real popup without showing/activating a window on the user's desktop.
-        let choice = controls general.control |> Seq.choose(function :? SettingsCombo as c when c.Name="theme" -> Some c | _ -> None) |> Seq.head
+        let choice = controls general.control |> Seq.choose(function :? SettingsCombo as c when c.Name="tab-alignment" -> Some c | _ -> None) |> Seq.head
+        choice.SelectedIndex <- 0
         let mutable choicesChanged = 0
         choice.SelectedIndexChanged.Add(fun _ -> choicesChanged <- choicesChanged+1)
         let popup = choice.CreateDropDown() |> Option.get
-        popup.Location <- Point(-12000,-12000)
-        WinUserApi.ShowWindow(popup.Handle,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
-        Application.DoEvents()
+        let showPopup (popup:SettingsChoicePopup) =
+            popup.Show(form,Point.Empty)
+            popup.Location <- Point(-12000,-12000)
+            Application.DoEvents()
+        showPopup popup
         use popupBitmap = new Bitmap(popup.Width,popup.Height)
         popup.DrawToBitmap(popupBitmap,Rectangle(Point.Empty,popupBitmap.Size))
         popupBitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-choice-dark.png"),ImageFormat.Png)
-        let menu = popup.Controls.[0] :?> ListBox
+        let menu = (popup.Items.[0] :?> ToolStripControlHost).Control :?> ListBox
         check (menu.ClientSize.Height >= menu.Items.Count*menu.ItemHeight) "Choice menu clips rows and needs a scrollbar"
         check (menu.TopIndex=0) "Choice menu starts scrolled"
         let selectedBeforeHover = menu.SelectedIndex
@@ -194,15 +205,20 @@ let main() =
         menu.SelectedIndex <- 1
         let keyDown = typeof<ListBox>.GetMethod("OnKeyDown",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic)
         keyDown.Invoke(menu,[|box(new KeyEventArgs(Keys.Enter))|]) |> ignore
-        check (choice.SelectedIndex=1 && choicesChanged=1 && popup.IsDisposed) "Choice did not commit once and close"
+        check (choice.SelectedIndex=1 && choicesChanged=1 && not popup.Visible) "Choice did not commit once and close"
+        popup.Dispose()
         let cancelPopup = choice.CreateDropDown() |> Option.get
-        let cancelMenu = cancelPopup.Controls.[0] :?> ListBox
+        showPopup cancelPopup
+        let cancelMenu = (cancelPopup.Items.[0] :?> ToolStripControlHost).Control :?> ListBox
         cancelMenu.SelectedIndex <- 2
         keyDown.Invoke(cancelMenu,[|box(new KeyEventArgs(Keys.Escape))|]) |> ignore
-        check (choice.SelectedIndex=1 && choicesChanged=1 && cancelPopup.IsDisposed) "Esc committed a choice"
+        check (choice.SelectedIndex=1 && choicesChanged=1 && not cancelPopup.Visible) "Esc committed a choice"
+        cancelPopup.Dispose()
         let dismissPopup = choice.CreateDropDown() |> Option.get
-        typeof<SettingsChoicePopup>.GetMethod("OnDeactivate",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public).Invoke(dismissPopup,[|box EventArgs.Empty|]) |> ignore
-        check dismissPopup.IsDisposed "Deactivation did not close the choice menu"
+        showPopup dismissPopup
+        dismissPopup.Close(ToolStripDropDownCloseReason.AppClicked)
+        check (not dismissPopup.Visible && form.Visible) "Outside dismissal hid the settings window"
+        dismissPopup.Dispose()
         choice.Enabled <- false
         check (choice.CreateDropDown().IsNone) "Disabled choice opens a menu"
         choice.Enabled <- true
@@ -212,11 +228,11 @@ let main() =
         search.Text <- "Theme"
         Application.DoEvents()
         let result = controls form |> Seq.choose(function :? ListBox as b when b.AccessibleName="Search results" -> Some b | _ -> None) |> Seq.head
-        result.SelectedIndex <- result.Items.IndexOf("General · Theme")
+        result.SelectedIndex <- result.Items.IndexOf("Theme")
         snapshot "settings-search-dark"
         typeof<ListBox>.GetMethod("OnKeyDown",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).Invoke(result,[|box(new KeyEventArgs(Keys.Enter))|]) |> ignore
         Application.DoEvents()
-        check (search.Text="" && general.control.Visible) "Search result did not navigate to the setting"
+        check (search.Text="" && appearance.control.Visible) "Search result did not navigate to the setting"
         let searchTime = Diagnostics.Stopwatch.StartNew()
         for i in 1..50 do
             search.Text <- if i%2=0 then "Theme" else "Tab"
@@ -234,6 +250,7 @@ let main() =
         Application.DoEvents()
         let tiles = controls appearance.control |> Seq.choose (function :? SettingsThemeTile as tile -> Some tile | _ -> None) |> Seq.toList
         check (tiles.Length=3) "Missing theme preview choices"
+        check (tiles |> List.forall(fun tile -> tile.Visible && tile.Height>=Dpi.scale 90)) "Theme choices collapsed"
         let lightTile = tiles |> List.find (fun tile -> tile.Text="Light")
         lightTile.Checked <- true
         Application.DoEvents()
@@ -303,7 +320,7 @@ let main() =
         check (appearanceLoads=1) "Search navigation did not realize its page"
         let heightEditor = lazyForm.Controls.Find("tabHeight",true) |> Array.head
         // The off-screen form is intentionally not activated: inspect its selected control, not OS focus.
-        check (obj.ReferenceEquals(lazyForm.ActiveControl,heightEditor)) "Search did not select the exact setting"
+        check (obj.ReferenceEquals(lazyForm.ActiveControl,heightEditor) || heightEditor.Contains(lazyForm.ActiveControl)) "Search did not select the exact setting"
         let targetPage = heightEditor.Parent
         let location = lazyForm.PointToClient(heightEditor.PointToScreen(Point.Empty))
         check (location.Y>=0 && location.Y+heightEditor.Height<=lazyForm.ClientSize.Height) "Search target remains below the viewport"

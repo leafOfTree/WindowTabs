@@ -9,16 +9,21 @@ type AppearanceView() =
     let mutable refreshing = false
     let mutable editingDark = ThemeService.currentIsDark()
     let update = Services.settings.updateAppearance
-    let custom = new SettingsToggle()
     let paletteTitle = new Label(AutoSize=true,Font=SettingsUi.sectionFont,
-                                 Margin=Padding(0,Dpi.scale 24,0,Dpi.scale 12))
+                                 Margin=Padding(0,Dpi.scale 16,0,Dpi.scale 8))
     let blue = SettingsUi.button (t "Use dark blue palette" "使用深蓝配色")
     let paletteForProfile (s:AppearancePreferences) = if editingDark then s.darkPalette else s.lightPalette
     let updatePalette change =
         update(fun s ->
-            if editingDark then {s with darkPalette=change s.darkPalette}
-            else {s with lightPalette=change s.lightPalette})
-    let preview = new Panel(Height=Dpi.scale 100)
+            let current =
+                if s.useCustomColors then paletteForProfile s
+                elif editingDark then Theme.darkPalette else Theme.lightPalette
+            let next = change current
+            if next=current then s
+            elif editingDark then {s with darkPalette=next;useCustomColors=true}
+            else {s with lightPalette=next;useCustomColors=true})
+    let preview = new Panel(Height=Dpi.scale 145,Margin=Padding(0,Dpi.scale 4,0,0),
+                            AccessibleName=t "File Explorer theme preview" "文件资源管理器主题预览")
     let colorFields : (string * (TabPalette -> Color) * (Color -> TabPalette -> TabPalette)) list = [
         "tabTextColor",(fun p -> p.tabTextColor),(fun v p -> {p with tabTextColor=v})
         "tabNormalBgColor",(fun p -> p.tabNormalBgColor),(fun v p -> {p with tabNormalBgColor=v})
@@ -26,7 +31,7 @@ type AppearanceView() =
         "tabHighlightBgColor",(fun p -> p.tabHighlightBgColor),(fun v p -> {p with tabHighlightBgColor=v})
         "tabBorderColor",(fun p -> p.tabBorderColor),(fun v p -> {p with tabBorderColor=v})
         "tabFlashBgColor",(fun p -> p.tabFlashBgColor),(fun v p -> {p with tabFlashBgColor=v}) ]
-    let colors = colorFields |> List.map(fun (key,get,set) -> key,get,set,(ColorEditor() :> IPropEditor))
+    let colors = colorFields |> List.map(fun (key,get,set) -> key,get,set,(new SettingsColorInput(Font=SettingsUi.bodyFont) :> IPropEditor))
     let dimensionFields : (string * int * int * (TabGeometry -> int) * (int -> TabGeometry -> TabGeometry)) list = [
         "tabHeight",12,120,(fun g -> g.height),(fun v g -> {g with height=v})
         "tabMaxWidth",60,1000,(fun g -> g.maxWidth),(fun v g -> {g with maxWidth=v})
@@ -34,7 +39,7 @@ type AppearanceView() =
         "tabIndentNormal",0,1000,(fun g -> g.indentNormal),(fun v g -> {g with indentNormal=v})
         "tabIndentFlipped",0,1000,(fun g -> g.indentFlipped),(fun v g -> {g with indentFlipped=v}) ]
     let dimensions = dimensionFields |> List.map(fun (key,minValue,maxValue,get,set) ->
-        key,get,set,new NumericUpDown(Minimum=decimal minValue,Maximum=decimal maxValue,Width=Dpi.scale 120))
+        key,get,set,new SettingsNumberInput(Minimum=decimal minValue,Maximum=decimal maxValue,Font=SettingsUi.bodyFont))
     let refresh() =
         refreshing <- true
         try
@@ -44,13 +49,11 @@ type AppearanceView() =
                 else t "Light theme · Tab colours" "浅色主题 · 标签配色"
             blue.Visible <- editingDark
             let settings = Services.settings.appearance
-            custom.Checked <- settings.useCustomColors
             let palette =
-                if custom.Checked then paletteForProfile settings
+                if settings.useCustomColors then paletteForProfile settings
                 elif editingDark then Theme.darkPalette else Theme.lightPalette
             for key,read,write,editor in colors do
                 editor.value <- box(read palette)
-                editor.control.Enabled <- custom.Checked
             let geometry = settings.geometry
             for key,read,write,editor in dimensions do
                 let value = decimal (read geometry)
@@ -58,6 +61,7 @@ type AppearanceView() =
                 editor.Minimum <- min editor.Minimum value
                 editor.Maximum <- max editor.Maximum value
                 editor.Value <- value
+            preview.Height <- max (Dpi.scale 145) (ThemeService.currentAppearance().scaled.tabHeight+Dpi.scale 120)
             preview.Invalidate()
         finally refreshing <- false
 
@@ -65,11 +69,47 @@ type AppearanceView() =
         SettingsUi.section table (t "Theme" "主题")
         SettingsUi.add table (SettingsBindings.themeTiles())
         SettingsUi.add table preview
-        SettingsUi.note table (t "Preview: active, hovered and inactive tabs. Changes apply immediately." "预览依次显示活动、悬停和非活动标签。修改立即生效。")
         preview.Paint.Add(fun e ->
+            let p = SettingsColors.current()
+            let dark = ThemeService.currentIsDark()
+            e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+            use frame = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(preview.Width-1),float32(preview.Height-1))) (float32(Dpi.scale 10))
+            use frameFill = new SolidBrush(if dark then Color.FromRGB(0x343432) else Color.FromRGB(0xE8E8E5))
+            use border = new Pen(p.border)
+            e.Graphics.FillPath(frameFill,frame)
+            e.Graphics.DrawPath(border,frame)
             let appearance = ThemeService.currentAppearance().scaled
             let height = max 12 appearance.tabHeight
             let width = max 100 (preview.ClientSize.Width-Dpi.scale 32)
+            let left = Dpi.scale 16
+            let top = Dpi.scale 14
+            let bodyTop = top+height+2
+            let bodyHeight = preview.Height-bodyTop-Dpi.scale 14
+            let fill color (rect:Rectangle) =
+                use brush = new SolidBrush(color)
+                e.Graphics.FillRectangle(brush,rect)
+            let contentColor = if dark then Color.FromRGB(0x202020) else Color.White
+            let chromeColor = if dark then Color.FromRGB(0x292929) else Color.FromRGB(0xF3F3F1)
+            let placeholderColor = if dark then Color.FromRGB(0x555552) else Color.FromRGB(0xC8C8C3)
+            fill contentColor (Rectangle(left,bodyTop,width,bodyHeight))
+            let toolbarHeight = Dpi.scale 28
+            fill chromeColor (Rectangle(left,bodyTop,width,toolbarHeight))
+            fill placeholderColor (Rectangle(left+Dpi.scale 12,bodyTop+Dpi.scale 13,min (Dpi.scale 180) (width/2),Dpi.scale 7))
+            let sidebarWidth = min (Dpi.scale 128) (width/3)
+            fill chromeColor (Rectangle(left,bodyTop+toolbarHeight,sidebarWidth,bodyHeight-toolbarHeight))
+            for index in 0..1 do
+                let bounds = Rectangle(left+Dpi.scale 6,bodyTop+toolbarHeight+Dpi.scale (3+index*24),sidebarWidth-Dpi.scale 12,Dpi.scale 23)
+                if index=1 then fill p.selection bounds
+                fill placeholderColor (Rectangle(bounds.X+Dpi.scale 8,bounds.Y+Dpi.scale 10,
+                                                 max 1 (bounds.Width-Dpi.scale (26+index*8)),Dpi.scale 6))
+            for index in 0..1 do
+                let x = left+sidebarWidth+Dpi.scale 16
+                let y = bodyTop+toolbarHeight+Dpi.scale (3+index*24)
+                fill placeholderColor (Rectangle(x,y+Dpi.scale 4,Dpi.scale 16,Dpi.scale 17))
+                fill placeholderColor (Rectangle(x+Dpi.scale 28,y+Dpi.scale 9,
+                                                 min (Dpi.scale (150-index*24)) (max 1 (width-sidebarWidth-Dpi.scale 64)),Dpi.scale 7))
+            e.Graphics.DrawRectangle(border,left,bodyTop,width-1,bodyHeight)
+            e.Graphics.DrawLine(border,left,bodyTop+toolbarHeight,left+width-1,bodyTop+toolbarHeight)
             let info caption : TabDisplayInfo = {
                 bgColor=None; text=caption; icon=SystemIcons.Application
                 textFont=SettingsUi.bodyFont; textBrush=SystemBrushes.MenuText }
@@ -79,11 +119,10 @@ type AppearanceView() =
                 slide=None;direction=TabUp;alignment=TabLeft;onlyIcons=false;transparent=true
                 appearance=appearance;hover=Some(2,TabBackground);captured=None }
             use bitmap = ts.render.bitmap
-            e.Graphics.DrawImageUnscaled(bitmap,Dpi.scale 16,Dpi.scale 28))
+            e.Graphics.DrawImageUnscaled(bitmap,left,top))
         SettingsUi.add table paletteTitle
         let colorsCard = new SettingsCard()
         SettingsUi.add table colorsCard
-        SettingsUi.settingRow colorsCard "use-custom-palettes" custom
         for key,read,write,editor in colors do
             editor.control.Width <- Dpi.scale 180
             SettingsUi.settingRow colorsCard key editor.control
@@ -103,10 +142,9 @@ type AppearanceView() =
             update Theme.resetLayout)
         SettingsUi.add table resetLayout
         refresh()
-        custom.CheckedChanged.Add(fun _ -> if not refreshing then update(fun s -> {s with useCustomColors=custom.Checked}))
         for key,read,write,editor in colors do
             editor.changed.Add(fun () ->
-                if not refreshing && custom.Checked then
+                if not refreshing then
                     updatePalette(write (editor.value :?> Color)))
         for key,read,write,editor in dimensions do
             editor.ValueChanged.Add(fun _ ->

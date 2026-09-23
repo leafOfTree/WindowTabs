@@ -21,9 +21,9 @@ module Theme =
 
     let dark = { light with
                     tabTextColor=Color.FromRGB(0xF3F3F3)
-                    tabNormalBgColor=Color.FromRGB(0x202020)
+                    tabNormalBgColor=Color.FromRGB(0x454545)
                     tabHighlightBgColor=Color.FromRGB(0x343434)
-                    tabActiveBgColor=Color.FromRGB(0x454545)
+                    tabActiveBgColor=Color.FromRGB(0x202020)
                     tabBorderColor=Color.FromRGB(0x747474)
                     tabFlashBgColor=Color.FromRGB(0x772222) }
 
@@ -44,9 +44,18 @@ module Theme =
     let darkPalette = TabPalette.fromAppearance dark
     let bluePalette =
         { darkPalette with
-            tabTextColor=Color.FromRGB(0xE0E0E0); tabNormalBgColor=Color.FromRGB(0x111827)
-            tabHighlightBgColor=Color.FromRGB(0x4B5970); tabActiveBgColor=Color.FromRGB(0x273548)
+            tabTextColor=Color.FromRGB(0xE0E0E0); tabNormalBgColor=Color.FromRGB(0x4B5970)
+            tabHighlightBgColor=Color.FromRGB(0x273548); tabActiveBgColor=Color.FromRGB(0x111827)
             tabBorderColor=Color.FromRGB(0x374151); tabFlashBgColor=Color.FromRGB(0x991B1B) }
+
+    /// Upgrade only exact copies of the former presets; keep user-edited colours.
+    let upgradeDarkPalette palette =
+        let oldDark = { darkPalette with tabNormalBgColor=Color.FromRGB(0x202020);tabActiveBgColor=Color.FromRGB(0x454545) }
+        let oldBlue = { bluePalette with tabNormalBgColor=Color.FromRGB(0x111827);tabHighlightBgColor=Color.FromRGB(0x4B5970);tabActiveBgColor=Color.FromRGB(0x273548) }
+        let matches candidate = sameColors (TabPalette.compose defaultGeometry palette) (TabPalette.compose defaultGeometry candidate)
+        if matches oldDark then darkPalette
+        elif matches oldBlue then bluePalette
+        else palette
 
     let resolve mode systemDark highContrast custom (geometry:TabGeometry) (lightColors:TabPalette) (darkColors:TabPalette) =
         let colors =

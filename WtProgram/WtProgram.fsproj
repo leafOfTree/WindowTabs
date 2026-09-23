@@ -122,6 +122,7 @@
     <Compile Include="ManagerViewService\ThemeBinding.fs" />
     <Compile Include="ManagerViewService\SettingsStyle.fs" />
     <Compile Include="ManagerViewService\SettingsControls.fs" />
+    <Compile Include="ManagerViewService\SettingsEditors.fs" />
     <Compile Include="ManagerViewService\SettingsPage.fs" />
     <Compile Include="ManagerViewService\SettingsUi.fs" />
     <Compile Include="ManagerViewService\SettingsBindings.fs" />
