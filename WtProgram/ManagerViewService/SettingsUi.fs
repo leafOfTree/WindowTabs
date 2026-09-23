@@ -11,28 +11,23 @@ module SettingsUi =
     let text en zh =
         if Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName = "zh" then zh else en
 
-    let bodyFont = new Font(SystemFonts.MessageBoxFont.FontFamily, 10.0f)
-    let titleFont = new Font(SystemFonts.MessageBoxFont.FontFamily, 20.0f, FontStyle.Regular)
-    let rowFont = new Font(SystemFonts.MessageBoxFont.FontFamily, 10.0f, FontStyle.Bold)
-    let sectionFont = new Font(SystemFonts.MessageBoxFont.FontFamily, 10.5f, FontStyle.Bold)
+    let bodyFont = new Font("Segoe UI", 10.5f, FontStyle.Regular)
+    let titleFont = new Font("Segoe UI", 20.0f, FontStyle.Regular)
+    let rowFont = bodyFont
+    let sectionFont = new Font("Segoe UI", 11.0f, FontStyle.Bold)
 
     let palette() = SettingsColors.current()
 
     let rec private applyPalette p darkMode (control:Control) =
         let tag = if isNull control.Tag then "" else string control.Tag
-        let rec inCard (item:Control) =
-            if isNull item.Parent then false
-            elif item.Parent :? SettingsCard then true
-            else inCard item.Parent
         let rec inSidebar (item:Control) =
             if string item.Tag="sidebar" then true
             elif isNull item.Parent then false else inSidebar item.Parent
         let background =
-            if tag="card" then p.background
-            elif inCard control || tag="surface" || tag="search-box" || tag="search-input" then p.surface
+            if tag="surface" || tag="search-box" || tag="search-input" then p.surface
             elif inSidebar control then
                 if SystemInformation.HighContrast then p.background
-                elif darkMode then Color.FromRGB(0x1F2023) else Color.FromRGB(0xF1F1F1)
+                elif darkMode then Color.FromRGB(0x161615) else Color.FromRGB(0xF2F1ED)
             else p.background
         if tag <> "color-swatch" then
             control.BackColor <- background
@@ -90,7 +85,7 @@ module SettingsUi =
 
     let section (table:TableLayoutPanel) caption =
         let label = new Label(Text=caption,AutoSize=true,Font=sectionFont)
-        label.Margin <- Padding(0,Dpi.scale 26,0,Dpi.scale 12)
+        label.Margin <- Padding(0,(if table.RowCount=0 then 0 else Dpi.scale 24),0,Dpi.scale 12)
         add table label
 
     let note (table:TableLayoutPanel) caption =
@@ -100,14 +95,14 @@ module SettingsUi =
         add table label
 
     let row (table:TableLayoutPanel) caption description (editor:Control) =
-        let row = new TableLayoutPanel(AutoSize=true,ColumnCount=2,Padding=Padding(0,Dpi.scale 10,0,Dpi.scale 10))
-        row.MinimumSize <- Size(0,Dpi.scale 64)
+        let row = new TableLayoutPanel(AutoSize=true,ColumnCount=2,Padding=Padding(0,Dpi.scale 8,0,Dpi.scale 8),Margin=Padding.Empty)
+        row.MinimumSize <- Size(0,Dpi.scale 56)
         row.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
         row.ColumnStyles.Add(ColumnStyle(SizeType.Absolute,float32(Dpi.scale 194))) |> ignore
         let labels = new TableLayoutPanel(AutoSize=true,ColumnCount=1,Dock=DockStyle.Fill,Margin=Padding(0,0,Dpi.scale 16,0))
         labels.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
-        let name = new Label(Text=caption,AutoSize=true,Dock=DockStyle.Fill,Font=rowFont,UseMnemonic=false)
-        let detail = new Label(Text=description,AutoSize=true,Dock=DockStyle.Fill,Tag="muted",UseMnemonic=false)
+        let name = new Label(Text=caption,AutoSize=true,Dock=DockStyle.Fill,Font=rowFont,UseMnemonic=false,Margin=Padding.Empty)
+        let detail = new Label(Text=description,AutoSize=true,Dock=DockStyle.Fill,Tag="muted",UseMnemonic=false,Margin=Padding(0,Dpi.scale 4,0,0))
         labels.Controls.Add(name,0,0)
         if description <> "" then labels.Controls.Add(detail,0,1)
         labels.SizeChanged.Add(fun _ ->

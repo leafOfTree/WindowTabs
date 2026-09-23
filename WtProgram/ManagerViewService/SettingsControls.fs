@@ -10,20 +10,9 @@ type SettingsCard() as this =
         this.AutoSize <- true
         this.ColumnCount <- 1
         this.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
-        this.Padding <- Padding(Dpi.scale 16,Dpi.scale 4,Dpi.scale 16,Dpi.scale 4)
-        this.Margin <- Padding(0,0,0,Dpi.scale 8)
-        this.Tag <- "card"
+        this.Padding <- Padding.Empty
+        this.Margin <- Padding.Empty
         this.DoubleBuffered <- true
-    override this.OnPaintBackground(e) =
-        let p = SettingsColors.current()
-        e.Graphics.Clear(p.background)
-        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-        if this.Width>2 && this.Height>2 then
-            use path = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 12))
-            use fill = new SolidBrush(p.surface)
-            use border = new Pen(p.border)
-            e.Graphics.FillPath(fill,path)
-            e.Graphics.DrawPath(border,path)
 
 type SettingsNavigationButton(key:SettingsViewType) as this =
     inherit Button()

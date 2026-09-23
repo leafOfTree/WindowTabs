@@ -15,13 +15,13 @@ module SettingsColors =
               muted=SystemColors.WindowText; border=SystemColors.WindowText; hover=SystemColors.Control
               accent=SystemColors.Highlight; selection=SystemColors.Highlight }
         elif ThemeService.currentIsDark() then
-            { background=Color.FromRGB(0x181818); surface=Color.FromRGB(0x232323); text=Color.FromRGB(0xF3F3F3)
-              muted=Color.FromRGB(0xAFAFAF); border=Color.FromRGB(0x363636); hover=Color.FromRGB(0x2C2C2C)
-              accent=Color.FromRGB(0x3B82F6); selection=Color.FromRGB(0x303136) }
+            { background=Color.FromRGB(0x1A1A19); surface=Color.FromRGB(0x252524); text=Color.FromRGB(0xF0EFEC)
+              muted=Color.FromRGB(0x8C8A84); border=Color.FromRGB(0x30302E); hover=Color.FromRGB(0x30302F)
+              accent=Color.FromRGB(0x3B82F6); selection=Color.FromRGB(0x373735) }
         else
-            { background=Color.FromRGB(0xFAFAFA); surface=Color.White; text=Color.FromRGB(0x202020)
-              muted=Color.FromRGB(0x626262); border=Color.FromRGB(0xE1E1E1); hover=Color.FromRGB(0xEAEAEA)
-              accent=Color.FromRGB(0x0067C0); selection=Color.FromRGB(0xE8E8E8) }
+            { background=Color.FromRGB(0xFAF9F6); surface=Color.White; text=Color.FromRGB(0x262624)
+              muted=Color.FromRGB(0x73716B); border=Color.FromRGB(0xE5E3DE); hover=Color.FromRGB(0xEEECE7)
+              accent=Color.FromRGB(0x0067C0); selection=Color.FromRGB(0xE4E2DC) }
 
 module SettingsShapes =
     let rounded (rect:RectangleF) radius =
