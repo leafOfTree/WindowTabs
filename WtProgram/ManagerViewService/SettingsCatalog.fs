@@ -27,7 +27,6 @@ module SettingsCatalog =
         { id="activate-on-hover"; page=HotKeySettings; caption=("Activate on hover","悬停时激活"); description=("Switch windows when the pointer rests on a tab.","鼠标悬停在标签上时切换窗口。"); keywords="activate-on-hover" }
         { id="shift-scroll"; page=HotKeySettings; caption=("Shift + scroll","Shift + 滚轮"); description=("Hold Shift and scroll over a grouped window to switch tabs.","在分组窗口内按住 Shift 并滚动滚轮以切换标签。"); keywords="shift-scroll" }
         { id="use-custom-palettes"; page=AppearanceSettings; caption=("Use custom palettes","使用自定义配色"); description=("Keep separate light and dark colours. Turning this off keeps your saved palettes.","分别保存浅色和深色方案；关闭此选项不会删除自定义颜色。"); keywords="use-custom-palettes" }
-        { id="palette-to-edit"; page=AppearanceSettings; caption=("Palette to edit","编辑配色"); description=("A palette takes effect when its theme is active.","切换到对应主题时，使用该方案。"); keywords="palette-to-edit" }
         { id="tabTextColor"; page=AppearanceSettings; caption=("Text and close button","文字与关闭按钮"); description=("",""); keywords="tabTextColor" }
         { id="tabNormalBgColor"; page=AppearanceSettings; caption=("Inactive tab","非活动标签"); description=("",""); keywords="tabNormalBgColor" }
         { id="tabActiveBgColor"; page=AppearanceSettings; caption=("Active tab","活动标签"); description=("",""); keywords="tabActiveBgColor" }

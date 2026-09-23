@@ -18,6 +18,10 @@ module SettingsUi =
 
     let palette() = SettingsColors.current()
 
+    let private sidebarColor (p:SettingsPalette) darkMode =
+        if SystemInformation.HighContrast then p.background
+        elif darkMode then Color.FromRGB(0x151514) else Color.FromRGB(0xFCFCFB)
+
     let rec private applyPalette p darkMode (control:Control) =
         let tag = if isNull control.Tag then "" else string control.Tag
         let rec inSidebar (item:Control) =
@@ -25,9 +29,7 @@ module SettingsUi =
             elif isNull item.Parent then false else inSidebar item.Parent
         let background =
             if tag="surface" || tag="search-box" || tag="search-input" then p.surface
-            elif inSidebar control then
-                if SystemInformation.HighContrast then p.background
-                elif darkMode then Color.FromRGB(0x161615) else Color.FromRGB(0xFCFCFB)
+            elif inSidebar control then sidebarColor p darkMode
             else p.background
         if tag <> "color-swatch" then
             control.BackColor <- background
@@ -56,6 +58,11 @@ module SettingsUi =
             try
                 let mutable dark = if darkMode && not SystemInformation.HighContrast then 1 else 0
                 DwmSetWindowAttribute(form.Handle, 20, &dark, sizeof<int>) |> ignore
+                let colorRef (color:Color) = int color.R ||| (int color.G <<< 8) ||| (int color.B <<< 16)
+                let mutable caption = if SystemInformation.HighContrast then -1 else colorRef (sidebarColor p darkMode)
+                let mutable captionText = if SystemInformation.HighContrast then -1 else colorRef p.text
+                DwmSetWindowAttribute(form.Handle, 35, &caption, sizeof<int>) |> ignore
+                DwmSetWindowAttribute(form.Handle, 36, &captionText, sizeof<int>) |> ignore
             with _ -> ()
         | _ -> ()
         control.Invalidate()

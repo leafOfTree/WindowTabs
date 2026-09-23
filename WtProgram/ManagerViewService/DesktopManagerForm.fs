@@ -138,6 +138,10 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         footer.Controls.Add(brand)
         navigation.Controls.Add(links)
         navigation.Controls.Add(footer)
+        navigation.Paint.Add(fun e ->
+            use border = new Pen((SettingsColors.current()).border)
+            e.Graphics.DrawLine(border,navigation.ClientSize.Width-1,0,
+                                navigation.ClientSize.Width-1,navigation.ClientSize.Height))
         body.Controls.Add(host)
         form.Controls.Add(body)
         form.Controls.Add(navigation)

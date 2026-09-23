@@ -7,14 +7,16 @@ type AppearanceView() =
     let t = SettingsUi.text
     let panel,table = SettingsUi.page()
     let mutable refreshing = false
-    let mutable lastDark = ThemeService.currentIsDark()
+    let mutable editingDark = ThemeService.currentIsDark()
     let update = Services.settings.updateAppearance
     let custom = new SettingsToggle()
-    let profile = SettingsUi.choice [|t "Light palette" "浅色配色";t "Dark palette" "深色配色"|]
-    let paletteForProfile (s:AppearancePreferences) = if profile.SelectedIndex=1 then s.darkPalette else s.lightPalette
+    let paletteTitle = new Label(AutoSize=true,Font=SettingsUi.sectionFont,
+                                 Margin=Padding(0,Dpi.scale 24,0,Dpi.scale 12))
+    let blue = SettingsUi.button (t "Use dark blue palette" "使用深蓝配色")
+    let paletteForProfile (s:AppearancePreferences) = if editingDark then s.darkPalette else s.lightPalette
     let updatePalette change =
         update(fun s ->
-            if profile.SelectedIndex=1 then {s with darkPalette=change s.darkPalette}
+            if editingDark then {s with darkPalette=change s.darkPalette}
             else {s with lightPalette=change s.lightPalette})
     let preview = new Panel(Height=Dpi.scale 100)
     let colorFields : (string * (TabPalette -> Color) * (Color -> TabPalette -> TabPalette)) list = [
@@ -36,14 +38,16 @@ type AppearanceView() =
     let refresh() =
         refreshing <- true
         try
-            let dark = ThemeService.currentIsDark()
-            if dark <> lastDark then profile.SelectedIndex <- (if dark then 1 else 0)
-            lastDark <- dark
+            editingDark <- ThemeService.currentIsDark()
+            paletteTitle.Text <-
+                if editingDark then t "Dark theme · Tab colours" "深色主题 · 标签配色"
+                else t "Light theme · Tab colours" "浅色主题 · 标签配色"
+            blue.Visible <- editingDark
             let settings = Services.settings.appearance
             custom.Checked <- settings.useCustomColors
             let palette =
                 if custom.Checked then paletteForProfile settings
-                elif profile.SelectedIndex = 1 then Theme.darkPalette else Theme.lightPalette
+                elif editingDark then Theme.darkPalette else Theme.lightPalette
             for key,read,write,editor in colors do
                 editor.value <- box(read palette)
                 editor.control.Enabled <- custom.Checked
@@ -58,7 +62,6 @@ type AppearanceView() =
         finally refreshing <- false
 
     do
-        profile.SelectedIndex <- if ThemeService.currentIsDark() then 1 else 0
         SettingsUi.section table (t "Theme" "主题")
         SettingsUi.add table (SettingsBindings.themeTiles())
         SettingsUi.add table preview
@@ -77,20 +80,19 @@ type AppearanceView() =
                 appearance=appearance;hover=Some(2,TabBackground);captured=None }
             use bitmap = ts.render.bitmap
             e.Graphics.DrawImageUnscaled(bitmap,Dpi.scale 16,Dpi.scale 28))
-        let colorsCard = SettingsUi.sectionCard table (t "Custom colours" "自定义颜色")
+        SettingsUi.add table paletteTitle
+        let colorsCard = new SettingsCard()
+        SettingsUi.add table colorsCard
         SettingsUi.settingRow colorsCard "use-custom-palettes" custom
-        SettingsUi.settingRow colorsCard "palette-to-edit" profile
         for key,read,write,editor in colors do
             editor.control.Width <- Dpi.scale 180
             SettingsUi.settingRow colorsCard key editor.control
         let reset = SettingsUi.button (t "Reset this palette" "重置当前配色")
-        reset.Click.Add(fun _ -> updatePalette(fun _ -> (if profile.SelectedIndex = 1 then Theme.darkPalette else Theme.lightPalette)))
+        reset.Click.Add(fun _ -> updatePalette(fun _ -> (if editingDark then Theme.darkPalette else Theme.lightPalette)))
         let actions = new FlowLayoutPanel(AutoSize=true,WrapContents=true,Margin=Padding(0,Dpi.scale 8,0,Dpi.scale 8))
         actions.Controls.Add(reset)
-        let blue = SettingsUi.button (t "Use dark blue palette" "使用深蓝配色")
         blue.Click.Add(fun _ ->
-            update(fun s -> {s with darkPalette=Theme.bluePalette;useCustomColors=true})
-            profile.SelectedIndex <- 1)
+            update(fun s -> {s with darkPalette=Theme.bluePalette;useCustomColors=true}))
         actions.Controls.Add(blue)
         SettingsUi.add table actions
         let layoutCard = SettingsUi.sectionCard table (t "Tab layout" "标签布局")
@@ -102,7 +104,6 @@ type AppearanceView() =
         SettingsUi.add table resetLayout
         refresh()
         custom.CheckedChanged.Add(fun _ -> if not refreshing then update(fun s -> {s with useCustomColors=custom.Checked}))
-        profile.SelectedIndexChanged.Add(fun _ -> if not refreshing then refresh())
         for key,read,write,editor in colors do
             editor.changed.Add(fun () ->
                 if not refreshing && custom.Checked then
