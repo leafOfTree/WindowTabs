@@ -23,11 +23,7 @@ type SettingsRec = {
     excludedPaths: Set2<string>
     autoGroupingPaths : Set2<string>
     version: string
-    tabAppearance: TabAppearanceInfo
-    tabThemeMode: string
-    tabUseCustomColors: bool
-    tabLightColors: TabAppearanceInfo
-    tabDarkColors: TabAppearanceInfo
+    appearance: AppearancePreferences
     runAtStartup: bool
     hideInactiveTabs: bool
     enableTabbingByDefault: bool
@@ -49,7 +45,9 @@ type ILicenseManager =
 type ISettings =
     abstract member setValue: (string * obj) -> unit
     abstract member getValue: string -> obj
-    abstract member notifyValue: string -> (obj -> unit) -> unit
+    abstract member notifyValue: string -> (obj -> unit) -> IDisposable
+    abstract member appearance: AppearancePreferences
+    abstract member updateAppearance: (AppearancePreferences -> AppearancePreferences) -> unit
     abstract member root : JObject with get,set
 
 type IFilterService =
@@ -98,9 +96,6 @@ type IProgram =
     abstract member getAutoGroupingEnabled : string -> bool
     abstract member setAutoGroupingEnabled : string -> bool -> unit
     abstract member tabAppearanceInfo : TabAppearanceInfo
-    abstract member defaultTabAppearanceInfo : TabAppearanceInfo
-    abstract member darkModeTabAppearanceInfo : TabAppearanceInfo
-    abstract member darkModeBlueTabAppearanceInfo : TabAppearanceInfo
     [<ServiceMethod(async=true)>]
     abstract member ping : unit -> unit
     abstract member setHotKey: string -> int -> unit

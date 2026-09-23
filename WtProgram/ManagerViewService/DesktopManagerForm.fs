@@ -197,7 +197,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         select (if pages |> List.exists (fun page -> page.key=GeneralSettings) then GeneralSettings else pages.Head.key)
         SettingsUi.apply form
         let mutable lastPalette = SettingsUi.palette()
-        Theme.watch form (fun () ->
+        ThemeBinding.watch form (fun () ->
             let palette = SettingsUi.palette()
             if palette <> lastPalette then
                 lastPalette <- palette

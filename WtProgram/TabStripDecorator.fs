@@ -52,7 +52,10 @@ type TabStripDecorator(group:WindowGroup) as this =
         group.bounds.changed.Add <| fun() ->
             this.updateTsPlacement()
 
+        let geometrySubscription = group.geometryChanged.Subscribe(fun () -> this.updateTsPlacement())
+
         group.exited.Add <| fun() ->
+            geometrySubscription.Dispose()
             Services.dragDrop.unregisterTarget(this.ts.hwnd)
     
 

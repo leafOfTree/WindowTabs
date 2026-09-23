@@ -7,48 +7,49 @@ type AppearanceView() =
     let t = SettingsUi.text
     let panel,table = SettingsUi.page()
     let mutable refreshing = false
-    let mutable lastDark = Theme.currentIsDark()
-    let get key = Services.settings.getValue(key)
-    let set key value = Services.settings.setValue(key,box value)
+    let mutable lastDark = ThemeService.currentIsDark()
+    let update = Services.settings.updateAppearance
     let custom = new SettingsToggle()
     let profile = SettingsUi.choice [|t "Light palette" "浅色配色";t "Dark palette" "深色配色"|]
-    let profileKey() = if profile.SelectedIndex = 1 then "tabDarkColors" else "tabLightColors"
+    let paletteForProfile (s:AppearancePreferences) = if profile.SelectedIndex=1 then s.darkPalette else s.lightPalette
+    let updatePalette change =
+        update(fun s ->
+            if profile.SelectedIndex=1 then {s with darkPalette=change s.darkPalette}
+            else {s with lightPalette=change s.lightPalette})
     let preview = new Panel(Height=Dpi.scale 100)
-    let colorFields = [
-        "tabTextColor",SettingsCatalog.title "tabTextColor"
-        "tabNormalBgColor",SettingsCatalog.title "tabNormalBgColor"
-        "tabActiveBgColor",SettingsCatalog.title "tabActiveBgColor"
-        "tabHighlightBgColor",SettingsCatalog.title "tabHighlightBgColor"
-        "tabBorderColor",SettingsCatalog.title "tabBorderColor"
-        "tabFlashBgColor",SettingsCatalog.title "tabFlashBgColor" ]
-    let colors = colorFields |> List.map (fun (key,caption) -> key,caption,(ColorEditor() :> IPropEditor))
-    let dimensions =
-        [
-        "tabHeight",SettingsCatalog.title "tabHeight",12,120
-        "tabMaxWidth",SettingsCatalog.title "tabMaxWidth",60,1000
-        "tabOverlap",SettingsCatalog.title "tabOverlap",-100,0
-        "tabIndentNormal",SettingsCatalog.title "tabIndentNormal",0,1000
-        "tabIndentFlipped",SettingsCatalog.title "tabIndentFlipped",0,1000 ]
-        |> List.map (fun (key,caption,minValue,maxValue) ->
-            let editor = new NumericUpDown(Minimum=decimal minValue,Maximum=decimal maxValue,Width=Dpi.scale 120)
-            key,caption,editor)
-
+    let colorFields : (string * (TabPalette -> Color) * (Color -> TabPalette -> TabPalette)) list = [
+        "tabTextColor",(fun p -> p.tabTextColor),(fun v p -> {p with tabTextColor=v})
+        "tabNormalBgColor",(fun p -> p.tabNormalBgColor),(fun v p -> {p with tabNormalBgColor=v})
+        "tabActiveBgColor",(fun p -> p.tabActiveBgColor),(fun v p -> {p with tabActiveBgColor=v})
+        "tabHighlightBgColor",(fun p -> p.tabHighlightBgColor),(fun v p -> {p with tabHighlightBgColor=v})
+        "tabBorderColor",(fun p -> p.tabBorderColor),(fun v p -> {p with tabBorderColor=v})
+        "tabFlashBgColor",(fun p -> p.tabFlashBgColor),(fun v p -> {p with tabFlashBgColor=v}) ]
+    let colors = colorFields |> List.map(fun (key,get,set) -> key,get,set,(ColorEditor() :> IPropEditor))
+    let dimensionFields : (string * int * int * (TabGeometry -> int) * (int -> TabGeometry -> TabGeometry)) list = [
+        "tabHeight",12,120,(fun g -> g.height),(fun v g -> {g with height=v})
+        "tabMaxWidth",60,1000,(fun g -> g.maxWidth),(fun v g -> {g with maxWidth=v})
+        "tabOverlap",-100,0,(fun g -> g.overlap),(fun v g -> {g with overlap=v})
+        "tabIndentNormal",0,1000,(fun g -> g.indentNormal),(fun v g -> {g with indentNormal=v})
+        "tabIndentFlipped",0,1000,(fun g -> g.indentFlipped),(fun v g -> {g with indentFlipped=v}) ]
+    let dimensions = dimensionFields |> List.map(fun (key,minValue,maxValue,get,set) ->
+        key,get,set,new NumericUpDown(Minimum=decimal minValue,Maximum=decimal maxValue,Width=Dpi.scale 120))
     let refresh() =
         refreshing <- true
         try
-            let dark = Theme.currentIsDark()
+            let dark = ThemeService.currentIsDark()
             if dark <> lastDark then profile.SelectedIndex <- (if dark then 1 else 0)
             lastDark <- dark
-            custom.Checked <- get "tabUseCustomColors" :?> bool
+            let settings = Services.settings.appearance
+            custom.Checked <- settings.useCustomColors
             let palette =
-                if custom.Checked then get (profileKey()) :?> TabAppearanceInfo
-                elif profile.SelectedIndex = 1 then Theme.dark else Theme.light
-            for key,_,editor in colors do
-                editor.value <- Serialize.readField palette key
+                if custom.Checked then paletteForProfile settings
+                elif profile.SelectedIndex = 1 then Theme.darkPalette else Theme.lightPalette
+            for key,read,write,editor in colors do
+                editor.value <- box(read palette)
                 editor.control.Enabled <- custom.Checked
-            let geometry = get "tabAppearance" :?> TabAppearanceInfo
-            for key,_,editor in dimensions do
-                let value = decimal (Serialize.readField geometry key :?> int)
+            let geometry = settings.geometry
+            for key,read,write,editor in dimensions do
+                let value = decimal (read geometry)
                 // Opening the page must not rewrite a legacy out-of-range value.
                 editor.Minimum <- min editor.Minimum value
                 editor.Maximum <- max editor.Maximum value
@@ -57,13 +58,13 @@ type AppearanceView() =
         finally refreshing <- false
 
     do
-        profile.SelectedIndex <- if Theme.currentIsDark() then 1 else 0
+        profile.SelectedIndex <- if ThemeService.currentIsDark() then 1 else 0
         SettingsUi.section table (t "Theme" "主题")
-        SettingsUi.add table (SettingsUi.themeTiles())
+        SettingsUi.add table (SettingsBindings.themeTiles())
         SettingsUi.add table preview
         SettingsUi.note table (t "Preview: active, hovered and inactive tabs. Changes apply immediately." "预览依次显示活动、悬停和非活动标签。修改立即生效。")
         preview.Paint.Add(fun e ->
-            let appearance = Theme.currentAppearance().scaled
+            let appearance = ThemeService.currentAppearance().scaled
             let height = max 12 appearance.tabHeight
             let width = max 100 (preview.ClientSize.Width-Dpi.scale 32)
             let info caption : TabDisplayInfo = {
@@ -79,48 +80,38 @@ type AppearanceView() =
         let colorsCard = SettingsUi.sectionCard table (t "Custom colours" "自定义颜色")
         SettingsUi.settingRow colorsCard "use-custom-palettes" custom
         SettingsUi.settingRow colorsCard "palette-to-edit" profile
-        for key,_,editor in colors do
+        for key,read,write,editor in colors do
             editor.control.Width <- Dpi.scale 180
             SettingsUi.settingRow colorsCard key editor.control
         let reset = SettingsUi.button (t "Reset this palette" "重置当前配色")
-        reset.Click.Add(fun _ -> set (profileKey()) (if profile.SelectedIndex = 1 then Theme.dark else Theme.light))
+        reset.Click.Add(fun _ -> updatePalette(fun _ -> (if profile.SelectedIndex = 1 then Theme.darkPalette else Theme.lightPalette)))
         let actions = new FlowLayoutPanel(AutoSize=true,WrapContents=true,Margin=Padding(0,Dpi.scale 8,0,Dpi.scale 8))
         actions.Controls.Add(reset)
         let blue = SettingsUi.button (t "Use dark blue palette" "使用深蓝配色")
         blue.Click.Add(fun _ ->
-            let colors = { Theme.dark with
-                            tabTextColor=Color.FromRGB(0xE0E0E0)
-                            tabNormalBgColor=Color.FromRGB(0x111827)
-                            tabHighlightBgColor=Color.FromRGB(0x4B5970)
-                            tabActiveBgColor=Color.FromRGB(0x273548)
-                            tabBorderColor=Color.FromRGB(0x374151)
-                            tabFlashBgColor=Color.FromRGB(0x991B1B) }
-            set "tabDarkColors" colors
-            set "tabUseCustomColors" true
+            update(fun s -> {s with darkPalette=Theme.bluePalette;useCustomColors=true})
             profile.SelectedIndex <- 1)
         actions.Controls.Add(blue)
         SettingsUi.add table actions
         let layoutCard = SettingsUi.sectionCard table (t "Tab layout" "标签布局")
         SettingsUi.note layoutCard (t "Sizes stay the same when you switch themes." "切换主题不会改变这些尺寸。")
-        for key,_,editor in dimensions do SettingsUi.settingRow layoutCard key editor
+        for key,read,write,editor in dimensions do SettingsUi.settingRow layoutCard key editor
         let resetLayout = SettingsUi.button (t "Reset tab layout" "重置标签布局")
         resetLayout.Click.Add(fun _ ->
-            set "tabAppearance" (Theme.withColors (get "tabAppearance" :?> TabAppearanceInfo) Theme.light))
+            update Theme.resetLayout)
         SettingsUi.add table resetLayout
         refresh()
-        custom.CheckedChanged.Add(fun _ -> if not refreshing then set "tabUseCustomColors" custom.Checked)
+        custom.CheckedChanged.Add(fun _ -> if not refreshing then update(fun s -> {s with useCustomColors=custom.Checked}))
         profile.SelectedIndexChanged.Add(fun _ -> if not refreshing then refresh())
-        for key,_,editor in colors do
+        for key,read,write,editor in colors do
             editor.changed.Add(fun () ->
                 if not refreshing && custom.Checked then
-                    let current = get (profileKey()) :?> TabAppearanceInfo
-                    set (profileKey()) (Serialize.writeField current key editor.value :?> TabAppearanceInfo))
-        for key,_,editor in dimensions do
+                    updatePalette(write (editor.value :?> Color)))
+        for key,read,write,editor in dimensions do
             editor.ValueChanged.Add(fun _ ->
                 if not refreshing then
-                    let current = get "tabAppearance" :?> TabAppearanceInfo
-                    set "tabAppearance" (Serialize.writeField current key (box(int editor.Value)) :?> TabAppearanceInfo))
-        Theme.watch panel refresh
+                    update(fun s -> {s with geometry=write (int editor.Value) s.geometry}))
+        ThemeBinding.watch panel refresh
 
     interface ISettingsView with
         member _.key = AppearanceSettings

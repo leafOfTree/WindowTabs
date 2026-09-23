@@ -29,32 +29,88 @@ let main() =
     try
         let settings = Settings(true)
         let api = settings :> ISettings
-        check (settings.settings.tabThemeMode="system") "New installs must follow system"
-        check (not settings.settings.tabUseCustomColors) "Default colours misclassified as custom"
+        check (settings.settings.appearance.mode=SystemTheme) "New installs must follow system"
+        check (not settings.settings.appearance.useCustomColors) "Default colours misclassified as custom"
         check (Theme.sameColors settings.defaultTabAppearance Theme.light) "KnownColor/ARGB comparison failed"
         let geometry = {Theme.light with tabHeight=37;tabMaxWidth=281;tabOverlap= -7;tabIndentNormal=11}
         let custom = {Theme.light with tabActiveBgColor=Color.Purple}
         for mode,systemDark,expected in ["system",true,Theme.dark;"system",false,Theme.light;"light",true,Theme.light;"dark",false,Theme.dark] do
-            let appearance = Theme.resolve mode systemDark false false geometry custom custom
+            let appearance = Theme.resolve (ThemeMode.parse mode) systemDark false false (TabGeometry.fromAppearance geometry) (TabPalette.fromAppearance custom) (TabPalette.fromAppearance custom)
             check (Theme.sameColors appearance expected) "Wrong standard palette"
             check (appearance.tabHeight=37 && appearance.tabMaxWidth=281 && appearance.tabOverlap= -7 && appearance.tabIndentNormal=11) "Theme changed tab geometry"
+        let beforeReset = {api.appearance with geometry=TabGeometry.fromAppearance geometry; lightPalette={api.appearance.lightPalette with tabActiveBgColor=Color.Purple}}
+        let reset = Theme.resetLayout beforeReset
+        check (reset.geometry=Theme.defaultGeometry) "Reset did not restore all geometry fields"
+        check (reset.lightPalette=beforeReset.lightPalette && reset.darkPalette=beforeReset.darkPalette && reset.legacyPalette=beforeReset.legacyPalette) "Reset changed palette fields"
+        check (TabGeometry.fromAppearance custom = TabGeometry.fromAppearance Theme.light) "Palette-only changes affect geometry notifications"
+        let placement appearance y =
+            let geometry = TabGeometry.fromAppearance appearance
+            { windowBounds=Rect(Pt(100,y),Sz(900,600)); monitorBounds=List2([Rect(Pt(0,0),Sz(1920,1080))])
+              decoratorHeight=geometry.height; decoratorHeightOffset=geometry.heightOffset
+              decoratorIndentNormal=geometry.indentNormal; decoratorIndentFlipped=geometry.indentFlipped } : WindowDecorator
+        let normal = placement geometry 200
+        check (normal.bounds.y=200-37+geometry.tabHeightOffset && normal.bounds.x=111 && normal.bounds.height=37) "Normal placement ignores geometry"
+        let maximized = placement {geometry with tabIndentFlipped=123} 0
+        check (maximized.shouldShowInside && maximized.bounds.x=223 && maximized.bounds.height=37) "Inside placement ignores geometry"
         let legacyJson = JObject.Parse("""{"tabAppearance":{"tabActiveBgColor":"123456","tabHeight":31},"unrelated":"keep"}""")
         api.root <- legacyJson
-        check settings.settings.tabUseCustomColors "Legacy custom colours lost"
-        for appearance in [settings.settings.tabLightColors;settings.settings.tabDarkColors] do
+        check settings.settings.appearance.useCustomColors "Legacy custom colours lost"
+        for appearance in [settings.settings.appearance.lightPalette;settings.settings.appearance.darkPalette] do
             check (appearance.tabActiveBgColor.ToArgb()=Color.FromArgb(0x12,0x34,0x56).ToArgb()) "Legacy palette overwritten"
         api.setValue("tabThemeMode",box "dark")
         api.setValue("tabDarkColors",box custom)
-        check (Theme.currentAppearance().tabActiveBgColor.ToArgb()=Color.Purple.ToArgb()) "Custom dark not applied"
+        check (ThemeService.currentAppearance().tabActiveBgColor.ToArgb()=Color.Purple.ToArgb()) "Custom dark not applied"
         api.setValue("tabThemeMode",box "light")
-        check (Theme.currentAppearance().tabActiveBgColor.ToArgb()<>Color.Purple.ToArgb()) "Light/dark custom palettes not independent"
+        check (ThemeService.currentAppearance().tabActiveBgColor.ToArgb()<>Color.Purple.ToArgb()) "Light/dark custom palettes not independent"
         check (string api.root.["unrelated"]="keep") "Unrelated setting removed"
         check (api.root.["tabDarkColors"].["tabHeight"] = null) "Geometry duplicated into colour palette"
         settings.clearCaches()
-        check (settings.settings.tabThemeMode="light" && settings.settings.tabAppearance.tabHeight=31) "Settings round-trip failed"
+        check (settings.settings.appearance.mode=LightTheme && settings.settings.appearance.geometry.height=31) "Settings round-trip failed"
         api.setValue("tabUseCustomColors",box false)
         api.setValue("tabAppearance",box Theme.light)
 
+        // Typed updates preserve palette/layout isolation, batch writes and release subscriptions.
+        let preserved = api.appearance
+        let mutable appearanceEvents = 0
+        let subscription = api.notifyValue "appearance" (fun _ -> appearanceEvents <- appearanceEvents+1)
+        let beforeNoOp = File.ReadAllText(settings.path)
+        api.updateAppearance id
+        check (appearanceEvents=0 && File.ReadAllText(settings.path)=beforeNoOp) "No-op appearance update writes or notifies"
+        api.updateAppearance(fun s -> {s with geometry={s.geometry with height=41};mode=DarkTheme})
+        check (appearanceEvents=1 && api.appearance.lightPalette=preserved.lightPalette && api.appearance.darkPalette=preserved.darkPalette) "Geometry update changed palettes or notified more than once"
+        settings.clearCaches()
+        check (api.appearance.geometry.height=41 && api.appearance.mode=DarkTheme) "Typed appearance failed round-trip"
+        subscription.Dispose()
+        api.updateAppearance(fun _ -> preserved)
+        check (appearanceEvents=1) "Disposed settings subscription still runs"
+        let mutable legacyNotices = 0
+        let legacySubscription = api.notifyValue "tabThemeMode" (fun value ->
+            check (value :? string) "Legacy mode notification payload changed"
+            legacyNotices <- legacyNotices+1)
+        let nextMode = if api.appearance.mode=DarkTheme then LightTheme else DarkTheme
+        api.updateAppearance(fun s -> {s with mode=nextMode})
+        check (legacyNotices=1) "Typed update did not notify legacy mode listeners"
+        api.setValue("tabThemeMode",box(ThemeMode.serialize preserved.mode))
+        check (legacyNotices=2) "Legacy adapter did not notify listeners"
+        legacySubscription.Dispose()
+        check (typeof<TabPalette>.GetProperties() |> Array.forall(fun field -> field.PropertyType=typeof<Color>)) "Palette still contains geometry"
+        let corrupt = JObject.Parse("""{"tabHeight":"bad","tabMaxWidth":333,"tabTextColor":"nothex","tabActiveBgColor":"112233","future":5}""")
+        let loadedGeometry = AppearanceJson.readGeometry corrupt preserved.geometry
+        let loadedPalette = AppearanceJson.readPalette corrupt preserved.lightPalette
+        check (loadedGeometry.height=preserved.geometry.height && loadedGeometry.maxWidth=333) "Invalid geometry damaged valid fields"
+        check (loadedPalette.tabTextColor=preserved.lightPalette.tabTextColor && loadedPalette.tabActiveBgColor.ToRGB()=0x112233) "Invalid colour damaged valid fields"
+        use bindingOwner = new Control()
+        bindingOwner.CreateControl()
+        let mutable callbacks = 0
+        ThemeBinding.watch bindingOwner (fun () -> callbacks <- callbacks+1)
+        ThemeService.notifyChanged()
+        ThemeService.notifyChanged()
+        Application.DoEvents()
+        check (callbacks=1) "Theme binding does not coalesce queued notifications"
+        bindingOwner.Dispose()
+        ThemeService.notifyChanged()
+        Application.DoEvents()
+        check (callbacks=1) "Disposed theme binding still runs"
         let mutable filterDefault = false
         Services.register<IFilterService>({
             new IFilterService with
@@ -193,8 +249,8 @@ let main() =
         snapshot "settings-appearance-minimum"
         check (ap.contentTable.Width <= ap.ClientSize.Width) "Minimum window width clips the page"
         // An invalid future mode falls back safely, and high contrast overrides custom colours.
-        check (Theme.normalizeMode "unknown"="system") "Unknown mode was not normalized"
-        let accessible = Theme.resolve "dark" true true true geometry custom custom
+        check (ThemeMode.parse "unknown"=SystemTheme) "Unknown mode was not normalized"
+        let accessible = Theme.resolve DarkTheme true true true (TabGeometry.fromAppearance geometry) (TabPalette.fromAppearance custom) (TabPalette.fromAppearance custom)
         check (accessible.tabTextColor.ToArgb()=SystemColors.WindowText.ToArgb()) "High contrast ignored"
         form.Close()
         // Search metadata must remain available without realizing any unopened pages.

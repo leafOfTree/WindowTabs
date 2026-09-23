@@ -59,7 +59,7 @@ type Program() as this =
     let delayTabExeNames = Set2(List2(["outlook.exe"]))
 
     let settingsManager = Settings(isStandAlone)
-    let themeMonitor = Theme.startMonitoring()
+    let themeMonitor = ThemeService.startMonitoring()
     do Application.ApplicationExit.Add(fun _ -> themeMonitor.Dispose())
 
     let keepAliveCell = Cell.create(List2())
@@ -89,10 +89,10 @@ type Program() as this =
             // next launch. An overlap they chose themselves is left alone, even
             // though it will look tighter than it used to.
             let appearance =
-                if original <> String.Empty && original <> version && s.tabAppearance.tabOverlap = legacyTabOverlap
-                then { s.tabAppearance with tabOverlap = 0 }
-                else s.tabAppearance
-            { s with version = version; tabAppearance = appearance }
+                if original <> String.Empty && original <> version && s.appearance.geometry.overlap = legacyTabOverlap
+                then { s.appearance.geometry with overlap = 0 }
+                else s.appearance.geometry
+            { s with version = version; appearance = {s.appearance with geometry=appearance} }
         original 
 
     let registerShellHooks =
@@ -114,8 +114,9 @@ type Program() as this =
         Desktop(this :> IDesktopNotification).ignore
         this.registerHotKeys()
         this.updateTaskSwitcher(Services.settings.getValue("replaceAltTab"))
-        Services.settings.notifyValue "runAtStartup" this.updateRunAtStartup
-        Services.settings.notifyValue "replaceAltTab" this.updateTaskSwitcher
+        let startupSubscription = Services.settings.notifyValue "runAtStartup" this.updateRunAtStartup
+        let switcherSubscription = Services.settings.notifyValue "replaceAltTab" this.updateTaskSwitcher
+        Application.ApplicationExit.Add(fun _ -> startupSubscription.Dispose(); switcherSubscription.Dispose())
         Services.desktop.groupExited.Add <| fun _ -> invoker.asyncInvoke(fun() -> this.updateAppWindows())
         Services.desktop.groupRemoved.Add <| fun _ -> invoker.asyncInvoke(fun() -> this.updateAppWindows())
     
@@ -332,16 +333,8 @@ type Program() as this =
         // so scaling here would persist scaled values and compound them on
         // every load. Drawing code scales at the point of use instead.
         member x.tabAppearanceInfo = 
-            Theme.currentAppearance()
+            ThemeService.currentAppearance()
 
-        member x.defaultTabAppearanceInfo = settingsManager.defaultTabAppearance
-
-        member x.darkModeTabAppearanceInfo = 
-            settingsManager.darkModeTabAppearance
-
-        member x.darkModeBlueTabAppearanceInfo = 
-            settingsManager.darkModeBlueTabAppearance
-            
         member x.getHotKey key = 
             let hotKeys = settingsManager.settingsJson.getObject("hotKeys").def(JObject())
             match hotKeys.getInt32(key) with

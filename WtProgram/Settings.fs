@@ -67,55 +67,7 @@ type Settings(isStandAlone) as this =
     // tabOverlap is 0 because rounded corners cannot overlap the way the old
     // bezier trapezoid could - overlapping tabs eat each other's corners. See
     // the migration in Program for what happens to existing settings.
-    member this.defaultTabAppearance =
-        {
-            tabHeight = 25
-            tabMaxWidth = 200
-            tabOverlap = 0
-            tabTextColor = Color.FromRGB(0x1F1F1F)
-            tabNormalBgColor = Color.FromRGB(0xCCCCCC)
-            tabHighlightBgColor = Color.FromRGB(0xE4E4E4)
-            tabActiveBgColor = Color.FromRGB(0xFFFFFF)
-            tabBorderColor = Color.FromRGB(0xA8A8A8)
-            tabFlashBgColor = Color.FromRGB(0xFFBBBB)
-            tabHeightOffset = 1
-            tabIndentFlipped = 80
-            tabIndentNormal = 3 
-        }
- 
-    member this.darkModeTabAppearance =
-        {
-            tabTextColor = Color.FromRGB(0xFFFFFF)         
-            tabNormalBgColor = Color.FromRGB(0x0D0D0D)     
-            tabHighlightBgColor = Color.FromRGB(0x1E1E1E)  
-            tabActiveBgColor = Color.FromRGB(0x2D2D2D)     
-            tabBorderColor = Color.FromRGB(0x333333)       
-            tabFlashBgColor = Color.FromRGB(0x772222)      
-
-            tabHeight = -1
-            tabMaxWidth = -1
-            tabOverlap = -1
-            tabHeightOffset = -1
-            tabIndentFlipped = -1
-            tabIndentNormal = -1
-        }
-
-    member this.darkModeBlueTabAppearance =
-        {
-            tabTextColor = Color.FromRGB(0xE0E0E0)         
-            tabNormalBgColor = Color.FromRGB(0x111827)    
-            tabHighlightBgColor = Color.FromRGB(0x4B5970)  
-            tabActiveBgColor = Color.FromRGB(0x273548)     
-            tabBorderColor = Color.FromRGB(0x374151)       
-            tabFlashBgColor = Color.FromRGB(0x991B1B)      
-
-            tabHeight = -1
-            tabMaxWidth = -1
-            tabOverlap = -1
-            tabHeightOffset = -1
-            tabIndentFlipped = -1
-            tabIndentNormal = -1
-        }
+    member this.defaultTabAppearance = Theme.light
 
     member this.update f = this.settings <- f(this.settings)
 
@@ -124,22 +76,13 @@ type Settings(isStandAlone) as this =
             if cachedSettingsRec.IsNone then 
                 let settingsJson = this.settingsJson
                 try
-                    let readAppearance (appearanceObject:JObject) defaults =
-                        appearanceObject.items.fold defaults <| fun appearance (key,value) ->
-                            try
-                                let raw = (value :?> JValue).Value
-                                let fieldType = Serialize.getFieldType (appearance.GetType()) key
-                                let parsed =
-                                    if fieldType = typeof<Color> then
-                                        box(Color.FromRGB(Int32.Parse(string raw, Globalization.NumberStyles.HexNumber)))
-                                    elif fieldType = typeof<int> then box(Convert.ToInt32(raw))
-                                    else failwith "Unknown appearance field"
-                                Serialize.writeField appearance key parsed :?> TabAppearanceInfo
-                            with _ -> appearance
-                    let legacy = readAppearance (settingsJson.getObject("tabAppearance").def(JObject())) this.defaultTabAppearance
+                    let legacyJson = settingsJson.getObject("tabAppearance").def(JObject())
+                    let geometry = AppearanceJson.readGeometry legacyJson (Theme.defaultGeometry)
+                    let legacyPalette = AppearanceJson.readPalette legacyJson (Theme.lightPalette)
+                    let legacy = TabPalette.compose geometry legacyPalette
                     let custom = settingsJson.getBool("tabUseCustomColors").def(not (Theme.sameColors legacy Theme.light))
-                    let lightColors = readAppearance (settingsJson.getObject("tabLightColors").def(JObject())) (if custom then legacy else Theme.light)
-                    let darkColors = readAppearance (settingsJson.getObject("tabDarkColors").def(JObject())) (if custom then legacy else Theme.dark)
+                    let lightColors = AppearanceJson.readPalette (settingsJson.getObject("tabLightColors").def(JObject())) (if custom then legacyPalette else Theme.lightPalette)
+                    let darkColors = AppearanceJson.readPalette (settingsJson.getObject("tabDarkColors").def(JObject())) (if custom then legacyPalette else Theme.darkPalette)
                     let settings = {
                         includedPaths = Set2(settingsJson.getStringArray("includedPaths").def(List2()))
                         excludedPaths = Set2(settingsJson.getStringArray("excludedPaths").def(List2()))
@@ -158,11 +101,13 @@ type Settings(isStandAlone) as this =
                         enableShiftScroll = settingsJson.getBool("enableShiftScroll").def(true)
                         version = settingsJson.getString("version").def(String.Empty)
                         alignment = settingsJson.getString("alignment").def("Center")
-                        tabAppearance = legacy
-                        tabThemeMode = settingsJson.getString("tabThemeMode").def("system") |> Theme.normalizeMode
-                        tabUseCustomColors = custom
-                        tabLightColors = lightColors
-                        tabDarkColors = darkColors
+                        appearance = {
+                            geometry = geometry
+                            legacyPalette = legacyPalette
+                            mode = settingsJson.getString("tabThemeMode").def("system") |> ThemeMode.parse
+                            useCustomColors = custom
+                            lightPalette = lightColors
+                            darkPalette = darkColors }
                     }
                     cachedSettingsRec <- Some(settings)
                 with ex ->
@@ -177,17 +122,10 @@ type Settings(isStandAlone) as this =
             settingsJson.setString("version", settings.version)
             settingsJson.setString("licenseKey", settings.licenseKey)
             settingsJson.setString("alignment", settings.alignment)
-            settingsJson.setString("tabThemeMode", settings.tabThemeMode)
-            settingsJson.setBool("tabUseCustomColors", settings.tabUseCustomColors)
-            let writeColors key (colors:TabAppearanceInfo) =
-                let obj = JObject()
-                for field in colors.GetType().GetProperties() do
-                    if field.PropertyType = typeof<Color> then
-                        let color = field.GetValue(colors, null) :?> Color
-                        obj.setString(field.Name, sprintf "%X" (color.ToRGB()))
-                settingsJson.setObject(key, obj)
-            writeColors "tabLightColors" settings.tabLightColors
-            writeColors "tabDarkColors" settings.tabDarkColors
+            settingsJson.setString("tabThemeMode", ThemeMode.serialize settings.appearance.mode)
+            settingsJson.setBool("tabUseCustomColors", settings.appearance.useCustomColors)
+            settingsJson.setObject("tabLightColors",AppearanceJson.writePalette settings.appearance.lightPalette)
+            settingsJson.setObject("tabDarkColors",AppearanceJson.writePalette settings.appearance.darkPalette)
             settings.ticket.iter <| fun ticket -> settingsJson.setString("ticket", ticket)
             settingsJson.setBool("runAtStartup", settings.runAtStartup)
             settingsJson.setBool("hideInactiveTabs", settings.hideInactiveTabs)
@@ -202,47 +140,65 @@ type Settings(isStandAlone) as this =
             settingsJson.setStringArray("includedPaths", settings.includedPaths.items)
             settingsJson.setStringArray("excludedPaths", settings.excludedPaths.items)
             settingsJson.setStringArray("autoGroupingPaths", settings.autoGroupingPaths.items)
-            let appearanceObject =
-                let appearance = settings.tabAppearance
-                let obj = JObject()
-                let props = appearance.GetType().GetProperties()
-                let values = FSharpValue.GetRecordFields(appearance)
-                List2(Seq.zip props values).iter <| fun (prop, value) ->
-                    let key = prop.Name
-                    match value with
-                    | :? Color as value -> obj.setString(key, sprintf "%X" (value.ToRGB()))
-                    | :? int as value -> obj.setInt64(key, int64(value))
-                    | :? string as value -> obj.setString(key, value)
-                    | _ -> ()
-                obj
-            settingsJson.setObject("tabAppearance", appearanceObject)
+            settingsJson.setObject("tabAppearance",AppearanceJson.writeLegacy settings.appearance.geometry settings.appearance.legacyPalette)
             this.settingsJson <- settingsJson
 
     interface ISettings with
 
+        member x.appearance = x.settings.appearance
+        member x.updateAppearance update =
+            let current = x.settings
+            let next = update current.appearance
+            if next <> current.appearance then
+                x.settings <- {current with appearance=next}
+                let previous = current.appearance
+                let notify key changed value = if changed then settingChangedEvent.Trigger(key,value)
+                notify "tabThemeMode" (previous.mode<>next.mode) (box(ThemeMode.serialize next.mode))
+                notify "tabUseCustomColors" (previous.useCustomColors<>next.useCustomColors) (box next.useCustomColors)
+                notify "tabAppearance" (previous.geometry<>next.geometry || previous.legacyPalette<>next.legacyPalette)
+                    (box(TabPalette.compose next.geometry next.legacyPalette))
+                notify "tabLightColors" (previous.lightPalette<>next.lightPalette)
+                    (box(TabPalette.compose next.geometry next.lightPalette))
+                notify "tabDarkColors" (previous.darkPalette<>next.darkPalette)
+                    (box(TabPalette.compose next.geometry next.darkPalette))
+                settingChangedEvent.Trigger("appearance",box next)
+                ThemeService.notifyChanged()
+
+        // Compatibility adapter for older callers; new appearance code uses the typed API.
         member x.setValue((key,value)) =
-            valueCache.Remove(key).ignore
-            let settings = x.settings
-            let settings = Serialize.writeField settings key value
-            x.settings <- unbox<SettingsRec>(settings)
-            settingChangedEvent.Trigger(key, value)
+            let api = x :> ISettings
             match key with
-            | "tabAppearance" | "tabThemeMode" | "tabUseCustomColors"
-            | "tabLightColors" | "tabDarkColors" -> Theme.notifyChanged()
-            | _ -> ()
-
-        member x.getValue(key) = 
-            match valueCache.tryFind(key) with
-            | None ->
-                let settings = x.settings
-                let value = Serialize.readField settings key
-                valueCache.Add(key, value)
-                value
-            | Some(value) -> value
-
+            | "tabAppearance" ->
+                let appearance = value :?> TabAppearanceInfo
+                api.updateAppearance(fun s -> {s with geometry=TabGeometry.fromAppearance appearance;legacyPalette=TabPalette.fromAppearance appearance})
+            | "tabThemeMode" -> api.updateAppearance(fun s -> {s with mode=ThemeMode.parse (value :?> string)})
+            | "tabUseCustomColors" -> api.updateAppearance(fun s -> {s with useCustomColors=unbox value})
+            | "tabLightColors" | "tabDarkColors" ->
+                let palette = match value with :? TabPalette as p -> p | _ -> TabPalette.fromAppearance (value :?> TabAppearanceInfo)
+                api.updateAppearance(fun s -> if key="tabLightColors" then {s with lightPalette=palette} else {s with darkPalette=palette})
+            | _ ->
+                valueCache.Remove(key).ignore
+                let settings = Serialize.writeField x.settings key value
+                x.settings <- unbox<SettingsRec>(settings)
+                settingChangedEvent.Trigger(key,value)
+        member x.getValue(key) =
+            let appearance = x.settings.appearance
+            match key with
+            | "tabAppearance" -> box(TabPalette.compose appearance.geometry appearance.legacyPalette)
+            | "tabThemeMode" -> box(ThemeMode.serialize appearance.mode)
+            | "tabUseCustomColors" -> box appearance.useCustomColors
+            | "tabLightColors" -> box(TabPalette.compose appearance.geometry appearance.lightPalette)
+            | "tabDarkColors" -> box(TabPalette.compose appearance.geometry appearance.darkPalette)
+            | _ ->
+                match valueCache.tryFind(key) with
+                | None ->
+                    let value = Serialize.readField x.settings key
+                    valueCache.Add(key,value)
+                    value
+                | Some value -> value
         member x.notifyValue key f =
-            settingChangedEvent.Publish.Add <| fun(changedKey, value) ->
-                if changedKey = key then f(value)
+            settingChangedEvent.Publish.Subscribe(fun(changedKey,value) ->
+                if changedKey=key then f(value))
 
         member x.root
             with get() = this.settingsJson

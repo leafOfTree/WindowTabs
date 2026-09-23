@@ -84,12 +84,14 @@
     <Compile Include="Shared\TabStripTypes.fs" />
     <Compile Include="Shared/Dpi.fs" />
     <Compile Include="Shared/Win32.fs" />
+    <Compile Include="Shared/AppearanceModel.fs" />
     <Compile Include="Shared\ProgramTypes.fs" />
     <Compile Include="Shared/DragDrop.fs" />
     <Compile Include="Shared/Serialize.fs" />
     <Compile Include="Shared/Win32Menu.fs" />
     <Compile Include="Shared/Services.fs" />
     <Compile Include="Shared/Theme.fs" />
+    <Compile Include="Shared/ThemeService.fs" />
     <Compile Include="Shared/AnimationWindow.fs" />
     <Compile Include="Shared/Forms.fs" />
     <Compile Include="Shared/Json.fs" />
@@ -101,6 +103,7 @@
     <Compile Include="TabStripSprite.fs" />
     <Compile Include="TabShadow.fs" />
     <Compile Include="TabStrip.fs" />
+    <Compile Include="AppearanceJson.fs" />
     <Compile Include="Settings.fs" />
     <Compile Include="TaskSwitch.fs" />
     <Compile Include="WindowDecorator.fs" />
@@ -116,7 +119,12 @@
     <Compile Include="Workspace\WorkspaceModel.fs" />
     <Compile Include="Workspace\WorkspaceView.fs" />
     <Compile Include="ManagerViewService\SettingsCatalog.fs" />
+    <Compile Include="ManagerViewService\ThemeBinding.fs" />
+    <Compile Include="ManagerViewService\SettingsStyle.fs" />
+    <Compile Include="ManagerViewService\SettingsControls.fs" />
+    <Compile Include="ManagerViewService\SettingsPage.fs" />
     <Compile Include="ManagerViewService\SettingsUi.fs" />
+    <Compile Include="ManagerViewService\SettingsBindings.fs" />
     <Compile Include="ManagerViewService\Views\GeneralView.fs" />
     <Compile Include="ManagerViewService\Views\AppearanceView.fs" />
     <Compile Include="ManagerViewService\Views\BehaviorView.fs" />

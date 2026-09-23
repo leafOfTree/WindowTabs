@@ -22,6 +22,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>) as this =
     let flashEvent = Event<_>()
     let keyboardLLEvent = Event<Int32 * KBDLLHOOKSTRUCT>()
     let foregroundEvent = Event<_>()
+    let geometryChangedEvent = Event<unit>()
+    let mutable appearanceSnapshot = ThemeService.currentAppearance().scaled
 
     let isDestroyed = Cell.create(false)
     let zorderCell = Cell.create(List2<IntPtr>())
@@ -71,9 +73,15 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>) as this =
         isForegroundExport.init()
 
         this.ts.setTabAppearance(this.tabAppearance)
-        themeSubscription <- Some(Theme.changed.Subscribe(fun () ->
+        themeSubscription <- Some(ThemeService.changed.Subscribe(fun () ->
             this.invokeAsync <| fun() ->
-                if not isDestroyed.value then this.ts.setTabAppearance(this.tabAppearance)))
+                if not isDestroyed.value then
+                    let next = ThemeService.currentAppearance().scaled
+                    let geometryChanged = TabGeometry.fromAppearance next <> TabGeometry.fromAppearance appearanceSnapshot
+                    if next <> appearanceSnapshot then
+                        appearanceSnapshot <- next
+                        this.ts.setTabAppearance(next)
+                        if geometryChanged then geometryChangedEvent.Trigger()))
 
         Cell.listen <| fun() ->
             this.ts.zorder <- zorderCell.value.map(Tab)
@@ -131,7 +139,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>) as this =
     
     // .scaled converts the stored logical pixels to physical ones. The stored
     // record stays logical because Settings writes it back to the settings file.
-    member this.tabAppearance = Theme.currentAppearance().scaled
+    member this.tabAppearance = appearanceSnapshot
+    member this.geometryChanged = geometryChangedEvent.Publish
 
     member private this.withUpdate f =
         Cell.beginUpdate()

@@ -122,18 +122,26 @@ type ProgramView() as this=
         panel.Controls.Add(statusBar)
         panel
 
-    do  
+    let mutable scanGeneration = 0
+
+    do
         this.populateNodes()
-        Services.settings.notifyValue "enableTabbingByDefault" <| fun(_) ->
-            this.populateNodes()
+        let subscription = Services.settings.notifyValue "enableTabbingByDefault" (fun _ ->
+            if not panel.IsDisposed then
+                invoker.asyncInvoke(fun () -> if not panel.IsDisposed then this.populateNodes()))
+        panel.Disposed.Add(fun _ ->
+            System.Threading.Interlocked.Increment(&scanGeneration) |> ignore
+            subscription.Dispose())
 
     member private this.populateNodes() =
+        let generation = System.Threading.Interlocked.Increment(&scanGeneration)
+        let isCurrent() = not panel.IsDisposed && generation=System.Threading.Volatile.Read(&scanGeneration)
         model.Nodes.Clear()
         ThreadHelper.queueBackground <| fun() ->
             let os = OS()
             let procs = Services.program.appWindows.fold (Map2()) <| fun procs hwnd ->
                 invoker.asyncInvoke <| fun() ->
-                    statusBar.Text <- sprintf "Scanning window 0x%x" hwnd
+                    if isCurrent() then statusBar.Text <- sprintf "Scanning window 0x%x" hwnd
                 let window = os.windowFromHwnd(hwnd)
                 let procPath = window.pid.processPath
                 procs.add procPath (procs.tryFind(procPath).def(List2()).append(window))
@@ -145,12 +153,13 @@ type ProgramView() as this=
                 procNode
             
             invoker.asyncInvoke <| fun() ->
-                model.Nodes.Clear()
-                // Case insensitive: F# compares strings ordinally, which sorts
-                // every capitalised executable ahead of every lowercase one -
-                // Code.exe and WindowTabs.exe before chrome.exe.
-                procNodes.sortBy(fun n -> n.Text.ToLowerInvariant()).iter <| fun node -> model.Nodes.Add(node)
-                statusBar.Text <- "Ready"
+                if isCurrent() then
+                    model.Nodes.Clear()
+                    // Case insensitive: F# compares strings ordinally, which sorts
+                    // every capitalised executable ahead of every lowercase one -
+                    // Code.exe and WindowTabs.exe before chrome.exe.
+                    procNodes.sortBy(fun n -> n.Text.ToLowerInvariant()).iter <| fun node -> model.Nodes.Add(node)
+                    statusBar.Text <- "Ready"
 
     interface ISettingsView with
         member x.key = SettingsViewType.ProgramSettings
