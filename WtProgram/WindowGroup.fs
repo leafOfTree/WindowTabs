@@ -9,7 +9,7 @@ open System.Threading
 open System.Windows.Forms
 open Bemo.Win32.Forms
 
-type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>) as this =
+type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:TabAppearanceInfo) as this =
     let Cell = CellScope(true)
     let _bb = Blackboard()
     let invoker = InvokerService.invoker
@@ -23,7 +23,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>) as this =
     let keyboardLLEvent = Event<Int32 * KBDLLHOOKSTRUCT>()
     let foregroundEvent = Event<_>()
     let geometryChangedEvent = Event<unit>()
-    let mutable appearanceSnapshot = ThemeService.currentAppearance().scaled
+    // Supplied by the caller: the main thread waits while this constructor runs.
+    // Calling the settings service here would synchronously invoke that blocked thread.
+    let mutable appearanceSnapshot = initialAppearance
 
     let isDestroyed = Cell.create(false)
     let zorderCell = Cell.create(List2<IntPtr>())

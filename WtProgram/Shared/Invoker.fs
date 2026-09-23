@@ -46,19 +46,24 @@ module ThreadHelper =
         System.Threading.ThreadPool.QueueUserWorkItem(Threading.WaitCallback(fun _ -> f())).ignore
 
     let startOnThreadAndWait fStart =
-        let evt = ManualResetEvent(false)
+        use evt = new ManualResetEvent(false)
         let results = ref None
+        let error = ref None
         let start() =
-            results := Some(fStart())
-            evt.Set().ignore
-            Application.EnableVisualStyles()
-            Application.Run()
+            try
+                try results := Some(fStart())
+                with ex -> error := Some(System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex))
+            finally evt.Set().ignore
+            if error.Value.IsNone then
+                Application.EnableVisualStyles()
+                Application.Run()
         let thread = Thread(ThreadStart(start))
         thread.SetApartmentState(ApartmentState.STA)
         thread.Start()
         evt.WaitOne().ignore
-        results.Value.Value
-
+        match error.Value with
+        | Some failure -> failure.Throw(); Unchecked.defaultof<_>
+        | None -> results.Value.Value
     let cancelablePostBack interval f =
         let timer = new System.Windows.Forms.Timer()
         timer.Interval <- interval

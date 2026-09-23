@@ -11,6 +11,7 @@ type GroupInfo(enableSuperBar) as this =
     let mutable _isExited = false
     let desktopInvoker = InvokerService.invoker
     let enableCtrlNumberHotKey = Services.settings.getValue("enableCtrlNumberHotKey").cast<bool>()
+    let initialAppearance = ThemeService.currentAppearance().scaled
     let (_group, invoker) = ThreadHelper.startOnThreadAndWait <| fun() ->
         let plugins = List2<_>([
             Some(MouseScrollPlugin().cast<IPlugin>())
@@ -20,7 +21,7 @@ type GroupInfo(enableSuperBar) as this =
             ])
         let plugins = plugins.choose(id)
 
-        let _group = WindowGroup(enableSuperBar, plugins)
+        let _group = WindowGroup(enableSuperBar, plugins, initialAppearance)
         _group.exited.Add <| fun _ ->
             _isExited <- true 
             Application.ExitThread()

@@ -111,6 +111,27 @@ let main() =
         ThemeService.notifyChanged()
         Application.DoEvents()
         check (callbacks=1) "Disposed theme binding still runs"
+        // Group creation must complete while the settings/UI thread waits without pumping messages.
+        // A settings proxy call in WindowGroup's constructor deadlocks this exact startup sequence.
+        let initialAppearance = ThemeService.currentAppearance().scaled
+        let mutable constructionError : exn option = None
+        let mutable constructed = false
+        let constructorThread = new Threading.Thread(Threading.ThreadStart(fun () ->
+            try
+                let group = WindowGroup(false,List2<IPlugin>(),initialAppearance)
+                constructed <- group.tabAppearance=initialAppearance
+                (InvokerService.invoker :> IDisposable).Dispose()
+            with ex -> constructionError <- Some ex))
+        constructorThread.IsBackground <- true
+        constructorThread.SetApartmentState(Threading.ApartmentState.STA)
+        constructorThread.Start()
+        check (constructorThread.Join(3000)) "WindowGroup constructor calls back into the blocked settings thread"
+        constructionError |> Option.iter raise
+        check constructed "WindowGroup did not retain the supplied appearance snapshot"
+        let mutable failureReturned = false
+        try ThreadHelper.startOnThreadAndWait(fun () -> failwith "startup-test") |> ignore
+        with ex -> failureReturned <- ex.Message="startup-test"
+        check failureReturned "Worker initialization failure did not return to the caller"
         let mutable filterDefault = false
         Services.register<IFilterService>({
             new IFilterService with
