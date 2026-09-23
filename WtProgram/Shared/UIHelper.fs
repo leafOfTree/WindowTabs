@@ -74,6 +74,7 @@ type ColorEditor() as this =
     let changedEvent = Event<_>()
     let chooserButton = 
         let btn = Button()
+        btn.Tag <- "color-swatch"
         btn.Width <- btn.Height
         btn.Click.Add <| fun _ -> 
             let dlg = System.Windows.Forms.ColorDialog()

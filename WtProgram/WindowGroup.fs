@@ -36,6 +36,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>) as this =
     let hookCleanup = Cell.create(Map2<IntPtr, IDisposable>())
     let shellHookWindow = Cell.create(None)
     let winEventHandler = Cell.create(None)
+    let mutable themeSubscription : IDisposable option = None
     let isDraggingCell = Cell.create(false)
     let isDraggingExport = Cell.export <| fun() -> isDraggingCell.value
     let zorderExport = Cell.export <| fun() -> zorderCell.value
@@ -70,9 +71,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>) as this =
         isForegroundExport.init()
 
         this.ts.setTabAppearance(this.tabAppearance)
-        Services.settings.notifyValue "tabAppearance" <| fun(_) ->
+        themeSubscription <- Some(Theme.changed.Subscribe(fun () ->
             this.invokeAsync <| fun() ->
-                this.ts.setTabAppearance(this.tabAppearance)
+                if not isDestroyed.value then this.ts.setTabAppearance(this.tabAppearance)))
 
         Cell.listen <| fun() ->
             this.ts.zorder <- zorderCell.value.map(Tab)
@@ -130,7 +131,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>) as this =
     
     // .scaled converts the stored logical pixels to physical ones. The stored
     // record stays logical because Settings writes it back to the settings file.
-    member this.tabAppearance = Services.settings.getValue("tabAppearance").cast<TabAppearanceInfo>().scaled
+    member this.tabAppearance = Theme.currentAppearance().scaled
 
     member private this.withUpdate f =
         Cell.beginUpdate()
@@ -465,6 +466,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>) as this =
     member this.destroy() =
         if isDestroyed.value.not then
             isDestroyed.set(true)
+            themeSubscription |> Option.iter (fun subscription -> subscription.Dispose())
+            themeSubscription <- None
             this.ts.destroy()
             shellHookWindow.value.iter <| fun d -> d.Dispose()
             winEventHandler.value.iter <| fun d -> d.Dispose()

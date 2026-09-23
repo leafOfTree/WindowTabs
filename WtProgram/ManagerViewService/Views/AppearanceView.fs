@@ -1,155 +1,128 @@
 ﻿namespace Bemo
 open System
 open System.Drawing
-open System.IO
 open System.Windows.Forms
-open Bemo.Win32
-open Bemo.Win32.Forms
-open Microsoft.FSharp.Reflection
-open System.Resources
-open System.Reflection
 
-type AppearanceProperty = {
-    displayText : string
-    key: string
-    propertyType : AppearancePropertyType
-    }
+type AppearanceView() =
+    let t = SettingsUi.text
+    let panel,table = SettingsUi.page()
+    let mutable refreshing = false
+    let mutable lastDark = Theme.currentIsDark()
+    let get key = Services.settings.getValue(key)
+    let set key value = Services.settings.setValue(key,box value)
+    let custom = new SettingsToggle()
+    let profile = SettingsUi.choice [|t "Light palette" "浅色配色";t "Dark palette" "深色配色"|]
+    let profileKey() = if profile.SelectedIndex = 1 then "tabDarkColors" else "tabLightColors"
+    let preview = new Panel(Height=Dpi.scale 100)
+    let colorFields = [
+        "tabTextColor",SettingsCatalog.title "tabTextColor"
+        "tabNormalBgColor",SettingsCatalog.title "tabNormalBgColor"
+        "tabActiveBgColor",SettingsCatalog.title "tabActiveBgColor"
+        "tabHighlightBgColor",SettingsCatalog.title "tabHighlightBgColor"
+        "tabBorderColor",SettingsCatalog.title "tabBorderColor"
+        "tabFlashBgColor",SettingsCatalog.title "tabFlashBgColor" ]
+    let colors = colorFields |> List.map (fun (key,caption) -> key,caption,(ColorEditor() :> IPropEditor))
+    let dimensions =
+        [
+        "tabHeight",SettingsCatalog.title "tabHeight",12,120
+        "tabMaxWidth",SettingsCatalog.title "tabMaxWidth",60,1000
+        "tabOverlap",SettingsCatalog.title "tabOverlap",-100,0
+        "tabIndentNormal",SettingsCatalog.title "tabIndentNormal",0,1000
+        "tabIndentFlipped",SettingsCatalog.title "tabIndentFlipped",0,1000 ]
+        |> List.map (fun (key,caption,minValue,maxValue) ->
+            let editor = new NumericUpDown(Minimum=decimal minValue,Maximum=decimal maxValue,Width=Dpi.scale 120)
+            key,caption,editor)
 
-and AppearancePropertyType =
-    | HotKeyProperty
-    | IntProperty
-    | ColorProperty
+    let refresh() =
+        refreshing <- true
+        try
+            let dark = Theme.currentIsDark()
+            if dark <> lastDark then profile.SelectedIndex <- (if dark then 1 else 0)
+            lastDark <- dark
+            custom.Checked <- get "tabUseCustomColors" :?> bool
+            let palette =
+                if custom.Checked then get (profileKey()) :?> TabAppearanceInfo
+                elif profile.SelectedIndex = 1 then Theme.dark else Theme.light
+            for key,_,editor in colors do
+                editor.value <- Serialize.readField palette key
+                editor.control.Enabled <- custom.Checked
+            let geometry = get "tabAppearance" :?> TabAppearanceInfo
+            for key,_,editor in dimensions do
+                let value = decimal (Serialize.readField geometry key :?> int)
+                // Opening the page must not rewrite a legacy out-of-range value.
+                editor.Minimum <- min editor.Minimum value
+                editor.Maximum <- max editor.Maximum value
+                editor.Value <- value
+            preview.Invalidate()
+        finally refreshing <- false
 
-type AppearanceView() as this =
-    let colorConfig key displayText = 
-        { displayText=displayText; key=key; propertyType=ColorProperty }
+    do
+        profile.SelectedIndex <- if Theme.currentIsDark() then 1 else 0
+        SettingsUi.section table (t "Theme" "主题")
+        SettingsUi.add table (SettingsUi.themeTiles())
+        SettingsUi.add table preview
+        SettingsUi.note table (t "Preview: active, hovered and inactive tabs. Changes apply immediately." "预览依次显示活动、悬停和非活动标签。修改立即生效。")
+        preview.Paint.Add(fun e ->
+            let appearance = Theme.currentAppearance().scaled
+            let height = max 12 appearance.tabHeight
+            let width = max 100 (preview.ClientSize.Width-Dpi.scale 32)
+            let info caption : TabDisplayInfo = {
+                bgColor=None; text=caption; icon=SystemIcons.Application
+                textFont=SettingsUi.bodyFont; textBrush=SystemBrushes.MenuText }
+            let ts : TabStripSprite<int> = {
+                tabs=Map2(List2([1,info (t "Active tab" "活动标签");2,info (t "Hovered tab" "悬停标签");3,info (t "Inactive tab" "非活动标签")]))
+                lorder=List2([1;2;3]);zorder=List2([1;2;3]);size=Sz(width,height+2)
+                slide=None;direction=TabUp;alignment=TabLeft;onlyIcons=false;transparent=true
+                appearance=appearance;hover=Some(2,TabBackground);captured=None }
+            use bitmap = ts.render.bitmap
+            e.Graphics.DrawImageUnscaled(bitmap,Dpi.scale 16,Dpi.scale 28))
+        let colorsCard = SettingsUi.sectionCard table (t "Custom colours" "自定义颜色")
+        SettingsUi.settingRow colorsCard "use-custom-palettes" custom
+        SettingsUi.settingRow colorsCard "palette-to-edit" profile
+        for key,_,editor in colors do
+            editor.control.Width <- Dpi.scale 180
+            SettingsUi.settingRow colorsCard key editor.control
+        let reset = SettingsUi.button (t "Reset this palette" "重置当前配色")
+        reset.Click.Add(fun _ -> set (profileKey()) (if profile.SelectedIndex = 1 then Theme.dark else Theme.light))
+        let actions = new FlowLayoutPanel(AutoSize=true,WrapContents=true,Margin=Padding(0,Dpi.scale 8,0,Dpi.scale 8))
+        actions.Controls.Add(reset)
+        let blue = SettingsUi.button (t "Use dark blue palette" "使用深蓝配色")
+        blue.Click.Add(fun _ ->
+            let colors = { Theme.dark with
+                            tabTextColor=Color.FromRGB(0xE0E0E0)
+                            tabNormalBgColor=Color.FromRGB(0x111827)
+                            tabHighlightBgColor=Color.FromRGB(0x4B5970)
+                            tabActiveBgColor=Color.FromRGB(0x273548)
+                            tabBorderColor=Color.FromRGB(0x374151)
+                            tabFlashBgColor=Color.FromRGB(0x991B1B) }
+            set "tabDarkColors" colors
+            set "tabUseCustomColors" true
+            profile.SelectedIndex <- 1)
+        actions.Controls.Add(blue)
+        SettingsUi.add table actions
+        let layoutCard = SettingsUi.sectionCard table (t "Tab layout" "标签布局")
+        SettingsUi.note layoutCard (t "Sizes stay the same when you switch themes." "切换主题不会改变这些尺寸。")
+        for key,_,editor in dimensions do SettingsUi.settingRow layoutCard key editor
+        let resetLayout = SettingsUi.button (t "Reset tab layout" "重置标签布局")
+        resetLayout.Click.Add(fun _ ->
+            set "tabAppearance" (Theme.withColors (get "tabAppearance" :?> TabAppearanceInfo) Theme.light))
+        SettingsUi.add table resetLayout
+        refresh()
+        custom.CheckedChanged.Add(fun _ -> if not refreshing then set "tabUseCustomColors" custom.Checked)
+        profile.SelectedIndexChanged.Add(fun _ -> if not refreshing then refresh())
+        for key,_,editor in colors do
+            editor.changed.Add(fun () ->
+                if not refreshing && custom.Checked then
+                    let current = get (profileKey()) :?> TabAppearanceInfo
+                    set (profileKey()) (Serialize.writeField current key editor.value :?> TabAppearanceInfo))
+        for key,_,editor in dimensions do
+            editor.ValueChanged.Add(fun _ ->
+                if not refreshing then
+                    let current = get "tabAppearance" :?> TabAppearanceInfo
+                    set "tabAppearance" (Serialize.writeField current key (box(int editor.Value)) :?> TabAppearanceInfo))
+        Theme.watch panel refresh
 
-    let intConfig key displayText = 
-        { displayText=displayText; key=key; propertyType=IntProperty }
-    
-    let hkConfig key displayText = 
-        { displayText=displayText; key=key; propertyType=HotKeyProperty }
-        
-    let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
-    let font = Font(resources.GetString("Font"), 10f)
-
-    let properties = List2([
-        intConfig "tabHeight" "Height"
-        intConfig "tabMaxWidth" "Max Width"
-        intConfig "tabOverlap" "Overlap"
-        colorConfig "tabTextColor" "Text Color"
-        colorConfig "tabNormalBgColor" "Background Normal"
-        colorConfig "tabHighlightBgColor" "Background Highlight"
-        colorConfig "tabActiveBgColor" "Background Active"
-        colorConfig "tabFlashBgColor" "Background Flash"
-        colorConfig "tabBorderColor" "Border"
-        intConfig "tabIndentNormal" "Indent Normal"
-        intConfig "tabIndentFlipped" "Indent Flipped"
-        ])
-
-    let panel = 
-        let panel = TableLayoutPanel()
-        panel.AutoScroll <- true
-        panel.Dock <- DockStyle.Fill
-        panel.GrowStyle <- TableLayoutPanelGrowStyle.FixedSize
-        panel.Padding <- Padding(10)
-        panel.RowCount <- properties.length + 1
-        List2([0..properties.length]).iter <| fun row ->
-            panel.RowStyles.Add(RowStyle(SizeType.Absolute, 35.0f)).ignore
-        panel.ColumnCount <- 2
-        panel
-
-    let editors = properties.enumerate.fold (Map2()) <| fun editors (i,prop) ->
-        let label =
-            let label = Label()
-            label.AutoSize <- true
-            label.Text <- resources.GetString(prop.displayText)
-            label.TextAlign <- ContentAlignment.MiddleLeft
-            label.Font <- font
-            label
-        let editor = 
-            match prop.propertyType with
-            | ColorProperty -> ColorEditor() :> IPropEditor
-            | IntProperty -> IntEditor() :> IPropEditor
-            | HotKeyProperty -> HotKeyEditor() :> IPropEditor
-
-        editor.control.Dock <- DockStyle.Fill
-        editor.control.Margin <- Padding(10,5,0,5)
-        label.Margin <- Padding(0,5,0,5)
-        panel.Controls.Add(label)
-        panel.Controls.Add(editor.control)
-        panel.SetRow(label, i)
-        panel.SetColumn(label, 0)
-        panel.SetRow(editor.control, i)
-        panel.SetColumn(editor.control, 1)
-        editors.add prop.key editor
-
-    let setEditorValues appearance =
-        properties.iter <| fun prop ->
-            let editor = editors.find prop.key
-            try
-                editor.value <- Serialize.readField appearance prop.key
-            with | _ ->()
-
-    let appearance = Services.program.tabAppearanceInfo
-
-    let font = Font(resources.GetString("Font"), 9f)
-
-    let buttonPanel =
-        let container = new FlowLayoutPanel()
-        container.FlowDirection <- FlowDirection.LeftToRight
-        container.AutoSize <- true
-        container.WrapContents <- false
-        container.Anchor <- AnchorStyles.Right
-
-        let resetBtn = Button()
-        resetBtn.Text <- resources.GetString("Reset")
-        resetBtn.Font <- font
-        resetBtn.Click.Add <| fun _ ->
-            let appearance = Services.program.defaultTabAppearanceInfo
-            setEditorValues appearance
-            this.applyAppearance()
-        
-        let darkBtn = Button()
-        darkBtn.Text <- resources.GetString("DarkMode")
-        darkBtn.Font <- font
-        darkBtn.Click.Add <| fun _ ->
-            let appearance = Services.program.darkModeTabAppearanceInfo
-            setEditorValues appearance
-            this.applyAppearance()
-
-        let darkBlueBtn = Button()
-        darkBlueBtn.AutoSize <- true
-        
-        darkBlueBtn.Text <- resources.GetString("DarkModeBlue")
-        darkBlueBtn.Font <- font
-        darkBlueBtn.Click.Add <| fun _ ->
-            let appearance = Services.program.darkModeBlueTabAppearanceInfo
-            setEditorValues appearance
-            this.applyAppearance()
-        
-        container.Controls.Add(darkBtn)
-        container.Controls.Add(darkBlueBtn)
-        container.Controls.Add(resetBtn)
-        container
-
-    do  
-        panel.Controls.Add(buttonPanel)
-        let btnRow = properties.length
-        panel.SetRow(buttonPanel, btnRow)
-        panel.SetColumn(buttonPanel, 1)
-        setEditorValues appearance
-        editors.items.map(snd).iter <| fun editor ->
-            editor.changed.Add <| fun() -> this.applyAppearance()
-        
-    member this.applyAppearance() =
-        let appearance = properties.fold appearance <| fun appearance property ->
-            let value = (editors.find property.key).value
-            (Serialize.writeField appearance property.key value) :?> TabAppearanceInfo
-        Services.settings.setValue("tabAppearance", box(appearance))
-        
     interface ISettingsView with
-        member x.key = SettingsViewType.AppearanceSettings
-        member x.title = resources.GetString("Appearance")
-        member x.control = panel :> Control
-
+        member _.key = AppearanceSettings
+        member _.title = t "Appearance" "外观"
+        member _.control = panel :> Control

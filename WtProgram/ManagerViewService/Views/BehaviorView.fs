@@ -1,130 +1,27 @@
-namespace Bemo
-open System
-open System.Drawing
-open System.IO
+﻿namespace Bemo
 open System.Windows.Forms
-open Bemo.Win32
-open Bemo.Win32.Forms
-open System.Resources
-open System.Reflection
-
 
 type HotKeyView() =
-    let settingsProperty name =
-        {
-            new IProperty<'a> with
-                member x.value
-                    with get() = unbox<'a>(Services.settings.getValue(name))
-                    and set(value) = Services.settings.setValue(name, box(value))
-        }
-        
-    let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
-
-    let checkBox (prop:IProperty<bool>) = 
-        let checkbox = BoolEditor() :> IPropEditor
-        checkbox.value <- box(prop.value)
-        checkbox.changed.Add <| fun() -> prop.value <- unbox<bool>(checkbox.value)
-        checkbox.control
-
-    let settingsCheckbox key = checkBox(settingsProperty(key))
-
-    let dropDown (prop:IProperty<string>, items: string list) = 
-        let combo = new ComboBox()
-
-        // First add items
-        combo.Items.AddRange(items |> List.toArray |> Array.map box)
-        
-        // Then set initial value if exists, otherwise select first item
-        let initialIndex = 
-            match items |> List.tryFindIndex ((=) prop.value) with
-            | Some index -> index
-            | None -> if combo.Items.Count > 0 then 0 else -1
-        
-        if initialIndex >= 0 then
-            combo.SelectedIndex <- initialIndex
-            
-        combo.SelectedIndexChanged.Add(fun _ ->
-            if combo.SelectedIndex >= 0 then
-                prop.value <- combo.SelectedItem.ToString()
-        )
-
-        combo :> Control
-
-    let settingsDropDown key value = dropDown(settingsProperty(key), value)
-
-    let basicForm = 
-        let fields = List2([
-            ("runAtStartup", settingsCheckbox "runAtStartup")
-            ("hideInactiveTabs", settingsCheckbox "hideInactiveTabs")
-            ("isTabbingEnabledForAllProcessesByDefault", checkBox(prop<IFilterService, bool>(Services.filter, "isTabbingEnabledForAllProcessesByDefault")))
-            ("autoHide", settingsCheckbox "autoHide")
-            ("alignment", settingsDropDown "alignment" ["Left"; "Center"; "Right"])
-        ])
-        "Basics", UIHelper.form fields
-
-    let taskForm = 
-        let fields = List2([
-            ("combineIconsInTaskbar", settingsCheckbox "combineIconsInTaskbar")
-            ("replaceAltTab", settingsCheckbox "replaceAltTab")
-            ("groupWindowsInSwitcher", settingsCheckbox "groupWindowsInSwitcher")
-        ])
-        "Tasks", UIHelper.form fields
-
-    let switchTabs =
-        let hotKeys = List2([
-            ("nextTab", "nextTab")
-            ("prevTab", "prevTab")
-        ])
-
-        let editors = hotKeys.enumerate.fold (Map2()) <| fun editors (i,(key, text)) ->
-            let caption = resources.GetString text
-            let label = UIHelper.label caption
-            let editor = HotKeyEditor() :> IPropEditor
-            editor.control.Margin <- Padding(0,5,0,5)
-            label.Margin <- Padding(0,5,0,5)
-            editors.add key editor
-
-        hotKeys.iter <| fun (key,_) ->
-            let editor = editors.find key
-            editor.value <- Services.program.getHotKey(key)
-            editor.changed.Add <| fun() ->
-                Services.program.setHotKey key (unbox<int>(editor.value))
-
-        let fields = hotKeys.map <| fun(key,text) ->
-            let editor = editors.find key
-            text, editor.control
-
-        let fields = fields.prependList(List2([
-            ("enableCtrlNumberHotKey", settingsCheckbox "enableCtrlNumberHotKey")
-            ("enableHoverActivate", settingsCheckbox "enableHoverActivate")
-            ("enableShiftScroll", settingsCheckbox "enableShiftScroll")
-        ]))
-
-        "Switch Tabs", UIHelper.form fields
-
-    let sections = List2([
-        basicForm
-        taskForm
-        switchTabs
-        ])
-
-    let table = 
-        let font = Font(resources.GetString("Font"), 10f)
-        let controls = sections.map <| fun(text,control) ->
-            control.Dock <- DockStyle.Fill
-            let group = GroupBox()
-            group.Dock <- DockStyle.Top
-            group.Margin <- Padding(10)
-            group.AutoSize <- true
-            group.Text <- text
-            group.Font <- font
-            group.Controls.Add(control)
-            group :> Control
-        let table = UIHelper.vbox controls
-        table.Dock <- DockStyle.Fill
-        table
-
+    let t = SettingsUi.text
+    let panel,table = SettingsUi.page()
+    let hotKey key =
+        let editor = HotKeyEditor() :> IPropEditor
+        editor.control.Font <- SettingsUi.bodyFont
+        editor.control.Width <- Dpi.scale 180
+        editor.value <- Services.program.getHotKey(key)
+        editor.changed.Add(fun () -> Services.program.setHotKey key (unbox<int> editor.value))
+        editor.control
+    do
+        SettingsUi.note table (t "Select a shortcut field and press your preferred key combination." "选中快捷键输入框，然后按下希望使用的组合键。")
+        let keyboard = SettingsUi.sectionCard table (t "Keyboard" "键盘")
+        SettingsUi.settingRow keyboard "next-tab" (hotKey "nextTab")
+        SettingsUi.settingRow keyboard "previous-tab" (hotKey "prevTab")
+        SettingsUi.settingRow keyboard "switch-tabs-by-number" (SettingsUi.settingToggle "enableCtrlNumberHotKey")
+        let pointer = SettingsUi.sectionCard table (t "Mouse" "鼠标")
+        SettingsUi.settingRow pointer "activate-on-hover" (SettingsUi.settingToggle "enableHoverActivate")
+        SettingsUi.settingRow pointer "shift-scroll" (SettingsUi.settingToggle "enableShiftScroll")
+        SettingsUi.note table (t "Scrolling directly over the tab strip always switches tabs." "直接在标签条上滚动滚轮始终可以切换标签。")
     interface ISettingsView with
-        member x.key = SettingsViewType.HotKeySettings
-        member x.title = resources.GetString("Behavior")
-        member x.control = table :> Control
+        member _.key = SettingsViewType.HotKeySettings
+        member _.title = t "Shortcuts" "快捷键"
+        member _.control = panel :> Control

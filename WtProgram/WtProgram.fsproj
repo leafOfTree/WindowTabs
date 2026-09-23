@@ -89,6 +89,7 @@
     <Compile Include="Shared/Serialize.fs" />
     <Compile Include="Shared/Win32Menu.fs" />
     <Compile Include="Shared/Services.fs" />
+    <Compile Include="Shared/Theme.fs" />
     <Compile Include="Shared/AnimationWindow.fs" />
     <Compile Include="Shared/Forms.fs" />
     <Compile Include="Shared/Json.fs" />
@@ -114,6 +115,9 @@
     <Compile Include="Launcher.fs" />
     <Compile Include="Workspace\WorkspaceModel.fs" />
     <Compile Include="Workspace\WorkspaceView.fs" />
+    <Compile Include="ManagerViewService\SettingsCatalog.fs" />
+    <Compile Include="ManagerViewService\SettingsUi.fs" />
+    <Compile Include="ManagerViewService\Views\GeneralView.fs" />
     <Compile Include="ManagerViewService\Views\AppearanceView.fs" />
     <Compile Include="ManagerViewService\Views\BehaviorView.fs" />
     <Compile Include="ManagerViewService\Views\DiagnosticsView.fs" />

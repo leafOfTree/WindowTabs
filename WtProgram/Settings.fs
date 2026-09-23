@@ -124,6 +124,22 @@ type Settings(isStandAlone) as this =
             if cachedSettingsRec.IsNone then 
                 let settingsJson = this.settingsJson
                 try
+                    let readAppearance (appearanceObject:JObject) defaults =
+                        appearanceObject.items.fold defaults <| fun appearance (key,value) ->
+                            try
+                                let raw = (value :?> JValue).Value
+                                let fieldType = Serialize.getFieldType (appearance.GetType()) key
+                                let parsed =
+                                    if fieldType = typeof<Color> then
+                                        box(Color.FromRGB(Int32.Parse(string raw, Globalization.NumberStyles.HexNumber)))
+                                    elif fieldType = typeof<int> then box(Convert.ToInt32(raw))
+                                    else failwith "Unknown appearance field"
+                                Serialize.writeField appearance key parsed :?> TabAppearanceInfo
+                            with _ -> appearance
+                    let legacy = readAppearance (settingsJson.getObject("tabAppearance").def(JObject())) this.defaultTabAppearance
+                    let custom = settingsJson.getBool("tabUseCustomColors").def(not (Theme.sameColors legacy Theme.light))
+                    let lightColors = readAppearance (settingsJson.getObject("tabLightColors").def(JObject())) (if custom then legacy else Theme.light)
+                    let darkColors = readAppearance (settingsJson.getObject("tabDarkColors").def(JObject())) (if custom then legacy else Theme.dark)
                     let settings = {
                         includedPaths = Set2(settingsJson.getStringArray("includedPaths").def(List2()))
                         excludedPaths = Set2(settingsJson.getStringArray("excludedPaths").def(List2()))
@@ -142,26 +158,11 @@ type Settings(isStandAlone) as this =
                         enableShiftScroll = settingsJson.getBool("enableShiftScroll").def(true)
                         version = settingsJson.getString("version").def(String.Empty)
                         alignment = settingsJson.getString("alignment").def("Center")
-                        tabAppearance =
-                            let appearanceObject = settingsJson.getObject("tabAppearance").def(JObject())
-                            appearanceObject.items.fold this.defaultTabAppearance <| fun appearance (key,value) ->
-                            try
-                                let value =
-                                    let rawValue = (value :?> JValue).Value
-                                    let fieldType = Serialize.getFieldType (appearance.GetType()) key
-                                    if fieldType = typeof<Int32> then 
-                                        box(unbox<Int64>(rawValue).Int32)
-                                    elif fieldType = typeof<Color> then 
-                                        let colorStr = unbox<string>(rawValue)
-                                        box(Color.FromRGB(Int32.Parse(colorStr, Globalization.NumberStyles.HexNumber)))
-                                    else 
-                                        failwith "UNKNOWN APPEARANCE FIELD TYPE"
-
-                                Serialize.writeField appearance key value :?> TabAppearanceInfo
-                            with ex ->
-                                let errorMessage = "Error loading Appearance setting '" + key + "'. Using default value."
-                                MessageBox.Show(errorMessage, "Appearance Setting Error", MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
-                                appearance 
+                        tabAppearance = legacy
+                        tabThemeMode = settingsJson.getString("tabThemeMode").def("system") |> Theme.normalizeMode
+                        tabUseCustomColors = custom
+                        tabLightColors = lightColors
+                        tabDarkColors = darkColors
                     }
                     cachedSettingsRec <- Some(settings)
                 with ex ->
@@ -176,6 +177,17 @@ type Settings(isStandAlone) as this =
             settingsJson.setString("version", settings.version)
             settingsJson.setString("licenseKey", settings.licenseKey)
             settingsJson.setString("alignment", settings.alignment)
+            settingsJson.setString("tabThemeMode", settings.tabThemeMode)
+            settingsJson.setBool("tabUseCustomColors", settings.tabUseCustomColors)
+            let writeColors key (colors:TabAppearanceInfo) =
+                let obj = JObject()
+                for field in colors.GetType().GetProperties() do
+                    if field.PropertyType = typeof<Color> then
+                        let color = field.GetValue(colors, null) :?> Color
+                        obj.setString(field.Name, sprintf "%X" (color.ToRGB()))
+                settingsJson.setObject(key, obj)
+            writeColors "tabLightColors" settings.tabLightColors
+            writeColors "tabDarkColors" settings.tabDarkColors
             settings.ticket.iter <| fun ticket -> settingsJson.setString("ticket", ticket)
             settingsJson.setBool("runAtStartup", settings.runAtStartup)
             settingsJson.setBool("hideInactiveTabs", settings.hideInactiveTabs)
@@ -214,6 +226,10 @@ type Settings(isStandAlone) as this =
             let settings = Serialize.writeField settings key value
             x.settings <- unbox<SettingsRec>(settings)
             settingChangedEvent.Trigger(key, value)
+            match key with
+            | "tabAppearance" | "tabThemeMode" | "tabUseCustomColors"
+            | "tabLightColors" | "tabDarkColors" -> Theme.notifyChanged()
+            | _ -> ()
 
         member x.getValue(key) = 
             match valueCache.tryFind(key) with

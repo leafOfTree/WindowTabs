@@ -24,6 +24,10 @@ type SettingsRec = {
     autoGroupingPaths : Set2<string>
     version: string
     tabAppearance: TabAppearanceInfo
+    tabThemeMode: string
+    tabUseCustomColors: bool
+    tabLightColors: TabAppearanceInfo
+    tabDarkColors: TabAppearanceInfo
     runAtStartup: bool
     hideInactiveTabs: bool
     enableTabbingByDefault: bool
@@ -57,6 +61,7 @@ type IFilterService =
     abstract member getIsTabbingEnabledForProcess : string -> bool
 
 type SettingsViewType =
+    | GeneralSettings
     | ProgramSettings
     | LicenseSettings
     | AppearanceSettings

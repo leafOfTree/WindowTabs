@@ -59,6 +59,8 @@ type Program() as this =
     let delayTabExeNames = Set2(List2(["outlook.exe"]))
 
     let settingsManager = Settings(isStandAlone)
+    let themeMonitor = Theme.startMonitoring()
+    do Application.ApplicationExit.Add(fun _ -> themeMonitor.Dispose())
 
     let keepAliveCell = Cell.create(List2())
     let keepAlive (obj:obj) =
@@ -330,7 +332,7 @@ type Program() as this =
         // so scaling here would persist scaled values and compound them on
         // every load. Drawing code scales at the point of use instead.
         member x.tabAppearanceInfo = 
-            settingsManager.settings.tabAppearance
+            Theme.currentAppearance()
 
         member x.defaultTabAppearanceInfo = settingsManager.defaultTabAppearance
 
