@@ -24,6 +24,35 @@ type SettingsSearchBox() as this =
             use pen = new Pen(border)
             e.Graphics.FillPath(fill,path)
             e.Graphics.DrawPath(pen,path)
+    override this.OnPaint(e) =
+        base.OnPaint(e)
+        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        use pen = new Pen((SettingsColors.current()).muted,float32(Dpi.scaleF 1.2))
+        let x,y = Dpi.scale 11,this.Height/2-Dpi.scale 7
+        e.Graphics.DrawEllipse(pen,x,y,Dpi.scale 12,Dpi.scale 12)
+        e.Graphics.DrawLine(pen,x+Dpi.scale 10,y+Dpi.scale 10,x+Dpi.scale 16,y+Dpi.scale 16)
+
+type SettingsSearchResults() as this =
+    inherit Panel()
+    do
+        this.DoubleBuffered <- true
+        this.ResizeRedraw <- true
+        this.Padding <- Padding(Dpi.scale 6)
+        this.Tag <- "surface"
+    override this.OnSizeChanged(e) =
+        base.OnSizeChanged(e)
+        if this.Width>2 && this.Height>2 then
+            use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (float32(Dpi.scale 10))
+            let previous = this.Region
+            this.Region <- new Region(shape)
+            if not (isNull previous) then previous.Dispose()
+    override this.OnPaintBackground(e) = e.Graphics.Clear((SettingsColors.current()).surface)
+    override this.OnPaint(e) =
+        base.OnPaint(e)
+        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        use shape = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 10))
+        use pen = new Pen((SettingsColors.current()).border)
+        e.Graphics.DrawPath(pen,shape)
 
 type SettingsCard() as this =
     inherit TableLayoutPanel()

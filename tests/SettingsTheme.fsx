@@ -1,4 +1,4 @@
-﻿// Build tests/Debug as described in TabShadow.fsx, then: fsi --exec tests/SettingsTheme.fsx
+// Build tests/Debug as described in TabShadow.fsx, then: fsi --exec tests/SettingsTheme.fsx
 // Uses an isolated settings directory and off-screen windows; no real preferences are changed.
 #r "System.Drawing"
 #r "System.Windows.Forms"
@@ -225,11 +225,25 @@ let main() =
         api.setValue("tabThemeMode",box "dark")
         Application.DoEvents()
         let search = controls form |> Seq.choose(function :? TextBox as input when input.AccessibleName="Search settings" -> Some input | _ -> None) |> Seq.head
+        form.ActiveControl <- search
+        Application.DoEvents()
         search.Text <- "Theme"
         Application.DoEvents()
         let result = controls form |> Seq.choose(function :? ListBox as b when b.AccessibleName="Search results" -> Some b | _ -> None) |> Seq.head
         result.SelectedIndex <- result.Items.IndexOf("Theme")
+        let suggestions = result.Parent
+        check (suggestions.Visible && obj.ReferenceEquals(suggestions.Parent,form)) "Search suggestions are not floating above the page"
+        check (general.control.Visible) "Searching hid the current page"
         snapshot "settings-search-dark"
+        use searchBitmap = new Bitmap(suggestions.Width,suggestions.Height)
+        suggestions.DrawToBitmap(searchBitmap,Rectangle(Point.Empty,searchBitmap.Size))
+        searchBitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-search-popup.png"),ImageFormat.Png)
+        let filter = SettingsSearchFocusFilter(form,search,suggestions) :> IMessageFilter
+        let mutable outsideClick = Message.Create(form.Handle,0x201,IntPtr.Zero,IntPtr.Zero)
+        filter.PreFilterMessage(&outsideClick) |> ignore
+        check (not suggestions.Visible && form.Visible) "Dismissing search hid the owner"
+        typeof<TextBox>.GetMethod("OnKeyDown",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).Invoke(search,[|box(new KeyEventArgs(Keys.Down))|]) |> ignore
+        check suggestions.Visible "Down did not reopen suggestions"
         typeof<ListBox>.GetMethod("OnKeyDown",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).Invoke(result,[|box(new KeyEventArgs(Keys.Enter))|]) |> ignore
         Application.DoEvents()
         check (search.Text="" && appearance.control.Visible) "Search result did not navigate to the setting"

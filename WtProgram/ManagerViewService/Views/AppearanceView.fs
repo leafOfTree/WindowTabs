@@ -11,7 +11,24 @@ type AppearanceView() =
     let update = Services.settings.updateAppearance
     let paletteTitle = new Label(AutoSize=true,Font=SettingsUi.sectionFont,
                                  Margin=Padding(0,Dpi.scale 16,0,Dpi.scale 8))
-    let blue = SettingsUi.button (t "Use dark blue palette" "使用深蓝配色")
+    let preset = SettingsUi.choice [|t "Default" "默认";t "Ocean" "海洋";t "Forest" "森林";t "Custom" "自定义"|]
+    let presets dark =
+        let make (basis:TabPalette) text active hover inactive border =
+            { basis with tabTextColor=Color.FromRGB(text);tabActiveBgColor=Color.FromRGB(active)
+                         tabHighlightBgColor=Color.FromRGB(hover);tabNormalBgColor=Color.FromRGB(inactive)
+                         tabBorderColor=Color.FromRGB(border) }
+        if dark then
+            [|Theme.darkPalette;Theme.bluePalette
+              make Theme.darkPalette 0xE4EEE6 0x19251D 0x2C3E31 0x455C4B 0x718778|]
+        else
+            [|Theme.lightPalette
+              make Theme.lightPalette 0x17324D 0xF5FAFF 0xE0ECF7 0xBCD0E3 0x8BA8C2
+              make Theme.lightPalette 0x213C2B 0xF6FBF5 0xE1EEDF 0xC0D5BE 0x8CA889|]
+    let rightActions (button:Control) =
+        let row = new FlowLayoutPanel(AutoSize=true,WrapContents=false,FlowDirection=FlowDirection.RightToLeft,
+                                      Margin=Padding(0,Dpi.scale 8,0,Dpi.scale 8))
+        row.Controls.Add(button)
+        SettingsUi.add table row
     let paletteForProfile (s:AppearancePreferences) = if editingDark then s.darkPalette else s.lightPalette
     let updatePalette change =
         update(fun s ->
@@ -26,9 +43,9 @@ type AppearanceView() =
                             AccessibleName=t "File Explorer theme preview" "文件资源管理器主题预览")
     let colorFields : (string * (TabPalette -> Color) * (Color -> TabPalette -> TabPalette)) list = [
         "tabTextColor",(fun p -> p.tabTextColor),(fun v p -> {p with tabTextColor=v})
-        "tabNormalBgColor",(fun p -> p.tabNormalBgColor),(fun v p -> {p with tabNormalBgColor=v})
         "tabActiveBgColor",(fun p -> p.tabActiveBgColor),(fun v p -> {p with tabActiveBgColor=v})
         "tabHighlightBgColor",(fun p -> p.tabHighlightBgColor),(fun v p -> {p with tabHighlightBgColor=v})
+        "tabNormalBgColor",(fun p -> p.tabNormalBgColor),(fun v p -> {p with tabNormalBgColor=v})
         "tabBorderColor",(fun p -> p.tabBorderColor),(fun v p -> {p with tabBorderColor=v})
         "tabFlashBgColor",(fun p -> p.tabFlashBgColor),(fun v p -> {p with tabFlashBgColor=v}) ]
     let colors = colorFields |> List.map(fun (key,get,set) -> key,get,set,(new SettingsColorInput(Font=SettingsUi.bodyFont) :> IPropEditor))
@@ -47,11 +64,14 @@ type AppearanceView() =
             paletteTitle.Text <-
                 if editingDark then t "Dark theme · Tab colours" "深色主题 · 标签配色"
                 else t "Light theme · Tab colours" "浅色主题 · 标签配色"
-            blue.Visible <- editingDark
             let settings = Services.settings.appearance
             let palette =
                 if settings.useCustomColors then paletteForProfile settings
                 elif editingDark then Theme.darkPalette else Theme.lightPalette
+            let values (p:TabPalette) =
+                [p.tabTextColor;p.tabActiveBgColor;p.tabHighlightBgColor;p.tabNormalBgColor;p.tabBorderColor;p.tabFlashBgColor]
+                |> List.map(fun c -> c.ToArgb())
+            preset.SelectedIndex <- presets editingDark |> Array.tryFindIndex(fun candidate -> values candidate=values palette) |> Option.defaultValue 3
             for key,read,write,editor in colors do
                 editor.value <- box(read palette)
             let geometry = settings.geometry
@@ -120,7 +140,20 @@ type AppearanceView() =
                 appearance=appearance;hover=Some(2,TabBackground);captured=None }
             use bitmap = ts.render.bitmap
             e.Graphics.DrawImageUnscaled(bitmap,left,top))
-        SettingsUi.add table paletteTitle
+        let paletteHeader = new Panel(Height=Dpi.scale 36,Margin=Padding(0,Dpi.scale 16,0,Dpi.scale 8))
+        paletteTitle.AutoSize <- false
+        paletteTitle.Dock <- DockStyle.Fill
+        paletteTitle.TextAlign <- ContentAlignment.MiddleLeft
+        preset.Name <- "palette-preset"
+        preset.AccessibleName <- t "Colour preset" "配色预设"
+        preset.Width <- Dpi.scale 180
+        preset.Dock <- DockStyle.Right
+        paletteHeader.Controls.Add(paletteTitle)
+        paletteHeader.Controls.Add(preset)
+        SettingsUi.add table paletteHeader
+        preset.SelectedIndexChanged.Add(fun _ ->
+            if not refreshing && preset.SelectedIndex>=0 && preset.SelectedIndex<3 then
+                updatePalette(fun _ -> (presets editingDark).[preset.SelectedIndex]))
         let colorsCard = new SettingsCard()
         SettingsUi.add table colorsCard
         for key,read,write,editor in colors do
@@ -128,19 +161,14 @@ type AppearanceView() =
             SettingsUi.settingRow colorsCard key editor.control
         let reset = SettingsUi.button (t "Reset this palette" "重置当前配色")
         reset.Click.Add(fun _ -> updatePalette(fun _ -> (if editingDark then Theme.darkPalette else Theme.lightPalette)))
-        let actions = new FlowLayoutPanel(AutoSize=true,WrapContents=true,Margin=Padding(0,Dpi.scale 8,0,Dpi.scale 8))
-        actions.Controls.Add(reset)
-        blue.Click.Add(fun _ ->
-            update(fun s -> {s with darkPalette=Theme.bluePalette;useCustomColors=true}))
-        actions.Controls.Add(blue)
-        SettingsUi.add table actions
+        rightActions reset
         let layoutCard = SettingsUi.sectionCard table (t "Tab layout" "标签布局")
         SettingsUi.note layoutCard (t "Sizes stay the same when you switch themes." "切换主题不会改变这些尺寸。")
         for key,read,write,editor in dimensions do SettingsUi.settingRow layoutCard key editor
         let resetLayout = SettingsUi.button (t "Reset tab layout" "重置标签布局")
         resetLayout.Click.Add(fun _ ->
             update Theme.resetLayout)
-        SettingsUi.add table resetLayout
+        rightActions resetLayout
         refresh()
         for key,read,write,editor in colors do
             editor.changed.Add(fun () ->

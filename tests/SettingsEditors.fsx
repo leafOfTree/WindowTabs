@@ -85,6 +85,13 @@ for mode,name in [DarkTheme,"dark";LightTheme,"light"] do
     Application.DoEvents()
     SettingsUi.apply form
     let all = view.control.Controls.Find("tabTextColor",true)
+    let preset = view.control.Controls.Find("palette-preset",true).[0] :?> SettingsCombo
+    let otherPalette = if mode=DarkTheme then preferences.lightPalette else preferences.darkPalette
+    for index in [1;2;0] do
+        preset.SelectedIndex <- index
+        Application.DoEvents()
+        assertTrue (preset.SelectedIndex=index) "Preset selection survives refresh"
+        assertTrue ((if mode=DarkTheme then preferences.lightPalette else preferences.darkPalette)=otherPalette) "Preset preserves other theme"
     let color = all.[0] :?> SettingsColorInput
     let swatch = color.Controls |> Seq.cast<Control> |> Seq.pick(function :? Button as b -> Some b | _ -> None)
     for _ in 1..3 do
@@ -99,6 +106,7 @@ for mode,name in [DarkTheme,"dark";LightTheme,"light"] do
         Application.DoEvents()
         let edited = if mode=DarkTheme then preferences.darkPalette else preferences.lightPalette
         assertTrue (edited.tabTextColor.B>240uy && edited.tabTextColor.R=0uy) "Live picker edit"
+        assertTrue (preset.SelectedIndex=3) "Edited preset displays Custom"
         assertTrue ((if mode=DarkTheme then preferences.lightPalette else preferences.darkPalette)=other) "Other theme preserved"
         use pickerBitmap = new Bitmap(popup.Width,popup.Height)
         popup.DrawToBitmap(pickerBitmap,Rectangle(Point.Empty,pickerBitmap.Size))
@@ -113,6 +121,9 @@ for mode,name in [DarkTheme,"dark";LightTheme,"light"] do
     (findReset view.control).Value.PerformClick()
     Application.DoEvents()
     assertTrue ((if mode=DarkTheme then preferences.darkPalette else preferences.lightPalette)=(if mode=DarkTheme then Theme.darkPalette else Theme.lightPalette)) "Palette reset"
+    assertTrue (preset.SelectedIndex=0) "Reset selects Default preset"
+    let resetButton = (findReset view.control).Value
+    assertTrue (resetButton.Left>resetButton.Parent.Width/2) "Reset is aligned right"
     use bitmap = new Bitmap(form.ClientSize.Width,form.ClientSize.Height)
     form.DrawToBitmap(bitmap,Rectangle(Point.Empty,bitmap.Size))
     bitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","editors-"+name+".png"))
