@@ -158,67 +158,6 @@ type ColorEditor() as this =
         member x.changed = changedEvent.Publish
 
 
-type HotKeyEditor() =
-    let control = HotKeyControl()
-    interface IPropEditor with
-        member x.value 
-            with get() = box(control.HotKey)
-            and set(newValue) = control.HotKey <- unbox<int>(newValue)
-        member x.control = control :> Control
-        member x.changed = control.HotKeyChanged |> Event.map (fun _ -> ())
-
-type HotKeyModifiersEditor() as this =
-    let mutable _modifiers = Keys.None
-    let modifiersChanged = Event<_>()
-    let textBox = {  
-        new TextBox() with
-            override x.ProcessCmdKey(msg, keys) =
-                this.modifiers <- Keys.Modifiers &&& keys
-                true
-    }
-    do
-        this.modifiers <- Keys.None
-    
-    member this.modifiers 
-        with get() = _modifiers
-        and set(newValue) = 
-            textBox.Text <- newValue.ToString()
-            _modifiers <- newValue
-            modifiersChanged.Trigger()
-
-    interface IPropEditor with    
-        member this.value 
-            with get() = box(this.modifiers)
-            and set(value) = this.modifiers <- unbox<Keys>(value)
-        member this.control = textBox :> Control
-        member this.changed = modifiersChanged.Publish
-
-type HotKeyOnlyEditor() as this =
-    let mutable _hk = Keys.None
-    let hkChanged = Event<_>()
-    let textBox = {  
-        new TextBox() with
-            override x.ProcessCmdKey(msg, keys) =
-                this.hk <- Keys.KeyCode &&& keys
-                true
-    }
-    do
-        this.hk <- Keys.None
-    
-    member this.hk 
-        with get() = _hk
-        and set(newValue) = 
-            textBox.Text <- newValue.ToString()
-            _hk <- newValue
-            hkChanged.Trigger()
-
-    interface IPropEditor with    
-        member this.value 
-            with get() = box(this.hk)
-            and set(value) = this.hk <- unbox<Keys>(value)
-        member this.control = textBox :> Control
-        member this.changed = hkChanged.Publish
-
 type SmoothNodeTextBox() = 
     inherit NodeControls.NodeTextBox()
 

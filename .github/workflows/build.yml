@@ -19,7 +19,7 @@ jobs:
       # NuGet packages are vendored under packages/, so there is nothing to
       # restore. The Release configuration static-links them into a single exe.
       - name: Build Release
-        run: msbuild WindowTabs.sln -t:Rebuild -p:Configuration=Release -p:Platform="Mixed Platforms" -m
+        run: msbuild WindowTabs.sln -t:Rebuild -p:Configuration=Release -p:Platform="Any CPU" -m
 
       - name: Run regression tests serially
         shell: powershell

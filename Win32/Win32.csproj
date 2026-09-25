@@ -82,8 +82,6 @@
     <Compile Include="Forms\OkCancelForm.Designer.cs">
       <DependentUpon>OkCancelForm.cs</DependentUpon>
     </Compile>
-    <Compile Include="HotKeyControl.cs" />
-    <Compile Include="HotKeyControl2.cs" />
     <Compile Include="HotKeyShortcut.cs" />
     <Compile Include="Ole2.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
