@@ -1,3 +1,10 @@
+# Text files are stored with LF in the repository; Git converts to the platform's
+# line endings on checkout (CRLF on Windows with core.autocrlf=true).
+* text=auto
+
+# Visual Studio rewrites solution files with CRLF.
+*.sln text eol=crlf
+
 # Binaries must never be converted or diffed as text.
 *.dll binary
 *.exe binary
@@ -5,21 +12,12 @@
 *.res binary
 *.ico binary
 *.bmp binary
+*.cur binary
+*.gif binary
 *.png binary
 *.jpg binary
+*.snk binary
 *.nupkg binary
 *.p7s binary
-
-# Deliberately no "* text=auto" rule here.
-#
-# Line endings in this repository are already mixed: sources and project files
-# are stored with CRLF, README with LF. Adding text=auto would renormalize every
-# CRLF blob to LF on the next commit, producing a repo-wide whitespace diff that
-# breaks git blame and conflicts with every open fork and pull request. A plain
-# "* -text" is no better: with core.autocrlf=true the working tree holds CRLF
-# copies of blobs stored as LF, so freezing conversion would commit those back
-# as CRLF and cause the same repo-wide diff in the other direction.
-#
-# Normalizing properly is a one-time, deliberate decision for the maintainer:
-#   git add --renormalize .   (after adding "* text=auto" above)
-# It should be its own commit, ideally when no pull requests are open.
+Thumbs.db binary
+treeviewadv/Aga.Controls/Resources/loading_icon binary
