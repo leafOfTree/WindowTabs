@@ -18,10 +18,3 @@ module Forms =
                 member x.Handle = hwnd
         }
         form.ShowDialog(owner).ignore
-
-    let showRegister hwnd =
-        Services.managerView.show(SettingsViewType.LicenseSettings)
-         
-    let openFeedback() =
-        let sInfo = new ProcessStartInfo("https://windowtabs.uservoice.com/")
-        Process.Start(sInfo).ignore

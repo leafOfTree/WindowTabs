@@ -252,7 +252,7 @@ type SettingsColorInput() as this =
         popup.Items.Add(host) |> ignore
         popup.Closed.Add(fun e ->
             picker.Flush()
-            suppressClick <- e.CloseReason=ToolStripDropDownCloseReason.AppClicked && swatch.RectangleToScreen(swatch.ClientRectangle).Contains(Cursor.Position))
+            suppressClick <- SettingsPopupLifetime.isOwnerClick swatch e)
         swatch.Click.Add(fun _ ->
             if suppressClick then suppressClick <- false
             elif popup.Visible then popup.Close()
@@ -272,7 +272,7 @@ type SettingsColorInput() as this =
             if e.KeyCode=Keys.Enter then commitText(); e.SuppressKeyPress <- true
             elif e.KeyCode=Keys.Escape then sync(); e.SuppressKeyPress <- true)
         text.LostFocus.Add(fun _ -> commitText())
-        this.Disposed.Add(fun _ -> popup.Dispose())
+        SettingsPopupLifetime.own this popup false
         text.Text <- "#FFFFFF"
     override this.ApplyTheme() =
         this.BackColor <- color

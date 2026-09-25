@@ -20,59 +20,28 @@ open Microsoft.Win32
 type ProgramInput =
     | WinEvent of (IntPtr * WinEvent)
     | ShellEvent of (IntPtr * ShellEvent)
-    | Timer
 
-type ProgramVersion(parts:List2<int>)=
-    new(versionString:string) =
-        ProgramVersion(List2(versionString.Split([|'.'|])).map(Int32.Parse))
-
-    member this.parts = parts
-
-    member this.compare(v2:ProgramVersion) =
-        let maxLen = max this.parts.length v2.parts.length
-        let zeroPad (parts:List2<_>) =
-            if parts.length < maxLen then parts.appendList(List2(Seq.init (maxLen - parts.length) (fun _ -> 0)))
-            else parts
-        let v1 = zeroPad this.parts
-        let v2 = zeroPad v2.parts
-        v1.zip(v2).tryPick(fun(v1,v2) -> 
-            if v1 > v2 then Some(1)
-            elif v2 > v1 then Some(-1)
-            else None).def(0)
-
-    member this.isNewerThan(v2:ProgramVersion) = 
-        this.compare(v2) > 0
-
-type Program() as this =
+type Program(lifetime:LifetimeScope) as this =
     let version = AssemblyInfo.informationalVersion
     let isStandAlone = System.Diagnostics.Debugger.IsAttached 
 
-    let mutex = new Mutex(false, "BemoSoftware.WindowTabs")
     let Cell = CellScope()
     let os = OS()
     let invoker = InvokerService.invoker
     let taskSwitchCell = Cell.create(None)
-    let isTabMonitoringSuspendedCell = Cell.create(false)
+    let isTabMonitoringSuspendedCell = Cell.create(0)
     let llMouseEvent = Event<_>()
 
     // case 727 outlook calendar items appear behind outlook main window
     let delayTabExeNames = Set2(List2(["outlook.exe"]))
 
-    let settingsManager = Settings(isStandAlone)
-    let themeMonitor = ThemeService.startMonitoring()
-    do Application.ApplicationExit.Add(fun _ -> themeMonitor.Dispose())
+    let settingsManager = lifetime.Own(new Settings(isStandAlone))
+    let themeMonitor = lifetime.Own(ThemeService.startMonitoring())
 
-    let keepAliveCell = Cell.create(List2())
-    let keepAlive (obj:obj) =
-        keepAliveCell.map(fun l -> l.append(obj))
-    let lastPing = Cell.create(DateTime.MinValue)
-    let notifiedOfUpgrade = Cell.create(false)
     let inShutdown = Cell.create(false)
-    let isSubscribed = Cell.create(Map2<IntPtr,IDisposable>())
+    let isSubscribed = lifetime.Own(new OwnedSubscriptions<IntPtr>())
     let isDroppedAndAwaitingGrouping = Cell.create(Set2())
     let windowNameOverride = Cell.create(Map2())
-    let notifyNewVersionEvt = Event<_>()
-    let launcher = Launcher()
    
     let isFirstRun = settingsManager.fileExists.not
 
@@ -96,11 +65,11 @@ type Program() as this =
         original 
 
     let registerShellHooks =
-        os.registerShellHooks <| fun (hwnd, shellEvent) ->
+        lifetime.Own(os.registerShellHooks <| fun (hwnd, shellEvent) ->
             match shellEvent with
             | ShellEvent.HSHELL_WINDOWCREATED -> this.receive(ShellEvent(hwnd, shellEvent))
             | ShellEvent.HSHELL_WINDOWDESTROYED -> this.receive(ShellEvent(hwnd, shellEvent))
-            | _ -> ()
+            | _ -> ())
 
 
     let hotKeyInfo = Map2(List2([
@@ -108,26 +77,29 @@ type Program() as this =
         ("nextTab", (3623, fun g -> g.switchWindow(true, false)))
         ]))
         
-    let hotKeyManager = HotKeyManager()
+    let hotKeyManager = lifetime.Own(new HotKeyManager())
+    let refreshQueue = lifetime.Own(new WindowRefreshQueue(30, this.updateChangedWindows, this.updateAppWindows))
 
     do
-        Desktop(this :> IDesktopNotification).ignore
+        Desktop(this :> IDesktopNotification, Services.settings, invoker :> IDispatcher).ignore
+        lifetime.Own({new IDisposable with
+            member _.Dispose() = taskSwitchCell.value.iter(fun switcher -> (switcher :> IDisposable).Dispose())}) |> ignore
         this.registerHotKeys()
         this.updateTaskSwitcher(Services.settings.getValue("replaceAltTab"))
         let startupSubscription = Services.settings.notifyValue "runAtStartup" this.updateRunAtStartup
         let switcherSubscription = Services.settings.notifyValue "replaceAltTab" this.updateTaskSwitcher
-        Application.ApplicationExit.Add(fun _ -> startupSubscription.Dispose(); switcherSubscription.Dispose())
-        Services.desktop.groupExited.Add <| fun _ -> invoker.asyncInvoke(fun() -> this.updateAppWindows())
-        Services.desktop.groupRemoved.Add <| fun _ -> invoker.asyncInvoke(fun() -> this.updateAppWindows())
+        lifetime.Own(startupSubscription) |> ignore
+        lifetime.Own(switcherSubscription) |> ignore
+        Services.desktop.groupExited.Add <| fun _ -> invoker.asyncInvoke(fun() -> refreshQueue.RequestAll())
+        Services.desktop.groupRemoved.Add <| fun _ -> invoker.asyncInvoke(fun() -> refreshQueue.RequestAll())
     
     member this.desktop = Services.desktop
     member this.isTabMonitoringSuspended
-        with get() = isTabMonitoringSuspendedCell.value
-        and set(value) = isTabMonitoringSuspendedCell.set(value)
+        with get() = isTabMonitoringSuspendedCell.value > 0
 
     member this.updateRunAtStartup(value)=
         let runAtStartup = value.cast<bool>()
-        let key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true)
+        use key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true)
         let keyName = "WindowTabs"
         if runAtStartup then
             let entryAssembly = System.Reflection.Assembly.GetEntryAssembly()
@@ -152,16 +124,12 @@ type Program() as this =
         if (this :> IProgram).getAutoGroupingEnabled(window.pid.processPath) then
             let hwndZorders = this.hwndZorders()
             let groups = this.desktop.groups
-            let groups = 
-                match this.cast<IProgram>().tabLimit with
-                | Some(tabLimit) -> groups.where(fun g -> g.windows.count < tabLimit)
-                | None -> groups
             let groups = groups.where(fun g-> g.windows.count > 0).sortBy(fun g -> g.windows.map(fun hwnd -> hwndZorders.tryFind(hwnd).def(Int32.MaxValue)).minBy(id))
             let group = groups.tryFind(fun g -> g.windows.map(fun hwnd -> os.windowFromHwnd(hwnd).pid.processPath).contains((=) window.pid.processPath))
             Some(group)
         else None
 
-    member this.updateAppWindows() =
+    member this.updateAppWindows() = RuntimeMetrics.measure(fun () ->
         if this.desktop.isDragging.not then
             if inShutdown.value.not then
                 os.windowsInZorder.iter <| fun window ->
@@ -171,11 +139,25 @@ type Program() as this =
             this.destroyEmptyGroups()
             this.removeUntabableWindows()
 
-        this.exitIfNeeded()
+        this.exitIfNeeded() )
+
+    member this.updateChangedWindows(handles:IntPtr array) = RuntimeMetrics.measure(fun () ->
+        if not this.desktop.isDragging && not inShutdown.value then
+            for hwnd in handles do
+                let window = os.windowFromHwnd(hwnd)
+                let exists = window.isWindow
+                if exists then this.ensureWindowIsSubscribed(window)
+                if exists && this.isTabbableWindow(window) then
+                    if not this.isTabMonitoringSuspended then this.ensureWindowIsGrouped(window)
+                else
+                    this.desktop.groups.iter(fun group ->
+                        if group.windows.contains((=)hwnd) then group.removeWindow(hwnd))
+            this.destroyEmptyGroups()
+        this.exitIfNeeded() )
 
     member this.ensureWindowIsSubscribed(window:Window) =
         let hwnd = window.hwnd
-        if  isSubscribed.value.contains(hwnd).not &&
+        if  isSubscribed.Contains(hwnd).not &&
             window.pid.isCurrentProcess.not &&
             this.isAppWindowStyle(window)
             then
@@ -187,7 +169,7 @@ type Program() as this =
                     member this.Dispose() =
                         hooks.iter(fun h -> h.Dispose())
                 }
-            isSubscribed.map(fun s -> s.add hwnd dispose)
+            isSubscribed.Add(hwnd,dispose)
 
     member this.ensureWindowIsGrouped(window) =
         if this.isTabbableWindow(window) && this.isInGroup(window.hwnd).not then
@@ -195,7 +177,7 @@ type Program() as this =
 
     member this.destroyEmptyGroups() =
         this.desktop.groups.iter <| fun gi ->
-        if gi.windows.isEmpty && launcher.isLaunching(gi).not then
+        if gi.windows.isEmpty then
             gi.destroy()
 
     member this.removeUntabableWindows() =
@@ -206,7 +188,6 @@ type Program() as this =
     member this.findGroupForWindow(window:Window) =
         let handlers = List2([
             this.tryDropped
-            launcher.findGroup
             this.tryAutoGroup
             ])
         handlers.tryPick(fun f -> f(window)).def(None)
@@ -225,15 +206,15 @@ type Program() as this =
 
     member this.receive message =
         match message with
-        | WinEvent(hwnd, evt) -> ()
+        | WinEvent(hwnd, evt) -> refreshQueue.RequestWindow(hwnd)
         | ShellEvent(hwnd, evt) ->
             match evt with
             | ShellEvent.HSHELL_WINDOWDESTROYED ->
-                isSubscribed.value.tryFind(hwnd).iter <| fun dispose -> dispose.Dispose()
+                isSubscribed.Remove(hwnd)
+                isDroppedAndAwaitingGrouping.map(fun s -> s.remove hwnd)
+                windowNameOverride.map(fun s -> s.remove hwnd)
             | _ ->()
-        | Timer -> ()
-                  
-        this.updateAppWindows()
+            refreshQueue.RequestWindow(hwnd)
 
     member this.exitIfNeeded() =
         if inShutdown.value then
@@ -261,8 +242,6 @@ type Program() as this =
             taskSwitchCell.set(None)
         
 
-    //needed to keep hook alive
-    member this.keepAliveReference = keepAliveCell.value
 
     member this.foregroundGroup = this.desktop.foregroundGroup
 
@@ -273,7 +252,8 @@ type Program() as this =
                     f(group)
             let shortcut = this.cast<IProgram>().getHotKey(key)
             let shortcut = HotKeyShortcut(HotKeyControlCode=int16(shortcut))
-            hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags, shortcut.RegisterHotKeyVirtualKeyCode) f |> ignore
+            if not (hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags, shortcut.RegisterHotKeyVirtualKeyCode) f) then
+                MessageBox.Show("The shortcut for " + key + " is unavailable. Choose another shortcut in Settings.", "Shortcut unavailable", MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
 
    
     member this.hwndZorders() : Map2<IntPtr, int>= Map2(os.windowsInZorder.enumerate.map(fun(i,w) -> w.hwnd,i))
@@ -281,9 +261,10 @@ type Program() as this =
     member this.isInGroup hwnd : bool =
         this.desktop.groups.any(fun group -> group.windows.contains((=)hwnd))
 
-    member this.notifyNewVersion = notifyNewVersionEvt.Publish
     
-    member this.refresh() = this.receive(Timer)
+    member this.refresh() =
+        refreshQueue.Cancel()
+        this.updateAppWindows()
 
     interface IProgram with
         member x.version = version
@@ -291,20 +272,20 @@ type Program() as this =
         member x.isFirstRun = isFirstRun
         member x.refresh() = this.refresh()
         member x.suspendTabMonitoring() = 
-            this.isTabMonitoringSuspended <- true
+            isTabMonitoringSuspendedCell.map(fun depth -> depth+1)
 
         member x.resumeTabMonitoring() = 
-            this.isTabMonitoringSuspended <- false
+            isTabMonitoringSuspendedCell.map(fun depth -> max 0 (depth-1))
             this.refresh()
 
         member x.shutdown() =
+            settingsManager.Flush() |> ignore
             inShutdown.set(true)
             this.desktop.groups.iter <| fun gi ->
                 gi.windows.iter <| fun window ->
                     gi.removeWindow window
             this.updateAppWindows()
                    
-        member x.tabLimit = None
      
         member x.setWindowNameOverride((hwnd, name)) = 
             windowNameOverride.set(windowNameOverride.value.add hwnd name)
@@ -343,19 +324,19 @@ type Program() as this =
                 let shortcut, _ = hotKeyInfo.find(key)
                 int(shortcut)
 
-        member x.setHotKey key value = 
-            let settings = settingsManager.settingsJson
-            let hotKeys = settings.getObject("hotKeys").def(JObject())
-            hotKeys.setInt32(key, value)
-            settings.setObject("hotKeys", hotKeys)
-            settingsManager.settingsJson <- settings
-            this.registerHotKeys()
+        member x.setHotKey key value =
+            let _,switch = hotKeyInfo.find(key)
+            let shortcut = HotKeyShortcut(HotKeyControlCode=int16(value))
+            let registered = hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags,shortcut.RegisterHotKeyVirtualKeyCode)
+                                (fun () -> this.foregroundGroup.iter switch)
+            if registered then
+                let settings = settingsManager.settingsJson
+                let hotKeys = settings.getObject("hotKeys").def(JObject())
+                hotKeys.setInt32(key,value)
+                settings.setObject("hotKeys",hotKeys)
+                settingsManager.settingsJson <- settings
+            registered
 
-        member x.ping() = 
-            ()
-
-        member x.notifyNewVersion() = notifyNewVersionEvt.Trigger()
-        member x.newVersion = notifyNewVersionEvt.Publish
         member x.llMouse = llMouseEvent.Publish
 
     interface IDesktopNotification with
@@ -366,31 +347,38 @@ type Program() as this =
             this.updateAppWindows()
             
 
-    member this.run(plugins:List2<IPlugin>) =  
-        if System.Diagnostics.Debugger.IsAttached.not then
-            if mutex.WaitOne(TimeSpan.FromSeconds(0.5), false).not then
-                MessageBox.Show("Another instance of WindowTabs is running, please close it before running this instance.", "WindowTabs is already running.").ignore
-                exit(0)
-
-        Application.EnableVisualStyles()
+    member this.run(plugins:List2<IPlugin>) =
         Services.register(this :> IProgram)
         Services.register(FilterService() :> IFilterService)
         Services.register(ManagerViewService() :> IManagerView)
+        plugins.iter(fun plugin ->
+            match plugin with
+            | :? IDisposable as resource -> lifetime.Own(resource) |> ignore
+            | _ -> ()
+            plugin.init())
         Services.program.refresh()
-
-        plugins.iter <| fun p -> p.init()
-
         Application.Run()
 
-        plugins.iter <| fun p ->
-            match p with
-            | :? IDisposable as d -> d.Dispose()
-            | _ -> ()
-
-Application.SetCompatibleTextRenderingDefault(false)
-let program = Program()
-program.run(List2<obj>([
-    InputManagerPlugin(Set2(List2([WindowMessages.WM_MOUSEWHEEL])))
-    NotifyIconPlugin()
-    ExceptionHandlerPlugin()
-]).map(fun o -> o.cast<IPlugin>()))
+module Bootstrap =
+    [<STAThread; EntryPoint>]
+    let main _ =
+        Application.SetCompatibleTextRenderingDefault(false)
+        use logger = new ExceptionHandlerPlugin()
+        (logger :> IPlugin).init()
+        try
+            use instance = new SingleInstance("BemoSoftware.WindowTabs")
+            if not(instance.TryAcquire()) then
+                MessageBox.Show("WindowTabs is already running.","WindowTabs") |> ignore
+                0
+            else
+                Application.EnableVisualStyles()
+                use lifetime = new LifetimeScope(fun error -> logger.log "Shutdown" error)
+                let program = Program(lifetime)
+                program.run(List2<IPlugin>([
+                    InputManagerPlugin(Set2(List2([WindowMessages.WM_MOUSEWHEEL]))) :> IPlugin
+                    NotifyIconPlugin() :> IPlugin ]))
+                0
+        with error ->
+            logger.log "Startup/runtime" error
+            MessageBox.Show(error.Message,"WindowTabs could not continue",MessageBoxButtons.OK,MessageBoxIcon.Error) |> ignore
+            1

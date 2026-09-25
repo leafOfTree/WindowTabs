@@ -9,8 +9,15 @@ module SettingsBindings =
     let settingToggle key =
         let check = new SettingsToggle()
         check.Checked <- Services.settings.getValue(key) :?> bool
-        check.CheckedChanged.Add(fun _ -> Services.settings.setValue(key,box check.Checked))
+        check.CheckedChanged.Add(fun _ ->
+            if key="enableTabbingByDefault" then Services.filter.isTabbingEnabledForAllProcessesByDefault <- check.Checked
+            else Services.settings.setValue(key,box check.Checked))
         check
+
+    let toggleRow table id =
+        let key = SettingsCatalog.toggleKey id
+        let control = settingToggle key
+        SettingsUi.settingRow table id control
 
     let themeTiles() =
         let table = new TableLayoutPanel(ColumnCount=3,RowCount=1,Height=Dpi.scale 92,

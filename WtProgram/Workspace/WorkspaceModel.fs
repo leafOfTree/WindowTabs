@@ -77,6 +77,7 @@ type WorkspaceWindow() as this =
                     ])
                 member x.height  = 250
                 member x.ok() = 
+                    WindowTitleMatcher.compile (int matchTypeEditor.value) (titleEditor.value.cast<string>()) |> ignore
                     this.name <- nameEditor.value.cast<string>()
                     this.title <- titleEditor.value.cast<string>()
                     this.matchType <- matchTypeEditor.value
@@ -135,13 +136,7 @@ and
             }
     
     member this.serialize() =
-        let placementObj = 
-            let obj = JObject()
-            obj.setInt32("showCmd", this.placement.showCmd)
-            obj.setPt("ptMaxPosition", this.placement.ptMaxPosition)
-            obj.setPt("ptMinPosition", this.placement.ptMinPosition)
-            obj.setRect("rcNormalPosition", this.placement.rcNormalPosition)
-            obj
+        let placementObj = WorkspaceData.writePlacement this.placement
         let windowObjects = this.children.map <| fun child -> child?serialize()
         let groupObj = JObject()
         groupObj.setString("name", this.name)
@@ -152,16 +147,7 @@ and
     static member deserialize(obj:JObject) =
         let group = WorkspaceGroup(
             name = obj.getString("name").Value,
-            placement =(
-                let obj = obj.getObject("placement").Value
-                {
-                    flags = 0
-                    showCmd = obj.getInt32("showCmd").Value
-                    ptMaxPosition = obj.getPt("ptMaxPosition")
-                    ptMinPosition = obj.getPt("ptMinPosition")
-                    rcNormalPosition = obj.getRect("rcNormalPosition")
-                })
-        )
+            placement = WorkspaceData.placement (obj.getObject("placement").Value))
         obj.getObjectArray("windows").Value.map(WorkspaceWindow.deserialize).iter(group.addWindow)
         group
 
@@ -227,23 +213,10 @@ type WindowResolver() as this =
     member this.resolve(windowInfo:Dynamic) =
         let target : string = windowInfo?title
 
-        let isMatch =
-            match windowInfo?matchType with
-            | WorkspaceWindowTitleMatchType.ExactMatch ->
-                fun(title) -> title = target
-            | WorkspaceWindowTitleMatchType.Contains ->
-                fun(title) -> title.Contains(target)
-            | WorkspaceWindowTitleMatchType.StartsWith ->
-                fun(title) -> title.StartsWith(target)
-            | WorkspaceWindowTitleMatchType.EndsWith ->
-                fun(title) -> title.EndsWith(target)
-            | WorkspaceWindowTitleMatchType.RegEx ->
-                let re = Regex(target)
-                fun(title) -> re.IsMatch(title)
-            | _ -> fun(title) -> false
-
-        hwnds.tryFind(this.title >> isMatch)
-  
+        let isMatch = WindowTitleMatcher.compile (int (windowInfo?matchType : WorkspaceWindowTitleMatchType)) target
+        let matched = hwnds.tryFind(this.title >> isMatch)
+        matched.iter this.removeHwnd
+        matched
 
 type IWorkspaceModel =
     abstract member list : List2<Workspace>
@@ -260,11 +233,15 @@ type WorkspaceModel() as this =
     let canRestoreChangedEvt = Event<_>()
     let _workspaces = System.Collections.Generic.List<Workspace>()
     let mutable _selected = null : obj
+    let mutable loading = false
+    let mutable readOnly = false
+    let mutable recovery : JToken option = None
 
     do
         Observable.init(this)
 
     member this.workspaces =  _workspaces.list
+    member _.isReadOnly = readOnly
     member this.workspaceAdded = workspaceAddedEvt.Publish
 
     member this.selected
@@ -282,7 +259,7 @@ type WorkspaceModel() as this =
 
     member private this.createWorkspace() =
         let zorder = os.windowZorders
-        let groups = Services.desktop.groups.enumerate.map <| fun (i, group) ->
+        let groups = Services.desktop.groups.where(fun group -> not group.windows.isEmpty).enumerate.map <| fun (i, group) ->
             let windowsInZorder = group.windows.sortBy(zorder.find)
             let innerZorder = Map2(windowsInZorder.enumerate.map(fun(innerZorder, hwnd) -> hwnd, innerZorder))
             let wsGroup = WorkspaceGroup(
@@ -309,29 +286,39 @@ type WorkspaceModel() as this =
         ws
 
     member private this.restoreWorkspace(workspace:Workspace) =
-        let windowResolver = WindowResolver()
-      
-        Services.program.suspendTabMonitoring()
-
-        let hwndToGroup = Map2(Services.desktop.groups.collect <| fun group ->
-            group.windows.map <| fun hwnd -> (hwnd, group)
-        )
-        let removeWindow hwnd = hwndToGroup.find(hwnd).removeWindow(hwnd)
-
-        workspace.children.iter <| fun (groupInfo) ->
-            let windows : List2<Dynamic> = groupInfo?windows
-            let windows = windows.reverse
-            let windows = windows.sortBy(fun w -> w?zorder).choose windowResolver.resolve
-            
-            windows.iter removeWindow
-            windows.iter <| fun hwnd -> WinUserApi.ShowWindow(hwnd, ShowWindowCommands.SW_RESTORE).ignore
-            windows.iter <| fun hwnd -> os.windowFromHwnd(hwnd).setPlacement(groupInfo?placement)
-            os.setZorder(windows)
-
-            let group = Services.desktop.createGroup(Services.settings.getValue("combineIconsInTaskbar").cast<bool>())
-            windows.iter <| fun hwnd -> group.addWindow(hwnd, false)
-
-        Services.program.resumeTabMonitoring()
+        let resolver = WindowResolver()
+        let errors = ResizeArray<string>()
+        let mutable restored = 0
+        let mutable missing = 0
+        TemporaryState.run Services.program.suspendTabMonitoring Services.program.resumeTabMonitoring (fun () ->
+            let owners = Map2(Services.desktop.groups.collect(fun group -> group.windows.map(fun hwnd -> hwnd,group)))
+            workspace.children.iter(fun groupInfo ->
+                let candidates : List2<Dynamic> = groupInfo?windows
+                let resolved = candidates.sortBy(fun w -> w?zorder).choose(fun item ->
+                    try
+                        let result = resolver.resolve(item)
+                        if result.IsNone then missing <- missing+1
+                        result
+                    with ex -> errors.Add(ex.Message); None)
+                if not resolved.isEmpty then
+                    let mutable destination : IGroup option = None
+                    resolved.iter(fun hwnd ->
+                        try
+                            let window = os.windowFromHwnd(hwnd)
+                            if window.isWindow then
+                                // Complete native placement before detaching from the old group.
+                                WinUserApi.ShowWindow(hwnd,ShowWindowCommands.SW_RESTORE) |> ignore
+                                window.setPlacement(groupInfo?placement)
+                                if destination.IsNone then destination <- Some(Services.desktop.createGroup(Services.settings.getValue("combineIconsInTaskbar").cast<bool>()))
+                                owners.tryFind(hwnd).iter(fun owner -> owner.removeWindow(hwnd))
+                                destination.Value.addWindow(hwnd,false)
+                                restored <- restored+1
+                            else missing <- missing+1
+                        with ex -> errors.Add(ex.Message))
+                    try os.setZorder(resolved) with ex -> errors.Add(ex.Message)))
+        MessageBox.Show(sprintf "Restored: %d\nNot found: %d\nErrors: %d%s" restored missing errors.Count
+                            (if errors.Count=0 then "" else "\n\n"+String.concat "\n" (errors |> Seq.truncate 5)),
+                        "Workspace restore",MessageBoxButtons.OK,(if errors.Count=0 then MessageBoxIcon.Information else MessageBoxIcon.Warning)) |> ignore
 
     member this.addWorkspace(ws:Workspace) =
         ws.cast<IWorkspaceNode>().removed.Add <| fun() -> this.onWorkspaceRemoved(ws)
@@ -340,11 +327,12 @@ type WorkspaceModel() as this =
         workspaceAddedEvt.Trigger(ws) 
          
     member this.create() =
-        let ws = this.createWorkspace()
-        this.addWorkspace(ws)
+        if not readOnly then
+            let ws = this.createWorkspace()
+            this.addWorkspace(ws)
     
     member this.remove() =
-        if this.selected <> null then
+        if not readOnly && this.selected <> null then
             this.selected?remove()
 
     member this.canRestore =
@@ -359,11 +347,11 @@ type WorkspaceModel() as this =
 
     member this.edit(parent) =
         let selected = this.selected
-        if selected <> null then
+        if not readOnly && selected <> null then
             let editInfo = selected?beginEdit()
             let table = UIHelper.form(editInfo?fields)
-            let form = UIHelper.okCancelForm table
-            let icon = Services.openIcon("edit.ico")
+            use form = UIHelper.okCancelForm table
+            use icon = Services.openIcon("edit.ico")
             form.Icon <- icon
             form.Width <- 300
             form.Height <- editInfo?height
@@ -371,8 +359,10 @@ type WorkspaceModel() as this =
             form.Text <- editInfo?title
             let ok = form.ShowDialog(parent) = DialogResult.OK
             if ok then    
-                editInfo?ok()
-                this.saveSettings()
+                try
+                    editInfo?ok()
+                    this.saveSettings()
+                with ex -> MessageBox.Show(ex.Message,"Invalid workspace setting",MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore
             ok
         else
             false
@@ -381,15 +371,26 @@ type WorkspaceModel() as this =
         this.loadSettings()
 
     member this.loadSettings() =
-        let settingsObj = Services.settings.root
-        let workspaces = settingsObj.getObjectArray("workspaces").def(List2()).map(Workspace.deserialize)
-        workspaces.iter this.addWorkspace
+        let root = Services.settings.root
+        let workspaces,warnings,unsupported = WorkspaceData.read root
+        readOnly <- unsupported
+        recovery <- if warnings.IsEmpty || isNull root.["workspaces"] then None else Some(root.["workspaces"].DeepClone())
+        loading <- true
+        try
+            _workspaces.Clear()
+            workspaces |> List.iter(fun json -> this.addWorkspace(Workspace.deserialize(json)))
+        finally loading <- false
+        if not warnings.IsEmpty then
+            MessageBox.Show(String.concat "\n" (warnings |> List.truncate 8),"Workspace data",MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore
 
     member this.saveSettings() =
-        let settingsObj = Services.settings.root
-        let workspaceObjs = this.workspaces.map <| fun ws -> ws.serialize()
-        settingsObj.setObjectArray("workspaces", workspaceObjs)
-        Services.settings.root <- settingsObj
+        if not loading && not readOnly then
+            let root = Services.settings.root
+            let workspaceObjs = this.workspaces.map(fun ws -> ws.serialize())
+            root.setObjectArray("workspaces",workspaceObjs)
+            root.setInt32("workspaceSchemaVersion",WorkspaceData.version)
+            recovery |> Option.iter(fun data -> root.["workspaceRecovery"] <- data.DeepClone())
+            Services.settings.root <- root
 
 
     member this.onWorkspaceRemoved(ws) =

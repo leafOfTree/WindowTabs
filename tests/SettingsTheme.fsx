@@ -27,7 +27,7 @@ let main() =
     Directory.CreateDirectory(isolated) |> ignore
     Environment.CurrentDirectory <- isolated
     try
-        let settings = Settings(true)
+        use settings = new Settings(true, saveDelay=0)
         let api = settings :> ISettings
         check (settings.settings.appearance.mode=SystemTheme) "New installs must follow system"
         check (not settings.settings.appearance.useCustomColors) "Default colours misclassified as custom"
@@ -121,13 +121,13 @@ let main() =
         check (callbacks=1) "Disposed theme binding still runs"
         // Group creation must complete while the settings/UI thread waits without pumping messages.
         // A settings proxy call in WindowGroup's constructor deadlocks this exact startup sequence.
-        let initialAppearance = ThemeService.currentAppearance().scaled
+        let initialAppearance = ThemeService.currentAppearance()
         let mutable constructionError : exn option = None
         let mutable constructed = false
         let constructorThread = new Threading.Thread(Threading.ThreadStart(fun () ->
             try
                 let group = WindowGroup(false,List2<IPlugin>(),initialAppearance)
-                constructed <- group.tabAppearance=initialAppearance
+                constructed <- group.tabAppearance=initialAppearance.scaled
                 (InvokerService.invoker :> IDisposable).Dispose()
             with ex -> constructionError <- Some ex))
         constructorThread.IsBackground <- true

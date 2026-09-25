@@ -121,6 +121,7 @@ type WorkspaceView() as this =
 
     member this.newButton : ToolStripButton = Cell.cacheProp this <| fun() ->
         let btn = ToolStripButton(resources.GetString("New"))
+        btn.Enabled <- not this.wm.isReadOnly
         btn.Image <- Services.openImage("add.png")
         btn.Click.Add <| fun _ -> this.onNewButton()
         btn
@@ -135,12 +136,14 @@ type WorkspaceView() as this =
 
     member this.removeButton : ToolStripButton = Cell.cacheProp this <| fun() ->
         let btn = ToolStripButton(resources.GetString("Remove"))
+        btn.Enabled <- not this.wm.isReadOnly
         btn.Image <- Services.openImage("delete.png")
         btn.Click.Add <| fun _ -> this.onRemoveButton()
         btn
 
     member this.editButton : ToolStripButton = Cell.cacheProp this <| fun() ->
         let btn = ToolStripButton(resources.GetString("Edit"))
+        btn.Enabled <- not this.wm.isReadOnly
         btn.Image <- Services.openImage("edit.png")
         btn.Click.Add <| fun _ -> this.onEditButton()
         btn

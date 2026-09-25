@@ -1,5 +1,7 @@
 Release/
 Debug/
+**/bin/
+**/obj/
 
 *.sdf
 /UpgradeLog.htm

@@ -37,11 +37,6 @@ type SettingsRec = {
     alignment: string
     }
 
-type ILicenseManager =
-    abstract member isLicensed : bool
-    abstract member licenseKey : string with get,set
-    abstract member setTicketString : string -> unit
-
 type ISettings =
     abstract member setValue: (string * obj) -> unit
     abstract member getValue: string -> obj
@@ -61,7 +56,6 @@ type IFilterService =
 type SettingsViewType =
     | GeneralSettings
     | ProgramSettings
-    | LicenseSettings
     | AppearanceSettings
     | DiagnosticsSettings
     | LayoutSettings
@@ -89,20 +83,14 @@ type IProgram =
     abstract member refresh : unit -> unit
     [<ServiceMethod(async=true)>]
     abstract member shutdown : unit -> unit
-    abstract member tabLimit : int option
     abstract member setWindowNameOverride : (IntPtr * Option<string>) -> unit
     abstract member getWindowNameOverride : IntPtr -> Option<string>
     abstract member appWindows : List2<IntPtr>
     abstract member getAutoGroupingEnabled : string -> bool
     abstract member setAutoGroupingEnabled : string -> bool -> unit
     abstract member tabAppearanceInfo : TabAppearanceInfo
-    [<ServiceMethod(async=true)>]
-    abstract member ping : unit -> unit
-    abstract member setHotKey: string -> int -> unit
+    abstract member setHotKey: string -> int -> bool
     abstract member getHotKey: string -> int
-    [<ServiceMethod(async=true)>]
-    abstract member notifyNewVersion : unit -> unit
-    abstract member newVersion : IEvent<unit>
     abstract member suspendTabMonitoring : unit -> unit
     abstract member resumeTabMonitoring : unit -> unit
     abstract member llMouse : IEvent<int32 * IntPtr>

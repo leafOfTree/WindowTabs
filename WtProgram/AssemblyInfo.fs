@@ -25,8 +25,7 @@ open System.Runtime.InteropServices
 
 do ()
 
-// Fallback keeps startup safe: ProgramVersion parses this string with
-// Int32.Parse, so it must never come back empty.
+// Keep diagnostics and settings migration version comparisons non-empty.
 let private fallbackVersion = "2025.06.30"
 
 let informationalVersion =

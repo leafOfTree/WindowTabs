@@ -9,6 +9,12 @@ open System.IO
 open System.Windows.Forms
 open Bemo.Win32.Forms
 
+module OleDropLifetime =
+    [<System.Runtime.InteropServices.DllImport("ole32.dll")>]
+    extern int RevokeDragDrop(IntPtr hwnd)
+    [<System.Runtime.InteropServices.DllImport("ole32.dll")>]
+    extern void OleUninitialize()
+
 type OleDropTarget(ts:TabStrip) as this=
     let Cell = CellScope()
     let os = OS()
@@ -16,10 +22,16 @@ type OleDropTarget(ts:TabStrip) as this=
     let rButtonDown = Cell.create(false)
     let lastTabHwndCell = Cell.create(None)
 
-    do
-        
-        Ole2Api.OleInitialize(IntPtr.Zero).ignore
-        Ole2Api.RegisterDragDrop(window.hwnd, this).ignore
+    let initialized = Ole2Api.OleInitialize(IntPtr.Zero)>=0
+    let registered = initialized && Ole2Api.RegisterDragDrop(window.hwnd, this)>=0
+    let mutable disposed = false
+
+    interface IDisposable with
+        member _.Dispose() =
+            if not disposed then
+                disposed <- true
+                if registered then OleDropLifetime.RevokeDragDrop(window.hwnd) |> ignore
+                if initialized then OleDropLifetime.OleUninitialize()
 
 
     member this.dragEnd() =

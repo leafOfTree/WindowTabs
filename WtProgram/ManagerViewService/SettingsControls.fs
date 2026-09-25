@@ -86,7 +86,7 @@ type SettingsNavigationButton(key:SettingsViewType) as this =
         use pen = new Pen(foreground, max 1.0f (float32(Dpi.scaleF 1.2)))
         let state = e.Graphics.Save()
         e.Graphics.TranslateTransform(float32(Dpi.scale 12),float32((this.Height-Dpi.scale 18)/2))
-        e.Graphics.ScaleTransform(float32(Dpi.factor.Force()),float32(Dpi.factor.Force()))
+        e.Graphics.ScaleTransform(float32(Dpi.currentFactor()),float32(Dpi.currentFactor()))
         match key with
         | GeneralSettings ->
             for y,x in [4.0f,6.0f;9.0f,12.0f;14.0f,7.0f] do
@@ -245,6 +245,26 @@ type SettingsChoicePopup() as this =
         use pen = new Pen((SettingsColors.current()).border)
         e.Graphics.DrawPath(pen,shape)
 
+module SettingsPopupLifetime =
+    let isOwnerClick (owner:Control) (e:ToolStripDropDownClosedEventArgs) =
+        e.CloseReason=ToolStripDropDownCloseReason.AppClicked &&
+        not owner.IsDisposed && owner.RectangleToScreen(owner.ClientRectangle).Contains(Cursor.Position)
+
+    /// Transient menus retire on the next UI turn, after ToolStrip completes closing.
+    /// Persistent pickers remain owned by their editor and are reused.
+    let own (owner:Control) (popup:ToolStripDropDown) transient =
+        let ownerDisposed = EventHandler(fun _ _ -> popup.Dispose())
+        owner.Disposed.AddHandler(ownerDisposed)
+        popup.Disposed.Add(fun _ -> owner.Disposed.RemoveHandler(ownerDisposed))
+        if transient then
+            popup.Closed.Add(fun _ ->
+                let timer = new Timer(Interval=1)
+                timer.Tick.Add(fun _ ->
+                    timer.Stop()
+                    timer.Dispose()
+                    if not popup.IsDisposed then popup.Dispose())
+                timer.Start())
+
 type SettingsCombo(items:string[]) as this =
     inherit Button()
     let changed = Event<EventArgs>()
@@ -258,7 +278,6 @@ type SettingsCombo(items:string[]) as this =
         this.FlatAppearance.BorderSize <- 0
         this.AccessibleRole <- AccessibleRole.ButtonDropDown
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
-        this.Disposed.Add(fun _ -> popup |> Option.iter(fun window -> window.Close()))
     member _.SelectedIndex
         with get() = selected
         and set(value) =
@@ -274,6 +293,7 @@ type SettingsCombo(items:string[]) as this =
             let p = SettingsColors.current()
             let window = new SettingsChoicePopup(BackColor=p.hover,ForeColor=p.text,Font=this.Font,
                                                 AccessibleName=this.AccessibleName)
+            SettingsPopupLifetime.own this window true
             let list = new ListBox(Dock=DockStyle.Fill,BorderStyle=BorderStyle.None,IntegralHeight=false,
                                    DrawMode=DrawMode.OwnerDrawFixed,ItemHeight=Dpi.scale 34,
                                    BackColor=p.hover,ForeColor=p.text,Font=this.Font,
@@ -352,8 +372,7 @@ type SettingsCombo(items:string[]) as this =
             window.Location <- Point(max area.Left (min (area.Right-window.Width) (anchor.X+this.Width-window.Width)),max area.Top y)
             popup <- Some window
             window.Closed.Add(fun e ->
-                if e.CloseReason=ToolStripDropDownCloseReason.AppClicked &&
-                   this.RectangleToScreen(this.ClientRectangle).Contains(Cursor.Position) then
+                if SettingsPopupLifetime.isOwnerClick this e then
                     suppressNextClick <- true
                 popup <- None
                 if not this.IsDisposed then this.Invalidate())

@@ -25,7 +25,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let geometryChangedEvent = Event<unit>()
     // Supplied by the caller: the main thread waits while this constructor runs.
     // Calling the settings service here would synchronously invoke that blocked thread.
-    let mutable appearanceSnapshot = initialAppearance
+    let mutable logicalAppearance = initialAppearance
+    let mutable appearanceSnapshot = logicalAppearance.scaled
 
     let isDestroyed = Cell.create(false)
     let zorderCell = Cell.create(List2<IntPtr>())
@@ -78,7 +79,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         themeSubscription <- Some(ThemeService.changed.Subscribe(fun () ->
             this.invokeAsync <| fun() ->
                 if not isDestroyed.value then
-                    let next = ThemeService.currentAppearance().scaled
+                    logicalAppearance <- ThemeService.currentAppearance()
+                    let next = logicalAppearance.scaled
                     let geometryChanged = TabGeometry.fromAppearance next <> TabGeometry.fromAppearance appearanceSnapshot
                     if next <> appearanceSnapshot then
                         appearanceSnapshot <- next
@@ -146,9 +148,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member private this.withUpdate f =
         Cell.beginUpdate()
-        let result = f()
-        Cell.endUpdate()
-        result
+        try f()
+        finally Cell.endUpdate()
 
     member this.invokeSync f =
         invoker.invoke (fun() -> this.withUpdate f)
@@ -256,6 +257,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member private this.saveTopWindowPlacement() =
         let window = this.os.windowFromHwnd(zorderCell.value.head)
+        let dpi = Dpi.forMonitor window.hwnd
+        if dpi <> Dpi.value() then
+            Dpi.set dpi
+            appearanceSnapshot <- logicalAppearance.scaled
+            this.ts.setTabAppearance(appearanceSnapshot)
+            geometryChangedEvent.Trigger()
         if  window.isMinimized.not &&
             this.os.isOnScreen(window.bounds)
             then
@@ -491,9 +498,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         let hasAnimation = Win32Helper.GetMinMaxAnimation()
         if hasAnimation then
             Win32Helper.SetMinMaxAnimation(false)
-        f()
-        if hasAnimation then
-            Win32Helper.SetMinMaxAnimation(true)
+        try f()
+        finally
+            if hasAnimation then Win32Helper.SetMinMaxAnimation(true)
 
     member this.minimizeAll = this.suppressAnimation <| fun() ->
         zorderCell.value.reverse.iter <| fun hwnd ->

@@ -7,10 +7,16 @@ open Microsoft.Win32
 
 type NotifyIconPlugin() as this =
     let Cell = CellScope()
-
+    let mutable disposed = false
     // Captured on the UI thread, so the theme change notification - which
     // arrives on its own thread - can be marshalled back.
     let invoker = InvokerService.invoker
+    let themeHandler = UserPreferenceChangedEventHandler(fun _ e ->
+        if not disposed then
+            match e.Category with
+            | UserPreferenceCategory.General
+            | UserPreferenceCategory.VisualStyle -> invoker.asyncInvoke(fun () -> if not disposed then this.refreshIcon())
+            | _ -> ())
     
     let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
 
@@ -43,11 +49,7 @@ type NotifyIconPlugin() as this =
             if e.Button = MouseButtons.Left then Services.managerView.show()
         // Switching between light and dark mode does not restart the process,
         // so the icon has to be replaced while it is on screen.
-        SystemEvents.UserPreferenceChanged.Add <| fun e ->
-            match e.Category with
-            | UserPreferenceCategory.General
-            | UserPreferenceCategory.VisualStyle -> invoker.asyncInvoke this.refreshIcon
-            | _ -> ()
+        SystemEvents.UserPreferenceChanged.AddHandler(themeHandler)
         notifyIcon
 
     member private this.refreshIcon() =
@@ -64,22 +66,17 @@ type NotifyIconPlugin() as this =
     member this.addItem(text, handler) =
         this.contextMenuItems.Add(text, EventHandler(fun obj (e:EventArgs) -> handler())) |> ignore
 
-    member this.onNewVersion() =
-        this.icon.ShowBalloonTip(
-            1000,
-            "A new version is available.",
-            "Please visit windowtabs.com to download the latest version.",
-            ToolTipIcon.Info
-        )
-
-
     interface IPlugin with
         member this.init() =
             this.addItem(resources.GetString("Settings"), fun() -> Services.managerView.show())
-            //this.addItem(resources.GetString("Feedback"), Forms.openFeedback) // 404 Not Found.
             this.contextMenuItems.Add("-").ignore
             this.addItem(resources.GetString("CloseWindowTabs"), fun() -> Services.program.shutdown())
-            Services.program.newVersion.Add this.onNewVersion
 
     interface IDisposable with
-        member this.Dispose() = this.icon.Dispose()
+        member this.Dispose() =
+            if not disposed then
+                disposed <- true
+                SystemEvents.UserPreferenceChanged.RemoveHandler(themeHandler)
+                let icon = this.icon.Icon
+                this.icon.Dispose()
+                if not (isNull icon) then icon.Dispose()

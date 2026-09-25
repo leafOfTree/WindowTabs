@@ -22,7 +22,7 @@ You can download my prebuilt files from the [releases](https://github.com/leafOf
 
 ## Usage
 
-- Run `WindowTabs.exe`. It will run in the background.
+- Keep `WindowTabs.exe.config` beside `WindowTabs.exe` (required for WinForms per-monitor DPI support). Run `WindowTabs.exe`; it will run in the background.
 
 - Configure for which window group and tab are enabled, along with other settings.
     - Right click on the notification icon at the bottom right corner.
@@ -65,6 +65,17 @@ Tips
 - You can also debug using `System.Diagnostics.Debug.WriteLine("Hello, world");` in code to print logs
 
 ## Project Structure
+
+Architecture and ownership conventions: [docs/architecture.md](docs/architecture.md).
+
+Run the regression suite (requires the same Visual Studio installation as the build):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-Tests.ps1
+```
+
+The script builds an isolated Debug output and runs native UI tests serially.
+Logs and rendered previews are written to `tests/Debug/`.
 
 - Entry point: `Program.fs` this.run
 - Tray icon (Notify icon): `NotifyIconPlugin.fs` this.icon

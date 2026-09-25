@@ -37,6 +37,10 @@ type ExceptionHandlerPlugin() as this =
         |> List.filter (fun d -> String.IsNullOrEmpty(d).not)
         |> List.tryPick tryDir
 
+    let mutable registered = false
+    let domainHandler = UnhandledExceptionEventHandler(fun _ e -> this.onException(e))
+    let threadHandler = Threading.ThreadExceptionEventHandler(fun _ e -> this.onThreadException(e))
+
     member this.describe(error:obj) =
         match error with
         | :? exn as ex -> ex.ToString()
@@ -69,6 +73,14 @@ type ExceptionHandlerPlugin() as this =
         this.log "Application.ThreadException" (box e.Exception)
 
     interface IPlugin with
-        member x.init() =
-            AppDomain.CurrentDomain.UnhandledException.Add this.onException
-            Application.ThreadException.Add this.onThreadException
+        member _.init() =
+            if not registered then
+                registered <- true
+                AppDomain.CurrentDomain.UnhandledException.AddHandler(domainHandler)
+                Application.ThreadException.AddHandler(threadHandler)
+    interface IDisposable with
+        member _.Dispose() =
+            if registered then
+                registered <- false
+                AppDomain.CurrentDomain.UnhandledException.RemoveHandler(domainHandler)
+                Application.ThreadException.RemoveHandler(threadHandler)

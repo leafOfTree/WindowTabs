@@ -3,27 +3,16 @@ open System
 open System.Drawing
 open System.Windows.Forms
 
-type AppearanceView() =
+type AppearanceView(?settings:ISettings) =
+    let settings = defaultArg settings Services.settings
     let t = SettingsUi.text
     let panel,table = SettingsUi.page()
     let mutable refreshing = false
     let mutable editingDark = ThemeService.currentIsDark()
-    let update = Services.settings.updateAppearance
+    let update = settings.updateAppearance
     let paletteTitle = new Label(AutoSize=true,Font=SettingsUi.sectionFont,
                                  Margin=Padding(0,Dpi.scale 16,0,Dpi.scale 8))
     let preset = SettingsUi.choice [|t "Default" "默认";t "Ocean" "海洋";t "Forest" "森林";t "Custom" "自定义"|]
-    let presets dark =
-        let make (basis:TabPalette) text active hover inactive border =
-            { basis with tabTextColor=Color.FromRGB(text);tabActiveBgColor=Color.FromRGB(active)
-                         tabHighlightBgColor=Color.FromRGB(hover);tabNormalBgColor=Color.FromRGB(inactive)
-                         tabBorderColor=Color.FromRGB(border) }
-        if dark then
-            [|Theme.darkPalette;Theme.bluePalette
-              make Theme.darkPalette 0xE4EEE6 0x19251D 0x2C3E31 0x455C4B 0x718778|]
-        else
-            [|Theme.lightPalette
-              make Theme.lightPalette 0x17324D 0xF5FAFF 0xE0ECF7 0xBCD0E3 0x8BA8C2
-              make Theme.lightPalette 0x213C2B 0xF6FBF5 0xE1EEDF 0xC0D5BE 0x8CA889|]
     let rightActions (button:Control) =
         let row = new FlowLayoutPanel(AutoSize=true,WrapContents=false,FlowDirection=FlowDirection.RightToLeft,
                                       Margin=Padding(0,Dpi.scale 8,0,Dpi.scale 8))
@@ -49,14 +38,15 @@ type AppearanceView() =
         "tabBorderColor",(fun p -> p.tabBorderColor),(fun v p -> {p with tabBorderColor=v})
         "tabFlashBgColor",(fun p -> p.tabFlashBgColor),(fun v p -> {p with tabFlashBgColor=v}) ]
     let colors = colorFields |> List.map(fun (key,get,set) -> key,get,set,(new SettingsColorInput(Font=SettingsUi.bodyFont) :> IPropEditor))
-    let dimensionFields : (string * int * int * (TabGeometry -> int) * (int -> TabGeometry -> TabGeometry)) list = [
-        "tabHeight",12,120,(fun g -> g.height),(fun v g -> {g with height=v})
-        "tabMaxWidth",60,1000,(fun g -> g.maxWidth),(fun v g -> {g with maxWidth=v})
-        "tabOverlap",-100,0,(fun g -> g.overlap),(fun v g -> {g with overlap=v})
-        "tabIndentNormal",0,1000,(fun g -> g.indentNormal),(fun v g -> {g with indentNormal=v})
-        "tabIndentFlipped",0,1000,(fun g -> g.indentFlipped),(fun v g -> {g with indentFlipped=v}) ]
-    let dimensions = dimensionFields |> List.map(fun (key,minValue,maxValue,get,set) ->
-        key,get,set,new SettingsNumberInput(Minimum=decimal minValue,Maximum=decimal maxValue,Font=SettingsUi.bodyFont))
+    let dimensionFields : (string * (TabGeometry -> int) * (int -> TabGeometry -> TabGeometry)) list = [
+        "tabHeight",(fun g -> g.height),(fun v g -> {g with height=v})
+        "tabMaxWidth",(fun g -> g.maxWidth),(fun v g -> {g with maxWidth=v})
+        "tabOverlap",(fun g -> g.overlap),(fun v g -> {g with overlap=v})
+        "tabIndentNormal",(fun g -> g.indentNormal),(fun v g -> {g with indentNormal=v})
+        "tabIndentFlipped",(fun g -> g.indentFlipped),(fun v g -> {g with indentFlipped=v}) ]
+    let dimensions = dimensionFields |> List.map(fun (key,get,set) ->
+        let low,high = SettingsCatalog.range key
+        key,get,set,new SettingsNumberInput(Minimum=decimal low,Maximum=decimal high,Font=SettingsUi.bodyFont))
     let refresh() =
         refreshing <- true
         try
@@ -64,14 +54,14 @@ type AppearanceView() =
             paletteTitle.Text <-
                 if editingDark then t "Dark theme · Tab colours" "深色主题 · 标签配色"
                 else t "Light theme · Tab colours" "浅色主题 · 标签配色"
-            let settings = Services.settings.appearance
+            let settings = settings.appearance
             let palette =
                 if settings.useCustomColors then paletteForProfile settings
                 elif editingDark then Theme.darkPalette else Theme.lightPalette
             let values (p:TabPalette) =
                 [p.tabTextColor;p.tabActiveBgColor;p.tabHighlightBgColor;p.tabNormalBgColor;p.tabBorderColor;p.tabFlashBgColor]
                 |> List.map(fun c -> c.ToArgb())
-            preset.SelectedIndex <- presets editingDark |> Array.tryFindIndex(fun candidate -> values candidate=values palette) |> Option.defaultValue 3
+            preset.SelectedIndex <- ThemePresets.palettes editingDark |> Array.tryFindIndex(fun candidate -> values candidate=values palette) |> Option.defaultValue 3
             for key,read,write,editor in colors do
                 editor.value <- box(read palette)
             let geometry = settings.geometry
@@ -153,7 +143,7 @@ type AppearanceView() =
         SettingsUi.add table paletteHeader
         preset.SelectedIndexChanged.Add(fun _ ->
             if not refreshing && preset.SelectedIndex>=0 && preset.SelectedIndex<3 then
-                updatePalette(fun _ -> (presets editingDark).[preset.SelectedIndex]))
+                updatePalette(fun _ -> (ThemePresets.palettes editingDark).[preset.SelectedIndex]))
         let colorsCard = new SettingsCard()
         SettingsUi.add table colorsCard
         for key,read,write,editor in colors do

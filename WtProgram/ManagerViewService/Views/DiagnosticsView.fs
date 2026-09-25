@@ -1,106 +1,41 @@
-﻿namespace Bemo
+namespace Bemo
 open System
-open System.Drawing
 open System.IO
+open System.Text
 open System.Windows.Forms
-open Bemo.Win32.Forms
-open Newtonsoft.Json
-open Newtonsoft.Json.Linq
-open System.Resources
-open System.Reflection
 
-type DiagnosticsView() as this =
-    let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
-    let font = Font(resources.GetString("Font"), 10f)
-
-    let textBox =
-        let tb = TextBox()
-        tb.ReadOnly <- true
-        tb.Multiline <- true
-        tb.ScrollBars <- ScrollBars.Both
-        tb.Dock <- DockStyle.Fill
-        tb.Font <- font
-        tb
-    let toolBar = 
-        let ts = ToolStrip()
-        ts.GripStyle  <- ToolStripGripStyle.Hidden
-        ts.Dock <- DockStyle.Top
-        let refreshBtn = 
-            let btn = ToolStripButton("Scan")
-            btn.Click.Add <| fun _ -> this.doRefresh()
-            btn
-        let copyBtn =
-            let btn = ToolStripButton("Copy to clipboard")
-            btn.Click.Add <| fun _ -> 
-                textBox.SelectAll()
-                textBox.Refresh()
-                textBox.Copy()
-                MessageBox.Show("Please paste (CTRL + V) into an email and send to 'support@windowtabs.com'", "Copied to clipboard").ignore
-            btn
-        let copySettingsFileBtn =
-            let btn = ToolStripButton("Copy settings file to WindowTabs.exe path")
-            btn.Click.Add <| fun _ -> 
-                let fileName = "WindowTabsSettings.txt"
-                let settingsFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WindowTabs")
-                let settingsFile = Path.Combine(settingsFolder, fileName)
-                let targetFile = Path.Combine(".", fileName)
-                try
-                    File.Copy(settingsFile, targetFile, false)
-                    MessageBox.Show("Restart WindowTabs.exe to use settings file of the same path", "Copied").ignore
-                with ex ->
-                    MessageBox.Show("Error: copy failed. Details: " + ex.Message, "Copy failed").ignore
-            btn
-        ts.Items.Add(refreshBtn).ignore
-        ts.Items.Add(copyBtn).ignore
-        ts.Items.Add(new ToolStripSeparator()).ignore
-        ts.Items.Add(copySettingsFileBtn).ignore
-        ts.Font <- font
-        ts
-    let statusBar = 
-        let sb = StatusBar()
-        sb.Text <- "Ready"
-        sb.Dock <- DockStyle.Bottom
-        sb.Font <- font
-        sb
-    let panel = 
-        let p = Panel()
-        p.Controls.Add(textBox)
-        p.Controls.Add(toolBar)
-        p.Controls.Add(statusBar)
-        p
-
-    member this.doRefresh() =
-        let os = OS()
-        let windows = os.windowsInZorder
-        let diagnosticsJson = JObject()
-        let windowObjs = windows.map <| fun window ->
-            let windowObj = JObject()
-            windowObj.setIntPtr("hwnd", window.hwnd)
-            windowObj.setIntPtr("style", window.style)
-            windowObj.setIntPtr("styleEx", window.styleEx)
-            windowObj.setIntPtr("hwndParent", window.parent.hwnd)
-            windowObj.setBool("isVisible", window.isVisible)
-            windowObj.setBool("isTopMost", window.isTopMost)
-            windowObj.setString("title", window.text)
-            windowObj.setInt32("pid", window.pid.pid)
-            windowObj
-        let pids = List2.distinct (windows.map(fun w -> w.pid.pid))
-        let processObjs = pids.map <| fun pid ->
-            let pid = Pid(pid)
-            let processObj = JObject()
-            processObj.setInt32("pid", pid.pid)
-            processObj.setBool("canQueryProcess", pid.canQueryProcess)
-            processObj.setString("path", pid.processPath)
-            processObj
-
-        diagnosticsJson.setObjectArray("processes", processObjs)
-        diagnosticsJson.setObjectArray("windows", windowObjs)
- 
-        textBox.Text <- diagnosticsJson.ToString()
-
+type DiagnosticsView() =
+    let t = SettingsUi.text
+    let panel = new Panel()
+    let text = new TextBox(ReadOnly=true,Multiline=true,ScrollBars=ScrollBars.Both,Dock=DockStyle.Fill,Font=SettingsUi.bodyFont)
+    let toolbar = new FlowLayoutPanel(AutoSize=true,Dock=DockStyle.Top,WrapContents=true)
+    let status = new Label(AutoSize=true,Dock=DockStyle.Bottom,Text=t "Reports omit window titles, paths and license data." "诊断报告不包含窗口标题、路径和授权信息。")
+    let report() =
+        let groups = Services.desktop.groups
+        RuntimeDiagnostics.report Services.settings.root groups.count (groups.collect(fun g -> g.windows).count)
+    let refresh() = text.Text <- (report()).ToString()
+    let guarded action =
+        try action()
+        with error -> MessageBox.Show(error.Message,t "Operation failed" "操作失败",MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore
+    let add caption action =
+        let button = SettingsUi.button caption
+        button.Click.Add(fun _ -> guarded action)
+        toolbar.Controls.Add(button)
+    let save filename content =
+        use dialog = new SaveFileDialog(FileName=filename,Filter="JSON (*.json)|*.json",AddExtension=true,DefaultExt="json",OverwritePrompt=true)
+        if dialog.ShowDialog(panel)=DialogResult.OK then
+            File.WriteAllText(dialog.FileName,content(),UTF8Encoding(false))
+            status.Text <- t "Saved." "已保存。"
+    do
+        add (t "Refresh" "刷新") refresh
+        add (t "Copy report" "复制报告") (fun () -> refresh(); Clipboard.SetText(text.Text); status.Text <- t "Report copied." "报告已复制。")
+        add (t "Save report" "保存报告") (fun () -> save "WindowTabs-diagnostics.json" (fun () -> (report()).ToString()))
+        add (t "Export settings" "导出设置") (fun () ->
+            // Export the current in-memory root, including edits waiting for the debounce timer.
+            save "WindowTabs-settings.json" (fun () -> Services.settings.root.ToString()))
+        panel.Controls.AddRange([|text :> Control;toolbar :> Control;status :> Control|])
+        panel.HandleCreated.Add(fun _ -> guarded refresh)
     interface ISettingsView with
-        member x.key = SettingsViewType.DiagnosticsSettings
-        member x.title = resources.GetString "Diagnostics"
-        member x.control = panel :> Control
-
-
+        member _.key = DiagnosticsSettings
+        member _.title = t "About & diagnostics" "关于与诊断"
+        member _.control = panel :> Control

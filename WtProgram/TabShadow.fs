@@ -84,7 +84,7 @@ module TabShadow =
 /// An owned, nonactivating, click-through window. Ownership keeps its stacking
 /// with the tab strip, without making it globally topmost or changing tab bounds.
 type TabShadowWindow(os:OS, owner:IntPtr) =
-    let padding = max 3 (Dpi.scale 15)
+    let mutable padding = max 3 (Dpi.scale 15)
     let helper =
         os.createWindow (fun msg -> msg.def()) WindowsStyles.WS_POPUP
             (WindowsExtendedStyles.WS_EX_LAYERED |||
@@ -119,6 +119,11 @@ type TabShadowWindow(os:OS, owner:IntPtr) =
         window.hide()
 
     member this.update(image:Img, alpha:byte, newDirection:TabDirection) =
+        let nextPadding = max 3 (Dpi.scale 15)
+        if nextPadding <> padding then
+            cached |> Option.iter(fun (_,_,_,_,bitmap) -> bitmap.Dispose())
+            cached <- None
+            padding <- nextPadding
         let mask = TabShadow.silhouette image.bitmap
         let bitmap =
             match cached with

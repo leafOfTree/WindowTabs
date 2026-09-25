@@ -1,0 +1,174 @@
+#r "System.Drawing"
+#r "System.Windows.Forms"
+#r "Debug/Newtonsoft.Json.dll"
+#r "Debug/Win32.dll"
+#r "Debug/Aga.Controls.dll"
+#r "Debug/WindowTabs.exe"
+open System
+open System.IO
+open System.Threading
+open System.Windows.Forms
+open Bemo
+
+let check condition message = if not condition then failwith message
+let pumpUntil description predicate =
+    let watch = Diagnostics.Stopwatch.StartNew()
+    while not(predicate()) && watch.ElapsedMilliseconds<5000L do
+        Application.DoEvents()
+        Thread.Sleep(5)
+    check (predicate()) description
+let pump milliseconds =
+    let watch = Diagnostics.Stopwatch.StartNew()
+    while watch.ElapsedMilliseconds<int64 milliseconds do
+        Application.DoEvents()
+        Thread.Sleep(5)
+
+let main() =
+    Application.EnableVisualStyles()
+    let directory = Path.Combine(__SOURCE_DIRECTORY__,"Debug","architecture-"+Guid.NewGuid().ToString("N"))
+    Directory.CreateDirectory(directory) |> ignore
+    let path = Path.Combine(directory,"settings.json")
+    let mutable errors = 0
+    use store = new SettingsFileStore(path,50,fun _ -> errors <- errors+1)
+    for value in 1..100 do store.Schedule(sprintf "{\"value\":%d}" value)
+    check (not(File.Exists(path))) "Settings writes were not deferred"
+    check (store.Read()=Some "{\"value\":100}") "Pending settings not immediately readable"
+    pumpUntil "Debounced write did not finish" (fun () -> not store.HasPending)
+    check (File.ReadAllText(path)="{\"value\":100}") "Debounce did not save the latest value"
+    store.Schedule("{\"value\":101}")
+    check (store.Flush()) "Explicit flush failed"
+    check (File.ReadAllText(path+".bak")="{\"value\":100}") "Atomic backup was not preserved"
+    do
+        use locked = new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.None)
+        store.Schedule("{\"value\":102}")
+        check (not(store.Flush()) && store.HasPending) "Write failure lost pending changes"
+        check (not(store.Flush()) && errors=1) "Repeated failure repeated the warning"
+    check (store.Flush() && not store.HasPending) "Failed write could not be retried"
+    File.WriteAllText(path,"invalid-json")
+    check (store.Read()=Some "{\"value\":101}") "Valid backup was not recovered"
+    check (Directory.GetFiles(directory,"*.corrupt-*").Length=1) "Corrupt original not preserved"
+    check (Directory.GetFiles(directory,"*.tmp").Length=0) "Temporary save files leaked"
+    let exitPath = Path.Combine(directory,"exit.json")
+    do
+        use exitStore = new SettingsFileStore(exitPath,10000,raise)
+        exitStore.Schedule("{}")
+    check (File.ReadAllText(exitPath)="{}") "Dispose did not flush pending settings"
+
+    use subscriptions = new OwnedSubscriptions<IntPtr>()
+    let mutable disposed = 0
+    for _ in 1..100 do
+        subscriptions.Add(IntPtr(42),{new IDisposable with member _.Dispose() = disposed <- disposed+1})
+        subscriptions.Remove(IntPtr(42))
+    check (disposed=100 && subscriptions.Count=0 && not(subscriptions.Contains(IntPtr(42)))) "Destroyed/reused handles retain subscriptions"
+    let mutable suspended = false
+    try TemporaryState.run (fun () -> suspended <- true) (fun () -> suspended <- false) (fun () -> failwith "native-failure")
+    with ex -> check (ex.Message="native-failure") "Exception was swallowed"
+    check (not suspended) "Failure left temporary state enabled"
+    let mutable scans = 0
+    use queue = new CoalescedAction(30,fun () -> scans <- scans+1)
+    for _ in 1..1000 do queue.Request()
+    pumpUntil "Events were not processed" (fun () -> scans=1)
+    pump 80
+    check (scans=1) "Event burst caused repeated full scans"
+    queue.Request()
+    queue.Cancel()
+    pump 80
+    check (scans=1) "Canceled scan ran"
+    let mutable windows = [||]
+    let mutable fullScans = 0
+    use windowQueue = new WindowRefreshQueue(30,(fun changed -> windows <- changed),(fun () -> fullScans <- fullScans+1))
+    for _ in 1..100 do windowQueue.RequestWindow(IntPtr(42))
+    windowQueue.RequestWindow(IntPtr(43))
+    pumpUntil "Dirty windows did not reconcile" (fun () -> windows.Length=2)
+    check (fullScans=0) "Window events triggered a full scan"
+    windows <- [||]
+    windowQueue.RequestWindow(IntPtr(44))
+    windowQueue.RequestAll()
+    pumpUntil "Full scan fallback did not run" (fun () -> fullScans=1)
+    check (windows.Length=0) "Full scan also redundantly reconciled dirty windows"
+
+    let originalDirectory = Environment.CurrentDirectory
+    Environment.CurrentDirectory <- directory
+    try
+        use settings = new Settings(true)
+        let dispatcher = InvokerService.invoker :> IDispatcher
+        let api = Services.settings
+        let mutable callbackThread = 0
+        use subscription = api.notifyValue "autoHide" (fun _ -> callbackThread <- Thread.CurrentThread.ManagedThreadId)
+        let uiThread = Thread.CurrentThread.ManagedThreadId
+        let mutable workerError : exn option = None
+        let worker = new Thread(ThreadStart(fun () ->
+            try
+                check (not dispatcher.CheckAccess) "Worker falsely claims UI access"
+                api.setValue("autoHide",box false)
+                check (api.getValue("autoHide") :?> bool |> not) "Typed dispatcher lost settings update"
+            with ex -> workerError <- Some ex))
+        worker.IsBackground <- true
+        worker.Start()
+        pumpUntil "Settings dispatch deadlocked" (fun () -> not worker.IsAlive)
+        workerError |> Option.iter raise
+        check (callbackThread=uiThread) "Settings mutation escaped its owner thread"
+        settings.Flush() |> ignore
+        let pathBefore = settings.path
+        Environment.CurrentDirectory <- __SOURCE_DIRECTORY__
+        api.setValue("autoHide",box true)
+        settings.Flush() |> ignore
+        check (settings.path=pathBefore) "Working-directory change redirected settings"
+
+        let mouse = Event<int32 * IntPtr>()
+        Services.register<IProgram>({new IProgram with
+            member _.version = "test"
+            member _.isUpgrade = false
+            member _.isFirstRun = false
+            member _.refresh() = ()
+            member _.shutdown() = ()
+            member _.setWindowNameOverride _ = ()
+            member _.getWindowNameOverride _ = None
+            member _.appWindows = List2()
+            member _.getAutoGroupingEnabled _ = false
+            member _.setAutoGroupingEnabled _ _ = ()
+            member _.tabAppearanceInfo = ThemeService.currentAppearance()
+            member _.setHotKey _ _ = true
+            member _.getHotKey _ = 0
+            member _.suspendTabMonitoring() = ()
+            member _.resumeTabMonitoring() = ()
+            member _.llMouse = mouse.Publish},false)
+        let desktop = Desktop({new IDesktopNotification with
+                                member _.dragDrop _ = ()
+                                member _.dragEnd() = ()},api,dispatcher)
+        let apiDesktop = desktop :> IDesktop
+        let mutable baseline = 0,0,0,0L
+        for iteration in 1..110 do
+            let group = apiDesktop.createGroup(false)
+            // Initialization and destruction use the same group dispatcher queue.
+            group.destroy()
+            pumpUntil "Exited group remains retained" (fun () -> desktop.retainedGroupCount=0)
+            if iteration=10 then
+                pump 50
+                GC.Collect()
+                GC.WaitForPendingFinalizers()
+                baseline <- RuntimeDiagnostics.resourceCounts()
+        pump 100
+        GC.Collect()
+        GC.WaitForPendingFinalizers()
+        let gdi,user,handles,_ = RuntimeDiagnostics.resourceCounts()
+        let oldGdi,oldUser,oldHandles,_ = baseline
+        printfn "100 group cycles: GDI %+d, USER %+d, handles %+d" (gdi-oldGdi) (user-oldUser) (handles-oldHandles)
+        check (gdi-oldGdi<20 && user-oldUser<20 && handles-oldHandles<50) "Native group resources accumulated after teardown"
+        check apiDesktop.isEmpty "Desktop did not become empty"
+    finally Environment.CurrentDirectory <- originalDirectory
+
+    use owner = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-12000,-12000))
+    use choice = new SettingsCombo([|"A";"B"|])
+    owner.Controls.Add(choice)
+    owner.Show()
+    for _ in 1..20 do
+        let popup = choice.CreateDropDown().Value
+        popup.Show(owner,Drawing.Point.Empty)
+        popup.Close(ToolStripDropDownCloseReason.AppClicked)
+        pumpUntil "Transient popup did not dispose after close" (fun () -> popup.IsDisposed)
+        check owner.Visible "Popup disposal hid its owner"
+    owner.Close()
+    pump 250
+    printfn "PASS: atomic/deferred saves, failure retry and backup recovery, subscriptions, temporary state, coalesced scans, dispatch, group cleanup and popup disposal."
+main()

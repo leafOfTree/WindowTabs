@@ -37,7 +37,10 @@ type HideTabsOnInactiveGroupPlugin() =
             let mutable disposed = false
             let subscription = Services.settings.notifyValue "hideInactiveTabs" (fun _ ->
                 group.invokeAsync(fun () -> if not disposed then this.onShowCompactChanged()))
-            group.exited.Add(fun _ -> disposed <- true; subscription.Dispose())
+            group.exited.Add(fun _ ->
+                disposed <- true
+                subscription.Dispose()
+                Services.dragDrop.unregisterNotification(this :> IDragDropNotification))
             this.group.zorder.changed.Add <| fun() ->
                 this.onShowCompactChanged()
             this.group.isForeground.changed.Add <| fun() ->

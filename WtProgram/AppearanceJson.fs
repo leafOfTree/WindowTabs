@@ -30,9 +30,19 @@ module AppearanceJson =
         geometryFields |> List.fold(fun geometry (key,_,set) ->
             try
                 match json.[key] with
-                | :? JValue as value when not(isNull value.Value) -> set (Convert.ToInt32(value.Value)) geometry
+                | :? JValue as value when value.Type=JTokenType.Integer ->
+                    let number = Convert.ToInt32(value.Value)
+                    let normalized = if key="tabHeightOffset" then max -120 (min 120 number) else SettingsCatalog.normalizeNumber key number
+                    set normalized geometry
                 | _ -> geometry
             with _ -> geometry) fallback
+    let normalizeGeometry (geometry:TabGeometry) =
+        { height=SettingsCatalog.normalizeNumber "tabHeight" geometry.height
+          maxWidth=SettingsCatalog.normalizeNumber "tabMaxWidth" geometry.maxWidth
+          overlap=SettingsCatalog.normalizeNumber "tabOverlap" geometry.overlap
+          heightOffset=max -120 (min 120 geometry.heightOffset)
+          indentNormal=SettingsCatalog.normalizeNumber "tabIndentNormal" geometry.indentNormal
+          indentFlipped=SettingsCatalog.normalizeNumber "tabIndentFlipped" geometry.indentFlipped }
     let writePalette palette =
         let json = JObject()
         for key,get,_ in paletteFields do json.setString(key,sprintf "%X" ((get palette).ToRGB()))

@@ -26,6 +26,9 @@ type TabStripDecorator(group:WindowGroup) as this =
         Services.dragDrop.registerTarget(this.ts.hwnd, this:>IDragDropTarget)
     
         dropTarget.set(Some(OleDropTarget(this.ts)))
+        this.ts.destroying.Add(fun () ->
+            dropTarget.value.iter(fun target -> (target :> IDisposable).Dispose())
+            dropTarget.set(None))
         
         this.initAutoHide()
 

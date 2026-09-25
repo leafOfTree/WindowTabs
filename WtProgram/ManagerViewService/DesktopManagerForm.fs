@@ -64,7 +64,6 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         | ProgramSettings -> t "App rules" "应用规则"
         | LayoutSettings -> t "Workspaces" "工作区"
         | DiagnosticsSettings -> t "About & diagnostics" "关于与诊断"
-        | _ -> fallback
     let buttons = pages |> List.map (fun page ->
         let button = new SettingsNavigationButton(page.key,Text=captions page.key page.title,Font=SettingsUi.bodyFont)
         button.TextAlign <- ContentAlignment.MiddleLeft
@@ -95,7 +94,13 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 if themedPages.Add(key) then SettingsUi.apply page.control
                 host.ResumeLayout(true)
     do
-        form.AutoScaleMode <- AutoScaleMode.None
+        form.AutoScaleDimensions <- SizeF(float32(Dpi.value()),float32(Dpi.value()))
+        form.AutoScaleMode <- AutoScaleMode.Dpi
+        form.DpiChanged.Add(fun e ->
+            Dpi.set e.DeviceDpiNew
+            searchResults.Hide()
+            results.ItemHeight <- Dpi.scale 48
+            form.Invalidate(true))
         form.StartPosition <- FormStartPosition.CenterScreen
         form.FormBorderStyle <- FormBorderStyle.Sizable
         form.Padding <- Padding.Empty
@@ -257,7 +262,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 SettingsUi.apply form
                 styleSearch()
                 themedPages.Add(activePage) |> ignore)
-        form.FormClosed.Add(fun _ ->
+        form.Disposed.Add(fun _ ->
             Application.RemoveMessageFilter(searchFocusFilter)
             searchResults.Dispose()
             match views with

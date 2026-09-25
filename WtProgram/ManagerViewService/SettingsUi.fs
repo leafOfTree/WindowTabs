@@ -8,8 +8,7 @@ module SettingsUi =
     [<DllImport("dwmapi.dll")>]
     extern int private DwmSetWindowAttribute(IntPtr hwnd, int attribute, int& value, int size)
 
-    let text en zh =
-        if Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName = "zh" then zh else en
+    let text en zh = SettingsCatalog.localize(en,zh)
 
     let bodyFont = new Font("Segoe UI", 10.5f, FontStyle.Regular)
     let titleFont = new Font("Segoe UI", 20.0f, FontStyle.Regular)

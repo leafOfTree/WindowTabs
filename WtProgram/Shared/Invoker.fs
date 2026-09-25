@@ -4,6 +4,12 @@ open System.Threading
 open System.Windows.Forms
 
 type InvokeDelegate<'a> = delegate of unit -> 'a
+/// Explicit thread boundary. Send completes a request; notifications use Post.
+[<AllowNullLiteral>]
+type IDispatcher =
+    abstract member CheckAccess : bool
+    abstract member Send<'a> : (unit -> 'a) -> 'a
+    abstract member Post : (unit -> unit) -> unit
 [<AllowNullLiteral>]
 type Invoker() as this =
     let form = 
@@ -24,6 +30,11 @@ type Invoker() as this =
     member this.asyncInvoke f = 
         lockDispose <| fun() ->
             form.BeginInvoke(MethodInvoker(fun() -> f())).ignore
+
+    interface IDispatcher with
+        member _.CheckAccess = not this.invokeRequired
+        member _.Send action = this.invoke action
+        member _.Post action = this.asyncInvoke action
 
     interface IDisposable with
         member this.Dispose() =

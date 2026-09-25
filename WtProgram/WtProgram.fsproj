@@ -12,10 +12,6 @@
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <Name>WtProgram</Name>
     <TargetFrameworkProfile />
-    <SccProjectName>&lt;Project Location In Database&gt;</SccProjectName>
-    <SccProvider>Mercurial Source Control Package</SccProvider>
-    <SccAuxPath>&lt;Source Control Database&gt;</SccAuxPath>
-    <SccLocalPath>&lt;Local Binding Root of Project&gt;</SccLocalPath>
     <ApplicationIcon>Resources\Bemo.ico</ApplicationIcon>
     <Win32Manifest>app.manifest</Win32Manifest>
     <TargetFSharpCoreVersion>6.0.0.0</TargetFSharpCoreVersion>
@@ -59,18 +55,6 @@
     </Otherwise>
   </Choose>
   <Import Project="$(FSharpTargetsPath)" Condition="Exists('$(FSharpTargetsPath)')" />
-  <PropertyGroup>
-    <PostBuildEvent>
-    </PostBuildEvent>
-  </PropertyGroup>
-  <PropertyGroup>
-    <PostBuildEvent>
-    </PostBuildEvent>
-  </PropertyGroup>
-  <PropertyGroup>
-    <PostBuildEvent>
-    </PostBuildEvent>
-  </PropertyGroup>
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
     <Compile Include="Shared/Operators.fs" />
@@ -78,6 +62,8 @@
     <Compile Include="Shared/Observable.fs" />
     <Compile Include="Shared/Blackboard.fs" />
     <Compile Include="Shared/Invoker.fs" />
+    <Compile Include="Shared/Lifetime.fs" />
+    <Compile Include="Shared/BackgroundWork.fs" />
     <Compile Include="Shared/Cell.fs" />
     <Compile Include="Shared/Drawing.fs" />
     <Compile Include="Shared/Sprite.fs" />
@@ -86,11 +72,14 @@
     <Compile Include="Shared/Win32.fs" />
     <Compile Include="Shared/AppearanceModel.fs" />
     <Compile Include="Shared\ProgramTypes.fs" />
+    <Compile Include="ManagerViewService\SettingsCatalog.fs" />
     <Compile Include="Shared/DragDrop.fs" />
     <Compile Include="Shared/Serialize.fs" />
     <Compile Include="Shared/Win32Menu.fs" />
     <Compile Include="Shared/Services.fs" />
+    <Compile Include="Shared/RuntimeDiagnostics.fs" />
     <Compile Include="Shared/Theme.fs" />
+    <Compile Include="Shared/ThemePresets.fs" />
     <Compile Include="Shared/ThemeService.fs" />
     <Compile Include="Shared/AnimationWindow.fs" />
     <Compile Include="Shared/Forms.fs" />
@@ -104,6 +93,7 @@
     <Compile Include="TabShadow.fs" />
     <Compile Include="TabStrip.fs" />
     <Compile Include="AppearanceJson.fs" />
+    <Compile Include="SettingsFileStore.fs" />
     <Compile Include="Settings.fs" />
     <Compile Include="TaskSwitch.fs" />
     <Compile Include="WindowDecorator.fs" />
@@ -115,10 +105,9 @@
     <Compile Include="GroupPlugins/NumericTabHotKeyPlugin.fs" />
     <Compile Include="GroupPlugins/HideTabsOnInactiveGroupPlugin.fs" />
     <Compile Include="Desktop.fs" />
-    <Compile Include="Launcher.fs" />
+    <Compile Include="Workspace\WorkspaceData.fs" />
     <Compile Include="Workspace\WorkspaceModel.fs" />
     <Compile Include="Workspace\WorkspaceView.fs" />
-    <Compile Include="ManagerViewService\SettingsCatalog.fs" />
     <Compile Include="ManagerViewService\ThemeBinding.fs" />
     <Compile Include="ManagerViewService\SettingsStyle.fs" />
     <Compile Include="ManagerViewService\SettingsControls.fs" />
@@ -130,7 +119,6 @@
     <Compile Include="ManagerViewService\Views\AppearanceView.fs" />
     <Compile Include="ManagerViewService\Views\BehaviorView.fs" />
     <Compile Include="ManagerViewService\Views\DiagnosticsView.fs" />
-    <Compile Include="ManagerViewService\Views\LicenseView.fs" />
     <Compile Include="ManagerViewService\Views\ProgramView.fs" />
     <Compile Include="ManagerViewService\DesktopManagerForm.fs" />
     <Compile Include="ManagerViewService\ManagerViewService.fs" />

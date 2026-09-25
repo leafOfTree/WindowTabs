@@ -60,6 +60,11 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let shadowRefreshMessage = 0x8000 + 67
     let hwndRef = ref IntPtr.Zero
     let isShrunkCell = Cell.create(false)
+    let destroyingEvent = Event<unit>()
+    let mutable fontDpi = Dpi.value()
+    let makeFont (style:FontStyle) = new Font(SystemFonts.MenuFont.FontFamily,float32(Dpi.scaleF(float SystemFonts.MenuFont.SizeInPoints)),style)
+    let mutable normalFont = makeFont FontStyle.Regular
+    let mutable renamedFont = makeFont FontStyle.Italic
 
     let isMouseOverExport = Cell.export <| fun() ->
         hoverCell.value.IsSome
@@ -105,9 +110,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                     bgColor = tabBgColor.value.tryFind(tab)
                     TabDisplayInfo.text = ti.text
                     icon = ti.iconSmall
-                    textFont = 
-                        let font = SystemFonts.MenuFont
-                        if ti.isRenamed then Font(font, FontStyle.Italic) else font
+                    textFont = if ti.isRenamed then renamedFont else normalFont
                     textBrush = SystemBrushes.MenuText
                 }
                 tab,tabInfo
@@ -356,7 +359,14 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             | None -> 
                 tabBgColor.map(fun m -> m.remove tab)
         
-    member this.setTabAppearance(appearance) = appearanceCell.set(Some(appearance))
+    member this.setTabAppearance(appearance) =
+        if fontDpi <> Dpi.value() then
+            normalFont.Dispose()
+            renamedFont.Dispose()
+            normalFont <- makeFont FontStyle.Regular
+            renamedFont <- makeFont FontStyle.Italic
+            fontDpi <- Dpi.value()
+        appearanceCell.set(Some(appearance))
             
     member this.contentBounds 
         with get() = contentBoundsCell.value
@@ -402,7 +412,11 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             }
         ts.render
 
+    member _.destroying = destroyingEvent.Publish
     member this.destroy() = 
+        destroyingEvent.Trigger()
+        normalFont.Dispose()
+        renamedFont.Dispose()
         shadowWindow |> Option.iter (fun shadow -> (shadow :> IDisposable).Dispose())
         shadowWindow <- None
         eventHandlersCell.value.items.iter(fun d -> d.Dispose())

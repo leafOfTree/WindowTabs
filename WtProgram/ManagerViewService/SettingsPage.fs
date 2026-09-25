@@ -11,18 +11,18 @@ type SettingsPage() as this =
     let mutable offset = 0
     let mutable maximum = 0
     let mutable arranging = false
-    let inset = Dpi.scale 32
+    let inset() = Dpi.scale 32
     let scrollTo value =
         offset <- max 0 (min maximum value)
-        table.Top <- inset-offset
+        table.Top <- (inset())-offset
         scroll.configure(maximum,this.ClientSize.Height,offset)
     let rec wire (control:Control) =
         control.Enter.Add(fun _ ->
             if control.IsHandleCreated && control.TabStop && not (control :? Panel) then
                 let location = this.PointToClient(control.PointToScreen(Point.Empty))
-                if location.Y < inset then scrollTo(offset+location.Y-inset)
-                elif location.Y+control.Height > this.Height-inset then
-                    scrollTo(offset+location.Y+control.Height-this.Height+inset))
+                if location.Y < (inset()) then scrollTo(offset+location.Y-(inset()))
+                elif location.Y+control.Height > this.Height-(inset()) then
+                    scrollTo(offset+location.Y+control.Height-this.Height+(inset())))
         control.ControlAdded.Add(fun e -> wire e.Control)
         for child in control.Controls do wire child
     do
@@ -39,21 +39,21 @@ type SettingsPage() as this =
     member _.reveal(control:Control) =
         this.PerformLayout()
         let location = this.PointToClient(control.PointToScreen(Point.Empty))
-        if location.Y < inset then scrollTo(offset+location.Y-inset)
-        elif location.Y+control.Height > this.Height-inset then
-            scrollTo(offset+location.Y+control.Height-this.Height+inset)
+        if location.Y < (inset()) then scrollTo(offset+location.Y-(inset()))
+        elif location.Y+control.Height > this.Height-(inset()) then
+            scrollTo(offset+location.Y+control.Height-this.Height+(inset()))
     override this.OnLayout(e) =
         base.OnLayout(e)
         if not arranging && not (isNull table) then
             arranging <- true
             try
-                let width = max 120 (min (Dpi.scale 760) (this.ClientSize.Width-inset*2-Dpi.scale 14))
+                let width = max 120 (min (Dpi.scale 760) (this.ClientSize.Width-(inset())*2-Dpi.scale 14))
                 table.MinimumSize <- Size(width,0)
                 table.MaximumSize <- Size(width,0)
                 table.Width <- width
                 table.Height <- table.GetPreferredSize(Size(width,0)).Height
-                table.Left <- max inset ((this.ClientSize.Width-Dpi.scale 14-width)/2)
-                maximum <- max 0 (table.Height+inset*2-this.ClientSize.Height)
+                table.Left <- max (inset()) ((this.ClientSize.Width-Dpi.scale 14-width)/2)
+                maximum <- max 0 (table.Height+(inset())*2-this.ClientSize.Height)
                 scroll.Bounds <- Rectangle(this.ClientSize.Width-scroll.Width,0,scroll.Width,this.ClientSize.Height)
                 scrollTo offset
             finally arranging <- false

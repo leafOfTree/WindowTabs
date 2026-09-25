@@ -11,19 +11,22 @@ open System.Reflection
 
 module ImgHelper =
     let imgFromIcon (icon:Icon) =
-        let img =
-            try
-                icon.ToBitmap().img
-            with _ ->
-                SystemIcons.Application.ToBitmap().img
-        img.resize(Sz(16,16)).bitmap :> Image
-
+        use bitmap = try icon.ToBitmap() with _ -> SystemIcons.Application.ToBitmap()
+        new Bitmap(bitmap,Size(16,16)) :> Image
+    let rec disposeNodes (nodes:seq<Node>) =
+        for node in nodes do
+            disposeNodes node.Nodes
+            match box node with :? IDisposable as owned -> owned.Dispose() | _ -> ()
 
 type ExeNode(procPath) =
     inherit Node(Path.GetFileName(procPath))
-    let icon = 
-        let procIcon = Win32Helper.GetFileIcon(procPath)
-        ImgHelper.imgFromIcon (Ico.fromHandle(procIcon).def(System.Drawing.SystemIcons.Application))
+    let icon =
+        let handle = Win32Helper.GetFileIcon(procPath)
+        try
+            match Ico.fromHandle(handle) with
+            | Some icon -> use owned = icon in ImgHelper.imgFromIcon owned
+            | None -> ImgHelper.imgFromIcon SystemIcons.Application
+        finally if handle<>IntPtr.Zero then WinUserApi.DestroyIcon(handle) |> ignore
     let mutable _enableTabs = Services.filter.getIsTabbingEnabledForProcess(procPath)
     let mutable _enableAutoGrouping = Services.program.getAutoGroupingEnabled(procPath)
     member this.Icon with get() = icon 
@@ -38,13 +41,18 @@ type ExeNode(procPath) =
             _enableAutoGrouping <- newValue
             Services.program.setAutoGroupingEnabled procPath _enableAutoGrouping
            
+    interface IDisposable with member _.Dispose() = icon.Dispose()
     interface INode with
         member x.showSettings = true
 
 type WindowNode(window:Window) =
     inherit Node(window.text)
-    let icon = ImgHelper.imgFromIcon window.iconSmall
+    let icon =
+        let source = window.iconSmall
+        try ImgHelper.imgFromIcon source
+        finally if not(obj.ReferenceEquals(source,SystemIcons.Application)) then source.Dispose()
     member this.Icon with get() = icon 
+    interface IDisposable with member _.Dispose() = icon.Dispose()
     interface INode with
         member x.showSettings = false
 
@@ -122,44 +130,57 @@ type ProgramView() as this=
         panel.Controls.Add(statusBar)
         panel
 
-    let mutable scanGeneration = 0
+    let scanner = new LatestWork<Node list>(invoker :> IDispatcher,
+        (fun nodes ->
+            ImgHelper.disposeNodes model.Nodes
+            model.Nodes.Clear()
+            for node in nodes do model.Nodes.Add(node)
+            statusBar.Text <- SettingsUi.text "Ready" "就绪"),
+        ImgHelper.disposeNodes,
+        (fun error -> statusBar.Text <- SettingsUi.text "Scan failed: " "扫描失败：" + error.Message))
 
     do
         this.populateNodes()
         let subscription = Services.settings.notifyValue "enableTabbingByDefault" (fun _ ->
-            if not panel.IsDisposed then
-                invoker.asyncInvoke(fun () -> if not panel.IsDisposed then this.populateNodes()))
+            if not panel.IsDisposed then invoker.asyncInvoke(fun () -> if not panel.IsDisposed then this.populateNodes()))
         panel.Disposed.Add(fun _ ->
-            System.Threading.Interlocked.Increment(&scanGeneration) |> ignore
-            subscription.Dispose())
+            (scanner :> IDisposable).Dispose()
+            subscription.Dispose()
+            ImgHelper.disposeNodes model.Nodes
+            font.Dispose())
 
     member private this.populateNodes() =
-        let generation = System.Threading.Interlocked.Increment(&scanGeneration)
-        let isCurrent() = not panel.IsDisposed && generation=System.Threading.Volatile.Read(&scanGeneration)
-        model.Nodes.Clear()
-        ThreadHelper.queueBackground <| fun() ->
-            let os = OS()
-            let procs = Services.program.appWindows.fold (Map2()) <| fun procs hwnd ->
-                invoker.asyncInvoke <| fun() ->
-                    if isCurrent() then statusBar.Text <- sprintf "Scanning window 0x%x" hwnd
-                let window = os.windowFromHwnd(hwnd)
-                let procPath = window.pid.processPath
-                procs.add procPath (procs.tryFind(procPath).def(List2()).append(window))
-            let procNodes = procs.items.map <| fun (procPath, windows) ->
-                let procNode = ExeNode(procPath)
-                windows.iter <| fun window ->
-                    let windowNode = WindowNode(window)
-                    procNode.Nodes.Add(windowNode)
-                procNode
-            
-            invoker.asyncInvoke <| fun() ->
-                if isCurrent() then
-                    model.Nodes.Clear()
-                    // Case insensitive: F# compares strings ordinally, which sorts
-                    // every capitalised executable ahead of every lowercase one -
-                    // Code.exe and WindowTabs.exe before chrome.exe.
-                    procNodes.sortBy(fun n -> n.Text.ToLowerInvariant()).iter <| fun node -> model.Nodes.Add(node)
-                    statusBar.Text <- "Ready"
+        statusBar.Text <- SettingsUi.text "Scanning…" "正在扫描…"
+        scanner.Request(fun cancellation ->
+            let nodes = ResizeArray<Node>()
+            try
+                let os = OS()
+                let procs = Collections.Generic.Dictionary<string,ExeNode>(StringComparer.OrdinalIgnoreCase)
+                for window in os.windowsInZorder.toArray do
+                    cancellation.ThrowIfCancellationRequested()
+                    try
+                        if window.isWindow && Services.filter.isAppWindow(window.hwnd) then
+                            cancellation.ThrowIfCancellationRequested()
+                            let path = window.pid.processPath
+                            if not(String.IsNullOrEmpty(path)) then
+                                let node =
+                                    match procs.TryGetValue(path) with
+                                    | true,node -> node
+                                    | _ ->
+                                        let node = ExeNode(path)
+                                        procs.Add(path,node)
+                                        nodes.Add(node)
+                                        node
+                                cancellation.ThrowIfCancellationRequested()
+                                if window.isWindow then node.Nodes.Add(WindowNode(window))
+                    with
+                    | :? OperationCanceledException -> reraise()
+                    | _ -> () // A window/process can disappear while scanning.
+                cancellation.ThrowIfCancellationRequested()
+                nodes |> Seq.sortBy(fun node -> node.Text.ToUpperInvariant()) |> Seq.toList
+            with error ->
+                ImgHelper.disposeNodes nodes
+                raise error)
 
     interface ISettingsView with
         member x.key = SettingsViewType.ProgramSettings

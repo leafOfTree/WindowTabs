@@ -8,46 +8,55 @@ open Microsoft.FSharp.Reflection
 open Newtonsoft.Json
 open Newtonsoft.Json.Linq
  
-type Settings(isStandAlone) as this =
+type Settings(isStandAlone, ?saveDelay:int) as this =
     let mutable cachedSettingsString = None
     let mutable cachedSettingsRec = None
     let mutable hasExistingSettings = false
     let settingChangedEvent = Event<string* obj>()
     let valueCache = Dictionary<string, obj>()
     let fileName = "WindowTabsSettings.txt"
+    // Resolve once: a later working-directory change must not redirect pending saves.
+    let relativePath = isStandAlone || File.Exists(Path.Combine(".", fileName))
+    let settingsPath = Path.GetFullPath(Path.Combine(
+        (if relativePath then "." else Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WindowTabs")),fileName))
+    let store = new SettingsFileStore(settingsPath,defaultArg saveDelay 250,fun ex ->
+        MessageBox.Show("Unable to save settings to " + settingsPath + ".\nYour changes remain in memory and will be retried on the next edit or exit.\n\n" + ex.Message,
+                        "Settings save failed",MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore)
 
     do
         hasExistingSettings <- this.fileExists
-        Services.register(this :> ISettings)
+        Services.register(DispatchedSettings(this :> ISettings, InvokerService.invoker :> IDispatcher) :> ISettings, false)
 
     member this.clearCaches() =
+        store.Flush() |> ignore
         cachedSettingsString <- None
         cachedSettingsRec <- None
         valueCache.Clear()
 
     member this.useRelativePath =
-        isStandAlone || File.Exists(Path.Combine(".", fileName))
+        relativePath
 
     member this.path =
-        let path = 
-            if this.useRelativePath then "."
-            else Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WindowTabs")
-        Path.Combine(path, fileName)
+        settingsPath
+
+    member _.Flush() = store.Flush()
+
+    interface IDisposable with
+        member _.Dispose() = (store :> IDisposable).Dispose()
 
     member this.fileExists : bool = File.Exists(this.path) 
 
     member this.settingsString
         with get() = 
             if cachedSettingsString.IsNone then 
-                cachedSettingsString <- (if this.fileExists then Some(File.ReadAllText(this.path)) else None)
+                cachedSettingsString <- store.Read()
             cachedSettingsString
 
         and set(newSettings : string option) =
-            let settingsDir = Path.GetDirectoryName(this.path)
-            if Directory.Exists(settingsDir).not then
-                Directory.CreateDirectory(settingsDir).ignore
-            File.WriteAllText(this.path, newSettings.Value)
-            this.clearCaches()
+            cachedSettingsString <- newSettings
+            cachedSettingsRec <- None
+            valueCache.Clear()
+            store.Schedule(newSettings.Value)
             
     member this.settingsJson
         with get() = 
@@ -90,18 +99,18 @@ type Settings(isStandAlone) as this =
                         autoGroupingPaths = Set2(settingsJson.getStringArray("autoGroupingPaths").def(List2()))
                         licenseKey = settingsJson.getString("licenseKey").def("")
                         ticket = settingsJson.getString("ticket")
-                        runAtStartup = settingsJson.getBool("runAtStartup").def(hasExistingSettings.not)
-                        hideInactiveTabs = settingsJson.getBool("hideInactiveTabs").def(hasExistingSettings.not)
-                        enableTabbingByDefault = settingsJson.getBool("enableTabbingByDefault").def(hasExistingSettings.not)
-                        combineIconsInTaskbar = settingsJson.getBool("combineIconsInTaskbar").def(hasExistingSettings)
-                        replaceAltTab = settingsJson.getBool("replaceAltTab").def(false)
-                        groupWindowsInSwitcher = settingsJson.getBool("groupWindowsInSwitcher").def(false)
-                        enableCtrlNumberHotKey = settingsJson.getBool("enableCtrlNumberHotKey").def(true)
-                        enableHoverActivate = settingsJson.getBool("enableHoverActivate").def(false)
-                        autoHide = settingsJson.getBool("autoHide").def(true)
-                        enableShiftScroll = settingsJson.getBool("enableShiftScroll").def(true)
+                        runAtStartup = settingsJson.getBool("runAtStartup").def(SettingsCatalog.toggleDefault "runAtStartup" hasExistingSettings)
+                        hideInactiveTabs = settingsJson.getBool("hideInactiveTabs").def(SettingsCatalog.toggleDefault "hideInactiveTabs" hasExistingSettings)
+                        enableTabbingByDefault = settingsJson.getBool("enableTabbingByDefault").def(SettingsCatalog.toggleDefault "enableTabbingByDefault" hasExistingSettings)
+                        combineIconsInTaskbar = settingsJson.getBool("combineIconsInTaskbar").def(SettingsCatalog.toggleDefault "combineIconsInTaskbar" hasExistingSettings)
+                        replaceAltTab = settingsJson.getBool("replaceAltTab").def(SettingsCatalog.toggleDefault "replaceAltTab" hasExistingSettings)
+                        groupWindowsInSwitcher = settingsJson.getBool("groupWindowsInSwitcher").def(SettingsCatalog.toggleDefault "groupWindowsInSwitcher" hasExistingSettings)
+                        enableCtrlNumberHotKey = settingsJson.getBool("enableCtrlNumberHotKey").def(SettingsCatalog.toggleDefault "enableCtrlNumberHotKey" hasExistingSettings)
+                        enableHoverActivate = settingsJson.getBool("enableHoverActivate").def(SettingsCatalog.toggleDefault "enableHoverActivate" hasExistingSettings)
+                        autoHide = settingsJson.getBool("autoHide").def(SettingsCatalog.toggleDefault "autoHide" hasExistingSettings)
+                        enableShiftScroll = settingsJson.getBool("enableShiftScroll").def(SettingsCatalog.toggleDefault "enableShiftScroll" hasExistingSettings)
                         version = settingsJson.getString("version").def(String.Empty)
-                        alignment = settingsJson.getString("alignment").def("Center")
+                        alignment = settingsJson.getString("alignment").def("Center") |> SettingsCatalog.normalizeChoice "alignment"
                         appearance = {
                             geometry = geometry
                             legacyPalette = legacyPalette
@@ -150,6 +159,7 @@ type Settings(isStandAlone) as this =
         member x.updateAppearance update =
             let current = x.settings
             let next = update current.appearance
+            let next = {next with geometry=AppearanceJson.normalizeGeometry next.geometry}
             if next <> current.appearance then
                 x.settings <- {current with appearance=next}
                 let previous = current.appearance
@@ -168,6 +178,7 @@ type Settings(isStandAlone) as this =
         // Compatibility adapter for older callers; new appearance code uses the typed API.
         member x.setValue((key,value)) =
             let api = x :> ISettings
+            let value = if key="alignment" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
             match key with
             | "tabAppearance" ->
                 let appearance = value :?> TabAppearanceInfo

@@ -5,13 +5,12 @@ open System.Threading
 open System.Windows.Forms
 
 
-type GroupInfo(enableSuperBar) as this =
+type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher) as this =
     let Cell = CellScope(true, true)
     let windowsCell = Cell.create(List2())
-    let mutable _isExited = false
-    let desktopInvoker = InvokerService.invoker
-    let enableCtrlNumberHotKey = Services.settings.getValue("enableCtrlNumberHotKey").cast<bool>()
-    let initialAppearance = ThemeService.currentAppearance().scaled
+    let mutable _isExited = 0
+    let enableCtrlNumberHotKey = settings.getValue("enableCtrlNumberHotKey").cast<bool>()
+    let initialAppearance = ThemeService.currentAppearance()
     let (_group, invoker) = ThreadHelper.startOnThreadAndWait <| fun() ->
         let plugins = List2<_>([
             Some(MouseScrollPlugin().cast<IPlugin>())
@@ -23,25 +22,25 @@ type GroupInfo(enableSuperBar) as this =
 
         let _group = WindowGroup(enableSuperBar, plugins, initialAppearance)
         _group.exited.Add <| fun _ ->
-            _isExited <- true 
+            System.Threading.Volatile.Write(&_isExited,1)
             Application.ExitThread()
         (_group, InvokerService.invoker)
 
     do
         _group.added.Add <| fun hwnd ->
-            desktopInvoker.invoke <| fun() ->
+            desktopDispatcher.Post <| fun() ->
                 windowsCell.map <| fun l -> l.where((<>) hwnd).append hwnd
 
         _group.moved.Add <| fun(hwnd, index) ->
-            desktopInvoker.invoke <| fun() ->
+            desktopDispatcher.Post <| fun() ->
                 windowsCell.map <| fun l -> l.move((=) hwnd, index)
 
         _group.removed.Add <| fun hwnd ->
-            desktopInvoker.invoke <| fun() ->
+            desktopDispatcher.Post <| fun() ->
                 windowsCell.map <| fun l -> l.where((<>) hwnd)
 
     member this.invokeGroup = invoker.asyncInvoke
-    member this.isExited = _isExited
+    member this.isExited = System.Threading.Volatile.Read(&_isExited)=1
     member this.exited = _group.exited
     member this.removed = _group.removed
     member this.group = _group
@@ -69,7 +68,7 @@ type IDesktopNotification =
     abstract member dragDrop : IntPtr -> unit
     abstract member dragEnd : unit -> unit
 
-type Desktop(notify:IDesktopNotification) as this =
+type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispatcher) as this =
     let os = OS()
     let Cell = CellScope()
     let groupCell = Cell.create(Set2<GroupInfo>())
@@ -81,18 +80,21 @@ type Desktop(notify:IDesktopNotification) as this =
     
     do 
         Services.register(_dd, false)
-        Services.register(this.cast<IDesktop>())
+        Services.register(DispatchedDesktop(this :> IDesktop, dispatcher) :> IDesktop, false)
 
     member private this.groups : List2<GroupInfo> = groupCell.value.items
+    member _.retainedGroupCount = groupCell.value.count
     member private this.isEmpty = this.groups.all(fun g -> g.isExited)
     member private this.isDragging = isDraggingCell.value
     member private this.createGroup(enableSuperBar) =
-        let group = GroupInfo(enableSuperBar)
+        let group = GroupInfo(enableSuperBar, settings, dispatcher)
         groupCell.map(fun g -> g.add(group))
         group.invokeGroup <| fun() -> 
             let ig = group.cast<IGroup>()
-            group.exited.Add <| fun _ -> exitedEvent.Trigger ig
-            group.removed.Add <| fun _ -> removedEvent.Trigger ig
+            group.exited.Add <| fun _ -> dispatcher.Post(fun () ->
+                groupCell.map(fun groups -> groups.remove group)
+                exitedEvent.Trigger ig)
+            group.removed.Add <| fun _ -> dispatcher.Post(fun () -> removedEvent.Trigger ig)
             TabStripDecorator(group.group).ignore
         group.cast<IGroup>() 
 
@@ -108,22 +110,20 @@ type Desktop(notify:IDesktopNotification) as this =
         group.iter <| fun g ->
             let group = g.cast<IGroup>()
             
-            Services.program.suspendTabMonitoring()
-            
-            let newGroup = Services.desktop.createGroup(enableSuperBar)
-            group.windows.iter <| fun hwnd -> 
-                group.removeWindow(hwnd)
-                newGroup.addWindow(hwnd, false)
+            TemporaryState.run Services.program.suspendTabMonitoring Services.program.resumeTabMonitoring (fun () ->
 
-            Services.program.resumeTabMonitoring()
+                let newGroup = Services.desktop.createGroup(enableSuperBar)
+                group.windows.iter <| fun hwnd ->
+                    group.removeWindow(hwnd)
+                    newGroup.addWindow(hwnd, false))
+
 
 
     interface IDesktop with
         member x.isDragging = this.isDragging
         member x.isEmpty = this.isEmpty
         member x.createGroup(enableSuperBar) = this.createGroup(enableSuperBar)
-        member x.restartGroup(hwnd, enableSuperBar) = invoker.asyncInvoke <| fun() ->
-            this.restartGroup(hwnd, enableSuperBar)
+        member x.restartGroup(hwnd, enableSuperBar) = this.restartGroup(hwnd, enableSuperBar)
         member x.groups = this.groups.where(fun(g) -> g.isExited.not).map(fun(g) -> g.cast<IGroup>())
         member x.groupExited = exitedEvent.Publish
         member x.groupRemoved = removedEvent.Publish
@@ -156,5 +156,3 @@ type Desktop(notify:IDesktopNotification) as this =
         member x.dragEnd() = invoker.asyncInvoke <| fun() ->
             isDraggingCell.set(false)
             notify.dragEnd()
-
-    

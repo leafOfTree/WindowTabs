@@ -3,7 +3,6 @@ open System
 open System.Drawing
 open System.Reflection
 open System.Collections.Generic
-open System.Reflection
 open System.Runtime.Remoting.Proxies
 open System.Runtime.Remoting.Messaging
 
@@ -29,11 +28,10 @@ type ServiceAsyncResult() as this =
                 cachedfCompleted <- Some(fCompleted)
                 this.tryToComplete()
 
-type ServiceProxy<'a>(service:'a) =
+type ServiceProxy<'a>(service:'a, dispatcher:IDispatcher) =
     inherit RealProxy(typeof<'a>)
     let attributeCache = new Dictionary<int, ServiceMethodAttribute>()
 
-    let invoker = InvokerService.invoker
     
     member private this.returnMessage(msg : IMessage, result : obj) =
         let mcm = msg :?> IMethodCallMessage
@@ -65,13 +63,13 @@ type ServiceProxy<'a>(service:'a) =
         this.methodInfo(msg).ReturnType = typeof<unit>
 
     member private this.doSyncInvoke(msg: IMessage) =
-        invoker.invoke <| fun() ->
+        dispatcher.Send <| fun() ->
             this.invokeMethod(msg)
 
     member private this.doAsyncInvoke(msg: IMessage) =  
         let asyncResult = ServiceAsyncResult()
 
-        invoker.asyncInvoke <| fun() -> 
+        dispatcher.Post <| fun() ->
             let result = this.invokeMethod(msg)
             asyncResult.complete(result)
 
@@ -102,7 +100,7 @@ type ServiceProvider() =
     member this.register(service:'a, wrap) =
         let service = 
             if wrap then
-                let rp = new ServiceProxy<'a>(service)
+                let rp = new ServiceProxy<'a>(service, InvokerService.invoker :> IDispatcher)
                 rp.GetTransparentProxy()
             else
                 box(unbox<'a>(service))
@@ -126,6 +124,29 @@ type ServiceProvider() =
         let t = typeof<'a>
         ServiceProvider.localServices.ContainsKey(t) || services.ContainsKey(t)
 
+/// Typed settings boundary: callers no longer rely on reflection/remoting for settings.
+type DispatchedSettings(inner:ISettings, dispatcher:IDispatcher) =
+    interface ISettings with
+        member _.appearance = dispatcher.Send(fun () -> inner.appearance)
+        member _.updateAppearance change = dispatcher.Send(fun () -> inner.updateAppearance change)
+        member _.getValue key = dispatcher.Send(fun () -> inner.getValue key)
+        member _.setValue value = dispatcher.Send(fun () -> inner.setValue value)
+        member _.notifyValue key callback = dispatcher.Send(fun () -> inner.notifyValue key callback)
+        member _.root
+            with get() = dispatcher.Send(fun () -> inner.root)
+            and set value = dispatcher.Send(fun () -> inner.root <- value)
+
+type DispatchedDesktop(inner:IDesktop, dispatcher:IDispatcher) =
+    interface IDesktop with
+        member _.isDragging = dispatcher.Send(fun () -> inner.isDragging)
+        member _.isEmpty = dispatcher.Send(fun () -> inner.isEmpty)
+        member _.createGroup enabled = dispatcher.Send(fun () -> inner.createGroup enabled)
+        member _.restartGroup(hwnd, enabled) = dispatcher.Post(fun () -> inner.restartGroup(hwnd, enabled))
+        member _.groups = dispatcher.Send(fun () -> inner.groups)
+        member _.groupExited = dispatcher.Send(fun () -> inner.groupExited)
+        member _.groupRemoved = dispatcher.Send(fun () -> inner.groupRemoved)
+        member _.foregroundGroup = dispatcher.Send(fun () -> inner.foregroundGroup)
+
 type WtServiceProvider() =
     inherit ServiceProvider()
     member this.program = this.get<IProgram>()
@@ -133,13 +154,11 @@ type WtServiceProvider() =
     member this.managerView = this.get<IManagerView>()
     member this.filter = this.get<IFilterService>()
     member this.settings = this.get<ISettings>()
-    member this.lm = this.get<ILicenseManager>()
     member this.dragDrop = this.get<IDragDrop>()
-    member this.openResource(name) = Assembly.GetEntryAssembly().GetManifestResourceStream(name)
+    member this.openResource(name) = typeof<WtServiceProvider>.Assembly.GetManifestResourceStream(name)
     member this.openIcon(name) = new Icon(this.openResource(name))
     member this.openImage(name) = System.Drawing.Image.FromStream(this.openResource(name))
 
 [<AutoOpen>]
 module GS =
     let Services = WtServiceProvider()
-    
