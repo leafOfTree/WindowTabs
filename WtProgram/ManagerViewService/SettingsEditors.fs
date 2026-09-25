@@ -107,6 +107,182 @@ type SettingsNumberInput() as this =
     member _.Value with get() = value and set(v) = setValue v
     member _.ValueChanged = changed.Publish
 
+/// Shortcuts use the hotkey control's encoding: virtual key in the low byte,
+/// HOTKEYF_* modifier flags in the high byte.
+module SettingsShortcut =
+    [<Runtime.InteropServices.DllImport("user32.dll")>]
+    extern uint32 private MapVirtualKey(uint32 code, uint32 mapType)
+    let private shiftFlag,controlFlag,altFlag,extendedFlag = 1,2,4,8
+    let private extendedKeys =
+        set [Keys.Insert;Keys.Delete;Keys.Home;Keys.End;Keys.PageUp;Keys.PageDown
+             Keys.Left;Keys.Right;Keys.Up;Keys.Down;Keys.Divide;Keys.NumLock]
+    let isModifier key =
+        key=Keys.ControlKey || key=Keys.ShiftKey || key=Keys.Menu ||
+        key=Keys.LControlKey || key=Keys.RControlKey || key=Keys.LShiftKey ||
+        key=Keys.RShiftKey || key=Keys.LMenu || key=Keys.RMenu || key=Keys.LWin || key=Keys.RWin
+    let isFunctionKey key = key>=Keys.F1 && key<=Keys.F24
+    let encode (keyData:Keys) =
+        let key = keyData &&& Keys.KeyCode
+        let flags =
+            (if keyData.HasFlag(Keys.Shift) then shiftFlag else 0) |||
+            (if keyData.HasFlag(Keys.Control) then controlFlag else 0) |||
+            (if keyData.HasFlag(Keys.Alt) then altFlag else 0) |||
+            (if extendedKeys.Contains key then extendedFlag else 0)
+        (flags <<< 8) ||| (int key &&& 0xFF)
+    let keyName (key:Keys) =
+        match key with
+        | k when (k>=Keys.A && k<=Keys.Z) || (k>=Keys.D0 && k<=Keys.D9) -> string(char k)
+        | k when k>=Keys.NumPad0 && k<=Keys.NumPad9 -> "Num " + string(int k-int Keys.NumPad0)
+        | k when isFunctionKey k -> k.ToString()
+        | Keys.PageUp -> "PgUp" | Keys.PageDown -> "PgDn" | Keys.Home -> "Home" | Keys.End -> "End"
+        | Keys.Insert -> "Ins" | Keys.Delete -> "Del" | Keys.Back -> "Backspace" | Keys.Return -> "Enter"
+        | Keys.Space -> "Space" | Keys.Tab -> "Tab" | Keys.Escape -> "Esc"
+        | Keys.Left -> "←" | Keys.Right -> "→" | Keys.Up -> "↑" | Keys.Down -> "↓"
+        | k ->
+            let character = MapVirtualKey(uint32 k,2u) &&& 0x7FFFu
+            if character>32u then string(Char.ToUpperInvariant(char character)) else k.ToString()
+    let private modifierNames (control,alt,shift) =
+        [if control then "Ctrl"
+         if alt then "Alt"
+         if shift then "Shift"]
+    let parts code =
+        let flags = (code >>> 8) &&& 0xFF
+        let key = enum<Keys>(code &&& 0xFF)
+        if key=Keys.None then []
+        else modifierNames (flags &&& controlFlag<>0,flags &&& altFlag<>0,flags &&& shiftFlag<>0) @ [keyName key]
+    let heldParts (modifiers:Keys) =
+        modifierNames (modifiers.HasFlag(Keys.Control),modifiers.HasFlag(Keys.Alt),modifiers.HasFlag(Keys.Shift))
+    /// A global shortcut without Ctrl or Alt would swallow ordinary typing.
+    let isAcceptable (keyData:Keys) =
+        let key = keyData &&& Keys.KeyCode
+        not (isModifier key) && (keyData.HasFlag(Keys.Control) || keyData.HasFlag(Keys.Alt) || isFunctionKey key)
+
+/// Click (or Enter/Space) to record, press the combination, Esc to cancel.
+/// The × button, or Backspace/Delete while recording, removes the shortcut (0).
+type SettingsShortcutInput() as this =
+    inherit SettingsInputFrame()
+    let t en zh = SettingsCatalog.localize(en,zh)
+    let changed = Event<EventArgs>()
+    let mutable shortcut = 0
+    let mutable recording = false
+    let mutable hovering = false
+    let mutable hoveringClear = false
+    /// Text and whether it reports an error (red) rather than a notice (muted).
+    let mutable message : (string * bool) option = None
+    let messageTimer = new Timer(Interval=2500)
+    let clearMessage() = messageTimer.Stop(); message <- None
+    let showMessage error text = message <- Some(text,error); messageTimer.Stop(); messageTimer.Start(); this.Invalidate()
+    let stopRecording() = if recording then recording <- false; this.Invalidate()
+    let clearBounds() =
+        let size = Dpi.scale 24
+        Rectangle(this.Width-size-Dpi.scale 5,(this.Height-size)/2,size,size)
+    let canClear() = shortcut<>0 && not recording && message.IsNone
+    let commit next =
+        recording <- false
+        if next<>shortcut then
+            this.Shortcut <- next
+            changed.Trigger(EventArgs.Empty)
+        elif next<>0 then showMessage false (t "Already the current shortcut" "已是当前快捷键")
+        this.Invalidate()
+    do
+        this.Width <- Dpi.scale 220
+        this.TabStop <- true
+        this.Cursor <- Cursors.Hand
+        this.SetStyle(ControlStyles.Selectable ||| ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer,true)
+        this.AccessibleRole <- AccessibleRole.HotkeyField
+        messageTimer.Tick.Add(fun _ -> clearMessage(); this.Invalidate())
+        this.Disposed.Add(fun _ -> messageTimer.Dispose())
+    member _.Shortcut
+        with get() = shortcut
+        and set(value) = shortcut <- value; this.AccessibleDescription <- String.Join(" + ",SettingsShortcut.parts value); this.Invalidate()
+    member _.Changed = changed.Publish
+    member _.IsRecording = recording
+    /// The notice or error currently shown in place of the shortcut, if any.
+    member _.Message = message |> Option.map fst
+    /// Restores a previous shortcut and says why the new one was not kept.
+    member this.Reject(previous,reason) = this.Shortcut <- previous; showMessage true reason
+    member this.StartRecording() =
+        clearMessage()
+        recording <- true
+        if not this.Focused then this.Focus() |> ignore
+        this.Invalidate()
+    override this.OnMouseEnter(e) = base.OnMouseEnter(e); hovering <- true; this.Invalidate()
+    override this.OnMouseLeave(e) = base.OnMouseLeave(e); hovering <- false; hoveringClear <- false; this.Invalidate()
+    override this.OnMouseMove(e) =
+        base.OnMouseMove(e)
+        let over = canClear() && (clearBounds()).Contains(e.Location)
+        if over<>hoveringClear then hoveringClear <- over; this.Invalidate()
+    override this.OnMouseDown(e) =
+        base.OnMouseDown(e)
+        if e.Button=MouseButtons.Left then
+            if canClear() && (clearBounds()).Contains(e.Location) then hoveringClear <- false; commit 0
+            elif recording then stopRecording()
+            else this.StartRecording()
+    /// Removes the shortcut, as the × button does.
+    member this.Clear() = commit 0
+    override this.OnGotFocus(e) = base.OnGotFocus(e); this.Invalidate()
+    override this.OnLostFocus(e) = base.OnLostFocus(e); stopRecording(); this.Invalidate()
+    override this.IsInputKey(key) = recording || base.IsInputKey(key)
+    override this.ProcessCmdKey(msg:byref<Message>,keyData:Keys) =
+        let key = keyData &&& Keys.KeyCode
+        if not recording then
+            if (key=Keys.Enter || key=Keys.Space) && keyData=key then this.StartRecording(); true
+            else base.ProcessCmdKey(&msg,keyData)
+        elif key=Keys.Escape && keyData=key then stopRecording(); true
+        elif (key=Keys.Back || key=Keys.Delete) && keyData=key then commit 0; true
+        elif SettingsShortcut.isModifier key then this.Invalidate(); true
+        elif SettingsShortcut.isAcceptable keyData then commit (SettingsShortcut.encode keyData); true
+        else
+            showMessage true (t "Include Ctrl or Alt" "需要包含 Ctrl 或 Alt")
+            true
+    override this.OnKeyUp(e) = base.OnKeyUp(e); if recording then this.Invalidate()
+    override this.OnPaint(e) =
+        let p = SettingsColors.current()
+        let g = e.Graphics
+        g.SmoothingMode <- SmoothingMode.AntiAlias
+        let active = recording || this.Focused
+        if active || hovering then
+            use shape = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 8))
+            use pen = new Pen((if active then p.accent else p.muted),(if recording then 2.0f else 1.0f))
+            g.DrawPath(pen,shape)
+        let left = Dpi.scale 8
+        let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis
+        let textArea x = Rectangle(x,0,max 1 (this.Width-x-Dpi.scale 8),this.Height)
+        let error = if ThemeService.currentIsDark() then Color.FromRGB(0xFF99A4) else Color.FromRGB(0xC42B1C)
+        let chips (labels:string list) =
+            let height = this.Height-Dpi.scale 14
+            let top = (this.Height-height)/2
+            labels |> List.fold(fun x label ->
+                let size = TextRenderer.MeasureText(g,label,this.Font,Size.Empty,TextFormatFlags.NoPadding)
+                let bounds = Rectangle(x,top,max height (size.Width+Dpi.scale 14),height)
+                use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X+0.5f,float32 bounds.Y+0.5f,float32 bounds.Width-1.0f,float32 bounds.Height-1.0f)) (float32(Dpi.scale 5))
+                use fill = new SolidBrush(p.selection)
+                use border = new Pen(p.border)
+                g.FillPath(fill,shape)
+                g.DrawPath(border,shape)
+                TextRenderer.DrawText(g,label,this.Font,bounds,p.text,TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter)
+                x+bounds.Width+Dpi.scale 4) left
+        match message with
+        | Some(text,isError) -> TextRenderer.DrawText(g,text,this.Font,textArea (Dpi.scale 12),(if isError then error else p.muted),flags)
+        | None when recording ->
+            let held = SettingsShortcut.heldParts Control.ModifierKeys
+            if held.IsEmpty then TextRenderer.DrawText(g,t "Press a shortcut…" "按下组合键…",this.Font,textArea (Dpi.scale 12),p.muted,flags)
+            else
+                let x = chips held
+                TextRenderer.DrawText(g,"+ …",this.Font,textArea x,p.muted,flags)
+        | None ->
+            match SettingsShortcut.parts shortcut with
+            | [] -> TextRenderer.DrawText(g,t "Not set" "未设置",this.Font,textArea (Dpi.scale 12),p.muted,flags)
+            | labels -> chips labels |> ignore
+        if canClear() then
+            let bounds = clearBounds()
+            if hoveringClear then
+                use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X,float32 bounds.Y,float32 bounds.Width,float32 bounds.Height)) (float32(Dpi.scale 5))
+                use fill = new SolidBrush(p.hover)
+                g.FillPath(fill,shape)
+            TextRenderer.DrawText(g,"✕",this.Font,bounds,(if hoveringClear then p.text else p.muted),
+                TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter)
+
 module SettingsHsv =
     let color hue saturation value =
         let h = ((hue % 360.0)+360.0)%360.0 / 60.0

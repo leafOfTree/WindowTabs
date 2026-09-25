@@ -155,6 +155,75 @@ let main() =
         form.DrawToBitmap(bitmap,Rectangle(Point.Empty,bitmap.Size))
         bitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","editors-"+name+".png"))
         form.Close()
-    printfn "PASS: input validation, no-op changes, HSV colours, repeated popup dismissal and light/dark renders."
+
+    // Shortcut recorder: encoding, recording, rejection and the rendered page.
+    assertTrue (SettingsShortcut.parts 3623=["Ctrl";"Alt";"→"]) "Default shortcut decodes"
+    assertTrue (SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.Right)=3623) "Shortcut encodes like the hotkey control"
+    assertTrue (not (SettingsShortcut.isAcceptable (Keys.Shift ||| Keys.A)) && SettingsShortcut.isAcceptable Keys.F7) "Shortcut needs Ctrl or Alt"
+    let hotKeys = Collections.Generic.Dictionary<string,int>(dict ["nextTab",3623;"prevTab",3621])
+    let rejected = SettingsShortcut.encode (Keys.Control ||| Keys.B)
+    let mouse = Event<int32 * IntPtr>()
+    Services.register<IProgram>({new IProgram with
+        member _.version = "test"
+        member _.isUpgrade = false
+        member _.isFirstRun = false
+        member _.refresh() = ()
+        member _.shutdown() = ()
+        member _.setWindowNameOverride _ = ()
+        member _.getWindowNameOverride _ = None
+        member _.appWindows = List2()
+        member _.getAutoGroupingEnabled _ = false
+        member _.setAutoGroupingEnabled _ _ = ()
+        member _.tabAppearanceInfo = ThemeService.currentAppearance()
+        member _.setHotKey key value = (if value<>rejected then hotKeys.[key] <- value); value<>rejected
+        member _.getHotKey key = hotKeys.[key]
+        member _.suspendTabMonitoring() = ()
+        member _.resumeTabMonitoring() = ()
+        member _.llMouse = mouse.Publish},false)
+    let command (control:Control) (keys:Keys) =
+        let mutable msg = Message()
+        let processKey = control.GetType().GetMethod("ProcessCmdKey",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
+        unbox<bool>(processKey.Invoke(control,[|box msg;box keys|]))
+    for mode,name in [DarkTheme,"dark";LightTheme,"light"] do
+        preferences <- { preferences with mode=mode }
+        use form = new Form(ClientSize=Size(920,560),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false,Font=SettingsUi.bodyFont)
+        let view = HotKeyView() :> ISettingsView
+        form.Controls.Add(view.control)
+        SettingsUi.apply form
+        form.Show()
+        Application.DoEvents()
+        let next = view.control.Controls.Find("next-tab",true).[0] :?> SettingsShortcutInput
+        let previous = view.control.Controls.Find("previous-tab",true).[0] :?> SettingsShortcutInput
+        next.StartRecording()
+        assertTrue (command next Keys.A && next.IsRecording && next.Shortcut=3623) "Plain key is refused while recording"
+        command next Keys.Escape |> ignore
+        assertTrue (not next.IsRecording && next.Shortcut=3623) "Esc cancels recording"
+        next.StartRecording()
+        command next (Keys.Control ||| Keys.OemCloseBrackets) |> ignore
+        let expected = SettingsShortcut.encode (Keys.Control ||| Keys.OemCloseBrackets)
+        assertTrue (not next.IsRecording && next.Shortcut=expected && hotKeys.["nextTab"]=expected) "Recorded shortcut saved"
+        next.StartRecording()
+        command next (Keys.Control ||| Keys.OemCloseBrackets) |> ignore
+        assertTrue (next.Message.IsSome && hotKeys.["nextTab"]=expected) "Same shortcut shows a notice"
+        previous.StartRecording()
+        command previous (Keys.Control ||| Keys.OemCloseBrackets) |> ignore
+        assertTrue (previous.Shortcut=3621 && hotKeys.["prevTab"]=3621 && previous.Message.IsSome) "Shortcut used by another action is refused"
+        previous.StartRecording()
+        command previous (Keys.Control ||| Keys.B) |> ignore
+        assertTrue (previous.Shortcut=3621 && hotKeys.["prevTab"]=3621) "Unavailable shortcut restored"
+        previous.StartRecording()
+        command previous Keys.Back |> ignore
+        assertTrue (previous.Shortcut=0 && hotKeys.["prevTab"]=0 && not previous.IsRecording) "Backspace removes the shortcut"
+        previous.Shortcut <- 3621
+        previous.Clear()
+        assertTrue (hotKeys.["prevTab"]=0) "Clear removes the shortcut"
+        hotKeys.["prevTab"] <- 3621
+        Application.DoEvents()
+        use bitmap = new Bitmap(form.ClientSize.Width,form.ClientSize.Height)
+        form.DrawToBitmap(bitmap,Rectangle(Point.Empty,bitmap.Size))
+        bitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","shortcuts-"+name+".png"))
+        hotKeys.["nextTab"] <- 3623
+        form.Close()
+    printfn "PASS: input validation, no-op changes, HSV colours, repeated popup dismissal, shortcut recording and light/dark renders."
 
 main()
