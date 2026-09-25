@@ -18,7 +18,7 @@ This repository is a fork of [payaneco's repository](https://github.com/payaneco
 
 <a href="https://github.com/leafOfTree/WindowTabs/releases">![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/leafoftree/windowtabs/total)</a>
 
-You can download my prebuilt files from the [releases](https://github.com/leafOfTree/WindowTabs/releases) page. You can also compile the `exe` file as below.
+You can download my prebuilt files from the [releases](https://github.com/leafOfTree/WindowTabs/releases) page: the `WindowTabs-<version>.zip` contains `WindowTabs.exe` and its `WindowTabs.exe.config`. You can also compile the `exe` file as below.
 
 ## Usage
 
@@ -62,6 +62,10 @@ with either the .NET SDK or Visual Studio 2022/2026. NuGet packages are restored
 
     `dotnet build WindowTabs.sln` (or the `Debug` configuration in Visual Studio) compiles to `WtProgram\bin\Debug\WindowTabs.exe`.
 
+- Release
+
+    Push a tag such as `v2025.10.01`. The `release` workflow builds with that version, runs the regression suite and drafts a GitHub release with the zip, `WindowTabs.exe` and `WindowTabs.exe.config` attached; review the notes and publish it. The default version for local builds is `<Version>` in `WtProgram/WtProgram.fsproj`.
+
 Tips
 
 - In Visual Studio editor, click on the left gray column to add a breakpoint on the current line. Then start `Debug` and you can see runtime details.
@@ -91,6 +95,10 @@ Logs and rendered previews are written to `tests/Debug/`.
 ## Changes
 
 2025
+
+- Add a language setting (follow Windows, English, 中文, 日本語) and translate the tray menu, tab menu and dialogs into Chinese; the Japanese translation now ships in the released exe
+
+- Draft GitHub releases automatically from `v*` tags; the version comes from the tag instead of being edited in `AssemblyInfo.fs`
 
 - Update FSharp.Core from 6.0.7 to 10.1.401. Newtonsoft.Json is pinned to 13.0.1: later versions cannot be statically linked into the single exe alongside FSharp.Core 7+
 

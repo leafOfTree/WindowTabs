@@ -4,22 +4,9 @@ open System
 open System.Reflection
 open System.Runtime.InteropServices
 
-// The version lives here and nowhere else. Program and the crash logger read it
-// back at runtime, so cutting a release means editing the three lines below
-// (and the README changelog).
-//
-// AssemblyVersion/AssemblyFileVersion must be numeric, so "2025.06.30" becomes
-// 2025.6.30.0 there. AssemblyInformationalVersion keeps the display string.
-
-[<assembly: AssemblyTitle("WindowTabs")>]
-[<assembly: AssemblyProduct("WindowTabs")>]
-[<assembly: AssemblyDescription("Brings browser-style tabbed window management to the desktop")>]
-[<assembly: AssemblyCompany("WindowTabs contributors")>]
-[<assembly: AssemblyCopyright("Licensed under the terms in LICENSE")>]
-
-[<assembly: AssemblyVersion("2025.6.30.0")>]
-[<assembly: AssemblyFileVersion("2025.6.30.0")>]
-[<assembly: AssemblyInformationalVersion("2025.06.30")>]
+// Version and product attributes are generated from WtProgram.fsproj. The release
+// workflow sets the version from the git tag (v2025.06.30 -> -p:Version=2025.06.30);
+// Program and the crash logger read the informational version back at runtime.
 
 [<assembly: ComVisible(false)>]
 

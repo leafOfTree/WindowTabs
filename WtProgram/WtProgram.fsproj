@@ -9,8 +9,15 @@
     <AppConfig>App.config</AppConfig>
     <ApplicationIcon>Resources\Bemo.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <!-- Version and product attributes live in AssemblyInfo.fs. -->
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <!-- The release workflow overrides this from the tag: dotnet build -c Release -p:Version=2025.10.01 -->
+    <Version>2025.06.30</Version>
+    <!-- Shown to users (tray, settings, crash log), so no "+commit" suffix. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <AssemblyTitle>WindowTabs</AssemblyTitle>
+    <Product>WindowTabs</Product>
+    <Description>Brings browser-style tabbed window management to the desktop</Description>
+    <Company>WindowTabs contributors</Company>
+    <Copyright>Licensed under the terms in LICENSE</Copyright>
     <!-- Keep bin\<Configuration>\ so scripts and CI find WindowTabs.exe where they always have. -->
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <!-- FSharp.Core ships translated messages for many cultures; the app only needs the neutral ones. -->
