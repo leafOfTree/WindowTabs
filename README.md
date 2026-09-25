@@ -92,6 +92,8 @@ Logs and rendered previews are written to `tests/Debug/`.
 
 2025
 
+- Update FSharp.Core from 6.0.7 to 10.1.401. Newtonsoft.Json is pinned to 13.0.1: later versions cannot be statically linked into the single exe alongside FSharp.Core 7+
+
 - Build with the .NET SDK (`dotnet build`) as well as Visual Studio: SDK-style projects, and NuGet packages restored instead of committed
 
 - Support Visual Studio 2026: retarget to .NET Framework 4.8 and drop the unused WiX installer project

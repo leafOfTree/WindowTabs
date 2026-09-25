@@ -115,8 +115,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="FSharp.Core" Version="6.0.7" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Update="FSharp.Core" Version="10.1.401" />
+    <!-- 13.0.2+ carries internal copies of System.Diagnostics.CodeAnalysis attributes that FSharp.Core 7+
+         also carries, and F# static linking (Release) cannot merge the duplicates.
+         13.0.1 already has the deep-nesting security fix. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="Interop.SHDocVw" HintPath="..\Interop.SHDocVw.dll" />
     <Reference Include="Interop.Shell32" HintPath="..\Interop.Shell32.dll" />
