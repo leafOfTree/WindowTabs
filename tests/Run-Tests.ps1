@@ -36,8 +36,12 @@ try {
         dotnet build tests\TestHost.fsproj "-p:TestName=$name" -v:quiet -nologo -clp:NoSummary
         if ($LASTEXITCODE -ne 0) { throw "$name compilation failed." }
     }
-    # Native UI tests share desktop focus and must not run in parallel.
-    foreach ($name in $names) {
+    # A native callback into .NET after the runtime has started shutting down ends the
+    # process with one of these codes, after every check has already passed. It is
+    # intermittent (seen in Architecture, roughly 1 run in 6) and not yet diagnosed, so
+    # such a run is retried once with a warning; any other failure fails immediately.
+    $teardownCrashes = @(0xC0020001, 0xC000041D) | ForEach-Object { [int]$_ }
+    function Invoke-Test($name) {
         $stdout = Join-Path $output "$name.stdout.log"
         $stderr = Join-Path $output "$name.stderr.log"
         $executable = Join-Path $output "$name.exe"
@@ -49,8 +53,17 @@ try {
             throw "$name timed out after $TimeoutSeconds seconds."
         }
         $process.WaitForExit()
-        Get-Content -LiteralPath $stdout
-        Get-Content -LiteralPath $stderr
-        if ($process.ExitCode -ne 0) { throw "$name failed (exit $($process.ExitCode))." }
+        Get-Content -LiteralPath $stdout | Out-Host
+        Get-Content -LiteralPath $stderr | Out-Host
+        [pscustomobject]@{ ExitCode = $process.ExitCode; Quiet = -not (Get-Content -LiteralPath $stderr -Raw) }
+    }
+    # Native UI tests share desktop focus and must not run in parallel.
+    foreach ($name in $names) {
+        $result = Invoke-Test $name
+        if ($result.ExitCode -in $teardownCrashes -and $result.Quiet) {
+            Write-Warning ("{0} crashed during process teardown (exit 0x{1:X8}); retrying once." -f $name, $result.ExitCode)
+            $result = Invoke-Test $name
+        }
+        if ($result.ExitCode -ne 0) { throw ("{0} failed (exit 0x{1:X8})." -f $name, $result.ExitCode) }
     }
 } finally { Pop-Location }

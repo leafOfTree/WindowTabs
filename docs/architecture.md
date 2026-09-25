@@ -59,6 +59,12 @@ then compiles seven STA test executables through `tests/TestHost.fsproj` and run
 serially with per-process timeouts. Logs and render snapshots are under
 `tests/Debug`; CI uploads them and also builds Release.
 
+Known issue: Architecture occasionally (about 1 run in 6) exits with 0xC0020001 or
+0xC000041D after all of its checks have passed - a native callback reaching .NET
+after runtime shutdown began. The culprit has not been identified yet (a crash dump
+needs WER LocalDumps). `Run-Tests.ps1` retries such a run once with a warning; any
+other failure, or a crash with stderr output, fails immediately.
+
 Architecture tests cover atomic save/backup/retry, deferred write batching, handle
 reuse, temporary state restoration, dirty/full reconciliation precedence, actual
 cross-thread settings calls, repeated native group teardown and popup disposal.
