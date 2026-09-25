@@ -72,7 +72,7 @@
     <Compile Include="Shared/Win32.fs" />
     <Compile Include="Shared/AppearanceModel.fs" />
     <Compile Include="Shared\ProgramTypes.fs" />
-    <Compile Include="ManagerViewService\SettingsCatalog.fs" />
+    <Compile Include="Shared/SettingsCatalog.fs" />
     <Compile Include="Shared/DragDrop.fs" />
     <Compile Include="Shared/Serialize.fs" />
     <Compile Include="Shared/Win32Menu.fs" />

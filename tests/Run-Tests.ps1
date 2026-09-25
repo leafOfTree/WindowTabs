@@ -11,6 +11,29 @@ if (-not $MSBuild -or -not $Fsi) {
 if (-not (Test-Path -LiteralPath $Fsi)) { throw "F# Interactive not found: $Fsi" }
 Push-Location $repo
 try {
+    # Legacy F# projects require each solution-explorer folder to be contiguous.
+    # MSBuild accepts interleaved folders even though Visual Studio rejects them.
+    [xml]$project = Get-Content -LiteralPath WtProgram\WtProgram.fsproj -Raw
+    $closedFolders = @{}
+    $previousFolders = @()
+    $compilePaths = @{}
+    foreach ($item in $project.Project.ItemGroup.Compile) {
+        if (-not $item.Include) { continue }
+        $path = $item.Include.Replace('\', '/')
+        if ($compilePaths.ContainsKey($path)) { throw "Duplicate Compile item: $path" }
+        $compilePaths[$path] = $true
+        $parts = $path.Split('/')
+        $folders = @()
+        for ($index = 0; $index -lt $parts.Length - 1; $index++) {
+            $folder = $parts[0..$index] -join '/'
+            if ($closedFolders.ContainsKey($folder)) { throw "Non-contiguous F# project folder at $path" }
+            $folders += $folder
+        }
+        foreach ($folder in $previousFolders) {
+            if ($folder -notin $folders) { $closedFolders[$folder] = $true }
+        }
+        $previousFolders = $folders
+    }
     $output = Join-Path $PSScriptRoot 'Debug\'
     $intermediate = Join-Path $repo 'WtProgram\obj\Regression\'
     # Full Build is required: Compile alone omits embedded resources.
