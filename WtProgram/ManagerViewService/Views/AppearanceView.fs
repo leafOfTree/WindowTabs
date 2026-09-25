@@ -12,7 +12,7 @@ type AppearanceView(?settings:ISettings) =
     let update = settings.updateAppearance
     let paletteTitle = new Label(AutoSize=true,Font=SettingsUi.sectionFont,
                                  Margin=Padding(0,Dpi.scale 16,0,Dpi.scale 8))
-    let preset = SettingsUi.choice [|t "Default" "默认";t "Ocean" "海洋";t "Forest" "森林";t "Custom" "自定义"|]
+    let preset = SettingsUi.choice (Array.append (ThemePresets.names |> Array.map SettingsCatalog.localize) [|t "Custom" "自定义"|])
     let rightActions (button:Control) =
         let row = new FlowLayoutPanel(AutoSize=true,WrapContents=false,FlowDirection=FlowDirection.RightToLeft,
                                       Margin=Padding(0,Dpi.scale 8,0,Dpi.scale 8))
@@ -61,7 +61,7 @@ type AppearanceView(?settings:ISettings) =
             let values (p:TabPalette) =
                 [p.tabTextColor;p.tabActiveBgColor;p.tabHighlightBgColor;p.tabNormalBgColor;p.tabBorderColor;p.tabFlashBgColor]
                 |> List.map(fun c -> c.ToArgb())
-            preset.SelectedIndex <- ThemePresets.palettes editingDark |> Array.tryFindIndex(fun candidate -> values candidate=values palette) |> Option.defaultValue 3
+            preset.SelectedIndex <- ThemePresets.palettes editingDark |> Array.tryFindIndex(fun candidate -> values candidate=values palette) |> Option.defaultValue ThemePresets.names.Length
             for key,read,write,editor in colors do
                 editor.value <- box(read palette)
             let geometry = settings.geometry
@@ -142,7 +142,7 @@ type AppearanceView(?settings:ISettings) =
         paletteHeader.Controls.Add(preset)
         SettingsUi.add table paletteHeader
         preset.SelectedIndexChanged.Add(fun _ ->
-            if not refreshing && preset.SelectedIndex>=0 && preset.SelectedIndex<3 then
+            if not refreshing && preset.SelectedIndex>=0 && preset.SelectedIndex<ThemePresets.names.Length then
                 updatePalette(fun _ -> (ThemePresets.palettes editingDark).[preset.SelectedIndex]))
         let colorsCard = new SettingsCard()
         SettingsUi.add table colorsCard

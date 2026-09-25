@@ -88,7 +88,7 @@ let main() =
         let all = view.control.Controls.Find("tabTextColor",true)
         let preset = view.control.Controls.Find("palette-preset",true).[0] :?> SettingsCombo
         let otherPalette = if mode=DarkTheme then preferences.lightPalette else preferences.darkPalette
-        for index in [1;2;0] do
+        for index in [1..ThemePresets.names.Length-1] @ [0] do
             preset.SelectedIndex <- index
             Application.DoEvents()
             assertTrue (preset.SelectedIndex=index) "Preset selection survives refresh"
@@ -107,7 +107,7 @@ let main() =
             Application.DoEvents()
             let edited = if mode=DarkTheme then preferences.darkPalette else preferences.lightPalette
             assertTrue (edited.tabTextColor.B>240uy && edited.tabTextColor.R=0uy) "Live picker edit"
-            assertTrue (preset.SelectedIndex=3) "Edited preset displays Custom"
+            assertTrue (preset.SelectedIndex=ThemePresets.names.Length) "Edited preset displays Custom"
             assertTrue ((if mode=DarkTheme then preferences.lightPalette else preferences.darkPalette)=other) "Other theme preserved"
             use pickerBitmap = new Bitmap(popup.Width,popup.Height)
             popup.DrawToBitmap(pickerBitmap,Rectangle(Point.Empty,pickerBitmap.Size))
