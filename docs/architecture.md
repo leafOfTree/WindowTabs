@@ -53,8 +53,8 @@ when the form is disposed without first being shown.
 ## Verification
 
 Run `powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-Tests.ps1` from
-the checkout. It discovers MSBuild and F# Interactive through Visual Studio,
-performs a full Debug build (including resources), then compiles seven STA test executables and runs them
+the checkout. It uses the .NET SDK to perform a full Debug build (including resources),
+then compiles seven STA test executables through `tests/TestHost.fsproj` and runs them
 serially with per-process timeouts. Logs and render snapshots are under
 `tests/Debug`; CI uploads them and also builds Release.
 

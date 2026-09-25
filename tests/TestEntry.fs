@@ -1,7 +1,5 @@
 module WindowTabsTests
 open System
-[<assembly:System.Runtime.Versioning.TargetFramework(".NETFramework,Version=v4.8")>]
-do ()
 // Test scripts run as startup initializers on this STA and return normally.
 [<STAThread;EntryPoint>]
 let main _ =

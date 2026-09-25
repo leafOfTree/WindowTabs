@@ -1,18 +1,11 @@
-param([string]$MSBuild, [string]$Fsi, [int]$TimeoutSeconds = 120)
+param([int]$TimeoutSeconds = 120)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
-if (-not $MSBuild -or -not $Fsi) {
-    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    $installation = & $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -property installationPath
-    if (-not $installation) { throw 'Visual Studio with MSBuild and F# is required.' }
-    if (-not $MSBuild) { $MSBuild = Join-Path $installation 'MSBuild\Current\Bin\MSBuild.exe' }
-    if (-not $Fsi) { $Fsi = Join-Path $installation 'Common7\IDE\CommonExtensions\Microsoft\FSharp\Tools\fsi.exe' }
-}
-if (-not (Test-Path -LiteralPath $Fsi)) { throw "F# Interactive not found: $Fsi" }
+if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw 'The .NET SDK (dotnet) is required.' }
 Push-Location $repo
 try {
-    # Legacy F# projects require each solution-explorer folder to be contiguous.
-    # MSBuild accepts interleaved folders even though Visual Studio rejects them.
+    # Keep each folder's files together: Visual Studio's F# project tree cannot
+    # show a folder whose files are interleaved with another folder's.
     [xml]$project = Get-Content -LiteralPath WtProgram\WtProgram.fsproj -Raw
     $closedFolders = @{}
     $previousFolders = @()
@@ -35,22 +28,19 @@ try {
         $previousFolders = $folders
     }
     $output = Join-Path $PSScriptRoot 'Debug\'
-    $intermediate = Join-Path $repo 'WtProgram\obj\Regression\'
     # Full Build is required: Compile alone omits embedded resources.
-    & $MSBuild WtProgram\WtProgram.fsproj /t:Build /p:Configuration=Debug "/p:OutDir=$output" "/p:BaseIntermediateOutputPath=$intermediate" /v:minimal /nologo
+    dotnet build WtProgram\WtProgram.fsproj -c Debug "-p:OutDir=$output" -v:minimal -nologo
     if ($LASTEXITCODE -ne 0) { throw 'Regression build failed.' }
+    $names = @('Reliability', 'Architecture', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon')
+    foreach ($name in $names) {
+        dotnet build tests\TestHost.fsproj "-p:TestName=$name" -v:quiet -nologo -clp:NoSummary
+        if ($LASTEXITCODE -ne 0) { throw "$name compilation failed." }
+    }
     # Native UI tests share desktop focus and must not run in parallel.
-    foreach ($name in @('Reliability', 'Architecture', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon')) {
-        $script = Join-Path $PSScriptRoot "$name.fsx"
+    foreach ($name in $names) {
         $stdout = Join-Path $output "$name.stdout.log"
         $stderr = Join-Path $output "$name.stderr.log"
-        # A real STA executable loads the same DPI configuration as production and
-        # permits WinForms/COM to unwind normally, unlike FSI's Environment.Exit.
-        $compiler = Join-Path (Split-Path $Fsi -Parent) 'fsc.exe'
         $executable = Join-Path $output "$name.exe"
-        & $compiler --nologo --target:exe --platform:x86 --nocopyfsharpcore --reference:packages\FSharp.Core.6.0.7\lib\netstandard2.0\FSharp.Core.dll "--out:$executable" --win32manifest:WtProgram\app.manifest $script tests\TestEntry.fs
-        if ($LASTEXITCODE -ne 0) { throw "$name compilation failed." }
-        Copy-Item -LiteralPath WtProgram\App.config -Destination "$executable.config"
         $process = Start-Process -FilePath $executable -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
         # Keep the native process handle open so Windows PowerShell retains ExitCode.
         $processHandle = $process.Handle

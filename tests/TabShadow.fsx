@@ -1,5 +1,5 @@
 // From the repository root, build a separate Debug output (Release is statically linked):
-// MSBuild WindowTabs.sln /p:Configuration=Debug "/p:Platform=Any CPU" /p:OutputPath=<absolute-path-to-tests/Debug/>
+// dotnet build WtProgram/WtProgram.fsproj -c Debug -p:OutDir=<absolute-path-to-tests/Debug/>
 // Then run: fsi --exec tests/TabShadow.fsx
 // Creates temporary test HWNDs outside the desktop; does not alter running groups.
 #r "System.Drawing"

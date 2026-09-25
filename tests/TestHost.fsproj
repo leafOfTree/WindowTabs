@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Compiles one regression script into its own executable:
+       dotnet build tests\TestHost.fsproj -p:TestName=Reliability
+       A real STA executable loads the same DPI configuration as production and
+       lets WinForms/COM unwind normally, unlike FSI's Environment.Exit. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x86</PlatformTarget>
+    <AssemblyName>$(TestName)</AssemblyName>
+    <OutDir>$(MSBuildThisFileDirectory)Debug\</OutDir>
+    <IntermediateOutputPath>obj\$(TestName)\</IntermediateOutputPath>
+    <ApplicationManifest>..\WtProgram\app.manifest</ApplicationManifest>
+    <AppConfig>..\WtProgram\App.config</AppConfig>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <NoWarn>$(NoWarn);0040;0046;0058;0760;1183</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The script's #r lines reference the app build in Debug\. -->
+    <Compile Include="$(TestName).fsx" />
+    <Compile Include="TestEntry.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="FSharp.Core" Version="6.0.7" />
+    <Reference Include="System.Windows.Forms" />
+  </ItemGroup>
+
+</Project>

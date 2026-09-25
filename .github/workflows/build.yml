@@ -13,13 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@v2
-
-      # NuGet packages are vendored under packages/, so there is nothing to
-      # restore. The Release configuration static-links them into a single exe.
+      # The SDK-style projects target .NET Framework 4.8 and restore their NuGet
+      # packages; the Release configuration static-links them into a single exe.
       - name: Build Release
-        run: msbuild WindowTabs.sln -t:Rebuild -p:Configuration=Release -p:Platform="Any CPU" -m
+        run: dotnet build WindowTabs.sln -c Release
 
       - name: Run regression tests serially
         shell: powershell

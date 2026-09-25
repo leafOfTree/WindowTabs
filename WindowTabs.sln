@@ -2,11 +2,11 @@
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "WtProgram", "WtProgram\WtProgram.fsproj", "{AE7D5E18-AC62-4BD3-AB9E-02CBB2EB29D6}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "WtProgram", "WtProgram\WtProgram.fsproj", "{AE7D5E18-AC62-4BD3-AB9E-02CBB2EB29D6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Win32", "Win32\Win32.csproj", "{08D5E815-CC69-4D6E-83BD-EF119618EA9C}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Win32", "Win32\Win32.csproj", "{08D5E815-CC69-4D6E-83BD-EF119618EA9C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Aga.Controls", "treeviewadv\Aga.Controls\Aga.Controls.csproj", "{E73BB233-D88B-44A7-A98F-D71EE158381D}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Aga.Controls", "treeviewadv\Aga.Controls\Aga.Controls.csproj", "{E73BB233-D88B-44A7-A98F-D71EE158381D}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

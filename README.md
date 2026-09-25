@@ -35,7 +35,8 @@ Any help is very welcome. Feel free to create issues or pull requests. If you'd 
 
 ## Compilation
 
-Tested on Win10 and Win11 with Visual Studio 2022 or 2026.
+Tested on Win10 and Win11. The projects are SDK-style and target .NET Framework 4.8, so they build
+with either the .NET SDK or Visual Studio 2022/2026. NuGet packages are restored on the first build.
 
 - Clone
 
@@ -43,21 +44,23 @@ Tested on Win10 and Win11 with Visual Studio 2022 or 2026.
     git clone https://github.com/leafOfTree/WindowTabs
     ```
 
-- Install
+- Install one of
 
-    - [Visual Studio community edition](https://visualstudio.microsoft.com/)
-
-        `.NET desktop development` needs to be selected in the installer. It provides the F# compiler and the .NET Framework 4.8 targeting pack, which are the only requirements.
+    - [.NET SDK](https://dotnet.microsoft.com/download) (tested with 10.0), for command-line builds.
+    - [Visual Studio community edition](https://visualstudio.microsoft.com/) with `.NET desktop development` selected in the installer.
 
 - Compile and Release
 
-    Launch Visual Studio, open this project by "File > Open > Project/Solution", and select "WindowTabs.sln".
+    ```
+    dotnet build WindowTabs.sln -c Release
+    ```
 
-    If you choose the `Release` configuration and click `Start`, you will get a release version `WindowTabs\WtProgram\bin\Release\WindowTabs.exe`.
+    produces a single self-contained `WtProgram\bin\Release\WindowTabs.exe`. In Visual Studio, open `WindowTabs.sln`,
+    choose the `Release` configuration and build.
 
 - Debug
 
-    Choose the `Debug` configuration and it will compile to `WindowTabs\WtProgram\bin\Debug\WindowTabs.exe`.
+    `dotnet build WindowTabs.sln` (or the `Debug` configuration in Visual Studio) compiles to `WtProgram\bin\Debug\WindowTabs.exe`.
 
 Tips
 
@@ -68,13 +71,14 @@ Tips
 
 Architecture and ownership conventions: [docs/architecture.md](docs/architecture.md).
 
-Run the regression suite (requires the same Visual Studio installation as the build):
+Run the regression suite (requires the .NET SDK):
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-Tests.ps1
 ```
 
-The script builds an isolated Debug output and runs native UI tests serially.
+The script builds a separate Debug output in `tests/Debug/`, compiles each test script with
+`tests/TestHost.fsproj` and runs the native UI tests serially.
 Logs and rendered previews are written to `tests/Debug/`.
 
 - Entry point: `Program.fs` this.run
@@ -87,6 +91,8 @@ Logs and rendered previews are written to `tests/Debug/`.
 ## Changes
 
 2025
+
+- Build with the .NET SDK (`dotnet build`) as well as Visual Studio: SDK-style projects, and NuGet packages restored instead of committed
 
 - Support Visual Studio 2026: retarget to .NET Framework 4.8 and drop the unused WiX installer project
 
