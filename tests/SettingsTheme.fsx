@@ -65,6 +65,9 @@ let main() =
         check settings.settings.appearance.useCustomColors "Legacy custom colours lost"
         for appearance in [settings.settings.appearance.lightPalette;settings.settings.appearance.darkPalette] do
             check (appearance.tabActiveBgColor.ToArgb()=Color.FromArgb(0x12,0x34,0x56).ToArgb()) "Legacy palette overwritten"
+        check (api.hotKey "nextTab" = None) "Unchanged shortcut reported as customised"
+        api.setHotKey "nextTab" 0x2DD
+        check (api.hotKey "nextTab" = Some 0x2DD && int api.root.["hotKeys"].["nextTab"] = 0x2DD) "Shortcut not saved"
         api.setValue("language",box "zh")
         check (string api.root.["language"]="zh" && api.getValue("language")=box "zh") "Language setting not saved"
         api.setValue("language",box "fr")

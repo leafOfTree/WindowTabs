@@ -39,7 +39,9 @@ let settings = { new ISettings with
     member _.root with get() = JObject() and set(_) = ()
     member _.getValue _ = box false
     member _.setValue _ = ()
-    member _.notifyValue _ _ = { new IDisposable with member _.Dispose() = () } }
+    member _.notifyValue _ _ = { new IDisposable with member _.Dispose() = () }
+    member _.hotKey _ = None
+    member _.setHotKey _ _ = () }
 Services.register<ISettings>(settings)
 let assertTrue condition message = if not condition then failwith message
 let key (control:Control) k =
@@ -217,6 +219,14 @@ let main() =
         previous.Shortcut <- 3621
         previous.Clear()
         assertTrue (hotKeys.["prevTab"]=0) "Clear removes the shortcut"
+        // Swapped and cleared shortcuts both come back to the catalog defaults.
+        hotKeys.["nextTab"] <- 3621
+        next.Shortcut <- 3621
+        let rec findButton text (control:Control) =
+            if control.Text=text then Some(control :?> Button)
+            else control.Controls |> Seq.cast<Control> |> Seq.tryPick (findButton text)
+        (findButton "Restore default shortcuts" view.control).Value.PerformClick()
+        assertTrue (hotKeys.["nextTab"]=3623 && hotKeys.["prevTab"]=3621 && next.Shortcut=3623 && previous.Shortcut=3621) "Restore default shortcuts"
         hotKeys.["prevTab"] <- 3621
         Application.DoEvents()
         use bitmap = new Bitmap(form.ClientSize.Width,form.ClientSize.Height)

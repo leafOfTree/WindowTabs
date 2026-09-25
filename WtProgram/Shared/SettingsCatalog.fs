@@ -5,7 +5,7 @@ type SettingBinding =
     | Toggle of key:string * freshDefault:bool * existingDefault:bool
     | Number of minimum:int * maximum:int
     | Choice of key:string * values:string list * defaultValue:string
-    | Shortcut of key:string
+    | Shortcut of key:string * defaultCode:int
     | Colour
     | Navigation
 
@@ -30,8 +30,8 @@ module SettingsCatalog =
         { id="combine-taskbar-icons"; page=GeneralSettings; caption=("Combine taskbar icons","合并任务栏图标"); description=("",""); keywords="combine-taskbar-icons"; binding=Toggle("combineIconsInTaskbar",false,true) }
         { id="use-windowtabs-for-alt-tab"; page=GeneralSettings; caption=("Use WindowTabs for Alt+Tab","使用 WindowTabs 切换器"); description=("",""); keywords="use-windowtabs-for-alt-tab"; binding=Toggle("replaceAltTab",false,false) }
         { id="group-windows-in-the-switcher"; page=GeneralSettings; caption=("Group windows in the switcher","在切换器中合并分组"); description=("",""); keywords="group-windows-in-the-switcher"; binding=Toggle("groupWindowsInSwitcher",false,false) }
-        { id="next-tab"; page=HotKeySettings; caption=("Next tab","下一个标签"); description=("Switch to the next window in the group.","切换到当前分组中的下一个窗口。"); keywords="next-tab"; binding=Shortcut "nextTab" }
-        { id="previous-tab"; page=HotKeySettings; caption=("Previous tab","上一个标签"); description=("Switch to the previous window in the group.","切换到当前分组中的上一个窗口。"); keywords="previous-tab"; binding=Shortcut "prevTab" }
+        { id="next-tab"; page=HotKeySettings; caption=("Next tab","下一个标签"); description=("Switch to the next window in the group.","切换到当前分组中的下一个窗口。"); keywords="next-tab"; binding=Shortcut("nextTab",3623) }
+        { id="previous-tab"; page=HotKeySettings; caption=("Previous tab","上一个标签"); description=("Switch to the previous window in the group.","切换到当前分组中的上一个窗口。"); keywords="previous-tab"; binding=Shortcut("prevTab",3621) }
         { id="switch-tabs-by-number"; page=HotKeySettings; caption=("Switch tabs by number","按数字切换标签"); description=("Use Ctrl + number to select a tab. Restart WindowTabs after changing this option.","使用 Ctrl + 数字选择标签。修改此项后需重启 WindowTabs。"); keywords="switch-tabs-by-number"; binding=Toggle("enableCtrlNumberHotKey",true,true) }
         { id="activate-on-hover"; page=HotKeySettings; caption=("Activate on hover","悬停时激活"); description=("Switch windows when the pointer rests on a tab.","鼠标悬停在标签上时切换窗口。"); keywords="activate-on-hover"; binding=Toggle("enableHoverActivate",false,false) }
         { id="shift-scroll"; page=HotKeySettings; caption=("Shift + scroll","Shift + 滚轮"); description=("Hold Shift and scroll over a grouped window to switch tabs. Scrolling over the tab strip always works.","在分组窗口内按住 Shift 并滚动滚轮以切换标签。直接在标签条上滚动始终有效。"); keywords="shift-scroll"; binding=Toggle("enableShiftScroll",true,true) }
@@ -53,6 +53,9 @@ module SettingsCatalog =
     let toggleKey id = match (find id).binding with Toggle(key,_,_) -> key | _ -> invalidArg "id" "Not a toggle"
     let toggleDefault key existing =
         all |> List.pick(fun item -> match item.binding with Toggle(k,fresh,old) when k=key -> Some(if existing then old else fresh) | _ -> None)
+    /// Ctrl+Alt+Right / Ctrl+Alt+Left, in hotkey-control encoding.
+    let shortcutDefault key =
+        all |> List.pick(fun item -> match item.binding with Shortcut(k,code) when k=key -> Some code | _ -> None)
     let range id = match (find id).binding with Number(low,high) -> low,high | _ -> invalidArg "id" "Not a numeric setting"
     let normalizeNumber id value =
         let low,high = range id

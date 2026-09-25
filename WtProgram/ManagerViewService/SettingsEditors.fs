@@ -182,7 +182,7 @@ type SettingsShortcutInput() as this =
         if next<>shortcut then
             this.Shortcut <- next
             changed.Trigger(EventArgs.Empty)
-        elif next<>0 then showMessage false (t "Already the current shortcut" "已是当前快捷键")
+        elif next<>0 then showMessage false (t "Already set" "已是当前快捷键")
         this.Invalidate()
     do
         this.Width <- Dpi.scale 220

@@ -73,9 +73,10 @@ type Program(lifetime:LifetimeScope) as this =
             | _ -> ())
 
 
+    // Default shortcuts live in SettingsCatalog; this maps each hotkey to its action.
     let hotKeyInfo = Map2(List2([
-        ("prevTab", (3621, fun (g:IGroup) -> g.switchWindow(false, false)))
-        ("nextTab", (3623, fun g -> g.switchWindow(true, false)))
+        ("prevTab", fun (g:IGroup) -> g.switchWindow(false, false))
+        ("nextTab", fun g -> g.switchWindow(true, false))
         ]))
         
     let hotKeyManager = lifetime.Own(new HotKeyManager())
@@ -249,7 +250,7 @@ type Program(lifetime:LifetimeScope) as this =
     member this.foregroundGroup = this.desktop.foregroundGroup
 
     member this.registerHotKeys() =
-        hotKeyInfo.items.iter <| fun(key,(_,f)) ->
+        hotKeyInfo.items.iter <| fun(key,f) ->
             let f() =
                 this.foregroundGroup.iter <| fun group -> 
                     f(group)
@@ -321,25 +322,15 @@ type Program(lifetime:LifetimeScope) as this =
         member x.tabAppearanceInfo = 
             ThemeService.currentAppearance()
 
-        member x.getHotKey key = 
-            let hotKeys = settingsManager.settingsJson.getObject("hotKeys").def(JObject())
-            match hotKeys.getInt32(key) with
-            | Some(value) -> value
-            | None -> 
-                let shortcut, _ = hotKeyInfo.find(key)
-                int(shortcut)
+        member x.getHotKey key =
+            (settingsManager :> ISettings).hotKey key |> Option.defaultValue (SettingsCatalog.shortcutDefault key)
 
         member x.setHotKey key value =
-            let _,switch = hotKeyInfo.find(key)
+            let switch = hotKeyInfo.find(key)
             let shortcut = HotKeyShortcut(HotKeyControlCode=int16(value))
             let registered = hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags,shortcut.RegisterHotKeyVirtualKeyCode)
                                 (fun () -> this.foregroundGroup.iter switch)
-            if registered then
-                let settings = settingsManager.settingsJson
-                let hotKeys = settings.getObject("hotKeys").def(JObject())
-                hotKeys.setInt32(key,value)
-                settings.setObject("hotKeys",hotKeys)
-                settingsManager.settingsJson <- settings
+            if registered then (settingsManager :> ISettings).setHotKey key value
             registered
 
         member x.llMouse = llMouseEvent.Publish

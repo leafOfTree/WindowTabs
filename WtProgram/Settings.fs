@@ -162,6 +162,15 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
 
     interface ISettings with
 
+        member x.hotKey key = x.settingsJson.getObject("hotKeys") |> Option.bind (fun hotKeys -> hotKeys.getInt32(key))
+        member x.setHotKey key value =
+            let json = x.settingsJson
+            let hotKeys = json.getObject("hotKeys").def(JObject())
+            hotKeys.setInt32(key,value)
+            json.setObject("hotKeys",hotKeys)
+            x.settingsJson <- json
+            settingChangedEvent.Trigger("hotKeys",box key)
+
         member x.appearance = x.settings.appearance
         member x.updateAppearance update =
             let current = x.settings

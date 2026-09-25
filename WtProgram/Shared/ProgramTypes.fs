@@ -34,6 +34,9 @@ type ISettings =
     abstract member appearance: AppearancePreferences
     abstract member updateAppearance: (AppearancePreferences -> AppearancePreferences) -> unit
     abstract member root : JObject with get,set
+    /// The user's shortcut for a program hotkey (hotkey-control encoding; 0 = none), if changed.
+    abstract member hotKey: string -> int option
+    abstract member setHotKey: string -> int -> unit
 
 type IFilterService =
     abstract member isAppWindow : IntPtr -> bool
