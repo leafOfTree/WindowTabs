@@ -26,7 +26,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
 
     do
         hasExistingSettings <- this.fileExists
-        Services.register(DispatchedSettings(this :> ISettings, InvokerService.invoker :> IDispatcher) :> ISettings, false)
+        Services.register(DispatchedSettings(this :> ISettings, InvokerService.invoker :> IDispatcher) :> ISettings)
 
     member this.clearCaches() =
         store.Flush() |> ignore

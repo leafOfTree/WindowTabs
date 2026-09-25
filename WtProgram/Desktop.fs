@@ -79,8 +79,8 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
     let _dd = DragDropController(this :> IDragDropParent) :> IDragDrop
     
     do 
-        Services.register(_dd, false)
-        Services.register(DispatchedDesktop(this :> IDesktop, dispatcher) :> IDesktop, false)
+        Services.register(_dd)
+        Services.register(DispatchedDesktop(this :> IDesktop, dispatcher) :> IDesktop)
 
     member private this.groups : List2<GroupInfo> = groupCell.value.items
     member _.retainedGroupCount = groupCell.value.count

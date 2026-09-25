@@ -3,86 +3,6 @@ open System
 open System.Drawing
 open System.Reflection
 open System.Collections.Generic
-open System.Runtime.Remoting.Proxies
-open System.Runtime.Remoting.Messaging
-
-type ServiceAsyncResult() as this =
-    let returnInvoker = InvokerService.invoker
-    let mutable cachedResult = None
-    let mutable cachedfCompleted = None
-    let mutable completed = false
-
-    member this.complete(result) =
-        returnInvoker.asyncInvoke <| fun() ->
-            cachedResult <- Some(result)
-            this.tryToComplete()
-
-    member this.tryToComplete() =
-        if completed.not && cachedResult.IsSome && cachedfCompleted.IsSome then
-            completed <- true
-            cachedfCompleted.Value(cachedResult.Value)
-
-    interface IServiceAsyncResult with
-        member x.onCompleted fCompleted =
-            returnInvoker.asyncInvoke <| fun() ->
-                cachedfCompleted <- Some(fCompleted)
-                this.tryToComplete()
-
-type ServiceProxy<'a>(service:'a, dispatcher:IDispatcher) =
-    inherit RealProxy(typeof<'a>)
-    let attributeCache = new Dictionary<int, ServiceMethodAttribute>()
-
-    
-    member private this.returnMessage(msg : IMessage, result : obj) =
-        let mcm = msg :?> IMethodCallMessage
-        ReturnMessage(result, null, 0, mcm.LogicalCallContext, mcm) :> IMessage
-
-    member private this.methodInfo(msg: IMessage) =
-        let mcm = msg :?> IMethodCallMessage
-        mcm.MethodBase :?> MethodInfo
-    
-    member private this.serviceMethodAttributeCached(mi:MethodInfo) =
-        let key = mi.MetadataToken
-        lock this <| fun() ->
-            if attributeCache.ContainsKey(key).not then
-                let attributes = List2(mi.GetCustomAttributes(typeof<ServiceMethodAttribute>, true))
-                let sma = attributes.map(fun(attr) -> attr.cast<ServiceMethodAttribute>()).tryHead.def(ServiceMethodAttribute())
-                attributeCache.Add(key, sma)
-            attributeCache.Item(key)
-
-    member private this.serviceMethodAttribute<'s>(msg: IMessage) =
-        let mi = this.methodInfo(msg)
-        this.serviceMethodAttributeCached mi
-
-    member private this.invokeMethod(msg : IMessage) =
-        let mcm = msg :?> IMethodCallMessage
-        let mi = this.methodInfo(msg)
-        mi.Invoke(service, mcm.InArgs)
-
-    member private this.isUnitReturnType(msg: IMessage) =
-        this.methodInfo(msg).ReturnType = typeof<unit>
-
-    member private this.doSyncInvoke(msg: IMessage) =
-        dispatcher.Send <| fun() ->
-            this.invokeMethod(msg)
-
-    member private this.doAsyncInvoke(msg: IMessage) =  
-        let asyncResult = ServiceAsyncResult()
-
-        dispatcher.Post <| fun() ->
-            let result = this.invokeMethod(msg)
-            asyncResult.complete(result)
-
-        if this.isUnitReturnType(msg) then null else box(asyncResult)
-
-    override this.Invoke(msg) =
-        let sma = this.serviceMethodAttribute(msg)
-        let result = 
-            if sma.async then
-                this.doAsyncInvoke(msg)
-            else
-                this.doSyncInvoke(msg)
-        this.returnMessage(msg, result)
 
 type ServiceProvider() =
     [<DefaultValue>]
@@ -97,16 +17,9 @@ type ServiceProvider() =
                 ServiceProvider._localServices <- new Dictionary<Type, obj>()
             ServiceProvider._localServices
 
-    member this.register(service:'a, wrap) =
-        let service = 
-            if wrap then
-                let rp = new ServiceProxy<'a>(service, InvokerService.invoker :> IDispatcher)
-                rp.GetTransparentProxy()
-            else
-                box(unbox<'a>(service))
-        services.Add(typeof<'a>, service)
-
-    member this.register(service:'a) = this.register(service, true)
+    /// Services that other threads call are registered as Dispatched* wrappers, which
+    /// marshal each member onto the owning thread explicitly.
+    member this.register(service:'a) = services.Add(typeof<'a>, box service)
 
     member this.registerLocal(service:'a) = 
         ServiceProvider.localServices.Add(typeof<'a>, service)
@@ -124,7 +37,7 @@ type ServiceProvider() =
         let t = typeof<'a>
         ServiceProvider.localServices.ContainsKey(t) || services.ContainsKey(t)
 
-/// Typed settings boundary: callers no longer rely on reflection/remoting for settings.
+/// Typed service boundaries: each member is marshalled to the owning thread explicitly.
 type DispatchedSettings(inner:ISettings, dispatcher:IDispatcher) =
     interface ISettings with
         member _.appearance = dispatcher.Send(fun () -> inner.appearance)
@@ -146,6 +59,42 @@ type DispatchedDesktop(inner:IDesktop, dispatcher:IDispatcher) =
         member _.groupExited = dispatcher.Send(fun () -> inner.groupExited)
         member _.groupRemoved = dispatcher.Send(fun () -> inner.groupRemoved)
         member _.foregroundGroup = dispatcher.Send(fun () -> inner.foregroundGroup)
+
+type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
+    interface IProgram with
+        member _.version = dispatcher.Send(fun () -> inner.version)
+        member _.isUpgrade = dispatcher.Send(fun () -> inner.isUpgrade)
+        member _.isFirstRun = dispatcher.Send(fun () -> inner.isFirstRun)
+        // Fire-and-forget: callers must not wait on a refresh or on shutdown.
+        member _.refresh() = dispatcher.Post(fun () -> inner.refresh())
+        member _.shutdown() = dispatcher.Post(fun () -> inner.shutdown())
+        member _.setWindowNameOverride value = dispatcher.Send(fun () -> inner.setWindowNameOverride value)
+        member _.getWindowNameOverride hwnd = dispatcher.Send(fun () -> inner.getWindowNameOverride hwnd)
+        member _.appWindows = dispatcher.Send(fun () -> inner.appWindows)
+        member _.getAutoGroupingEnabled path = dispatcher.Send(fun () -> inner.getAutoGroupingEnabled path)
+        member _.setAutoGroupingEnabled path enabled = dispatcher.Send(fun () -> inner.setAutoGroupingEnabled path enabled)
+        member _.tabAppearanceInfo = dispatcher.Send(fun () -> inner.tabAppearanceInfo)
+        member _.setHotKey key value = dispatcher.Send(fun () -> inner.setHotKey key value)
+        member _.getHotKey key = dispatcher.Send(fun () -> inner.getHotKey key)
+        member _.suspendTabMonitoring() = dispatcher.Send(fun () -> inner.suspendTabMonitoring())
+        member _.resumeTabMonitoring() = dispatcher.Send(fun () -> inner.resumeTabMonitoring())
+        member _.llMouse = dispatcher.Send(fun () -> inner.llMouse)
+
+type DispatchedFilterService(inner:IFilterService, dispatcher:IDispatcher) =
+    interface IFilterService with
+        member _.isAppWindow hwnd = dispatcher.Send(fun () -> inner.isAppWindow hwnd)
+        member _.isAppWindowStyle hwnd = dispatcher.Send(fun () -> inner.isAppWindowStyle hwnd)
+        member _.isTabbableWindow hwnd = dispatcher.Send(fun () -> inner.isTabbableWindow hwnd)
+        member _.isTabbingEnabledForAllProcessesByDefault
+            with get() = dispatcher.Send(fun () -> inner.isTabbingEnabledForAllProcessesByDefault)
+            and set value = dispatcher.Send(fun () -> inner.isTabbingEnabledForAllProcessesByDefault <- value)
+        member _.setIsTabbingEnabledForProcess path enabled = dispatcher.Send(fun () -> inner.setIsTabbingEnabledForProcess path enabled)
+        member _.getIsTabbingEnabledForProcess path = dispatcher.Send(fun () -> inner.getIsTabbingEnabledForProcess path)
+
+type DispatchedManagerView(inner:IManagerView, dispatcher:IDispatcher) =
+    interface IManagerView with
+        member _.show() = dispatcher.Send(fun () -> inner.show())
+        member _.show(view:SettingsViewType) = dispatcher.Send(fun () -> inner.show(view))
 
 type WtServiceProvider() =
     inherit ServiceProvider()

@@ -353,9 +353,10 @@ type Program(lifetime:LifetimeScope) as this =
             
 
     member this.run(plugins:List2<IPlugin>) =
-        Services.register(this :> IProgram)
-        Services.register(FilterService() :> IFilterService)
-        Services.register(ManagerViewService() :> IManagerView)
+        let dispatcher = InvokerService.invoker :> IDispatcher
+        Services.register(DispatchedProgram(this, dispatcher) :> IProgram)
+        Services.register(DispatchedFilterService(FilterService(), dispatcher) :> IFilterService)
+        Services.register(DispatchedManagerView(ManagerViewService(), dispatcher) :> IManagerView)
         plugins.iter(fun plugin ->
             match plugin with
             | :? IDisposable as resource -> lifetime.Own(resource) |> ignore

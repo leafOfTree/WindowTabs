@@ -152,7 +152,7 @@ let main() =
                 member _.isTabbableWindow _ = false
                 member _.isTabbingEnabledForAllProcessesByDefault with get()=filterDefault and set v=filterDefault<-v
                 member _.setIsTabbingEnabledForProcess _ _ = ()
-                member _.getIsTabbingEnabledForProcess _ = false }, false)
+                member _.getIsTabbingEnabledForProcess _ = false })
         let general = GeneralView() :> ISettingsView
         let appearance = AppearanceView() :> ISettingsView
         let placeholder key caption =

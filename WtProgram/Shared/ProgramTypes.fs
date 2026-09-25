@@ -4,18 +4,6 @@ open System.Windows.Forms
 open Newtonsoft.Json
 open Newtonsoft.Json.Linq
 
-[<AttributeUsage(System.AttributeTargets.Method)>]
-type ServiceMethodAttribute() =
-    inherit Attribute()
-    let mutable _async = false
-
-    member this.async
-        with get() = _async
-        and set(value) = _async <- value
-
-type IServiceAsyncResult =
-    abstract member onCompleted : (obj -> unit) -> unit
-
 type SettingsRec = {
     licenseKey: string
     ticket: string option
@@ -81,9 +69,9 @@ type IProgram =
     abstract member version : string
     abstract member isUpgrade : bool
     abstract member isFirstRun : bool
-    [<ServiceMethod(async=true)>]
+    /// Posted to the UI thread; returns before the work runs.
     abstract member refresh : unit -> unit
-    [<ServiceMethod(async=true)>]
+    /// Posted to the UI thread; returns before the work runs.
     abstract member shutdown : unit -> unit
     abstract member setWindowNameOverride : (IntPtr * Option<string>) -> unit
     abstract member getWindowNameOverride : IntPtr -> Option<string>

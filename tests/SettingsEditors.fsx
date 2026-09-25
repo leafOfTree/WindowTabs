@@ -40,7 +40,7 @@ let settings = { new ISettings with
     member _.getValue _ = box false
     member _.setValue _ = ()
     member _.notifyValue _ _ = { new IDisposable with member _.Dispose() = () } }
-Services.register<ISettings>(settings,false)
+Services.register<ISettings>(settings)
 let assertTrue condition message = if not condition then failwith message
 let key (control:Control) k =
     control.GetType().GetMethod("OnKeyDown",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(control,[|box(KeyEventArgs(k))|]) |> ignore
@@ -179,7 +179,7 @@ let main() =
         member _.getHotKey key = hotKeys.[key]
         member _.suspendTabMonitoring() = ()
         member _.resumeTabMonitoring() = ()
-        member _.llMouse = mouse.Publish},false)
+        member _.llMouse = mouse.Publish})
     let command (control:Control) (keys:Keys) =
         let mutable msg = Message()
         let processKey = control.GetType().GetMethod("ProcessCmdKey",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)

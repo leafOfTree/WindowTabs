@@ -7,10 +7,11 @@
   back through the injected `IDispatcher`; it must not synchronously call back into
   a caller that is waiting for group creation. Group initialization receives an
   appearance snapshot for this reason.
-- `DispatchedSettings` and `DispatchedDesktop` are typed service adapters. `Send`
-  completes a request on the owner thread; `Post` queues notifications. Other legacy
-  services still use `ServiceProxy`, now with an explicit dispatcher dependency.
-  Migrate these individually, preserving their synchronous/asynchronous contracts.
+- Every cross-thread service is a typed `Dispatched*` adapter in `Services.fs`
+  (settings, desktop, program, filter, settings window). `Send` completes a request
+  on the owner thread; `Post` queues fire-and-forget work (`IProgram.refresh` and
+  `shutdown`). There is no reflection or remoting proxy; a new service method needs a
+  matching line in its adapter.
 - Settings views can receive an `ISettings` dependency (Appearance currently does).
   Pure palette presets live in `ThemePresets`, not in the view.
 - Destroyed HWND subscriptions are removed before disposing their hooks. Group exit
@@ -92,7 +93,9 @@ trees release their owned icons. Closing the view cancels its worker.
 
 `SettingsCatalog` shares setting IDs, bilingual labels, boolean defaults, numeric
 ranges and choice values between search and editors. Appearance values are normalized
-at load and update boundaries. Older specialized views still use their resource files.
+at load and update boundaries. All other user-visible text goes through `Localization`
+(inline English/Chinese, Japanese where translated) so it compiles into the single exe;
+the `language` setting overrides the Windows display language.
 Diagnostics report resource counts, scan timing and an allow-list of non-identifying
 settings; paths, titles and license data are excluded. Full settings export is a
 separate user-selected action and reads the current in-memory root, including pending
