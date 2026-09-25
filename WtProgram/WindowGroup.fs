@@ -514,10 +514,19 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if window.isMinimized then
                 window.showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE)
         
-    member this.tabActivate(Tab(hwnd), force) = 
+    member this.tabActivate(Tab(hwnd), force) =
         let window = this.os.windowFromHwnd(hwnd)
+        let strip = this.os.windowFromHwnd(this.ts.hwnd)
+        // The strip is owned by the top window and only follows a new top window once the
+        // foreground event comes back through the group. Until then the activated window
+        // covers it, which flashes whenever the tabs sit inside the title bar. Owned windows
+        // are raised with their owner, so hand the strip over before activating.
+        if this.windows.contains(hwnd) then strip.setOwner(window)
         window.setForegroundOrRestore(force)
         window.bringToTop()
+        // Activation can be refused (foreground lock); keep the strip with the real top window.
+        this.inZorder(this.windows.items).tryHead |> Option.iter (fun top ->
+            if top <> hwnd then strip.setOwner(this.os.windowFromHwnd(top)))
 
     member this.onTabMoved(hwnd, index) = movedEvent.Trigger(hwnd, index)
 

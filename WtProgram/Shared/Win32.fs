@@ -420,6 +420,11 @@ and
             WinUserApi.SetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT, parent.hwnd).ignore
             this.insertAfter(parent.prevZorder)
 
+    /// Changes the owner but leaves this window where it is in the z-order.
+    member this.setOwner (owner:Window) =
+        if this.parent.hwnd <> owner.hwnd then
+            WinUserApi.SetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT, owner.hwnd).ignore
+
     member this.showNoActivate() = WinUserApi.ShowWindow(hwnd, ShowWindowCommands.SW_SHOWNOACTIVATE).ignore
 
     member this.update(image:Img, location:Pt, alpha) =       
