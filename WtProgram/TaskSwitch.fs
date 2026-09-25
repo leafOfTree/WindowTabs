@@ -6,8 +6,6 @@ open System.Windows.Forms
 open Bemo.Win32
 open Aga.Controls
 open Aga.Controls.Tree
-open System.Resources
-open System.Reflection
 
 type ITaskSwitchGroup =
     abstract member hwnd : IntPtr
@@ -42,8 +40,7 @@ type TaskWindowNode(item) as this=
     member this.IconImage with get() = image
 
 type TaskSwitchTreeViewControl(windows:List2<TaskWindowItem>) =
-    let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
-    let font = Font(resources.GetString("Font"), 10f)
+    let font = Font("Segoe UI", 10f)
     let nameColumn = TreeColumn("Name", 200)
         
     let nodes = windows.map <| fun window -> TaskWindowNode(window)

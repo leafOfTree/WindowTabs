@@ -20,8 +20,9 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
     let settingsPath = Path.GetFullPath(Path.Combine(
         (if relativePath then "." else Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WindowTabs")),fileName))
     let store = new SettingsFileStore(settingsPath,defaultArg saveDelay 250,fun ex ->
-        MessageBox.Show("Unable to save settings to " + settingsPath + ".\nYour changes remain in memory and will be retried on the next edit or exit.\n\n" + ex.Message,
-                        "Settings save failed",MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore)
+        MessageBox.Show(Localization.text ("Unable to save settings to " + settingsPath + ".\nYour changes remain in memory and will be retried on the next edit or exit.\n\n" + ex.Message)
+                                           ("无法保存设置到 " + settingsPath + "。\n更改仍保留在内存中，下次修改或退出时会重试。\n\n" + ex.Message),
+                        Localization.text "Settings save failed" "设置保存失败",MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore)
 
     do
         hasExistingSettings <- this.fileExists
@@ -63,8 +64,8 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             try
                 this.settingsString.map(JObject.Parse).def(JObject())
             with ex ->
-                let errorMessage = "Error loading settings.\n\nFix or remove the file "  + this.path + ".\n\nDetails: " + ex.Message
-                MessageBox.Show(errorMessage, "Settings Error", MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
+                let errorMessage = Localization.text ("Error loading settings.\n\nFix or remove the file "  + this.path + ".\n\nDetails: " + ex.Message) ("读取设置出错。\n\n请修复或删除文件 " + this.path + "。\n\n详细信息：" + ex.Message)
+                MessageBox.Show(errorMessage, Localization.text "Settings error" "设置错误", MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
                 failwith "Error parsing settings json"
         and set(settingsJson:JObject) = this.settingsString <- Some(settingsJson.ToString())
 
@@ -111,6 +112,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         enableShiftScroll = settingsJson.getBool("enableShiftScroll").def(SettingsCatalog.toggleDefault "enableShiftScroll" hasExistingSettings)
                         version = settingsJson.getString("version").def(String.Empty)
                         alignment = settingsJson.getString("alignment").def("Center") |> SettingsCatalog.normalizeChoice "alignment"
+                        language = settingsJson.getString("language").def("system") |> SettingsCatalog.normalizeChoice "language"
                         appearance = {
                             geometry = geometry
                             legacyPalette = legacyPalette
@@ -123,8 +125,8 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                     }
                     cachedSettingsRec <- Some(settings)
                 with ex ->
-                    let errorMessage = "Error loading settings.\n\nFix or remove the file "  + this.path + ".\n\nDetails: " + ex.Message
-                    MessageBox.Show(errorMessage, "Settings Error", MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
+                    let errorMessage = Localization.text ("Error loading settings.\n\nFix or remove the file "  + this.path + ".\n\nDetails: " + ex.Message) ("读取设置出错。\n\n请修复或删除文件 " + this.path + "。\n\n详细信息：" + ex.Message)
+                    MessageBox.Show(errorMessage, Localization.text "Settings error" "设置错误", MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
                     failwith "Error parsing settings json"
                     
             cachedSettingsRec.Value
@@ -134,6 +136,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setString("version", settings.version)
             settingsJson.setString("licenseKey", settings.licenseKey)
             settingsJson.setString("alignment", settings.alignment)
+            settingsJson.setString("language", settings.language)
             settingsJson.setString("tabThemeMode", ThemeMode.serialize settings.appearance.mode)
             settingsJson.setBool("tabUseCustomColors", settings.appearance.useCustomColors)
             settingsJson.setObject("tabLightColors",AppearanceJson.writePalette settings.appearance.lightPalette)
@@ -182,7 +185,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
         // Compatibility adapter for older callers; new appearance code uses the typed API.
         member x.setValue((key,value)) =
             let api = x :> ISettings
-            let value = if key="alignment" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
+            let value = if key="alignment" || key="language" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
             match key with
             | "tabAppearance" ->
                 let appearance = value :?> TabAppearanceInfo

@@ -76,6 +76,13 @@ let main() =
     let gap = AppearanceJson.readGeometry (JObject.Parse("""{"tabOverlap":-30}""")) Theme.defaultGeometry
     check (gap.overlap= -30 && (AppearanceJson.normalizeGeometry {gap with overlap= -500}).overlap= -100) "Tab gap lost its stored sign or bounds"
     check (SettingsCatalog.normalizeChoice "alignment" "invalid"="Center") "Invalid choice was not normalized"
+    check (SettingsCatalog.normalizeChoice "language" "fr"="system") "Unknown language was not normalized"
+    for code,expected in ["en","Close";"zh","关闭";"ja","閉じる"] do
+        Localization.setPreference code
+        check (Localization.text3 "Close" "关闭" "閉じる"=expected) ("Language override ignored: "+code)
+    Localization.setPreference "ja"
+    check (Localization.text "Close" "关闭"="Close") "Japanese without a translation must fall back to English"
+    Localization.setPreference "system"
 
     let queue = ConcurrentQueue<unit -> unit>()
     let dispatcher = {new IDispatcher with

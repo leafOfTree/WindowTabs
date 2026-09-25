@@ -115,7 +115,7 @@ type ColorEditor() as this =
             with ex -> 
                 e.Cancel <- true
                 tb.SelectAll()
-                MessageBox.Show("Invalid color value, must be a six digit hexadecimal number.").ignore
+                MessageBox.Show(Localization.text "Invalid colour. Enter six hexadecimal digits." "颜色无效，请输入六位十六进制数。").ignore
 
         tb.Validated.Add <| fun e -> save()
         tb
@@ -167,8 +167,6 @@ type SmoothNodeTextBox() =
 
 
 module UIHelper =
-    open System.Resources
-    open System.Reflection
 
     let label text =
         let label = Label()
@@ -177,7 +175,6 @@ module UIHelper =
         label.TextAlign <- ContentAlignment.MiddleLeft
         label
         
-    let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
     
 
     let form (fields:List2<_>) =
@@ -194,8 +191,7 @@ module UIHelper =
             t
 
         fields.enumerate.iter <| fun (i,(text, control:Control)) ->
-            let caption = resources.GetString text
-            let label = label caption
+            let label = label text
             control.Dock <- DockStyle.Fill
             label.Margin <- Padding(0,5,0,5)
             panel.Controls.Add(label)
@@ -241,12 +237,12 @@ module UIHelper =
         form.Padding <- Padding(12)
         
         let okButton = Button()
-        okButton.Text <- "OK"
+        okButton.Text <- Localization.text3 "OK" "确定" "OK"
         okButton.Click.Add <| fun _ ->
             form.DialogResult <- DialogResult.OK
 
         let cancelButton = Button()
-        cancelButton.Text <- "Cancel"
+        cancelButton.Text <- Localization.text3 "Cancel" "取消" "キャンセル"
         
         cancelButton.Click.Add <| fun _ ->
             form.DialogResult <- DialogResult.Cancel

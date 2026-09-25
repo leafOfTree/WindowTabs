@@ -65,6 +65,10 @@ let main() =
         check settings.settings.appearance.useCustomColors "Legacy custom colours lost"
         for appearance in [settings.settings.appearance.lightPalette;settings.settings.appearance.darkPalette] do
             check (appearance.tabActiveBgColor.ToArgb()=Color.FromArgb(0x12,0x34,0x56).ToArgb()) "Legacy palette overwritten"
+        api.setValue("language",box "zh")
+        check (string api.root.["language"]="zh" && api.getValue("language")=box "zh") "Language setting not saved"
+        api.setValue("language",box "fr")
+        check (api.getValue("language")=box "system") "Invalid language not normalized"
         api.setValue("tabThemeMode",box "dark")
         api.setValue("tabDarkColors",box custom)
         check (ThemeService.currentAppearance().tabActiveBgColor.ToArgb()=Color.Purple.ToArgb()) "Custom dark not applied"

@@ -35,6 +35,8 @@ type SettingsRec = {
     autoHide: bool
     enableShiftScroll: bool
     alignment: string
+    /// "system", "en", "zh" or "ja".
+    language: string
     }
 
 type ISettings =

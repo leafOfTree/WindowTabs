@@ -6,8 +6,6 @@ open System.Windows.Forms
 open Bemo.Win32.Forms
 open Aga.Controls
 open Aga.Controls.Tree
-open System.Resources
-open System.Reflection
 
 module ImgHelper =
     let imgFromIcon (icon:Icon) =
@@ -57,15 +55,14 @@ type WindowNode(window:Window) =
         member x.showSettings = false
 
 type ProgramView() as this=
-    let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
-    let font = Font(resources.GetString("Font"), 10f)
+    let font = Font("Segoe UI", 10f)
 
     let invoker = InvokerService.invoker
     let toolBar = 
         let ts = ToolStrip()
         ts.GripStyle  <- ToolStripGripStyle.Hidden
         let refreshBtn = 
-            let btn = ToolStripButton(resources.GetString("Refresh"))
+            let btn = ToolStripButton(Localization.text3 "Refresh" "刷新" "更新")
             btn.Click.Add <| fun _ -> this.populateNodes()
             btn
         ts.Items.Add(refreshBtn).ignore
@@ -73,22 +70,21 @@ type ProgramView() as this=
         ts
     let statusBar = 
         let sb = StatusBar()
-        sb.Text <- "Ready"
+        sb.Text <- Localization.text3 "Ready" "就绪" "準備完了"
         sb.Font <- font
         sb
     let tree,model = 
         let tree = TreeViewAdv()
         let model = TreeModel()
-        let nameColumn = TreeColumn(resources.GetString("Name"), 200)
+        let nameColumn = TreeColumn(Localization.text3 "Name" "名称" "名称", 200)
         tree.UseColumns <- true
         tree.Columns.Add(nameColumn)
         tree.RowHeight <- 24
         tree.Font <- font
         tree.BorderStyle <- BorderStyle.None
         let addCheckBoxColumn colText propName =
-            let content = resources.GetString(propName)
             let parentColumn =
-                let col = TreeColumn(content, 120)
+                let col = TreeColumn(colText, 120)
                 col.TextAlign <- HorizontalAlignment.Center
                 col
             tree.Columns.Add(parentColumn)
@@ -102,8 +98,8 @@ type ProgramView() as this=
                 control.EditEnabled <- true
                 control.DataPropertyName <- propName
                 control)
-        addCheckBoxColumn "Tabs" "enableTabs"
-        addCheckBoxColumn "Auto Grouping" "enableAutoGrouping"
+        addCheckBoxColumn (Localization.text3 "Tabs" "标签" "タブ") "enableTabs"
+        addCheckBoxColumn (Localization.text3 "Auto grouping" "自动分组" "自動グループ化") "enableAutoGrouping"
         tree.NodeControls.Add(
             let control = NodeControls.NodeIcon()
             control.ParentColumn <- nameColumn
@@ -184,5 +180,5 @@ type ProgramView() as this=
 
     interface ISettingsView with
         member x.key = SettingsViewType.ProgramSettings
-        member x.title = resources.GetString "Programs"
+        member x.title = Localization.text3 "Programs" "程序" "プログラム"
         member x.control = panel :> Control

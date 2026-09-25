@@ -44,6 +44,7 @@ type Program(lifetime:LifetimeScope) as this =
     let windowNameOverride = Cell.create(Map2())
    
     let isFirstRun = settingsManager.fileExists.not
+    do Localization.setPreference settingsManager.settings.language
 
     // The old default tab overlap. Tabs used to be bezier trapezoids, drawn to
     // slide under one another; the rounded rectangles that replaced them cannot
@@ -88,8 +89,10 @@ type Program(lifetime:LifetimeScope) as this =
         this.updateTaskSwitcher(Services.settings.getValue("replaceAltTab"))
         let startupSubscription = Services.settings.notifyValue "runAtStartup" this.updateRunAtStartup
         let switcherSubscription = Services.settings.notifyValue "replaceAltTab" this.updateTaskSwitcher
+        let languageSubscription = Services.settings.notifyValue "language" (fun value -> Localization.setPreference (unbox value))
         lifetime.Own(startupSubscription) |> ignore
         lifetime.Own(switcherSubscription) |> ignore
+        lifetime.Own(languageSubscription) |> ignore
         Services.desktop.groupExited.Add <| fun _ -> invoker.asyncInvoke(fun() -> refreshQueue.RequestAll())
         Services.desktop.groupRemoved.Add <| fun _ -> invoker.asyncInvoke(fun() -> refreshQueue.RequestAll())
     
@@ -253,7 +256,9 @@ type Program(lifetime:LifetimeScope) as this =
             let shortcut = this.cast<IProgram>().getHotKey(key)
             let shortcut = HotKeyShortcut(HotKeyControlCode=int16(shortcut))
             if not (hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags, shortcut.RegisterHotKeyVirtualKeyCode) f) then
-                MessageBox.Show("The shortcut for " + key + " is unavailable. Choose another shortcut in Settings.", "Shortcut unavailable", MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
+                let name = SettingsCatalog.title (if key="nextTab" then "next-tab" else "previous-tab")
+                MessageBox.Show(Localization.text (sprintf "The shortcut for %s is unavailable. Choose another shortcut in Settings." name) (sprintf "“%s”的快捷键已被占用，请在设置中另选一个。" name),
+                                Localization.text "Shortcut unavailable" "快捷键不可用", MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
 
    
     member this.hwndZorders() : Map2<IntPtr, int>= Map2(os.windowsInZorder.enumerate.map(fun(i,w) -> w.hwnd,i))
@@ -368,7 +373,7 @@ module Bootstrap =
         try
             use instance = new SingleInstance("BemoSoftware.WindowTabs")
             if not(instance.TryAcquire()) then
-                MessageBox.Show("WindowTabs is already running.","WindowTabs") |> ignore
+                MessageBox.Show(Localization.text "WindowTabs is already running." "WindowTabs 已在运行。","WindowTabs") |> ignore
                 0
             else
                 Application.EnableVisualStyles()
@@ -380,5 +385,5 @@ module Bootstrap =
                 0
         with error ->
             logger.log "Startup/runtime" error
-            MessageBox.Show(error.Message,"WindowTabs could not continue",MessageBoxButtons.OK,MessageBoxIcon.Error) |> ignore
+            MessageBox.Show(error.Message,Localization.text "WindowTabs could not continue" "WindowTabs 无法继续运行",MessageBoxButtons.OK,MessageBoxIcon.Error) |> ignore
             1

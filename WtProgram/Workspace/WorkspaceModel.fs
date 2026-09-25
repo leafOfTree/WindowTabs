@@ -71,9 +71,9 @@ type WorkspaceWindow() as this =
                 member x.title = this.name
                 member x.fields = 
                     List2([
-                        ("Name", nameEditor.control)
-                        ("Title", titleEditor.control)
-                        ("Match Type", matchTypeEditor.cast<IPropEditor>().control)
+                        (Localization.text3 "Name" "名称" "名称", nameEditor.control)
+                        (Localization.text3 "Title" "标题" "タイトル", titleEditor.control)
+                        (Localization.text3 "Match type" "匹配方式" "一致区分", matchTypeEditor.cast<IPropEditor>().control)
                     ])
                 member x.height  = 250
                 member x.ok() = 
@@ -130,7 +130,7 @@ and
             nameEditor.value <- this?name
             { new IEditInfo with
                 member x.title = this?name
-                member x.fields = List2([("Name", nameEditor.control)])
+                member x.fields = List2([(Localization.text3 "Name" "名称" "名称", nameEditor.control)])
                 member x.height  = 200
                 member x.ok() = this?name <- nameEditor.value.cast<string>()
             }
@@ -182,7 +182,7 @@ and
             nameEditor.value <- this?name
             { new IEditInfo with
                 member x.title = this?name
-                member x.fields = List2([("Name", nameEditor.control)])
+                member x.fields = List2([(Localization.text3 "Name" "名称" "名称", nameEditor.control)])
                 member x.height  = 200
                 member x.ok() = this?name <- nameEditor.value.cast<string>()
             }
@@ -316,9 +316,10 @@ type WorkspaceModel() as this =
                             else missing <- missing+1
                         with ex -> errors.Add(ex.Message))
                     try os.setZorder(resolved) with ex -> errors.Add(ex.Message)))
-        MessageBox.Show(sprintf "Restored: %d\nNot found: %d\nErrors: %d%s" restored missing errors.Count
-                            (if errors.Count=0 then "" else "\n\n"+String.concat "\n" (errors |> Seq.truncate 5)),
-                        "Workspace restore",MessageBoxButtons.OK,(if errors.Count=0 then MessageBoxIcon.Information else MessageBoxIcon.Warning)) |> ignore
+        let details = if errors.Count=0 then "" else "\n\n"+String.concat "\n" (errors |> Seq.truncate 5)
+        MessageBox.Show(Localization.text (sprintf "Restored: %d\nNot found: %d\nErrors: %d%s" restored missing errors.Count details)
+                                          (sprintf "已恢复：%d\n未找到：%d\n错误：%d%s" restored missing errors.Count details),
+                        Localization.text "Workspace restore" "恢复工作区",MessageBoxButtons.OK,(if errors.Count=0 then MessageBoxIcon.Information else MessageBoxIcon.Warning)) |> ignore
 
     member this.addWorkspace(ws:Workspace) =
         ws.cast<IWorkspaceNode>().removed.Add <| fun() -> this.onWorkspaceRemoved(ws)
@@ -362,7 +363,7 @@ type WorkspaceModel() as this =
                 try
                     editInfo?ok()
                     this.saveSettings()
-                with ex -> MessageBox.Show(ex.Message,"Invalid workspace setting",MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore
+                with ex -> MessageBox.Show(ex.Message,Localization.text "Invalid workspace setting" "工作区设置无效",MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore
             ok
         else
             false

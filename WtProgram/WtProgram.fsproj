@@ -49,6 +49,7 @@
     <Compile Include="Shared\Win32.fs" />
     <Compile Include="Shared\AppearanceModel.fs" />
     <Compile Include="Shared\ProgramTypes.fs" />
+    <Compile Include="Shared\Localization.fs" />
     <Compile Include="Shared\SettingsCatalog.fs" />
     <Compile Include="Shared\DragDrop.fs" />
     <Compile Include="Shared\Serialize.fs" />
@@ -108,11 +109,7 @@
 
   <ItemGroup>
     <!-- Loaded by file name (GetManifestResourceStream "Bemo.ico"), so keep the bare names. -->
-    <EmbeddedResource Include="Resources\*.ico;Resources\*.png" LogicalName="%(Filename)%(Extension)" />
-    <!-- Legacy F# projects ignored RootNamespace; the code loads ResourceManager("Properties.Resources"). -->
-    <EmbeddedResource Update="Properties\Resources.resx" LogicalName="Properties.Resources.resources" />
-    <EmbeddedResource Update="Properties\Resources.ja-JP.resx" LogicalName="Properties.Resources.ja-JP.resources" />
-  </ItemGroup>
+    <EmbeddedResource Include="Resources\*.ico;Resources\*.png" LogicalName="%(Filename)%(Extension)" />  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Update="FSharp.Core" Version="10.1.401" />

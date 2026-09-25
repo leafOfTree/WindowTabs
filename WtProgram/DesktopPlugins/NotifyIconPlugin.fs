@@ -1,13 +1,12 @@
 namespace Bemo
 open System
 open System.Windows.Forms
-open System.Reflection
-open System.Resources
 open Microsoft.Win32
 
 type NotifyIconPlugin() as this =
     let Cell = CellScope()
     let mutable disposed = false
+    let mutable languageSubscription : IDisposable option = None
     // Captured on the UI thread, so the theme change notification - which
     // arrives on its own thread - can be marshalled back.
     let invoker = InvokerService.invoker
@@ -18,8 +17,6 @@ type NotifyIconPlugin() as this =
             | UserPreferenceCategory.VisualStyle -> invoker.asyncInvoke(fun () -> if not disposed then this.refreshIcon())
             | _ -> ())
     
-    let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
-
     // The tray icon sits on the taskbar, whose colour follows
     // SystemUsesLightTheme, not the per-app setting. The shipped artwork is two
     // panes with white outlines and a near-white front, which reads on a dark
@@ -42,7 +39,7 @@ type NotifyIconPlugin() as this =
     member this.icon = Cell.cacheProp this <| fun() ->
         let notifyIcon = new NotifyIcon()
         notifyIcon.Visible <- true
-        notifyIcon.Text <- "WindowTabs (version " + Services.program.version + ")"
+        notifyIcon.Text <- "WindowTabs " + Services.program.version
         notifyIcon.Icon <- iconForTaskbar()
         notifyIcon.ContextMenu <- new ContextMenu()
         notifyIcon.MouseClick.Add <| fun e ->
@@ -66,16 +63,23 @@ type NotifyIconPlugin() as this =
     member this.addItem(text, handler) =
         this.contextMenuItems.Add(text, EventHandler(fun obj (e:EventArgs) -> handler())) |> ignore
 
+    member private this.buildMenu() =
+        this.contextMenuItems.Clear()
+        this.addItem(Localization.text3 "Settings..." "设置..." "設定", fun() -> Services.managerView.show())
+        this.contextMenuItems.Add("-").ignore
+        this.addItem(Localization.text3 "Close WindowTabs" "退出 WindowTabs" "終了", fun() -> Services.program.shutdown())
+
     interface IPlugin with
         member this.init() =
-            this.addItem(resources.GetString("Settings"), fun() -> Services.managerView.show())
-            this.contextMenuItems.Add("-").ignore
-            this.addItem(resources.GetString("CloseWindowTabs"), fun() -> Services.program.shutdown())
+            this.buildMenu()
+            languageSubscription <- Some(Services.settings.notifyValue "language" (fun _ ->
+                invoker.asyncInvoke(fun () -> if not disposed then this.buildMenu())))
 
     interface IDisposable with
         member this.Dispose() =
             if not disposed then
                 disposed <- true
+                languageSubscription |> Option.iter (fun subscription -> subscription.Dispose())
                 SystemEvents.UserPreferenceChanged.RemoveHandler(themeHandler)
                 let icon = this.icon.Icon
                 this.icon.Dispose()

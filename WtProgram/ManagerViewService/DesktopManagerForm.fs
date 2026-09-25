@@ -280,3 +280,4 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         form.Show()
         form.Activate()
     member _.window = form
+    member _.activeView = activePage

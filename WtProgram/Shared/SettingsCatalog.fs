@@ -18,10 +18,10 @@ type SettingDefinition = {
     binding:SettingBinding }
 
 module SettingsCatalog =
-    let localize (en,zh) =
-        if Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName="zh" then zh else en
+    let localize (en,zh) = Localization.text en zh
     let all = [
         { id="theme"; page=AppearanceSettings; caption=("Theme","主题"); description=("Choose system, light, or dark mode.","选择跟随系统、浅色或深色模式。"); keywords="theme system light dark 系统 浅色 深色"; binding=Choice("tabThemeMode",["system";"light";"dark"],"system") }
+        { id="language"; page=GeneralSettings; caption=("Language","语言"); description=("Follow Windows or choose a language. Settings has English and Chinese; Japanese covers menus and lists.","跟随 Windows 或指定语言。设置窗口提供英文和中文；日语覆盖菜单和列表。"); keywords="language locale english chinese japanese 语言 中文 英文 日语 日本語"; binding=Choice("language",["system";"en";"zh";"ja"],"system") }
         { id="launch-at-sign-in"; page=GeneralSettings; caption=("Launch at sign-in","登录时启动"); description=("Keep WindowTabs available when Windows starts.","登录 Windows 后自动运行 WindowTabs。"); keywords="launch-at-sign-in startup autostart 开机 自启动"; binding=Toggle("runAtStartup",true,false) }
         { id="enable-tabs-for-new-apps"; page=GeneralSettings; caption=("Enable tabs for new apps","为新应用启用标签"); description=("Individual overrides are available in App rules.","可在“应用规则”中单独调整每个应用。"); keywords="enable-tabs-for-new-apps"; binding=Toggle("enableTabbingByDefault",true,false) }
         { id="dim-inactive-groups"; page=GeneralSettings; caption=("Dim inactive groups","淡化非活动分组"); description=("Reduce the opacity of tabs outside the active group.","降低非活动分组标签的透明度。"); keywords="dim-inactive-groups"; binding=Toggle("hideInactiveTabs",true,false) }

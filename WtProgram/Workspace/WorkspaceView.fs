@@ -9,8 +9,6 @@ open Newtonsoft.Json
 open Newtonsoft.Json.Linq
 open Aga.Controls
 open Aga.Controls.Tree
-open System.Resources
-open System.Reflection
 
 [<AllowNullLiteral>]
 type WorkspaceNode(model:Dynamic) as this =
@@ -38,8 +36,7 @@ type WorkspaceNode(model:Dynamic) as this =
 type WorkspaceView() as this =
     let Cell = CellScope()
     
-    let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
-    let font = Font(resources.GetString("Font"), 10f)
+    let font = Font("Segoe UI", 10f)
 
     member this.wm = Cell.cacheProp this <| fun() ->
         let wm = WorkspaceModel()
@@ -48,13 +45,13 @@ type WorkspaceView() as this =
         wm
 
     member this.nameColumn = Cell.cacheProp this <| fun() ->
-        TreeColumn(resources.GetString("Name"), 200)
+        TreeColumn(Localization.text3 "Name" "名称" "名称", 200)
 
     member this.matchTypeColumn = Cell.cacheProp this <| fun() ->
-        TreeColumn(resources.GetString("MatchType"), 100)
+        TreeColumn(Localization.text3 "Match type" "匹配方式" "一致区分", 100)
 
     member this.titleColumn = Cell.cacheProp this <| fun() ->
-        TreeColumn(resources.GetString("Title"), 350)
+        TreeColumn(Localization.text3 "Title" "标题" "タイトル", 350)
         
     member this.model = Cell.cacheProp this <| fun() -> 
         let model = TreeModel()
@@ -120,14 +117,14 @@ type WorkspaceView() as this =
         tree
 
     member this.newButton : ToolStripButton = Cell.cacheProp this <| fun() ->
-        let btn = ToolStripButton(resources.GetString("New"))
+        let btn = ToolStripButton(Localization.text3 "New" "新建" "新規")
         btn.Enabled <- not this.wm.isReadOnly
         btn.Image <- Services.openImage("add.png")
         btn.Click.Add <| fun _ -> this.onNewButton()
         btn
 
     member this.restoreButton : ToolStripButton = Cell.cacheProp this <| fun() ->
-        let btn = ToolStripButton(resources.GetString("Restore"))
+        let btn = ToolStripButton(Localization.text3 "Restore" "恢复" "元に戻す")
         btn.Image <- Services.openImage("restore.png")
         btn.Click.Add <| fun _ -> this.onRestoreButton()
         this.wm.canRestoreChanged.Add <| fun(canRestore) -> 
@@ -135,14 +132,14 @@ type WorkspaceView() as this =
         btn
 
     member this.removeButton : ToolStripButton = Cell.cacheProp this <| fun() ->
-        let btn = ToolStripButton(resources.GetString("Remove"))
+        let btn = ToolStripButton(Localization.text3 "Remove" "删除" "削除")
         btn.Enabled <- not this.wm.isReadOnly
         btn.Image <- Services.openImage("delete.png")
         btn.Click.Add <| fun _ -> this.onRemoveButton()
         btn
 
     member this.editButton : ToolStripButton = Cell.cacheProp this <| fun() ->
-        let btn = ToolStripButton(resources.GetString("Edit"))
+        let btn = ToolStripButton(Localization.text3 "Edit" "编辑" "編集")
         btn.Enabled <- not this.wm.isReadOnly
         btn.Image <- Services.openImage("edit.png")
         btn.Click.Add <| fun _ -> this.onEditButton()
@@ -198,5 +195,5 @@ type WorkspaceView() as this =
 
     interface ISettingsView with
         member x.key = SettingsViewType.LayoutSettings
-        member x.title = resources.GetString("Workspace")
+        member x.title = Localization.text3 "Workspace" "工作区" "ワークスペース"
         member x.control = this.panel :> Control
