@@ -73,6 +73,8 @@ let main() =
     check (report.["settings"].["workspaceCount"].Value<int>()=1) "Diagnostic summary missing workspace count"
     let geometry = AppearanceJson.readGeometry (JObject.Parse("""{"tabHeight":-20,"tabMaxWidth":999999,"tabOverlap":30}""")) Theme.defaultGeometry
     check (geometry.height=12 && geometry.maxWidth=1000 && geometry.overlap=0) "Invalid persisted dimensions bypassed shared bounds"
+    let gap = AppearanceJson.readGeometry (JObject.Parse("""{"tabOverlap":-30}""")) Theme.defaultGeometry
+    check (gap.overlap= -30 && (AppearanceJson.normalizeGeometry {gap with overlap= -500}).overlap= -100) "Tab gap lost its stored sign or bounds"
     check (SettingsCatalog.normalizeChoice "alignment" "invalid"="Center") "Invalid choice was not normalized"
 
     let queue = ConcurrentQueue<unit -> unit>()

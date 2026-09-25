@@ -5,13 +5,16 @@ open System.Drawing
 /// This record deliberately contains no palette fields.
 type TabGeometry = {
     height:int; maxWidth:int; overlap:int; heightOffset:int
-    indentNormal:int; indentFlipped:int }
+    indentNormal:int }
 
 module TabGeometry =
+    /// Tabs drawn inside the window sit over its title bar; this extra margin keeps
+    /// them clear of the caption buttons. One side margin setting covers both cases.
+    let captionButtonsReserve = 77
     let fromAppearance (appearance:TabAppearanceInfo) = {
         height=appearance.tabHeight; maxWidth=appearance.tabMaxWidth
         overlap=appearance.tabOverlap; heightOffset=appearance.tabHeightOffset
-        indentNormal=appearance.tabIndentNormal; indentFlipped=appearance.tabIndentFlipped }
+        indentNormal=appearance.tabIndentNormal }
 type TabPalette = {
     tabTextColor:Color; tabNormalBgColor:Color; tabHighlightBgColor:Color
     tabActiveBgColor:Color; tabBorderColor:Color; tabFlashBgColor:Color }
@@ -23,7 +26,8 @@ module TabPalette =
         tabBorderColor=a.tabBorderColor; tabFlashBgColor=a.tabFlashBgColor }
     let compose (g:TabGeometry) (p:TabPalette) : TabAppearanceInfo = {
         tabHeight=g.height; tabMaxWidth=g.maxWidth; tabOverlap=g.overlap
-        tabHeightOffset=g.heightOffset; tabIndentNormal=g.indentNormal; tabIndentFlipped=g.indentFlipped
+        tabHeightOffset=g.heightOffset; tabIndentNormal=g.indentNormal
+        tabIndentFlipped=g.indentNormal+TabGeometry.captionButtonsReserve
         tabTextColor=p.tabTextColor; tabNormalBgColor=p.tabNormalBgColor
         tabHighlightBgColor=p.tabHighlightBgColor; tabActiveBgColor=p.tabActiveBgColor
         tabBorderColor=p.tabBorderColor; tabFlashBgColor=p.tabFlashBgColor }
@@ -38,5 +42,8 @@ type AppearancePreferences = {
     legacyPalette:TabPalette
     lightPalette:TabPalette
     darkPalette:TabPalette
+    /// The user's own palettes, kept apart so picking a preset never overwrites them.
+    lightCustomPalette:TabPalette
+    darkCustomPalette:TabPalette
     mode:ThemeMode
     useCustomColors:bool }

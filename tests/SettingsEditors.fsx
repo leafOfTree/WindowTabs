@@ -31,6 +31,7 @@ let visiblePopup() =
 let mutable preferences = {
     geometry=Theme.defaultGeometry;legacyPalette=Theme.lightPalette
     lightPalette=Theme.lightPalette;darkPalette=Theme.darkPalette
+    lightCustomPalette=Theme.lightPalette;darkCustomPalette=Theme.darkPalette
     mode=DarkTheme;useCustomColors=true }
 let settings = { new ISettings with
     member _.appearance = preferences
@@ -133,8 +134,23 @@ let main() =
         Application.DoEvents()
         assertTrue ((if mode=DarkTheme then preferences.darkPalette else preferences.lightPalette)=(if mode=DarkTheme then Theme.darkPalette else Theme.lightPalette)) "Palette reset"
         assertTrue (preset.SelectedIndex=0) "Reset selects Default preset"
+        let active() = if mode=DarkTheme then preferences.darkPalette else preferences.lightPalette
+        let custom = if mode=DarkTheme then preferences.darkCustomPalette else preferences.lightCustomPalette
+        assertTrue (custom.tabTextColor.B>240uy && custom.tabTextColor.R=0uy) "Custom palette survives reset"
+        preset.SelectedIndex <- 1
+        Application.DoEvents()
+        preset.SelectedIndex <- ThemePresets.names.Length
+        Application.DoEvents()
+        assertTrue (active()=custom && preset.SelectedIndex=ThemePresets.names.Length) "Custom restored after switching presets"
+        (findReset view.control).Value.PerformClick()
+        Application.DoEvents()
         let resetButton = (findReset view.control).Value
         assertTrue (resetButton.Left>resetButton.Parent.Width/2) "Reset is aligned right"
+        let gap = view.control.Controls.Find("tabOverlap",true).[0] :?> SettingsNumberInput
+        gap.Value <- 6M
+        Application.DoEvents()
+        assertTrue (preferences.geometry.overlap= -6 && gap.Minimum=0M) "Tab gap is shown positive and stored negative"
+        preferences <- {preferences with geometry=Theme.defaultGeometry}
         use bitmap = new Bitmap(form.ClientSize.Width,form.ClientSize.Height)
         form.DrawToBitmap(bitmap,Rectangle(Point.Empty,bitmap.Size))
         bitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","editors-"+name+".png"))

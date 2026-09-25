@@ -117,7 +117,9 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                             mode = settingsJson.getString("tabThemeMode").def("system") |> ThemeMode.parse
                             useCustomColors = custom
                             lightPalette = lightColors
-                            darkPalette = darkColors }
+                            darkPalette = darkColors
+                            lightCustomPalette = AppearanceJson.readPalette (settingsJson.getObject("tabLightCustomColors").def(JObject())) lightColors
+                            darkCustomPalette = AppearanceJson.readPalette (settingsJson.getObject("tabDarkCustomColors").def(JObject())) darkColors }
                     }
                     cachedSettingsRec <- Some(settings)
                 with ex ->
@@ -136,6 +138,8 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setBool("tabUseCustomColors", settings.appearance.useCustomColors)
             settingsJson.setObject("tabLightColors",AppearanceJson.writePalette settings.appearance.lightPalette)
             settingsJson.setObject("tabDarkColors",AppearanceJson.writePalette settings.appearance.darkPalette)
+            settingsJson.setObject("tabLightCustomColors",AppearanceJson.writePalette settings.appearance.lightCustomPalette)
+            settingsJson.setObject("tabDarkCustomColors",AppearanceJson.writePalette settings.appearance.darkCustomPalette)
             settings.ticket.iter <| fun ticket -> settingsJson.setString("ticket", ticket)
             settingsJson.setBool("runAtStartup", settings.runAtStartup)
             settingsJson.setBool("hideInactiveTabs", settings.hideInactiveTabs)

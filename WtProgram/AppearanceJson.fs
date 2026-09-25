@@ -17,8 +17,7 @@ module AppearanceJson =
         "tabMaxWidth",(fun g -> g.maxWidth),(fun v g -> {g with maxWidth=v})
         "tabOverlap",(fun g -> g.overlap),(fun v g -> {g with overlap=v})
         "tabHeightOffset",(fun g -> g.heightOffset),(fun v g -> {g with heightOffset=v})
-        "tabIndentNormal",(fun g -> g.indentNormal),(fun v g -> {g with indentNormal=v})
-        "tabIndentFlipped",(fun g -> g.indentFlipped),(fun v g -> {g with indentFlipped=v}) ]
+        "tabIndentNormal",(fun g -> g.indentNormal),(fun v g -> {g with indentNormal=v}) ]
     let readPalette (json:JObject) fallback =
         paletteFields |> List.fold(fun palette (key,_,set) ->
             try
@@ -26,23 +25,30 @@ module AppearanceJson =
                 | :? JValue as value -> set (Color.FromRGB(Int32.Parse(string value.Value,Globalization.NumberStyles.HexNumber))) palette
                 | _ -> palette
             with _ -> palette) fallback
+    /// Stored as the legacy negative overlap; the settings page shows it as a positive gap.
+    let normalizeOverlap overlap =
+        let low,high = SettingsCatalog.range "tabOverlap"
+        max -high (min -low overlap)
     let readGeometry (json:JObject) fallback =
         geometryFields |> List.fold(fun geometry (key,_,set) ->
             try
                 match json.[key] with
                 | :? JValue as value when value.Type=JTokenType.Integer ->
                     let number = Convert.ToInt32(value.Value)
-                    let normalized = if key="tabHeightOffset" then max -120 (min 120 number) else SettingsCatalog.normalizeNumber key number
+                    let normalized =
+                        match key with
+                        | "tabHeightOffset" -> max -120 (min 120 number)
+                        | "tabOverlap" -> normalizeOverlap number
+                        | _ -> SettingsCatalog.normalizeNumber key number
                     set normalized geometry
                 | _ -> geometry
             with _ -> geometry) fallback
     let normalizeGeometry (geometry:TabGeometry) =
         { height=SettingsCatalog.normalizeNumber "tabHeight" geometry.height
           maxWidth=SettingsCatalog.normalizeNumber "tabMaxWidth" geometry.maxWidth
-          overlap=SettingsCatalog.normalizeNumber "tabOverlap" geometry.overlap
+          overlap=normalizeOverlap geometry.overlap
           heightOffset=max -120 (min 120 geometry.heightOffset)
-          indentNormal=SettingsCatalog.normalizeNumber "tabIndentNormal" geometry.indentNormal
-          indentFlipped=SettingsCatalog.normalizeNumber "tabIndentFlipped" geometry.indentFlipped }
+          indentNormal=SettingsCatalog.normalizeNumber "tabIndentNormal" geometry.indentNormal }
     let writePalette palette =
         let json = JObject()
         for key,get,_ in paletteFields do json.setString(key,sprintf "%X" ((get palette).ToRGB()))

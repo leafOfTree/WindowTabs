@@ -43,9 +43,8 @@ module SettingsCatalog =
         { id="tabFlashBgColor"; page=AppearanceSettings; caption=("Attention","提醒颜色"); description=("",""); keywords="tabFlashBgColor"; binding=Colour }
         { id="tabHeight"; page=AppearanceSettings; caption=("Tab height","标签高度"); description=("",""); keywords="tabHeight"; binding=Number(12,120) }
         { id="tabMaxWidth"; page=AppearanceSettings; caption=("Maximum width","标签最大宽度"); description=("",""); keywords="tabMaxWidth"; binding=Number(60,1000) }
-        { id="tabOverlap"; page=AppearanceSettings; caption=("Tab overlap / gap","标签重叠／间距"); description=("",""); keywords="tabOverlap"; binding=Number(-100,0) }
-        { id="tabIndentNormal"; page=AppearanceSettings; caption=("Window inset","普通窗口缩进"); description=("",""); keywords="tabIndentNormal"; binding=Number(0,1000) }
-        { id="tabIndentFlipped"; page=AppearanceSettings; caption=("Maximized inset","最大化窗口缩进"); description=("",""); keywords="tabIndentFlipped"; binding=Number(0,1000) }
+        { id="tabOverlap"; page=AppearanceSettings; caption=("Tab spacing","标签间距"); description=("Space between neighbouring tabs.","相邻标签之间的空隙。"); keywords="tabOverlap gap spacing 间距 间隔"; binding=Number(0,100) }
+        { id="tabIndentNormal"; page=AppearanceSettings; caption=("Side margin","两侧边距"); description=("Space between the tabs and the left and right window edges. With centred tabs it only shows once the tabs fill the row.","标签与窗口左右边缘之间的距离。居中对齐时，要等标签占满一整行才看得出来。"); keywords="tabIndentNormal tabIndentFlipped inset margin indent maximized 边距 缩进 最大化"; binding=Number(0,1000) }
         { id="app-rules"; page=ProgramSettings; caption=("App rules","应用规则"); description=("Choose apps for tabs and automatic grouping.","选择启用标签和自动分组的应用。"); keywords="process application exe 程序 进程"; binding=Navigation }
         { id="workspaces"; page=LayoutSettings; caption=("Workspaces","工作区"); description=("Save and restore window layouts.","保存和恢复窗口布局。"); keywords="workspace layout 工作区 布局"; binding=Navigation }
         { id="diagnostics"; page=DiagnosticsSettings; caption=("About & diagnostics","关于与诊断"); description=("Version and troubleshooting information.","版本与故障排查信息。"); keywords="version diagnostic log 版本 日志 诊断"; binding=Navigation }
