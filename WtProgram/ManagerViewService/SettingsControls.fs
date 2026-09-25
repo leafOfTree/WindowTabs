@@ -220,10 +220,37 @@ type SettingsThemeTile(mode:string) as this =
             TextRenderer.DrawText(e.Graphics,this.Text,this.Font,label,(if this.Checked && this.Enabled then p.text else p.muted),
                 TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter)
             if this.Focused && this.ShowFocusCues then ControlPaint.DrawFocusRectangle(e.Graphics,label,p.text,this.BackColor)
+/// Paint the entire list in one buffered pass. Native owner-draw selection messages
+/// otherwise paint rows directly to the screen between background erases.
+type SettingsChoiceList() as this =
+    inherit ListBox()
+    do
+        this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.AllPaintingInWmPaint |||
+                      ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.ResizeRedraw,true)
+    override this.OnPaint(e) =
+        e.Graphics.Clear(this.BackColor)
+        if this.Items.Count>0 then
+            let first = max 0 this.TopIndex
+            let last = min (this.Items.Count-1) (first+this.ClientSize.Height/max 1 this.ItemHeight)
+            for index in first..last do
+                let bounds = this.GetItemRectangle(index)
+                if e.ClipRectangle.IntersectsWith(bounds) then
+                    let state = if index=this.SelectedIndex then DrawItemState.Selected else DrawItemState.None
+                    this.OnDrawItem(new DrawItemEventArgs(e.Graphics,this.Font,bounds,index,state,this.ForeColor,this.BackColor))
+    override this.WndProc(message:byref<Message>) =
+        if message.Msg=0x202B then // OCM_DRAWITEM: defer native row paints to WM_PAINT.
+            this.Invalidate()
+            message.Result <- IntPtr(1)
+        else
+            base.WndProc(&message)
+            if message.Msg=0x115 || message.Msg=0x20A then this.Invalidate()
+
 /// A menu-style popup keeps the settings window active when dismissed outside.
 type SettingsChoicePopup() as this =
     inherit ToolStripDropDown()
     do
+        this.DoubleBuffered <- true
+        this.BackColor <- (SettingsColors.current()).hover
         this.AutoClose <- true
         this.AutoSize <- false
         this.Padding <- Padding(Dpi.scale 6)
@@ -272,6 +299,18 @@ type SettingsCombo(items:string[]) as this =
     let mutable hovering = false
     let mutable popup : SettingsChoicePopup option = None
     let mutable suppressNextClick = false
+    let mutable itemColors : Color array = [||]
+    let drawDot (graphics:Graphics) (bounds:Rectangle) index =
+        if index>=0 && index<itemColors.Length then
+            let size = Dpi.scale 12
+            let circle = Rectangle(bounds.Left+Dpi.scale 12,bounds.Top+(bounds.Height-size)/2,size,size)
+            graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+            use brush = new SolidBrush(itemColors.[index])
+            graphics.FillEllipse(brush,circle)
+            use outline = new Pen(Color.FromArgb(65,(SettingsColors.current()).text))
+            graphics.DrawEllipse(outline,circle)
+            Dpi.scale 22
+        else 0
     do
         this.Size <- Size(Dpi.scale 180,Dpi.scale 34)
         this.FlatStyle <- FlatStyle.Flat
@@ -288,13 +327,21 @@ type SettingsCombo(items:string[]) as this =
                 this.Invalidate()
                 changed.Trigger(EventArgs.Empty)
     member _.SelectedIndexChanged = changed.Publish
+    member _.ItemColors
+        with get() = Array.copy itemColors
+        and set(value:Color array) =
+            if isNull value || (value.Length<>0 && value.Length<>items.Length) then
+                invalidArg "value" "Provide one colour per option, or an empty array."
+            itemColors <- Array.copy value
+            this.Invalidate()
+            popup |> Option.iter(fun window -> window.Invalidate(true))
     member this.CreateDropDown() =
         if this.Enabled && items.Length>0 && popup.IsNone then
             let p = SettingsColors.current()
             let window = new SettingsChoicePopup(BackColor=p.hover,ForeColor=p.text,Font=this.Font,
                                                 AccessibleName=this.AccessibleName)
             SettingsPopupLifetime.own this window true
-            let list = new ListBox(Dock=DockStyle.Fill,BorderStyle=BorderStyle.None,IntegralHeight=false,
+            let list = new SettingsChoiceList(Dock=DockStyle.Fill,BorderStyle=BorderStyle.None,IntegralHeight=false,
                                    DrawMode=DrawMode.OwnerDrawFixed,ItemHeight=Dpi.scale 34,
                                    BackColor=p.hover,ForeColor=p.text,Font=this.Font,
                                    AccessibleName=this.AccessibleName)
@@ -316,7 +363,8 @@ type SettingsCombo(items:string[]) as this =
                         use brush = new SolidBrush(p.selection)
                         e.Graphics.FillPath(brush,shape)
                     let foreground = if active && SystemInformation.HighContrast then SystemColors.HighlightText else p.text
-                    let rect = Rectangle(e.Bounds.X+Dpi.scale 12,e.Bounds.Y,e.Bounds.Width-Dpi.scale 42,e.Bounds.Height)
+                    let offset = drawDot e.Graphics e.Bounds e.Index
+                    let rect = Rectangle(e.Bounds.X+Dpi.scale 12+offset,e.Bounds.Y,e.Bounds.Width-Dpi.scale 42-offset,e.Bounds.Height)
                     TextRenderer.DrawText(e.Graphics,items.[e.Index],this.Font,rect,foreground,TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
                     if e.Index=selected then
                         TextRenderer.DrawText(e.Graphics,"✓",this.Font,Rectangle(e.Bounds.Right-Dpi.scale 28,e.Bounds.Y,Dpi.scale 24,e.Bounds.Height),foreground,TextFormatFlags.VerticalCenter ||| TextFormatFlags.HorizontalCenter))
@@ -353,7 +401,7 @@ type SettingsCombo(items:string[]) as this =
                     finish false
                     this.Parent.SelectNextControl(this,not e.Shift,true,true,true) |> ignore
                     e.SuppressKeyPress <- true)
-            let listHost = new ToolStripControlHost(list,AutoSize=false,Margin=Padding.Empty,Padding=Padding.Empty)
+            let listHost = new ToolStripControlHost(list,AutoSize=false,Margin=Padding.Empty,Padding=Padding.Empty,BackColor=p.hover)
             window.Items.Add(listHost) |> ignore
             let area = Screen.FromControl(this).WorkingArea
             let labelWidth = items |> Array.map(fun text -> TextRenderer.MeasureText(text,this.Font).Width) |> Array.max
@@ -361,7 +409,7 @@ type SettingsCombo(items:string[]) as this =
             // Realize the list first, then size the client area using its final row height.
             list.Handle |> ignore
             list.ItemHeight <- max (Dpi.scale 34) (list.Font.Height+Dpi.scale 12)
-            window.Size <- Size(min area.Width (max this.Width (labelWidth+Dpi.scale 58)),
+            window.Size <- Size(min area.Width (max this.Width (labelWidth+Dpi.scale (if itemColors.Length>0 then 80 else 58))),
                                 min (area.Height-Dpi.scale 12) (items.Length*list.ItemHeight+window.Padding.Vertical+2))
             listHost.Size <- Size(window.Width-window.Padding.Horizontal,window.Height-window.Padding.Vertical)
             list.Size <- listHost.Size
@@ -416,7 +464,8 @@ type SettingsCombo(items:string[]) as this =
         e.Graphics.FillPath(fill,shape)
         e.Graphics.DrawPath(border,shape)
         let foreground = if this.Enabled then p.text else p.muted
-        TextRenderer.DrawText(e.Graphics,this.Text,this.Font,Rectangle(Dpi.scale 12,0,this.Width-Dpi.scale 40,this.Height),foreground,
+        let offset = drawDot e.Graphics this.ClientRectangle selected
+        TextRenderer.DrawText(e.Graphics,this.Text,this.Font,Rectangle(Dpi.scale 12+offset,0,this.Width-Dpi.scale 40-offset,this.Height),foreground,
             TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
         let x,y = this.Width-Dpi.scale 17,this.Height/2
         use arrow = new Pen(foreground,1.3f)

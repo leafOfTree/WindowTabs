@@ -87,6 +87,16 @@ let main() =
         SettingsUi.apply form
         let all = view.control.Controls.Find("tabTextColor",true)
         let preset = view.control.Controls.Find("palette-preset",true).[0] :?> SettingsCombo
+        let menu = preset.CreateDropDown().Value
+        menu.Show(form,Point(20,20))
+        use menuBitmap = new Bitmap(menu.Width,menu.Height)
+        menu.DrawToBitmap(menuBitmap,Rectangle(Point.Empty,menuBitmap.Size))
+        menuBitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","presets-"+name+".png"))
+        menu.Close(ToolStripDropDownCloseReason.AppClicked)
+        let settle = Diagnostics.Stopwatch.StartNew()
+        while settle.ElapsedMilliseconds<250L do
+            Application.DoEvents()
+            Threading.Thread.Sleep(5)
         let otherPalette = if mode=DarkTheme then preferences.lightPalette else preferences.darkPalette
         for index in [1..ThemePresets.names.Length-1] @ [0] do
             preset.SelectedIndex <- index

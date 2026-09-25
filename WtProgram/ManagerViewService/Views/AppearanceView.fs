@@ -61,7 +61,9 @@ type AppearanceView(?settings:ISettings) =
             let values (p:TabPalette) =
                 [p.tabTextColor;p.tabActiveBgColor;p.tabHighlightBgColor;p.tabNormalBgColor;p.tabBorderColor;p.tabFlashBgColor]
                 |> List.map(fun c -> c.ToArgb())
-            preset.SelectedIndex <- ThemePresets.palettes editingDark |> Array.tryFindIndex(fun candidate -> values candidate=values palette) |> Option.defaultValue ThemePresets.names.Length
+            let presets = ThemePresets.palettes editingDark
+            preset.ItemColors <- Array.append (presets |> Array.map(fun candidate -> candidate.tabNormalBgColor)) [|palette.tabNormalBgColor|]
+            preset.SelectedIndex <- presets |> Array.tryFindIndex(fun candidate -> values candidate=values palette) |> Option.defaultValue ThemePresets.names.Length
             for key,read,write,editor in colors do
                 editor.value <- box(read palette)
             let geometry = settings.geometry
