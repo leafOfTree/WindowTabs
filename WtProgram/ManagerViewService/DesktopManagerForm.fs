@@ -55,6 +55,8 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         let choice = SettingsUi.choice [|t "Follow Windows" "跟随系统";"English";"中文";"日本語"|]
         choice.Name <- "language"
         choice.AccessibleName <- t "Language" "语言"
+        choice.Size <- Size(Dpi.scale 56,Dpi.scale 28)
+        choice.CompactLabel <- fun () -> match Localization.current() with "zh" -> "中" | "ja" -> "日" | _ -> "EN"
         choice.SelectedIndex <- languages |> Array.tryFindIndex ((=) (Services.settings.getValue("language") :?> string)) |> Option.defaultValue 0
         choice.SelectedIndexChanged.Add(fun _ ->
             if choice.SelectedIndex >= 0 then Services.settings.setValue("language",box languages.[choice.SelectedIndex]))
@@ -134,16 +136,18 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 search.Clear()
                 suppressSearch <- false
                 select page.key)
-        let footer = new Panel(Dock=DockStyle.Bottom,Height=Dpi.scale 112,
+        let footer = new Panel(Dock=DockStyle.Bottom,Height=Dpi.scale 72,
                                Padding=Padding(Dpi.scale 12,Dpi.scale 12,Dpi.scale 8,Dpi.scale 8))
         let brand = new Label(Text="WindowTabs",Font=SettingsUi.sectionFont,AutoSize=false,
                               Dock=DockStyle.Top,Height=Dpi.scale 24,UseMnemonic=false)
         let version = new Label(Text=sprintf "v%s" AssemblyInfo.informationalVersion,AutoSize=false,
-                                Dock=DockStyle.Top,Height=Dpi.scale 22,Tag="muted",UseMnemonic=false)
-        // Name and version on top, the language picker along the bottom edge.
-        languageChoice.Dock <- DockStyle.Bottom
-        footer.Controls.Add(languageChoice)
-        footer.Controls.Add(version)
+                                Dock=DockStyle.Fill,Tag="muted",UseMnemonic=false,TextAlign=ContentAlignment.MiddleLeft)
+        // The compact language picker shares the version line.
+        languageChoice.Dock <- DockStyle.Right
+        let versionRow = new Panel(Dock=DockStyle.Fill)
+        versionRow.Controls.Add(version)
+        versionRow.Controls.Add(languageChoice)
+        footer.Controls.Add(versionRow)
         footer.Controls.Add(brand)
         navigation.Controls.Add(links)
         navigation.Controls.Add(footer)

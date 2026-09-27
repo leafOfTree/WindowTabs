@@ -300,6 +300,8 @@ type SettingsCombo(items:string[]) as this =
     let mutable popup : SettingsChoicePopup option = None
     let mutable suppressNextClick = false
     let mutable itemColors : Color array = [||]
+    /// When set, the closed control shows a globe and this short label instead of the full choice.
+    let mutable compactLabel : (unit -> string) option = None
     let drawDot (graphics:Graphics) (bounds:Rectangle) index =
         if index>=0 && index<itemColors.Length then
             let size = Dpi.scale 12
@@ -327,6 +329,7 @@ type SettingsCombo(items:string[]) as this =
                 this.Invalidate()
                 changed.Trigger(EventArgs.Empty)
     member _.SelectedIndexChanged = changed.Publish
+    member _.CompactLabel with set(label:unit -> string) = compactLabel <- Some label; this.Invalidate()
     member _.ItemColors
         with get() = Array.copy itemColors
         and set(value:Color array) =
@@ -419,6 +422,7 @@ type SettingsCombo(items:string[]) as this =
             let y = if anchor.Y+window.Height<=area.Bottom then anchor.Y else this.PointToScreen(Point.Empty).Y-window.Height-Dpi.scale 4
             window.Location <- Point(max area.Left (min (area.Right-window.Width) (anchor.X+this.Width-window.Width)),max area.Top y)
             popup <- Some window
+            this.Invalidate()
             window.Closed.Add(fun e ->
                 if SettingsPopupLifetime.isOwnerClick this e then
                     suppressNextClick <- true
@@ -458,18 +462,38 @@ type SettingsCombo(items:string[]) as this =
         let p = SettingsColors.current()
         e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        match compactLabel with
+        | Some label -> this.paintCompact(e.Graphics,p,label())
+        | None -> this.paintFull(e.Graphics,p)
+    member private this.paintFull(graphics:Graphics,p:SettingsPalette) =
         use shape = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 8))
         use fill = new SolidBrush(if hovering && this.Enabled then p.selection else p.hover)
         use border = new Pen(p.border)
-        e.Graphics.FillPath(fill,shape)
-        e.Graphics.DrawPath(border,shape)
+        graphics.FillPath(fill,shape)
+        graphics.DrawPath(border,shape)
         let foreground = if this.Enabled then p.text else p.muted
-        let offset = drawDot e.Graphics this.ClientRectangle selected
-        TextRenderer.DrawText(e.Graphics,this.Text,this.Font,Rectangle(Dpi.scale 12+offset,0,this.Width-Dpi.scale 40-offset,this.Height),foreground,
+        let offset = drawDot graphics this.ClientRectangle selected
+        TextRenderer.DrawText(graphics,this.Text,this.Font,Rectangle(Dpi.scale 12+offset,0,this.Width-Dpi.scale 40-offset,this.Height),foreground,
             TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
         let x,y = this.Width-Dpi.scale 17,this.Height/2
         use arrow = new Pen(foreground,1.3f)
-        e.Graphics.DrawLines(arrow,[|Point(x-Dpi.scale 4,y-Dpi.scale 2);Point(x,y+Dpi.scale 2);Point(x+Dpi.scale 4,y-Dpi.scale 2)|])
+        graphics.DrawLines(arrow,[|Point(x-Dpi.scale 4,y-Dpi.scale 2);Point(x,y+Dpi.scale 2);Point(x+Dpi.scale 4,y-Dpi.scale 2)|])
+    /// Borderless: a globe and a short label; a subtle fill on hover or while the list is open.
+    member private this.paintCompact(graphics:Graphics,p:SettingsPalette,label:string) =
+        if (hovering || popup.IsSome || this.Focused) && this.Enabled then
+            use shape = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 6))
+            use fill = new SolidBrush(p.selection)
+            graphics.FillPath(fill,shape)
+        let foreground = if hovering || popup.IsSome then p.text else p.muted
+        let size = float32(Dpi.scale 14)
+        let globe = RectangleF(float32(Dpi.scale 8),float32(this.Height)/2.0f-size/2.0f,size,size)
+        use pen = new Pen(foreground,1.2f)
+        graphics.DrawEllipse(pen,globe)
+        graphics.DrawEllipse(pen,RectangleF(globe.X+globe.Width*0.28f,globe.Y,globe.Width*0.44f,globe.Height))
+        graphics.DrawLine(pen,globe.Left,globe.Y+globe.Height/2.0f,globe.Right,globe.Y+globe.Height/2.0f)
+        let textLeft = int globe.Right+Dpi.scale 5
+        TextRenderer.DrawText(graphics,label,this.Font,Rectangle(textLeft,0,this.Width-textLeft,this.Height),foreground,
+            TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter)
 
 /// A small themed scrollbar; keeps native white scrollbar chrome out of dark pages.
 type SettingsScrollBar() as this =

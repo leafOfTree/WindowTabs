@@ -188,6 +188,17 @@ let main() =
         Application.DoEvents()
         check (form.BackColor=SettingsUi.palette().background) "Live theme update missed form"
         snapshot "settings-general-dark"
+        let language = controls form |> Seq.choose(function :? SettingsCombo as c when c.Name="language" -> Some c | _ -> None) |> Seq.head
+        check (language.Width < Dpi.scale 80) "Language picker is not compact"
+        let languagePopup = language.CreateDropDown() |> Option.get
+        languagePopup.Show(form,Point.Empty)
+        languagePopup.Location <- Point(-12000,-12000)
+        Application.DoEvents()
+        use languageBitmap = new Bitmap(languagePopup.Width,languagePopup.Height)
+        languagePopup.DrawToBitmap(languageBitmap,Rectangle(Point.Empty,languageBitmap.Size))
+        languageBitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-language-dark.png"),ImageFormat.Png)
+        languagePopup.Close()
+        Application.DoEvents()
         // Construct the real popup without showing/activating a window on the user's desktop.
         let choice = controls general.control |> Seq.choose(function :? SettingsCombo as c when c.Name="tab-alignment" -> Some c | _ -> None) |> Seq.head
         choice.SelectedIndex <- 0
