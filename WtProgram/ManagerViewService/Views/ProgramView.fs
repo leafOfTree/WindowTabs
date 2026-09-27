@@ -55,36 +55,17 @@ type WindowNode(window:Window) =
         member x.showSettings = false
 
 type ProgramView() as this=
-    let font = new Font("Segoe UI", 10f)
-
     let invoker = InvokerService.invoker
-    let toolBar = 
-        let ts = new ToolStrip()
-        ts.GripStyle  <- ToolStripGripStyle.Hidden
-        let refreshBtn = 
-            let btn = new ToolStripButton(Localization.text3 "Refresh" "刷新" "更新")
-            btn.Click.Add <| fun _ -> this.populateNodes()
-            btn
-        ts.Items.Add(refreshBtn).ignore
-        ts.Font <- font
-        ts
-    let statusBar = 
-        let sb = new StatusBar()
-        sb.Text <- Localization.text3 "Ready" "就绪" "準備完了"
-        sb.Font <- font
-        sb
+    let t = SettingsUi.text
     let tree,model = 
         let tree = new TreeViewAdv()
         let model = TreeModel()
-        let nameColumn = new TreeColumn(Localization.text3 "Name" "名称" "名称", 200)
+        let nameColumn = new TreeColumn(Localization.text3 "Name" "名称" "名称", Dpi.scale 320)
         tree.UseColumns <- true
         tree.Columns.Add(nameColumn)
-        tree.RowHeight <- 24
-        tree.Font <- font
-        tree.BorderStyle <- BorderStyle.None
         let addCheckBoxColumn colText propName =
             let parentColumn =
-                let col = new TreeColumn(colText, 120)
+                let col = new TreeColumn(colText, Dpi.scale 130)
                 col.TextAlign <- HorizontalAlignment.Center
                 col
             tree.Columns.Add(parentColumn)
@@ -94,7 +75,7 @@ type ProgramView() as this=
                 control.IsVisibleValueNeeded.Add <| fun e ->
                     let node = tree.GetPath(e.Node).LastNode :?> INode
                     e.Value <- node.showSettings
-                control.LeftMargin <- 50
+                control.LeftMargin <- (Dpi.scale 130 - NodeControls.NodeCheckBox.ImageSize)/2
                 control.EditEnabled <- true
                 control.DataPropertyName <- propName
                 control)
@@ -112,28 +93,28 @@ type ProgramView() as this=
             control.DisplayHiddenContentInToolTip <- true
             control.ParentColumn <- nameColumn
             control.DataPropertyName <- "Text"
-            control.LeftMargin <- 3
+            control.LeftMargin <- Dpi.scale 6
             control)
         tree.Model <- model
         tree,model
-    let panel = 
-        let panel = new Panel()
-        toolBar.Dock <- DockStyle.Top
-        tree.Dock <- DockStyle.Fill
-        statusBar.Dock <- DockStyle.Bottom
-        panel.Controls.Add(tree)
-        panel.Controls.Add(toolBar)
-        panel.Controls.Add(statusBar)
-        panel
+    let refresh =
+        let button = SettingsUi.button (Localization.text3 "Refresh" "刷新" "更新")
+        button.Click.Add(fun _ -> this.populateNodes())
+        button
+    let panel =
+        new SettingsListPage(t "App rules" "应用规则",
+                             t "Running apps are listed here. Choose which get tabs and which are grouped automatically; expand an app to see its windows."
+                               "这里列出正在运行的应用。选择哪些应用显示标签、哪些自动分组；展开可查看其窗口。",
+                             tree,[refresh :> Control])
 
     let scanner = new LatestWork<Node list>(invoker :> IDispatcher,
         (fun nodes ->
             ImgHelper.disposeNodes model.Nodes
             model.Nodes.Clear()
             for node in nodes do model.Nodes.Add(node)
-            statusBar.Text <- SettingsUi.text "Ready" "就绪"),
+            panel.Status <- t (sprintf "%d apps" nodes.Length) (sprintf "%d 个应用" nodes.Length)),
         ImgHelper.disposeNodes,
-        (fun error -> statusBar.Text <- SettingsUi.text "Scan failed: " "扫描失败：" + error.Message))
+        (fun error -> panel.Status <- t "Scan failed: " "扫描失败：" + error.Message))
 
     do
         this.populateNodes()
@@ -142,11 +123,10 @@ type ProgramView() as this=
         panel.Disposed.Add(fun _ ->
             (scanner :> IDisposable).Dispose()
             subscription.Dispose()
-            ImgHelper.disposeNodes model.Nodes
-            font.Dispose())
+            ImgHelper.disposeNodes model.Nodes)
 
     member private this.populateNodes() =
-        statusBar.Text <- SettingsUi.text "Scanning…" "正在扫描…"
+        panel.Status <- SettingsUi.text "Scanning…" "正在扫描…"
         scanner.Request(fun cancellation ->
             let nodes = ResizeArray<Node>()
             try

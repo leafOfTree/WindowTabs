@@ -238,6 +238,14 @@ namespace Aga.Controls.Tree.NodeControls
 			if (!context.Enabled)
 				textColor = SystemColors.GrayText;
 
+			TreeTheme theme = Parent != null ? Parent.Theme : null;
+			if (theme != null)
+			{
+				bool selected = context.DrawSelection == DrawSelectionMode.Active || context.DrawSelection == DrawSelectionMode.Inactive;
+				textColor = !context.Enabled ? theme.MutedText : (selected || context.DrawSelection == DrawSelectionMode.FullRowSelect ? theme.SelectionText : theme.Text);
+				backgroundBrush = selected ? GetFrush(theme.Selection) : null;
+			}
+
 			if (DrawTextMustBeFired(node))
 			{
 				DrawEventArgs args = new DrawEventArgs(node, this, context, text);

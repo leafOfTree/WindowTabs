@@ -141,7 +141,13 @@ namespace Aga.Controls.Tree
 				if (context.DrawSelection == DrawSelectionMode.Active || context.DrawSelection == DrawSelectionMode.Inactive)
 				{
 					Rectangle focusRect = new Rectangle(OffsetX, rowRect.Y, ClientRectangle.Width, rowRect.Height);
-					if (context.DrawSelection == DrawSelectionMode.Active)
+					if (Theme != null)
+					{
+						using (Brush selection = new SolidBrush(Theme.Selection))
+							e.Graphics.FillRectangle(selection, focusRect);
+						context.DrawSelection = DrawSelectionMode.FullRowSelect;
+					}
+					else if (context.DrawSelection == DrawSelectionMode.Active)
 					{
 						e.Graphics.FillRectangle(SystemBrushes.Highlight, focusRect);
 						context.DrawSelection = DrawSelectionMode.FullRowSelect;
@@ -181,7 +187,10 @@ namespace Aga.Controls.Tree
 			PerformanceAnalyzer.Start("DrawColumnHeaders");
 			ReorderColumnState reorder = Input as ReorderColumnState;
 			int x = 0;
-			TreeColumn.DrawBackground(gr, new Rectangle(0, 0, ClientRectangle.Width + 2, ColumnHeaderHeight - 1), false, false);
+			if (Theme != null)
+				TreeColumn.DrawThemedBackground(gr, new Rectangle(0, 0, ClientRectangle.Width + 2, ColumnHeaderHeight - 1), Theme);
+			else
+				TreeColumn.DrawBackground(gr, new Rectangle(0, 0, ClientRectangle.Width + 2, ColumnHeaderHeight - 1), false, false);
 			gr.TranslateTransform(-OffsetX, 0);
 			foreach (TreeColumn c in Columns)
 			{
@@ -192,7 +201,10 @@ namespace Aga.Controls.Tree
 						Rectangle rect = new Rectangle(x, 0, c.Width, ColumnHeaderHeight - 1);
 						gr.SetClip(rect);
 						bool pressed = ((Input is ClickColumnState || reorder != null) && ((Input as ColumnState).Column == c));
-						c.Draw(gr, rect, Font, pressed, _hotColumn == c);
+						if (Theme != null)
+							c.DrawThemed(gr, rect, Font, Theme);
+						else
+							c.Draw(gr, rect, Font, pressed, _hotColumn == c);
 						gr.ResetClip();
 
 						if (reorder != null && reorder.DropColumn == c)
@@ -229,8 +241,8 @@ namespace Aga.Controls.Tree
 		{
 			Rectangle r1 = DisplayRectangle;
 			Rectangle r2 = ClientRectangle;
-			gr.FillRectangle(SystemBrushes.Control,
-				new Rectangle(r1.Right, r1.Bottom, r2.Width - r1.Width, r2.Height - r1.Height));
+			using (Brush box = new SolidBrush(Theme != null ? Theme.Back : SystemColors.Control))
+				gr.FillRectangle(box, new Rectangle(r1.Right, r1.Bottom, r2.Width - r1.Width, r2.Height - r1.Height));
 		}
 
 		private void DrawDropMark(Graphics gr)

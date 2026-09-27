@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using Aga.Controls.Properties;
 using System.Windows.Forms;
 using System.Windows.Forms.VisualStyles;
@@ -55,7 +56,21 @@ namespace Aga.Controls.Tree.NodeControls
 			{
 				Rectangle r = context.Bounds;
 				int dy = (int)Math.Round((float)(r.Height - ImageSize) / 2);
-				if (Application.RenderWithVisualStyles)
+				TreeTheme theme = Parent != null ? Parent.Theme : null;
+				if (theme != null)
+				{
+					// A chevron in the muted text colour: right when collapsed, down when expanded.
+					float cx = r.X + ImageSize / 2f, cy = r.Y + r.Height / 2f, s = ImageSize / 4f;
+					PointF[] points = node.IsExpanded
+						? new[] { new PointF(cx - s, cy - s / 2), new PointF(cx, cy + s / 2), new PointF(cx + s, cy - s / 2) }
+						: new[] { new PointF(cx - s / 2, cy - s), new PointF(cx + s / 2, cy), new PointF(cx - s / 2, cy + s) };
+					var mode = context.Graphics.SmoothingMode;
+					context.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+					using (Pen pen = new Pen(theme.MutedText, 1.4f))
+						context.Graphics.DrawLines(pen, points);
+					context.Graphics.SmoothingMode = mode;
+				}
+				else if (Application.RenderWithVisualStyles)
 				{
 					VisualStyleRenderer renderer;
 					if (node.IsExpanded)

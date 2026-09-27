@@ -239,6 +239,7 @@ namespace Aga.Controls.Tree
 			ArrangeControls();
 
 			_plusMinus = new NodePlusMinus();
+			_plusMinus.AssignParent(this); // WindowTabs: lets the glyph read Theme
 			_controls = new NodeControlsCollection(this);
 
 			Font = _font;

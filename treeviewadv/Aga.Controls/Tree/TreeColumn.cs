@@ -241,6 +241,22 @@ namespace Aga.Controls.Tree
 			return b;
 		}
 
+		// WindowTabs addition: flat header in the host's colours.
+		internal static void DrawThemedBackground(Graphics gr, Rectangle bounds, TreeTheme theme)
+		{
+			using (Brush back = new SolidBrush(theme.HeaderBack))
+				gr.FillRectangle(back, bounds);
+			using (Pen line = new Pen(theme.Line))
+				gr.DrawLine(line, bounds.Left, bounds.Bottom, bounds.Right, bounds.Bottom);
+		}
+
+		internal void DrawThemed(Graphics gr, Rectangle bounds, Font font, TreeTheme theme)
+		{
+			DrawThemedBackground(gr, bounds, theme);
+			Rectangle inner = new Rectangle(bounds.X + HeaderLeftMargin, bounds.Y, bounds.Width - HeaderLeftMargin - HeaderRightMargin, bounds.Height);
+			TextRenderer.DrawText(gr, Header, font, inner, theme.MutedText, _headerFlags);
+		}
+
 		internal void Draw(Graphics gr, Rectangle bounds, Font font, bool pressed, bool hot)
 		{
 			DrawBackground(gr, bounds, pressed, hot);

@@ -36,7 +36,7 @@ type WorkspaceNode(model:Dynamic) as this =
 type WorkspaceView() as this =
     let Cell = CellScope()
     
-    let font = new Font("Segoe UI", 10f)
+    let t = SettingsUi.text
 
     member this.wm = Cell.cacheProp this <| fun() ->
         let wm = WorkspaceModel()
@@ -45,24 +45,24 @@ type WorkspaceView() as this =
         wm
 
     member this.nameColumn = Cell.cacheProp this <| fun() ->
-        new TreeColumn(Localization.text3 "Name" "名称" "名称", 200)
+        new TreeColumn(Localization.text3 "Name" "名称" "名称", Dpi.scale 260)
 
     member this.matchTypeColumn = Cell.cacheProp this <| fun() ->
-        new TreeColumn(Localization.text3 "Match type" "匹配方式" "一致区分", 100)
+        new TreeColumn(Localization.text3 "Match type" "匹配方式" "一致区分", Dpi.scale 130)
 
     member this.titleColumn = Cell.cacheProp this <| fun() ->
-        new TreeColumn(Localization.text3 "Title" "标题" "タイトル", 350)
+        new TreeColumn(Localization.text3 "Title" "标题" "タイトル", Dpi.scale 280)
         
     member this.model = Cell.cacheProp this <| fun() -> 
         let model = TreeModel()
         model
 
-    member this.panel = Cell.cacheProp this <| fun() -> 
-        let panel = new Panel()
-        panel.Controls.Add(this.tree)
-        panel.Controls.Add(this.toolbar)
-        panel
-
+    member this.panel : SettingsListPage = Cell.cacheProp this <| fun() ->
+        new SettingsListPage(t "Workspaces" "工作区",
+                             t "Save the current window groups as a workspace and restore them later. Edit a window to change how its title is matched."
+                               "把当前的窗口分组保存为工作区，之后可以一键恢复。编辑窗口可修改标题的匹配方式。",
+                             this.tree,
+                             [this.newButton :> Control;this.restoreButton;this.editButton;this.removeButton])
     member this.iconNodeControl = Cell.cacheProp this <| fun() ->
         let control = new NodeControls.NodeStateIcon()
         control.ParentColumn <- this.nameColumn
@@ -110,53 +110,33 @@ type WorkspaceView() as this =
         tree.NodeControls.Add(this.matchTypeNodeControl)
         tree.NodeControls.Add(this.titleNodeControl)
         tree.Model <- this.model
-        tree.Dock <- DockStyle.Fill
         tree.SelectionChanged.Add <| this.onTreeSelectionChanged
-        tree.Font <- font
-        tree.BorderStyle <- BorderStyle.None
         tree
 
-    member this.newButton : ToolStripButton = Cell.cacheProp this <| fun() ->
-        let btn = new ToolStripButton(Localization.text3 "New" "新建" "新規")
+    member this.newButton : Button = Cell.cacheProp this <| fun() ->
+        let btn = SettingsUi.button (Localization.text3 "New" "新建" "新規")
         btn.Enabled <- not this.wm.isReadOnly
-        btn.Image <- Services.openImage("add.png")
         btn.Click.Add <| fun _ -> this.onNewButton()
         btn
 
-    member this.restoreButton : ToolStripButton = Cell.cacheProp this <| fun() ->
-        let btn = new ToolStripButton(Localization.text3 "Restore" "恢复" "元に戻す")
-        btn.Image <- Services.openImage("restore.png")
+    member this.restoreButton : Button = Cell.cacheProp this <| fun() ->
+        let btn = SettingsUi.button (Localization.text3 "Restore" "恢复" "元に戻す")
         btn.Click.Add <| fun _ -> this.onRestoreButton()
         this.wm.canRestoreChanged.Add <| fun(canRestore) -> 
             btn.Enabled <- canRestore
         btn
 
-    member this.removeButton : ToolStripButton = Cell.cacheProp this <| fun() ->
-        let btn = new ToolStripButton(Localization.text3 "Remove" "删除" "削除")
+    member this.removeButton : Button = Cell.cacheProp this <| fun() ->
+        let btn = SettingsUi.button (Localization.text3 "Remove" "删除" "削除")
         btn.Enabled <- not this.wm.isReadOnly
-        btn.Image <- Services.openImage("delete.png")
         btn.Click.Add <| fun _ -> this.onRemoveButton()
         btn
 
-    member this.editButton : ToolStripButton = Cell.cacheProp this <| fun() ->
-        let btn = new ToolStripButton(Localization.text3 "Edit" "编辑" "編集")
+    member this.editButton : Button = Cell.cacheProp this <| fun() ->
+        let btn = SettingsUi.button (Localization.text3 "Edit" "编辑" "編集")
         btn.Enabled <- not this.wm.isReadOnly
-        btn.Image <- Services.openImage("edit.png")
         btn.Click.Add <| fun _ -> this.onEditButton()
         btn
-
-    member this.toolbar = Cell.cacheProp this <| fun() ->
-        let ts = new ToolStripEx(
-            ClickThrough=true
-        )
-        ts.GripStyle  <- ToolStripGripStyle.Hidden
-        ts.Dock <- DockStyle.Top
-        ts.Items.Add(this.newButton).ignore
-        ts.Items.Add(this.restoreButton).ignore
-        ts.Items.Add(this.editButton).ignore
-        ts.Items.Add(this.removeButton).ignore
-        ts.Font <- font
-        ts
 
     member this.findNode(node:TreeNodeAdv) =
         this.model.FindNode(this.tree.GetPath(node)) :?> WorkspaceNode

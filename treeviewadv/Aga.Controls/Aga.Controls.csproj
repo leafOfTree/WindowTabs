@@ -9,10 +9,6 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-    <DefineConstants>$(DefineConstants);PERF_TEST</DefineConstants>
-  </PropertyGroup>
-
   <ItemGroup>
     <!-- Upstream sources that were never part of this build. -->
     <Compile Remove="Tree\ColumnCollection.cs;Tree\NativeMethods.cs" />

@@ -92,7 +92,6 @@
     <Compile Include="Desktop.fs" />
     <Compile Include="Workspace\WorkspaceData.fs" />
     <Compile Include="Workspace\WorkspaceModel.fs" />
-    <Compile Include="Workspace\WorkspaceView.fs" />
     <Compile Include="ManagerViewService\ThemeBinding.fs" />
     <Compile Include="ManagerViewService\SettingsStyle.fs" />
     <Compile Include="ManagerViewService\SettingsControls.fs" />
@@ -100,11 +99,13 @@
     <Compile Include="ManagerViewService\SettingsPage.fs" />
     <Compile Include="ManagerViewService\SettingsUi.fs" />
     <Compile Include="ManagerViewService\SettingsBindings.fs" />
+    <Compile Include="ManagerViewService\SettingsListPage.fs" />
     <Compile Include="ManagerViewService\Views\GeneralView.fs" />
     <Compile Include="ManagerViewService\Views\AppearanceView.fs" />
     <Compile Include="ManagerViewService\Views\BehaviorView.fs" />
     <Compile Include="ManagerViewService\Views\DiagnosticsView.fs" />
     <Compile Include="ManagerViewService\Views\ProgramView.fs" />
+    <Compile Include="ManagerViewService\Views\WorkspaceView.fs" />
     <Compile Include="ManagerViewService\DesktopManagerForm.fs" />
     <Compile Include="ManagerViewService\ManagerViewService.fs" />
     <Compile Include="FilterService.fs" />

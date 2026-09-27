@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using Aga.Controls.Properties;
 using System.Reflection;
 using System.Windows.Forms;
@@ -53,7 +54,34 @@ namespace Aga.Controls.Tree.NodeControls
 		{
 			Rectangle bounds = GetBounds(node, context);
 			CheckState state = GetCheckState(node);
-			if (Application.RenderWithVisualStyles)
+			TreeTheme theme = Parent != null ? Parent.Theme : null;
+			if (theme != null)
+			{
+				// Rounded box in the host's accent colour, matching the settings toggles.
+				var g = context.Graphics;
+				var mode = g.SmoothingMode;
+				g.SmoothingMode = SmoothingMode.AntiAlias;
+				RectangleF box = new RectangleF(bounds.X + 0.5f, bounds.Y + 0.5f, ImageSize - 1, ImageSize - 1);
+				using (GraphicsPath path = RoundedBox(box, ImageSize / 4f))
+				{
+					if (state == CheckState.Unchecked)
+						using (Pen border = new Pen(theme.MutedText, 1.2f)) g.DrawPath(border, path);
+					else
+					{
+						using (Brush fill = new SolidBrush(theme.Accent)) g.FillPath(fill, path);
+						using (Pen mark = new Pen(Color.White, 1.6f))
+						{
+							if (state == CheckState.Checked)
+								g.DrawLines(mark, new[] { new PointF(box.X + box.Width * 0.25f, box.Y + box.Height * 0.52f),
+									new PointF(box.X + box.Width * 0.43f, box.Y + box.Height * 0.70f), new PointF(box.X + box.Width * 0.76f, box.Y + box.Height * 0.32f) });
+							else
+								g.DrawLine(mark, box.X + box.Width * 0.28f, box.Y + box.Height / 2, box.X + box.Width * 0.72f, box.Y + box.Height / 2);
+						}
+					}
+				}
+				g.SmoothingMode = mode;
+			}
+			else if (Application.RenderWithVisualStyles)
 			{
 				VisualStyleRenderer renderer;
 				if (state == CheckState.Indeterminate)
@@ -75,6 +103,18 @@ namespace Aga.Controls.Tree.NodeControls
 					img = _uncheck;
 				context.Graphics.DrawImage(img, bounds.Location);
 			}
+		}
+
+		private static GraphicsPath RoundedBox(RectangleF r, float radius)
+		{
+			float d = radius * 2;
+			var path = new GraphicsPath();
+			path.AddArc(r.Left, r.Top, d, d, 180, 90);
+			path.AddArc(r.Right - d, r.Top, d, d, 270, 90);
+			path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+			path.AddArc(r.Left, r.Bottom - d, d, d, 90, 90);
+			path.CloseFigure();
+			return path;
 		}
 
 		protected virtual CheckState GetCheckState(TreeNodeAdv node)
