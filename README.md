@@ -12,7 +12,7 @@ A utility that brings browser-style tabbed window management to the desktop.
 It was originally developed by Maurice Flanagan in 2009 and was provided as free and paid versions.
 The author who no longer has time to maintain it has open-sourced it. See the original repository: [mauricef/WindowTabs](https://github.com/mauricef/WindowTabs).
 
-This repository is a fork of [payaneco's repository](https://github.com/payaneco/WindowTabs) which is from [redgis'](https://github.com/redgis/WindowTabs). Now, it compiles and runs successfully on Win7, Win10 and Win11.
+This repository is a fork of [payaneco's repository](https://github.com/payaneco/WindowTabs) which is from [redgis'](https://github.com/redgis/WindowTabs). It is tested on Windows 10 and 11. Windows 7 SP1 can run .NET Framework 4.8, but current builds are untested there.
 
 ## Download
 

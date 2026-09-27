@@ -107,6 +107,13 @@ settings; paths, titles and license data are excluded. Full settings export is a
 separate user-selected action and reads the current in-memory root, including pending
 debounced edits.
 
+## Vendored TreeViewAdv
+
+`treeviewadv/Aga.Controls` is a vendored copy. Its `AbortableThreadPool` uses
+`Thread.Abort`, which modern .NET does not support; it only runs when a tree enables
+`AsyncExpanding`, which WindowTabs never does. Remove that path before any move off
+.NET Framework.
+
 ## DPI and stress verification
 
 The manifest and .NET 4.8 configuration opt into PerMonitorV2. WinForms owns form
