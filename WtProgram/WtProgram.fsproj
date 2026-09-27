@@ -56,6 +56,7 @@
     <Compile Include="Shared\Win32.fs" />
     <Compile Include="Shared\AppearanceModel.fs" />
     <Compile Include="Shared\ProgramTypes.fs" />
+    <Compile Include="Shared\LocalizationJa.fs" />
     <Compile Include="Shared\Localization.fs" />
     <Compile Include="Shared\SettingsCatalog.fs" />
     <Compile Include="Shared\DragDrop.fs" />

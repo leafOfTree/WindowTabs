@@ -112,7 +112,7 @@ type ProgramView() as this=
             ImgHelper.disposeNodes model.Nodes
             model.Nodes.Clear()
             for node in nodes do model.Nodes.Add(node)
-            panel.Status <- t (sprintf "%d apps" nodes.Length) (sprintf "%d 个应用" nodes.Length)),
+            panel.Status <- Localization.text3 (sprintf "%d apps" nodes.Length) (sprintf "%d 个应用" nodes.Length) (sprintf "%d 個のアプリ" nodes.Length)),
         ImgHelper.disposeNodes,
         (fun error -> panel.Status <- t "Scan failed: " "扫描失败：" + error.Message))
 

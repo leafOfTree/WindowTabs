@@ -258,7 +258,8 @@ type Program(lifetime:LifetimeScope) as this =
             let shortcut = HotKeyShortcut(HotKeyControlCode=int16(shortcut))
             if not (hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags, shortcut.RegisterHotKeyVirtualKeyCode) f) then
                 let name = SettingsCatalog.title (if key="nextTab" then "next-tab" else "previous-tab")
-                MessageBox.Show(Localization.text (sprintf "The shortcut for %s is unavailable. Choose another shortcut in Settings." name) (sprintf "“%s”的快捷键已被占用，请在设置中另选一个。" name),
+                MessageBox.Show(Localization.text3 (sprintf "The shortcut for %s is unavailable. Choose another shortcut in Settings." name) (sprintf "“%s”的快捷键已被占用，请在设置中另选一个。" name)
+                                                   (sprintf "「%s」のショートカットは使用できません。設定で別のショートカットを選択してください。" name),
                                 Localization.text "Shortcut unavailable" "快捷键不可用", MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
 
    

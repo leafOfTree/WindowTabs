@@ -217,7 +217,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         let removeTabsItem =
             CmiRegular({
-                text = Localization.text (sprintf "Remove tabs for '%s' windows" exeName) (sprintf "不为“%s”窗口显示标签" exeName)
+                text = Localization.text3 (sprintf "Remove tabs for '%s' windows" exeName) (sprintf "不为“%s”窗口显示标签" exeName) (sprintf "「%s」のウィンドウにタブを表示しない" exeName)
                 image = None
                 click = fun() -> Services.filter.setIsTabbingEnabledForProcess processPath false
                 flags = List2()
@@ -226,7 +226,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         let isGrouped = Services.program.getAutoGroupingEnabled processPath
         let groupTabsItem =
             CmiRegular({
-                text = Localization.text (sprintf "Group tabs for '%s' windows" exeName) (sprintf "自动分组“%s”窗口" exeName)
+                text = Localization.text3 (sprintf "Group tabs for '%s' windows" exeName) (sprintf "自动分组“%s”窗口" exeName) (sprintf "「%s」のウィンドウを自動的にグループ化" exeName)
                 image = None
                 click = fun() -> Services.program.setAutoGroupingEnabled processPath isGrouped.not
                 flags = checkedFlag(isGrouped)
@@ -250,7 +250,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         let closeAllExeTabsItem =
             CmiRegular({
-                text = Localization.text (sprintf "Close all '%s' windows" exeName) (sprintf "关闭所有“%s”窗口" exeName)
+                text = Localization.text3 (sprintf "Close all '%s' windows" exeName) (sprintf "关闭所有“%s”窗口" exeName) (sprintf "「%s」のウィンドウをすべて閉じる" exeName)
                 image = None
                 click = fun() -> this.onCloseAllExeWindows exeName
                 flags = List2()

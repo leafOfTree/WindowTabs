@@ -12,7 +12,12 @@ module Localization =
         if preference="system" then CultureInfo.CurrentUICulture.TwoLetterISOLanguageName else preference
     /// The language text is shown in: "zh", "ja" or "en" (any other language falls back to English).
     let current() = match language() with "zh" -> "zh" | "ja" -> "ja" | _ -> "en"
-    let text (en:string) (zh:string) = if language()="zh" then zh else en
+    /// Japanese comes from LocalizationJa, keyed by the English text; missing entries show English.
+    let text (en:string) (zh:string) =
+        match language() with
+        | "zh" -> zh
+        | "ja" -> (match LocalizationJa.table.TryGetValue en with | true,ja -> ja | _ -> en)
+        | _ -> en
     let text3 (en:string) (zh:string) (ja:string) =
         match language() with
         | "zh" -> zh

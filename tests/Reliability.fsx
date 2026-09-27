@@ -85,7 +85,13 @@ let main() =
         Localization.setPreference code
         check (Localization.text3 "Close" "关闭" "閉じる"=expected) ("Language override ignored: "+code)
     Localization.setPreference "ja"
-    check (Localization.text "Close" "关闭"="Close") "Japanese without a translation must fall back to English"
+    check (Localization.text "Close" "关闭"="閉じる") "Japanese table not used"
+    check (Localization.text "Untranslated text" "未翻译"="Untranslated text") "Japanese without a translation must fall back to English"
+    let untranslated =
+        SettingsCatalog.all
+        |> List.collect(fun item -> [fst item.caption; fst item.description])
+        |> List.filter(fun en -> en<>"" && not (LocalizationJa.table.ContainsKey en))
+    check untranslated.IsEmpty ("Settings text without Japanese: " + String.concat " | " untranslated)
     Localization.setPreference "system"
 
     let queue = ConcurrentQueue<unit -> unit>()

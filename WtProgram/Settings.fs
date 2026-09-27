@@ -20,8 +20,9 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
     let settingsPath = Path.GetFullPath(Path.Combine(
         (if relativePath then "." else Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WindowTabs")),fileName))
     let store = new SettingsFileStore(settingsPath,defaultArg saveDelay 250,fun ex ->
-        MessageBox.Show(Localization.text ("Unable to save settings to " + settingsPath + ".\nYour changes remain in memory and will be retried on the next edit or exit.\n\n" + ex.Message)
-                                           ("无法保存设置到 " + settingsPath + "。\n更改仍保留在内存中，下次修改或退出时会重试。\n\n" + ex.Message),
+        MessageBox.Show(Localization.text3 ("Unable to save settings to " + settingsPath + ".\nYour changes remain in memory and will be retried on the next edit or exit.\n\n" + ex.Message)
+                                           ("无法保存设置到 " + settingsPath + "。\n更改仍保留在内存中，下次修改或退出时会重试。\n\n" + ex.Message)
+                                           ("設定を " + settingsPath + " に保存できませんでした。\n変更はメモリに保持され、次の編集時または終了時に再試行されます。\n\n" + ex.Message),
                         Localization.text "Settings save failed" "设置保存失败",MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore)
 
     do
@@ -64,7 +65,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             try
                 this.settingsString.map(JObject.Parse).def(JObject())
             with ex ->
-                let errorMessage = Localization.text ("Error loading settings.\n\nFix or remove the file "  + this.path + ".\n\nDetails: " + ex.Message) ("读取设置出错。\n\n请修复或删除文件 " + this.path + "。\n\n详细信息：" + ex.Message)
+                let errorMessage = Localization.text3 ("Error loading settings.\n\nFix or remove the file "  + this.path + ".\n\nDetails: " + ex.Message) ("读取设置出错。\n\n请修复或删除文件 " + this.path + "。\n\n详细信息：" + ex.Message) ("設定の読み込み中にエラーが発生しました。\n\nファイル " + this.path + " を修正または削除してください。\n\n詳細: " + ex.Message)
                 MessageBox.Show(errorMessage, Localization.text "Settings error" "设置错误", MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
                 failwith "Error parsing settings json"
         and set(settingsJson:JObject) = this.settingsString <- Some(settingsJson.ToString())
@@ -125,7 +126,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                     }
                     cachedSettingsRec <- Some(settings)
                 with ex ->
-                    let errorMessage = Localization.text ("Error loading settings.\n\nFix or remove the file "  + this.path + ".\n\nDetails: " + ex.Message) ("读取设置出错。\n\n请修复或删除文件 " + this.path + "。\n\n详细信息：" + ex.Message)
+                    let errorMessage = Localization.text3 ("Error loading settings.\n\nFix or remove the file "  + this.path + ".\n\nDetails: " + ex.Message) ("读取设置出错。\n\n请修复或删除文件 " + this.path + "。\n\n详细信息：" + ex.Message) ("設定の読み込み中にエラーが発生しました。\n\nファイル " + this.path + " を修正または削除してください。\n\n詳細: " + ex.Message)
                     MessageBox.Show(errorMessage, Localization.text "Settings error" "设置错误", MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
                     failwith "Error parsing settings json"
                     

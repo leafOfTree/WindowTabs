@@ -16,7 +16,7 @@ type HotKeyView() =
             match conflict with
             | Some(_,id) ->
                 let name = SettingsCatalog.title id
-                editor.Reject(previous,t (sprintf "Used by %s" name) (sprintf "已用于“%s”" name))
+                editor.Reject(previous,Localization.text3 (sprintf "Used by %s" name) (sprintf "已用于“%s”" name) (sprintf "「%s」で使用中" name))
             | None when not (Services.program.setHotKey key editor.Shortcut) ->
                 editor.Reject(previous,t "In use by another app" "已被系统或其他程序占用")
             | None -> ())
