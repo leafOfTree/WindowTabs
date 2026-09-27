@@ -49,6 +49,16 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
     let search = new TextBox(Font=SettingsUi.bodyFont,BorderStyle=BorderStyle.None,
                              AccessibleName=t "Search settings" "搜索设置",Tag="search-input")
     let searchResults = new SettingsSearchResults(Visible=false,AccessibleName=t "Search suggestions" "搜索建议")
+    // Each language names itself, so the list stays readable whatever is selected.
+    let languageChoice =
+        let languages = [|"system";"en";"zh";"ja"|]
+        let choice = SettingsUi.choice [|t "Follow Windows" "跟随系统";"English";"中文";"日本語"|]
+        choice.Name <- "language"
+        choice.AccessibleName <- t "Language" "语言"
+        choice.SelectedIndex <- languages |> Array.tryFindIndex ((=) (Services.settings.getValue("language") :?> string)) |> Option.defaultValue 0
+        choice.SelectedIndexChanged.Add(fun _ ->
+            if choice.SelectedIndex >= 0 then Services.settings.setValue("language",box languages.[choice.SelectedIndex]))
+        choice
     let searchFocusFilter = new SettingsSearchFocusFilter(form,search,searchResults) :> IMessageFilter
     let results = new ListBox(Dock=DockStyle.Fill,BorderStyle=BorderStyle.None,
                              Font=SettingsUi.bodyFont,IntegralHeight=false,
@@ -124,12 +134,15 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 search.Clear()
                 suppressSearch <- false
                 select page.key)
-        let footer = new Panel(Dock=DockStyle.Bottom,Height=Dpi.scale 68,
+        let footer = new Panel(Dock=DockStyle.Bottom,Height=Dpi.scale 112,
                                Padding=Padding(Dpi.scale 12,Dpi.scale 12,Dpi.scale 8,Dpi.scale 8))
         let brand = new Label(Text="WindowTabs",Font=SettingsUi.sectionFont,AutoSize=false,
                               Dock=DockStyle.Top,Height=Dpi.scale 24,UseMnemonic=false)
         let version = new Label(Text=sprintf "v%s" AssemblyInfo.informationalVersion,AutoSize=false,
-                                Dock=DockStyle.Fill,Tag="muted",UseMnemonic=false)
+                                Dock=DockStyle.Top,Height=Dpi.scale 22,Tag="muted",UseMnemonic=false)
+        // Name and version on top, the language picker along the bottom edge.
+        languageChoice.Dock <- DockStyle.Bottom
+        footer.Controls.Add(languageChoice)
         footer.Controls.Add(version)
         footer.Controls.Add(brand)
         navigation.Controls.Add(links)
@@ -202,16 +215,19 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 suppressSearch <- true
                 search.Clear()
                 suppressSearch <- false
-                select item.page
-                let page = pages |> List.find(fun page -> page.key=item.page)
-                let target = page.control.Controls.Find(item.id,true) |> Array.tryHead
-                match target with
-                | Some control ->
-                    match page.control with
-                    | :? SettingsPage as settingsPage -> settingsPage.reveal(control)
-                    | _ -> ()
-                    control.Select()
-                | None -> page.control.SelectNextControl(null,true,true,true,false) |> ignore
+                // The language picker lives in the sidebar footer, not on a page.
+                if item.id="language" then languageChoice.Select()
+                else
+                    select item.page
+                    let page = pages |> List.find(fun page -> page.key=item.page)
+                    let target = page.control.Controls.Find(item.id,true) |> Array.tryHead
+                    match target with
+                    | Some control ->
+                        match page.control with
+                        | :? SettingsPage as settingsPage -> settingsPage.reveal(control)
+                        | _ -> ()
+                        control.Select()
+                    | None -> page.control.SelectNextControl(null,true,true,true,false) |> ignore
         results.MouseClick.Add(fun e ->
             if e.Button=MouseButtons.Left && results.IndexFromPoint(e.Location)>=0 then navigateResult())
         results.MouseMove.Add(fun e ->
