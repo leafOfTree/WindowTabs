@@ -58,6 +58,10 @@ let main() =
     check (placement.rcNormalPosition.x=10 && placement.rcNormalPosition.width=800) "Legacy placement migration lost bounds"
     let restored = WorkspaceData.placement (WorkspaceData.writePlacement placement)
     check (restored=placement) "Placement round trip lost geometry"
+    // WorkspaceData.read rewrites numbers as Int32 JValues; the model must still load them.
+    let loaded = Workspace.deserialize workspaces.Head
+    let window = (group.["windows"].[0] :?> JObject)
+    check (loaded.name="valid" && JObject(JProperty("n",JValue(7))).getInt32("n")=Some 7 && window.getInt32("matchType")=Some 0) "Normalized workspace could not be loaded"
     for schema in ["999";"\"bad\"";"0"] do
         let _,_,protectedData = WorkspaceData.read (JObject.Parse("{\"workspaceSchemaVersion\":"+schema+"}"))
         check protectedData "Unsupported schema was writable"
