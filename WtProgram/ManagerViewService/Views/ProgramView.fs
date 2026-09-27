@@ -55,28 +55,28 @@ type WindowNode(window:Window) =
         member x.showSettings = false
 
 type ProgramView() as this=
-    let font = Font("Segoe UI", 10f)
+    let font = new Font("Segoe UI", 10f)
 
     let invoker = InvokerService.invoker
     let toolBar = 
-        let ts = ToolStrip()
+        let ts = new ToolStrip()
         ts.GripStyle  <- ToolStripGripStyle.Hidden
         let refreshBtn = 
-            let btn = ToolStripButton(Localization.text3 "Refresh" "刷新" "更新")
+            let btn = new ToolStripButton(Localization.text3 "Refresh" "刷新" "更新")
             btn.Click.Add <| fun _ -> this.populateNodes()
             btn
         ts.Items.Add(refreshBtn).ignore
         ts.Font <- font
         ts
     let statusBar = 
-        let sb = StatusBar()
+        let sb = new StatusBar()
         sb.Text <- Localization.text3 "Ready" "就绪" "準備完了"
         sb.Font <- font
         sb
     let tree,model = 
-        let tree = TreeViewAdv()
+        let tree = new TreeViewAdv()
         let model = TreeModel()
-        let nameColumn = TreeColumn(Localization.text3 "Name" "名称" "名称", 200)
+        let nameColumn = new TreeColumn(Localization.text3 "Name" "名称" "名称", 200)
         tree.UseColumns <- true
         tree.Columns.Add(nameColumn)
         tree.RowHeight <- 24
@@ -84,12 +84,12 @@ type ProgramView() as this=
         tree.BorderStyle <- BorderStyle.None
         let addCheckBoxColumn colText propName =
             let parentColumn =
-                let col = TreeColumn(colText, 120)
+                let col = new TreeColumn(colText, 120)
                 col.TextAlign <- HorizontalAlignment.Center
                 col
             tree.Columns.Add(parentColumn)
             tree.NodeControls.Add(
-                let control = NodeControls.NodeCheckBox()
+                let control = new NodeControls.NodeCheckBox()
                 control.ParentColumn <- parentColumn
                 control.IsVisibleValueNeeded.Add <| fun e ->
                     let node = tree.GetPath(e.Node).LastNode :?> INode
@@ -101,13 +101,13 @@ type ProgramView() as this=
         addCheckBoxColumn (Localization.text3 "Tabs" "标签" "タブ") "enableTabs"
         addCheckBoxColumn (Localization.text3 "Auto grouping" "自动分组" "自動グループ化") "enableAutoGrouping"
         tree.NodeControls.Add(
-            let control = NodeControls.NodeIcon()
+            let control = new NodeControls.NodeIcon()
             control.ParentColumn <- nameColumn
             control.LeftMargin <- 3
             control.DataPropertyName <- "Icon"
             control)
         tree.NodeControls.Add(
-            let control = SmoothNodeTextBox()
+            let control = new SmoothNodeTextBox()
             control.Trimming <- StringTrimming.EllipsisCharacter
             control.DisplayHiddenContentInToolTip <- true
             control.ParentColumn <- nameColumn
@@ -117,7 +117,7 @@ type ProgramView() as this=
         tree.Model <- model
         tree,model
     let panel = 
-        let panel = Panel()
+        let panel = new Panel()
         toolBar.Dock <- DockStyle.Top
         tree.Dock <- DockStyle.Fill
         statusBar.Dock <- DockStyle.Bottom
@@ -163,12 +163,12 @@ type ProgramView() as this=
                                     match procs.TryGetValue(path) with
                                     | true,node -> node
                                     | _ ->
-                                        let node = ExeNode(path)
+                                        let node = new ExeNode(path)
                                         procs.Add(path,node)
                                         nodes.Add(node)
                                         node
                                 cancellation.ThrowIfCancellationRequested()
-                                if window.isWindow then node.Nodes.Add(WindowNode(window))
+                                if window.isWindow then node.Nodes.Add(new WindowNode(window))
                     with
                     | :? OperationCanceledException -> reraise()
                     | _ -> () // A window/process can disappear while scanning.

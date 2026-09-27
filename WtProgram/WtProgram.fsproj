@@ -23,7 +23,7 @@
     <!-- FSharp.Core ships translated messages for many cultures; the app only needs the neutral ones. -->
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <WarningLevel>3</WarningLevel>
-    <NoWarn>$(NoWarn);0040;0046;0058;0760;1183;2009</NoWarn>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
@@ -36,7 +36,7 @@
     <OtherFlags>$(OtherFlags) --standalone --staticlink:Win32 --staticlink:Newtonsoft.Json --staticlink:Aga.Controls --staticlink:Interop.SHDocVw --staticlink:Interop.Shell32</OtherFlags>
     <!-- FS2011: framework internals (SMDiagnostics, System.ServiceModel.Internals) reached through
          System.Runtime.Serialization are not in the reference assemblies; they stay in the GAC, not the exe. -->
-    <NoWarn>$(NoWarn);2011</NoWarn>
+    <NoWarn>$(NoWarn);2009;2011</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

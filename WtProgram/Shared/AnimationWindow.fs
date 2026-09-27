@@ -1,7 +1,7 @@
 ﻿namespace Bemo
 open System
 
-type AnimationWindow(os:OS) as this =
+type AnimationWindow(os:OS) =
     let scope = CellScope()
     let location = Cell<Pt>(scope, Pt.empty, (=))
     let isWindowVisible = Cell(scope, false, (=))

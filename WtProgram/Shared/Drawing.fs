@@ -131,18 +131,18 @@ module RectExtensions =
 
 [<NoEquality>]
 [<NoComparison>]
-type Rgn(hRgn:IntPtr) as this=
+type Rgn(hRgn:IntPtr)=
     let mutable released = false
     let release() =
         if not released then
             released <- true
             WinGdiApi.DeleteObject(hRgn).ignore
 
-    new(rect:Rect) = Rgn(WinGdiApi.CreateRectRgn(rect.left, rect.top, rect.right, rect.bottom))
-    new() = Rgn(Rect())
+    new(rect:Rect) = new Rgn(WinGdiApi.CreateRectRgn(rect.left, rect.top, rect.right, rect.bottom))
+    new() = new Rgn(Rect())
     member this.h = hRgn
     member this.combine(rgn:Rgn, style) =
-        let newRgn = Rgn()
+        let newRgn = new Rgn()
         WinGdiApi.CombineRgn(newRgn.h, this.h, rgn.h, style).ignore
         newRgn
     member this.copy = this.combine(this, CombineRgnStyles.RGN_COPY)
@@ -152,7 +152,7 @@ type Rgn(hRgn:IntPtr) as this=
     member this.box = Win32Helper.GetRgnBox(this.h).Rect
     member this.isEmpty = this.box.isEmpty
     member this.containsRect(bounds:Rect) =
-        use boundsRegion = Rgn(bounds)
+        use boundsRegion = new Rgn(bounds)
         use intersection = this.intersect(boundsRegion)
         intersection.isEmpty.not
     member this.rects = List2(Seq.ofArray(Win32Helper.RectsFromRegion(this.h))).map(fun r -> r.Rect)
@@ -170,7 +170,7 @@ type Rgn(hRgn:IntPtr) as this=
     override this.Finalize() = release()
 
 [<NoComparison>]
-type Mon(hMonitor:IntPtr) as this=
+type Mon(hMonitor:IntPtr)=
     member this.hMonitor = hMonitor
     member private this.info = Win32Helper.GetMonitorInfo(hMonitor)
     member this.workRect = this.info.rcWork.Rect

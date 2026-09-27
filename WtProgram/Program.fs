@@ -240,7 +240,7 @@ type Program(lifetime:LifetimeScope) as this =
                                 member y.windows = Set2(gi.windows)
                             }
                 }
-                taskSwitchCell.set(Some(TaskSwitcher(settingsManager, tsDesktop)))
+                taskSwitchCell.set(Some(new TaskSwitcher(settingsManager, tsDesktop)))
         else
             taskSwitchCell.value.iter <| fun s -> (s :> IDisposable).Dispose()
             taskSwitchCell.set(None)
@@ -373,7 +373,7 @@ module Bootstrap =
                 let program = Program(lifetime)
                 program.run(List2<IPlugin>([
                     InputManagerPlugin(Set2(List2([WindowMessages.WM_MOUSEWHEEL]))) :> IPlugin
-                    NotifyIconPlugin() :> IPlugin ]))
+                    new NotifyIconPlugin() :> IPlugin ]))
                 0
         with error ->
             logger.log "Startup/runtime" error

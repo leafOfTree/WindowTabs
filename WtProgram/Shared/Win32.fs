@@ -68,7 +68,7 @@ type ShellEvent =
 type IWindow =
     abstract member hwnd : IntPtr
 
-type OS() as this= 
+type OS()= 
     let Cell = CellScope()
 
     member this.getTaskbar() = if this.isWin7OrHigher then Some(ShellApi.GetTaskbar()) else None
@@ -177,9 +177,9 @@ type OS() as this=
     // Caller owns the returned region and should dispose it. The accumulator and
     // the per-monitor regions are dead once union has produced the next one.
     member this.screenRegion =
-        Mon.all.fold (Rgn()) <| fun rgn mon ->
+        Mon.all.fold (new Rgn()) <| fun rgn mon ->
             use previous = rgn
-            use monitorRegion = Rgn(mon.displayRect)
+            use monitorRegion = new Rgn(mon.displayRect)
             previous.union(monitorRegion)
 
     member this.isOnScreen (bounds:Rect) =
@@ -249,7 +249,7 @@ type OS() as this=
         this.setWinEventHook(event, event, proc, 0, 0)
 
 and
-    Window(hwnd:nativeint, os:OS) as this =
+    Window(hwnd:nativeint, os:OS) =
     let Cell = CellScope()
 
     member this.hwnd = hwnd

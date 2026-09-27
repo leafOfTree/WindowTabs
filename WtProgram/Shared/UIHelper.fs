@@ -12,7 +12,7 @@ type INode =
 
 type IntEditor() =
     let control = 
-        let control = NumericUpDown()
+        let control = new NumericUpDown()
         control.Minimum <- decimal(1)
         control.Maximum <- decimal(1000)
         control.Margin <- Padding(0)
@@ -26,7 +26,7 @@ type IntEditor() =
 
 type TextEditor() =
     let control = 
-        let control = TextBox()
+        let control = new TextBox()
         control
     interface IPropEditor with
         member x.value 
@@ -36,7 +36,7 @@ type TextEditor() =
         member x.changed = control.TextChanged |> Event.map ignore
 
 type BoolEditor() =
-    let control = CheckBox()
+    let control = new CheckBox()
     interface IPropEditor with
         member x.value
             with get() = box(control.Checked)
@@ -45,7 +45,7 @@ type BoolEditor() =
         member x.changed = control.CheckedChanged |> Event.map ignore
 
 type EnumEditor<'e when 'e :> Enum>() as this =
-    let control = ComboBox()
+    let control = new ComboBox()
     let mutable cachedValue = null
     do this.init()
 
@@ -73,11 +73,11 @@ type EnumEditor<'e when 'e :> Enum>() as this =
 type ColorEditor() as this =
     let changedEvent = Event<_>()
     let chooserButton = 
-        let btn = Button()
+        let btn = new Button()
         btn.Tag <- "color-swatch"
         btn.Width <- btn.Height
         btn.Click.Add <| fun _ -> 
-            let dlg = System.Windows.Forms.ColorDialog()
+            let dlg = new System.Windows.Forms.ColorDialog()
             dlg.Color <- this.color
             dlg.FullOpen <- true
             dlg.ShowHelp <- false
@@ -90,7 +90,7 @@ type ColorEditor() as this =
         btn
         
     let textBox = 
-        let tb = TextBox()
+        let tb = new TextBox()
         let maxLen = 6
         let save() =
             (this :> IPropEditor).value <- this.colorFromTb
@@ -121,7 +121,7 @@ type ColorEditor() as this =
         tb
 
     let panel = 
-        let panel = TableLayoutPanel()
+        let panel = new TableLayoutPanel()
         panel.GrowStyle <- TableLayoutPanelGrowStyle.FixedSize
         panel.RowCount <- 1
         panel.ColumnCount <- 2
@@ -169,7 +169,7 @@ type SmoothNodeTextBox() =
 module UIHelper =
 
     let label text =
-        let label = Label()
+        let label = new Label()
         label.AutoSize <- true
         label.Text <- text
         label.TextAlign <- ContentAlignment.MiddleLeft
@@ -179,7 +179,7 @@ module UIHelper =
 
     let form (fields:List2<_>) =
         let panel = 
-            let t = TableLayoutPanel()
+            let t = new TableLayoutPanel()
             t.AutoScroll <- true
             t.AutoSize <- true
             t.Dock <- DockStyle.Fill
@@ -204,7 +204,7 @@ module UIHelper =
               
     let vbox (controls:List2<Control>) =
         let t = 
-            let t = TableLayoutPanel()
+            let t = new TableLayoutPanel()
             t.AutoScroll <- true
             t.AutoSize <- true
             t.RowCount <- controls.length
@@ -219,7 +219,7 @@ module UIHelper =
 
     let hbox (controls:List2<Control>) =
         let t = 
-            let t = TableLayoutPanel()
+            let t = new TableLayoutPanel()
             t.AutoScroll <- true
             t.AutoSize <- true
             t.RowCount <- 1
@@ -233,15 +233,15 @@ module UIHelper =
         t  
 
     let okCancelForm control =
-        let form = Form()
+        let form = new Form()
         form.Padding <- Padding(12)
         
-        let okButton = Button()
+        let okButton = new Button()
         okButton.Text <- Localization.text3 "OK" "确定" "OK"
         okButton.Click.Add <| fun _ ->
             form.DialogResult <- DialogResult.OK
 
-        let cancelButton = Button()
+        let cancelButton = new Button()
         cancelButton.Text <- Localization.text3 "Cancel" "取消" "キャンセル"
         
         cancelButton.Click.Add <| fun _ ->

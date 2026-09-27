@@ -201,7 +201,7 @@ and
         groups.iter(ws.addGroup)
         ws
 
-type WindowResolver() as this =
+type WindowResolver() =
     let os = OS()
     let mutable hwnds = Services.program.appWindows
     let hwndToTitle = Map2(hwnds.map(fun hwnd -> (hwnd, os.windowFromHwnd(hwnd).text)))

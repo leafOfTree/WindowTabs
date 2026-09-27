@@ -130,7 +130,7 @@ type TabSprite<'id> = {
                 if this.isTop then active
                 elif this.hover.IsSome || this.captured.IsSome then highlight
                 else inactive
-        SolidBrush(color)
+        new SolidBrush(color)
 
     // The inset exists because GDI+ puts pixel centres on integer coordinates
     // once antialiasing is on, so column k spans k-0.5 to k+0.5, and a fill run

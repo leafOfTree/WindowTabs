@@ -40,12 +40,12 @@ type TaskWindowNode(item) as this=
     member this.IconImage with get() = image
 
 type TaskSwitchTreeViewControl(windows:List2<TaskWindowItem>) =
-    let font = Font("Segoe UI", 10f)
-    let nameColumn = TreeColumn("Name", 200)
+    let font = new Font("Segoe UI", 10f)
+    let nameColumn = new TreeColumn("Name", 200)
         
     let nodes = windows.map <| fun window -> TaskWindowNode(window)
     let tree,model = 
-        let tree = TreeViewAdv()
+        let tree = new TreeViewAdv()
         let model = TreeModel()
         tree.FullRowSelect <- true
         tree.UseColumns <- false
@@ -56,13 +56,13 @@ type TaskSwitchTreeViewControl(windows:List2<TaskWindowItem>) =
         tree.Font <- font
         tree.BorderStyle <- BorderStyle.None
         tree.NodeControls.Add(
-            let control = NodeControls.NodeIcon()
+            let control = new NodeControls.NodeIcon()
             control.ParentColumn <- nameColumn
             control.LeftMargin <- 3
             control.DataPropertyName <- "IconImage"
             control)
         tree.NodeControls.Add(
-            let control = SmoothNodeTextBox()
+            let control = new SmoothNodeTextBox()
             control.Trimming <- StringTrimming.EllipsisCharacter
             control.DisplayHiddenContentInToolTip <- true
             control.ParentColumn <- nameColumn
@@ -81,17 +81,17 @@ type TaskSwitchTreeViewControl(windows:List2<TaskWindowItem>) =
             let scrollBarWidth = 40
             nameColumn.Width <- form.Width - scrollBarWidth
 
-type TaskSwitchForm(control:ITaskSwitchListControl) as this =
+type TaskSwitchForm(control:ITaskSwitchListControl) =
     let os = OS()
     let form = 
         let f = { 
             new Form() with
                 override this.CreateParams with get() =
-                    let params = base.CreateParams
-                    params.ExStyle <- params.ExStyle ||| 
+                    let createParams = base.CreateParams
+                    createParams.ExStyle <- createParams.ExStyle ||| 
                         WindowsExtendedStyles.WS_EX_DLGMODALFRAME |||
                         WindowsExtendedStyles.WS_EX_TOPMOST
-                    params
+                    createParams
         }
         let formSize = Size(600,400)
         let screenSize= Screen.PrimaryScreen.Bounds.Size
@@ -179,7 +179,7 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>) as this =
 type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop) as this=
     let os = OS()
     let Cell = CellScope()
-    let hotKeyManager = HotKeyManager()
+    let hotKeyManager = new HotKeyManager()
     let switcherCell = Cell.create(None:TaskSwitchAction option)
     let doTaskSwitch prev =
         if switcherCell.value.IsNone then

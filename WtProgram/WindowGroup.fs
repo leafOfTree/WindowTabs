@@ -226,7 +226,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                         let iconSize = icon.Size.Sz
                         let img = Img(size)
                         let g = img.graphics
-                        g.FillRectangle(SolidBrush(Color.LightGray), Rect(Pt(), size).Rectangle)
+                        g.FillRectangle(new SolidBrush(Color.LightGray), Rect(Pt(), size).Rectangle)
                         g.DrawIcon(icon, ((size.width - iconSize.width).float / 2.0).Int32, ((size.height - iconSize.height).float / 2.0).Int32)
                         img
                     else

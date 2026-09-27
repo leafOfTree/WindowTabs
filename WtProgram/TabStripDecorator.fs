@@ -25,7 +25,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         Services.dragDrop.registerTarget(this.ts.hwnd, this:>IDragDropTarget)
     
-        dropTarget.set(Some(OleDropTarget(this.ts)))
+        dropTarget.set(Some(new OleDropTarget(this.ts)))
         this.ts.destroying.Add(fun () ->
             dropTarget.value.iter(fun target -> (target :> IDisposable).Dispose())
             dropTarget.set(None))
@@ -138,7 +138,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         group.windows.items.iter this.onCloseWindow
 
     member private this.contextMenu(hwnd) =
-        let checked(isChecked) = if isChecked then List2([MenuFlags.MF_CHECKED]) else List2()
+        let checkedFlag(isChecked) = if isChecked then List2([MenuFlags.MF_CHECKED]) else List2()
         let grayed(isGrayed) = if isGrayed then List2([MenuFlags.MF_GRAYED]) else List2()
         let iconOnlyItem = CmiRegular({
             text = (if group.isIconOnly then Localization.text "Expand tabs" "展开标签" else Localization.text "Shrink tabs" "收起标签")
@@ -159,7 +159,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             let alignmentMenuItem(text,alignment) = CmiRegular({
                 text = text
                 image = None
-                flags = checked(currentAlignment = alignment)
+                flags = checkedFlag(currentAlignment = alignment)
                 click = setAlignment alignment
             })
             CmiPopUp({
@@ -177,7 +177,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             let isEnabled = group.bb.read("autoHide", isAutoHideEnabledDef)
             CmiRegular({
                 text = Localization.text "Auto-hide when maximized" "最大化时自动收起"
-                flags = checked(isEnabled)
+                flags = checkedFlag(isEnabled)
                 image = None
                 click = fun() ->
                     group.bb.write("autoHide", isEnabled.not)
@@ -196,7 +196,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 text = Localization.text "Combine icons in taskbar" "合并任务栏图标"
                 image = None
                 click = fun() -> Services.desktop.restartGroup(group.hwnd, group.isSuperBarEnabled.not)
-                flags = checked(group.isSuperBarEnabled)
+                flags = checkedFlag(group.isSuperBarEnabled)
             })
         
         let renameTabItem =
@@ -229,7 +229,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 text = Localization.text (sprintf "Group tabs for '%s' windows" exeName) (sprintf "自动分组“%s”窗口" exeName)
                 image = None
                 click = fun() -> Services.program.setAutoGroupingEnabled processPath isGrouped.not
-                flags = checked(isGrouped)
+                flags = checkedFlag(isGrouped)
             })
                  
         let closeTabItem = 

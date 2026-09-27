@@ -31,10 +31,10 @@ type WindowDecorator = {
         )
 
     member this.shouldShowInside = 
-        use decoratorOutsideRegion = Rgn(this.outsideBounds)
-        use decoratorInsideRegion = Rgn(this.insideBounds)
+        use decoratorOutsideRegion = new Rgn(this.outsideBounds)
+        use decoratorInsideRegion = new Rgn(this.insideBounds)
         this.monitorBounds.any <| fun monitorBounds ->
-            use monitorRegion = Rgn(monitorBounds)
+            use monitorRegion = new Rgn(monitorBounds)
             use onMonitorInsideRegion = monitorRegion.intersect(decoratorInsideRegion)
             use onMonitorOutsideRegion = monitorRegion.intersect(decoratorOutsideRegion)
             onMonitorInsideRegion.box.height > onMonitorOutsideRegion.box.height

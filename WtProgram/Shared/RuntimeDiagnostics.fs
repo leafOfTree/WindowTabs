@@ -20,11 +20,11 @@ module RuntimeMetrics =
 
 module RuntimeDiagnostics =
     [<DllImport("user32.dll")>]
-    extern uint32 private GetGuiResources(IntPtr process, uint32 flags)
+    extern uint32 private GetGuiResources(IntPtr current, uint32 flags)
     let resourceCounts() =
-        use process = Process.GetCurrentProcess()
-        process.Refresh()
-        int(GetGuiResources(process.Handle,0u)),int(GetGuiResources(process.Handle,1u)),process.HandleCount,process.PrivateMemorySize64
+        use current = Process.GetCurrentProcess()
+        current.Refresh()
+        int(GetGuiResources(current.Handle,0u)),int(GetGuiResources(current.Handle,1u)),current.HandleCount,current.PrivateMemorySize64
     /// Allow-list only non-identifying settings. Paths, titles, license data and unknown fields never enter reports.
     let settingsSummary (settings:JObject) =
         let result = JObject()

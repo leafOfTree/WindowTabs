@@ -49,7 +49,7 @@ type InvokerService =
     static member invoker
         with get() =
             if InvokerService._invoker = null then
-                InvokerService._invoker <- Invoker()
+                InvokerService._invoker <- new Invoker()
             InvokerService._invoker
 
 module ThreadHelper =
