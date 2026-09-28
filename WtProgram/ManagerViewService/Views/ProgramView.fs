@@ -6,9 +6,21 @@ open System.Windows.Forms
 open Bemo.Win32.Forms
 
 module ImgHelper =
+    /// Keeps the icon's native size; the list scales it to the row, so 32px sources stay sharp at high DPI.
     let imgFromIcon (icon:Icon) =
-        use bitmap = try icon.ToBitmap() with _ -> SystemIcons.Application.ToBitmap()
-        new Bitmap(bitmap,Size(16,16)) :> Image
+        (try icon.ToBitmap() with _ -> SystemIcons.Application.ToBitmap()) :> Image
+    /// A window's own icon, or None when it only has the generic application icon. UWP apps
+    /// behind ApplicationFrameHost publish no window icon; their package icon is used instead.
+    let windowIcon (window:Window) : Image option =
+        if window.className="ApplicationFrameWindow" then
+            AppIcons.GetAppIcon(AppIcons.GetHostedAppId(window.hwnd),32) |> Option.ofObj |> Option.map(fun icon -> icon :> Image)
+        else
+            let big,small = window.iconBig,window.iconSmall
+            let source,other = if big.Width >= small.Width then big,small else small,big
+            if not (obj.ReferenceEquals(other,SystemIcons.Application)) then other.Dispose()
+            if obj.ReferenceEquals(source,SystemIcons.Application) then None
+            elif AppIcons.IsGenericIcon(source.Handle) then source.Dispose(); None
+            else try Some(imgFromIcon source) finally source.Dispose()
     /// List items own their icons; release them when a list is replaced or discarded.
     let rec disposeItems (items:seq<TreeListItem>) =
         for item in items do
@@ -18,23 +30,20 @@ module ImgHelper =
 module private ProgramItems =
     /// Column indexes of the check boxes.
     let tabsColumn,groupingColumn = 1,2
-    let exe (path:string) =
+    /// The icon the app shows on the taskbar (its first window), else the executable's own
+    /// icon. A host without icons of its own (ApplicationFrameHost.exe) gets a line glyph
+    /// rather than borrowing one hosted app's logo.
+    let exe (path:string) (first:Window) =
         let icon =
-            let handle = Win32Helper.GetFileIcon(path)
-            try
-                match Ico.fromHandle(handle) with
-                | Some icon -> use owned = icon in ImgHelper.imgFromIcon owned
-                | None -> ImgHelper.imgFromIcon SystemIcons.Application
-            finally if handle<>IntPtr.Zero then WinUserApi.DestroyIcon(handle) |> ignore
-        TreeListItem(Path.GetFileName(path),Icon=icon,Tag=path,
+            if not (AppIcons.HasOwnIcon path) then None
+            else
+                match ImgHelper.windowIcon first with
+                | Some icon -> Some icon
+                | None -> try Some(use icon = Icon.ExtractAssociatedIcon(path) in ImgHelper.imgFromIcon icon) with _ -> None
+        TreeListItem(Path.GetFileName(path),Icon=Option.toObj icon,Glyph=WindowGlyph,Tag=path,
                      Checks=[|None;Some(Services.filter.getIsTabbingEnabledForProcess path);Some(Services.program.getAutoGroupingEnabled path)|])
     let window (window:Window) =
-        let icon =
-            let source = window.iconSmall
-            try ImgHelper.imgFromIcon source
-            finally if not(obj.ReferenceEquals(source,SystemIcons.Application)) then source.Dispose()
-        TreeListItem(window.text,Icon=icon)
-
+        TreeListItem(window.text,Icon=Option.toObj (ImgHelper.windowIcon window),Glyph=WindowGlyph)
 type ProgramView() as this=
     let invoker = InvokerService.invoker
     let t = SettingsUi.text
@@ -93,7 +102,7 @@ type ProgramView() as this=
                                     match procs.TryGetValue(path) with
                                     | true,item -> item
                                     | _ ->
-                                        let item = ProgramItems.exe path
+                                        let item = ProgramItems.exe path window
                                         procs.Add(path,item)
                                         items.Add(item)
                                         item

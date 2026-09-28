@@ -23,15 +23,17 @@ type ITaskSwitchListControl =
 module private TaskWindowItems =
     let create (TaskWindowItem(hwnd,isGroup)) =
         let window = OS().windowFromHwnd(hwnd)
-        let image = 
-            let icon = if window.iconBig.Width > window.iconSmall.Width then window.iconBig else window.iconSmall
-            let image = Img(icon.ToBitmap()).resize(Sz(32,32))
+        match ImgHelper.windowIcon window with
+        | Some icon ->
+            let image = Img(new Bitmap(icon)).resize(Sz(32,32))
+            icon.Dispose()
             if isGroup then
-                let badge = Img(Services.openIcon("Bemo.ico").ToBitmap()).resize(Sz(16,16)).bitmap
+                use badgeIcon = Services.openIcon("Bemo.ico")
+                let badge = Img(badgeIcon.ToBitmap()).resize(Sz(16,16)).bitmap
                 let g = image.graphics
                 g.DrawImage(badge, Point(16,16))
-            image.bitmap
-        TreeListItem(window.text,Icon=image)
+            TreeListItem(window.text,Icon=image.bitmap)
+        | None -> TreeListItem(window.text,Glyph=WindowGlyph)
 
 type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
     let list =

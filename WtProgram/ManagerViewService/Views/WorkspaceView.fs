@@ -46,7 +46,12 @@ type WorkspaceView() as this =
         let selected = defaultArg select (if isNull list.SelectedItem then null else list.SelectedItem.Tag)
         let rec item (model:Dynamic) : TreeListItem =
             let showSettings : bool = model?showSettings
-            let row = TreeListItem(model?name,Icon=(model?icon : Image),Tag=model,Expanded=expanded.Contains(model))
+            let glyph =
+                match box model with
+                | :? Workspace -> WorkspaceGlyph
+                | :? WorkspaceGroup -> GroupGlyph
+                | _ -> WindowGlyph
+            let row = TreeListItem(model?name,Glyph=glyph,Tag=model,Expanded=expanded.Contains(model))
             if showSettings then row.Values <- [|"";string(model?matchType);model?title|]
             for child in (model?children : List2<Dynamic>).list do row.Add(item child) |> ignore
             row

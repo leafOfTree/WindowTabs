@@ -80,6 +80,14 @@ let main() =
     check (gap.overlap= -30 && (AppearanceJson.normalizeGeometry {gap with overlap= -500}).overlap= -100) "Tab gap lost its stored sign or bounds"
     check (SettingsCatalog.normalizeChoice "alignment" "invalid"="Center") "Invalid choice was not normalized"
     check (SettingsCatalog.normalizeChoice "language" "fr"="system") "Unknown language was not normalized"
+    // File icons must resolve for paths outside the ANSI code page (SHGetFileInfo is called as Unicode).
+    let unicodeDir = IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug","图标 アイコン")
+    IO.Directory.CreateDirectory(unicodeDir) |> ignore
+    let unicodeExe = IO.Path.Combine(unicodeDir,"WindowTabs.exe")
+    IO.File.Copy(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug","WindowTabs.exe"),unicodeExe,true)
+    let fileIcon = Win32Helper.GetFileIcon(unicodeExe)
+    check (AppIcons.HasOwnIcon unicodeExe && not (AppIcons.IsGenericIcon fileIcon)) "File icon lost for a non-ASCII path"
+    WinUserApi.DestroyIcon(fileIcon) |> ignore
     for code,expected in ["en","Close";"zh","关闭";"ja","閉じる"] do
         Localization.setPreference code
         check (Localization.text3 "Close" "关闭" "閉じる"=expected) ("Language override ignored: "+code)

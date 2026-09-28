@@ -9,6 +9,14 @@ type TreeListColumnKind =
     | TextColumn
     | CheckColumn
 
+/// Line icons drawn in the theme's muted colour, in the style of the settings sidebar icons.
+/// Used for the app's own objects and wherever no real icon is available.
+type TreeListGlyph =
+    | NoGlyph
+    | WindowGlyph
+    | GroupGlyph
+    | WorkspaceGlyph
+
 /// A column of SettingsTreeList. Width is in logical pixels; 0 fills the remaining width.
 /// Column 0 is the tree column: expand chevron, icon and the item's Text.
 type TreeListColumn(header:string, width:int, kind:TreeListColumnKind) =
@@ -24,6 +32,8 @@ type TreeListItem(text:string) =
     member val Text = text with get,set
     /// Drawn but not owned by the list.
     member val Icon : Image = null with get,set
+    /// Drawn when Icon is null.
+    member val Glyph = NoGlyph with get,set
     member val Values : string[] = [||] with get,set
     member val Checks : bool option[] = [||] with get,set
     member val Expanded = false with get,set
@@ -154,6 +164,30 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             checkChanged.Trigger((item,column,not value))
         | None -> ()
 
+    /// Draws a glyph on a 16-unit grid scaled to the box.
+    static member drawGlyph(g:Graphics, glyph:TreeListGlyph, box:Rectangle, color:Color) =
+        let state = g.Save()
+        g.SmoothingMode <- SmoothingMode.AntiAlias
+        g.TranslateTransform(float32 box.X,float32 box.Y)
+        g.ScaleTransform(float32 box.Width/16.0f,float32 box.Height/16.0f)
+        use pen = new Pen(color,1.2f)
+        match glyph with
+        | WindowGlyph ->
+            use frame = SettingsShapes.rounded (RectangleF(1.5f,2.5f,13.0f,11.0f)) 2.0f
+            g.DrawPath(pen,frame)
+            g.DrawLine(pen,1.5f,5.5f,14.5f,5.5f)
+        | GroupGlyph ->
+            use frame = SettingsShapes.rounded (RectangleF(1.5f,5.0f,13.0f,9.0f)) 2.0f
+            g.DrawPath(pen,frame)
+            g.DrawLines(pen,[|PointF(2.5f,5.0f);PointF(2.5f,2.5f);PointF(7.0f,2.5f);PointF(8.5f,5.0f)|])
+        | WorkspaceGlyph ->
+            use back = SettingsShapes.rounded (RectangleF(1.5f,1.5f,9.5f,8.5f)) 1.5f
+            use front = SettingsShapes.rounded (RectangleF(5.0f,6.0f,9.5f,8.5f)) 1.5f
+            g.DrawPath(pen,back)
+            g.DrawPath(pen,front)
+        | NoGlyph -> ()
+        g.Restore(state)
+
     override this.OnResize(e) = base.OnResize(e); this.updateScroll()
     override this.OnGotFocus(e) = base.OnGotFocus(e); this.Invalidate()
     override this.OnLostFocus(e) = base.OnLostFocus(e); this.Invalidate()
@@ -281,10 +315,14 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         use pen = new Pen(p.muted,1.5f)
                         g.DrawLines(pen,points)
                     let mutable x = cell.X+this.textLeft level
+                    let size = Dpi.scale this.IconSize
+                    let iconBox = Rectangle(x,top+(rowHeight-size)/2,size,size)
                     if not (isNull item.Icon) then
-                        let size = Dpi.scale this.IconSize
                         g.InterpolationMode <- InterpolationMode.HighQualityBicubic
-                        g.DrawImage(item.Icon,Rectangle(x,top+(rowHeight-size)/2,size,size))
+                        g.DrawImage(item.Icon,iconBox)
+                        x <- x+size+Dpi.scale 8
+                    elif item.Glyph<>NoGlyph then
+                        SettingsTreeList.drawGlyph(g,item.Glyph,iconBox,p.muted)
                         x <- x+size+Dpi.scale 8
                     TextRenderer.DrawText(g,item.Text,this.Font,Rectangle(x,top,max 1 (cell.Right-x-Dpi.scale 8),rowHeight),text,flags)
                 | TextColumn ->

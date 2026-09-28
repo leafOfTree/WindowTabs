@@ -119,7 +119,8 @@
 
   <ItemGroup>
     <!-- Loaded by file name (GetManifestResourceStream "Bemo.ico"), so keep the bare names. -->
-    <EmbeddedResource Include="Resources\*.ico;Resources\*.png" LogicalName="%(Filename)%(Extension)" />  </ItemGroup>
+    <EmbeddedResource Include="Resources\*.ico" LogicalName="%(Filename)%(Extension)" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Update="FSharp.Core" Version="10.1.401" />

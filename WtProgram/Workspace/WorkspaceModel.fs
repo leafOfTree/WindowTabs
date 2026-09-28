@@ -31,7 +31,6 @@ type WorkspaceWindowTitleMatchType =
 
 type WorkspaceWindow() as this = 
     inherit Dynamic()
-    let _icon = Services.openImage("window.png")
     let removedEvent = Event<_>()
     let data = ModelObject()
 
@@ -51,7 +50,6 @@ type WorkspaceWindow() as this =
         with get() = data.get("zorder").cast<int>()
         and set(value) = data.set("zorder", value)
 
-    member this.icon = _icon
     member this.children = List2<Dynamic>()
     interface IWorkspaceNode with
         member x.showSettings = true
@@ -157,7 +155,6 @@ and
     let removedEvent = Event<_>()
     [<DefaultValue>] val mutable name : string
     let mutable _groups  = System.Collections.Generic.List<Dynamic>()
-    let _icon = Services.openImage("workspace.png")
     
     member this.addGroup(group) =
         group.cast<IWorkspaceNode>().removed.Add <| fun()-> this.removeGroup(group)
@@ -168,7 +165,6 @@ and
 
     member this.groups = List2(_groups)
     member this.children = this.groups
-    member this.icon = _icon
 
     interface IWorkspaceNode with
         member x.showSettings = false
