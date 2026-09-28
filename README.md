@@ -88,13 +88,15 @@ Logs and rendered previews are written to `tests/Debug/`.
 - Entry point: `Program.fs` this.run
 - Tray icon (Notify icon): `NotifyIconPlugin.fs` this.icon
 - Settings Window: `DesktopManagerForm.fs`. Its tabs are under `ManagerViewService/Views/`
-- Tree: `treeviewadv/`. Probably from https://sourceforge.net/projects/treeviewadv/
+- Lists (App rules, Workspaces, Alt+Tab switcher): `SettingsTreeList.fs`
 - Taskbar group: `SuperBarPlugin.fs`
 - GUI framework: WinForms
 
 ## Changes
 
 2025
+
+- Replace the 2009 TreeViewAdv library with a small built-in list control: App rules, Workspaces and the Alt+Tab switcher follow the light/dark theme and DPI, and the executable no longer bundles the library
 
 - Add a language setting (follow Windows, English, 中文, 日本語) and translate the tray menu, tab menu and dialogs into Chinese; the Japanese translation now ships in the released exe
 

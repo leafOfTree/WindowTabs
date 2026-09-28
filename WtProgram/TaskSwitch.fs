@@ -4,8 +4,6 @@ open System.Drawing
 open System.Runtime.InteropServices
 open System.Windows.Forms
 open Bemo.Win32
-open Aga.Controls
-open Aga.Controls.Tree
 
 type ITaskSwitchGroup =
     abstract member hwnd : IntPtr
@@ -22,65 +20,35 @@ type ITaskSwitchListControl =
     abstract member control : Control
     abstract member onShow : Form -> unit
 
-type TaskWindowNode(item) as this=
-    inherit Node()
-    let os = OS()
-    let (TaskWindowItem(hwnd,isGroup)) = item
-    let window = os.windowFromHwnd(hwnd)
-    let image = 
-        let icon = if window.iconBig.Width > window.iconSmall.Width then window.iconBig else window.iconSmall
-        let image = Img(icon.ToBitmap()).resize(Sz(32,32))
-        if isGroup then
-            let badge = Img(Services.openIcon("Bemo.ico").ToBitmap()).resize(Sz(16,16)).bitmap
-            let g = image.graphics
-            g.DrawImage(badge, Point(16,16))
-        image.bitmap
-    do
-        this.Text <- window.text
-    member this.IconImage with get() = image
+module private TaskWindowItems =
+    let create (TaskWindowItem(hwnd,isGroup)) =
+        let window = OS().windowFromHwnd(hwnd)
+        let image = 
+            let icon = if window.iconBig.Width > window.iconSmall.Width then window.iconBig else window.iconSmall
+            let image = Img(icon.ToBitmap()).resize(Sz(32,32))
+            if isGroup then
+                let badge = Img(Services.openIcon("Bemo.ico").ToBitmap()).resize(Sz(16,16)).bitmap
+                let g = image.graphics
+                g.DrawImage(badge, Point(16,16))
+            image.bitmap
+        TreeListItem(window.text,Icon=image)
 
-type TaskSwitchTreeViewControl(windows:List2<TaskWindowItem>) =
-    let font = new Font("Segoe UI", 10f)
-    let nameColumn = new TreeColumn("Name", 200)
-        
-    let nodes = windows.map <| fun window -> TaskWindowNode(window)
-    let tree,model = 
-        let tree = new TreeViewAdv()
-        let model = TreeModel()
-        tree.FullRowSelect <- true
-        tree.UseColumns <- false
-        tree.ShowLines <- false
-        tree.ShowPlusMinus <- false
-        tree.Columns.Add(nameColumn)
-        tree.RowHeight <- 48
-        tree.Font <- font
-        tree.BorderStyle <- BorderStyle.None
-        tree.NodeControls.Add(
-            let control = new NodeControls.NodeIcon()
-            control.ParentColumn <- nameColumn
-            control.LeftMargin <- 3
-            control.DataPropertyName <- "IconImage"
-            control)
-        tree.NodeControls.Add(
-            let control = new SmoothNodeTextBox()
-            control.Trimming <- StringTrimming.EllipsisCharacter
-            control.DisplayHiddenContentInToolTip <- true
-            control.ParentColumn <- nameColumn
-            control.DataPropertyName <- "Text"
-            control.LeftMargin <- 3
-            control)
-        nodes.iter(model.Nodes.Add)
-        tree.Model <- model
-        tree,model
+type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
+    let list =
+        new SettingsTreeList([TreeListColumn("",0,TextColumn)],
+                             ShowHeader=false,ShowExpanders=false,RowHeight=48,IconSize=32)
+    do
+        list.Roots.AddRange(windows.list |> List.map TaskWindowItems.create)
+        list.Rebuild()
+        list.Disposed.Add(fun _ -> ImgHelper.disposeItems list.Roots)
 
     interface ITaskSwitchListControl with
-        member this.select index =  
-            tree.SelectedNode <- tree.Root.Children.Item(index)
-        member this.control = tree :> Control
-        member this.onShow form = 
-            let scrollBarWidth = 40
-            nameColumn.Width <- form.Width - scrollBarWidth
-
+        member this.select index = list.SelectedItem <- list.Roots.[index]
+        member this.control = list :> Control
+        member this.onShow form =
+            let p = SettingsColors.current()
+            form.BackColor <- p.surface
+            list.BackColor <- p.surface
 type TaskSwitchForm(control:ITaskSwitchListControl) =
     let os = OS()
     let form = 
@@ -126,7 +94,7 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>) as this =
     let os = OS()
     let Cell = CellScope()        
     let switchIndex = Cell.create(0)
-    let form = TaskSwitchForm(TaskSwitchTreeViewControl(windows))
+    let form = TaskSwitchForm(TaskSwitchListControl(windows))
     let endedEvent = Event<_>()
 
     let setIndex index =

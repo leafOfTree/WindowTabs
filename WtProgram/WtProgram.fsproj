@@ -33,7 +33,7 @@
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <Tailcalls>true</Tailcalls>
     <!-- Release is a single self-contained WindowTabs.exe. -->
-    <OtherFlags>$(OtherFlags) --standalone --staticlink:Win32 --staticlink:Newtonsoft.Json --staticlink:Aga.Controls --staticlink:Interop.SHDocVw --staticlink:Interop.Shell32</OtherFlags>
+    <OtherFlags>$(OtherFlags) --standalone --staticlink:Win32 --staticlink:Newtonsoft.Json --staticlink:Interop.SHDocVw --staticlink:Interop.Shell32</OtherFlags>
     <!-- FS2011: framework internals (SMDiagnostics, System.ServiceModel.Internals) reached through
          System.Runtime.Serialization are not in the reference assemblies; they stay in the GAC, not the exe. -->
     <NoWarn>$(NoWarn);2009;2011</NoWarn>
@@ -81,7 +81,6 @@
     <Compile Include="AppearanceJson.fs" />
     <Compile Include="SettingsFileStore.fs" />
     <Compile Include="Settings.fs" />
-    <Compile Include="TaskSwitch.fs" />
     <Compile Include="WindowDecorator.fs" />
     <Compile Include="OleDropTarget.fs" />
     <Compile Include="WindowGroup.fs" />
@@ -99,6 +98,7 @@
     <Compile Include="ManagerViewService\SettingsEditors.fs" />
     <Compile Include="ManagerViewService\SettingsPage.fs" />
     <Compile Include="ManagerViewService\SettingsUi.fs" />
+    <Compile Include="ManagerViewService\SettingsTreeList.fs" />
     <Compile Include="ManagerViewService\SettingsBindings.fs" />
     <Compile Include="ManagerViewService\SettingsListPage.fs" />
     <Compile Include="ManagerViewService\Views\GeneralView.fs" />
@@ -113,6 +113,7 @@
     <Compile Include="DesktopPlugins\InputManagerPlugin.fs" />
     <Compile Include="DesktopPlugins\NotifyIconPlugin.fs" />
     <Compile Include="DesktopPlugins\ExceptionHandlerPlugin.fs" />
+    <Compile Include="TaskSwitch.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
@@ -130,7 +131,6 @@
     <Reference Include="Interop.SHDocVw" HintPath="..\Interop.SHDocVw.dll" />
     <Reference Include="Interop.Shell32" HintPath="..\Interop.Shell32.dll" />
     <ProjectReference Include="..\Win32\Win32.csproj" />
-    <ProjectReference Include="..\treeviewadv\Aga.Controls\Aga.Controls.csproj" />
   </ItemGroup>
 
 </Project>

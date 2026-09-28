@@ -8,8 +8,6 @@ open System.Windows.Forms
 open Bemo.Win32.Forms
 open Newtonsoft.Json
 open Newtonsoft.Json.Linq
-open Aga.Controls
-open Aga.Controls.Tree
 
 type IEditInfo =
     abstract member title : string

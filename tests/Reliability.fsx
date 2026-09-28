@@ -2,7 +2,6 @@
 #r "System.Windows.Forms"
 #r "Debug/Newtonsoft.Json.dll"
 #r "Debug/Win32.dll"
-#r "Debug/Aga.Controls.dll"
 #r "Debug/WindowTabs.exe"
 open System
 open System.Threading

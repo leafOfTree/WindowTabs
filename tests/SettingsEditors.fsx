@@ -234,6 +234,37 @@ let main() =
         bitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","shortcuts-"+name+".png"))
         hotKeys.["nextTab"] <- 3623
         form.Close()
+    // SettingsTreeList: expansion, keyboard navigation, check boxes and selection events.
+    let treeList = new SettingsTreeList([TreeListColumn("Name",0,TextColumn);TreeListColumn("On",80,CheckColumn)])
+    treeList.Size <- Size(400,300)
+    let parentItem = TreeListItem("parent",Checks=[|None;Some false|])
+    let childItem = parentItem.Add(TreeListItem("child"))
+    let secondItem = TreeListItem("second")
+    treeList.Roots.AddRange([parentItem;secondItem])
+    treeList.Rebuild()
+    let mutable toggled = None
+    let mutable selections = 0
+    treeList.CheckChanged.Add(fun (item,column,value) -> toggled <- Some(item.Text,column,value))
+    treeList.SelectionChanged.Add(fun _ -> selections <- selections+1)
+    key treeList Keys.Down
+    assertTrue (Object.ReferenceEquals(treeList.SelectedItem,parentItem) && selections=1) "Tree list: first row selected"
+    key treeList Keys.Down
+    assertTrue (Object.ReferenceEquals(treeList.SelectedItem,secondItem)) "Tree list: collapsed children are skipped"
+    key treeList Keys.Up
+    key treeList Keys.Right
+    assertTrue parentItem.Expanded "Tree list: Right expands"
+    key treeList Keys.Down
+    assertTrue (Object.ReferenceEquals(treeList.SelectedItem,childItem)) "Tree list: expanded children are listed"
+    key treeList Keys.Left
+    assertTrue (Object.ReferenceEquals(treeList.SelectedItem,parentItem)) "Tree list: Left moves to the parent"
+    key treeList Keys.Space
+    assertTrue (toggled=Some("parent",1,true) && parentItem.Checks.[1]=Some true) "Tree list: Space toggles the check box"
+    key treeList Keys.Left
+    assertTrue (not parentItem.Expanded) "Tree list: Left collapses"
+    treeList.Roots.Remove(parentItem) |> ignore
+    treeList.Rebuild()
+    assertTrue (isNull treeList.SelectedItem) "Tree list: removed selection is cleared"
+    treeList.Dispose()
     printfn "PASS: input validation, no-op changes, HSV colours, repeated popup dismissal, shortcut recording and light/dark renders."
 
 main()

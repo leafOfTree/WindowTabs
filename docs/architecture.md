@@ -107,12 +107,14 @@ settings; paths, titles and license data are excluded. Full settings export is a
 separate user-selected action and reads the current in-memory root, including pending
 debounced edits.
 
-## Vendored TreeViewAdv
+## Lists
 
-`treeviewadv/Aga.Controls` is a vendored copy. Its `AbortableThreadPool` uses
-`Thread.Abort`, which modern .NET does not support; it only runs when a tree enables
-`AsyncExpanding`, which WindowTabs never does. Remove that path before any move off
-.NET Framework.
+`SettingsTreeList` is the one list control: App rules, Workspaces and the Alt+Tab
+switcher use it. It is owner-drawn with `SettingsColors` (so it follows the theme),
+sizes everything with `Dpi`, and takes plain `TreeListItem` rows: a tree column with
+chevron and icon, text columns and check-box columns. Items do not own their icons;
+views dispose icons they create (`ImgHelper.disposeItems`). It replaced the vendored
+2009 TreeViewAdv library.
 
 ## DPI and stress verification
 

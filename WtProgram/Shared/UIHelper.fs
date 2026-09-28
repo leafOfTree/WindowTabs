@@ -3,7 +3,6 @@ open System
 open System.Drawing
 open System.Drawing.Text
 open System.Windows.Forms
-open Aga.Controls.Tree
 open Bemo.Win32
 
 [<AllowNullLiteral>]
@@ -156,14 +155,6 @@ type ColorEditor() as this =
                 textBox.Text <- sprintf "%X" (color.ToRGB())
         member x.control = panel :> Control
         member x.changed = changedEvent.Publish
-
-
-type SmoothNodeTextBox() = 
-    inherit NodeControls.NodeTextBox()
-
-    override this.Draw(node, context) =
-        context.Graphics.TextRenderingHint <- TextRenderingHint.ClearTypeGridFit
-        base.Draw(node, context)
 
 
 module UIHelper =
