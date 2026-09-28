@@ -92,20 +92,24 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         | None -> ()
         | Some page ->
             if activePage=key && page.isCreated && page.control.Parent=host && page.control.Visible then () else
+                // Construct before suspending layout: a failed page must not freeze navigation.
+                let nextControl = page.control
                 host.SuspendLayout()
-                for control in host.Controls do control.Visible <- false
-                page.control.Dock <- DockStyle.Fill
-                if page.control.Parent<>host then host.Controls.Add(page.control)
-                page.control.Visible <- true
-                page.control.BringToFront()
-                activePage <- key
-                for other,button in buttons do
-                    let tag = if other.key=key then "nav-active" else "nav"
-                    if string button.Tag<>tag then
-                        button.Tag <- tag
-                        button.Invalidate()
-                if themedPages.Add(key) then SettingsUi.apply page.control
-                host.ResumeLayout(true)
+                try
+                    nextControl.Dock <- DockStyle.Fill
+                    if nextControl.Parent<>host then host.Controls.Add(nextControl)
+                    for control in host.Controls do control.Visible <- (control=nextControl)
+                    nextControl.BringToFront()
+                    activePage <- key
+                    for other,button in buttons do
+                        let tag = if other.key=key then "nav-active" else "nav"
+                        if string button.Tag<>tag then
+                            button.Tag <- tag
+                            button.Invalidate()
+                    if not (themedPages.Contains(key)) then
+                        SettingsUi.apply nextControl
+                        themedPages.Add(key) |> ignore
+                finally host.ResumeLayout(true)
     do
         form.AutoScaleDimensions <- SizeF(float32(Dpi.value()),float32(Dpi.value()))
         form.AutoScaleMode <- AutoScaleMode.Dpi
@@ -120,14 +124,10 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         form.MinimumSize <- Size(Dpi.scale 840,Dpi.scale 580)
         form.Size <- Size(Dpi.scale 980,Dpi.scale 760)
         form.Icon <- Services.openIcon(currentIconName)
-        let searchBox = new SettingsSearchBox(Width=Dpi.scale 164,Height=Dpi.scale 36,
-                                  Padding=Padding(Dpi.scale 36,Dpi.scale 7,Dpi.scale 12,Dpi.scale 6),
+        let searchBox = new SettingsSearchBox(search,Width=Dpi.scale 164,Height=Dpi.scale 36,
                                   Margin=Padding(0,Dpi.scale 4,0,Dpi.scale 16))
-        search.Dock <- DockStyle.Top
         search.HandleCreated.Add(fun _ ->
             SettingsWindowNative.SetCue(search.Handle,0x1501,IntPtr.Zero,t "Search" "搜索") |> ignore)
-        searchBox.Controls.Add(search)
-        searchBox.MouseClick.Add(fun _ -> search.Focus() |> ignore)
         SettingsUi.add links searchBox
         for page,button in buttons do
             SettingsUi.add links button
@@ -213,6 +213,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 if matches.Length>0 then results.SelectedIndex <- 0
                 showSearch()
         let navigateResult() =
+            searchResults.Hide()
             let selected = results.SelectedIndex
             if selected>=0 && selected<matches.Length then
                 let item = matches.[selected]

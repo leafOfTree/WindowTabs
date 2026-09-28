@@ -4,33 +4,77 @@ open System.Drawing
 open System.Windows.Forms
 open System.Runtime.InteropServices
 
-type SettingsSearchBox() as this =
+type SettingsSearchBox(search:TextBox) as this =
     inherit Panel()
     do
         this.DoubleBuffered <- true
         this.ResizeRedraw <- true
         this.Tag <- "search-box"
+        this.Controls.Add(search)
+        this.Layout.Add(fun _ ->
+            let right = if search.TextLength>0 then Dpi.scale 36 else Dpi.scale 12
+            search.SetBounds(Dpi.scale 36,(this.Height-search.Height)/2,
+                             max 20 (this.Width-Dpi.scale 36-right),search.Height))
+        search.TextChanged.Add(fun _ -> this.PerformLayout(); this.Invalidate())
+        search.Enter.Add(fun _ -> this.Invalidate())
+        search.Leave.Add(fun _ -> this.Invalidate())
+    override this.OnMouseDown(e) =
+        base.OnMouseDown(e)
+        if e.Button=MouseButtons.Left then
+            if search.TextLength>0 && e.X>=this.Width-Dpi.scale 32 then search.Clear()
+            search.Focus() |> ignore
     override this.OnPaintBackground(e) =
         let p = SettingsColors.current()
         e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
         if this.Width>2 && this.Height>2 then
             e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-            use path = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 8))
+            use path = SettingsShapes.rounded (RectangleF(1.0f,1.0f,float32(this.Width-3),float32(this.Height-3))) (float32(Dpi.scale 10))
             use fill = new SolidBrush(p.surface)
             let border =
                 if SystemInformation.HighContrast then p.border
-                elif ThemeService.currentIsDark() then Color.FromRGB(0x3B3B39)
+                elif search.Focused && ThemeService.currentIsDark() then Color.FromRGB(0x777773)
+                elif search.Focused then p.accent
+                elif ThemeService.currentIsDark() then Color.FromRGB(0x4A4A48)
                 else Color.FromRGB(0xD6D6D3)
-            use pen = new Pen(border)
+            use pen = new Pen(border,if search.Focused && not (ThemeService.currentIsDark()) then float32(Dpi.scaleF 1.5) else 1.0f)
             e.Graphics.FillPath(fill,path)
             e.Graphics.DrawPath(pen,path)
     override this.OnPaint(e) =
         base.OnPaint(e)
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-        use pen = new Pen((SettingsColors.current()).muted,float32(Dpi.scaleF 1.2))
+        let glyph = if search.Focused && not (ThemeService.currentIsDark()) then (SettingsColors.current()).accent else (SettingsColors.current()).muted
+        use pen = new Pen(glyph,float32(Dpi.scaleF 1.4))
         let x,y = Dpi.scale 11,this.Height/2-Dpi.scale 7
         e.Graphics.DrawEllipse(pen,x,y,Dpi.scale 12,Dpi.scale 12)
         e.Graphics.DrawLine(pen,x+Dpi.scale 10,y+Dpi.scale 10,x+Dpi.scale 16,y+Dpi.scale 16)
+        if search.TextLength>0 then
+            let x = this.Width-Dpi.scale 24
+            let y = this.Height/2
+            use clearPen = new Pen((SettingsColors.current()).muted,float32(Dpi.scaleF 1.4))
+            e.Graphics.DrawLine(clearPen,x-Dpi.scale 4,y-Dpi.scale 4,x+Dpi.scale 4,y+Dpi.scale 4)
+            e.Graphics.DrawLine(clearPen,x+Dpi.scale 4,y-Dpi.scale 4,x-Dpi.scale 4,y+Dpi.scale 4)
+
+type SettingsInfoButton() as this =
+    inherit Button()
+    do
+        this.Size <- Size(Dpi.scale 24,Dpi.scale 24)
+        this.FlatStyle <- FlatStyle.Flat
+        this.FlatAppearance.BorderSize <- 0
+        this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
+    override this.OnPaint(e) =
+        let p = SettingsColors.current()
+        e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
+        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        let color = if this.Focused || this.ClientRectangle.Contains(this.PointToClient(Control.MousePosition)) then p.text else p.muted
+        use pen = new Pen(color,max 1.0f (float32(Dpi.scaleF 1.2)))
+        let cx,cy = float32(this.Width)/2.0f,float32(this.Height)/2.0f
+        let r = float32(Dpi.scale 8)
+        e.Graphics.DrawEllipse(pen,cx-r,cy-r,r*2.0f,r*2.0f)
+        e.Graphics.DrawLine(pen,cx,cy-float32(Dpi.scale 1),cx,cy+float32(Dpi.scale 4))
+        e.Graphics.DrawLine(pen,cx,cy-float32(Dpi.scale 5),cx,cy-float32(Dpi.scale 4))
+        if this.Focused then ControlPaint.DrawFocusRectangle(e.Graphics,this.ClientRectangle)
+    override this.OnMouseEnter(e) = base.OnMouseEnter(e); this.Invalidate()
+    override this.OnMouseLeave(e) = base.OnMouseLeave(e); this.Invalidate()
 
 type SettingsSearchResults() as this =
     inherit Panel()

@@ -71,22 +71,26 @@ type WorkspaceWindow() as this =
             nameEditor.value <- this.name
             let titleEditor = TextEditor() :> IPropEditor
             titleEditor.value <- this.title
-            let matchTypeEditor = EnumEditor<WorkspaceWindowTitleMatchType>(MatchTypeText.label)
-            matchTypeEditor.value <- this.matchType
+            let matchTypes = [| WorkspaceWindowTitleMatchType.ExactMatch; WorkspaceWindowTitleMatchType.StartsWith;
+                               WorkspaceWindowTitleMatchType.EndsWith; WorkspaceWindowTitleMatchType.Contains;
+                               WorkspaceWindowTitleMatchType.RegEx |]
+            let matchTypeEditor = SettingsUi.choice (matchTypes |> Array.map MatchTypeText.label)
+            matchTypeEditor.SelectedIndex <- Array.IndexOf(matchTypes,this.matchType)
             { new IEditInfo with
                 member x.title = this.name
                 member x.fields = 
                     List2([
                         (Localization.text3 "Name" "名称" "名称", nameEditor.control)
                         (Localization.text3 "Title" "标题" "タイトル", titleEditor.control)
-                        (Localization.text3 "Match type" "匹配方式" "一致区分", matchTypeEditor.cast<IPropEditor>().control)
+                        (Localization.text3 "Match method" "匹配方式" "一致方法", matchTypeEditor :> Control)
                     ])
                 member x.height  = 250
                 member x.ok() = 
-                    WindowTitleMatcher.compile (int matchTypeEditor.value) (titleEditor.value.cast<string>()) |> ignore
+                    let matchType = matchTypes.[max 0 matchTypeEditor.SelectedIndex]
+                    WindowTitleMatcher.compile (int matchType) (titleEditor.value.cast<string>()) |> ignore
                     this.name <- nameEditor.value.cast<string>()
                     this.title <- titleEditor.value.cast<string>()
-                    this.matchType <- matchTypeEditor.value
+                    this.matchType <- matchType
             }
 
     member this.serialize() =
@@ -340,6 +344,7 @@ type WorkspaceModel() as this =
     member this.remove() =
         if not readOnly && this.selected <> null then
             this.selected?remove()
+            this.saveSettings()
 
     member this.canRestore =
         this.selected <> null && this.selected.GetType() = typeof<Workspace>
@@ -347,7 +352,7 @@ type WorkspaceModel() as this =
     member this.canRestoreChanged = canRestoreChangedEvt.Publish
 
     member this.restore() =
-        if this.selected <> null then
+        if this.canRestore then
             let ws = this.selected :?> Workspace
             this.restoreWorkspace(ws)
 
@@ -355,20 +360,51 @@ type WorkspaceModel() as this =
         let selected = this.selected
         if not readOnly && selected <> null then
             let editInfo = selected?beginEdit()
-            let table = UIHelper.form(editInfo?fields)
-            use form = UIHelper.okCancelForm table
-            use icon = Services.openIcon("edit.ico")
-            form.Icon <- icon
-            form.Width <- 300
-            form.Height <- editInfo?height
-            form.StartPosition <- FormStartPosition.CenterParent
-            form.Text <- editInfo?title
-            let ok = form.ShowDialog(parent) = DialogResult.OK
-            if ok then    
+            let fields : List2<string * Control> = editInfo?fields
+            use form = new Form(Font=SettingsUi.bodyFont,FormBorderStyle=FormBorderStyle.FixedDialog,
+                                MaximizeBox=false,MinimizeBox=false,ShowInTaskbar=false,
+                                StartPosition=FormStartPosition.CenterParent)
+            form.ClientSize <- Size(Dpi.scale 440,Dpi.scale (96+fields.length*48))
+            let table = new TableLayoutPanel(Dock=DockStyle.Fill,ColumnCount=2,
+                                              RowCount=fields.length+1,Padding=Padding(Dpi.scale 20))
+            table.ColumnStyles.Add(ColumnStyle(SizeType.Absolute,float32(Dpi.scale 112))) |> ignore
+            table.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+            fields.enumerate.iter(fun (i,(caption,editor)) ->
+                table.RowStyles.Add(RowStyle(SizeType.Absolute,float32(Dpi.scale 48))) |> ignore
+                let label = new Label(Text=caption,Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,
+                                      UseMnemonic=false,Margin=Padding.Empty)
+                let input : Control =
+                    match editor with
+                    | :? TextBoxBase -> new SettingsTextInput(editor) :> Control
+                    | _ -> editor
+                input.Dock <- DockStyle.Fill
+                input.Margin <- Padding(0,Dpi.scale 6,0,Dpi.scale 6)
+                table.Controls.Add(label,0,i)
+                table.Controls.Add(input,1,i))
+            table.RowStyles.Add(RowStyle(SizeType.Percent,100.0f)) |> ignore
+            let buttons = new FlowLayoutPanel(Dock=DockStyle.Fill,FlowDirection=FlowDirection.RightToLeft,
+                                               WrapContents=false,Margin=Padding.Empty)
+            let okButton = SettingsUi.button (Localization.text3 "Save" "保存" "保存")
+            let cancelButton = SettingsUi.button (Localization.text3 "Cancel" "取消" "キャンセル")
+            okButton.Click.Add(fun _ ->
                 try
                     editInfo?ok()
                     this.saveSettings()
-                with ex -> MessageBox.Show(ex.Message,Localization.text "Invalid workspace setting" "工作区设置无效",MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore
+                    form.DialogResult <- DialogResult.OK
+                with ex -> MessageBox.Show(form,ex.Message,Localization.text "Invalid workspace setting" "工作区设置无效",MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore)
+            cancelButton.DialogResult <- DialogResult.Cancel
+            buttons.Controls.Add(okButton)
+            buttons.Controls.Add(cancelButton)
+            table.Controls.Add(buttons,0,fields.length)
+            table.SetColumnSpan(buttons,2)
+            form.Controls.Add(table)
+            form.AcceptButton <- okButton
+            form.CancelButton <- cancelButton
+            ThemeBinding.watch form (fun () -> SettingsUi.apply form)
+            use icon = Services.openIcon("edit.ico")
+            form.Icon <- icon
+            form.Text <- editInfo?title
+            let ok = form.ShowDialog(parent) = DialogResult.OK
             ok
         else
             false

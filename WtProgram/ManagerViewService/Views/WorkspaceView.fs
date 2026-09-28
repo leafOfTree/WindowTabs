@@ -12,6 +12,10 @@ type WorkspaceView() as this =
     /// The model raises workspaceAdded while it loads; rows are built once loading is done.
     let mutable loaded = false
     let mutable lastAdded : obj = null
+    let helpText = Localization.text3
+                       "How to use\n1  Group and position your windows, then click Save.\n2  Select a workspace and click Restore.\n3  Click Edit to change names or window title matching.\nRestore only uses open windows. It does not launch apps."
+                       "使用说明\n1  将窗口分组并调整位置，然后点击“保存”。\n2  选中工作区，点击“恢复”。\n3  点击“编辑”可修改名称或窗口标题的匹配方式。\n恢复仅适用于已打开的窗口，不会启动应用。"
+                       "使い方\n1  ウィンドウをグループ化して配置し、「保存」をクリックします。\n2  ワークスペースを選び、「復元」をクリックします。\n3  「編集」で名前やタイトルの一致方法を変更できます。\n復元は開いているウィンドウのみが対象です。アプリは起動しません。"
 
     member this.wm = Cell.cacheProp this <| fun() ->
         let wm = WorkspaceModel()
@@ -22,7 +26,7 @@ type WorkspaceView() as this =
     member this.list : SettingsTreeList = Cell.cacheProp this <| fun() ->
         let list =
             new SettingsTreeList([TreeListColumn(Localization.text3 "Name" "名称" "名称",0,TextColumn)
-                                  TreeListColumn(Localization.text3 "Match type" "匹配方式" "一致区分",130,TextColumn)
+                                  TreeListColumn(Localization.text3 "Match method" "匹配方式" "一致方法",130,TextColumn)
                                   TreeListColumn(Localization.text3 "Title" "标题" "タイトル",240,TextColumn)])
         list.SelectionChanged.Add(fun _ ->
             this.wm.selected <- (if isNull list.SelectedItem then null else list.SelectedItem.Tag :?> Dynamic))
@@ -31,10 +35,11 @@ type WorkspaceView() as this =
     member this.panel : SettingsListPage = Cell.cacheProp this <| fun() ->
         let panel =
             new SettingsListPage(t "Workspaces" "工作区",
-                                 t "Save the current window groups as a workspace and restore them later. Edit a window to change how its title is matched."
-                                   "把当前的窗口分组保存为工作区，之后可以一键恢复。编辑窗口可修改标题的匹配方式。",
+                                 t "Save and restore window groups and positions."
+                                   "保存和恢复窗口分组与位置。",
                                  this.list,
-                                 [this.newButton :> Control;this.restoreButton;this.editButton;this.removeButton])
+                                 [this.newButton :> Control;this.restoreButton;this.editButton;this.removeButton],
+                                 helpText=helpText)
         this.wm |> ignore
         loaded <- true
         this.reload(lastAdded)
@@ -63,21 +68,23 @@ type WorkspaceView() as this =
         list.SelectedItem <- (if isNull selected then null else find list.Roots |> Option.toObj)
 
     member this.newButton : Button = Cell.cacheProp this <| fun() ->
-        let btn = SettingsUi.button (Localization.text3 "New" "新建" "新規")
+        let btn = SettingsUi.button (Localization.text3 "Save" "保存" "保存")
         btn.Enabled <- not this.wm.isReadOnly
         btn.Click.Add <| fun _ -> this.wm.create()
         btn
 
     member this.restoreButton : Button = Cell.cacheProp this <| fun() ->
         let btn = SettingsUi.button (Localization.text3 "Restore" "恢复" "復元")
+        btn.Enabled <- false
         btn.Click.Add <| fun _ -> this.wm.restore()
         this.wm.canRestoreChanged.Add <| fun(canRestore) ->
             btn.Enabled <- canRestore
         btn
 
     member this.removeButton : Button = Cell.cacheProp this <| fun() ->
-        let btn = SettingsUi.button (Localization.text3 "Remove" "删除" "削除")
-        btn.Enabled <- not this.wm.isReadOnly
+        let btn = SettingsUi.button (Localization.text3 "Delete" "删除" "削除")
+        btn.Enabled <- false
+        this.wm.selectedChanged.Add(fun selected -> btn.Enabled <- not this.wm.isReadOnly && not (isNull selected))
         btn.Click.Add <| fun _ ->
             this.wm.remove()
             this.reload()
@@ -85,7 +92,8 @@ type WorkspaceView() as this =
 
     member this.editButton : Button = Cell.cacheProp this <| fun() ->
         let btn = SettingsUi.button (Localization.text3 "Edit" "编辑" "編集")
-        btn.Enabled <- not this.wm.isReadOnly
+        btn.Enabled <- false
+        this.wm.selectedChanged.Add(fun selected -> btn.Enabled <- not this.wm.isReadOnly && not (isNull selected))
         btn.Click.Add <| fun _ -> if this.wm.edit(this.panel) then this.reload()
         btn
 

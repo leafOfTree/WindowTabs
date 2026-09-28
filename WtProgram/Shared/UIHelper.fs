@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Drawing
 open System.Drawing.Text
@@ -106,7 +106,7 @@ type ColorEditor() as this =
             with ex -> 
                 e.Cancel <- true
                 tb.SelectAll()
-                MessageBox.Show(Localization.text "Invalid colour. Enter six hexadecimal digits." "颜色无效，请输入六位十六进制数。").ignore
+                MessageBox.Show(Localization.text "Invalid color. Enter six hexadecimal digits." "颜色无效，请输入六位十六进制数。").ignore
 
         tb.Validated.Add <| fun e -> save()
         tb

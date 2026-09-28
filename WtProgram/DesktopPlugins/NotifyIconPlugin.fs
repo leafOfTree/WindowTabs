@@ -51,7 +51,7 @@ type NotifyIconPlugin() as this =
         this.contextMenuItems.Clear()
         this.addItem(Localization.text3 "Settings..." "设置..." "設定", fun() -> Services.managerView.show())
         this.contextMenuItems.Add("-").ignore
-        this.addItem(Localization.text3 "Close WindowTabs" "退出 WindowTabs" "終了", fun() -> Services.program.shutdown())
+        this.addItem(Localization.text3 "Exit WindowTabs" "退出 WindowTabs" "終了", fun() -> Services.program.shutdown())
 
     interface IPlugin with
         member this.init() =

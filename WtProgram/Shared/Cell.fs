@@ -208,11 +208,16 @@ and CellComputation(scope:CellScope, compute) =
         if _computing then 
             failwith "re-entrant computation detected"
         _computing <- true
-        if this.isStale then
-            scope.executionStack.Push(this)
-            this.clearDependencies()
-            this.version <- scope.nextVersion()
-            this.cachedValue <- compute()
-            scope.executionStack.Pop() |> ignore
-        _computing <- false
-        this.cachedValue
+        try
+            if this.isStale then
+                scope.executionStack.Push(this)
+                try
+                    this.clearDependencies()
+                    this.version <- scope.nextVersion()
+                    try this.cachedValue <- compute()
+                    with _ ->
+                        this.version <- -1
+                        reraise()
+                finally scope.executionStack.Pop() |> ignore
+            this.cachedValue
+        finally _computing <- false

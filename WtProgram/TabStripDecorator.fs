@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Drawing
 open System.Windows.Forms
@@ -141,7 +141,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         let checkedFlag(isChecked) = if isChecked then List2([MenuFlags.MF_CHECKED]) else List2()
         let grayed(isGrayed) = if isGrayed then List2([MenuFlags.MF_GRAYED]) else List2()
         let iconOnlyItem = CmiRegular({
-            text = (if group.isIconOnly then Localization.text "Expand tabs" "展开标签" else Localization.text "Shrink tabs" "收起标签")
+            text = (if group.isIconOnly then Localization.text "Show tab titles" "显示标签标题" else Localization.text "Show icons only" "仅显示图标")
             image = None
             click = fun() -> group.isIconOnly <- group.isIconOnly.not
             flags = List2()
@@ -163,7 +163,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 click = setAlignment alignment
             })
             CmiPopUp({
-                text = Localization.text "Align tabs" "标签位置"
+                text = Localization.text "Tab position" "标签位置"
                 image = None
                 items = List2([
                     (Localization.text "Left" "左侧", TabLeft)
@@ -193,7 +193,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         let combineIconsInTaskbar =
             CmiRegular({
-                text = Localization.text "Combine icons in taskbar" "合并任务栏图标"
+                text = Localization.text "Combine taskbar icons" "合并任务栏图标"
                 image = None
                 click = fun() -> Services.desktop.restartGroup(group.hwnd, group.isSuperBarEnabled.not)
                 flags = checkedFlag(group.isSuperBarEnabled)
@@ -217,7 +217,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         let removeTabsItem =
             CmiRegular({
-                text = Localization.text3 (sprintf "Remove tabs for '%s' windows" exeName) (sprintf "不为“%s”窗口显示标签" exeName) (sprintf "「%s」のウィンドウにタブを表示しない" exeName)
+                text = Localization.text3 (sprintf "Disable tabs for %s" exeName) (sprintf "禁用 %s 的标签" exeName) (sprintf "%s のタブを無効にする" exeName)
                 image = None
                 click = fun() -> Services.filter.setIsTabbingEnabledForProcess processPath false
                 flags = List2()
@@ -226,7 +226,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         let isGrouped = Services.program.getAutoGroupingEnabled processPath
         let groupTabsItem =
             CmiRegular({
-                text = Localization.text3 (sprintf "Group tabs for '%s' windows" exeName) (sprintf "自动分组“%s”窗口" exeName) (sprintf "「%s」のウィンドウを自動的にグループ化" exeName)
+                text = Localization.text3 (sprintf "Auto-group %s windows" exeName) (sprintf "自动分组 %s 的窗口" exeName) (sprintf "%s のウィンドウを自動グループ化" exeName)
                 image = None
                 click = fun() -> Services.program.setAutoGroupingEnabled processPath isGrouped.not
                 flags = checkedFlag(isGrouped)

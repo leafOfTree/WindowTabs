@@ -361,6 +361,43 @@ let main() =
         check (lazyForm.Controls.Find("tabHeight",true).Length=1 && generalLoads=1 && appearanceLoads=1) "Clearing search loses the current page or recreates it"
         lazyForm.Close()
         check (unusedLoads=0) "Closing the frame constructs unused pages"
+        // A failed page must leave the cache retryable and the host layout usable.
+        let retryScope = CellScope()
+        let mutable attempts = 0
+        let retryValue = retryScope.cache(fun () ->
+            attempts <- attempts+1
+            if attempts=1 then failwith "transient initialization failure"
+            42)
+        try retryValue() |> ignore with _ -> ()
+        check (not retryScope.inComputation && retryValue()=42) "Failed computation poisoned the cache"
+        let workspace = WorkspaceView() :> ISettingsView
+        let mutable failPage = true
+        let failingPage =
+            { new ISettingsView with
+                member _.key = LayoutSettings
+                member _.title = "Workspaces"
+                member _.control =
+                    if failPage then failPage <- false; failwith "page initialization failure"
+                    workspace.control }
+        let recovery = DesktopManagerForm(views=[GeneralView() :> ISettingsView; AppearanceView() :> ISettingsView; failingPage])
+        use recoveryForm = recovery.window
+        recoveryForm.ShowInTaskbar <- false
+        recoveryForm.StartPosition <- FormStartPosition.Manual
+        recoveryForm.Location <- Point(-12000,-12000)
+        try recovery.showView(LayoutSettings) with _ -> ()
+        recovery.showView(AppearanceSettings)
+        Application.DoEvents()
+        let tile = controls recoveryForm |> Seq.choose(function :? SettingsThemeTile as tile -> Some tile | _ -> None) |> Seq.head
+        check (tile.Width>Dpi.scale 80) "Failed navigation left host layout suspended"
+        recovery.showView(LayoutSettings)
+        Application.DoEvents()
+        check (workspace.control.Width>Dpi.scale 300) "Workspace page failed to initialize or lay out"
+        recoveryForm.Close()
+        use tinyTile = new SettingsThemeTile("system",Size=Size(16,80))
+        use tinyImage = new Bitmap(16,80)
+        tinyTile.DrawToBitmap(tinyImage,Rectangle(0,0,16,80))
+        use emptyShape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,-1.0f,8.0f)) 4.0f
+        check (emptyShape.PointCount=0) "Invalid layout geometry created an invalid rounded path"
         check (SettingsCatalog.all |> List.map(fun item -> item.id) |> List.distinct |> List.length = SettingsCatalog.all.Length) "Duplicate setting identifiers"
         let oldCulture = Globalization.CultureInfo.CurrentUICulture
         try

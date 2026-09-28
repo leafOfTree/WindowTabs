@@ -5,7 +5,7 @@ open Newtonsoft.Json.Linq
 
 module WindowTitleMatcher =
     let compile kind (target:string) =
-        if isNull target || target.Length>4096 then invalidArg "target" "Window title pattern is missing or too long."
+        if isNull target || target.Length>4096 then invalidArg "target" (Localization.text3 "Window title is missing or exceeds 4,096 characters." "窗口标题缺失或超过 4,096 个字符。" "ウィンドウのタイトルがないか、4,096 文字を超えています。")
         match kind with
         | 0 -> fun title -> String.Equals(title,target,StringComparison.Ordinal)
         | 1 -> fun (title:string) -> title.StartsWith(target,StringComparison.Ordinal)
@@ -14,7 +14,7 @@ module WindowTitleMatcher =
         | 4 ->
             let regex = Regex(target,RegexOptions.CultureInvariant,TimeSpan.FromMilliseconds(100.0))
             fun title -> regex.IsMatch(title)
-        | _ -> invalidArg "kind" "Unknown window title match type."
+        | _ -> invalidArg "kind" (Localization.text3 "Unknown title match method." "未知的标题匹配方式。" "タイトルの一致方法が不明です。")
 
 module WorkspaceData =
     let version = 2

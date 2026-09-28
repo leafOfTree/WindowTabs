@@ -91,13 +91,13 @@
     <Compile Include="GroupPlugins\HideTabsOnInactiveGroupPlugin.fs" />
     <Compile Include="Desktop.fs" />
     <Compile Include="Workspace\WorkspaceData.fs" />
-    <Compile Include="Workspace\WorkspaceModel.fs" />
     <Compile Include="ManagerViewService\ThemeBinding.fs" />
     <Compile Include="ManagerViewService\SettingsStyle.fs" />
     <Compile Include="ManagerViewService\SettingsControls.fs" />
     <Compile Include="ManagerViewService\SettingsEditors.fs" />
     <Compile Include="ManagerViewService\SettingsPage.fs" />
     <Compile Include="ManagerViewService\SettingsUi.fs" />
+    <Compile Include="Workspace\WorkspaceModel.fs" />
     <Compile Include="ManagerViewService\SettingsTreeList.fs" />
     <Compile Include="ManagerViewService\SettingsBindings.fs" />
     <Compile Include="ManagerViewService\SettingsListPage.fs" />

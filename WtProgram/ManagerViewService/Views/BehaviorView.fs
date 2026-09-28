@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System.Windows.Forms
 
 type HotKeyView() =
@@ -18,7 +18,7 @@ type HotKeyView() =
                 let name = SettingsCatalog.title id
                 editor.Reject(previous,Localization.text3 (sprintf "Used by %s" name) (sprintf "已用于“%s”" name) (sprintf "「%s」で使用中" name))
             | None when not (Services.program.setHotKey key editor.Shortcut) ->
-                editor.Reject(previous,t "In use by another app" "已被系统或其他程序占用")
+                editor.Reject(previous,t "Shortcut already in use" "快捷键已被占用")
             | None -> ())
         editor
     let editors = actions |> List.map (fun (key,_) -> key,hotKey key)
@@ -28,7 +28,7 @@ type HotKeyView() =
         for key,editor in editors do
             let target = SettingsCatalog.shortcutDefault key
             if Services.program.setHotKey key target then editor.Shortcut <- target
-            else editor.Reject(0,t "In use by another app" "已被系统或其他程序占用")
+            else editor.Reject(0,t "Shortcut already in use" "快捷键已被占用")
     do
         let keyboard = SettingsUi.sectionCard table (t "Keyboard" "键盘")
         SettingsUi.note keyboard (t "Click a shortcut, then press the new combination. Esc cancels; × or Backspace removes it." "点击快捷键后按下新的组合键。按 Esc 取消；点 × 或按 Backspace 移除。")

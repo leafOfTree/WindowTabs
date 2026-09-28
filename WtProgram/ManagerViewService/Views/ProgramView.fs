@@ -52,15 +52,15 @@ type ProgramView() as this=
     let list =
         new SettingsTreeList([TreeListColumn(Localization.text3 "Name" "名称" "名称",0,TextColumn)
                               TreeListColumn(Localization.text3 "Tabs" "标签" "タブ",130,CheckColumn)
-                              TreeListColumn(Localization.text3 "Auto grouping" "自动分组" "自動グループ化",130,CheckColumn)])
+                              TreeListColumn(Localization.text3 "Auto-group" "自动分组" "自動グループ化",130,CheckColumn)])
     let refresh =
         let button = SettingsUi.button (Localization.text3 "Refresh" "刷新" "更新")
         button.Click.Add(fun _ -> this.populateNodes())
         button
     let panel =
         new SettingsListPage(t "App rules" "应用规则",
-                             t "Running apps are listed here. Choose which get tabs and which are grouped automatically; expand an app to see its windows."
-                               "这里列出正在运行的应用。选择哪些应用显示标签、哪些自动分组；展开可查看其窗口。",
+                             t "Choose which apps use tabs and automatic grouping. Expand an app to see its windows."
+                               "为应用设置标签和自动分组。展开应用可查看其窗口。",
                              list,[refresh :> Control])
 
     let scanner = new LatestWork<TreeListItem list>(invoker :> IDispatcher,
@@ -69,7 +69,7 @@ type ProgramView() as this=
             list.Roots.Clear()
             list.Roots.AddRange(items)
             list.Rebuild()
-            panel.Status <- Localization.text3 (sprintf "%d apps" items.Length) (sprintf "%d 个应用" items.Length) (sprintf "%d 個のアプリ" items.Length)),
+            panel.Status <- Localization.text3 (if items.Length=1 then "1 app" else sprintf "%d apps" items.Length) (sprintf "%d 个应用" items.Length) (sprintf "%d 個のアプリ" items.Length)),
         ImgHelper.disposeItems,
         (fun error -> panel.Status <- t "Scan failed: " "扫描失败：" + error.Message))
 

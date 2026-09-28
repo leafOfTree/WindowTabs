@@ -324,7 +324,7 @@ type SettingsColorPicker() as this =
     do
         this.Size <- Size(Dpi.scale 238,Dpi.scale 206)
         this.TabStop <- true
-        this.AccessibleName <- Localization.text3 "Colour picker: arrow keys adjust saturation and brightness; Shift + arrow keys adjust hue" "颜色选择器：方向键调整饱和度和亮度；Shift + 方向键调整色相" "色の選択：方向キーで彩度と明るさを調整し、Shift + 方向キーで色相を調整します"
+        this.AccessibleName <- Localization.text3 "Color picker: arrow keys adjust saturation and brightness; Shift + arrow keys adjust hue" "颜色选择器：方向键调整饱和度和亮度；Shift + 方向键调整色相" "色の選択：方向キーで彩度と明るさを調整し、Shift + 方向キーで色相を調整します"
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
         timer.Tick.Add(fun _ -> flush())
         this.Disposed.Add(fun _ -> timer.Dispose())
@@ -400,7 +400,7 @@ type SettingsColorInput() as this =
     let changed = Event<unit>()
     let mutable color = Color.White
     let text = new TextBox(BorderStyle=BorderStyle.None,MaxLength=7,CharacterCasing=CharacterCasing.Upper)
-    let swatch = new Button(FlatStyle=FlatStyle.Flat,Text="",AccessibleName=Localization.text3 "Choose colour" "选择颜色" "色を選択",Cursor=Cursors.Hand)
+    let swatch = new Button(FlatStyle=FlatStyle.Flat,Text="",AccessibleName=Localization.text3 "Choose color" "选择颜色" "色を選択",Cursor=Cursors.Hand)
     let picker = new SettingsColorPicker()
     let popup = new SettingsChoicePopup(AutoSize=true)
     let mutable suppressClick = false

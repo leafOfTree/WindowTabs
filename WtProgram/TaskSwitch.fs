@@ -4,6 +4,50 @@ open System.Drawing
 open System.Runtime.InteropServices
 open System.Windows.Forms
 open Bemo.Win32
+open Bemo.Win32.Forms
+
+/// A transparent, nonactivating shadow around the rounded switcher.
+type private TaskSwitchShadow(owner:Form) =
+    let os = OS()
+    let padding = Dpi.scale 28
+    let radius = float (Dpi.scale 12)
+    let offset = float (Dpi.scale 6)
+    let sigma = float (Dpi.scale 10)
+    let helper =
+        os.createWindow (fun msg -> msg.def()) WindowsStyles.WS_POPUP
+            (WindowsExtendedStyles.WS_EX_LAYERED ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW |||
+             WindowsExtendedStyles.WS_EX_NOACTIVATE ||| WindowsExtendedStyles.WS_EX_TRANSPARENT)
+    let window = os.windowFromHwnd(helper.hwnd)
+    let bitmap =
+        let w,h = owner.Width+padding*2,owner.Height+padding*2
+        let halfW,halfH = float owner.Width/2.0,float owner.Height/2.0
+        let distance x y =
+            let dx,dy = abs(x-halfW)-(halfW-radius),abs(y-halfH)-(halfH-radius)
+            sqrt(max dx 0.0 ** 2.0 + max dy 0.0 ** 2.0) + min (max dx dy) 0.0 - radius
+        let pixels = Array.zeroCreate<byte> (w*h*4)
+        for y in 0..h-1 do
+            for x in 0..w-1 do
+                let px,py = float(x-padding)+0.5,float(y-padding)+0.5
+                // The owned window sits above its owner, so leave the body transparent.
+                if distance px py >= 0.0 then
+                    let d = max 0.0 (distance px (py-offset))
+                    let fade = min 1.0 (float (min (min x (w-1-x)) (min y (h-1-y))) / float (max 1 (Dpi.scale 4)))
+                    pixels.[(y*w+x)*4+3] <- byte (Math.Round(48.0 * exp(-d*d/(2.0*sigma*sigma)) * fade))
+        let image = new Bitmap(w,h,Imaging.PixelFormat.Format32bppArgb)
+        let data = image.LockBits(Rectangle(0,0,w,h),Imaging.ImageLockMode.WriteOnly,Imaging.PixelFormat.Format32bppArgb)
+        try
+            for y in 0..h-1 do
+                Marshal.Copy(pixels,y*w*4,IntPtr.Add(data.Scan0,y*data.Stride),w*4)
+        finally image.UnlockBits(data)
+        image
+    do window.setParent(os.windowFromHwnd(owner.Handle))
+    member _.Show() =
+        Win32Helper.UpdateLayeredWindow(helper.hwnd,Point(owner.Left-padding,owner.Top-padding),bitmap,255uy)
+        window.showNoActivate()
+    interface IDisposable with
+        member _.Dispose() =
+            (helper :?> IDisposable).Dispose()
+            bitmap.Dispose()
 
 type ITaskSwitchGroup =
     abstract member hwnd : IntPtr
@@ -38,7 +82,7 @@ module private TaskWindowItems =
 type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
     let list =
         new SettingsTreeList([TreeListColumn("",0,TextColumn)],
-                             ShowHeader=false,ShowExpanders=false,RowHeight=48,IconSize=32)
+                             ShowHeader=false,ShowExpanders=false,RowHeight=52,IconSize=32)
     do
         list.Roots.AddRange(windows.list |> List.map TaskWindowItems.create)
         list.Rebuild()
@@ -53,39 +97,57 @@ type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
             list.BackColor <- p.surface
 type TaskSwitchForm(control:ITaskSwitchListControl) =
     let os = OS()
+    let mutable shadow : TaskSwitchShadow option = None
     let form = 
         let f = { 
             new Form() with
                 override this.CreateParams with get() =
                     let createParams = base.CreateParams
-                    createParams.ExStyle <- createParams.ExStyle ||| 
-                        WindowsExtendedStyles.WS_EX_DLGMODALFRAME |||
-                        WindowsExtendedStyles.WS_EX_TOPMOST
+                    createParams.ExStyle <- createParams.ExStyle ||| WindowsExtendedStyles.WS_EX_TOPMOST
                     createParams
+                override this.OnPaint(e) =
+                    base.OnPaint(e)
+                    e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+                    use outline = SettingsShapes.rounded
+                                      (RectangleF(0.5f,0.5f,float32(this.ClientSize.Width-1),float32(this.ClientSize.Height-1)))
+                                      (float32(Dpi.scale 12))
+                    use border = new Pen((SettingsColors.current()).border)
+                    e.Graphics.DrawPath(border,outline)
         }
-        let formSize = Size(600,400)
-        let screenSize= Screen.PrimaryScreen.Bounds.Size
-        f.AutoScroll <- true
+        let area = Screen.FromHandle(WinUserApi.GetForegroundWindow()).WorkingArea
+        let formSize = Size(min (Dpi.scale 600) (area.Width-Dpi.scale 32),min (Dpi.scale 400) (area.Height-Dpi.scale 32))
+        f.AutoScaleMode <- AutoScaleMode.None
+        f.Padding <- Padding(Dpi.scale 12)
+        f.Font <- SettingsUi.bodyFont
         f.ShowInTaskbar <- false
         f.StartPosition <- FormStartPosition.Manual
-        f.Location <- Point((screenSize.Width - formSize.Width) / 2,  (screenSize.Height - formSize.Height) / 2)
-        f.Size <- formSize
+        f.FormBorderStyle <- FormBorderStyle.None
+        f.ClientSize <- formSize
+        f.Location <- Point(area.Left+(area.Width-formSize.Width)/2,area.Top+(area.Height-formSize.Height)/2)
         f.ControlBox <- false
+        control.control.Dock <- DockStyle.Fill
         f.Controls.Add(control.control)
-        f.FormBorderStyle <- FormBorderStyle.Fixed3D
-        let window = os.windowFromHwnd(f.Handle)
+        use shape = SettingsShapes.rounded
+                        (RectangleF(0.0f,0.0f,float32 formSize.Width,float32 formSize.Height))
+                        (float32(Dpi.scale 12))
+        f.Region <- new Region(shape)
         f    
 
     member this.hwnd = form.Handle
 
     member this.show() = 
-        form.Show()
-        control.control.Dock <- DockStyle.Fill
         control.onShow(form)
+        form.Show()
+        if not SystemInformation.HighContrast then
+            if shadow.IsNone then shadow <- Some(new TaskSwitchShadow(form))
+            shadow |> Option.iter(fun item -> item.Show())
         let os = OS()
         os.windowFromHwnd(form.Handle).setForegroundOrRestore(true)
                 
-    member this.hide() = form.Hide()
+    member this.hide() =
+        shadow |> Option.iter(fun item -> (item :> IDisposable).Dispose())
+        shadow <- None
+        form.Hide()
 
     member this.select(index) =
         control.select(index)

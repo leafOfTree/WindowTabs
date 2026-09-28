@@ -26,10 +26,13 @@ module SettingsColors =
 module SettingsShapes =
     let rounded (rect:RectangleF) radius =
         let path = new Drawing2D.GraphicsPath()
-        let d = min (radius*2.0f) (min rect.Width rect.Height)
-        path.AddArc(rect.Left,rect.Top,d,d,180.0f,90.0f)
-        path.AddArc(rect.Right-d,rect.Top,d,d,270.0f,90.0f)
-        path.AddArc(rect.Right-d,rect.Bottom-d,d,d,0.0f,90.0f)
-        path.AddArc(rect.Left,rect.Bottom-d,d,d,90.0f,90.0f)
-        path.CloseFigure()
+        if rect.Width>0.0f && rect.Height>0.0f then
+            let d = min (radius*2.0f) (min rect.Width rect.Height)
+            if d<=0.0f then path.AddRectangle(rect)
+            else
+                path.AddArc(rect.Left,rect.Top,d,d,180.0f,90.0f)
+                path.AddArc(rect.Right-d,rect.Top,d,d,270.0f,90.0f)
+                path.AddArc(rect.Right-d,rect.Bottom-d,d,d,0.0f,90.0f)
+                path.AddArc(rect.Left,rect.Bottom-d,d,d,90.0f,90.0f)
+                path.CloseFigure()
         path

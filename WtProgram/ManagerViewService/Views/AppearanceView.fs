@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Drawing
 open System.Windows.Forms
@@ -62,8 +62,8 @@ type AppearanceView(?settings:ISettings) =
         try
             editingDark <- ThemeService.currentIsDark()
             paletteTitle.Text <-
-                if editingDark then t "Dark theme · Tab colours" "深色主题 · 标签配色"
-                else t "Light theme · Tab colours" "浅色主题 · 标签配色"
+                if editingDark then t "Dark theme · Tab colors" "深色主题 · 标签配色"
+                else t "Light theme · Tab colors" "浅色主题 · 标签配色"
             let settings = settings.appearance
             let palette = activePalette settings
             let values (p:TabPalette) =
@@ -145,7 +145,7 @@ type AppearanceView(?settings:ISettings) =
         paletteTitle.Dock <- DockStyle.Fill
         paletteTitle.TextAlign <- ContentAlignment.MiddleLeft
         preset.Name <- "palette-preset"
-        preset.AccessibleName <- t "Colour preset" "配色预设"
+        preset.AccessibleName <- t "Color preset" "配色预设"
         preset.Width <- Dpi.scale 180
         preset.Dock <- DockStyle.Right
         paletteHeader.Controls.Add(paletteTitle)
@@ -161,7 +161,7 @@ type AppearanceView(?settings:ISettings) =
         for key,read,write,editor in colors do
             editor.control.Width <- Dpi.scale 180
             SettingsUi.settingRow colorsCard key editor.control
-        let reset = SettingsUi.button (t "Reset this palette" "重置当前配色")
+        let reset = SettingsUi.button (t "Reset colors" "重置配色")
         reset.Click.Add(fun _ -> showPalette(fun _ -> (if editingDark then Theme.darkPalette else Theme.lightPalette)))
         rightActions reset
         let layoutCard = SettingsUi.sectionCard table (t "Tab layout" "标签布局")
