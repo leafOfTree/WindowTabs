@@ -37,9 +37,11 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "$name compilation failed." }
     }
     # A native callback into .NET after the runtime has started shutting down ends the
-    # process with one of these codes, after every check has already passed. It is
-    # intermittent (seen in Architecture, roughly 1 run in 6) and not yet diagnosed, so
-    # such a run is retried once with a warning; any other failure fails immediately.
+    # process with one of these codes, after every check has already passed. The usual
+    # cause was another process's broadcast (WM_SETTINGCHANGE and the like) reaching the
+    # SystemEvents window on the main thread; TestInit.fsx moves it to its own thread, as
+    # the app does. A broadcast can still land in the last moments of shutdown, so such a
+    # run is retried once with a warning; any other failure fails immediately.
     $teardownCrashes = @(0xC0020001, 0xC000041D) | ForEach-Object { [int]$_ }
     function Invoke-Test($name) {
         $stdout = Join-Path $output "$name.stdout.log"

@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <!-- The script's #r lines reference the app build in Debug\. -->
+    <Compile Include="TestInit.fsx" />
     <Compile Include="$(TestName).fsx" />
     <Compile Include="TestEntry.fs" />
   </ItemGroup>
