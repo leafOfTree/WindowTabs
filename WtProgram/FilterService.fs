@@ -48,6 +48,8 @@ type FilterService() as this =
             fun() -> (window.className <> "ApplicationFrameWindow") || not(String.IsNullOrEmpty window.text)
             fun() -> this.isBanned(window).not
             fun() -> this.isOnScreenOrMinimized(window)
+            // Background UWP apps keep a "visible" but cloaked frame window.
+            fun() -> not (WindowCloaking.IsHiddenOnCurrentDesktop window.hwnd)
             ])
         tests.all(fun pred -> pred()) 
 

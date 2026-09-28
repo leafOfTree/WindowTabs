@@ -491,7 +491,8 @@ and
     member this.isAltTabWindow =
         WinUserApi.IsWindowVisible(hwnd) &&
         this.isOwned.not &&
-        int(this.styleEx) &&& WindowsExtendedStyles.WS_EX_TOOLWINDOW = 0
+        int(this.styleEx) &&& WindowsExtendedStyles.WS_EX_TOOLWINDOW = 0 &&
+        not (WindowCloaking.IsHiddenOnCurrentDesktop hwnd)
     
     member this.registerShellHookWindow() = WinUserApi.RegisterShellHookWindow(this.hwnd) |> ignore 
 
