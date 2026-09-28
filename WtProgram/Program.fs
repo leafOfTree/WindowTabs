@@ -41,7 +41,9 @@ type Program(lifetime:LifetimeScope) as this =
     let inShutdown = Cell.create(false)
     let isSubscribed = lifetime.Own(new OwnedSubscriptions<IntPtr>())
     let isDroppedAndAwaitingGrouping = Cell.create(Set2())
-    let windowNameOverride = Cell.create(Map2())
+    // An immutable map swapped whole on the main thread, so tab strips on group threads
+    // read renames without waiting for it: tab text is rebuilt on every title change.
+    let mutable windowNameOverride : Map2<IntPtr,string option> = Map2()
    
     let isFirstRun = settingsManager.fileExists.not
     do Localization.setPreference settingsManager.settings.language
@@ -216,7 +218,7 @@ type Program(lifetime:LifetimeScope) as this =
             | ShellEvent.HSHELL_WINDOWDESTROYED ->
                 isSubscribed.Remove(hwnd)
                 isDroppedAndAwaitingGrouping.map(fun s -> s.remove hwnd)
-                windowNameOverride.map(fun s -> s.remove hwnd)
+                windowNameOverride <- windowNameOverride.remove hwnd
             | _ ->()
             refreshQueue.RequestWindow(hwnd)
 
@@ -295,10 +297,10 @@ type Program(lifetime:LifetimeScope) as this =
                    
      
         member x.setWindowNameOverride((hwnd, name)) = 
-            windowNameOverride.set(windowNameOverride.value.add hwnd name)
+            windowNameOverride <- windowNameOverride.add hwnd name
 
         member x.getWindowNameOverride(hwnd) =
-            windowNameOverride.value.tryFind(hwnd).bind(id)
+            windowNameOverride.tryFind(hwnd).bind(id)
 
         member x.appWindows = 
             os.windowsInZorder.where(this.isAppWindow).map(fun w -> w.hwnd)

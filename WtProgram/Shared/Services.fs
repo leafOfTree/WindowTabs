@@ -38,11 +38,20 @@ type ServiceProvider() =
         ServiceProvider.localServices.ContainsKey(t) || services.ContainsKey(t)
 
 /// Typed service boundaries: each member is marshalled to the owning thread explicitly.
-type DispatchedSettings(inner:ISettings, dispatcher:IDispatcher) =
+type DispatchedSettings(inner:ISettings, dispatcher:IDispatcher, ?published:Collections.Concurrent.ConcurrentDictionary<string,obj>) =
     interface ISettings with
         member _.appearance = dispatcher.Send(fun () -> inner.appearance)
         member _.updateAppearance change = dispatcher.Send(fun () -> inner.updateAppearance change)
-        member _.getValue key = dispatcher.Send(fun () -> inner.getValue key)
+        // Tab strips read settings on mouse moves. Off the owner thread a value is fetched once
+        // and kept in published, which the owner clears on every write; storing it inside the
+        // Send orders the store with those clears, so a stale value is never kept.
+        member _.getValue key =
+            match published with
+            | Some cache when not dispatcher.CheckAccess ->
+                match cache.TryGetValue key with
+                | true,value -> value
+                | _ -> dispatcher.Send(fun () -> let value = inner.getValue key in cache.[key] <- value; value)
+            | _ -> dispatcher.Send(fun () -> inner.getValue key)
         member _.setValue value = dispatcher.Send(fun () -> inner.setValue value)
         member _.notifyValue key callback = dispatcher.Send(fun () -> inner.notifyValue key callback)
         member _.hotKey key = dispatcher.Send(fun () -> inner.hotKey key)
@@ -71,7 +80,8 @@ type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
         member _.refresh() = dispatcher.Post(fun () -> inner.refresh())
         member _.shutdown() = dispatcher.Post(fun () -> inner.shutdown())
         member _.setWindowNameOverride value = dispatcher.Send(fun () -> inner.setWindowNameOverride value)
-        member _.getWindowNameOverride hwnd = dispatcher.Send(fun () -> inner.getWindowNameOverride hwnd)
+        // Reads an immutable snapshot; called by tab strips on every title change.
+        member _.getWindowNameOverride hwnd = inner.getWindowNameOverride hwnd
         member _.appWindows = dispatcher.Send(fun () -> inner.appWindows)
         member _.getAutoGroupingEnabled path = dispatcher.Send(fun () -> inner.getAutoGroupingEnabled path)
         member _.setAutoGroupingEnabled path enabled = dispatcher.Send(fun () -> inner.setAutoGroupingEnabled path enabled)

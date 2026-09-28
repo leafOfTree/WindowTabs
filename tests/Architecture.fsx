@@ -107,6 +107,26 @@ let main() =
         pumpUntil "Settings dispatch deadlocked" (fun () -> not worker.IsAlive)
         workerError |> Option.iter raise
         check (callbackThread=uiThread) "Settings mutation escaped its owner thread"
+        // Off the owner thread a value read once is served without waiting on it, and a
+        // write on the owner thread replaces it.
+        api.setValue("autoHide",box true)
+        let readOnWorker() =
+            let mutable value = None
+            let reader = new Thread(ThreadStart(fun () -> value <- Some(api.getValue("autoHide") :?> bool)),IsBackground=true)
+            reader.Start()
+            pumpUntil "Worker settings read deadlocked" (fun () -> not reader.IsAlive)
+            value.Value
+        check (readOnWorker()) "Worker read a stale setting"
+        let mutable blockedRead = None
+        let blocked = new Thread(ThreadStart(fun () -> blockedRead <- Some(api.getValue("autoHide") :?> bool)),IsBackground=true)
+        blocked.Start()
+        // Sleep does not pump, unlike Join on this STA thread: a Send would stay unanswered.
+        Thread.Sleep(500)
+        let servedWhileBlocked = not blocked.IsAlive && blockedRead=Some true
+        pumpUntil "Worker settings read deadlocked" (fun () -> not blocked.IsAlive)
+        check servedWhileBlocked "Worker waited on the owner thread for a value it already read"
+        api.setValue("autoHide",box false)
+        check (not (readOnWorker())) "Worker kept a setting after it changed"
         settings.Flush() |> ignore
         let pathBefore = settings.path
         Environment.CurrentDirectory <- __SOURCE_DIRECTORY__

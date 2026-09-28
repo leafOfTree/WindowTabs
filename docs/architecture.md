@@ -12,6 +12,18 @@
   on the owner thread; `Post` queues fire-and-forget work (`IProgram.refresh` and
   `shutdown`). There is no reflection or remoting proxy; a new service method needs a
   matching line in its adapter.
+- Synchronous waits only point one way: group threads may `Send` to the main thread,
+  and a drag source's group thread to a drop target's, but the main thread never waits
+  on a group thread except for group creation. Keep it that way; a wait the other way
+  round is a deadlock waiting for a coincidence.
+- `SystemEvents` runs on its own thread (`ThemeService.moveSystemEventsOffMainThread`,
+  first thing in `Bootstrap.main` and in `tests/TestInit.fsx`). It delivers each
+  notification by waiting on every subscribing thread, WinForms' own controls included;
+  on the main thread that deadlocked a light/dark switch against a group thread reading
+  the appearance, and its broadcast window crashed the process at exit.
+- Values that group threads read often do not wait on the main thread: the appearance
+  (`ThemeService.publishPreferences`), `getValue` (fetched once per key into a cache the
+  owner clears on every write) and window renames (an immutable map).
 - Settings views can receive an `ISettings` dependency (Appearance currently does).
   Pure palette presets live in `ThemePresets`, not in the view.
 - Destroyed HWND subscriptions are removed before disposing their hooks. Group exit

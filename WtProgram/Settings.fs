@@ -14,6 +14,8 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
     let mutable hasExistingSettings = false
     let settingChangedEvent = Event<string* obj>()
     let valueCache = Dictionary<string, obj>()
+    // Values already handed to other threads; cleared on every write, like valueCache.
+    let published = Collections.Concurrent.ConcurrentDictionary<string, obj>()
     let fileName = "WindowTabsSettings.txt"
     // Resolve once: a later working-directory change must not redirect pending saves.
     let relativePath = isStandAlone || File.Exists(Path.Combine(".", fileName))
@@ -27,13 +29,14 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
 
     do
         hasExistingSettings <- this.fileExists
-        Services.register(DispatchedSettings(this :> ISettings, InvokerService.invoker :> IDispatcher) :> ISettings)
+        Services.register(DispatchedSettings(this :> ISettings, InvokerService.invoker :> IDispatcher, published) :> ISettings)
 
     member this.clearCaches() =
         store.Flush() |> ignore
         cachedSettingsString <- None
         cachedSettingsRec <- None
         valueCache.Clear()
+        published.Clear()
 
     member this.useRelativePath =
         relativePath
@@ -58,6 +61,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             cachedSettingsString <- newSettings
             cachedSettingsRec <- None
             valueCache.Clear()
+            published.Clear()
             store.Schedule(newSettings.Value)
             
     member this.settingsJson
