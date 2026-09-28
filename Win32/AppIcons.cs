@@ -202,6 +202,39 @@ namespace Bemo
             finally { if (handle != IntPtr.Zero) DeleteObject(handle); }
         }
 
+        private static readonly System.Collections.Generic.Dictionary<string, Icon> packagedIcons =
+            new System.Collections.Generic.Dictionary<string, Icon>();
+
+        /// <summary>
+        /// The package icon for a UWP window (ApplicationFrameWindow) at the given size, or null.
+        /// Icons are cached per app and size for the life of the process and must not be disposed:
+        /// tabs rebuild their icons on every title change.
+        /// </summary>
+        public static Icon GetPackagedWindowIcon(IntPtr frame, int size)
+        {
+            string appId = GetHostedAppId(frame);
+            if (string.IsNullOrEmpty(appId)) return null;
+            string key = appId + "|" + size;
+            lock (packagedIcons)
+            {
+                Icon cached;
+                if (packagedIcons.TryGetValue(key, out cached)) return cached;
+            }
+            Icon icon = null;
+            using (Bitmap bitmap = GetAppIcon(appId, size))
+                if (bitmap != null)
+                    using (var sized = bitmap.Width == size ? null : new Bitmap(bitmap, new Size(size, size)))
+                        icon = Icon.FromHandle((sized ?? bitmap).GetHicon());
+            if (icon == null) return null;
+            lock (packagedIcons)
+            {
+                Icon cached;
+                if (packagedIcons.TryGetValue(key, out cached)) return cached;
+                packagedIcons[key] = icon;
+                return icon;
+            }
+        }
+
         /// <summary>Copies a 32-bit DIB section keeping its alpha channel (Image.FromHbitmap drops it).</summary>
         private static Bitmap FromDibSection(IntPtr handle)
         {

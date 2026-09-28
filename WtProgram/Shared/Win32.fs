@@ -318,8 +318,16 @@ and
 
     member this.isInMoveSize = this.uiThreadInfo.hwndMoveSize = hwnd
 
-    member this.icon iconType = 
-        Ico.fromHandle(Win32Helper.GetWindowIcon(hwnd, iconType)).def(System.Drawing.SystemIcons.Application)
+    member this.icon iconType =
+        // UWP apps behind ApplicationFrameHost publish no window icon; use their package icon
+        // (cached by AppIcons, so callers never dispose it).
+        let packaged =
+            if this.className = "ApplicationFrameWindow" then
+                let size = if iconType = IconTypeCodes.ICON_BIG then SystemInformation.IconSize.Width else SystemInformation.SmallIconSize.Width
+                AppIcons.GetPackagedWindowIcon(hwnd, size)
+            else null
+        if not (isNull packaged) then packaged
+        else Ico.fromHandle(Win32Helper.GetWindowIcon(hwnd, iconType)).def(System.Drawing.SystemIcons.Application)
 
     member this.iconSmall = this.icon IconTypeCodes.ICON_SMALL
 
