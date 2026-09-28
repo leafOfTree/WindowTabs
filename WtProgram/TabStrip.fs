@@ -178,7 +178,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         this.update()
 
     member private this.wndProc(msg:Win32Message) =
-        let mousePt() = msg.lParam.location
+        let mousePt() =
+            let pt = msg.lParam.location
+            if this.isShrunk then pt.add(Pt(0,this.ts.collapsedOffset)) else pt
         let mouseDown btn =
             this.processMouse(MouseClick(mousePt(), btn, MouseDown))
             msg.def()
@@ -232,7 +234,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         if this.visible then 
             let image = this.render
             try
-                this.window.update(image, this.location, this.alpha)
+                let location = if this.isShrunk then this.location.add(Pt(0,this.ts.collapsedOffset)) else this.location
+                this.window.update(image, location, this.alpha)
                 shadowWindow |> Option.iter (fun shadow ->
                     if this.isShrunk || this.isEmpty then shadow.hide()
                     else shadow.update(image, this.alpha, this.direction))
@@ -245,11 +248,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     
     member private this.render : Img = 
         try
-            let img = this.ts.render
-            if this.isShrunk && this.direction = TabDirection.TabDown then
-                img.clip(Rect(Pt(0, img.height - 7), Sz(img.width, 7)))
-            else
-                img
+            if this.isShrunk then this.ts.renderCollapsed else this.ts.render
         with ex -> 
             Img(Sz(1,1))
 
@@ -423,4 +422,5 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         layeredWindowCell.value.iter <| fun w -> (w :?> IDisposable).Dispose()
         this.window.destroy()
             
-    member this.tryHit(pt) : Option<_> = this.ts.tryHit(pt)
+    member this.tryHit(pt:Pt) : Option<_> =
+        this.ts.tryHit(if this.isShrunk then pt.add(Pt(0,this.ts.collapsedOffset)) else pt)

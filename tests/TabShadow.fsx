@@ -66,6 +66,32 @@ let main () =
         slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false
         transparent=true; appearance=appearance; hover=None; captured=None }
     let tabImage = ts.render
+    let originalDpi = Dpi.value()
+    try
+        for dpi in [96;144;192] do
+            Dpi.set dpi
+            let close : ISprite =
+                { CloseButtonSprite.hover=false; captured=false; foreColor=Color.Black; size=Dpi.scaleSize(Sz(16,16)) } :> ISprite
+            let extent = Dpi.scale 16
+            use closePixels = close.image.bitmap
+            check (closePixels.GetPixel(1,1).A=0uy) "Close hit-test test point is not transparent"
+            for x,y in [1,1;extent-2,1;1,extent-2;extent-2,extent-2;extent/2,extent/2] do
+                check (not (close.hit(Pt(x,y))).isEmpty) "Transparent area of close button cannot be clicked"
+            for x,y in [-1,0;0,-1;extent,0;0,extent] do
+                check ((close.hit(Pt(x,y))).isEmpty) "Close button captures neighboring pixels"
+            for direction in [TabUp;TabDown] do
+                let strip = { ts with appearance=appearance.scaled; size=Dpi.scaleSize(Sz(420,28)); direction=direction }
+                use bar = strip.renderCollapsed.bitmap
+                check (bar.Height=Dpi.scale 4 && bar.Width=strip.size.width) "Minimal bar does not scale with DPI"
+                let expectedOffset = if direction=TabUp then strip.size.height-bar.Height else 0
+                check (strip.collapsedOffset=expectedOffset) "Minimal bar is not at the window edge"
+                check (bar.GetPixel(Dpi.scale 80,bar.Height/2).A=255uy) "Minimal bar lacks a solid hover target"
+                check ((strip.tryHit(Pt(Dpi.scale 80,strip.collapsedOffset+bar.Height/2))).IsSome) "Minimal bar cannot reveal its tabs"
+                let tabLocation,tabSprite = strip.sprite.children.list |> List.find(fun (_,sprite) -> sprite.children.list |> List.exists(fun (_,child) -> child :? CloseButtonSprite))
+                let closeLocation,_ = tabSprite.children.list |> List.find(fun (_,child) -> child :? CloseButtonSprite)
+                let point = tabLocation.add(closeLocation).add(Pt(1,1))
+                check (strip.tryHit(point) |> Option.exists(fun (_,part) -> part=TabClose)) "Strip does not route the full close-button region to close"
+    finally Dpi.set originalDpi
     use tabBitmap = tabImage.bitmap
     use rendered = TabShadow.render tabBitmap.Width tabBitmap.Height (TabShadow.silhouette tabBitmap) padding
     use preview = new Bitmap(540,260)

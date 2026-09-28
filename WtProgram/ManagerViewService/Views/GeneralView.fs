@@ -12,6 +12,7 @@ type GeneralView() =
         let behaviour = SettingsUi.sectionCard table (t "Tab behavior" "标签行为")
         SettingsBindings.toggleRow behaviour "dim-inactive-groups"
         SettingsBindings.toggleRow behaviour "auto-hide-maximized-tabs"
+        SettingsBindings.toggleRow behaviour "minimal-mode"
         let alignment = SettingsUi.choice [|t "Left" "左侧";t "Center" "居中";t "Right" "右侧"|]
         let values = [|"Left";"Center";"Right"|]
         alignment.SelectedIndex <- values |> Array.tryFindIndex ((=) (Services.settings.getValue("alignment") :?> string)) |> Option.defaultValue 1

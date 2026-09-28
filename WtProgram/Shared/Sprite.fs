@@ -5,6 +5,10 @@ open System.Drawing
 type ISprite =
     abstract member image : Img
     abstract member children : List2<Pt * ISprite>
+
+/// Interactive regions can include transparent pixels around a glyph.
+type ISpriteHitTest =
+    abstract member containsPoint : Pt -> bool
    
 [<AutoOpen>]
 module Sprite = 
@@ -26,7 +30,11 @@ module Sprite =
             match hitPath with
             | Some(path) -> Some(path)
             | None ->
-                if this.image.containsPoint(pt) 
+                let contains =
+                    match this with
+                    | :? ISpriteHitTest as target -> target.containsPoint(pt)
+                    | _ -> this.image.containsPoint(pt)
+                if contains
                 then Some(path)
                 else None
 

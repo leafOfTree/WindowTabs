@@ -193,7 +193,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         let combineIconsInTaskbar =
             CmiRegular({
-                text = Localization.text "Combine taskbar icons" "合并任务栏图标"
+                text = Localization.text "One taskbar icon per group" "每个分组显示一个任务栏图标"
                 image = None
                 click = fun() -> Services.desktop.restartGroup(group.hwnd, group.isSuperBarEnabled.not)
                 flags = checkedFlag(group.isSuperBarEnabled)
@@ -305,11 +305,24 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         let isAutoHideEnabledDef = Services.settings.getValue("autoHide").cast<bool>()
         let autoHideCell = propCell("autoHide", isAutoHideEnabledDef)
+        let minimalModeCell = Cell.create(Services.settings.getValue("minimalMode").cast<bool>())
+        let mutable disposed = false
+        let minimalSubscription = Services.settings.notifyValue "minimalMode" (fun value ->
+            let enabled = value.cast<bool>()
+            group.invokeAsync(fun () -> if not disposed then minimalModeCell.value <- enabled))
+        group.exited.Add(fun _ ->
+            disposed <- true
+            minimalSubscription.Dispose()
+            callbackRef.Value.iter(fun (pending:IDisposable) -> pending.Dispose())
+            callbackRef := None)
         let contextMenuVisibleCell = propCell("contextMenuVisible", false)
         let renamingTabCell = propCell("renamingTab", false)
         let isRecentlyChangedZorderCell =
             let cell = Cell.create(false)
             let cbRef = ref None
+            group.exited.Add(fun _ ->
+                cbRef.Value.iter(fun (pending:IDisposable) -> pending.Dispose())
+                cbRef := None)
             group.zorder.changed.Add <| fun() ->
                 cell.value <- true
                 cbRef.Value.iter <| fun(d:IDisposable) -> d.Dispose()
@@ -319,18 +332,17 @@ type TabStripDecorator(group:WindowGroup) as this =
             cell
         Cell.listen <| fun() ->
             let shrink = 
-                isMaximized.value && 
+                (minimalModeCell.value || (isMaximized.value && autoHideCell.value)) &&
                 isMouseOver.value.not && 
                 isDraggingCell.value.not &&
-                autoHideCell.value &&
                 contextMenuVisibleCell.value.not &&
                 renamingTabCell.value.not &&
-                isRecentlyChangedZorderCell.value.not
+                (minimalModeCell.value || isRecentlyChangedZorderCell.value.not)
             callbackRef.Value.iter <| fun(d:IDisposable) -> d.Dispose()
             callbackRef := None
             if shrink then
                 callbackRef := Some(ThreadHelper.cancelablePostBack 100 <| fun() ->
-                    this.ts.isShrunk <- true
+                    if not disposed then this.ts.isShrunk <- true
                 )
             else
                 this.ts.isShrunk <- false

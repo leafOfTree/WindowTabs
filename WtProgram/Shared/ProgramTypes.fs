@@ -21,6 +21,7 @@ type SettingsRec = {
     combineIconsInTaskbar: bool
     enableHoverActivate: bool
     autoHide: bool
+    minimalMode: bool
     enableShiftScroll: bool
     alignment: string
     /// "system", "en", "zh" or "ja".

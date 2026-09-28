@@ -28,6 +28,11 @@ let main() =
     try
         use settings = new Settings(true, saveDelay=0)
         let api = settings :> ISettings
+        check (api.getValue("minimalMode")=box false) "Minimal mode must default to off"
+        api.setValue("minimalMode",box true)
+        settings.clearCaches()
+        check (api.getValue("minimalMode")=box true && settings.settings.minimalMode) "Minimal mode was not persisted"
+        api.setValue("minimalMode",box false)
         check (settings.settings.appearance.mode=SystemTheme) "New installs must follow system"
         check (not settings.settings.appearance.useCustomColors) "Default colours misclassified as custom"
         check (Theme.sameColors settings.defaultTabAppearance Theme.light) "KnownColor/ARGB comparison failed"

@@ -114,6 +114,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         enableCtrlNumberHotKey = settingsJson.getBool("enableCtrlNumberHotKey").def(SettingsCatalog.toggleDefault "enableCtrlNumberHotKey" hasExistingSettings)
                         enableHoverActivate = settingsJson.getBool("enableHoverActivate").def(SettingsCatalog.toggleDefault "enableHoverActivate" hasExistingSettings)
                         autoHide = settingsJson.getBool("autoHide").def(SettingsCatalog.toggleDefault "autoHide" hasExistingSettings)
+                        minimalMode = settingsJson.getBool("minimalMode").def(SettingsCatalog.toggleDefault "minimalMode" hasExistingSettings)
                         enableShiftScroll = settingsJson.getBool("enableShiftScroll").def(SettingsCatalog.toggleDefault "enableShiftScroll" hasExistingSettings)
                         version = settingsJson.getString("version").def(String.Empty)
                         alignment = settingsJson.getString("alignment").def("Center") |> SettingsCatalog.normalizeChoice "alignment"
@@ -159,6 +160,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setBool("enableCtrlNumberHotKey", settings.enableCtrlNumberHotKey)
             settingsJson.setBool("enableHoverActivate", settings.enableHoverActivate)
             settingsJson.setBool("autoHide", settings.autoHide)
+            settingsJson.setBool("minimalMode", settings.minimalMode)
             settingsJson.setBool("enableShiftScroll", settings.enableShiftScroll)
             settingsJson.setStringArray("includedPaths", settings.includedPaths.items)
             settingsJson.setStringArray("excludedPaths", settings.excludedPaths.items)

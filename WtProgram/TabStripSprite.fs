@@ -42,6 +42,9 @@ type CloseButtonSprite = {
         if this.hover then Color.FromArgb(230, int c.R, int c.G, int c.B)
         else Color.FromArgb(150, int c.R, int c.G, int c.B)
     member private this.pen = new Pen(this.penColor, float32 (max 1 (Dpi.scale 1)) * 1.2f)
+    interface ISpriteHitTest with
+        member this.containsPoint(pt) =
+            pt.x>=0 && pt.y>=0 && pt.x<this.size.width && pt.y<this.size.height
     interface ISprite with
         member this.image = 
             let bitmap = Img(this.size)
@@ -401,6 +404,25 @@ type TabStripSprite<'id> when 'id : equality = {
     member this.renderTab tab = this.tabSprite(tab).render
 
     member this.render = this.sprite.render
+
+    member this.collapsedHeight = max 1 (min this.size.height (Dpi.scale 4))
+
+    member this.collapsedOffset =
+        if this.direction=TabUp then this.size.height-this.collapsedHeight else 0
+
+    /// Keep a solid hover target at the window edge, without text or icons.
+    member this.renderCollapsed =
+        let image = Img(Sz(this.size.width,this.collapsedHeight))
+        use graphics = image.graphics
+        let gapInset = max 1 (Dpi.scale 2)
+        for location,sprite in this.sprite.children.list do
+            let tab = sprite :?> TabSprite<'id>
+            let leftInset = if tab.id=this.lorder.head then 0 else gapInset
+            let rightInset = if tab.id=this.lorder.list.[this.lorder.count-1] then 0 else gapInset
+            use fill = new SolidBrush(if tab.isTop then this.appearance.tabActiveBgColor else this.appearance.tabNormalBgColor)
+            let width = tab.size.width-leftInset-rightInset
+            if width>0 then graphics.FillRectangle(fill,location.x+leftInset,0,width,this.collapsedHeight)
+        image
 
     member this.tryHit pt = 
         let path = this.sprite.hit(pt)
