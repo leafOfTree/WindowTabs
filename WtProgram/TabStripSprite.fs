@@ -364,7 +364,12 @@ type TabStripSprite<'id> when 'id : equality = {
             let x = x + this.alignmentOffset
             Pt(int(x), 1)
 
-    member this.tabSize = Sz(int(this.tabLength), (this.size.height) - 2)
+    // Tabs start one pixel into the strip. Above a window they then run to the strip's
+    // bottom row, which overlaps the window's top edge by tabHeightOffset, so they cover
+    // its border line. Inside the title bar the strip starts a pixel above the window and
+    // that first row is already the window's edge.
+    member this.tabSize =
+        Sz(int(this.tabLength), this.size.height - (if this.direction = TabUp then 1 else 2))
 
     member this.movedTab =
         match this.slide with
