@@ -56,8 +56,8 @@
     <Compile Include="Shared\Win32.fs" />
     <Compile Include="Shared\AppearanceModel.fs" />
     <Compile Include="Shared\ProgramTypes.fs" />
-    <Compile Include="Shared\LocalizationJa.fs" />
     <Compile Include="Shared\Localization.fs" />
+    <Compile Include="Shared\Strings.fs" />
     <Compile Include="Shared\SettingsCatalog.fs" />
     <Compile Include="Shared\DragDrop.fs" />
     <Compile Include="Shared\Serialize.fs" />
@@ -91,13 +91,13 @@
     <Compile Include="GroupPlugins\HideTabsOnInactiveGroupPlugin.fs" />
     <Compile Include="Desktop.fs" />
     <Compile Include="Workspace\WorkspaceData.fs" />
+    <Compile Include="Workspace\WorkspaceModel.fs" />
     <Compile Include="ManagerViewService\ThemeBinding.fs" />
     <Compile Include="ManagerViewService\SettingsStyle.fs" />
     <Compile Include="ManagerViewService\SettingsControls.fs" />
     <Compile Include="ManagerViewService\SettingsEditors.fs" />
     <Compile Include="ManagerViewService\SettingsPage.fs" />
     <Compile Include="ManagerViewService\SettingsUi.fs" />
-    <Compile Include="Workspace\WorkspaceModel.fs" />
     <Compile Include="ManagerViewService\SettingsTreeList.fs" />
     <Compile Include="ManagerViewService\SettingsBindings.fs" />
     <Compile Include="ManagerViewService\SettingsListPage.fs" />

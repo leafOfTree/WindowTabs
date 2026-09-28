@@ -5,7 +5,7 @@ open Newtonsoft.Json.Linq
 
 module WindowTitleMatcher =
     let compile kind (target:string) =
-        if isNull target || target.Length>4096 then invalidArg "target" (Localization.text3 "Window title is missing or exceeds 4,096 characters." "窗口标题缺失或超过 4,096 个字符。" "ウィンドウのタイトルがないか、4,096 文字を超えています。")
+        if isNull target || target.Length>4096 then invalidArg "target" (tr Strings.Workspaces.titleInvalid)
         match kind with
         | 0 -> fun title -> String.Equals(title,target,StringComparison.Ordinal)
         | 1 -> fun (title:string) -> title.StartsWith(target,StringComparison.Ordinal)
@@ -14,7 +14,7 @@ module WindowTitleMatcher =
         | 4 ->
             let regex = Regex(target,RegexOptions.CultureInvariant,TimeSpan.FromMilliseconds(100.0))
             fun title -> regex.IsMatch(title)
-        | _ -> invalidArg "kind" (Localization.text3 "Unknown title match method." "未知的标题匹配方式。" "タイトルの一致方法が不明です。")
+        | _ -> invalidArg "kind" (tr Strings.Workspaces.unknownMatchMethod)
 
 module WorkspaceData =
     let version = 2
@@ -56,10 +56,10 @@ module WorkspaceData =
                     try
                         match value with
                         | :? JObject as obj -> Some(convert (obj.DeepClone() :?> JObject))
-                        | _ -> failwith (Localization.text3 "Expected an object." "应为对象。" "オブジェクトが必要です。")
+                        | _ -> failwith (tr Strings.Workspaces.expectedObject)
                     with ex -> warnings.Add(sprintf "%s #%d: %s" context (index+1) ex.Message); None)
                 |> Seq.choose id |> Seq.toList
-            | _ -> warnings.Add(context + Localization.text3 ": expected a list." "：应为列表。" "：リストが必要です。"); []
+            | _ -> warnings.Add(context + tr Strings.Workspaces.expectedList); []
         let window (obj:JObject) =
             let title = text obj "title" null
             let kind = number obj "matchType" 0
@@ -70,9 +70,9 @@ module WorkspaceData =
             obj.["zorder"] <- JValue(number obj "zorder" 0)
             obj
         let group (obj:JObject) =
-            let p = match obj.["placement"] with :? JObject as p -> placement p | _ -> failwith (Localization.text3 "Missing placement." "缺少窗口位置。" "ウィンドウの配置がありません。")
+            let p = match obj.["placement"] with :? JObject as p -> placement p | _ -> failwith (tr Strings.Workspaces.missingPlacement)
             let windows = collect "Window" obj.["windows"] window
-            if windows.IsEmpty then failwith (Localization.text3 "No valid windows in this group." "此分组中没有有效窗口。" "このグループに有効なウィンドウがありません。")
+            if windows.IsEmpty then failwith (tr Strings.Workspaces.noValidWindows)
             obj.["name"] <- JValue(text obj "name" "Group")
             obj.["placement"] <- writePlacement p
             obj.["windows"] <- JArray(windows |> Seq.map box)
@@ -84,7 +84,7 @@ module WorkspaceData =
             obj
         try
             let schema = number root "workspaceSchemaVersion" 1
-            if schema<1 || schema>version then [],[Localization.text3 "Unsupported workspace version; saved workspaces will not be modified." "不支持此工作区版本；已保存的工作区不会被修改。" "このワークスペースのバージョンには対応していません。保存済みのワークスペースは変更されません。"],true
+            if schema<1 || schema>version then [],[tr Strings.Workspaces.unsupportedVersion],true
             else
                 let result = collect "Workspace" root.["workspaces"] workspace
                 result,List.ofSeq warnings,false

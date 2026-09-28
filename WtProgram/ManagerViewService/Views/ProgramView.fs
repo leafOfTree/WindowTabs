@@ -48,19 +48,17 @@ module private ProgramItems =
         TreeListItem(window.text,Icon=Option.toObj (ImgHelper.windowIcon window),Glyph=WindowGlyph)
 type ProgramView() as this=
     let invoker = InvokerService.invoker
-    let t = SettingsUi.text
     let list =
-        new SettingsTreeList([TreeListColumn(Localization.text3 "Name" "名称" "名称",0,TextColumn)
-                              TreeListColumn(Localization.text3 "Tabs" "标签" "タブ",130,CheckColumn)
-                              TreeListColumn(Localization.text3 "Auto-group" "自动分组" "自動グループ化",130,CheckColumn)])
+        new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn)
+                              TreeListColumn(tr Strings.AppRules.tabs,130,CheckColumn)
+                              TreeListColumn(tr Strings.AppRules.autoGroup,130,CheckColumn)])
     let refresh =
-        let button = SettingsUi.button (Localization.text3 "Refresh" "刷新" "更新")
+        let button = SettingsUi.button (tr Strings.Common.refresh)
         button.Click.Add(fun _ -> this.populateNodes())
         button
     let panel =
-        new SettingsListPage(t "App rules" "应用规则",
-                             t "Choose which apps use tabs and automatic grouping. Expand an app to see its windows."
-                               "为应用设置标签和自动分组。展开应用可查看其窗口。",
+        new SettingsListPage(tr Strings.Pages.appRules,
+                             tr Strings.AppRules.description,
                              list,[refresh :> Control])
 
     let scanner = new LatestWork<TreeListItem list>(invoker :> IDispatcher,
@@ -69,9 +67,9 @@ type ProgramView() as this=
             list.Roots.Clear()
             list.Roots.AddRange(items)
             list.Rebuild()
-            panel.Status <- Localization.text3 (if items.Length=1 then "1 app" else sprintf "%d apps" items.Length) (sprintf "%d 个应用" items.Length) (sprintf "%d 個のアプリ" items.Length)),
+            panel.Status <- tr (Strings.AppRules.appCount items.Length)),
         ImgHelper.disposeItems,
-        (fun error -> panel.Status <- t "Scan failed: " "扫描失败：" + error.Message))
+        (fun error -> panel.Status <- tr (Strings.AppRules.scanFailed error.Message)))
 
     do
         list.CheckChanged.Add(fun (item,column,value) ->
@@ -90,7 +88,7 @@ type ProgramView() as this=
             ImgHelper.disposeItems list.Roots)
 
     member private this.populateNodes() =
-        panel.Status <- SettingsUi.text "Scanning…" "正在扫描…"
+        panel.Status <- tr Strings.AppRules.scanning
         scanner.Request(fun cancellation ->
             let items = ResizeArray<TreeListItem>()
             try
@@ -124,5 +122,5 @@ type ProgramView() as this=
 
     interface ISettingsView with
         member x.key = SettingsViewType.ProgramSettings
-        member x.title = t "App rules" "应用规则"
+        member x.title = tr Strings.Pages.appRules
         member x.control = panel :> Control

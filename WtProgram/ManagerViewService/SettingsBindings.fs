@@ -28,7 +28,7 @@ module SettingsBindings =
         for _ in 1..3 do table.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f/3.0f)) |> ignore
         let mutable refreshing = false
         let choices =
-            [|"system",text "System" "跟随系统";"light",text "Light" "浅色";"dark",text "Dark" "深色"|]
+            [|"system",tr Strings.Appearance.system;"light",tr Strings.Appearance.light;"dark",tr Strings.Appearance.dark|]
             |> Array.mapi (fun index (mode,label) ->
                 let tile = new SettingsThemeTile(mode,Text=label,Font=bodyFont,AccessibleName=label)
                 table.Controls.Add(tile,index,0)

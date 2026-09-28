@@ -5,14 +5,13 @@ open System.Windows.Forms
 
 type AppearanceView(?settings:ISettings) =
     let settings = defaultArg settings Services.settings
-    let t = SettingsUi.text
     let panel,table = SettingsUi.page()
     let mutable refreshing = false
     let mutable editingDark = ThemeService.currentIsDark()
     let update = settings.updateAppearance
     let paletteTitle = new Label(AutoSize=true,Font=SettingsUi.sectionFont,
                                  Margin=Padding(0,Dpi.scale 16,0,Dpi.scale 8))
-    let preset = SettingsUi.choice (Array.append (ThemePresets.names |> Array.map SettingsCatalog.localize) [|t "Custom" "自定义"|])
+    let preset = SettingsUi.choice (Array.append (ThemePresets.names |> Array.map tr) [|tr Strings.Appearance.custom|])
     let rightActions (button:Control) =
         let row = new FlowLayoutPanel(AutoSize=true,WrapContents=false,FlowDirection=FlowDirection.RightToLeft,
                                       Margin=Padding(0,Dpi.scale 8,0,Dpi.scale 8))
@@ -39,7 +38,7 @@ type AppearanceView(?settings:ISettings) =
             let next = pick s
             if next=activePalette s then s else setActive next s)
     let preview = new Panel(Height=Dpi.scale 145,Margin=Padding(0,Dpi.scale 4,0,0),
-                            AccessibleName=t "File Explorer theme preview" "文件资源管理器主题预览")
+                            AccessibleName=tr Strings.Appearance.explorerPreview)
     let colorFields : (string * (TabPalette -> Color) * (Color -> TabPalette -> TabPalette)) list = [
         "tabTextColor",(fun p -> p.tabTextColor),(fun v p -> {p with tabTextColor=v})
         "tabActiveBgColor",(fun p -> p.tabActiveBgColor),(fun v p -> {p with tabActiveBgColor=v})
@@ -62,8 +61,8 @@ type AppearanceView(?settings:ISettings) =
         try
             editingDark <- ThemeService.currentIsDark()
             paletteTitle.Text <-
-                if editingDark then t "Dark theme · Tab colors" "深色主题 · 标签配色"
-                else t "Light theme · Tab colors" "浅色主题 · 标签配色"
+                if editingDark then tr Strings.Appearance.darkThemeColors
+                else tr Strings.Appearance.lightThemeColors
             let settings = settings.appearance
             let palette = activePalette settings
             let values (p:TabPalette) =
@@ -86,7 +85,7 @@ type AppearanceView(?settings:ISettings) =
         finally refreshing <- false
 
     do
-        SettingsUi.section table (t "Theme" "主题")
+        SettingsUi.section table (tr Strings.Settings.theme.caption)
         SettingsUi.add table (SettingsBindings.themeTiles())
         SettingsUi.add table preview
         preview.Paint.Add(fun e ->
@@ -134,7 +133,7 @@ type AppearanceView(?settings:ISettings) =
                 bgColor=None; text=caption; icon=SystemIcons.Application
                 textFont=SettingsUi.bodyFont; textBrush=SystemBrushes.MenuText }
             let ts : TabStripSprite<int> = {
-                tabs=Map2(List2([1,info (t "Active tab" "活动标签");2,info (t "Hovered tab" "悬停标签");3,info (t "Inactive tab" "非活动标签")]))
+                tabs=Map2(List2([1,info (tr Strings.Settings.tabActiveBgColor.caption);2,info (tr Strings.Settings.tabHighlightBgColor.caption);3,info (tr Strings.Settings.tabNormalBgColor.caption)]))
                 lorder=List2([1;2;3]);zorder=List2([1;2;3]);size=Sz(width,height+2)
                 slide=None;direction=TabUp;alignment=TabLeft;onlyIcons=false;transparent=true
                 appearance=appearance;hover=Some(2,TabBackground);captured=None }
@@ -145,7 +144,7 @@ type AppearanceView(?settings:ISettings) =
         paletteTitle.Dock <- DockStyle.Fill
         paletteTitle.TextAlign <- ContentAlignment.MiddleLeft
         preset.Name <- "palette-preset"
-        preset.AccessibleName <- t "Color preset" "配色预设"
+        preset.AccessibleName <- tr Strings.Appearance.colorPreset
         preset.Width <- Dpi.scale 180
         preset.Dock <- DockStyle.Right
         paletteHeader.Controls.Add(paletteTitle)
@@ -161,13 +160,13 @@ type AppearanceView(?settings:ISettings) =
         for key,read,write,editor in colors do
             editor.control.Width <- Dpi.scale 180
             SettingsUi.settingRow colorsCard key editor.control
-        let reset = SettingsUi.button (t "Reset colors" "重置配色")
+        let reset = SettingsUi.button (tr Strings.Appearance.resetColors)
         reset.Click.Add(fun _ -> showPalette(fun _ -> (if editingDark then Theme.darkPalette else Theme.lightPalette)))
         rightActions reset
-        let layoutCard = SettingsUi.sectionCard table (t "Tab layout" "标签布局")
-        SettingsUi.note layoutCard (t "Sizes stay the same when you switch themes." "切换主题不会改变这些尺寸。")
+        let layoutCard = SettingsUi.sectionCard table (tr Strings.Appearance.tabLayout)
+        SettingsUi.note layoutCard (tr Strings.Appearance.sizesStayTheSame)
         for key,read,write,editor in dimensions do SettingsUi.settingRow layoutCard key editor
-        let resetLayout = SettingsUi.button (t "Reset tab layout" "重置标签布局")
+        let resetLayout = SettingsUi.button (tr Strings.Appearance.resetTabLayout)
         resetLayout.Click.Add(fun _ ->
             update Theme.resetLayout)
         rightActions resetLayout
@@ -184,5 +183,5 @@ type AppearanceView(?settings:ISettings) =
 
     interface ISettingsView with
         member _.key = AppearanceSettings
-        member _.title = t "Appearance" "外观"
+        member _.title = tr Strings.Pages.appearance
         member _.control = panel :> Control

@@ -106,7 +106,7 @@ type ColorEditor() as this =
             with ex -> 
                 e.Cancel <- true
                 tb.SelectAll()
-                MessageBox.Show(Localization.text "Invalid color. Enter six hexadecimal digits." "颜色无效，请输入六位十六进制数。").ignore
+                MessageBox.Show(tr Strings.Messages.invalidColor).ignore
 
         tb.Validated.Add <| fun e -> save()
         tb
@@ -220,12 +220,12 @@ module UIHelper =
         form.Padding <- Padding(12)
         
         let okButton = new Button()
-        okButton.Text <- Localization.text3 "OK" "确定" "OK"
+        okButton.Text <- tr Strings.Common.ok
         okButton.Click.Add <| fun _ ->
             form.DialogResult <- DialogResult.OK
 
         let cancelButton = new Button()
-        cancelButton.Text <- Localization.text3 "Cancel" "取消" "キャンセル"
+        cancelButton.Text <- tr Strings.Common.cancel
         
         cancelButton.Click.Add <| fun _ ->
             form.DialogResult <- DialogResult.Cancel

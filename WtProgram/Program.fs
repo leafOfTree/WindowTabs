@@ -260,9 +260,8 @@ type Program(lifetime:LifetimeScope) as this =
             let shortcut = HotKeyShortcut(HotKeyControlCode=int16(shortcut))
             if not (hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags, shortcut.RegisterHotKeyVirtualKeyCode) f) then
                 let name = SettingsCatalog.title (if key="nextTab" then "next-tab" else "previous-tab")
-                MessageBox.Show(Localization.text3 (sprintf "The shortcut for %s is unavailable. Choose another shortcut in Settings." name) (sprintf "“%s”的快捷键已被占用，请在设置中另选一个。" name)
-                                                   (sprintf "「%s」のショートカットは使用できません。設定で別のショートカットを選択してください。" name),
-                                Localization.text "Shortcut unavailable" "快捷键不可用", MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
+                MessageBox.Show(tr (Strings.Messages.shortcutUnavailableFor name),
+                                tr Strings.Messages.shortcutUnavailable, MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
 
    
     member this.hwndZorders() : Map2<IntPtr, int>= Map2(os.windowsInZorder.enumerate.map(fun(i,w) -> w.hwnd,i))
@@ -369,7 +368,7 @@ module Bootstrap =
         try
             use instance = new SingleInstance("BemoSoftware.WindowTabs")
             if not(instance.TryAcquire()) then
-                MessageBox.Show(Localization.text "WindowTabs is already running." "WindowTabs 已在运行。","WindowTabs") |> ignore
+                MessageBox.Show(tr Strings.Messages.alreadyRunning,"WindowTabs") |> ignore
                 0
             else
                 Application.EnableVisualStyles()
@@ -381,5 +380,5 @@ module Bootstrap =
                 0
         with error ->
             logger.log "Startup/runtime" error
-            MessageBox.Show(error.Message,Localization.text "WindowTabs could not continue" "WindowTabs 无法继续运行",MessageBoxButtons.OK,MessageBoxIcon.Error) |> ignore
+            MessageBox.Show(error.Message,tr Strings.Messages.couldNotContinue,MessageBoxButtons.OK,MessageBoxIcon.Error) |> ignore
             1

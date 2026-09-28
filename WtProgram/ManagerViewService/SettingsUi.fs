@@ -8,7 +8,6 @@ module SettingsUi =
     [<DllImport("dwmapi.dll")>]
     extern int private DwmSetWindowAttribute(IntPtr hwnd, int attribute, int& value, int size)
 
-    let text en zh = SettingsCatalog.localize(en,zh)
 
     let bodyFont = new Font("Segoe UI", 10.5f, FontStyle.Regular)
     let titleFont = new Font("Segoe UI", 20.0f, FontStyle.Regular)
@@ -133,8 +132,8 @@ module SettingsUi =
     let settingRow table id (editor:Control) =
         let definition = SettingsCatalog.find id
         editor.Name <- id
-        editor.AccessibleDescription <- SettingsCatalog.localize definition.description
-        row table (SettingsCatalog.localize definition.caption) editor.AccessibleDescription editor
+        editor.AccessibleDescription <- tr definition.text.description
+        row table (tr definition.text.caption) editor.AccessibleDescription editor
 
     let sectionCard table caption =
         section table caption

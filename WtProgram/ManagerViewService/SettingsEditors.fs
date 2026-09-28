@@ -76,8 +76,8 @@ type SettingsNumberInput() as this =
     let mutable maximum = 100M
     let mutable value = 0M
     let text = new TextBox(BorderStyle=BorderStyle.None,Text="0",TextAlign=HorizontalAlignment.Left)
-    let minus = new SettingsActionButton(Text="−",TabStop=false,AccessibleName=Localization.text3 "Decrease" "减小" "減らす")
-    let plus = new SettingsActionButton(Text="+",TabStop=false,AccessibleName=Localization.text3 "Increase" "增大" "増やす")
+    let minus = new SettingsActionButton(Text="−",TabStop=false,AccessibleName=tr Strings.Appearance.decrease)
+    let plus = new SettingsActionButton(Text="+",TabStop=false,AccessibleName=tr Strings.Appearance.increase)
     let sync() = text.Text <- value.ToString("0",CultureInfo.InvariantCulture)
     let setValue next =
         let next = max minimum (min maximum (Decimal.Truncate next))
@@ -166,7 +166,6 @@ module SettingsShortcut =
 /// The × button, or Backspace/Delete while recording, removes the shortcut (0).
 type SettingsShortcutInput() as this =
     inherit SettingsInputFrame()
-    let t en zh = SettingsCatalog.localize(en,zh)
     let changed = Event<EventArgs>()
     let mutable shortcut = 0
     let mutable recording = false
@@ -187,7 +186,7 @@ type SettingsShortcutInput() as this =
         if next<>shortcut then
             this.Shortcut <- next
             changed.Trigger(EventArgs.Empty)
-        elif next<>0 then showMessage false (t "Already set" "已是当前快捷键")
+        elif next<>0 then showMessage false (tr Strings.Shortcuts.alreadySet)
         this.Invalidate()
     do
         this.Width <- Dpi.scale 220
@@ -238,7 +237,7 @@ type SettingsShortcutInput() as this =
         elif SettingsShortcut.isModifier key then this.Invalidate(); true
         elif SettingsShortcut.isAcceptable keyData then commit (SettingsShortcut.encode keyData); true
         else
-            showMessage true (t "Include Ctrl or Alt" "需要包含 Ctrl 或 Alt")
+            showMessage true (tr Strings.Shortcuts.includeCtrlOrAlt)
             true
     override this.OnKeyUp(e) = base.OnKeyUp(e); if recording then this.Invalidate()
     override this.OnPaint(e) =
@@ -271,13 +270,13 @@ type SettingsShortcutInput() as this =
         | Some(text,isError) -> TextRenderer.DrawText(g,text,this.Font,textArea (Dpi.scale 12),(if isError then error else p.muted),flags)
         | None when recording ->
             let held = SettingsShortcut.heldParts Control.ModifierKeys
-            if held.IsEmpty then TextRenderer.DrawText(g,t "Press a shortcut…" "按下组合键…",this.Font,textArea (Dpi.scale 12),p.muted,flags)
+            if held.IsEmpty then TextRenderer.DrawText(g,tr Strings.Shortcuts.pressShortcut,this.Font,textArea (Dpi.scale 12),p.muted,flags)
             else
                 let x = chips held
                 TextRenderer.DrawText(g,"+ …",this.Font,textArea x,p.muted,flags)
         | None ->
             match SettingsShortcut.parts shortcut with
-            | [] -> TextRenderer.DrawText(g,t "Not set" "未设置",this.Font,textArea (Dpi.scale 12),p.muted,flags)
+            | [] -> TextRenderer.DrawText(g,tr Strings.Shortcuts.notSet,this.Font,textArea (Dpi.scale 12),p.muted,flags)
             | labels -> chips labels |> ignore
         if canClear() then
             let bounds = clearBounds()
@@ -324,7 +323,7 @@ type SettingsColorPicker() as this =
     do
         this.Size <- Size(Dpi.scale 238,Dpi.scale 206)
         this.TabStop <- true
-        this.AccessibleName <- Localization.text3 "Color picker: arrow keys adjust saturation and brightness; Shift + arrow keys adjust hue" "颜色选择器：方向键调整饱和度和亮度；Shift + 方向键调整色相" "色の選択：方向キーで彩度と明るさを調整し、Shift + 方向キーで色相を調整します"
+        this.AccessibleName <- tr Strings.Appearance.pickerHelp
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
         timer.Tick.Add(fun _ -> flush())
         this.Disposed.Add(fun _ -> timer.Dispose())
@@ -400,7 +399,7 @@ type SettingsColorInput() as this =
     let changed = Event<unit>()
     let mutable color = Color.White
     let text = new TextBox(BorderStyle=BorderStyle.None,MaxLength=7,CharacterCasing=CharacterCasing.Upper)
-    let swatch = new Button(FlatStyle=FlatStyle.Flat,Text="",AccessibleName=Localization.text3 "Choose color" "选择颜色" "色を選択",Cursor=Cursors.Hand)
+    let swatch = new Button(FlatStyle=FlatStyle.Flat,Text="",AccessibleName=tr Strings.Appearance.chooseColor,Cursor=Cursors.Hand)
     let picker = new SettingsColorPicker()
     let popup = new SettingsChoicePopup(AutoSize=true)
     let mutable suppressClick = false

@@ -109,11 +109,12 @@ trees release their owned icons. Closing the view cancels its worker.
 
 ## Settings and diagnostics
 
-`SettingsCatalog` shares setting IDs, bilingual labels, boolean defaults, numeric
+`SettingsCatalog` shares setting IDs, labels, boolean defaults, numeric
 ranges and choice values between search and editors. Appearance values are normalized
-at load and update boundaries. All other user-visible text goes through `Localization`
-(inline English/Chinese, Japanese where translated) so it compiles into the single exe;
-the `language` setting overrides the Windows display language.
+at load and update boundaries. Every user-visible text is a `LocalizedText` record in
+`Strings` (one field per language, so a missing translation fails to compile) and is
+shown with `tr`; it compiles into the single exe. `Localization.languages` lists the
+supported languages, and the `language` setting overrides the Windows display language.
 Diagnostics report resource counts, scan timing and an allow-list of non-identifying
 settings; paths, titles and license data are excluded. Full settings export is a
 separate user-selected action and reads the current in-memory root, including pending

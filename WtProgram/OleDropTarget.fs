@@ -91,20 +91,20 @@ type OleDropTarget(ts:TabStrip) as this=
                     if rButtonDown.value then
                         Win32Menu.show window.hwnd ptScreen (List2([
                             CmiRegular({
-                                text = Localization.text3 "Copy" "复制" "コピー"
+                                text = tr Strings.DropMenu.copy
                                 image = None
                                 flags = List2()
                                 click = copy
                             })
                             CmiRegular({
-                                text = Localization.text3 "Move" "移动" "移動"
+                                text = tr Strings.DropMenu.move
                                 image = None
                                 flags = List2()
                                 click = move
                             })
                             CmiSeparator
                             CmiRegular({
-                                text = Localization.text3 "Cancel" "取消" "キャンセル"
+                                text = tr Strings.Common.cancel
                                 image = None
                                 flags = List2()
                                 click = fun() -> ()

@@ -12,43 +12,41 @@ type SettingBinding =
 type SettingDefinition = {
     id:string
     page:SettingsViewType
-    caption:string * string
-    description:string * string
+    text:SettingText
     keywords:string
     binding:SettingBinding }
 
 module SettingsCatalog =
-    let localize (en,zh) = Localization.text en zh
     let all = [
-        { id="theme"; page=AppearanceSettings; caption=("Theme","主题"); description=("Choose system, light, or dark mode.","选择跟随系统、浅色或深色模式。"); keywords="theme system light dark 系统 浅色 深色"; binding=Choice("tabThemeMode",["system";"light";"dark"],"system") }
-        { id="language"; page=GeneralSettings; caption=("Language","语言"); description=("Follow Windows or choose a language.","跟随 Windows 或指定语言。"); keywords="language locale english chinese japanese 语言 中文 英文 日语 日本語 言語"; binding=Choice("language",["system";"en";"zh";"ja"],"system") }
-        { id="launch-at-sign-in"; page=GeneralSettings; caption=("Start with Windows","随 Windows 启动"); description=("Launch at startup.","开机时自动运行。"); keywords="launch-at-sign-in startup autostart 开机 自启动"; binding=Toggle("runAtStartup",true,false) }
-        { id="enable-tabs-for-new-apps"; page=GeneralSettings; caption=("Enable tabs by default","默认启用标签"); description=("For apps without an app rule.","适用于没有应用规则的应用。"); keywords="enable-tabs-for-new-apps"; binding=Toggle("enableTabbingByDefault",true,false) }
-        { id="dim-inactive-groups"; page=GeneralSettings; caption=("Dim tabs in inactive groups","淡化非活动分组的标签"); description=("Make tabs in inactive groups translucent.","使非活动分组中的标签半透明。"); keywords="dim-inactive-groups"; binding=Toggle("hideInactiveTabs",true,false) }
-        { id="auto-hide-maximized-tabs"; page=GeneralSettings; caption=("Auto-hide tabs when maximized","最大化时自动隐藏标签"); description=("Point to the top edge to show them.","鼠标移到顶部边缘时显示。"); keywords="auto-hide-maximized-tabs"; binding=Toggle("autoHide",true,true) }
-        { id="minimal-mode"; page=GeneralSettings; caption=("Minimal mode","极简模式"); description=("Shrink tabs to a thin bar in all windows. Hover to expand.","所有窗口的标签收成细栏，悬停时展开。"); keywords="minimal-mode minimalMode compact auto hide bar hover 极简 自动隐藏 细栏 悬停"; binding=Toggle("minimalMode",false,false) }
-        { id="tab-alignment"; page=GeneralSettings; caption=("Tab position","标签位置"); description=("Choose where tabs appear above the window.","选择标签在窗口顶部的位置。"); keywords="tab-alignment"; binding=Choice("alignment",["Left";"Center";"Right"],"Center") }
-        { id="combine-taskbar-icons"; page=GeneralSettings; caption=("One taskbar icon per group","每个分组显示一个任务栏图标"); description=("Applies to new groups. Change existing ones from the tab menu.","适用于新分组。已有分组可在标签右键菜单中更改。"); keywords="combine-taskbar-icons"; binding=Toggle("combineIconsInTaskbar",false,true) }
-        { id="use-windowtabs-for-alt-tab"; page=GeneralSettings; caption=("Use WindowTabs for Alt+Tab","使用 WindowTabs 窗口切换器"); description=("Replaces the Windows switcher.","替换 Windows 自带的窗口切换器。"); keywords="use-windowtabs-for-alt-tab"; binding=Toggle("replaceAltTab",false,false) }
-        { id="group-windows-in-the-switcher"; page=GeneralSettings; caption=("Group windows in Alt+Tab","Alt+Tab 中按分组显示"); description=("Show each window group as one item.","每个窗口分组只显示一项。"); keywords="group-windows-in-the-switcher"; binding=Toggle("groupWindowsInSwitcher",false,false) }
-        { id="next-tab"; page=HotKeySettings; caption=("Next tab","下一个标签"); description=("Switch to the next window in the group.","切换到当前分组中的下一个窗口。"); keywords="next-tab"; binding=Shortcut("nextTab",3623) }
-        { id="previous-tab"; page=HotKeySettings; caption=("Previous tab","上一个标签"); description=("Switch to the previous window in the group.","切换到当前分组中的上一个窗口。"); keywords="previous-tab"; binding=Shortcut("prevTab",3621) }
-        { id="switch-tabs-by-number"; page=HotKeySettings; caption=("Switch tabs by number","按数字切换标签"); description=("Use Ctrl + 1–9 to switch tabs. Restart WindowTabs to apply changes.","使用 Ctrl + 1–9 切换标签。更改后需重启 WindowTabs。"); keywords="switch-tabs-by-number"; binding=Toggle("enableCtrlNumberHotKey",true,true) }
-        { id="activate-on-hover"; page=HotKeySettings; caption=("Switch tabs on hover","悬停切换标签"); description=("Switch windows when the pointer rests on a tab.","鼠标悬停在标签上时切换窗口。"); keywords="activate-on-hover"; binding=Toggle("enableHoverActivate",false,false) }
-        { id="shift-scroll"; page=HotKeySettings; caption=("Shift + scroll to switch tabs","Shift + 滚轮切换标签"); description=("Hold Shift and scroll over a grouped window to switch tabs. You can also scroll over the tab strip without holding Shift.","在分组窗口上按住 Shift 并滚动滚轮即可切换标签。在标签条上滚动时无需按 Shift。"); keywords="shift-scroll"; binding=Toggle("enableShiftScroll",true,true) }
-        { id="tabTextColor"; page=AppearanceSettings; caption=("Text and close button","文字与关闭按钮"); description=("",""); keywords="tabTextColor"; binding=Colour }
-        { id="tabNormalBgColor"; page=AppearanceSettings; caption=("Inactive tab","非活动标签"); description=("",""); keywords="tabNormalBgColor"; binding=Colour }
-        { id="tabActiveBgColor"; page=AppearanceSettings; caption=("Active tab","活动标签"); description=("",""); keywords="tabActiveBgColor"; binding=Colour }
-        { id="tabHighlightBgColor"; page=AppearanceSettings; caption=("Hovered tab","悬停标签"); description=("",""); keywords="tabHighlightBgColor"; binding=Colour }
-        { id="tabBorderColor"; page=AppearanceSettings; caption=("Separator","分隔线"); description=("",""); keywords="tabBorderColor"; binding=Colour }
-        { id="tabFlashBgColor"; page=AppearanceSettings; caption=("Flashing tab","闪烁标签"); description=("",""); keywords="tabFlashBgColor"; binding=Colour }
-        { id="tabHeight"; page=AppearanceSettings; caption=("Tab height","标签高度"); description=("",""); keywords="tabHeight"; binding=Number(12,120) }
-        { id="tabMaxWidth"; page=AppearanceSettings; caption=("Maximum tab width","标签最大宽度"); description=("",""); keywords="tabMaxWidth"; binding=Number(60,1000) }
-        { id="tabOverlap"; page=AppearanceSettings; caption=("Tab spacing","标签间距"); description=("Space between adjacent tabs.","相邻标签之间的空隙。"); keywords="tabOverlap gap spacing 间距 间隔"; binding=Number(0,100) }
-        { id="tabIndentNormal"; page=AppearanceSettings; caption=("Side margin","两侧边距"); description=("Space between the tabs and the window edges. With centered tabs, this takes effect when the tabs fill the row.","标签与窗口两侧边缘的距离。标签居中时，只有排满整行后才会生效。"); keywords="tabIndentNormal tabIndentFlipped inset margin indent maximized 边距 缩进 最大化"; binding=Number(0,1000) }
-        { id="app-rules"; page=ProgramSettings; caption=("App rules","应用规则"); description=("Choose apps for tabs and automatic grouping.","选择启用标签和自动分组的应用。"); keywords="process application exe 程序 进程"; binding=Navigation }
-        { id="workspaces"; page=LayoutSettings; caption=("Workspaces","工作区"); description=("Save and restore window layouts.","保存和恢复窗口布局。"); keywords="workspace layout 工作区 布局"; binding=Navigation }
-        { id="diagnostics"; page=DiagnosticsSettings; caption=("About & diagnostics","关于与诊断"); description=("Version and troubleshooting information.","版本与故障排查信息。"); keywords="version diagnostic log 版本 日志 诊断"; binding=Navigation }
+        { id="theme"; page=AppearanceSettings; text=Strings.Settings.theme; keywords="theme system light dark 系统 浅色 深色"; binding=Choice("tabThemeMode",["system";"light";"dark"],"system") }
+        { id="language"; page=GeneralSettings; text=Strings.Settings.language; keywords="language locale english chinese japanese 语言 中文 英文 日语 日本語 言語"; binding=Choice("language",Localization.preferences,"system") }
+        { id="launch-at-sign-in"; page=GeneralSettings; text=Strings.Settings.launchAtSignIn; keywords="launch-at-sign-in startup autostart 开机 自启动"; binding=Toggle("runAtStartup",true,false) }
+        { id="enable-tabs-for-new-apps"; page=GeneralSettings; text=Strings.Settings.enableTabsByDefault; keywords="enable-tabs-for-new-apps"; binding=Toggle("enableTabbingByDefault",true,false) }
+        { id="dim-inactive-groups"; page=GeneralSettings; text=Strings.Settings.dimInactiveGroups; keywords="dim-inactive-groups"; binding=Toggle("hideInactiveTabs",true,false) }
+        { id="auto-hide-maximized-tabs"; page=GeneralSettings; text=Strings.Settings.autoHideMaximized; keywords="auto-hide-maximized-tabs"; binding=Toggle("autoHide",true,true) }
+        { id="minimal-mode"; page=GeneralSettings; text=Strings.Settings.minimalMode; keywords="minimal-mode minimalMode compact auto hide bar hover 极简 自动隐藏 细栏 悬停"; binding=Toggle("minimalMode",false,false) }
+        { id="tab-alignment"; page=GeneralSettings; text=Strings.Settings.tabAlignment; keywords="tab-alignment"; binding=Choice("alignment",["Left";"Center";"Right"],"Center") }
+        { id="combine-taskbar-icons"; page=GeneralSettings; text=Strings.Settings.combineTaskbarIcons; keywords="combine-taskbar-icons"; binding=Toggle("combineIconsInTaskbar",false,true) }
+        { id="use-windowtabs-for-alt-tab"; page=GeneralSettings; text=Strings.Settings.replaceAltTab; keywords="use-windowtabs-for-alt-tab"; binding=Toggle("replaceAltTab",false,false) }
+        { id="group-windows-in-the-switcher"; page=GeneralSettings; text=Strings.Settings.groupWindowsInSwitcher; keywords="group-windows-in-the-switcher"; binding=Toggle("groupWindowsInSwitcher",false,false) }
+        { id="next-tab"; page=HotKeySettings; text=Strings.Settings.nextTab; keywords="next-tab"; binding=Shortcut("nextTab",3623) }
+        { id="previous-tab"; page=HotKeySettings; text=Strings.Settings.previousTab; keywords="previous-tab"; binding=Shortcut("prevTab",3621) }
+        { id="switch-tabs-by-number"; page=HotKeySettings; text=Strings.Settings.switchTabsByNumber; keywords="switch-tabs-by-number"; binding=Toggle("enableCtrlNumberHotKey",true,true) }
+        { id="activate-on-hover"; page=HotKeySettings; text=Strings.Settings.activateOnHover; keywords="activate-on-hover"; binding=Toggle("enableHoverActivate",false,false) }
+        { id="shift-scroll"; page=HotKeySettings; text=Strings.Settings.shiftScroll; keywords="shift-scroll"; binding=Toggle("enableShiftScroll",true,true) }
+        { id="tabTextColor"; page=AppearanceSettings; text=Strings.Settings.tabTextColor; keywords="tabTextColor"; binding=Colour }
+        { id="tabNormalBgColor"; page=AppearanceSettings; text=Strings.Settings.tabNormalBgColor; keywords="tabNormalBgColor"; binding=Colour }
+        { id="tabActiveBgColor"; page=AppearanceSettings; text=Strings.Settings.tabActiveBgColor; keywords="tabActiveBgColor"; binding=Colour }
+        { id="tabHighlightBgColor"; page=AppearanceSettings; text=Strings.Settings.tabHighlightBgColor; keywords="tabHighlightBgColor"; binding=Colour }
+        { id="tabBorderColor"; page=AppearanceSettings; text=Strings.Settings.tabBorderColor; keywords="tabBorderColor"; binding=Colour }
+        { id="tabFlashBgColor"; page=AppearanceSettings; text=Strings.Settings.tabFlashBgColor; keywords="tabFlashBgColor"; binding=Colour }
+        { id="tabHeight"; page=AppearanceSettings; text=Strings.Settings.tabHeight; keywords="tabHeight"; binding=Number(12,120) }
+        { id="tabMaxWidth"; page=AppearanceSettings; text=Strings.Settings.tabMaxWidth; keywords="tabMaxWidth"; binding=Number(60,1000) }
+        { id="tabOverlap"; page=AppearanceSettings; text=Strings.Settings.tabOverlap; keywords="tabOverlap gap spacing 间距 间隔"; binding=Number(0,100) }
+        { id="tabIndentNormal"; page=AppearanceSettings; text=Strings.Settings.tabIndent; keywords="tabIndentNormal tabIndentFlipped inset margin indent maximized 边距 缩进 最大化"; binding=Number(0,1000) }
+        { id="app-rules"; page=ProgramSettings; text=Strings.Settings.appRules; keywords="process application exe 程序 进程"; binding=Navigation }
+        { id="workspaces"; page=LayoutSettings; text=Strings.Settings.workspaces; keywords="workspace layout 工作区 布局"; binding=Navigation }
+        { id="diagnostics"; page=DiagnosticsSettings; text=Strings.Settings.diagnostics; keywords="version diagnostic log 版本 日志 诊断"; binding=Navigation }
     ]
     let find id = all |> List.find(fun item -> item.id=id)
     let toggleKey id = match (find id).binding with Toggle(key,_,_) -> key | _ -> invalidArg "id" "Not a toggle"
@@ -66,18 +64,14 @@ module SettingsCatalog =
             match item.binding with
             | Choice(k,values,fallback) when k=key -> Some(if List.contains value values then value else fallback)
             | _ -> None)
-    let title id = (find id).caption |> localize
+    let title id = tr (find id).text.caption
+    /// Matches every term against the text in all languages, so any language finds a setting.
     let matches (query:string) item =
-        let en,zh = item.caption
-        let detailEn,detailZh = item.description
         let pageWords =
             match item.page with
-            | GeneralSettings -> "general 常规"
-            | AppearanceSettings -> "appearance 外观"
-            | HotKeySettings -> "shortcuts keyboard mouse 快捷键 键盘 鼠标"
-            | ProgramSettings -> "app rules 应用规则"
-            | LayoutSettings -> "workspaces 工作区"
-            | _ -> "diagnostics 诊断"
-        let haystack = String.concat " " [en;zh;detailEn;detailZh;item.keywords;pageWords]
+            | HotKeySettings -> [Strings.Pages.shortcuts;Strings.Shortcuts.keyboard;Strings.Shortcuts.mouse]
+            | page -> [Strings.Pages.title page]
+        let texts = item.text.caption :: item.text.description :: pageWords
+        let haystack = String.concat " " (item.keywords :: List.collect Localization.all texts)
         query.Split([|' ';'\t'|],StringSplitOptions.RemoveEmptyEntries)
         |> Array.forall(fun term -> haystack.IndexOf(term,StringComparison.CurrentCultureIgnoreCase)>=0)

@@ -141,7 +141,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         let checkedFlag(isChecked) = if isChecked then List2([MenuFlags.MF_CHECKED]) else List2()
         let grayed(isGrayed) = if isGrayed then List2([MenuFlags.MF_GRAYED]) else List2()
         let iconOnlyItem = CmiRegular({
-            text = (if group.isIconOnly then Localization.text "Show tab titles" "显示标签标题" else Localization.text "Show icons only" "仅显示图标")
+            text = (if group.isIconOnly then tr Strings.TabMenu.showTabTitles else tr Strings.TabMenu.showIconsOnly)
             image = None
             click = fun() -> group.isIconOnly <- group.isIconOnly.not
             flags = List2()
@@ -163,12 +163,12 @@ type TabStripDecorator(group:WindowGroup) as this =
                 click = setAlignment alignment
             })
             CmiPopUp({
-                text = Localization.text "Tab position" "标签位置"
+                text = tr Strings.Settings.tabAlignment.caption
                 image = None
                 items = List2([
-                    (Localization.text "Left" "左侧", TabLeft)
-                    (Localization.text "Center" "居中", TabCenter)
-                    (Localization.text "Right" "右侧",TabRight)
+                    (tr Strings.Common.left, TabLeft)
+                    (tr Strings.Common.center, TabCenter)
+                    (tr Strings.Common.right,TabRight)
                 ]).map(alignmentMenuItem)
             })
 
@@ -176,7 +176,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             let isAutoHideEnabledDef = Services.settings.getValue("autoHide").cast<bool>()
             let isEnabled = group.bb.read("autoHide", isAutoHideEnabledDef)
             CmiRegular({
-                text = Localization.text "Auto-hide tabs when maximized" "最大化时自动隐藏标签"
+                text = tr Strings.Settings.autoHideMaximized.caption
                 flags = checkedFlag(isEnabled)
                 image = None
                 click = fun() ->
@@ -185,7 +185,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         let newWindowItem = 
             CmiRegular({
-                text = Localization.text "New window" "新建窗口"
+                text = tr Strings.TabMenu.newWindow
                 flags = List2()
                 image = None
                 click = fun() -> Process.Start(processPath) |> ignore
@@ -193,7 +193,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         let combineIconsInTaskbar =
             CmiRegular({
-                text = Localization.text "One taskbar icon per group" "每个分组显示一个任务栏图标"
+                text = tr Strings.Settings.combineTaskbarIcons.caption
                 image = None
                 click = fun() -> Services.desktop.restartGroup(group.hwnd, group.isSuperBarEnabled.not)
                 flags = checkedFlag(group.isSuperBarEnabled)
@@ -201,7 +201,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         
         let renameTabItem =
             CmiRegular({
-                text = Localization.text "Rename tab" "重命名标签"
+                text = tr Strings.TabMenu.renameTab
                 image = None
                 flags = List2()
                 click = fun() ->
@@ -209,7 +209,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             })
         let restoreTabNameItem =
             CmiRegular({
-                text = Localization.text "Restore tab name" "恢复标签名称"
+                text = tr Strings.TabMenu.restoreTabName
                 image = None
                 click = fun() -> group.setTabName(hwnd, None)
                 flags = List2()
@@ -217,7 +217,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         let removeTabsItem =
             CmiRegular({
-                text = Localization.text3 (sprintf "Disable tabs for %s" exeName) (sprintf "禁用 %s 的标签" exeName) (sprintf "%s のタブを無効にする" exeName)
+                text = tr (Strings.TabMenu.disableTabsFor exeName)
                 image = None
                 click = fun() -> Services.filter.setIsTabbingEnabledForProcess processPath false
                 flags = List2()
@@ -226,7 +226,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         let isGrouped = Services.program.getAutoGroupingEnabled processPath
         let groupTabsItem =
             CmiRegular({
-                text = Localization.text3 (sprintf "Auto-group %s windows" exeName) (sprintf "自动分组 %s 的窗口" exeName) (sprintf "%s のウィンドウを自動グループ化" exeName)
+                text = tr (Strings.TabMenu.autoGroupWindowsOf exeName)
                 image = None
                 click = fun() -> Services.program.setAutoGroupingEnabled processPath isGrouped.not
                 flags = checkedFlag(isGrouped)
@@ -234,7 +234,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                  
         let closeTabItem = 
             CmiRegular({
-                text = Localization.text "Close" "关闭"
+                text = tr Strings.TabMenu.close
                 image = None
                 click = fun() -> this.onCloseWindow hwnd
                 flags = List2()
@@ -242,7 +242,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         let closeOtherTabsItem =
             CmiRegular({
-                text = Localization.text "Close others" "关闭其他"
+                text = tr Strings.TabMenu.closeOthers
                 image = None
                 click = fun() -> this.onCloseOtherWindows hwnd
                 flags = List2()
@@ -250,7 +250,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         let closeAllExeTabsItem =
             CmiRegular({
-                text = Localization.text3 (sprintf "Close all '%s' windows" exeName) (sprintf "关闭所有“%s”窗口" exeName) (sprintf "「%s」のウィンドウをすべて閉じる" exeName)
+                text = tr (Strings.TabMenu.closeAllOf exeName)
                 image = None
                 click = fun() -> this.onCloseAllExeWindows exeName
                 flags = List2()
@@ -258,7 +258,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         let closeAllTabsItem =
             CmiRegular({
-                text = Localization.text "Close all" "全部关闭"
+                text = tr Strings.TabMenu.closeAll
                 image = None
                 click = fun() -> this.onCloseAllWindows()
                 flags = List2()
@@ -266,7 +266,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         let managerItem =
             CmiRegular({
-                text = Localization.text "Settings..." "设置..."
+                text = tr Strings.TabMenu.settings
                 image = None
                 click = fun() -> Services.managerView.show()
                 flags = List2()

@@ -2,7 +2,6 @@ namespace Bemo
 open System.Windows.Forms
 
 type HotKeyView() =
-    let t = SettingsUi.text
     let panel,table = SettingsUi.page()
     // Setting id for each program hotkey, so a conflict can name the other action.
     let actions = ["nextTab","next-tab";"prevTab","previous-tab"]
@@ -16,9 +15,9 @@ type HotKeyView() =
             match conflict with
             | Some(_,id) ->
                 let name = SettingsCatalog.title id
-                editor.Reject(previous,Localization.text3 (sprintf "Used by %s" name) (sprintf "已用于“%s”" name) (sprintf "「%s」で使用中" name))
+                editor.Reject(previous,tr (Strings.Shortcuts.usedBy name))
             | None when not (Services.program.setHotKey key editor.Shortcut) ->
-                editor.Reject(previous,t "Shortcut already in use" "快捷键已被占用")
+                editor.Reject(previous,tr Strings.Shortcuts.inUse)
             | None -> ())
         editor
     let editors = actions |> List.map (fun (key,_) -> key,hotKey key)
@@ -28,22 +27,22 @@ type HotKeyView() =
         for key,editor in editors do
             let target = SettingsCatalog.shortcutDefault key
             if Services.program.setHotKey key target then editor.Shortcut <- target
-            else editor.Reject(0,t "Shortcut already in use" "快捷键已被占用")
+            else editor.Reject(0,tr Strings.Shortcuts.inUse)
     do
-        let keyboard = SettingsUi.sectionCard table (t "Keyboard" "键盘")
-        SettingsUi.note keyboard (t "Click a shortcut, then press the new combination. Esc cancels; × or Backspace removes it." "点击快捷键后按下新的组合键。按 Esc 取消；点 × 或按 Backspace 移除。")
+        let keyboard = SettingsUi.sectionCard table (tr Strings.Shortcuts.keyboard)
+        SettingsUi.note keyboard (tr Strings.Shortcuts.keyboardNote)
         for (key,editor),(_,id) in List.zip editors actions do SettingsUi.settingRow keyboard id editor
         SettingsBindings.toggleRow keyboard "switch-tabs-by-number"
-        let restore = SettingsUi.button (t "Restore default shortcuts" "恢复默认快捷键")
+        let restore = SettingsUi.button (tr Strings.Shortcuts.restoreDefaults)
         restore.Click.Add(fun _ -> restoreDefaults())
         let actionsRow = new FlowLayoutPanel(AutoSize=true,WrapContents=false,FlowDirection=FlowDirection.RightToLeft,
                                              Margin=Padding(0,Dpi.scale 8,0,Dpi.scale 8))
         actionsRow.Controls.Add(restore)
         SettingsUi.add table actionsRow
-        let pointer = SettingsUi.sectionCard table (t "Mouse" "鼠标")
+        let pointer = SettingsUi.sectionCard table (tr Strings.Shortcuts.mouse)
         SettingsBindings.toggleRow pointer "activate-on-hover"
         SettingsBindings.toggleRow pointer "shift-scroll"
     interface ISettingsView with
         member _.key = SettingsViewType.HotKeySettings
-        member _.title = t "Shortcuts" "快捷键"
+        member _.title = tr Strings.Pages.shortcuts
         member _.control = panel :> Control

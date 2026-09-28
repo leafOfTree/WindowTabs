@@ -6,16 +6,11 @@ open System.Windows.Forms
 
 type WorkspaceView() as this =
     let Cell = CellScope()
-    let t = SettingsUi.text
     /// Models whose rows are expanded, kept across rebuilds.
     let expanded = HashSet<obj>(HashIdentity.Reference)
     /// The model raises workspaceAdded while it loads; rows are built once loading is done.
     let mutable loaded = false
     let mutable lastAdded : obj = null
-    let helpText = Localization.text3
-                       "How to use\n1  Group and position your windows, then click Save.\n2  Select a workspace and click Restore.\n3  Click Edit to change names or window title matching.\nRestore only uses open windows. It does not launch apps."
-                       "使用说明\n1  将窗口分组并调整位置，然后点击“保存”。\n2  选中工作区，点击“恢复”。\n3  点击“编辑”可修改名称或窗口标题的匹配方式。\n恢复仅适用于已打开的窗口，不会启动应用。"
-                       "使い方\n1  ウィンドウをグループ化して配置し、「保存」をクリックします。\n2  ワークスペースを選び、「復元」をクリックします。\n3  「編集」で名前やタイトルの一致方法を変更できます。\n復元は開いているウィンドウのみが対象です。アプリは起動しません。"
 
     member this.wm = Cell.cacheProp this <| fun() ->
         let wm = WorkspaceModel()
@@ -25,21 +20,20 @@ type WorkspaceView() as this =
 
     member this.list : SettingsTreeList = Cell.cacheProp this <| fun() ->
         let list =
-            new SettingsTreeList([TreeListColumn(Localization.text3 "Name" "名称" "名称",0,TextColumn)
-                                  TreeListColumn(Localization.text3 "Match method" "匹配方式" "一致方法",130,TextColumn)
-                                  TreeListColumn(Localization.text3 "Title" "标题" "タイトル",240,TextColumn)])
+            new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn)
+                                  TreeListColumn(tr Strings.Workspaces.matchMethod,130,TextColumn)
+                                  TreeListColumn(tr Strings.Common.title,240,TextColumn)])
         list.SelectionChanged.Add(fun _ ->
             this.wm.selected <- (if isNull list.SelectedItem then null else list.SelectedItem.Tag :?> Dynamic))
         list
 
     member this.panel : SettingsListPage = Cell.cacheProp this <| fun() ->
         let panel =
-            new SettingsListPage(t "Workspaces" "工作区",
-                                 t "Save and restore window groups and positions."
-                                   "保存和恢复窗口分组与位置。",
+            new SettingsListPage(tr Strings.Pages.workspaces,
+                                 tr Strings.Workspaces.description,
                                  this.list,
                                  [this.newButton :> Control;this.restoreButton;this.editButton;this.removeButton],
-                                 helpText=helpText)
+                                 helpText=tr Strings.Workspaces.help)
         this.wm |> ignore
         loaded <- true
         this.reload(lastAdded)
@@ -68,13 +62,13 @@ type WorkspaceView() as this =
         list.SelectedItem <- (if isNull selected then null else find list.Roots |> Option.toObj)
 
     member this.newButton : Button = Cell.cacheProp this <| fun() ->
-        let btn = SettingsUi.button (Localization.text3 "Save" "保存" "保存")
+        let btn = SettingsUi.button (tr Strings.Common.save)
         btn.Enabled <- not this.wm.isReadOnly
         btn.Click.Add <| fun _ -> this.wm.create()
         btn
 
     member this.restoreButton : Button = Cell.cacheProp this <| fun() ->
-        let btn = SettingsUi.button (Localization.text3 "Restore" "恢复" "復元")
+        let btn = SettingsUi.button (tr Strings.Workspaces.restore)
         btn.Enabled <- false
         btn.Click.Add <| fun _ -> this.wm.restore()
         this.wm.canRestoreChanged.Add <| fun(canRestore) ->
@@ -82,7 +76,7 @@ type WorkspaceView() as this =
         btn
 
     member this.removeButton : Button = Cell.cacheProp this <| fun() ->
-        let btn = SettingsUi.button (Localization.text3 "Delete" "删除" "削除")
+        let btn = SettingsUi.button (tr Strings.Workspaces.delete)
         btn.Enabled <- false
         this.wm.selectedChanged.Add(fun selected -> btn.Enabled <- not this.wm.isReadOnly && not (isNull selected))
         btn.Click.Add <| fun _ ->
@@ -91,11 +85,64 @@ type WorkspaceView() as this =
         btn
 
     member this.editButton : Button = Cell.cacheProp this <| fun() ->
-        let btn = SettingsUi.button (Localization.text3 "Edit" "编辑" "編集")
+        let btn = SettingsUi.button (tr Strings.Workspaces.edit)
         btn.Enabled <- false
         this.wm.selectedChanged.Add(fun selected -> btn.Enabled <- not this.wm.isReadOnly && not (isNull selected))
-        btn.Click.Add <| fun _ -> if this.wm.edit(this.panel) then this.reload()
+        btn.Click.Add <| fun _ ->
+            match this.wm.beginEdit() with
+            | Some editInfo -> if this.showEditDialog editInfo then this.reload()
+            | None -> ()
         btn
+
+    member private this.showEditDialog(editInfo:IEditInfo) =
+        let fields = editInfo.fields
+        use form = new Form(Font=SettingsUi.bodyFont,FormBorderStyle=FormBorderStyle.FixedDialog,
+                            MaximizeBox=false,MinimizeBox=false,ShowInTaskbar=false,
+                            StartPosition=FormStartPosition.CenterParent)
+        form.ClientSize <- Size(Dpi.scale 440,Dpi.scale (96+fields.Length*48))
+        let table = new TableLayoutPanel(Dock=DockStyle.Fill,ColumnCount=2,
+                                          RowCount=fields.Length+1,Padding=Padding(Dpi.scale 20))
+        table.ColumnStyles.Add(ColumnStyle(SizeType.Absolute,float32(Dpi.scale 112))) |> ignore
+        table.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+        fields |> List.iteri (fun i field ->
+            table.RowStyles.Add(RowStyle(SizeType.Absolute,float32(Dpi.scale 48))) |> ignore
+            let caption,input =
+                match field with
+                | TextField(caption,editor) -> caption,new SettingsTextInput(editor.control) :> Control
+                | ChoiceField(caption,choices,selected) ->
+                    let choice = SettingsUi.choice choices
+                    choice.SelectedIndex <- selected.Value
+                    choice.SelectedIndexChanged.Add(fun _ -> selected.Value <- choice.SelectedIndex)
+                    caption,choice :> Control
+            let label = new Label(Text=caption,Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,
+                                  UseMnemonic=false,Margin=Padding.Empty)
+            input.Dock <- DockStyle.Fill
+            input.Margin <- Padding(0,Dpi.scale 6,0,Dpi.scale 6)
+            table.Controls.Add(label,0,i)
+            table.Controls.Add(input,1,i))
+        table.RowStyles.Add(RowStyle(SizeType.Percent,100.0f)) |> ignore
+        let buttons = new FlowLayoutPanel(Dock=DockStyle.Fill,FlowDirection=FlowDirection.RightToLeft,
+                                           WrapContents=false,Margin=Padding.Empty)
+        let okButton = SettingsUi.button (tr Strings.Common.save)
+        let cancelButton = SettingsUi.button (tr Strings.Common.cancel)
+        okButton.Click.Add(fun _ ->
+            try
+                this.wm.commitEdit editInfo
+                form.DialogResult <- DialogResult.OK
+            with ex -> MessageBox.Show(form,ex.Message,tr Strings.Workspaces.invalidSetting,MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore)
+        cancelButton.DialogResult <- DialogResult.Cancel
+        buttons.Controls.Add(okButton)
+        buttons.Controls.Add(cancelButton)
+        table.Controls.Add(buttons,0,fields.Length)
+        table.SetColumnSpan(buttons,2)
+        form.Controls.Add(table)
+        form.AcceptButton <- okButton
+        form.CancelButton <- cancelButton
+        ThemeBinding.watch form (fun () -> SettingsUi.apply form)
+        use icon = Services.openIcon("edit.ico")
+        form.Icon <- icon
+        form.Text <- editInfo.title
+        form.ShowDialog(this.panel) = DialogResult.OK
 
     /// A new or loaded workspace opens fully expanded and selected; the others collapse.
     member this.onWorkspaceAdded(ws:Workspace) =
@@ -109,5 +156,5 @@ type WorkspaceView() as this =
 
     interface ISettingsView with
         member x.key = SettingsViewType.LayoutSettings
-        member x.title = t "Workspaces" "工作区"
+        member x.title = tr Strings.Pages.workspaces
         member x.control = this.panel :> Control

@@ -551,7 +551,7 @@ type SettingsScrollBar() as this =
         this.Width <- Dpi.scale 14
         this.TabStop <- true
         this.AccessibleRole <- AccessibleRole.ScrollBar
-        this.AccessibleName <- Localization.text3 "Page scroll" "页面滚动条" "ページのスクロールバー"
+        this.AccessibleName <- tr Strings.SettingsWindow.pageScroll
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
     member private this.thumb =
         let height = max (Dpi.scale 32) (this.Height * viewport / max 1 (viewport+maximum)) |> min this.Height

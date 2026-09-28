@@ -42,7 +42,7 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
     inherit Panel()
     let inset() = Dpi.scale 32
     let heading = new Label(Text=title,AutoSize=true,Font=SettingsUi.sectionFont,UseMnemonic=false)
-    let helpButton = new SettingsInfoButton(AccessibleName=SettingsUi.text "How to use" "使用说明")
+    let helpButton = new SettingsInfoButton(AccessibleName=tr Strings.SettingsWindow.howToUse)
     let helpTip = new ToolTip(AutoPopDelay=30000,InitialDelay=350,ReshowDelay=100,ShowAlways=true)
     let darkHelp = helpText |> Option.map (fun value -> new SettingsHelpPopup(value))
     let helpWatcher = new Timer(Interval=200)

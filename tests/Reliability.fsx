@@ -105,16 +105,19 @@ let main() =
     WinUserApi.DestroyIcon(fileIcon) |> ignore
     for code,expected in ["en","Close";"zh","关闭";"ja","閉じる"] do
         Localization.setPreference code
-        check (Localization.text3 "Close" "关闭" "閉じる"=expected) ("Language override ignored: "+code)
-    Localization.setPreference "ja"
-    check (Localization.text "Close" "关闭"="閉じる") "Japanese table not used"
-    check (Localization.text "Untranslated text" "未翻译"="Untranslated text") "Japanese without a translation must fall back to English"
-    let untranslated =
-        SettingsCatalog.all
-        |> List.collect(fun item -> [fst item.caption; fst item.description])
-        |> List.filter(fun en -> en<>"" && not (LocalizationJa.table.ContainsKey en))
-    check untranslated.IsEmpty ("Settings text without Japanese: " + String.concat " | " untranslated)
+        check (tr Strings.TabMenu.close=expected) ("Language override ignored: "+code)
+    Localization.setPreference "fr"
+    check (tr Strings.TabMenu.close="Close") "Unsupported language must fall back to English"
     Localization.setPreference "system"
+    // A text is either empty in every language or translated in every language.
+    let partial =
+        SettingsCatalog.all
+        |> List.collect(fun item -> [item.text.caption; item.text.description])
+        |> List.filter(fun text -> let values = Localization.all text in List.contains "" values && List.exists ((<>) "") values)
+        |> List.map(fun text -> text.en)
+    check partial.IsEmpty ("Settings text with a missing translation: " + String.concat " | " partial)
+    check (SettingsCatalog.all |> List.forall(fun item -> item.text.caption.en<>"")) "Setting without a caption"
+    check (SettingsCatalog.all |> List.exists(fun item -> SettingsCatalog.matches "テーマ" item)) "Settings search ignores Japanese"
 
     let queue = ConcurrentQueue<unit -> unit>()
     let dispatcher = {new IDispatcher with

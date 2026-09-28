@@ -9,10 +9,14 @@ open Bemo.Win32.Forms
 open Newtonsoft.Json
 open Newtonsoft.Json.Linq
 
+/// One field of an edit dialog; the settings UI builds the controls.
+type EditField =
+    | TextField of caption:string * editor:IPropEditor
+    | ChoiceField of caption:string * choices:string[] * selected:int ref
+
 type IEditInfo =
     abstract member title : string
-    abstract member fields : List2<string * Control>
-    abstract member height : int
+    abstract member fields : EditField list
     abstract member ok : unit -> unit
 
 [<AllowNullLiteral>]
@@ -32,11 +36,11 @@ type WorkspaceWindowTitleMatchType =
 module MatchTypeText =
     let label (value:WorkspaceWindowTitleMatchType) =
         match value with
-        | WorkspaceWindowTitleMatchType.ExactMatch -> Localization.text3 "Exact match" "完全匹配" "完全一致"
-        | WorkspaceWindowTitleMatchType.StartsWith -> Localization.text3 "Starts with" "开头匹配" "前方一致"
-        | WorkspaceWindowTitleMatchType.EndsWith -> Localization.text3 "Ends with" "结尾匹配" "後方一致"
-        | WorkspaceWindowTitleMatchType.Contains -> Localization.text3 "Contains" "包含" "部分一致"
-        | WorkspaceWindowTitleMatchType.RegEx -> Localization.text3 "Regular expression" "正则表达式" "正規表現"
+        | WorkspaceWindowTitleMatchType.ExactMatch -> tr Strings.Workspaces.exactMatch
+        | WorkspaceWindowTitleMatchType.StartsWith -> tr Strings.Workspaces.startsWith
+        | WorkspaceWindowTitleMatchType.EndsWith -> tr Strings.Workspaces.endsWith
+        | WorkspaceWindowTitleMatchType.Contains -> tr Strings.Workspaces.contains
+        | WorkspaceWindowTitleMatchType.RegEx -> tr Strings.Workspaces.regularExpression
         | other -> string other
 
 type WorkspaceWindow() as this = 
@@ -74,19 +78,15 @@ type WorkspaceWindow() as this =
             let matchTypes = [| WorkspaceWindowTitleMatchType.ExactMatch; WorkspaceWindowTitleMatchType.StartsWith;
                                WorkspaceWindowTitleMatchType.EndsWith; WorkspaceWindowTitleMatchType.Contains;
                                WorkspaceWindowTitleMatchType.RegEx |]
-            let matchTypeEditor = SettingsUi.choice (matchTypes |> Array.map MatchTypeText.label)
-            matchTypeEditor.SelectedIndex <- Array.IndexOf(matchTypes,this.matchType)
+            let matchTypeIndex = ref (Array.IndexOf(matchTypes,this.matchType))
             { new IEditInfo with
                 member x.title = this.name
-                member x.fields = 
-                    List2([
-                        (Localization.text3 "Name" "名称" "名称", nameEditor.control)
-                        (Localization.text3 "Title" "标题" "タイトル", titleEditor.control)
-                        (Localization.text3 "Match method" "匹配方式" "一致方法", matchTypeEditor :> Control)
-                    ])
-                member x.height  = 250
-                member x.ok() = 
-                    let matchType = matchTypes.[max 0 matchTypeEditor.SelectedIndex]
+                member x.fields =
+                    [ TextField(tr Strings.Common.name, nameEditor)
+                      TextField(tr Strings.Common.title, titleEditor)
+                      ChoiceField(tr Strings.Workspaces.matchMethod, matchTypes |> Array.map MatchTypeText.label, matchTypeIndex) ]
+                member x.ok() =
+                    let matchType = matchTypes.[max 0 matchTypeIndex.Value]
                     WindowTitleMatcher.compile (int matchType) (titleEditor.value.cast<string>()) |> ignore
                     this.name <- nameEditor.value.cast<string>()
                     this.title <- titleEditor.value.cast<string>()
@@ -140,8 +140,7 @@ and
             nameEditor.value <- this?name
             { new IEditInfo with
                 member x.title = this?name
-                member x.fields = List2([(Localization.text3 "Name" "名称" "名称", nameEditor.control)])
-                member x.height  = 200
+                member x.fields = [TextField(tr Strings.Common.name, nameEditor)]
                 member x.ok() = this?name <- nameEditor.value.cast<string>()
             }
     
@@ -190,8 +189,7 @@ and
             nameEditor.value <- this?name
             { new IEditInfo with
                 member x.title = this?name
-                member x.fields = List2([(Localization.text3 "Name" "名称" "名称", nameEditor.control)])
-                member x.height  = 200
+                member x.fields = [TextField(tr Strings.Common.name, nameEditor)]
                 member x.ok() = this?name <- nameEditor.value.cast<string>()
             }
 
@@ -325,10 +323,8 @@ type WorkspaceModel() as this =
                         with ex -> errors.Add(ex.Message))
                     try os.setZorder(resolved) with ex -> errors.Add(ex.Message)))
         let details = if errors.Count=0 then "" else "\n\n"+String.concat "\n" (errors |> Seq.truncate 5)
-        MessageBox.Show(Localization.text3 (sprintf "Restored: %d\nNot found: %d\nErrors: %d%s" restored missing errors.Count details)
-                                           (sprintf "已恢复：%d\n未找到：%d\n错误：%d%s" restored missing errors.Count details)
-                                           (sprintf "復元: %d\n見つからない: %d\nエラー: %d%s" restored missing errors.Count details),
-                        Localization.text "Workspace restore" "恢复工作区",MessageBoxButtons.OK,(if errors.Count=0 then MessageBoxIcon.Information else MessageBoxIcon.Warning)) |> ignore
+        MessageBox.Show(tr (Strings.Workspaces.restoreSummary restored missing errors.Count details),
+                        tr Strings.Workspaces.restoreTitle,MessageBoxButtons.OK,(if errors.Count=0 then MessageBoxIcon.Information else MessageBoxIcon.Warning)) |> ignore
 
     member this.addWorkspace(ws:Workspace) =
         ws.cast<IWorkspaceNode>().removed.Add <| fun() -> this.onWorkspaceRemoved(ws)
@@ -356,58 +352,14 @@ type WorkspaceModel() as this =
             let ws = this.selected :?> Workspace
             this.restoreWorkspace(ws)
 
-    member this.edit(parent) =
-        let selected = this.selected
-        if not readOnly && selected <> null then
-            let editInfo = selected?beginEdit()
-            let fields : List2<string * Control> = editInfo?fields
-            use form = new Form(Font=SettingsUi.bodyFont,FormBorderStyle=FormBorderStyle.FixedDialog,
-                                MaximizeBox=false,MinimizeBox=false,ShowInTaskbar=false,
-                                StartPosition=FormStartPosition.CenterParent)
-            form.ClientSize <- Size(Dpi.scale 440,Dpi.scale (96+fields.length*48))
-            let table = new TableLayoutPanel(Dock=DockStyle.Fill,ColumnCount=2,
-                                              RowCount=fields.length+1,Padding=Padding(Dpi.scale 20))
-            table.ColumnStyles.Add(ColumnStyle(SizeType.Absolute,float32(Dpi.scale 112))) |> ignore
-            table.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
-            fields.enumerate.iter(fun (i,(caption,editor)) ->
-                table.RowStyles.Add(RowStyle(SizeType.Absolute,float32(Dpi.scale 48))) |> ignore
-                let label = new Label(Text=caption,Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,
-                                      UseMnemonic=false,Margin=Padding.Empty)
-                let input : Control =
-                    match editor with
-                    | :? TextBoxBase -> new SettingsTextInput(editor) :> Control
-                    | _ -> editor
-                input.Dock <- DockStyle.Fill
-                input.Margin <- Padding(0,Dpi.scale 6,0,Dpi.scale 6)
-                table.Controls.Add(label,0,i)
-                table.Controls.Add(input,1,i))
-            table.RowStyles.Add(RowStyle(SizeType.Percent,100.0f)) |> ignore
-            let buttons = new FlowLayoutPanel(Dock=DockStyle.Fill,FlowDirection=FlowDirection.RightToLeft,
-                                               WrapContents=false,Margin=Padding.Empty)
-            let okButton = SettingsUi.button (Localization.text3 "Save" "保存" "保存")
-            let cancelButton = SettingsUi.button (Localization.text3 "Cancel" "取消" "キャンセル")
-            okButton.Click.Add(fun _ ->
-                try
-                    editInfo?ok()
-                    this.saveSettings()
-                    form.DialogResult <- DialogResult.OK
-                with ex -> MessageBox.Show(form,ex.Message,Localization.text "Invalid workspace setting" "工作区设置无效",MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore)
-            cancelButton.DialogResult <- DialogResult.Cancel
-            buttons.Controls.Add(okButton)
-            buttons.Controls.Add(cancelButton)
-            table.Controls.Add(buttons,0,fields.length)
-            table.SetColumnSpan(buttons,2)
-            form.Controls.Add(table)
-            form.AcceptButton <- okButton
-            form.CancelButton <- cancelButton
-            ThemeBinding.watch form (fun () -> SettingsUi.apply form)
-            use icon = Services.openIcon("edit.ico")
-            form.Icon <- icon
-            form.Text <- editInfo?title
-            let ok = form.ShowDialog(parent) = DialogResult.OK
-            ok
-        else
-            false
+    /// The selected node's edit fields, or None when it cannot be edited.
+    member this.beginEdit() : IEditInfo option =
+        if not readOnly && this.selected <> null then Some(this.selected?beginEdit()) else None
+
+    /// Applies an edit and saves it; throws when a field is invalid.
+    member this.commitEdit(editInfo:IEditInfo) =
+        editInfo.ok()
+        this.saveSettings()
 
     member this.init() =
         this.loadSettings()
@@ -423,7 +375,7 @@ type WorkspaceModel() as this =
             workspaces |> List.iter(fun json -> this.addWorkspace(Workspace.deserialize(json)))
         finally loading <- false
         if not warnings.IsEmpty then
-            MessageBox.Show(String.concat "\n" (warnings |> List.truncate 8),Localization.text3 "Workspace data" "工作区数据" "ワークスペースのデータ",MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore
+            MessageBox.Show(String.concat "\n" (warnings |> List.truncate 8),tr Strings.Workspaces.dataWarnings,MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore
 
     member this.saveSettings() =
         if not loading && not readOnly then

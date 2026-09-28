@@ -2,9 +2,7 @@ namespace Bemo
 open System.Drawing
 
 module ThemePresets =
-    let names = [| "Default","默认"; "Ocean","海洋蓝"; "Forest","森林绿"
-                   "Slate","石板灰"; "Teal","青碧"; "Sand","沙岩米色"
-                   "Amber","琥珀橙"; "Rose","玫瑰红"; "Plum","梅紫" |]
+    let names = Strings.Appearance.presets
     let palettes dark =
         let make (basis:TabPalette) text active hover inactive border =
             { basis with tabTextColor=Color.FromRGB(text);tabActiveBgColor=Color.FromRGB(active)

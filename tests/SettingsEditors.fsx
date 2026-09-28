@@ -130,7 +130,7 @@ let main() =
             assertTrue (not popup.Visible && not popup.IsDisposed) "Popup reusable after outside close"
             assertTrue form.Visible "Owner remains visible"
         let rec findReset (control:Control) =
-            if control.Text="Reset this palette" then Some(control :?> Button)
+            if control.Text=tr Strings.Appearance.resetColors then Some(control :?> Button)
             else control.Controls |> Seq.cast<Control> |> Seq.tryPick findReset
         (findReset view.control).Value.PerformClick()
         Application.DoEvents()

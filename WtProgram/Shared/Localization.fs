@@ -1,25 +1,32 @@
-﻿namespace Bemo
+namespace Bemo
 open System.Globalization
 
-/// All user-visible text is written inline in English and Chinese, plus Japanese where a
-/// translation exists, so it compiles into the single WindowTabs.exe. (Satellite resource
+/// One piece of user-visible text in every supported language. Every field is required, so a
+/// missing translation is a compile error. All instances live in Strings.
+type LocalizedText = { en:string; zh:string; ja:string }
+
+/// All user-visible text is compiled into the single WindowTabs.exe. (Satellite resource
 /// assemblies cannot be statically linked, so a .resx translation would not ship.)
 module Localization =
+    /// Supported languages: code, name shown in the language menu, compact label.
+    let languages = [| "en","English","EN"; "zh","中文","中"; "ja","日本語","日" |]
+    /// Values of the language setting: "system" follows the Windows display language.
+    let preferences = "system" :: [for code,_,_ in languages -> code]
     let mutable private preference = "system"
-    /// "system" follows the Windows display language; "en", "zh" or "ja" override it.
     let setPreference (value:string) = preference <- value
-    let private language() =
-        if preference="system" then CultureInfo.CurrentUICulture.TwoLetterISOLanguageName else preference
-    /// The language text is shown in: "zh", "ja" or "en" (any other language falls back to English).
-    let current() = match language() with "zh" -> "zh" | "ja" -> "ja" | _ -> "en"
-    /// Japanese comes from LocalizationJa, keyed by the English text; missing entries show English.
-    let text (en:string) (zh:string) =
-        match language() with
-        | "zh" -> zh
-        | "ja" -> (match LocalizationJa.table.TryGetValue en with | true,ja -> ja | _ -> en)
-        | _ -> en
-    let text3 (en:string) (zh:string) (ja:string) =
-        match language() with
-        | "zh" -> zh
-        | "ja" -> ja
-        | _ -> en
+    /// The language text is shown in; any unsupported language falls back to English.
+    let current() =
+        let code = if preference="system" then CultureInfo.CurrentUICulture.TwoLetterISOLanguageName else preference
+        if languages |> Array.exists (fun (c,_,_) -> c=code) then code else "en"
+    let tr (text:LocalizedText) =
+        match current() with
+        | "zh" -> text.zh
+        | "ja" -> text.ja
+        | _ -> text.en
+    /// Every translation of a text, for search.
+    let all (text:LocalizedText) = [text.en; text.zh; text.ja]
+
+[<AutoOpen>]
+module LocalizationOperators =
+    /// The text in the current language.
+    let tr text = Localization.tr text

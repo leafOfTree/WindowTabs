@@ -26,38 +26,40 @@ type SettingsPageRegistration(key:SettingsViewType, title:string, create:unit ->
     member _.control = view.Value.control
 
 type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewType * string * (unit -> ISettingsView)) list) =
-    let t = SettingsUi.text
     let pages =
         match views,viewFactories with
         | Some pages,_ -> pages |> List.map(fun page -> SettingsPageRegistration(page.key,page.title,fun () -> page))
         | _,Some factories -> factories |> List.map(fun (key,title,create) -> SettingsPageRegistration(key,title,create))
         | _ -> [
-            SettingsPageRegistration(GeneralSettings,t "General" "常规",fun () -> GeneralView() :> ISettingsView)
-            SettingsPageRegistration(AppearanceSettings,t "Appearance" "外观",fun () -> AppearanceView() :> ISettingsView)
-            SettingsPageRegistration(HotKeySettings,t "Shortcuts" "快捷键",fun () -> HotKeyView() :> ISettingsView)
-            SettingsPageRegistration(ProgramSettings,t "App rules" "应用规则",fun () -> ProgramView() :> ISettingsView)
-            SettingsPageRegistration(SettingsViewType.LayoutSettings,t "Workspaces" "工作区",fun () -> WorkspaceView() :> ISettingsView)
-            SettingsPageRegistration(DiagnosticsSettings,t "About & diagnostics" "关于与诊断",fun () -> DiagnosticsView() :> ISettingsView) ]
+            SettingsPageRegistration(GeneralSettings,tr Strings.Pages.general,fun () -> GeneralView() :> ISettingsView)
+            SettingsPageRegistration(AppearanceSettings,tr Strings.Pages.appearance,fun () -> AppearanceView() :> ISettingsView)
+            SettingsPageRegistration(HotKeySettings,tr Strings.Pages.shortcuts,fun () -> HotKeyView() :> ISettingsView)
+            SettingsPageRegistration(ProgramSettings,tr Strings.Pages.appRules,fun () -> ProgramView() :> ISettingsView)
+            SettingsPageRegistration(SettingsViewType.LayoutSettings,tr Strings.Pages.workspaces,fun () -> WorkspaceView() :> ISettingsView)
+            SettingsPageRegistration(DiagnosticsSettings,tr Strings.Pages.diagnostics,fun () -> DiagnosticsView() :> ISettingsView) ]
     let mutable activePage = pages.Head.key
     let mutable suppressSearch = false
     let themedPages = Collections.Generic.HashSet<SettingsViewType>()
-    let form = new Form(Text="",AccessibleName=t "WindowTabs Settings" "WindowTabs 设置",Font=SettingsUi.bodyFont)
+    let form = new Form(Text="",AccessibleName=tr Strings.SettingsWindow.title,Font=SettingsUi.bodyFont)
     let mutable currentIconName = ThemeService.taskbarIconName()
     let navigation = new Panel(Dock=DockStyle.Left,Width=Dpi.scale 208,Padding=Padding(Dpi.scale 12),Tag="sidebar")
     let links = new TableLayoutPanel(Dock=DockStyle.Top,AutoSize=true,ColumnCount=1)
     let body = new Panel(Dock=DockStyle.Fill)
     let host = new Panel(Dock=DockStyle.Fill)
     let search = new TextBox(Font=SettingsUi.bodyFont,BorderStyle=BorderStyle.None,
-                             AccessibleName=t "Search settings" "搜索设置",Tag="search-input")
-    let searchResults = new SettingsSearchResults(Visible=false,AccessibleName=t "Search suggestions" "搜索建议")
+                             AccessibleName=tr Strings.SettingsWindow.searchSettings,Tag="search-input")
+    let searchResults = new SettingsSearchResults(Visible=false,AccessibleName=tr Strings.SettingsWindow.searchSuggestions)
     // Each language names itself, so the list stays readable whatever is selected.
     let languageChoice =
-        let languages = [|"system";"en";"zh";"ja"|]
-        let choice = SettingsUi.choice [|t "Follow Windows" "跟随系统";"English";"中文";"日本語"|]
+        let languages = Array.ofList Localization.preferences
+        let choice = SettingsUi.choice [| yield tr Strings.SettingsWindow.followWindows
+                                          for _,name,_ in Localization.languages -> name |]
         choice.Name <- "language"
-        choice.AccessibleName <- t "Language" "语言"
+        choice.AccessibleName <- tr Strings.Settings.language.caption
         choice.Size <- Size(Dpi.scale 56,Dpi.scale 28)
-        choice.CompactLabel <- fun () -> match Localization.current() with "zh" -> "中" | "ja" -> "日" | _ -> "EN"
+        choice.CompactLabel <- fun () ->
+            let current = Localization.current()
+            Localization.languages |> Array.pick (fun (code,_,label) -> if code=current then Some label else None)
         choice.SelectedIndex <- languages |> Array.tryFindIndex ((=) (Services.settings.getValue("language") :?> string)) |> Option.defaultValue 0
         choice.SelectedIndexChanged.Add(fun _ ->
             if choice.SelectedIndex >= 0 then Services.settings.setValue("language",box languages.[choice.SelectedIndex]))
@@ -66,17 +68,10 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
     let results = new ListBox(Dock=DockStyle.Fill,BorderStyle=BorderStyle.None,
                              Font=SettingsUi.bodyFont,IntegralHeight=false,
                              DrawMode=DrawMode.OwnerDrawFixed,ItemHeight=Dpi.scale 48,Cursor=Cursors.Hand,
-                             AccessibleName=t "Search results" "搜索结果")
+                             AccessibleName=tr Strings.SettingsWindow.searchResults)
     let emptyResults = new Label(Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleCenter,Tag="muted",
-                                 Text=t "No matching settings." "没有找到匹配的设置。")
-    let captions key fallback =
-        match key with
-        | GeneralSettings -> t "General" "常规"
-        | AppearanceSettings -> t "Appearance" "外观"
-        | HotKeySettings -> t "Shortcuts" "快捷键"
-        | ProgramSettings -> t "App rules" "应用规则"
-        | LayoutSettings -> t "Workspaces" "工作区"
-        | DiagnosticsSettings -> t "About & diagnostics" "关于与诊断"
+                                 Text=tr Strings.SettingsWindow.noMatches)
+    let captions key fallback = tr (Strings.Pages.title key)
     let buttons = pages |> List.map (fun page ->
         let button = new SettingsNavigationButton(page.key,Text=captions page.key page.title,Font=SettingsUi.bodyFont)
         button.TextAlign <- ContentAlignment.MiddleLeft
@@ -127,7 +122,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         let searchBox = new SettingsSearchBox(search,Width=Dpi.scale 164,Height=Dpi.scale 36,
                                   Margin=Padding(0,Dpi.scale 4,0,Dpi.scale 16))
         search.HandleCreated.Add(fun _ ->
-            SettingsWindowNative.SetCue(search.Handle,0x1501,IntPtr.Zero,t "Search" "搜索") |> ignore)
+            SettingsWindowNative.SetCue(search.Handle,0x1501,IntPtr.Zero,tr Strings.SettingsWindow.search) |> ignore)
         SettingsUi.add links searchBox
         for page,button in buttons do
             SettingsUi.add links button
@@ -173,7 +168,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 e.Graphics.FillRectangle(background,e.Bounds)
                 let left = e.Bounds.Left+Dpi.scale 14
                 let right = e.Bounds.Width-Dpi.scale 28
-                TextRenderer.DrawText(e.Graphics,SettingsCatalog.localize item.caption,SettingsUi.rowFont,
+                TextRenderer.DrawText(e.Graphics,tr item.text.caption,SettingsUi.rowFont,
                     Rectangle(left,e.Bounds.Top+Dpi.scale 7,right,Dpi.scale 23),p.text,
                     TextFormatFlags.NoPrefix ||| TextFormatFlags.EndEllipsis)
                 let context = captions item.page ""
@@ -206,7 +201,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 results.BeginUpdate()
                 try
                     results.Items.Clear()
-                    results.Items.AddRange(matches |> Array.map(fun item -> box(SettingsCatalog.localize item.caption)))
+                    results.Items.AddRange(matches |> Array.map(fun item -> box(tr item.text.caption)))
                 finally results.EndUpdate()
                 emptyResults.Visible <- matches.Length=0
                 results.Visible <- matches.Length>0
