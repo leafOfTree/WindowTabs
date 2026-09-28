@@ -5,16 +5,23 @@ open System.Drawing.Drawing2D
 open System.Globalization
 open System.Windows.Forms
 
+[<RequireQualifiedAccess>]
+type SettingsButtonKind =
+    | Standard
+    /// The dialog's main action: filled with the accent colour.
+    | Primary
+    /// A destructive action: red text, filled red while pointed at.
+    | Danger
+
 type SettingsActionButton() as this =
     inherit Button()
     let mutable hovering = false
-    let mutable primary = false
+    let mutable kind = SettingsButtonKind.Standard
     do
         this.FlatStyle <- FlatStyle.Flat
         this.FlatAppearance.BorderSize <- 0
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
-    /// The dialog's main action: filled with the accent colour.
-    member this.Primary with get() = primary and set value = primary <- value; this.Invalidate()
+    member this.Kind with get() = kind and set value = kind <- value; this.Invalidate()
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); hovering <- true; this.Invalidate()
     override this.OnMouseLeave(e) = base.OnMouseLeave(e); hovering <- false; this.Invalidate()
     override this.OnPaint(e) =
@@ -25,21 +32,32 @@ type SettingsActionButton() as this =
         let highContrast = SystemInformation.HighContrast
         let light = not highContrast && not (ThemeService.currentIsDark())
         let hot = hovering && this.Enabled
+        let neutral() =
+            let fill =
+                if light then Color.FromRGB(if hot then 0xEAEAE8 else 0xF3F3F1)
+                elif hot then p.hover
+                else p.surface
+            fill,(if light then fill else p.border)
+        // Hover moves a filled colour towards the page, as Windows accent buttons do.
+        let hoverShade (color:Color) =
+            if not hot then color
+            else Color.FromArgb(int(float32 color.R*0.9f+float32 p.background.R*0.1f),
+                                int(float32 color.G*0.9f+float32 p.background.G*0.1f),
+                                int(float32 color.B*0.9f+float32 p.background.B*0.1f))
         let fillColor,borderColor,textColor =
-            if primary && this.Enabled then
-                // Hover moves the accent towards the page, as Windows accent buttons do.
-                let accent = if highContrast then SystemColors.Highlight
-                             elif hot then Color.FromArgb(int(float32 p.accent.R*0.9f+float32 p.background.R*0.1f),
-                                                          int(float32 p.accent.G*0.9f+float32 p.background.G*0.1f),
-                                                          int(float32 p.accent.B*0.9f+float32 p.background.B*0.1f))
-                             else p.accent
+            match kind with
+            | _ when not this.Enabled -> let fill,border = neutral() in fill,border,p.muted
+            | SettingsButtonKind.Primary ->
+                let accent = if highContrast then SystemColors.Highlight else hoverShade p.accent
                 accent,accent,(if highContrast then SystemColors.HighlightText else Color.White)
-            else
-                let fill =
-                    if light then Color.FromRGB(if hot then 0xEAEAE8 else 0xF3F3F1)
-                    elif hot then p.hover
-                    else p.surface
-                fill,(if light then fill else p.border),(if this.Enabled then p.text else p.muted)
+            | SettingsButtonKind.Danger when not highContrast ->
+                if hot then
+                    let red = Color.FromRGB(0xC42B1C)
+                    red,red,Color.White
+                else
+                    let fill,border = neutral()
+                    fill,border,(if light then Color.FromRGB(0xC42B1C) else Color.FromRGB(0xFF99A4))
+            | _ -> let fill,border = neutral() in fill,border,p.text
         use fill = new SolidBrush(fillColor)
         use border = new Pen(borderColor)
         e.Graphics.FillPath(fill,shape)

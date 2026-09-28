@@ -77,6 +77,7 @@ type WorkspaceView() as this =
 
     member this.removeButton : Button = Cell.cacheProp this <| fun() ->
         let btn = SettingsUi.button (tr Strings.Workspaces.delete)
+        btn.Kind <- SettingsButtonKind.Danger
         btn.Enabled <- false
         this.wm.selectedChanged.Add(fun selected -> btn.Enabled <- not this.wm.isReadOnly && not (isNull selected))
         btn.Click.Add <| fun _ ->
@@ -124,7 +125,7 @@ type WorkspaceView() as this =
         let buttons = new FlowLayoutPanel(Dock=DockStyle.Fill,FlowDirection=FlowDirection.RightToLeft,
                                            WrapContents=false,Margin=Padding.Empty)
         let okButton = SettingsUi.button (tr Strings.Common.save)
-        okButton.Primary <- true
+        okButton.Kind <- SettingsButtonKind.Primary
         let cancelButton = SettingsUi.button (tr Strings.Common.cancel)
         okButton.Click.Add(fun _ ->
             try
