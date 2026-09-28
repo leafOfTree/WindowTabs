@@ -259,6 +259,11 @@ let main() =
     assertTrue (Object.ReferenceEquals(treeList.SelectedItem,parentItem)) "Tree list: Left moves to the parent"
     key treeList Keys.Space
     assertTrue (toggled=Some("parent",1,true) && parentItem.Checks.[1]=Some true) "Tree list: Space toggles the check box"
+    parentItem.CheckEnabled <- [|true;false|]
+    toggled <- None
+    key treeList Keys.Space
+    assertTrue (toggled=None && parentItem.Checks.[1]=Some true) "Tree list: a disabled check box cannot be toggled"
+    parentItem.CheckEnabled <- [||]
     key treeList Keys.Left
     assertTrue (not parentItem.Expanded) "Tree list: Left collapses"
     treeList.Roots.Remove(parentItem) |> ignore

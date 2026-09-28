@@ -40,8 +40,10 @@ module private ProgramItems =
                 match ImgHelper.windowIcon first with
                 | Some icon -> Some icon
                 | None -> try Some(use icon = Icon.ExtractAssociatedIcon(path) in ImgHelper.imgFromIcon icon) with _ -> None
+        let tabs = Services.filter.getIsTabbingEnabledForProcess path
+        // Auto grouping only decides which group a tabbed window joins.
         TreeListItem(Path.GetFileName(path),Icon=Option.toObj icon,Glyph=WindowGlyph,Tag=path,
-                     Checks=[|None;Some(Services.filter.getIsTabbingEnabledForProcess path);Some(Services.program.getAutoGroupingEnabled path)|])
+                     Checks=[|None;Some tabs;Some(Services.program.getAutoGroupingEnabled path)|],CheckEnabled=[|true;true;tabs|])
     let window (window:Window) =
         TreeListItem(window.text,Icon=Option.toObj (ImgHelper.windowIcon window),Glyph=WindowGlyph)
 type ProgramView() as this=
@@ -74,7 +76,10 @@ type ProgramView() as this=
     do
         list.CheckChanged.Add(fun (item,column,value) ->
             let path = item.Tag :?> string
-            if column=ProgramItems.tabsColumn then Services.filter.setIsTabbingEnabledForProcess path value
+            if column=ProgramItems.tabsColumn then
+                Services.filter.setIsTabbingEnabledForProcess path value
+                item.CheckEnabled.[ProgramItems.groupingColumn] <- value
+                list.Invalidate()
             elif column=ProgramItems.groupingColumn then Services.program.setAutoGroupingEnabled path value)
         this.populateNodes()
         let subscription = Services.settings.notifyValue "enableTabbingByDefault" (fun _ ->

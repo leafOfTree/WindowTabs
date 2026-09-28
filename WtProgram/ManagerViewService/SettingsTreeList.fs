@@ -36,6 +36,8 @@ type TreeListItem(text:string) =
     member val Glyph = NoGlyph with get,set
     member val Values : string[] = [||] with get,set
     member val Checks : bool option[] = [||] with get,set
+    /// Per check column; a box listed as false is drawn dimmed and cannot be toggled.
+    member val CheckEnabled : bool[] = [||] with get,set
     member val Expanded = false with get,set
     member val Tag : obj = null with get,set
     member val Parent : TreeListItem = null with get,set
@@ -43,6 +45,7 @@ type TreeListItem(text:string) =
     member this.Add(child:TreeListItem) = child.Parent <- this; children.Add(child); child
     member this.value index = if index<this.Values.Length && not (isNull this.Values.[index]) then this.Values.[index] else ""
     member this.check index = if index<this.Checks.Length then this.Checks.[index] else None
+    member this.checkEnabled index = index>=this.CheckEnabled.Length || this.CheckEnabled.[index]
 
 /// Owner-drawn tree with columns for the settings window and the task switcher: themed
 /// with SettingsColors, DPI-aware, keyboard and mouse navigation, check boxes.
@@ -158,11 +161,11 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
 
     member private this.toggleCheck(item:TreeListItem, column:int) =
         match item.check column with
-        | Some value ->
+        | Some value when item.checkEnabled column ->
             item.Checks.[column] <- Some(not value)
             this.Invalidate()
             checkChanged.Trigger((item,column,not value))
-        | None -> ()
+        | _ -> ()
 
     /// Draws a glyph on a 16-unit grid scaled to the box.
     static member drawGlyph(g:Graphics, glyph:TreeListGlyph, box:Rectangle, color:Color) =
@@ -275,7 +278,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                     elif not (isNull selected.Parent) then this.SelectedItem <- selected.Parent
                     true
                 | Keys.Space when not (isNull selected) ->
-                    [0..columns.Length-1] |> List.tryFind(fun i -> columns.[i].Kind=CheckColumn && (selected.check i).IsSome)
+                    [0..columns.Length-1] |> List.tryFind(fun i -> columns.[i].Kind=CheckColumn && (selected.check i).IsSome && selected.checkEnabled i)
                     |> Option.iter(fun column -> this.toggleCheck(selected,column))
                     true
                 | _ -> false
@@ -334,14 +337,15 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         let box = this.checkBounds(cell,top)
                         let r = RectangleF(float32 box.X+0.5f,float32 box.Y+0.5f,float32 box.Width-1.0f,float32 box.Height-1.0f)
                         use shape = SettingsShapes.rounded r (float32(Dpi.scale 4))
+                        let enabled = item.checkEnabled column
                         if isChecked then
-                            use fill = new SolidBrush(p.accent)
+                            use fill = new SolidBrush(if enabled then p.accent else Color.FromArgb(90,p.muted))
                             g.FillPath(fill,shape)
                             use mark = new Pen(Color.White,1.8f)
                             g.DrawLines(mark,[|PointF(r.X+r.Width*0.25f,r.Y+r.Height*0.52f);PointF(r.X+r.Width*0.43f,r.Y+r.Height*0.70f)
                                                PointF(r.X+r.Width*0.76f,r.Y+r.Height*0.32f)|])
                         else
-                            use border = new Pen(p.muted,1.3f)
+                            use border = new Pen((if enabled then p.muted else Color.FromArgb(90,p.muted)),1.3f)
                             g.DrawPath(border,shape)
                     | None -> ()
         g.ResetClip()
