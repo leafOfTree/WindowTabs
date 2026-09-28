@@ -43,31 +43,23 @@ type BoolEditor() =
         member x.control = control :> Control
         member x.changed = control.CheckedChanged |> Event.map ignore
 
-type EnumEditor<'e when 'e :> Enum>() as this =
-    let control = new ComboBox()
-    let mutable cachedValue = null
-    do this.init()
-
-    member this.init() =
-        for tag in Enum.GetValues(typeof<'e>) do
-            let tag = tag.cast<'e>()
-            control.Items.Add(tag.ToString()).ignore
-        control.SelectedValueChanged.Add <| fun _ ->
-            cachedValue <- control.SelectedItem
+/// Lists an enum's values by their display names; label defaults to the member name.
+type EnumEditor<'e when 'e :> Enum>(?label:'e -> string) =
+    let values = [| for value in Enum.GetValues(typeof<'e>) -> value :?> 'e |]
+    let label = defaultArg label (fun value -> value.ToString())
+    let control = new ComboBox(DropDownStyle=ComboBoxStyle.DropDownList)
+    do control.Items.AddRange([| for value in values -> box(label value) |])
 
     member this.value
-        with get() = 
-            let value = cachedValue
-            Enum.Parse(typeof<'e>, string(value)).cast<'e>()
-        and set(value) =
-            control.SelectedItem <- value.ToString()
+        with get() = values.[max 0 control.SelectedIndex]
+        and set(value:'e) = control.SelectedIndex <- Array.IndexOf(values,value)
 
     interface IPropEditor with
         member x.value
-            with get() = this.value.cast<obj>()
-            and set(value) = this.value <- value.cast<'e>()
+            with get() = box x.value
+            and set(value) = x.value <- value.cast<'e>()
         member x.control = control :> Control
-        member x.changed = control.SelectedValueChanged |> Event.map ignore
+        member x.changed = control.SelectedIndexChanged |> Event.map ignore
 
 type ColorEditor() as this =
     let changedEvent = Event<_>()

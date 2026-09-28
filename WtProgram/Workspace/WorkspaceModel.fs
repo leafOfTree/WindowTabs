@@ -29,6 +29,16 @@ type WorkspaceWindowTitleMatchType =
     | Contains = 3
     | RegEx = 4
 
+module MatchTypeText =
+    let label (value:WorkspaceWindowTitleMatchType) =
+        match value with
+        | WorkspaceWindowTitleMatchType.ExactMatch -> Localization.text3 "Exact match" "完全匹配" "完全一致"
+        | WorkspaceWindowTitleMatchType.StartsWith -> Localization.text3 "Starts with" "开头匹配" "前方一致"
+        | WorkspaceWindowTitleMatchType.EndsWith -> Localization.text3 "Ends with" "结尾匹配" "後方一致"
+        | WorkspaceWindowTitleMatchType.Contains -> Localization.text3 "Contains" "包含" "部分一致"
+        | WorkspaceWindowTitleMatchType.RegEx -> Localization.text3 "Regular expression" "正则表达式" "正規表現"
+        | other -> string other
+
 type WorkspaceWindow() as this = 
     inherit Dynamic()
     let removedEvent = Event<_>()
@@ -61,7 +71,7 @@ type WorkspaceWindow() as this =
             nameEditor.value <- this.name
             let titleEditor = TextEditor() :> IPropEditor
             titleEditor.value <- this.title
-            let matchTypeEditor = EnumEditor<WorkspaceWindowTitleMatchType>()
+            let matchTypeEditor = EnumEditor<WorkspaceWindowTitleMatchType>(MatchTypeText.label)
             matchTypeEditor.value <- this.matchType
             { new IEditInfo with
                 member x.title = this.name

@@ -137,7 +137,7 @@ module LocalizationJa =
             "Version and troubleshooting information.", "バージョンとトラブルシューティングの情報。"
             "Scan failed: ", "スキャンに失敗しました: "
             "Scanning…", "スキャン中…"
-            "Reports omit window titles, paths and license data.", "レポートにはウィンドウのタイトル、パス、ライセンス情報は含まれません。"
+            "Attach this report to bug reports. It omits window titles, paths and license data.", "不具合を報告するときはこのレポートを添付してください。ウィンドウのタイトル、パス、ライセンス情報は含まれません。"
             "Saved.", "保存しました。"
             "Refresh", "更新"
             "Copy report", "レポートをコピー"

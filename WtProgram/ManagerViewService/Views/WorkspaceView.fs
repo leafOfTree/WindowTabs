@@ -52,7 +52,7 @@ type WorkspaceView() as this =
                 | :? WorkspaceGroup -> GroupGlyph
                 | _ -> WindowGlyph
             let row = TreeListItem(model?name,Glyph=glyph,Tag=model,Expanded=expanded.Contains(model))
-            if showSettings then row.Values <- [|"";string(model?matchType);model?title|]
+            if showSettings then row.Values <- [|"";MatchTypeText.label (model?matchType);model?title|]
             for child in (model?children : List2<Dynamic>).list do row.Add(item child) |> ignore
             row
         list.Roots.Clear()
