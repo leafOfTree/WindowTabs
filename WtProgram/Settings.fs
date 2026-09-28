@@ -125,6 +125,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                             darkCustomPalette = AppearanceJson.readPalette (settingsJson.getObject("tabDarkCustomColors").def(JObject())) darkColors }
                     }
                     cachedSettingsRec <- Some(settings)
+                    ThemeService.publishPreferences settings.appearance
                 with ex ->
                     let errorMessage = Localization.text3 ("Error loading settings.\n\nFix or remove the file "  + this.path + ".\n\nDetails: " + ex.Message) ("读取设置出错。\n\n请修复或删除文件 " + this.path + "。\n\n详细信息：" + ex.Message) ("設定の読み込み中にエラーが発生しました。\n\nファイル " + this.path + " を修正または削除してください。\n\n詳細: " + ex.Message)
                     MessageBox.Show(errorMessage, Localization.text "Settings error" "设置错误", MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
@@ -160,6 +161,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setStringArray("autoGroupingPaths", settings.autoGroupingPaths.items)
             settingsJson.setObject("tabAppearance",AppearanceJson.writeLegacy settings.appearance.geometry settings.appearance.legacyPalette)
             this.settingsJson <- settingsJson
+            ThemeService.publishPreferences settings.appearance
 
     interface ISettings with
 
@@ -231,4 +233,6 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
 
         member x.root
             with get() = this.settingsJson
-            and set(value) = this.settingsJson <- value 
+            and set(value) =
+                this.settingsJson <- value
+                ThemeService.publishPreferences this.settings.appearance

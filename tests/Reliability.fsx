@@ -11,6 +11,21 @@ open Newtonsoft.Json.Linq
 
 let check condition message = if not condition then failwith message
 let main() =
+    // A system theme change deadlocked when SystemEvents ran on the main thread while a tab
+    // group thread waited on it for the appearance.
+    ThemeService.moveSystemEventsOffMainThread()
+    let mutable eventsThread = null
+    use delivered = new ManualResetEventSlim(false)
+    Microsoft.Win32.SystemEvents.InvokeOnEventsThread(Action(fun () -> eventsThread <- Thread.CurrentThread.Name; delivered.Set()))
+    check (delivered.Wait(5000) && eventsThread=".NET SystemEvents") "SystemEvents does not have a thread of its own"
+    ThemeService.publishPreferences {
+        geometry=Theme.defaultGeometry; legacyPalette=Theme.lightPalette; lightPalette=Theme.lightPalette; darkPalette=Theme.darkPalette
+        lightCustomPalette=Theme.lightPalette; darkCustomPalette=Theme.darkPalette; mode=ThemeMode.parse "dark"; useCustomColors=false }
+    let mutable dark = false
+    let reader = Thread(fun () -> dark <- ThemeService.currentIsDark())
+    reader.Start()
+    check (reader.Join(5000) && dark) "Reading the appearance off the settings thread went through Services.settings"
+
     let events = ResizeArray<int>()
     let errors = ResizeArray<exn>()
     let scope = new LifetimeScope(errors.Add)

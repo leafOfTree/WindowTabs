@@ -360,6 +360,7 @@ type Program(lifetime:LifetimeScope) as this =
 module Bootstrap =
     [<STAThread; EntryPoint>]
     let main _ =
+        ThemeService.moveSystemEventsOffMainThread()
         Application.SetCompatibleTextRenderingDefault(false)
         use logger = new ExceptionHandlerPlugin()
         (logger :> IPlugin).init()
