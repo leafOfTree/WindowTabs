@@ -124,6 +124,7 @@ type WorkspaceView() as this =
         let buttons = new FlowLayoutPanel(Dock=DockStyle.Fill,FlowDirection=FlowDirection.RightToLeft,
                                            WrapContents=false,Margin=Padding.Empty)
         let okButton = SettingsUi.button (tr Strings.Common.save)
+        okButton.Primary <- true
         let cancelButton = SettingsUi.button (tr Strings.Common.cancel)
         okButton.Click.Add(fun _ ->
             try
@@ -138,9 +139,15 @@ type WorkspaceView() as this =
         form.Controls.Add(table)
         form.AcceptButton <- okButton
         form.CancelButton <- cancelButton
-        ThemeBinding.watch form (fun () -> SettingsUi.apply form)
-        use icon = Services.openIcon("edit.ico")
-        form.Icon <- icon
+        // The title bar follows the settings theme, so the pencil does too.
+        let editIcon() = Services.openIcon(if ThemeService.currentIsDark() then "edit.ico" else "editLight.ico")
+        form.Icon <- editIcon()
+        form.Disposed.Add(fun _ -> form.Icon.Dispose())
+        ThemeBinding.watch form (fun () ->
+            SettingsUi.apply form
+            let previous = form.Icon
+            form.Icon <- editIcon()
+            previous.Dispose())
         form.Text <- editInfo.title
         form.ShowDialog(this.panel) = DialogResult.OK
 

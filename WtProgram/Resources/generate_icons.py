@@ -44,8 +44,31 @@ def frame(size, light):
     return im.resize((size, size), Image.Resampling.LANCZOS)
 
 
-for name, light in (("Bemo.ico", False), ("BemoLight.ico", True)):
-    images = [frame(size, light) for size in SIZES]
+def pencil(size, light):
+    # Title-bar glyph for edit dialogs: a solid pencil with a separate cap,
+    # drawn along the diagonal. "light" is for a light title bar.
+    scale = max(4, 1024 // size)
+    im = Image.new("RGBA", (size * scale, size * scale))
+    d = ImageDraw.Draw(im)
+    s = scale * size / 256
+    ink = "#252525" if light else "#F5F5F5"
+    tip = (44, 212)
+    u = (0.7071, -0.7071)
+    n = (0.7071, 0.7071)
+    length, half = 236, 30
+
+    def at(t, w):
+        return (round((tip[0] + u[0] * t + n[0] * w) * s),
+                round((tip[1] + u[1] * t + n[1] * w) * s))
+
+    d.polygon([at(0, 0), at(52, -half), at(length - 58, -half),
+               at(length - 58, half), at(52, half)], fill=ink)
+    d.polygon([at(length - 40, -half), at(length, -half),
+               at(length, half), at(length - 40, half)], fill=ink)
+    return im.resize((size, size), Image.Resampling.LANCZOS)
+
+
+def write_icon(name, images):
     payloads = []
     for image in images:
         stream = BytesIO()
@@ -60,3 +83,9 @@ for name, light in (("Bemo.ico", False), ("BemoLight.ico", True)):
             offset += len(payload)
         for payload in payloads:
             icon.write(payload)
+
+
+for name, light in (("Bemo.ico", False), ("BemoLight.ico", True)):
+    write_icon(name, [frame(size, light) for size in SIZES])
+for name, light in (("edit.ico", False), ("editLight.ico", True)):
+    write_icon(name, [pencil(size, light) for size in SIZES])

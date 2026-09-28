@@ -8,10 +8,13 @@ open System.Windows.Forms
 type SettingsActionButton() as this =
     inherit Button()
     let mutable hovering = false
+    let mutable primary = false
     do
         this.FlatStyle <- FlatStyle.Flat
         this.FlatAppearance.BorderSize <- 0
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
+    /// The dialog's main action: filled with the accent colour.
+    member this.Primary with get() = primary and set value = primary <- value; this.Invalidate()
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); hovering <- true; this.Invalidate()
     override this.OnMouseLeave(e) = base.OnMouseLeave(e); hovering <- false; this.Invalidate()
     override this.OnPaint(e) =
@@ -19,16 +22,29 @@ type SettingsActionButton() as this =
         e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
         e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
         use shape = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 8))
-        let light = not SystemInformation.HighContrast && not (ThemeService.currentIsDark())
-        let fillColor =
-            if light then Color.FromRGB(if hovering && this.Enabled then 0xEAEAE8 else 0xF3F3F1)
-            elif hovering && this.Enabled then p.hover
-            else p.surface
+        let highContrast = SystemInformation.HighContrast
+        let light = not highContrast && not (ThemeService.currentIsDark())
+        let hot = hovering && this.Enabled
+        let fillColor,borderColor,textColor =
+            if primary && this.Enabled then
+                // Hover moves the accent towards the page, as Windows accent buttons do.
+                let accent = if highContrast then SystemColors.Highlight
+                             elif hot then Color.FromArgb(int(float32 p.accent.R*0.9f+float32 p.background.R*0.1f),
+                                                          int(float32 p.accent.G*0.9f+float32 p.background.G*0.1f),
+                                                          int(float32 p.accent.B*0.9f+float32 p.background.B*0.1f))
+                             else p.accent
+                accent,accent,(if highContrast then SystemColors.HighlightText else Color.White)
+            else
+                let fill =
+                    if light then Color.FromRGB(if hot then 0xEAEAE8 else 0xF3F3F1)
+                    elif hot then p.hover
+                    else p.surface
+                fill,(if light then fill else p.border),(if this.Enabled then p.text else p.muted)
         use fill = new SolidBrush(fillColor)
-        use border = new Pen(if light then fillColor else p.border)
+        use border = new Pen(borderColor)
         e.Graphics.FillPath(fill,shape)
         e.Graphics.DrawPath(border,shape)
-        TextRenderer.DrawText(e.Graphics,this.Text,this.Font,this.ClientRectangle,(if this.Enabled then p.text else p.muted),
+        TextRenderer.DrawText(e.Graphics,this.Text,this.Font,this.ClientRectangle,textColor,
             TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
 
 type SettingsInputFrame() as this =
