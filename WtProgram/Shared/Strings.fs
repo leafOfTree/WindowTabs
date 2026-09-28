@@ -101,7 +101,7 @@ module Strings =
         let launchAtSignIn = { caption={ en="Start with Windows"; zh="随 Windows 启动"; ja="Windows と同時に起動" }
                                description={ en="Launch at startup."; zh="开机时自动运行。"; ja="起動時に自動で実行します。" } }
         let enableTabsByDefault = { caption={ en="Enable tabs by default"; zh="默认启用标签"; ja="既定でタブを有効にする" }
-                                    description={ en="For apps without an app rule."; zh="适用于没有应用规则的应用。"; ja="アプリのルールがないアプリに適用します。" } }
+                                    description={ en="App rules override this for individual apps."; zh="可在“应用规则”中为单个应用另行设置。"; ja="「アプリのルール」でアプリごとに変更できます。" } }
         let dimInactiveGroups = { caption={ en="Dim tabs in inactive groups"; zh="淡化非活动分组的标签"; ja="非アクティブなグループのタブを半透明にする" }
                                   description={ en="Make tabs in inactive groups translucent."; zh="使非活动分组中的标签半透明。"; ja="アクティブでないグループのタブを半透明にします。" } }
         let autoHideMaximized = { caption={ en="Auto-hide tabs when maximized"; zh="最大化时自动隐藏标签"; ja="最大化時にタブを自動的に隠す" }
