@@ -17,24 +17,8 @@ type NotifyIconPlugin() as this =
             | UserPreferenceCategory.VisualStyle -> invoker.asyncInvoke(fun () -> if not disposed then this.refreshIcon())
             | _ -> ())
     
-    // The tray icon sits on the taskbar, whose colour follows
-    // SystemUsesLightTheme, not the per-app setting. The shipped artwork is two
-    // panes with white outlines and a near-white front, which reads on a dark
-    // taskbar and all but disappears on a light one, so a tone inverted copy is
-    // used there.
-    let taskbarUsesLightTheme() =
-        try
-            use key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
-            if isNull key then false
-            else
-                match key.GetValue("SystemUsesLightTheme") with
-                | :? int as value -> value <> 0
-                | _ -> false
-        // Absent before Windows 10 1903, where the taskbar was always dark.
-        with _ -> false
-
     let iconForTaskbar() =
-        Services.openIcon(if taskbarUsesLightTheme() then "BemoLight.ico" else "Bemo.ico")
+        Services.openIcon(ThemeService.taskbarIconName())
 
     member this.icon = Cell.cacheProp this <| fun() ->
         let notifyIcon = new NotifyIcon()

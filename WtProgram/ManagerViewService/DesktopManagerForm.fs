@@ -42,6 +42,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
     let mutable suppressSearch = false
     let themedPages = Collections.Generic.HashSet<SettingsViewType>()
     let form = new Form(Text="",AccessibleName=t "WindowTabs Settings" "WindowTabs 设置",Font=SettingsUi.bodyFont)
+    let mutable currentIconName = ThemeService.taskbarIconName()
     let navigation = new Panel(Dock=DockStyle.Left,Width=Dpi.scale 208,Padding=Padding(Dpi.scale 12),Tag="sidebar")
     let links = new TableLayoutPanel(Dock=DockStyle.Top,AutoSize=true,ColumnCount=1)
     let body = new Panel(Dock=DockStyle.Fill)
@@ -118,8 +119,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         form.Padding <- Padding.Empty
         form.MinimumSize <- Size(Dpi.scale 840,Dpi.scale 580)
         form.Size <- Size(Dpi.scale 980,Dpi.scale 760)
-        use iconStream = typeof<DesktopManagerForm>.Assembly.GetManifestResourceStream("Bemo.ico")
-        form.Icon <- new Icon(iconStream)
+        form.Icon <- Services.openIcon(currentIconName)
         let searchBox = new SettingsSearchBox(Width=Dpi.scale 164,Height=Dpi.scale 36,
                                   Padding=Padding(Dpi.scale 36,Dpi.scale 7,Dpi.scale 12,Dpi.scale 6),
                                   Margin=Padding(0,Dpi.scale 4,0,Dpi.scale 16))
@@ -275,6 +275,12 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         form.HandleCreated.Add(fun _ -> SettingsUi.apply form)
         let mutable lastPalette = SettingsUi.palette()
         ThemeBinding.watch form (fun () ->
+            let iconName = ThemeService.taskbarIconName()
+            if iconName <> currentIconName then
+                let previous = form.Icon
+                form.Icon <- Services.openIcon(iconName)
+                currentIconName <- iconName
+                previous.Dispose()
             let palette = SettingsUi.palette()
             if palette <> lastPalette then
                 lastPalette <- palette
@@ -283,6 +289,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 styleSearch()
                 themedPages.Add(activePage) |> ignore)
         form.Disposed.Add(fun _ ->
+            form.Icon.Dispose()
             Application.RemoveMessageFilter(searchFocusFilter)
             searchResults.Dispose()
             match views with

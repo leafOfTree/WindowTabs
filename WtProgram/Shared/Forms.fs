@@ -10,7 +10,7 @@ module Forms =
     let os = OS()
     let showForm hwnd (form:#Form) text (ok:Button) (cancel:Button) onOk =
         form.Text <- "WindowTabs | " + text
-        form.Icon <- Services.openIcon("Bemo.ico")
+        form.Icon <- Services.openIcon(ThemeService.taskbarIconName())
         ok.Click.Add <| fun _ -> onOk()
         cancel.Click.Add <| fun _ -> form.Close()
         let owner = {
