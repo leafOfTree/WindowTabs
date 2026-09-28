@@ -69,7 +69,7 @@ type WorkspaceView() as this =
         btn
 
     member this.restoreButton : Button = Cell.cacheProp this <| fun() ->
-        let btn = SettingsUi.button (Localization.text3 "Restore" "恢复" "元に戻す")
+        let btn = SettingsUi.button (Localization.text3 "Restore" "恢复" "復元")
         btn.Click.Add <| fun _ -> this.wm.restore()
         this.wm.canRestoreChanged.Add <| fun(canRestore) ->
             btn.Enabled <- canRestore
@@ -101,5 +101,5 @@ type WorkspaceView() as this =
 
     interface ISettingsView with
         member x.key = SettingsViewType.LayoutSettings
-        member x.title = Localization.text3 "Workspace" "工作区" "ワークスペース"
+        member x.title = t "Workspaces" "工作区"
         member x.control = this.panel :> Control

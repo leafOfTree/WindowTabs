@@ -19,8 +19,13 @@ type SettingsActionButton() as this =
         e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
         e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
         use shape = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 8))
-        use fill = new SolidBrush(if hovering && this.Enabled then p.hover else p.surface)
-        use border = new Pen(p.border)
+        let light = not SystemInformation.HighContrast && not (ThemeService.currentIsDark())
+        let fillColor =
+            if light then Color.FromRGB(if hovering && this.Enabled then 0xEAEAE8 else 0xF3F3F1)
+            elif hovering && this.Enabled then p.hover
+            else p.surface
+        use fill = new SolidBrush(fillColor)
+        use border = new Pen(if light then fillColor else p.border)
         e.Graphics.FillPath(fill,shape)
         e.Graphics.DrawPath(border,shape)
         TextRenderer.DrawText(e.Graphics,this.Text,this.Font,this.ClientRectangle,(if this.Enabled then p.text else p.muted),
@@ -71,8 +76,8 @@ type SettingsNumberInput() as this =
     let mutable maximum = 100M
     let mutable value = 0M
     let text = new TextBox(BorderStyle=BorderStyle.None,Text="0",TextAlign=HorizontalAlignment.Left)
-    let minus = new SettingsActionButton(Text="−",TabStop=false,AccessibleName="Decrease")
-    let plus = new SettingsActionButton(Text="+",TabStop=false,AccessibleName="Increase")
+    let minus = new SettingsActionButton(Text="−",TabStop=false,AccessibleName=Localization.text3 "Decrease" "减小" "減らす")
+    let plus = new SettingsActionButton(Text="+",TabStop=false,AccessibleName=Localization.text3 "Increase" "增大" "増やす")
     let sync() = text.Text <- value.ToString("0",CultureInfo.InvariantCulture)
     let setValue next =
         let next = max minimum (min maximum (Decimal.Truncate next))
@@ -319,7 +324,7 @@ type SettingsColorPicker() as this =
     do
         this.Size <- Size(Dpi.scale 238,Dpi.scale 206)
         this.TabStop <- true
-        this.AccessibleName <- "Colour picker: arrows adjust saturation and brightness; Shift + arrows adjusts hue"
+        this.AccessibleName <- Localization.text3 "Colour picker: arrow keys adjust saturation and brightness; Shift + arrow keys adjust hue" "颜色选择器：方向键调整饱和度和亮度；Shift + 方向键调整色相" "色の選択：方向キーで彩度と明るさを調整し、Shift + 方向キーで色相を調整します"
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
         timer.Tick.Add(fun _ -> flush())
         this.Disposed.Add(fun _ -> timer.Dispose())
@@ -395,7 +400,7 @@ type SettingsColorInput() as this =
     let changed = Event<unit>()
     let mutable color = Color.White
     let text = new TextBox(BorderStyle=BorderStyle.None,MaxLength=7,CharacterCasing=CharacterCasing.Upper)
-    let swatch = new Button(FlatStyle=FlatStyle.Flat,Text="",AccessibleName="Choose colour",Cursor=Cursors.Hand)
+    let swatch = new Button(FlatStyle=FlatStyle.Flat,Text="",AccessibleName=Localization.text3 "Choose colour" "选择颜色" "色を選択",Cursor=Cursors.Hand)
     let picker = new SettingsColorPicker()
     let popup = new SettingsChoicePopup(AutoSize=true)
     let mutable suppressClick = false

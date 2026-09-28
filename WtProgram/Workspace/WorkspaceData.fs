@@ -56,10 +56,10 @@ module WorkspaceData =
                     try
                         match value with
                         | :? JObject as obj -> Some(convert (obj.DeepClone() :?> JObject))
-                        | _ -> failwith "Expected an object."
+                        | _ -> failwith (Localization.text3 "Expected an object." "应为对象。" "オブジェクトが必要です。")
                     with ex -> warnings.Add(sprintf "%s #%d: %s" context (index+1) ex.Message); None)
                 |> Seq.choose id |> Seq.toList
-            | _ -> warnings.Add(context+": expected a list."); []
+            | _ -> warnings.Add(context + Localization.text3 ": expected a list." "：应为列表。" "：リストが必要です。"); []
         let window (obj:JObject) =
             let title = text obj "title" null
             let kind = number obj "matchType" 0
@@ -70,9 +70,9 @@ module WorkspaceData =
             obj.["zorder"] <- JValue(number obj "zorder" 0)
             obj
         let group (obj:JObject) =
-            let p = match obj.["placement"] with :? JObject as p -> placement p | _ -> failwith "Missing placement."
+            let p = match obj.["placement"] with :? JObject as p -> placement p | _ -> failwith (Localization.text3 "Missing placement." "缺少窗口位置。" "ウィンドウの配置がありません。")
             let windows = collect "Window" obj.["windows"] window
-            if windows.IsEmpty then failwith "No valid windows in this group."
+            if windows.IsEmpty then failwith (Localization.text3 "No valid windows in this group." "此分组中没有有效窗口。" "このグループに有効なウィンドウがありません。")
             obj.["name"] <- JValue(text obj "name" "Group")
             obj.["placement"] <- writePlacement p
             obj.["windows"] <- JArray(windows |> Seq.map box)
@@ -84,7 +84,7 @@ module WorkspaceData =
             obj
         try
             let schema = number root "workspaceSchemaVersion" 1
-            if schema<1 || schema>version then [],["Unsupported workspace version; saved workspaces will not be modified."],true
+            if schema<1 || schema>version then [],[Localization.text3 "Unsupported workspace version; saved workspaces will not be modified." "不支持此工作区版本；已保存的工作区不会被修改。" "このワークスペースのバージョンには対応していません。保存済みのワークスペースは変更されません。"],true
             else
                 let result = collect "Workspace" root.["workspaces"] workspace
                 result,List.ofSeq warnings,false

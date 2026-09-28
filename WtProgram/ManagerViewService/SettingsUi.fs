@@ -71,8 +71,8 @@ module SettingsUi =
         applyPalette (palette()) (ThemeService.currentIsDark()) control
 
     let button caption =
-        let button = new SettingsActionButton(Text=caption, AutoSize=true, MinimumSize=Size(Dpi.scale 100,Dpi.scale 34))
-        button.Padding <- Padding(Dpi.scale 10,Dpi.scale 3,Dpi.scale 10,Dpi.scale 3)
+        let button = new SettingsActionButton(Text=caption, AutoSize=true, MinimumSize=Size(Dpi.scale 76,Dpi.scale 30))
+        button.Padding <- Padding(Dpi.scale 8,Dpi.scale 2,Dpi.scale 8,Dpi.scale 2)
         button.Font <- bodyFont
         button
 

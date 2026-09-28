@@ -6,7 +6,7 @@ type GeneralView() =
     let t = SettingsUi.text
     let panel,table = SettingsUi.page()
     do
-        let startup = SettingsUi.sectionCard table (t "Startup and grouping" "启动与分组")
+        let startup = SettingsUi.sectionCard table (t "Startup and defaults" "启动与默认设置")
         SettingsBindings.toggleRow startup "launch-at-sign-in"
         SettingsBindings.toggleRow startup "enable-tabs-for-new-apps"
         let behaviour = SettingsUi.sectionCard table (t "Tab behaviour" "标签行为")

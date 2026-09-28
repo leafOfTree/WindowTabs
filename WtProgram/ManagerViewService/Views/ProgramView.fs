@@ -124,5 +124,5 @@ type ProgramView() as this=
 
     interface ISettingsView with
         member x.key = SettingsViewType.ProgramSettings
-        member x.title = Localization.text3 "Programs" "程序" "プログラム"
+        member x.title = t "App rules" "应用规则"
         member x.control = panel :> Control

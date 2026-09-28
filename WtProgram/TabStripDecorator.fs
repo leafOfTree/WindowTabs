@@ -176,7 +176,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             let isAutoHideEnabledDef = Services.settings.getValue("autoHide").cast<bool>()
             let isEnabled = group.bb.read("autoHide", isAutoHideEnabledDef)
             CmiRegular({
-                text = Localization.text "Auto-hide when maximized" "最大化时自动收起"
+                text = Localization.text "Auto-hide tabs when maximized" "最大化时自动隐藏标签"
                 flags = checkedFlag(isEnabled)
                 image = None
                 click = fun() ->

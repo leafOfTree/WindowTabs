@@ -387,7 +387,7 @@ type WorkspaceModel() as this =
             workspaces |> List.iter(fun json -> this.addWorkspace(Workspace.deserialize(json)))
         finally loading <- false
         if not warnings.IsEmpty then
-            MessageBox.Show(String.concat "\n" (warnings |> List.truncate 8),"Workspace data",MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore
+            MessageBox.Show(String.concat "\n" (warnings |> List.truncate 8),Localization.text3 "Workspace data" "工作区数据" "ワークスペースのデータ",MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore
 
     member this.saveSettings() =
         if not loading && not readOnly then
@@ -401,4 +401,4 @@ type WorkspaceModel() as this =
 
     member this.onWorkspaceRemoved(ws) =
         _workspaces.Remove(ws).ignore
-        this.saveSettings() 
+        this.saveSettings()
