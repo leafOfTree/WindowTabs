@@ -99,7 +99,7 @@ module Strings =
         let language = { caption={ en="Language"; zh="语言"; ja="言語" }
                          description={ en="Follow Windows or choose a language."; zh="跟随 Windows 或指定语言。"; ja="Windows の設定に従うか、言語を選択します。" } }
         let launchAtSignIn = { caption={ en="Start with Windows"; zh="随 Windows 启动"; ja="Windows と同時に起動" }
-                               description={ en="Start WindowTabs when you sign in to Windows."; zh="登录 Windows 时自动启动 WindowTabs。"; ja="Windows にサインインしたときに WindowTabs を起動します。" } }
+                               description={ en="Launch at startup."; zh="开机时自动运行。"; ja="起動時に自動で実行します。" } }
         let enableTabsByDefault = { caption={ en="Enable tabs by default"; zh="默认启用标签"; ja="既定でタブを有効にする" }
                                     description={ en="For apps without an app rule."; zh="适用于没有应用规则的应用。"; ja="アプリのルールがないアプリに適用します。" } }
         let dimInactiveGroups = { caption={ en="Dim tabs in inactive groups"; zh="淡化非活动分组的标签"; ja="非アクティブなグループのタブを半透明にする" }
@@ -113,7 +113,7 @@ module Strings =
         let combineTaskbarIcons = { caption={ en="One taskbar icon per group"; zh="每个分组显示一个任务栏图标"; ja="グループごとにタスクバーアイコンを1つ表示" }
                                     description={ en="Applies to new groups. Change existing ones from the tab menu."; zh="适用于新分组。已有分组可在标签右键菜单中更改。"; ja="新しいグループに適用します。既存のグループはタブの右クリックメニューで変更できます。" } }
         let replaceAltTab = { caption={ en="Use WindowTabs for Alt+Tab"; zh="使用 WindowTabs 窗口切换器"; ja="Alt+Tab に WindowTabs を使う" }
-                              description={ en="Press Alt+Tab to switch windows with WindowTabs."; zh="按 Alt+Tab 使用 WindowTabs 切换窗口。"; ja="Alt+Tab を押すと WindowTabs でウィンドウを切り替えます。" } }
+                              description={ en="Replaces the Windows switcher."; zh="替换 Windows 自带的窗口切换器。"; ja="Windows 標準のウィンドウ切り替えを置き換えます。" } }
         let groupWindowsInSwitcher = { caption={ en="Group windows in Alt+Tab"; zh="Alt+Tab 中按分组显示"; ja="Alt+Tab でグループをまとめる" }
                                        description={ en="Show each window group as one item."; zh="每个窗口分组只显示一项。"; ja="ウィンドウのグループをそれぞれ 1 項目にまとめて表示します。" } }
         let nextTab = { caption={ en="Next tab"; zh="下一个标签"; ja="次のタブ" }
