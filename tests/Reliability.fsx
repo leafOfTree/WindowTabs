@@ -112,12 +112,15 @@ let main() =
     // A text is either empty in every language or translated in every language.
     let partial =
         SettingsCatalog.all
-        |> List.collect(fun item -> [item.text.caption; item.text.description])
+        |> List.collect(fun item -> [item.text.caption; item.text.description; item.text.keywords])
         |> List.filter(fun text -> let values = Localization.all text in List.contains "" values && List.exists ((<>) "") values)
         |> List.map(fun text -> text.en)
     check partial.IsEmpty ("Settings text with a missing translation: " + String.concat " | " partial)
     check (SettingsCatalog.all |> List.forall(fun item -> item.text.caption.en<>"")) "Setting without a caption"
     check (SettingsCatalog.all |> List.exists(fun item -> SettingsCatalog.matches "テーマ" item)) "Settings search ignores Japanese"
+    let found query = SettingsCatalog.all |> List.filter (SettingsCatalog.matches query) |> List.map(fun item -> item.id)
+    for query in ["autostart";"自启动";"スタートアップ";"runAtStartup"] do
+        check (List.contains "launch-at-sign-in" (found query)) ("Search keyword missed: "+query)
 
     let queue = ConcurrentQueue<unit -> unit>()
     let dispatcher = {new IDispatcher with
