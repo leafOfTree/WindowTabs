@@ -539,7 +539,9 @@ type SettingsCombo(items:string[]) as this =
         TextRenderer.DrawText(graphics,label,this.Font,Rectangle(textLeft,0,this.Width-textLeft,this.Height),foreground,
             TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter)
 
-/// A small themed scrollbar; keeps native white scrollbar chrome out of dark pages.
+/// A themed overlay-style scrollbar like Windows 11: a thin rounded line that widens into
+/// a pill on a faint track while pointed at, dragged or focused. The whole control width
+/// stays clickable.
 type SettingsScrollBar() as this =
     inherit Control()
     let positionChanged = Event<int>()
@@ -547,16 +549,37 @@ type SettingsScrollBar() as this =
     let mutable maximum = 0
     let mutable viewport = 1
     let mutable dragOffset = None
+    let mutable hovering = false
+    /// 0 = thin line, 1 = fully widened.
+    let mutable expansion = 0.0f
+    /// Stays widened briefly after the pointer leaves, as the system scrollbar does.
+    let mutable collapseAt = DateTime.MinValue
+    let animation = new Timer(Interval=15)
+    let margin() = Dpi.scale 3
     do
         this.Width <- Dpi.scale 14
         this.TabStop <- true
         this.AccessibleRole <- AccessibleRole.ScrollBar
         this.AccessibleName <- tr Strings.SettingsWindow.pageScroll
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
+        animation.Tick.Add(fun _ ->
+            let active = hovering || dragOffset.IsSome || this.keyboardFocused || DateTime.Now<collapseAt
+            let target = if active then 1.0f else 0.0f
+            let next = if target>expansion then min target (expansion+0.2f) else max target (expansion-0.12f)
+            if next<>expansion then
+                expansion <- next
+                this.Invalidate()
+            // Input events restart the timer; only a pending collapse needs it to keep running.
+            elif DateTime.Now>=collapseAt then animation.Stop())
+        this.Disposed.Add(fun _ -> animation.Dispose())
+    /// Full-width thumb bounds, for hit testing.
     member private this.thumb =
-        let height = max (Dpi.scale 32) (this.Height * viewport / max 1 (viewport+maximum)) |> min this.Height
-        let y = if maximum=0 then 0 else position*(this.Height-height)/maximum
-        Rectangle(Dpi.scale 4,y,max 3 (this.Width-Dpi.scale 8),height)
+        let track = max 1 (this.Height-margin()*2)
+        let height = max (Dpi.scale 32) (track * viewport / max 1 (viewport+maximum)) |> min track
+        let y = margin() + (if maximum=0 then 0 else position*(track-height)/maximum)
+        Rectangle(0,y,this.Width,height)
+    member private this.animate() = if not animation.Enabled then animation.Start()
+    member private this.keyboardFocused = this.Focused && this.ShowFocusCues
     member this.configure(maxValue,viewSize,value) =
         maximum <- max 0 maxValue
         viewport <- max 1 viewSize
@@ -568,11 +591,42 @@ type SettingsScrollBar() as this =
         let value = max 0 (min maximum value)
         if value<>position then position<-value; positionChanged.Trigger(value); this.Invalidate()
     override this.OnPaint(e) =
-        let color = if SystemInformation.HighContrast then SystemColors.WindowText
-                    elif ThemeService.currentIsDark() then Color.FromRGB(0x777777) else Color.FromRGB(0x999999)
+        let g = e.Graphics
+        g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        let p = SettingsColors.current()
+        let highContrast = SystemInformation.HighContrast
+        let t = if highContrast then 1.0f else expansion
+        let thin,wide = float32(Dpi.scale 2),float32(Dpi.scale 6)
+        let thickness = thin+(wide-thin)*t
+        let x = float32(this.Width-margin())-thickness
+        if t>0.0f && not highContrast then
+            let alpha = int(255.0f*t)
+            use track = new SolidBrush(Color.FromArgb(alpha,p.hover))
+            let trackRect = RectangleF(x,float32(margin()),thickness,float32(this.Height-margin()*2))
+            use path = SettingsShapes.rounded trackRect (thickness/2.0f)
+            g.FillPath(track,path)
+        let thumb = this.thumb
+        let color =
+            if highContrast then SystemColors.WindowText
+            else
+                // Blend from the muted line colour towards the text colour as it widens or is dragged.
+                let amount = if dragOffset.IsSome then 0.6f else t*0.35f
+                let mix (a:int) (b:int) = a+int(float32(b-a)*amount)
+                Color.FromArgb(mix (int p.muted.R) (int p.text.R),mix (int p.muted.G) (int p.text.G),mix (int p.muted.B) (int p.text.B))
         use brush = new SolidBrush(color)
-        e.Graphics.FillRectangle(brush,this.thumb)
-        if this.Focused then ControlPaint.DrawFocusRectangle(e.Graphics,this.ClientRectangle)
+        use path = SettingsShapes.rounded (RectangleF(x,float32 thumb.Y,thickness,float32 thumb.Height)) (thickness/2.0f)
+        g.FillPath(brush,path)
+    override this.OnMouseEnter(e) =
+        base.OnMouseEnter(e)
+        hovering <- true
+        this.animate()
+    override this.OnMouseLeave(e) =
+        base.OnMouseLeave(e)
+        hovering <- false
+        collapseAt <- DateTime.Now.AddMilliseconds(600.0)
+        this.animate()
+    override this.OnGotFocus(e) = base.OnGotFocus(e); this.animate()
+    override this.OnLostFocus(e) = base.OnLostFocus(e); this.animate()
     override this.OnMouseDown(e) =
         base.OnMouseDown(e)
         if e.Button=MouseButtons.Left then
@@ -580,15 +634,18 @@ type SettingsScrollBar() as this =
             if this.thumb.Contains(e.Location) then dragOffset<-Some(e.Y-this.thumb.Y)
             else this.setPosition(position+(if e.Y<this.thumb.Y then -viewport else viewport))
             this.Capture <- true
+            this.Invalidate()
     override this.OnMouseMove(e) =
         base.OnMouseMove(e)
         match dragOffset with
-        | Some offset -> this.setPosition((e.Y-offset)*maximum / max 1 (this.Height-this.thumb.Height))
+        | Some offset -> this.setPosition((e.Y-margin()-offset)*maximum / max 1 (this.Height-margin()*2-this.thumb.Height))
         | None -> ()
     override this.OnMouseUp(e) =
         base.OnMouseUp(e)
         dragOffset<-None
         this.Capture<-false
+        collapseAt <- DateTime.Now.AddMilliseconds(600.0)
+        this.animate()
     override this.IsInputKey(key) =
         match key &&& Keys.KeyCode with
         | Keys.Up | Keys.Down | Keys.PageUp | Keys.PageDown | Keys.Home | Keys.End -> true
