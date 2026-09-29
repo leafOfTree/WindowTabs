@@ -126,6 +126,8 @@ and
 
     member this.removeWindow(window) =
         _windows.Remove(window).ignore
+        // A group without windows restores nothing, so deleting its last window deletes it too.
+        if _windows.Count=0 then removedEvent.Trigger()
 
     member this.windows = List2(_windows)
     member this.children = this.windows

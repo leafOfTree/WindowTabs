@@ -18,6 +18,8 @@ module WindowTitleMatcher =
 
 module WorkspaceData =
     let version = 2
+    /// Drops an entry that is harmless rather than damaged, without a warning.
+    exception private SkipEntry
     let number (obj:JObject) key fallback =
         match obj.[key] with
         | null -> fallback
@@ -57,7 +59,9 @@ module WorkspaceData =
                         match value with
                         | :? JObject as obj -> Some(convert (obj.DeepClone() :?> JObject))
                         | _ -> failwith (tr Strings.Workspaces.expectedObject)
-                    with ex -> warnings.Add(sprintf "%s #%d: %s" context (index+1) ex.Message); None)
+                    with
+                    | SkipEntry -> None
+                    | ex -> warnings.Add(sprintf "%s #%d: %s" context (index+1) ex.Message); None)
                 |> Seq.choose id |> Seq.toList
             | _ -> warnings.Add(context + tr Strings.Workspaces.expectedList); []
         let window (obj:JObject) =
@@ -70,6 +74,12 @@ module WorkspaceData =
             obj.["zorder"] <- JValue(number obj "zorder" 0)
             obj
         let group (obj:JObject) =
+            // Older versions kept a group after its last window was deleted. It restores
+            // nothing, so it is dropped quietly; a group whose windows are all invalid still warns.
+            match obj.["windows"] with
+            | null -> raise SkipEntry
+            | :? JArray as saved when saved.Count=0 -> raise SkipEntry
+            | _ -> ()
             let p = match obj.["placement"] with :? JObject as p -> placement p | _ -> failwith (tr Strings.Workspaces.missingPlacement)
             let windows = collect "Window" obj.["windows"] window
             if windows.IsEmpty then failwith (tr Strings.Workspaces.noValidWindows)

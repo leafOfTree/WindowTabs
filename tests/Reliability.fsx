@@ -76,6 +76,16 @@ let main() =
     let loaded = Workspace.deserialize workspaces.Head
     let window = (group.["windows"].[0] :?> JObject)
     check (loaded.name="valid" && JObject(JProperty("n",JValue(7))).getInt32("n")=Some 7 && window.getInt32("matchType")=Some 0) "Normalized workspace could not be loaded"
+    let emptyGroups = JObject.Parse("""{"workspaces":[{"name":"w","groups":[{"placement":{"x":0,"y":0,"width":800,"height":600},"windows":[]},{"placement":{"x":0,"y":0,"width":800,"height":600}},{"placement":{"x":0,"y":0,"width":800,"height":600},"windows":[{"title":"Documents","matchType":0}]}]}]}""")
+    let kept,emptyWarnings,_ = WorkspaceData.read emptyGroups
+    check (emptyWarnings.IsEmpty && (kept.Head.["groups"] :?> JArray).Count=1) "Groups saved without windows were not dropped quietly"
+    let workspace = Workspace(name="w")
+    let wsGroup = WorkspaceGroup(name="g",placement=placement)
+    let wsWindow = WorkspaceWindow()
+    workspace.addGroup(wsGroup)
+    wsGroup.addWindow(wsWindow)
+    (box wsWindow :?> IWorkspaceNode).remove()
+    check workspace.groups.isEmpty "Deleting a group's last window left an empty group"
     for schema in ["999";"\"bad\"";"0"] do
         let _,_,protectedData = WorkspaceData.read (JObject.Parse("{\"workspaceSchemaVersion\":"+schema+"}"))
         check protectedData "Unsupported schema was writable"
