@@ -53,7 +53,7 @@ The taskbar default is deliberately scoped to **new groups**, which its descript
 | Theme, colors, presets, layout and resets | Updates existing tab strips and settings UI immediately. Color changes affect the current light/dark profile; state-specific colors appear when that state occurs. Centered tabs use the side margin when they fill the row. | `ThemeService.changed` → `WindowGroup`; `ThemeBinding` |
 | Language | Recreates the open settings window on the same page and rebuilds tray text; tab menus use the language when opened. | `Program`, `ManagerViewService`, `NotifyIconPlugin` |
 | Per-app automatic grouping | Enabling requests regrouping of current windows. Disabling affects future grouping and preserves existing groups; the UI explains this. | `Program.setAutoGroupingEnabled` |
-| Workspaces | Save/edit changes stored layouts; Restore applies them when invoked. | `WorkspaceModel` |
+| Workspaces | Save/edit changes stored layouts (Edit, or double-click or Enter on an item); Restore applies them when invoked. | `WorkspaceModel` |
 
 New group subscriptions marshal changes onto the group thread and are disposed on group exit.
 

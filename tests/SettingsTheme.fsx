@@ -346,6 +346,18 @@ Group #2: No valid windows in this group.";
         api.setValue("tabThemeMode",box "light")
         Application.DoEvents()
         snapshot "settings-appearance-light"
+        // The preview keeps one height as the tab height changes; the window inside it gives way.
+        let preview = controls form |> Seq.find(fun c -> c.Name="tab-preview")
+        let originalHeight = api.appearance.geometry.height
+        let previewHeights =
+            [12;25;60] |> List.map(fun tabHeight ->
+                api.updateAppearance(fun s -> {s with geometry={s.geometry with height=tabHeight}})
+                Application.DoEvents()
+                if tabHeight<>25 then snapshot (sprintf "settings-appearance-tab%d" tabHeight)
+                preview.Height)
+        api.updateAppearance(fun s -> {s with geometry={s.geometry with height=originalHeight}})
+        Application.DoEvents()
+        check (previewHeights |> List.distinct |> List.length = 1) (sprintf "Tab preview height follows the tab height: %A" previewHeights)
         let ap = appearance.control :?> SettingsPage
         check (ap.contentTable.Height>500) "Appearance page failed to lay out on first visit"
         let scroll = controls ap |> Seq.choose (function :? SettingsScrollBar as s -> Some s | _ -> None) |> Seq.head

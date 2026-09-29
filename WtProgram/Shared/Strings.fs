@@ -242,9 +242,9 @@ module Strings =
 
     module Workspaces =
         let description = { en="Save and restore window groups and positions."; zh="保存和恢复窗口分组与位置。"; ja="ウィンドウのグループと位置を保存・復元します。" }
-        let help = { en="How to use\n1  Group and position your windows, then click Save.\n2  Select a workspace and click Restore.\n3  Click Edit to change names or window title matching.\nRestore only uses open windows. It does not launch apps."
-                     zh="使用说明\n1  将窗口分组并调整位置，然后点击“保存”。\n2  选中工作区，点击“恢复”。\n3  点击“编辑”可修改名称或窗口标题的匹配方式。\n恢复仅适用于已打开的窗口，不会启动应用。"
-                     ja="使い方\n1  ウィンドウをグループ化して配置し、「保存」をクリックします。\n2  ワークスペースを選び、「復元」をクリックします。\n3  「編集」で名前やタイトルの一致方法を変更できます。\n復元は開いているウィンドウのみが対象です。アプリは起動しません。" }
+        let help = { en="How to use\n1  Group and position your windows, then click Save.\n2  Select a workspace and click Restore.\n3  Double-click an item, or select it and click Edit, to change its name or window title matching.\nRestore only uses open windows. It does not launch apps."
+                     zh="使用说明\n1  将窗口分组并调整位置，然后点击“保存”。\n2  选中工作区，点击“恢复”。\n3  双击任意项，或选中后点击“编辑”，可修改名称或窗口标题的匹配方式。\n恢复仅适用于已打开的窗口，不会启动应用。"
+                     ja="使い方\n1  ウィンドウをグループ化して配置し、「保存」をクリックします。\n2  ワークスペースを選び、「復元」をクリックします。\n3  項目をダブルクリックするか、選んで「編集」をクリックすると、名前やタイトルの一致方法を変更できます。\n復元は開いているウィンドウのみが対象です。アプリは起動しません。" }
         let restore = { en="Restore"; zh="恢复"; ja="復元" }
         let delete = { en="Delete"; zh="删除"; ja="削除" }
         let edit = { en="Edit"; zh="编辑"; ja="編集" }

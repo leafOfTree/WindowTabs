@@ -37,7 +37,7 @@ type AppearanceView(?settings:ISettings) =
         update(fun s ->
             let next = pick s
             if next=activePalette s then s else setActive next s)
-    let preview = new Panel(Height=Dpi.scale 145,Margin=Padding(0,Dpi.scale 4,0,0),
+    let preview = new Panel(Name="tab-preview",Height=Dpi.scale 145,Margin=Padding(0,Dpi.scale 4,0,0),
                             AccessibleName=tr Strings.Appearance.explorerPreview)
     let colorFields : (string * (TabPalette -> Color) * (Color -> TabPalette -> TabPalette)) list = [
         "tabTextColor",(fun p -> p.tabTextColor),(fun v p -> {p with tabTextColor=v})
@@ -80,7 +80,9 @@ type AppearanceView(?settings:ISettings) =
                 editor.Minimum <- min editor.Minimum value
                 editor.Maximum <- max editor.Maximum value
                 editor.Value <- value
-            preview.Height <- max (Dpi.scale 145) (ThemeService.currentAppearance().scaled.tabHeight+Dpi.scale 120)
+            // One height for any usual tab height: the window below the tabs gives up the room.
+            // Only tabs too tall to leave its toolbar visible make the panel grow.
+            preview.Height <- max (Dpi.scale 145) (ThemeService.currentAppearance().scaled.tabHeight+Dpi.scale (14+14+28)+2)
             preview.Invalidate()
         finally refreshing <- false
 
@@ -103,13 +105,16 @@ type AppearanceView(?settings:ISettings) =
             let left = Dpi.scale 16
             let top = Dpi.scale 14
             let bodyTop = top+height+2
-            let bodyHeight = preview.Height-bodyTop-Dpi.scale 14
+            // The panel keeps one height; taller tabs leave less room for the window below them.
+            let bodyHeight = max 0 (preview.Height-bodyTop-Dpi.scale 14)
             let fill color (rect:Rectangle) =
                 use brush = new SolidBrush(color)
                 e.Graphics.FillRectangle(brush,rect)
             let contentColor = if dark then Color.FromRGB(0x202020) else Color.White
             let chromeColor = if dark then Color.FromRGB(0x292929) else Color.FromRGB(0xF3F3F1)
             let placeholderColor = if dark then Color.FromRGB(0x555552) else Color.FromRGB(0xC8C8C3)
+            let state = e.Graphics.Save()
+            e.Graphics.SetClip(Rectangle(left,bodyTop,width,bodyHeight+1))
             fill contentColor (Rectangle(left,bodyTop,width,bodyHeight))
             let toolbarHeight = Dpi.scale 28
             fill chromeColor (Rectangle(left,bodyTop,width,toolbarHeight))
@@ -129,9 +134,12 @@ type AppearanceView(?settings:ISettings) =
                                                  min (Dpi.scale (150-index*24)) (max 1 (width-sidebarWidth-Dpi.scale 64)),Dpi.scale 7))
             e.Graphics.DrawRectangle(border,left,bodyTop,width-1,bodyHeight)
             e.Graphics.DrawLine(border,left,bodyTop+toolbarHeight,left+width-1,bodyTop+toolbarHeight)
+            e.Graphics.Restore(state)
+            // The font real tabs use, so the preview shrinks its text with short tabs too.
+            use font = TabMetrics.font appearance.tabHeight FontStyle.Regular
             let info caption : TabDisplayInfo = {
                 bgColor=None; text=caption; icon=SystemIcons.Application
-                textFont=SettingsUi.bodyFont; textBrush=SystemBrushes.MenuText }
+                textFont=font; textBrush=SystemBrushes.MenuText }
             let ts : TabStripSprite<int> = {
                 tabs=Map2(List2([1,info (tr Strings.Settings.tabActiveBgColor.caption);2,info (tr Strings.Settings.tabHighlightBgColor.caption);3,info (tr Strings.Settings.tabNormalBgColor.caption)]))
                 lorder=List2([1;2;3]);zorder=List2([1;2;3]);size=Sz(width,height+2)
