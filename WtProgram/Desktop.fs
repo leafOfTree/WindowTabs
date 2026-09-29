@@ -9,12 +9,11 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
     let Cell = CellScope(true, true)
     let windowsCell = Cell.create(List2())
     let mutable _isExited = 0
-    let enableCtrlNumberHotKey = settings.getValue("enableCtrlNumberHotKey").cast<bool>()
     let initialAppearance = ThemeService.currentAppearance()
     let (_group, invoker) = ThreadHelper.startOnThreadAndWait <| fun() ->
         let plugins = List2<_>([
             Some(MouseScrollPlugin().cast<IPlugin>())
-            (if enableCtrlNumberHotKey then Some(NumericTabHotKeyPlugin().cast<IPlugin>()) else None)
+            Some(NumericTabHotKeyPlugin().cast<IPlugin>())
             Some(HideTabsOnInactiveGroupPlugin().cast<IPlugin>())
             (if enableSuperBar then Some(SuperBarPlugin().cast<IPlugin>()) else None)
             ])

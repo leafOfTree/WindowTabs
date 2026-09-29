@@ -181,6 +181,11 @@ let main() =
         check (File.ReadAllText(settings.path)=beforeOpen) "Opening settings rewrote values"
         check (not form.TopMost && form.FormBorderStyle=FormBorderStyle.Sizable) "Old tool window behaviour retained"
         check (controls general.control |> Seq.forall(fun c -> not(c :? GroupBox))) "General page still uses GroupBox"
+        let combine = controls general.control |> Seq.find(fun c -> c.Name="combine-taskbar-icons")
+        let scopeNotice = tr Strings.General.newGroupsOnly
+        check (combine.AccessibleDescription.Contains(scopeNotice) &&
+               (controls combine.Parent |> Seq.exists(fun c -> c :? Label && c.Text=scopeNotice)))
+              "Taskbar setting does not expose its new-groups-only scope"
         let snapshot name =
             form.PerformLayout()
             Application.DoEvents()

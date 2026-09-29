@@ -48,6 +48,9 @@ module SettingsCatalog =
         { id="diagnostics"; page=DiagnosticsSettings; text=Strings.Settings.diagnostics; binding=Navigation }
     ]
     let find id = all |> List.find(fun item -> item.id=id)
+    /// A visible scope label for settings that do not update existing groups.
+    let effectNotice id =
+        if id="combine-taskbar-icons" then Some Strings.General.newGroupsOnly else None
     let toggleKey id = match (find id).binding with Toggle(key,_,_) -> key | _ -> invalidArg "id" "Not a toggle"
     let toggleDefault key existing =
         all |> List.pick(fun item -> match item.binding with Toggle(k,fresh,old) when k=key -> Some(if existing then old else fresh) | _ -> None)

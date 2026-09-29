@@ -98,6 +98,20 @@ type SettingsSearchResults() as this =
         use pen = new Pen((SettingsColors.current()).border)
         e.Graphics.DrawPath(pen,shape)
 
+type SettingsRow() =
+    inherit TableLayoutPanel()
+    override this.WndProc(message:byref<Message>) =
+        // Disabled HWNDs route cursor handling to their parent. Setting the
+        // disabled editor's Cursor alone would therefore have no effect.
+        let overDisabledEditor() =
+            let point = this.PointToClient(Cursor.Position)
+            this.Controls |> Seq.cast<Control>
+            |> Seq.exists(fun child -> child.Visible && not child.Enabled && child.Bounds.Contains(point))
+        if message.Msg=WindowMessages.WM_SETCURSOR && overDisabledEditor() then
+            Cursor.Current <- Cursors.No
+            message.Result <- IntPtr(1)
+        else base.WndProc(&message)
+
 type SettingsCard() as this =
     inherit TableLayoutPanel()
     do
@@ -162,6 +176,26 @@ type SettingsNavigationButton(key:SettingsViewType) as this =
         if this.Focused && this.ShowFocusCues then
             ControlPaint.DrawFocusRectangle(e.Graphics,Rectangle(3,3,this.Width-6,this.Height-6),foreground,this.BackColor)
 
+type SettingsBadge() as this =
+    inherit Label()
+    do
+        this.AutoSize <- true
+        this.UseMnemonic <- false
+        this.Tag <- "muted"
+        this.Padding <- Padding(Dpi.scale 7,Dpi.scale 2,Dpi.scale 7,Dpi.scale 2)
+        this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint ||| ControlStyles.ResizeRedraw,true)
+    override this.OnPaint(e) =
+        let p = SettingsColors.current()
+        e.Graphics.Clear(this.BackColor)
+        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        use shape = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 6))
+        use border = new Pen(if SystemInformation.HighContrast then p.border else p.disabledText)
+        e.Graphics.DrawPath(border,shape)
+        let bounds = Rectangle(this.Padding.Left,this.Padding.Top,
+                               max 0 (this.Width-this.Padding.Horizontal),max 0 (this.Height-this.Padding.Vertical))
+        TextRenderer.DrawText(e.Graphics,this.Text,this.Font,bounds,this.ForeColor,
+            TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter)
+
 type SettingsToggle() as this =
     inherit CheckBox()
     let mutable hovering = false
@@ -194,12 +228,16 @@ type SettingsToggle() as this =
             if SystemInformation.HighContrast then SystemColors.Control
             elif dark then Color.FromRGB(if hovering then 0x555555 else 0x424242)
             else Color.FromRGB(if hovering then 0xC7C7C7 else 0xD8D8D8)
-        use fill = new SolidBrush(if not this.Enabled then palette.hover elif this.Checked then checkedColor else offColor)
+        let disabledColor =
+            if SystemInformation.HighContrast then SystemColors.Control
+            elif dark then Color.FromRGB(0x272726)
+            else Color.FromRGB(0xECECEA)
+        use fill = new SolidBrush(if not this.Enabled then disabledColor elif this.Checked then checkedColor else offColor)
         e.Graphics.FillPath(fill,path)
         let inset = float32(Dpi.scale 3)
         let diameter = h-inset*2.0f
         let left = if this.Checked then x+w-diameter-inset else x+inset
-        use knob = new SolidBrush(if SystemInformation.HighContrast then (if this.Checked then SystemColors.HighlightText else SystemColors.WindowText) elif not this.Enabled then palette.muted elif this.Checked then Color.White else neutral)
+        use knob = new SolidBrush(if not this.Enabled then palette.disabledText elif SystemInformation.HighContrast then (if this.Checked then SystemColors.HighlightText else SystemColors.WindowText) elif this.Checked then Color.White else neutral)
         e.Graphics.FillEllipse(knob,left,y+inset,diameter,diameter)
 
 type SettingsThemeTile(mode:string) as this =

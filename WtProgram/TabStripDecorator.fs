@@ -56,8 +56,14 @@ type TabStripDecorator(group:WindowGroup) as this =
             this.updateTsPlacement()
 
         let geometrySubscription = group.geometryChanged.Subscribe(fun () -> this.updateTsPlacement())
+        let mutable disposed = false
+        let alignmentSubscription = Services.settings.notifyValue "alignment" (fun value ->
+            let alignment = value.cast<string>()
+            group.invokeAsync(fun () -> if not disposed then this.ts.setDefaultAlignment(alignment)))
 
         group.exited.Add <| fun() ->
+            disposed <- true
+            alignmentSubscription.Dispose()
             geometrySubscription.Dispose()
             Services.dragDrop.unregisterTarget(this.ts.hwnd)
     
@@ -303,16 +309,25 @@ type TabStripDecorator(group:WindowGroup) as this =
             group.bb.subscribe key update
             cell
 
-        let isAutoHideEnabledDef = Services.settings.getValue("autoHide").cast<bool>()
-        let autoHideCell = propCell("autoHide", isAutoHideEnabledDef)
+        let mutable autoHideDefault = Services.settings.getValue("autoHide").cast<bool>()
+        let autoHideCell = Cell.create(group.bb.read("autoHide", autoHideDefault))
+        let updateAutoHide() = autoHideCell.value <- group.bb.read("autoHide", autoHideDefault)
+        group.bb.subscribe "autoHide" updateAutoHide
         let minimalModeCell = Cell.create(Services.settings.getValue("minimalMode").cast<bool>())
         let mutable disposed = false
         let minimalSubscription = Services.settings.notifyValue "minimalMode" (fun value ->
             let enabled = value.cast<bool>()
             group.invokeAsync(fun () -> if not disposed then minimalModeCell.value <- enabled))
+        let autoHideSubscription = Services.settings.notifyValue "autoHide" (fun value ->
+            let enabled = value.cast<bool>()
+            group.invokeAsync(fun () ->
+                if not disposed then
+                    autoHideDefault <- enabled
+                    updateAutoHide()))
         group.exited.Add(fun _ ->
             disposed <- true
             minimalSubscription.Dispose()
+            autoHideSubscription.Dispose()
             callbackRef.Value.iter(fun (pending:IDisposable) -> pending.Dispose())
             callbackRef := None)
         let contextMenuVisibleCell = propCell("contextMenuVisible", false)

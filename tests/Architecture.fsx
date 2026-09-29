@@ -156,6 +156,65 @@ let main() =
                                 member _.dragDrop _ = ()
                                 member _.dragEnd() = ()},api,dispatcher)
         let apiDesktop = desktop :> IDesktop
+        // Exercise updates on a group that already exists, across the real dispatcher.
+        api.setValue("enableCtrlNumberHotKey",box false)
+        api.setValue("alignment",box "Center")
+        api.setValue("autoHide",box false)
+        api.setValue("minimalMode",box false)
+        let live = apiDesktop.createGroup(false) :?> GroupInfo
+        let onGroup action =
+            let mutable result = None
+            live.invokeGroup(fun () ->
+                result <- Some(try Choice1Of2(action live.group) with error -> Choice2Of2 error))
+            pumpUntil "Group settings update deadlocked" (fun () -> result.IsSome)
+            match result.Value with Choice1Of2 value -> value | Choice2Of2 error -> raise error
+        let positions() = onGroup(fun group -> group.ts.getAlignment TabUp,group.ts.getAlignment TabDown)
+        check (positions()=(TabCenter,TabCenter)) "New group ignored initial alignment"
+        api.setValue("alignment",box "Left")
+        check (positions()=(TabLeft,TabLeft)) "Existing group did not update alignment"
+        onGroup(fun group -> group.ts.setAlignment(TabUp,TabRight))
+        api.setValue("alignment",box "Center")
+        check (positions()=(TabRight,TabCenter)) "Alignment update lost the per-direction menu override"
+
+        let numeric = NumericTabHotKeyPlugin()
+        let target msg key ctrl = onGroup(fun _ -> numeric.targetIndex(msg,key,ctrl))
+        check (target WindowMessages.WM_KEYDOWN 0x31 true=None) "Disabled numeric shortcut still activates"
+        api.setValue("enableCtrlNumberHotKey",box true)
+        check (target WindowMessages.WM_KEYDOWN 0x31 true=Some 0 && target WindowMessages.WM_KEYDOWN 0x39 true=Some 8)
+              "Numeric shortcuts did not enable on an existing group thread"
+        check (target WindowMessages.WM_KEYUP 0x31 true=None && target WindowMessages.WM_KEYDOWN 0x31 false=None &&
+               target WindowMessages.WM_KEYDOWN 0x30 true=None) "Numeric shortcut accepted key-up, missing Ctrl or an invalid digit"
+        api.setValue("enableCtrlNumberHotKey",box false)
+        check (target WindowMessages.WM_KEYDOWN 0x31 true=None) "Numeric shortcuts retained their enabled state"
+
+        // A hidden, off-screen HWND with the maximized style exercises the actual
+        // collapse timer without maximizing a window on the user's desktop.
+        let testWindow = onGroup(fun group ->
+            let form = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,
+                                Location=Drawing.Point(-20000,-20000),Text="Settings live test")
+            let style = WinUserApi.GetWindowLong(form.Handle,WindowLongFieldOffset.GWL_STYLE)
+            WinUserApi.SetWindowLong(form.Handle,WindowLongFieldOffset.GWL_STYLE,
+                IntPtr(style.ToInt64() ||| int64 WindowsStyles.WS_MAXIMIZE)) |> ignore
+            check (WinUserApi.IsZoomed(form.Handle)) "Test HWND is not maximized"
+            group.addWindow(form.Handle,false)
+            form)
+        try
+            check (not(onGroup(fun group -> group.ts.isShrunk))) "Disabled auto-hide collapsed tabs"
+            api.setValue("autoHide",box true)
+            pumpUntil "Auto-hide did not enable on an existing maximized group" (fun () -> onGroup(fun group -> group.ts.isShrunk))
+            api.setValue("autoHide",box false)
+            check (not(onGroup(fun group -> group.ts.isShrunk))) "Disabling auto-hide did not expand tabs"
+            onGroup(fun group -> group.bb.write("autoHide",false))
+            api.setValue("autoHide",box true)
+            pump 200
+            check (not(onGroup(fun group -> group.ts.isShrunk))) "Global auto-hide overwrote the group menu setting"
+        finally
+            onGroup(fun group -> group.removeWindow(testWindow.Handle); testWindow.Dispose())
+            (live :> IGroup).destroy()
+            pumpUntil "Live settings group did not exit" (fun () -> desktop.retainedGroupCount=0)
+        // Disposed groups must no longer receive settings callbacks.
+        api.setValue("alignment",box "Left")
+        api.setValue("autoHide",box false)
         let mutable baseline = 0,0,0,0L
         for iteration in 1..110 do
             let group = apiDesktop.createGroup(false)

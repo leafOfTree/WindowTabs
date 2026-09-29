@@ -108,22 +108,22 @@ module Strings =
                                description={ en="Starts in the notification area when you sign in."; zh="登录 Windows 后在通知区域中运行。"; ja="サインイン時に通知領域で起動します。" }
                                keywords={ en="startup autostart boot sign in login"; zh="开机 自启动 登录"; ja="スタートアップ 自動起動 サインイン ログイン" } }
         let enableTabsByDefault = { caption={ en="Enable tabs by default"; zh="默认启用标签"; ja="既定でタブを有効にする" }
-                                    description={ en="App rules override this for individual apps."; zh="可在“应用规则”中为单个应用另行设置。"; ja="「アプリのルール」でアプリごとに変更できます。" }
+                                    description={ en="Add tabs to apps; app rules take priority."; zh="为应用添加标签，应用规则优先。"; ja="アプリにタブを追加します。アプリのルールを優先。" }
                                     keywords={ en="new apps default"; zh="新应用 默认"; ja="新しいアプリ 既定" } }
         let dimInactiveGroups = { caption={ en="Dim tabs in inactive groups"; zh="淡化非活动分组的标签"; ja="非アクティブなグループのタブを半透明にする" }
                                   description={ en="Makes the active group easier to spot."; zh="更容易看出当前活动的分组。"; ja="アクティブなグループが見分けやすくなります。" }
                                   keywords={ en="fade transparent opacity"; zh="透明 变暗"; ja="透明 暗く" } }
         let autoHideMaximized = { caption={ en="Auto-hide tabs when maximized"; zh="最大化时自动隐藏标签"; ja="最大化時にタブを自動的に隠す" }
-                                  description={ en="Point to the top edge to show them."; zh="鼠标移到顶部边缘时显示。"; ja="上端にポインターを移動すると表示します。" }
+                                  description={ en="Hide maximized tabs until hover; tab menu overrides."; zh="最大化时隐藏标签，悬停展开；分组单独设置优先。"; ja="最大化時はホバーでタブを表示。個別設定を優先。" }
                                   keywords={ en="fullscreen full screen hide"; zh="全屏 隐藏"; ja="全画面 隠す" } }
         let minimalMode = { caption={ en="Minimal mode"; zh="极简模式"; ja="ミニマルモード" }
-                            description={ en="Shrink tabs to a thin bar in all windows. Hover to expand."; zh="所有窗口的标签收成细栏，悬停时展开。"; ja="すべてのウィンドウでタブを細いバーにし、ポインターを重ねると展開します。" }
+                            description={ en="Shrink all tabs until hover, even with auto-hide off."; zh="所有标签收成细栏，悬停展开；优先于自动隐藏设置。"; ja="全タブを細くし、ホバーで展開。自動非表示設定より優先。" }
                             keywords={ en="compact thin bar"; zh="紧凑 精简 细栏"; ja="コンパクト 細い" } }
         let tabAlignment = { caption={ en="Tab position"; zh="标签位置"; ja="タブの位置" }
-                             description={ en="Applies to new groups. Change existing ones from the tab menu."; zh="适用于新分组。已有分组可在标签右键菜单中更改。"; ja="新しいグループに適用します。既存のグループはタブの右クリックメニューで変更できます。" }
+                             description={ en="Align tabs left, center or right; tab menu overrides."; zh="设置标签左对齐、居中或右对齐，分组单独设置优先。"; ja="タブを左・中央・右に配置。個別設定を優先。" }
                              keywords={ en="alignment align left center right"; zh="对齐 左 居中 右"; ja="揃え 左 中央 右" } }
         let combineTaskbarIcons = { caption={ en="One taskbar icon per group"; zh="每个分组显示一个任务栏图标"; ja="グループごとにタスクバーアイコンを1つ表示" }
-                                    description={ en="Applies to new groups. Change existing ones from the tab menu."; zh="适用于新分组。已有分组可在标签右键菜单中更改。"; ja="新しいグループに適用します。既存のグループはタブの右クリックメニューで変更できます。" }
+                                    description={ en="Combine group icons; adjust each group in the tab menu."; zh="合并分组的任务栏图标，已有分组在标签右键菜单中设置。"; ja="グループのアイコンを統合。既存グループはタブメニューで設定。" }
                                     keywords={ en="combine merge superbar"; zh="合并"; ja="結合 まとめる" } }
         let replaceAltTab = { caption={ en="Use WindowTabs for Alt+Tab"; zh="使用 WindowTabs 窗口切换器"; ja="Alt+Tab に WindowTabs を使う" }
                               description={ en="Replaces the Windows switcher."; zh="替换 Windows 自带的窗口切换器。"; ja="Windows 標準のウィンドウ切り替えを置き換えます。" }
@@ -138,7 +138,7 @@ module Strings =
                             description={ en="Switch to the previous window in the group."; zh="切换到当前分组中的上一个窗口。"; ja="グループ内の前のウィンドウに切り替えます。" }
                             keywords=hotkeyWords }
         let switchTabsByNumber = { caption={ en="Switch tabs by number"; zh="按数字切换标签"; ja="番号でタブを切り替え" }
-                                   description={ en="Use Ctrl + 1–9 to switch tabs. Restart WindowTabs to apply changes."; zh="使用 Ctrl + 1–9 切换标签。更改后需重启 WindowTabs。"; ja="Ctrl + 1～9 でタブを切り替えます。変更後は WindowTabs を再起動してください。" }
+                                   description={ en="Use Ctrl + 1–9 to switch tabs."; zh="使用 Ctrl + 1–9 切换标签。"; ja="Ctrl + 1～9 でタブを切り替えます。" }
                                    keywords={ en="hotkey digit number ctrl"; zh="热键 数字"; ja="ホットキー 数字" } }
         let activateOnHover = { caption={ en="Switch tabs on hover"; zh="悬停切换标签"; ja="ホバーでタブを切り替え" }
                                 description={ en="Switch windows when the pointer rests on a tab."; zh="鼠标悬停在标签上时切换窗口。"; ja="タブにポインターを置くとウィンドウを切り替えます。" }
@@ -175,6 +175,7 @@ module Strings =
                             keywords={ en="version about log bug report"; zh="版本 日志 报告 反馈"; ja="バージョン ログ レポート" } }
 
     module General =
+        let newGroupsOnly = { en="New groups only"; zh="仅新分组生效"; ja="新しいグループのみ" }
         let startupAndDefaults = { en="Startup and defaults"; zh="启动与默认设置"; ja="起動と既定の設定" }
         let tabBehavior = { en="Tab behavior"; zh="标签行为"; ja="タブの動作" }
         let taskbar = { en="Taskbar"; zh="任务栏"; ja="タスクバー" }
@@ -227,9 +228,9 @@ module Strings =
         let notSet = { en="Not set"; zh="未设置"; ja="未設定" }
 
     module AppRules =
-        let description = { en="Choose which apps use tabs and automatic grouping. Expand an app to see its windows."
-                            zh="为应用设置标签和自动分组。展开应用可查看其窗口。"
-                            ja="アプリごとにタブと自動グループ化を設定します。展開するとウィンドウが表示されます。" }
+        let description = { en="Choose which apps use tabs and automatic grouping. Turning off auto-grouping keeps existing groups. Expand an app to see its windows."
+                            zh="为应用设置标签和自动分组。关闭自动分组不会拆散已有分组。展开应用可查看其窗口。"
+                            ja="アプリごとにタブと自動グループ化を設定します。自動グループ化をオフにしても既存のグループは維持されます。展開するとウィンドウが表示されます。" }
         let tabs = { en="Tabs"; zh="标签"; ja="タブ" }
         let autoGroup = { en="Auto-group"; zh="自动分组"; ja="自動グループ化" }
         let appCount count =

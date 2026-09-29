@@ -47,6 +47,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         | Some align -> align
         | None -> TabCenter
     let alignment = Cell.create(Map2(List2([(TabUp,alignmentDefault);(TabDown,alignmentDefault)])))
+    let mutable alignmentOverrides = Set.empty
     let capturedCell = Cell.create(None : Option<Tab*TabPart>)
     let hoverCell = Cell.create(None : Option<Tab*TabPart>)
     let slideCell = Cell.create(None)
@@ -323,7 +324,15 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member this.getAlignment direction = alignment.value.find(direction)
 
-    member this.setAlignment((direction, newAlignment)) = alignment.map(fun m -> m.add direction newAlignment)
+    member this.setAlignment((direction, newAlignment)) =
+        alignmentOverrides <- alignmentOverrides.Add(direction)
+        alignment.map(fun m -> m.add direction newAlignment)
+
+    member this.setDefaultAlignment(value:string) =
+        let next = alignmentMap.TryFind(value) |> Option.defaultValue TabCenter
+        alignment.map(fun current ->
+            [TabUp;TabDown] |> List.fold (fun result direction ->
+                if alignmentOverrides.Contains(direction) then result else result.add direction next) current)
             
     member this.direction = if showInsideCell.value then TabDown else TabUp
     

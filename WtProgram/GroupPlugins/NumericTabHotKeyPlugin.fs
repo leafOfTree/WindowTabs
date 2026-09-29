@@ -3,8 +3,6 @@ open System
 open System.Runtime.InteropServices
 
 type NumericTabHotKeyPlugin() as this =
-    let mutable ctrlKeyPressed = false
-
     member this.wtGroup = Services.get<WindowGroup>()
 
     member this.vkToTabIndex(msg) =
@@ -14,17 +12,15 @@ type NumericTabHotKeyPlugin() as this =
         else
             None
 
-    member this.onKeyboardLL(msg, data:KBDLLHOOKSTRUCT) =
-        let keyDown = 
-            if msg = WindowMessages.WM_KEYDOWN then Some(true)
-            else if msg = WindowMessages.WM_KEYUP then Some(false)
-            else None
+    member this.targetIndex(msg, vkCode, controlPressed) =
+        if msg = WindowMessages.WM_KEYDOWN && controlPressed &&
+           Services.settings.getValue("enableCtrlNumberHotKey").cast<bool>() then
+            this.vkToTabIndex(vkCode)
+        else None
 
-        let vkCode = data.vkCode
-        keyDown.iter <| fun(keyDown) ->
-            if Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_CONTROL) then
-                this.vkToTabIndex(vkCode).iter <| fun(index) ->
-                    this.wtGroup.activateIndex(index, true)
+    member this.onKeyboardLL(msg, data:KBDLLHOOKSTRUCT) =
+        this.targetIndex(msg, data.vkCode, Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_CONTROL))
+        |> Option.iter(fun index -> this.wtGroup.activateIndex(index, true))
 
     interface IPlugin with
         member x.init() =

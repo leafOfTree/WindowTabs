@@ -31,9 +31,37 @@ Every `notifyValue` subscription returns `IDisposable`. The owner must dispose i
 
 Search must not instantiate unopened pages. Page selection reuses controls. Theme changes invalidate the visible shell and mark detached pages for styling on next visit; geometry/palette changes do not restyle the settings shell unnecessarily.
 
+## When settings take effect
+
+No setting exposed by the settings UI requires restarting WindowTabs after the live-update fixes below.
+The taskbar default is deliberately scoped to **new groups**, with a visible scope label in the UI.
+
+| Setting | Effect and limitations | Runtime path |
+| --- | --- | --- |
+| Launch at sign-in | Updates the Windows startup registration immediately; launches on the next Windows sign-in. | `Program.updateRunAtStartup` |
+| Enable tabs by default; per-app tabs | Refreshes current windows immediately, using the app rules. | `FilterService` → `Program.refresh` |
+| Dim inactive groups | Updates existing groups immediately. | `HideTabsOnInactiveGroupPlugin` subscription |
+| Auto-hide when maximized | Updates existing groups immediately; tab-menu overrides take priority. Minimal mode can still keep tabs collapsed. Previously the global default was captured only at group creation. | `TabStripDecorator.initAutoHide` subscription |
+| Minimal mode | Updates existing groups immediately; pointer, drag and menu state still control expansion. | `TabStripDecorator.initAutoHide` subscription |
+| Tab position | Updates both normal and maximized positions in existing groups. A position explicitly chosen in the tab menu stays overridden for that direction. Previously applied only to new groups. | `TabStripDecorator` → `TabStrip.setDefaultAlignment` |
+| One taskbar icon per group | Global preference applies to new groups. Use an existing group's tab menu to change that group without restarting the app. Taskbar plugin and preview-window lifetime are tied to the group; the existing menu action rebuilds it. Automatically rebuilding every group could discard its local state and interrupt interaction, so this remains explicitly scoped. | `GroupInfo` plugin creation; `Desktop.restartGroup` |
+| Replace Alt+Tab | Installs or removes the switcher immediately. | `Program.updateTaskSwitcher` |
+| Group windows in Alt+Tab | Used when the next Alt+Tab list is built; requires the WindowTabs switcher. | `TaskSwitcher.windows` |
+| Next/previous tab shortcuts | Registers immediately. A conflict rejects the edit and preserves the working shortcut. | `Program.setHotKey` → `HotKeyManager` |
+| Ctrl + 1–9 | Enables/disables on existing groups immediately. The plugin is always installed and checks the current setting on key-down; key-up does not activate a tab. Previously plugin installation depended on the value at group creation. | `NumericTabHotKeyPlugin` |
+| Hover activation; Shift + scroll | Used on the next matching pointer/wheel event. | `TabStrip.processMouse`; `MouseScrollPlugin` |
+| Theme, colors, presets, layout and resets | Updates existing tab strips and settings UI immediately. Color changes affect the current light/dark profile; state-specific colors appear when that state occurs. Centered tabs use the side margin when they fill the row. | `ThemeService.changed` → `WindowGroup`; `ThemeBinding` |
+| Language | Recreates the open settings window on the same page and rebuilds tray text; tab menus use the language when opened. | `Program`, `ManagerViewService`, `NotifyIconPlugin` |
+| Per-app automatic grouping | Enabling requests regrouping of current windows. Disabling affects future grouping and preserves existing groups; the UI explains this. | `Program.setAutoGroupingEnabled` |
+| Workspaces | Save/edit changes stored layouts; Restore applies them when invoked. | `WorkspaceModel` |
+
+New group subscriptions marshal changes onto the group thread and are disposed on group exit.
+
 ## Validation
 
 Build Debug into `tests/Debug`, then run `tests/SettingsTheme.fsx` using F# Interactive. The harness uses isolated settings files and off-screen windows. It covers legacy migration, typed round-trips, reset isolation, disposable/coalesced callbacks, geometry calculations, lazy loading, search, themes, choice-menu sizing, and keyboard cancellation/commit.
+
+`tests/Architecture.fsx` also checks live settings on an existing group thread: both tab positions, per-group overrides, numeric shortcut enable/disable and key filtering, maximized auto-hide collapse/expansion, and cleanup over 100 group lifetimes. `tests/SettingsTheme.fsx` checks the visible and accessible taskbar scope label.
 
 `tests/TabShadow.fsx` covers tab shadow rendering and native window handling. Desktop multi-monitor positioning and live system theme changes should additionally be checked in the running application.
 
