@@ -61,7 +61,7 @@ type ExceptionHandlerPlugin() as this =
                 text.AppendLine(String.Format("Time    : {0:yyyy-MM-dd HH:mm:ss}", DateTime.Now)).ignore
                 text.AppendLine("Source  : " + source).ignore
                 text.AppendLine("Version : " + AssemblyInfo.informationalVersion).ignore
-                text.AppendLine("OS      : " + Environment.OSVersion.VersionString + " / CLR " + Environment.Version.ToString()).ignore
+                text.AppendLine("OS      : " + RuntimeDiagnostics.windowsVersion() + " / .NET " + RuntimeDiagnostics.dotNetVersion()).ignore
                 text.AppendLine(this.describe(error)).ignore
                 File.AppendAllText(path, text.ToString()))
         with _ -> ()
@@ -71,6 +71,8 @@ type ExceptionHandlerPlugin() as this =
 
     member this.onThreadException(e:Threading.ThreadExceptionEventArgs) =
         this.log "Application.ThreadException" (box e.Exception)
+        // WindowTabs carries on after a UI error, so say once that there is something to report.
+        try RuntimeDiagnostics.notifyErrorLogged() with _ -> ()
 
     interface IPlugin with
         member _.init() =

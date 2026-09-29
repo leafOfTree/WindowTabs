@@ -25,7 +25,11 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
             for text,url in links do
                 let link = new LinkLabel(Text=text,AutoSize=true,UseMnemonic=false,LinkBehavior=LinkBehavior.HoverUnderline,
                                          Margin=Padding(0,0,Dpi.scale 16,0))
-                link.LinkClicked.Add(fun _ -> try Diagnostics.Process.Start(url) |> ignore with _ -> ())
+                link.LinkClicked.Add(fun _ ->
+                    try
+                        if IO.File.Exists(url) then Diagnostics.Process.Start("explorer.exe",sprintf "/select,\"%s\"" url) |> ignore
+                        else Diagnostics.Process.Start(url) |> ignore
+                    with _ -> ())
                 linkTip.SetToolTip(link,url)
                 row.Controls.Add(link)
             row)

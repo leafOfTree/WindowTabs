@@ -108,6 +108,24 @@ let main() =
     let rules = RuntimeDiagnostics.report (JObject.Parse("""{"includedPaths":["C:\\SECRET\\a.exe","b"],"excludedPaths":["c"],"tabAppearance":{"tabHeight":25,"tabMaxWidth":"SECRET"}}""")) 0 0
     check (rules.["settings"].["appRules"].["tabsOn"].Value<int>()=2 && rules.["settings"].["tabs"].["height"].Value<int>()=25) "Diagnostic summary missing rule counts or tab size"
     check (not (rules.ToString().Contains("SECRET"))) "Diagnostic summary leaked app rule paths or unexpected values"
+    // The report reads the newest crash log entry but keeps its message, which can hold paths, out.
+    let crashLog = IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"WindowTabsCrash.log")
+    let existingLog = if IO.File.Exists(crashLog) then Some(IO.File.ReadAllText(crashLog)) else None
+    try
+        let entry time kind =
+            String.concat "\r\n" ["---------------------------------------------";"Time    : "+time;"Source  : Application.ThreadException"
+                                  "Version : 1.2.3";"OS      : Windows 11 Pro 24H2 (26100.1) / .NET 4.8.1"
+                                  kind+": Could not open C:\\SECRET\\file.txt";"   at Bemo.Somewhere()";""]
+        IO.File.WriteAllText(crashLog,entry "2026-01-01 10:00:00" "System.ArgumentException"+entry "2026-01-02 11:00:00" "System.IO.IOException")
+        let crash = (RuntimeDiagnostics.report (JObject()) 0 0).["lastCrash"]
+        check (not (isNull crash) && crash.["time"].Value<string>()="2026-01-02 11:00:00" && crash.["exception"].Value<string>()="System.IO.IOException"
+               && crash.["crashesInLog"].Value<int>()=2 && crash.["source"].Value<string>()="Application.ThreadException") "Diagnostic report misread the crash log"
+        check (not (crash.ToString().Contains("SECRET"))) "Diagnostic report copied a crash message"
+        check (RuntimeDiagnostics.crashLogPath()=Some crashLog) "Crash log next to the exe was not found"
+    finally
+        match existingLog with
+        | Some text -> IO.File.WriteAllText(crashLog,text)
+        | None -> IO.File.Delete(crashLog)
     let geometry = AppearanceJson.readGeometry (JObject.Parse("""{"tabHeight":-20,"tabMaxWidth":999999,"tabOverlap":30}""")) Theme.defaultGeometry
     check (geometry.height=12 && geometry.maxWidth=1000 && geometry.overlap=0) "Invalid persisted dimensions bypassed shared bounds"
     let gap = AppearanceJson.readGeometry (JObject.Parse("""{"tabOverlap":-30}""")) Theme.defaultGeometry

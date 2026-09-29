@@ -6,6 +6,8 @@ type NotifyIconPlugin() =
     let Cell = CellScope()
     let mutable disposed = false
     let mutable languageSubscription : IDisposable option = None
+    let mutable errorSubscription : IDisposable option = None
+    let mutable errorNoticeShown = false
     let invoker = InvokerService.invoker
 
     member this.icon = Cell.cacheProp this <| fun() ->
@@ -16,6 +18,10 @@ type NotifyIconPlugin() =
         notifyIcon.ContextMenu <- new ContextMenu()
         notifyIcon.MouseClick.Add <| fun e ->
             if e.Button = MouseButtons.Left then Services.managerView.show()
+        // The only balloon WindowTabs shows is the error notice, so a click opens the crash log.
+        notifyIcon.BalloonTipClicked.Add <| fun _ ->
+            RuntimeDiagnostics.crashLogPath() |> Option.iter(fun path ->
+                try Diagnostics.Process.Start("explorer.exe",sprintf "/select,\"%s\"" path) |> ignore with _ -> ())
         notifyIcon
 
     member this.contextMenuItems = this.icon.ContextMenu.MenuItems
@@ -34,12 +40,19 @@ type NotifyIconPlugin() =
             this.buildMenu()
             languageSubscription <- Some(Services.settings.notifyValue "language" (fun _ ->
                 invoker.asyncInvoke(fun () -> if not disposed then this.buildMenu())))
+            // Once per session: later errors go to the same log without another notice.
+            errorSubscription <- Some(RuntimeDiagnostics.errorLogged.Subscribe(fun () ->
+                invoker.asyncInvoke(fun () ->
+                    if not disposed && not errorNoticeShown then
+                        errorNoticeShown <- true
+                        this.icon.ShowBalloonTip(10000,tr Strings.Tray.errorTitle,tr Strings.Tray.errorText,ToolTipIcon.Warning))))
 
     interface IDisposable with
         member this.Dispose() =
             if not disposed then
                 disposed <- true
                 languageSubscription |> Option.iter (fun subscription -> subscription.Dispose())
+                errorSubscription |> Option.iter (fun subscription -> subscription.Dispose())
                 let icon = this.icon.Icon
                 this.icon.Dispose()
                 if not (isNull icon) then icon.Dispose()

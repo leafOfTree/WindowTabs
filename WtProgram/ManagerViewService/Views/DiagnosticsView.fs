@@ -137,9 +137,13 @@ type DiagnosticsView() =
         new SettingsListPage(tr Strings.Pages.diagnostics,
                              tr Strings.Diagnostics.description,
                              view,actions,
-                             links=[tr Strings.Diagnostics.projectPage,repository
-                                    tr Strings.Diagnostics.reportIssue,repository+"/issues/new"
-                                    tr Strings.Diagnostics.releases,repository+"/releases"],
+                             // The crash log link appears only when there is a log to attach.
+                             links=[yield tr Strings.Diagnostics.projectPage,repository
+                                    yield tr Strings.Diagnostics.reportIssue,repository+"/issues/new"
+                                    yield tr Strings.Diagnostics.releases,repository+"/releases"
+                                    match RuntimeDiagnostics.crashLogPath() with
+                                    | Some path -> yield tr Strings.Diagnostics.openCrashLog,path
+                                    | None -> ()],
                              extra=fileSection)
     do
         setStatus <- fun value -> panel.Status <- value

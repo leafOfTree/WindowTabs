@@ -114,15 +114,24 @@ module RuntimeDiagnostics =
                 JProperty("highContrast",Windows.Forms.SystemInformation.HighContrast),
                 JProperty("animations",Windows.Forms.SystemInformation.UIEffectsEnabled))
 
-    /// When and how WindowTabs last crashed, from WindowTabsCrash.log beside the exe or in
-    /// AppData. Only the time, source and exception type: messages can contain paths.
+    /// Raised after a UI error is written to the crash log and WindowTabs carries on.
+    let private errorLoggedEvent = Event<unit>()
+    let errorLogged = errorLoggedEvent.Publish
+    let notifyErrorLogged() = errorLoggedEvent.Trigger()
+
+    /// The newest WindowTabsCrash.log, beside the exe or in AppData, where the crash handler writes it.
+    let crashLogPath() =
+        [AppDomain.CurrentDomain.BaseDirectory
+         IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"WindowTabs")]
+        |> List.map(fun folder -> IO.Path.Combine(folder,"WindowTabsCrash.log"))
+        |> List.filter IO.File.Exists
+        |> List.sortByDescending IO.File.GetLastWriteTime
+        |> List.tryHead
+
+    /// When and how WindowTabs last crashed. Only the time, source and exception type:
+    /// messages can contain paths.
     let private lastCrash() =
-        let files =
-            [AppDomain.CurrentDomain.BaseDirectory
-             IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"WindowTabs")]
-            |> List.map(fun folder -> IO.Path.Combine(folder,"WindowTabsCrash.log"))
-            |> List.filter IO.File.Exists
-        match files |> List.sortByDescending IO.File.GetLastWriteTime |> List.tryHead with
+        match crashLogPath() with
         | None -> None
         | Some file ->
             try

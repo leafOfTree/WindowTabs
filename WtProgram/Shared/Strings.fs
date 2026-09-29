@@ -46,6 +46,10 @@ module Strings =
     /// Tray icon menu.
     module Tray =
         let exit = { en="Exit WindowTabs"; zh="退出 WindowTabs"; ja="WindowTabs を終了" }
+        let errorTitle = { en="WindowTabs ran into a problem"; zh="WindowTabs 遇到了问题"; ja="WindowTabs で問題が発生しました" }
+        let errorText = { en="It kept running. The details are in the crash log; click to show it."
+                          zh="程序仍在运行。详细信息已写入崩溃日志，点击查看。"
+                          ja="動作は続いています。詳細はクラッシュログにあります。クリックすると表示します。" }
 
     /// Tab context menu.
     module TabMenu =
@@ -305,3 +309,4 @@ module Strings =
         let projectPage = { en="Project page"; zh="项目主页"; ja="プロジェクトページ" }
         let reportIssue = { en="Report an issue"; zh="报告问题"; ja="問題を報告" }
         let releases = { en="Releases"; zh="版本发布"; ja="リリース" }
+        let openCrashLog = { en="Crash log"; zh="崩溃日志"; ja="クラッシュログ" }
