@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "isRoot": true,
+  "tools": {
+    "dotnet-reportgenerator-globaltool": {
+      "version": "5.5.11",
+      "commands": [
+        "reportgenerator"
+      ],
+      "rollForward": false
+    },
+    "altcover.global": {
+      "version": "9.0.145",
+      "commands": [
+        "altcover"
+      ],
+      "rollForward": false
+    }
+  }
+}

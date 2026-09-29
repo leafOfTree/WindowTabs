@@ -12,6 +12,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
 
       # The SDK-style projects target .NET Framework 4.8 and restore their NuGet
       # packages; the Release configuration static-links them into a single exe.
@@ -20,7 +23,11 @@ jobs:
 
       - name: Run regression tests serially
         shell: powershell
-        run: ./tests/Run-Tests.ps1
+        run: ./tests/Run-Tests.ps1 -Coverage -MinimumLineCoverage 45 -MinimumBranchCoverage 40
+
+      - name: Smoke test isolated Release assembly
+        shell: powershell
+        run: ./tests/Run-ReleaseSmoke.ps1
 
       - name: Upload regression diagnostics
         if: always()
@@ -30,6 +37,9 @@ jobs:
           path: |
             tests/Debug/*.log
             tests/Debug/*.png
+            tests/Debug/test-results.jsonl
+            tests/coverage/*/coverage.xml
+            tests/coverage/*/report/**
           if-no-files-found: ignore
 
       - name: Upload WindowTabs.exe

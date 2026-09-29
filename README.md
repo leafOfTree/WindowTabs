@@ -84,6 +84,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-Tests.ps1
 The script builds a separate Debug output in `tests/Debug/`, compiles each test script with
 `tests/TestHost.fsproj` and runs the native UI tests serially.
 Logs and rendered previews are written to `tests/Debug/`.
+Coverage and isolated Release smoke commands, limitations and the remaining test
+matrix are documented in [docs/testing.md](docs/testing.md).
 
 - Entry point: `Program.fs` this.run
 - Tray icon (Notify icon): `NotifyIconPlugin.fs` this.icon

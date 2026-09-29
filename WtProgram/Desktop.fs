@@ -47,7 +47,12 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
     member private this.windows = windowsCell.value
     member private this.addWindow(hwnd, withDelay) =  
         //add it to collection up front, can't wait for async notification of add through added event
-        windowsCell.map <| fun l -> l.append hwnd
+        // A duplicate request produces no added event on the group thread, so it
+        // must not introduce a duplicate in the optimistic desktop snapshot either.
+        if not (windowsCell.value.contains((=) hwnd)) then
+            windowsCell.map <| fun l -> l.append hwnd
+        // Still queue the operation: a preceding asynchronous remove may not
+        // have updated this snapshot yet, and remove-then-add must reattach it.
         this.invokeGroup <| fun() -> this.group.addWindow(hwnd, withDelay)
     member private this.removeWindow hwnd =
         this.invokeGroup <| fun() -> this.group.removeWindow(hwnd)

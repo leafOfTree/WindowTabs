@@ -32,6 +32,10 @@ jobs:
         shell: powershell
         run: ./tests/Run-Tests.ps1
 
+      - name: Smoke test isolated Release assembly
+        shell: powershell
+        run: ./tests/Run-ReleaseSmoke.ps1
+
       - name: Package
         shell: pwsh
         run: |
@@ -57,4 +61,5 @@ jobs:
           path: |
             tests/Debug/*.log
             tests/Debug/*.png
+            tests/Debug/test-results.jsonl
           if-no-files-found: ignore

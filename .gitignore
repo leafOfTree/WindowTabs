@@ -13,3 +13,4 @@ CppProperties.json
 
 # NuGet packages are restored to the user cache (PackageReference), never into the repository.
 packages/
+tests/coverage/
