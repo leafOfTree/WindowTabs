@@ -34,19 +34,19 @@ Search must not instantiate unopened pages. Page selection reuses controls. Them
 ## When settings take effect
 
 No setting exposed by the settings UI requires restarting WindowTabs after the live-update fixes below.
-The taskbar default is deliberately scoped to **new groups**, with a visible scope label in the UI.
+The taskbar default is deliberately scoped to **new groups**, which its description states. Settings a group can override from its tab menu (tab position, auto-hide, taskbar icons) carry an (i) button that says so.
 
 | Setting | Effect and limitations | Runtime path |
 | --- | --- | --- |
 | Launch at sign-in | Updates the Windows startup registration immediately; launches on the next Windows sign-in. | `Program.updateRunAtStartup` |
 | Enable tabs by default; per-app tabs | Refreshes current windows immediately, using the app rules. | `FilterService` → `Program.refresh` |
 | Dim inactive groups | Updates existing groups immediately. | `HideTabsOnInactiveGroupPlugin` subscription |
-| Auto-hide when maximized | Updates existing groups immediately; tab-menu overrides take priority. Minimal mode can still keep tabs collapsed. Previously the global default was captured only at group creation. | `TabStripDecorator.initAutoHide` subscription |
-| Minimal mode | Updates existing groups immediately; pointer, drag and menu state still control expansion. | `TabStripDecorator.initAutoHide` subscription |
+| Auto-hide tabs (Never / When maximized or snapped / Always) | Updates existing groups immediately; "maximized or snapped" means the window is maximized or its tabs sit inside it for lack of room above (`TabStrip.isShownInside`), which covers top snaps and windows moved against the top edge; a mode chosen in a group's tab menu takes priority. Pointer, drag and menu state still control expansion. Replaces the former `autoHide` and `minimalMode` toggles, which are migrated on load (minimal mode → Always) and dropped on save. | `TabStripDecorator.initAutoHide` subscription |
+| Show tabs when switching | Updates existing groups immediately; expands auto-hidden tabs for about a second after a tab switch, in either auto-hide mode. Defaults on, except for people migrating from minimal mode, which never did this. Hidden in the page while auto-hide is Never. | `TabStripDecorator.initAutoHide` subscription |
 | Tab position | Updates both normal and maximized positions in existing groups. A position explicitly chosen in the tab menu stays overridden for that direction. Previously applied only to new groups. | `TabStripDecorator` → `TabStrip.setDefaultAlignment` |
 | One taskbar icon per group | Global preference applies to new groups. Use an existing group's tab menu to change that group without restarting the app. Taskbar plugin and preview-window lifetime are tied to the group; the existing menu action rebuilds it. Automatically rebuilding every group could discard its local state and interrupt interaction, so this remains explicitly scoped. | `GroupInfo` plugin creation; `Desktop.restartGroup` |
 | Replace Alt+Tab | Installs or removes the switcher immediately. | `Program.updateTaskSwitcher` |
-| Group windows in Alt+Tab | Used when the next Alt+Tab list is built; requires the WindowTabs switcher. | `TaskSwitcher.windows` |
+| Group windows in Alt+Tab | Used when the next Alt+Tab list is built; requires the WindowTabs switcher, and is hidden in the page while it is off. | `TaskSwitcher.windows` |
 | Next/previous tab shortcuts | Registers immediately. A conflict rejects the edit and preserves the working shortcut. | `Program.setHotKey` → `HotKeyManager` |
 | Ctrl + 1–9 | Enables/disables on existing groups immediately. The plugin is always installed and checks the current setting on key-down; key-up does not activate a tab. Previously plugin installation depended on the value at group creation. | `NumericTabHotKeyPlugin` |
 | Hover activation; Shift + scroll | Used on the next matching pointer/wheel event. | `TabStrip.processMouse`; `MouseScrollPlugin` |

@@ -111,8 +111,15 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         groupWindowsInSwitcher = settingsJson.getBool("groupWindowsInSwitcher").def(SettingsCatalog.toggleDefault "groupWindowsInSwitcher" hasExistingSettings)
                         enableCtrlNumberHotKey = settingsJson.getBool("enableCtrlNumberHotKey").def(SettingsCatalog.toggleDefault "enableCtrlNumberHotKey" hasExistingSettings)
                         enableHoverActivate = settingsJson.getBool("enableHoverActivate").def(SettingsCatalog.toggleDefault "enableHoverActivate" hasExistingSettings)
-                        autoHide = settingsJson.getBool("autoHide").def(SettingsCatalog.toggleDefault "autoHide" hasExistingSettings)
-                        minimalMode = settingsJson.getBool("minimalMode").def(SettingsCatalog.toggleDefault "minimalMode" hasExistingSettings)
+                        // Older versions stored two toggles: minimalMode (every window) and autoHide (maximized only).
+                        autoHideMode =
+                            settingsJson.getString("autoHideMode").def(
+                                if settingsJson.getBool("minimalMode").def(false) then "Always"
+                                elif settingsJson.getBool("autoHide").def(true) then "Maximized"
+                                else "Never")
+                            |> SettingsCatalog.normalizeChoice "autoHideMode"
+                        // Minimal mode never expanded on a switch; keep that for people who used it.
+                        showTabsOnSwitch = settingsJson.getBool("showTabsOnSwitch").def(not (settingsJson.getBool("minimalMode").def(false)))
                         enableShiftScroll = settingsJson.getBool("enableShiftScroll").def(SettingsCatalog.toggleDefault "enableShiftScroll" hasExistingSettings)
                         version = settingsJson.getString("version").def(String.Empty)
                         alignment = settingsJson.getString("alignment").def("Center") |> SettingsCatalog.normalizeChoice "alignment"
@@ -157,8 +164,10 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setBool("groupWindowsInSwitcher", settings.groupWindowsInSwitcher)
             settingsJson.setBool("enableCtrlNumberHotKey", settings.enableCtrlNumberHotKey)
             settingsJson.setBool("enableHoverActivate", settings.enableHoverActivate)
-            settingsJson.setBool("autoHide", settings.autoHide)
-            settingsJson.setBool("minimalMode", settings.minimalMode)
+            settingsJson.setString("autoHideMode", settings.autoHideMode)
+            settingsJson.setBool("showTabsOnSwitch", settings.showTabsOnSwitch)
+            settingsJson.Remove("autoHide") |> ignore
+            settingsJson.Remove("minimalMode") |> ignore
             settingsJson.setBool("enableShiftScroll", settings.enableShiftScroll)
             settingsJson.setStringArray("includedPaths", settings.includedPaths.items)
             settingsJson.setStringArray("excludedPaths", settings.excludedPaths.items)
@@ -201,7 +210,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
         // Compatibility adapter for older callers; new appearance code uses the typed API.
         member x.setValue((key,value)) =
             let api = x :> ISettings
-            let value = if key="alignment" || key="language" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
+            let value = if key="alignment" || key="language" || key="autoHideMode" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
             match key with
             | "tabAppearance" ->
                 let appearance = value :?> TabAppearanceInfo

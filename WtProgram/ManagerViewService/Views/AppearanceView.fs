@@ -92,7 +92,7 @@ type AppearanceView(?settings:ISettings) =
             let p = SettingsColors.current()
             let dark = ThemeService.currentIsDark()
             e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-            use frame = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(preview.Width-1),float32(preview.Height-1))) (float32(Dpi.scale 10))
+            use frame = SettingsShapes.rounded (SettingsShapes.outlineRect preview.Width preview.Height) (float32(Dpi.scale 10))
             use frameFill = new SolidBrush(if dark then Color.FromRGB(0x343432) else Color.FromRGB(0xE8E8E5))
             use border = new Pen(p.border)
             e.Graphics.FillPath(frameFill,frame)

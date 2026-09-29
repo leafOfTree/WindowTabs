@@ -25,6 +25,9 @@ type WorkspaceView() as this =
                                   TreeListColumn(tr Strings.Common.title,240,TextColumn)])
         list.SelectionChanged.Add(fun _ ->
             this.wm.selected <- (if isNull list.SelectedItem then null else list.SelectedItem.Tag :?> Dynamic))
+        // Double-click (or Enter) edits the item, as the Edit button does; the arrow expands.
+        list.ExpandOnDoubleClick <- false
+        list.ItemActivated.Add(fun _ -> this.editSelected())
         list
 
     member this.panel : SettingsListPage = Cell.cacheProp this <| fun() ->
@@ -89,11 +92,14 @@ type WorkspaceView() as this =
         let btn = SettingsUi.button (tr Strings.Workspaces.edit)
         btn.Enabled <- false
         this.wm.selectedChanged.Add(fun selected -> btn.Enabled <- not this.wm.isReadOnly && not (isNull selected))
-        btn.Click.Add <| fun _ ->
+        btn.Click.Add(fun _ -> this.editSelected())
+        btn
+
+    member private this.editSelected() =
+        if not this.wm.isReadOnly && not (isNull this.wm.selected) then
             match this.wm.beginEdit() with
             | Some editInfo -> if this.showEditDialog editInfo then this.reload()
             | None -> ()
-        btn
 
     member private this.showEditDialog(editInfo:IEditInfo) =
         let fields = editInfo.fields
@@ -140,16 +146,9 @@ type WorkspaceView() as this =
         form.Controls.Add(table)
         form.AcceptButton <- okButton
         form.CancelButton <- cancelButton
-        // The title bar follows the settings theme, so the pencil does too.
-        let editIcon() = Services.openIcon(if ThemeService.currentIsDark() then "edit.ico" else "editLight.ico")
-        form.Icon <- editIcon()
-        form.Disposed.Add(fun _ -> form.Icon.Dispose())
-        ThemeBinding.watch form (fun () ->
-            SettingsUi.apply form
-            let previous = form.Icon
-            form.Icon <- editIcon()
-            previous.Dispose())
-        form.Text <- editInfo.title
+        form.ShowIcon <- false
+        ThemeBinding.watch form (fun () -> SettingsUi.apply form)
+        form.Text <- tr (Strings.Workspaces.editTitle editInfo.title)
         form.ShowDialog(this.panel) = DialogResult.OK
 
     /// A new or loaded workspace opens fully expanded and selected; the others collapse.

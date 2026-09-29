@@ -22,9 +22,10 @@ module SettingsCatalog =
         { id="launch-at-sign-in"; page=GeneralSettings; text=Strings.Settings.launchAtSignIn; binding=Toggle("runAtStartup",true,false) }
         { id="enable-tabs-for-new-apps"; page=GeneralSettings; text=Strings.Settings.enableTabsByDefault; binding=Toggle("enableTabbingByDefault",true,false) }
         { id="dim-inactive-groups"; page=GeneralSettings; text=Strings.Settings.dimInactiveGroups; binding=Toggle("hideInactiveTabs",true,false) }
-        { id="auto-hide-maximized-tabs"; page=GeneralSettings; text=Strings.Settings.autoHideMaximized; binding=Toggle("autoHide",true,true) }
-        { id="minimal-mode"; page=GeneralSettings; text=Strings.Settings.minimalMode; binding=Toggle("minimalMode",false,false) }
         { id="tab-alignment"; page=GeneralSettings; text=Strings.Settings.tabAlignment; binding=Choice("alignment",["Left";"Center";"Right"],"Center") }
+        // "Maximized" also covers windows whose tabs sit inside them (top snaps); the stored value keeps its original name.
+        { id="auto-hide-tabs"; page=GeneralSettings; text=Strings.Settings.autoHide; binding=Choice("autoHideMode",["Never";"Maximized";"Always"],"Maximized") }
+        { id="show-tabs-on-switch"; page=GeneralSettings; text=Strings.Settings.showTabsOnSwitch; binding=Toggle("showTabsOnSwitch",true,true) }
         { id="combine-taskbar-icons"; page=GeneralSettings; text=Strings.Settings.combineTaskbarIcons; binding=Toggle("combineIconsInTaskbar",false,true) }
         { id="use-windowtabs-for-alt-tab"; page=GeneralSettings; text=Strings.Settings.replaceAltTab; binding=Toggle("replaceAltTab",false,false) }
         { id="group-windows-in-the-switcher"; page=GeneralSettings; text=Strings.Settings.groupWindowsInSwitcher; binding=Toggle("groupWindowsInSwitcher",false,false) }
@@ -48,9 +49,17 @@ module SettingsCatalog =
         { id="diagnostics"; page=DiagnosticsSettings; text=Strings.Settings.diagnostics; binding=Navigation }
     ]
     let find id = all |> List.find(fun item -> item.id=id)
-    /// A visible scope label for settings that do not update existing groups.
-    let effectNotice id =
-        if id="combine-taskbar-icons" then Some Strings.General.newGroupsOnly else None
+    /// Shown from an (i) button beside the caption.
+    let help id =
+        // Changeable per group from the tab menu; groups do not save it, so it lasts as long as the group.
+        if List.contains id ["auto-hide-tabs";"tab-alignment";"combine-taskbar-icons"] then Some Strings.General.tabMenuHint
+        else None
+    /// A setting shown only while the one it depends on makes it meaningful.
+    let parent id =
+        match id with
+        | "show-tabs-on-switch" -> Some "auto-hide-tabs"
+        | "group-windows-in-the-switcher" -> Some "use-windowtabs-for-alt-tab"
+        | _ -> None
     let toggleKey id = match (find id).binding with Toggle(key,_,_) -> key | _ -> invalidArg "id" "Not a toggle"
     let toggleDefault key existing =
         all |> List.pick(fun item -> match item.binding with Toggle(k,fresh,old) when k=key -> Some(if existing then old else fresh) | _ -> None)

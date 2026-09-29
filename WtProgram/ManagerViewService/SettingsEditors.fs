@@ -28,7 +28,7 @@ type SettingsActionButton() as this =
         let p = SettingsColors.current()
         e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
         e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
-        use shape = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 8))
+        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 8))
         let highContrast = SystemInformation.HighContrast
         let light = not highContrast && not (ThemeService.currentIsDark())
         let hot = hovering && this.Enabled
@@ -86,7 +86,7 @@ type SettingsInputFrame() as this =
         e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
         e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
         if this.Width>2 && this.Height>2 then
-            use shape = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 8))
+            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 8))
             use fill = new SolidBrush(this.BackColor)
             use border = new Pen(p.border)
             e.Graphics.FillPath(fill,shape)
@@ -280,7 +280,9 @@ type SettingsShortcutInput() as this =
         g.SmoothingMode <- SmoothingMode.AntiAlias
         let active = recording || this.Focused
         if active || hovering then
-            use shape = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 8))
+            // A 2px pen needs its centre half a pixel in to cover the two edge rows; a 1px pen none.
+            let inset = if recording then 0.5f else 0.0f
+            use shape = SettingsShapes.rounded (RectangleF(inset,inset,float32(this.Width-1)-2.0f*inset,float32(this.Height-1)-2.0f*inset)) (float32(Dpi.scale 8))
             use pen = new Pen((if active then p.accent else p.muted),(if recording then 2.0f else 1.0f))
             g.DrawPath(pen,shape)
         let left = Dpi.scale 8

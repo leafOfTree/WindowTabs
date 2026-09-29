@@ -19,6 +19,9 @@ module Strings =
         let left = { en="Left"; zh="左侧"; ja="左" }
         let center = { en="Center"; zh="居中"; ja="中央" }
         let right = { en="Right"; zh="右侧"; ja="右" }
+        let never = { en="Never"; zh="从不"; ja="しない" }
+        let whenMaximizedOrSnapped = { en="When maximized or snapped"; zh="最大化或贴靠时"; ja="最大化・スナップ時" }
+        let always = { en="Always"; zh="始终"; ja="常に" }
         let operationFailed = { en="Operation failed"; zh="操作失败"; ja="操作に失敗しました" }
 
     module Messages =
@@ -105,25 +108,25 @@ module Strings =
                          description={ en="Follow Windows uses your Windows display language."; zh="“跟随系统”使用 Windows 的显示语言。"; ja="「Windows に従う」では Windows の表示言語を使います。" }
                          keywords={ en="locale english chinese japanese"; zh="中文 英文 英语 日语 日文"; ja="英語 中国語 日本語" } }
         let launchAtSignIn = { caption={ en="Start with Windows"; zh="随 Windows 启动"; ja="Windows と同時に起動" }
-                               description={ en="Starts in the notification area when you sign in."; zh="登录 Windows 后在通知区域中运行。"; ja="サインイン時に通知領域で起動します。" }
-                               keywords={ en="startup autostart boot sign in login"; zh="开机 自启动 登录"; ja="スタートアップ 自動起動 サインイン ログイン" } }
+                               description={ en="Runs in the system tray after you sign in."; zh="登录后在系统托盘中运行。"; ja="サインイン後にシステムトレイで実行します。" }
+                               keywords={ en="startup autostart boot sign in login tray notification area"; zh="开机 自启动 登录 托盘 通知区域"; ja="スタートアップ 自動起動 サインイン ログイン トレイ 通知領域" } }
         let enableTabsByDefault = { caption={ en="Enable tabs by default"; zh="默认启用标签"; ja="既定でタブを有効にする" }
                                     description={ en="Add tabs to apps; app rules take priority."; zh="为应用添加标签，应用规则优先。"; ja="アプリにタブを追加します。アプリのルールを優先。" }
                                     keywords={ en="new apps default"; zh="新应用 默认"; ja="新しいアプリ 既定" } }
         let dimInactiveGroups = { caption={ en="Dim tabs in inactive groups"; zh="淡化非活动分组的标签"; ja="非アクティブなグループのタブを半透明にする" }
-                                  description={ en="Makes the active group easier to spot."; zh="更容易看出当前活动的分组。"; ja="アクティブなグループが見分けやすくなります。" }
+                                  description={ en="Make the active group easier to spot."; zh="让当前活动的分组更容易辨认。"; ja="アクティブなグループを見分けやすくします。" }
                                   keywords={ en="fade transparent opacity"; zh="透明 变暗"; ja="透明 暗く" } }
-        let autoHideMaximized = { caption={ en="Auto-hide tabs when maximized"; zh="最大化时自动隐藏标签"; ja="最大化時にタブを自動的に隠す" }
-                                  description={ en="Hide maximized tabs until hover; tab menu overrides."; zh="最大化时隐藏标签，悬停展开；分组单独设置优先。"; ja="最大化時はホバーでタブを表示。個別設定を優先。" }
-                                  keywords={ en="fullscreen full screen hide"; zh="全屏 隐藏"; ja="全画面 隠す" } }
-        let minimalMode = { caption={ en="Minimal mode"; zh="极简模式"; ja="ミニマルモード" }
-                            description={ en="Shrink all tabs until hover, even with auto-hide off."; zh="所有标签收成细栏，悬停展开；优先于自动隐藏设置。"; ja="全タブを細くし、ホバーで展開。自動非表示設定より優先。" }
-                            keywords={ en="compact thin bar"; zh="紧凑 精简 细栏"; ja="コンパクト 細い" } }
+        let autoHide = { caption={ en="Auto-hide tabs"; zh="自动隐藏标签"; ja="タブを自動的に隠す" }
+                         description={ en="Show a thin strip until hover."; zh="只显示细栏，悬停展开。"; ja="細いバーだけ表示し、ホバーで展開します。" }
+                         keywords={ en="maximized snapped snap half fullscreen full screen hide minimal mode compact thin bar never always"; zh="最大化 贴靠 半屏 分屏 全屏 隐藏 极简模式 紧凑 精简 细栏 从不 始终"; ja="最大化 スナップ 半分 全画面 隠す ミニマルモード コンパクト 細い 常に" } }
+        let showTabsOnSwitch = { caption={ en="Show tabs when switching"; zh="切换标签时显示"; ja="切り替え時にタブを表示" }
+                                 description={ en="Briefly expand hidden tabs after a switch."; zh="切换后短暂展开隐藏的标签。"; ja="切り替え後、隠れたタブを一時的に展開します。" }
+                                 keywords={ en="auto-hide peek flash change tab"; zh="自动隐藏 切换 展开"; ja="自動非表示 切り替え 展開" } }
         let tabAlignment = { caption={ en="Tab position"; zh="标签位置"; ja="タブの位置" }
-                             description={ en="Align tabs left, center or right; tab menu overrides."; zh="设置标签左对齐、居中或右对齐，分组单独设置优先。"; ja="タブを左・中央・右に配置。個別設定を優先。" }
+                             description={ en="Align tabs left, center or right."; zh="设置标签左对齐、居中或右对齐。"; ja="タブを左・中央・右に配置します。" }
                              keywords={ en="alignment align left center right"; zh="对齐 左 居中 右"; ja="揃え 左 中央 右" } }
         let combineTaskbarIcons = { caption={ en="One taskbar icon per group"; zh="每个分组显示一个任务栏图标"; ja="グループごとにタスクバーアイコンを1つ表示" }
-                                    description={ en="Combine group icons; adjust each group in the tab menu."; zh="合并分组的任务栏图标，已有分组在标签右键菜单中设置。"; ja="グループのアイコンを統合。既存グループはタブメニューで設定。" }
+                                    description={ en="Combine each group's icons into one; applies to new groups."; zh="合并每个分组的任务栏图标，对新分组生效。"; ja="グループごとにアイコンを 1 つにまとめます。新しいグループに適用。" }
                                     keywords={ en="combine merge superbar"; zh="合并"; ja="結合 まとめる" } }
         let replaceAltTab = { caption={ en="Use WindowTabs for Alt+Tab"; zh="使用 WindowTabs 窗口切换器"; ja="Alt+Tab に WindowTabs を使う" }
                               description={ en="Replaces the Windows switcher."; zh="替换 Windows 自带的窗口切换器。"; ja="Windows 標準のウィンドウ切り替えを置き換えます。" }
@@ -175,7 +178,7 @@ module Strings =
                             keywords={ en="version about log bug report"; zh="版本 日志 报告 反馈"; ja="バージョン ログ レポート" } }
 
     module General =
-        let newGroupsOnly = { en="New groups only"; zh="仅新分组生效"; ja="新しいグループのみ" }
+        let tabMenuHint = { en="Change it for one group from the tab menu."; zh="可在标签菜单中为单个分组修改。"; ja="タブメニューでグループごとに変更できます。" }
         let startupAndDefaults = { en="Startup and defaults"; zh="启动与默认设置"; ja="起動と既定の設定" }
         let tabBehavior = { en="Tab behavior"; zh="标签行为"; ja="タブの動作" }
         let taskbar = { en="Taskbar"; zh="任务栏"; ja="タスクバー" }
@@ -246,6 +249,7 @@ module Strings =
         let restore = { en="Restore"; zh="恢复"; ja="復元" }
         let delete = { en="Delete"; zh="删除"; ja="削除" }
         let edit = { en="Edit"; zh="编辑"; ja="編集" }
+        let editTitle name = { en=sprintf "Edit %s" name; zh=sprintf "编辑 %s" name; ja=sprintf "%s を編集" name }
         let matchMethod = { en="Match method"; zh="匹配方式"; ja="一致方法" }
         let exactMatch = { en="Exact match"; zh="完全匹配"; ja="完全一致" }
         let startsWith = { en="Starts with"; zh="开头匹配"; ja="前方一致" }

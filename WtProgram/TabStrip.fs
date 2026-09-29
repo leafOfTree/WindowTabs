@@ -70,6 +70,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let isMouseOverExport = Cell.export <| fun() ->
         hoverCell.value.IsSome
 
+    let showInsideExport = Cell.export <| fun() -> showInsideCell.value
+
     let addEvent(evt,handler) =
         eventHandlersCell.map(fun s -> s.add(_os.setSingleWinEvent evt handler))
     do  
@@ -86,6 +88,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         shadowWindow <- Some(new TabShadowWindow(_os, hwndRef.Value))
         
         isMouseOverExport.init()
+        showInsideExport.init()
 
         Cell.listen <| fun() ->
             this.update()
@@ -321,6 +324,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         and set(newValue) = isShrunkCell.set(newValue)
 
     member this.isMouseOver = isMouseOverExport :> ICellOutput<_>
+
+    /// No room above the window on its monitor, so the tabs sit inside it over the title bar:
+    /// true when the window is maximized, snapped to the top, or moved against the top edge.
+    member this.isShownInside = showInsideExport :> ICellOutput<bool>
 
     member this.getAlignment direction = alignment.value.find(direction)
 

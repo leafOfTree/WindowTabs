@@ -17,18 +17,8 @@ module ThemeService =
                 | _ -> false
         with _ -> false
 
-    let taskbarUsesLightTheme() =
-        try
-            use key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
-            if isNull key then false
-            else
-                match key.GetValue("SystemUsesLightTheme") with
-                | :? int as value -> value <> 0
-                | _ -> false
-        with _ -> false
-
-    let taskbarIconName() =
-        if taskbarUsesLightTheme() then "BemoLight.ico" else "Bemo.ico"
+    /// The logo's dark outline keeps its light front tab clear on light and dark taskbars alike.
+    let appIconName = "Bemo.ico"
 
     // Read the registry on system notifications, never from a control's paint callback.
     let mutable private systemDark = if systemIsDark() then 1 else 0

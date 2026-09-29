@@ -76,7 +76,9 @@ module SettingsUi =
         button
 
     let choice (items:string[]) =
-        new SettingsCombo(items,Font=bodyFont)
+        let combo = new SettingsCombo(items,Font=bodyFont)
+        combo.FitToItems()
+        combo
 
     let page() =
         let panel = new SettingsPage()
@@ -100,37 +102,39 @@ module SettingsUi =
         label.MaximumSize <- Size(Dpi.scale 550,0)
         add table label
 
-    let private rowWithNotice (table:TableLayoutPanel) caption description notice (editor:Control) =
+    let private rowWithHelp (table:TableLayoutPanel) caption description (help:string option) (editor:Control) =
         let row = new SettingsRow(AutoSize=true,ColumnCount=2,Padding=Padding(0,Dpi.scale 8,0,Dpi.scale 8),Margin=Padding.Empty)
         row.MinimumSize <- Size(0,Dpi.scale (if String.IsNullOrWhiteSpace(description) then 44 else 56))
         row.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
-        row.ColumnStyles.Add(ColumnStyle(SizeType.Absolute,float32(Dpi.scale 194))) |> ignore
+        row.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
         let labels = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=1,
                                          Anchor=(AnchorStyles.Left ||| AnchorStyles.Right),Margin=Padding(0,0,Dpi.scale 16,0))
         labels.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
         let name = new Label(Text=caption,AutoSize=true,Dock=DockStyle.Fill,Font=rowFont,UseMnemonic=false,Margin=Padding.Empty)
-        let detail = new Label(Text=description,AutoSize=false,AutoEllipsis=true,Font=rowFont,Height=rowFont.Height,
-                               MinimumSize=Size(0,rowFont.Height),Dock=DockStyle.Fill,Tag="muted",UseMnemonic=false,
+        let detail = new SettingsEllipsisLabel(Text=description,AutoSize=false,Font=rowFont,Height=rowFont.Height,
+                               MinimumSize=Size(0,rowFont.Height),Dock=DockStyle.Fill,Tag="muted",
                                Margin=Padding(0,Dpi.scale 4,0,0))
         labels.RowCount <- if String.IsNullOrWhiteSpace(description) then 1 else 2
         labels.RowStyles.Add(RowStyle(SizeType.AutoSize)) |> ignore
         if labels.RowCount=2 then
             labels.RowStyles.Add(RowStyle(SizeType.Absolute,float32(rowFont.Height+detail.Margin.Vertical))) |> ignore
         if not (String.IsNullOrWhiteSpace(description)) then labels.Controls.Add(detail,0,1)
-        let noticeLabel = notice |> Option.map(fun text ->
+        let helpButton = help |> Option.map(fun text ->
+            new SettingsHelpButton(text,Anchor=AnchorStyles.Left,Margin=Padding(Dpi.scale 4,0,0,0),Font=rowFont,
+                                   AccessibleName=caption))
+        match helpButton with
+        | None -> labels.Controls.Add(name,0,0)
+        | Some button ->
             let heading = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,
                                               Dock=DockStyle.Fill,WrapContents=false,Margin=Padding.Empty)
             name.Dock <- DockStyle.None
             name.Anchor <- AnchorStyles.Left
-            let label = new SettingsBadge(Text=text,Anchor=AnchorStyles.Left,Margin=Padding(Dpi.scale 10,0,0,0))
             heading.Controls.Add(name)
-            heading.Controls.Add(label)
+            heading.Controls.Add(button)
             labels.Controls.Add(heading,0,0)
-            label)
-        if noticeLabel.IsNone then labels.Controls.Add(name,0,0)
         labels.SizeChanged.Add(fun _ ->
             let width=max 40 (labels.ClientSize.Width-Dpi.scale 8)
-            let noticeWidth = noticeLabel |> Option.map(fun label -> label.GetPreferredSize(Size.Empty).Width+label.Margin.Horizontal) |> Option.defaultValue 0
+            let noticeWidth = helpButton |> Option.map(fun button -> button.Width+button.Margin.Horizontal) |> Option.defaultValue 0
             name.MaximumSize <- Size(max 40 (width-noticeWidth),0)
             detail.MaximumSize <- Size(width,0))
         editor.Anchor <- AnchorStyles.Right
@@ -141,21 +145,28 @@ module SettingsUi =
         detail.ForeColor <- (palette()).muted
         row.Controls.Add(labels,0,0)
         row.Controls.Add(editor,1,0)
+        // A separator follows every row except the last one still shown.
+        let isShown (control:Control) = match control with :? SettingsRow as other -> not other.Collapsed | _ -> true
         row.Paint.Add(fun e ->
-            if table.GetRow(row) < table.RowCount-1 then
+            let below = table.Controls |> Seq.cast<Control> |> Seq.exists(fun other -> table.GetRow(other) > table.GetRow(row) && isShown other)
+            if below then
                 use pen = new Pen((palette()).border)
                 e.Graphics.DrawLine(pen,0,row.Height-1,row.Width,row.Height-1))
         add table row
+        row
 
-    let row table caption description editor = rowWithNotice table caption description None editor
+    let row table caption description editor = rowWithHelp table caption description None editor |> ignore
 
-    let settingRow table id (editor:Control) =
+    /// The row, for a setting that is collapsed while another one makes it meaningless.
+    let settingRowControl table id (editor:Control) =
         let definition = SettingsCatalog.find id
-        let notice = SettingsCatalog.effectNotice id |> Option.map tr
+        let help = SettingsCatalog.help id |> Option.map tr
         editor.Name <- id
         let description = tr definition.text.description
-        editor.AccessibleDescription <- String.concat " " (description :: Option.toList notice)
-        rowWithNotice table (tr definition.text.caption) description notice editor
+        editor.AccessibleDescription <- String.concat " " (description :: Option.toList help)
+        rowWithHelp table (tr definition.text.caption) description help editor
+
+    let settingRow table id editor = settingRowControl table id editor |> ignore
 
     let sectionCard table caption =
         section table caption

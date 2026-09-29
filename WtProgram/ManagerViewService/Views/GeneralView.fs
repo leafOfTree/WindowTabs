@@ -10,23 +10,25 @@ type GeneralView() =
         SettingsBindings.toggleRow startup "enable-tabs-for-new-apps"
         let behaviour = SettingsUi.sectionCard table (tr Strings.General.tabBehavior)
         SettingsBindings.toggleRow behaviour "dim-inactive-groups"
-        SettingsBindings.toggleRow behaviour "auto-hide-maximized-tabs"
-        SettingsBindings.toggleRow behaviour "minimal-mode"
-        let alignment = SettingsUi.choice [|tr Strings.Common.left;tr Strings.Common.center;tr Strings.Common.right|]
-        let values = [|"Left";"Center";"Right"|]
-        alignment.SelectedIndex <- values |> Array.tryFindIndex ((=) (Services.settings.getValue("alignment") :?> string)) |> Option.defaultValue 1
-        alignment.SelectedIndexChanged.Add(fun _ ->
-            if alignment.SelectedIndex >= 0 then Services.settings.setValue("alignment",box values.[alignment.SelectedIndex]))
-        SettingsUi.settingRow behaviour "tab-alignment" alignment
+        // Same order as the tab menu: position, then auto-hide.
+        SettingsBindings.choiceRow behaviour "tab-alignment"
+            [|tr Strings.Common.left;tr Strings.Common.center;tr Strings.Common.right|] |> ignore
+        let autoHide = SettingsBindings.choiceRow behaviour "auto-hide-tabs"
+                           [|tr Strings.Common.never;tr Strings.Common.whenMaximizedOrSnapped;tr Strings.Common.always|]
+        let showOnSwitch = SettingsUi.settingRowControl behaviour "show-tabs-on-switch" (SettingsBindings.settingToggle "showTabsOnSwitch")
+        // Index 0 is Never: nothing is hidden, so there is nothing to show.
+        let updateShowOnSwitch() = showOnSwitch.Collapsed <- autoHide.SelectedIndex = 0
+        updateShowOnSwitch()
+        autoHide.SelectedIndexChanged.Add(fun _ -> updateShowOnSwitch())
         let taskbar = SettingsUi.sectionCard table (tr Strings.General.taskbar)
         SettingsBindings.toggleRow taskbar "combine-taskbar-icons"
         let switcher = SettingsUi.sectionCard table (tr Strings.General.windowSwitcher)
         let enabled = SettingsBindings.settingToggle "replaceAltTab"
         let grouped = SettingsBindings.settingToggle "groupWindowsInSwitcher"
-        grouped.Enabled <- enabled.Checked
-        enabled.CheckedChanged.Add(fun _ -> grouped.Enabled <- enabled.Checked)
         SettingsUi.settingRow switcher "use-windowtabs-for-alt-tab" enabled
-        SettingsUi.settingRow switcher "group-windows-in-the-switcher" grouped
+        let groupedRow = SettingsUi.settingRowControl switcher "group-windows-in-the-switcher" grouped
+        groupedRow.Collapsed <- not enabled.Checked
+        enabled.CheckedChanged.Add(fun _ -> groupedRow.Collapsed <- not enabled.Checked)
     interface ISettingsView with
         member _.key = GeneralSettings
         member _.title = tr Strings.Pages.general

@@ -12,10 +12,13 @@ type SettingsPage() as this =
     let mutable maximum = 0
     let mutable arranging = false
     let inset() = Dpi.scale 32
-    let scrollTo value =
-        offset <- max 0 (min maximum value)
+    let clamp value = max 0 (min maximum value)
+    let apply value =
+        offset <- clamp value
         table.Top <- (inset())-offset
         scroll.configure(maximum,this.ClientSize.Height,offset)
+    let smooth = new SmoothScroller((fun () -> offset),clamp,apply)
+    let scrollTo value = smooth.jump value
     let rec wire (control:Control) =
         control.Enter.Add(fun _ ->
             if control.IsHandleCreated && control.TabStop && not (control :? Panel) then
@@ -35,6 +38,7 @@ type SettingsPage() as this =
         scroll.changed.Add(scrollTo)
         table.SizeChanged.Add(fun _ -> this.PerformLayout())
         wire table
+        this.Disposed.Add(fun _ -> (smooth :> IDisposable).Dispose())
     member _.contentTable = table
     member _.reveal(control:Control) =
         this.PerformLayout()
@@ -55,7 +59,7 @@ type SettingsPage() as this =
                 table.Left <- max (inset()) ((this.ClientSize.Width-Dpi.scale 14-width)/2)
                 maximum <- max 0 (table.Height+(inset())*2-this.ClientSize.Height)
                 scroll.Bounds <- Rectangle(this.ClientSize.Width-scroll.Width,0,scroll.Width,this.ClientSize.Height)
-                scrollTo offset
+                apply offset
             finally arranging <- false
     override this.OnMouseWheel(e) =
-        scrollTo(offset-e.Delta*Dpi.scale 48/120)
+        smooth.by(SmoothScroller.wheelStep e.Delta this.ClientSize.Height)

@@ -109,7 +109,7 @@ type TaskSwitchForm(control:ITaskSwitchListControl) =
                     base.OnPaint(e)
                     e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
                     use outline = SettingsShapes.rounded
-                                      (RectangleF(0.5f,0.5f,float32(this.ClientSize.Width-1),float32(this.ClientSize.Height-1)))
+                                      (SettingsShapes.outlineRect this.ClientSize.Width this.ClientSize.Height)
                                       (float32(Dpi.scale 12))
                     use border = new Pen((SettingsColors.current()).border)
                     e.Graphics.DrawPath(border,outline)

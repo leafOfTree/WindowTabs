@@ -179,14 +179,21 @@ type TabStripDecorator(group:WindowGroup) as this =
             })
 
         let autoHideItem =
-            let isAutoHideEnabledDef = Services.settings.getValue("autoHide").cast<bool>()
-            let isEnabled = group.bb.read("autoHide", isAutoHideEnabledDef)
-            CmiRegular({
-                text = tr Strings.Settings.autoHideMaximized.caption
-                flags = checkedFlag(isEnabled)
+            let currentMode = group.bb.read("autoHideMode", Services.settings.getValue("autoHideMode").cast<string>())
+            let autoHideMenuItem(text,mode:string) = CmiRegular({
+                text = text
                 image = None
-                click = fun() ->
-                    group.bb.write("autoHide", isEnabled.not)
+                flags = checkedFlag(currentMode = mode)
+                click = fun() -> group.bb.write("autoHideMode", mode)
+            })
+            CmiPopUp({
+                text = tr Strings.Settings.autoHide.caption
+                image = None
+                items = List2([
+                    (tr Strings.Common.never, "Never")
+                    (tr Strings.Common.whenMaximizedOrSnapped, "Maximized")
+                    (tr Strings.Common.always, "Always")
+                ]).map(autoHideMenuItem)
             })
 
         let newWindowItem = 
@@ -302,6 +309,7 @@ type TabStripDecorator(group:WindowGroup) as this =
     member private this.initAutoHide() =
         let callbackRef = ref None
         let isMaximized = Cell.import(group.isMaximized)
+        let isShownInside = Cell.import(this.ts.isShownInside)
         let isMouseOver = Cell.import(group.isMouseOver)
         let propCell(key,def) =
             let cell = Cell.create(group.bb.read(key, def))
@@ -309,25 +317,26 @@ type TabStripDecorator(group:WindowGroup) as this =
             group.bb.subscribe key update
             cell
 
-        let mutable autoHideDefault = Services.settings.getValue("autoHide").cast<bool>()
-        let autoHideCell = Cell.create(group.bb.read("autoHide", autoHideDefault))
-        let updateAutoHide() = autoHideCell.value <- group.bb.read("autoHide", autoHideDefault)
-        group.bb.subscribe "autoHide" updateAutoHide
-        let minimalModeCell = Cell.create(Services.settings.getValue("minimalMode").cast<bool>())
+        // "Never", "Maximized" or "Always"; a choice made in this group's tab menu beats the global default.
+        let mutable autoHideDefault = Services.settings.getValue("autoHideMode").cast<string>()
+        let autoHideCell = Cell.create(group.bb.read("autoHideMode", autoHideDefault))
+        let updateAutoHide() = autoHideCell.value <- group.bb.read("autoHideMode", autoHideDefault)
+        group.bb.subscribe "autoHideMode" updateAutoHide
         let mutable disposed = false
-        let minimalSubscription = Services.settings.notifyValue "minimalMode" (fun value ->
-            let enabled = value.cast<bool>()
-            group.invokeAsync(fun () -> if not disposed then minimalModeCell.value <- enabled))
-        let autoHideSubscription = Services.settings.notifyValue "autoHide" (fun value ->
-            let enabled = value.cast<bool>()
+        let autoHideSubscription = Services.settings.notifyValue "autoHideMode" (fun value ->
+            let mode = value.cast<string>()
             group.invokeAsync(fun () ->
                 if not disposed then
-                    autoHideDefault <- enabled
+                    autoHideDefault <- mode
                     updateAutoHide()))
+        let showOnSwitchCell = Cell.create(Services.settings.getValue("showTabsOnSwitch").cast<bool>())
+        let showOnSwitchSubscription = Services.settings.notifyValue "showTabsOnSwitch" (fun value ->
+            let enabled = value.cast<bool>()
+            group.invokeAsync(fun () -> if not disposed then showOnSwitchCell.value <- enabled))
         group.exited.Add(fun _ ->
             disposed <- true
-            minimalSubscription.Dispose()
             autoHideSubscription.Dispose()
+            showOnSwitchSubscription.Dispose()
             callbackRef.Value.iter(fun (pending:IDisposable) -> pending.Dispose())
             callbackRef := None)
         let contextMenuVisibleCell = propCell("contextMenuVisible", false)
@@ -346,13 +355,14 @@ type TabStripDecorator(group:WindowGroup) as this =
                 )
             cell
         Cell.listen <| fun() ->
-            let shrink = 
-                (minimalModeCell.value || (isMaximized.value && autoHideCell.value)) &&
-                isMouseOver.value.not && 
+            let shrink =
+                (autoHideCell.value = "Always" ||
+                 ((isMaximized.value || isShownInside.value) && autoHideCell.value = "Maximized")) &&
+                isMouseOver.value.not &&
                 isDraggingCell.value.not &&
                 contextMenuVisibleCell.value.not &&
                 renamingTabCell.value.not &&
-                (minimalModeCell.value || isRecentlyChangedZorderCell.value.not)
+                (showOnSwitchCell.value.not || isRecentlyChangedZorderCell.value.not)
             callbackRef.Value.iter <| fun(d:IDisposable) -> d.Dispose()
             callbackRef := None
             if shrink then

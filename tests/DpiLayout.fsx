@@ -5,6 +5,7 @@
 #r "Debug/WindowTabs.exe"
 open System
 open System.Drawing
+open System.IO
 open System.Windows.Forms
 open System.Runtime.InteropServices
 open Bemo
@@ -16,6 +17,13 @@ module Native =
 let check condition message = if not condition then failwith message
 let main() =
     Application.EnableVisualStyles()
+    // Settings rows read the theme palette, which comes from the settings service.
+    // An isolated settings directory keeps real preferences untouched.
+    let originalDirectory = Environment.CurrentDirectory
+    let isolated = Path.Combine(__SOURCE_DIRECTORY__,"Debug","dpi-test-"+Guid.NewGuid().ToString("N"))
+    Directory.CreateDirectory(isolated) |> ignore
+    Environment.CurrentDirectory <- isolated
+    use settings = new Settings(true, saveDelay=0)
     let previous = Native.SetThreadDpiAwarenessContext(IntPtr(-4))
     let originalDpi = Dpi.value()
     try
@@ -50,5 +58,6 @@ let main() =
     finally
         Dpi.set originalDpi
         Native.SetThreadDpiAwarenessContext(previous) |> ignore
+        Environment.CurrentDirectory <- originalDirectory
     printfn "PASS: repeated native WM_DPICHANGED transitions, sidebar sizing and editor layout."
 main()

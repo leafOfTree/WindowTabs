@@ -41,7 +41,6 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
     let mutable suppressSearch = false
     let themedPages = Collections.Generic.HashSet<SettingsViewType>()
     let form = new Form(Text="",AccessibleName=tr Strings.SettingsWindow.title,Font=SettingsUi.bodyFont)
-    let mutable currentIconName = ThemeService.taskbarIconName()
     let navigation = new Panel(Dock=DockStyle.Left,Width=Dpi.scale 208,Padding=Padding(Dpi.scale 12),Tag="sidebar")
     let links = new TableLayoutPanel(Dock=DockStyle.Top,AutoSize=true,ColumnCount=1)
     let body = new Panel(Dock=DockStyle.Fill)
@@ -118,7 +117,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         form.Padding <- Padding.Empty
         form.MinimumSize <- Size(Dpi.scale 840,Dpi.scale 580)
         form.Size <- Size(Dpi.scale 980,Dpi.scale 760)
-        form.Icon <- Services.openIcon(currentIconName)
+        form.Icon <- Services.openIcon(ThemeService.appIconName)
         let searchBox = new SettingsSearchBox(search,Width=Dpi.scale 164,Height=Dpi.scale 36,
                                   Margin=Padding(0,Dpi.scale 4,0,Dpi.scale 16))
         search.HandleCreated.Add(fun _ ->
@@ -220,7 +219,13 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 else
                     select item.page
                     let page = pages |> List.find(fun page -> page.key=item.page)
-                    let target = page.control.Controls.Find(item.id,true) |> Array.tryHead
+                    // A collapsed setting is reached through the one that would show it.
+                    let rec find id =
+                        match page.control.Controls.Find(id,true) |> Array.tryHead with
+                        | Some control when (match control.Parent with :? SettingsRow as row -> row.Collapsed | _ -> false) ->
+                            SettingsCatalog.parent id |> Option.bind find |> Option.orElse (Some control)
+                        | found -> found
+                    let target = find item.id
                     match target with
                     | Some control ->
                         match page.control with
@@ -271,12 +276,6 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         form.HandleCreated.Add(fun _ -> SettingsUi.apply form)
         let mutable lastPalette = SettingsUi.palette()
         ThemeBinding.watch form (fun () ->
-            let iconName = ThemeService.taskbarIconName()
-            if iconName <> currentIconName then
-                let previous = form.Icon
-                form.Icon <- Services.openIcon(iconName)
-                currentIconName <- iconName
-                previous.Dispose()
             let palette = SettingsUi.palette()
             if palette <> lastPalette then
                 lastPalette <- palette

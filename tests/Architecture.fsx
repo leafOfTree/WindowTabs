@@ -93,14 +93,14 @@ let main() =
         let dispatcher = InvokerService.invoker :> IDispatcher
         let api = Services.settings
         let mutable callbackThread = 0
-        use subscription = api.notifyValue "autoHide" (fun _ -> callbackThread <- Thread.CurrentThread.ManagedThreadId)
+        use subscription = api.notifyValue "autoHideMode" (fun _ -> callbackThread <- Thread.CurrentThread.ManagedThreadId)
         let uiThread = Thread.CurrentThread.ManagedThreadId
         let mutable workerError : exn option = None
         let worker = new Thread(ThreadStart(fun () ->
             try
                 check (not dispatcher.CheckAccess) "Worker falsely claims UI access"
-                api.setValue("autoHide",box false)
-                check (api.getValue("autoHide") :?> bool |> not) "Typed dispatcher lost settings update"
+                api.setValue("autoHideMode",box "Never")
+                check (api.getValue("autoHideMode")=box "Never") "Typed dispatcher lost settings update"
             with ex -> workerError <- Some ex))
         worker.IsBackground <- true
         worker.Start()
@@ -109,28 +109,28 @@ let main() =
         check (callbackThread=uiThread) "Settings mutation escaped its owner thread"
         // Off the owner thread a value read once is served without waiting on it, and a
         // write on the owner thread replaces it.
-        api.setValue("autoHide",box true)
+        api.setValue("autoHideMode",box "Maximized")
         let readOnWorker() =
             let mutable value = None
-            let reader = new Thread(ThreadStart(fun () -> value <- Some(api.getValue("autoHide") :?> bool)),IsBackground=true)
+            let reader = new Thread(ThreadStart(fun () -> value <- Some(api.getValue("autoHideMode") :?> string)),IsBackground=true)
             reader.Start()
             pumpUntil "Worker settings read deadlocked" (fun () -> not reader.IsAlive)
             value.Value
-        check (readOnWorker()) "Worker read a stale setting"
+        check (readOnWorker()="Maximized") "Worker read a stale setting"
         let mutable blockedRead = None
-        let blocked = new Thread(ThreadStart(fun () -> blockedRead <- Some(api.getValue("autoHide") :?> bool)),IsBackground=true)
+        let blocked = new Thread(ThreadStart(fun () -> blockedRead <- Some(api.getValue("autoHideMode") :?> string)),IsBackground=true)
         blocked.Start()
         // Sleep does not pump, unlike Join on this STA thread: a Send would stay unanswered.
         Thread.Sleep(500)
-        let servedWhileBlocked = not blocked.IsAlive && blockedRead=Some true
+        let servedWhileBlocked = not blocked.IsAlive && blockedRead=Some "Maximized"
         pumpUntil "Worker settings read deadlocked" (fun () -> not blocked.IsAlive)
         check servedWhileBlocked "Worker waited on the owner thread for a value it already read"
-        api.setValue("autoHide",box false)
-        check (not (readOnWorker())) "Worker kept a setting after it changed"
+        api.setValue("autoHideMode",box "Never")
+        check (readOnWorker()="Never") "Worker kept a setting after it changed"
         settings.Flush() |> ignore
         let pathBefore = settings.path
         Environment.CurrentDirectory <- __SOURCE_DIRECTORY__
-        api.setValue("autoHide",box true)
+        api.setValue("autoHideMode",box "Maximized")
         settings.Flush() |> ignore
         check (settings.path=pathBefore) "Working-directory change redirected settings"
 
@@ -159,8 +159,7 @@ let main() =
         // Exercise updates on a group that already exists, across the real dispatcher.
         api.setValue("enableCtrlNumberHotKey",box false)
         api.setValue("alignment",box "Center")
-        api.setValue("autoHide",box false)
-        api.setValue("minimalMode",box false)
+        api.setValue("autoHideMode",box "Never")
         let live = apiDesktop.createGroup(false) :?> GroupInfo
         let onGroup action =
             let mutable result = None
@@ -200,21 +199,27 @@ let main() =
             form)
         try
             check (not(onGroup(fun group -> group.ts.isShrunk))) "Disabled auto-hide collapsed tabs"
-            api.setValue("autoHide",box true)
+            api.setValue("autoHideMode",box "Maximized")
             pumpUntil "Auto-hide did not enable on an existing maximized group" (fun () -> onGroup(fun group -> group.ts.isShrunk))
-            api.setValue("autoHide",box false)
+            api.setValue("autoHideMode",box "Never")
             check (not(onGroup(fun group -> group.ts.isShrunk))) "Disabling auto-hide did not expand tabs"
-            onGroup(fun group -> group.bb.write("autoHide",false))
-            api.setValue("autoHide",box true)
+            onGroup(fun group -> group.bb.write("autoHideMode","Never"))
+            api.setValue("autoHideMode",box "Maximized")
             pump 200
             check (not(onGroup(fun group -> group.ts.isShrunk))) "Global auto-hide overwrote the group menu setting"
+            api.setValue("autoHideMode",box "Always")
+            pump 200
+            check (not(onGroup(fun group -> group.ts.isShrunk))) "Global Always overwrote the group menu setting"
+            onGroup(fun group -> group.bb.write("autoHideMode","Always"))
+            pumpUntil "Group menu Always did not collapse tabs" (fun () -> onGroup(fun group -> group.ts.isShrunk))
+            api.setValue("autoHideMode",box "Never")
         finally
             onGroup(fun group -> group.removeWindow(testWindow.Handle); testWindow.Dispose())
             (live :> IGroup).destroy()
             pumpUntil "Live settings group did not exit" (fun () -> desktop.retainedGroupCount=0)
         // Disposed groups must no longer receive settings callbacks.
         api.setValue("alignment",box "Left")
-        api.setValue("autoHide",box false)
+        api.setValue("autoHideMode",box "Never")
         let mutable baseline = 0,0,0,0L
         for iteration in 1..110 do
             let group = apiDesktop.createGroup(false)

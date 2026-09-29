@@ -23,7 +23,7 @@ def layer(draw, points, fill, outline, width, scale):
         draw.ellipse((x-radius, y-radius, x+radius, y+radius), fill=outline)
 
 
-def frame(size, light):
+def frame(size):
     # Draw at high resolution, then sample once. The simplified silhouette
     # survives the 16-pixel notification icon without hairline highlights.
     scale = max(4, 1024 // size)
@@ -31,40 +31,14 @@ def frame(size, light):
     d = ImageDraw.Draw(im)
     k = size / 256
     s = scale * k
-    if light:
-        back, front, edge = "#929292", "#252525", "#F4F4F4"
-    else:
-        back, front, edge = "#737373", "#F5F5F5", "#202020"
+    # A light front tab with a dark outline reads on light and dark taskbars alike.
+    back, front, edge = "#737373", "#F5F5F5", "#202020"
 
     # Two overlapping window tabs, with consistent clear space around them.
     layer(d, [(30, 31), (107, 31), (107, 65), (214, 65),
               (214, 175), (30, 175)], back, edge, 9, s)
     layer(d, [(48, 111), (139, 111), (139, 89), (222, 89),
               (222, 224), (48, 224)], front, edge, 10, s)
-    return im.resize((size, size), Image.Resampling.LANCZOS)
-
-
-def pencil(size, light):
-    # Title-bar glyph for edit dialogs: a solid pencil with a separate cap,
-    # drawn along the diagonal. "light" is for a light title bar.
-    scale = max(4, 1024 // size)
-    im = Image.new("RGBA", (size * scale, size * scale))
-    d = ImageDraw.Draw(im)
-    s = scale * size / 256
-    ink = "#252525" if light else "#F5F5F5"
-    tip = (44, 212)
-    u = (0.7071, -0.7071)
-    n = (0.7071, 0.7071)
-    length, half = 236, 30
-
-    def at(t, w):
-        return (round((tip[0] + u[0] * t + n[0] * w) * s),
-                round((tip[1] + u[1] * t + n[1] * w) * s))
-
-    d.polygon([at(0, 0), at(52, -half), at(length - 58, -half),
-               at(length - 58, half), at(52, half)], fill=ink)
-    d.polygon([at(length - 40, -half), at(length, -half),
-               at(length, half), at(length - 40, half)], fill=ink)
     return im.resize((size, size), Image.Resampling.LANCZOS)
 
 
@@ -85,7 +59,4 @@ def write_icon(name, images):
             icon.write(payload)
 
 
-for name, light in (("Bemo.ico", False), ("BemoLight.ico", True)):
-    write_icon(name, [frame(size, light) for size in SIZES])
-for name, light in (("edit.ico", False), ("editLight.ico", True)):
-    write_icon(name, [pencil(size, light) for size in SIZES])
+write_icon("Bemo.ico", [frame(size) for size in SIZES])

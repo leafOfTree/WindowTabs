@@ -28,11 +28,26 @@ let main() =
     try
         use settings = new Settings(true, saveDelay=0)
         let api = settings :> ISettings
-        check (api.getValue("minimalMode")=box false) "Minimal mode must default to off"
-        api.setValue("minimalMode",box true)
+        check (api.getValue("autoHideMode")=box "Maximized") "Auto-hide must default to maximized windows only"
+        check (api.getValue("showTabsOnSwitch")=box true) "Switching must show auto-hidden tabs by default"
+        api.setValue("autoHideMode",box "Always")
         settings.clearCaches()
-        check (api.getValue("minimalMode")=box true && settings.settings.minimalMode) "Minimal mode was not persisted"
-        api.setValue("minimalMode",box false)
+        check (api.getValue("autoHideMode")=box "Always" && settings.settings.autoHideMode="Always") "Auto-hide mode was not persisted"
+        api.setValue("autoHideMode",box "Sometimes")
+        check (api.getValue("autoHideMode")=box "Maximized") "Unknown auto-hide mode was not normalized"
+        // The two toggles it replaced are migrated, with minimal mode winning.
+        for autoHide,minimal,expected in [true,true,"Always";false,true,"Always";true,false,"Maximized";false,false,"Never"] do
+            let json = api.root
+            json.Remove("autoHideMode") |> ignore
+            json.Remove("showTabsOnSwitch") |> ignore
+            json.setBool("autoHide",autoHide)
+            json.setBool("minimalMode",minimal)
+            api.root <- json
+            settings.clearCaches()
+            check (settings.settings.autoHideMode=expected) (sprintf "Legacy autoHide=%b minimalMode=%b did not migrate to %s" autoHide minimal expected)
+            check (settings.settings.showTabsOnSwitch=not minimal) (sprintf "Legacy minimalMode=%b changed whether switching shows tabs" minimal)
+        api.setValue("autoHideMode",box "Maximized")
+        check (api.root.getBool("minimalMode").IsNone && api.root.getBool("autoHide").IsNone) "Legacy auto-hide keys were kept after saving"
         check (settings.settings.appearance.mode=SystemTheme) "New installs must follow system"
         check (not settings.settings.appearance.useCustomColors) "Default colours misclassified as custom"
         check (Theme.sameColors settings.defaultTabAppearance Theme.light) "KnownColor/ARGB comparison failed"
@@ -182,10 +197,11 @@ let main() =
         check (not form.TopMost && form.FormBorderStyle=FormBorderStyle.Sizable) "Old tool window behaviour retained"
         check (controls general.control |> Seq.forall(fun c -> not(c :? GroupBox))) "General page still uses GroupBox"
         let combine = controls general.control |> Seq.find(fun c -> c.Name="combine-taskbar-icons")
-        let scopeNotice = tr Strings.General.newGroupsOnly
-        check (combine.AccessibleDescription.Contains(scopeNotice) &&
-               (controls combine.Parent |> Seq.exists(fun c -> c :? Label && c.Text=scopeNotice)))
-              "Taskbar setting does not expose its new-groups-only scope"
+        let hint = tr Strings.General.tabMenuHint
+        check (combine.AccessibleDescription.Contains(tr Strings.Settings.combineTaskbarIcons.description) &&
+               combine.AccessibleDescription.Contains(hint) &&
+               (controls combine.Parent |> Seq.exists(fun c -> c :? SettingsHelpButton && c.AccessibleDescription=hint)))
+              "Taskbar setting does not explain its scope and tab-menu override"
         let snapshot name =
             form.PerformLayout()
             Application.DoEvents()
@@ -316,7 +332,13 @@ let main() =
         check (ap.contentTable.Top=originalTop) "Home did not restore scroll position"
         let wheel = typeof<SettingsPage>.GetMethod("OnMouseWheel",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public)
         wheel.Invoke(ap,[|box(new MouseEventArgs(MouseButtons.None,0,0,0,-120))|]) |> ignore
-        check (ap.contentTable.Top < originalTop) "Mouse wheel did not scroll the page"
+        // The wheel eases into place over a few frames (or jumps when Windows animations are off).
+        let settled = Diagnostics.Stopwatch.StartNew()
+        let notch = SmoothScroller.wheelStep -120 ap.ClientSize.Height
+        while ap.contentTable.Top <> originalTop-notch && settled.ElapsedMilliseconds < 2000L do
+            Application.DoEvents()
+            Threading.Thread.Sleep(5)
+        check (ap.contentTable.Top = originalTop-notch) (sprintf "Mouse wheel did not scroll the page by one notch: top %d, expected %d" ap.contentTable.Top (originalTop-notch))
         callKey Keys.Home
         form.Size <- Size(Dpi.scale 1440,Dpi.scale 860)
         form.PerformLayout()

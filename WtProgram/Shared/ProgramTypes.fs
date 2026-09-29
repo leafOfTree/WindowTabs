@@ -20,8 +20,10 @@ type SettingsRec = {
     enableCtrlNumberHotKey: bool
     combineIconsInTaskbar: bool
     enableHoverActivate: bool
-    autoHide: bool
-    minimalMode: bool
+    /// "Never", "Maximized" or "Always".
+    autoHideMode: string
+    /// Expand auto-hidden tabs for a moment after switching tabs.
+    showTabsOnSwitch: bool
     enableShiftScroll: bool
     alignment: string
     /// "system", "en", "zh" or "ja".

@@ -66,15 +66,111 @@ type SettingsInfoButton() as this =
         e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         let color = if this.Focused || this.ClientRectangle.Contains(this.PointToClient(Control.MousePosition)) then p.text else p.muted
-        use pen = new Pen(color,max 1.0f (float32(Dpi.scaleF 1.2)))
-        let cx,cy = float32(this.Width)/2.0f,float32(this.Height)/2.0f
-        let r = float32(Dpi.scale 8)
-        e.Graphics.DrawEllipse(pen,cx-r,cy-r,r*2.0f,r*2.0f)
-        e.Graphics.DrawLine(pen,cx,cy-float32(Dpi.scale 1),cx,cy+float32(Dpi.scale 4))
-        e.Graphics.DrawLine(pen,cx,cy-float32(Dpi.scale 5),cx,cy-float32(Dpi.scale 4))
+        // Keep the "i" on whole pixels so it stays sharp: pixel edges on whole coordinates, a whole-pixel
+        // stroke, and a circle whose size differs from the stroke by an even amount so the stem is centred.
+        e.Graphics.PixelOffsetMode <- Drawing2D.PixelOffsetMode.Half
+        let stroke = max 1 (int(Math.Round(Dpi.scaleF 1.2)))
+        let size = let s = Dpi.scale 16 in if (s-stroke)%2=0 then s else s+1
+        let left,top = (this.Width-size)/2,(this.Height-size)/2
+        let half = float32 stroke/2.0f
+        use pen = new Pen(color,float32 stroke)
+        e.Graphics.DrawEllipse(pen,float32 left+half,float32 top+half,float32(size-stroke),float32(size-stroke))
+        use brush = new SolidBrush(color)
+        let x = left+(size-stroke)/2
+        let at fraction = top+int(Math.Round(float size*fraction))
+        let stemTop,stemBottom = at 0.44,at 0.75
+        // The dot sits a clear gap above the stem, so at 100% the two never merge into a bar.
+        let dot,gap = max 2 stroke,max 2 stroke
+        e.Graphics.FillRectangle(brush,x,stemTop-gap-dot,stroke,dot)
+        e.Graphics.FillRectangle(brush,x,stemTop,stroke,stemBottom-stemTop)
         if this.Focused then ControlPaint.DrawFocusRectangle(e.Graphics,this.ClientRectangle)
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); this.Invalidate()
     override this.OnMouseLeave(e) = base.OnMouseLeave(e); this.Invalidate()
+
+type private SettingsHelpPopup(message:string,font:Font) as this =
+    inherit Form()
+    do
+        // Form's base constructor reads CreateParams before F# initialization finishes.
+        this.HandleCreated.Add(fun _ ->
+            let style = WinUserApi.GetWindowLong(this.Handle,WindowLongFieldOffset.GWL_EXSTYLE)
+            WinUserApi.SetWindowLong(this.Handle,WindowLongFieldOffset.GWL_EXSTYLE,
+                IntPtr(style.ToInt64() ||| 0x08000000L ||| 0x00000080L)) |> ignore)
+        this.FormBorderStyle <- FormBorderStyle.None
+        this.StartPosition <- FormStartPosition.Manual
+        this.ShowInTaskbar <- false
+        this.Font <- font
+        this.DoubleBuffered <- true
+        // As wide as a short message needs, wrapping only past 470px.
+        let oneLine = TextRenderer.MeasureText(message,font,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPrefix).Width
+        let width = min (Dpi.scale 470) (oneLine+Dpi.scale 32)
+        let textSize = TextRenderer.MeasureText(message,font,Size(width-Dpi.scale 32,Int32.MaxValue),
+                                                TextFormatFlags.WordBreak ||| TextFormatFlags.NoPrefix)
+        this.ClientSize <- Size(width,textSize.Height+Dpi.scale 32)
+        use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (float32(Dpi.scale 10))
+        this.Region <- new Region(shape)
+    override _.ShowWithoutActivation = true
+    override this.OnPaintBackground(e) = e.Graphics.Clear((SettingsColors.current()).surface)
+    override this.OnPaint(e) =
+        let p = SettingsColors.current()
+        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        use shape = SettingsShapes.rounded (RectangleF(1.0f,1.0f,float32(this.Width-3),float32(this.Height-3))) (float32(Dpi.scale 10))
+        use border = new Pen(p.border)
+        e.Graphics.DrawPath(border,shape)
+        TextRenderer.DrawText(e.Graphics,message,this.Font,
+            Rectangle(Dpi.scale 16,Dpi.scale 16,this.Width-Dpi.scale 32,this.Height-Dpi.scale 32),
+            p.text,TextFormatFlags.WordBreak ||| TextFormatFlags.NoPrefix)
+
+/// An (i) button that explains something on hover, focus or click. Light themes use the system
+/// tooltip; dark ones a themed popup, because the system tooltip stays light.
+type SettingsHelpButton(text:string) as this =
+    inherit SettingsInfoButton()
+    let tip = new ToolTip(AutoPopDelay=30000,InitialDelay=350,ReshowDelay=100,ShowAlways=true)
+    let watcher = new Timer(Interval=200)
+    let mutable popup : SettingsHelpPopup option = None
+    let hide() =
+        watcher.Stop()
+        tip.Hide(this)
+        popup |> Option.iter(fun window -> window.Hide())
+    let show() =
+        if ThemeService.currentIsDark() then
+            tip.SetToolTip(this,"")
+            let window =
+                match popup with
+                | Some window -> window
+                | None ->
+                    let window = new SettingsHelpPopup(text,this.Font)
+                    popup <- Some window
+                    window
+            let origin = this.PointToScreen(Point(0,this.Height+Dpi.scale 6))
+            let bounds = Screen.FromControl(this).WorkingArea
+            let x = min origin.X (bounds.Right-window.Width-Dpi.scale 8)
+            let y = if origin.Y+window.Height<=bounds.Bottom then origin.Y else origin.Y-window.Height-this.Height-Dpi.scale 12
+            window.Location <- Point(max bounds.Left x,max bounds.Top y)
+            window.Show(this.FindForm())
+            watcher.Start()
+        else tip.Show(text,this,0,this.Height+Dpi.scale 6,30000)
+    do
+        this.AccessibleDescription <- text
+        tip.SetToolTip(this,text)
+        // Hide the popup once the pointer has left both it and the button, or the window lost focus.
+        watcher.Tick.Add(fun _ ->
+            popup |> Option.iter(fun window ->
+                let pointer = Cursor.Position
+                let owner = this.FindForm()
+                if not window.Visible || not this.Visible || isNull owner || not owner.ContainsFocus ||
+                   (not (this.RectangleToScreen(this.ClientRectangle).Contains(pointer))
+                    && not (window.Bounds.Contains(pointer)) && not this.Focused) then
+                    window.Hide()
+                    watcher.Stop()))
+        this.MouseEnter.Add(fun _ -> show())
+        this.Click.Add(fun _ -> show())
+        this.KeyDown.Add(fun e -> if e.KeyCode=Keys.Escape then hide(); e.SuppressKeyPress <- true)
+        this.VisibleChanged.Add(fun _ -> if not this.Visible then hide())
+        ThemeBinding.watch this hide
+        this.Disposed.Add(fun _ ->
+            watcher.Dispose()
+            tip.Dispose()
+            popup |> Option.iter(fun window -> window.Dispose()))
 
 type SettingsSearchResults() as this =
     inherit Panel()
@@ -94,12 +190,22 @@ type SettingsSearchResults() as this =
     override this.OnPaint(e) =
         base.OnPaint(e)
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-        use shape = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 10))
+        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 10))
         use pen = new Pen((SettingsColors.current()).border)
         e.Graphics.DrawPath(pen,shape)
 
 type SettingsRow() =
     inherit TableLayoutPanel()
+    let mutable collapsed = false
+    /// Hidden because the setting it depends on makes it meaningless. Unlike Visible, this
+    /// does not also read false while the page itself is not shown.
+    member this.Collapsed
+        with get() = collapsed
+        and set(value) =
+            collapsed <- value
+            this.Visible <- not value
+            // The row above may gain or lose its separator.
+            if not (isNull this.Parent) then this.Parent.Invalidate(true)
     override this.WndProc(message:byref<Message>) =
         // Disabled HWNDs route cursor handling to their parent. Setting the
         // disabled editor's Cursor alone would therefore have no effect.
@@ -176,25 +282,27 @@ type SettingsNavigationButton(key:SettingsViewType) as this =
         if this.Focused && this.ShowFocusCues then
             ControlPaint.DrawFocusRectangle(e.Graphics,Rectangle(3,3,this.Width-6,this.Height-6),foreground,this.BackColor)
 
-type SettingsBadge() as this =
+/// A single-line label that trims with an ellipsis and shows the full text on hover only when trimmed.
+type SettingsEllipsisLabel() as this =
     inherit Label()
+    // Owned by the label, so its window closes with the page instead of outliving it.
+    let tip = new ToolTip(AutoPopDelay=30000,InitialDelay=400,ReshowDelay=100,ShowAlways=true)
     do
-        this.AutoSize <- true
         this.UseMnemonic <- false
-        this.Tag <- "muted"
-        this.Padding <- Padding(Dpi.scale 7,Dpi.scale 2,Dpi.scale 7,Dpi.scale 2)
-        this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint ||| ControlStyles.ResizeRedraw,true)
+        this.SetStyle(ControlStyles.ResizeRedraw,true)
+        this.Disposed.Add(fun _ -> tip.Dispose())
+    member private this.isTrimmed =
+        TextRenderer.MeasureText(this.Text,this.Font,Size(Int32.MaxValue,this.Height),
+            TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine).Width > this.ClientSize.Width
+    override this.OnMouseEnter(e) =
+        base.OnMouseEnter(e)
+        tip.SetToolTip(this,(if this.isTrimmed then this.Text else ""))
+    override this.OnMouseLeave(e) =
+        base.OnMouseLeave(e)
+        tip.SetToolTip(this,"")
     override this.OnPaint(e) =
-        let p = SettingsColors.current()
-        e.Graphics.Clear(this.BackColor)
-        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-        use shape = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 6))
-        use border = new Pen(if SystemInformation.HighContrast then p.border else p.disabledText)
-        e.Graphics.DrawPath(border,shape)
-        let bounds = Rectangle(this.Padding.Left,this.Padding.Top,
-                               max 0 (this.Width-this.Padding.Horizontal),max 0 (this.Height-this.Padding.Vertical))
-        TextRenderer.DrawText(e.Graphics,this.Text,this.Font,bounds,this.ForeColor,
-            TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter)
+        TextRenderer.DrawText(e.Graphics,this.Text,this.Font,this.ClientRectangle,this.ForeColor,
+            TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis)
 
 type SettingsToggle() as this =
     inherit CheckBox()
@@ -350,7 +458,7 @@ type SettingsChoicePopup() as this =
         // ToolStripDropDown's renderer draws a light system border by default.
         e.Graphics.Clear(this.BackColor)
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-        use shape = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 10))
+        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 10))
         use pen = new Pen((SettingsColors.current()).border)
         e.Graphics.DrawPath(pen,shape)
 
@@ -411,6 +519,11 @@ type SettingsCombo(items:string[]) as this =
                 this.Invalidate()
                 changed.Trigger(EventArgs.Empty)
     member _.SelectedIndexChanged = changed.Publish
+    /// Narrowest width that shows every choice untrimmed, matching the insets used by paintFull.
+    member this.FitToItems() =
+        let textWidth = items |> Array.map(fun text -> TextRenderer.MeasureText(text,this.Font).Width) |> Array.fold max 0
+        let dot = if itemColors.Length>0 then Dpi.scale 22 else 0
+        this.Width <- max (Dpi.scale 96) (textWidth+dot+Dpi.scale 60)
     member _.CompactLabel with set(label:unit -> string) = compactLabel <- Some label; this.Invalidate()
     member _.ItemColors
         with get() = Array.copy itemColors
@@ -548,7 +661,7 @@ type SettingsCombo(items:string[]) as this =
         | Some label -> this.paintCompact(e.Graphics,p,label())
         | None -> this.paintFull(e.Graphics,p)
     member private this.paintFull(graphics:Graphics,p:SettingsPalette) =
-        use shape = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 8))
+        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 8))
         use fill = new SolidBrush(if hovering && this.Enabled then p.selection else p.hover)
         use border = new Pen(p.border)
         graphics.FillPath(fill,shape)
@@ -563,7 +676,7 @@ type SettingsCombo(items:string[]) as this =
     /// Borderless: a globe and a short label; a subtle fill on hover or while the list is open.
     member private this.paintCompact(graphics:Graphics,p:SettingsPalette,label:string) =
         if (hovering || popup.IsSome || this.Focused) && this.Enabled then
-            use shape = SettingsShapes.rounded (RectangleF(0.5f,0.5f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 6))
+            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 6))
             use fill = new SolidBrush(p.selection)
             graphics.FillPath(fill,shape)
         let foreground = if hovering || popup.IsSome then p.text else p.muted

@@ -55,6 +55,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     let scroll = new SettingsScrollBar(TabStop=false)
     let tooltip = new ToolTip(ShowAlways=true)
     let selectionChanged = Event<EventArgs>()
+    let itemActivated = Event<TreeListItem>()
     let checkChanged = Event<TreeListItem * int * bool>()
     let mutable rows : (TreeListItem * int)[] = [||]
     let mutable offset = 0
@@ -62,6 +63,9 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     let mutable hovered : TreeListItem = null
     let mutable tooltipText = ""
     let columns = List.toArray columns
+    let smooth = new SmoothScroller((fun () -> offset),
+                                    (fun value -> max 0 (min (max 0 (rows.Length*this.rowHeight-this.viewport)) value)),
+                                    (fun value -> offset <- value; this.updateScroll(); this.Invalidate()))
     do
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint |||
                       ControlStyles.Selectable ||| ControlStyles.ResizeRedraw,true)
@@ -69,14 +73,19 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         this.AccessibleRole <- AccessibleRole.Outline
         this.Font <- SettingsUi.bodyFont
         this.Controls.Add(scroll)
-        scroll.changed.Add(fun value -> offset <- value; this.Invalidate())
-        this.Disposed.Add(fun _ -> tooltip.Dispose())
+        scroll.changed.Add(fun value -> smooth.stop(); offset <- value; this.Invalidate())
+        this.Disposed.Add(fun _ -> tooltip.Dispose(); (smooth :> IDisposable).Dispose())
 
     /// Logical pixels.
     member val RowHeight = 30 with get,set
     member val IconSize = 16 with get,set
     member val ShowHeader = true with get,set
     member val ShowExpanders = true with get,set
+    /// When false, double-clicking a row raises ItemActivated instead of expanding it; the
+    /// arrow and the Left/Right keys still expand.
+    member val ExpandOnDoubleClick = true with get,set
+    /// Raised on Enter, and on double-click when ExpandOnDoubleClick is false.
+    member _.ItemActivated = itemActivated.Publish
     member _.Roots = roots
     member _.SelectionChanged = selectionChanged.Publish
     /// Raised after a check box is toggled by the user: item, column, new value.
@@ -130,6 +139,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         match this.indexOf item with
         | Some index ->
             let top = index*this.rowHeight
+            smooth.stop()
             if top < offset then offset <- top
             elif top+this.rowHeight > offset+this.viewport then offset <- top+this.rowHeight-this.viewport
             this.updateScroll()
@@ -196,23 +206,27 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     override this.OnLostFocus(e) = base.OnLostFocus(e); this.Invalidate()
     override this.OnMouseWheel(e) =
         base.OnMouseWheel(e)
-        offset <- offset-e.Delta*this.rowHeight*3/120
-        this.updateScroll()
-        this.Invalidate()
+        smooth.by(-e.Delta*this.rowHeight*3/120)
+
+    member private this.onExpander(index,item:TreeListItem,level,point:Point) =
+        this.ShowExpanders && item.Children.Count>0 &&
+        (this.expanderBounds(level,this.headerHeight+index*this.rowHeight-offset)).Contains(point)
+
+    /// The check column whose box is under the point, if any.
+    member private this.checkAt(index,item:TreeListItem,point:Point) =
+        let rowTop = this.headerHeight+index*this.rowHeight-offset
+        let bounds = this.columnBounds
+        [0..columns.Length-1] |> List.tryFind(fun i ->
+            columns.[i].Kind=CheckColumn && (item.check i).IsSome &&
+            (this.checkBounds(bounds.[i],rowTop)).Contains(point))
 
     override this.OnMouseDown(e) =
         base.OnMouseDown(e)
         this.Focus() |> ignore
         match this.rowAt e.Y with
         | Some(index,(item,level)) when e.Button=MouseButtons.Left ->
-            let rowTop = this.headerHeight+index*this.rowHeight-offset
-            let bounds = this.columnBounds
-            let checkColumn =
-                columns |> Array.tryFindIndex(fun column -> column.Kind=CheckColumn) |> Option.bind(fun _ ->
-                    [0..columns.Length-1] |> List.tryFind(fun i ->
-                        columns.[i].Kind=CheckColumn && (item.check i).IsSome &&
-                        (this.checkBounds(bounds.[i],rowTop)).Contains(e.Location)))
-            if this.ShowExpanders && item.Children.Count>0 && (this.expanderBounds(level,rowTop)).Contains(e.Location) then
+            let checkColumn = this.checkAt(index,item,e.Location)
+            if this.onExpander(index,item,level,e.Location) then
                 this.SetExpanded(item,not item.Expanded)
             else
                 this.SelectedItem <- item
@@ -223,7 +237,12 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     override this.OnMouseDoubleClick(e) =
         base.OnMouseDoubleClick(e)
         match this.rowAt e.Y with
-        | Some(_,(item,_)) when item.Children.Count>0 -> this.SetExpanded(item,not item.Expanded)
+        // Each press on the arrow or a check box already acted; a quick second press there must not
+        // also expand or collapse the row.
+        | Some(index,(item,level)) when not (this.onExpander(index,item,level,e.Location))
+                                        && (this.checkAt(index,item,e.Location)).IsNone ->
+            if not this.ExpandOnDoubleClick then itemActivated.Trigger(item)
+            elif item.Children.Count>0 then this.SetExpanded(item,not item.Expanded)
         | _ -> ()
 
     override this.OnMouseMove(e) =
@@ -252,7 +271,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
 
     override this.IsInputKey(key) =
         match key &&& Keys.KeyCode with
-        | Keys.Up | Keys.Down | Keys.Left | Keys.Right | Keys.Home | Keys.End | Keys.PageUp | Keys.PageDown -> true
+        | Keys.Up | Keys.Down | Keys.Left | Keys.Right | Keys.Home | Keys.End | Keys.PageUp | Keys.PageDown | Keys.Enter -> true
         | _ -> base.IsInputKey(key)
 
     override this.OnKeyDown(e) =
@@ -277,6 +296,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                     if selected.Expanded then this.SetExpanded(selected,false)
                     elif not (isNull selected.Parent) then this.SelectedItem <- selected.Parent
                     true
+                | Keys.Enter when not (isNull selected) -> itemActivated.Trigger(selected); true
                 | Keys.Space when not (isNull selected) ->
                     [0..columns.Length-1] |> List.tryFind(fun i -> columns.[i].Kind=CheckColumn && (selected.check i).IsSome && selected.checkEnabled i)
                     |> Option.iter(fun column -> this.toggleCheck(selected,column))
