@@ -99,6 +99,15 @@ let main() =
     let report = RuntimeDiagnostics.report (JObject.Parse("""{"licenseKey":"SECRET","workspaces":[{"title":"SECRET"}],"path":"SECRET","runAtStartup":true,"alignment":"SECRET"}""")) 0 0
     check (not(report.ToString().Contains("SECRET"))) "Diagnostic report leaked private data"
     check (report.["settings"].["workspaceCount"].Value<int>()=1) "Diagnostic summary missing workspace count"
+    for key in ["version";"os";"dotNet";"uptimeMinutes";"environment";"monitors";"otherTools";"groups";"groupedWindows";"resources";"scans";"settings"] do
+        check (not (isNull report.[key])) ("Diagnostic report missing " + key)
+    check ((report.["monitors"] :?> JArray).Count >= 1) "Diagnostic report lists no displays"
+    IO.File.WriteAllText(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug","diagnostics-sample.json"),report.ToString())
+    // Nothing that looks like a file path, whatever the machine has.
+    check (not (report.ToString().Contains(":\\"))) "Diagnostic report contains a path"
+    let rules = RuntimeDiagnostics.report (JObject.Parse("""{"includedPaths":["C:\\SECRET\\a.exe","b"],"excludedPaths":["c"],"tabAppearance":{"tabHeight":25,"tabMaxWidth":"SECRET"}}""")) 0 0
+    check (rules.["settings"].["appRules"].["tabsOn"].Value<int>()=2 && rules.["settings"].["tabs"].["height"].Value<int>()=25) "Diagnostic summary missing rule counts or tab size"
+    check (not (rules.ToString().Contains("SECRET"))) "Diagnostic summary leaked app rule paths or unexpected values"
     let geometry = AppearanceJson.readGeometry (JObject.Parse("""{"tabHeight":-20,"tabMaxWidth":999999,"tabOverlap":30}""")) Theme.defaultGeometry
     check (geometry.height=12 && geometry.maxWidth=1000 && geometry.overlap=0) "Invalid persisted dimensions bypassed shared bounds"
     let gap = AppearanceJson.readGeometry (JObject.Parse("""{"tabOverlap":-30}""")) Theme.defaultGeometry

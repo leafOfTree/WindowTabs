@@ -75,6 +75,11 @@ type DiagnosticsView() =
     let report() =
         let groups = Services.desktop.groups
         let result = RuntimeDiagnostics.report Services.settings.root groups.count (groups.collect(fun g -> g.windows).count)
+        let folder = IO.Path.GetDirectoryName(Services.settings.path).TrimEnd('\\')
+        result.["settingsLocation"] <- JValue(
+            if folder=AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\') then "portable (next to WindowTabs.exe)"
+            elif folder.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),StringComparison.OrdinalIgnoreCase) then "AppData"
+            else "working directory")
         if includeWindows.Checked then result.["windows"] <- windowDetails()
         result
     let refresh() = text.Text <- (report()).ToString()
