@@ -66,6 +66,26 @@ let main () =
         slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false
         transparent=true; appearance=appearance; hover=None; captured=None }
     let tabImage = ts.render
+    // Short tabs shrink their contents to fit instead of clipping them.
+    do
+        let heights = [12;18;26]
+        use sheet = new Bitmap(440,heights |> List.sumBy(fun h -> h+12))
+        use g = Graphics.FromImage(sheet)
+        g.Clear(Color.FromArgb(45,48,53))
+        heights |> List.fold(fun y h ->
+            use font = TabMetrics.font h FontStyle.Regular
+            check (font.Height <= max h (SystemFonts.MenuFont.Height)) (sprintf "Text line does not fit a %dpx tab" h)
+            let info text : TabDisplayInfo = { bgColor=None; text=text; icon=SystemIcons.Application; textFont=font; textBrush=Brushes.Black }
+            let strip = { ts with appearance={ appearance with tabHeight=h }; size=Sz(420,h+1)
+                                  tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"])) }
+            for _,tab in strip.sprite.children.list do
+                for location,child in tab.children.list do
+                    let size = match child with :? IconSprite as icon -> icon.size | :? CloseButtonSprite as close -> close.size | _ -> Sz(0,0)
+                    check (location.y >= 0 && location.y+size.height <= h) (sprintf "Icon or close button overflows a %dpx tab" h)
+            use bitmap = strip.render.bitmap
+            g.DrawImage(bitmap,10,y+6)
+            y+h+12) 0 |> ignore
+        sheet.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug","tab-heights.png"),ImageFormat.Png)
     let originalDpi = Dpi.value()
     try
         for dpi in [96;144;192] do

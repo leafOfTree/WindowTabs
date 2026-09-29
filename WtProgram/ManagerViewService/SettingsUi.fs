@@ -7,6 +7,15 @@ open System.Runtime.InteropServices
 module SettingsUi =
     [<DllImport("dwmapi.dll")>]
     extern int private DwmSetWindowAttribute(IntPtr hwnd, int attribute, int& value, int size)
+    [<DllImport("uxtheme.dll")>]
+    extern int private SetWindowThemeAttribute(IntPtr hwnd, int attribute, uint32[] options, uint32 size)
+
+    /// Keeps a window's text out of its own title bar. The taskbar and Windows' Alt+Tab still show
+    /// the text, so the window can have a real title there and a clean title bar.
+    let hideCaptionText (form:Form) =
+        // WTA_NONCLIENT with WTNCA_NODRAWCAPTION in both the flags and the mask.
+        form.HandleCreated.Add(fun _ ->
+            try SetWindowThemeAttribute(form.Handle,1,[|1u;1u|],8u) |> ignore with _ -> ())
 
 
     let bodyFont = new Font("Segoe UI", 10.5f, FontStyle.Regular)

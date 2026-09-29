@@ -62,10 +62,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let hwndRef = ref IntPtr.Zero
     let isShrunkCell = Cell.create(false)
     let destroyingEvent = Event<unit>()
-    let mutable fontDpi = Dpi.value()
-    let makeFont (style:FontStyle) = new Font(SystemFonts.MenuFont.FontFamily,float32(Dpi.scaleF(float SystemFonts.MenuFont.SizeInPoints)),style)
-    let mutable normalFont = makeFont FontStyle.Regular
-    let mutable renamedFont = makeFont FontStyle.Italic
+    let makeFont = TabMetrics.font
+    let mutable fontKey = Dpi.value(),0
+    let mutable normalFont = makeFont 0 FontStyle.Regular
+    let mutable renamedFont = makeFont 0 FontStyle.Italic
 
     let isMouseOverExport = Cell.export <| fun() ->
         hoverCell.value.IsSome
@@ -374,13 +374,14 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             | None -> 
                 tabBgColor.map(fun m -> m.remove tab)
         
-    member this.setTabAppearance(appearance) =
-        if fontDpi <> Dpi.value() then
+    member this.setTabAppearance(appearance:TabAppearanceInfo) =
+        let key = Dpi.value(),appearance.tabHeight
+        if fontKey <> key then
             normalFont.Dispose()
             renamedFont.Dispose()
-            normalFont <- makeFont FontStyle.Regular
-            renamedFont <- makeFont FontStyle.Italic
-            fontDpi <- Dpi.value()
+            normalFont <- makeFont appearance.tabHeight FontStyle.Regular
+            renamedFont <- makeFont appearance.tabHeight FontStyle.Italic
+            fontKey <- key
         appearanceCell.set(Some(appearance))
             
     member this.contentBounds 

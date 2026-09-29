@@ -322,7 +322,8 @@ Group #2: No valid windows in this group.";
         searchTime.Stop()
         printfn "50 search updates: %d ms" searchTime.ElapsedMilliseconds
         check (searchTime.ElapsedMilliseconds < 2000L) "Search updates are too slow"
-        check (form.Text="" && form.MinimizeBox && form.MaximizeBox && form.ControlBox) "Native title bar configuration changed"
+        // The title is for the taskbar and Alt+Tab; hideCaptionText keeps it out of the title bar itself.
+        check (form.Text=tr Strings.SettingsWindow.title && form.MinimizeBox && form.MaximizeBox && form.ControlBox) "Native title bar configuration changed"
         search.Text <- "nonexistent-setting-xyz"
         Application.DoEvents()
         check (controls form |> Seq.exists(fun c -> c.Text="No matching settings.")) "Missing empty search state"

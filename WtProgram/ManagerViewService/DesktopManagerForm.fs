@@ -40,7 +40,8 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
     let mutable activePage = pages.Head.key
     let mutable suppressSearch = false
     let themedPages = Collections.Generic.HashSet<SettingsViewType>()
-    let form = new Form(Text="",AccessibleName=tr Strings.SettingsWindow.title,Font=SettingsUi.bodyFont)
+    let form = new Form(Text=tr Strings.SettingsWindow.title,AccessibleName=tr Strings.SettingsWindow.title,Font=SettingsUi.bodyFont)
+    do SettingsUi.hideCaptionText form
     let navigation = new Panel(Dock=DockStyle.Left,Width=Dpi.scale 208,Padding=Padding(Dpi.scale 12),Tag="sidebar")
     let links = new TableLayoutPanel(Dock=DockStyle.Top,AutoSize=true,ColumnCount=1)
     let body = new Panel(Dock=DockStyle.Fill)

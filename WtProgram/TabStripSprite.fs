@@ -5,6 +5,23 @@ open System.Drawing.Drawing2D
 open System.Drawing.Imaging
 open System.Windows.Forms
 
+/// Tab contents keep their full size until the tab is too short for them, then shrink together,
+/// so a low tab still shows its icon, close button and text whole.
+module TabMetrics =
+    /// Icon side for a tab this many pixels high: 16 logical px, or less to keep a tenth of the
+    /// height clear above and below it.
+    let iconSide (height:int) = max 1 (min (Dpi.scale 16) (height - 2*(max 1 (height/10))))
+    /// How much the contents have shrunk: 1 on a tab tall enough for them.
+    let scale (height:int) = float (iconSide height) / float (Dpi.scale 16)
+    /// A logical length (padding, gap, button) shrunk with the icon.
+    let scaled (height:int) (logical:int) = max 1 (int(Math.Round(float(Dpi.scale logical) * scale height)))
+    /// The menu font, made smaller only when its line would not fit the tab. 0 means any height.
+    let font (height:int) (style:FontStyle) =
+        let points = float32(Dpi.scaleF(float SystemFonts.MenuFont.SizeInPoints))
+        use full = new Font(SystemFonts.MenuFont.FontFamily,points,style)
+        let fit = if height>0 && full.Height>height then float32 height/float32 full.Height else 1.0f
+        new Font(SystemFonts.MenuFont.FontFamily,max 1.0f (points*fit),style)
+
 type IconSprite = {
     icon: Icon
     size: Sz
@@ -52,7 +69,7 @@ type CloseButtonSprite = {
             match this.bgColor with
             | Some(bg) ->
                 use path = new GraphicsPath()
-                let r = float32 (max 2 (Dpi.scale 4))
+                let r = float32 (max 2 (min (Dpi.scale 4) (this.size.width/4)))
                 let d = r * 2.0f
                 let w = float32 this.size.width
                 let h = float32 this.size.height
@@ -115,7 +132,7 @@ type TabSprite<'id> = {
        
     // Horizontal padding inside the tab. The old bezier edges needed 18px of
     // run-up on each side; rounded corners need only enough room to breathe.
-    member private this.edgeWidth = Dpi.scale 10
+    member private this.edgeWidth = TabMetrics.scaled this.appearance.tabHeight 10
 
     // Proportional to the tab, the way a browser draws it: Edge measures about
     // 9px of corner on a 42px tab. A fixed radius looks tight on a tall tab and
@@ -170,7 +187,9 @@ type TabSprite<'id> = {
     member private this.fillPath =
         this.shapePath -0.5f -0.5f (float32 this.size.width + 0.5f) (float32 this.size.height + 0.5f)
 
-    member private this.iconSize = Dpi.scaleSize(Sz(16, 16))
+    member private this.iconSize =
+        let side = TabMetrics.iconSide this.appearance.tabHeight
+        Sz(side, side)
 
     member private this.iconLocation =
         // Centre against the icon's own height. This used to divide by a
@@ -178,7 +197,7 @@ type TabSprite<'id> = {
         let y = (this.size.height - this.iconSize.height) / 2
         Pt(this.edgeWidth, y)
 
-    member private this.closeButtonSize = Dpi.scaleSize(Sz(16, 16))
+    member private this.closeButtonSize = this.iconSize
 
     member private this.closeButtonLocation =
         let x = this.size.width - this.edgeWidth - this.closeButtonSize.width
@@ -186,7 +205,7 @@ type TabSprite<'id> = {
         Pt(x, y)
 
     member this.textLocation =
-        let x = this.iconLocation.x + this.iconSize.width + Dpi.scale 5
+        let x = this.iconLocation.x + this.iconSize.width + TabMetrics.scaled this.appearance.tabHeight 5
         Pt(x, 0)
 
     // Browser behaviour: the close button only appears on the active tab and on

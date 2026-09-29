@@ -19,7 +19,18 @@ type SettingsPage() as this =
         scroll.configure(maximum,this.ClientSize.Height,offset)
     let smooth = new SmoothScroller((fun () -> offset),clamp,apply)
     let scrollTo value = smooth.jump value
+    // Pressing something that cannot hold focus (a label, a row, the page) takes focus from the
+    // input that has it, which then validates and commits as it does when tabbing away. Presses
+    // inside an input's frame are left alone: the frame hands focus to its own editor.
+    let releaseFocus (control:Control) =
+        let rec inFrame (item:Control) = not (isNull item) && (item :? SettingsInputFrame || inFrame item.Parent)
+        control.MouseDown.Add(fun _ ->
+            if not control.CanSelect && not (inFrame control) then
+                match this.FindForm() with
+                | null -> ()
+                | form -> form.ActiveControl <- null)
     let rec wire (control:Control) =
+        releaseFocus control
         control.Enter.Add(fun _ ->
             if control.IsHandleCreated && control.TabStop && not (control :? Panel) then
                 let location = this.PointToClient(control.PointToScreen(Point.Empty))
@@ -37,6 +48,7 @@ type SettingsPage() as this =
         scroll.BringToFront()
         scroll.changed.Add(scrollTo)
         table.SizeChanged.Add(fun _ -> this.PerformLayout())
+        releaseFocus this
         wire table
         this.Disposed.Add(fun _ -> (smooth :> IDisposable).Dispose())
     member _.contentTable = table
