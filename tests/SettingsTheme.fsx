@@ -213,6 +213,32 @@ let main() =
         Application.DoEvents()
         check (form.BackColor=SettingsUi.palette().background) "Live theme update missed form"
         snapshot "settings-general-dark"
+        // Alerts: each kind in both themes, off-screen, stacked into one image for review.
+        let alerts = [AlertKind.Info,"Restore","Restored 3 windows.";
+                      AlertKind.Warning,"Workspace data","Group #1: No valid windows in this group.
+Group #2: No valid windows in this group.";
+                      AlertKind.Error,"WindowTabs could not continue","The settings file is locked by another process."]
+        let shots =
+            [ for theme in ["light";"dark"] do
+                api.setValue("tabThemeMode",box theme)
+                Application.DoEvents()
+                for kind,title,message in alerts do
+                    use dialog = new SettingsAlertDialog(kind,title,message,false,StartPosition=FormStartPosition.Manual,
+                                                         Location=Point(-20000,-20000),TopMost=false,ShowInTaskbar=false)
+                    dialog.Show()
+                    Application.DoEvents()
+                    check (dialog.Width > Dpi.scale 300 && controls dialog |> Seq.exists(fun c -> c :? SettingsActionButton))
+                          "Alert dialog did not lay out its text and OK button"
+                    let bmp = new Bitmap(dialog.Width,dialog.Height)
+                    dialog.DrawToBitmap(bmp,Rectangle(Point.Empty,bmp.Size))
+                    yield bmp ]
+        do
+            use sheet = new Bitmap(shots |> List.map(fun b -> b.Width) |> List.max,shots |> List.sumBy(fun b -> b.Height+8))
+            use g = Graphics.FromImage(sheet)
+            g.Clear(Color.Gray)
+            shots |> List.fold(fun y b -> g.DrawImage(b,0,y); y+b.Height+8) 0 |> ignore
+            sheet.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","alerts.png"),ImageFormat.Png)
+            for b in shots do b.Dispose()
         let language = controls form |> Seq.choose(function :? SettingsCombo as c when c.Name="language" -> Some c | _ -> None) |> Seq.head
         check (language.Width < Dpi.scale 80) "Language picker is not compact"
         let languagePopup = language.CreateDropDown() |> Option.get

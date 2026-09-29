@@ -22,8 +22,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
     let settingsPath = Path.GetFullPath(Path.Combine(
         (if relativePath then "." else Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WindowTabs")),fileName))
     let store = new SettingsFileStore(settingsPath,defaultArg saveDelay 250,fun ex ->
-        MessageBox.Show(tr (Strings.Messages.unableToSaveSettings settingsPath ex.Message),
-                        tr Strings.Messages.settingsSaveFailed,MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore)
+        Alert.show AlertKind.Warning (tr Strings.Messages.settingsSaveFailed) (tr (Strings.Messages.unableToSaveSettings settingsPath ex.Message)))
 
     do
         hasExistingSettings <- this.fileExists
@@ -68,7 +67,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                 this.settingsString.map(JObject.Parse).def(JObject())
             with ex ->
                 let errorMessage = tr (Strings.Messages.errorLoadingSettings this.path ex.Message)
-                MessageBox.Show(errorMessage, tr Strings.Messages.settingsError, MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
+                Alert.showSystem AlertKind.Warning (tr Strings.Messages.settingsError) errorMessage
                 failwith "Error parsing settings json"
         and set(settingsJson:JObject) = this.settingsString <- Some(settingsJson.ToString())
 
@@ -138,7 +137,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                     ThemeService.publishPreferences settings.appearance
                 with ex ->
                     let errorMessage = tr (Strings.Messages.errorLoadingSettings this.path ex.Message)
-                    MessageBox.Show(errorMessage, tr Strings.Messages.settingsError, MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
+                    Alert.showSystem AlertKind.Warning (tr Strings.Messages.settingsError) errorMessage
                     failwith "Error parsing settings json"
                     
             cachedSettingsRec.Value

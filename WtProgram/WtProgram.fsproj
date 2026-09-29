@@ -58,6 +58,7 @@
     <Compile Include="Shared\ProgramTypes.fs" />
     <Compile Include="Shared\Localization.fs" />
     <Compile Include="Shared\Strings.fs" />
+    <Compile Include="Shared\Alert.fs" />
     <Compile Include="Shared\SettingsCatalog.fs" />
     <Compile Include="Shared\DragDrop.fs" />
     <Compile Include="Shared\Serialize.fs" />
@@ -98,6 +99,7 @@
     <Compile Include="ManagerViewService\SettingsEditors.fs" />
     <Compile Include="ManagerViewService\SettingsPage.fs" />
     <Compile Include="ManagerViewService\SettingsUi.fs" />
+    <Compile Include="ManagerViewService\SettingsAlert.fs" />
     <Compile Include="ManagerViewService\SettingsTreeList.fs" />
     <Compile Include="ManagerViewService\SettingsBindings.fs" />
     <Compile Include="ManagerViewService\SettingsListPage.fs" />

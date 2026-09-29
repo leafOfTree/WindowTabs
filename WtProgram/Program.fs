@@ -260,8 +260,7 @@ type Program(lifetime:LifetimeScope) as this =
             let shortcut = HotKeyShortcut(HotKeyControlCode=int16(shortcut))
             if not (hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags, shortcut.RegisterHotKeyVirtualKeyCode) f) then
                 let name = SettingsCatalog.title (if key="nextTab" then "next-tab" else "previous-tab")
-                MessageBox.Show(tr (Strings.Messages.shortcutUnavailableFor name),
-                                tr Strings.Messages.shortcutUnavailable, MessageBoxButtons.OK, MessageBoxIcon.Warning) |> ignore
+                Alert.show AlertKind.Warning (tr Strings.Messages.shortcutUnavailable) (tr (Strings.Messages.shortcutUnavailableFor name))
 
    
     member this.hwndZorders() : Map2<IntPtr, int>= Map2(os.windowsInZorder.enumerate.map(fun(i,w) -> w.hwnd,i))
@@ -350,6 +349,7 @@ type Program(lifetime:LifetimeScope) as this =
         Services.register(DispatchedProgram(this, dispatcher) :> IProgram)
         Services.register(DispatchedFilterService(FilterService(), dispatcher) :> IFilterService)
         Services.register(DispatchedManagerView(ManagerViewService(), dispatcher) :> IManagerView)
+        SettingsAlert.install()
         plugins.iter(fun plugin ->
             match plugin with
             | :? IDisposable as resource -> lifetime.Own(resource) |> ignore
@@ -368,7 +368,7 @@ module Bootstrap =
         try
             use instance = new SingleInstance("BemoSoftware.WindowTabs")
             if not(instance.TryAcquire()) then
-                MessageBox.Show(tr Strings.Messages.alreadyRunning,"WindowTabs") |> ignore
+                Alert.showSystem AlertKind.Info "WindowTabs" (tr Strings.Messages.alreadyRunning)
                 0
             else
                 Application.EnableVisualStyles()
@@ -380,5 +380,5 @@ module Bootstrap =
                 0
         with error ->
             logger.log "Startup/runtime" error
-            MessageBox.Show(error.Message,tr Strings.Messages.couldNotContinue,MessageBoxButtons.OK,MessageBoxIcon.Error) |> ignore
+            Alert.showSystem AlertKind.Error (tr Strings.Messages.couldNotContinue) error.Message
             1

@@ -17,7 +17,7 @@ type DiagnosticsView() =
     let refresh() = text.Text <- (report()).ToString()
     let guarded action =
         try action()
-        with error -> MessageBox.Show(error.Message,tr Strings.Common.operationFailed,MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore
+        with error -> Alert.show AlertKind.Warning (tr Strings.Common.operationFailed) error.Message
     let save filename content =
         use dialog = new SaveFileDialog(FileName=filename,Filter="JSON (*.json)|*.json",AddExtension=true,DefaultExt="json",OverwritePrompt=true)
         if dialog.ShowDialog(owner)=DialogResult.OK then

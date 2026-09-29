@@ -137,7 +137,7 @@ type WorkspaceView() as this =
             try
                 this.wm.commitEdit editInfo
                 form.DialogResult <- DialogResult.OK
-            with ex -> MessageBox.Show(form,ex.Message,tr Strings.Workspaces.invalidSetting,MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore)
+            with ex -> Alert.show AlertKind.Warning (tr Strings.Workspaces.invalidSetting) ex.Message)
         cancelButton.DialogResult <- DialogResult.Cancel
         buttons.Controls.Add(okButton)
         buttons.Controls.Add(cancelButton)

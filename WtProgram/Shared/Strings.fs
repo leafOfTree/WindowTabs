@@ -42,7 +42,6 @@ module Strings =
             { en=sprintf "Error loading settings.\n\nFix or remove the file %s.\n\nDetails: %s" path details
               zh=sprintf "读取设置出错。\n\n请修复或删除文件 %s。\n\n详细信息：%s" path details
               ja=sprintf "設定の読み込み中にエラーが発生しました。\n\nファイル %s を修正または削除してください。\n\n詳細: %s" path details }
-        let invalidColor = { en="Invalid color. Enter six hexadecimal digits."; zh="颜色无效，请输入六位十六进制数。"; ja="色が無効です。16 進数 6 桁で入力してください。" }
 
     /// Tray icon menu.
     module Tray =

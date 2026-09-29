@@ -325,8 +325,8 @@ type WorkspaceModel() as this =
                         with ex -> errors.Add(ex.Message))
                     try os.setZorder(resolved) with ex -> errors.Add(ex.Message)))
         let details = if errors.Count=0 then "" else "\n\n"+String.concat "\n" (errors |> Seq.truncate 5)
-        MessageBox.Show(tr (Strings.Workspaces.restoreSummary restored missing errors.Count details),
-                        tr Strings.Workspaces.restoreTitle,MessageBoxButtons.OK,(if errors.Count=0 then MessageBoxIcon.Information else MessageBoxIcon.Warning)) |> ignore
+        Alert.show (if errors.Count=0 then AlertKind.Info else AlertKind.Warning) (tr Strings.Workspaces.restoreTitle)
+                   (tr (Strings.Workspaces.restoreSummary restored missing errors.Count details))
 
     member this.addWorkspace(ws:Workspace) =
         ws.cast<IWorkspaceNode>().removed.Add <| fun() -> this.onWorkspaceRemoved(ws)
@@ -377,7 +377,7 @@ type WorkspaceModel() as this =
             workspaces |> List.iter(fun json -> this.addWorkspace(Workspace.deserialize(json)))
         finally loading <- false
         if not warnings.IsEmpty then
-            MessageBox.Show(String.concat "\n" (warnings |> List.truncate 8),tr Strings.Workspaces.dataWarnings,MessageBoxButtons.OK,MessageBoxIcon.Warning) |> ignore
+            Alert.show AlertKind.Warning (tr Strings.Workspaces.dataWarnings) (String.concat "\n" (warnings |> List.truncate 8))
 
     member this.saveSettings() =
         if not loading && not readOnly then
