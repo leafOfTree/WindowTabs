@@ -12,10 +12,12 @@ type SettingsPage() as this =
     let mutable maximum = 0
     let mutable arranging = false
     let inset() = Dpi.scale 32
+    /// Half the side margin above the first heading, which the title bar already sets apart.
+    let topInset() = Dpi.scale 16
     let clamp value = max 0 (min maximum value)
     let apply value =
         offset <- clamp value
-        table.Top <- (inset())-offset
+        table.Top <- (topInset())-offset
         scroll.configure(maximum,this.ClientSize.Height,offset)
     let smooth = new SmoothScroller((fun () -> offset),clamp,apply)
     let scrollTo value = smooth.jump value
@@ -69,7 +71,7 @@ type SettingsPage() as this =
                 table.Width <- width
                 table.Height <- table.GetPreferredSize(Size(width,0)).Height
                 table.Left <- max (inset()) ((this.ClientSize.Width-Dpi.scale 14-width)/2)
-                maximum <- max 0 (table.Height+(inset())*2-this.ClientSize.Height)
+                maximum <- max 0 (table.Height+topInset()+inset()-this.ClientSize.Height)
                 scroll.Bounds <- Rectangle(this.ClientSize.Width-scroll.Width,0,scroll.Width,this.ClientSize.Height)
                 apply offset
             finally arranging <- false

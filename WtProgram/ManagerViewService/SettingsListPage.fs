@@ -10,6 +10,7 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
                       ?links:(string*string) list, ?extra:Control) as this =
     inherit Panel()
     let inset() = Dpi.scale 32
+    let topInset() = Dpi.scale 16
     let heading = new Label(Text=title,AutoSize=true,Font=SettingsUi.sectionFont,UseMnemonic=false)
     let helpButton = helpText |> Option.map(fun text ->
         new SettingsHelpButton(text,AccessibleName=tr Strings.SettingsWindow.howToUse,Font=SettingsUi.bodyFont))
@@ -17,6 +18,7 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
     let status = new Label(AutoSize=false,AutoEllipsis=true,TextAlign=ContentAlignment.MiddleRight,Tag="muted",UseMnemonic=false)
     let actionRow = new FlowLayoutPanel(AutoSize=true,WrapContents=false,FlowDirection=FlowDirection.LeftToRight)
     let card = new Panel(Tag="surface")
+    let linkTip = new ToolTip(InitialDelay=400,ReshowDelay=100,ShowAlways=true)
     let linkRow =
         links |> Option.filter(List.isEmpty >> not) |> Option.map(fun links ->
             let row = new FlowLayoutPanel(AutoSize=true,WrapContents=true)
@@ -24,6 +26,7 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
                 let link = new LinkLabel(Text=text,AutoSize=true,UseMnemonic=false,LinkBehavior=LinkBehavior.HoverUnderline,
                                          Margin=Padding(0,0,Dpi.scale 16,0))
                 link.LinkClicked.Add(fun _ -> try Diagnostics.Process.Start(url) |> ignore with _ -> ())
+                linkTip.SetToolTip(link,url)
                 row.Controls.Add(link)
             row)
     do
@@ -49,6 +52,7 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
         this.Controls.AddRange([|heading :> Control;detail;actionRow;status;card|])
         helpButton |> Option.iter(fun button -> this.Controls.Add(button))
         linkRow |> Option.iter(fun row -> this.Controls.Add(row))
+        this.Disposed.Add(fun _ -> linkTip.Dispose())
         extra |> Option.iter(fun control -> this.Controls.Add(control))
         ThemeBinding.watch this (fun () ->
             linkRow |> Option.iter(fun row ->
@@ -66,7 +70,7 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
         if not (isNull heading) then
             let width = max 120 (min (Dpi.scale 760) (this.ClientSize.Width-inset()*2))
             let left = max (inset()) ((this.ClientSize.Width-width)/2)
-            heading.Location <- Point(left,inset())
+            heading.Location <- Point(left,topInset())
             helpButton |> Option.iter(fun button -> button.Location <- Point(heading.Right+Dpi.scale 10,heading.Top-Dpi.scale 2))
             detail.MaximumSize <- Size(width,0)
             detail.Location <- Point(left,heading.Bottom+Dpi.scale 8)

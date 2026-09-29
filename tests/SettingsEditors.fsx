@@ -271,6 +271,22 @@ let main() =
     treeList.Rebuild()
     assertTrue (isNull treeList.SelectedItem) "Tree list: removed selection is cleared"
     treeList.Dispose()
+    // The report view hides the system scrollbar and scrolls the text from the settings one.
+    do
+        use host = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ClientSize=Size(300,200))
+        let view = new SettingsTextView(Dock=DockStyle.Fill)
+        host.Controls.Add(view)
+        host.Show()
+        view.TextBox.Text <- String.Join("
+",[1..200] |> List.map string)
+        Application.DoEvents()
+        let bar = view.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsScrollBar as b -> Some b | _ -> None)
+        assertTrue bar.Visible "Report scrollbar is hidden for long text"
+        assertTrue (view.TextBox.Right > view.ClientSize.Width) "System scrollbar of the report is not clipped away"
+        key bar Keys.End
+        Application.DoEvents()
+        let firstLine = WinUserApi.SendMessage(view.TextBox.Handle,0x00CE,0,0).ToInt32()  // EM_GETFIRSTVISIBLELINE
+        assertTrue (firstLine > 100) (sprintf "Settings scrollbar did not scroll the report (first line %d)" firstLine)
     printfn "PASS: input validation, no-op changes, HSV colours, repeated popup dismissal, shortcut recording and light/dark renders."
 
 main()

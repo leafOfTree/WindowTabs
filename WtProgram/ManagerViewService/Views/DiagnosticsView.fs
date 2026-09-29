@@ -42,8 +42,9 @@ module private SettingsFile =
                 Services.program.shutdown()
 
 type DiagnosticsView() =
-    let text = new TextBox(ReadOnly=true,Multiline=true,ScrollBars=ScrollBars.Vertical,WordWrap=false,BorderStyle=BorderStyle.None,
-                           Font=new Font("Consolas",SettingsUi.bodyFont.SizeInPoints,GraphicsUnit.Point))
+    let view = new SettingsTextView()
+    let text = view.TextBox
+    do text.Font <- new Font("Consolas",SettingsUi.bodyFont.SizeInPoints,GraphicsUnit.Point)
     // Buttons are built before the page, which shows their results in its status line.
     let mutable setStatus : string -> unit = ignore
     let mutable owner : IWin32Window = null
@@ -130,7 +131,7 @@ type DiagnosticsView() =
     let panel =
         new SettingsListPage(tr Strings.Pages.diagnostics,
                              tr Strings.Diagnostics.description,
-                             text,actions,
+                             view,actions,
                              links=[tr Strings.Diagnostics.projectPage,repository
                                     tr Strings.Diagnostics.reportIssue,repository+"/issues/new"
                                     tr Strings.Diagnostics.releases,repository+"/releases"],
@@ -139,9 +140,6 @@ type DiagnosticsView() =
         setStatus <- fun value -> panel.Status <- value
         owner <- panel
         panel.HandleCreated.Add(fun _ -> guarded refresh)
-        // The report's native scroll bar follows the theme too.
-        ThemeBinding.watch text (fun () ->
-            UxThemeApi.SetWindowTheme(text.Handle,(if ThemeService.currentIsDark() then "DarkMode_Explorer" else "Explorer"),null) |> ignore)
         panel.Disposed.Add(fun _ -> text.Font.Dispose())
     interface ISettingsView with
         member _.key = DiagnosticsSettings

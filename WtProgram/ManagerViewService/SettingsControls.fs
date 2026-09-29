@@ -738,6 +738,8 @@ type SettingsScrollBar() as this =
         this.Visible <- maximum > 0
         this.Invalidate()
     member this.changed = positionChanged.Publish
+    override this.OnPaintBackground(e) =
+        e.Graphics.Clear(if isNull this.Parent then (SettingsColors.current()).background else this.Parent.BackColor)
     member private this.setPosition value =
         let value = max 0 (min maximum value)
         if value<>position then position<-value; positionChanged.Trigger(value); this.Invalidate()
@@ -810,3 +812,51 @@ type SettingsScrollBar() as this =
         | Keys.Home -> this.setPosition(0)
         | Keys.End -> this.setPosition(maximum)
         | _ -> base.OnKeyDown(e)
+
+/// Raises Scrolled after anything that can move its text: scrolling, keys, typing, or the
+/// timer the edit control uses to scroll while a selection is dragged.
+type private ScrollReportingTextBox() =
+    inherit TextBox()
+    let scrolled = Event<unit>()
+    member _.Scrolled = scrolled.Publish
+    override this.WndProc(message:byref<Message>) =
+        base.WndProc(&message)
+        match message.Msg with
+        | 0x0115 | 0x020A | 0x0100 | 0x0102 | 0x000C | 0x0113 | 0x0202 -> scrolled.Trigger()
+        | _ -> ()
+
+/// A read-only, multi-line text view with the settings scrollbar. The text box keeps its own
+/// system scrollbar, and with it its scrolling behaviour, but the host clips that bar away and
+/// shows the settings one in its place, kept in step with the text box's scroll position.
+type SettingsTextView() as this =
+    inherit Panel()
+    let box = new ScrollReportingTextBox(ReadOnly=true,Multiline=true,ScrollBars=ScrollBars.Vertical,
+                                         WordWrap=false,BorderStyle=BorderStyle.None)
+    let bar = new SettingsScrollBar(TabStop=false)
+    let mutable syncing = false
+    let sync() =
+        if box.IsHandleCreated && not syncing then
+            let mutable info = SCROLLINFO()
+            info.cbSize <- Runtime.InteropServices.Marshal.SizeOf(typeof<SCROLLINFO>)
+            info.fMask <- 0x17  // SIF_RANGE | SIF_PAGE | SIF_POS | SIF_TRACKPOS
+            if WinUserApi.GetScrollInfo(box.Handle,1,&info) then
+                bar.configure(max 0 (info.nMax-info.nMin+1-info.nPage),info.nPage,info.nPos-info.nMin)
+            else bar.configure(0,1,0)
+    let arrange() =
+        let size = this.ClientSize
+        box.Bounds <- Rectangle(0,0,size.Width+SystemInformation.VerticalScrollBarWidth,size.Height)
+        bar.Bounds <- Rectangle(size.Width-bar.Width,0,bar.Width,size.Height)
+        sync()
+    do
+        this.Controls.Add(box)
+        this.Controls.Add(bar)
+        bar.BringToFront()
+        box.Scrolled.Add(fun () -> sync())
+        box.TextChanged.Add(fun _ -> sync())
+        box.HandleCreated.Add(fun _ -> sync())
+        bar.changed.Add(fun value ->
+            syncing <- true
+            try WinUserApi.SendMessage(box.Handle,0x0115,(value <<< 16) ||| 4,0) |> ignore  // WM_VSCROLL, SB_THUMBPOSITION
+            finally syncing <- false)
+        this.Resize.Add(fun _ -> arrange())
+    member _.TextBox = box :> TextBox
