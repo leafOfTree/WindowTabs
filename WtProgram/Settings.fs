@@ -17,10 +17,17 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
     // Values already handed to other threads; cleared on every write, like valueCache.
     let published = Collections.Concurrent.ConcurrentDictionary<string, obj>()
     let fileName = "WindowTabsSettings.txt"
-    // Resolve once: a later working-directory change must not redirect pending saves.
-    let relativePath = isStandAlone || File.Exists(Path.Combine(".", fileName))
-    let settingsPath = Path.GetFullPath(Path.Combine(
-        (if relativePath then "." else Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WindowTabs")),fileName))
+    // Resolved once, so a later working-directory change cannot redirect pending saves.
+    // A debug or test run (standalone) keeps its file in the working directory. Otherwise a file
+    // next to WindowTabs.exe makes that copy portable; this used to look in the working
+    // directory, which is not the exe's folder when Windows starts the app at sign-in.
+    let exeFolder = AppDomain.CurrentDomain.BaseDirectory
+    let folder =
+        if isStandAlone then Path.GetFullPath(".")
+        elif File.Exists(Path.Combine(exeFolder,fileName)) then exeFolder
+        else Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"WindowTabs")
+    let relativePath = isStandAlone || folder=exeFolder
+    let settingsPath = Path.GetFullPath(Path.Combine(folder,fileName))
     let store = new SettingsFileStore(settingsPath,defaultArg saveDelay 250,fun ex ->
         Alert.show AlertKind.Warning (tr Strings.Messages.settingsSaveFailed) (tr (Strings.Messages.unableToSaveSettings settingsPath ex.Message)))
 
@@ -243,6 +250,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingChangedEvent.Publish.Subscribe(fun(changedKey,value) ->
                 if changedKey=key then f(value))
 
+        member x.path = settingsPath
         member x.root
             with get() = this.settingsJson
             and set(value) =

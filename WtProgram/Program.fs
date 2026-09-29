@@ -360,14 +360,16 @@ type Program(lifetime:LifetimeScope) as this =
 
 module Bootstrap =
     [<STAThread; EntryPoint>]
-    let main _ =
+    let main argv =
         ThemeService.moveSystemEventsOffMainThread()
         Application.SetCompatibleTextRenderingDefault(false)
         use logger = new ExceptionHandlerPlugin()
         (logger :> IPlugin).init()
         try
             use instance = new SingleInstance("BemoSoftware.WindowTabs")
-            if not(instance.TryAcquire()) then
+            // A restart (after importing settings) waits for the previous instance to exit.
+            let wait = if Array.contains "--restart" argv then 10000 else 0
+            if not(instance.TryAcquire(wait)) then
                 Alert.showSystem AlertKind.Info "WindowTabs" (tr Strings.Messages.alreadyRunning)
                 0
             else

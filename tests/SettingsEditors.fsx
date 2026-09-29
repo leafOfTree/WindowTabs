@@ -37,6 +37,7 @@ let settings = { new ISettings with
     member _.appearance = preferences
     member _.updateAppearance update = preferences <- update preferences; ThemeService.notifyChanged()
     member _.root with get() = JObject() and set(_) = ()
+    member _.path = ""
     member _.getValue _ = box false
     member _.setValue _ = ()
     member _.notifyValue _ _ = { new IDisposable with member _.Dispose() = () }

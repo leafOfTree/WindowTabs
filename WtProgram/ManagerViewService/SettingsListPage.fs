@@ -6,7 +6,8 @@ open System.Windows.Forms
 /// Layout for settings pages built around a list (App rules, Workspaces):
 /// the same margins and column as SettingsPage, a title and description, a row of
 /// actions, and the list in a rounded card that follows the light/dark theme.
-type SettingsListPage(title:string, description:string, list:Control, actions:Control list, ?helpText:string) as this =
+type SettingsListPage(title:string, description:string, list:Control, actions:Control list, ?helpText:string,
+                      ?links:(string*string) list, ?extra:Control) as this =
     inherit Panel()
     let inset() = Dpi.scale 32
     let heading = new Label(Text=title,AutoSize=true,Font=SettingsUi.sectionFont,UseMnemonic=false)
@@ -16,6 +17,15 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
     let status = new Label(AutoSize=false,AutoEllipsis=true,TextAlign=ContentAlignment.MiddleRight,Tag="muted",UseMnemonic=false)
     let actionRow = new FlowLayoutPanel(AutoSize=true,WrapContents=false,FlowDirection=FlowDirection.LeftToRight)
     let card = new Panel(Tag="surface")
+    let linkRow =
+        links |> Option.filter(List.isEmpty >> not) |> Option.map(fun links ->
+            let row = new FlowLayoutPanel(AutoSize=true,WrapContents=true)
+            for text,url in links do
+                let link = new LinkLabel(Text=text,AutoSize=true,UseMnemonic=false,LinkBehavior=LinkBehavior.HoverUnderline,
+                                         Margin=Padding(0,0,Dpi.scale 16,0))
+                link.LinkClicked.Add(fun _ -> try Diagnostics.Process.Start(url) |> ignore with _ -> ())
+                row.Controls.Add(link)
+            row)
     do
         this.Dock <- DockStyle.Fill
         this.DoubleBuffered <- true
@@ -38,7 +48,15 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
         card.Resize.Add(fun _ -> card.Invalidate())
         this.Controls.AddRange([|heading :> Control;detail;actionRow;status;card|])
         helpButton |> Option.iter(fun button -> this.Controls.Add(button))
+        linkRow |> Option.iter(fun row -> this.Controls.Add(row))
+        extra |> Option.iter(fun control -> this.Controls.Add(control))
         ThemeBinding.watch this (fun () ->
+            linkRow |> Option.iter(fun row ->
+                let p = SettingsColors.current()
+                for link in row.Controls |> Seq.cast<LinkLabel> do
+                    link.LinkColor <- p.accent
+                    link.ActiveLinkColor <- p.accent
+                    link.VisitedLinkColor <- p.accent)
             list.Invalidate()
             card.Invalidate())
     /// Short note above the list (scan progress, counts, errors).
@@ -53,7 +71,20 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
             detail.MaximumSize <- Size(width,0)
             detail.Location <- Point(left,heading.Bottom+Dpi.scale 8)
             actionRow.Size <- actionRow.GetPreferredSize(Size.Empty)
-            actionRow.Location <- Point(left,detail.Bottom+Dpi.scale 16)
+            let linksBottom =
+                match linkRow with
+                | Some row ->
+                    row.MaximumSize <- Size(width,0)
+                    row.Location <- Point(left,detail.Bottom+Dpi.scale 8)
+                    row.Bottom
+                | None -> detail.Bottom
+            let extraBottom =
+                match extra with
+                | Some control ->
+                    control.Bounds <- Rectangle(left,linksBottom+Dpi.scale 16,width,control.GetPreferredSize(Size(width,0)).Height)
+                    control.Bottom-Dpi.scale 16
+                | None -> linksBottom
+            actionRow.Location <- Point(left,extraBottom+Dpi.scale 16)
             let statusGap = Dpi.scale 16
             let statusWidth = width-actionRow.Width-statusGap
             let statusOnNextLine = statusWidth < Dpi.scale 120

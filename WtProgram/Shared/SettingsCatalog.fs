@@ -47,12 +47,15 @@ module SettingsCatalog =
         { id="app-rules"; page=ProgramSettings; text=Strings.Settings.appRules; binding=Navigation }
         { id="workspaces"; page=LayoutSettings; text=Strings.Settings.workspaces; binding=Navigation }
         { id="diagnostics"; page=DiagnosticsSettings; text=Strings.Settings.diagnostics; binding=Navigation }
+        { id="settings-location"; page=DiagnosticsSettings; text=Strings.Settings.settingsLocation; binding=Navigation }
+        { id="settings-backup"; page=DiagnosticsSettings; text=Strings.Settings.settingsBackup; binding=Navigation }
     ]
     let find id = all |> List.find(fun item -> item.id=id)
     /// Shown from an (i) button beside the caption.
     let help id =
         // Changeable per group from the tab menu; groups do not save it, so it lasts as long as the group.
         if List.contains id ["auto-hide-tabs";"tab-alignment";"combine-taskbar-icons"] then Some Strings.General.tabMenuHint
+        elif id="settings-location" then Some Strings.General.locationHint
         else None
     /// A setting shown only while the one it depends on makes it meaningful.
     let parent id =

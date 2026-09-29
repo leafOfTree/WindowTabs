@@ -37,6 +37,8 @@ type ISettings =
     abstract member appearance: AppearancePreferences
     abstract member updateAppearance: (AppearancePreferences -> AppearancePreferences) -> unit
     abstract member root : JObject with get,set
+    /// The settings file in use: next to WindowTabs.exe for a portable copy, else in AppData.
+    abstract member path : string
     /// The user's shortcut for a program hotkey (hotkey-control encoding; 0 = none), if changed.
     abstract member hotKey: string -> int option
     abstract member setHotKey: string -> int -> unit

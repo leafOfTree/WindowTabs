@@ -166,14 +166,17 @@ module SettingsUi =
 
     let row table caption description editor = rowWithHelp table caption description None editor |> ignore
 
-    /// The row, for a setting that is collapsed while another one makes it meaningless.
-    let settingRowControl table id (editor:Control) =
+    /// A catalog setting's row with a description of its own, such as a file path.
+    let settingRowWith table id (description:string) (editor:Control) =
         let definition = SettingsCatalog.find id
         let help = SettingsCatalog.help id |> Option.map tr
         editor.Name <- id
-        let description = tr definition.text.description
         editor.AccessibleDescription <- String.concat " " (description :: Option.toList help)
         rowWithHelp table (tr definition.text.caption) description help editor
+
+    /// The row, for a setting that is collapsed while another one makes it meaningless.
+    let settingRowControl table id (editor:Control) =
+        settingRowWith table id (tr (SettingsCatalog.find id).text.description) editor
 
     let settingRow table id editor = settingRowControl table id editor |> ignore
 

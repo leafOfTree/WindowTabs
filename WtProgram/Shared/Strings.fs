@@ -85,7 +85,7 @@ module Strings =
         let shortcuts = { en="Shortcuts"; zh="快捷键"; ja="ショートカット" }
         let appRules = { en="App rules"; zh="应用规则"; ja="アプリのルール" }
         let workspaces = { en="Workspaces"; zh="工作区"; ja="ワークスペース" }
-        let diagnostics = { en="About & diagnostics"; zh="关于与诊断"; ja="バージョン情報と診断" }
+        let diagnostics = { en="Support"; zh="帮助与支持"; ja="サポート" }
         let title page =
             match page with
             | GeneralSettings -> general
@@ -173,10 +173,30 @@ module Strings =
                            description={ en="Save and restore window layouts."; zh="保存和恢复窗口布局。"; ja="ウィンドウの配置を保存して復元します。" }
                            keywords={ en="layout session"; zh="布局 会话"; ja="レイアウト" } }
         let diagnostics = { caption=Pages.diagnostics
-                            description={ en="Version and troubleshooting information."; zh="版本与故障排查信息。"; ja="バージョンとトラブルシューティングの情報。" }
-                            keywords={ en="version about log bug report"; zh="版本 日志 报告 反馈"; ja="バージョン ログ レポート" } }
+                            description={ en="Troubleshooting report and where to get help."; zh="故障排查报告与获取帮助的途径。"; ja="トラブルシューティング用のレポートとヘルプの入手先。" }
+                            keywords={ en="diagnostics version about log bug report issue github help feedback"; zh="诊断 版本 日志 报告 反馈 问题 帮助"; ja="診断 バージョン ログ レポート 問題 ヘルプ" } }
+        let settingsLocation = { caption={ en="Location"; zh="位置"; ja="場所" }
+                                 description=none
+                                 keywords={ en="settings file folder path portable appdata"; zh="设置文件 文件夹 路径 便携"; ja="設定ファイル フォルダー パス ポータブル" } }
+        let settingsBackup = { caption={ en="Back up and restore"; zh="备份与恢复"; ja="バックアップと復元" }
+                               description={ en="Export all settings to a file, or import them and restart."; zh="将所有设置导出为文件，或从文件导入并重新启动。"; ja="すべての設定をファイルにエクスポートするか、インポートして再起動します。" }
+                               keywords={ en="import export backup restore migrate json settings file"; zh="导入 导出 备份 恢复 迁移 设置文件"; ja="インポート エクスポート バックアップ 復元 移行 設定ファイル" } }
 
     module General =
+        let settingsFile = { en="Settings file"; zh="设置文件"; ja="設定ファイル" }
+        let openFolder = { en="Open folder"; zh="打开文件夹"; ja="フォルダーを開く" }
+        let export = { en="Export…"; zh="导出…"; ja="エクスポート…" }
+        let import = { en="Import…"; zh="导入…"; ja="インポート…" }
+        let locationHint = { en="To keep settings next to WindowTabs.exe (portable), copy this file into that folder and restart WindowTabs."
+                             zh="若要把设置放在 WindowTabs.exe 所在文件夹（便携），将此文件复制到该文件夹并重启 WindowTabs。"
+                             ja="設定を WindowTabs.exe と同じフォルダーに置く（ポータブル）には、このファイルをそのフォルダーにコピーして WindowTabs を再起動します。" }
+        let exported = { en="Settings exported."; zh="设置已导出。"; ja="設定をエクスポートしました。" }
+        let importTitle = { en="Import settings"; zh="导入设置"; ja="設定のインポート" }
+        let notSettingsFile = { en="This file does not contain WindowTabs settings."; zh="此文件不包含 WindowTabs 设置。"; ja="このファイルには WindowTabs の設定が含まれていません。" }
+        let importedRestarting path =
+            { en=sprintf "Settings imported. WindowTabs will now restart to apply them.\n\nYour previous settings were saved to:\n%s" path
+              zh=sprintf "设置已导入。WindowTabs 将重新启动以应用这些设置。\n\n原来的设置已保存到：\n%s" path
+              ja=sprintf "設定をインポートしました。適用するために WindowTabs を再起動します。\n\n以前の設定の保存先:\n%s" path }
         let tabMenuHint = { en="Change it for one group from the tab menu."; zh="可在标签菜单中为单个分组修改。"; ja="タブメニューでグループごとに変更できます。" }
         let startupAndDefaults = { en="Startup and defaults"; zh="启动与默认设置"; ja="起動と既定の設定" }
         let tabBehavior = { en="Tab behavior"; zh="标签行为"; ja="タブの動作" }
@@ -278,6 +298,10 @@ module Strings =
                             ja="不具合を報告するときはこのレポートを添付してください。ウィンドウのタイトル、パス、ライセンス情報は含まれません。" }
         let saved = { en="Saved."; zh="已保存。"; ja="保存しました。" }
         let copyReport = { en="Copy report"; zh="复制报告"; ja="レポートをコピー" }
+        let includeWindows = { en="Include window details"; zh="包含窗口详情"; ja="ウィンドウの詳細を含める" }
         let reportCopied = { en="Report copied."; zh="报告已复制。"; ja="レポートをコピーしました。" }
         let saveReport = { en="Save report"; zh="保存报告"; ja="レポートを保存" }
-        let exportSettings = { en="Export settings"; zh="导出设置"; ja="設定をエクスポート" }
+        let reportTitle = { en="Troubleshooting report"; zh="故障排查报告"; ja="トラブルシューティング レポート" }
+        let projectPage = { en="Project page"; zh="项目主页"; ja="プロジェクトページ" }
+        let reportIssue = { en="Report an issue"; zh="报告问题"; ja="問題を報告" }
+        let releases = { en="Releases"; zh="版本发布"; ja="リリース" }

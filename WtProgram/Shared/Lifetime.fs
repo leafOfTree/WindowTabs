@@ -22,9 +22,11 @@ type LifetimeScope(report:exn -> unit) =
 type SingleInstance(name:string) =
     let mutex = new Threading.Mutex(false,name)
     let mutable acquired = false
-    member _.TryAcquire() =
+    member this.TryAcquire() = this.TryAcquire(0)
+    /// Waits up to timeout milliseconds, for a restart whose previous instance is still exiting.
+    member _.TryAcquire(timeout:int) =
         if not acquired then
-            acquired <- try mutex.WaitOne(0) with :? Threading.AbandonedMutexException -> true
+            acquired <- try mutex.WaitOne(timeout) with :? Threading.AbandonedMutexException -> true
         acquired
     interface IDisposable with
         member _.Dispose() =

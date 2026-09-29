@@ -186,7 +186,7 @@ let main() =
         let beforeOpen = File.ReadAllText(settings.path)
         let frame = DesktopManagerForm(views=[
             general;appearance;placeholder HotKeySettings "Shortcuts";placeholder ProgramSettings "App rules"
-            placeholder LayoutSettings "Workspaces";placeholder DiagnosticsSettings "About & diagnostics"])
+            placeholder LayoutSettings "Workspaces";placeholder DiagnosticsSettings "Diagnostics"])
         use form = frame.window
         form.ShowInTaskbar <- false
         form.StartPosition <- FormStartPosition.Manual

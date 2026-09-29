@@ -56,6 +56,7 @@ type DispatchedSettings(inner:ISettings, dispatcher:IDispatcher, ?published:Coll
         member _.notifyValue key callback = dispatcher.Send(fun () -> inner.notifyValue key callback)
         member _.hotKey key = dispatcher.Send(fun () -> inner.hotKey key)
         member _.setHotKey key value = dispatcher.Send(fun () -> inner.setHotKey key value)
+        member _.path = inner.path
         member _.root
             with get() = dispatcher.Send(fun () -> inner.root)
             and set value = dispatcher.Send(fun () -> inner.root <- value)
