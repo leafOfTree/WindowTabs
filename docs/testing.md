@@ -68,14 +68,20 @@ dragging, shortcuts or user settings. Those need a separate end-to-end harness.
 
 ## Remaining coverage plan
 
+The separate [desktop E2E suite](desktop-e2e.md) exercises the actual Release
+entry point, real mouse drag grouping, frequent foreground switching, maximized
+tabs, closing the active window, tray-menu exit and restart. It requires an idle
+interactive desktop and is not part of the focus-safe default suite.
+
 | Risk | Existing evidence | Next validation |
 | --- | --- | --- |
 | Persistence and recovery | Architecture, Reliability | Generated malformed data, interrupted writes |
 | Threads and resource ownership | Architecture, Reliability, menu-hook teardown guard | Randomized event ordering, broader shutdown scenarios |
 | Settings and visuals | SettingsTheme, SettingsEditors | Reviewed screenshot baselines per DPI/theme/language |
 | DPI | DpiLayout message transitions | Physical mixed-monitor movement and docking |
-| Release packaging | Isolated assembly smoke | Actual startup, settings changes, exit and restart |
-| Window grouping | GroupLifecycle: real HWND membership, ordering, transfer and removal | Mouse-driven dragging, actual focus, external-process helper windows |
+| Release packaging | Isolated assembly smoke; desktop E2E startup, exit and restart | UI-driven settings edits and import-triggered restart |
+| Window grouping | GroupLifecycle plus desktop E2E drag/focus on foreign helper HWNDs | Third-party application scenarios, drag-out and cancellation |
+| Frequent tab switching | Desktop E2E clicks, numeric and next/previous shortcuts, maximized/closed tabs; deterministic stale-focus and Ctrl snapshot checks | Mixed-monitor switching, minimize/restore, prolonged soak |
 | Long-running desktop | Short resource-cycle tests | Multi-hour soak, sleep/resume, Explorer restart |
 
 Establish a repeatable coverage baseline before increasing thresholds. Prioritize

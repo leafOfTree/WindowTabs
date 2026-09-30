@@ -29,6 +29,11 @@ jobs:
         shell: powershell
         run: ./tests/Run-ReleaseSmoke.ps1
 
+      # Real input runs separately on an unlocked interactive desktop.
+      - name: Compile desktop E2E harness
+        shell: powershell
+        run: ./tests/Run-DesktopE2E.ps1 -BuildOnly
+
       - name: Upload regression diagnostics
         if: always()
         uses: actions/upload-artifact@v4
