@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Drawing
 open System.Runtime.InteropServices
@@ -66,6 +66,10 @@ type ITaskSwitchView =
     abstract member select : int -> unit
     /// Takes the keyboard while the switcher is open; losing focus cancels it.
     abstract member inputControl : Control
+    /// The pointer moved onto a window: it becomes the chosen one.
+    abstract member hovered : IEvent<int>
+    /// A window was clicked: switch to it now.
+    abstract member clicked : IEvent<int>
 
 type ITaskSwitchListControl =
     abstract member select : int -> unit
@@ -73,6 +77,10 @@ type ITaskSwitchListControl =
     abstract member onShow : Form -> unit
     /// The height that shows every window without scrolling.
     abstract member contentHeight : int
+    /// The pointer moved onto a window: it becomes the chosen one.
+    abstract member hovered : IEvent<int>
+    /// A window was clicked: switch to it now.
+    abstract member clicked : IEvent<int>
 
 module private TaskWindowItems =
     let create (TaskWindowItem(hwnd,isGroup)) =
@@ -94,16 +102,31 @@ type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
         new SettingsTreeList([TreeListColumn("",0,TextColumn)],
                              ShowHeader=false,ShowExpanders=false,RowHeight=52,IconSize=32,
                              BackColor=(SettingsColors.current()).surface,ForeColor=(SettingsColors.current()).text)
+    let hovered = Event<int>()
+    let clicked = Event<int>()
+    // The pointer may already rest over a row when Alt+Tab opens; only moving it chooses.
+    let mutable start = Point.Empty
+    let indexAt point = list.ItemAt(point) |> Option.map(fun item -> list.Roots.IndexOf(item)) |> Option.filter(fun index -> index>=0)
     do
         list.Roots.AddRange(windows.list |> List.map TaskWindowItems.create)
         list.Rebuild()
         list.Disposed.Add(fun _ -> ImgHelper.disposeItems list.Roots)
+        list.MouseMove.Add(fun e ->
+            if Cursor.Position<>start then
+                indexAt e.Location |> Option.iter(fun index ->
+                    if not (obj.ReferenceEquals(list.SelectedItem,list.Roots.[index])) then hovered.Trigger(index)))
+        list.MouseClick.Add(fun e -> if e.Button=MouseButtons.Left then indexAt e.Location |> Option.iter clicked.Trigger)
+    /// The window on the row at a point in the list, if any.
+    member _.IndexAt(point:Point) = indexAt point
 
     interface ITaskSwitchListControl with
+        member this.hovered = hovered.Publish
+        member this.clicked = clicked.Publish
         member this.select index = list.SelectedItem <- list.Roots.[index]
         member this.control = list :> Control
         member this.contentHeight = list.Roots.Count*Dpi.scale list.RowHeight
         member this.onShow form =
+            start <- Cursor.Position
             let p = SettingsColors.current()
             form.BackColor <- p.surface
             list.BackColor <- p.surface
@@ -185,66 +208,8 @@ type TaskSwitchForm(control:ITaskSwitchListControl) =
         member this.hide() = this.hide()
         member this.select index = this.select index
         member this.inputControl = this.inputControl
-
-module private SwitcherNative =
-    [<Struct; StructLayout(LayoutKind.Sequential)>]
-    type Margins =
-        val mutable Left : int
-        val mutable Right : int
-        val mutable Top : int
-        val mutable Bottom : int
-    [<DllImport("dwmapi.dll")>]
-    extern int DwmSetWindowAttribute(nativeint hwnd, int attribute, int& value, int size)
-    [<DllImport("dwmapi.dll")>]
-    extern int DwmExtendFrameIntoClientArea(nativeint hwnd, Margins& margins)
-    [<DllImport("gdi32.dll")>]
-    extern nativeint CreateCompatibleDC(nativeint dc)
-    [<DllImport("gdi32.dll")>]
-    extern nativeint SelectObject(nativeint dc, nativeint item)
-    [<DllImport("gdi32.dll")>]
-    extern bool DeleteObject(nativeint item)
-    [<DllImport("gdi32.dll")>]
-    extern bool DeleteDC(nativeint dc)
-    [<DllImport("gdi32.dll")>]
-    extern bool BitBlt(nativeint target, int x, int y, int width, int height, nativeint source, int sourceX, int sourceY, int operation)
-
-    /// The blurred, tinted backdrop of Windows 11 flyouts (DWMSBT_TRANSIENTWINDOW) behind the
-    /// whole window, dark or light, with rounded corners. False where Windows has none (before
-    /// Windows 11 22H2): the caller then draws a solid panel.
-    let systemBackdrop (hwnd:nativeint) (dark:bool) =
-        try
-            let mutable margins = Margins(Left= -1,Right= -1,Top= -1,Bottom= -1)
-            DwmExtendFrameIntoClientArea(hwnd,&margins) |> ignore
-            let mutable darkMode = if dark then 1 else 0
-            DwmSetWindowAttribute(hwnd,20,&darkMode,4) |> ignore
-            let mutable round = 2
-            DwmSetWindowAttribute(hwnd,33,&round,4) |> ignore
-            let mutable transient = 3
-            DwmSetWindowAttribute(hwnd,38,&transient,4)=0
-        with _ -> false
-
-    /// Copies the bitmap with its alpha, which DWM then lays over the backdrop; drawing it
-    /// through GDI+ would make every pixel opaque.
-    let blit (graphics:Graphics) (bitmap:Bitmap) =
-        let target = graphics.GetHdc()
-        let source = CreateCompatibleDC(target)
-        let handle = bitmap.GetHbitmap(Color.FromArgb(0))
-        let previous = SelectObject(source,handle)
-        try BitBlt(target,0,0,bitmap.Width,bitmap.Height,source,0,0,0x00CC0020) |> ignore
-        finally
-            SelectObject(source,previous) |> ignore
-            DeleteObject(handle) |> ignore
-            DeleteDC(source) |> ignore
-            graphics.ReleaseHdc(target)
-
-    /// Off when the user turned transparency effects off in Windows settings.
-    let transparencyEnabled() =
-        try
-            use key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
-            match (if isNull key then null else key.GetValue("EnableTransparency")) with
-            | :? int as value -> value<>0
-            | _ -> true
-        with _ -> true
+        member this.hovered = control.hovered
+        member this.clicked = control.clicked
 
 module private TaskWindowIcons =
     /// A window's app icon at the given size: the shell's icon for its program, which comes in
@@ -268,16 +233,16 @@ module private TaskWindowIcons =
         | null -> fromWindow()
         | icon -> Some icon
 
-/// The macOS-style switcher: large app icons in a row, wrapping onto more rows when there are
-/// many, on a translucent blurred panel, with the chosen window's title beneath them.
+/// The horizontal switcher: large app icons in a row, wrapping onto more rows when there are
+/// many, with the chosen window's title beneath them. The panel matches the vertical list:
+/// the same surface, border, rounded corners and shadow.
 type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
     let iconSize = Dpi.scale 64
     let cell = Dpi.scale 96
     let gap = Dpi.scale 8
     let padding = Dpi.scale 20
     let titleHeight = Dpi.scale 36
-    // Matches the radius Windows 11 gives the window, and so its blur.
-    let radius = Dpi.scale 8
+    let radius = Dpi.scale 12
     let items =
         windows.list |> List.map(fun (TaskWindowItem(hwnd,isGroup)) ->
             let window = OS().windowFromHwnd(hwnd)
@@ -293,8 +258,10 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
         use icon = Services.openIcon("Bemo.ico")
         new Bitmap(icon.ToBitmap(),Size(Dpi.scale 24,Dpi.scale 24))
     let mutable selected = 0
-    /// Whether Windows draws the blurred backdrop; decided when the window is created.
-    let mutable backdrop = false
+    let mutable closed = false
+    let mutable shadow : TaskSwitchShadow option = None
+    let hovered = Event<int>()
+    let clicked = Event<int>()
     /// The panel as last rendered, which the window paints.
     let mutable frame : Bitmap = null
     let form =
@@ -304,23 +271,20 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
                     let createParams = base.CreateParams
                     createParams.ExStyle <- createParams.ExStyle ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW ||| WindowsExtendedStyles.WS_EX_TOPMOST
                     createParams
-                override this.OnHandleCreated(e) =
-                    base.OnHandleCreated(e)
-                    backdrop <- not SystemInformation.HighContrast && SwitcherNative.transparencyEnabled()
-                                && SwitcherNative.systemBackdrop this.Handle (ThemeService.currentIsDark())
-                // The backdrop shows through pixels left transparent; clearing them would cover it.
+                // The rendered panel covers the whole window.
                 override this.OnPaintBackground(e) = ()
-                override this.OnPaint(e) = if not (isNull frame) then SwitcherNative.blit e.Graphics frame }
+                override this.OnPaint(e) = if not (isNull frame) then e.Graphics.DrawImageUnscaled(frame,0,0) }
         f.FormBorderStyle <- FormBorderStyle.None
         f.ShowInTaskbar <- false
         f.StartPosition <- FormStartPosition.Manual
         // The style bit alone is not enough: showing a form whose TopMost is false moves it
         // below other always-on-top windows.
         f.TopMost <- true
-        f.BackColor <- Color.Black
+        f.BackColor <- (SettingsColors.current()).surface
         f.Bounds <- Rectangle(area.Left+(area.Width-width)/2,area.Top+(area.Height-height)/2,width,height)
+        use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 width,float32 height)) (float32 radius)
+        f.Region <- new Region(shape)
         f
-    let solid() = not backdrop
     /// Each row is centred, so a short last row sits in the middle.
     let cellBounds index =
         let row,column = index/columns,index%columns
@@ -328,12 +292,11 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
         let left = (width-(inRow*cell+(inRow-1)*gap))/2
         Rectangle(left+column*(cell+gap),padding+row*(cell+gap),cell,cell)
     member _.Size = Size(width,height)
-    /// Whether Windows draws the blurred backdrop behind the panel.
-    member _.UsesBackdrop = backdrop
-    /// The panel as drawn: transparent outside its rounded shape and translucent inside it,
-    /// unless transparency effects are off.
+    /// The window whose icon is at a point in the panel, if any.
+    member _.IndexAt(point:Point) =
+        Seq.init items.Length id |> Seq.tryFind(fun index -> (cellBounds index).Contains(point))
+    /// The panel as drawn, transparent outside its rounded shape.
     member _.Render() =
-        // Premultiplied, as DWM composes it; a plain ARGB bitmap loses its alpha on the way.
         let bitmap = new Bitmap(width,height,Imaging.PixelFormat.Format32bppPArgb)
         use g = Graphics.FromImage(bitmap)
         g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
@@ -341,26 +304,18 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
         g.TextRenderingHint <- Text.TextRenderingHint.AntiAliasGridFit
         g.Clear(Color.Transparent)
         let p = SettingsColors.current()
-        let dark = ThemeService.currentIsDark()
         let highContrast = SystemInformation.HighContrast
-        let background =
-            if solid() then p.surface
-            // Windows tints the blur already; this only evens it out a little.
-            elif dark then Color.FromArgb(0x30,0x20,0x20,0x20)
-            else Color.FromArgb(0x40,0xF6,0xF6,0xF6)
         use panel = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 width,float32 height)) (float32 radius)
-        use fill = new SolidBrush(background)
+        use fill = new SolidBrush(p.surface)
         g.FillPath(fill,panel)
         use outline = SettingsShapes.rounded (SettingsShapes.outlineRect width height) (float32 radius)
-        // Windows draws the rounded window's own border over the backdrop.
-        if solid() then
-            use border = new Pen(if highContrast then SystemColors.WindowText elif dark then Color.FromArgb(0x40,Color.White) else Color.FromArgb(0x30,Color.Black))
-            g.DrawPath(border,outline)
+        use border = new Pen(p.border)
+        g.DrawPath(border,outline)
         items |> Array.iteri(fun index (_,icon,isGroup) ->
             let bounds = cellBounds index
             if index=selected then
-                use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X,float32 bounds.Y,float32 bounds.Width,float32 bounds.Height)) (float32(Dpi.scale 12))
-                use highlight = new SolidBrush(if highContrast then SystemColors.Highlight elif dark then Color.FromArgb(0x40,Color.White) else Color.FromArgb(0x24,Color.Black))
+                use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X,float32 bounds.Y,float32 bounds.Width,float32 bounds.Height)) (float32(Dpi.scale 10))
+                use highlight = new SolidBrush(if highContrast then SystemColors.Highlight else p.selection)
                 g.FillPath(highlight,shape)
             let iconBounds = Rectangle(bounds.X+(cell-iconSize)/2,bounds.Y+(cell-iconSize)/2,iconSize,iconSize)
             match icon with
@@ -374,10 +329,19 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
             let title,_,_ = items.[max 0 (min (items.Length-1) selected)]
             use format = new StringFormat(StringFormatFlags.NoWrap,Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center,
                                           Trimming=StringTrimming.EllipsisCharacter)
-            use text = new SolidBrush(if highContrast then SystemColors.WindowText elif dark then Color.White else Color.FromRGB(0x1A1A1A))
+            use text = new SolidBrush(if highContrast then SystemColors.WindowText else p.text)
             let bottom = padding+rows*cell+(rows-1)*gap
             g.DrawString(title,titleFont,text,RectangleF(float32 padding,float32 bottom,float32(width-padding*2),float32 titleHeight),format)
         bitmap
+    member private this.wirePointer() =
+        // The pointer may already rest over an icon when Alt+Tab opens; only moving it chooses.
+        let mutable start = Cursor.Position
+        form.Shown.Add(fun _ -> start <- Cursor.Position)
+        form.MouseMove.Add(fun e ->
+            if Cursor.Position<>start then
+                this.IndexAt(e.Location) |> Option.iter(fun index -> if index<>selected then hovered.Trigger(index)))
+        form.MouseClick.Add(fun e ->
+            if e.Button=MouseButtons.Left then this.IndexAt(e.Location) |> Option.iter clicked.Trigger)
     member private this.present() =
         let previous = frame
         frame <- this.Render()
@@ -385,15 +349,19 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
         form.Invalidate()
     interface ITaskSwitchView with
         member this.show() =
-            form.Handle |> ignore
-            if solid() then
-                use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 width,float32 height)) (float32 radius)
-                form.Region <- new Region(shape)
+            this.wirePointer()
             this.present()
+            // Built while hidden, like the list's, so it cannot delay the first paint.
+            if not SystemInformation.HighContrast then shadow <- Some(new TaskSwitchShadow(form))
             form.Show()
             form.Update()
+            shadow |> Option.iter(fun item -> item.Show())
             OS().windowFromHwnd(form.Handle).setForegroundOrRestore(true)
         member this.hide() =
+          // Ending a switch can hide twice: once for the choice, again as the panel loses focus.
+          if not closed then
+            closed <- true
+            shadow |> Option.iter(fun item -> (item :> IDisposable).Dispose())
             form.Hide()
             form.Dispose()
             titleFont.Dispose()
@@ -404,6 +372,8 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
             selected <- index
             if form.IsHandleCreated then this.present()
         member this.inputControl = form :> Control
+        member this.hovered = hovered.Publish
+        member this.clicked = clicked.Publish
 
 type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string) as this =
     let os = OS()
@@ -413,6 +383,7 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string) as this =
         if style="List" then TaskSwitchForm(TaskSwitchListControl(windows)) :> ITaskSwitchView
         else TaskSwitchIconView(windows) :> ITaskSwitchView
     let endedEvent = Event<_>()
+    let mutable finished = false
 
     let setIndex index =
         switchIndex.set(index)
@@ -436,6 +407,11 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string) as this =
         form.inputControl.LostFocus.Add <| fun e ->
             this.switchEnd(true)
 
+        form.hovered.Add setIndex
+        form.clicked.Add <| fun index ->
+            setIndex index
+            this.switchEnd(false)
+
         form.inputControl.KeyDown.Add <| fun e ->
             this.processKeys(e)
             
@@ -449,11 +425,14 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string) as this =
     member this.switchNext() = doSwitch true
     member this.switchPrev() = doSwitch false
     member this.switchEnd(cancel:bool) =
-        if cancel.not && windows.length > 0 then
-            let (TaskWindowItem(hwnd,_)) = windows.at(switchIndex.value)
-            os.windowFromHwnd(hwnd).setForegroundOrRestore(false)
-        form.hide()
-        endedEvent.Trigger()
+        // Switching away makes the panel lose focus, which asks to end again: once is enough.
+        if not finished then
+            finished <- true
+            if cancel.not && windows.length > 0 then
+                let (TaskWindowItem(hwnd,_)) = windows.at(switchIndex.value)
+                os.windowFromHwnd(hwnd).setForegroundOrRestore(false)
+            form.hide()
+            endedEvent.Trigger()
 
     member this.selectedHwnd =
         let (TaskWindowItem(hwnd,_)) = windows.at(switchIndex.value)
@@ -507,9 +486,10 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop) as this=
     
     member this.windows =
         let windowsInZorder = os.windowsInZorder.where(fun w -> 
-            w.isAltTabWindow 
-            && w.pid.isCurrentProcess.not 
-            && not(String.IsNullOrEmpty w.text) 
+            // WindowTabs' own windows, such as Settings, are listed like any other. The switcher
+            // is not shown yet when this runs, so it does not list itself.
+            w.isAltTabWindow
+            && not(String.IsNullOrEmpty w.text)
             && w.text <> "Microsoft Text Input Application"
             && w.className <> "Windows.UI.Core.CoreWindow"
         )

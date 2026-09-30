@@ -157,6 +157,9 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             let index = (y-this.headerHeight+offset)/this.rowHeight
             if index>=0 && index<rows.Length then Some(index,rows.[index]) else None
 
+    /// The item on the shown row at a point, if any.
+    member this.ItemAt(point:Point) = this.rowAt point.Y |> Option.map(fun (_,(item,_)) -> item)
+
     member private this.expanderBounds(level:int, rowTop:int) =
         let size = Dpi.scale 16
         Rectangle(Dpi.scale 8+level*Dpi.scale 20,rowTop+(this.rowHeight-size)/2,size,size)

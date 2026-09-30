@@ -420,6 +420,31 @@ Group #2: No valid windows in this group.";
                 switcherForm.ClientSize.Height
             let area = Screen.FromHandle(WinUserApi.GetForegroundWindow()).WorkingArea
             let few,many = sized 12,sized 200
+            // Shell icons keep clean edges: read with the right alpha format, no pixel is brighter
+            // than its own coverage once premultiplied (that shows as a light fringe).
+            do
+                use icon = AppIcons.GetFileIcon(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),"explorer.exe"),Dpi.scale 64)
+                check (not (isNull icon)) "No shell icon for Explorer"
+                let data = icon.LockBits(Rectangle(Point.Empty,icon.Size),ImageLockMode.ReadOnly,PixelFormat.Format32bppPArgb)
+                let bytes = Array.zeroCreate<byte> (data.Stride*icon.Height)
+                Runtime.InteropServices.Marshal.Copy(data.Scan0,bytes,0,bytes.Length)
+                icon.UnlockBits(data)
+                let fringe = [ for i in 0..4..bytes.Length-4 do
+                                 let alpha = bytes.[i+3]
+                                 if bytes.[i]>alpha || bytes.[i+1]>alpha || bytes.[i+2]>alpha then yield i ]
+                check fringe.IsEmpty (sprintf "Shell icon edges are read with the wrong alpha: %d pixels" fringe.Length)
+            // The pointer finds the window on each row of the list, and none below the last.
+            do
+                let control = TaskSwitchListControl(List2())
+                let tree = (control :> ITaskSwitchListControl).control :?> SettingsTreeList
+                for index in 1..3 do tree.Roots.Add(TreeListItem(sprintf "Window %d" index))
+                tree.Rebuild()
+                let switcher = TaskSwitchForm(control)
+                use switcherForm = Control.FromHandle(switcher.hwnd) :?> Form
+                let row = Dpi.scale tree.RowHeight
+                check (control.IndexAt(Point(Dpi.scale 40,row*2+row/2))=Some 2 && control.IndexAt(Point(Dpi.scale 40,row/2))=Some 0)
+                      "List rows are not where the pointer finds them"
+                check (control.IndexAt(Point(Dpi.scale 40,row*3+row/2)).IsNone) "Space below the list picks a window"
             check (few >= 12*Dpi.scale 52) (sprintf "Switcher does not show all 12 windows: %d px" few)
             check (many <= area.Height*85/100 && many > few) (sprintf "Switcher outgrows the screen: %d px of %d" many area.Height)
             // The icon style: one row for a few windows, more rows for many, never wider than
@@ -438,8 +463,15 @@ Group #2: No valid windows in this group.";
                     use image = three.Render()
                     image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","switcher-icons-"+theme+".png"),ImageFormat.Png)
                     check (image.GetPixel(0,0).A=0uy && image.GetPixel(image.Width/2,image.Height/2).A>0uy) "Icon switcher is not transparent outside its panel"
-                (three :> ITaskSwitchView).hide()
-                (crowd :> ITaskSwitchView).hide()
+                // The pointer finds each icon, left to right, and nothing in the title area.
+                let middle = Dpi.scale 20+Dpi.scale 48
+                let found = [ for x in 0..three.Size.Width-1 -> three.IndexAt(Point(x,middle)) ] |> List.choose id |> List.distinct
+                check (found=[0;1;2]) (sprintf "Icons are not where the pointer finds them: %A" found)
+                check (three.IndexAt(Point(three.Size.Width/2,three.Size.Height-Dpi.scale 12)).IsNone) "The title area picks a window"
+                // Ending a switch hides the panel twice (the choice, then the lost focus).
+                for _ in 1..2 do
+                    (three :> ITaskSwitchView).hide()
+                    (crowd :> ITaskSwitchView).hide()
             finally for window in windows do window.Dispose()
             api.setValue("tabThemeMode",box "dark")
         let language = controls form |> Seq.choose(function :? SettingsCombo as c when c.Name="language" -> Some c | _ -> None) |> Seq.head

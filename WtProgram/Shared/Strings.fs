@@ -235,8 +235,9 @@ module Strings =
         let lightThemeColors = { en="Light theme · Tab colors"; zh="浅色主题 · 标签配色"; ja="ライトテーマ · タブの色" }
         let colorPreset = { en="Color preset"; zh="配色预设"; ja="配色プリセット" }
         let custom = { en="Custom"; zh="自定义"; ja="カスタム" }
-        let switcherIcons = { en="Icons"; zh="图标"; ja="アイコン" }
-        let switcherList = { en="List"; zh="列表"; ja="リスト" }
+        /// Switcher styles: large icons in a row, or window titles in a column.
+        let switcherHorizontal = { en="Horizontal"; zh="横向"; ja="横" }
+        let switcherVertical = { en="Vertical"; zh="纵向"; ja="縦" }
         /// A colour preset whose colours the user has changed.
         let editedPreset name = { en=sprintf "%s (edited)" name; zh=sprintf "%s（已修改）" name; ja=sprintf "%s（変更済み）" name }
         let resetColors = { en="Reset colors"; zh="重置配色"; ja="配色をリセット" }

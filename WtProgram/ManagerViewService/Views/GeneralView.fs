@@ -27,7 +27,7 @@ type GeneralView() =
         let grouped = SettingsBindings.settingToggle "groupWindowsInSwitcher"
         SettingsUi.settingRow switcher "use-windowtabs-for-alt-tab" enabled
         let style = SettingsBindings.choiceRow switcher "switcher-style"
-                        [|tr Strings.Appearance.switcherIcons;tr Strings.Appearance.switcherList|]
+                        [|tr Strings.Appearance.switcherHorizontal;tr Strings.Appearance.switcherVertical|]
         let groupedRow = SettingsUi.settingRowControl switcher "group-windows-in-the-switcher" grouped
         // Both only matter while WindowTabs handles Alt+Tab.
         let dependents = [style.Parent :?> SettingsRow;groupedRow]

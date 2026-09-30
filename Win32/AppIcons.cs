@@ -250,25 +250,38 @@ namespace Bemo
             }
         }
 
-        /// <summary>Copies a 32-bit DIB section keeping its alpha channel (Image.FromHbitmap drops it).</summary>
+        /// <summary>
+        /// Copies a 32-bit DIB section keeping its alpha channel (Image.FromHbitmap drops it). The
+        /// shell hands over unpremultiplied colours for icons; read as premultiplied, the partly
+        /// transparent edge pixels come out too bright, a light fringe round the icon. A pixel
+        /// brighter than its alpha only exists unpremultiplied, so the pixels decide the format.
+        /// </summary>
         private static Bitmap FromDibSection(IntPtr handle)
         {
             var section = new DIBSECTION();
             if (GetObject(handle, Marshal.SizeOf(section), ref section) == 0 || section.bmBitsPixel != 32 || section.bmBits == IntPtr.Zero)
                 return Image.FromHbitmap(handle);
             int width = section.bmWidth, height = Math.Abs(section.bmHeight);
-            var result = new Bitmap(width, height, PixelFormat.Format32bppPArgb);
-            var data = result.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format32bppPArgb);
+            var pixels = new byte[width * height * 4];
+            bool bottomUp = section.biHeight > 0;
+            for (int y = 0; y < height; y++)
+            {
+                int source = bottomUp ? height - 1 - y : y;
+                Marshal.Copy(IntPtr.Add(section.bmBits, source * section.bmWidthBytes), pixels, y * width * 4, width * 4);
+            }
+            bool premultiplied = true;
+            for (int i = 0; i < pixels.Length && premultiplied; i += 4)
+            {
+                byte alpha = pixels[i + 3];
+                if (pixels[i] > alpha || pixels[i + 1] > alpha || pixels[i + 2] > alpha) premultiplied = false;
+            }
+            var format = premultiplied ? PixelFormat.Format32bppPArgb : PixelFormat.Format32bppArgb;
+            var result = new Bitmap(width, height, format);
+            var data = result.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, format);
             try
             {
-                var row = new byte[section.bmWidthBytes];
-                bool bottomUp = section.biHeight > 0;
                 for (int y = 0; y < height; y++)
-                {
-                    int source = bottomUp ? height - 1 - y : y;
-                    Marshal.Copy(IntPtr.Add(section.bmBits, source * section.bmWidthBytes), row, 0, row.Length);
-                    Marshal.Copy(row, 0, IntPtr.Add(data.Scan0, y * data.Stride), Math.Min(row.Length, data.Stride));
-                }
+                    Marshal.Copy(pixels, y * width * 4, IntPtr.Add(data.Scan0, y * data.Stride), width * 4);
             }
             finally { result.UnlockBits(data); }
             return result;
