@@ -9,6 +9,15 @@ open System.Threading
 open System.Windows.Forms
 open Bemo.Win32.Forms
 
+module TabNavigation =
+    /// Foreground events are asynchronous. Prefer current OS focus when it is in
+    /// this group; a background group can still navigate from its last top tab.
+    let targetIndex (order:IntPtr list) foreground previousTop next =
+        let current = if List.contains foreground order then Some foreground else previousTop
+        current
+        |> Option.bind(fun hwnd -> order |> List.tryFindIndex ((=) hwnd))
+        |> Option.map(fun index -> (index + (if next then 1 else order.Length-1)) % order.Length)
+
 type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:TabAppearanceInfo) as this =
     let Cell = CellScope(true)
     let _bb = Blackboard()
@@ -20,7 +29,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let exitedEvent = Event<_>()
     let mouseLLEvent = Event<Int32 * Pt * IntPtr>()
     let flashEvent = Event<_>()
-    let keyboardLLEvent = Event<Int32 * KBDLLHOOKSTRUCT>()
+    let keyboardLLEvent = Event<Int32 * KBDLLHOOKSTRUCT * bool>()
     let foregroundEvent = Event<_>()
     let geometryChangedEvent = Event<unit>()
     // Supplied by the caller: the main thread waits while this constructor runs.
@@ -121,7 +130,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             None
 
     member this.postMouseLL(msg, pt, data) = mouseLLEvent.Trigger(msg, pt, data)
-    member this.postKeyboardLL(key, data) = keyboardLLEvent.Trigger(key, data)
+    member this.postKeyboardLL(key, data, controlPressed) = keyboardLLEvent.Trigger(key, data, controlPressed)
     member this.mouseLL = mouseLLEvent.Publish
     member this.keyboardLL = keyboardLLEvent.Publish
     member this.bb = _bb
@@ -469,17 +478,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.switchWindow(next,force) = 
         if this.windowCount > 1 then
-            let lorder = this.ts.lorder
-            let max = lorder.count - 1
-            let top = zorderCell.value.tryHead
-            top.iter <| fun top ->
-                (lorder.tryFindIndex((=)(Tab(top)))).iter <| fun index ->
-                    let targetIndex = if next then index + 1 else index - 1
-                    let targetIndex = 
-                        if targetIndex > max then 0
-                        elif targetIndex < 0 then max
-                        else targetIndex
-                    this.activateIndex(targetIndex, force)
+            // A second shortcut can arrive before the foreground WinEvent from
+            // the previous activation. Navigate from the actual foreground HWND
+            // instead of repeating/skipping a tab from the delayed snapshot.
+            let foreground = this.os.foreground.hwnd
+            let order = this.ts.lorder.list |> List.map(fun(Tab(hwnd)) -> hwnd)
+            TabNavigation.targetIndex order foreground zorderCell.value.tryHead next
+            |> Option.iter(fun index -> this.activateIndex(index, force))
                         
     member this.destroy() =
         if isDestroyed.value.not then

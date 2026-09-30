@@ -190,11 +190,30 @@ let main() =
         check (positions()=(TabRight,TabCenter)) "Alignment update lost the per-direction menu override"
 
         let numeric = NumericTabHotKeyPlugin()
+        // The OS can already focus B while the delayed foreground event still
+        // says A. Both directions must start at B, including after a removal.
+        let a,b,c = IntPtr(101),IntPtr(102),IntPtr(103)
+        let navigate order focused stale next = TabNavigation.targetIndex order focused stale next
+        check (navigate [a;b;c] b (Some a) true=Some 2) "Rapid next used stale foreground"
+        check (navigate [a;b;c] b (Some a) false=Some 0) "Rapid previous used stale foreground"
+        check (navigate [a;b;c] c (Some a) true=Some 0 && navigate [a;b;c] a (Some c) false=Some 2) "Tab navigation did not wrap"
+        check (navigate [a;c] c (Some b) false=Some 0) "Closed tab influenced navigation"
+        check (navigate [a;c] IntPtr.Zero (Some c) true=Some 0) "Background group lost its last top tab"
+        check (navigate [] a (Some a) true=None && navigate [a] IntPtr.Zero None false=None) "Empty/unknown tab navigation fabricated a target"
         let target msg key ctrl = onGroup(fun _ -> numeric.targetIndex(msg,key,ctrl))
         check (target WindowMessages.WM_KEYDOWN 0x31 true=None) "Disabled numeric shortcut still activates"
         api.setValue("enableCtrlNumberHotKey",box true)
         check (target WindowMessages.WM_KEYDOWN 0x31 true=Some 0 && target WindowMessages.WM_KEYDOWN 0x39 true=Some 8)
               "Numeric shortcuts did not enable on an existing group thread"
+        onGroup(fun group ->
+            let observed = ResizeArray<int option>()
+            use subscription = group.keyboardLL.Subscribe(fun(msg,data,ctrl) -> observed.Add(numeric.targetIndex(msg,data.vkCode,ctrl)))
+            let data = KBDLLHOOKSTRUCT(vkCode=0x31)
+            // Explicit snapshots must survive dispatch without consulting the
+            // desktop's current modifier state (which may already be released).
+            group.postKeyboardLL(WindowMessages.WM_KEYDOWN,data,true)
+            group.postKeyboardLL(WindowMessages.WM_KEYDOWN,data,false)
+            check (List.ofSeq observed=[Some 0;None]) "Keyboard dispatch discarded its captured Ctrl state")
         check (target WindowMessages.WM_KEYUP 0x31 true=None && target WindowMessages.WM_KEYDOWN 0x31 false=None &&
                target WindowMessages.WM_KEYDOWN 0x30 true=None) "Numeric shortcut accepted key-up, missing Ctrl or an invalid digit"
         api.setValue("enableCtrlNumberHotKey",box false)

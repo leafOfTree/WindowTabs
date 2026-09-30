@@ -29,10 +29,13 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
 
     member this.registerKeyboardLLHook() =
         kbHook <- OS.registerKeyboardLLHook <| fun(key, data) ->
+            // The group runs asynchronously; Ctrl may be released before it handles
+            // this key. Preserve the modifier state belonging to this input event.
+            let controlPressed = Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_CONTROL)
             this.foregroundGroup.iter <| fun group ->
                 let groupInfo = group.cast<GroupInfo>()
                 groupInfo.invokeGroup <| fun() ->
-                    groupInfo.group.postKeyboardLL(int(key), data)
+                    groupInfo.group.postKeyboardLL(int(key), data, controlPressed)
             None
 
     interface IPlugin with

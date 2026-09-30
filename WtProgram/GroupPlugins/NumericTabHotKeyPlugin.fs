@@ -18,8 +18,8 @@ type NumericTabHotKeyPlugin() as this =
             this.vkToTabIndex(vkCode)
         else None
 
-    member this.onKeyboardLL(msg, data:KBDLLHOOKSTRUCT) =
-        this.targetIndex(msg, data.vkCode, Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_CONTROL))
+    member this.onKeyboardLL(msg, data:KBDLLHOOKSTRUCT, controlPressed) =
+        this.targetIndex(msg, data.vkCode, controlPressed)
         |> Option.iter(fun index -> this.wtGroup.activateIndex(index, true))
 
     interface IPlugin with
