@@ -245,7 +245,6 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                     else shadow.update(image, this.alpha, this.direction))
             finally
                 image.bitmap.Dispose()
-            GC.Collect()
         else
             shadowWindow |> Option.iter (fun shadow -> shadow.hide())
             this.window.hide()

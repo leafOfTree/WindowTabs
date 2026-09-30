@@ -65,7 +65,7 @@ type CloseButtonSprite = {
     interface ISprite with
         member this.image = 
             let bitmap = Img(this.size)
-            let g = bitmap.graphics
+            use g = bitmap.graphics
             match this.bgColor with
             | Some(bg) ->
                 use path = new GraphicsPath()
@@ -78,14 +78,16 @@ type CloseButtonSprite = {
                 path.AddArc(w - d, h - d, d, d, 0.0f, 90.0f)
                 path.AddArc(0.0f, h - d, d, d, 90.0f, 90.0f)
                 path.CloseFigure()
-                g.FillPath(new SolidBrush(bg), path)
+                use brush = new SolidBrush(bg)
+                g.FillPath(brush, path)
             | None -> ()
             // Inset so the cross sits inside the hover square rather than
             // filling it corner to corner.
             let inset = float32 this.size.width * 0.32f
             let far = float32 this.size.width - inset
-            g.DrawLine(this.pen, inset, inset, far, far)
-            g.DrawLine(this.pen, inset, far, far, inset)
+            use pen = this.pen
+            g.DrawLine(pen, inset, inset, far, far)
+            g.DrawLine(pen, inset, far, far, inset)
             bitmap
         member this.children = List2()
 
@@ -226,8 +228,10 @@ type TabSprite<'id> = {
     interface ISprite with
         member this.image =
             let img = Img(this.size)
-            let g = img.graphics
-            do g.FillPath(this.bgBrush, this.fillPath)
+            use g = img.graphics
+            use background = this.bgBrush
+            use path = this.fillPath
+            do g.FillPath(background, path)
             // No outline on any tab, the way a browser draws them: the active
             // tab is told apart by its fill, and a hairline divides adjacent
             // plain tabs. An outline round the active tab made it read as a box
@@ -244,8 +248,8 @@ type TabSprite<'id> = {
                 //can't be drawn by gdi+ to a transparent background, need to draw directly on the tab background
                 let text = this.displayInfo.text
                 let font = this.displayInfo.textFont
-                let brush = this.tabTextBrush
-                let format = new StringFormat()
+                use brush = this.tabTextBrush
+                use format = new StringFormat()
                 do format.LineAlignment <- StringAlignment.Center
                 do format.Alignment <- StringAlignment.Near
                 do format.Trimming <- StringTrimming.EllipsisCharacter
@@ -336,21 +340,12 @@ type TabStripSprite<'id> when 'id : equality = {
         let bgColor = 
             if this.transparent then Color.FromArgb(0, 0, 0, 0)
             else Color.FromArgb(1, 1, 1, 1) 
-        let gr, img = 
-            let sz = this.size
-            if sz.isEmptyArea then
-                let bmp = new Bitmap(1,1)
-                let gr = Graphics.FromImage(bmp)
-                do gr.SmoothingMode <- SmoothingMode.AntiAlias
-                (gr, bmp)
-            else
-                let bmp = new Bitmap(sz.width, sz.height)
-                let gr = Graphics.FromImage(bmp)
-                do gr.SmoothingMode <- SmoothingMode.AntiAlias
-                (gr, bmp)   
+        let img = Img(if this.size.isEmptyArea then Sz(1,1) else this.size)
+        use gr = img.graphics
+        use brush = new SolidBrush(bgColor)
         let bounds = Rect(Pt(), this.size)
-        do  gr.FillRectangle(new SolidBrush(bgColor), bounds.Rectangle)
-        img.img
+        gr.FillRectangle(brush, bounds.Rectangle)
+        img
 
     member private this.tabLengthWithOverlap tabOverlap =
         let tsWidth = float(this.size.width)

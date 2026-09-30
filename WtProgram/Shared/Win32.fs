@@ -436,16 +436,13 @@ and
     member this.showNoActivate() = WinUserApi.ShowWindow(hwnd, ShowWindowCommands.SW_SHOWNOACTIVATE).ignore
 
     member this.update(image:Img, location:Pt, alpha) =       
-        let image =
-            let imageWithBg = new Bitmap(image.width, image.height)
-            let gfx = Graphics.FromImage(imageWithBg)
-            let b = new SolidBrush(Color.Transparent)
-            gfx.FillRectangle(b, new Rectangle(Point.Empty, image.size.Size))
-            b.Dispose()
+        use imageWithBg = new Bitmap(image.width, image.height)
+        do
+            use gfx = Graphics.FromImage(imageWithBg)
+            use brush = new SolidBrush(Color.Transparent)
+            gfx.FillRectangle(brush, new Rectangle(Point.Empty, image.size.Size))
             gfx.DrawImage(image.bitmap, Point.Empty)
-            gfx.Dispose()
-            imageWithBg
-        Win32Helper.UpdateLayeredWindow(hwnd, location.Point, image, alpha)
+        Win32Helper.UpdateLayeredWindow(hwnd, location.Point, imageWithBg, alpha)
         this.showNoActivate()
     
     member this.updateLocation(location:Pt) =       

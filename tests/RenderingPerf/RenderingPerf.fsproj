@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x86</PlatformTarget>
+    <Optimize>true</Optimize>
+    <AppConfig>../../WtProgram/App.config</AppConfig>
+    <ApplicationManifest>../../WtProgram/app.manifest</ApplicationManifest>
+    <BenchmarkAppDir Condition="'$(BenchmarkAppDir)' == ''">../Debug/performance/current/</BenchmarkAppDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Ownership.fs" />
+    <Compile Include="Program.fs" />
+    <PackageReference Update="FSharp.Core" Version="10.1.401" />
+    <Reference Include="WindowTabs" HintPath="$(BenchmarkAppDir)/WindowTabs.exe" />
+    <Reference Include="Win32" HintPath="$(BenchmarkAppDir)/Win32.dll" />
+    <Reference Include="Newtonsoft.Json" HintPath="$(BenchmarkAppDir)/Newtonsoft.Json.dll" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+  </ItemGroup>
+</Project>

@@ -3,6 +3,7 @@ open System
 open System.Drawing
 
 type ISprite =
+    /// Returns a fresh image owned by the caller, including for hit testing.
     abstract member image : Img
     abstract member children : List2<Pt * ISprite>
 
@@ -14,13 +15,17 @@ type ISpriteHitTest =
 module Sprite = 
     type ISprite with
         member this.render : Img =
-            let image = this.image.clone()
-            let gr = image.graphics
-            let draw (childLocation:Pt, child:ISprite) = 
-                let image = child.render
-                do  gr.DrawImageUnscaled(image.bitmap, childLocation.Point) 
-            do  this.children.reverse.iter draw
-            image
+            let image = this.image
+            try
+                use gr = image.graphics
+                let draw (childLocation:Pt, child:ISprite) =
+                    use bitmap = child.render.bitmap
+                    gr.DrawImageUnscaled(bitmap, childLocation.Point)
+                this.children.reverse.iter draw
+                image
+            with _ ->
+                image.bitmap.Dispose()
+                reraise()
 
         member this.tryHit(pt:Pt, path:List2<ISprite>) =
             let path = path.prepend(this)
@@ -33,7 +38,10 @@ module Sprite =
                 let contains =
                     match this with
                     | :? ISpriteHitTest as target -> target.containsPoint(pt)
-                    | _ -> this.image.containsPoint(pt)
+                    | _ ->
+                        let image = this.image
+                        try image.containsPoint(pt)
+                        finally image.bitmap.Dispose()
                 if contains
                 then Some(path)
                 else None
