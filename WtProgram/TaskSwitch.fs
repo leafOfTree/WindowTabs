@@ -84,7 +84,8 @@ module private TaskWindowItems =
 type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
     let list =
         new SettingsTreeList([TreeListColumn("",0,TextColumn)],
-                             ShowHeader=false,ShowExpanders=false,RowHeight=52,IconSize=32)
+                             ShowHeader=false,ShowExpanders=false,RowHeight=52,IconSize=32,
+                             BackColor=(SettingsColors.current()).surface,ForeColor=(SettingsColors.current()).text)
     do
         list.Roots.AddRange(windows.list |> List.map TaskWindowItems.create)
         list.Rebuild()
@@ -98,6 +99,8 @@ type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
             let p = SettingsColors.current()
             form.BackColor <- p.surface
             list.BackColor <- p.surface
+            form.ForeColor <- p.text
+            list.ForeColor <- p.text
 type TaskSwitchForm(control:ITaskSwitchListControl) =
     let os = OS()
     let mutable shadow : TaskSwitchShadow option = None
@@ -106,7 +109,9 @@ type TaskSwitchForm(control:ITaskSwitchListControl) =
             new Form() with
                 override this.CreateParams with get() =
                     let createParams = base.CreateParams
-                    createParams.ExStyle <- createParams.ExStyle ||| WindowsExtendedStyles.WS_EX_TOPMOST
+                    // The list is a child HWND: buffer the complete popup, not
+                    // just the form background, while it becomes visible.
+                    createParams.ExStyle <- createParams.ExStyle ||| WindowsExtendedStyles.WS_EX_TOPMOST ||| WindowsExtendedStyles.WS_EX_COMPOSITED
                     createParams
                 override this.OnPaint(e) =
                     base.OnPaint(e)
@@ -117,6 +122,9 @@ type TaskSwitchForm(control:ITaskSwitchListControl) =
                     use border = new Pen((SettingsColors.current()).border)
                     e.Graphics.DrawPath(border,outline)
         }
+        let palette = SettingsColors.current()
+        f.BackColor <- palette.surface
+        f.ForeColor <- palette.text
         let area = Screen.FromHandle(WinUserApi.GetForegroundWindow()).WorkingArea
         let padding = Dpi.scale 12
         // Tall enough for every window, so each is one glance away; only more windows than
@@ -144,10 +152,13 @@ type TaskSwitchForm(control:ITaskSwitchListControl) =
 
     member this.show() = 
         control.onShow(form)
-        form.Show()
+        // Shadow generation walks every pixel. Do it while the owner is hidden,
+        // so it cannot delay the first themed paint of an already-visible form.
         if not SystemInformation.HighContrast then
             if shadow.IsNone then shadow <- Some(new TaskSwitchShadow(form))
-            shadow |> Option.iter(fun item -> item.Show())
+        form.Show()
+        form.Refresh()
+        shadow |> Option.iter(fun item -> item.Show())
         let os = OS()
         os.windowFromHwnd(form.Handle).setForegroundOrRestore(true)
                 
@@ -183,9 +194,9 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>) as this =
             setIndex index
 
     do
-        form.show()
         if windows.length > 0 then
             setIndex 0
+        form.show()
         
         form.inputControl.LostFocus.Add <| fun e ->
             this.switchEnd(true)

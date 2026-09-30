@@ -93,6 +93,24 @@ attempt, the Release solution build completed without warnings, and the isolated
 Release smoke test plus its deliberate paint-failure probe passed. The new
 ownership checks passed. No end-to-end latency trace or multi-hour soak was run.
 
+## Popup first paint
+
+The dark-mode white-flash report led to a separate first-show change: initialize
+the task-switcher list and form palette before HWND creation, select its first
+item before showing, prepare the shadow while hidden, and synchronously paint
+before returning from show. Choice dropdowns and the task-switcher form use
+`WS_EX_COMPOSITED` to buffer their child HWNDs together with the popup background;
+per-control double buffering alone does not cover the complete subtree. See
+[Microsoft's composited-window documentation](https://learn.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles).
+
+`tests/Run-Tests.ps1 -Suites PopupRendering -Repeat 3` checks dark/light/dark
+initialization, native WM_PAINT theme state, painting before Show returns, native
+compositing styles, output pixels and repeated open/close cycles. It is also part
+of the default regression suite. These off-screen checks do not record actual
+DWM presentation or prove an intermittent visible flash is eliminated on every
+desktop. Repeated first opens and Alt+Tab holds on the user's display remain the
+manual confirmation. No system-wide animation or theme settings are changed.
+
 ## Next measurements
 
 Use an ETW CPU/GC trace for real hover, drag and resize workloads to establish

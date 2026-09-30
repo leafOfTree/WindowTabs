@@ -811,12 +811,24 @@ type SettingsListFrame(list:SettingsChoiceList) as this =
 type SettingsChoicePopup() as this =
     inherit ToolStripDropDown()
     do
+        // DoubleBuffered covers this ToolStrip only; the hosted frame/list have
+        // their own HWNDs. Composite the entire subtree before it becomes visible.
+        // Use HandleCreated because the base constructor reads CreateParams
+        // before F#'s instance initialization has completed.
+        this.HandleCreated.Add(fun _ ->
+            let style = WinUserApi.GetWindowLong(this.Handle,WindowLongFieldOffset.GWL_EXSTYLE)
+            WinUserApi.SetWindowLong(this.Handle,WindowLongFieldOffset.GWL_EXSTYLE,
+                IntPtr(style.ToInt64() ||| int64 WindowsExtendedStyles.WS_EX_COMPOSITED)) |> ignore)
         this.DoubleBuffered <- true
         this.BackColor <- (SettingsColors.current()).hover
         this.AutoClose <- true
         this.AutoSize <- false
         this.Padding <- Padding(Dpi.scale 6)
         this.DropShadowEnabled <- false
+    override this.OnOpened(e) =
+        // Finish the first themed paint before returning to other UI work.
+        this.Refresh()
+        base.OnOpened(e)
     override this.OnSizeChanged(e) =
         base.OnSizeChanged(e)
         if this.Width>0 && this.Height>0 then
