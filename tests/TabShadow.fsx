@@ -104,11 +104,63 @@ let main () =
                 let expectedOffset = if direction=TabUp then strip.size.height-bar.Height else 0
                 check (strip.collapsedOffset=expectedOffset) "Minimal bar is not at the window edge"
                 check (bar.GetPixel(Dpi.scale 80,bar.Height/2).A=255uy) "Minimal bar lacks a solid hover target"
+                // An active tab at either end of the bar is marked at that end, in the inactive colour;
+                // one between others, or alone, is not.
+                let sameColor (a:Color) (b:Color) = a.ToArgb()=b.ToArgb()
+                let pixel (bar:Bitmap) x = bar.GetPixel(x,bar.Height/2)
+                let segment (strip:TabStripSprite<int>) id =
+                    strip.sprite.children.list |> List.pick(fun (location,sprite) ->
+                        let tab = sprite :?> TabSprite<int>
+                        if tab.id=id then Some(location.x,tab.size.width) else None)
+                // The gap between tabs stays clear, and the end mark has rounded ends: its outermost
+                // pixel is only partly covered.
+                let x2,_ = segment strip 2
+                check ((pixel bar x2).A=0uy) "The gap between tabs is filled"
+                let x,width = segment strip 1
+                check ((bar.GetPixel(x,0)).A<255uy) "The end mark has a square end"
+                check (sameColor (pixel bar (x+Dpi.scale 3)) appearance.tabNormalBgColor) "An active first tab is not marked at the left end"
+                check (sameColor (pixel bar (x+width/2)) appearance.tabActiveBgColor) "The mark reaches the middle of the active tab"
+                let lastActive = { strip with lorder=List2([2;1]) }
+                use lastBar = lastActive.renderCollapsed.bitmap
+                let x,width = segment lastActive 1
+                check (sameColor (pixel lastBar (x+width-Dpi.scale 3)) appearance.tabNormalBgColor) "An active last tab is not marked at the right end"
+                let three = { strip with tabs=Map2(List2([1,info "One";2,info "Two";3,info "Three"])); lorder=List2([2;1;3]); zorder=List2([1;2;3]) }
+                use middleBar = three.renderCollapsed.bitmap
+                let x,width = segment three 1
+                check ([x+Dpi.scale 3;x+width/2;x+width-Dpi.scale 3] |> List.forall(fun at -> sameColor (pixel middleBar at) appearance.tabActiveBgColor))
+                      "An active tab between others is marked"
+                let alone = { strip with tabs=Map2(List2([1,info "Only"])); lorder=List2([1]); zorder=List2([1]) }
+                use aloneBar = alone.renderCollapsed.bitmap
+                let x,width = segment alone 1
+                check ([x+Dpi.scale 3;x+width-Dpi.scale 3] |> List.forall(fun at -> sameColor (pixel aloneBar at) appearance.tabActiveBgColor))
+                      "A lone tab is marked"
                 check ((strip.tryHit(Pt(Dpi.scale 80,strip.collapsedOffset+bar.Height/2))).IsSome) "Minimal bar cannot reveal its tabs"
                 let tabLocation,tabSprite = strip.sprite.children.list |> List.find(fun (_,sprite) -> sprite.children.list |> List.exists(fun (_,child) -> child :? CloseButtonSprite))
                 let closeLocation,_ = tabSprite.children.list |> List.find(fun (_,child) -> child :? CloseButtonSprite)
                 let point = tabLocation.add(closeLocation).add(Pt(1,1))
                 check (strip.tryHit(point) |> Option.exists(fun (_,part) -> part=TabClose)) "Strip does not route the full close-button region to close"
+        // For review: the minimal bar in both default themes, over a title bar of the same colour
+        // as the active tab, where the mark is all that shows which tab is active.
+        do
+            Dpi.set originalDpi
+            // The active tab first, between the others, and last, in each theme.
+            let rows = [ for theme in [Theme.light;Theme.dark] do
+                           for order in [[1;2;3];[2;1;3];[2;3;1]] -> theme,order ]
+            // Left: over a title bar in the active tab's colour. Right: over another app's blue one.
+            let half = Dpi.scale 420+40
+            use sheet = new Bitmap(half*2,rows.Length*24)
+            use g = Graphics.FromImage(sheet)
+            rows |> List.iteri(fun index (theme,order) ->
+                let strip = { ts with appearance=theme.scaled; size=Dpi.scaleSize(Sz(420,28))
+                                      tabs=Map2(List2([1,info "One";2,info "Two";3,info "Three"])); lorder=List2(order); zorder=List2([1;2;3]) }
+                use caption = new SolidBrush(theme.tabActiveBgColor)
+                g.FillRectangle(caption,0,index*24,half,24)
+                use other = new SolidBrush(Color.FromArgb(40,90,160))
+                g.FillRectangle(other,half,index*24,half,24)
+                use bar = strip.renderCollapsed.bitmap
+                g.DrawImage(bar,20,index*24+10)
+                g.DrawImage(bar,half+20,index*24+10))
+            sheet.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug","minimal-bar.png"),ImageFormat.Png)
     finally Dpi.set originalDpi
     use tabBitmap = tabImage.bitmap
     use rendered = TabShadow.render tabBitmap.Width tabBitmap.Height (TabShadow.silhouette tabBitmap) padding

@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Drawing
 open System.Drawing.Drawing2D
@@ -429,13 +429,41 @@ type TabStripSprite<'id> when 'id : equality = {
         let image = Img(Sz(this.size.width,this.collapsedHeight))
         use graphics = image.graphics
         let gapInset = max 1 (Dpi.scale 2)
+        let height = float32 this.collapsedHeight
+        // Whole pixels stay sharp with antialiasing on: pixel centres sit at half coordinates.
+        graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        graphics.PixelOffsetMode <- Drawing2D.PixelOffsetMode.Half
+        /// A segment of the bar, with round ends where it ends the whole bar.
+        let fillSegment (brush:Brush) (x:int) (width:int) roundLeft roundRight =
+            let left,right = float32 x,float32(x+width)
+            // Each round end is a half circle as tall as the bar, or narrower on a short segment.
+            let cap = min height (float32 width/2.0f)
+            use path = new Drawing2D.GraphicsPath()
+            if roundLeft then path.AddArc(left,0.0f,cap,height,90.0f,180.0f) else path.AddLine(left,height,left,0.0f)
+            if roundRight then path.AddArc(right-cap,0.0f,cap,height,270.0f,180.0f) else path.AddLine(right,0.0f,right,height)
+            path.CloseFigure()
+            graphics.FillPath(brush,path)
         for location,sprite in this.sprite.children.list do
             let tab = sprite :?> TabSprite<'id>
-            let leftInset = if tab.id=this.lorder.head then 0 else gapInset
-            let rightInset = if tab.id=this.lorder.list.[this.lorder.count-1] then 0 else gapInset
+            let first = tab.id=this.lorder.head
+            let last = tab.id=this.lorder.list.[this.lorder.count-1]
+            let leftInset = if first then 0 else gapInset
+            let rightInset = if last then 0 else gapInset
             use fill = new SolidBrush(if tab.isTop then this.appearance.tabActiveBgColor else this.appearance.tabNormalBgColor)
             let width = tab.size.width-leftInset-rightInset
-            if width>0 then graphics.FillRectangle(fill,location.x+leftInset,0,width,this.collapsedHeight)
+            if width>0 then
+                fillSegment fill (location.x+leftInset) width first last
+                // The active tab's colour matches its window, so over the title bar its segment all
+                // but disappears. Between other tabs it still shows, as the gap in the bar; at either
+                // end the bar only looks shorter. There a short mark in the inactive tabs' colour, so
+                // it reads as part of the bar, closes the bar at its end. A lone tab needs none:
+                // there is nothing else it could be.
+                if tab.isTop && this.lorder.count>1 && (first || last) then
+                    let markWidth = min (Dpi.scale 12) (width/2)
+                    if markWidth>0 then
+                        let x = if first then location.x+leftInset else location.x+leftInset+width-markWidth
+                        use ink = new SolidBrush(this.appearance.tabNormalBgColor)
+                        fillSegment ink x markWidth true true
         image
 
     member this.tryHit pt = 

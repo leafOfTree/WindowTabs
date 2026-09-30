@@ -463,6 +463,34 @@ Group #2: No valid windows in this group.";
                     use image = three.Render()
                     image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","switcher-icons-"+theme+".png"),ImageFormat.Png)
                     check (image.GetPixel(0,0).A=0uy && image.GetPixel(image.Width/2,image.Height/2).A>0uy) "Icon switcher is not transparent outside its panel"
+                // The vertical style fills more columns when windows outnumber the screen's height,
+                // so every window stays in view.
+                do
+                    let columns = TaskSwitchListControl(items 60)
+                    let listControl = columns :> ITaskSwitchListControl
+                    check (columns.Columns > 1) "Many windows do not fill more columns"
+                    let switcher = TaskSwitchForm(columns)
+                    use listForm = Control.FromHandle(switcher.hwnd) :?> Form
+                    check (listForm.Height <= area.Height*85/100 && listForm.Width <= area.Width-Dpi.scale 32
+                           && listControl.contentHeight <= area.Height*85/100)
+                          (sprintf "Columned switcher does not fit the screen: %A" listForm.Size)
+                    // As in a switch: the first window is chosen, the switcher shows, then the choice moves.
+                    listControl.select 0
+                    listForm.Location <- Point(-20000,-20000)
+                    listForm.Show()
+                    Application.DoEvents()
+                    listControl.select 59
+                    Application.DoEvents()
+                    let trees = listControl.control.Controls |> Seq.cast<Control> |> Seq.choose(function :? SettingsTreeList as t -> Some t | _ -> None) |> Seq.toList
+                    check (trees.Length=columns.Columns && not (isNull (List.last trees).SelectedItem)
+                           && trees |> List.take (trees.Length-1) |> List.forall(fun t -> isNull t.SelectedItem))
+                          "Choosing the last window does not select it in the last column alone"
+                    // A focused column with nothing chosen would outline its first row.
+                    check (trees |> List.forall(fun t -> not t.Focused || not (isNull t.SelectedItem))) "Focus stays on a column without the choice"
+                    use shot = new Bitmap(listForm.Width,listForm.Height)
+                    listForm.DrawToBitmap(shot,Rectangle(Point.Empty,shot.Size))
+                    shot.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","switcher-columns.png"),ImageFormat.Png)
+                    switcher.hide()
                 // The pointer finds each icon, left to right, and nothing in the title area.
                 let middle = Dpi.scale 20+Dpi.scale 48
                 let found = [ for x in 0..three.Size.Width-1 -> three.IndexAt(Point(x,middle)) ] |> List.choose id |> List.distinct

@@ -64,8 +64,10 @@ type ITaskSwitchView =
     abstract member show : unit -> unit
     abstract member hide : unit -> unit
     abstract member select : int -> unit
-    /// Takes the keyboard while the switcher is open; losing focus cancels it.
+    /// Takes the keyboard while the switcher is open.
     abstract member inputControl : Control
+    /// Another window became active: the switch is cancelled.
+    abstract member deactivated : IEvent<unit>
     /// The pointer moved onto a window: it becomes the chosen one.
     abstract member hovered : IEvent<int>
     /// A window was clicked: switch to it now.
@@ -77,6 +79,8 @@ type ITaskSwitchListControl =
     abstract member onShow : Form -> unit
     /// The height that shows every window without scrolling.
     abstract member contentHeight : int
+    /// The width of all columns together.
+    abstract member contentWidth : int
     /// The pointer moved onto a window: it becomes the chosen one.
     abstract member hovered : IEvent<int>
     /// A window was clicked: switch to it now.
@@ -97,41 +101,88 @@ module private TaskWindowItems =
             TreeListItem(window.text,Icon=image.bitmap)
         | None -> TreeListItem(window.text,Glyph=WindowGlyph)
 
+/// The vertical switcher: windows listed by title. When more than fit in most of the screen's
+/// height, they fill further columns side by side (column by column), so all stay in view.
 type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
-    let list =
+    let rowHeight = 52
+    let area = Screen.FromHandle(WinUserApi.GetForegroundWindow()).WorkingArea
+    // The form's padding on each side.
+    let inset = Dpi.scale 24
+    let items = windows.list |> List.map TaskWindowItems.create |> Array.ofList
+    let fit = max 1 ((area.Height*85/100-inset)/Dpi.scale rowHeight)
+    // Columns no narrower than this, so titles stay readable.
+    let maxColumns = max 1 ((area.Width*9/10-inset)/Dpi.scale 280)
+    let columns = max 1 (min maxColumns ((items.Length+fit-1)/fit))
+    // Balanced columns: the last is at most one row shorter.
+    let perColumn = max 1 ((items.Length+columns-1)/columns)
+    let columnWidth =
+        if columns=1 then Dpi.scale 600-inset
+        else min (Dpi.scale 600-inset) ((area.Width*9/10-inset)/columns)
+    let newList() =
         new SettingsTreeList([TreeListColumn("",0,TextColumn)],
-                             ShowHeader=false,ShowExpanders=false,RowHeight=52,IconSize=32,
-                             BackColor=(SettingsColors.current()).surface,ForeColor=(SettingsColors.current()).text)
+                             ShowHeader=false,ShowExpanders=false,RowHeight=rowHeight,IconSize=32,
+                             BackColor=(SettingsColors.current()).surface,ForeColor=(SettingsColors.current()).text,
+                             Margin=Padding.Empty)
+    let lists = Array.init columns (fun _ -> newList())
+    /// Where a window sits: its column and its row in that column.
+    let place index = if columns=1 then 0,index else index/perColumn,index%perColumn
+    let control : Control =
+        if columns=1 then lists.[0] :> Control
+        else
+            let table = new TableLayoutPanel(ColumnCount=columns,RowCount=1,Margin=Padding.Empty,Padding=Padding.Empty,
+                                             BackColor=(SettingsColors.current()).surface)
+            table.RowStyles.Add(RowStyle(SizeType.Percent,100.0f)) |> ignore
+            for column,list in Array.indexed lists do
+                table.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f/float32 columns)) |> ignore
+                list.Dock <- DockStyle.Fill
+                table.Controls.Add(list,column,0)
+            table :> Control
     let hovered = Event<int>()
     let clicked = Event<int>()
     // The pointer may already rest over a row when Alt+Tab opens; only moving it chooses.
     let mutable start = Point.Empty
-    let indexAt point = list.ItemAt(point) |> Option.map(fun item -> list.Roots.IndexOf(item)) |> Option.filter(fun index -> index>=0)
+    let indexIn column (point:Point) =
+        let list = lists.[column]
+        list.ItemAt(point) |> Option.map(fun item -> list.Roots.IndexOf(item)) |> Option.filter(fun row -> row>=0)
+        |> Option.map(fun row -> if columns=1 then row else column*perColumn+row)
     do
-        list.Roots.AddRange(windows.list |> List.map TaskWindowItems.create)
-        list.Rebuild()
-        list.Disposed.Add(fun _ -> ImgHelper.disposeItems list.Roots)
-        list.MouseMove.Add(fun e ->
-            if Cursor.Position<>start then
-                indexAt e.Location |> Option.iter(fun index ->
-                    if not (obj.ReferenceEquals(list.SelectedItem,list.Roots.[index])) then hovered.Trigger(index)))
-        list.MouseClick.Add(fun e -> if e.Button=MouseButtons.Left then indexAt e.Location |> Option.iter clicked.Trigger)
-    /// The window on the row at a point in the list, if any.
-    member _.IndexAt(point:Point) = indexAt point
+        for column,list in Array.indexed lists do
+            let rows = if columns=1 then items else items.[column*perColumn..min (items.Length-1) ((column+1)*perColumn-1)]
+            list.Roots.AddRange(rows)
+            list.Rebuild()
+            list.Disposed.Add(fun _ -> ImgHelper.disposeItems list.Roots)
+            list.MouseMove.Add(fun e ->
+                if Cursor.Position<>start then
+                    indexIn column e.Location |> Option.iter(fun index ->
+                        let _,row = place index
+                        if not (obj.ReferenceEquals(list.SelectedItem,list.Roots.[row])) then hovered.Trigger(index)))
+            list.MouseClick.Add(fun e -> if e.Button=MouseButtons.Left then indexIn column e.Location |> Option.iter clicked.Trigger)
+    /// The window on the row at a point in the first column, if any.
+    member _.IndexAt(point:Point) = indexIn 0 point
+    /// How many columns the windows fill.
+    member _.Columns = columns
 
     interface ITaskSwitchListControl with
         member this.hovered = hovered.Publish
         member this.clicked = clicked.Publish
-        member this.select index = list.SelectedItem <- list.Roots.[index]
-        member this.control = list :> Control
-        member this.contentHeight = list.Roots.Count*Dpi.scale list.RowHeight
+        member this.select index =
+            let column,row = place index
+            for other,list in Array.indexed lists do
+                list.SelectedItem <- if other=column then list.Roots.[row] else null
+            // Focus follows the choice: a focused column with nothing chosen outlines its first row.
+            if columns>1 && lists.[column].Visible && not lists.[column].Focused then lists.[column].Focus() |> ignore
+        member this.control = control
+        member this.contentHeight = (lists |> Array.map(fun list -> list.Roots.Count) |> Array.max)*Dpi.scale rowHeight
+        member this.contentWidth = columns*columnWidth
         member this.onShow form =
             start <- Cursor.Position
             let p = SettingsColors.current()
             form.BackColor <- p.surface
-            list.BackColor <- p.surface
+            control.BackColor <- p.surface
             form.ForeColor <- p.text
-            list.ForeColor <- p.text
+            for list in lists do
+                list.BackColor <- p.surface
+                list.ForeColor <- p.text
 type TaskSwitchForm(control:ITaskSwitchListControl) =
     let os = OS()
     let mutable shadow : TaskSwitchShadow option = None
@@ -161,7 +212,7 @@ type TaskSwitchForm(control:ITaskSwitchListControl) =
         // Tall enough for every window, so each is one glance away; only more windows than
         // most of the screen can hold scroll.
         let height = max (Dpi.scale 120) (control.contentHeight+padding*2)
-        let formSize = Size(min (Dpi.scale 600) (area.Width-Dpi.scale 32),min height (area.Height*85/100))
+        let formSize = Size(min (control.contentWidth+padding*2) (area.Width-Dpi.scale 32),min height (area.Height*85/100))
         f.AutoScaleMode <- AutoScaleMode.None
         f.Padding <- Padding(padding)
         f.Font <- SettingsUi.bodyFont
@@ -208,6 +259,7 @@ type TaskSwitchForm(control:ITaskSwitchListControl) =
         member this.hide() = this.hide()
         member this.select index = this.select index
         member this.inputControl = this.inputControl
+        member this.deactivated = form.Deactivate |> Event.map ignore
         member this.hovered = control.hovered
         member this.clicked = control.clicked
 
@@ -372,6 +424,7 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
             selected <- index
             if form.IsHandleCreated then this.present()
         member this.inputControl = form :> Control
+        member this.deactivated = form.Deactivate |> Event.map ignore
         member this.hovered = hovered.Publish
         member this.clicked = clicked.Publish
 
@@ -404,7 +457,9 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string) as this =
             setIndex 0
         form.show()
         
-        form.inputControl.LostFocus.Add <| fun e ->
+        // Clicking another column moves focus inside the switcher; only another window taking
+        // over cancels it.
+        form.deactivated.Add <| fun () ->
             this.switchEnd(true)
 
         form.hovered.Add setIndex
