@@ -65,10 +65,12 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
             if choice.SelectedIndex >= 0 then Services.settings.setValue("language",box languages.[choice.SelectedIndex]))
         choice
     let searchFocusFilter = new SettingsSearchFocusFilter(form,search,searchResults) :> IMessageFilter
-    let results = new ListBox(Dock=DockStyle.Fill,BorderStyle=BorderStyle.None,
+    let results = new SettingsChoiceList(BorderStyle=BorderStyle.None,
                              Font=SettingsUi.bodyFont,IntegralHeight=false,
                              DrawMode=DrawMode.OwnerDrawFixed,ItemHeight=Dpi.scale 48,Cursor=Cursors.Hand,
                              AccessibleName=tr Strings.SettingsWindow.searchResults)
+    // More results than fit scroll with the settings scrollbar, not the system one.
+    let resultsFrame = new SettingsListFrame(results,Dock=DockStyle.Fill)
     let emptyResults = new Label(Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleCenter,Tag="muted",
                                  Text=tr Strings.SettingsWindow.noMatches)
     let captions key fallback = tr (Strings.Pages.title key)
@@ -157,7 +159,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
 
         let entries = SettingsCatalog.all |> List.filter(fun item -> pages |> List.exists(fun page -> page.key=item.page)) |> List.toArray
         let mutable matches : SettingDefinition array = [||]
-        searchResults.Controls.Add(results)
+        searchResults.Controls.Add(resultsFrame)
         searchResults.Controls.Add(emptyResults)
         results.DrawItem.Add(fun e ->
             if e.Index>=0 && e.Index<matches.Length then
@@ -204,7 +206,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                     results.Items.AddRange(matches |> Array.map(fun item -> box(tr item.text.caption)))
                 finally results.EndUpdate()
                 emptyResults.Visible <- matches.Length=0
-                results.Visible <- matches.Length>0
+                resultsFrame.Visible <- matches.Length>0
                 if matches.Length>0 then results.SelectedIndex <- 0
                 showSearch()
         let navigateResult() =
@@ -230,9 +232,14 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                     match target with
                     | Some control ->
                         match page.control with
-                        | :? SettingsPage as settingsPage -> settingsPage.reveal(control)
+                        | :? SettingsPage as settingsPage ->
+                            // The whole row goes to the middle of the page, where its highlight shows.
+                            let rec rowOf (item:Control) =
+                                if isNull item then control elif item :? SettingsRow then item else rowOf item.Parent
+                            settingsPage.center(rowOf control)
                         | _ -> ()
                         control.Select()
+                        SettingsUi.flash control
                     | None -> page.control.SelectNextControl(null,true,true,true,false) |> ignore
         results.MouseClick.Add(fun e ->
             if e.Button=MouseButtons.Left && results.IndexFromPoint(e.Location)>=0 then navigateResult())

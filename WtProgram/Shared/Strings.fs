@@ -191,9 +191,15 @@ module Strings =
         let openFolder = { en="Open folder"; zh="打开文件夹"; ja="フォルダーを開く" }
         let export = { en="Export…"; zh="导出…"; ja="エクスポート…" }
         let import = { en="Import…"; zh="导入…"; ja="インポート…" }
-        let locationHint = { en="To keep settings next to WindowTabs.exe (portable), copy this file into that folder and restart WindowTabs."
-                             zh="若要把设置放在 WindowTabs.exe 所在文件夹（便携），将此文件复制到该文件夹并重启 WindowTabs。"
-                             ja="設定を WindowTabs.exe と同じフォルダーに置く（ポータブル）には、このファイルをそのフォルダーにコピーして WindowTabs を再起動します。" }
+        let locationAppData = { en="WindowTabs uses the settings in AppData. To keep settings next to WindowTabs.exe (portable), copy this file into that folder and restart WindowTabs."
+                                zh="WindowTabs 使用 AppData 中的设置。若要把设置放在 WindowTabs.exe 所在文件夹（便携），将此文件复制到该文件夹并重启 WindowTabs。"
+                                ja="WindowTabs は AppData の設定を使っています。設定を WindowTabs.exe と同じフォルダーに置く（ポータブル）には、このファイルをそのフォルダーにコピーして WindowTabs を再起動します。" }
+        let locationPortable = { en="These settings are next to WindowTabs.exe, so this copy is portable. To use the settings in AppData instead, move this file elsewhere and restart WindowTabs."
+                                 zh="此设置文件位于 WindowTabs.exe 旁，因此这是便携版。若要改用 AppData 中的设置，将此文件移走并重启 WindowTabs。"
+                                 ja="この設定は WindowTabs.exe と同じフォルダーにあるため、このコピーはポータブルです。AppData の設定を使うには、このファイルを別の場所に移して WindowTabs を再起動します。" }
+        let locationWorkingDirectory = { en="This debug run keeps its settings in the working directory."
+                                         zh="此调试运行将设置保存在工作目录中。"
+                                         ja="このデバッグ実行では、設定を作業ディレクトリに保存します。" }
         let exported = { en="Settings exported."; zh="设置已导出。"; ja="設定をエクスポートしました。" }
         let importTitle = { en="Import settings"; zh="导入设置"; ja="設定のインポート" }
         let notSettingsFile = { en="This file does not contain WindowTabs settings."; zh="此文件不包含 WindowTabs 设置。"; ja="このファイルには WindowTabs の設定が含まれていません。" }
@@ -241,9 +247,9 @@ module Strings =
     module Shortcuts =
         let keyboard = { en="Keyboard"; zh="键盘"; ja="キーボード" }
         let mouse = { en="Mouse"; zh="鼠标"; ja="マウス" }
-        let keyboardNote = { en="Click a shortcut, then press the new combination. Esc cancels; × or Backspace removes it."
-                             zh="点击快捷键后按下新的组合键。按 Esc 取消；点 × 或按 Backspace 移除。"
-                             ja="ショートカットをクリックして、新しいキーの組み合わせを押します。Esc でキャンセル、× または Backspace で削除します。" }
+        let keyboardNote = { en="Click a shortcut, then press the new combination. Esc cancels."
+                             zh="点击快捷键后按下新的组合键。按 Esc 取消。"
+                             ja="ショートカットをクリックして、新しいキーの組み合わせを押します。Esc でキャンセルします。" }
         let restoreDefaults = { en="Restore default shortcuts"; zh="恢复默认快捷键"; ja="既定のショートカットに戻す" }
         let inUse = { en="Shortcut already in use"; zh="快捷键已被占用"; ja="ショートカットは使用中です" }
         let usedBy name = { en=sprintf "Used by %s" name; zh=sprintf "已用于“%s”" name; ja=sprintf "「%s」で使用中" name }
@@ -297,14 +303,16 @@ module Strings =
                                    ja="このワークスペースのバージョンには対応していません。保存済みのワークスペースは変更されません。" }
 
     module Diagnostics =
-        let description = { en="Attach this report to bug reports. It omits window titles, paths and license data."
-                            zh="提交问题时可附上此报告。报告不包含窗口标题、路径和授权信息。"
-                            ja="不具合を報告するときはこのレポートを添付してください。ウィンドウのタイトル、パス、ライセンス情報は含まれません。" }
-        let saved = { en="Saved."; zh="已保存。"; ja="保存しました。" }
-        let copyReport = { en="Copy report"; zh="复制报告"; ja="レポートをコピー" }
-        let includeWindows = { en="Include window details"; zh="包含窗口详情"; ja="ウィンドウの詳細を含める" }
+        let description = { en="Safe to share: no window titles, file paths or other personal information."
+                            zh="可放心分享：不含窗口标题、文件路径等任何个人信息。"
+                            ja="安心して共有できます：ウィンドウのタイトルやファイルのパスなどの個人情報は含まれません。" }
+        let copyReport = { en="Copy the report, to paste into an issue"; zh="复制报告，以便粘贴到问题报告中"; ja="レポートをコピー（問題の報告に貼り付け）" }
+        let includeWindowsHelp = { en="Include window details: each window's program, class and whether it gets tabs. Never titles."
+                                   zh="包含窗口详情：每个窗口的程序、窗口类，以及是否会加上标签。不含标题。"
+                                   ja="ウィンドウの詳細を含める：各ウィンドウのプログラム、クラス、タブが付くかどうか。タイトルは含みません。" }
+        let refreshReport = { en="Refresh the report"; zh="刷新报告"; ja="レポートを更新" }
         let reportCopied = { en="Report copied."; zh="报告已复制。"; ja="レポートをコピーしました。" }
-        let saveReport = { en="Save report"; zh="保存报告"; ja="レポートを保存" }
+        let reportRefreshed = { en="Report refreshed."; zh="报告已刷新。"; ja="レポートを更新しました。" }
         let reportTitle = { en="Troubleshooting report"; zh="故障排查报告"; ja="トラブルシューティング レポート" }
         let projectPage = { en="Project page"; zh="项目主页"; ja="プロジェクトページ" }
         let reportIssue = { en="Report an issue"; zh="报告问题"; ja="問題を報告" }

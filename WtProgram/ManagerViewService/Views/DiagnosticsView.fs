@@ -7,6 +7,14 @@ open System.Windows.Forms
 open Newtonsoft.Json.Linq
 
 module private SettingsFile =
+    type Location = Portable | AppData | WorkingDirectory
+    /// Which of the places Settings looks in holds the file in use.
+    let location() =
+        let folder = Path.GetDirectoryName(Services.settings.path).TrimEnd('\\')
+        if folder=AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\') then Portable
+        elif folder.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),StringComparison.OrdinalIgnoreCase) then AppData
+        else WorkingDirectory
+
     /// Keys only a WindowTabs settings file has; an import needs at least one of them.
     let private knownKeys = ["version";"tabAppearance";"includedPaths";"excludedPaths";"runAtStartup";"alignment";"workspaces"]
 
@@ -45,10 +53,9 @@ type DiagnosticsView() =
     let view = new SettingsTextView()
     let text = view.TextBox
     do text.Font <- new Font("Consolas",SettingsUi.bodyFont.SizeInPoints,GraphicsUnit.Point)
-    // Buttons are built before the page, which shows their results in its status line.
-    let mutable setStatus : string -> unit = ignore
+    // Buttons are built before the page, which owns their dialogs.
     let mutable owner : IWin32Window = null
-    let includeWindows = new SettingsToggle(AccessibleName=tr Strings.Diagnostics.includeWindows)
+    let includeWindows = new SettingsIconButton(WindowListIcon,tr Strings.Diagnostics.includeWindowsHelp,toggle=true)
     /// What decides whether each visible window of another program gets tabs. Program names,
     /// window classes and styles only: never titles or paths, so the report stays safe to share.
     let windowDetails() =
@@ -75,46 +82,58 @@ type DiagnosticsView() =
     let report() =
         let groups = Services.desktop.groups
         let result = RuntimeDiagnostics.report Services.settings.root groups.count (groups.collect(fun g -> g.windows).count)
-        let folder = IO.Path.GetDirectoryName(Services.settings.path).TrimEnd('\\')
         result.["settingsLocation"] <- JValue(
-            if folder=AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\') then "portable (next to WindowTabs.exe)"
-            elif folder.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),StringComparison.OrdinalIgnoreCase) then "AppData"
-            else "working directory")
+            match SettingsFile.location() with
+            | SettingsFile.Portable -> "portable (next to WindowTabs.exe)"
+            | SettingsFile.AppData -> "AppData"
+            | SettingsFile.WorkingDirectory -> "working directory")
         if includeWindows.Checked then result.["windows"] <- windowDetails()
         result
     let refresh() = text.Text <- (report()).ToString()
     let guarded action =
         try action()
         with error -> Alert.show AlertKind.Warning (tr Strings.Common.operationFailed) error.Message
-    let save filename content =
-        use dialog = new SaveFileDialog(FileName=filename,Filter="JSON (*.json)|*.json",AddExtension=true,DefaultExt="json",OverwritePrompt=true)
-        if dialog.ShowDialog(owner)=DialogResult.OK then
-            File.WriteAllText(dialog.FileName,content(),UTF8Encoding(false))
-            setStatus (tr Strings.Diagnostics.saved)
-    let button caption action =
-        let button = SettingsUi.button caption
-        button.Click.Add(fun _ -> guarded action)
-        button :> Control
-    let includeWindowsRow =
-        let row = new FlowLayoutPanel(AutoSize=true,WrapContents=false,Margin=Padding.Empty)
-        let label = new Label(Text=tr Strings.Diagnostics.includeWindows,AutoSize=true,UseMnemonic=false,
-                              Anchor=AnchorStyles.Left,Margin=Padding(Dpi.scale 6,0,Dpi.scale 8,0))
-        includeWindows.Anchor <- AnchorStyles.Left
-        // The label switches it too, as a check box label would.
-        label.Click.Add(fun _ -> includeWindows.Checked <- not includeWindows.Checked)
+    // The report's tools float at its top-right corner, just left of its scrollbar.
+    let tools =
+        let strip = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
+                                        Margin=Padding.Empty,Padding=Padding.Empty,Tag="surface")
+        // A short note left of the icons confirms a click, then goes.
+        let feedback = new Label(AutoSize=true,Visible=false,Tag="muted",UseMnemonic=false,Anchor=AnchorStyles.Left,
+                                 Margin=Padding(0,0,Dpi.scale 6,0))
+        let fade = new Timer(Interval=2500)
+        fade.Tick.Add(fun _ -> fade.Stop(); feedback.Visible <- false)
+        feedback.Disposed.Add(fun _ -> fade.Dispose())
+        let confirm message =
+            feedback.Text <- message
+            feedback.Visible <- true
+            fade.Stop()
+            fade.Start()
+        strip.Controls.Add(feedback)
+        let tool icon help action =
+            let button = new SettingsIconButton(icon,help,Margin=Padding(Dpi.scale 2,0,0,0))
+            button.Click.Add(fun _ -> guarded action)
+            strip.Controls.Add(button)
+        tool RefreshIcon (tr Strings.Diagnostics.refreshReport) (fun () ->
+            refresh()
+            confirm (tr Strings.Diagnostics.reportRefreshed))
+        tool CopyIcon (tr Strings.Diagnostics.copyReport) (fun () ->
+            refresh()
+            Clipboard.SetText(text.Text)
+            confirm (tr Strings.Diagnostics.reportCopied))
+        includeWindows.Margin <- Padding(Dpi.scale 2,0,0,0)
         includeWindows.CheckedChanged.Add(fun _ -> guarded refresh)
-        row.Controls.Add(includeWindows)
-        row.Controls.Add(label)
-        row :> Control
-    let actions = [
-        button (tr Strings.Common.refresh) refresh
-        button (tr Strings.Diagnostics.copyReport) (fun () -> refresh(); Clipboard.SetText(text.Text); setStatus (tr Strings.Diagnostics.reportCopied))
-        button (tr Strings.Diagnostics.saveReport) (fun () -> save "WindowTabs-diagnostics.json" (fun () -> (report()).ToString()))
-        includeWindowsRow ]
+        strip.Controls.Add(includeWindows)
+        view.Controls.Add(strip)
+        strip.BringToFront()
+        let place() = strip.Location <- Point(view.ClientSize.Width-strip.Width-Dpi.scale 20,Dpi.scale 6)
+        view.Resize.Add(fun _ -> place())
+        strip.SizeChanged.Add(fun _ -> place())
+        strip
     let repository = "https://github.com/leafOfTree/WindowTabs"
-    // Settings file rows, then the heading of the report that fills the rest of the page.
+    // Settings file rows, then the report section's heading and note; its links, actions and
+    // the report itself follow.
     let fileSection =
-        let table = new TableLayoutPanel(ColumnCount=1,Margin=Padding.Empty)
+        let table = new TableLayoutPanel(ColumnCount=1,Margin=Padding.Empty,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink)
         table.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
         let card = SettingsUi.sectionCard table (tr Strings.General.settingsFile)
         let run action = fun _ ->
@@ -123,7 +142,12 @@ type DiagnosticsView() =
         let openFolder = SettingsUi.button (tr Strings.General.openFolder)
         openFolder.Click.Add(run (fun _ ->
             Diagnostics.Process.Start("explorer.exe",sprintf "/select,\"%s\"" Services.settings.path) |> ignore))
-        SettingsUi.settingRowWith card "settings-location" Services.settings.path openFolder |> ignore
+        let hint =
+            match SettingsFile.location() with
+            | SettingsFile.Portable -> Strings.General.locationPortable
+            | SettingsFile.AppData -> Strings.General.locationAppData
+            | SettingsFile.WorkingDirectory -> Strings.General.locationWorkingDirectory
+        SettingsUi.settingRowWithHelp card "settings-location" Services.settings.path (Some(tr hint)) openFolder |> ignore
         let backup = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false)
         for caption,action in [tr Strings.General.export,SettingsFile.export;tr Strings.General.import,SettingsFile.import] do
             let button = SettingsUi.button caption
@@ -132,23 +156,23 @@ type DiagnosticsView() =
             backup.Controls.Add(button)
         SettingsUi.settingRow card "settings-backup" backup
         SettingsUi.section table (tr Strings.Diagnostics.reportTitle)
+        SettingsUi.note table (tr Strings.Diagnostics.description)
         table :> Control
     let panel =
-        new SettingsListPage(tr Strings.Pages.diagnostics,
-                             tr Strings.Diagnostics.description,
-                             view,actions,
+        // No page title: the sidebar names the page, and its two sections carry their own headings.
+        new SettingsListPage("","",view,[],
                              // The crash log link appears only when there is a log to attach.
-                             links=[yield tr Strings.Diagnostics.projectPage,repository
-                                    yield tr Strings.Diagnostics.reportIssue,repository+"/issues/new"
+                             links=[yield tr Strings.Diagnostics.reportIssue,repository+"/issues/new"
+                                    yield tr Strings.Diagnostics.projectPage,repository
                                     yield tr Strings.Diagnostics.releases,repository+"/releases"
                                     match RuntimeDiagnostics.crashLogPath() with
                                     | Some path -> yield tr Strings.Diagnostics.openCrashLog,path
                                     | None -> ()],
                              extra=fileSection)
     do
-        setStatus <- fun value -> panel.Status <- value
         owner <- panel
         panel.HandleCreated.Add(fun _ -> guarded refresh)
+        tools |> ignore
         panel.Disposed.Add(fun _ -> text.Font.Dispose())
     interface ISettingsView with
         member _.key = DiagnosticsSettings

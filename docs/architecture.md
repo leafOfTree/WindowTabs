@@ -52,7 +52,8 @@ retries. This does not guarantee persistence of the last 250 ms after a forced k
 
 On malformed JSON, a valid backup is restored and the broken primary is retained
 as `.corrupt-<id>`. Without a valid backup, loading still reports failure. The legacy
-license/ticket and appearance fields remain compatible; unused activation UI,
+appearance fields remain compatible; the old paid version's license key and ticket are
+dropped from the file on the next save. Unused activation UI,
 version notification stubs and the uncalled launcher have been removed.
 
 ## Settings popups
@@ -119,7 +120,7 @@ at load and update boundaries. Every user-visible text is a `LocalizedText` reco
 shown with `tr`; it compiles into the single exe. `Localization.languages` lists the
 supported languages, and the `language` setting overrides the Windows display language.
 Diagnostics report resource counts, scan timing and an allow-list of non-identifying
-settings; paths, titles and license data are excluded. Full settings export is a
+settings; paths and titles are excluded. Full settings export is a
 separate user-selected action and reads the current in-memory root, including pending
 debounced edits.
 

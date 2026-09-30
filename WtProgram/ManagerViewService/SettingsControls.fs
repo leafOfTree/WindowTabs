@@ -120,57 +120,227 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
             Rectangle(Dpi.scale 16,Dpi.scale 16,this.Width-Dpi.scale 32,this.Height-Dpi.scale 32),
             p.text,TextFormatFlags.WordBreak ||| TextFormatFlags.NoPrefix)
 
-/// An (i) button that explains something on hover, focus or click. Light themes use the system
-/// tooltip; dark ones a themed popup, because the system tooltip stays light.
-type SettingsHelpButton(text:string) as this =
-    inherit SettingsInfoButton()
+/// Hover help for any control, the way the (i) button shows it: the system tooltip in a light
+/// theme, a themed popup in a dark one (the system tooltip stays light). The popup closes once
+/// the pointer has left both it and the control, or the window loses focus.
+type SettingsHover(target:Control, text:string) =
+    /// The popup on screen, so a new one replaces it instead of stacking up beside it.
+    static let mutable shown : Form option = None
     let tip = new ToolTip(AutoPopDelay=30000,InitialDelay=350,ReshowDelay=100,ShowAlways=true)
     let watcher = new Timer(Interval=200)
     let mutable popup : SettingsHelpPopup option = None
+    /// Opened on purpose (the (i) button's click), so it stays while the target keeps focus.
+    /// Opened by hovering, it goes with the pointer, even from a button that a click focused.
+    let mutable pinned = false
     let hide() =
         watcher.Stop()
-        tip.Hide(this)
+        pinned <- false
+        tip.Hide(target)
         popup |> Option.iter(fun window -> window.Hide())
-    let show() =
+    let show pin =
+        pinned <- pin
         if ThemeService.currentIsDark() then
-            tip.SetToolTip(this,"")
+            tip.SetToolTip(target,"")
             let window =
                 match popup with
                 | Some window -> window
                 | None ->
-                    let window = new SettingsHelpPopup(text,this.Font)
+                    let window = new SettingsHelpPopup(text,target.Font)
                     popup <- Some window
                     window
-            let origin = this.PointToScreen(Point(0,this.Height+Dpi.scale 6))
-            let bounds = Screen.FromControl(this).WorkingArea
+            let origin = target.PointToScreen(Point(0,target.Height+Dpi.scale 6))
+            let bounds = Screen.FromControl(target).WorkingArea
             let x = min origin.X (bounds.Right-window.Width-Dpi.scale 8)
-            let y = if origin.Y+window.Height<=bounds.Bottom then origin.Y else origin.Y-window.Height-this.Height-Dpi.scale 12
+            let y = if origin.Y+window.Height<=bounds.Bottom then origin.Y else origin.Y-window.Height-target.Height-Dpi.scale 12
             window.Location <- Point(max bounds.Left x,max bounds.Top y)
-            window.Show(this.FindForm())
+            shown |> Option.iter(fun other -> if not (obj.ReferenceEquals(other,window)) && not other.IsDisposed then other.Hide())
+            shown <- Some(window :> Form)
+            // The pointer can come back before the watcher has closed it: Show throws on a
+            // form that is already visible, so an open popup is only moved.
+            if not window.Visible then window.Show(target.FindForm())
             watcher.Start()
-        else tip.Show(text,this,0,this.Height+Dpi.scale 6,30000)
+        else tip.Show(text,target,0,target.Height+Dpi.scale 6,30000)
     do
-        this.AccessibleDescription <- text
-        tip.SetToolTip(this,text)
-        // Hide the popup once the pointer has left both it and the button, or the window lost focus.
+        tip.SetToolTip(target,text)
         watcher.Tick.Add(fun _ ->
             popup |> Option.iter(fun window ->
                 let pointer = Cursor.Position
-                let owner = this.FindForm()
-                if not window.Visible || not this.Visible || isNull owner || not owner.ContainsFocus ||
-                   (not (this.RectangleToScreen(this.ClientRectangle).Contains(pointer))
-                    && not (window.Bounds.Contains(pointer)) && not this.Focused) then
+                let owner = target.FindForm()
+                if not window.Visible || not target.Visible || isNull owner || not owner.ContainsFocus ||
+                   (not (target.RectangleToScreen(target.ClientRectangle).Contains(pointer))
+                    && not (window.Bounds.Contains(pointer)) && not (pinned && target.Focused)) then
                     window.Hide()
                     watcher.Stop()))
-        this.MouseEnter.Add(fun _ -> show())
-        this.Click.Add(fun _ -> show())
-        this.KeyDown.Add(fun e -> if e.KeyCode=Keys.Escape then hide(); e.SuppressKeyPress <- true)
-        this.VisibleChanged.Add(fun _ -> if not this.Visible then hide())
-        ThemeBinding.watch this hide
-        this.Disposed.Add(fun _ ->
+        target.MouseEnter.Add(fun _ -> show false)
+        target.MouseLeave.Add(fun _ -> if not pinned then tip.Hide(target))
+        target.KeyDown.Add(fun e -> if e.KeyCode=Keys.Escape then hide(); e.SuppressKeyPress <- true)
+        target.VisibleChanged.Add(fun _ -> if not target.Visible then hide())
+        ThemeBinding.watch target hide
+        target.Disposed.Add(fun _ ->
             watcher.Dispose()
             tip.Dispose()
             popup |> Option.iter(fun window -> window.Dispose()))
+    member _.Show() = show true
+
+/// Where a link goes, shown by a mark after its text: an arrow for the web, a folder for a file
+/// on this PC.
+type SettingsLinkKind =
+    | WebLink
+    | FileLink
+
+/// A link whose mark reads as part of it: text and mark sit close together on one baseline and
+/// share the hover underline, which a LinkLabel with a drawn mark cannot do.
+type SettingsLink(text:string, kind:SettingsLinkKind) as this =
+    inherit Control()
+    let mutable hovering = false
+    let mutable linkColor = SystemColors.HotTrack
+    let flags = TextFormatFlags.NoPadding ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine
+    let mark() = Dpi.scale 9
+    let gap() = Dpi.scale 4
+    /// The text's baseline, from the top of the control.
+    let baseline() =
+        let font = this.Font
+        let family = font.FontFamily
+        int(Math.Round(float(font.GetHeight()) * float(family.GetCellAscent(font.Style)) / float(family.GetLineSpacing(font.Style))))
+    do
+        this.Text <- text
+        this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint
+                      ||| ControlStyles.ResizeRedraw ||| ControlStyles.Selectable,true)
+        this.Cursor <- Cursors.Hand
+        this.TabStop <- true
+        this.AccessibleRole <- AccessibleRole.Link
+        this.AccessibleName <- text
+        this.AutoSize <- true
+    member _.Kind = kind
+    member _.LinkColor
+        with get() = linkColor
+        and set(value) = linkColor <- value; this.Invalidate()
+    override this.GetPreferredSize(_) =
+        let size = TextRenderer.MeasureText(this.Text,this.Font,Size.Empty,flags)
+        Size(size.Width+gap()+mark()+Dpi.scale 1,max size.Height (baseline()+Dpi.scale 4))
+    override this.OnFontChanged(e) = base.OnFontChanged(e); this.Size <- this.GetPreferredSize(Size.Empty)
+    override this.OnTextChanged(e) = base.OnTextChanged(e); this.Size <- this.GetPreferredSize(Size.Empty)
+    override this.OnMouseEnter(e) = base.OnMouseEnter(e); hovering <- true; this.Invalidate()
+    override this.OnMouseLeave(e) = base.OnMouseLeave(e); hovering <- false; this.Invalidate()
+    override this.OnGotFocus(e) = base.OnGotFocus(e); this.Invalidate()
+    override this.OnLostFocus(e) = base.OnLostFocus(e); this.Invalidate()
+    override this.OnKeyDown(e) =
+        base.OnKeyDown(e)
+        if e.KeyCode=Keys.Enter || e.KeyCode=Keys.Space then
+            e.Handled <- true
+            this.OnClick(EventArgs.Empty)
+    override this.OnPaint(e) =
+        let g = e.Graphics
+        g.Clear(if isNull this.Parent then this.BackColor else this.Parent.BackColor)
+        let textWidth = TextRenderer.MeasureText(g,this.Text,this.Font,Size.Empty,flags).Width
+        TextRenderer.DrawText(g,this.Text,this.Font,Point.Empty,linkColor,flags)
+        g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        use pen = new Pen(linkColor,float32(max 1 (int(Math.Round(Dpi.scaleF 1.2)))))
+        pen.StartCap <- Drawing2D.LineCap.Round
+        pen.EndCap <- Drawing2D.LineCap.Round
+        pen.LineJoin <- Drawing2D.LineJoin.Round
+        // The mark stands on the text's baseline, about as tall as its capitals.
+        let s = float32(mark())
+        let x = float32(textWidth+gap())
+        let y = float32(baseline())-s
+        let at (fx:float32) (fy:float32) = PointF(x+s*fx,y+s*fy)
+        match kind with
+        | FileLink ->
+            g.DrawLines(pen,[|at 0.0f 0.95f;at 0.0f 0.1f;at 0.38f 0.1f;at 0.5f 0.25f;at 1.0f 0.25f;at 1.0f 0.95f;at 0.0f 0.95f|])
+        | WebLink ->
+            g.DrawLine(pen,at 0.1f 0.95f,at 0.9f 0.15f)
+            g.DrawLines(pen,[|at 0.35f 0.15f;at 0.9f 0.15f;at 0.9f 0.7f|])
+        if hovering || (this.Focused && this.ShowFocusCues) then
+            // One underline under text and mark together.
+            g.SmoothingMode <- Drawing2D.SmoothingMode.None
+            let underline = baseline()+Dpi.scale 2
+            use line = new Pen(linkColor,float32(max 1 (Dpi.scale 1)))
+            g.DrawLine(line,0,underline,int(x+s),underline)
+
+type SettingsIcon =
+    | RefreshIcon
+    | CopyIcon
+    | WindowListIcon
+
+/// A small square icon button with hover help. As a toggle it stays highlighted while on.
+type SettingsIconButton(icon:SettingsIcon, help:string, ?toggle:bool) as this =
+    inherit Button()
+    let isToggle = defaultArg toggle false
+    let mutable isChecked = false
+    let mutable hovering = false
+    let checkedChanged = Event<EventArgs>()
+    do
+        this.Size <- Size(Dpi.scale 30,Dpi.scale 30)
+        this.FlatStyle <- FlatStyle.Flat
+        this.FlatAppearance.BorderSize <- 0
+        this.AccessibleName <- help
+        this.AccessibleRole <- if isToggle then AccessibleRole.CheckButton else AccessibleRole.PushButton
+        this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
+        SettingsHover(this,help) |> ignore
+        this.Click.Add(fun _ -> if isToggle then this.Checked <- not isChecked)
+    member _.Checked
+        with get() = isChecked
+        and set(value) =
+            if value<>isChecked then
+                isChecked <- value
+                this.AccessibleDescription <- if value then "on" else "off"
+                this.Invalidate()
+                checkedChanged.Trigger(EventArgs.Empty)
+    member _.CheckedChanged = checkedChanged.Publish
+    override this.OnMouseEnter(e) = base.OnMouseEnter(e); hovering <- true; this.Invalidate()
+    override this.OnMouseLeave(e) = base.OnMouseLeave(e); hovering <- false; this.Invalidate()
+    override this.OnPaint(e) =
+        let p = SettingsColors.current()
+        let g = e.Graphics
+        g.Clear(if isNull this.Parent then p.surface else this.Parent.BackColor)
+        g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        if hovering || isChecked then
+            use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (float32(Dpi.scale 6))
+            use fill = new SolidBrush(if isChecked then Color.FromArgb(56,p.accent) else p.hover)
+            g.FillPath(fill,shape)
+        let color = if isChecked then p.accent elif hovering then p.text else p.muted
+        use pen = new Pen(color,float32(max 1 (int(Math.Round(Dpi.scaleF 1.4)))))
+        pen.StartCap <- Drawing2D.LineCap.Round
+        pen.EndCap <- Drawing2D.LineCap.Round
+        pen.LineJoin <- Drawing2D.LineJoin.Round
+        let s = float32(Dpi.scale 16)
+        let x0,y0 = (float32 this.Width-s)/2.0f,(float32 this.Height-s)/2.0f
+        let at (fx:float32) (fy:float32) = PointF(x0+s*fx,y0+s*fy)
+        match icon with
+        | RefreshIcon ->
+            // A near-full clockwise circle, the arrowhead at its open end pointing along it.
+            let cx,cy,r = x0+s*0.5f,y0+s*0.5f,s*0.36f
+            let start,sweep = 20.0,300.0
+            g.DrawArc(pen,cx-r,cy-r,r*2.0f,r*2.0f,float32 start,float32 sweep)
+            let theta = (start+sweep)*Math.PI/180.0
+            let ex,ey = cx+r*float32(cos theta),cy+r*float32(sin theta)
+            let dx,dy = float32(-(sin theta)),float32(cos theta)
+            let length = s*0.24f
+            let tip = PointF(ex+dx*length*0.35f,ey+dy*length*0.35f)
+            let wing side = PointF(tip.X-dx*length-dy*length*0.75f*side,tip.Y-dy*length+dx*length*0.75f*side)
+            g.DrawLines(pen,[|wing 1.0f;tip;wing -1.0f|])
+        | CopyIcon ->
+            use back = SettingsShapes.rounded (RectangleF(x0+s*0.06f,y0+s*0.06f,s*0.56f,s*0.62f)) (s*0.1f)
+            use front = SettingsShapes.rounded (RectangleF(x0+s*0.34f,y0+s*0.3f,s*0.58f,s*0.64f)) (s*0.1f)
+            g.DrawPath(pen,back)
+            use cover = new SolidBrush(if hovering || isChecked then (if isChecked then Color.FromArgb(56,p.accent) else p.hover) else (if isNull this.Parent then p.surface else this.Parent.BackColor))
+            g.FillPath(cover,front)
+            g.DrawPath(pen,front)
+        | WindowListIcon ->
+            // A window frame with rows: the report's per-window details.
+            use frame = SettingsShapes.rounded (RectangleF(x0+s*0.06f,y0+s*0.12f,s*0.88f,s*0.76f)) (s*0.1f)
+            g.DrawPath(pen,frame)
+            g.DrawLine(pen,at 0.06f 0.34f,at 0.94f 0.34f)
+            for fy in [0.52f;0.7f] do g.DrawLine(pen,at 0.24f fy,at 0.76f fy)
+        if this.Focused && this.ShowFocusCues then ControlPaint.DrawFocusRectangle(g,Rectangle(2,2,this.Width-4,this.Height-4))
+
+/// An (i) button that explains something on hover, focus or click.
+type SettingsHelpButton(text:string) as this =
+    inherit SettingsInfoButton()
+    let hover = SettingsHover(this,text)
+    do
+        this.AccessibleDescription <- text
+        this.Click.Add(fun _ -> hover.Show())
 
 type SettingsSearchResults() as this =
     inherit Panel()
@@ -282,7 +452,8 @@ type SettingsNavigationButton(key:SettingsViewType) as this =
         if this.Focused && this.ShowFocusCues then
             ControlPaint.DrawFocusRectangle(e.Graphics,Rectangle(3,3,this.Width-6,this.Height-6),foreground,this.BackColor)
 
-/// A single-line label that trims with an ellipsis and shows the full text on hover only when trimmed.
+/// A label that wraps at spaces and trims with an ellipsis only what cannot wrap, such as a long
+/// path; it shows the full text on hover only when trimmed.
 type SettingsEllipsisLabel() as this =
     inherit Label()
     // Owned by the label, so its window closes with the page instead of outliving it.
@@ -292,8 +463,9 @@ type SettingsEllipsisLabel() as this =
         this.SetStyle(ControlStyles.ResizeRedraw,true)
         this.Disposed.Add(fun _ -> tip.Dispose())
     member private this.isTrimmed =
-        TextRenderer.MeasureText(this.Text,this.Font,Size(Int32.MaxValue,this.Height),
-            TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine).Width > this.ClientSize.Width
+        let size = TextRenderer.MeasureText(this.Text,this.Font,Size(this.ClientSize.Width,Int32.MaxValue),
+                       TextFormatFlags.NoPrefix ||| TextFormatFlags.WordBreak)
+        size.Width > this.ClientSize.Width || size.Height > this.ClientSize.Height
     override this.OnMouseEnter(e) =
         base.OnMouseEnter(e)
         tip.SetToolTip(this,(if this.isTrimmed then this.Text else ""))
@@ -302,7 +474,7 @@ type SettingsEllipsisLabel() as this =
         tip.SetToolTip(this,"")
     override this.OnPaint(e) =
         TextRenderer.DrawText(e.Graphics,this.Text,this.Font,this.ClientRectangle,this.ForeColor,
-            TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis)
+            TextFormatFlags.NoPrefix ||| TextFormatFlags.WordBreak ||| TextFormatFlags.EndEllipsis)
 
 type SettingsToggle() as this =
     inherit CheckBox()
@@ -410,13 +582,140 @@ type SettingsThemeTile(mode:string) as this =
             TextRenderer.DrawText(e.Graphics,this.Text,this.Font,label,(if this.Checked && this.Enabled then p.text else p.muted),
                 TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter)
             if this.Focused && this.ShowFocusCues then ControlPaint.DrawFocusRectangle(e.Graphics,label,p.text,this.BackColor)
+/// A themed overlay-style scrollbar like Windows 11: a thin rounded line that widens into
+/// a pill on a faint track while pointed at, dragged or focused. The whole control width
+/// stays clickable.
+type SettingsScrollBar() as this =
+    inherit Control()
+    let positionChanged = Event<int>()
+    let mutable position = 0
+    let mutable maximum = 0
+    let mutable viewport = 1
+    let mutable dragOffset = None
+    let mutable hovering = false
+    /// 0 = thin line, 1 = fully widened.
+    let mutable expansion = 0.0f
+    /// Stays widened briefly after the pointer leaves, as the system scrollbar does.
+    let mutable collapseAt = DateTime.MinValue
+    let animation = new Timer(Interval=15)
+    let margin() = Dpi.scale 3
+    do
+        this.Width <- Dpi.scale 14
+        this.TabStop <- true
+        this.AccessibleRole <- AccessibleRole.ScrollBar
+        this.AccessibleName <- tr Strings.SettingsWindow.pageScroll
+        this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
+        animation.Tick.Add(fun _ ->
+            let active = hovering || dragOffset.IsSome || this.keyboardFocused || DateTime.Now<collapseAt
+            let target = if active then 1.0f else 0.0f
+            let next = if target>expansion then min target (expansion+0.2f) else max target (expansion-0.12f)
+            if next<>expansion then
+                expansion <- next
+                this.Invalidate()
+            // Input events restart the timer; only a pending collapse needs it to keep running.
+            elif DateTime.Now>=collapseAt then animation.Stop())
+        this.Disposed.Add(fun _ -> animation.Dispose())
+    /// Full-width thumb bounds, for hit testing.
+    member private this.thumb =
+        let track = max 1 (this.Height-margin()*2)
+        let height = max (Dpi.scale 32) (track * viewport / max 1 (viewport+maximum)) |> min track
+        let y = margin() + (if maximum=0 then 0 else position*(track-height)/maximum)
+        Rectangle(0,y,this.Width,height)
+    member private this.animate() = if not animation.Enabled then animation.Start()
+    member private this.keyboardFocused = this.Focused && this.ShowFocusCues
+    member this.configure(maxValue,viewSize,value) =
+        maximum <- max 0 maxValue
+        viewport <- max 1 viewSize
+        position <- max 0 (min maximum value)
+        this.Visible <- maximum > 0
+        this.Invalidate()
+    member this.changed = positionChanged.Publish
+    override this.OnPaintBackground(e) =
+        e.Graphics.Clear(if isNull this.Parent then (SettingsColors.current()).background else this.Parent.BackColor)
+    member private this.setPosition value =
+        let value = max 0 (min maximum value)
+        if value<>position then position<-value; positionChanged.Trigger(value); this.Invalidate()
+    override this.OnPaint(e) =
+        let g = e.Graphics
+        g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        let p = SettingsColors.current()
+        let highContrast = SystemInformation.HighContrast
+        let t = if highContrast then 1.0f else expansion
+        let thin,wide = float32(Dpi.scale 2),float32(Dpi.scale 6)
+        let thickness = thin+(wide-thin)*t
+        let x = float32(this.Width-margin())-thickness
+        if t>0.0f && not highContrast then
+            let alpha = int(255.0f*t)
+            use track = new SolidBrush(Color.FromArgb(alpha,p.hover))
+            let trackRect = RectangleF(x,float32(margin()),thickness,float32(this.Height-margin()*2))
+            use path = SettingsShapes.rounded trackRect (thickness/2.0f)
+            g.FillPath(track,path)
+        let thumb = this.thumb
+        let color =
+            if highContrast then SystemColors.WindowText
+            else
+                // Blend from the muted line colour towards the text colour as it widens or is dragged.
+                let amount = if dragOffset.IsSome then 0.6f else t*0.35f
+                let mix (a:int) (b:int) = a+int(float32(b-a)*amount)
+                Color.FromArgb(mix (int p.muted.R) (int p.text.R),mix (int p.muted.G) (int p.text.G),mix (int p.muted.B) (int p.text.B))
+        use brush = new SolidBrush(color)
+        use path = SettingsShapes.rounded (RectangleF(x,float32 thumb.Y,thickness,float32 thumb.Height)) (thickness/2.0f)
+        g.FillPath(brush,path)
+    override this.OnMouseEnter(e) =
+        base.OnMouseEnter(e)
+        hovering <- true
+        this.animate()
+    override this.OnMouseLeave(e) =
+        base.OnMouseLeave(e)
+        hovering <- false
+        collapseAt <- DateTime.Now.AddMilliseconds(600.0)
+        this.animate()
+    override this.OnGotFocus(e) = base.OnGotFocus(e); this.animate()
+    override this.OnLostFocus(e) = base.OnLostFocus(e); this.animate()
+    override this.OnMouseDown(e) =
+        base.OnMouseDown(e)
+        if e.Button=MouseButtons.Left then
+            this.Focus() |> ignore
+            if this.thumb.Contains(e.Location) then dragOffset<-Some(e.Y-this.thumb.Y)
+            else this.setPosition(position+(if e.Y<this.thumb.Y then -viewport else viewport))
+            this.Capture <- true
+            this.Invalidate()
+    override this.OnMouseMove(e) =
+        base.OnMouseMove(e)
+        match dragOffset with
+        | Some offset -> this.setPosition((e.Y-margin()-offset)*maximum / max 1 (this.Height-margin()*2-this.thumb.Height))
+        | None -> ()
+    override this.OnMouseUp(e) =
+        base.OnMouseUp(e)
+        dragOffset<-None
+        this.Capture<-false
+        collapseAt <- DateTime.Now.AddMilliseconds(600.0)
+        this.animate()
+    override this.IsInputKey(key) =
+        match key &&& Keys.KeyCode with
+        | Keys.Up | Keys.Down | Keys.PageUp | Keys.PageDown | Keys.Home | Keys.End -> true
+        | _ -> base.IsInputKey(key)
+    override this.OnKeyDown(e) =
+        match e.KeyCode with
+        | Keys.Up -> this.setPosition(position-Dpi.scale 32)
+        | Keys.Down -> this.setPosition(position+Dpi.scale 32)
+        | Keys.PageUp -> this.setPosition(position-viewport)
+        | Keys.PageDown -> this.setPosition(position+viewport)
+        | Keys.Home -> this.setPosition(0)
+        | Keys.End -> this.setPosition(maximum)
+        | _ -> base.OnKeyDown(e)
+
 /// Paint the entire list in one buffered pass. Native owner-draw selection messages
 /// otherwise paint rows directly to the screen between background erases.
 type SettingsChoiceList() as this =
     inherit ListBox()
+    let scrolled = Event<EventArgs>()
     do
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.AllPaintingInWmPaint |||
                       ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.ResizeRedraw,true)
+        this.SelectedIndexChanged.Add(fun _ -> scrolled.Trigger(EventArgs.Empty))
+    /// The first shown row or the rows themselves may have changed.
+    member _.Scrolled = scrolled.Publish
     override this.OnPaint(e) =
         e.Graphics.Clear(this.BackColor)
         if this.Items.Count>0 then
@@ -433,7 +732,49 @@ type SettingsChoiceList() as this =
             message.Result <- IntPtr(1)
         else
             base.WndProc(&message)
-            if message.Msg=0x115 || message.Msg=0x20A then this.Invalidate()
+            match message.Msg with
+            | 0x115 | 0x20A -> // WM_VSCROLL, WM_MOUSEWHEEL
+                this.Invalidate()
+                scrolled.Trigger(EventArgs.Empty)
+            // LB_ADDSTRING, LB_INSERTSTRING, LB_DELETESTRING, LB_RESETCONTENT, LB_SETTOPINDEX
+            | 0x180 | 0x181 | 0x182 | 0x184 | 0x197 -> scrolled.Trigger(EventArgs.Empty)
+            | _ -> ()
+
+/// Shows a list with the settings scrollbar instead of the system one: the list is widened just
+/// enough for its own scrollbar to fall outside the frame, and the settings bar sits in the
+/// space it leaves, following the list as it scrolls a row at a time.
+type SettingsListFrame(list:SettingsChoiceList) as this =
+    inherit Panel()
+    let bar = new SettingsScrollBar(TabStop=false)
+    let visibleRows() = max 1 (this.ClientSize.Height/max 1 list.ItemHeight)
+    let sync() =
+        bar.configure(max 0 (list.Items.Count-visibleRows()),visibleRows(),list.TopIndex)
+    let arrange() =
+        let size = this.ClientSize
+        let overflows = list.Items.Count*list.ItemHeight > size.Height
+        let content = if overflows then max 1 (size.Width-bar.Width) else size.Width
+        list.Bounds <- Rectangle(0,0,content,size.Height)
+        // Whatever the list's own scrollbar takes is added back, outside the frame.
+        let native = list.Width-list.ClientSize.Width
+        if native>0 then list.Width <- content+native
+        bar.Bounds <- Rectangle(size.Width-bar.Width,0,bar.Width,size.Height)
+        sync()
+    do
+        this.BackColor <- list.BackColor
+        list.Dock <- DockStyle.None
+        this.Controls.Add(list)
+        this.Controls.Add(bar)
+        bar.BringToFront()
+        list.BackColorChanged.Add(fun _ -> this.BackColor <- list.BackColor; bar.Invalidate())
+        list.Scrolled.Add(fun _ ->
+            if not this.IsDisposed then
+                // A change in the number of rows can add or remove the scrollbar.
+                let overflows = list.Items.Count*list.ItemHeight > this.ClientSize.Height
+                if overflows<>(list.ClientSize.Width<this.ClientSize.Width) then arrange() else sync())
+        bar.changed.Add(fun value -> list.TopIndex <- value; sync())
+        this.Resize.Add(fun _ -> arrange())
+    member _.List = list
+    override this.OnGotFocus(e) = base.OnGotFocus(e); list.Focus() |> ignore
 
 /// A menu-style popup keeps the settings window active when dismissed outside.
 type SettingsChoicePopup() as this =
@@ -599,7 +940,9 @@ type SettingsCombo(items:string[]) as this =
                     finish false
                     this.Parent.SelectNextControl(this,not e.Shift,true,true,true) |> ignore
                     e.SuppressKeyPress <- true)
-            let listHost = new ToolStripControlHost(list,AutoSize=false,Margin=Padding.Empty,Padding=Padding.Empty,BackColor=p.hover)
+            // A screen too short for every choice scrolls them with the settings scrollbar.
+            let frame = new SettingsListFrame(list)
+            let listHost = new ToolStripControlHost(frame,AutoSize=false,Margin=Padding.Empty,Padding=Padding.Empty,BackColor=p.hover)
             window.Items.Add(listHost) |> ignore
             let area = Screen.FromControl(this).WorkingArea
             let labelWidth = items |> Array.map(fun text -> TextRenderer.MeasureText(text,this.Font).Width) |> Array.max
@@ -610,7 +953,7 @@ type SettingsCombo(items:string[]) as this =
             window.Size <- Size(min area.Width (max this.Width (labelWidth+Dpi.scale (if itemColors.Length>0 then 80 else 58))),
                                 min (area.Height-Dpi.scale 12) (items.Length*list.ItemHeight+window.Padding.Vertical+2))
             listHost.Size <- Size(window.Width-window.Padding.Horizontal,window.Height-window.Padding.Vertical)
-            list.Size <- listHost.Size
+            frame.Size <- listHost.Size
             list.SelectedIndex <- max 0 selected
             list.TopIndex <- 0
             let anchor = this.PointToScreen(Point(0,this.Height+Dpi.scale 4))
@@ -629,8 +972,8 @@ type SettingsCombo(items:string[]) as this =
         match this.CreateDropDown() with
         | Some window ->
             window.Show(window.Location)
-            let list = (window.Items.[0] :?> ToolStripControlHost).Control
-            list.Focus() |> ignore
+            let frame = (window.Items.[0] :?> ToolStripControlHost).Control :?> SettingsListFrame
+            frame.List.Focus() |> ignore
         | None -> ()
     override this.OnMouseDown(e) =
         match popup with
@@ -690,173 +1033,54 @@ type SettingsCombo(items:string[]) as this =
         TextRenderer.DrawText(graphics,label,this.Font,Rectangle(textLeft,0,this.Width-textLeft,this.Height),foreground,
             TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter)
 
-/// A themed overlay-style scrollbar like Windows 11: a thin rounded line that widens into
-/// a pill on a faint track while pointed at, dragged or focused. The whole control width
-/// stays clickable.
-type SettingsScrollBar() as this =
-    inherit Control()
-    let positionChanged = Event<int>()
-    let mutable position = 0
-    let mutable maximum = 0
-    let mutable viewport = 1
-    let mutable dragOffset = None
-    let mutable hovering = false
-    /// 0 = thin line, 1 = fully widened.
-    let mutable expansion = 0.0f
-    /// Stays widened briefly after the pointer leaves, as the system scrollbar does.
-    let mutable collapseAt = DateTime.MinValue
-    let animation = new Timer(Interval=15)
-    let margin() = Dpi.scale 3
-    do
-        this.Width <- Dpi.scale 14
-        this.TabStop <- true
-        this.AccessibleRole <- AccessibleRole.ScrollBar
-        this.AccessibleName <- tr Strings.SettingsWindow.pageScroll
-        this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
-        animation.Tick.Add(fun _ ->
-            let active = hovering || dragOffset.IsSome || this.keyboardFocused || DateTime.Now<collapseAt
-            let target = if active then 1.0f else 0.0f
-            let next = if target>expansion then min target (expansion+0.2f) else max target (expansion-0.12f)
-            if next<>expansion then
-                expansion <- next
-                this.Invalidate()
-            // Input events restart the timer; only a pending collapse needs it to keep running.
-            elif DateTime.Now>=collapseAt then animation.Stop())
-        this.Disposed.Add(fun _ -> animation.Dispose())
-    /// Full-width thumb bounds, for hit testing.
-    member private this.thumb =
-        let track = max 1 (this.Height-margin()*2)
-        let height = max (Dpi.scale 32) (track * viewport / max 1 (viewport+maximum)) |> min track
-        let y = margin() + (if maximum=0 then 0 else position*(track-height)/maximum)
-        Rectangle(0,y,this.Width,height)
-    member private this.animate() = if not animation.Enabled then animation.Start()
-    member private this.keyboardFocused = this.Focused && this.ShowFocusCues
-    member this.configure(maxValue,viewSize,value) =
-        maximum <- max 0 maxValue
-        viewport <- max 1 viewSize
-        position <- max 0 (min maximum value)
-        this.Visible <- maximum > 0
-        this.Invalidate()
-    member this.changed = positionChanged.Publish
-    override this.OnPaintBackground(e) =
-        e.Graphics.Clear(if isNull this.Parent then (SettingsColors.current()).background else this.Parent.BackColor)
-    member private this.setPosition value =
-        let value = max 0 (min maximum value)
-        if value<>position then position<-value; positionChanged.Trigger(value); this.Invalidate()
-    override this.OnPaint(e) =
-        let g = e.Graphics
-        g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-        let p = SettingsColors.current()
-        let highContrast = SystemInformation.HighContrast
-        let t = if highContrast then 1.0f else expansion
-        let thin,wide = float32(Dpi.scale 2),float32(Dpi.scale 6)
-        let thickness = thin+(wide-thin)*t
-        let x = float32(this.Width-margin())-thickness
-        if t>0.0f && not highContrast then
-            let alpha = int(255.0f*t)
-            use track = new SolidBrush(Color.FromArgb(alpha,p.hover))
-            let trackRect = RectangleF(x,float32(margin()),thickness,float32(this.Height-margin()*2))
-            use path = SettingsShapes.rounded trackRect (thickness/2.0f)
-            g.FillPath(track,path)
-        let thumb = this.thumb
-        let color =
-            if highContrast then SystemColors.WindowText
-            else
-                // Blend from the muted line colour towards the text colour as it widens or is dragged.
-                let amount = if dragOffset.IsSome then 0.6f else t*0.35f
-                let mix (a:int) (b:int) = a+int(float32(b-a)*amount)
-                Color.FromArgb(mix (int p.muted.R) (int p.text.R),mix (int p.muted.G) (int p.text.G),mix (int p.muted.B) (int p.text.B))
-        use brush = new SolidBrush(color)
-        use path = SettingsShapes.rounded (RectangleF(x,float32 thumb.Y,thickness,float32 thumb.Height)) (thickness/2.0f)
-        g.FillPath(brush,path)
-    override this.OnMouseEnter(e) =
-        base.OnMouseEnter(e)
-        hovering <- true
-        this.animate()
-    override this.OnMouseLeave(e) =
-        base.OnMouseLeave(e)
-        hovering <- false
-        collapseAt <- DateTime.Now.AddMilliseconds(600.0)
-        this.animate()
-    override this.OnGotFocus(e) = base.OnGotFocus(e); this.animate()
-    override this.OnLostFocus(e) = base.OnLostFocus(e); this.animate()
-    override this.OnMouseDown(e) =
-        base.OnMouseDown(e)
-        if e.Button=MouseButtons.Left then
-            this.Focus() |> ignore
-            if this.thumb.Contains(e.Location) then dragOffset<-Some(e.Y-this.thumb.Y)
-            else this.setPosition(position+(if e.Y<this.thumb.Y then -viewport else viewport))
-            this.Capture <- true
-            this.Invalidate()
-    override this.OnMouseMove(e) =
-        base.OnMouseMove(e)
-        match dragOffset with
-        | Some offset -> this.setPosition((e.Y-margin()-offset)*maximum / max 1 (this.Height-margin()*2-this.thumb.Height))
-        | None -> ()
-    override this.OnMouseUp(e) =
-        base.OnMouseUp(e)
-        dragOffset<-None
-        this.Capture<-false
-        collapseAt <- DateTime.Now.AddMilliseconds(600.0)
-        this.animate()
-    override this.IsInputKey(key) =
-        match key &&& Keys.KeyCode with
-        | Keys.Up | Keys.Down | Keys.PageUp | Keys.PageDown | Keys.Home | Keys.End -> true
-        | _ -> base.IsInputKey(key)
-    override this.OnKeyDown(e) =
-        match e.KeyCode with
-        | Keys.Up -> this.setPosition(position-Dpi.scale 32)
-        | Keys.Down -> this.setPosition(position+Dpi.scale 32)
-        | Keys.PageUp -> this.setPosition(position-viewport)
-        | Keys.PageDown -> this.setPosition(position+viewport)
-        | Keys.Home -> this.setPosition(0)
-        | Keys.End -> this.setPosition(maximum)
-        | _ -> base.OnKeyDown(e)
-
-/// Raises Scrolled after anything that can move its text: scrolling, keys, typing, or the
-/// timer the edit control uses to scroll while a selection is dragged.
-type private ScrollReportingTextBox() =
+/// Hands mouse-wheel turns to its container instead of scrolling itself.
+type private WheelForwardingTextBox() =
     inherit TextBox()
-    let scrolled = Event<unit>()
-    member _.Scrolled = scrolled.Publish
+    let wheel = Event<int>()
+    member _.Wheel = wheel.Publish
     override this.WndProc(message:byref<Message>) =
-        base.WndProc(&message)
-        match message.Msg with
-        | 0x0115 | 0x020A | 0x0100 | 0x0102 | 0x000C | 0x0113 | 0x0202 -> scrolled.Trigger()
-        | _ -> ()
+        // WM_MOUSEWHEEL: the signed delta is the high word of wParam.
+        if message.Msg=0x020A then wheel.Trigger(int (int16 ((message.WParam.ToInt64() >>> 16) &&& 0xFFFFL)))
+        else base.WndProc(&message)
 
-/// A read-only, multi-line text view with the settings scrollbar. The text box keeps its own
-/// system scrollbar, and with it its scrolling behaviour, but the host clips that bar away and
-/// shows the settings one in its place, kept in step with the text box's scroll position.
+/// A read-only, multi-line text view that scrolls smoothly, like settings pages. The text box is
+/// as tall as its text and moves inside a clipping frame; the settings scrollbar and eased wheel
+/// scrolling drive it, and its text stays selectable.
 type SettingsTextView() as this =
     inherit Panel()
-    let box = new ScrollReportingTextBox(ReadOnly=true,Multiline=true,ScrollBars=ScrollBars.Vertical,
+    let box = new WheelForwardingTextBox(ReadOnly=true,Multiline=true,ScrollBars=ScrollBars.None,
                                          WordWrap=false,BorderStyle=BorderStyle.None)
     let bar = new SettingsScrollBar(TabStop=false)
-    let mutable syncing = false
-    let sync() =
-        if box.IsHandleCreated && not syncing then
-            let mutable info = SCROLLINFO()
-            info.cbSize <- Runtime.InteropServices.Marshal.SizeOf(typeof<SCROLLINFO>)
-            info.fMask <- 0x17  // SIF_RANGE | SIF_PAGE | SIF_POS | SIF_TRACKPOS
-            if WinUserApi.GetScrollInfo(box.Handle,1,&info) then
-                bar.configure(max 0 (info.nMax-info.nMin+1-info.nPage),info.nPage,info.nPos-info.nMin)
-            else bar.configure(0,1,0)
+    let mutable offset = 0
+    let maximum() = max 0 (box.Height-this.ClientSize.Height)
+    let apply value =
+        offset <- max 0 (min (maximum()) value)
+        box.Top <- -offset
+        bar.configure(maximum(),this.ClientSize.Height,offset)
+    let smooth = new SmoothScroller((fun () -> offset),(fun value -> max 0 (min (maximum()) value)),apply)
+    /// The edit control's own line spacing, taken from where it puts the second line.
+    let textHeight() =
+        let lines = max 1 box.Lines.Length
+        let lineHeight =
+            if lines>1 && box.IsHandleCreated then
+                let spacing = box.GetPositionFromCharIndex(box.GetFirstCharIndexFromLine(1)).Y-box.GetPositionFromCharIndex(0).Y
+                if spacing>0 then spacing else box.Font.Height
+            else box.Font.Height
+        lines*lineHeight+Dpi.scale 8
     let arrange() =
         let size = this.ClientSize
-        box.Bounds <- Rectangle(0,0,size.Width+SystemInformation.VerticalScrollBarWidth,size.Height)
+        box.Bounds <- Rectangle(0,-offset,max 1 (size.Width-bar.Width),max size.Height (textHeight()))
         bar.Bounds <- Rectangle(size.Width-bar.Width,0,bar.Width,size.Height)
-        sync()
+        apply offset
     do
         this.Controls.Add(box)
         this.Controls.Add(bar)
         bar.BringToFront()
-        box.Scrolled.Add(fun () -> sync())
-        box.TextChanged.Add(fun _ -> sync())
-        box.HandleCreated.Add(fun _ -> sync())
-        bar.changed.Add(fun value ->
-            syncing <- true
-            try WinUserApi.SendMessage(box.Handle,0x0115,(value <<< 16) ||| 4,0) |> ignore  // WM_VSCROLL, SB_THUMBPOSITION
-            finally syncing <- false)
+        box.Wheel.Add(fun delta -> smooth.by(SmoothScroller.wheelStep delta this.ClientSize.Height))
+        box.TextChanged.Add(fun _ -> arrange())
+        box.FontChanged.Add(fun _ -> arrange())
+        box.HandleCreated.Add(fun _ -> arrange())
+        bar.changed.Add(fun value -> smooth.jump value)
         this.Resize.Add(fun _ -> arrange())
+        this.Disposed.Add(fun _ -> (smooth :> IDisposable).Dispose())
     member _.TextBox = box :> TextBox

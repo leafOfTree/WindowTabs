@@ -15,6 +15,20 @@ open Bemo
 open Bemo.Win32.Forms
 
 let check value message = if not value then failwith message
+
+module Capture =
+    [<Runtime.InteropServices.DllImport("user32.dll")>]
+    extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint32 flags)
+    /// What Windows draws for the window, overlapping children included; DrawToBitmap can
+    /// leave out a control that floats over a sibling.
+    let window (form:Form) (path:string) =
+        use bmp = new Bitmap(form.Width,form.Height)
+        do
+            use g = Graphics.FromImage(bmp)
+            let hdc = g.GetHdc()
+            try PrintWindow(form.Handle,hdc,2u) |> ignore  // PW_RENDERFULLCONTENT
+            finally g.ReleaseHdc(hdc)
+        bmp.Save(path,ImageFormat.Png)
 let rec controls (control:Control) = seq {
     yield control
     for child in control.Controls do yield! controls child }
@@ -48,6 +62,16 @@ let main() =
             check (settings.settings.showTabsOnSwitch=not minimal) (sprintf "Legacy minimalMode=%b changed whether switching shows tabs" minimal)
         api.setValue("autoHideMode",box "Maximized")
         check (api.root.getBool("minimalMode").IsNone && api.root.getBool("autoHide").IsNone) "Legacy auto-hide keys were kept after saving"
+        // The old paid version's license key and activation ticket go on the next save.
+        do
+            let json = api.root
+            json.setString("licenseKey","OLD-KEY")
+            json.setString("ticket","OLD-TICKET")
+            api.root <- json
+            settings.clearCaches()
+            api.setValue("autoHideMode",box "Always")
+            api.setValue("autoHideMode",box "Maximized")
+            check (api.root.getString("licenseKey").IsNone && api.root.getString("ticket").IsNone) "Old license key or ticket kept after saving"
         check (settings.settings.appearance.mode=SystemTheme) "New installs must follow system"
         check (not settings.settings.appearance.useCustomColors) "Default colours misclassified as custom"
         check (Theme.sameColors settings.defaultTabAppearance Theme.light) "KnownColor/ARGB comparison failed"
@@ -183,10 +207,21 @@ let main() =
                 member _.key=key
                 member _.title=caption
                 member _.control=panel :> Control }
+        // The Support page's report reads the desktop's groups; an empty one will do.
+        Services.register<IDesktop>({ new IDesktop with
+            member _.isDragging = false
+            member _.isEmpty = true
+            member _.createGroup _ = failwith "The Support page does not create groups"
+            member _.restartGroup(_,_) = ()
+            member _.groups = List2()
+            member _.groupExited = Event<IGroup>().Publish
+            member _.groupRemoved = Event<IGroup>().Publish
+            member _.foregroundGroup = None })
+        let support = DiagnosticsView() :> ISettingsView
         let beforeOpen = File.ReadAllText(settings.path)
         let frame = DesktopManagerForm(views=[
             general;appearance;placeholder HotKeySettings "Shortcuts";placeholder ProgramSettings "App rules"
-            placeholder LayoutSettings "Workspaces";placeholder DiagnosticsSettings "Diagnostics"])
+            placeholder LayoutSettings "Workspaces";support])
         use form = frame.window
         form.ShowInTaskbar <- false
         form.StartPosition <- FormStartPosition.Manual
@@ -209,10 +244,101 @@ let main() =
             form.DrawToBitmap(bmp,Rectangle(Point.Empty,bmp.Size))
             bmp.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",name+".png"),ImageFormat.Png)
         snapshot "settings-general-light"
+        let generalDescriptions = controls general.control |> Seq.choose(function :? SettingsEllipsisLabel as l -> Some l | _ -> None) |> Seq.toList
+        check (not generalDescriptions.IsEmpty && generalDescriptions |> List.forall(fun l -> l.Height >= l.Font.Height && l.Bottom <= l.Parent.ClientSize.Height))
+              (sprintf "Setting descriptions are clipped by their rows: %A"
+                       (generalDescriptions |> List.truncate 3 |> List.map(fun l -> l.Bounds,l.Parent.ClientSize,(l.Parent :?> TableLayoutPanel).RowStyles.[1].SizeType,l.Parent.Parent.Bounds)))
         api.setValue("tabThemeMode",box "dark")
         Application.DoEvents()
         check (form.BackColor=SettingsUi.palette().background) "Live theme update missed form"
         snapshot "settings-general-dark"
+        // Opened from the sidebar, as a user would: the page is built hidden, then shown and sized.
+        do
+            let navigate = controls form |> Seq.find(fun c -> c :? Button && c.Text=tr Strings.Pages.diagnostics) :?> Button
+            navigate.PerformClick()
+            Application.DoEvents()
+            snapshot "settings-support-dark"
+            Capture.window form (Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-support-print.png"))
+            let all = controls support.control |> Seq.toList
+            let links = all |> List.choose(function :? SettingsLink as link -> Some link | _ -> None)
+            check (links.Length >= 3 && links |> List.forall(fun link -> link.Visible && link.Height > 0)) "Support links are missing"
+            let screenTop (c:Control) = c.PointToScreen(Point.Empty).Y
+            let note = all |> List.find(fun c -> c :? Label && c.Text=tr Strings.Diagnostics.description)
+            let refresh = all |> List.find(fun c -> c :? SettingsIconButton && c.AccessibleName=tr Strings.Diagnostics.refreshReport)
+            let fileCard = all |> List.find(fun c -> c :? Label && c.Text=tr Strings.General.settingsFile)
+            check (screenTop links.Head < screenTop fileCard && screenTop links.Head < screenTop note && links.Head.Top < Dpi.scale 30)
+                  (sprintf "Support links are not the first line: links %d, Settings file %d, note %d"
+                           (screenTop links.Head) (screenTop fileCard) (screenTop note))
+            // Each link's mark sits right after its text, inside the link, so hover underlines both.
+            check (links |> List.forall(fun link ->
+                        let textWidth = TextRenderer.MeasureText(link.Text,link.Font,Size.Empty,TextFormatFlags.NoPadding).Width
+                        link.Width > textWidth+Dpi.scale 9 && link.Width < textWidth+Dpi.scale 20))
+                  (sprintf "Support link marks are not beside their text: %A" (links |> List.map(fun l -> l.Text,l.Width)))
+            check (links |> List.forall(fun link -> link.Kind=WebLink || link.Text=tr Strings.Diagnostics.openCrashLog))
+                  "A web link is marked as a file"
+            // Hovered links, web and file, for review.
+            do
+                let p = SettingsColors.current()
+                use strip = new Bitmap(Dpi.scale 360,Dpi.scale 30)
+                use g = Graphics.FromImage(strip)
+                g.Clear(support.control.BackColor)
+                let mutable x = 0
+                for text,kind in [links.Head.Text,WebLink;tr Strings.Diagnostics.openCrashLog,FileLink] do
+                    use link = new SettingsLink(text,kind,Font=links.Head.Font,BackColor=support.control.BackColor,LinkColor=p.accent)
+                    typeof<Control>.GetMethod("OnMouseEnter",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).Invoke(link,[|box EventArgs.Empty|]) |> ignore
+                    use one = new Bitmap(link.Width,link.Height)
+                    link.DrawToBitmap(one,Rectangle(Point.Empty,one.Size))
+                    g.DrawImage(one,x+Dpi.scale 6,Dpi.scale 6)
+                    x <- x+link.Width+Dpi.scale 24
+                strip.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-links-hover.png"),ImageFormat.Png)
+            let rows = all |> List.choose(function :? SettingsRow as row -> Some row | _ -> None)
+            let describe (row:SettingsRow) =
+                let rec walk depth (c:Control) =
+                    sprintf "%s%s %A max=%A min=%A auto=%b" (String(' ',depth*2)) (c.GetType().Name) c.Bounds c.MaximumSize c.MinimumSize c.AutoSize
+                    :: (c.Controls |> Seq.cast<Control> |> Seq.collect(walk (depth+1)) |> Seq.toList)
+                String.Join("
+",walk 0 row)
+            let descriptions = rows |> List.collect(fun row -> controls row |> Seq.choose(function :? SettingsEllipsisLabel as l -> Some l | _ -> None) |> Seq.toList)
+            check (descriptions.Length=2 && descriptions |> List.forall(fun l -> l.Visible && l.Height >= l.Font.Height && l.Width > Dpi.scale 100
+                                                                                   && l.Bottom <= l.Parent.ClientSize.Height))
+                  (sprintf "Settings file descriptions are hidden:
+%s" (String.Join("
+
+",rows |> List.map describe)))
+            let tools = all |> List.choose(function :? SettingsIconButton as b -> Some b | _ -> None)
+            check (tools.Length=3 && tools |> List.forall(fun b -> b.Visible && b.Width > 0 && b.Parent.Visible && b.Parent.Parent :? SettingsTextView))
+                  (sprintf "Report tools are missing: %A" (tools |> List.map(fun b -> b.Bounds,b.Parent.Bounds,b.Parent.Visible)))
+            // Sliding the pointer across the tools and back onto one whose popup is still open
+            // must neither throw nor leave several popups on screen.
+            let enter (c:Control) =
+                typeof<Control>.GetMethod("OnMouseEnter",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).Invoke(c,[|box EventArgs.Empty|]) |> ignore
+            for tool in tools @ [List.last tools] do enter tool
+            let popups = Application.OpenForms |> Seq.cast<Form> |> Seq.filter(fun f -> f.GetType().Name="SettingsHelpPopup" && f.Visible) |> Seq.length
+            check (popups=1) (sprintf "Hover popups stacked up: %d visible" popups)
+            for f in Application.OpenForms |> Seq.cast<Form> |> Seq.filter(fun f -> f.GetType().Name="SettingsHelpPopup") |> Seq.toList do f.Hide()
+            check (rows |> List.forall(fun row -> row.Height < Dpi.scale 90))
+                  (sprintf "A Settings file row is too tall: %A
+%s" (rows |> List.map(fun row -> row.Height)) (String.Join("
+
+",rows |> List.map describe)))
+            let report = all |> List.find(fun c -> c :? SettingsTextView)
+            check (screenTop refresh >= screenTop report && screenTop refresh < screenTop report + Dpi.scale 40)
+                  "Report tools do not float at the report's top"
+            check (screenTop report - (screenTop note+note.Height) < Dpi.scale 30)
+                  (sprintf "Support page leaves a gap before the report: %d" (screenTop report - (screenTop note+note.Height)))
+            // A click is confirmed by a note beside the tools, which then goes by itself.
+            let feedback = refresh.Parent.Controls |> Seq.cast<Control> |> Seq.find(fun c -> c :? Label)
+            (refresh :?> Button).PerformClick()
+            Application.DoEvents()
+            check (feedback.Visible && feedback.Text=tr Strings.Diagnostics.reportRefreshed) "Refresh gives no feedback"
+            let fading = Diagnostics.Stopwatch.StartNew()
+            while feedback.Visible && fading.ElapsedMilliseconds < 4000L do
+                Application.DoEvents()
+                Threading.Thread.Sleep(20)
+            check (not feedback.Visible && fading.ElapsedMilliseconds > 2000L)
+                  (sprintf "Refresh feedback does not go after a moment: %dms" fading.ElapsedMilliseconds)
+            (controls form |> Seq.find(fun c -> c :? Button && c.Text=tr Strings.Pages.general) :?> Button).PerformClick()
+            Application.DoEvents()
         // Alerts: each kind in both themes, off-screen, stacked into one image for review.
         let alerts = [AlertKind.Info,"Restore","Restored 3 windows.";
                       AlertKind.Warning,"Workspace data","Group #1: No valid windows in this group.
@@ -264,7 +390,7 @@ Group #2: No valid windows in this group.";
         use popupBitmap = new Bitmap(popup.Width,popup.Height)
         popup.DrawToBitmap(popupBitmap,Rectangle(Point.Empty,popupBitmap.Size))
         popupBitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-choice-dark.png"),ImageFormat.Png)
-        let menu = (popup.Items.[0] :?> ToolStripControlHost).Control :?> ListBox
+        let menu = ((popup.Items.[0] :?> ToolStripControlHost).Control :?> SettingsListFrame).List :> ListBox
         check (menu.ClientSize.Height >= menu.Items.Count*menu.ItemHeight) "Choice menu clips rows and needs a scrollbar"
         check (menu.TopIndex=0) "Choice menu starts scrolled"
         let selectedBeforeHover = menu.SelectedIndex
@@ -278,7 +404,7 @@ Group #2: No valid windows in this group.";
         popup.Dispose()
         let cancelPopup = choice.CreateDropDown() |> Option.get
         showPopup cancelPopup
-        let cancelMenu = (cancelPopup.Items.[0] :?> ToolStripControlHost).Control :?> ListBox
+        let cancelMenu = ((cancelPopup.Items.[0] :?> ToolStripControlHost).Control :?> SettingsListFrame).List :> ListBox
         cancelMenu.SelectedIndex <- 2
         keyDown.Invoke(cancelMenu,[|box(new KeyEventArgs(Keys.Escape))|]) |> ignore
         check (choice.SelectedIndex=1 && choicesChanged=1 && not cancelPopup.Visible) "Esc committed a choice"
@@ -300,13 +426,30 @@ Group #2: No valid windows in this group.";
         Application.DoEvents()
         let result = controls form |> Seq.choose(function :? ListBox as b when b.AccessibleName="Search results" -> Some b | _ -> None) |> Seq.head
         result.SelectedIndex <- result.Items.IndexOf("Theme")
-        let suggestions = result.Parent
+        // The list sits in a frame that swaps its system scrollbar for the settings one.
+        let suggestions = result.Parent.Parent
         check (suggestions.Visible && obj.ReferenceEquals(suggestions.Parent,form)) "Search suggestions are not floating above the page"
         check (general.control.Visible) "Searching hid the current page"
         snapshot "settings-search-dark"
         use searchBitmap = new Bitmap(suggestions.Width,suggestions.Height)
         suggestions.DrawToBitmap(searchBitmap,Rectangle(Point.Empty,searchBitmap.Size))
         searchBitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-search-popup.png"),ImageFormat.Png)
+        // Many matches scroll with the settings scrollbar; the system one stays outside the frame.
+        do
+            search.Text <- "s"
+            Application.DoEvents()
+            let frame = result.Parent
+            let bar = frame.Controls |> Seq.cast<Control> |> Seq.find(fun c -> c :? SettingsScrollBar)
+            check (result.Items.Count*result.ItemHeight > frame.ClientSize.Height) "Search for s does not overflow the list"
+            check (bar.Visible && result.ClientSize.Width+bar.Width=frame.ClientSize.Width && result.Width>frame.ClientSize.Width-bar.Width)
+                  (sprintf "Search list shows the system scrollbar: list %A client %A frame %A bar %b"
+                           result.Size result.ClientSize frame.ClientSize bar.Visible)
+            result.SelectedIndex <- result.Items.Count-1
+            Application.DoEvents()
+            check (result.TopIndex>0) "Selecting the last result does not scroll the list"
+            Capture.window form (Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-search-scrolled.png"))
+            search.Text <- "Theme"
+            Application.DoEvents()
         let filter = SettingsSearchFocusFilter(form,search,suggestions) :> IMessageFilter
         let mutable outsideClick = Message.Create(form.Handle,0x201,IntPtr.Zero,IntPtr.Zero)
         filter.PreFilterMessage(&outsideClick) |> ignore
@@ -388,6 +531,20 @@ Group #2: No valid windows in this group.";
         Application.DoEvents()
         snapshot "settings-appearance-minimum"
         check (ap.contentTable.Width <= ap.ClientSize.Width) "Minimum window width clips the page"
+        // A narrow window wraps descriptions onto more lines rather than cutting them short.
+        do
+            let descriptions = controls ap |> Seq.choose(function :? SettingsEllipsisLabel as l when l.Visible && l.Text.Contains(" ") -> Some l | _ -> None) |> Seq.toList
+            let fits (l:SettingsEllipsisLabel) =
+                let size = TextRenderer.MeasureText(l.Text,l.Font,Size(l.ClientSize.Width,Int32.MaxValue),TextFormatFlags.NoPrefix ||| TextFormatFlags.WordBreak)
+                size.Height <= l.ClientSize.Height
+            let cut = descriptions |> List.filter(fits >> not)
+            check (cut.IsEmpty) (sprintf "Descriptions are cut short instead of wrapping: %A" (cut |> List.map(fun l -> l.Text,l.Size)))
+            check (descriptions |> List.exists(fun l -> l.Height >= l.Font.Height*2)) "No description wraps at the minimum window width"
+            ap.reveal(descriptions |> List.find(fun l -> l.Height >= l.Font.Height*2))
+            let settled = Diagnostics.Stopwatch.StartNew()
+            while settled.ElapsedMilliseconds < 600L do Application.DoEvents(); Threading.Thread.Sleep(10)
+            snapshot "settings-appearance-wrapped"
+            callKey Keys.Home
         // An invalid future mode falls back safely, and high contrast overrides custom colours.
         check (ThemeMode.parse "unknown"=SystemTheme) "Unknown mode was not normalized"
         let accessible = Theme.resolve DarkTheme true true true (TabGeometry.fromAppearance geometry) (TabPalette.fromAppearance custom) (TabPalette.fromAppearance custom)
@@ -426,6 +583,35 @@ Group #2: No valid windows in this group.";
         let targetPage = heightEditor.Parent
         let location = lazyForm.PointToClient(heightEditor.PointToScreen(Point.Empty))
         check (location.Y>=0 && location.Y+heightEditor.Height<=lazyForm.ClientSize.Height) "Search target remains below the viewport"
+        // The row it landed on is tinted for a moment, then goes back to the page colour.
+        do
+            let rec rowOf (c:Control) = if c :? SettingsRow then c else rowOf c.Parent
+            let row = rowOf heightEditor
+            // Centred on the page, unless the page cannot scroll that far.
+            let page = lazyForm.Controls.Find("tabHeight",true).[0] |> Seq.unfold(fun c -> if isNull c then None else Some(c,c.Parent)) |> Seq.pick(function :? SettingsPage as p -> Some p | _ -> None)
+            let middle = page.PointToClient(row.PointToScreen(Point(0,row.Height/2))).Y
+            let atEnd = page.contentTable.Top >= Dpi.scale 16 || page.contentTable.Bottom <= page.ClientSize.Height-Dpi.scale 31
+            check (abs(middle-page.ClientSize.Height/2) <= Dpi.scale 2 || atEnd)
+                  (sprintf "Search does not centre the setting: row middle %d, page middle %d" middle (page.ClientSize.Height/2))
+            let caption = row.Controls |> Seq.cast<Control> |> Seq.collect(fun c -> Seq.append [c] (c.Controls |> Seq.cast<Control>))
+                          |> Seq.find(fun c -> c :? Label && c.Text<>"")
+            let background = SettingsUi.palette().background
+            let waited = Diagnostics.Stopwatch.StartNew()
+            while row.BackColor.ToArgb()=background.ToArgb() && waited.ElapsedMilliseconds < 500L do
+                Application.DoEvents(); Threading.Thread.Sleep(10)
+            check (row.BackColor.ToArgb()<>background.ToArgb() && caption.BackColor.ToArgb()=row.BackColor.ToArgb())
+                  "Search does not highlight the row it lands on"
+            use highlight = new Bitmap(row.Width,row.Height)
+            row.DrawToBitmap(highlight,Rectangle(Point.Empty,highlight.Size))
+            highlight.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-search-highlight.png"),ImageFormat.Png)
+            check (waited.ElapsedMilliseconds < 1000L) "Search highlight is gone too soon to notice"
+            Threading.Thread.Sleep(1000)
+            Application.DoEvents()
+            check (row.BackColor.ToArgb()<>background.ToArgb()) "Search highlight is gone too soon to notice"
+            while row.BackColor.ToArgb()<>background.ToArgb() && waited.ElapsedMilliseconds < 5000L do
+                Application.DoEvents(); Threading.Thread.Sleep(10)
+            check (row.BackColor.ToArgb()=background.ToArgb() && caption.BackColor.ToArgb()=background.ToArgb())
+                  (sprintf "Search highlight did not fade back: %A" row.BackColor)
         lazySearch.Text <- "xyz"
         lazySearch.Clear()
         Application.DoEvents()

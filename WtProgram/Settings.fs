@@ -26,7 +26,6 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
         if isStandAlone then Path.GetFullPath(".")
         elif File.Exists(Path.Combine(exeFolder,fileName)) then exeFolder
         else Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"WindowTabs")
-    let relativePath = isStandAlone || folder=exeFolder
     let settingsPath = Path.GetFullPath(Path.Combine(folder,fileName))
     let store = new SettingsFileStore(settingsPath,defaultArg saveDelay 250,fun ex ->
         Alert.show AlertKind.Warning (tr Strings.Messages.settingsSaveFailed) (tr (Strings.Messages.unableToSaveSettings settingsPath ex.Message)))
@@ -41,9 +40,6 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
         cachedSettingsRec <- None
         valueCache.Clear()
         published.Clear()
-
-    member this.useRelativePath =
-        relativePath
 
     member this.path =
         settingsPath
@@ -107,8 +103,6 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         includedPaths = Set2(settingsJson.getStringArray("includedPaths").def(List2()))
                         excludedPaths = Set2(settingsJson.getStringArray("excludedPaths").def(List2()))
                         autoGroupingPaths = Set2(settingsJson.getStringArray("autoGroupingPaths").def(List2()))
-                        licenseKey = settingsJson.getString("licenseKey").def("")
-                        ticket = settingsJson.getString("ticket")
                         runAtStartup = settingsJson.getBool("runAtStartup").def(SettingsCatalog.toggleDefault "runAtStartup" hasExistingSettings)
                         hideInactiveTabs = settingsJson.getBool("hideInactiveTabs").def(SettingsCatalog.toggleDefault "hideInactiveTabs" hasExistingSettings)
                         enableTabbingByDefault = settingsJson.getBool("enableTabbingByDefault").def(SettingsCatalog.toggleDefault "enableTabbingByDefault" hasExistingSettings)
@@ -152,7 +146,6 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
         and set(settings) =
             let settingsJson = this.settingsJson
             settingsJson.setString("version", settings.version)
-            settingsJson.setString("licenseKey", settings.licenseKey)
             settingsJson.setString("alignment", settings.alignment)
             settingsJson.setString("language", settings.language)
             settingsJson.setString("tabThemeMode", ThemeMode.serialize settings.appearance.mode)
@@ -161,7 +154,6 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setObject("tabDarkColors",AppearanceJson.writePalette settings.appearance.darkPalette)
             settingsJson.setObject("tabLightCustomColors",AppearanceJson.writePalette settings.appearance.lightCustomPalette)
             settingsJson.setObject("tabDarkCustomColors",AppearanceJson.writePalette settings.appearance.darkCustomPalette)
-            settings.ticket.iter <| fun ticket -> settingsJson.setString("ticket", ticket)
             settingsJson.setBool("runAtStartup", settings.runAtStartup)
             settingsJson.setBool("hideInactiveTabs", settings.hideInactiveTabs)
             settingsJson.setBool("enableTabbingByDefault", settings.enableTabbingByDefault)
@@ -174,6 +166,9 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setBool("showTabsOnSwitch", settings.showTabsOnSwitch)
             settingsJson.Remove("autoHide") |> ignore
             settingsJson.Remove("minimalMode") |> ignore
+            // The license key and activation ticket of the old paid version: nothing reads them.
+            settingsJson.Remove("licenseKey") |> ignore
+            settingsJson.Remove("ticket") |> ignore
             settingsJson.setBool("enableShiftScroll", settings.enableShiftScroll)
             settingsJson.setStringArray("includedPaths", settings.includedPaths.items)
             settingsJson.setStringArray("excludedPaths", settings.excludedPaths.items)

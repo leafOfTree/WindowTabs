@@ -31,7 +31,6 @@ let main() =
         let mouse = Event<int * IntPtr>()
         Services.register<IProgram>({new IProgram with
             member _.version = "test"
-            member _.isUpgrade = false
             member _.isFirstRun = false
             member _.refresh() = ()
             member _.shutdown() = ()

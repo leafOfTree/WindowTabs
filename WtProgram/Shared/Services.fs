@@ -75,7 +75,6 @@ type DispatchedDesktop(inner:IDesktop, dispatcher:IDispatcher) =
 type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
     interface IProgram with
         member _.version = dispatcher.Send(fun () -> inner.version)
-        member _.isUpgrade = dispatcher.Send(fun () -> inner.isUpgrade)
         member _.isFirstRun = dispatcher.Send(fun () -> inner.isFirstRun)
         // Fire-and-forget: callers must not wait on a refresh or on shutdown.
         member _.refresh() = dispatcher.Post(fun () -> inner.refresh())

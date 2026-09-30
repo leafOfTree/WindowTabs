@@ -78,6 +78,44 @@ module SettingsUi =
     let apply (control:Control) =
         applyPalette (palette()) (ThemeService.currentIsDark()) control
 
+    /// Tints the setting row holding a control for a moment, then fades it back, so a search
+    /// result shows where it landed. Labels and layout panels paint their own background, so
+    /// they are tinted with the row; editors keep their own look.
+    let flash (control:Control) =
+        let rec rowOf (item:Control) =
+            if isNull item then None
+            elif item :? SettingsRow then Some item
+            else rowOf item.Parent
+        rowOf control |> Option.iter(fun row ->
+            let rec tinted (item:Control) =
+                match item with
+                | :? Label | :? Panel when not (item :? SettingsInputFrame) ->
+                    item :: (item.Controls |> Seq.cast<Control> |> Seq.collect tinted |> Seq.toList)
+                | _ -> []
+            let targets = tinted row |> List.map(fun item -> item,item.BackColor)
+            let start = palette()
+            let mix (a:Color) (b:Color) (t:float) =
+                let channel (x:byte) (y:byte) = int(Math.Round(float x+(float y-float x)*t))
+                Color.FromArgb(channel a.R b.R,channel a.G b.G,channel a.B b.B)
+            let hold,fade = 1500.0,1200.0
+            let clock = Diagnostics.Stopwatch.StartNew()
+            let timer = new Timer(Interval=16)
+            let finish restore =
+                timer.Stop()
+                timer.Dispose()
+                if restore then for item,color in targets do if not item.IsDisposed then item.BackColor <- color
+            timer.Tick.Add(fun _ ->
+                let p = palette()
+                // A theme change repaints everything with the new colours; leave those alone.
+                if row.IsDisposed || p.background<>start.background || p.accent<>start.accent then finish false
+                else
+                    let elapsed = clock.Elapsed.TotalMilliseconds
+                    if elapsed >= hold+fade then finish true
+                    else
+                        let strength = 0.22*(if elapsed <= hold then 1.0 else 1.0-(elapsed-hold)/fade)
+                        for item,color in targets do item.BackColor <- mix color p.accent strength)
+            timer.Start())
+
     let button caption =
         let button = new SettingsActionButton(Text=caption, AutoSize=true, MinimumSize=Size(Dpi.scale 76,Dpi.scale 30))
         button.Padding <- Padding(Dpi.scale 8,Dpi.scale 2,Dpi.scale 8,Dpi.scale 2)
@@ -126,7 +164,18 @@ module SettingsUi =
         labels.RowCount <- if String.IsNullOrWhiteSpace(description) then 1 else 2
         labels.RowStyles.Add(RowStyle(SizeType.AutoSize)) |> ignore
         if labels.RowCount=2 then
-            labels.RowStyles.Add(RowStyle(SizeType.Absolute,float32(rowFont.Height+detail.Margin.Vertical))) |> ignore
+            let style = RowStyle(SizeType.Absolute,float32(rowFont.Height+detail.Margin.Vertical))
+            labels.RowStyles.Add(style) |> ignore
+            // The description wraps to as many lines as the column's width needs. Its height is set
+            // here, on every layout, rather than by auto-size: an auto-size row collapses around
+            // this docked label, and WinForms rescales absolute heights when a page is added to a
+            // window that has already been laid out.
+            labels.Layout.Add(fun _ ->
+                let width = max 40 (labels.ClientSize.Width-Dpi.scale 8)
+                let text = TextRenderer.MeasureText(description,rowFont,Size(width,Int32.MaxValue),
+                                                    TextFormatFlags.NoPrefix ||| TextFormatFlags.WordBreak)
+                let height = float32(max rowFont.Height text.Height+detail.Margin.Vertical)
+                if style.Height<>height then style.Height <- height)
         if not (String.IsNullOrWhiteSpace(description)) then labels.Controls.Add(detail,0,1)
         let helpButton = help |> Option.map(fun text ->
             new SettingsHelpButton(text,Anchor=AnchorStyles.Left,Margin=Padding(Dpi.scale 4,0,0,0),Font=rowFont,
@@ -166,13 +215,15 @@ module SettingsUi =
 
     let row table caption description editor = rowWithHelp table caption description None editor |> ignore
 
-    /// A catalog setting's row with a description of its own, such as a file path.
-    let settingRowWith table id (description:string) (editor:Control) =
+    /// A catalog setting's row with a description and (i) text of its own, such as a file path.
+    let settingRowWithHelp table id (description:string) (help:string option) (editor:Control) =
         let definition = SettingsCatalog.find id
-        let help = SettingsCatalog.help id |> Option.map tr
         editor.Name <- id
         editor.AccessibleDescription <- String.concat " " (description :: Option.toList help)
         rowWithHelp table (tr definition.text.caption) description help editor
+
+    let settingRowWith table id description editor =
+        settingRowWithHelp table id description (SettingsCatalog.help id |> Option.map tr) editor
 
     /// The row, for a setting that is collapsed while another one makes it meaningless.
     let settingRowControl table id (editor:Control) =

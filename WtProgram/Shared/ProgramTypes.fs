@@ -5,8 +5,6 @@ open Newtonsoft.Json
 open Newtonsoft.Json.Linq
 
 type SettingsRec = {
-    licenseKey: string
-    ticket: string option
     includedPaths: Set2<string>
     excludedPaths: Set2<string>
     autoGroupingPaths : Set2<string>
@@ -75,7 +73,6 @@ type IManagerView =
 
 type IProgram =
     abstract member version : string
-    abstract member isUpgrade : bool
     abstract member isFirstRun : bool
     /// Posted to the UI thread; returns before the work runs.
     abstract member refresh : unit -> unit

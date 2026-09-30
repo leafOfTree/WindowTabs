@@ -150,7 +150,7 @@ module RuntimeDiagnostics =
                             JProperty("crashesInLog",lines |> Array.filter(fun line -> line.StartsWith("Time    :")) |> Array.length)))
             with _ -> None
 
-    /// Allow-list only non-identifying settings. Paths, titles, license data and unknown fields never enter reports.
+    /// Allow-list only non-identifying settings. Paths, titles and unknown fields never enter reports.
     let settingsSummary (settings:JObject) =
         let result = JObject()
         for item in SettingsCatalog.all do

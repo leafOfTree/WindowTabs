@@ -60,6 +60,14 @@ type SettingsPage() as this =
         if location.Y < (inset()) then scrollTo(offset+location.Y-(inset()))
         elif location.Y+control.Height > this.Height-(inset()) then
             scrollTo(offset+location.Y+control.Height-this.Height+(inset()))
+    /// Scrolls so the control sits in the middle of the page, as far as the page can scroll;
+    /// one taller than the page starts at its top.
+    member _.center(control:Control) =
+        this.PerformLayout()
+        let location = this.PointToClient(control.PointToScreen(Point.Empty))
+        let room = this.ClientSize.Height-topInset()-inset()
+        if control.Height >= room then scrollTo(offset+location.Y-topInset())
+        else scrollTo(offset+location.Y+control.Height/2-this.ClientSize.Height/2)
     override this.OnLayout(e) =
         base.OnLayout(e)
         if not arranging && not (isNull table) then

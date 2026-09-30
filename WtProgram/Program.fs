@@ -12,7 +12,6 @@ open System.Threading
 open System.Windows.Forms
 open Microsoft.FSharp.Reflection
 open Bemo.Win32
-//open Bemo.Licensing
 open Newtonsoft.Json
 open Newtonsoft.Json.Linq
 open Microsoft.Win32
@@ -53,7 +52,7 @@ type Program(lifetime:LifetimeScope) as this =
     // overlap without eating each other's corners.
     let legacyTabOverlap = 20
 
-    let originalVersion = 
+    do
         let original = settingsManager.settings.version
         settingsManager.update <| fun s ->
             // Runs once, on the startup that first sees a new version: an
@@ -65,7 +64,6 @@ type Program(lifetime:LifetimeScope) as this =
                 then { s.appearance.geometry with overlap = 0 }
                 else s.appearance.geometry
             { s with version = version; appearance = {s.appearance with geometry=appearance} }
-        original 
 
     let registerShellHooks =
         lifetime.Own(os.registerShellHooks <| fun (hwnd, shellEvent) ->
@@ -275,7 +273,6 @@ type Program(lifetime:LifetimeScope) as this =
 
     interface IProgram with
         member x.version = version
-        member x.isUpgrade = version <> originalVersion
         member x.isFirstRun = isFirstRun
         member x.refresh() = this.refresh()
         member x.suspendTabMonitoring() = 

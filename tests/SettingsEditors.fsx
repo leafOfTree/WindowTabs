@@ -168,7 +168,6 @@ let main() =
     let mouse = Event<int32 * IntPtr>()
     Services.register<IProgram>({new IProgram with
         member _.version = "test"
-        member _.isUpgrade = false
         member _.isFirstRun = false
         member _.refresh() = ()
         member _.shutdown() = ()
@@ -271,22 +270,21 @@ let main() =
     treeList.Rebuild()
     assertTrue (isNull treeList.SelectedItem) "Tree list: removed selection is cleared"
     treeList.Dispose()
-    // The report view hides the system scrollbar and scrolls the text from the settings one.
+    // The report view scrolls its full-height text box by pixels from the settings scrollbar.
     do
         use host = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ClientSize=Size(300,200))
         let view = new SettingsTextView(Dock=DockStyle.Fill)
         host.Controls.Add(view)
         host.Show()
-        view.TextBox.Text <- String.Join("
-",[1..200] |> List.map string)
+        view.TextBox.Text <- String.Join(Environment.NewLine,[1..200] |> List.map string)
         Application.DoEvents()
         let bar = view.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsScrollBar as b -> Some b | _ -> None)
         assertTrue bar.Visible "Report scrollbar is hidden for long text"
-        assertTrue (view.TextBox.Right > view.ClientSize.Width) "System scrollbar of the report is not clipped away"
+        assertTrue (view.TextBox.Height > view.ClientSize.Height*5) "Report text box is not as tall as its text"
         key bar Keys.End
         Application.DoEvents()
-        let firstLine = WinUserApi.SendMessage(view.TextBox.Handle,0x00CE,0,0).ToInt32()  // EM_GETFIRSTVISIBLELINE
-        assertTrue (firstLine > 100) (sprintf "Settings scrollbar did not scroll the report (first line %d)" firstLine)
+        assertTrue (view.TextBox.Top < 0 && abs(view.TextBox.Bottom-view.ClientSize.Height) <= 1)
+                   (sprintf "Settings scrollbar did not scroll the report to its end (top %d, bottom %d)" view.TextBox.Top view.TextBox.Bottom)
     printfn "PASS: input validation, no-op changes, HSV colours, repeated popup dismissal, shortcut recording and light/dark renders."
 
 main()
