@@ -349,17 +349,16 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
         Seq.init items.Length id |> Seq.tryFind(fun index -> (cellBounds index).Contains(point))
     /// The panel as drawn, transparent outside its rounded shape.
     member _.Render() =
-        let bitmap = new Bitmap(width,height,Imaging.PixelFormat.Format32bppPArgb)
+        // Opaque, like the list: the window's rounded region trims the corners. With no alpha
+        // channel the title can be drawn with ClearType as everywhere else in the settings UI;
+        // text drawn over transparency only gets greyscale smoothing, and looks washed out.
+        let bitmap = new Bitmap(width,height,Imaging.PixelFormat.Format24bppRgb)
         use g = Graphics.FromImage(bitmap)
         g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
-        g.TextRenderingHint <- Text.TextRenderingHint.AntiAliasGridFit
-        g.Clear(Color.Transparent)
         let p = SettingsColors.current()
         let highContrast = SystemInformation.HighContrast
-        use panel = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 width,float32 height)) (float32 radius)
-        use fill = new SolidBrush(p.surface)
-        g.FillPath(fill,panel)
+        g.Clear(p.surface)
         use outline = SettingsShapes.rounded (SettingsShapes.outlineRect width height) (float32 radius)
         use border = new Pen(p.border)
         g.DrawPath(border,outline)
@@ -379,11 +378,11 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
             if isGroup then g.DrawImage(badge,iconBounds.Right-badge.Width+Dpi.scale 4,iconBounds.Bottom-badge.Height+Dpi.scale 4))
         if items.Length>0 then
             let title,_,_ = items.[max 0 (min (items.Length-1) selected)]
-            use format = new StringFormat(StringFormatFlags.NoWrap,Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center,
-                                          Trimming=StringTrimming.EllipsisCharacter)
-            use text = new SolidBrush(if highContrast then SystemColors.WindowText else p.text)
             let bottom = padding+rows*cell+(rows-1)*gap
-            g.DrawString(title,titleFont,text,RectangleF(float32 padding,float32 bottom,float32(width-padding*2),float32 titleHeight),format)
+            TextRenderer.DrawText(g,title,titleFont,Rectangle(padding,bottom,width-padding*2,titleHeight),
+                                  (if highContrast then SystemColors.WindowText else p.text),p.surface,
+                                  TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.HorizontalCenter
+                                  ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
         bitmap
     member private this.wirePointer() =
         // The pointer may already rest over an icon when Alt+Tab opens; only moving it chooses.

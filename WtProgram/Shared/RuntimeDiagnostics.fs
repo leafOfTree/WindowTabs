@@ -237,16 +237,19 @@ module RuntimeDiagnostics =
         let gdi,user,handles,memory = resourceCounts()
         let scans,last,maximum = RuntimeMetrics.snapshot()
         let uptime = try int (DateTime.Now-Process.GetCurrentProcess().StartTime).TotalMinutes with _ -> -1
+        // Most telling first: what runs where and how it is set up, then what else runs beside
+        // it, the display, and the current state. Crashes follow, as they can be old or one-off;
+        // resource and timing figures, for developers, come last.
         let result =
             JObject(JProperty("version",AssemblyInfo.informationalVersion),JProperty("os",windowsVersion()),
-                    JProperty("dotNet",dotNetVersion()),JProperty("uptimeMinutes",uptime),
-                    JProperty("environment",environment()),JProperty("monitors",monitors()),
+                    JProperty("dotNet",dotNetVersion()),
+                    JProperty("settings",settingsSummary settings),
                     JProperty("otherTools",otherTools()),
+                    JProperty("environment",environment()),JProperty("monitors",monitors()),
                     JProperty("groups",groupCount),JProperty("groupedWindows",groupedWindowCount),
-                    JProperty("resources",JObject(JProperty("gdiObjects",gdi),JProperty("userObjects",user),JProperty("handles",handles),
-                                                  JProperty("privateMB",Math.Round(float memory/1048576.0,1)))),
-                    JProperty("scans",JObject(JProperty("count",scans),JProperty("lastMs",Math.Round(last,1)),
-                                              JProperty("maxMs",Math.Round(maximum,1)))))
+                    JProperty("uptimeMinutes",uptime))
         recentCrashes() |> Option.iter(fun crashes -> result.["crashes"] <- crashes)
-        result.["settings"] <- settingsSummary settings
+        result.["resources"] <- JObject(JProperty("gdiObjects",gdi),JProperty("userObjects",user),JProperty("handles",handles),
+                                        JProperty("privateMB",Math.Round(float memory/1048576.0,1)))
+        result.["scans"] <- JObject(JProperty("count",scans),JProperty("lastMs",Math.Round(last,1)),JProperty("maxMs",Math.Round(maximum,1)))
         result

@@ -102,11 +102,16 @@ type DiagnosticsView() =
     let report() =
         let groups = Services.desktop.groups
         let result = RuntimeDiagnostics.report Services.settings.root groups.count (groups.collect(fun g -> g.windows).count)
-        result.["settingsLocation"] <- JValue(
-            match SettingsFile.location() with
-            | SettingsFile.Portable -> "portable (next to WindowTabs.exe)"
-            | SettingsFile.AppData -> "AppData"
-            | SettingsFile.WorkingDirectory -> "working directory")
+        // Where the settings come from leads the settings.
+        match result.["settings"] with
+        | :? JObject as settings ->
+            settings.AddFirst(JProperty("location",
+                                match SettingsFile.location() with
+                                | SettingsFile.Portable -> "portable (next to WindowTabs.exe)"
+                                | SettingsFile.AppData -> "AppData"
+                                | SettingsFile.WorkingDirectory -> "working directory"))
+        | _ -> ()
+        // The longest part, and optional, comes last.
         if includeWindows.Checked then result.["windows"] <- windowDetails()
         result
     let refresh() = text.Text <- (report()).ToString()

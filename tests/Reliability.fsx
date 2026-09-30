@@ -114,8 +114,10 @@ let main() =
         check (isNull cleared.["includedPaths"] && isNull cleared.["excludedPaths"] && isNull cleared.["workspaces"]) "Reset did not clear what was asked"
         check (current.["tabThemeMode"].ToString()="dark") "Reset changed the settings it read"
     check (report.["settings"].["workspaceCount"].Value<int>()=1) "Diagnostic summary missing workspace count"
-    for key in ["version";"os";"dotNet";"uptimeMinutes";"environment";"monitors";"otherTools";"groups";"groupedWindows";"resources";"scans";"settings"] do
-        check (not (isNull report.[key])) ("Diagnostic report missing " + key)
+    // Most telling first; crashes (none here) would sit before the developer figures at the end.
+    let order = ["version";"os";"dotNet";"settings";"otherTools";"environment";"monitors";"groups";"groupedWindows";"uptimeMinutes";"resources";"scans"]
+    let keys = report.Properties() |> Seq.map(fun property -> property.Name) |> Seq.toList
+    check (keys=order) (sprintf "Diagnostic report fields are missing or out of order: %A" keys)
     check ((report.["monitors"] :?> JArray).Count >= 1) "Diagnostic report lists no displays"
     IO.File.WriteAllText(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug","diagnostics-sample.json"),report.ToString())
     // Nothing that looks like a file path, whatever the machine has.
@@ -138,7 +140,12 @@ let main() =
                                   "   --- End of inner exception stack trace ---";""]
         // An older version wrote oldest first; the report still starts with the newest.
         IO.File.WriteAllText(crashLog,entry "2026-01-01 10:00:00" "System.ArgumentException"+entry "2026-01-02 11:00:00" "System.InvalidOperationException")
-        let crashes = (RuntimeDiagnostics.report (JObject()) 0 0).["crashes"]
+        let withCrashes = RuntimeDiagnostics.report (JObject()) 0 0
+        let keys = withCrashes.Properties() |> Seq.map(fun property -> property.Name) |> Seq.toList
+        check (List.findIndex ((=) "crashes") keys = List.findIndex ((=) "uptimeMinutes") keys+1
+               && List.findIndex ((=) "resources") keys = List.findIndex ((=) "crashes") keys+1)
+              (sprintf "Crashes are not between the current state and the developer figures: %A" keys)
+        let crashes = withCrashes.["crashes"]
         let latest = crashes.["latest"].[0]
         check (not (isNull crashes) && crashes.["inLog"].Value<int>()=2 && latest.["time"].Value<string>()="2026-01-02 11:00:00"
                && latest.["exception"].Value<string>()="System.InvalidOperationException ---> System.IO.IOException"

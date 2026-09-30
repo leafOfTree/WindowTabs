@@ -462,7 +462,11 @@ Group #2: No valid windows in this group.";
                     (three :> ITaskSwitchView).select 1
                     use image = three.Render()
                     image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","switcher-icons-"+theme+".png"),ImageFormat.Png)
-                    check (image.GetPixel(0,0).A=0uy && image.GetPixel(image.Width/2,image.Height/2).A>0uy) "Icon switcher is not transparent outside its panel"
+                    // The title is drawn on the panel's own colour (opaque, so it gets ClearType).
+                    let surface = (SettingsColors.current()).surface.ToArgb()
+                    let titleRow = [ for x in 0..image.Width-1 do for y in image.Height-Dpi.scale 40..image.Height-Dpi.scale 8 -> image.GetPixel(x,y).ToArgb() ]
+                    check (image.GetPixel(Dpi.scale 4,image.Height/2).ToArgb()=surface && titleRow |> List.exists((<>) surface))
+                          "Icon switcher panel or title is missing"
                 // The vertical style fills more columns when windows outnumber the screen's height,
                 // so every window stays in view.
                 do
