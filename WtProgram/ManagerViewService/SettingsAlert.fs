@@ -46,9 +46,15 @@ type private AlertGlyph(kind:AlertKind) as this =
             g.DrawLine(pen,c+r,m-r,c-r,m+r)
 
 /// The themed message box behind Alert.show: icon, wrapped text and an OK button, matching the
-/// settings window. Ctrl+C copies the title and text, as the system message box does.
-type SettingsAlertDialog(kind:AlertKind, title:string, message:string, owned:bool) as this =
+/// settings window. Ctrl+C copies the title and text, as the system message box does. Given a
+/// confirm caption it asks instead: that button and Cancel, with optional switches above them,
+/// under a heading. A switch for a settings page shows that page's sidebar icon and name.
+type SettingsAlertDialog(kind:AlertKind, title:string, message:string, owned:bool, ?confirm:string,
+                         ?optionsHeading:string, ?options:(SettingsViewType option * string) list) as this =
     inherit Form()
+    let switches =
+        defaultArg options [] |> List.map(fun (page,caption) ->
+            new SettingsToggle(AccessibleName=caption,Anchor=AnchorStyles.Left,Margin=Padding(0,0,Dpi.scale 10,0)),page,caption)
     do
         this.Text <- title
         this.Font <- SettingsUi.bodyFont
@@ -63,7 +69,7 @@ type SettingsAlertDialog(kind:AlertKind, title:string, message:string, owned:boo
         this.AutoSize <- true
         this.AutoSizeMode <- AutoSizeMode.GrowAndShrink
         this.KeyPreview <- true
-        let layout = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=2,RowCount=2,
+        let layout = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=2,RowCount=3,
                                           Padding=Padding(Dpi.scale 24,Dpi.scale 24,Dpi.scale 24,Dpi.scale 20))
         layout.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
         layout.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
@@ -71,23 +77,55 @@ type SettingsAlertDialog(kind:AlertKind, title:string, message:string, owned:boo
         let text = new Label(Text=message,AutoSize=true,UseMnemonic=false,
                              MinimumSize=Size(Dpi.scale 260,0),MaximumSize=Size(Dpi.scale 440,0),
                              Margin=Padding(0,Dpi.scale 5,0,0))
-        let ok = SettingsUi.button (tr Strings.Common.ok)
+        let ok = SettingsUi.button (defaultArg confirm (tr Strings.Common.ok))
         ok.Kind <- SettingsButtonKind.Primary
         ok.DialogResult <- DialogResult.OK
-        ok.Anchor <- AnchorStyles.Right
-        ok.Margin <- Padding(0,Dpi.scale 24,0,0)
+        ok.Margin <- Padding.Empty
         layout.Controls.Add(glyph,0,0)
         layout.Controls.Add(text,1,0)
-        layout.Controls.Add(ok,0,1)
-        layout.SetColumnSpan(ok,2)
+        if not switches.IsEmpty then
+            let list = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,FlowDirection=FlowDirection.TopDown,
+                                           WrapContents=false,Margin=Padding(0,Dpi.scale 16,0,0))
+            optionsHeading |> Option.iter(fun heading ->
+                list.Controls.Add(new Label(Text=heading,AutoSize=true,UseMnemonic=false,Margin=Padding(0,0,0,Dpi.scale 8))))
+            for switch,page,caption in switches do
+                let row = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,Margin=Padding(0,0,0,Dpi.scale 6))
+                let label = new Label(Text=caption,AutoSize=true,UseMnemonic=false,Anchor=AnchorStyles.Left,Margin=Padding.Empty)
+                // The caption and icon switch it too, as a check box's label would.
+                let flip = fun _ -> switch.Checked <- not switch.Checked
+                label.Click.Add(flip)
+                row.Controls.Add(switch)
+                page |> Option.iter(fun key ->
+                    let icon = new SettingsPageIcon(key,Anchor=AnchorStyles.Left,Margin=Padding(0,0,Dpi.scale 8,0))
+                    icon.Click.Add(flip)
+                    row.Controls.Add(icon))
+                row.Controls.Add(label)
+                list.Controls.Add(row)
+            layout.Controls.Add(list,1,1)
+        let buttons = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
+                                          FlowDirection=FlowDirection.RightToLeft,Anchor=AnchorStyles.Right,Margin=Padding(0,Dpi.scale 24,0,0))
+        buttons.Controls.Add(ok)
+        layout.Controls.Add(buttons,0,2)
+        layout.SetColumnSpan(buttons,2)
         this.Controls.Add(layout)
         this.AcceptButton <- ok
-        this.CancelButton <- ok
+        match confirm with
+        | Some _ ->
+            let cancel = SettingsUi.button (tr Strings.Common.cancel)
+            cancel.DialogResult <- DialogResult.Cancel
+            cancel.Margin <- Padding(0,0,Dpi.scale 8,0)
+            buttons.Controls.Add(cancel)
+            this.CancelButton <- cancel
+            // Asked to do something hard to undo, the safe choice starts focused.
+            this.Shown.Add(fun _ -> cancel.Focus() |> ignore)
+        | None -> this.CancelButton <- ok
         this.KeyDown.Add(fun e ->
             if e.Control && e.KeyCode=Keys.C then
                 try Clipboard.SetText(title+Environment.NewLine+Environment.NewLine+message) with _ -> ()
                 e.SuppressKeyPress <- true)
         this.HandleCreated.Add(fun _ -> SettingsUi.apply this)
+    /// Whether each switch is on, in the order given.
+    member _.Choices = switches |> List.map(fun (switch,_,_) -> switch.Checked)
 
 module SettingsAlert =
     /// The window the alert belongs to: the active form on this thread, else the most recent
@@ -111,5 +149,17 @@ module SettingsAlert =
         match owner with
         | Some form -> dialog.ShowDialog(form) |> ignore
         | None -> dialog.ShowDialog() |> ignore
+
+    /// Asks before doing something hard to undo. Returns whether each option was switched on,
+    /// or None when cancelled.
+    let confirm kind title message (action:string) (optionsHeading:string) (options:(SettingsViewType option * string) list) =
+        SettingsColors.current() |> ignore
+        let owner = owner()
+        use dialog = new SettingsAlertDialog(kind,title,message,owner.IsSome,action,optionsHeading,options)
+        let result =
+            match owner with
+            | Some form -> dialog.ShowDialog(form)
+            | None -> dialog.ShowDialog()
+        if result=DialogResult.OK then Some dialog.Choices else None
 
     let install() = Alert.install show

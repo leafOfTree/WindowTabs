@@ -187,6 +187,9 @@ module Strings =
         let settingsBackup = { caption={ en="Back up and restore"; zh="备份与恢复"; ja="バックアップと復元" }
                                description={ en="Export all settings to a file, or import them and restart."; zh="将所有设置导出为文件，或从文件导入并重新启动。"; ja="すべての設定をファイルにエクスポートするか、インポートして再起動します。" }
                                keywords={ en="import export backup restore migrate json settings file"; zh="导入 导出 备份 恢复 迁移 设置文件"; ja="インポート エクスポート バックアップ 復元 移行 設定ファイル" } }
+        let settingsReset = { caption={ en="Reset to defaults"; zh="恢复默认设置"; ja="既定値に戻す" }
+                              description={ en="Restore every setting to its default and restart."; zh="将所有设置恢复为默认值并重新启动。"; ja="すべての設定を既定値に戻して再起動します。" }
+                              keywords={ en="reset default defaults factory clear start over"; zh="重置 默认 恢复默认 出厂 清除"; ja="リセット 既定 初期化 出荷時 消去" } }
 
     module General =
         let settingsFile = { en="Settings file"; zh="设置文件"; ja="設定ファイル" }
@@ -197,6 +200,17 @@ module Strings =
                                  zh="如果 WindowTabs.exe 所在文件夹里有设置文件，WindowTabs 就使用它（便携模式）；否则使用 AppData 中的。旧版本的设置文件名为 WindowTabsSettings.txt，现在改为 WindowTabsSettings.json；在 .json 文件生成之前，仍会读取旧的 .txt 文件。"
                                  ja="WindowTabs.exe のフォルダーに設定ファイルがあれば、WindowTabs はそれを使います（ポータブル モード）。なければ AppData のものを使います。以前のバージョンでは WindowTabsSettings.txt という名前でしたが、現在は WindowTabsSettings.json です。.json ファイルができるまでは、古い .txt ファイルも読み込まれます。" }
         let exported = { en="Settings exported."; zh="设置已导出。"; ja="設定をエクスポートしました。" }
+        let reset = { en="Reset…"; zh="重置…"; ja="リセット…" }
+        let resetConfirm = { en="Reset"; zh="重置"; ja="リセット" }
+        let resetTitle = { en="Reset settings"; zh="重置设置"; ja="設定のリセット" }
+        let resetMessage = { en="Restore every setting to its default and restart WindowTabs? The current settings are saved first, so you can import them back."
+                             zh="将所有设置恢复为默认值并重新启动 WindowTabs？当前设置会先保存下来，之后可以再导入。"
+                             ja="すべての設定を既定値に戻して WindowTabs を再起動しますか？現在の設定は先に保存されるので、後でインポートして戻せます。" }
+        let resetAlsoClear = { en="Also clear:"; zh="同时清除："; ja="次も消去する："}
+        let resetRestarting path =
+            { en=sprintf "Settings were reset. WindowTabs will now restart.\n\nYour previous settings were saved to:\n%s" path
+              zh=sprintf "设置已重置。WindowTabs 将重新启动。\n\n原来的设置已保存到：\n%s" path
+              ja=sprintf "設定をリセットしました。WindowTabs を再起動します。\n\n以前の設定の保存先:\n%s" path }
         let importTitle = { en="Import settings"; zh="导入设置"; ja="設定のインポート" }
         let notSettingsFile = { en="This file does not contain WindowTabs settings."; zh="此文件不包含 WindowTabs 设置。"; ja="このファイルには WindowTabs の設定が含まれていません。" }
         let importedRestarting path =
@@ -218,6 +232,8 @@ module Strings =
         let lightThemeColors = { en="Light theme · Tab colors"; zh="浅色主题 · 标签配色"; ja="ライトテーマ · タブの色" }
         let colorPreset = { en="Color preset"; zh="配色预设"; ja="配色プリセット" }
         let custom = { en="Custom"; zh="自定义"; ja="カスタム" }
+        /// A colour preset whose colours the user has changed.
+        let editedPreset name = { en=sprintf "%s (edited)" name; zh=sprintf "%s（已修改）" name; ja=sprintf "%s（変更済み）" name }
         let resetColors = { en="Reset colors"; zh="重置配色"; ja="配色をリセット" }
         let tabLayout = { en="Tab layout"; zh="标签布局"; ja="タブのレイアウト" }
         let sizesStayTheSame = { en="Sizes stay the same when you switch themes."; zh="切换主题不会改变这些尺寸。"; ja="テーマを切り替えてもサイズは変わりません。" }

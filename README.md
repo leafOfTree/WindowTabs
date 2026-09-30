@@ -28,7 +28,7 @@ You can download my prebuilt files from the [releases](https://github.com/leafOf
     - Right click on the notification icon at the bottom right corner.
     - Right click on the tab title.
 - Settings are kept in `%AppData%\WindowTabs\WindowTabsSettings.json`. For a portable copy, put a `WindowTabsSettings.json` next to `WindowTabs.exe`; WindowTabs then uses that file instead. Settings files from older versions, `WindowTabsSettings.txt`, are read when no `.json` file exists yet and are left unchanged. Settings › Support › Settings file shows which file is in use and can export or import it.
-- If WindowTabs crashes, it writes `WindowTabsCrash.log` next to `WindowTabs.exe`, or to `%AppData%\WindowTabs` when that folder is not writable. Attaching it to an issue makes the problem much easier to track down: Settings › Support shows a *Crash log* link when there is one. If WindowTabs keeps running after an error, a tray notification says so once per session.
+- If WindowTabs crashes, it writes `WindowTabsCrash.log` next to `WindowTabs.exe`, or to `%AppData%\WindowTabs` when that folder is not writable. The newest crash is at the top. Attaching it to an issue makes the problem much easier to track down: Settings › Support shows a *Crash log* link when there is one, and the troubleshooting report there lists the latest three crashes without their messages or file paths. If WindowTabs keeps running after an error, a tray notification says so once per session.
 
 ## Contribution
 

@@ -398,6 +398,53 @@ type SettingsCard() as this =
         this.Margin <- Padding.Empty
         this.DoubleBuffered <- true
 
+/// The sidebar's page icons, drawn on an 18 x 18 grid, so other places can show the same mark.
+module SettingsPageIcons =
+    /// Draws the icon for a page with its top-left corner at the given point.
+    let draw (g:Graphics) (key:SettingsViewType) (x:int) (y:int) (foreground:Color) (background:Color) =
+        use pen = new Pen(foreground, max 1.0f (float32(Dpi.scaleF 1.2)))
+        let state = g.Save()
+        g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        g.TranslateTransform(float32 x,float32 y)
+        g.ScaleTransform(float32(Dpi.currentFactor()),float32(Dpi.currentFactor()))
+        match key with
+        | GeneralSettings ->
+            use fill = new SolidBrush(background)
+            for y,x in [4.0f,6.0f;9.0f,12.0f;14.0f,7.0f] do
+                g.DrawLine(pen,1.0f,y,17.0f,y)
+                g.FillEllipse(fill,x-2.0f,y-2.0f,4.0f,4.0f)
+                g.DrawEllipse(pen,x-2.0f,y-2.0f,4.0f,4.0f)
+        | AppearanceSettings ->
+            g.DrawEllipse(pen,2.0f,2.0f,14.0f,14.0f)
+            use fill = new SolidBrush(foreground)
+            g.FillPie(fill,2,2,14,14,90,180)
+        | HotKeySettings ->
+            g.DrawRectangle(pen,1.0f,3.0f,16.0f,12.0f)
+            for x in [4.0f;8.0f;12.0f] do g.DrawLine(pen,x,7.0f,x+1.0f,7.0f)
+            g.DrawLine(pen,5.0f,11.0f,13.0f,11.0f)
+        | ProgramSettings ->
+            for x,y in [2,2;11,2;2,11;11,11] do g.DrawRectangle(pen,x,y,5,5)
+        | LayoutSettings ->
+            g.DrawRectangle(pen,1,1,12,11)
+            g.DrawRectangle(pen,5,6,12,11)
+        | _ ->
+            g.DrawEllipse(pen,2,2,14,14)
+            g.DrawLine(pen,9,8,9,13)
+            g.DrawLine(pen,9,5,9,6)
+        g.Restore(state)
+
+/// A page's sidebar icon on its own, beside text that names the page.
+type SettingsPageIcon(key:SettingsViewType) as this =
+    inherit Control()
+    do
+        this.Size <- Size(Dpi.scale 20,Dpi.scale 20)
+        this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
+    override this.OnPaint(e) =
+        let p = SettingsColors.current()
+        let background = if isNull this.Parent then p.background else this.Parent.BackColor
+        e.Graphics.Clear(background)
+        SettingsPageIcons.draw e.Graphics key (Dpi.scale 1) (Dpi.scale 1) p.text background
+
 type SettingsNavigationButton(key:SettingsViewType) as this =
     inherit Button()
     let mutable hovering = false
@@ -409,43 +456,27 @@ type SettingsNavigationButton(key:SettingsViewType) as this =
     override this.OnMouseLeave(e) = base.OnMouseLeave(e); hovering<-false; this.Invalidate()
     override this.OnPaint(e) =
         let p = SettingsColors.current()
-        e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
+        let sidebar = if isNull this.Parent then p.background else this.Parent.BackColor
+        e.Graphics.Clear(sidebar)
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         let selected = string this.Tag="nav-active"
-        if selected || hovering then
+        let highContrast = SystemInformation.HighContrast
+        // As in Windows 11: hovering fills with the hover colour, a little lighter than the open
+        // page's selection fill, which also has an accent bar at its left edge.
+        let hoverFill = p.hover
+        let fill = if selected then Some p.selection elif hovering then Some hoverFill else None
+        fill |> Option.iter(fun color ->
             use path = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 8))
-            use brush = new SolidBrush(if selected then p.selection else p.hover)
-            e.Graphics.FillPath(brush,path)
-        let foreground = if not this.Enabled then p.muted elif selected && SystemInformation.HighContrast then SystemColors.HighlightText else p.text
-        use pen = new Pen(foreground, max 1.0f (float32(Dpi.scaleF 1.2)))
-        let state = e.Graphics.Save()
-        e.Graphics.TranslateTransform(float32(Dpi.scale 12),float32((this.Height-Dpi.scale 18)/2))
-        e.Graphics.ScaleTransform(float32(Dpi.currentFactor()),float32(Dpi.currentFactor()))
-        match key with
-        | GeneralSettings ->
-            for y,x in [4.0f,6.0f;9.0f,12.0f;14.0f,7.0f] do
-                e.Graphics.DrawLine(pen,1.0f,y,17.0f,y)
-                use fill = new SolidBrush(if selected then p.selection else (if isNull this.Parent then p.background else this.Parent.BackColor))
-                e.Graphics.FillEllipse(fill,x-2.0f,y-2.0f,4.0f,4.0f)
-                e.Graphics.DrawEllipse(pen,x-2.0f,y-2.0f,4.0f,4.0f)
-        | AppearanceSettings ->
-            e.Graphics.DrawEllipse(pen,2.0f,2.0f,14.0f,14.0f)
-            use fill = new SolidBrush(foreground)
-            e.Graphics.FillPie(fill,2,2,14,14,90,180)
-        | HotKeySettings ->
-            e.Graphics.DrawRectangle(pen,1.0f,3.0f,16.0f,12.0f)
-            for x in [4.0f;8.0f;12.0f] do e.Graphics.DrawLine(pen,x,7.0f,x+1.0f,7.0f)
-            e.Graphics.DrawLine(pen,5.0f,11.0f,13.0f,11.0f)
-        | ProgramSettings ->
-            for x,y in [2,2;11,2;2,11;11,11] do e.Graphics.DrawRectangle(pen,x,y,5,5)
-        | LayoutSettings ->
-            e.Graphics.DrawRectangle(pen,1,1,12,11)
-            e.Graphics.DrawRectangle(pen,5,6,12,11)
-        | _ ->
-            e.Graphics.DrawEllipse(pen,2,2,14,14)
-            e.Graphics.DrawLine(pen,9,8,9,13)
-            e.Graphics.DrawLine(pen,9,5,9,6)
-        e.Graphics.Restore(state)
+            use brush = new SolidBrush(color)
+            e.Graphics.FillPath(brush,path))
+        if selected && not highContrast then
+            let width,height = float32(Dpi.scale 3),float32(Dpi.scale 16)
+            use bar = SettingsShapes.rounded (RectangleF(float32(Dpi.scale 1),(float32 this.Height-height)/2.0f,width,height)) (width/2.0f)
+            use accent = new SolidBrush(p.accent)
+            e.Graphics.FillPath(accent,bar)
+        let foreground = if not this.Enabled then p.muted elif selected && highContrast then SystemColors.HighlightText else p.text
+        let background = fill |> Option.defaultValue sidebar
+        SettingsPageIcons.draw e.Graphics key (Dpi.scale 12) ((this.Height-Dpi.scale 18)/2) foreground background
         TextRenderer.DrawText(e.Graphics,this.Text,this.Font,
             Rectangle(Dpi.scale 40,0,this.Width-Dpi.scale 48,this.Height),foreground,
             TextFormatFlags.NoPrefix ||| TextFormatFlags.Left ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
@@ -832,6 +863,8 @@ module SettingsFlash =
 
 type SettingsCombo(items:string[]) as this =
     inherit Button()
+    /// A copy, so SetItemText changes this control's labels only.
+    let items = Array.copy items
     let changed = Event<EventArgs>()
     /// A search result's accent highlight, 1 to 0; see Flash.
     let mutable flash = 0.0
@@ -884,6 +917,13 @@ type SettingsCombo(items:string[]) as this =
                 this.Invalidate()
                 changed.Trigger(EventArgs.Empty)
     member _.SelectedIndexChanged = changed.Publish
+    /// Relabels a choice, such as to mark it changed, without selecting anything.
+    member this.SetItemText(index,text:string) =
+        if items.[index]<>text then
+            items.[index] <- text
+            if index=selected then this.Text <- text
+            this.Invalidate()
+    member _.ItemText(index) = items.[index]
     /// Narrowest width that shows every choice untrimmed, matching the insets used by paintFull.
     member this.FitToItems() =
         let textWidth = items |> Array.map(fun text -> TextRenderer.MeasureText(text,this.Font).Width) |> Array.fold max 0

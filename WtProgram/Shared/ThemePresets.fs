@@ -3,6 +3,10 @@ open System.Drawing
 
 module ThemePresets =
     let names = Strings.Appearance.presets
+    /// Stable names for storing a preset choice and its edits, whatever the display language.
+    let keys = names |> Array.map(fun name -> name.en)
+    /// Stored as the preset choice when the user's own palette is chosen.
+    let customKey = "custom"
     let palettes dark =
         let make (basis:TabPalette) text active hover inactive border =
             { basis with tabTextColor=Color.FromRGB(text);tabActiveBgColor=Color.FromRGB(active)

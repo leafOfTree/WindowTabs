@@ -17,7 +17,7 @@ open System.Windows.Forms
 type ExceptionHandlerPlugin() as this =
 
     let fileName = "WindowTabsCrash.log"
-    let maxLogBytes = 512L * 1024L
+    let maxLogChars = 512 * 1024
 
     // Follows the same convention as Settings: next to the exe when that
     // directory is writable (portable install), otherwise %AppData%\WindowTabs.
@@ -50,20 +50,23 @@ type ExceptionHandlerPlugin() as this =
     member this.log (source:string) (error:obj) =
         try
             logPath |> Option.iter (fun path ->
-                // Keep the file bounded; a crash loop should not fill the disk.
-                try
-                    let info = FileInfo(path)
-                    if info.Exists && info.Length > maxLogBytes then info.Delete()
-                with _ -> ()
-
                 let text = StringBuilder()
-                text.AppendLine("---------------------------------------------").ignore
+                text.AppendLine(RuntimeDiagnostics.CrashLog.separator).ignore
                 text.AppendLine(String.Format("Time    : {0:yyyy-MM-dd HH:mm:ss}", DateTime.Now)).ignore
                 text.AppendLine("Source  : " + source).ignore
                 text.AppendLine("Version : " + AssemblyInfo.informationalVersion).ignore
                 text.AppendLine("OS      : " + RuntimeDiagnostics.windowsVersion() + " / .NET " + RuntimeDiagnostics.dotNetVersion()).ignore
                 text.AppendLine(this.describe(error)).ignore
-                File.AppendAllText(path, text.ToString()))
+                // Newest first, so the log opens on the latest crash. The file stays bounded,
+                // so a crash loop cannot fill the disk: the oldest entries go first.
+                let existing = try (if File.Exists(path) then File.ReadAllText(path) else "") with _ -> ""
+                let updated = RuntimeDiagnostics.CrashLog.prepend (text.ToString()) existing maxLogChars
+                let temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp"
+                try
+                    File.WriteAllText(temporary, updated, UTF8Encoding(false))
+                    if File.Exists(path) then File.Replace(temporary, path, null) else File.Move(temporary, path)
+                finally
+                    if File.Exists(temporary) then File.Delete(temporary))
         with _ -> ()
 
     member this.onException(e:UnhandledExceptionEventArgs) =

@@ -136,7 +136,21 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                             lightPalette = lightColors
                             darkPalette = darkColors
                             lightCustomPalette = AppearanceJson.readPalette (settingsJson.getObject("tabLightCustomColors").def(JObject())) lightColors
-                            darkCustomPalette = AppearanceJson.readPalette (settingsJson.getObject("tabDarkCustomColors").def(JObject())) darkColors }
+                            darkCustomPalette = AppearanceJson.readPalette (settingsJson.getObject("tabDarkCustomColors").def(JObject())) darkColors
+                            lightPreset = settingsJson.getString("tabLightPreset").def("")
+                            darkPreset = settingsJson.getString("tabDarkPreset").def("")
+                            presetEdits =
+                                match settingsJson.getObject("tabPresetEdits") with
+                                | None -> Map.empty
+                                | Some edits ->
+                                    edits.Properties()
+                                    |> Seq.choose(fun edit ->
+                                        match edit.Value with
+                                        | :? JObject as colors ->
+                                            let basis = if edit.Name.StartsWith("dark:") then Theme.darkPalette else Theme.lightPalette
+                                            Some(edit.Name,AppearanceJson.readPalette colors basis)
+                                        | _ -> None)
+                                    |> Map.ofSeq }
                     }
                     cachedSettingsRec <- Some(settings)
                     ThemeService.publishPreferences settings.appearance
@@ -158,6 +172,11 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setObject("tabDarkColors",AppearanceJson.writePalette settings.appearance.darkPalette)
             settingsJson.setObject("tabLightCustomColors",AppearanceJson.writePalette settings.appearance.lightCustomPalette)
             settingsJson.setObject("tabDarkCustomColors",AppearanceJson.writePalette settings.appearance.darkCustomPalette)
+            settingsJson.setString("tabLightPreset", settings.appearance.lightPreset)
+            settingsJson.setString("tabDarkPreset", settings.appearance.darkPreset)
+            let edits = JObject()
+            for KeyValue(key,palette) in settings.appearance.presetEdits do edits.[key] <- AppearanceJson.writePalette palette
+            settingsJson.setObject("tabPresetEdits", edits)
             settingsJson.setBool("runAtStartup", settings.runAtStartup)
             settingsJson.setBool("hideInactiveTabs", settings.hideInactiveTabs)
             settingsJson.setBool("enableTabbingByDefault", settings.enableTabbingByDefault)

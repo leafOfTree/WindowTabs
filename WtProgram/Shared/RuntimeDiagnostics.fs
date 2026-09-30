@@ -128,26 +128,74 @@ module RuntimeDiagnostics =
         |> List.sortByDescending IO.File.GetLastWriteTime
         |> List.tryHead
 
-    /// When and how WindowTabs last crashed. Only the time, source and exception type:
-    /// messages can contain paths.
-    let private lastCrash() =
+    /// WindowTabsCrash.log: entries newest first, each starting with a line of dashes, then
+    /// Time, Source, Version and OS, then the exception as .NET prints it.
+    module CrashLog =
+        let separator = "---------------------------------------------"
+        let private lines (entry:string) = entry.Replace("\r\n","\n").Split('\n')
+        let private field (prefix:string) (entry:string) =
+            lines entry |> Array.tryFind(fun line -> line.StartsWith(prefix))
+            |> Option.map(fun line -> line.Substring(line.IndexOf(':')+1).Trim()) |> Option.defaultValue ""
+        let private time entry =
+            match DateTime.TryParseExact(field "Time    :" entry,"yyyy-MM-dd HH:mm:ss",Globalization.CultureInfo.InvariantCulture,
+                                         Globalization.DateTimeStyles.None) with
+            | true,value -> value
+            | _ -> DateTime.MinValue
+        /// The log's entries, newest first, whatever order an older version wrote them in.
+        let entries (text:string) =
+            let result = Collections.Generic.List<Text.StringBuilder>()
+            for line in lines text do
+                if line.StartsWith(separator) || result.Count=0 then result.Add(Text.StringBuilder())
+                result.[result.Count-1].Append(line).Append("\r\n") |> ignore
+            result |> Seq.map string |> Seq.filter(fun entry -> entry.Contains("Time    :"))
+            |> Seq.toList |> List.sortByDescending time
+        /// The log with a new entry on top, dropping the oldest entries past the size limit.
+        let prepend (entry:string) (existing:string) (maxChars:int) =
+            let all = entry.TrimEnd()+"\r\n" :: entries existing
+            let rec fit total = function
+                | [] -> []
+                | (next:string) :: rest -> if total+next.Length > maxChars && total>0 then [] else next :: fit (total+next.Length) rest
+            String.concat "" (fit 0 all)
+        /// What an entry says about the crash that is safe to share: when, where, which version,
+        /// the exception type and the methods on its stack. Messages and the source file paths
+        /// in stack frames are left out, as they can hold paths and window titles.
+        let summary (entry:string) =
+            let header = ["Time    :";"Source  :";"Version :";"OS      :"]
+            let body = lines entry |> Array.skipWhile(fun line ->
+                           line.StartsWith(separator) || line.Trim()="" || header |> List.exists(fun prefix -> line.StartsWith(prefix)))
+            let typeOf (line:string) = let colon = line.IndexOf(':') in (if colon>0 then line.Substring(0,colon) else line).Trim()
+            // A frame names its source file after the method ("at X in C:\...:line 5", or in the
+            // system's language, "在 X 位置 C:\..."): cut from the word before the path.
+            let withoutFile = Text.RegularExpressions.Regex(@"\s+\S+\s+([A-Za-z]:\\|\\\\).*$")
+            let stack =
+                body |> Array.choose(fun line ->
+                    let trimmed = line.Trim()
+                    if trimmed.StartsWith("---> ") then Some("---> "+typeOf (trimmed.Substring(5)))
+                    elif trimmed.StartsWith("--- ") then Some trimmed
+                    // Frames are indented; message lines are not.
+                    elif line.StartsWith("   ") then Some(withoutFile.Replace(trimmed,""))
+                    else None)
+                // Anything still naming a path is dropped rather than shared.
+                |> Array.filter(fun frame -> not (frame.Contains(":\\") || frame.Contains("\\\\")))
+                |> Array.truncate 20
+            JObject(JProperty("time",field "Time    :" entry),JProperty("source",field "Source  :" entry),
+                    JProperty("version",field "Version :" entry),
+                    // "Outer: message ---> Inner: message": each type, without the messages.
+                    JProperty("exception",body |> Array.tryHead
+                                          |> Option.map(fun line -> line.Split([|" ---> "|],StringSplitOptions.None) |> Array.map typeOf |> String.concat " ---> ")
+                                          |> Option.defaultValue ""),
+                    JProperty("stack",JArray(stack |> Array.map box)))
+
+    /// The latest crashes, newest first, as far as they are safe to share; see CrashLog.summary.
+    let private recentCrashes() =
         match crashLogPath() with
         | None -> None
         | Some file ->
             try
-                let lines = IO.File.ReadAllLines(file)
-                let value (line:string) = line.Substring(line.IndexOf(':')+1).Trim()
-                lines |> Array.tryFindIndexBack(fun line -> line.StartsWith("Time    :")) |> Option.map(fun start ->
-                    let entry = lines.[start..] |> Array.takeWhile(fun line -> not (line.StartsWith("-----")))
-                    let field prefix = entry |> Array.tryFind(fun line -> line.StartsWith(prefix)) |> Option.map value |> Option.defaultValue ""
-                    // The first line after the header fields is "Namespace.ExceptionType: message".
-                    let exceptionType =
-                        entry |> Array.skipWhile(fun line -> line.Contains(" : ")) |> Array.tryHead
-                        |> Option.map(fun line -> let colon = line.IndexOf(':') in if colon>0 then line.Substring(0,colon) else line)
-                        |> Option.defaultValue ""
-                    JObject(JProperty("time",value lines.[start]),JProperty("source",field "Source  :"),
-                            JProperty("version",field "Version :"),JProperty("exception",exceptionType),
-                            JProperty("crashesInLog",lines |> Array.filter(fun line -> line.StartsWith("Time    :")) |> Array.length)))
+                let entries = CrashLog.entries (IO.File.ReadAllText(file))
+                if entries.IsEmpty then None
+                else Some(JObject(JProperty("inLog",entries.Length),
+                                  JProperty("latest",JArray(entries |> List.truncate 3 |> List.map(CrashLog.summary >> box)))))
             with _ -> None
 
     /// Allow-list only non-identifying settings. Paths, titles and unknown fields never enter reports.
@@ -199,6 +247,6 @@ module RuntimeDiagnostics =
                                                   JProperty("privateMB",Math.Round(float memory/1048576.0,1)))),
                     JProperty("scans",JObject(JProperty("count",scans),JProperty("lastMs",Math.Round(last,1)),
                                               JProperty("maxMs",Math.Round(maximum,1)))))
-        lastCrash() |> Option.iter(fun crash -> result.["lastCrash"] <- crash)
+        recentCrashes() |> Option.iter(fun crashes -> result.["crashes"] <- crashes)
         result.["settings"] <- settingsSummary settings
         result

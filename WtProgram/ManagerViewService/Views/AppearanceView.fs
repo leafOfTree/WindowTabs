@@ -27,16 +27,41 @@ type AppearanceView(?settings:ISettings) =
         else {s with lightPalette=palette;useCustomColors=true}
     let setCustom palette (s:AppearancePreferences) =
         if editingDark then {s with darkCustomPalette=palette} else {s with lightCustomPalette=palette}
-    // A colour edit becomes the user's own palette; presets and reset only change what is shown.
+    let values (p:TabPalette) =
+        [p.tabTextColor;p.tabActiveBgColor;p.tabHighlightBgColor;p.tabNormalBgColor;p.tabBorderColor;p.tabFlashBgColor]
+        |> List.map(fun c -> c.ToArgb())
+    let original index = (ThemePresets.palettes editingDark).[index]
+    let editKey index = (if editingDark then "dark:" else "light:")+ThemePresets.keys.[index]
+    /// A preset as the user left it: its own colours with their edits.
+    let presetPalette (s:AppearancePreferences) index = s.presetEdits.TryFind(editKey index) |> Option.defaultValue (original index)
+    let setPreset key (s:AppearancePreferences) = if editingDark then {s with darkPreset=key} else {s with lightPreset=key}
+    /// The chosen entry: Some preset, or None for Custom. Settings from before the choice was
+    /// stored are matched by their colours.
+    let selection (s:AppearancePreferences) =
+        match if editingDark then s.darkPreset else s.lightPreset with
+        | key when key=ThemePresets.customKey -> None
+        | key when Array.contains key ThemePresets.keys -> Some(Array.findIndex ((=) key) ThemePresets.keys)
+        | _ -> ThemePresets.palettes editingDark |> Array.tryFindIndex(fun candidate -> values candidate=values (activePalette s))
+    /// A colour edit changes the chosen entry: the preset keeps it as its own edit, or Custom
+    /// takes it. An edit back to a preset's own colours is no longer an edit.
     let editPalette change =
         update(fun s ->
             let current = activePalette s
             let next = change current
-            if next=current then s else s |> setActive next |> setCustom next)
-    let showPalette pick =
+            if values next=values current then s
+            else
+                match selection s with
+                | None -> s |> setActive next |> setCustom next |> setPreset ThemePresets.customKey
+                | Some index ->
+                    let edits = if values next=values (original index) then s.presetEdits.Remove(editKey index) else s.presetEdits.Add(editKey index,next)
+                    {(setActive next s) with presetEdits=edits} |> setPreset ThemePresets.keys.[index])
+    let choosePreset index = update(fun s -> s |> setActive (presetPalette s index) |> setPreset ThemePresets.keys.[index])
+    let chooseCustom() = update(fun s -> s |> setActive (customForProfile s) |> setPreset ThemePresets.customKey)
+    /// The chosen preset's own colours again; from Custom, the Default preset.
+    let resetColors() =
         update(fun s ->
-            let next = pick s
-            if next=activePalette s then s else setActive next s)
+            let index = selection s |> Option.defaultValue 0
+            {(setActive (original index) s) with presetEdits=s.presetEdits.Remove(editKey index)} |> setPreset ThemePresets.keys.[index])
     let preview = new Panel(Name="tab-preview",Height=Dpi.scale 145,Margin=Padding(0,Dpi.scale 4,0,0),
                             AccessibleName=tr Strings.Appearance.explorerPreview)
     let colorFields : (string * (TabPalette -> Color) * (Color -> TabPalette -> TabPalette)) list = [
@@ -65,12 +90,13 @@ type AppearanceView(?settings:ISettings) =
                 else tr Strings.Appearance.lightThemeColors
             let settings = settings.appearance
             let palette = activePalette settings
-            let values (p:TabPalette) =
-                [p.tabTextColor;p.tabActiveBgColor;p.tabHighlightBgColor;p.tabNormalBgColor;p.tabBorderColor;p.tabFlashBgColor]
-                |> List.map(fun c -> c.ToArgb())
-            let presets = ThemePresets.palettes editingDark
-            preset.ItemColors <- Array.append (presets |> Array.map(fun candidate -> candidate.tabNormalBgColor)) [|(customForProfile settings).tabNormalBgColor|]
-            preset.SelectedIndex <- presets |> Array.tryFindIndex(fun candidate -> values candidate=values palette) |> Option.defaultValue ThemePresets.names.Length
+            // A preset with changed colours says so, in the list and when chosen.
+            ThemePresets.names |> Array.iteri(fun index name ->
+                let label = if settings.presetEdits.ContainsKey(editKey index) then tr (Strings.Appearance.editedPreset (tr name)) else tr name
+                preset.SetItemText(index,label))
+            preset.ItemColors <- Array.append (Array.init ThemePresets.names.Length (fun index -> (presetPalette settings index).tabNormalBgColor))
+                                              [|(customForProfile settings).tabNormalBgColor|]
+            preset.SelectedIndex <- selection settings |> Option.defaultValue ThemePresets.names.Length
             for key,read,write,editor in colors do
                 editor.value <- box(read palette)
             let geometry = settings.geometry
@@ -161,15 +187,14 @@ type AppearanceView(?settings:ISettings) =
         preset.SelectedIndexChanged.Add(fun _ ->
             if not refreshing && preset.SelectedIndex>=0 then
                 let index = preset.SelectedIndex
-                if index<ThemePresets.names.Length then showPalette(fun _ -> (ThemePresets.palettes editingDark).[index])
-                else showPalette customForProfile)
+                if index<ThemePresets.names.Length then choosePreset index else chooseCustom())
         let colorsCard = new SettingsCard()
         SettingsUi.add table colorsCard
         for key,read,write,editor in colors do
             editor.control.Width <- Dpi.scale 180
             SettingsUi.settingRow colorsCard key editor.control
         let reset = SettingsUi.button (tr Strings.Appearance.resetColors)
-        reset.Click.Add(fun _ -> showPalette(fun _ -> (if editingDark then Theme.darkPalette else Theme.lightPalette)))
+        reset.Click.Add(fun _ -> resetColors())
         rightActions reset
         let layoutCard = SettingsUi.sectionCard table (tr Strings.Appearance.tabLayout)
         SettingsUi.note layoutCard (tr Strings.Appearance.sizesStayTheSame)

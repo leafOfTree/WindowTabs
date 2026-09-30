@@ -32,7 +32,7 @@ let mutable preferences = {
     geometry=Theme.defaultGeometry;legacyPalette=Theme.lightPalette
     lightPalette=Theme.lightPalette;darkPalette=Theme.darkPalette
     lightCustomPalette=Theme.lightPalette;darkCustomPalette=Theme.darkPalette
-    mode=DarkTheme;useCustomColors=true }
+    mode=DarkTheme;useCustomColors=true;lightPreset="";darkPreset="";presetEdits=Map.empty }
 let settings = { new ISettings with
     member _.appearance = preferences
     member _.updateAppearance update = preferences <- update preferences; ThemeService.notifyChanged()
@@ -76,6 +76,9 @@ let main() =
     colorText.Text <- "#NOTHEX"
     key colorText Keys.Enter
     assertTrue (colorText.Text="#00AB0F" && changes=1) "Invalid colour input"
+    colorText.Text <- "#0af"
+    key colorText Keys.Enter
+    assertTrue (colorText.Text="#00AAFF" && changes=2) "Three-digit hex is not expanded"
     assertTrue ((SettingsHsv.color 120.0 1.0 1.0).ToArgb()=Color.Lime.ToArgb()) "HSV green"
     assertTrue ((SettingsHsv.color 240.0 1.0 1.0).ToArgb()=Color.Blue.ToArgb()) "HSV blue"
     input.Dispose()
@@ -121,7 +124,7 @@ let main() =
             Application.DoEvents()
             let edited = if mode=DarkTheme then preferences.darkPalette else preferences.lightPalette
             assertTrue (edited.tabTextColor.B>240uy && edited.tabTextColor.R=0uy) "Live picker edit"
-            assertTrue (preset.SelectedIndex=ThemePresets.names.Length) "Edited preset displays Custom"
+            assertTrue (preset.SelectedIndex=0) "Editing a preset's colour switched away from it"
             assertTrue ((if mode=DarkTheme then preferences.lightPalette else preferences.darkPalette)=other) "Other theme preserved"
             use pickerBitmap = new Bitmap(popup.Width,popup.Height)
             popup.DrawToBitmap(pickerBitmap,Rectangle(Point.Empty,pickerBitmap.Size))
@@ -133,18 +136,42 @@ let main() =
         let rec findReset (control:Control) =
             if control.Text=tr Strings.Appearance.resetColors then Some(control :?> Button)
             else control.Controls |> Seq.cast<Control> |> Seq.tryPick findReset
-        (findReset view.control).Value.PerformClick()
-        Application.DoEvents()
-        assertTrue ((if mode=DarkTheme then preferences.darkPalette else preferences.lightPalette)=(if mode=DarkTheme then Theme.darkPalette else Theme.lightPalette)) "Palette reset"
-        assertTrue (preset.SelectedIndex=0) "Reset selects Default preset"
         let active() = if mode=DarkTheme then preferences.darkPalette else preferences.lightPalette
-        let custom = if mode=DarkTheme then preferences.darkCustomPalette else preferences.lightCustomPalette
-        assertTrue (custom.tabTextColor.B>240uy && custom.tabTextColor.R=0uy) "Custom palette survives reset"
+        let custom() = if mode=DarkTheme then preferences.darkCustomPalette else preferences.lightCustomPalette
+        let isBlue (p:TabPalette) = p.tabTextColor.B>240uy && p.tabTextColor.R=0uy
+        let defaults = if mode=DarkTheme then Theme.darkPalette else Theme.lightPalette
+        let same (a:TabPalette) (b:TabPalette) = a.tabTextColor.ToArgb()=b.tabTextColor.ToArgb() && a.tabNormalBgColor.ToArgb()=b.tabNormalBgColor.ToArgb()
+        // The edit belongs to the Default preset: Custom is untouched, and the preset keeps it.
+        assertTrue (not (isBlue (custom()))) "Editing a preset changed the Custom palette"
         preset.SelectedIndex <- 1
         Application.DoEvents()
+        assertTrue (not (isBlue (active()))) "Another preset shows the edit"
+        preset.SelectedIndex <- 0
+        Application.DoEvents()
+        assertTrue (isBlue (active()) && preset.SelectedIndex=0) "A preset lost its edit after switching away"
+        let name = tr ThemePresets.names.[0]
+        assertTrue (preset.Text=tr (Strings.Appearance.editedPreset name) && preset.ItemText(1)=tr ThemePresets.names.[1])
+                   (sprintf "Edited preset is not marked: %s" preset.Text)
+        // Reset restores the chosen preset's own colours, and it stays chosen.
+        (findReset view.control).Value.PerformClick()
+        Application.DoEvents()
+        assertTrue (same (active()) defaults && preset.SelectedIndex=0 && preset.Text=name) "Reset did not restore the preset or its name"
+        preset.SelectedIndex <- 1
+        Application.DoEvents()
+        preset.SelectedIndex <- 0
+        Application.DoEvents()
+        assertTrue (same (active()) defaults) "Reset edit came back"
+        // Editing while Custom is chosen changes Custom, typed in the short hex form.
         preset.SelectedIndex <- ThemePresets.names.Length
         Application.DoEvents()
-        assertTrue (active()=custom && preset.SelectedIndex=ThemePresets.names.Length) "Custom restored after switching presets"
+        let colorText = color.Controls |> Seq.cast<Control> |> Seq.pick(function :? TextBox as t -> Some t | _ -> None)
+        colorText.Text <- "#f00"
+        key colorText Keys.Enter
+        Application.DoEvents()
+        assertTrue (custom().tabTextColor.ToArgb()=Color.Red.ToArgb() && active().tabTextColor.ToArgb()=Color.Red.ToArgb()
+                    && preset.SelectedIndex=ThemePresets.names.Length) "Custom did not take the edit"
+        preset.SelectedIndex <- 0
+        Application.DoEvents()
         (findReset view.control).Value.PerformClick()
         Application.DoEvents()
         let resetButton = (findReset view.control).Value

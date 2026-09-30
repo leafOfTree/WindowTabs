@@ -46,4 +46,11 @@ type AppearancePreferences = {
     lightCustomPalette:TabPalette
     darkCustomPalette:TabPalette
     mode:ThemeMode
-    useCustomColors:bool }
+    useCustomColors:bool
+    /// The colour preset chosen for each profile: its English name, "custom", or "" when none
+    /// has been stored yet (settings from before presets were saved), and it is worked out from
+    /// the colours instead.
+    lightPreset:string
+    darkPreset:string
+    /// Colours changed in a preset, by "light:Name" or "dark:Name"; the preset keeps them.
+    presetEdits:Map<string,TabPalette> }

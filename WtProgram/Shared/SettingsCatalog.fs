@@ -49,6 +49,7 @@ module SettingsCatalog =
         { id="diagnostics"; page=DiagnosticsSettings; text=Strings.Settings.diagnostics; binding=Navigation }
         { id="settings-location"; page=DiagnosticsSettings; text=Strings.Settings.settingsLocation; binding=Navigation }
         { id="settings-backup"; page=DiagnosticsSettings; text=Strings.Settings.settingsBackup; binding=Navigation }
+        { id="settings-reset"; page=DiagnosticsSettings; text=Strings.Settings.settingsReset; binding=Navigation }
     ]
     let find id = all |> List.find(fun item -> item.id=id)
     /// Shown from an (i) button beside the caption.
@@ -63,6 +64,24 @@ module SettingsCatalog =
         | "group-windows-in-the-switcher" -> Some "use-windowtabs-for-alt-tab"
         | _ -> None
     let toggleKey id = match (find id).binding with Toggle(key,_,_) -> key | _ -> invalidArg "id" "Not a toggle"
+    /// Every toggle's value on a fresh install. A reset writes these: a missing toggle in an
+    /// existing settings file would take its existing-user default instead.
+    let freshToggles =
+        all |> List.choose(fun item -> match item.binding with Toggle(key,fresh,_) -> Some(key,fresh) | _ -> None)
+    /// Settings that are the user's own records rather than preferences: a reset keeps them
+    /// unless asked to clear them.
+    let appRuleKeys = ["includedPaths";"excludedPaths";"autoGroupingPaths"]
+    let workspaceKeys = ["workspaces";"workspaceSchemaVersion";"workspaceRecovery"]
+    /// The settings a reset leaves: fresh-install toggles, the version (so the next start does
+    /// not take the reset for an upgrade) and, unless cleared, app rules and saved workspaces.
+    let resetRoot (current:Newtonsoft.Json.Linq.JObject) clearAppRules clearWorkspaces =
+        let fresh = Newtonsoft.Json.Linq.JObject()
+        let keep key = if not (isNull current.[key]) then fresh.[key] <- current.[key].DeepClone()
+        keep "version"
+        for key,value in freshToggles do fresh.[key] <- Newtonsoft.Json.Linq.JValue(value)
+        if not clearAppRules then List.iter keep appRuleKeys
+        if not clearWorkspaces then List.iter keep workspaceKeys
+        fresh
     let toggleDefault key existing =
         all |> List.pick(fun item -> match item.binding with Toggle(k,fresh,old) when k=key -> Some(if existing then old else fresh) | _ -> None)
     /// Ctrl+Alt+Right / Ctrl+Alt+Left, in hotkey-control encoding.

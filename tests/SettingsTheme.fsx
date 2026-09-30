@@ -62,6 +62,16 @@ let main() =
             check (settings.settings.showTabsOnSwitch=not minimal) (sprintf "Legacy minimalMode=%b changed whether switching shows tabs" minimal)
         api.setValue("autoHideMode",box "Maximized")
         check (api.root.getBool("minimalMode").IsNone && api.root.getBool("autoHide").IsNone) "Legacy auto-hide keys were kept after saving"
+        // The chosen preset and its edited colours are saved and read back.
+        do
+            let key = "light:"+ThemePresets.keys.[1]
+            let edited = {(ThemePresets.palettes false).[1] with tabTextColor=Color.FromArgb(0x12,0x34,0x56)}
+            api.updateAppearance(fun s -> {s with lightPreset=ThemePresets.keys.[1];presetEdits=s.presetEdits.Add(key,edited)})
+            settings.clearCaches()
+            let reloaded = settings.settings.appearance
+            check (reloaded.lightPreset=ThemePresets.keys.[1] && reloaded.darkPreset=""
+                   && reloaded.presetEdits.[key].tabTextColor.ToArgb()=edited.tabTextColor.ToArgb()) "Preset choice or edits were not saved"
+            api.updateAppearance(fun s -> {s with lightPreset="";presetEdits=Map.empty})
         // The old paid version's license key and activation ticket go on the next save.
         do
             let json = api.root
@@ -252,6 +262,18 @@ let main() =
         Application.DoEvents()
         check (form.BackColor=SettingsUi.palette().background) "Live theme update missed form"
         snapshot "settings-general-dark"
+        // Hovering a sidebar item looks lighter than the open page, which also has an accent bar.
+        do
+            let nav = controls form |> Seq.find(fun c -> c :? SettingsNavigationButton && c.Text=tr Strings.Pages.appearance)
+            let mouse name = typeof<Control>.GetMethod(name,Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).Invoke(nav,[|box EventArgs.Empty|]) |> ignore
+            mouse "OnMouseEnter"
+            use sidebar = new Bitmap(nav.Parent.Width,nav.Bottom+Dpi.scale 8)
+            nav.Parent.DrawToBitmap(sidebar,Rectangle(Point.Empty,sidebar.Size))
+            sidebar.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-sidebar-hover.png"),ImageFormat.Png)
+            let general = controls form |> Seq.find(fun c -> c :? SettingsNavigationButton && c.Text=tr Strings.Pages.general)
+            let at (c:Control) = sidebar.GetPixel(c.Left+c.Width-Dpi.scale 12,c.Top+c.Height/2)
+            check (at nav <> at general) "Hovered and open sidebar items look the same"
+            mouse "OnMouseLeave"
         // Opened from the sidebar, as a user would: the page is built hidden, then shown and sized.
         do
             let navigate = controls form |> Seq.find(fun c -> c :? Button && c.Text=tr Strings.Pages.diagnostics) :?> Button
@@ -304,7 +326,7 @@ let main() =
                 String.Join("
 ",walk 0 row)
             let descriptions = rows |> List.collect(fun row -> controls row |> Seq.choose(function :? SettingsEllipsisLabel as l -> Some l | _ -> None) |> Seq.toList)
-            check (descriptions.Length=2 && descriptions |> List.forall(fun l -> l.Visible && l.Height >= l.Font.Height && l.Width > Dpi.scale 100
+            check (descriptions.Length=3 && descriptions |> List.forall(fun l -> l.Visible && l.Height >= l.Font.Height && l.Width > Dpi.scale 100
                                                                                    && l.Bottom <= l.Parent.ClientSize.Height))
                   (sprintf "Settings file descriptions are hidden:
 %s" (String.Join("
@@ -362,7 +384,23 @@ Group #2: No valid windows in this group.";
                           "Alert dialog did not lay out its text and OK button"
                     let bmp = new Bitmap(dialog.Width,dialog.Height)
                     dialog.DrawToBitmap(bmp,Rectangle(Point.Empty,bmp.Size))
-                    yield bmp ]
+                    yield bmp
+                // A confirmation: its action, Cancel, and switches for what else to clear.
+                use confirm = new SettingsAlertDialog(AlertKind.Warning,tr Strings.General.resetTitle,tr Strings.General.resetMessage,false,
+                                                      tr Strings.General.resetConfirm,tr Strings.General.resetAlsoClear,
+                                                      [Some SettingsViewType.ProgramSettings,tr Strings.Pages.appRules
+                                                       Some SettingsViewType.LayoutSettings,tr Strings.Pages.workspaces],
+                                                      StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),TopMost=false,ShowInTaskbar=false)
+                confirm.Show()
+                Application.DoEvents()
+                let buttons = controls confirm |> Seq.filter(fun c -> c :? SettingsActionButton) |> Seq.toList
+                check (buttons.Length=2 && controls confirm |> Seq.filter(fun c -> c :? SettingsToggle) |> Seq.length = 2
+                       && confirm.Choices=[false;false] && confirm.CancelButton<>confirm.AcceptButton
+                       && controls confirm |> Seq.filter(fun c -> c :? SettingsPageIcon) |> Seq.length = 2)
+                      "Confirmation lacks its action, Cancel or switches"
+                let shot = new Bitmap(confirm.Width,confirm.Height)
+                confirm.DrawToBitmap(shot,Rectangle(Point.Empty,shot.Size))
+                yield shot ]
         do
             use sheet = new Bitmap(shots |> List.map(fun b -> b.Width) |> List.max,shots |> List.sumBy(fun b -> b.Height+8))
             use g = Graphics.FromImage(sheet)
@@ -370,6 +408,20 @@ Group #2: No valid windows in this group.";
             shots |> List.fold(fun y b -> g.DrawImage(b,0,y); y+b.Height+8) 0 |> ignore
             sheet.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","alerts.png"),ImageFormat.Png)
             for b in shots do b.Dispose()
+        // The Alt+Tab switcher is as tall as its windows, up to most of the screen.
+        do
+            let sized count =
+                let list = TaskSwitchListControl(List2()) :> ITaskSwitchListControl
+                let tree = list.control :?> SettingsTreeList
+                for index in 1..count do tree.Roots.Add(TreeListItem(sprintf "Window %d" index))
+                tree.Rebuild()
+                let switcher = TaskSwitchForm(list)
+                use switcherForm = Control.FromHandle(switcher.hwnd) :?> Form
+                switcherForm.ClientSize.Height
+            let area = Screen.FromHandle(WinUserApi.GetForegroundWindow()).WorkingArea
+            let few,many = sized 12,sized 200
+            check (few >= 12*Dpi.scale 52) (sprintf "Switcher does not show all 12 windows: %d px" few)
+            check (many <= area.Height*85/100 && many > few) (sprintf "Switcher outgrows the screen: %d px of %d" many area.Height)
         let language = controls form |> Seq.choose(function :? SettingsCombo as c when c.Name="language" -> Some c | _ -> None) |> Seq.head
         check (language.Width < Dpi.scale 80) "Language picker is not compact"
         let languagePopup = language.CreateDropDown() |> Option.get

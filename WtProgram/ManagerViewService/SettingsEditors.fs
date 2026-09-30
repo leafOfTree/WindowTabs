@@ -449,6 +449,8 @@ type SettingsColorInput() as this =
         if different then changed.Trigger()
     let commitText() =
         let hex = text.Text.Trim().TrimStart('#')
+        // The short form doubles each digit, as in CSS: #3A7 is #33AA77.
+        let hex = if hex.Length=3 then String(hex.ToCharArray() |> Array.collect(fun c -> [|c;c|])) else hex
         match Int32.TryParse(hex,NumberStyles.HexNumber,CultureInfo.InvariantCulture) with
         | true,value when hex.Length=6 -> commit(Color.FromArgb((value >>> 16) &&& 255,(value >>> 8) &&& 255,value &&& 255))
         | _ -> sync()

@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Drawing
 open System.Windows.Forms
@@ -143,7 +143,8 @@ module SettingsUi =
 
     let section (table:TableLayoutPanel) caption =
         let label = new Label(Text=caption,AutoSize=true,Font=sectionFont)
-        label.Margin <- Padding(0,(if table.RowCount=0 then 0 else Dpi.scale 24),0,Dpi.scale 12)
+        // Close to its first row, which has its own top padding.
+        label.Margin <- Padding(0,(if table.RowCount=0 then 0 else Dpi.scale 24),0,Dpi.scale 4)
         add table label
 
     let note (table:TableLayoutPanel) caption =
@@ -243,7 +244,7 @@ module SettingsUi =
     /// A section card whose heading has an (i) that explains the whole section.
     let sectionCardWithHelp (table:TableLayoutPanel) caption (help:string) =
         let heading = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
-                                          Margin=Padding(0,(if table.RowCount=0 then 0 else Dpi.scale 24),0,Dpi.scale 12))
+                                          Margin=Padding(0,(if table.RowCount=0 then 0 else Dpi.scale 24),0,Dpi.scale 4))
         let label = new Label(Text=caption,AutoSize=true,Font=sectionFont,Anchor=AnchorStyles.Left,Margin=Padding.Empty)
         let button = new SettingsHelpButton(help,Anchor=AnchorStyles.Left,Margin=Padding(Dpi.scale 6,0,0,0),
                                             Font=rowFont,AccessibleName=caption)

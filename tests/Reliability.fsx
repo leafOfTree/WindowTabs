@@ -20,7 +20,8 @@ let main() =
     check (delivered.Wait(5000) && eventsThread=".NET SystemEvents") "SystemEvents does not have a thread of its own"
     ThemeService.publishPreferences {
         geometry=Theme.defaultGeometry; legacyPalette=Theme.lightPalette; lightPalette=Theme.lightPalette; darkPalette=Theme.darkPalette
-        lightCustomPalette=Theme.lightPalette; darkCustomPalette=Theme.darkPalette; mode=ThemeMode.parse "dark"; useCustomColors=false }
+        lightCustomPalette=Theme.lightPalette; darkCustomPalette=Theme.darkPalette; mode=ThemeMode.parse "dark"; useCustomColors=false
+        lightPreset=""; darkPreset=""; presetEdits=Map.empty }
     let mutable dark = false
     let reader = Thread(fun () -> dark <- ThemeService.currentIsDark())
     reader.Start()
@@ -98,6 +99,20 @@ let main() =
 
     let report = RuntimeDiagnostics.report (JObject.Parse("""{"licenseKey":"SECRET","workspaces":[{"title":"SECRET"}],"path":"SECRET","runAtStartup":true,"alignment":"SECRET"}""")) 0 0
     check (not(report.ToString().Contains("SECRET"))) "Diagnostic report leaked private data"
+    // A reset keeps the version, writes fresh-install toggles, and keeps app rules and
+    // workspaces unless asked to clear them.
+    do
+        let current = JObject.Parse("""{"version":"1.2","tabThemeMode":"dark","runAtStartup":false,"hotKeys":{"nextTab":1},
+                                        "includedPaths":["a.exe"],"excludedPaths":["b.exe"],"autoGroupingPaths":[],
+                                        "workspaces":[{"name":"w"}],"workspaceSchemaVersion":2}""")
+        let kept = SettingsCatalog.resetRoot current false false
+        check (kept.["version"].ToString()="1.2" && isNull kept.["tabThemeMode"] && isNull kept.["hotKeys"]) "Reset kept a preference"
+        check ((kept.["runAtStartup"] :?> JValue).Value=box true) "Reset did not write the fresh-install toggle default"
+        check (not (isNull kept.["includedPaths"]) && not (isNull kept.["excludedPaths"]) && not (isNull kept.["workspaces"])
+               && kept.["workspaceSchemaVersion"].ToString()="2") "Reset lost app rules or workspaces"
+        let cleared = SettingsCatalog.resetRoot current true true
+        check (isNull cleared.["includedPaths"] && isNull cleared.["excludedPaths"] && isNull cleared.["workspaces"]) "Reset did not clear what was asked"
+        check (current.["tabThemeMode"].ToString()="dark") "Reset changed the settings it read"
     check (report.["settings"].["workspaceCount"].Value<int>()=1) "Diagnostic summary missing workspace count"
     for key in ["version";"os";"dotNet";"uptimeMinutes";"environment";"monitors";"otherTools";"groups";"groupedWindows";"resources";"scans";"settings"] do
         check (not (isNull report.[key])) ("Diagnostic report missing " + key)
@@ -108,20 +123,38 @@ let main() =
     let rules = RuntimeDiagnostics.report (JObject.Parse("""{"includedPaths":["C:\\SECRET\\a.exe","b"],"excludedPaths":["c"],"tabAppearance":{"tabHeight":25,"tabMaxWidth":"SECRET"}}""")) 0 0
     check (rules.["settings"].["appRules"].["tabsOn"].Value<int>()=2 && rules.["settings"].["tabs"].["height"].Value<int>()=25) "Diagnostic summary missing rule counts or tab size"
     check (not (rules.ToString().Contains("SECRET"))) "Diagnostic summary leaked app rule paths or unexpected values"
-    // The report reads the newest crash log entry but keeps its message, which can hold paths, out.
+    // The report lists the latest crashes, newest first, with their exception types and the
+    // methods on their stacks, but never messages or source paths.
     let crashLog = IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"WindowTabsCrash.log")
     let existingLog = if IO.File.Exists(crashLog) then Some(IO.File.ReadAllText(crashLog)) else None
     try
         let entry time kind =
             String.concat "\r\n" ["---------------------------------------------";"Time    : "+time;"Source  : Application.ThreadException"
                                   "Version : 1.2.3";"OS      : Windows 11 Pro 24H2 (26100.1) / .NET 4.8.1"
-                                  kind+": Could not open C:\\SECRET\\file.txt";"   at Bemo.Somewhere()";""]
-        IO.File.WriteAllText(crashLog,entry "2026-01-01 10:00:00" "System.ArgumentException"+entry "2026-01-02 11:00:00" "System.IO.IOException")
-        let crash = (RuntimeDiagnostics.report (JObject()) 0 0).["lastCrash"]
-        check (not (isNull crash) && crash.["time"].Value<string>()="2026-01-02 11:00:00" && crash.["exception"].Value<string>()="System.IO.IOException"
-               && crash.["crashesInLog"].Value<int>()=2 && crash.["source"].Value<string>()="Application.ThreadException") "Diagnostic report misread the crash log"
-        check (not (crash.ToString().Contains("SECRET"))) "Diagnostic report copied a crash message"
+                                  kind+": Could not open C:\\SECRET\\file.txt ---> System.IO.IOException: SECRET title"
+                                  "and a SECRET second message line"
+                                  "   at Bemo.Somewhere() in C:\\SECRET\\Program.fs:line 12"
+                                  "   在 Bemo.Elsewhere(String path) 位置 D:\\SECRET\\Other.fs:行号 3"
+                                  "   --- End of inner exception stack trace ---";""]
+        // An older version wrote oldest first; the report still starts with the newest.
+        IO.File.WriteAllText(crashLog,entry "2026-01-01 10:00:00" "System.ArgumentException"+entry "2026-01-02 11:00:00" "System.InvalidOperationException")
+        let crashes = (RuntimeDiagnostics.report (JObject()) 0 0).["crashes"]
+        let latest = crashes.["latest"].[0]
+        check (not (isNull crashes) && crashes.["inLog"].Value<int>()=2 && latest.["time"].Value<string>()="2026-01-02 11:00:00"
+               && latest.["exception"].Value<string>()="System.InvalidOperationException ---> System.IO.IOException"
+               && latest.["source"].Value<string>()="Application.ThreadException") (sprintf "Diagnostic report misread the crash log: %O" crashes)
+        let frames = latest.["stack"] |> Seq.map string |> Seq.toList
+        check (frames=["at Bemo.Somewhere()";"在 Bemo.Elsewhere(String path)";"--- End of inner exception stack trace ---"])
+              (sprintf "Crash stack frames were not reduced to their methods: %A" frames)
+        check (not (crashes.ToString().Contains("SECRET"))) "Diagnostic report copied a crash message or path"
         check (RuntimeDiagnostics.crashLogPath()=Some crashLog) "Crash log next to the exe was not found"
+        // New entries go on top, old logs are put in order, and the oldest go past the limit.
+        let log = RuntimeDiagnostics.CrashLog.prepend (entry "2026-01-03 09:00:00" "System.NullReferenceException") (IO.File.ReadAllText(crashLog)) 100000
+        let times = RuntimeDiagnostics.CrashLog.entries log |> List.map(fun e -> e.Substring(e.IndexOf("Time    :")+10,19))
+        check (log.StartsWith("-----") && log.IndexOf("2026-01-03") < log.IndexOf("2026-01-02") && log.IndexOf("2026-01-02") < log.IndexOf("2026-01-01"))
+              (sprintf "Crash log is not newest first: %A" times)
+        let short = RuntimeDiagnostics.CrashLog.prepend (entry "2026-01-03 09:00:00" "System.NullReferenceException") (IO.File.ReadAllText(crashLog)) 800
+        check (short.Contains("2026-01-03") && not (short.Contains("2026-01-01"))) "Crash log limit did not drop the oldest entries"
     finally
         match existingLog with
         | Some text -> IO.File.WriteAllText(crashLog,text)

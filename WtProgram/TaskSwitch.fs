@@ -63,6 +63,8 @@ type ITaskSwitchListControl =
     abstract member select : int -> unit
     abstract member control : Control
     abstract member onShow : Form -> unit
+    /// The height that shows every window without scrolling.
+    abstract member contentHeight : int
 
 module private TaskWindowItems =
     let create (TaskWindowItem(hwnd,isGroup)) =
@@ -91,6 +93,7 @@ type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
     interface ITaskSwitchListControl with
         member this.select index = list.SelectedItem <- list.Roots.[index]
         member this.control = list :> Control
+        member this.contentHeight = list.Roots.Count*Dpi.scale list.RowHeight
         member this.onShow form =
             let p = SettingsColors.current()
             form.BackColor <- p.surface
@@ -115,9 +118,13 @@ type TaskSwitchForm(control:ITaskSwitchListControl) =
                     e.Graphics.DrawPath(border,outline)
         }
         let area = Screen.FromHandle(WinUserApi.GetForegroundWindow()).WorkingArea
-        let formSize = Size(min (Dpi.scale 600) (area.Width-Dpi.scale 32),min (Dpi.scale 400) (area.Height-Dpi.scale 32))
+        let padding = Dpi.scale 12
+        // Tall enough for every window, so each is one glance away; only more windows than
+        // most of the screen can hold scroll.
+        let height = max (Dpi.scale 120) (control.contentHeight+padding*2)
+        let formSize = Size(min (Dpi.scale 600) (area.Width-Dpi.scale 32),min height (area.Height*85/100))
         f.AutoScaleMode <- AutoScaleMode.None
-        f.Padding <- Padding(Dpi.scale 12)
+        f.Padding <- Padding(padding)
         f.Font <- SettingsUi.bodyFont
         f.ShowInTaskbar <- false
         f.StartPosition <- FormStartPosition.Manual

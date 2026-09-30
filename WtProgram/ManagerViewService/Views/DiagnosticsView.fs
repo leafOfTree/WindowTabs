@@ -26,8 +26,19 @@ module private SettingsFile =
             File.WriteAllText(dialog.FileName,Services.settings.root.ToString(),UTF8Encoding(false))
             Alert.show AlertKind.Info (tr Strings.General.settingsFile) (tr Strings.General.exported)
 
-    /// Replaces every setting with the file's, keeping a copy of the current ones beside the
-    /// settings file, then restarts so hotkeys, workspaces, rules and open groups all reload.
+    /// Replaces every setting, keeping a copy of the current ones beside the settings file, then
+    /// restarts so hotkeys, workspaces, rules and open groups all reload.
+    let private replace (root:JObject) backupName title (message:string -> string) =
+        let settings = Services.settings
+        let backup = Path.Combine(Path.GetDirectoryName(settings.path),sprintf "WindowTabsSettings.%s.json" backupName)
+        File.WriteAllText(backup,settings.root.ToString(),UTF8Encoding(false))
+        settings.root <- root
+        Alert.show AlertKind.Info title (message backup)
+        // The new instance waits for this one, whose shutdown writes the new settings.
+        Diagnostics.Process.Start(Application.ExecutablePath,"--restart") |> ignore
+        Services.program.shutdown()
+
+    /// Replaces every setting with the file's.
     let import (owner:IWin32Window) =
         // .txt is the name older versions give the settings file, and still opens here.
         use dialog = new OpenFileDialog(Filter=sprintf "%s (*.json;*.txt)|*.json;*.txt|All files (*.*)|*.*" (tr Strings.General.settingsFile))
@@ -41,14 +52,22 @@ module private SettingsFile =
             match imported with
             | None -> Alert.show AlertKind.Warning (tr Strings.General.importTitle) (tr Strings.General.notSettingsFile)
             | Some root ->
-                let settings = Services.settings
-                let backup = Path.Combine(Path.GetDirectoryName(settings.path),"WindowTabsSettings.before-import.json")
-                File.WriteAllText(backup,settings.root.ToString(),UTF8Encoding(false))
-                settings.root <- root
-                Alert.show AlertKind.Info (tr Strings.General.importTitle) (tr (Strings.General.importedRestarting backup))
-                // The new instance waits for this one, whose shutdown writes the imported settings.
-                Diagnostics.Process.Start(Application.ExecutablePath,"--restart") |> ignore
-                Services.program.shutdown()
+                replace root "before-import" (tr Strings.General.importTitle) (fun backup -> tr (Strings.General.importedRestarting backup))
+
+    /// Every setting back to its fresh-install default, keeping app rules and saved workspaces
+    /// unless the user switches on clearing them.
+    let reset (_:IWin32Window) =
+        let answer =
+            SettingsAlert.confirm AlertKind.Warning (tr Strings.General.resetTitle) (tr Strings.General.resetMessage)
+                (tr Strings.General.resetConfirm) (tr Strings.General.resetAlsoClear)
+                // Named and marked as in the sidebar, so it is clear which pages lose their lists.
+                [Some SettingsViewType.ProgramSettings,tr Strings.Pages.appRules
+                 Some SettingsViewType.LayoutSettings,tr Strings.Pages.workspaces]
+        match answer with
+        | Some [clearAppRules;clearWorkspaces] ->
+            let fresh = SettingsCatalog.resetRoot Services.settings.root clearAppRules clearWorkspaces
+            replace fresh "before-reset" (tr Strings.General.resetTitle) (fun backup -> tr (Strings.General.resetRestarting backup))
+        | _ -> ()
 
 type DiagnosticsView() =
     let view = new SettingsTextView()
@@ -152,6 +171,9 @@ type DiagnosticsView() =
             button.Click.Add(run action)
             backup.Controls.Add(button)
         SettingsUi.settingRow card "settings-backup" backup
+        let reset = SettingsUi.button (tr Strings.General.reset)
+        reset.Click.Add(run SettingsFile.reset)
+        SettingsUi.settingRow card "settings-reset" reset
         SettingsUi.section table (tr Strings.Diagnostics.reportTitle)
         SettingsUi.note table (tr Strings.Diagnostics.description)
         table :> Control
