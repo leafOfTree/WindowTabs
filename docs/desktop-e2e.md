@@ -104,14 +104,17 @@ snapshot regressions also run in the regular Architecture suite.
 
 ## GitHub Actions setup
 
-`.github/workflows/desktop-e2e-hosted.yml` provides **Desktop E2E Hosted Quick**
-on GitHub's `windows-2022` virtual machine, without a local runner. It runs on
-pushes to the dedicated `codex/desktop-e2e-cloud` probe branch and supports manual
-dispatch once available on the default branch. It builds the actual Release
-binary and runs Quick with real input, retaining diagnostics for 14 days even
-on failure. This is an experimental environment check, not yet a required PR
-gate. Quick verifies one startup/exit cycle and 120 individual switches; Full
-adds a second cycle to verify restart with surviving foreign windows.
+`.github/workflows/desktop-e2e-hosted.yml` provides **Desktop E2E Hosted**
+on GitHub's `windows-2022` virtual machine, without a local runner. Every pull
+request runs Quick as the stable **Desktop E2E (Quick)** check. No path filters
+skip this check. Manual dispatch offers Quick or Full once the workflow is
+available on the default branch. It builds the actual Release binary and uses
+real input, retaining diagnostics for 14 days even on failure. Quick verifies
+one startup/exit cycle and 120 individual switches; Full adds a second cycle
+to verify restart with surviving foreign windows and 1,320 individual switches.
+These triggers take effect when this configuration is published; branch
+protection has not been changed to make the check mandatory. The temporary
+`codex/desktop-e2e-cloud` push trigger used for validation has been removed.
 
 `.github/workflows/desktop-e2e.yml` provides a manual **Desktop E2E** workflow
 with a Quick/Full/Soak choice. It targets
@@ -154,11 +157,23 @@ closing the active helper and normal tray-menu exit. No retries were used.
 The normal switching phase had observed p95 93.9 ms, including driver overhead.
 
 This demonstrates that the current GitHub-hosted Windows environment can run
-this suite with real input. It is one successful Quick run, not evidence of
-long-term CI stability or restart/Soak coverage. Those still require Full and
-Soak runs. The uploaded artifact records the tested binary SHA-256 and raw
-measurements; a local copy is under
+this suite with real input. The uploaded artifact records the tested binary
+SHA-256 and raw measurements; a local copy is under
 `tests/Debug/github-e2e-cloud/36721632173`.
+
+The [Node.js 24 Quick run](https://github.com/leafOfTree/WindowTabs/actions/runs/36725502267)
+also passed, without the Node.js 20 deprecation warning.
+The subsequent [Hosted Full run](https://github.com/leafOfTree/WindowTabs/actions/runs/36727204266)
+passed on commit `7ea7064`, completing two startup/exit cycles and 1,320
+individually verified switches without retries. The second cycle reused the
+portable settings and surviving foreign helper HWNDs after normal exit. The
+whole run took approximately 3 minutes 48 seconds; the driver took about 75
+seconds, with 50.7 seconds spent in measured switching phases. Normal-window
+phase p95 was 108.8/109.3 ms, including driver overhead. Resource budgets passed.
+Downloaded logs and reports are under `tests/Debug/github-e2e-cloud/36727204266`.
+These three successful hosted runs justify enabling Quick on pull requests;
+they do not establish long-term flake rates or Soak coverage. The 30-minute
+Soak still requires a separate run.
 
 ## Local validation (2026-09-30)
 

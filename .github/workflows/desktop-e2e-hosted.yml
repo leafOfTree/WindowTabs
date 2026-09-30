@@ -1,8 +1,7 @@
 name: Desktop E2E Hosted
 
 on:
-  push:
-    branches: [codex/desktop-e2e-cloud]
+  pull_request:
   workflow_dispatch:
     inputs:
       profile:
@@ -20,7 +19,7 @@ concurrency:
 
 jobs:
   desktop:
-    name: Desktop E2E (${{ inputs.profile || 'Full' }})
+    name: Desktop E2E (${{ inputs.profile || 'Quick' }})
     runs-on: windows-2022
     timeout-minutes: 15
     steps:
@@ -36,7 +35,7 @@ jobs:
         id: e2e
         shell: powershell
         env:
-          E2E_PROFILE: ${{ inputs.profile || 'Full' }}
+          E2E_PROFILE: ${{ inputs.profile || 'Quick' }}
         run: ./tests/Run-DesktopE2E.ps1 -Interactive -Profile $env:E2E_PROFILE
 
       - name: Clean up this test's processes
@@ -50,7 +49,7 @@ jobs:
         if: always() && steps.e2e.outputs.stage != ''
         uses: actions/upload-artifact@v6
         with:
-          name: desktop-e2e-hosted-${{ inputs.profile || 'Full' }}-${{ github.run_id }}
+          name: desktop-e2e-hosted-${{ inputs.profile || 'Quick' }}-${{ github.run_id }}
           retention-days: 14
           path: |
             ${{ steps.e2e.outputs.stage }}/manifest.json
