@@ -6,7 +6,9 @@ open System.Windows.Forms
 open Newtonsoft.Json.Linq
 
 /// UI-thread owned persistence. Pending edits survive a failed write and can be retried.
-type SettingsFileStore(path:string, delay:int, reportError:exn -> unit) =
+/// Until the file exists, settings are read from the legacy file if there is one; that file is
+/// only ever read, so an older version keeps the settings it had.
+type SettingsFileStore(path:string, delay:int, reportError:exn -> unit, ?legacyPath:string) =
     let timer = new Timer(Interval=max 1 delay)
     let mutable pending : string option = None
     let mutable reported = false
@@ -48,7 +50,15 @@ type SettingsFileStore(path:string, delay:int, reportError:exn -> unit) =
         match pending with
         | Some text -> Some text
         | None when not (File.Exists(path)) ->
-            if File.Exists(path+".bak") then Some(File.ReadAllText(path+".bak") |> validate) else None
+            if File.Exists(path+".bak") then Some(File.ReadAllText(path+".bak") |> validate)
+            else
+                match legacyPath with
+                | Some legacy when File.Exists(legacy) ->
+                    try Some(File.ReadAllText(legacy) |> validate)
+                    with original ->
+                        if File.Exists(legacy+".bak") then Some(File.ReadAllText(legacy+".bak") |> validate)
+                        else raise original
+                | _ -> None
         | None ->
             try Some(File.ReadAllText(path) |> validate)
             with original ->

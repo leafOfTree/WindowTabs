@@ -173,7 +173,8 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 TextRenderer.DrawText(e.Graphics,tr item.text.caption,SettingsUi.rowFont,
                     Rectangle(left,e.Bounds.Top+Dpi.scale 7,right,Dpi.scale 23),p.text,
                     TextFormatFlags.NoPrefix ||| TextFormatFlags.EndEllipsis)
-                let context = captions item.page ""
+                // The language picker is in the sidebar, on every page, not on General.
+                let context = if item.id="language" then tr Strings.SettingsWindow.sidebar else captions item.page ""
                 TextRenderer.DrawText(e.Graphics,context,SettingsUi.bodyFont,
                     Rectangle(left,e.Bounds.Top+Dpi.scale 27,right,Dpi.scale 19),p.muted,
                     TextFormatFlags.NoPrefix ||| TextFormatFlags.EndEllipsis)
@@ -218,7 +219,9 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 search.Clear()
                 suppressSearch <- false
                 // The language picker lives in the sidebar footer, not on a page.
-                if item.id="language" then languageChoice.Select()
+                if item.id="language" then
+                    languageChoice.Select()
+                    SettingsUi.flash languageChoice
                 else
                     select item.page
                     let page = pages |> List.find(fun page -> page.key=item.page)

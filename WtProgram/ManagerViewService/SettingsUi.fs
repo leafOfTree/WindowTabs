@@ -80,8 +80,12 @@ module SettingsUi =
 
     /// Tints the setting row holding a control for a moment, then fades it back, so a search
     /// result shows where it landed. Labels and layout panels paint their own background, so
-    /// they are tinted with the row; editors keep their own look.
+    /// they are tinted with the row; editors keep their own look. A choice outside any row, such
+    /// as the sidebar's language picker, draws the highlight itself.
     let flash (control:Control) =
+        match control with
+        | :? SettingsCombo as combo when not (control.Parent :? SettingsRow) -> combo.Flash()
+        | _ -> ()
         let rec rowOf (item:Control) =
             if isNull item then None
             elif item :? SettingsRow then Some item
@@ -97,7 +101,6 @@ module SettingsUi =
             let mix (a:Color) (b:Color) (t:float) =
                 let channel (x:byte) (y:byte) = int(Math.Round(float x+(float y-float x)*t))
                 Color.FromArgb(channel a.R b.R,channel a.G b.G,channel a.B b.B)
-            let hold,fade = 1500.0,1200.0
             let clock = Diagnostics.Stopwatch.StartNew()
             let timer = new Timer(Interval=16)
             let finish restore =
@@ -110,9 +113,9 @@ module SettingsUi =
                 if row.IsDisposed || p.background<>start.background || p.accent<>start.accent then finish false
                 else
                     let elapsed = clock.Elapsed.TotalMilliseconds
-                    if elapsed >= hold+fade then finish true
+                    if elapsed >= SettingsFlash.hold+SettingsFlash.fade then finish true
                     else
-                        let strength = 0.22*(if elapsed <= hold then 1.0 else 1.0-(elapsed-hold)/fade)
+                        let strength = 0.22*SettingsFlash.strength elapsed
                         for item,color in targets do item.BackColor <- mix color p.accent strength)
             timer.Start())
 
@@ -233,6 +236,20 @@ module SettingsUi =
 
     let sectionCard table caption =
         section table caption
+        let card = new SettingsCard()
+        add table card
+        card :> TableLayoutPanel
+
+    /// A section card whose heading has an (i) that explains the whole section.
+    let sectionCardWithHelp (table:TableLayoutPanel) caption (help:string) =
+        let heading = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
+                                          Margin=Padding(0,(if table.RowCount=0 then 0 else Dpi.scale 24),0,Dpi.scale 12))
+        let label = new Label(Text=caption,AutoSize=true,Font=sectionFont,Anchor=AnchorStyles.Left,Margin=Padding.Empty)
+        let button = new SettingsHelpButton(help,Anchor=AnchorStyles.Left,Margin=Padding(Dpi.scale 6,0,0,0),
+                                            Font=rowFont,AccessibleName=caption)
+        heading.Controls.Add(label)
+        heading.Controls.Add(button)
+        add table heading
         let card = new SettingsCard()
         add table card
         card :> TableLayoutPanel

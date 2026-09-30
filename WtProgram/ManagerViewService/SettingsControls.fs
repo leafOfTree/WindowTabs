@@ -823,9 +823,20 @@ module SettingsPopupLifetime =
                     if not popup.IsDisposed then popup.Dispose())
                 timer.Start())
 
+/// How long a search result's highlight holds, then fades: shared by setting rows and by the
+/// controls that draw their own highlight.
+module SettingsFlash =
+    let hold,fade = 1500.0,1200.0
+    /// Highlight strength from 1 down to 0, after the given milliseconds.
+    let strength (elapsed:float) = if elapsed <= hold then 1.0 else max 0.0 (1.0-(elapsed-hold)/fade)
+
 type SettingsCombo(items:string[]) as this =
     inherit Button()
     let changed = Event<EventArgs>()
+    /// A search result's accent highlight, 1 to 0; see Flash.
+    let mutable flash = 0.0
+    let flashClock = Diagnostics.Stopwatch()
+    let flashTimer = new Timer(Interval=16)
     let mutable selected = -1
     let mutable hovering = false
     let mutable popup : SettingsChoicePopup option = None
@@ -850,6 +861,19 @@ type SettingsCombo(items:string[]) as this =
         this.FlatAppearance.BorderSize <- 0
         this.AccessibleRole <- AccessibleRole.ButtonDropDown
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
+        flashTimer.Tick.Add(fun _ ->
+            flash <- SettingsFlash.strength flashClock.Elapsed.TotalMilliseconds
+            if flash <= 0.0 then flashTimer.Stop()
+            this.Invalidate())
+        this.Disposed.Add(fun _ -> flashTimer.Dispose())
+    /// Tints the control with the accent colour for a moment, as search does to a setting's row.
+    member this.Flash() =
+        flash <- 1.0
+        flashClock.Restart()
+        flashTimer.Start()
+        this.Invalidate()
+    /// The highlight's current strength, 0 when none is showing.
+    member _.FlashStrength = flash
     member _.SelectedIndex
         with get() = selected
         and set(value) =
@@ -1008,6 +1032,9 @@ type SettingsCombo(items:string[]) as this =
         use fill = new SolidBrush(if hovering && this.Enabled then p.selection else p.hover)
         use border = new Pen(p.border)
         graphics.FillPath(fill,shape)
+        if flash > 0.0 then
+            use tint = new SolidBrush(Color.FromArgb(int(90.0*flash),p.accent))
+            graphics.FillPath(tint,shape)
         graphics.DrawPath(border,shape)
         let foreground = if this.Enabled then p.text else p.muted
         let offset = drawDot graphics this.ClientRectangle selected
@@ -1018,11 +1045,14 @@ type SettingsCombo(items:string[]) as this =
         graphics.DrawLines(arrow,[|Point(x-Dpi.scale 4,y-Dpi.scale 2);Point(x,y+Dpi.scale 2);Point(x+Dpi.scale 4,y-Dpi.scale 2)|])
     /// Borderless: a globe and a short label; a subtle fill on hover or while the list is open.
     member private this.paintCompact(graphics:Graphics,p:SettingsPalette,label:string) =
+        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 6))
         if (hovering || popup.IsSome || this.Focused) && this.Enabled then
-            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 6))
             use fill = new SolidBrush(p.selection)
             graphics.FillPath(fill,shape)
-        let foreground = if hovering || popup.IsSome then p.text else p.muted
+        if flash > 0.0 then
+            use tint = new SolidBrush(Color.FromArgb(int(90.0*flash),p.accent))
+            graphics.FillPath(tint,shape)
+        let foreground = if hovering || popup.IsSome || flash > 0.0 then p.text else p.muted
         let size = float32(Dpi.scale 14)
         let globe = RectangleF(float32(Dpi.scale 8),float32(this.Height)/2.0f-size/2.0f,size,size)
         use pen = new Pen(foreground,1.2f)

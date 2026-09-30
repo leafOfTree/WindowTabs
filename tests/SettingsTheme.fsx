@@ -266,6 +266,11 @@ let main() =
             let note = all |> List.find(fun c -> c :? Label && c.Text=tr Strings.Diagnostics.description)
             let refresh = all |> List.find(fun c -> c :? SettingsIconButton && c.AccessibleName=tr Strings.Diagnostics.refreshReport)
             let fileCard = all |> List.find(fun c -> c :? Label && c.Text=tr Strings.General.settingsFile)
+            // How the settings file is chosen is told once, by the (i) beside its heading.
+            let helps = all |> List.filter(fun c -> c :? SettingsHelpButton)
+            check (helps.Length=1 && obj.ReferenceEquals(helps.Head.Parent,fileCard.Parent) && helps.Head.Left > fileCard.Right
+                   && helps.Head.AccessibleDescription=tr Strings.General.settingsFileHelp)
+                  (sprintf "Settings file help is not beside its heading: %A" (helps |> List.map(fun h -> h.Parent.GetType().Name,h.Bounds)))
             check (screenTop links.Head < screenTop fileCard && screenTop links.Head < screenTop note && links.Head.Top < Dpi.scale 30)
                   (sprintf "Support links are not the first line: links %d, Settings file %d, note %d"
                            (screenTop links.Head) (screenTop fileCard) (screenTop note))
@@ -448,6 +453,19 @@ Group #2: No valid windows in this group.";
             Application.DoEvents()
             check (result.TopIndex>0) "Selecting the last result does not scroll the list"
             Capture.window form (Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-search-scrolled.png"))
+            // The language picker is in the sidebar; search lights it up in the accent colour.
+            search.Text <- "langu"
+            Application.DoEvents()
+            result.SelectedIndex <- 0
+            typeof<ListBox>.GetMethod("OnKeyDown",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).Invoke(result,[|box(new KeyEventArgs(Keys.Enter))|]) |> ignore
+            Application.DoEvents()
+            let language = form.Controls.Find("language",true).[0] :?> SettingsCombo
+            check (language.FlashStrength > 0.0) "Search does not highlight the language picker"
+            let painted = Diagnostics.Stopwatch.StartNew()
+            while painted.ElapsedMilliseconds < 150L do Application.DoEvents(); Threading.Thread.Sleep(10)
+            language.Update()
+            Capture.window form (Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-search-language.png"))
+            form.ActiveControl <- search
             search.Text <- "Theme"
             Application.DoEvents()
         let filter = SettingsSearchFocusFilter(form,search,suggestions) :> IMessageFilter

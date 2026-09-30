@@ -16,7 +16,9 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
     let valueCache = Dictionary<string, obj>()
     // Values already handed to other threads; cleared on every write, like valueCache.
     let published = Collections.Concurrent.ConcurrentDictionary<string, obj>()
-    let fileName = "WindowTabsSettings.txt"
+    let fileName = "WindowTabsSettings.json"
+    /// The name older versions use: still read when no .json file exists yet, never written.
+    let legacyFileName = "WindowTabsSettings.txt"
     // Resolved once, so a later working-directory change cannot redirect pending saves.
     // A debug or test run (standalone) keeps its file in the working directory. Otherwise a file
     // next to WindowTabs.exe makes that copy portable; this used to look in the working
@@ -24,11 +26,13 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
     let exeFolder = AppDomain.CurrentDomain.BaseDirectory
     let folder =
         if isStandAlone then Path.GetFullPath(".")
-        elif File.Exists(Path.Combine(exeFolder,fileName)) then exeFolder
+        elif File.Exists(Path.Combine(exeFolder,fileName)) || File.Exists(Path.Combine(exeFolder,legacyFileName)) then exeFolder
         else Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"WindowTabs")
     let settingsPath = Path.GetFullPath(Path.Combine(folder,fileName))
-    let store = new SettingsFileStore(settingsPath,defaultArg saveDelay 250,fun ex ->
-        Alert.show AlertKind.Warning (tr Strings.Messages.settingsSaveFailed) (tr (Strings.Messages.unableToSaveSettings settingsPath ex.Message)))
+    let legacyPath = Path.GetFullPath(Path.Combine(folder,legacyFileName))
+    let store = new SettingsFileStore(settingsPath,defaultArg saveDelay 250,(fun ex ->
+        Alert.show AlertKind.Warning (tr Strings.Messages.settingsSaveFailed) (tr (Strings.Messages.unableToSaveSettings settingsPath ex.Message))),
+                                      legacyPath)
 
     do
         hasExistingSettings <- this.fileExists
@@ -49,7 +53,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
     interface IDisposable with
         member _.Dispose() = (store :> IDisposable).Dispose()
 
-    member this.fileExists : bool = File.Exists(this.path) 
+    member this.fileExists : bool = File.Exists(this.path) || File.Exists(legacyPath)
 
     member this.settingsString
         with get() = 

@@ -19,7 +19,7 @@ module private SettingsFile =
     let private knownKeys = ["version";"tabAppearance";"includedPaths";"excludedPaths";"runAtStartup";"alignment";"workspaces"]
 
     let export (owner:IWin32Window) =
-        use dialog = new SaveFileDialog(FileName="WindowTabs-settings.json",Filter="JSON (*.json)|*.json",
+        use dialog = new SaveFileDialog(FileName="WindowTabsSettings.json",Filter="JSON (*.json)|*.json",
                                         AddExtension=true,DefaultExt="json",OverwritePrompt=true)
         if dialog.ShowDialog(owner)=DialogResult.OK then
             // The in-memory root, including edits still waiting to be written.
@@ -29,7 +29,8 @@ module private SettingsFile =
     /// Replaces every setting with the file's, keeping a copy of the current ones beside the
     /// settings file, then restarts so hotkeys, workspaces, rules and open groups all reload.
     let import (owner:IWin32Window) =
-        use dialog = new OpenFileDialog(Filter="JSON (*.json)|*.json|All files (*.*)|*.*")
+        // .txt is the name older versions give the settings file, and still opens here.
+        use dialog = new OpenFileDialog(Filter=sprintf "%s (*.json;*.txt)|*.json;*.txt|All files (*.*)|*.*" (tr Strings.General.settingsFile))
         if dialog.ShowDialog(owner)=DialogResult.OK then
             let imported =
                 try
@@ -41,7 +42,7 @@ module private SettingsFile =
             | None -> Alert.show AlertKind.Warning (tr Strings.General.importTitle) (tr Strings.General.notSettingsFile)
             | Some root ->
                 let settings = Services.settings
-                let backup = Path.Combine(Path.GetDirectoryName(settings.path),"WindowTabsSettings.before-import.txt")
+                let backup = Path.Combine(Path.GetDirectoryName(settings.path),"WindowTabsSettings.before-import.json")
                 File.WriteAllText(backup,settings.root.ToString(),UTF8Encoding(false))
                 settings.root <- root
                 Alert.show AlertKind.Info (tr Strings.General.importTitle) (tr (Strings.General.importedRestarting backup))
@@ -135,19 +136,15 @@ type DiagnosticsView() =
     let fileSection =
         let table = new TableLayoutPanel(ColumnCount=1,Margin=Padding.Empty,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink)
         table.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
-        let card = SettingsUi.sectionCard table (tr Strings.General.settingsFile)
+        let card = SettingsUi.sectionCardWithHelp table (tr Strings.General.settingsFile) (tr Strings.General.settingsFileHelp)
         let run action = fun _ ->
             try action owner
             with error -> Alert.show AlertKind.Warning (tr Strings.Common.operationFailed) error.Message
         let openFolder = SettingsUi.button (tr Strings.General.openFolder)
         openFolder.Click.Add(run (fun _ ->
             Diagnostics.Process.Start("explorer.exe",sprintf "/select,\"%s\"" Services.settings.path) |> ignore))
-        let hint =
-            match SettingsFile.location() with
-            | SettingsFile.Portable -> Strings.General.locationPortable
-            | SettingsFile.AppData -> Strings.General.locationAppData
-            | SettingsFile.WorkingDirectory -> Strings.General.locationWorkingDirectory
-        SettingsUi.settingRowWithHelp card "settings-location" Services.settings.path (Some(tr hint)) openFolder |> ignore
+        // Which file is in use shows in the path itself; the heading's (i) says how it is chosen.
+        SettingsUi.settingRowWithHelp card "settings-location" Services.settings.path None openFolder |> ignore
         let backup = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false)
         for caption,action in [tr Strings.General.export,SettingsFile.export;tr Strings.General.import,SettingsFile.import] do
             let button = SettingsUi.button caption

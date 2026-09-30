@@ -77,6 +77,8 @@ module Strings =
         let search = { en="Search"; zh="搜索"; ja="検索" }
         let searchSettings = { en="Search settings"; zh="搜索设置"; ja="設定を検索" }
         let searchSuggestions = { en="Search suggestions"; zh="搜索建议"; ja="検索候補" }
+        /// Where a search result lives when it is on no page: the language picker.
+        let sidebar = { en="Sidebar"; zh="侧边栏"; ja="サイドバー" }
         let searchResults = { en="Search results"; zh="搜索结果"; ja="検索結果" }
         let noMatches = { en="No matching settings."; zh="没有找到匹配的设置。"; ja="一致する設定はありません。" }
         let followWindows = { en="Follow Windows"; zh="跟随系统"; ja="Windows に従う" }
@@ -191,15 +193,9 @@ module Strings =
         let openFolder = { en="Open folder"; zh="打开文件夹"; ja="フォルダーを開く" }
         let export = { en="Export…"; zh="导出…"; ja="エクスポート…" }
         let import = { en="Import…"; zh="导入…"; ja="インポート…" }
-        let locationAppData = { en="WindowTabs uses the settings in AppData. To keep settings next to WindowTabs.exe (portable), copy this file into that folder and restart WindowTabs."
-                                zh="WindowTabs 使用 AppData 中的设置。若要把设置放在 WindowTabs.exe 所在文件夹（便携），将此文件复制到该文件夹并重启 WindowTabs。"
-                                ja="WindowTabs は AppData の設定を使っています。設定を WindowTabs.exe と同じフォルダーに置く（ポータブル）には、このファイルをそのフォルダーにコピーして WindowTabs を再起動します。" }
-        let locationPortable = { en="These settings are next to WindowTabs.exe, so this copy is portable. To use the settings in AppData instead, move this file elsewhere and restart WindowTabs."
-                                 zh="此设置文件位于 WindowTabs.exe 旁，因此这是便携版。若要改用 AppData 中的设置，将此文件移走并重启 WindowTabs。"
-                                 ja="この設定は WindowTabs.exe と同じフォルダーにあるため、このコピーはポータブルです。AppData の設定を使うには、このファイルを別の場所に移して WindowTabs を再起動します。" }
-        let locationWorkingDirectory = { en="This debug run keeps its settings in the working directory."
-                                         zh="此调试运行将设置保存在工作目录中。"
-                                         ja="このデバッグ実行では、設定を作業ディレクトリに保存します。" }
+        let settingsFileHelp = { en="If the WindowTabs.exe folder has a settings file, WindowTabs uses it (portable mode); otherwise it uses the one in AppData. Older versions named it WindowTabsSettings.txt; it is now WindowTabsSettings.json, and an old .txt file is still read until the .json one exists."
+                                 zh="如果 WindowTabs.exe 所在文件夹里有设置文件，WindowTabs 就使用它（便携模式）；否则使用 AppData 中的。旧版本的设置文件名为 WindowTabsSettings.txt，现在改为 WindowTabsSettings.json；在 .json 文件生成之前，仍会读取旧的 .txt 文件。"
+                                 ja="WindowTabs.exe のフォルダーに設定ファイルがあれば、WindowTabs はそれを使います（ポータブル モード）。なければ AppData のものを使います。以前のバージョンでは WindowTabsSettings.txt という名前でしたが、現在は WindowTabsSettings.json です。.json ファイルができるまでは、古い .txt ファイルも読み込まれます。" }
         let exported = { en="Settings exported."; zh="设置已导出。"; ja="設定をエクスポートしました。" }
         let importTitle = { en="Import settings"; zh="导入设置"; ja="設定のインポート" }
         let notSettingsFile = { en="This file does not contain WindowTabs settings."; zh="此文件不包含 WindowTabs 设置。"; ja="このファイルには WindowTabs の設定が含まれていません。" }

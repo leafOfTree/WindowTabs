@@ -87,6 +87,21 @@ let main() =
     check (windows.Length=0) "Full scan also redundantly reconciled dirty windows"
 
     let originalDirectory = Environment.CurrentDirectory
+    // Settings from an older version, in WindowTabsSettings.txt, are read until the .json file
+    // exists; the old file is left exactly as it was.
+    do
+        let legacyDirectory = Path.Combine(directory,"legacy")
+        Directory.CreateDirectory(legacyDirectory) |> ignore
+        let current = Path.Combine(legacyDirectory,"WindowTabsSettings.json")
+        let legacy = Path.Combine(legacyDirectory,"WindowTabsSettings.txt")
+        let legacyText = """{"alignment":"Right"}"""
+        File.WriteAllText(legacy,legacyText)
+        use legacyStore = new SettingsFileStore(current,0,raise,legacy)
+        check (legacyStore.Read()=Some legacyText) "Legacy settings were not read"
+        legacyStore.Schedule("""{"alignment":"Left"}""")
+        check (File.ReadAllText(current)="""{"alignment":"Left"}""") "Saving did not write the .json settings file"
+        check (legacyStore.Read()=Some """{"alignment":"Left"}""") "The .json file does not take over once it exists"
+        check (File.ReadAllText(legacy)=legacyText && not (File.Exists(legacy+".bak"))) "Legacy settings file was changed"
     Environment.CurrentDirectory <- directory
     try
         use settings = new Settings(true)

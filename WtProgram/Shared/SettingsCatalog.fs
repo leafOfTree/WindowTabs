@@ -55,7 +55,6 @@ module SettingsCatalog =
     let help id =
         // Changeable per group from the tab menu; groups do not save it, so it lasts as long as the group.
         if List.contains id ["auto-hide-tabs";"tab-alignment";"combine-taskbar-icons"] then Some Strings.General.tabMenuHint
-        elif id="settings-location" then Some Strings.General.locationAppData
         else None
     /// A setting shown only while the one it depends on makes it meaningful.
     let parent id =
