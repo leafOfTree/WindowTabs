@@ -470,10 +470,22 @@ type SettingsNavigationButton(key:SettingsViewType) as this =
             use brush = new SolidBrush(color)
             e.Graphics.FillPath(brush,path))
         if selected && not highContrast then
-            let width,height = float32(Dpi.scale 3),float32(Dpi.scale 16)
-            use bar = SettingsShapes.rounded (RectangleF(float32(Dpi.scale 1),(float32 this.Height-height)/2.0f,width,height)) (width/2.0f)
-            use accent = new SolidBrush(p.accent)
-            e.Graphics.FillPath(accent,bar)
+            // Whole pixels keep the bar's ends sharp. On a dark sidebar Windows uses a lighter
+            // tint of the accent, which reads as the bright bar next to the open page.
+            let width = max 3 (Dpi.scale 3)
+            let height = Dpi.scale 14
+            let bar = Rectangle(Dpi.scale 2,(this.Height-height)/2,width,height)
+            let color =
+                if ThemeService.currentIsDark() then
+                    let lighten (c:byte) = int c+(255-int c)*35/100
+                    Color.FromArgb(lighten p.accent.R,lighten p.accent.G,lighten p.accent.B)
+                else p.accent
+            use accent = new SolidBrush(color)
+            let state = e.Graphics.Save()
+            e.Graphics.PixelOffsetMode <- Drawing2D.PixelOffsetMode.Half
+            use shape = SettingsShapes.rounded (RectangleF(float32 bar.X,float32 bar.Y,float32 bar.Width,float32 bar.Height)) (float32 width/2.0f)
+            e.Graphics.FillPath(accent,shape)
+            e.Graphics.Restore(state)
         let foreground = if not this.Enabled then p.muted elif selected && highContrast then SystemColors.HighlightText else p.text
         let background = fill |> Option.defaultValue sidebar
         SettingsPageIcons.draw e.Graphics key (Dpi.scale 12) ((this.Height-Dpi.scale 18)/2) foreground background
