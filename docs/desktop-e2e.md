@@ -96,12 +96,22 @@ including intentional mouse down/up timing and approximately 10 ms polling.
 Median, p95 and maximum are diagnostic observations, not compositor presentation
 latency or a portable speed benchmark. A switch has a 2-second correctness timeout.
 
-Normal CI should compile this harness with `-BuildOnly`. Actual input tests belong
-on a dedicated unlocked interactive Windows runner; hosted/service sessions must
-not silently report them as passed. The deterministic navigation and modifier
+Normal CI compiles this harness with `-BuildOnly`. Actual input tests require
+an unlocked interactive Windows desktop. The hosted Quick workflow checks this
+on GitHub's Windows VM; unusable hosted/service sessions fail rather than skip
+or silently report success. The deterministic navigation and modifier
 snapshot regressions also run in the regular Architecture suite.
 
 ## GitHub Actions setup
+
+`.github/workflows/desktop-e2e-hosted.yml` provides **Desktop E2E Hosted Quick**
+on GitHub's `windows-2022` virtual machine, without a local runner. It runs on
+pushes to the dedicated `codex/desktop-e2e-cloud` probe branch and supports manual
+dispatch once available on the default branch. It builds the actual Release
+binary and runs Quick with real input, retaining diagnostics for 14 days even
+on failure. This is an experimental environment check, not yet a required PR
+gate. Quick verifies one startup/exit cycle and 120 individual switches; Full
+adds a second cycle to verify restart with surviving foreign windows.
 
 `.github/workflows/desktop-e2e.yml` provides a manual **Desktop E2E** workflow
 with a Quick/Full/Soak choice. It targets
@@ -127,10 +137,27 @@ To enable actual GitHub execution:
 The workflow is not automatically triggered by pull requests or a nightly
 schedule. Enable scheduling only after the dedicated runner is ready. Running
 the workflow without an online matching runner leaves it waiting for a runner.
-Registration and a real GitHub run have not been performed by this local change.
+Self-hosted runner registration and execution have not been performed.
 
 GitHub's documentation explains [runner labels and job routing](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/use-in-a-workflow)
 and [manual workflow execution](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-running-a-workflow).
+
+## Hosted validation (2026-09-30)
+
+The first [Hosted Quick run](https://github.com/leafOfTree/WindowTabs/actions/runs/36721632173)
+passed on `windows-2022`, testing commit `d64fc7c`. The whole Actions run took
+approximately 76 seconds, including setup/build/upload; the driver took about
+15 seconds. Its downloaded report confirms one completed cycle and 120
+individually verified switches, including drag grouping, maximized switching,
+closing the active helper and normal tray-menu exit. No retries were used.
+The normal switching phase had observed p95 93.9 ms, including driver overhead.
+
+This demonstrates that the current GitHub-hosted Windows environment can run
+this suite with real input. It is one successful Quick run, not evidence of
+long-term CI stability or restart/Soak coverage. Those still require Full and
+Soak runs. The uploaded artifact records the tested binary SHA-256 and raw
+measurements; a local copy is under
+`tests/Debug/github-e2e-cloud/36721632173`.
 
 ## Local validation (2026-09-30)
 
@@ -164,4 +191,4 @@ The subsequent profile/CI changes passed actionlint workflow validation, Release
 and driver compilation, profile/override and duration-bound checks, and a
 noninteractive process fixture proving cleanup preserves another run with the
 same EXE name. The new 30-minute Soak profile has not yet been executed for its
-full duration, and this workflow has not been dispatched on GitHub.
+full duration, and the self-hosted workflow has not been dispatched on GitHub.
