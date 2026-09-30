@@ -187,12 +187,27 @@ namespace Bemo
         public static Bitmap GetAppIcon(string appId, int size)
         {
             if (string.IsNullOrEmpty(appId)) return null;
+            return GetShellIcon("shell:AppsFolder\\" + appId, size);
+        }
+
+        /// <summary>
+        /// A file's icon as the shell shows it, at up to 256 pixels and with transparency (the
+        /// icons windows report are 32 pixels at most); null when unavailable.
+        /// </summary>
+        public static Bitmap GetFileIcon(string path, int size)
+        {
+            if (string.IsNullOrEmpty(path)) return null;
+            return GetShellIcon(path, size);
+        }
+
+        private static Bitmap GetShellIcon(string parsingName, int size)
+        {
             IntPtr handle = IntPtr.Zero;
             try
             {
                 var iid = typeof(IShellItemImageFactory).GUID;
                 IShellItemImageFactory factory;
-                SHCreateItemFromParsingName("shell:AppsFolder\\" + appId, IntPtr.Zero, ref iid, out factory);
+                SHCreateItemFromParsingName(parsingName, IntPtr.Zero, ref iid, out factory);
                 if (factory.GetImage(new SIZE { cx = size, cy = size }, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK, out handle) != 0)
                     return null;
                 return FromDibSection(handle);

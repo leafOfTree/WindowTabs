@@ -23,6 +23,8 @@ type SettingsRec = {
     /// Expand auto-hidden tabs for a moment after switching tabs.
     showTabsOnSwitch: bool
     enableShiftScroll: bool
+    /// "Icons" (large icons in a row) or "List" (window titles in a column).
+    switcherStyle: string
     alignment: string
     /// "system", "en", "zh" or "ja".
     language: string

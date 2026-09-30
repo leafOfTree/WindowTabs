@@ -262,7 +262,7 @@ let main() =
         Application.DoEvents()
         check (form.BackColor=SettingsUi.palette().background) "Live theme update missed form"
         snapshot "settings-general-dark"
-        // Hovering a sidebar item looks lighter than the open page, which also has an accent bar.
+        // Hovering a sidebar item looks a shade lighter than the open page.
         do
             let nav = controls form |> Seq.find(fun c -> c :? SettingsNavigationButton && c.Text=tr Strings.Pages.appearance)
             let mouse name = typeof<Control>.GetMethod(name,Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).Invoke(nav,[|box EventArgs.Empty|]) |> ignore
@@ -422,6 +422,26 @@ Group #2: No valid windows in this group.";
             let few,many = sized 12,sized 200
             check (few >= 12*Dpi.scale 52) (sprintf "Switcher does not show all 12 windows: %d px" few)
             check (many <= area.Height*85/100 && many > few) (sprintf "Switcher outgrows the screen: %d px of %d" many area.Height)
+            // The icon style: one row for a few windows, more rows for many, never wider than
+            // most of the screen; rendered in both themes for review.
+            let windows = [ for title in ["Inbox - Mail";"Project plan.docx - Word";"WindowTabs - Visual Studio"] ->
+                              new Form(Text=title,StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false) ]
+            try
+                let items count = List2([ for index in 0..count-1 -> TaskWindowItem(windows.[index%windows.Length].Handle,index=1) ])
+                let three = TaskSwitchIconView(items 3)
+                let crowd = TaskSwitchIconView(items 60)
+                check (three.Size.Height < Dpi.scale 200 && three.Size.Width < area.Width/2) (sprintf "Icon switcher is too big for three windows: %A" three.Size)
+                check (crowd.Size.Width <= area.Width*9/10 && crowd.Size.Height > three.Size.Height) (sprintf "Icon switcher does not wrap many windows: %A" crowd.Size)
+                for theme in ["dark";"light"] do
+                    api.setValue("tabThemeMode",box theme)
+                    (three :> ITaskSwitchView).select 1
+                    use image = three.Render()
+                    image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","switcher-icons-"+theme+".png"),ImageFormat.Png)
+                    check (image.GetPixel(0,0).A=0uy && image.GetPixel(image.Width/2,image.Height/2).A>0uy) "Icon switcher is not transparent outside its panel"
+                (three :> ITaskSwitchView).hide()
+                (crowd :> ITaskSwitchView).hide()
+            finally for window in windows do window.Dispose()
+            api.setValue("tabThemeMode",box "dark")
         let language = controls form |> Seq.choose(function :? SettingsCombo as c when c.Name="language" -> Some c | _ -> None) |> Seq.head
         check (language.Width < Dpi.scale 80) "Language picker is not compact"
         let languagePopup = language.CreateDropDown() |> Option.get

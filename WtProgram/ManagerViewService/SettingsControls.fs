@@ -461,31 +461,13 @@ type SettingsNavigationButton(key:SettingsViewType) as this =
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         let selected = string this.Tag="nav-active"
         let highContrast = SystemInformation.HighContrast
-        // As in Windows 11: hovering fills with the hover colour, a little lighter than the open
-        // page's selection fill, which also has an accent bar at its left edge.
-        let hoverFill = p.hover
-        let fill = if selected then Some p.selection elif hovering then Some hoverFill else None
+        // The open page has the selection fill; hovering shows the hover colour, a shade lighter,
+        // so the two stay apart without an accent bar that could be taken for Windows' own.
+        let fill = if selected then Some p.selection elif hovering then Some p.hover else None
         fill |> Option.iter(fun color ->
             use path = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 8))
             use brush = new SolidBrush(color)
             e.Graphics.FillPath(brush,path))
-        if selected && not highContrast then
-            // Whole pixels keep the bar's ends sharp. On a dark sidebar Windows uses a lighter
-            // tint of the accent, which reads as the bright bar next to the open page.
-            let width = max 3 (Dpi.scale 3)
-            let height = Dpi.scale 14
-            let bar = Rectangle(Dpi.scale 2,(this.Height-height)/2,width,height)
-            let color =
-                if ThemeService.currentIsDark() then
-                    let lighten (c:byte) = int c+(255-int c)*35/100
-                    Color.FromArgb(lighten p.accent.R,lighten p.accent.G,lighten p.accent.B)
-                else p.accent
-            use accent = new SolidBrush(color)
-            let state = e.Graphics.Save()
-            e.Graphics.PixelOffsetMode <- Drawing2D.PixelOffsetMode.Half
-            use shape = SettingsShapes.rounded (RectangleF(float32 bar.X,float32 bar.Y,float32 bar.Width,float32 bar.Height)) (float32 width/2.0f)
-            e.Graphics.FillPath(accent,shape)
-            e.Graphics.Restore(state)
         let foreground = if not this.Enabled then p.muted elif selected && highContrast then SystemColors.HighlightText else p.text
         let background = fill |> Option.defaultValue sidebar
         SettingsPageIcons.draw e.Graphics key (Dpi.scale 12) ((this.Height-Dpi.scale 18)/2) foreground background

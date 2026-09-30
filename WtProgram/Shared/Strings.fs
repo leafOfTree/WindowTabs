@@ -136,6 +136,9 @@ module Strings =
         let replaceAltTab = { caption={ en="Use WindowTabs for Alt+Tab"; zh="使用 WindowTabs 窗口切换器"; ja="Alt+Tab に WindowTabs を使う" }
                               description={ en="Replaces the Windows switcher."; zh="替换 Windows 自带的窗口切换器。"; ja="Windows 標準のウィンドウ切り替えを置き換えます。" }
                               keywords={ en="switcher task switching"; zh="切换器 任务切换"; ja="タスク切り替え" } }
+        let switcherStyle = { caption={ en="Switcher style"; zh="切换器样式"; ja="スイッチャーの表示" }
+                              description={ en="Large icons in a row, or a list with full window titles."; zh="一排大图标，或显示完整窗口标题的列表。"; ja="大きなアイコンを横に並べるか、ウィンドウ タイトルを一覧で表示します。" }
+                              keywords={ en="alt tab switcher icons list horizontal vertical layout"; zh="切换器 图标 列表 横向 竖向 布局"; ja="スイッチャー アイコン リスト 横 縦 レイアウト" } }
         let groupWindowsInSwitcher = { caption={ en="Group windows in Alt+Tab"; zh="Alt+Tab 中按分组显示"; ja="Alt+Tab でグループをまとめる" }
                                        description={ en="Show each window group as one item."; zh="每个窗口分组只显示一项。"; ja="ウィンドウのグループをそれぞれ 1 項目にまとめて表示します。" }
                                        keywords={ en="switcher"; zh="切换器"; ja="切り替え" } }
@@ -232,6 +235,8 @@ module Strings =
         let lightThemeColors = { en="Light theme · Tab colors"; zh="浅色主题 · 标签配色"; ja="ライトテーマ · タブの色" }
         let colorPreset = { en="Color preset"; zh="配色预设"; ja="配色プリセット" }
         let custom = { en="Custom"; zh="自定义"; ja="カスタム" }
+        let switcherIcons = { en="Icons"; zh="图标"; ja="アイコン" }
+        let switcherList = { en="List"; zh="列表"; ja="リスト" }
         /// A colour preset whose colours the user has changed.
         let editedPreset name = { en=sprintf "%s (edited)" name; zh=sprintf "%s（已修改）" name; ja=sprintf "%s（変更済み）" name }
         let resetColors = { en="Reset colors"; zh="重置配色"; ja="配色をリセット" }

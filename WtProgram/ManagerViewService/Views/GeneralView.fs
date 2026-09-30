@@ -26,9 +26,14 @@ type GeneralView() =
         let enabled = SettingsBindings.settingToggle "replaceAltTab"
         let grouped = SettingsBindings.settingToggle "groupWindowsInSwitcher"
         SettingsUi.settingRow switcher "use-windowtabs-for-alt-tab" enabled
+        let style = SettingsBindings.choiceRow switcher "switcher-style"
+                        [|tr Strings.Appearance.switcherIcons;tr Strings.Appearance.switcherList|]
         let groupedRow = SettingsUi.settingRowControl switcher "group-windows-in-the-switcher" grouped
-        groupedRow.Collapsed <- not enabled.Checked
-        enabled.CheckedChanged.Add(fun _ -> groupedRow.Collapsed <- not enabled.Checked)
+        // Both only matter while WindowTabs handles Alt+Tab.
+        let dependents = [style.Parent :?> SettingsRow;groupedRow]
+        let update() = for row in dependents do row.Collapsed <- not enabled.Checked
+        update()
+        enabled.CheckedChanged.Add(fun _ -> update())
     interface ISettingsView with
         member _.key = GeneralSettings
         member _.title = tr Strings.Pages.general

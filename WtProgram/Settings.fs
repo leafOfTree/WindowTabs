@@ -127,6 +127,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         enableShiftScroll = settingsJson.getBool("enableShiftScroll").def(SettingsCatalog.toggleDefault "enableShiftScroll" hasExistingSettings)
                         version = settingsJson.getString("version").def(String.Empty)
                         alignment = settingsJson.getString("alignment").def("Center") |> SettingsCatalog.normalizeChoice "alignment"
+                        switcherStyle = settingsJson.getString("switcherStyle").def("Icons") |> SettingsCatalog.normalizeChoice "switcherStyle"
                         language = settingsJson.getString("language").def("system") |> SettingsCatalog.normalizeChoice "language"
                         appearance = {
                             geometry = geometry
@@ -165,6 +166,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             let settingsJson = this.settingsJson
             settingsJson.setString("version", settings.version)
             settingsJson.setString("alignment", settings.alignment)
+            settingsJson.setString("switcherStyle", settings.switcherStyle)
             settingsJson.setString("language", settings.language)
             settingsJson.setString("tabThemeMode", ThemeMode.serialize settings.appearance.mode)
             settingsJson.setBool("tabUseCustomColors", settings.appearance.useCustomColors)
@@ -234,7 +236,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
         // Compatibility adapter for older callers; new appearance code uses the typed API.
         member x.setValue((key,value)) =
             let api = x :> ISettings
-            let value = if key="alignment" || key="language" || key="autoHideMode" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
+            let value = if key="alignment" || key="language" || key="autoHideMode" || key="switcherStyle" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
             match key with
             | "tabAppearance" ->
                 let appearance = value :?> TabAppearanceInfo
