@@ -124,7 +124,8 @@ only its exact staged EXE paths. Reports are retained for 14 days.
 To enable actual GitHub execution:
 
 1. Add a Windows x64 self-hosted runner to this repository and assign the
-   `windowtabs-desktop` label. Install .NET Framework 4.8; the workflow installs
+   `windowtabs-desktop` label. Use Actions Runner 2.327.1 or later for the
+   Node.js 24 actions. Install .NET Framework 4.8; the workflow installs
    SDK 10 using setup-dotnet.
 2. Start the runner from its `run.cmd` in the logged-in test user's interactive
    session. Do not configure this desktop runner as a Windows service. Keep the

@@ -17,10 +17,10 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
@@ -39,7 +39,7 @@ jobs:
 
       - name: Upload desktop diagnostics
         if: always() && steps.e2e.outputs.stage != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: desktop-e2e-hosted-Quick-${{ github.run_id }}
           retention-days: 14
