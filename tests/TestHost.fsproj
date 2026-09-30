@@ -2,8 +2,8 @@
 
   <!-- Compiles one regression script into its own executable:
        dotnet build tests\TestHost.fsproj -p:TestName=Reliability
-       A real STA executable loads the same DPI configuration as production and
-       lets WinForms/COM unwind normally, unlike FSI's Environment.Exit. -->
+       An STA executable loads the production DPI configuration. Each script
+       uses TestInit.run so popup menus execute inside Application.Run. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net48</TargetFramework>

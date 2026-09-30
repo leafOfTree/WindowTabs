@@ -23,11 +23,10 @@ hosts are excluded. HTML, Cobertura and a text summary are generated under
 mean that line percentages and AltCover's sequence-point percentages differ.
 
 Each suite is still a standalone STA executable, not an individual test-case
-runner. `tests/Debug/test-results.jsonl` records suite attempts and exit codes;
-attempt-numbered logs preserve the initial failure when a retry succeeds.
-Only recognized teardown exit codes with no stderr and a final
-`TEST_BODY_COMPLETE` marker permit one retry. A retry is evidence of instability,
-not a clean first-pass result. Reports from failed or interrupted runs are partial.
+runner. `tests/Debug/test-results.jsonl` records suite attempts and exit codes.
+Process failures are not retried. A zero exit code also requires the final
+`TEST_BODY_COMPLETE` marker, printed after the test body and cleanup checks.
+Reports from failed or interrupted runs are partial.
 Suites continue after a failure so the final run reports all observed failures.
 Coverage is collected after each process exits to avoid losing later process data.
 Optional `-MinimumLineCoverage` and `-MinimumBranchCoverage` percentages enforce
@@ -36,12 +35,12 @@ default to zero locally. Build CI explicitly requires 45% lines and 40% branches
 this is not yet a changed-lines gate or an automatic comparison against the base
 branch. The first complete local measurement on 2026-09-29 was 48.6% lines
 (4351/8943) and 42.8% branches (1436/3349), with all seven suites passing on their
-first attempt. Earlier runs reproduced the known native teardown crash; it remains
-unresolved. Confirm stability across CI runs before tightening these initial floors.
+first attempt. The original native teardown failure was diagnosed and corrected
+on 2026-09-30; see below. Confirm CI stability before tightening these initial floors.
 
 `-Suites` selects one or more suites (all eight by default). `-Repeat` builds once
-and runs fresh test processes for each round; `-NoRetry` exposes every crash as a
-failure. Repeated runs include round numbers in filenames and JSON records. Use
+and runs fresh test processes for each round. `-NoRetry` remains accepted for old
+commands but is no longer needed. Repeated runs include round numbers in filenames and JSON records. Use
 the full default suite when evaluating the CI coverage floors.
 
 GroupLifecycle exercises real, hidden helper HWNDs through the production desktop
@@ -52,10 +51,8 @@ snapshot. These are API-driven integration tests; they do not simulate mouse inp
 or assert foreground activation. Ten fresh-process runs passed with retries disabled.
 
 Test hosts print remaining native window classes after managed cleanup and before
-`TEST_BODY_COMPLETE`, without window titles. The investigated Architecture run left
-SystemEvents, GDI+ and IME windows; this alone does not establish which callback
-causes the intermittent teardown crash. A native crash dump is still needed before
-changing production shutdown behavior.
+`TEST_BODY_COMPLETE`, without window titles. Framework windows alone are not proof
+of a leak; the specific menu hook identified in the dump is checked separately.
 
 The Release smoke test copies only the shipped EXE and configuration into an
 isolated directory, then uses a separate Framework STA host to check type loading,
@@ -74,7 +71,7 @@ dragging, shortcuts or user settings. Those need a separate end-to-end harness.
 | Risk | Existing evidence | Next validation |
 | --- | --- | --- |
 | Persistence and recovery | Architecture, Reliability | Generated malformed data, interrupted writes |
-| Threads and resource ownership | Architecture, Reliability | Teardown crash dump, randomized event ordering |
+| Threads and resource ownership | Architecture, Reliability, menu-hook teardown guard | Randomized event ordering, broader shutdown scenarios |
 | Settings and visuals | SettingsTheme, SettingsEditors | Reviewed screenshot baselines per DPI/theme/language |
 | DPI | DpiLayout message transitions | Physical mixed-monitor movement and docking |
 | Release packaging | Isolated assembly smoke | Actual startup, settings changes, exit and restart |
@@ -89,13 +86,42 @@ Neither percentage proves correctness. Each fixed defect should get a reproducin
 regression assertion. Real desktop E2E should use isolated test accounts/settings
 and deterministic helper windows before adding third-party application scenarios.
 
-## Latest verification caveat
+## Teardown investigation (2026-09-30)
 
-The eight-suite coverage run after adding GroupLifecycle failed overall because
-SettingsEditors exited with `0xC000041D` on both attempts after its completion
-marker; SettingsTheme also needed one retry. Keep this run's coverage as diagnostic
-data, not a passing baseline. GroupLifecycle separately passed ten fresh-process
-runs with retries disabled. The corrected Release smoke and its deliberate paint
-failure probe passed. The native teardown crash and the smoke host's missing
-settings initialization are separate issues; fixing the latter does not resolve
-the former.
+A native debugger reproduced the uninstrumented SettingsEditors crash on run 10.
+The full dump and Microsoft symbols showed:
+
+```
+clr!WaitForEndOfShutdown -> combase!CoWaitForMultipleHandles
+  -> user32!PeekMessageW -> user32!DispatchHookW
+  -> clr!UMThunkStubRareDisableWorker -> clr!COMPlusThrowBoot (0xc0020001)
+```
+
+SOS identified a rooted
+`ToolStripManager.ModalMenuFilter.HostedWindowsFormsMessageHook` with
+`isHooked = true`. The callback occurred on the main STA, not the SystemEvents
+thread. Popup tests had executed without `Application.Run`; `DoEvents` does not
+make `Application.MessageLoop` true. The hosted menu hook could therefore remain
+active while CLR shutdown was pumping messages.
+
+All eight scripts now call `TestInit.run main`. The helper starts a real WinForms
+message loop, invokes the body once on Idle, exits the loop and propagates failures.
+Visual styles are enabled before the loop starts, matching production startup;
+enabling them inside the test body is too late for WinForms DPI initialization.
+The native DPI transition regression passed three fresh processes after this fix.
+TestEntry checks for an active hosted menu hook before declaring completion. This
+read-only diagnostic uses .NET Framework 4.8 private field names and fails clearly
+if they change; it never clears fields or unhooks through reflection. UI exceptions
+are raised as failures instead of opening modal error dialogs.
+
+The old SettingsEditors execution path was tested with this guard and failed
+deterministically with "WinForms hosted menu hook is still active". The corrected
+SettingsEditors ran 20 fresh processes without retries or crashes. Debugger tools,
+symbols and the full dump remain local ignored diagnostics under `tests/Debug`;
+they are not dependencies of the tests or CI.
+
+The complete post-fix coverage run passed all eight suites on their first attempt:
+52.6% lines (5016/9532) and 45.0% branches (1674/3712), above the 45%/40% CI
+floors. The Release build, isolated assembly smoke and injected paint-failure
+probe also passed. These figures describe that local source snapshot; concurrent
+application changes can alter the coverage denominator.

@@ -2,6 +2,7 @@ param([ValidateRange(1, 3600)][int]$TimeoutSeconds = 120, [switch]$Coverage,
       [ValidateRange(0, 100)][double]$MinimumLineCoverage = 0,
       [ValidateRange(0, 100)][double]$MinimumBranchCoverage = 0,
       [ValidateRange(1, 100)][int]$Repeat = 1,
+      # Retained for existing callers; failures are no longer retried.
       [switch]$NoRetry,
       [ValidateSet('Reliability', 'Architecture', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon', 'GroupLifecycle')]
       [string[]]$Suites = @('Reliability', 'Architecture', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon', 'GroupLifecycle'))
@@ -43,14 +44,8 @@ try {
         dotnet build tests\TestHost.fsproj "-p:TestName=$name" -v:quiet -nologo -clp:NoSummary
         if ($LASTEXITCODE -ne 0) { throw "$name compilation failed." }
     }
-    # A native callback into .NET after the runtime has started shutting down ends the
-    # process with one of these codes, after every check has already passed. The usual
-    # cause was another process's broadcast (WM_SETTINGCHANGE and the like) reaching the
-    # SystemEvents window on the main thread; TestInit.fsx moves it to its own thread, as
-    # the app does. A broadcast can still land in the last moments of shutdown, so such a
-    # run is retried once with a warning and a completion marker; other failures
-    # are retained while the remaining suites run, then fail the overall run.
-    $teardownCrashes = @(0xC0020001, 0xC000041D) | ForEach-Object { [int]$_ }
+    # TestInit.run supplies the real WinForms message loop required by popup menus.
+    # Any process failure now fails the run, including native teardown crashes.
     $runOutput = $output
     if ($Coverage) {
         dotnet tool restore
@@ -87,7 +82,10 @@ try {
         Get-Content -LiteralPath $stdout | Out-Host
         Get-Content -LiteralPath $stderr | Out-Host
         if ($timedOut) { throw "$name timed out after $TimeoutSeconds seconds." }
-        [pscustomobject]@{ ExitCode = $process.ExitCode; Quiet = -not (Get-Content -LiteralPath $stderr -Raw); Complete = [bool](Select-String -LiteralPath $stdout -Pattern '^TEST_BODY_COMPLETE$' -Quiet) }
+        if ($process.ExitCode -eq 0 -and -not (Select-String -LiteralPath $stdout -Pattern '^TEST_BODY_COMPLETE$' -Quiet)) {
+            throw "$name exited without completing its test body and cleanup."
+        }
+        [pscustomobject]@{ ExitCode = $process.ExitCode }
     }
     # Native UI tests share desktop focus and must not run in parallel.
     Set-Content -LiteralPath (Join-Path $output 'test-results.jsonl') -Value ''
@@ -97,10 +95,6 @@ try {
         foreach ($name in $names) {
             try {
                 $result = Invoke-Test $name 1
-                if (-not $NoRetry -and $result.ExitCode -in $teardownCrashes -and $result.Quiet -and $result.Complete) {
-                    Write-Warning ("{0} crashed during process teardown (exit 0x{1:X8}); retrying once." -f $name, $result.ExitCode)
-                    $result = Invoke-Test $name 2
-                }
                 if ($result.ExitCode -ne 0) { throw ("{0} failed (exit 0x{1:X8})." -f $name, $result.ExitCode) }
             } catch {
                 $failures += "Run ${iteration}: $($_.Exception.Message)"

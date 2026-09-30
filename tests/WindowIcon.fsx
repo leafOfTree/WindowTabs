@@ -1,4 +1,4 @@
-// Build tests/Debug as described in TabShadow.fsx, then: fsi --exec tests/WindowIcon.fsx
+// Run through tests/Run-Tests.ps1 -Suites WindowIcon (STA + Application.Run).
 #r "System.Drawing"
 #r "Debug/Win32.dll"
 #r "Debug/WindowTabs.exe"
@@ -62,4 +62,4 @@ let main () =
         printfn "Window icon fallback, priority, lifetime and scaling checks passed."
     finally
         (wnd :?> IDisposable).Dispose()
-main()
+TestInit.run main

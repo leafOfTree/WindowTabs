@@ -268,4 +268,4 @@ let main() =
     owner.Close()
     pump 250
     printfn "PASS: atomic/deferred saves, failure retry and backup recovery, subscriptions, temporary state, coalesced scans, dispatch, group cleanup and popup disposal."
-main()
+TestInit.run main

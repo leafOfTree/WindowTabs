@@ -1,4 +1,4 @@
-// Build tests/Debug as described in TabShadow.fsx, then: fsi --exec tests/SettingsEditors.fsx
+// Run through tests/Run-Tests.ps1 -Suites SettingsEditors (STA + Application.Run).
 // Uses in-memory settings; does not read or write real user preferences.
 #r "System.Drawing"
 #r "System.Windows.Forms"
@@ -287,4 +287,4 @@ let main() =
                    (sprintf "Settings scrollbar did not scroll the report to its end (top %d, bottom %d)" view.TextBox.Top view.TextBox.Bottom)
     printfn "PASS: input validation, no-op changes, HSV colours, repeated popup dismissal, shortcut recording and light/dark renders."
 
-main()
+TestInit.run main

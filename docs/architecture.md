@@ -20,7 +20,7 @@
   first thing in `Bootstrap.main` and in `tests/TestInit.fsx`). It delivers each
   notification by waiting on every subscribing thread, WinForms' own controls included;
   on the main thread that deadlocked a light/dark switch against a group thread reading
-  the appearance, and its broadcast window crashed the process at exit.
+  the appearance.
 - Values that group threads read often do not wait on the main thread: the appearance
   (`ThemeService.publishPreferences`), `getValue` (fetched once per key into a cache the
   owner clears on every write) and window renames (an immutable map).
@@ -73,13 +73,14 @@ serially with per-process timeouts. Logs and render snapshots are under
 `tests/Debug`; CI uploads them and also builds Release.
 Coverage, targeted repetition and Release smoke commands are in [testing.md](testing.md).
 
-Known issue: Architecture occasionally (about 1 run in 6) exits with 0xC0020001 or
-0xC000041D after all of its checks have passed - a native callback reaching .NET
-after runtime shutdown began. The culprit has not been identified yet (a crash dump
-needs WER LocalDumps). `Run-Tests.ps1` retries such a run once with a warning only
-when stderr is empty and the final `TEST_BODY_COMPLETE` marker was printed.
-Other failures are retained while the remaining suites run, then fail the overall
-run. Use `-NoRetry` when investigating stability.
+Each script calls `TestInit.run main` to execute inside a real `Application.Run`
+message loop. A native crash dump identified the former 0xC0020001/0xC000041D exit
+failure as a still-active ToolStrip hosted message hook calling back during CLR
+shutdown. `DoEvents` alone did not supply the message-loop lifetime popup menus
+expect. The host now checks for that leftover hook before declaring completion;
+it does not modify WinForms internals. Process failures are never retried, and
+missing completion markers also fail the run. Failures are retained while the
+remaining suites run, then fail the overall run.
 
 Architecture tests cover atomic save/backup/retry, deferred write batching, handle
 reuse, temporary state restoration, dirty/full reconciliation precedence, actual

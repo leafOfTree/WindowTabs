@@ -1,4 +1,4 @@
-// Build tests/Debug as described in TabShadow.fsx, then: fsi --exec tests/SettingsTheme.fsx
+// Run through tests/Run-Tests.ps1 -Suites SettingsTheme (STA + Application.Run).
 // Uses an isolated settings directory and off-screen windows; no real preferences are changed.
 #r "System.Drawing"
 #r "System.Windows.Forms"
@@ -694,4 +694,4 @@ Group #2: No valid windows in this group.";
         printfn "Theme resolution, custom migration, round-trip, UI notification and off-screen rendering checks passed."
     finally
         Environment.CurrentDirectory <- originalDirectory
-main()
+TestInit.run main

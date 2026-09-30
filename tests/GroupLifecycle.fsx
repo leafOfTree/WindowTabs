@@ -113,4 +113,4 @@ let main() =
             for form in forms do form.Dispose()
     finally
         Environment.CurrentDirectory <- previousDirectory
-main()
+TestInit.run main

@@ -212,4 +212,4 @@ let main() =
     finally Dpi.set originalDpi
     printfn "PASS: startup ownership, singleton, transactional shortcuts, workspace recovery and regex timeout, private diagnostics, single-flight cancellation and DPI geometry."
 
-main()
+TestInit.run main

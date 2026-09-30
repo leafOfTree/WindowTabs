@@ -1,6 +1,4 @@
-// From the repository root, build a separate Debug output (Release is statically linked):
-// dotnet build WtProgram/WtProgram.fsproj -c Debug -p:OutDir=<absolute-path-to-tests/Debug/>
-// Then run: fsi --exec tests/TabShadow.fsx
+// Run through tests/Run-Tests.ps1 -Suites TabShadow (STA + Application.Run).
 // Creates temporary test HWNDs outside the desktop; does not alter running groups.
 #r "System.Drawing"
 #r "Debug/Win32.dll"
@@ -206,4 +204,4 @@ let main () =
                 (layer :> IDisposable).Dispose()
     finally
         (owner :?> IDisposable).Dispose()
-main()
+TestInit.run main

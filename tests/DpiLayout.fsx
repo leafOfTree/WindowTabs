@@ -60,4 +60,4 @@ let main() =
         Native.SetThreadDpiAwarenessContext(previous) |> ignore
         Environment.CurrentDirectory <- originalDirectory
     printfn "PASS: repeated native WM_DPICHANGED transitions, sidebar sizing and editor layout."
-main()
+TestInit.run main
