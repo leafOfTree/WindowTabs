@@ -153,6 +153,36 @@ let main () =
             g.DrawImage(bitmap,10,y+6)
             y+h+12) 0 |> ignore
         sheet.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug","tab-heights.png"),ImageFormat.Png)
+    // Icons only: the icon is centred; a smaller close button shows beside it on the pointed-at
+    // tab only, and not at all when the tab is too narrow for both.
+    do
+        let parts (strip:TabStripSprite<int>) =
+            strip.sprite.children.list |> List.map(fun (_,tab) ->
+                let tab = tab :?> TabSprite<int>
+                let find kind = (tab :> ISprite).children.list |> List.tryPick(fun (location,child:ISprite) -> kind location child)
+                let icon = find (fun location child -> match child with :? IconSprite as icon -> Some(location,icon.size) | _ -> None)
+                let close = find (fun location child -> match child with :? CloseButtonSprite as close -> Some(location,close.size) | _ -> None)
+                tab.id,tab.size,icon.Value,close)
+        // As TabStrip sizes icon-only tabs.
+        let icons = { ts with onlyIcons=true; appearance={ appearance with tabMaxWidth=Dpi.scale 50 } }
+        for _,size,(location,icon),close in parts icons do
+            check (abs (location.x+icon.width/2-size.width/2) <= 1) "An icon-only tab does not centre its icon"
+            check close.IsNone "An icon-only tab shows a close button without the pointer"
+        let pointed = parts { icons with hover=Some(2,TabBackground) }
+        for id,size,(icon,iconSize),close in pointed do
+            match close with
+            | Some(location,closeSize) ->
+                check (id=2) "An icon-only tab the pointer is not on shows a close button"
+                check (location.x >= icon.x+iconSize.width && location.x+closeSize.width <= size.width) "The close button overlaps the centred icon"
+                check (closeSize.width < iconSize.width) "The icon-only close button is not smaller than the icon"
+            | None -> check (id<>2) "The pointed-at icon-only tab shows no close button"
+        let narrow = parts { icons with appearance={ appearance with tabMaxWidth=Dpi.scale 30 }; hover=Some(2,TabBackground) }
+        check (narrow |> List.forall(fun (_,_,_,close) -> close.IsNone)) "A tab too narrow for icon and button shows a close button"
+        // The end mark of the minimal bar: 6 logical px in the inactive colour, then the active tab.
+        use bar = ts.renderCollapsed.bitmap
+        let row = bar.Height/2
+        check (bar.GetPixel(Dpi.scale 3,row).R=appearance.tabNormalBgColor.R) "The minimal bar's end mark is missing"
+        check (bar.GetPixel(Dpi.scale 9,row).R=appearance.tabActiveBgColor.R) "The minimal bar's end mark is wider than 6 px"
     let originalDpi = Dpi.value()
     try
         for dpi in [96;144;192] do

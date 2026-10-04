@@ -203,14 +203,28 @@ type TabSprite<'id> = {
         // Centre against the icon's own height. This used to divide by a
         // hardcoded 16, which left the icon off centre once it was scaled.
         let y = (this.size.height - this.iconSize.height) / 2
-        Pt(this.edgeWidth, y)
+        // Alone in the tab, the icon is centred.
+        let x = if this.onlyIcon then (this.size.width - this.iconSize.width) / 2 else this.edgeWidth
+        Pt(x, y)
 
-    member private this.closeButtonSize = this.iconSize
+    // Beside a centred icon there is room only for a smaller button.
+    member private this.closeButtonSize =
+        if this.onlyIcon then
+            let side = max 1 (this.iconSize.width * 5 / 8)
+            Sz(side, side)
+        else this.iconSize
 
     member private this.closeButtonLocation =
-        let x = this.size.width - this.edgeWidth - this.closeButtonSize.width
+        let inset = if this.onlyIcon then TabMetrics.scaled this.appearance.tabHeight 4 else this.edgeWidth
+        let x = this.size.width - inset - this.closeButtonSize.width
         let y = (this.size.height - this.closeButtonSize.height) / 2
         Pt(x, y)
+
+    /// With icons only the button must clear the icon; tabs too narrow for that close by
+    /// middle-click or the tab menu.
+    member private this.closeButtonFits =
+        this.onlyIcon.not ||
+        this.closeButtonLocation.x >= this.iconLocation.x + this.iconSize.width + TabMetrics.scaled this.appearance.tabHeight 2
 
     member this.textLocation =
         let x = this.iconLocation.x + this.iconSize.width + TabMetrics.scaled this.appearance.tabHeight 5
@@ -219,9 +233,12 @@ type TabSprite<'id> = {
     // Browser behaviour: the close button only appears on the active tab and on
     // whichever tab the pointer is over. The space it occupies is reserved
     // either way - see textSize - so a label never reflows as the pointer moves
-    // across the strip.
+    // across the strip. With icons only it shows on the pointed-at tab alone, so
+    // the strip stays a row of icons.
     member this.showCloseButton =
-        this.onlyIcon.not && (this.isTop || this.hover.IsSome || this.captured.IsSome)
+        let pointed = this.hover.IsSome || this.captured.IsSome
+        if this.onlyIcon then pointed && this.closeButtonFits
+        else this.isTop || pointed
 
     member this.textSize =
         let width = this.size.width - this.textLocation.x - this.edgeWidth - this.closeButtonSize.width
@@ -470,7 +487,7 @@ type TabStripSprite<'id> when 'id : equality = {
                 // it reads as part of the bar, closes the bar at its end. A lone tab needs none:
                 // there is nothing else it could be.
                 if tab.isTop && this.lorder.count>1 && (first || last) then
-                    let markWidth = min (Dpi.scale 12) (width/2)
+                    let markWidth = min (Dpi.scale 6) (width/2)
                     if markWidth>0 then
                         let x = if first then location.x+leftInset else location.x+leftInset+width-markWidth
                         use ink = new SolidBrush(this.appearance.tabNormalBgColor)
