@@ -32,6 +32,8 @@ module SettingsCatalog =
         { id="switcher-style"; page=GeneralSettings; text=Strings.Settings.switcherStyle; binding=Choice("switcherStyle",["Icons";"List"],"Icons") }
         { id="next-tab"; page=HotKeySettings; text=Strings.Settings.nextTab; binding=Shortcut("nextTab",3623) }
         { id="previous-tab"; page=HotKeySettings; text=Strings.Settings.previousTab; binding=Shortcut("prevTab",3621) }
+        // Not set until the user picks one, so it takes no shortcut from another program.
+        { id="search-tabs"; page=HotKeySettings; text=Strings.Settings.searchTabs; binding=Shortcut("searchTabs",0) }
         { id="switch-tabs-by-number"; page=HotKeySettings; text=Strings.Settings.switchTabsByNumber; binding=Toggle("enableCtrlNumberHotKey",true,true) }
         { id="activate-on-hover"; page=HotKeySettings; text=Strings.Settings.activateOnHover; binding=Toggle("enableHoverActivate",false,false) }
         { id="shift-scroll"; page=HotKeySettings; text=Strings.Settings.shiftScroll; binding=Toggle("enableShiftScroll",true,true) }

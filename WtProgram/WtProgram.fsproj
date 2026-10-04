@@ -117,6 +117,7 @@
     <Compile Include="DesktopPlugins\NotifyIconPlugin.fs" />
     <Compile Include="DesktopPlugins\ExceptionHandlerPlugin.fs" />
     <Compile Include="TaskSwitch.fs" />
+    <Compile Include="TabSearch.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

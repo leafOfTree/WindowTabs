@@ -34,6 +34,11 @@ type TreeListItem(text:string) =
     member val Icon : Image = null with get,set
     /// Drawn when Icon is null.
     member val Glyph = NoGlyph with get,set
+    /// Draws a divider above the row, to set it apart from the rows before.
+    member val SeparatorAbove = false with get,set
+    /// Per text column, (start,length) runs of its text to mark, such as search matches.
+    member val Highlights : (int * int) list[] = [||] with get,set
+    member this.highlights index = if index<this.Highlights.Length then this.Highlights.[index] else []
     member val Values : string[] = [||] with get,set
     member val Checks : bool option[] = [||] with get,set
     /// Per check column; a box listed as false is drawn dimmed and cannot be toggled.
@@ -204,6 +209,28 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         | NoGlyph -> ()
         g.Restore(state)
 
+    /// Tints the runs of a text drawn with these flags in these bounds, before the text goes on
+    /// top. Runs cut off by the ellipsis are left out; high contrast underlines instead.
+    member private this.drawHighlights(g:Graphics, text:string, runs:(int * int) list, bounds:Rectangle, flags:TextFormatFlags, p:SettingsPalette) =
+        if not runs.IsEmpty && text<>"" then
+            let measure (part:string) = TextRenderer.MeasureText(g,part,this.Font,Size(Int32.MaxValue,bounds.Height),flags ||| TextFormatFlags.NoPadding).Width
+            // The padding DrawText adds before the text.
+            let pad = (TextRenderer.MeasureText(g,text,this.Font,Size(Int32.MaxValue,bounds.Height),flags).Width-measure text)/2
+            let height = this.Font.Height+Dpi.scale 2
+            let top = bounds.Y+(bounds.Height-height)/2
+            for start,length in runs do
+                if start>=0 && start+length<=text.Length then
+                    let left = bounds.X+pad+(if start=0 then 0 else measure (text.Substring(0,start)))
+                    let right = bounds.X+pad+measure (text.Substring(0,start+length))
+                    if right<=bounds.Right-(if measure text+pad>bounds.Width then measure "…" else 0) then
+                        if SystemInformation.HighContrast then
+                            use line = new Pen(SystemColors.Highlight,float32(Dpi.scale 2))
+                            g.DrawLine(line,left,top+height,right,top+height)
+                        else
+                            use shape = SettingsShapes.rounded (RectangleF(float32 left-1.0f,float32 top,float32(right-left)+2.0f,float32 height)) (float32(Dpi.scale 3))
+                            use fill = new SolidBrush(Color.FromArgb(90,p.accent))
+                            g.FillPath(fill,shape)
+
     override this.OnResize(e) = base.OnResize(e); this.updateScroll()
     override this.OnGotFocus(e) = base.OnGotFocus(e); this.Invalidate()
     override this.OnLostFocus(e) = base.OnLostFocus(e); this.Invalidate()
@@ -327,6 +354,12 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                 use shape = SettingsShapes.rounded (RectangleF(float32 row.X,float32 row.Y,float32 row.Width,float32 row.Height)) (float32(Dpi.scale 6))
                 use fill = new SolidBrush(if isSelected then p.selection else p.hover)
                 g.FillPath(fill,shape)
+            // After the highlight, and one crisp pixel: smoothed, it would blur into the rows around it.
+            if item.SeparatorAbove && index>0 then
+                use divider = new Pen(if SystemInformation.HighContrast then SystemColors.WindowText else Color.FromArgb(110,p.muted))
+                g.SmoothingMode <- SmoothingMode.None
+                g.DrawLine(divider,Dpi.scale 10,top,this.contentWidth-Dpi.scale 10,top)
+                g.SmoothingMode <- SmoothingMode.AntiAlias
             let text = if isSelected && SystemInformation.HighContrast then SystemColors.HighlightText else p.text
             for column in 0..columns.Length-1 do
                 let cell = bounds.[column]
@@ -350,10 +383,15 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                     elif item.Glyph<>NoGlyph then
                         SettingsTreeList.drawGlyph(g,item.Glyph,iconBox,p.muted)
                         x <- x+size+Dpi.scale 8
-                    TextRenderer.DrawText(g,item.Text,this.Font,Rectangle(x,top,max 1 (cell.Right-x-Dpi.scale 8),rowHeight),text,flags)
+                    let bounds = Rectangle(x,top,max 1 (cell.Right-x-Dpi.scale 8),rowHeight)
+                    this.drawHighlights(g,item.Text,item.highlights 0,bounds,flags,p)
+                    TextRenderer.DrawText(g,item.Text,this.Font,bounds,text,flags)
                 | TextColumn ->
-                    TextRenderer.DrawText(g,item.value column,this.Font,Rectangle(cell.X+Dpi.scale 8,top,max 1 (cell.Width-Dpi.scale 16),rowHeight),
-                                          (if isSelected then text else p.muted),flags)
+                    let bounds = Rectangle(cell.X+Dpi.scale 8,top,max 1 (cell.Width-Dpi.scale 16),rowHeight)
+                    this.drawHighlights(g,item.value column,item.highlights column,bounds,flags,p)
+                    // Muted text is hard to read on a highlight: a column with matches takes the full colour.
+                    let color = if isSelected || not (item.highlights column).IsEmpty then text else p.muted
+                    TextRenderer.DrawText(g,item.value column,this.Font,bounds,color,flags)
                 | CheckColumn ->
                     match item.check column with
                     | Some isChecked ->

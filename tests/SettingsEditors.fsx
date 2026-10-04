@@ -190,7 +190,7 @@ let main() =
     assertTrue (SettingsShortcut.parts 3623=["Ctrl";"Alt";"→"]) "Default shortcut decodes"
     assertTrue (SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.Right)=3623) "Shortcut encodes like the hotkey control"
     assertTrue (not (SettingsShortcut.isAcceptable (Keys.Shift ||| Keys.A)) && SettingsShortcut.isAcceptable Keys.F7) "Shortcut needs Ctrl or Alt"
-    let hotKeys = Collections.Generic.Dictionary<string,int>(dict ["nextTab",3623;"prevTab",3621])
+    let hotKeys = Collections.Generic.Dictionary<string,int>(dict ["nextTab",3623;"prevTab",3621;"searchTabs",0])
     let rejected = SettingsShortcut.encode (Keys.Control ||| Keys.B)
     let mouse = Event<int32 * IntPtr>()
     Services.register<IProgram>({new IProgram with
@@ -252,8 +252,13 @@ let main() =
         let rec findButton text (control:Control) =
             if control.Text=text then Some(control :?> Button)
             else control.Controls |> Seq.cast<Control> |> Seq.tryPick (findButton text)
+        let search = view.control.Controls.Find("search-tabs",true).[0] :?> SettingsShortcutInput
+        assertTrue (search.Shortcut=0) "Tab search has a shortcut before the user sets one"
+        hotKeys.["searchTabs"] <- 1568
+        search.Shortcut <- 1568
         (findButton "Restore default shortcuts" view.control).Value.PerformClick()
         assertTrue (hotKeys.["nextTab"]=3623 && hotKeys.["prevTab"]=3621 && next.Shortcut=3623 && previous.Shortcut=3621) "Restore default shortcuts"
+        assertTrue (hotKeys.["searchTabs"]=0 && search.Shortcut=0) "Restore default left tab search without a shortcut"
         hotKeys.["prevTab"] <- 3621
         Application.DoEvents()
         use bitmap = new Bitmap(form.ClientSize.Width,form.ClientSize.Height)

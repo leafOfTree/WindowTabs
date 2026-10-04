@@ -28,6 +28,7 @@ type Program(lifetime:LifetimeScope) as this =
     let os = OS()
     let invoker = InvokerService.invoker
     let taskSwitchCell = Cell.create(None)
+    let tabSearchCell = Cell.create(None:TabSearchForm option)
     let isTabMonitoringSuspendedCell = Cell.create(0)
     let llMouseEvent = Event<_>()
 
@@ -75,8 +76,9 @@ type Program(lifetime:LifetimeScope) as this =
 
     // Default shortcuts live in SettingsCatalog; this maps each hotkey to its action.
     let hotKeyInfo = Map2(List2([
-        ("prevTab", fun (g:IGroup) -> g.switchWindow(false, false))
-        ("nextTab", fun g -> g.switchWindow(true, false))
+        ("prevTab", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.switchWindow(false, false)))
+        ("nextTab", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.switchWindow(true, false)))
+        ("searchTabs", fun () -> this.toggleTabSearch())
         ]))
         
     let hotKeyManager = lifetime.Own(new HotKeyManager())
@@ -86,6 +88,8 @@ type Program(lifetime:LifetimeScope) as this =
         Desktop(this :> IDesktopNotification, Services.settings, invoker :> IDispatcher).ignore
         lifetime.Own({new IDisposable with
             member _.Dispose() = taskSwitchCell.value.iter(fun switcher -> (switcher :> IDisposable).Dispose())}) |> ignore
+        lifetime.Own({new IDisposable with
+            member _.Dispose() = tabSearchCell.value.iter(fun search -> search.Close())}) |> ignore
         this.registerHotKeys()
         this.updateTaskSwitcher(Services.settings.getValue("replaceAltTab"))
         let startupSubscription = Services.settings.notifyValue "runAtStartup" this.updateRunAtStartup
@@ -249,16 +253,27 @@ type Program(lifetime:LifetimeScope) as this =
 
     member this.foregroundGroup = this.desktop.foregroundGroup
 
+    /// Opens the tab search, or closes it when it is already open.
+    member this.toggleTabSearch() =
+        match tabSearchCell.value with
+        | Some search -> search.Close()
+        | None ->
+            let nameOverride hwnd = windowNameOverride.tryFind(hwnd).bind(id)
+            // The desktop keeps each group's windows in tab order.
+            let groups = this.desktop.groups.list |> List.map(fun group -> group.windows.list)
+            let group = this.desktop.foregroundGroup |> Option.map(fun group -> group.windows.list) |> Option.defaultValue []
+            let search = TabSearchForm(TabSearch.tabs nameOverride (WinUserApi.GetForegroundWindow()) groups,group)
+            search.Ended.Add(fun () -> tabSearchCell.set(None))
+            tabSearchCell.set(Some(search))
+            search.Show()
+
+    /// A shortcut another program already holds stays unregistered, without a message at every
+    /// start; choosing it again in Settings says it is in use.
     member this.registerHotKeys() =
-        hotKeyInfo.items.iter <| fun(key,f) ->
-            let f() =
-                this.foregroundGroup.iter <| fun group -> 
-                    f(group)
+        hotKeyInfo.items.iter <| fun(key,action) ->
             let shortcut = this.cast<IProgram>().getHotKey(key)
             let shortcut = HotKeyShortcut(HotKeyControlCode=int16(shortcut))
-            if not (hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags, shortcut.RegisterHotKeyVirtualKeyCode) f) then
-                let name = SettingsCatalog.title (if key="nextTab" then "next-tab" else "previous-tab")
-                Alert.show AlertKind.Warning (tr Strings.Messages.shortcutUnavailable) (tr (Strings.Messages.shortcutUnavailableFor name))
+            hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags, shortcut.RegisterHotKeyVirtualKeyCode) action |> ignore
 
    
     member this.hwndZorders() : Map2<IntPtr, int>= Map2(os.windowsInZorder.enumerate.map(fun(i,w) -> w.hwnd,i))
@@ -324,10 +339,9 @@ type Program(lifetime:LifetimeScope) as this =
             (settingsManager :> ISettings).hotKey key |> Option.defaultValue (SettingsCatalog.shortcutDefault key)
 
         member x.setHotKey key value =
-            let switch = hotKeyInfo.find(key)
+            let action = hotKeyInfo.find(key)
             let shortcut = HotKeyShortcut(HotKeyControlCode=int16(value))
-            let registered = hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags,shortcut.RegisterHotKeyVirtualKeyCode)
-                                (fun () -> this.foregroundGroup.iter switch)
+            let registered = hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags,shortcut.RegisterHotKeyVirtualKeyCode) action
             if registered then (settingsManager :> ISettings).setHotKey key value
             registered
 

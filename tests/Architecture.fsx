@@ -286,5 +286,84 @@ let main() =
         check owner.Visible "Popup disposal hid its owner"
     owner.Close()
     pump 250
-    printfn "PASS: atomic/deferred saves, failure retry and backup recovery, subscriptions, temporary state, coalesced scans, dispatch, group cleanup and popup disposal."
+
+    // Tab search: every term must match in any case and order; the active window goes last.
+    use mailWindow = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-12000,-12000))
+    use notesWindow = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-12000,-12000))
+    use editorWindow = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-12000,-12000))
+    let searchEntry (window:Form) title program = TabSearch.create window.Handle title title program
+    let mail = searchEntry mailWindow "Inbox - Mail" "outlook"
+    let notes = searchEntry notesWindow "Untitled - Notepad" "notepad"
+    let editor = searchEntry editorWindow "README.md - Code" "code"
+    check (TabSearch.matches "" notes) "An empty tab search hid a window"
+    check (TabSearch.matches "PAD untitled" notes) "Tab search terms were not matched in any case and order"
+    check (TabSearch.matches "outlook" mail) "Tab search did not match the program name"
+    check (not (TabSearch.matches "mail notepad" notes)) "Tab search matched when one term was missing"
+    check (TabSearch.create IntPtr.Zero "Renamed" "Original title" "app" |> TabSearch.matches "original") "A renamed tab was not found by its title"
+    // Highlights: every occurrence of every term, in any case, overlapping runs merged.
+    check (TabSearch.highlights "md read" "README.md - Code" = [0,4;7,2]) "Search terms were not highlighted where they appear"
+    check (TabSearch.highlights "o" "Foo" = [1,2]) "Adjacent matches were not merged"
+    check (TabSearch.highlights "ab bc" "xabcx" = [1,3]) "Overlapping matches were not merged"
+    check (TabSearch.highlights "" "Foo" = [] && TabSearch.highlights "zz" "Foo" = []) "Text was highlighted without a match"
+    // Choosing: the best match, then the most recently used; a match at a word start is best.
+    check (TabSearch.quality "set" "windowtabs settings" = 2) "A match at a word start was not ranked best"
+    check (TabSearch.quality "tabs" "windowtabs settings" = 1) "A match inside a word did not count"
+    check (TabSearch.quality "wts" "windowtabs settings" = 0) "Scattered letters matched"
+    let older = { TabSearch.create IntPtr.Zero "Code - main.fs" "Code - main.fs" "code" with recency=2 }
+    let newer = { TabSearch.create IntPtr.Zero "main.fs" "main.fs" "editor" with recency=1 }
+    check (TabSearch.best "fs" [older;newer] = Some newer) "Of equal matches the most recent was not chosen"
+    check (TabSearch.best "" [older;newer] = Some newer) "An empty search did not choose the most recent tab"
+    let inside = { TabSearch.create IntPtr.Zero "Tabset" "Tabset" "" with recency=0 }
+    let start = { TabSearch.create IntPtr.Zero "Settings" "Settings" "" with recency=5 }
+    check (TabSearch.best "set" [inside;start] = Some start) "The better match was not chosen"
+    check (TabSearch.best "zzz" [inside;start] = None) "A tab was chosen with nothing matching"
+    // Grouping: groups by last use, each in tab order; the active tab is the least recent.
+    let zorder hwnd = if hwnd=editor.hwnd then 0 elif hwnd=notes.hwnd then 1 else 2
+    let arranged = TabSearch.arrange zorder editor.hwnd [[mail;notes];[];[editor]]
+    check (arranged |> List.map(fun entry -> entry.hwnd) = [editor.hwnd;mail.hwnd;notes.hwnd]) "Tabs were not listed group by group in tab order"
+    check (arranged |> List.map(fun entry -> entry.group) = [0;1;1]) "Groups were not numbered from the most recently used"
+    check (arranged |> List.map(fun entry -> entry.recency) = [2;1;0]) "The active tab was not treated as the least recent"
+    // Scope: a group of two or more tabs is searched first; Tab switches to every tab and back.
+    let grouped = TabSearchForm([mail;notes;editor],[mail.hwnd;editor.hwnd])
+    check (grouped.Scope=GroupTabs && grouped.Results=[mail;editor]) "Tab search did not start in the active group"
+    grouped.Query <- "notepad"
+    check grouped.Results.IsEmpty "Tab search found a tab outside the active group"
+    grouped.SwitchScope()
+    check (grouped.Scope=AllTabs && grouped.Results=[notes]) "Switching scope did not search every tab"
+    grouped.SwitchScope()
+    check (grouped.Scope=GroupTabs && grouped.Results.IsEmpty) "Switching scope again did not return to the group"
+    grouped.Close()
+    let single = TabSearchForm([mail;notes;editor],[notes.hwnd])
+    check (single.Scope=AllTabs && single.Results=[mail;notes;editor]) "A one-tab group limited the tab search"
+    single.SwitchScope()
+    check (single.Scope=AllTabs) "A one-tab group could be searched on its own"
+    single.Close()
+    let whole = TabSearchForm([mail;notes],[mail.hwnd;notes.hwnd])
+    whole.SwitchScope()
+    check (whole.Scope=GroupTabs) "Switching scope was offered when the group holds every tab"
+    whole.Close()
+    let search = TabSearchForm([mail;notes;editor],[])
+    let mutable ends = 0
+    search.Ended.Add(fun () -> ends <- ends+1)
+    check (search.Results = [mail;notes;editor] && search.Selected = Some mail) "Empty tab search did not list every window, first chosen"
+    search.Query <- "md"
+    check (search.Results = [editor] && search.Selected = Some editor) "Tab search did not filter to the match"
+    search.Query <- "nothing like this"
+    check (search.Results.IsEmpty && search.Selected.IsNone) "Tab search kept results that do not match"
+    search.Accept()
+    check (not search.IsClosed && ends=0) "Accepting with no match closed the tab search"
+    search.Query <- ""
+    search.SelectNext()
+    check (search.Selected = Some notes) "Down did not move to the next window"
+    search.Show()
+    search.Close()
+    search.Close()
+    pump 100
+    check (search.IsClosed && ends=1) "Tab search did not end exactly once"
+    let picked = TabSearchForm([mail;notes],[])
+    picked.Query <- "note"
+    picked.Accept()
+    pump 100
+    check picked.IsClosed "Accepting a match did not close the tab search"
+    printfn "PASS: atomic/deferred saves, failure retry and backup recovery, subscriptions, temporary state, coalesced scans, dispatch, group cleanup, popup disposal and tab search."
 TestInit.run main

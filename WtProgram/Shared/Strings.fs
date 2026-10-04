@@ -27,11 +27,6 @@ module Strings =
     module Messages =
         let alreadyRunning = { en="WindowTabs is already running."; zh="WindowTabs 已在运行。"; ja="WindowTabs は既に実行中です。" }
         let couldNotContinue = { en="WindowTabs could not continue"; zh="WindowTabs 无法继续运行"; ja="WindowTabs を続行できません" }
-        let shortcutUnavailable = { en="Shortcut unavailable"; zh="快捷键不可用"; ja="ショートカットを使用できません" }
-        let shortcutUnavailableFor name =
-            { en=sprintf "The shortcut for %s is unavailable. Choose another shortcut in Settings." name
-              zh=sprintf "“%s”的快捷键已被占用，请在设置中另选一个。" name
-              ja=sprintf "「%s」のショートカットは使用できません。設定で別のショートカットを選択してください。" name }
         let settingsSaveFailed = { en="Settings save failed"; zh="设置保存失败"; ja="設定を保存できませんでした" }
         let unableToSaveSettings path details =
             { en=sprintf "Unable to save settings to %s.\nYour changes remain in memory and will be retried on the next edit or exit.\n\n%s" path details
@@ -148,6 +143,9 @@ module Strings =
         let previousTab = { caption={ en="Previous tab"; zh="上一个标签"; ja="前のタブ" }
                             description={ en="Switch to the previous window in the group."; zh="切换到当前分组中的上一个窗口。"; ja="グループ内の前のウィンドウに切り替えます。" }
                             keywords=hotkeyWords }
+        let searchTabs = { caption={ en="Search tabs"; zh="搜索标签"; ja="タブを検索" }
+                           description={ en="Find a tab by title or app and switch to it, starting in the current group."; zh="按标题或应用查找标签并切换，优先在当前分组中查找。"; ja="タイトルやアプリ名でタブを探して切り替えます。まず現在のグループ内を検索します。" }
+                           keywords={ en="hotkey find jump go to window switcher palette"; zh="热键 查找 跳转 窗口 切换"; ja="ホットキー 検索 ジャンプ ウィンドウ 切り替え" } }
         let switchTabsByNumber = { caption={ en="Switch tabs by number"; zh="按数字切换标签"; ja="番号でタブを切り替え" }
                                    description={ en="Use Ctrl + 1–9 to switch tabs."; zh="使用 Ctrl + 1–9 切换标签。"; ja="Ctrl + 1～9 でタブを切り替えます。" }
                                    keywords={ en="hotkey digit number ctrl"; zh="热键 数字"; ja="ホットキー 数字" } }
@@ -281,6 +279,13 @@ module Strings =
         let includeCtrlOrAlt = { en="Include Ctrl or Alt"; zh="需要包含 Ctrl 或 Alt"; ja="Ctrl か Alt が必要です" }
         let pressShortcut = { en="Press a shortcut…"; zh="按下组合键…"; ja="キーを押してください…" }
         let notSet = { en="Not set"; zh="未设置"; ja="未設定" }
+
+    /// The tab search box.
+    module TabSearch =
+        let prompt = { en="Search tabs by title or app"; zh="按标题或应用搜索标签"; ja="タイトルやアプリでタブを検索" }
+        let noMatches = { en="No matching tabs."; zh="没有匹配的标签。"; ja="一致するタブはありません。" }
+        let groupTabs count = { en=sprintf "This group · %d" count; zh=sprintf "当前分组 · %d" count; ja=sprintf "このグループ · %d" count }
+        let allTabs count = { en=sprintf "All tabs · %d" count; zh=sprintf "全部标签 · %d" count; ja=sprintf "すべてのタブ · %d" count }
 
     module AppRules =
         let description = { en="Choose which apps use tabs and automatic grouping. Turning off auto-grouping keeps existing groups. Expand an app to see its windows."
