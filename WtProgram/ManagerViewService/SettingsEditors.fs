@@ -205,18 +205,21 @@ type SettingsShortcutInput() as this =
     let mutable recording = false
     let mutable hovering = false
     let mutable hoveringClear = false
+    /// Off once a recording ends, so a focused but idle box does not look like it is listening.
+    let mutable focusCue = false
     /// Text and whether it reports an error (red) rather than a notice (muted).
     let mutable message : (string * bool) option = None
     let messageTimer = new Timer(Interval=2500)
     let clearMessage() = messageTimer.Stop(); message <- None
     let showMessage error text = message <- Some(text,error); messageTimer.Stop(); messageTimer.Start(); this.Invalidate()
-    let stopRecording() = if recording then recording <- false; this.Invalidate()
+    let stopRecording() = if recording then recording <- false; focusCue <- false; this.Invalidate()
     let clearBounds() =
         let size = Dpi.scale 24
         Rectangle(this.Width-size-Dpi.scale 5,(this.Height-size)/2,size,size)
     let canClear() = shortcut<>0 && not recording && message.IsNone
     let commit next =
         recording <- false
+        focusCue <- false
         if next<>shortcut then
             this.Shortcut <- next
             changed.Trigger(EventArgs.Empty)
@@ -235,6 +238,8 @@ type SettingsShortcutInput() as this =
         and set(value) = shortcut <- value; this.AccessibleDescription <- String.Join(" + ",SettingsShortcut.parts value); this.Invalidate()
     member _.Changed = changed.Publish
     member _.IsRecording = recording
+    /// Whether the accent outline is drawn: while recording, or on fresh keyboard focus.
+    member this.IsHighlighted = recording || (this.Focused && focusCue)
     /// The notice or error currently shown in place of the shortcut, if any.
     member _.Message = message |> Option.map fst
     /// Restores a previous shortcut and says why the new one was not kept.
@@ -258,7 +263,7 @@ type SettingsShortcutInput() as this =
             else this.StartRecording()
     /// Removes the shortcut, as the × button does.
     member this.Clear() = commit 0
-    override this.OnGotFocus(e) = base.OnGotFocus(e); this.Invalidate()
+    override this.OnGotFocus(e) = base.OnGotFocus(e); focusCue <- true; this.Invalidate()
     override this.OnLostFocus(e) = base.OnLostFocus(e); stopRecording(); this.Invalidate()
     override this.IsInputKey(key) = recording || base.IsInputKey(key)
     override this.ProcessCmdKey(msg:byref<Message>,keyData:Keys) =
@@ -278,7 +283,7 @@ type SettingsShortcutInput() as this =
         let p = SettingsColors.current()
         let g = e.Graphics
         g.SmoothingMode <- SmoothingMode.AntiAlias
-        let active = recording || this.Focused
+        let active = this.IsHighlighted
         if active || hovering then
             // A 2px pen needs its centre half a pixel in to cover the two edge rows; a 1px pen none.
             let inset = if recording then 0.5f else 0.0f

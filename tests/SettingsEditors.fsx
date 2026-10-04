@@ -287,9 +287,15 @@ let main() =
         command next (Keys.Control ||| Keys.OemCloseBrackets) |> ignore
         let expected = SettingsShortcut.encode (Keys.Control ||| Keys.OemCloseBrackets)
         assertTrue (not next.IsRecording && next.Shortcut=expected && hotKeys.["nextTab"]=expected) "Recorded shortcut saved"
+        assertTrue (not next.IsHighlighted) "Recorded shortcut kept the listening highlight"
         next.StartRecording()
+        assertTrue next.IsHighlighted "Recording must be highlighted"
         command next (Keys.Control ||| Keys.OemCloseBrackets) |> ignore
-        assertTrue (next.Message.IsSome && hotKeys.["nextTab"]=expected) "Same shortcut shows a notice"
+        assertTrue (not next.IsRecording && next.Message.IsSome && not next.IsHighlighted && hotKeys.["nextTab"]=expected) "Same shortcut must say it is already set"
+        command next Keys.Enter |> ignore
+        assertTrue (next.IsRecording && next.IsHighlighted) "Enter must restart recording"
+        command next Keys.Escape |> ignore
+        assertTrue (not next.IsHighlighted) "Cancelled recording kept the listening highlight"
         previous.StartRecording()
         command previous (Keys.Control ||| Keys.OemCloseBrackets) |> ignore
         assertTrue (previous.Shortcut=3621 && hotKeys.["prevTab"]=3621 && previous.Message.IsSome) "Shortcut used by another action is refused"
