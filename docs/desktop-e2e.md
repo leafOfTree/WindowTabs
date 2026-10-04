@@ -1,5 +1,40 @@
 # Desktop end-to-end tests
 
+The separate opt-in latency benchmark measures shipped WindowTabs against real
+Edge/Chromium app windows with an isolated profile and local solid-colour pages.
+It verifies the expected tab's foreground HWND, strip ownership and a visible
+3 x 3 desktop pixel patch. It also maximizes groups of 5 and 20 independent helper
+processes, with and without one delayed positioning handler.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-DesktopLatency.ps1 -BuildOnly
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-DesktopLatency.ps1 -Interactive -Switches 30 -MaximizeSamples 5 -SlowWindowMs 80
+```
+
+Exit WindowTabs and existing windows of the selected browser first, then leave
+input idle. `-BrowserPath` accepts another installed Chromium browser. Existing
+browser windows are refused because production grouping rules select executable
+paths and could otherwise adopt the user's regular windows. Native suites and
+other desktop tests must not run concurrently. The driver closes only its fixture
+windows and cleans up processes it launched; it force-stops its own staged
+WindowTabs during teardown, so this benchmark does not validate normal app exit.
+
+Raw samples, summaries, tested binary hash, browser version, screen/DPI, stdout,
+stderr and failure diagnostics are retained in `tests/Debug/desktop-latency-*`.
+Timing starts immediately before native mouse down/up injection, after the cursor
+has moved. Visible-pixel time includes foreground polling and capture overhead;
+it is an observed upper bound for fixture content visibility, not photon latency
+or full-frame completion. For maximize, pixel checks run after all native states
+are maximized; these values also include the desktop's animation behavior. Five
+maximize samples are a small diagnostic workload, and their reported p95 is the
+maximum sample. See [performance.md](performance.md) for measured results.
+
+The initial development attempts remain recorded: a 32-bit driver could not read
+the existing 64-bit browser's MainModule; startup/foreground snapshots could be
+taken before group adoption completed; and an empty, pre-created crash log was
+incorrectly treated as an exception. Those checks were repaired before the final
+complete run; failures were not silently retried.
+
 Run on an unlocked Windows desktop with .NET Framework 4.8 and the .NET SDK.
 Exit WindowTabs first and leave the mouse and keyboard idle during the run.
 The primary working area must be at least 1000 x 700 physical pixels. This suite
