@@ -41,7 +41,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let isDestroyed = Cell.create(false)
     let zorderCell = Cell.create(List2<IntPtr>())
     let prevTop = Cell.create(None)
-    let placement = Cell.create(None:Option<Rect * OSWindowPlacement>)
+    /// Bounds to restore windows to, their placement, and the visible frame the tabs sit on.
+    let placement = Cell.create(None:Option<Rect * OSWindowPlacement * Rect>)
     let windowsCell = Cell.create(Set2())
     let _ts = ref None 
     let inMoveSize = Cell.create(false)
@@ -71,8 +72,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         zorderCell.value.tryHead.exists(fun hwnd -> this.os.windowFromHwnd(hwnd).isMaximized)
  
     let boundsExport = Cell.export <| fun() ->
-        placement.value.bind <| fun(rect,placement) -> 
-            if isVisibleCell.value then Some(rect) else None
+        placement.value.bind <| fun(_,_,visible) ->
+            if isVisibleCell.value then Some(visible) else None
 
     let isForegroundExport = Cell.export <| fun() ->
         zorderCell.value.any((=) foregroundCell.value)
@@ -295,7 +296,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
        
     member private this.windowCount = this.windows.count
 
-    member this.placementBounds : Rect = placement.value.map(fst).def(Rect())
+    member this.placementBounds : Rect = placement.value.map(fun(bounds,_,_) -> bounds).def(Rect())
 
     member private this.isTop(hwnd) = zorderCell.value.where(isMinimized >> not).tryHead = Some(hwnd)
 
@@ -310,19 +311,19 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if  window.isMinimized.not &&
             this.os.isOnScreen(window.bounds)
             then
-            let bounds = 
+            let monitorBounds =
                 if window.isMaximized then
                     //windows are placed slightly off screen when maximized, get the bounds of the monitor instead
-                    match Mon.fromHwnd(window.hwnd) with
-                    | Some(mon) -> mon.workRect.move(-1,-1)
-                    | None -> window.bounds
-                else window.bounds
-            placement.set(Some(bounds, window.placement))
+                    Mon.fromHwnd(window.hwnd).map(fun mon -> mon.workRect.move(-1,-1))
+                else None
+            let bounds = monitorBounds.def(window.bounds)
+            let visible = monitorBounds.def(window.visibleBounds)
+            placement.set(Some(bounds, window.placement, visible))
            
     member private this.adjustWindowPlacement(hwnd) =
         let window = this.os.windowFromHwnd(hwnd)
         if placement.value.IsSome then
-            let bounds,wp = placement.value.Value
+            let bounds,wp,_ = placement.value.Value
             let current = window.placement
             //if you remove this check, then when you drag a window into an Aero Snapp'ed window
             //the dragged in window will be placed at the restore location for the target, instead of

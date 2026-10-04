@@ -61,6 +61,8 @@ namespace Bemo
         [DllImport("dwmapi.dll")]
         public static extern int DwmIsCompositionEnabled(out bool enabled);
         [DllImport("dwmapi.dll")]
+        public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
+        [DllImport("dwmapi.dll")]
         public static extern int DwmSetIconicThumbnail(IntPtr hwnd, IntPtr hBmp, int dwSITFlags);
         [DllImport("dwmapi.dll")]
         public static extern int DwmSetIconicLivePreviewBitmap(IntPtr hwnd, IntPtr hBmp, ref POINT pptClient, int dwSITFlags);

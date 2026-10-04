@@ -148,8 +148,21 @@ let main() =
                 let setBounds (group:WindowGroup) target =
                     let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="placement")
                     let cell = field.GetValue(group)
-                    let value = Some(target,OS().windowFromHwnd(handles.Head).placement)
+                    let value = Some(target,OS().windowFromHwnd(handles.Head).placement,target)
                     cell.GetType().GetMethod("set").Invoke(cell,[|box value|]) |> ignore
+                if count=2 then
+                    // Tabs sit on the frame the user sees; a sizable window's rect also holds
+                    // invisible resize borders, which put left-aligned tabs past its left edge.
+                    let window = Win32Helper.GetWindowRectangle(handles.Head)
+                    let visible = Win32Helper.GetVisibleWindowRectangle(handles.Head)
+                    check (visible.Left>window.Left && visible.Right<window.Right && visible.Top>=window.Top) (sprintf "Visible frame %A keeps the resize borders of %A" visible window)
+                    let frame = Rect(bounds.location.add(Pt(8,0)),bounds.size.add(Sz(-16,-8)))
+                    onGroup(fun group ->
+                        let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="placement")
+                        let cell = field.GetValue(group)
+                        cell.GetType().GetMethod("set").Invoke(cell,[|box (Some(bounds,OS().windowFromHwnd(handles.Head).placement,frame))|]) |> ignore
+                        check (group.bounds.value=Some(frame)) "Tabs were not placed on the visible window frame"
+                        check (group.placementBounds=bounds) "Grouped windows were not restored to the full window rect")
                 onGroup(fun group -> setBounds group bounds; invoke "updatePlacements" group [||] |> ignore)
                 samples (sprintf "%dtabs-repeat-placement" count) 20 (fun group _ -> invoke "updatePlacements" group [||] |> ignore)
                 let changes = forms |> List.sumBy(fun form -> form.Changes)
@@ -165,7 +178,7 @@ let main() =
                 let applyPlacement (group:WindowGroup) command =
                     let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="placement")
                     let cell = field.GetValue(group)
-                    let value = Some(bounds,{normal with showCmd=command})
+                    let value = Some(bounds,{normal with showCmd=command},bounds)
                     cell.GetType().GetMethod("set").Invoke(cell,[|box value|]) |> ignore
                     invoke "updatePlacements" group [||] |> ignore
                 preparedSamples (sprintf "%dtabs-maximize-followers" count) 10
@@ -187,7 +200,8 @@ let main() =
             samples "20tabs-move-one-50ms-handler" 5 (fun group index ->
                 let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="placement")
                 let cell = field.GetValue(group)
-                let value = Some(Rect(Pt(-20000+index%2*10,-20000),Sz(640,480)),OS().windowFromHwnd(handles.Head).placement)
+                let target = Rect(Pt(-20000+index%2*10,-20000),Sz(640,480))
+                let value = Some(target,OS().windowFromHwnd(handles.Head).placement,target)
                 cell.GetType().GetMethod("set").Invoke(cell,[|box value|]) |> ignore
                 invoke "updatePlacements" group [||] |> ignore)
             dispatcher.invoke(fun () -> forms.[1].Delay <- 0)
@@ -262,7 +276,8 @@ let main() =
                 let apply command = onGroup(fun group ->
                     let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="placement")
                     let cell = field.GetValue(group)
-                    let value = Some(Rect(Pt(-20000,-20000),Sz(640,480)),{normal with showCmd=command})
+                    let target = Rect(Pt(-20000,-20000),Sz(640,480))
+                    let value = Some(target,{normal with showCmd=command},target)
                     cell.GetType().GetMethod("set").Invoke(cell,[|box value|]) |> ignore
                     invoke "updatePlacements" group [||] |> ignore)
                 for delay in [0;50;100] do
@@ -279,7 +294,8 @@ let main() =
                             group.invokeAsync(fun () -> queued <- clock.Elapsed.TotalMilliseconds)
                             let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="placement")
                             let cell = field.GetValue(group)
-                            let value = Some(Rect(Pt(-20000,-20000),Sz(640,480)),{normal with showCmd=ShowWindowCommands.SW_SHOWMAXIMIZED})
+                            let target = Rect(Pt(-20000,-20000),Sz(640,480))
+                            let value = Some(target,{normal with showCmd=ShowWindowCommands.SW_SHOWMAXIMIZED},target)
                             cell.GetType().GetMethod("set").Invoke(cell,[|box value|]) |> ignore
                             invoke "updatePlacements" group [||] |> ignore
                             clock.Elapsed.TotalMilliseconds)

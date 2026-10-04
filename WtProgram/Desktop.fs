@@ -144,7 +144,12 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
             let dragInfo = unbox<TabDragInfo>(data)
             let (Tab(hwnd)) = dragInfo.tab
             let window = os.windowFromHwnd(hwnd)
-            let windowPt = pt.sub(dragInfo.tabOffset).add(this.windowOffset)
+            // Tabs sit on the visible frame, so step back over the invisible resize border too.
+            // A maximized or minimized window's frame says nothing about its restored one.
+            let frameOffset =
+                if window.isMaximized || window.isMinimized then Pt()
+                else window.visibleBounds.location.sub(window.bounds.location)
+            let windowPt = pt.sub(dragInfo.tabOffset).add(this.windowOffset).sub(frameOffset)
             let monitor = Mon.fromPoint windowPt
             let workspaceOffset = monitor.map(fun mon -> mon.workRect.location.sub(mon.displayRect.location)).def(Pt())
             let windowPt = windowPt.sub(workspaceOffset)

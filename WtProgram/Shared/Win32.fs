@@ -308,7 +308,10 @@ and
 
     member this.isOwned = WinUserApi.GetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT) <> IntPtr.Zero
 
-    member this.bounds = Win32Helper.GetWindowRectangle(hwnd).Rect  
+    member this.bounds = Win32Helper.GetWindowRectangle(hwnd).Rect
+
+    /// What the user sees: bounds less the invisible resize borders, for drawing next to the window.
+    member this.visibleBounds = Win32Helper.GetVisibleWindowRectangle(hwnd).Rect
 
     member this.size = this.bounds.size
     

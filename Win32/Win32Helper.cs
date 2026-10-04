@@ -225,6 +225,20 @@ namespace Bemo
             WinUserApi.GetWindowRect(hwnd, out rect);
             return rect.ToRectangle();
         }
+        /// <summary>The window as drawn, without the invisible resize borders that
+        /// GetWindowRect includes on Windows 10 and later.</summary>
+        public static Rectangle GetVisibleWindowRectangle(IntPtr hwnd)
+        {
+            RECT rect;
+            try
+            {
+                if (DwmApi.DwmGetWindowAttribute(hwnd, DWMWINDOWATTRIBUTE.DWMWA_EXTENDED_FRAME_BOUNDS,
+                        out rect, Marshal.SizeOf(typeof(RECT))) == 0 && rect.Right > rect.Left && rect.Bottom > rect.Top)
+                    return rect.ToRectangle();
+            }
+            catch (DllNotFoundException) { }
+            return GetWindowRectangle(hwnd);
+        }
         public static Rectangle GetRgnBox(IntPtr hRegion)
         {
             RECT rect;
