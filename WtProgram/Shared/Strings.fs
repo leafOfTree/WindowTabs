@@ -53,8 +53,8 @@ module Strings =
         let newWindow = { en="New window"; zh="新建窗口"; ja="新しいウィンドウ" }
         let renameTab = { en="Rename tab"; zh="重命名标签"; ja="タブ名を変更" }
         let restoreTabName = { en="Restore tab name"; zh="恢复标签名称"; ja="タブ名を元に戻す" }
-        let disableTabsFor exe = { en=sprintf "Disable tabs for %s" exe; zh=sprintf "禁用 %s 的标签" exe; ja=sprintf "%s のタブを無効にする" exe }
-        let autoGroupWindowsOf exe = { en=sprintf "Auto-group %s windows" exe; zh=sprintf "自动分组 %s 的窗口" exe; ja=sprintf "%s のウィンドウを自動グループ化" exe }
+        let enableTabsFor exe = { en=sprintf "Enable tabs for %s" exe; zh=sprintf "为 %s 启用标签" exe; ja=sprintf "%s のタブを有効にする" exe }
+        let autoGroupWindowsOf exe = { en=sprintf "Enable auto-grouping for %s" exe; zh=sprintf "为 %s 启用自动分组" exe; ja=sprintf "%s の自動グループ化を有効にする" exe }
         let close = { en="Close"; zh="关闭"; ja="閉じる" }
         let closeOthers = { en="Close others"; zh="关闭其他"; ja="他を閉じる" }
         let closeAllOf exe = { en=sprintf "Close all '%s' windows" exe; zh=sprintf "关闭所有“%s”窗口" exe; ja=sprintf "「%s」のウィンドウをすべて閉じる" exe }

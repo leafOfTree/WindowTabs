@@ -228,12 +228,13 @@ type TabStripDecorator(group:WindowGroup) as this =
                 flags = List2()
             })
 
-        let removeTabsItem =
+        let isTabbingEnabled = Services.filter.getIsTabbingEnabledForProcess processPath
+        let enableTabsItem =
             CmiRegular({
-                text = tr (Strings.TabMenu.disableTabsFor exeName)
+                text = tr (Strings.TabMenu.enableTabsFor exeName)
                 image = None
-                click = fun() -> Services.filter.setIsTabbingEnabledForProcess processPath false
-                flags = List2()
+                click = fun() -> Services.filter.setIsTabbingEnabledForProcess processPath isTabbingEnabled.not
+                flags = checkedFlag(isTabbingEnabled)
             })
 
         let isGrouped = Services.program.getAutoGroupingEnabled processPath
@@ -287,21 +288,21 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         List2([
             Some(newWindowItem)
+            Some(renameTabItem)
+            (if group.isRenamed(hwnd) then Some(restoreTabNameItem) else None)
             Some(CmiSeparator)
             Some(iconOnlyItem)
             Some(alignmentItem)
             Some(autoHideItem)
             Some(combineIconsInTaskbar)
-            Some(renameTabItem)
-            (if group.isRenamed(hwnd) then Some(restoreTabNameItem) else None)
+            Some(CmiSeparator)
+            Some(enableTabsItem)
+            Some(groupTabsItem)
             Some(CmiSeparator)
             Some(closeTabItem)
             Some(closeOtherTabsItem)
             Some(closeAllExeTabsItem)
             Some(closeAllTabsItem)
-            Some(CmiSeparator)
-            Some(removeTabsItem)
-            Some(groupTabsItem)
             Some(CmiSeparator)
             Some(managerItem)
         ]).choose(id)
