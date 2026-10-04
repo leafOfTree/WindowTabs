@@ -33,6 +33,21 @@
 
 ## Window reconciliation
 
+Follower placement uses a shared `WindowPlacementQueue` with at most four native
+workers. Group STAs submit immutable bounds/placement snapshots; workers never
+read group cells or call group services. Each HWND has one serial stream across
+group transfers, with only its newest pending request retained. Ownership and
+generation checks cancel queued work, including the second phase of a superseded
+move/placement operation. PID/thread identity checks reject closed foreign HWNDs.
+Already-running Win32 calls cannot be interrupted: a new owner's placement waits
+behind that call, while its UI remains responsive. Releasing a group does not wait
+for native calls and releases queue entries when outstanding work ends.
+
+Minimize/restore uses the same stream and acknowledges its own WinEvents to avoid
+feeding an older transition back into the group. Native animation settings are
+left unchanged. Maximized cross-monitor positioning still moves before applying
+placement; normal positioning still uses `MoveWindow` to preserve snapped bounds.
+
 `WindowRefreshQueue` batches events for 30 ms without continually resetting its
 deadline. Repeated events for an HWND collapse to one update. Ordinary show/hide and
 shell events reconcile dirty windows; explicit refresh, group removal/exit and drag

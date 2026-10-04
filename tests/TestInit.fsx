@@ -5,6 +5,7 @@ open System.Windows.Forms
 
 // Surface paint/event exceptions as test failures rather than modal dialogs.
 Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException)
+printfn "TEST_APPLICATION_ASSEMBLY=%s" typeof<Bemo.WindowGroup>.Assembly.Location
 // Like Bootstrap.main, give SystemEvents its own thread before creating controls
 // so synchronous system notifications cannot deadlock the main and group STAs.
 Bemo.ThemeService.moveSystemEventsOffMainThread()

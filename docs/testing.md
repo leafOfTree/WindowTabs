@@ -5,6 +5,8 @@
 Use Windows with .NET SDK 10 and .NET Framework 4.8. Native UI tests run
 serially and require a desktop session. They must not share focus with another
 UI test run.
+The regression runner takes a session-wide mutex before building or running;
+another regression run, including from another checkout, fails explicitly.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-Tests.ps1

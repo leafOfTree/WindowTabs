@@ -31,6 +31,7 @@ type ProbeForm() =
         elif message.Msg=0x8050 then message.Result <- IntPtr(positionRequests)
         elif message.Msg=0x46 then
             positionRequests <- positionRequests+1
+            if positionDelay>0 then printfn "POSITION_REQUEST"
             Thread.Sleep(positionDelay)
             // This independent process must remain off screen when maximized.
             let position = Marshal.PtrToStructure(message.LParam,typeof<WINDOWPOS>) :?> WINDOWPOS

@@ -54,6 +54,46 @@ type HelperWindow() =
         base.WndProc(&message)
 
 let main() =
+    // Hold a native-like call in flight, then replace its queued successors and
+    // transfer the HWND. The old owner cannot publish its second phase or cancel
+    // the new owner's work; removal also drops work that has not started.
+    use entered = new ManualResetEventSlim(false)
+    use resume = new ManualResetEventSlim(false)
+    let applied = Collections.Concurrent.ConcurrentQueue<int>()
+    let queue = WindowPlacementQueue<int>((fun _ value valid ->
+        if value=1 then entered.Set(); resume.Wait()
+        if valid() then applied.Enqueue(value)),workerLimit=1)
+    let owner,other = obj(),obj()
+    let first,removed = IntPtr(1),IntPtr(2)
+    queue.claim(owner,first)
+    queue.claim(owner,removed)
+    try
+        queue.submit(owner,first,1)
+        check (entered.Wait(10000)) "Placement worker did not start"
+        check (queue.isWindowBusyWith(owner,first,((=)1))) "In-flight request kind was lost"
+        check (not(queue.isWindowBusyWith(owner,first,((=)99)))) "An unrelated request kind was marked busy"
+        queue.submit(owner,first,2)
+        queue.submit(owner,first,3)
+        queue.submit(owner,removed,99)
+        queue.release(owner,removed)
+        check (queue.retainedCount=1) "Cancelled queued HWND remained retained behind a slow call"
+        queue.claim(other,first)
+        queue.submit(other,first,4)
+        queue.release(owner,first)
+        resume.Set()
+        pumpUntil(fun () -> queue.isIdle(other) && queue.retainedCount=1)
+        check (applied.ToArray()=[|4|]) "Stale placement survived coalescing, transfer or removal"
+        entered.Reset()
+        resume.Reset()
+        queue.submit(other,first,1)
+        check (entered.Wait(10000)) "Second placement worker did not start"
+        for value in 5..25 do queue.submit(other,first,value)
+        resume.Set()
+        pumpUntil(fun () -> queue.isIdle(other))
+        check (applied.ToArray()=[|4;25|]) "Repeated placement requests did not retain only the latest state"
+        queue.release(other,first)
+        check (queue.retainedCount=0) "Placement queue retained a released HWND"
+    finally resume.Set()
     let original = Environment.CurrentDirectory
     let isolated = Path.Combine(__SOURCE_DIRECTORY__,"Debug","group-operations-"+Guid.NewGuid().ToString("N"))
     Directory.CreateDirectory(isolated) |> ignore
@@ -92,6 +132,11 @@ let main() =
         let forms,handles,dispatcher = ThreadHelper.startOnThreadAndWait(fun () ->
             let forms = [for _ in 1..20 -> new HelperWindow()]
             forms,forms |> List.map(fun form -> form.Handle),InvokerService.invoker)
+        let onHelper action =
+            let mutable result = None
+            dispatcher.asyncInvoke(fun () -> result <- Some(try Choice1Of2(action()) with error -> Choice2Of2 error))
+            pumpUntil(fun () -> result.IsSome)
+            match result.Value with Choice1Of2 value -> value | Choice2Of2 error -> raise error
         let flags = BindingFlags.Instance ||| BindingFlags.NonPublic
         let invoke name (group:WindowGroup) arguments =
             typeof<WindowGroup>.GetMethod(name,flags).Invoke(group,arguments)
@@ -105,15 +150,21 @@ let main() =
                 hook |> Option.iter(fun subscription -> subscription.Dispose())
                 cell.GetType().GetMethod("set").Invoke(cell,[|box (None:IDisposable option)|]) |> ignore)
         let preparedSamples name count prepare action =
-            let values = onGroup(fun group ->
-                prepare group
-                action group 0
-                [for index in 1..count do
-                    prepare group
-                    let clock = Stopwatch.StartNew()
-                    action group index
-                    yield clock.Elapsed.TotalMilliseconds] |> List.sort)
-            printfn "PERF %s median=%.3fms p95=%.3fms" name values.[count/2] values.[min (count-1) (int(float count*0.95))]
+            let wait() = pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle))
+            onGroup prepare
+            wait()
+            onGroup(fun group -> action group 0)
+            wait()
+            let values = [for index in 1..count do
+                            onGroup prepare
+                            wait()
+                            let value = onGroup(fun group ->
+                                let clock = Stopwatch.StartNew()
+                                action group index
+                                clock.Elapsed.TotalMilliseconds)
+                            wait()
+                            yield value] |> List.sort
+            printfn "PERF %s dispatch-median=%.3fms dispatch-p95=%.3fms" name values.[count/2] values.[min (count-1) (int(float count*0.95))]
         let samples name count action = preparedSamples name count ignore action
         try
             for count in [2;5;10;20] do
@@ -121,10 +172,13 @@ let main() =
                     if not((info :> IGroup).windows.contains ((=) hwnd)) then (info :> IGroup).addWindow(hwnd,false)
                 pumpUntil(fun () -> onGroup(fun group -> group.windows.count=count))
                 if count=2 then
-                    dispatcher.invoke(fun () -> OS().windowFromHwnd(handles.Head).showWindow(ShowWindowCommands.SW_SHOWMINNOACTIVE))
-                    pumpUntil(fun () -> handles |> List.take count |> List.forall(fun hwnd -> OS().windowFromHwnd(hwnd).isMinimized))
-                    dispatcher.invoke(fun () -> OS().windowFromHwnd(handles.Head).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
-                    pumpUntil(fun () -> handles |> List.take count |> List.forall(fun hwnd -> not(OS().windowFromHwnd(hwnd).isMinimized)))
+                    for _ in 1..5 do
+                        onHelper(fun () -> OS().windowFromHwnd(handles.Head).showWindow(ShowWindowCommands.SW_SHOWMINNOACTIVE))
+                        pumpUntil(fun () -> handles |> List.take count |> List.forall(fun hwnd -> OS().windowFromHwnd(hwnd).isMinimized))
+                        pumpUntil(fun () -> onGroup(fun group -> not group.ts.visible))
+                        onHelper(fun () -> OS().windowFromHwnd(handles.Head).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
+                        pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle) && (handles |> List.take count |> List.forall(fun hwnd -> not(OS().windowFromHwnd(hwnd).isMinimized))))
+                        pumpUntil(fun () -> onGroup(fun group -> group.ts.visible))
                 onGroup(fun group ->
                     // Benchmark direct production operations separately from
                     // queued OS notifications generated by synthetic rapid loops.
@@ -167,6 +221,7 @@ let main() =
                 samples (sprintf "%dtabs-repeat-placement" count) 20 (fun group _ -> invoke "updatePlacements" group [||] |> ignore)
                 let changes = forms |> List.sumBy(fun form -> form.Changes)
                 onGroup(fun group -> invoke "updatePlacements" group [||] |> ignore)
+                pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle))
                 check (forms |> List.sumBy(fun form -> form.Changes) = changes) (sprintf "Unchanged placement sent native positioning messages: %A" (handles |> List.take count |> List.map(fun hwnd -> let w=OS().windowFromHwnd(hwnd) in w.bounds.ToString(),w.placement.showCmd)))
                 samples (sprintf "%dtabs-move" count) 20 (fun group index ->
                     setBounds group (bounds.move(index%2*10,0))
@@ -187,16 +242,17 @@ let main() =
                 check (onGroup(fun group -> group.zorder.value.list.Tail |> List.forall(fun hwnd -> OS().windowFromHwnd(hwnd).isMaximized))) "Maximize left normal followers"
                 check (Win32Helper.GetMinMaxAnimation()=animationPreference) "Maximize changed the user's animation preference"
                 onGroup(fun group -> applyPlacement group ShowWindowCommands.SW_SHOWNORMAL)
+                pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle))
                 if count=5 then
                     samples "5tabs-selection-info-responsive" 30 (fun group index ->
                         invoke "setTabInfo" group [|box handles.[index%5]|] |> ignore)
-                    dispatcher.invoke(fun () -> forms.Head.IconDelay <- 50)
+                    onHelper(fun () -> forms.Head.IconDelay <- 50)
                     try
                         samples "5tabs-selection-info-one-50ms-icon-handler" 3 (fun group _ ->
                             invoke "setTabInfo" group [|box handles.Head|] |> ignore)
-                    finally dispatcher.invoke(fun () -> forms.Head.IconDelay <- 0)
+                    finally onHelper(fun () -> forms.Head.IconDelay <- 0)
             // Controlled latency in an application's synchronous positioning handler.
-            dispatcher.invoke(fun () -> forms.[1].Delay <- 50)
+            onHelper(fun () -> forms.[1].Delay <- 50)
             samples "20tabs-move-one-50ms-handler" 5 (fun group index ->
                 let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="placement")
                 let cell = field.GetValue(group)
@@ -204,7 +260,7 @@ let main() =
                 let value = Some(target,OS().windowFromHwnd(handles.Head).placement,target)
                 cell.GetType().GetMethod("set").Invoke(cell,[|box value|]) |> ignore
                 invoke "updatePlacements" group [||] |> ignore)
-            dispatcher.invoke(fun () -> forms.[1].Delay <- 0)
+            onHelper(fun () -> forms.[1].Delay <- 0)
             onGroup(fun group ->
                 let location = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="pendingLocations")
                 let pending = location.GetValue(group) :?> Collections.Generic.HashSet<IntPtr>
@@ -280,15 +336,19 @@ let main() =
                     let value = Some(target,{normal with showCmd=command},target)
                     cell.GetType().GetMethod("set").Invoke(cell,[|box value|]) |> ignore
                     invoke "updatePlacements" group [||] |> ignore)
+                let waitPlacement() = pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle))
                 for delay in [0;50;100] do
                     WinUserApi.SendMessage(foreignHwnd,0x804E,IntPtr(delay),IntPtr.Zero) |> ignore
                     let timings = ResizeArray<float>()
                     let waits = ResizeArray<float>()
                     let requests = ResizeArray<int>()
+                    let completions = ResizeArray<float>()
                     for _ in 1..5 do
                         apply ShowWindowCommands.SW_SHOWNORMAL
+                        waitPlacement()
                         WinUserApi.SendMessage(foreignHwnd,0x804F,IntPtr.Zero,IntPtr.Zero) |> ignore
                         let mutable queued = -1.0
+                        let completion = Stopwatch.StartNew()
                         let duration = onGroup(fun group ->
                             let clock = Stopwatch.StartNew()
                             group.invokeAsync(fun () -> queued <- clock.Elapsed.TotalMilliseconds)
@@ -300,6 +360,8 @@ let main() =
                             invoke "updatePlacements" group [||] |> ignore
                             clock.Elapsed.TotalMilliseconds)
                         onGroup(fun _ -> ())
+                        waitPlacement()
+                        completions.Add(completion.Elapsed.TotalMilliseconds)
                         check (queued>=0.0) "Queued group UI marker was lost"
                         check (onGroup(fun group -> group.zorder.value.tail.list |> List.forall(fun hwnd -> OS().windowFromHwnd(hwnd).isMaximized))) "Foreign slow follower did not maximize"
                         timings.Add(duration)
@@ -307,10 +369,35 @@ let main() =
                         requests.Add(WinUserApi.SendMessage(foreignHwnd,0x8050,IntPtr.Zero,IntPtr.Zero).ToInt32())
                     let sorted = timings |> Seq.sort |> Seq.toArray
                     let queued = waits |> Seq.sort |> Seq.toArray
-                    printfn "PERF 21tabs-maximize-foreign-%dms-position median=%.3fms p95=%.3fms queued-ui-median=%.3fms requests=%A raw-ms=%A" delay sorted.[2] sorted.[4] queued.[2] (requests.ToArray()) (timings.ToArray())
-                    if delay>0 then check (sorted.[2]>=float delay && queued.[2]>=float delay) "Foreign positioning delay did not hold group synchronization/UI work"
+                    let complete = completions |> Seq.sort |> Seq.toArray
+                    printfn "PERF 21tabs-maximize-foreign-%dms-position dispatch-median=%.3fms queued-ui-median=%.3fms completion-median=%.3fms requests=%A raw-ui-ms=%A" delay sorted.[2] queued.[2] complete.[2] (requests.ToArray()) (waits.ToArray())
+                    if delay>0 then check (complete.[2]>=float delay) "Slow placement completion was not measured"
+                    if delay=100 then check (queued.[2]<50.0) "An independent 100ms positioning handler still blocked group UI work"
+                // A restore supersedes pending maximize requests even while the
+                // slow foreign window is still processing the first transition.
+                WinUserApi.SendMessage(foreignHwnd,0x804E,IntPtr(100),IntPtr.Zero) |> ignore
+                apply ShowWindowCommands.SW_SHOWNORMAL
+                waitPlacement()
+                let positionRequests() = output.ToArray() |> Array.filter((=) "POSITION_REQUEST") |> Array.length
+                let beforePosition = positionRequests()
+                apply ShowWindowCommands.SW_SHOWMAXIMIZED
+                pumpUntil(fun () -> positionRequests()>beforePosition)
+                check (not(onGroup(fun group -> group.isPlacementIdle))) "Slow transition finished before replacement could be tested"
+                apply ShowWindowCommands.SW_SHOWNORMAL
+                waitPlacement()
+                check (not(OS().windowFromHwnd(foreignHwnd).isMaximized)) "Restore was dropped while a maximize call was in flight"
+                for _ in 1..10 do
+                    apply ShowWindowCommands.SW_SHOWMAXIMIZED
+                    apply ShowWindowCommands.SW_SHOWNORMAL
+                waitPlacement()
+                check (onGroup(fun group -> group.zorder.value.tail.list |> List.forall(fun hwnd -> not(OS().windowFromHwnd(hwnd).isMaximized)))) "Rapid restore left a stale maximized follower"
+                for _ in 1..10 do
+                    onGroup(fun group -> group.minimizeAll(); group.restoreAll())
+                waitPlacement()
+                check (handles@[foreignHwnd] |> List.forall(fun hwnd -> not(OS().windowFromHwnd(hwnd).isMinimized))) "Rapid group restore left a minimized window"
                 WinUserApi.SendMessage(foreignHwnd,0x804E,IntPtr.Zero,IntPtr.Zero) |> ignore
                 apply ShowWindowCommands.SW_SHOWNORMAL
+                waitPlacement()
                 onGroup(fun group -> group.removeWindow(foreignHwnd))
             finally
                 if foreignHwnd<>IntPtr.Zero then
@@ -323,26 +410,39 @@ let main() =
                 foreign.WaitForExit()
                 check (foreign.ExitCode=0 && output.ToArray() |> Array.contains "TEST_BODY_COMPLETE") "Foreign icon helper failed during cleanup"
             onGroup(fun group -> group.restoreAll())
+            pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle))
+            onGroup(fun group -> group.onEnterMoveSize(); group.onExitMoveSize())
+            pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle))
+            check (handles |> List.forall(fun hwnd -> OS().windowFromHwnd(hwnd).bounds.x < -10000)) "Move helpers escaped the off-screen fixture"
             onGroup(fun group -> group.main(handles.Head,WinEvent.EVENT_SYSTEM_MINIMIZESTART))
             // A dispatcher barrier waits for the explicitly queued stale event.
             onGroup(fun _ -> ())
             check (handles |> List.forall(fun hwnd -> not(OS().windowFromHwnd(hwnd).isMinimized))) "Stale minimize event minimized a restored group"
             onGroup(fun group -> group.minimizeAll())
+            pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle))
             onGroup(fun group -> group.main(handles.Head,WinEvent.EVENT_SYSTEM_MINIMIZEEND))
             onGroup(fun _ -> ())
             check (handles |> List.forall(fun hwnd -> OS().windowFromHwnd(hwnd).isMinimized)) "Stale restore event restored a minimized group"
             // A valid event can also arrive before the source's state changes.
             // Hooks are disabled here: only the deferred state reconciliation
             // can restore the other windows when the source later finishes.
-            dispatcher.invoke(fun () -> OS().windowFromHwnd(handles.Head).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
+            onHelper(fun () -> OS().windowFromHwnd(handles.Head).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
             pumpUntil(fun () -> handles |> List.forall(fun hwnd -> not(OS().windowFromHwnd(hwnd).isMinimized)))
             printfn "PASS: grouped order, normal placement, maximize followers, minimize/restore, stale events and controlled slow application. Measurements exclude real input and DWM."
         finally
-            dispatcher.invoke(fun () -> for form in forms do form.Delay <- 0; form.IconDelay <- 0)
-            onGroup(fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
+            onHelper(fun () -> for form in forms do form.Delay <- 0; form.IconDelay <- 0)
+            pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle))
+            let remaining = onGroup(fun group -> group.windows.items.list)
+            // Removing twenty visible tabs in one callback includes twenty renders;
+            // instrumented pixel loops can exceed a single dispatcher deadline.
+            for hwnd in remaining do
+                let removal = Stopwatch.StartNew()
+                onGroup(fun group -> group.removeWindow hwnd)
+                printfn "GROUP_CLEANUP removed=%d elapsed=%.3fms" (hwnd.ToInt64()) removal.Elapsed.TotalMilliseconds
             (info :> IGroup).destroy()
             pumpUntil(fun () -> desktop.retainedGroupCount=0)
-            dispatcher.invoke(fun () ->
+            pumpUntil(fun () -> FollowerPlacement.queue.retainedCount=0)
+            onHelper(fun () ->
                 for form in forms do form.Dispose()
                 (dispatcher :> IDisposable).Dispose()
                 Application.ExitThread())

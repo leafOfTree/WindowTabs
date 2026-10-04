@@ -11,7 +11,12 @@ $repo = Split-Path $PSScriptRoot -Parent
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw 'The .NET SDK (dotnet) is required.' }
 if (-not $Coverage -and ($MinimumLineCoverage -gt 0 -or $MinimumBranchCoverage -gt 0)) { throw 'Coverage thresholds require -Coverage.' }
 Push-Location $repo
+$taskRegressionMutex = [Threading.Mutex]::new($false, 'Local\WindowTabs.NativeRegressionTests')
+$taskOwnsRegressionMutex = $false
 try {
+    try { $taskOwnsRegressionMutex = $taskRegressionMutex.WaitOne(0) }
+    catch [Threading.AbandonedMutexException] { $taskOwnsRegressionMutex = $true }
+    if (-not $taskOwnsRegressionMutex) { throw 'Another WindowTabs native regression run is active; wait for it to finish before starting this run.' }
     # Keep each folder's files together: Visual Studio's F# project tree cannot
     # show a folder whose files are interleaved with another folder's.
     [xml]$project = Get-Content -LiteralPath WtProgram\WtProgram.fsproj -Raw
@@ -123,4 +128,8 @@ try {
         }
     }
     if ($failures.Count -gt 0) { throw ($failures -join [Environment]::NewLine) }
-} finally { Pop-Location }
+} finally {
+    if ($taskOwnsRegressionMutex) { $taskRegressionMutex.ReleaseMutex() }
+    $taskRegressionMutex.Dispose()
+    Pop-Location
+}

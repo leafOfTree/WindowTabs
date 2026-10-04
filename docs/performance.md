@@ -586,3 +586,76 @@ Commit preparation did not send desktop input or repeat the visible browser
 measurements. Those remain identified by their earlier working-tree binary hash.
 Validation artifacts are retained under
 `tests/Debug/commit-check-8094b9e80a364148a32ae46dae43e2e6/snapshot/tests/Debug`.
+
+## Background follower placement: 2026-10-04
+
+Follower movement, maximization, drag hiding and minimize/restore now submit
+immutable requests to a shared queue with at most four native workers. Requests
+for one HWND remain serial across group transfers; only its latest pending state
+is retained. Removing a window drops queued work immediately, including when
+other workers are busy. Generation checks prevent an obsolete move from issuing
+its second placement call. Workers check PID/thread identity and never access
+group cells or services. Normal movement preserves snapped bounds, and maximized
+cross-monitor movement still moves before applying placement.
+
+Minimize/restore events acknowledge propagated requests and update tab visibility
+without repeating the group operation. Native animation preferences are left
+unchanged. Native calls already in progress cannot be cancelled; a transferred
+window's next placement waits for that call to return. This improves group UI
+responsiveness rather than making a slow application's handler render faster.
+Foreground and z-order calls remain separate native paths on the group STA.
+
+`GroupOperations` reports dispatch duration, queued group work and eventual native
+completion separately. Each sample waits for placement work to finish before the
+next one. Controlled foreign handlers delay every positioning message by 0, 50
+or 100 ms; instrumentation timings are excluded from performance comparisons.
+Gated assertions cover request replacement during a slow maximize, rapid restore,
+owner transfer, removal, queued-entry cleanup and retaining the latest request.
+Native checks cover repeated minimize/restore, tab visibility, drag completion,
+unchanged bounds and final state. Test helper calls post and pump the main STA
+while waiting, allowing group-to-main services to complete during native work.
+The regression runner rejects concurrent native regression runs across checkouts.
+
+Physical mixed-monitor movement and visible browser latency with this scheduler
+still require the opt-in desktop tests. The earlier Edge figures above retain
+their original binary hash and have not been rerun for this change.
+
+The final uninstrumented 21-window control used five samples per handler delay:
+
+| Foreign handler delay | Dispatch median ms | Queued group work median ms | Placement completion median ms |
+| --- | ---: | ---: | ---: |
+| 0 ms | 0.490 | 0.496 | 186.006 |
+| 50 ms | 0.513 | 0.519 | 311.410 |
+| 100 ms | 0.454 | 0.460 | 405.052 |
+
+The follower received two positioning requests in each measured transition. The
+earlier synchronous controls held queued group work for hundreds of milliseconds;
+the new dispatch/queue figures exclude application completion and final display
+frames. Absolute native completion times vary with desktop state and animation.
+This run is an off-screen native control, not a repeat of the real Edge workload.
+
+All 13 default suites passed together with coverage floors enabled: 61.9% lines
+(6702/10818) and 53.7% branches (2472/4599). WindowPlacementQueue has 94.1% line /
+60.9% branch coverage, and WindowGroup has 86.7% / 63.2%. Architecture recorded
+GDI +0, USER +0 and handles +0 across 100 group cycles. Release built with zero
+warnings/errors and passed smoke, including the expected injected-paint-failure
+check. A separate activation-enabled off-screen native probe preserved the
+foreground across two background maximize/restore cycles; it does not replace
+foreground/z-order checks in the full application or physical monitor testing.
+
+Development failures are retained. One exposed a dropped restore during a pending
+maximize; another came from cleaning up twenty tabs in one dispatcher callback.
+Instrumented removals took 0.5–0.9 s apiece, exceeding that callback's 10 s deadline.
+Cleanup now removes one window per callback and checks final queue release, without
+loosening the timeout or removing assertions. The final normal cleanup took roughly
+14–32 ms per window. The complete passing instrumented run preceded the separate
+normal control; neither is a hidden retry of the failed script.
+
+The fixed working-tree snapshot includes the concurrent visible-frame changes.
+Artifacts are under `tests/Debug/placement-validation-4b8db016320945b6b6d78518886bbb53`:
+`manifest.json` identifies Debug/Release hashes, `passing-coverage-logs` retains
+all 13 results, and the report is in
+`snapshot/tests/coverage/e1470ccb987143e79724748d8150cfcb/report`. Normal timing and
+Release smoke logs remain in `snapshot/tests/Debug`; preceding failures are in
+`first-coverage-logs` and `second-coverage-logs`. The separate foreground probe
+source/output is in `tests/Debug/PlacementFocusProbe.*`.

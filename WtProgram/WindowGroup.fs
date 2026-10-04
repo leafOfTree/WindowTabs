@@ -43,6 +43,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let prevTop = Cell.create(None)
     /// Bounds to restore windows to, their placement, and the visible frame the tabs sit on.
     let placement = Cell.create(None:Option<Rect * OSWindowPlacement * Rect>)
+    let placementOwner = obj()
     let windowsCell = Cell.create(Set2())
     let _ts = ref None 
     let inMoveSize = Cell.create(false)
@@ -60,6 +61,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let locationGate = obj()
     let pendingLocations = Collections.Generic.HashSet<IntPtr>()
     let pendingMinimizeStates = Collections.Generic.Dictionary<IntPtr,bool * int64>()
+    let requestedMinimizeStates = Collections.Generic.Dictionary<IntPtr,bool>()
     let minimizeStateTimer = new System.Windows.Forms.Timer(Interval=16)
     let transitionClock = Stopwatch.StartNew()
     let iconCache = new WindowIconCache(invoker :> IDispatcher,fun hwnd ->
@@ -206,7 +208,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         | None -> ()
 
     member private this.hideChildWindows() =
-        zorderCell.value.tail.where(isMinimized >> not).iter(fun window -> this.os.windowFromHwnd(window).hideOffScreen(None))
+        zorderCell.value.tail.iter(fun hwnd -> FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.hideRequest hwnd))
 
     member private this.inZorder(windows:List2<IntPtr>) =
         // One desktop snapshot keeps the order consistent and avoids enumerating
@@ -216,6 +218,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member private this.setZorder(newZorder:List2<_>) =
         if zorderCell.value.list <> newZorder.list then
+            if newZorder.tryHead<>zorderCell.value.tryHead then
+                newZorder.tryHead.iter(fun hwnd ->
+                    FollowerPlacement.queue.cancel(placementOwner,hwnd,whenValue=(fun (_,request) ->
+                        match request with SetMinimized _ -> false | _ -> true)))
             prevTop.set(zorderCell.value.tryHead)
             zorderCell.set(newZorder)
 
@@ -321,31 +327,15 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             placement.set(Some(bounds, window.placement, visible))
            
     member private this.adjustWindowPlacement(hwnd) =
-        let window = this.os.windowFromHwnd(hwnd)
-        if placement.value.IsSome then
+        let changingMinimizeState =
+            match requestedMinimizeStates.TryGetValue(hwnd) with
+            | true,expected -> this.os.windowFromHwnd(hwnd).isMinimized<>expected && FollowerPlacement.isChangingMinimizeState placementOwner hwnd
+            | _ -> false
+        if placement.value.IsSome && not changingMinimizeState then
             let bounds,wp,_ = placement.value.Value
-            let current = window.placement
-            //if you remove this check, then when you drag a window into an Aero Snapp'ed window
-            //the dragged in window will be placed at the restore location for the target, instead of
-            //at its snapped location - this is because GetWindowPlacement rcNormal is the restore
-            //location for snapped windows
-            if  wp.showCmd = ShowWindowCommands.SW_SHOWNORMAL &&
-                current.showCmd = ShowWindowCommands.SW_SHOWNORMAL
-                then
-                if window.bounds <> bounds then window.move(bounds)
-            else
-                if current.showCmd = ShowWindowCommands.SW_SHOWMINIMIZED then
-                    let minimized = {wp with showCmd = ShowWindowCommands.SW_SHOWMINIMIZED}
-                    if current <> minimized then window.setPlacement(minimized)
-                else
-                    if current.showCmd = ShowWindowCommands.SW_SHOWMAXIMIZED &&
-                        wp.showCmd = ShowWindowCommands.SW_SHOWMAXIMIZED then
-                        //maximized windows won't move from one monitor to another by setting placement alone,
-                        //need to first move to the new bounds, then set placement
-                        if current <> wp || window.bounds <> bounds then
-                            window.move(bounds)
-                            window.setPlacement(wp)
-                    elif current <> wp then window.setPlacement(wp)
+            FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.request hwnd bounds wp)
+
+    member this.isPlacementIdle = FollowerPlacement.queue.isIdle(placementOwner)
                      
     member this.setTabName(hwnd,name) =
         Services.program.setWindowNameOverride(hwnd, name)
@@ -417,24 +407,38 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     minimizeStateTimer.Start()
                     false
             else true
+        // Acknowledge our own propagated events instead of reissuing the group
+        // operation. An older event cannot reverse a newer request still in flight.
+        let propagated =
+            if minimizeEvent then
+                match requestedMinimizeStates.TryGetValue(hwnd) with
+                | true,expected ->
+                    let observed = evt=WinEvent.EVENT_SYSTEM_MINIMIZESTART
+                    if expected=observed then
+                        if minimizeReady then requestedMinimizeStates.Remove(hwnd) |> ignore
+                        true
+                    elif FollowerPlacement.isChangingMinimizeState placementOwner hwnd then true
+                    else requestedMinimizeStates.Remove(hwnd) |> ignore; false
+                | _ -> false
+            else false
         match evt with
         | WinEvent.EVENT_SYSTEM_MINIMIZESTART -> 
             // Queued notifications may be overtaken by a fast restore.
             if minimizeReady && this.windows.contains(hwnd) && this.os.windowFromHwnd(hwnd).isMinimized then
-                let needsMinimized = zorderCell.value.any <| fun hwnd -> 
-                    this.os.windowFromHwnd(hwnd).isMinimized.not
-                if needsMinimized then  
-                    this.minimizeAll()
-                    this.os.setZorder(zorderCell.value.moveToEnd((=)hwnd))
+                if not propagated then
+                    let needsMinimized = zorderCell.value.any <| fun hwnd -> this.os.windowFromHwnd(hwnd).isMinimized.not
+                    if needsMinimized then
+                        this.minimizeAll()
+                        this.os.setZorder(zorderCell.value.moveToEnd((=)hwnd))
                 this.updateIsVisible()
         //this happens when a window is restored from minimize
         | WinEvent.EVENT_SYSTEM_MINIMIZEEND ->
             if minimizeReady && this.windows.contains(hwnd) && this.os.windowFromHwnd(hwnd).isMinimized.not then
-                let needsRestore = zorderCell.value.any <| fun hwnd -> 
-                    this.os.windowFromHwnd(hwnd).isMinimized
-                if needsRestore then  
-                    this.restoreAll()
-                    this.os.setZorder(zorderCell.value.moveToEnd((=)hwnd))
+                if not propagated then
+                    let needsRestore = zorderCell.value.any <| fun hwnd -> this.os.windowFromHwnd(hwnd).isMinimized
+                    if needsRestore then
+                        this.restoreAll()
+                        this.os.setZorder(zorderCell.value.moveToEnd((=)hwnd))
                 this.updateIsVisible()      
                 //foreground status may have changed
                 this.foreground <- this.os.foreground.hwnd
@@ -489,6 +493,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             let window = this.os.windowFromHwnd(hwnd)                
             let window = this.os.windowFromHwnd(hwnd)
             this.setWindows(this.windows.add hwnd)
+            FollowerPlacement.queue.claim(placementOwner,hwnd)
             if prevTop.value.IsNone then
                 prevTop.set(Some(hwnd))
                 this.saveTopWindowPlacement()
@@ -518,7 +523,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             addedEvent.Trigger(hwnd)
 
     member this.removeWindow(hwnd) = this.withUpdate <| fun() ->
-        if this.windows.contains(hwnd) then    
+        if this.windows.contains(hwnd) then
+            FollowerPlacement.queue.release(placementOwner,hwnd)
             //CASE 777 - chrome windows can close when you merge a single chrome tab
             //into another chrome group, need to exit the move/size and restore windows on screen in this case
             if inMoveSize.value then
@@ -530,6 +536,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             hookCleanup.map(fun hooks -> hooks.remove(hwnd))
             removedEvent.Trigger(hwnd)
             pendingMinimizeStates.Remove(hwnd) |> ignore
+            requestedMinimizeStates.Remove(hwnd) |> ignore
             iconCache.remove(hwnd)
     
     member this.activateIndex(index, force) =
@@ -550,9 +557,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.destroy() =
         if isDestroyed.value.not then
             isDestroyed.set(true)
+            this.windows.items.iter(fun hwnd -> FollowerPlacement.queue.release(placementOwner,hwnd))
             lock locationGate (fun () -> pendingLocations.Clear())
             minimizeStateTimer.Dispose()
             pendingMinimizeStates.Clear()
+            requestedMinimizeStates.Clear()
             themeSubscription |> Option.iter (fun subscription -> subscription.Dispose())
             themeSubscription <- None
             this.ts.destroy()
@@ -564,25 +573,15 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
    
 
-    member private this.suppressAnimation f = fun() ->
-        let hasAnimation = Win32Helper.GetMinMaxAnimation()
-        if hasAnimation then
-            Win32Helper.SetMinMaxAnimation(false)
-        try f()
-        finally
-            if hasAnimation then Win32Helper.SetMinMaxAnimation(true)
-
-    member this.minimizeAll = this.suppressAnimation <| fun() ->
+    member this.minimizeAll = fun() ->
         zorderCell.value.reverse.iter <| fun hwnd ->
-            let window = this.os.windowFromHwnd(hwnd)
-            if window.isMinimized.not then
-                window.showWindow(ShowWindowCommands.SW_SHOWMINNOACTIVE)
+            requestedMinimizeStates.[hwnd] <- true
+            FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.minimizeRequest hwnd true)
         
-    member this.restoreAll = this.suppressAnimation <| fun() ->
+    member this.restoreAll = fun() ->
         zorderCell.value.iter <| fun hwnd ->
-            let window = this.os.windowFromHwnd(hwnd)
-            if window.isMinimized then
-                window.showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE)
+            requestedMinimizeStates.[hwnd] <- false
+            FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.minimizeRequest hwnd false)
         
     member this.tabActivate(Tab(hwnd), force) =
         let window = this.os.windowFromHwnd(hwnd)
