@@ -32,7 +32,15 @@ type HotKeyView() =
         let keyboard = SettingsUi.sectionCard table (tr Strings.Shortcuts.keyboard)
         SettingsUi.note keyboard (tr Strings.Shortcuts.keyboardNote)
         for (key,editor),(_,id) in List.zip editors actions do SettingsUi.settingRow keyboard id editor
-        SettingsBindings.toggleRow keyboard "switch-tabs-by-number"
+        let numericEnabled = SettingsBindings.settingToggle "enableCtrlNumberHotKey"
+        SettingsUi.settingRow keyboard "switch-tabs-by-number" numericEnabled
+        let numericChoice = SettingsBindings.choiceRow keyboard "number-shortcut"
+                                [|tr Strings.Settings.numberShortcutCtrl;tr Strings.Settings.numberShortcutAlt;tr Strings.Settings.numberShortcutBoth|]
+        let numericRow = numericChoice.Parent :?> SettingsRow
+        SettingsUi.indentDependentRow numericRow
+        let updateNumeric() = numericRow.Collapsed <- not numericEnabled.Checked
+        updateNumeric()
+        numericEnabled.CheckedChanged.Add(fun _ -> updateNumeric())
         let restore = SettingsUi.button (tr Strings.Shortcuts.restoreDefaults)
         restore.Click.Add(fun _ -> restoreDefaults())
         let actionsRow = new FlowLayoutPanel(AutoSize=true,WrapContents=false,FlowDirection=FlowDirection.RightToLeft,

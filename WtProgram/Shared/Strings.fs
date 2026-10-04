@@ -147,8 +147,14 @@ module Strings =
                            description={ en="Find a tab by title or app and switch to it, starting in the current group."; zh="按标题或应用查找标签并切换，优先在当前分组中查找。"; ja="タイトルやアプリ名でタブを探して切り替えます。まず現在のグループ内を検索します。" }
                            keywords={ en="hotkey jump window switcher palette"; zh="热键 跳转 窗口"; ja="ホットキー ジャンプ ウィンドウ" } }
         let switchTabsByNumber = { caption={ en="Switch tabs by number"; zh="按数字切换标签"; ja="番号でタブを切り替え" }
-                                   description={ en="Use Ctrl + 1–9 to switch tabs."; zh="使用 Ctrl + 1–9 切换标签。"; ja="Ctrl + 1～9 でタブを切り替えます。" }
+                                   description={ en="Switch tabs using a modifier key and 1–9."; zh="使用修饰键与 1–9 切换标签。"; ja="修飾キーと 1～9 でタブを切り替えます。" }
                                    keywords={ en="hotkey digit"; zh="热键"; ja="ホットキー 数字" } }
+        let numberShortcut = { caption={ en="Number shortcut"; zh="数字快捷键"; ja="番号ショートカット" }
+                               description={ en="Choose Ctrl, Alt, or either modifier."; zh="选择 Ctrl、Alt，或两者均可。"; ja="Ctrl、Alt、またはどちらでも使える設定を選びます。" }
+                               keywords={ en="number shortcut modifier"; zh="数字 快捷键 修饰键"; ja="番号 ショートカット 修飾キー" } }
+        let numberShortcutCtrl = { en="Ctrl + 1–9"; zh="Ctrl + 1–9"; ja="Ctrl + 1～9" }
+        let numberShortcutAlt = { en="Alt + 1–9"; zh="Alt + 1–9"; ja="Alt + 1～9" }
+        let numberShortcutBoth = { en="Ctrl or Alt + 1–9"; zh="Ctrl 或 Alt + 1–9"; ja="Ctrl または Alt + 1～9" }
         let activateOnHover = { caption={ en="Switch tabs on hover"; zh="悬停切换标签"; ja="ホバーでタブを切り替え" }
                                 description={ en="Switch windows when the pointer rests on a tab."; zh="鼠标悬停在标签上时切换窗口。"; ja="タブにポインターを置くとウィンドウを切り替えます。" }
                                 keywords={ en="mouse"; zh="悬浮"; ja="マウスオーバー" } }

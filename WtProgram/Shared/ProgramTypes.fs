@@ -16,6 +16,7 @@ type SettingsRec = {
     replaceAltTab: bool
     groupWindowsInSwitcher: bool
     enableCtrlNumberHotKey: bool
+    numberHotKeyModifier: string
     combineIconsInTaskbar: bool
     enableHoverActivate: bool
     /// "Never", "Maximized" or "Always".

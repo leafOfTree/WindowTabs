@@ -218,6 +218,24 @@ let main() =
                target WindowMessages.WM_KEYDOWN 0x30 true=None) "Numeric shortcut accepted key-up, missing Ctrl or an invalid digit"
         api.setValue("enableCtrlNumberHotKey",box false)
         check (target WindowMessages.WM_KEYDOWN 0x31 true=None) "Numeric shortcuts retained their enabled state"
+        let altTarget msg ctrl alt = onGroup(fun _ -> numeric.targetIndex(msg,0x31,ctrl,altPressed=alt))
+        let capture = NumericShortcutCapture()
+        check (capture.handle(WindowMessages.WM_KEYDOWN,0x31,Some 0)=(true,Some 0)) "Matched digit must be swallowed and activated"
+        check (capture.handle(WindowMessages.WM_KEYDOWN,0x31,Some 0)=(true,Some 0)) "Held digit repeat leaked to the application"
+        check (capture.handle(WindowMessages.WM_KEYDOWN,0x31,None)=(true,None)) "Captured repeat leaked after focus or modifiers changed"
+        check (capture.handle(WindowMessages.WM_KEYUP,0x31,None)=(true,None)) "Captured release leaked after focus or modifiers changed"
+        check (capture.handle(WindowMessages.WM_KEYDOWN,0x31,None)=(false,None)) "Unmatched digit was swallowed"
+        check (capture.handle(WindowMessages.WM_SYSKEYDOWN,0x32,Some 1)=(true,Some 1) && capture.handle(WindowMessages.WM_SYSKEYUP,0x32,None)=(true,None)) "Alt digit press/release was not swallowed"
+        api.setValue("enableCtrlNumberHotKey",box true)
+        api.setValue("numberHotKeyModifier",box "Alt")
+        check (altTarget WindowMessages.WM_SYSKEYDOWN false true=Some 0 && target WindowMessages.WM_KEYDOWN 0x31 true=None) "Alt mode did not replace Ctrl"
+        api.setValue("numberHotKeyModifier",box "Both")
+        check (altTarget WindowMessages.WM_SYSKEYDOWN false true=Some 0 && target WindowMessages.WM_KEYDOWN 0x31 true=Some 0) "Both mode must accept either modifier"
+        check (altTarget WindowMessages.WM_SYSKEYDOWN true true=None && altTarget WindowMessages.WM_SYSKEYUP false true=None) "Numeric shortcut accepted Ctrl+Alt or Alt key-up"
+        api.setValue("numberHotKeyModifier",box "invalid")
+        check (api.getValue("numberHotKeyModifier") :?> string = "Ctrl") "Invalid numeric modifier must fall back to Ctrl"
+        api.setValue("enableCtrlNumberHotKey",box false)
+        check (altTarget WindowMessages.WM_SYSKEYDOWN false true=None) "Disabled numeric shortcut accepted Alt"
 
         // A hidden, off-screen HWND with the maximized style exercises the actual
         // collapse timer without maximizing a window on the user's desktop.

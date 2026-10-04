@@ -33,13 +33,14 @@ let mutable preferences = {
     lightPalette=Theme.lightPalette;darkPalette=Theme.darkPalette
     lightCustomPalette=Theme.lightPalette;darkCustomPalette=Theme.darkPalette
     mode=DarkTheme;useCustomColors=true;lightPreset="";darkPreset="";presetEdits=Map.empty }
+let settingValues = Collections.Generic.Dictionary<string,obj>(dict ["numberHotKeyModifier",box "Ctrl"])
 let settings = { new ISettings with
     member _.appearance = preferences
     member _.updateAppearance update = preferences <- update preferences; ThemeService.notifyChanged()
     member _.root with get() = JObject() and set(_) = ()
     member _.path = ""
-    member _.getValue _ = box false
-    member _.setValue _ = ()
+    member _.getValue key = if settingValues.ContainsKey(key) then settingValues.[key] else box false
+    member _.setValue args = let key,value = args in settingValues.[key] <- value
     member _.notifyValue _ _ = { new IDisposable with member _.Dispose() = () }
     member _.hotKey _ = None
     member _.setHotKey _ _ = () }
@@ -256,6 +257,7 @@ let main() =
         let processKey = control.GetType().GetMethod("ProcessCmdKey",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
         unbox<bool>(processKey.Invoke(control,[|box msg;box keys|]))
     for mode,name in [DarkTheme,"dark";LightTheme,"light"] do
+        hotKeys.["searchTabs"] <- 0
         preferences <- { preferences with mode=mode }
         use form = new Form(ClientSize=Size(920,560),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false,Font=SettingsUi.bodyFont)
         let view = HotKeyView() :> ISettingsView
@@ -265,6 +267,18 @@ let main() =
         Application.DoEvents()
         let next = view.control.Controls.Find("next-tab",true).[0] :?> SettingsShortcutInput
         let previous = view.control.Controls.Find("previous-tab",true).[0] :?> SettingsShortcutInput
+        let numeric = view.control.Controls.Find("switch-tabs-by-number",true).[0] :?> SettingsToggle
+        let numericChoice = view.control.Controls.Find("number-shortcut",true).[0] :?> SettingsCombo
+        let numericRow = numericChoice.Parent :?> SettingsRow
+        numeric.Checked <- false
+        assertTrue numericRow.Collapsed "Disabled numeric shortcuts must hide modifier selection"
+        numeric.Checked <- true
+        assertTrue (not numericRow.Collapsed) "Enabled numeric shortcuts must show modifier selection"
+        numericChoice.SelectedIndex <- 1
+        assertTrue (settings.getValue("numberHotKeyModifier") :?> string = "Alt") "Alt selection was not saved"
+        numericChoice.SelectedIndex <- 2
+        assertTrue (settings.getValue("numberHotKeyModifier") :?> string = "Both") "Both selection was not saved"
+        numericChoice.SelectedIndex <- 0
         next.StartRecording()
         assertTrue (command next Keys.A && next.IsRecording && next.Shortcut=3623) "Plain key is refused while recording"
         command next Keys.Escape |> ignore
@@ -295,12 +309,12 @@ let main() =
             if control.Text=text then Some(control :?> Button)
             else control.Controls |> Seq.cast<Control> |> Seq.tryPick (findButton text)
         let search = view.control.Controls.Find("search-tabs",true).[0] :?> SettingsShortcutInput
-        assertTrue (search.Shortcut=0) "Tab search has a shortcut before the user sets one"
+        assertTrue (search.Shortcut=0) "Explicitly cleared tab search shortcut was not preserved"
         hotKeys.["searchTabs"] <- 1568
         search.Shortcut <- 1568
         (findButton "Restore default shortcuts" view.control).Value.PerformClick()
         assertTrue (hotKeys.["nextTab"]=3623 && hotKeys.["prevTab"]=3621 && next.Shortcut=3623 && previous.Shortcut=3621) "Restore default shortcuts"
-        assertTrue (hotKeys.["searchTabs"]=0 && search.Shortcut=0) "Restore default left tab search without a shortcut"
+        assertTrue (hotKeys.["searchTabs"]=1056 && search.Shortcut=1056) "Restore default must set tab search to Alt+Space"
         hotKeys.["prevTab"] <- 3621
         Application.DoEvents()
         use bitmap = new Bitmap(form.ClientSize.Width,form.ClientSize.Height)

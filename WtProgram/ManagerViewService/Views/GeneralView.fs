@@ -16,6 +16,7 @@ type GeneralView() =
         let autoHide = SettingsBindings.choiceRow behaviour "auto-hide-tabs"
                            [|tr Strings.Common.never;tr Strings.Common.whenMaximizedOrSnapped;tr Strings.Common.always|]
         let showOnSwitch = SettingsUi.settingRowControl behaviour "show-tabs-on-switch" (SettingsBindings.settingToggle "showTabsOnSwitch")
+        SettingsUi.indentDependentRow showOnSwitch
         // Index 0 is Never: nothing is hidden, so there is nothing to show.
         let updateShowOnSwitch() = showOnSwitch.Collapsed <- autoHide.SelectedIndex = 0
         updateShowOnSwitch()
@@ -31,6 +32,7 @@ type GeneralView() =
         let groupedRow = SettingsUi.settingRowControl switcher "group-windows-in-the-switcher" grouped
         // Both only matter while WindowTabs handles Alt+Tab.
         let dependents = [style.Parent :?> SettingsRow;groupedRow]
+        dependents |> List.iter SettingsUi.indentDependentRow
         let update() = for row in dependents do row.Collapsed <- not enabled.Checked
         update()
         enabled.CheckedChanged.Add(fun _ -> update())

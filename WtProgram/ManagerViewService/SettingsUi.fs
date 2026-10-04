@@ -213,7 +213,7 @@ module SettingsUi =
             let below = table.Controls |> Seq.cast<Control> |> Seq.exists(fun other -> table.GetRow(other) > table.GetRow(row) && isShown other)
             if below then
                 use pen = new Pen((palette()).border)
-                e.Graphics.DrawLine(pen,0,row.Height-1,row.Width,row.Height-1))
+                e.Graphics.DrawLine(pen,row.Padding.Left,row.Height-1,row.Width,row.Height-1))
         add table row
         row
 
@@ -234,6 +234,11 @@ module SettingsUi =
         settingRowWith table id (tr (SettingsCatalog.find id).text.description) editor
 
     let settingRow table id editor = settingRowControl table id editor |> ignore
+
+    /// Keep dependent settings inset while their editors stay aligned on the right.
+    let indentDependentRow (row:SettingsRow) =
+        let padding = row.Padding
+        row.Padding <- Padding(Dpi.scale 20,padding.Top,padding.Right,padding.Bottom)
 
     let sectionCard table caption =
         section table caption
