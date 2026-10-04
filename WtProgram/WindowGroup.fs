@@ -32,6 +32,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let keyboardLLEvent = Event<Int32 * KBDLLHOOKSTRUCT * bool>()
     let foregroundEvent = Event<_>()
     let geometryChangedEvent = Event<unit>()
+    let tabInfoChangedEvent = Event<IntPtr>()
     // Supplied by the caller: the main thread waits while this constructor runs.
     // Calling the settings service here would synchronously invoke that blocked thread.
     let mutable logicalAppearance = initialAppearance
@@ -55,6 +56,16 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let isDraggingExport = Cell.export <| fun() -> isDraggingCell.value
     let zorderExport = Cell.export <| fun() -> zorderCell.value
     let isVisibleCell = Cell.create(false)
+    let locationGate = obj()
+    let pendingLocations = Collections.Generic.HashSet<IntPtr>()
+    let pendingMinimizeStates = Collections.Generic.Dictionary<IntPtr,bool * int64>()
+    let minimizeStateTimer = new System.Windows.Forms.Timer(Interval=16)
+    let transitionClock = Stopwatch.StartNew()
+    let iconCache = new WindowIconCache(invoker :> IDispatcher,fun hwnd ->
+        Cell.beginUpdate()
+        try
+            if not isDestroyed.value && this.windows.contains(hwnd) then this.setTabInfo(hwnd)
+        finally Cell.endUpdate())
 
     let isMaximizedExport = Cell.export <| fun() ->
         zorderCell.value.tryHead.exists(fun hwnd -> this.os.windowFromHwnd(hwnd).isMaximized)
@@ -70,6 +81,14 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.init(ts:TabStrip) =
         _ts := Some(ts)
+        minimizeStateTimer.Tick.Add(fun _ ->
+            let now = transitionClock.ElapsedMilliseconds
+            for hwnd,(minimized,deadline) in pendingMinimizeStates |> Seq.map(fun pair -> pair.Key,pair.Value) |> Seq.toList do
+                if this.windows.contains(hwnd).not || not(WinUserApi.IsWindow(hwnd)) || now>=deadline then pendingMinimizeStates.Remove(hwnd) |> ignore
+                elif this.os.windowFromHwnd(hwnd).isMinimized=minimized then
+                    pendingMinimizeStates.Remove(hwnd) |> ignore
+                    this.main(hwnd,if minimized then WinEvent.EVENT_SYSTEM_MINIMIZESTART else WinEvent.EVENT_SYSTEM_MINIMIZEEND)
+            if pendingMinimizeStates.Count=0 then minimizeStateTimer.Stop())
 
         winEventHandler.set(Some(
             _os.setSingleWinEvent WinEvent.EVENT_SYSTEM_FOREGROUND <| fun(hwnd) -> 
@@ -188,7 +207,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.hideChildWindows() =
         zorderCell.value.tail.where(isMinimized >> not).iter(fun window -> this.os.windowFromHwnd(window).hideOffScreen(None))
 
-    member private this.inZorder(windows:List2<IntPtr>) = this.windows.items.sortBy(fun hwnd -> this.os.windowFromHwnd(hwnd).zorder)
+    member private this.inZorder(windows:List2<IntPtr>) =
+        // One desktop snapshot keeps the order consistent and avoids enumerating
+        // every desktop window again for each tab during activation.
+        let order = this.os.windowZorders
+        windows.sortBy(fun hwnd -> order.tryFind(hwnd).def(9999))
 
     member private this.setZorder(newZorder:List2<_>) =
         if zorderCell.value.list <> newZorder.list then
@@ -222,29 +245,41 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member private this.getTabInfo(hwnd) =
         let window = this.os.windowFromHwnd(hwnd)
+        let small,big = iconCache.get(hwnd)
         {
             text = this.hwndText hwnd
             isRenamed = this.isRenamed hwnd
-            iconSmall = window.iconSmall
-            iconBig = window.iconBig
+            iconSmall = small
+            iconBig = big
             preview = fun() ->
                 try
                     if window.isMinimized then
                         let size = this.placementBounds.size
-                        let icon = window.iconBig
+                        let _,icon = iconCache.get(hwnd)
                         let iconSize = icon.Size.Sz
                         let img = Img(size)
-                        let g = img.graphics
-                        g.FillRectangle(new SolidBrush(Color.LightGray), Rect(Pt(), size).Rectangle)
-                        g.DrawIcon(icon, ((size.width - iconSize.width).float / 2.0).Int32, ((size.height - iconSize.height).float / 2.0).Int32)
-                        img
+                        try
+                            use g = img.graphics
+                            use background = new SolidBrush(Color.LightGray)
+                            g.FillRectangle(background, Rect(Pt(), size).Rectangle)
+                            g.DrawIcon(icon, ((size.width - iconSize.width).float / 2.0).Int32, ((size.height - iconSize.height).float / 2.0).Int32)
+                            img
+                        with _ ->
+                            img.bitmap.Dispose()
+                            reraise()
                     else
                         Img(Win32Helper.PrintWindow(hwnd))
                 with ex -> Img(Sz(1, 1))
         }
     
     member private this.setTabInfo(hwnd) =
-        this.ts.setTabInfo(Tab(hwnd), this.getTabInfo(hwnd))
+        let info = this.getTabInfo(hwnd)
+        let previous = this.ts.tabInfo(Tab(hwnd))
+        if not(this.ts.hasTabInfo(Tab(hwnd))) || info.text <> previous.text || info.isRenamed <> previous.isRenamed ||
+           not(obj.ReferenceEquals(info.iconSmall,previous.iconSmall)) ||
+           not(obj.ReferenceEquals(info.iconBig,previous.iconBig)) then
+            this.ts.setTabInfo(Tab(hwnd),info)
+            tabInfoChangedEvent.Trigger(hwnd)
 
     member private this.setTsParent(parentHwnd) =
         this.os.windowFromHwnd(this.ts.hwnd).setParent(this.os.windowFromHwnd(parentHwnd))
@@ -288,24 +323,28 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         let window = this.os.windowFromHwnd(hwnd)
         if placement.value.IsSome then
             let bounds,wp = placement.value.Value
+            let current = window.placement
             //if you remove this check, then when you drag a window into an Aero Snapp'ed window
             //the dragged in window will be placed at the restore location for the target, instead of
             //at its snapped location - this is because GetWindowPlacement rcNormal is the restore
             //location for snapped windows
             if  wp.showCmd = ShowWindowCommands.SW_SHOWNORMAL &&
-                window.placement.showCmd = ShowWindowCommands.SW_SHOWNORMAL
+                current.showCmd = ShowWindowCommands.SW_SHOWNORMAL
                 then
-                window.move(bounds)
+                if window.bounds <> bounds then window.move(bounds)
             else
-                if window.placement.showCmd = ShowWindowCommands.SW_SHOWMINIMIZED then
-                    window.setPlacement({wp with showCmd = ShowWindowCommands.SW_SHOWMINIMIZED})
+                if current.showCmd = ShowWindowCommands.SW_SHOWMINIMIZED then
+                    let minimized = {wp with showCmd = ShowWindowCommands.SW_SHOWMINIMIZED}
+                    if current <> minimized then window.setPlacement(minimized)
                 else
-                    if window.placement.showCmd = ShowWindowCommands.SW_SHOWMAXIMIZED &&
+                    if current.showCmd = ShowWindowCommands.SW_SHOWMAXIMIZED &&
                         wp.showCmd = ShowWindowCommands.SW_SHOWMAXIMIZED then
                         //maximized windows won't move from one monitor to another by setting placement alone,
                         //need to first move to the new bounds, then set placement
-                        window.move(bounds)
-                    window.setPlacement(wp)   
+                        if current <> wp || window.bounds <> bounds then
+                            window.move(bounds)
+                            window.setPlacement(wp)
+                    elif current <> wp then window.setPlacement(wp)
                      
     member this.setTabName(hwnd,name) =
         Services.program.setWindowNameOverride(hwnd, name)
@@ -332,6 +371,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         | ShellEvent.HSHELL_REDRAW ->
             if this.windows.contains(hwnd) then
                 this.flashTab(Tab(hwnd), false)
+                iconCache.get(hwnd,force=true) |> ignore
                 this.setTabInfo(hwnd)
         | ShellEvent.HSHELL_WINDOWACTIVATED 
         | ShellEvent.HSHELL_RUDEAPPACTIVATED ->
@@ -354,10 +394,32 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         this.makeTopWindowForeground()
         this.updateIsVisible()
 
-    member this.main(hwnd, evt) = this.invokeAsync <| fun() -> this.withUpdate <| fun() ->
+    member this.main(hwnd, evt) =
+        let location = evt = WinEvent.EVENT_OBJECT_LOCATIONCHANGE
+        let post = not location || lock locationGate (fun () -> pendingLocations.Add(hwnd))
+        if post then
+            this.invokeAsync(fun () ->
+                if location then lock locationGate (fun () -> pendingLocations.Remove(hwnd) |> ignore)
+                if not isDestroyed.value then this.handleWindowEvent(hwnd,evt))
+
+    member private this.handleWindowEvent(hwnd,evt) =
+        // These native events announce the start of a transition. A group STA
+        // can receive them before the source's IsIconic state has changed.
+        let minimizeEvent = evt=WinEvent.EVENT_SYSTEM_MINIMIZESTART || evt=WinEvent.EVENT_SYSTEM_MINIMIZEEND
+        if minimizeEvent then pendingMinimizeStates.Remove(hwnd) |> ignore
+        let minimizeReady =
+            if minimizeEvent && this.windows.contains(hwnd) then
+                let expected = evt=WinEvent.EVENT_SYSTEM_MINIMIZESTART
+                if this.os.windowFromHwnd(hwnd).isMinimized=expected then true
+                else
+                    pendingMinimizeStates.[hwnd] <- expected,transitionClock.ElapsedMilliseconds+1000L
+                    minimizeStateTimer.Start()
+                    false
+            else true
         match evt with
         | WinEvent.EVENT_SYSTEM_MINIMIZESTART -> 
-            if this.windows.contains(hwnd) then
+            // Queued notifications may be overtaken by a fast restore.
+            if minimizeReady && this.windows.contains(hwnd) && this.os.windowFromHwnd(hwnd).isMinimized then
                 let needsMinimized = zorderCell.value.any <| fun hwnd -> 
                     this.os.windowFromHwnd(hwnd).isMinimized.not
                 if needsMinimized then  
@@ -366,7 +428,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 this.updateIsVisible()
         //this happens when a window is restored from minimize
         | WinEvent.EVENT_SYSTEM_MINIMIZEEND ->
-            if this.windows.contains(hwnd) then
+            if minimizeReady && this.windows.contains(hwnd) && this.os.windowFromHwnd(hwnd).isMinimized.not then
                 let needsRestore = zorderCell.value.any <| fun hwnd -> 
                     this.os.windowFromHwnd(hwnd).isMinimized
                 if needsRestore then  
@@ -424,7 +486,6 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
        if this.windows.contains(hwnd).not then
             if withDelay then System.Threading.Thread.Sleep(250)
             let window = this.os.windowFromHwnd(hwnd)                
-            let conflateEvents = Set2(List2([WinEvent.EVENT_SYSTEM_MINIMIZESTART; WinEvent.EVENT_SYSTEM_MINIMIZEEND]))
             let window = this.os.windowFromHwnd(hwnd)
             this.setWindows(this.windows.add hwnd)
             if prevTop.value.IsNone then
@@ -432,9 +493,6 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 this.saveTopWindowPlacement()
             let registerEvent evt = 
                 let handler = fun() -> this.main(hwnd, evt)
-                let handler =
-                    if conflateEvents.contains(evt) then Helper.conflate (TimeSpan(0,0,1)) handler
-                    else handler
                 window.setWinEventHook evt handler
             let hooks = 
                 List2([
@@ -470,6 +528,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             hookCleanup.value.find(hwnd).Dispose()
             hookCleanup.map(fun hooks -> hooks.remove(hwnd))
             removedEvent.Trigger(hwnd)
+            pendingMinimizeStates.Remove(hwnd) |> ignore
+            iconCache.remove(hwnd)
     
     member this.activateIndex(index, force) =
         let nextTab = this.ts.lorder.tryAt(index)
@@ -489,12 +549,16 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.destroy() =
         if isDestroyed.value.not then
             isDestroyed.set(true)
+            lock locationGate (fun () -> pendingLocations.Clear())
+            minimizeStateTimer.Dispose()
+            pendingMinimizeStates.Clear()
             themeSubscription |> Option.iter (fun subscription -> subscription.Dispose())
             themeSubscription <- None
             this.ts.destroy()
             shellHookWindow.value.iter <| fun d -> d.Dispose()
             winEventHandler.value.iter <| fun d -> d.Dispose()
             exitedEvent.Trigger()
+            (iconCache :> IDisposable).Dispose()
             (invoker :> IDisposable).Dispose()
 
    
@@ -542,6 +606,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.added = addedEvent.Publish
     member this.moved = movedEvent.Publish
     member this.foregroundChanged = foregroundEvent.Publish
+    member this.tabInfoChanged = tabInfoChangedEvent.Publish
     member this.flash = flashEvent.Publish
     member this.removed = removedEvent.Publish
     member this.lorder = this.ts.lorder.map(fun(Tab(hwnd)) -> hwnd)

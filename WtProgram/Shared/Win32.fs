@@ -318,20 +318,34 @@ and
 
     member this.isInMoveSize = this.uiThreadInfo.hwndMoveSize = hwnd
 
-    member this.icon iconType =
+    member private this.packagedIcon iconType =
         // UWP apps behind ApplicationFrameHost publish no window icon; use their package icon
         // (cached by AppIcons, so callers never dispose it).
-        let packaged =
-            if this.className = "ApplicationFrameWindow" then
-                let size = if iconType = IconTypeCodes.ICON_BIG then SystemInformation.IconSize.Width else SystemInformation.SmallIconSize.Width
-                AppIcons.GetPackagedWindowIcon(hwnd, size)
-            else null
+        if this.className = "ApplicationFrameWindow" then
+            let size = if iconType = IconTypeCodes.ICON_BIG then SystemInformation.IconSize.Width else SystemInformation.SmallIconSize.Width
+            AppIcons.GetPackagedWindowIcon(hwnd, size)
+        else null
+
+    member this.icon iconType =
+        let packaged = this.packagedIcon iconType
         if not (isNull packaged) then packaged
         else Ico.fromHandle(Win32Helper.GetWindowIcon(hwnd, iconType)).def(System.Drawing.SystemIcons.Application)
+
+    member this.copyIcon iconType =
+        let packaged = this.packagedIcon iconType
+        if not(isNull packaged) then packaged.Clone() :?> Icon
+        else
+            match Ico.fromHandle(Win32Helper.GetWindowIcon(hwnd, iconType)) with
+            | Some icon -> icon
+            | None -> System.Drawing.SystemIcons.Application.Clone() :?> Icon
 
     member this.iconSmall = this.icon IconTypeCodes.ICON_SMALL
 
     member this.iconBig = this.icon IconTypeCodes.ICON_BIG
+
+    member this.setIcons(icon:Icon) =
+        for size in [IconTypeCodes.ICON_SMALL;IconTypeCodes.ICON_BIG] do
+            WinUserApi.SendMessage(hwnd,WindowMessages.WM_SETICON,IntPtr(size),icon.Handle) |> ignore
 
     member this.text = Win32Helper.GetWindowText(hwnd)
         

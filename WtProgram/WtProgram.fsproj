@@ -54,6 +54,7 @@
     <Compile Include="Shared\TabStripTypes.fs" />
     <Compile Include="Shared\Dpi.fs" />
     <Compile Include="Shared\Win32.fs" />
+    <Compile Include="Shared\WindowIconCache.fs" />
     <Compile Include="Shared\AppearanceModel.fs" />
     <Compile Include="Shared\ProgramTypes.fs" />
     <Compile Include="Shared\Localization.fs" />

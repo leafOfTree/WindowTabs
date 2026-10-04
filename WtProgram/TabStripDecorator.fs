@@ -426,7 +426,8 @@ type TabStripDecorator(group:WindowGroup) as this =
                         dragPtCell.set(pt)
                         dragInfoCell.set(Some(dragInfo))
                         this.ts.addTabSlide dragInfo.tab this.tabSlide
-                        this.ts.setTabInfo(dragInfo.tab, dragInfo.tabInfo)
+                        // The destination group owns its cached icons. Drag data
+                        // can outlive the source group's membership and cache.
                         group.addWindow(hwnd, false)
                         true
                 this.updateTsSlide()

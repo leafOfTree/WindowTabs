@@ -153,6 +153,10 @@ type TaskBarButton(info) as this =
         let prevInfo = infoCell.value
         infoCell.set(Some(info))
 
+        // Notify the shell before the group releases its previous icon copies.
+        if prevInfo |> Option.exists(fun previous -> obj.ReferenceEquals(previous.icon,info.icon)) |> not then
+            this.window.setIcons(info.icon)
+
         this.window.move(info.bounds)
         this.window.setText(info.text)
         
@@ -169,6 +173,10 @@ type TaskBarButton(info) as this =
 
             tabWindow.window.move(info.bounds)
             tabWindow.window.setText(tabConfig.text)
+            let previousIcon = prevInfo |> Option.bind(fun previous ->
+                previous.tabs.tryFind(fst >> (=) tab) |> Option.map(fun (_,config) -> config.icon))
+            if previousIcon |> Option.exists(fun icon -> obj.ReferenceEquals(icon,tabConfig.icon)) |> not then
+                tabWindow.window.setIcons(tabConfig.icon)
             
         let prevTabOrder = 
             match prevInfo with
@@ -382,6 +390,7 @@ type SuperBarPlugin() as this =
     interface IPlugin with
         member x.init() =
             this.wtGroup.foregroundChanged.Add this.onForegroundChanged
+            this.wtGroup.tabInfoChanged.Add(fun _ -> this.updateTaskbar())
             this.wtGroup.added.Add this.onAdded
             this.wtGroup.removed.Add this.onRemoved
             this.wtGroup.flash.Add this.onFlash

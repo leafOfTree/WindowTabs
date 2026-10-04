@@ -4,8 +4,8 @@ param([ValidateRange(1, 3600)][int]$TimeoutSeconds = 120, [switch]$Coverage,
       [ValidateRange(1, 100)][int]$Repeat = 1,
       # Retained for existing callers; failures are no longer retried.
       [switch]$NoRetry,
-      [ValidateSet('Reliability', 'Architecture', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon', 'GroupLifecycle', 'PopupRendering', 'TabInteraction', 'TaskbarPreview')]
-      [string[]]$Suites = @('Reliability', 'Architecture', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon', 'GroupLifecycle', 'PopupRendering', 'TabInteraction', 'TaskbarPreview'))
+      [ValidateSet('Reliability', 'Architecture', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon', 'GroupLifecycle', 'GroupOperations', 'PopupRendering', 'TabInteraction', 'TaskbarPreview', 'PrintWindowProbe')]
+      [string[]]$Suites = @('Reliability', 'Architecture', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon', 'GroupLifecycle', 'GroupOperations', 'PopupRendering', 'TabInteraction', 'TaskbarPreview', 'PrintWindowProbe'))
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw 'The .NET SDK (dotnet) is required.' }
@@ -40,6 +40,10 @@ try {
     dotnet build WtProgram\WtProgram.fsproj -c Debug "-p:OutDir=$output" -v:minimal -nologo
     if ($LASTEXITCODE -ne 0) { throw 'Regression build failed.' }
     $names = $Suites
+    if ('PrintWindowProbe' -in $names -or 'GroupOperations' -in $names) {
+        dotnet build tests\TestHost.fsproj '-p:TestName=PrintWindowHelper' -v:quiet -nologo -clp:NoSummary
+        if ($LASTEXITCODE -ne 0) { throw 'PrintWindow helper compilation failed.' }
+    }
     foreach ($name in $names) {
         dotnet build tests\TestHost.fsproj "-p:TestName=$name" -v:quiet -nologo -clp:NoSummary
         if ($LASTEXITCODE -ne 0) { throw "$name compilation failed." }

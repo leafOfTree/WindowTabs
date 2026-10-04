@@ -52,6 +52,41 @@ let run (measure:string -> int -> (int -> unit) -> JObject) iterations =
                     strip.setPlacement(placement (i%400))
                     // The decorator repeats this assignment when its owner moves.
                     strip.visible <- true))
+                results.Add(measure (sprintf "5tabs-%ddpi-native-window-resize" dpi) iterations (fun i ->
+                    strip.setPlacement({showInside=false;bounds=Rect(Pt(-20000,-20000),
+                        Dpi.scaleSize(Sz(800+i%200,28)))})))
+                strip.setPlacement(placement 0)
+                results.Add(measure (sprintf "5tabs-%ddpi-native-tab-slide" dpi) iterations (fun i ->
+                    strip.slide <- Some(Tab(IntPtr(101)),Dpi.scale (i%400))))
+                strip.slide <- None
+                // Auto-hide listeners can request the existing expanded state.
+                results.Add(measure (sprintf "5tabs-%ddpi-native-repeat-expanded" dpi) iterations (fun _ ->
+                    strip.isShrunk <- false))
+                let image = strip.renderTs(None)
+                try
+                    let mask = TabShadow.silhouette image.bitmap
+                    let renderer = TabShadow.Renderer()
+                    results.Add(measure (sprintf "5tabs-%ddpi-shadow-rebuild-only" dpi) iterations (fun _ ->
+                        use bitmap = renderer.Render(image.width,image.height,mask,Dpi.scale 15,TabUp)
+                        ()))
+                finally image.bitmap.Dispose()
+                let order = [for id in 1..5 -> Tab(IntPtr(100+id))]
+                results.Add(measure (sprintf "5tabs-%ddpi-native-click-selection-updates" dpi) iterations (fun i ->
+                    let tab = order.[i%5]
+                    // Click clears attention, then the foreground/shell events
+                    // update z-order and information. No foreign app activation.
+                    strip.setTabBgColor(tab,None)
+                    strip.zorder <- List2((order |> List.filter ((<>) tab))@[tab])
+                    strip.setTabInfo(tab,strip.tabInfo(tab))))
+                results.Add(measure (sprintf "5tabs-%ddpi-native-repeat-selection-updates" dpi) iterations (fun _ ->
+                    let tab = order.[4]
+                    strip.setTabBgColor(tab,None)
+                    strip.zorder <- List2(order)))
+                let popup = Dpi.scaleSize(Sz(640,280))
+                results.Add(measure (sprintf "switcher-%ddpi-shadow-cache-miss" dpi) iterations (fun i ->
+                    TaskSwitchShadowCache.get dpi (popup.width+i%6) popup.height |> ignore))
+                results.Add(measure (sprintf "switcher-%ddpi-shadow-cache-hit" dpi) iterations (fun _ ->
+                    TaskSwitchShadowCache.get dpi popup.width popup.height |> ignore))
             finally strip.destroy()
     finally
         Environment.CurrentDirectory <- originalDirectory

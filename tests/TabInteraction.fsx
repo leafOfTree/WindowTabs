@@ -44,6 +44,21 @@ let main() =
                 let start = Pt(-20000,-20000)
                 strip.setPlacement(placement start size false)
                 strip.visible <- true
+                let selectionFrames = frames strip
+                let order = strip.zorder
+                strip.setTabBgColor(order.head,None)
+                strip.zorder <- List2(order.list)
+                check (frames strip=selectionFrames) "Repeated selection or clearing absent attention repainted"
+                let attention = ThemeService.currentAppearance().scaled.tabFlashBgColor
+                strip.setTabBgColor(order.head,Some attention)
+                check (frames strip=selectionFrames+1L) "Attention did not render"
+                strip.setTabBgColor(order.head,Some attention)
+                check (frames strip=selectionFrames+1L) "Repeated attention repainted"
+                strip.setTabBgColor(order.head,None)
+                check (frames strip=selectionFrames+2L) "Clearing existing attention did not render"
+                let initialFrames = frames strip
+                for _ in 1..20 do strip.isShrunk <- false
+                check (frames strip=initialFrames) "Repeated expanded state repainted"
                 let send message (point:Pt) =
                     WinUserApi.SendMessage(strip.hwnd,message,IntPtr.Zero,IntPtr((point.y <<< 16) ||| point.x)) |> ignore
                 let hover x = send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale x,Dpi.scale 14))

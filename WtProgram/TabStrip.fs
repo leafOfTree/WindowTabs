@@ -64,7 +64,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let mutable shadowRefreshPending = false
     let shadowRefreshMessage = 0x8000 + 67
     let hwndRef = ref IntPtr.Zero
-    let isShrunkCell = Cell.create(false)
+    let isShrunkCell = Bemo.Cell<bool>(Cell, false, (=))
     let destroyingEvent = Event<unit>()
     let makeFont = TabMetrics.font
     let mutable fontKey = Dpi.value(),0
@@ -326,7 +326,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.zorder
         with get() = zorderCell.value
         and set(zorder:List2<Tab>) =
-            zorderCell.set(zorder.where(this.tabs.contains))
+            let next = zorder.where(this.tabs.contains)
+            if next.list <> zorderCell.value.list then zorderCell.set(next)
 
     member this.sprite = this.ts.sprite
             
@@ -369,6 +370,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member this.setTabInfo((tab, tabInfo)) = 
         tabInfoCell.map(fun m -> m.add tab tabInfo)
+
+    member internal this.hasTabInfo(tab) = tabInfoCell.value.contains(tab)
             
     member this.tabLocation = this.ts.tabLocation
     
@@ -383,6 +386,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         bmpOverlay
 
     member this.setTabBgColor((tab, color)) =
+        if tabBgColor.value.tryFind(tab) <> color then
             match color with
             | Some(color) -> 
                 tabBgColor.map(fun m -> m.add tab color)

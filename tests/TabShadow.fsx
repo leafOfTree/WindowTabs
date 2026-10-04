@@ -7,11 +7,80 @@
 open System
 open System.Drawing
 open System.Drawing.Imaging
+open System.Runtime.InteropServices
 open Bemo
 open Bemo.Win32.Forms
 
+let referenceShadow width height (mask:byte[]) padding =
+    let w = width + padding * 2
+    let h = height + padding
+    let sigma = float padding / 3.0
+    let weights = Array.init (padding * 2 + 1) (fun i ->
+        let d = float (i - padding)
+        exp (-d * d / (2.0 * sigma * sigma)))
+    let total = Array.sum weights
+    let kernel = weights |> Array.map (fun v -> v / total)
+    let sample x y =
+        let sx = x - padding
+        let sy = y - padding
+        if sx < 0 || sx >= width || sy < 0 || sy >= height then 0.0
+        else float mask.[sy * width + sx] / 255.0
+    let horizontal = Array.zeroCreate<float> (w * h)
+    for y in padding .. h - 1 do
+        for x in 0 .. w - 1 do
+            let mutable v = 0.0
+            for k in -padding .. padding do
+                v <- v + sample (x + k) y * kernel.[k + padding]
+            horizontal.[y * w + x] <- v
+    let pixels = Array.zeroCreate<byte> (w * h * 4)
+    // Fade the side tails into the window junction. No bottom shadow row.
+    let fadeHeight = max 1 (padding / 3)
+    for y in 0 .. h - 1 do
+        let fade = min 1.0 (float (h - 1 - y) / float fadeHeight)
+        for x in 0 .. w - 1 do
+            let mutable v = 0.0
+            for k in -padding .. padding do
+                let sy = y + k
+                if sy >= 0 && sy < h then
+                    v <- v + horizontal.[sy * w + x] * kernel.[k + padding]
+            // The helper is owned by (and above) the strip; cut the tabs out.
+            let exterior = 1.0 - sample x y
+            pixels.[(y * w + x) * 4 + 3] <- byte (Math.Round(64.0 * v * exterior * fade))
+    let bitmap = new Bitmap(w, h, PixelFormat.Format32bppArgb)
+    let data = bitmap.LockBits(Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb)
+    try
+        for y in 0 .. h - 1 do
+            Marshal.Copy(pixels, y * w * 4, IntPtr.Add(data.Scan0, y * data.Stride), w * 4)
+    finally
+        bitmap.UnlockBits(data)
+    bitmap
+
+
 let main () =
     let check condition message = if not condition then failwith message
+    let pixels (bitmap:Bitmap) =
+        let data = bitmap.LockBits(Rectangle(0,0,bitmap.Width,bitmap.Height),ImageLockMode.ReadOnly,PixelFormat.Format32bppArgb)
+        try
+            let bytes = Array.zeroCreate<byte> (bitmap.Width*bitmap.Height*4)
+            for y in 0..bitmap.Height-1 do
+                Marshal.Copy(IntPtr.Add(data.Scan0,y*data.Stride),bytes,y*bitmap.Width*4,bitmap.Width*4)
+            bytes
+        finally bitmap.UnlockBits(data)
+    let renderer = TabShadow.Renderer()
+    let random = Random(42)
+    // Compare every alpha value with the original convolution, including
+    // partial alpha, direction changes and reused buffers after larger frames.
+    for width,height,padding in [315,42,22;160,26,15;40,12,3;280,35,20;60,18,8] do
+      for partial in [false;true] do
+        let mask = Array.init (width*height) (fun i ->
+            if partial then byte(random.Next(256))
+            elif i%width>width/5 && i%width<width*4/5 && i/width>1 then 255uy else 0uy)
+        for direction in [TabUp;TabDown] do
+            let input = if direction=TabUp then mask else Array.init mask.Length (fun i -> mask.[(height-1-i/width)*width+i%width])
+            use expected = referenceShadow width height input padding
+            if direction=TabDown then expected.RotateFlip(RotateFlipType.RotateNoneFlipY)
+            use actual = renderer.Render(width,height,mask,padding,direction)
+            check (pixels actual = pixels expected) "Optimized shadow pixels differ from the original convolution"
     let padding = 15
     let width, height = 160, 26
     let mask = Array.init (width * height) (fun i ->

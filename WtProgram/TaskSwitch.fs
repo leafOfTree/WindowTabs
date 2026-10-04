@@ -1,4 +1,4 @@
-namespace Bemo
+﻿namespace Bemo
 open System
 open System.Drawing
 open System.Runtime.InteropServices
@@ -6,13 +6,63 @@ open System.Windows.Forms
 open Bemo.Win32
 open Bemo.Win32.Forms
 
+/// CPU-generated alpha pixels are independent of owner handles and theme.
+/// Keep at most four layouts / 8 MiB; each helper owns its native bitmap.
+module TaskSwitchShadowCache =
+    let private gate = obj()
+    let mutable private cached : ((int*int*int)*byte[]) list = []
+    let private create dpi width height =
+        let padding = Dpi.scaleAt dpi 28
+        let radius = float (Dpi.scaleAt dpi 12)
+        let offset = float (Dpi.scaleAt dpi 6)
+        let sigma = float (Dpi.scaleAt dpi 10)
+        let w,h = width+padding*2,height+padding*2
+        let halfW,halfH = float width/2.0,float height/2.0
+        let distance x y =
+            let dx,dy = abs(x-halfW)-(halfW-radius),abs(y-halfH)-(halfH-radius)
+            sqrt(max dx 0.0 ** 2.0 + max dy 0.0 ** 2.0) + min (max dx dy) 0.0 - radius
+        let pixels = Array.zeroCreate<byte> (w*h*4)
+        let draw y x py =
+            let px = float(x-padding)+0.5
+            // The owned window sits above its owner, so leave the body transparent.
+            if distance px py >= 0.0 then
+                let d = max 0.0 (distance px (py-offset))
+                let fade = min 1.0 (float (min (min x (w-1-x)) (min y (h-1-y))) / float (max 1 (Dpi.scaleAt dpi 4)))
+                pixels.[(y*w+x)*4+3] <- byte (Math.Round(48.0 * exp(-d*d/(2.0*sigma*sigma)) * fade))
+        for y in 0..h-1 do
+            let py = float(y-padding)+0.5
+            // The rounded rectangle's interior is transparent in the shadow.
+            // Only its exterior and corner bands need distance calculations.
+            let left,right =
+                if float width>=radius*2.0 && float height>=radius*2.0 && py>=0.0 && py<float height then
+                    if py>=radius && py<float height-radius then padding,padding+width
+                    else padding+int radius,padding+width-int radius
+                else 0,0
+            for x in 0..left-1 do draw y x py
+            for x in right..w-1 do draw y x py
+        pixels
+    let get dpi width height =
+        lock gate (fun () ->
+            let key = dpi,width,height
+            match cached |> List.tryFind(fun (existing,_) -> existing=key) with
+            | Some(_,pixels) ->
+                cached <- (key,pixels)::(cached |> List.filter(fun (existing,_) -> existing<>key))
+                pixels
+            | None ->
+                let pixels = create dpi width height
+                if pixels.Length <= 4*1024*1024 then
+                    let rec fit bytes count (entries:((int*int*int)*byte[]) list) =
+                        match entries with
+                        | (entryKey,image)::tail when count<4 && bytes+image.Length<=8*1024*1024 ->
+                            (entryKey,image)::fit (bytes+image.Length) (count+1) tail
+                        | _ -> []
+                    cached <- fit 0 0 ((key,pixels)::cached)
+                pixels)
+
 /// A transparent, nonactivating shadow around the rounded switcher.
-type private TaskSwitchShadow(owner:Form) =
+type internal TaskSwitchShadow(owner:Form) =
     let os = OS()
     let padding = Dpi.scale 28
-    let radius = float (Dpi.scale 12)
-    let offset = float (Dpi.scale 6)
-    let sigma = float (Dpi.scale 10)
     let helper =
         os.createWindow (fun msg -> msg.def()) WindowsStyles.WS_POPUP
             (WindowsExtendedStyles.WS_EX_LAYERED ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW |||
@@ -20,19 +70,7 @@ type private TaskSwitchShadow(owner:Form) =
     let window = os.windowFromHwnd(helper.hwnd)
     let bitmap =
         let w,h = owner.Width+padding*2,owner.Height+padding*2
-        let halfW,halfH = float owner.Width/2.0,float owner.Height/2.0
-        let distance x y =
-            let dx,dy = abs(x-halfW)-(halfW-radius),abs(y-halfH)-(halfH-radius)
-            sqrt(max dx 0.0 ** 2.0 + max dy 0.0 ** 2.0) + min (max dx dy) 0.0 - radius
-        let pixels = Array.zeroCreate<byte> (w*h*4)
-        for y in 0..h-1 do
-            for x in 0..w-1 do
-                let px,py = float(x-padding)+0.5,float(y-padding)+0.5
-                // The owned window sits above its owner, so leave the body transparent.
-                if distance px py >= 0.0 then
-                    let d = max 0.0 (distance px (py-offset))
-                    let fade = min 1.0 (float (min (min x (w-1-x)) (min y (h-1-y))) / float (max 1 (Dpi.scale 4)))
-                    pixels.[(y*w+x)*4+3] <- byte (Math.Round(48.0 * exp(-d*d/(2.0*sigma*sigma)) * fade))
+        let pixels = TaskSwitchShadowCache.get (Dpi.value()) owner.Width owner.Height
         let image = new Bitmap(w,h,Imaging.PixelFormat.Format32bppArgb)
         let data = image.LockBits(Rectangle(0,0,w,h),Imaging.ImageLockMode.WriteOnly,Imaging.PixelFormat.Format32bppArgb)
         try

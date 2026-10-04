@@ -65,7 +65,7 @@ let main() =
     use capturedBitmap = Win32Helper.PrintWindow(captureForm.Handle,&captured)
     check (captured && capturedBitmap.Size=captureForm.Size) "Full-window capture failed or changed its coordinate extent"
     let pixel = capturedBitmap.GetPixel(capturedBitmap.Width/2,capturedBitmap.Height/2)
-    check (pixel.A=255uy && pixel.ToArgb()=Color.CornflowerBlue.ToArgb()) "Captured client content is blank or transparent"
+    check (pixel.A=255uy && pixel.ToArgb()=Color.CornflowerBlue.ToArgb()) (sprintf "Captured client content is blank or transparent: %A" pixel)
     captureForm.Close()
     let os = OS()
     let helper = os.createWindow (fun msg -> msg.def()) WindowsStyles.WS_POPUP WindowsExtendedStyles.WS_EX_TOOLWINDOW
