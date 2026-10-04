@@ -190,7 +190,7 @@ module Strings =
                                keywords={ en="import export backup restore migrate json settings file"; zh="导入 导出 备份 恢复 迁移 设置文件"; ja="インポート エクスポート バックアップ 復元 移行 設定ファイル" } }
         let settingsReset = { caption={ en="Reset to defaults"; zh="恢复默认设置"; ja="既定値に戻す" }
                               description={ en="Restore every setting to its default and restart."; zh="将所有设置恢复为默认值并重新启动。"; ja="すべての設定を既定値に戻して再起動します。" }
-                              keywords={ en="reset default defaults factory clear start over"; zh="重置 默认 恢复默认 出厂 清除"; ja="リセット 既定 初期化 出荷時 消去" } }
+                              keywords={ en="reset default defaults factory clear"; zh="重置 默认 恢复默认 出厂 清除"; ja="リセット 既定 初期化 出荷時 消去" } }
 
     module General =
         let settingsFile = { en="Settings file"; zh="设置文件"; ja="設定ファイル" }

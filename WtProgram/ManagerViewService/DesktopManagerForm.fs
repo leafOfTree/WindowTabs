@@ -161,6 +161,26 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         let mutable matches : SettingDefinition array = [||]
         searchResults.Controls.Add(resultsFrame)
         searchResults.Controls.Add(emptyResults)
+        let drawMatch (graphics:Graphics) (text:string) font (bounds:Rectangle) color =
+            let ranges = SettingsCatalog.matchRanges (search.Text.Trim()) text
+            let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.NoPadding ||| TextFormatFlags.SingleLine
+            let state = graphics.Save()
+            graphics.SetClip(bounds)
+            try
+                let mutable x = bounds.Left
+                let mutable start = 0
+                while start<text.Length do
+                    let highlighted i = ranges |> Array.exists(fun (offset,length) -> i>=offset && i<offset+length)
+                    let active = highlighted start
+                    let mutable finish = start+1
+                    while finish<text.Length && highlighted finish=active do finish <- finish+1
+                    let part = text.Substring(start,finish-start)
+                    let size = TextRenderer.MeasureText(graphics,part,font,Size(Int32.MaxValue,bounds.Height),flags)
+                    TextRenderer.DrawText(graphics,part,font,Point(x,bounds.Top),
+                        (if active then (SettingsColors.current()).accent else color),flags)
+                    x <- x+size.Width
+                    start <- finish
+            finally graphics.Restore(state)
         results.DrawItem.Add(fun e ->
             if e.Index>=0 && e.Index<matches.Length then
                 let item = matches.[e.Index]
@@ -170,14 +190,17 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 e.Graphics.FillRectangle(background,e.Bounds)
                 let left = e.Bounds.Left+Dpi.scale 14
                 let right = e.Bounds.Width-Dpi.scale 28
-                TextRenderer.DrawText(e.Graphics,tr item.text.caption,SettingsUi.rowFont,
-                    Rectangle(left,e.Bounds.Top+Dpi.scale 7,right,Dpi.scale 23),p.text,
-                    TextFormatFlags.NoPrefix ||| TextFormatFlags.EndEllipsis)
+                drawMatch e.Graphics (tr item.text.caption) SettingsUi.rowFont
+                    (Rectangle(left,e.Bounds.Top+Dpi.scale 7,right,Dpi.scale 23)) p.text
                 // The language picker is in the sidebar, on every page, not on General.
-                let context = if item.id="language" then tr Strings.SettingsWindow.sidebar else captions item.page ""
-                TextRenderer.DrawText(e.Graphics,context,SettingsUi.bodyFont,
-                    Rectangle(left,e.Bounds.Top+Dpi.scale 27,right,Dpi.scale 19),p.muted,
-                    TextFormatFlags.NoPrefix ||| TextFormatFlags.EndEllipsis)
+                let context = tr (SettingsCatalog.searchContext item)
+                let evidence =
+                    if SettingsCatalog.matchRanges (search.Text.Trim()) (tr item.text.caption+" "+context) |> Array.isEmpty then
+                        let texts = [tr item.text.keywords] @ SettingsCatalog.searchTexts item
+                        texts |> List.tryFind(fun text -> SettingsCatalog.matchRanges (search.Text.Trim()) text |> Array.isEmpty |> not)
+                    else None
+                drawMatch e.Graphics (evidence |> Option.map(fun text -> context+" · "+text) |> Option.defaultValue context)
+                    SettingsUi.bodyFont (Rectangle(left,e.Bounds.Top+Dpi.scale 27,right,Dpi.scale 19)) p.muted
                 ())
         let styleSearch() =
             let p = SettingsColors.current()

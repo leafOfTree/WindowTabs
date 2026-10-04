@@ -100,18 +100,21 @@ module SettingsCatalog =
             | Choice(k,values,fallback) when k=key -> Some(if List.contains value values then value else fallback)
             | _ -> None)
     let title id = tr (find id).text.caption
-    /// The settings file key, so a setting can also be found by the name users see in settings.json.
-    let private storageKey item =
-        match item.binding with
-        | Toggle(key,_,_) | Choice(key,_,_) | Shortcut(key,_) -> key
-        | _ -> ""
-    /// Matches every term against the text in all languages, so any language finds a setting.
-    let matches (query:string) item =
-        let pageWords =
-            match item.page with
-            | HotKeySettings -> [Strings.Pages.shortcuts;Strings.Shortcuts.keyboard;Strings.Shortcuts.mouse]
-            | page -> [Strings.Pages.title page]
-        let texts = item.text.caption :: item.text.description :: item.text.keywords :: pageWords
-        let haystack = String.concat " " (item.id :: storageKey item :: List.collect Localization.all texts)
+    /// Search and highlighting share case-insensitive substring matching.
+    let matchRanges (query:string) (text:string) =
         query.Split([|' ';'\t'|],StringSplitOptions.RemoveEmptyEntries)
-        |> Array.forall(fun term -> haystack.IndexOf(term,StringComparison.CurrentCultureIgnoreCase)>=0)
+        |> Array.collect(fun term ->
+            [| for index in 0 .. text.Length-term.Length do
+                if String.Compare(text,index,term,0,term.Length,StringComparison.CurrentCultureIgnoreCase)=0 then
+                    yield index,term.Length |])
+        |> Array.distinct
+        |> Array.sortBy fst
+    let searchContext item =
+        if item.id="language" then Strings.SettingsWindow.sidebar else Strings.Pages.title item.page
+    let searchTexts item =
+        [item.text.caption;item.text.keywords;searchContext item] |> List.collect Localization.all
+    /// Visible page names are searchable; explanatory prose stays out of the index.
+    let matches (query:string) item =
+        let texts = searchTexts item
+        query.Split([|' ';'\t'|],StringSplitOptions.RemoveEmptyEntries)
+        |> Array.forall(fun term -> texts |> List.exists(fun text -> matchRanges term text |> Array.isEmpty |> not))

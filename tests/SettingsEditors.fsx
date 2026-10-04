@@ -48,6 +48,16 @@ let assertTrue condition message = if not condition then failwith message
 let key (control:Control) k =
     control.GetType().GetMethod("OnKeyDown",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(control,[|box(KeyEventArgs(k))|]) |> ignore
 let main() =
+    let found query = SettingsCatalog.all |> List.filter(SettingsCatalog.matches query) |> List.map(fun item -> item.id)
+    assertTrue (found "start" = ["launch-at-sign-in"]) "Start must not match restart or reset"
+    assertTrue (found "TART" = ["launch-at-sign-in"]) "Substrings ignore case and can start inside words"
+    assertTrue (found "启动" |> List.contains "launch-at-sign-in") "Chinese searches work across languages"
+    assertTrue (found "start windows" = ["launch-at-sign-in"]) "All query terms must match"
+    assertTrue (SettingsCatalog.matchRanges "start" "Start and restart" = [|0,5;12,5|]) "Highlight includes matches inside words"
+    let general = SettingsCatalog.all |> List.filter(fun item -> item.page=GeneralSettings && item.id<>"language") |> List.map(fun item -> item.id)
+    assertTrue (found "general" = general) "Page names find their settings but not the sidebar language picker"
+    assertTrue (general |> List.forall(fun id -> found "ge" |> List.contains id)) "Page names support partial matching"
+    assertTrue (SettingsCatalog.matchRanges "ge" "General" = [|0,2|]) "Page-name matches are highlighted"
     Application.EnableVisualStyles()
     let number = new SettingsNumberInput(Minimum= -10M,Maximum=100M,Value=10M)
     let numberText = number.Controls |> Seq.cast<Control> |> Seq.pick(function :? TextBox as t -> Some t | _ -> None)
