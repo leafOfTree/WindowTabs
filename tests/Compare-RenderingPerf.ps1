@@ -8,13 +8,18 @@ $candidate = Get-Content -LiteralPath $After -Raw | ConvertFrom-Json
 foreach ($field in @('runtime','os','processBits')) {
     if ($baseline.$field -ne $candidate.$field) { throw "Benchmark environment differs: $field" }
 }
+if ([bool]$baseline.nativeStrip -ne [bool]$candidate.nativeStrip) { throw 'Benchmark modes differ.' }
 $oldImages = @($baseline.images | ForEach-Object { "$($_.name):$($_.sha256)" })
 $newImages = @($candidate.images | ForEach-Object { "$($_.name):$($_.sha256)" })
-if ($oldImages.Count -eq 0 -or (Compare-Object $oldImages $newImages)) {
+if (-not $candidate.nativeStrip -and ($oldImages.Count -eq 0 -or (Compare-Object $oldImages $newImages))) {
     throw 'Rendered pixels differ; review the visual change before accepting the timing comparison.'
 }
 if (Compare-Object @($baseline.results.name) @($candidate.results.name)) { throw 'Benchmark scenarios differ.' }
-Write-Host "PASS: $($newImages.Count) pixel hashes match. Positive improvement means less time."
+if ($candidate.nativeStrip) {
+    Write-Host 'Native event-processing comparison; validate pixels and behavior with TabInteraction/TabShadow. Positive improvement means less time.'
+} else {
+    Write-Host "PASS: $($newImages.Count) pixel hashes match. Positive improvement means less time."
+}
 foreach ($row in $candidate.results) {
     $old = $baseline.results | Where-Object name -eq $row.name
     if ($old.iterations -ne $row.iterations) { throw "Iteration counts differ: $($row.name)" }

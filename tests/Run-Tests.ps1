@@ -4,8 +4,8 @@ param([ValidateRange(1, 3600)][int]$TimeoutSeconds = 120, [switch]$Coverage,
       [ValidateRange(1, 100)][int]$Repeat = 1,
       # Retained for existing callers; failures are no longer retried.
       [switch]$NoRetry,
-      [ValidateSet('Reliability', 'Architecture', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon', 'GroupLifecycle', 'PopupRendering')]
-      [string[]]$Suites = @('Reliability', 'Architecture', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon', 'GroupLifecycle', 'PopupRendering'))
+      [ValidateSet('Reliability', 'Architecture', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon', 'GroupLifecycle', 'PopupRendering', 'TabInteraction')]
+      [string[]]$Suites = @('Reliability', 'Architecture', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon', 'GroupLifecycle', 'PopupRendering', 'TabInteraction'))
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw 'The .NET SDK (dotnet) is required.' }

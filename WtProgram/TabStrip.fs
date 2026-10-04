@@ -25,14 +25,18 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let appearanceCell = Cell.create(None)
     let foregroundCell = Cell.create(None:Tab option)
     let prevForegroundCell = Cell.create(None)
-    let sizeCell = Cell.create(Sz.empty)
+    let sizeCell = Bemo.Cell<Sz>(Cell, Sz.empty, (=))
     let alphaCell = Cell.create(byte(0xFF))
-    let locationCell = Cell.create(Pt.empty)
+    // Position is presentation state, not an input to pixel rendering.
+    let mutable location = Pt.empty
+    let mutable renderedFrames = 0L
+    let mutable renderedOffset = 0
+    let mutable relocating = false
     let lorderCell = Cell.create(List2())
     let zorderCell = Cell.create(List2())
-    let visibleCell = Cell.create(false)
+    let visibleCell = Bemo.Cell<bool>(Cell, false, (=))
     let transparentCell = Cell.create(true)
-    let showInsideCell = Cell.create(false)
+    let showInsideCell = Bemo.Cell<bool>(Cell, false, (=))
     let isInAltTabCell = Cell.create(false)
     let iconOnlyCell = Cell.create(false)
     let alignmentMap = 
@@ -48,8 +52,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         | None -> TabCenter
     let alignment = Cell.create(Map2(List2([(TabUp,alignmentDefault);(TabDown,alignmentDefault)])))
     let mutable alignmentOverrides = Set.empty
-    let capturedCell = Cell.create(None : Option<Tab*TabPart>)
-    let hoverCell = Cell.create(None : Option<Tab*TabPart>)
+    let capturedCell = Bemo.Cell<Option<Tab*TabPart>>(Cell, None, (=))
+    let hoverCell = Bemo.Cell<Option<Tab*TabPart>>(Cell, None, (=))
     let slideCell = Cell.create(None)
     let ptCell = Cell.create(None)
     let tabInfoCell = Cell.create(Map2():Map2<Tab,TabInfo>)
@@ -147,39 +151,38 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         }
     
     member private this.processMouse(mouse) =
-        match mouse with
-        | MouseMove(pt) ->
-            this.setPt(Some(pt))
-            if this.window.hasCapture.not then 
-                this.window.trackMouseLeave()
-            hoverCell.set(this.hit)
-            let enableHoverActivate = Services.settings.getValue("enableHoverActivate").cast<bool>()
-            if enableHoverActivate then 
+        // Hover/capture changes share one render. Equal hover values leave the
+        // render listener untouched, while pointer/click callbacks still run.
+        this.withUpdate(fun () ->
+            match mouse with
+            | MouseMove(pt) ->
+                this.setPt(Some(pt))
+                if this.window.hasCapture.not then
+                    this.window.trackMouseLeave()
+                let hit = this.hit
+                hoverCell.set(hit)
+                let enableHoverActivate = Services.settings.getValue("enableHoverActivate").cast<bool>()
+                if enableHoverActivate then
+                    hit.iter <| fun(hitTab, hitPart) -> monitor.tabActivate(hitTab)
+            | MouseClick(pt, btn, action) ->
+                this.setPt(Some(pt))
                 this.hit.iter <| fun(hitTab, hitPart) ->
-                    monitor.tabActivate(hitTab)
-        | MouseClick(pt, btn, action) ->
-            this.setPt(Some(pt))
-            this.hit.iter <| fun(hitTab, hitPart) ->
-                match action with
-                | MouseDown ->
-                    capturedCell.set(Some(hitTab, hitPart))
-                | MouseUp ->
-                    capturedCell.value.iter <| fun(capturedTab, capturedPart) ->
-                    if  btn = MouseLeft && 
-                        hitTab = capturedTab &&
-                        hitPart = capturedPart &&
-                        hitPart = TabClose then
-                        monitor.tabClose(hitTab)
-                    capturedCell.set(None)
-                | MouseDblClick ->
-                    ()
-                this.onMouse(action, pt, btn, (hitTab, hitPart))
-            hoverCell.set(this.hit)
-        | MouseLeave ->
-            this.setPt(None)
-            capturedCell.set(None)
-            hoverCell.set(None)
-        this.update()
+                    match action with
+                    | MouseDown ->
+                        capturedCell.set(Some(hitTab, hitPart))
+                    | MouseUp ->
+                        capturedCell.value.iter <| fun(capturedTab, capturedPart) ->
+                        if btn = MouseLeft && hitTab = capturedTab &&
+                           hitPart = capturedPart && hitPart = TabClose then
+                            monitor.tabClose(hitTab)
+                        capturedCell.set(None)
+                    | MouseDblClick -> ()
+                    this.onMouse(action, pt, btn, (hitTab, hitPart))
+                hoverCell.set(this.hit)
+            | MouseLeave ->
+                this.setPt(None)
+                capturedCell.set(None)
+                hoverCell.set(None))
 
     member private this.wndProc(msg:Win32Message) =
         let mousePt() =
@@ -207,8 +210,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         | WindowMessages.WM_WINDOWPOSCHANGED
         | WindowMessages.WM_SHOWWINDOW ->
             let result = msg.def()
-            shadowWindow |> Option.iter (fun shadow -> shadow.sync())
-            this.refreshShadow()
+            if not relocating then
+                shadowWindow |> Option.iter (fun shadow -> shadow.sync())
+                this.refreshShadow()
             result
         | WindowMessages.WM_MOUSEACTIVATE ->
             MouseActivateReturnCodes.MA_NOACTIVATE
@@ -232,14 +236,18 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member private this.top = zorderCell.value.head
     member private this.isEmpty = this.lorder.isEmpty
     member private this.contentOffset = this.appearance.tabHeightOffset
-    member private this.location = locationCell.value 
+    member private this.location = location
+    // Used by native performance/regression hosts to verify that unchanged
+    // hover and movement do not regenerate pixels; not a user-facing setting.
+    member internal _.renderCount = renderedFrames
     
     member private this.update() = 
         if this.visible then 
             let image = this.render
             try
-                let location = if this.isShrunk then this.location.add(Pt(0,this.ts.collapsedOffset)) else this.location
-                this.window.update(image, location, this.alpha)
+                renderedOffset <- if this.isShrunk then this.ts.collapsedOffset else 0
+                renderedFrames <- renderedFrames+1L
+                this.window.update(image, this.location.add(Pt(0,renderedOffset)), this.alpha)
                 shadowWindow |> Option.iter (fun shadow ->
                     if this.isShrunk || this.isEmpty then shadow.hide()
                     else shadow.update(image, this.alpha, this.direction))
@@ -258,9 +266,17 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     
     member private this.withUpdate f =
         Cell.beginUpdate()
-        let result = f()
-        Cell.endUpdate()
-        result
+        try f()
+        finally Cell.endUpdate()
+
+    member private this.move() =
+        // Layered HWNDs retain their pixels. Moving them needs neither a new
+        // strip bitmap nor extraction/comparison of the shadow silhouette.
+        relocating <- true
+        try
+            this.window.updateLocation(this.location.add(Pt(0,renderedOffset)))
+            shadowWindow |> Option.iter(fun shadow -> shadow.move())
+        finally relocating <- false
 
     // Run after Windows finishes activation/owner popup bookkeeping. Coalescing
     // prevents resize/move message bursts from producing redundant refreshes.
@@ -396,9 +412,16 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.bounds = this.window.bounds
 
     member this.setPlacement(placement) =
-        showInsideCell.set(placement.showInside)
-        sizeCell.set(placement.bounds.size)
-        locationCell.set(placement.bounds.location)   
+        let moved = location <> placement.bounds.location
+        let previousRender = renderedFrames
+        location <- placement.bounds.location
+        this.withUpdate(fun () ->
+            showInsideCell.set(placement.showInside)
+            sizeCell.set(placement.bounds.size))
+        // A size/direction change already uploaded fresh pixels at the new
+        // position. Otherwise keep the existing strip/shadow surfaces.
+        if moved && this.visible && renderedFrames>0L && renderedFrames=previousRender then
+            this.move()
      
     member this.alpha
         with get() = alphaCell.value
@@ -406,7 +429,11 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member this.visible 
         with get() = visibleCell.value
-        and set(value) = visibleCell.set(value)
+        and set(value) =
+            // Windows may hide an owned popup independently of our desired state.
+            // Keep the equal-value fast path, but restore externally hidden strips.
+            if value && visibleCell.value && not this.window.isVisible then this.update()
+            else visibleCell.set(value)
             
     member this.transparent 
         with get() = transparentCell.value

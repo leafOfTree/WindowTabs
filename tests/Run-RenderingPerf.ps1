@@ -2,10 +2,12 @@ param(
     [ValidatePattern('^[a-zA-Z0-9_-]+$')][string]$Label = 'current',
     [switch]$ForceGc,
     [switch]$VerifyOwnership,
+    [switch]$Native,
     [ValidateRange(100,10000)][int]$Iterations = 300,
     [ValidateRange(30,3600)][int]$TimeoutSeconds = 300
 )
 $ErrorActionPreference = 'Stop'
+if ($Native -and $ForceGc) { throw '-ForceGc applies to sprite mode; native mode uses production collection behavior.' }
 $repo = Split-Path $PSScriptRoot -Parent
 $output = Join-Path $PSScriptRoot "Debug/performance/$Label"
 New-Item -ItemType Directory -Path $output -Force | Out-Null
@@ -20,6 +22,7 @@ $stdout = Join-Path $output 'stdout.log'
 $stderr = Join-Path $output 'stderr.log'
 $arguments = @(('"'+$json+'"'), $ForceGc.IsPresent.ToString(), $Iterations)
 if ($VerifyOwnership) { $arguments += 'verify' }
+if ($Native) { $arguments += 'native' }
 $process = Start-Process -FilePath (Join-Path $output 'RenderingPerf.exe') -WorkingDirectory $output -WindowStyle Hidden -PassThru -ArgumentList $arguments -RedirectStandardOutput $stdout -RedirectStandardError $stderr
 $processHandle = $process.Handle
 if (-not $process.WaitForExit($TimeoutSeconds*1000)) {

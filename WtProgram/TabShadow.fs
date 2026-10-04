@@ -118,6 +118,13 @@ type TabShadowWindow(os:OS, owner:IntPtr) =
         enabled <- false
         window.hide()
 
+    member this.move() =
+        let parent = os.windowFromHwnd(owner)
+        if parent.isVisible && enabled then
+            window.updateLocation(this.location)
+            if not window.isVisible then window.showNoActivate()
+        else window.hide()
+
     member this.update(image:Img, alpha:byte, newDirection:TabDirection) =
         let nextPadding = max 3 (Dpi.scale 15)
         if nextPadding <> padding then

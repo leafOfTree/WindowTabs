@@ -71,9 +71,10 @@ let main args =
         let output = args.[0]
         let forceGc = Boolean.Parse(args.[1])
         let iterations = Int32.Parse(args.[2])
-        if args.Length>3 && args.[3]="verify" then RenderingOwnership.verify()
+        if Array.contains "verify" args then RenderingOwnership.verify()
         let results,images = JArray(),JArray()
-        for dpi in [96;144;192] do
+        let native = Array.contains "native" args
+        for dpi in (if native then [] else [96;144;192]) do
             Dpi.set dpi
             use font = TabMetrics.font (Dpi.scale 26) FontStyle.Regular
             for count in [1;10;30] do
@@ -91,9 +92,11 @@ let main args =
                     if forceGc then GC.Collect()))
                 results.Add(measure (key+"-hit") iterations (fun i ->
                     ts.tryHit(Pt(i%ts.size.width,Dpi.scale 14)) |> ignore))
+        if native then
+            NativeRenderingPerf.run measure iterations |> Seq.iter(fun result -> results.Add(result))
         let report = JObject(JProperty("utc",DateTime.UtcNow),JProperty("runtime",Environment.Version.ToString()),
                         JProperty("os",Environment.OSVersion.ToString()),JProperty("processBits",IntPtr.Size*8),
-                        JProperty("forcedGcPerRender",forceGc),JProperty("results",results),JProperty("images",images))
+                        JProperty("forcedGcPerRender",forceGc),JProperty("nativeStrip",native),JProperty("results",results),JProperty("images",images))
         File.WriteAllText(output,report.ToString())
         0
     with ex -> eprintfn "%O" ex; 1
