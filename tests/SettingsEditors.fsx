@@ -49,8 +49,13 @@ let key (control:Control) k =
     control.GetType().GetMethod("OnKeyDown",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(control,[|box(KeyEventArgs(k))|]) |> ignore
 let main() =
     let found query = SettingsCatalog.all |> List.filter(SettingsCatalog.matches query) |> List.map(fun item -> item.id)
-    assertTrue (found "start" = ["launch-at-sign-in"]) "Start must not match restart or reset"
-    assertTrue (found "TART" = ["launch-at-sign-in"]) "Substrings ignore case and can start inside words"
+    // Ordered as the settings window lists results: caption matches first.
+    let ranked query = found query |> List.sortByDescending(fun id -> SettingsCatalog.searchRank query (SettingsCatalog.find id))
+    assertTrue (List.head (ranked "start") = "launch-at-sign-in") "A caption match is not listed first"
+    assertTrue (found "start" |> List.contains "search-tabs") "A description word is not found"
+    assertTrue (found "start" |> List.contains "settings-reset") "Descriptions are not matched inside words (restart)"
+    assertTrue (SettingsCatalog.searchRank "start" (SettingsCatalog.find "settings-reset") = 0) "A match inside a description word is not ranked last"
+    assertTrue (List.head (ranked "TART") = "launch-at-sign-in") "Substrings ignore case and can start inside words"
     assertTrue (found "启动" |> List.contains "launch-at-sign-in") "Chinese searches work across languages"
     assertTrue (found "start windows" = ["launch-at-sign-in"]) "All query terms must match"
     assertTrue (SettingsCatalog.matchRanges "start" "Start and restart" = [|0,5;12,5|]) "Highlight includes matches inside words"
@@ -58,6 +63,21 @@ let main() =
     assertTrue (found "general" = general) "Page names find their settings but not the sidebar language picker"
     assertTrue (general |> List.forall(fun id -> found "ge" |> List.contains id)) "Page names support partial matching"
     assertTrue (SettingsCatalog.matchRanges "ge" "General" = [|0,2|]) "Page-name matches are highlighted"
+    assertTrue (found "runAtStartup" = ["launch-at-sign-in"]) "Settings-file keys find their setting"
+    assertTrue (found "system" |> List.contains "launch-at-sign-in") "Description words are not searched"
+    assertTrue (SettingsCatalog.searchRank "system" (SettingsCatalog.find "launch-at-sign-in") = 0) "A description-only match is not ranked last"
+    assertTrue (found "边距" |> List.contains "tabIndentNormal") "Chinese captions or descriptions are not searched"
+    Localization.setPreference "en"
+    try
+        let startup = SettingsCatalog.find "launch-at-sign-in"
+        assertTrue (SettingsCatalog.searchEvidence "start" startup = []) "A match the caption shows is repeated below it"
+        assertTrue (SettingsCatalog.searchEvidence "windows notif" startup = ["notification"]) "A second term's keyword is not shown on its own"
+        assertTrue (SettingsCatalog.searchEvidence "runatstartup" startup = ["runAtStartup"]) "A settings-file key match is not shown"
+        assertTrue (SettingsCatalog.searchEvidence "system" startup = [tr startup.text.description]) "A short description match is not shown whole"
+        match SettingsCatalog.searchEvidence "row" (SettingsCatalog.find "tabIndentNormal") with
+        | [part] -> assertTrue (part = "…they fill the row.") (sprintf "A long description is not cut to the words around the match: %s" part)
+        | other -> failwithf "A description match is not shown: %A" other
+    finally Localization.setPreference "system"
     Application.EnableVisualStyles()
     let number = new SettingsNumberInput(Minimum= -10M,Maximum=100M,Value=10M)
     let numberText = number.Controls |> Seq.cast<Control> |> Seq.pick(function :? TextBox as t -> Some t | _ -> None)

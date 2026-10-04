@@ -111,10 +111,55 @@ module SettingsCatalog =
         |> Array.sortBy fst
     let searchContext item =
         if item.id="language" then Strings.SettingsWindow.sidebar else Strings.Pages.title item.page
+    /// The settings file key, so a setting can also be found by the name users see in settings.json.
+    let storageKey item =
+        match item.binding with
+        | Toggle(key,_,_) | Choice(key,_,_) | Shortcut(key,_) -> key
+        | _ -> ""
     let searchTexts item =
-        [item.text.caption;item.text.keywords;searchContext item] |> List.collect Localization.all
-    /// Visible page names are searchable; explanatory prose stays out of the index.
+        ([item.text.caption;item.text.keywords;searchContext item] |> List.collect Localization.all) @ [storageKey item]
+        |> List.filter((<>) "")
+    let private terms (query:string) = query.Split([|' ';'\t'|],StringSplitOptions.RemoveEmptyEntries)
+    let private contains term text = matchRanges term text |> Array.isEmpty |> not
+    let private inDescription term item = Localization.all item.text.description |> List.exists (contains term)
+    /// Every term in the caption, keywords, page name or settings-file key, in any language, or
+    /// in the description.
     let matches (query:string) item =
         let texts = searchTexts item
-        query.Split([|' ';'\t'|],StringSplitOptions.RemoveEmptyEntries)
-        |> Array.forall(fun term -> texts |> List.exists(fun text -> matchRanges term text |> Array.isEmpty |> not))
+        terms query |> Array.forall(fun term -> texts |> List.exists (contains term) || inDescription term item)
+    /// Orders results: 2 when every term is in a caption, 1 when in the other indexed texts, 0 when
+    /// a term is found only in the description.
+    let searchRank (query:string) item =
+        let captions = Localization.all item.text.caption
+        let texts = searchTexts item
+        let all = terms query
+        if all |> Array.forall(fun term -> captions |> List.exists (contains term)) then 2
+        elif all |> Array.forall(fun term -> texts |> List.exists (contains term)) then 1
+        else 0
+    /// A short part of a description around its first match of the term, ellipses marking cuts.
+    let private snippet (term:string) (text:string) =
+        match matchRanges term text |> Array.tryHead with
+        | None -> None
+        | Some(index,length) ->
+            let before,after = 16,36
+            // Up to before characters ahead of the match, from the start of a word.
+            let start = if index<=before then 0 else (match text.IndexOf(' ',index-before,before) with -1 -> index-before | space -> space+1)
+            let stop = min text.Length (index+length+after)
+            let stop = if stop=text.Length then stop else (match text.IndexOf(' ',stop) with space when space>0 && space-stop<12 -> space | _ -> stop)
+            Some((if start>0 then "…" else "")+text.Substring(start,stop-start).Trim()+(if stop<text.Length then "…" else ""))
+    /// Why a result matched, for each term its caption and page name do not show: the keywords
+    /// holding it (just those words; the list is long), the caption in another language or the
+    /// settings-file key, else the part of the description around it.
+    let searchEvidence (query:string) item =
+        let shown = tr item.text.caption+" "+tr (searchContext item)
+        let keywords = tr item.text.keywords :: Localization.all item.text.keywords |> List.collect(fun line -> line.Split(' ') |> List.ofArray)
+        let texts = keywords @ searchTexts item |> List.filter((<>) "")
+        let descriptions = tr item.text.description :: Localization.all item.text.description
+        terms query
+        |> Array.filter(fun term -> not (contains term shown))
+        |> Array.choose(fun term ->
+            match texts |> List.tryFind (contains term) with
+            | Some text -> Some text
+            | None -> descriptions |> List.tryPick (snippet term))
+        |> Array.distinct
+        |> List.ofArray

@@ -162,8 +162,19 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         searchResults.Controls.Add(resultsFrame)
         searchResults.Controls.Add(emptyResults)
         let drawMatch (graphics:Graphics) (text:string) font (bounds:Rectangle) color =
-            let ranges = SettingsCatalog.matchRanges (search.Text.Trim()) text
             let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.NoPadding ||| TextFormatFlags.SingleLine
+            let width (part:string) = TextRenderer.MeasureText(graphics,part,font,Size(Int32.MaxValue,bounds.Height),flags).Width
+            // Drawn in pieces, so EndEllipsis cannot shorten it: cut where an ellipsis still fits.
+            let text =
+                if width text<=bounds.Width then text
+                else
+                    let rec fit fits tooLong =
+                        if tooLong-fits<=1 then fits
+                        else
+                            let middle = (fits+tooLong)/2
+                            if width (text.Substring(0,middle)+"…")<=bounds.Width then fit middle tooLong else fit fits middle
+                    text.Substring(0,fit 0 text.Length).TrimEnd()+"…"
+            let ranges = SettingsCatalog.matchRanges (search.Text.Trim()) text
             let state = graphics.Save()
             graphics.SetClip(bounds)
             try
@@ -194,12 +205,8 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                     (Rectangle(left,e.Bounds.Top+Dpi.scale 7,right,Dpi.scale 23)) p.text
                 // The language picker is in the sidebar, on every page, not on General.
                 let context = tr (SettingsCatalog.searchContext item)
-                let evidence =
-                    if SettingsCatalog.matchRanges (search.Text.Trim()) (tr item.text.caption+" "+context) |> Array.isEmpty then
-                        let texts = [tr item.text.keywords] @ SettingsCatalog.searchTexts item
-                        texts |> List.tryFind(fun text -> SettingsCatalog.matchRanges (search.Text.Trim()) text |> Array.isEmpty |> not)
-                    else None
-                drawMatch e.Graphics (evidence |> Option.map(fun text -> context+" · "+text) |> Option.defaultValue context)
+                let evidence = SettingsCatalog.searchEvidence (search.Text.Trim()) item
+                drawMatch e.Graphics (String.concat " · " (context::evidence))
                     SettingsUi.bodyFont (Rectangle(left,e.Bounds.Top+Dpi.scale 27,right,Dpi.scale 19)) p.muted
                 ())
         let styleSearch() =
@@ -223,7 +230,9 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
             if query = "" then
                 searchResults.Hide()
             else
-                matches <- entries |> Array.filter(SettingsCatalog.matches query)
+                // Caption matches first; a match only in a description comes last. Ties keep page order.
+                matches <- entries |> Array.filter(SettingsCatalog.matches query) |> List.ofArray
+                           |> List.sortByDescending(SettingsCatalog.searchRank query) |> Array.ofList
                 results.BeginUpdate()
                 try
                     results.Items.Clear()
