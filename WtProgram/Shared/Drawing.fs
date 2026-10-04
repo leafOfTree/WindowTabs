@@ -210,8 +210,13 @@ type Img(bitmap:Bitmap) =
         g
     member this.clip(rc:Rect) =
         let clipped = Img(rc.size)
-        clipped.graphics.DrawImage(this.bitmap, 0, 0, rc.Rectangle, GraphicsUnit.Pixel)
-        clipped
+        try
+            use graphics = clipped.graphics
+            graphics.DrawImage(this.bitmap, 0, 0, rc.Rectangle, GraphicsUnit.Pixel)
+            clipped
+        with _ ->
+            clipped.bitmap.Dispose()
+            reraise()
     member this.crop croppedSize =
         let croppedSize = this.size.intersect(croppedSize)
         if this.size.eq(croppedSize).not then

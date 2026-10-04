@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Text;
@@ -87,32 +87,36 @@ namespace Bemo
         }
         public static Bitmap PrintWindow(IntPtr hwnd)
         {
+            bool captured;
+            return PrintWindow(hwnd, out captured);
+        }
+        public static Bitmap PrintWindow(IntPtr hwnd, out bool captured)
+        {
             RECT windowRect;
             WinUserApi.GetWindowRect(hwnd, out windowRect);
-            IntPtr hdc = WinUserApi.GetWindowDC(hwnd);
-            Bitmap bmp = new Bitmap(windowRect.Width, windowRect.Height, PixelFormat.Format32bppArgb);
-            Graphics gfxBmp = Graphics.FromImage(bmp);
-            gfxBmp.FillRectangle(new SolidBrush(Color.FromArgb(0,0,0,0)), new Rectangle(Point.Empty, bmp.Size));
-            IntPtr hdcBitmap = gfxBmp.GetHdc();
-            bool succeeded = WinUserApi.PrintWindow(hwnd, hdcBitmap, 0);
-            gfxBmp.ReleaseHdc(hdcBitmap);
-            if (!succeeded)
+            Bitmap bmp = new Bitmap(windowRect.Width, windowRect.Height, PixelFormat.Format32bppRgb);
+            try
             {
-                gfxBmp.FillRectangle(new SolidBrush(Color.Gray), new Rectangle(Point.Empty, bmp.Size));
+                using (Graphics graphics = Graphics.FromImage(bmp))
+                {
+                    graphics.Clear(Color.Gray);
+                    IntPtr dc = graphics.GetHdc();
+                    try
+                    {
+                        // Full-content capture includes composition-backed application content.
+                        const int PW_RENDERFULLCONTENT = 0x00000002;
+                        captured = WinUserApi.PrintWindow(hwnd, dc, PW_RENDERFULLCONTENT);
+                        if (!captured) captured = WinUserApi.PrintWindow(hwnd, dc, 0);
+                    }
+                    finally { graphics.ReleaseHdc(dc); }
+                }
+                return bmp;
             }
-            IntPtr hRgn = WinGdiApi.CreateRectRgn(0, 0, 0, 0);
-            WinUserApi.GetWindowRgn(hwnd, hRgn);
-            Region region = Region.FromHrgn(hRgn);
-            if (!region.IsEmpty(gfxBmp))
+            catch
             {
-                gfxBmp.ExcludeClip(region);
-                gfxBmp.Clear(Color.FromArgb(0, 0, 0, 0));
+                bmp.Dispose();
+                throw;
             }
-            region.Dispose();
-            WinGdiApi.DeleteObject(hRgn);
-            gfxBmp.Dispose();
-            WinUserApi.ReleaseDC(hwnd, hdc);
-            return bmp;
         }
  
         public static void UpdateLayeredWindow(IntPtr hwnd, Point location, Bitmap bitmap, byte alpha)

@@ -268,14 +268,14 @@ and
         if os.isWin7OrHigher then
             let mutable ptClient = POINT(0, 0)
             let hbitmap = image.hbitmap
-            DwmApi.DwmSetIconicLivePreviewBitmap(hwnd, hbitmap, ref ptClient, 0) |> ignore
-            WinGdiApi.DeleteObject(hbitmap) |> ignore
+            try DwmApi.DwmSetIconicLivePreviewBitmap(hwnd, hbitmap, ref ptClient, 0) |> ignore
+            finally WinGdiApi.DeleteObject(hbitmap) |> ignore
 
     member this.dwmSetIconicThumbnail (image:Img) =
         if os.isWin7OrHigher then
             let hbitmap = image.hbitmap
-            DwmApi.DwmSetIconicThumbnail(hwnd, hbitmap, 0) |> ignore
-            WinGdiApi.DeleteObject(hbitmap) |> ignore
+            try DwmApi.DwmSetIconicThumbnail(hwnd, hbitmap, 0) |> ignore
+            finally WinGdiApi.DeleteObject(hbitmap) |> ignore
 
     member this.style = WinUserApi.GetWindowLong(hwnd, WindowLongFieldOffset.GWL_STYLE)
     member this.styleEx = WinUserApi.GetWindowLong(hwnd, WindowLongFieldOffset.GWL_EXSTYLE)
