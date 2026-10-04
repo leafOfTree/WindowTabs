@@ -124,10 +124,10 @@ module Strings =
                                  keywords={ en="auto-hide peek flash change"; zh="自动隐藏"; ja="自動非表示" } }
         let tabAlignment = { caption={ en="Tab position"; zh="标签位置"; ja="タブの位置" }
                              description={ en="Align tabs left, center or right."; zh="设置标签左对齐、居中或右对齐。"; ja="タブを左・中央・右に配置します。" }
-                             keywords={ en="alignment"; zh=""; ja="揃え" } }
+                             keywords={ en="alignment"; zh="对齐"; ja="揃え" } }
         let combineTaskbarIcons = { caption={ en="One taskbar icon per group"; zh="每个分组显示一个任务栏图标"; ja="グループごとにタスクバーアイコンを1つ表示" }
                                     description={ en="Combine each group's icons into one; applies to new groups."; zh="合并每个分组的任务栏图标，对新分组生效。"; ja="グループごとにアイコンを 1 つにまとめます。新しいグループに適用。" }
-                                    keywords={ en="merge superbar"; zh=""; ja="結合 まとめる" } }
+                                    keywords={ en="merge superbar"; zh="合并 任务栏"; ja="結合 まとめる" } }
         let replaceAltTab = { caption={ en="Use WindowTabs for Alt+Tab"; zh="使用 WindowTabs 窗口切换器"; ja="Alt+Tab に WindowTabs を使う" }
                               description={ en="Replaces the Windows switcher."; zh="替换 Windows 自带的窗口切换器。"; ja="Windows 標準のウィンドウ切り替えを置き換えます。" }
                               keywords={ en="task switching"; zh="任务切换"; ja="タスク切り替え" } }
