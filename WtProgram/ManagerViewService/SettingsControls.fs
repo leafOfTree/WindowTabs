@@ -87,8 +87,43 @@ type SettingsInfoButton() as this =
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); this.Invalidate()
     override this.OnMouseLeave(e) = base.OnMouseLeave(e); this.Invalidate()
 
+module SettingsTextWrap =
+    /// The text as lines no wider than width: broken at spaces, after a path separator inside a
+    /// long word such as a file path (WordBreak would clip one), else between characters.
+    let lines (text:string) (font:Font) (width:int) =
+        let measure (part:string) = TextRenderer.MeasureText(part,font,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPrefix).Width
+        let fits (part:string) = measure (part.TrimEnd()) <= width
+        // Pieces that each end where a line may break.
+        let pieces (paragraph:string) =
+            let result = ResizeArray<string>()
+            let mutable start = 0
+            for index in 0..paragraph.Length-1 do
+                if paragraph.[index]=' ' || paragraph.[index]='\\' || paragraph.[index]='/' then
+                    result.Add(paragraph.Substring(start,index+1-start))
+                    start <- index+1
+            if start<paragraph.Length then result.Add(paragraph.Substring(start))
+            List.ofSeq result
+        let rec characters (line:string) (piece:string) (lines:string list) =
+            if piece="" then line,lines
+            elif fits (line+piece.Substring(0,1)) || line="" then characters (line+piece.Substring(0,1)) (piece.Substring(1)) lines
+            else characters "" piece (line.TrimEnd()::lines)
+        text.Replace("\r\n","\n").Split('\n')
+        |> Array.collect(fun paragraph ->
+            let line,lines =
+                pieces paragraph |> List.fold(fun (line:string,lines) piece ->
+                    if fits (line+piece) then line+piece,lines
+                    elif fits piece then piece,(if line="" then lines else line.TrimEnd()::lines)
+                    else characters line piece lines) ("",[])
+            line.TrimEnd()::lines |> List.rev |> Array.ofList)
+        |> List.ofArray
+
 type private SettingsHelpPopup(message:string,font:Font) as this =
     inherit Form()
+    // As wide as a short message needs, wrapping only past 470px.
+    let width =
+        let oneLine = TextRenderer.MeasureText(message,font,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPrefix).Width
+        min (Dpi.scale 470) (oneLine+Dpi.scale 32)
+    let wrapped = String.Join("\n",SettingsTextWrap.lines message font (width-Dpi.scale 32))
     do
         // Form's base constructor reads CreateParams before F# initialization finishes.
         this.HandleCreated.Add(fun _ ->
@@ -100,11 +135,7 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
         this.ShowInTaskbar <- false
         this.Font <- font
         this.DoubleBuffered <- true
-        // As wide as a short message needs, wrapping only past 470px.
-        let oneLine = TextRenderer.MeasureText(message,font,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPrefix).Width
-        let width = min (Dpi.scale 470) (oneLine+Dpi.scale 32)
-        let textSize = TextRenderer.MeasureText(message,font,Size(width-Dpi.scale 32,Int32.MaxValue),
-                                                TextFormatFlags.WordBreak ||| TextFormatFlags.NoPrefix)
+        let textSize = TextRenderer.MeasureText(wrapped,font,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPrefix)
         this.ClientSize <- Size(width,textSize.Height+Dpi.scale 32)
         use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (float32(Dpi.scale 10))
         this.Region <- new Region(shape)
@@ -116,9 +147,9 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
         use shape = SettingsShapes.rounded (RectangleF(1.0f,1.0f,float32(this.Width-3),float32(this.Height-3))) (float32(Dpi.scale 10))
         use border = new Pen(p.border)
         e.Graphics.DrawPath(border,shape)
-        TextRenderer.DrawText(e.Graphics,message,this.Font,
+        TextRenderer.DrawText(e.Graphics,wrapped,this.Font,
             Rectangle(Dpi.scale 16,Dpi.scale 16,this.Width-Dpi.scale 32,this.Height-Dpi.scale 32),
-            p.text,TextFormatFlags.WordBreak ||| TextFormatFlags.NoPrefix)
+            p.text,TextFormatFlags.NoPrefix)
 
 /// Hover help for any control, the way the (i) button shows it: the system tooltip in a light
 /// theme, a themed popup in a dark one (the system tooltip stays light). The popup closes once

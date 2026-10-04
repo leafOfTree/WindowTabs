@@ -79,6 +79,18 @@ let main() =
         | other -> failwithf "A description match is not shown: %A" other
     finally Localization.setPreference "system"
     Application.EnableVisualStyles()
+    // Hover text wraps a long file path, which has no spaces, instead of clipping it.
+    do
+        let path = @"C:\Users\someone\repository\WindowTabs\WtProgram\bin\Debug\WindowTabsCrash.log"
+        let width = 220
+        let measure (line:string) = TextRenderer.MeasureText(line,SettingsUi.bodyFont,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPrefix).Width
+        let lines = SettingsTextWrap.lines path SettingsUi.bodyFont width
+        assertTrue (lines.Length>1 && lines |> List.forall(fun line -> measure line<=width)) "A long path is not wrapped to the width"
+        assertTrue (String.concat "" lines = path) "Wrapping a path lost characters"
+        assertTrue (lines |> List.take (lines.Length-1) |> List.forall(fun line -> line.EndsWith("\\"))) "A path is not broken after its separators"
+        assertTrue (SettingsTextWrap.lines "Short text" SettingsUi.bodyFont width = ["Short text"]) "Text that fits is wrapped"
+        let sentence = SettingsTextWrap.lines "Words wrap at spaces when the line runs out of room" SettingsUi.bodyFont 150
+        assertTrue (sentence.Length>1 && sentence |> List.forall(fun line -> not (line.StartsWith(" ") || line.EndsWith(" ")))) "A sentence is not wrapped at spaces"
     let number = new SettingsNumberInput(Minimum= -10M,Maximum=100M,Value=10M)
     let numberText = number.Controls |> Seq.cast<Control> |> Seq.pick(function :? TextBox as t -> Some t | _ -> None)
     numberText.Text <- "500"
