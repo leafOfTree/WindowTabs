@@ -127,7 +127,7 @@ type TabSprite<'id> = {
     member private this.closeButtonSprite = 
         {
             CloseButtonSprite.size = this.closeButtonSize
-            foreColor = this.appearance.tabTextColor
+            foreColor = this.textColor
             hover = this.hover = Some(TabClose)
             captured = this.captured = Some(TabClose)
         } :> ISprite
@@ -141,18 +141,24 @@ type TabSprite<'id> = {
     // swallows a short one.
     member private this.cornerRadius = max (Dpi.scale 4) (this.size.height * 30 / 100)
 
-    member private this.bgBrush =
-        let color = 
-            match this.displayInfo.bgColor with
-            | Some(color) -> color
-            | None ->
-                let active = this.appearance.tabActiveBgColor
-                let inactive = this.appearance.tabNormalBgColor
-                let highlight = this.appearance.tabHighlightBgColor
-                if this.isTop then active
-                elif this.hover.IsSome || this.captured.IsSome then highlight
-                else inactive
-        new SolidBrush(color)
+    member private this.bgColor =
+        match this.displayInfo.bgColor with
+        | Some(color) -> color
+        | None ->
+            let active = this.appearance.tabActiveBgColor
+            let inactive = this.appearance.tabNormalBgColor
+            let highlight = this.appearance.tabHighlightBgColor
+            if this.isTop then active
+            elif this.hover.IsSome || this.captured.IsSome then highlight
+            else inactive
+
+    member private this.bgBrush = new SolidBrush(this.bgColor)
+
+    /// The text and close button colour for this tab's own background: the chosen colour,
+    /// or a darker or lighter shade of it where that would be hard to read.
+    member this.textColor =
+        let a = this.appearance
+        TextContrast.onTab a.tabTextColor a.tabActiveBgColor a.tabHighlightBgColor a.tabNormalBgColor this.bgColor
 
     // The inset exists because GDI+ puts pixel centres on integer coordinates
     // once antialiasing is on, so column k spans k-0.5 to k+0.5, and a fill run
@@ -222,8 +228,8 @@ type TabSprite<'id> = {
         let width = max 1 width
         Sz(width, this.size.height)
 
-    member this.tabTextBrush = 
-        new SolidBrush(this.appearance.tabTextColor)
+    member this.tabTextBrush =
+        new SolidBrush(this.textColor)
 
     interface ISprite with
         member this.image =
@@ -449,7 +455,12 @@ type TabStripSprite<'id> when 'id : equality = {
             let last = tab.id=this.lorder.list.[this.lorder.count-1]
             let leftInset = if first then 0 else gapInset
             let rightInset = if last then 0 else gapInset
-            use fill = new SolidBrush(if tab.isTop then this.appearance.tabActiveBgColor else this.appearance.tabNormalBgColor)
+            // A flashing tab keeps its colour here too, so a call for attention still shows.
+            let color =
+                match tab.displayInfo.bgColor with
+                | Some(color) -> color
+                | None -> if tab.isTop then this.appearance.tabActiveBgColor else this.appearance.tabNormalBgColor
+            use fill = new SolidBrush(color)
             let width = tab.size.width-leftInset-rightInset
             if width>0 then
                 fillSegment fill (location.x+leftInset) width first last

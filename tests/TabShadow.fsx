@@ -134,6 +134,11 @@ let main () =
                 let x,width = segment alone 1
                 check ([x+Dpi.scale 3;x+width-Dpi.scale 3] |> List.forall(fun at -> sameColor (pixel aloneBar at) appearance.tabActiveBgColor))
                       "A lone tab is marked"
+                // A tab calling for attention shows its flashing colour in the bar as well.
+                let flashing = { three with tabs=Map2(List2([1,info "One";2,{ info "Two" with bgColor=Some appearance.tabFlashBgColor };3,info "Three"])) }
+                use flashingBar = flashing.renderCollapsed.bitmap
+                let x,width = segment flashing 2
+                check (sameColor (pixel flashingBar (x+width/2)) appearance.tabFlashBgColor) "A flashing tab does not show in the minimal bar"
                 check ((strip.tryHit(Pt(Dpi.scale 80,strip.collapsedOffset+bar.Height/2))).IsSome) "Minimal bar cannot reveal its tabs"
                 let tabLocation,tabSprite = strip.sprite.children.list |> List.find(fun (_,sprite) -> sprite.children.list |> List.exists(fun (_,child) -> child :? CloseButtonSprite))
                 let closeLocation,_ = tabSprite.children.list |> List.find(fun (_,child) -> child :? CloseButtonSprite)

@@ -640,6 +640,20 @@ Group #2: No valid windows in this group.";
         api.setValue("tabThemeMode",box "dark")
         Application.DoEvents()
         snapshot "settings-appearance-dark"
+        // Text that would be hard to read on a tab colour is adjusted there, and the page says where.
+        do
+            let before = settings.settings.appearance
+            let pink,green = Color.FromArgb(0xA9,0x79,0x79),Color.FromArgb(0x71,0xD5,0x1A)
+            api.updateAppearance(fun s -> {s with darkPalette={s.darkPalette with tabTextColor=pink;tabActiveBgColor=green};useCustomColors=true;darkPreset=ThemePresets.customKey})
+            Application.DoEvents()
+            let noteShown () = controls appearance.control |> Seq.exists(fun c -> c :? Label && c.Visible && c.Text = tr Strings.Appearance.textAdjusted)
+            check (noteShown()) "The page does not say the text colour is adjusted"
+            let comparison = controls appearance.control |> Seq.pick(function :? ContrastComparison as c -> Some c | _ -> None)
+            check (comparison.Visible && comparison.Samples.Length=3 && comparison.Height>0) "The adjusted text is not shown against the chosen text"
+            snapshot "settings-appearance-contrast"
+            api.updateAppearance(fun _ -> before)
+            Application.DoEvents()
+            check (not (noteShown()) && not comparison.Visible) "The contrast note stays after the colours read well again"
         api.setValue("tabThemeMode",box "light")
         Application.DoEvents()
         snapshot "settings-appearance-light"

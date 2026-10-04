@@ -238,6 +238,11 @@ module Strings =
         /// Switcher styles: large icons in a row, or window titles in a column.
         let switcherHorizontal = { en="Horizontal"; zh="横向"; ja="横" }
         let switcherVertical = { en="Vertical"; zh="纵向"; ja="縦" }
+        /// The tab colours on which the text is shown darker or lighter than chosen.
+        /// Samples of the tab text as chosen and as shown, side by side.
+        let textBefore = { en="Before"; zh="调整前"; ja="調整前" }
+        let textAfter = { en="After"; zh="调整后"; ja="調整後" }
+        let textAdjusted = { en="Text color is adjusted slightly to stay readable."; zh="文字颜色已稍作调整，以保持清晰。"; ja="読みやすさのため、文字の色を少し調整しています。" }
         /// A colour preset whose colours the user has changed.
         let editedPreset name = { en=sprintf "%s (edited)" name; zh=sprintf "%s（已修改）" name; ja=sprintf "%s（変更済み）" name }
         let resetColors = { en="Reset colors"; zh="重置配色"; ja="配色をリセット" }

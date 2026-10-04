@@ -3,6 +3,51 @@ open System
 open System.Drawing
 open System.Windows.Forms
 
+/// The tab text on each tab colour where it is adjusted: as chosen and as shown, with the
+/// contrast of each, so the change can be judged by eye.
+type ContrastComparison() as this =
+    inherit Control()
+    let mutable samples : (string*Color*Color*Color) list = []
+    let chipWidth,chipHeight,gap = Dpi.scale 168,Dpi.scale 32,Dpi.scale 10
+    let captionFont = new Font("Segoe UI",9.0f)
+    let columns () = max 1 ((this.Width+gap)/(chipWidth+gap))
+    let rowHeight () = chipHeight+Dpi.scale 4+captionFont.Height+gap
+    let fit () =
+        let rows = (samples.Length+columns()-1)/columns()
+        this.Height <- rows*rowHeight()
+    do
+        this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
+        this.Tag <- "color-swatch"
+        this.Margin <- Padding(0,Dpi.scale 10,0,0)
+    /// Each as the tab name, its colour, the text as chosen and the text as shown.
+    member this.Samples
+        with get() = samples
+        and set value =
+            samples <- value
+            this.Visible <- not value.IsEmpty
+            fit()
+            this.Invalidate()
+    override this.OnResize e =
+        base.OnResize e
+        fit()
+        this.Invalidate()
+    override this.OnPaint e =
+        let p = SettingsUi.palette()
+        let g = e.Graphics
+        g.Clear(p.background)
+        samples |> List.iteri(fun index (name,background,before,after) ->
+            let x = (index%columns())*(chipWidth+gap)
+            let y = (index/columns())*rowHeight()
+            let chip = Rectangle(x,y,chipWidth,chipHeight)
+            use fill = new SolidBrush(background)
+            g.FillRectangle(fill,chip)
+            let half = chipWidth/2
+            let flags = TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine
+            TextRenderer.DrawText(g,tr Strings.Appearance.textBefore,this.Font,Rectangle(x,y,half,chipHeight),before,background,flags)
+            TextRenderer.DrawText(g,tr Strings.Appearance.textAfter,this.Font,Rectangle(x+half,y,half,chipHeight),after,background,flags)
+            let caption = sprintf "%s  %.1f → %.1f" name (TextContrast.ratio before background) (TextContrast.ratio after background)
+            TextRenderer.DrawText(g,caption,captionFont,Point(x,y+chipHeight+Dpi.scale 4),p.muted,p.background,TextFormatFlags.NoPrefix))
+
 type AppearanceView(?settings:ISettings) =
     let settings = defaultArg settings Services.settings
     let panel,table = SettingsUi.page()
@@ -81,6 +126,24 @@ type AppearanceView(?settings:ISettings) =
     let dimensions = dimensionFields |> List.map(fun (key,get,set) ->
         let low,high = SettingsCatalog.range key
         key,get,set,new SettingsNumberInput(Minimum=decimal low,Maximum=decimal high,Font=SettingsUi.bodyFont))
+    /// Says when the text colour is shown darker or lighter than chosen, so it stays readable.
+    let contrastNote = new Label(AutoSize=true,Tag="muted",UseMnemonic=false,Visible=false,Margin=Padding(0,Dpi.scale 8,0,0))
+    let contrastComparison = new ContrastComparison(Name="contrast-comparison",Visible=false)
+    let updateContrastNote (palette:TabPalette) =
+        let text = palette.tabTextColor
+        // A flashing tab is rare and brief, so it is adjusted quietly and left out here.
+        let samples =
+            [ Strings.Settings.tabActiveBgColor,palette.tabActiveBgColor
+              Strings.Settings.tabHighlightBgColor,palette.tabHighlightBgColor
+              Strings.Settings.tabNormalBgColor,palette.tabNormalBgColor ]
+            |> List.map(fun (name,background) ->
+                tr name.caption,background,text,
+                TextContrast.onTab text palette.tabActiveBgColor palette.tabHighlightBgColor palette.tabNormalBgColor background)
+            |> List.filter(fun (_,_,before,after) -> after <> before)
+        let adjusted = not samples.IsEmpty
+        contrastComparison.Samples <- samples
+        contrastNote.Visible <- adjusted
+        contrastNote.Text <- if adjusted then tr Strings.Appearance.textAdjusted else ""
     let refresh() =
         refreshing <- true
         try
@@ -99,6 +162,7 @@ type AppearanceView(?settings:ISettings) =
             preset.SelectedIndex <- selection settings |> Option.defaultValue ThemePresets.names.Length
             for key,read,write,editor in colors do
                 editor.value <- box(read palette)
+            updateContrastNote palette
             let geometry = settings.geometry
             for key,read,write,editor in dimensions do
                 let value = decimal (read geometry)
@@ -193,6 +257,9 @@ type AppearanceView(?settings:ISettings) =
         for key,read,write,editor in colors do
             editor.control.Width <- Dpi.scale 180
             SettingsUi.settingRow colorsCard key editor.control
+        contrastNote.MaximumSize <- Size(Dpi.scale 700,0)
+        SettingsUi.add table contrastNote
+        SettingsUi.add table contrastComparison
         let reset = SettingsUi.button (tr Strings.Appearance.resetColors)
         reset.Click.Add(fun _ -> resetColors())
         rightActions reset

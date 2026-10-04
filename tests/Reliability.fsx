@@ -99,6 +99,37 @@ let main() =
 
     let report = RuntimeDiagnostics.report (JObject.Parse("""{"licenseKey":"SECRET","workspaces":[{"title":"SECRET"}],"path":"SECRET","runAtStartup":true,"alignment":"SECRET"}""")) 0 0
     check (not(report.ToString().Contains("SECRET"))) "Diagnostic report leaked private data"
+    // Tab text stays readable on every tab colour: kept where it reads well, otherwise taken
+    // darker or lighter just enough, keeping some of its own colour.
+    do
+        check (abs (TextContrast.ratio System.Drawing.Color.Black System.Drawing.Color.White-21.0) < 0.01) "Contrast of black on white is not 21:1"
+        let pink,green = System.Drawing.Color.FromArgb(0xA9,0x79,0x79),System.Drawing.Color.FromArgb(0x71,0xD5,0x1A)
+        let fixedText = TextContrast.readable pink green
+        check (TextContrast.ratio fixedText green >= TextContrast.minimum && fixedText.ToArgb()<>System.Drawing.Color.Black.ToArgb() && fixedText.R>fixedText.G)
+              (sprintf "Pink text on green is not made readable in its own hue: %A" fixedText)
+        check (TextContrast.readable System.Drawing.Color.White System.Drawing.Color.Black = System.Drawing.Color.White) "Readable text was changed"
+        // Among light tabs one shade serves all three, so the text does not change as a tab
+        // is hovered or activated.
+        let lightGray,white = System.Drawing.Color.FromArgb(0xE0,0xE0,0xE0),System.Drawing.Color.White
+        let onLight = [green;lightGray;white] |> List.map(TextContrast.onTab pink green lightGray white)
+        check (onLight |> List.distinct |> List.length = 1 && onLight.Head <> pink
+               && [green;lightGray;white] |> List.forall(fun background -> TextContrast.ratio onLight.Head background >= TextContrast.minimum))
+              (sprintf "Light tabs do not share one readable text shade: %A" onLight)
+        // A light active tab among dark ones has no shade that reads on both; each gets its own.
+        let darkGray = System.Drawing.Color.FromArgb(0x2B,0x2B,0x2B)
+        check (TextContrast.shared pink [green;darkGray]).IsNone "A shade was shared between a light and a dark tab"
+        check ([green;darkGray] |> List.forall(fun background -> TextContrast.ratio (TextContrast.onTab pink green darkGray darkGray background) background >= TextContrast.minimum))
+              "Text on mixed light and dark tabs is not readable"
+        for palette in [Theme.lightPalette;Theme.darkPalette] do
+            for background in [palette.tabActiveBgColor;palette.tabHighlightBgColor;palette.tabNormalBgColor] do
+                check (TextContrast.readable palette.tabTextColor background = palette.tabTextColor)
+                      (sprintf "A default theme's text is adjusted on %A" background)
+        for dark in [false;true] do
+            ThemePresets.palettes dark |> Array.iteri(fun index palette ->
+                let low = [palette.tabActiveBgColor;palette.tabHighlightBgColor;palette.tabNormalBgColor;palette.tabFlashBgColor]
+                          |> List.filter(fun background -> TextContrast.readable palette.tabTextColor background <> palette.tabTextColor)
+                // Built-in presets read well as they are, so they look exactly as before.
+                check low.IsEmpty (sprintf "Preset %s (%s) needs its text adjusted" ThemePresets.keys.[index] (if dark then "dark" else "light")))
     // A reset keeps the version, writes fresh-install toggles, and keeps app rules and
     // workspaces unless asked to clear them.
     do
