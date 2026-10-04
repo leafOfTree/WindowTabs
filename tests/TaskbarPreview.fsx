@@ -43,6 +43,14 @@ let main() =
     try TaskbarPreview.compose (Sz(64,64)) Point.Empty Point.Empty (fun () -> content) (fun () -> failwith "injected strip failure") |> ignore
     with ex when ex.Message="injected strip failure" -> ()
     check (disposed content.bitmap) "Composition failure leaked captured content"
+    // The drag preview window owns its image: replacing or closing it frees the bitmap.
+    let animation = AnimationWindow(OS())
+    let first,second = source(),source()
+    animation.setImage(first)
+    animation.setImage(second)
+    check (disposed first.bitmap && not (disposed second.bitmap)) "Replaced drag preview image leaked or current one was freed"
+    animation.Dispose()
+    check (disposed second.bitmap) "Closed drag preview window leaked its image"
     let colored (color:Color) (size:Sz) =
         let image = Img(size)
         use graphics = image.graphics

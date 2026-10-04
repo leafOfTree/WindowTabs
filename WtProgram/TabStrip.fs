@@ -375,15 +375,19 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             
     member this.tabLocation = this.ts.tabLocation
     
+    /// The window capture is full size; release it here rather than waiting for the GC.
     member this.dragImage (tab:Tab) : Img= 
-        let bmpTab = this.tsBase(TabUp).renderTab(tab)
-        let bmpHwnd : Img = this.tabInfo(tab).preview()
-        let bmpOverlay = Img(Sz(bmpHwnd.width, bmpHwnd.height + bmpTab.height - this.contentOffset))
-        let gCapture = bmpOverlay.graphics
-        gCapture.DrawImage(bmpTab.bitmap, Point.Empty)
-        gCapture.DrawImage(bmpHwnd.bitmap, new Point(0, this.size.height - this.contentOffset))
-        gCapture.Dispose()
-        bmpOverlay
+        use bmpTab = this.tsBase(TabUp).renderTab(tab).bitmap
+        use bmpHwnd = this.tabInfo(tab).preview().bitmap
+        let bmpOverlay = Img(Sz(bmpHwnd.Width, bmpHwnd.Height + bmpTab.Height - this.contentOffset))
+        try
+            use gCapture = bmpOverlay.graphics
+            gCapture.DrawImage(bmpTab, Point.Empty)
+            gCapture.DrawImage(bmpHwnd, new Point(0, this.size.height - this.contentOffset))
+            bmpOverlay
+        with _ ->
+            bmpOverlay.bitmap.Dispose()
+            reraise()
 
     member this.setTabBgColor((tab, color)) =
         if tabBgColor.value.tryFind(tab) <> color then

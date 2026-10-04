@@ -162,7 +162,8 @@ type DragAction(info:DragActionInfo) =
                     animationWindow.setAlpha(byte(0xAA))
                     try
                         //this may fail if the image coming back is too small
-                        animationWindow.setImage(info.image().scale(dragScale))
+                        use full = info.image().bitmap
+                        animationWindow.setImage(full.img.scale(dragScale))
                     with _ -> ()
                     Some(animationWindow)
                 info.targets.values.iter <| fun target -> target.dragBegin()

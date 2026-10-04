@@ -35,8 +35,13 @@ type AnimationWindow(os:OS) =
            
     member this.setIsVisible(value) = isVisible.set(value)
     member this.hasImage = image.value.IsSome
-    member this.setImage(value) = image.set(Some(value))
+    /// Takes ownership of the image; the window copies its pixels on each update.
+    member this.setImage(value:Img) =
+        image.value.iter(fun previous -> previous.bitmap.Dispose())
+        image.set(Some(value))
     member this.setLocation(value) = location.set(value)
     member this.setAlpha = alpha.set
     member this.hwnd = window.hwnd
-    member this.Dispose() = (window :?> IDisposable).Dispose()
+    member this.Dispose() =
+        (window :?> IDisposable).Dispose()
+        image.value.iter(fun current -> current.bitmap.Dispose())
