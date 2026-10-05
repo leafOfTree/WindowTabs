@@ -50,7 +50,7 @@ module Strings =
     module TabMenu =
         let showTabTitles = { en="Show tab titles"; zh="显示标签标题"; ja="タブのタイトルを表示" }
         let showIconsOnly = { en="Show icons only"; zh="仅显示图标"; ja="アイコンのみ表示" }
-        let newTab = { en="New tab"; zh="新建标签"; ja="新しいタブ" }
+        let newTab = { en="Open new tab"; zh="新建标签"; ja="新しいタブを開く" }
         let renameTab = { en="Rename tab"; zh="重命名标签"; ja="タブ名を変更" }
         let restoreTabName = { en="Restore tab name"; zh="恢复标签名称"; ja="タブ名を元に戻す" }
         let enableTabsFor exe = { en=sprintf "Enable tabs for %s" exe; zh=sprintf "为 %s 启用标签" exe; ja=sprintf "%s のタブを有効にする" exe }
@@ -111,7 +111,7 @@ module Strings =
                                description={ en="Runs in the system tray after you sign in."; zh="登录后在系统托盘中运行。"; ja="サインイン後にシステムトレイで実行します。" }
                                keywords={ en="startup autostart boot login notification area"; zh="开机 自启动 通知区域"; ja="スタートアップ 自動起動 ログイン 通知領域" } }
         let enableTabsByDefault = { caption={ en="Enable tabs by default"; zh="默认启用标签"; ja="既定でタブを有効にする" }
-                                    description={ en="Add tabs to apps; app rules take priority."; zh="为应用添加标签，应用规则优先。"; ja="アプリにタブを追加します。アプリのルールを優先。" }
+                                    description={ en="For apps without an app rule."; zh="适用于没有应用规则的应用。"; ja="アプリのルールがないアプリに適用されます。" }
                                     keywords={ en="new"; zh="新应用"; ja="新しいアプリ" } }
         let dimInactiveGroups = { caption={ en="Dim tabs in inactive groups"; zh="淡化非活动分组的标签"; ja="非アクティブなグループのタブを半透明にする" }
                                   description={ en="Make the active group easier to spot."; zh="让当前活动的分组更容易辨认。"; ja="アクティブなグループを見分けやすくします。" }
@@ -119,51 +119,51 @@ module Strings =
         let autoHide = { caption={ en="Auto-hide tabs"; zh="自动隐藏标签"; ja="タブを自動的に隠す" }
                          description={ en="Show a thin strip until hover."; zh="只显示细栏，悬停展开。"; ja="細いバーだけ表示し、ホバーで展開します。" }
                          keywords={ en="maximized snapped snap half fullscreen full screen minimal mode compact bar never always"; zh="最大化 贴靠 半屏 分屏 全屏 极简模式 紧凑 精简 从不 始终"; ja="最大化 スナップ 半分 全画面 ミニマルモード コンパクト 常に" } }
-        let showTabsOnSwitch = { caption={ en="Show tabs when switching"; zh="切换标签时显示"; ja="切り替え時にタブを表示" }
-                                 description={ en="Briefly expand hidden tabs after a switch."; zh="切换后短暂展开隐藏的标签。"; ja="切り替え後、隠れたタブを一時的に展開します。" }
-                                 keywords={ en="auto-hide peek flash change"; zh="自动隐藏"; ja="自動非表示" } }
-        let tabAlignment = { caption={ en="Tab position"; zh="标签位置"; ja="タブの位置" }
-                             description={ en="Align tabs left, center or right."; zh="设置标签左对齐、居中或右对齐。"; ja="タブを左・中央・右に配置します。" }
-                             keywords={ en="alignment"; zh="对齐"; ja="揃え" } }
-        let combineTaskbarIcons = { caption={ en="One taskbar icon per group"; zh="每个分组显示一个任务栏图标"; ja="グループごとにタスクバーアイコンを1つ表示" }
-                                    description={ en="Combine each group's icons into one; applies to new groups."; zh="合并每个分组的任务栏图标，对新分组生效。"; ja="グループごとにアイコンを 1 つにまとめます。新しいグループに適用。" }
-                                    keywords={ en="merge superbar"; zh="合并 任务栏"; ja="結合 まとめる" } }
+        let showTabsOnSwitch = { caption={ en="Show tabs briefly after switching"; zh="切换后短暂显示标签"; ja="切り替え後にタブを一時的に表示" }
+                                 description={ en="For about a second, so you can see where you are."; zh="显示约一秒，方便确认当前位置。"; ja="約 1 秒間表示して、今いる位置を確認できます。" }
+                                 keywords={ en="auto-hide peek flash change when switching"; zh="自动隐藏 切换标签时显示"; ja="自動非表示 切り替え時" } }
+        let tabAlignment = { caption={ en="Align tabs"; zh="对齐标签"; ja="タブを揃える" }
+                             description=none
+                             keywords={ en="tab position alignment left center right"; zh="标签位置 对齐方式 左 居中 右"; ja="タブの位置 配置 左 中央 右" } }
+        let combineTaskbarIcons = { caption={ en="Combine taskbar icons per group"; zh="合并每个分组的任务栏图标"; ja="グループのタスクバーアイコンをまとめる" }
+                                    description={ en="Applies to new groups."; zh="对新分组生效。"; ja="新しいグループに適用されます。" }
+                                    keywords={ en="merge superbar one icon"; zh="一个图标"; ja="結合 1つ" } }
         let replaceAltTab = { caption={ en="Use WindowTabs for Alt+Tab"; zh="使用 WindowTabs 窗口切换器"; ja="Alt+Tab に WindowTabs を使う" }
                               description={ en="Replaces the Windows switcher."; zh="替换 Windows 自带的窗口切换器。"; ja="Windows 標準のウィンドウ切り替えを置き換えます。" }
                               keywords={ en="task switching"; zh="任务切换"; ja="タスク切り替え" } }
         let switcherStyle = { caption={ en="Switcher style"; zh="切换器样式"; ja="スイッチャーの表示" }
                               description={ en="Large icons in a row, or a list with full window titles."; zh="一排大图标，或显示完整窗口标题的列表。"; ja="大きなアイコンを横に並べるか、ウィンドウ タイトルを一覧で表示します。" }
                               keywords={ en="alt tab horizontal vertical layout"; zh="横向 竖向 布局"; ja="リスト 縦 レイアウト" } }
-        let groupWindowsInSwitcher = { caption={ en="Group windows in Alt+Tab"; zh="Alt+Tab 中按分组显示"; ja="Alt+Tab でグループをまとめる" }
-                                       description={ en="Show each window group as one item."; zh="每个窗口分组只显示一项。"; ja="ウィンドウのグループをそれぞれ 1 項目にまとめて表示します。" }
+        let groupWindowsInSwitcher = { caption={ en="Group windows in Alt+Tab"; zh="在 Alt+Tab 中按分组显示"; ja="Alt+Tab でグループをまとめる" }
+                                       description={ en="Each group appears as one item."; zh="每个分组只显示一项。"; ja="各グループを 1 項目として表示します。" }
                                        keywords={ en="switcher"; zh="切换器"; ja="切り替え" } }
-        let nextTab = { caption={ en="Next tab"; zh="下一个标签"; ja="次のタブ" }
-                        description={ en="Switch to the next window in the group."; zh="切换到当前分组中的下一个窗口。"; ja="グループ内の次のウィンドウに切り替えます。" }
+        let nextTab = { caption={ en="Switch to next tab"; zh="切换到下一个标签"; ja="次のタブに切り替え" }
+                        description={ en="Within the current group."; zh="在当前分组内切换。"; ja="現在のグループ内で切り替えます。" }
                         keywords=hotkeyWords }
-        let previousTab = { caption={ en="Previous tab"; zh="上一个标签"; ja="前のタブ" }
-                            description={ en="Switch to the previous window in the group."; zh="切换到当前分组中的上一个窗口。"; ja="グループ内の前のウィンドウに切り替えます。" }
+        let previousTab = { caption={ en="Switch to previous tab"; zh="切换到上一个标签"; ja="前のタブに切り替え" }
+                            description={ en="Within the current group."; zh="在当前分组内切换。"; ja="現在のグループ内で切り替えます。" }
                             keywords=hotkeyWords }
         let searchTabs = { caption={ en="Search tabs"; zh="搜索标签"; ja="タブを検索" }
-                           description={ en="Find a tab by title or app and switch to it, starting in the current group."; zh="按标题或应用查找标签并切换，优先在当前分组中查找。"; ja="タイトルやアプリ名でタブを探して切り替えます。まず現在のグループ内を検索します。" }
+                           description={ en="By title or app name, current group first."; zh="按标题或应用名查找，优先当前分组。"; ja="タイトルやアプリ名で探します。現在のグループを優先。" }
                            keywords={ en="hotkey jump window switcher palette"; zh="热键 跳转 窗口"; ja="ホットキー ジャンプ ウィンドウ" } }
-        let newTab = { caption={ en="New tab"; zh="新建标签"; ja="新しいタブ" }
-                       description={ en="Start the current tab's app again to open another window."
-                                     zh="再次启动当前标签的应用，打开一个新窗口。"
-                                     ja="現在のタブのアプリをもう一度起動して、新しいウィンドウを開きます。" }
+        let newTab = { caption={ en="Open new tab"; zh="新建标签"; ja="新しいタブを開く" }
+                       description={ en="Starts the current tab's app again."
+                                     zh="再次启动当前标签的应用。"
+                                     ja="現在のタブのアプリをもう一度起動します。" }
                        keywords={ en="hotkey new window open launch"; zh="热键 新建窗口 打开"; ja="ホットキー 新しいウィンドウ 開く" } }
         let switchTabsByNumber = { caption={ en="Switch tabs by number"; zh="按数字切换标签"; ja="番号でタブを切り替え" }
-                                   description={ en="Switch tabs using a modifier key and 1–9."; zh="使用修饰键与 1–9 切换标签。"; ja="修飾キーと 1～9 でタブを切り替えます。" }
+                                   description={ en="Hold a modifier key and press 1–9."; zh="按住修饰键再按 1–9。"; ja="修飾キーを押しながら 1～9 を押します。" }
                                    keywords={ en="hotkey digit"; zh="热键"; ja="ホットキー 数字" } }
-        let numberShortcut = { caption={ en="Number shortcut"; zh="数字快捷键"; ja="番号ショートカット" }
-                               description={ en="Choose Ctrl, Alt, or either modifier."; zh="选择 Ctrl、Alt，或两者均可。"; ja="Ctrl、Alt、またはどちらでも使える設定を選びます。" }
+        let numberShortcut = { caption={ en="Modifier key for 1–9"; zh="数字键搭配的修饰键"; ja="1～9 と組み合わせるキー" }
+                               description=none
                                keywords={ en="number shortcut modifier"; zh="数字 快捷键 修饰键"; ja="番号 ショートカット 修飾キー" } }
         let numberShortcutCtrl = { en="Ctrl + 1–9"; zh="Ctrl + 1–9"; ja="Ctrl + 1～9" }
         let numberShortcutAlt = { en="Alt + 1–9"; zh="Alt + 1–9"; ja="Alt + 1～9" }
         let numberShortcutBoth = { en="Ctrl or Alt + 1–9"; zh="Ctrl 或 Alt + 1–9"; ja="Ctrl または Alt + 1～9" }
         let activateOnHover = { caption={ en="Switch tabs on hover"; zh="悬停切换标签"; ja="ホバーでタブを切り替え" }
-                                description={ en="Switch windows when the pointer rests on a tab."; zh="鼠标悬停在标签上时切换窗口。"; ja="タブにポインターを置くとウィンドウを切り替えます。" }
+                                description={ en="Rest the pointer on a tab instead of clicking."; zh="鼠标停在标签上即可，无需点击。"; ja="クリックしなくても、タブにポインターを置くだけで済みます。" }
                                 keywords={ en="mouse"; zh="悬浮"; ja="マウスオーバー" } }
-        let shiftScroll = { caption={ en="Shift + scroll to switch tabs"; zh="Shift + 滚轮切换标签"; ja="Shift + スクロールでタブを切り替え" }
+        let shiftScroll = { caption={ en="Switch tabs with Shift + scroll"; zh="用 Shift + 滚轮切换标签"; ja="Shift + スクロールでタブを切り替え" }
                             description={ en="Works anywhere over a grouped window. Over the tab strip, Shift isn't needed."
                                           zh="在分组窗口的任意位置均可使用；在标签条上滚动时无需按 Shift。"
                                           ja="グループ化されたウィンドウ上ならどこでも使えます。タブバー上では Shift は不要です。" }
@@ -203,7 +203,7 @@ module Strings =
                                description={ en="Export all settings to a file, or import them and restart."; zh="将所有设置导出为文件，或从文件导入并重新启动。"; ja="すべての設定をファイルにエクスポートするか、インポートして再起動します。" }
                                keywords={ en="backup migrate json"; zh="迁移 设置文件"; ja="移行 設定ファイル" } }
         let settingsReset = { caption={ en="Reset to defaults"; zh="恢复默认设置"; ja="既定値に戻す" }
-                              description={ en="Restore every setting to its default and restart."; zh="将所有设置恢复为默认值并重新启动。"; ja="すべての設定を既定値に戻して再起動します。" }
+                              description={ en="Then restarts. App rules and workspaces can be kept."; zh="完成后重新启动，可保留应用规则和工作区。"; ja="その後再起動します。アプリのルールとワークスペースは残せます。" }
                               keywords={ en="factory clear"; zh="重置 出厂 清除"; ja="リセット 初期化 出荷時 消去" } }
 
     module General =

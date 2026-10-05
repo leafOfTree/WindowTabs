@@ -53,7 +53,7 @@ let main() =
     // Ordered as the settings window lists results: caption matches first.
     let ranked query = found query |> List.sortByDescending(fun id -> SettingsCatalog.searchRank query (SettingsCatalog.find id))
     assertTrue (List.head (ranked "start") = "launch-at-sign-in") "A caption match is not listed first"
-    assertTrue (found "start" |> List.contains "search-tabs") "A description word is not found"
+    assertTrue (found "start" |> List.contains "new-tab") "A description word is not found"
     assertTrue (found "start" |> List.contains "settings-reset") "Descriptions are not matched inside words (restart)"
     assertTrue (SettingsCatalog.searchRank "start" (SettingsCatalog.find "settings-reset") = 0) "A match inside a description word is not ranked last"
     assertTrue (List.head (ranked "TART") = "launch-at-sign-in") "Substrings ignore case and can start inside words"
