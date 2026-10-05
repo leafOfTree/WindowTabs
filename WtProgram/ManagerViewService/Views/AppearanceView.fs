@@ -255,7 +255,6 @@ type AppearanceView(?settings:ISettings) =
         let colorsCard = new SettingsCard()
         SettingsUi.add table colorsCard
         for key,read,write,editor in colors do
-            editor.control.Width <- Dpi.scale 180
             SettingsUi.settingRow colorsCard key editor.control
         contrastNote.MaximumSize <- Size(Dpi.scale 700,0)
         SettingsUi.add table contrastNote

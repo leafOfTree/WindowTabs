@@ -67,11 +67,14 @@ type SettingsActionButton() as this =
 
 type SettingsInputFrame() as this =
     inherit Panel()
+    let mutable pill = false
     do
         this.Size <- Size(Dpi.scale 180,Dpi.scale 34)
         this.Margin <- Padding.Empty
         this.DoubleBuffered <- true
         this.ResizeRedraw <- true
+    /// Fully rounded ends instead of the usual corners.
+    member this.Pill with get() = pill and set value = pill <- value; this.Invalidate()
     abstract member ApplyTheme : unit -> unit
     default this.ApplyTheme() =
         let p = SettingsColors.current()
@@ -86,7 +89,8 @@ type SettingsInputFrame() as this =
         e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
         e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
         if this.Width>2 && this.Height>2 then
-            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 8))
+            let radius = if pill then float32 this.Height/2.0f else float32(Dpi.scale 8)
+            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) radius
             use fill = new SolidBrush(this.BackColor)
             use border = new Pen(p.border)
             e.Graphics.FillPath(fill,shape)
@@ -446,7 +450,7 @@ type SettingsColorInput() as this =
     let mutable suppressClick = false
     let sync() =
         text.Text <- sprintf "#%06X" (color.ToArgb() &&& 0xFFFFFF)
-        this.ApplyTheme()
+        swatch.Invalidate()
     let commit (next:Color) =
         let different = next.ToArgb()<>color.ToArgb()
         color <- next
@@ -460,17 +464,27 @@ type SettingsColorInput() as this =
         | true,value when hex.Length=6 -> commit(Color.FromArgb((value >>> 16) &&& 255,(value >>> 8) &&& 255,value &&& 255))
         | _ -> sync()
     do
+        // A pill with a colour dot and its hex code, the colour itself kept to the dot.
+        this.Width <- Dpi.scale 120
+        this.Pill <- true
         swatch.FlatAppearance.BorderSize <- 0
         this.Controls.AddRange([|swatch :> Control;text :> Control|])
         this.Layout.Add(fun _ ->
             let size = Dpi.scale 24
-            swatch.SetBounds(Dpi.scale 6,(this.Height-size)/2,size,size)
-            text.SetBounds(Dpi.scale 38,(this.Height-text.Height)/2,max 1 (this.Width-Dpi.scale 48),text.Height))
+            swatch.SetBounds(Dpi.scale 7,(this.Height-size)/2,size,size)
+            let left = swatch.Right+Dpi.scale 6
+            text.SetBounds(left,(this.Height-text.Height)/2,max 1 (this.Width-left-Dpi.scale 12),text.Height))
         swatch.Paint.Add(fun e ->
-            e.Graphics.Clear(color)
+            let p = SettingsColors.current()
+            e.Graphics.Clear(this.BackColor)
             e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
-            use outline = new Pen(text.ForeColor,1.0f)
-            e.Graphics.DrawEllipse(outline,Rectangle(Dpi.scale 5,Dpi.scale 5,swatch.Width-Dpi.scale 10,swatch.Height-Dpi.scale 10)))
+            let size = Dpi.scale 16
+            let dot = Rectangle((swatch.Width-size)/2,(swatch.Height-size)/2,size,size)
+            use fill = new SolidBrush(color)
+            e.Graphics.FillEllipse(fill,dot)
+            // A faint rim keeps a dot the colour of the field visible.
+            use rim = new Pen(Color.FromArgb(65,p.text))
+            e.Graphics.DrawEllipse(rim,dot))
         let host = new ToolStripControlHost(picker,Margin=Padding.Empty,Padding=Padding.Empty)
         popup.Items.Add(host) |> ignore
         popup.Closed.Add(fun e ->
@@ -498,15 +512,8 @@ type SettingsColorInput() as this =
         SettingsPopupLifetime.own this popup false
         text.Text <- "#FFFFFF"
     override this.ApplyTheme() =
-        this.BackColor <- color
-        let foreground = if 0.299*float color.R+0.587*float color.G+0.114*float color.B>150.0 then Color.FromRGB(0x202020) else Color.White
-        text.BackColor <- color
-        text.ForeColor <- foreground
-        swatch.BackColor <- color
-        swatch.FlatAppearance.MouseOverBackColor <- color
-        swatch.FlatAppearance.MouseDownBackColor <- color
+        base.ApplyTheme()
         swatch.Invalidate()
-        this.Invalidate()
     interface IPropEditor with
         member _.value
             with get() = box color

@@ -122,6 +122,10 @@ let main() =
     colorText.Text <- "#0af"
     key colorText Keys.Enter
     assertTrue (colorText.Text="#00AAFF" && changes=2) "Three-digit hex is not expanded"
+    colorEditor.value <- box Color.Red
+    input.ApplyTheme()
+    let surface = (SettingsColors.current()).surface.ToArgb()
+    assertTrue (input.Pill && input.BackColor.ToArgb()=surface && colorText.BackColor.ToArgb()=surface) "Colour field is filled with the chosen colour instead of the theme"
     assertTrue ((SettingsHsv.color 120.0 1.0 1.0).ToArgb()=Color.Lime.ToArgb()) "HSV green"
     assertTrue ((SettingsHsv.color 240.0 1.0 1.0).ToArgb()=Color.Blue.ToArgb()) "HSV blue"
     input.Dispose()
