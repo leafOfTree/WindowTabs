@@ -112,6 +112,7 @@ let main() =
         api.setValue("enableCtrlNumberHotKey",box false)
         api.setValue("autoHideMode",box "Never")
         let mouse = Event<int * IntPtr>()
+        let newTabRequests = Collections.Concurrent.ConcurrentQueue<IntPtr>()
         Services.register<IProgram>({new IProgram with
             member _.version = "test"
             member _.isFirstRun = false
@@ -124,7 +125,8 @@ let main() =
             member _.setAutoGroupingEnabled _ _ = ()
             member _.tabAppearanceInfo = ThemeService.currentAppearance()
             member _.setHotKey _ _ = true
-            member _.getHotKey _ = 0
+            member _.getHotKey key = if key="newTab" then 1614 else 0
+            member _.newTab hwnd = newTabRequests.Enqueue(hwnd)
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
             member _.llMouse = mouse.Publish})
@@ -306,13 +308,17 @@ let main() =
                     foreignHwnd<>IntPtr.Zero || foreign.HasExited)
                 check (foreignHwnd<>IntPtr.Zero) "Foreign icon helper did not start"
                 // The tab menu as the decorator builds it on a right click.
-                let menuTexts hwnd = onGroup(fun group ->
+                let menu hwnd = onGroup(fun group ->
                     let decorator = typeof<TabStrip>.GetFields(flags) |> Array.find(fun field -> field.FieldType=typeof<ITabStripMonitor>)
                                     |> fun field -> field.GetValue(group.ts)
                     let items = decorator.GetType().GetMethod("contextMenu",flags).Invoke(decorator,[|box hwnd|]) :?> List2<ContextMenuItem>
-                    items.list |> List.choose(function CmiRegular item -> Some item.text | _ -> None))
+                    items.list |> List.choose(function CmiRegular item -> Some item | _ -> None))
+                let menuTexts hwnd = menu hwnd |> List.map(fun item -> item.text)
                 let closeAllOf hwnd = Localization.tr (Strings.TabMenu.closeAllOf (OS().windowFromHwnd(hwnd).pid.exeName))
                 let alone = menuTexts handles.Head
+                check (List.head alone = Localization.tr Strings.TabMenu.newTab + "\tCtrl+Alt+N") "The tab menu does not start with New tab and its shortcut"
+                (List.head (menu handles.[1])).click()
+                check (newTabRequests.ToArray() = [|handles.[1]|]) "New tab did not start the program of the tab it was opened from"
                 check (List.contains (Localization.tr Strings.TabMenu.closeAll) alone) "The tab menu lost Close all"
                 check (not (List.contains (closeAllOf handles.Head) alone)) "A group of one program offers closing that program's windows"
                 (info :> IGroup).addWindow(foreignHwnd,false)

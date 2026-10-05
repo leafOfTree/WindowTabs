@@ -62,6 +62,7 @@
     <Compile Include="Shared\Strings.fs" />
     <Compile Include="Shared\Alert.fs" />
     <Compile Include="Shared\SettingsCatalog.fs" />
+    <Compile Include="Shared\SettingsShortcut.fs" />
     <Compile Include="Shared\DragDrop.fs" />
     <Compile Include="Shared\Serialize.fs" />
     <Compile Include="Shared\Win32Menu.fs" />

@@ -89,6 +89,8 @@ type IProgram =
     abstract member tabAppearanceInfo : TabAppearanceInfo
     abstract member setHotKey: string -> int -> bool
     abstract member getHotKey: string -> int
+    /// Starts the tab's program again. Posted to the UI thread; returns before the work runs.
+    abstract member newTab : IntPtr -> unit
     abstract member suspendTabMonitoring : unit -> unit
     abstract member resumeTabMonitoring : unit -> unit
     abstract member llMouse : IEvent<int32 * IntPtr>

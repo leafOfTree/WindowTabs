@@ -50,7 +50,7 @@ module Strings =
     module TabMenu =
         let showTabTitles = { en="Show tab titles"; zh="显示标签标题"; ja="タブのタイトルを表示" }
         let showIconsOnly = { en="Show icons only"; zh="仅显示图标"; ja="アイコンのみ表示" }
-        let newWindow = { en="New window"; zh="新建窗口"; ja="新しいウィンドウ" }
+        let newTab = { en="New tab"; zh="新建标签"; ja="新しいタブ" }
         let renameTab = { en="Rename tab"; zh="重命名标签"; ja="タブ名を変更" }
         let restoreTabName = { en="Restore tab name"; zh="恢复标签名称"; ja="タブ名を元に戻す" }
         let enableTabsFor exe = { en=sprintf "Enable tabs for %s" exe; zh=sprintf "为 %s 启用标签" exe; ja=sprintf "%s のタブを有効にする" exe }
@@ -146,6 +146,11 @@ module Strings =
         let searchTabs = { caption={ en="Search tabs"; zh="搜索标签"; ja="タブを検索" }
                            description={ en="Find a tab by title or app and switch to it, starting in the current group."; zh="按标题或应用查找标签并切换，优先在当前分组中查找。"; ja="タイトルやアプリ名でタブを探して切り替えます。まず現在のグループ内を検索します。" }
                            keywords={ en="hotkey jump window switcher palette"; zh="热键 跳转 窗口"; ja="ホットキー ジャンプ ウィンドウ" } }
+        let newTab = { caption={ en="New tab"; zh="新建标签"; ja="新しいタブ" }
+                       description={ en="Start the current tab's app again to open another window."
+                                     zh="再次启动当前标签的应用，打开一个新窗口。"
+                                     ja="現在のタブのアプリをもう一度起動して、新しいウィンドウを開きます。" }
+                       keywords={ en="hotkey new window open launch"; zh="热键 新建窗口 打开"; ja="ホットキー 新しいウィンドウ 開く" } }
         let switchTabsByNumber = { caption={ en="Switch tabs by number"; zh="按数字切换标签"; ja="番号でタブを切り替え" }
                                    description={ en="Switch tabs using a modifier key and 1–9."; zh="使用修饰键与 1–9 切换标签。"; ja="修飾キーと 1～9 でタブを切り替えます。" }
                                    keywords={ en="hotkey digit"; zh="热键"; ja="ホットキー 数字" } }

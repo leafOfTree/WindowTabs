@@ -251,7 +251,8 @@ let main() =
     assertTrue (SettingsShortcut.parts 3623=["Ctrl";"Alt";"→"]) "Default shortcut decodes"
     assertTrue (SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.Right)=3623) "Shortcut encodes like the hotkey control"
     assertTrue (not (SettingsShortcut.isAcceptable (Keys.Shift ||| Keys.A)) && SettingsShortcut.isAcceptable Keys.F7) "Shortcut needs Ctrl or Alt"
-    let hotKeys = Collections.Generic.Dictionary<string,int>(dict ["nextTab",3623;"prevTab",3621;"searchTabs",0])
+    assertTrue (SettingsShortcut.text 1614="Ctrl+Alt+N" && SettingsShortcut.text 0="") "Menus show shortcuts as Ctrl+Alt+N"
+    let hotKeys = Collections.Generic.Dictionary<string,int>(dict ["nextTab",3623;"prevTab",3621;"searchTabs",0;"newTab",0])
     let rejected = SettingsShortcut.encode (Keys.Control ||| Keys.B)
     let mouse = Event<int32 * IntPtr>()
     Services.register<IProgram>({new IProgram with
@@ -267,6 +268,7 @@ let main() =
         member _.tabAppearanceInfo = ThemeService.currentAppearance()
         member _.setHotKey key value = (if value<>rejected then hotKeys.[key] <- value); value<>rejected
         member _.getHotKey key = hotKeys.[key]
+        member _.newTab _ = ()
         member _.suspendTabMonitoring() = ()
         member _.resumeTabMonitoring() = ()
         member _.llMouse = mouse.Publish})
@@ -276,6 +278,7 @@ let main() =
         unbox<bool>(processKey.Invoke(control,[|box msg;box keys|]))
     for mode,name in [DarkTheme,"dark";LightTheme,"light"] do
         hotKeys.["searchTabs"] <- 0
+        hotKeys.["newTab"] <- 0
         preferences <- { preferences with mode=mode }
         use form = new Form(ClientSize=Size(920,560),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false,Font=SettingsUi.bodyFont)
         let view = HotKeyView() :> ISettingsView
@@ -339,6 +342,8 @@ let main() =
         (findButton "Restore default shortcuts" view.control).Value.PerformClick()
         assertTrue (hotKeys.["nextTab"]=3623 && hotKeys.["prevTab"]=3621 && next.Shortcut=3623 && previous.Shortcut=3621) "Restore default shortcuts"
         assertTrue (hotKeys.["searchTabs"]=1056 && search.Shortcut=1056) "Restore default must set tab search to Alt+Space"
+        let newTab = view.control.Controls.Find("new-tab",true).[0] :?> SettingsShortcutInput
+        assertTrue (hotKeys.["newTab"]=1614 && newTab.Shortcut=1614) "Restore default must set new tab to Ctrl+Alt+N"
         hotKeys.["prevTab"] <- 3621
         Application.DoEvents()
         use bitmap = new Bitmap(form.ClientSize.Width,form.ClientSize.Height)

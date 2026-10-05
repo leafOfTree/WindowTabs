@@ -79,6 +79,7 @@ type Program(lifetime:LifetimeScope) as this =
         ("prevTab", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.switchWindow(false, false)))
         ("nextTab", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.switchWindow(true, false)))
         ("searchTabs", fun () -> this.toggleTabSearch())
+        ("newTab", fun () -> this.openNewTab(WinUserApi.GetForegroundWindow()))
         ]))
         
     let hotKeyManager = lifetime.Own(new HotKeyManager())
@@ -127,6 +128,13 @@ type Program(lifetime:LifetimeScope) as this =
 
     member this.tryDropped(window:Window) =
         if isDroppedAndAwaitingGrouping.value.contains(window.hwnd) then Some(None) else None
+
+    /// Only for a tab: the hotkey does nothing over the desktop, the taskbar or an untabbed window.
+    /// The new window is grouped like any other, so auto-grouping decides where it goes.
+    member this.openNewTab(hwnd:IntPtr) =
+        if this.isInGroup hwnd then
+            try Process.Start(os.windowFromHwnd(hwnd).pid.processPath) |> ignore
+            with :? ComponentModel.Win32Exception -> ()
 
     member this.tryAutoGroup(window:Window) =
         if (this :> IProgram).getAutoGroupingEnabled(window.pid.processPath) then
@@ -344,6 +352,8 @@ type Program(lifetime:LifetimeScope) as this =
             let registered = hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags,shortcut.RegisterHotKeyVirtualKeyCode) action
             if registered then (settingsManager :> ISettings).setHotKey key value
             registered
+
+        member x.newTab hwnd = this.openNewTab hwnd
 
         member x.llMouse = llMouseEvent.Publish
 

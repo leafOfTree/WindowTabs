@@ -4,7 +4,7 @@ open System.Windows.Forms
 type HotKeyView() =
     let panel,table = SettingsUi.page()
     // Setting id for each program hotkey, so a conflict can name the other action.
-    let actions = ["nextTab","next-tab";"prevTab","previous-tab";"searchTabs","search-tabs"]
+    let actions = ["nextTab","next-tab";"prevTab","previous-tab";"searchTabs","search-tabs";"newTab","new-tab"]
     let hotKey key =
         let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont,Shortcut=Services.program.getHotKey key)
         editor.Changed.Add(fun _ ->

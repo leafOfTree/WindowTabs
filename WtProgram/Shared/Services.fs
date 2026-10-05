@@ -88,6 +88,8 @@ type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
         member _.tabAppearanceInfo = dispatcher.Send(fun () -> inner.tabAppearanceInfo)
         member _.setHotKey key value = dispatcher.Send(fun () -> inner.setHotKey key value)
         member _.getHotKey key = dispatcher.Send(fun () -> inner.getHotKey key)
+        // Starting a program can take a while; the tab menu must not wait for it.
+        member _.newTab hwnd = dispatcher.Post(fun () -> inner.newTab hwnd)
         member _.suspendTabMonitoring() = dispatcher.Send(fun () -> inner.suspendTabMonitoring())
         member _.resumeTabMonitoring() = dispatcher.Send(fun () -> inner.resumeTabMonitoring())
         member _.llMouse = dispatcher.Send(fun () -> inner.llMouse)

@@ -33,6 +33,8 @@ module SettingsCatalog =
         { id="next-tab"; page=HotKeySettings; text=Strings.Settings.nextTab; binding=Shortcut("nextTab",3623) }
         { id="previous-tab"; page=HotKeySettings; text=Strings.Settings.previousTab; binding=Shortcut("prevTab",3621) }
         { id="search-tabs"; page=HotKeySettings; text=Strings.Settings.searchTabs; binding=Shortcut("searchTabs",1056) }
+        // Ctrl+Alt+N: Ctrl+N and Ctrl+Shift+N belong to the apps themselves.
+        { id="new-tab"; page=HotKeySettings; text=Strings.Settings.newTab; binding=Shortcut("newTab",1614) }
         { id="switch-tabs-by-number"; page=HotKeySettings; text=Strings.Settings.switchTabsByNumber; binding=Toggle("enableCtrlNumberHotKey",true,true) }
         { id="number-shortcut"; page=HotKeySettings; text=Strings.Settings.numberShortcut; binding=Choice("numberHotKeyModifier",["Ctrl";"Alt";"Both"],"Ctrl") }
         { id="activate-on-hover"; page=HotKeySettings; text=Strings.Settings.activateOnHover; binding=Toggle("enableHoverActivate",false,false) }

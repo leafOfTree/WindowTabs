@@ -42,6 +42,7 @@ let main() =
             member _.tabAppearanceInfo = ThemeService.currentAppearance()
             member _.setHotKey _ _ = true
             member _.getHotKey _ = 0
+            member _.newTab _ = ()
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
             member _.llMouse = mouse.Publish})

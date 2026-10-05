@@ -197,12 +197,14 @@ type TabStripDecorator(group:WindowGroup) as this =
                 ]).map(autoHideMenuItem)
             })
 
-        let newWindowItem = 
+        let newTabItem =
+            // The menu shows the shortcut right-aligned after a tab character.
+            let shortcut = SettingsShortcut.text (Services.program.getHotKey "newTab")
             CmiRegular({
-                text = tr Strings.TabMenu.newWindow
+                text = tr Strings.TabMenu.newTab + (if shortcut = "" then "" else "\t" + shortcut)
                 flags = List2()
                 image = None
-                click = fun() -> Process.Start(processPath) |> ignore
+                click = fun() -> Services.program.newTab hwnd
             })
 
         let combineIconsInTaskbar =
@@ -290,7 +292,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             })
 
         List2([
-            Some(newWindowItem)
+            Some(newTabItem)
             Some(renameTabItem)
             (if group.isRenamed(hwnd) then Some(restoreTabNameItem) else None)
             Some(CmiSeparator)
