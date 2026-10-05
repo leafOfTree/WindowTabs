@@ -200,8 +200,8 @@ let main () =
         check ((fst first).x=60 && (snd first).size.width=100) "A held layout moved the tabs after a close"
         let overflowing = { strip 5 with held=Some(100.0,60.0) }
         check ((tabs overflowing) |> List.forall(fun (_,tab) -> tab.size.width<100)) "A held layout that no longer fits was kept"
-        // Inside the title bar centred tabs centre on the window, not the narrower strip,
-        // but never run past the strip into the caption buttons.
+        // Inside the title bar centred tabs centre on the window, not the narrower strip; once
+        // they fill the row they keep the caption buttons' room free on both sides.
         let span (s:TabStripSprite<int>) =
             let all = tabs s
             all |> List.map(fun (location,_) -> location.x) |> List.min,
@@ -210,8 +210,9 @@ let main () =
         let left,right = span { wide 2 with centerShift=40.0 }
         let plainLeft,plainRight = span (wide 2)
         check (left-plainLeft=40 && right-plainRight=40) "Centred tabs in the title bar did not centre on the window"
-        let _,crowdedRight = span { wide 3 with centerShift=200.0 }
-        check (crowdedRight = 800) "Centred tabs shifted into the caption buttons"
+        let crowdedLeft,crowdedRight = span { wide 6 with centerShift=40.0 }
+        check (crowdedRight = 800) "Centred tabs ran into the caption buttons or left the row unfilled"
+        check (crowdedLeft = 80) "Centred tabs that fill the row are not symmetric about the window"
     // Folder and pill styles: the inactive tabs are the bar, the active tab a shape raised on it.
     // Three 140px tabs, the middle one active, each 27px tall from y=1.
     do

@@ -439,6 +439,7 @@ type TabStripSprite<'id> when 'id : equality = {
     held: (float * float) option
     /// How far right of the strip's middle the window's middle lies. Inside the title bar the
     /// strip leaves room for the caption buttons on the right only, so its middle is left of the window's.
+    /// Centred tabs keep the same room free on the left.
     centerShift: float
     } with
 
@@ -524,8 +525,15 @@ type TabStripSprite<'id> when 'id : equality = {
         let h = this.appearance.tabHeight
         float(2*TabMetrics.scaled h 10 + 2*TabMetrics.iconSide h + TabMetrics.scaled h 5 + TabMetrics.scaled h 20)
 
+    /// Centred tabs leave the caption buttons' room free on the left too, so they stay on the
+    /// window's middle even when they fill the row.
+    member private this.leftReserve =
+        match this.alignment with
+        | TabCenter -> min (2.0 * this.centerShift) (float this.size.width)
+        | _ -> 0.0
+
     member private this.fittedLength =
-        let tsWidth = float(this.size.width)
+        let tsWidth = float(this.size.width) - this.leftReserve
         let tsWidth =
             if this.count < 2 then tsWidth 
             else 
@@ -553,18 +561,17 @@ type TabStripSprite<'id> when 'id : equality = {
         float(index) * tabOffset
 
     /// Never negative: when the tabs fill the strip the first one stays in view.
-    /// Centred tabs centre on the window, moving left only as far as needed to stay in the strip.
     member private this.alignmentOffset =
         match this.heldLayout with
         | Some(_,offset) -> offset
         | None ->
-            let widthOfEmptySpace = float(this.size.width) - this.rightOf this.tabLength 0.0
+            let widthOfEmptySpace = float(this.size.width) - this.leftReserve - this.rightOf this.tabLength 0.0
             let offset =
                 match this.alignment with
                 | TabLeft -> 0.0
-                | TabCenter -> min widthOfEmptySpace (widthOfEmptySpace / 2.0 + this.centerShift)
+                | TabCenter -> widthOfEmptySpace / 2.0
                 | TabRight -> widthOfEmptySpace - 60.0
-            max 0.0 offset
+            this.leftReserve + max 0.0 offset
 
     /// The current tab length and left offset, for holding while tabs are closed.
     member this.layout = this.tabLength,this.alignmentOffset
