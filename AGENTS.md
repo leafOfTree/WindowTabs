@@ -67,3 +67,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
   have no prefix, e.g. `Keep tab text readable on every tab colour`.
 - Add a regression assertion to the most relevant suite for each fixed defect.
 - Do not commit `bin/`, `obj/`, `tests/Debug/` or `tests/coverage/`.
+- **Line endings.** `.gitattributes` stores every text file with LF and Git converts on
+  commit, so writing a file with CRLF or LF makes no difference to the diff. If a diff
+  shows every line of a file changed, the file was committed with CRs: run
+  `git add --renormalize <file>`, commit that on its own and add its hash to
+  `.git-blame-ignore-revs`. `git ls-files --eol | grep -E 'i/(crlf|mixed)'` must stay empty.
