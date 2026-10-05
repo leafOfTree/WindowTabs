@@ -228,10 +228,11 @@ type WindowResolver(?windows:List2<IntPtr * string * string>) =
                     Some(hwnd,title,path)
                 with _ -> None)
 
-    member _.resolve(windowInfo:WorkspaceWindow) =
+    /// Without samePath any window with the title matches, e.g. an app updated into a new folder.
+    member _.resolve(windowInfo:WorkspaceWindow,samePath) =
         let isMatch = WindowTitleMatcher.compile (int windowInfo.matchType) windowInfo.title
         let matched = remaining.tryFind(fun (_,title,path) ->
-            (String.IsNullOrEmpty windowInfo.processPath ||
+            (not samePath || String.IsNullOrEmpty windowInfo.processPath ||
              String.Equals(windowInfo.processPath,path,StringComparison.OrdinalIgnoreCase)) && isMatch title)
         matched.map(fun (hwnd,_,_) ->
             remaining <- remaining.where(fun (candidate,_,_) -> candidate<>hwnd)
@@ -239,14 +240,30 @@ type WindowResolver(?windows:List2<IntPtr * string * string>) =
 
 /// The saved list is tab order; z-order only determines which restored window sits on top.
 module WorkspaceRestore =
-    let resolve (resolver:WindowResolver) (windows:List2<Dynamic>) missing failed =
-        windows.choose(fun item ->
-            try
-                let window = item :?> WorkspaceWindow
-                let result = resolver.resolve(window)
-                if result.IsNone then missing()
-                result.map(fun hwnd -> window,hwnd)
-            with ex -> failed ex; None)
+    type private Slot =
+        | Unmatched of Dynamic
+        | Matched of WorkspaceWindow * IntPtr
+        | Failed
+
+    /// Every saved window first claims a window of its own app, anywhere in the workspace, so
+    /// the title-only fallback cannot take the window of another saved app with the same title.
+    let resolve (resolver:WindowResolver) (groups:List2<'group * List2<Dynamic>>) missing failed =
+        let pass samePath slot =
+            match slot with
+            | Unmatched item ->
+                try
+                    let window = item :?> WorkspaceWindow
+                    match resolver.resolve(window,samePath) with
+                    | Some hwnd -> Matched(window,hwnd)
+                    | None -> slot
+                with ex -> failed ex; Failed
+            | _ -> slot
+        let ownApp = groups.map(fun (group,windows) -> group,windows.map(Unmatched >> pass true))
+        ownApp.map(fun (group,slots) ->
+            group,slots.map(pass false).choose(function
+                | Matched(window,hwnd) -> Some(window,hwnd)
+                | Unmatched _ -> missing(); None
+                | Failed -> None))
 
     let zorder (windows:List2<WorkspaceWindow * IntPtr>) =
         windows.sortBy(fun (window,_) -> window.zorder).map snd
@@ -326,10 +343,9 @@ type WorkspaceModel() as this =
         let mutable missing = 0
         TemporaryState.run Services.program.suspendTabMonitoring Services.program.resumeTabMonitoring (fun () ->
             let owners = Map2(Services.desktop.groups.collect(fun group -> group.windows.map(fun hwnd -> hwnd,group)))
-            workspace.children.iter(fun groupInfo ->
-                let candidates : List2<Dynamic> = groupInfo?windows
-                let resolved = WorkspaceRestore.resolve resolver candidates
-                                   (fun () -> missing <- missing+1) (fun ex -> errors.Add(ex.Message))
+            let saved = workspace.children.map(fun groupInfo -> groupInfo,(groupInfo?windows : List2<Dynamic>))
+            let groups = WorkspaceRestore.resolve resolver saved (fun () -> missing <- missing+1) (fun ex -> errors.Add(ex.Message))
+            groups.iter(fun (groupInfo:Dynamic,resolved) ->
                 if not resolved.isEmpty then
                     let mutable destination : IGroup option = None
                     let successful = ResizeArray<WorkspaceWindow * IntPtr>()

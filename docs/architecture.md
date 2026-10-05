@@ -120,8 +120,10 @@ retains valid siblings. Unsupported schema versions are read-only. Rejected data
 is retained in `workspaceRecovery` on subsequent save. Opening the workspace page
 does not save or migrate its contents. Title regexes have a 100 ms match timeout.
 New workspace snapshots record the executable path alongside each title. Restore
-matches both (paths ignore case); older snapshots without a path keep title-only
-matching. The saved window array retains tab order, while each window's zorder
+first matches both (paths ignore case) for every saved window in the workspace,
+then falls back to the title alone for windows still unmatched, so an app updated
+into a new folder is still found without taking another saved app's window. Older
+snapshots without a path match by title. The saved window array retains tab order, while each window's zorder
 restores stacking separately. Normal bounds are fitted to a current monitor's
 work area using WINDOWPLACEMENT workspace coordinates; moved layouts discard stale
 minimize/maximize points. Restore reports restored, missing and failed windows and
