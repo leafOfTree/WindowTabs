@@ -243,8 +243,7 @@ module Strings =
         let light = { en="Light"; zh="浅色"; ja="ライト" }
         let dark = { en="Dark"; zh="深色"; ja="ダーク" }
         let explorerPreview = { en="File Explorer theme preview"; zh="文件资源管理器主题预览"; ja="エクスプローラーのテーマのプレビュー" }
-        let darkThemeColors = { en="Dark theme · Tab colors"; zh="深色主题 · 标签配色"; ja="ダークテーマ · タブの色" }
-        let lightThemeColors = { en="Light theme · Tab colors"; zh="浅色主题 · 标签配色"; ja="ライトテーマ · タブの色" }
+        let tabColors = { en="Tab colors"; zh="标签配色"; ja="タブの色" }
         let colorPreset = { en="Color preset"; zh="配色预设"; ja="配色プリセット" }
         let custom = { en="Custom"; zh="自定义"; ja="カスタム" }
         /// Switcher styles: large icons in a row, or window titles in a column.

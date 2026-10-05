@@ -61,7 +61,8 @@ type AppearanceView(?settings:ISettings) =
     let mutable refreshing = false
     let mutable editingDark = ThemeService.currentIsDark()
     let update = settings.updateAppearance
-    let paletteTitle = new Label(AutoSize=true,Font=SettingsUi.sectionFont,
+    /// The theme tiles above show which theme's colours these are.
+    let paletteTitle = new Label(AutoSize=true,Font=SettingsUi.sectionFont,Text=tr Strings.Appearance.tabColors,
                                  Margin=Padding(0,Dpi.scale 16,0,Dpi.scale 8))
     let preset = SettingsUi.choice (Array.append (ThemePresets.names |> Array.map tr) [|tr Strings.Appearance.custom|])
     let tabStyle = SettingsUi.choice (Strings.Appearance.tabStyles |> Array.map tr)
@@ -163,9 +164,6 @@ type AppearanceView(?settings:ISettings) =
         refreshing <- true
         try
             editingDark <- ThemeService.currentIsDark()
-            paletteTitle.Text <-
-                if editingDark then tr Strings.Appearance.darkThemeColors
-                else tr Strings.Appearance.lightThemeColors
             let settings = settings.appearance
             let palette = activePalette settings
             // A preset with changed colours says so, in the list and when chosen.
