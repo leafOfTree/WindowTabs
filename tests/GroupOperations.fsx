@@ -319,6 +319,49 @@ let main() =
                 check (List.head alone = Localization.tr Strings.TabMenu.newTab + "\tCtrl+Alt+N") "The tab menu does not start with New tab and its shortcut"
                 (List.head (menu handles.[1])).click()
                 check (newTabRequests.ToArray() = [|handles.[1]|]) "New tab did not start the program of the tab it was opened from"
+                // Renaming edits the name in place: a field in the tab's own colours and font, inside the tab.
+                let renameBox() = Application.OpenForms |> Seq.cast<Form> |> Seq.tryPick(function :? Bemo.Win32.Forms.FloatingTextBox as box -> Some box | _ -> None)
+                onGroup(fun group ->
+                    let decorator = typeof<TabStrip>.GetFields(flags) |> Array.find(fun field -> field.FieldType=typeof<ITabStripMonitor>)
+                                    |> fun field -> field.GetValue(group.ts)
+                    decorator.GetType().GetMethod("beginRename").Invoke(decorator,[|box handles.Head|]) |> ignore
+                    let form = renameBox() |> Option.get
+                    let tab = group.ts.tabSprites.list |> List.pick(fun (offset,sprite) -> if sprite.id=Tab(handles.Head) then Some(offset,sprite) else None)
+                    let offset,sprite = tab
+                    let text = form.textBox
+                    check (text.BorderStyle=BorderStyle.None && text.BackColor=form.BackColor) "The rename field draws a border of its own inside the outline"
+                    check (SystemInformation.HighContrast || (text.BackColor=sprite.fillColor && text.ForeColor=sprite.textColor)) "The rename field does not take the tab's colours"
+                    use tabFont = TabMetrics.font group.tabAppearance.tabHeight FontStyle.Regular
+                    check (text.Font.Height=tabFont.Height) "The rename field does not use the tab's font"
+                    check (text.Top>=0 && text.Bottom<=form.ClientSize.Height && abs(text.Top-(form.ClientSize.Height-text.Bottom))<=1) "The name is not centred in the rename field"
+                    let strip = group.ts.bounds
+                    check (form.Top>=strip.y && form.Bottom<=strip.y+strip.size.height) "The rename field reaches outside the tab"
+                    check (text.Text=group.ts.tabInfo(Tab(handles.Head)).text && text.SelectionLength=text.Text.Length) "The rename field does not start with the whole name selected"
+                    // The field over its tab, drawn off screen, for a look at the result.
+                    use tabImage = (sprite :> ISprite).render.bitmap
+                    let at = Point(form.Left-strip.x-offset.x,form.Top-strip.y-offset.y)
+                    use shot = new Bitmap(max tabImage.Width (at.X+form.Width)+Dpi.scale 8,tabImage.Height)
+                    do
+                        use g = Graphics.FromImage(shot)
+                        g.Clear(group.tabAppearance.tabNormalBgColor)
+                        g.DrawImageUnscaled(tabImage,0,0)
+                        // The helper windows have no titles; a name shows how the text sits.
+                        text.Text <- "Project notes"
+                        text.SelectAll()
+                        use fieldImage = new Bitmap(form.Width,form.Height)
+                        form.DrawToBitmap(fieldImage,Rectangle(Point.Empty,form.Size))
+                        g.DrawImageUnscaled(fieldImage,at)
+                    use large = new Bitmap(shot.Width*3,shot.Height*3)
+                    do
+                        use g = Graphics.FromImage(large)
+                        g.InterpolationMode <- Drawing2D.InterpolationMode.NearestNeighbor
+                        g.PixelOffsetMode <- Drawing2D.PixelOffsetMode.Half
+                        g.DrawImage(shot,Rectangle(Point.Empty,large.Size))
+                    large.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","tab-rename.png"),Imaging.ImageFormat.Png))
+                onGroup(fun group ->
+                    renameBox() |> Option.iter(fun form -> form.textBox.Text <- "Renamed"; form.Close()))
+                pumpUntil(fun () -> onGroup(fun group -> renameBox().IsNone && not (group.bb.read("renamingTab",true))))
+                check (not (onGroup(fun group -> group.isRenamed handles.Head))) "Leaving the rename field without Enter renamed the tab"
                 check (List.contains (Localization.tr Strings.TabMenu.closeAll) alone) "The tab menu lost Close all"
                 check (not (List.contains (closeAllOf handles.Head) alone)) "A group of one program offers closing that program's windows"
                 (info :> IGroup).addWindow(foreignHwnd,false)

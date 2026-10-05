@@ -101,24 +101,51 @@ type TabStripDecorator(group:WindowGroup) as this =
 
     member this.beginRename(hwnd) =
         let tab = Tab(hwnd)
-        let textBounds = 
+        let offset, sprite =
             this.ts.tabSprites.pick <| fun (tabOffset, tabSprite) ->
-                if tabSprite.id = tab then 
-                    Some(Rect(tabSprite.textLocation.add(tabOffset), tabSprite.textSize))
-                else None
+                if tabSprite.id = tab then Some(tabOffset, tabSprite) else None
+        let text = Rect(sprite.textLocation.add(offset), sprite.textSize)
+        // The font the tab draws its name in, so the name does not change size when editing starts.
+        let font = TabMetrics.font group.tabAppearance.tabHeight FontStyle.Regular
+        let highContrast = SystemInformation.HighContrast
+        let fill = if highContrast then SystemColors.Window else sprite.fillColor
+        let ink = if highContrast then SystemColors.WindowText else sprite.textColor
+        // The outline of a focused field, in the colour the selected name is drawn with.
+        let accent = SystemColors.Highlight
+        // The field starts this far left of the name, so the name stays where the tab drew it.
+        let padding = Dpi.scale 4
+        let height = min text.size.height (max (font.Height + Dpi.scale 2) (min (text.size.height - Dpi.scale 4) (font.Height + Dpi.scale 6)))
         // A compact tab has almost no text area; give the name room to be edited.
-        let textBounds = Rect(textBounds.location, Sz(max textBounds.size.width (Dpi.scale 120), textBounds.size.height))
-        let verticalMargin = 2
+        let size = Sz(max (text.size.width + padding) (Dpi.scale 120), height)
+        let location = Pt(text.location.x - padding, text.location.y + (text.size.height - height) / 2)
         let form = new FloatingTextBox()
-        form.textBox.Font <- SystemFonts.MenuFont
-        form.Location <- textBounds.location.add(this.placement.bounds.location).add(Pt(0, verticalMargin)).Point
-        form.SetSize(textBounds.size.add(Sz(0, -2 * verticalMargin)).Size)
-        form.textBox.KeyPress.Add <| fun e ->
+        form.BackColor <- fill
+        form.Location <- location.add(this.placement.bounds.location).Point
+        form.SetSize(size.Size)
+        let box = form.textBox
+        box.BorderStyle <- BorderStyle.None
+        box.Font <- font
+        box.BackColor <- fill
+        box.ForeColor <- ink
+        box.SetBounds(padding, (height - font.Height) / 2, size.width - 2 * padding, font.Height)
+        // No inner margins: the field's own padding already places the text.
+        WinUserApi.SendMessage(box.Handle, 0xD3, IntPtr(3), IntPtr.Zero) |> ignore
+        form.Paint.Add <| fun e ->
+            use pen = new Pen(accent)
+            e.Graphics.DrawRectangle(pen, 0, 0, size.width - 1, height - 1)
+        // Windows 11 rounds the field and draws its outline smoothly; earlier versions keep the painted square one.
+        let window = os.windowFromHwnd(form.Handle)
+        window.dwmSetAttribute 33 3
+        window.dwmSetAttribute 34 (ColorTranslator.ToWin32(accent))
+        box.KeyPress.Add <| fun e ->
             if e.KeyChar = char(Keys.Enter) then
-                let newName = form.textBox.Text
+                // Handled, so the edit control does not beep at a key it has no use for.
+                e.Handled <- true
+                let newName = box.Text
                 group.setTabName(hwnd, if newName.Length = 0 then None else Some(newName))
                 form.Close()
             elif e.KeyChar = char(Keys.Escape) then
+                e.Handled <- true
                 form.Close()
         let tabText = this.ts.tabInfo(Tab(hwnd)).text
         form.textBox.Text <- tabText
@@ -129,6 +156,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         group.bb.write("renamingTab", true)
         form.Closed.Add <| fun _ ->
             group.bb.write("renamingTab", false)
+        form.Disposed.Add <| fun _ -> font.Dispose()
         form.Show()
 
     member private this.onCloseWindow hwnd =
