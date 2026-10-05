@@ -110,9 +110,9 @@ module Strings =
         let launchAtSignIn = { caption={ en="Start with Windows"; zh="随 Windows 启动"; ja="Windows と同時に起動" }
                                description={ en="Runs in the system tray after you sign in."; zh="登录后在系统托盘中运行。"; ja="サインイン後にシステムトレイで実行します。" }
                                keywords={ en="startup autostart boot login notification area"; zh="开机 自启动 通知区域"; ja="スタートアップ 自動起動 ログイン 通知領域" } }
-        let enableTabsByDefault = { caption={ en="Enable tabs by default"; zh="默认启用标签"; ja="既定でタブを有効にする" }
-                                    description={ en="For apps without an app rule."; zh="适用于没有应用规则的应用。"; ja="アプリのルールがないアプリに適用されます。" }
-                                    keywords={ en="new"; zh="新应用"; ja="新しいアプリ" } }
+        let enableTabsByDefault = { caption={ en="Use tabs for new apps"; zh="新应用自动启用标签"; ja="新しいアプリでタブを使う" }
+                                    description={ en="Apps you haven't set in the list."; zh="适用于列表中还没设置过的应用。"; ja="一覧でまだ設定していないアプリに適用されます。" }
+                                    keywords={ en="enable tabs by default new"; zh="默认启用标签 新应用"; ja="既定でタブを有効にする 新しいアプリ" } }
         let dimInactiveGroups = { caption={ en="Dim tabs in inactive groups"; zh="淡化非活动分组的标签"; ja="非アクティブなグループのタブを半透明にする" }
                                   description={ en="Make the active group easier to spot."; zh="让当前活动的分组更容易辨认。"; ja="アクティブなグループを見分けやすくします。" }
                                   keywords={ en="fade transparent opacity"; zh="透明 变暗"; ja="暗く" } }
@@ -233,7 +233,7 @@ module Strings =
               zh=sprintf "设置已导入。WindowTabs 将重新启动以应用这些设置。\n\n原来的设置已保存到：\n%s" path
               ja=sprintf "設定をインポートしました。適用するために WindowTabs を再起動します。\n\n以前の設定の保存先:\n%s" path }
         let tabMenuHint = { en="Change it for one group from the tab menu."; zh="可在标签菜单中为单个分组修改。"; ja="タブメニューでグループごとに変更できます。" }
-        let startupAndDefaults = { en="Startup and defaults"; zh="启动与默认设置"; ja="起動と既定の設定" }
+        let startup = { en="Startup"; zh="启动"; ja="起動" }
         let tabBehavior = { en="Tab behavior"; zh="标签行为"; ja="タブの動作" }
         let taskbar = { en="Taskbar"; zh="任务栏"; ja="タスクバー" }
         let windowSwitcher = { en="Window switcher"; zh="窗口切换器"; ja="ウィンドウ切り替え" }
@@ -311,6 +311,8 @@ module Strings =
                             ja="アプリごとにタブと自動グループ化を設定します。自動グループ化をオフにしても既存のグループは維持されます。展開するとウィンドウが表示されます。" }
         let tabs = { en="Tabs"; zh="标签"; ja="タブ" }
         let autoGroup = { en="Auto-group"; zh="自动分组"; ja="自動グループ化" }
+        /// The first row: its boxes turn a column on or off for every app below.
+        let allApps = { en="All apps"; zh="全部应用"; ja="すべてのアプリ" }
         let appCount count =
             { en=(if count=1 then "1 app" else sprintf "%d apps" count); zh=sprintf "%d 个应用" count; ja=sprintf "%d 個のアプリ" count }
         let scanning = { en="Scanning…"; zh="正在扫描…"; ja="スキャン中…" }

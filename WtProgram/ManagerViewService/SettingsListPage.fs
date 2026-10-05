@@ -7,7 +7,7 @@ open System.Windows.Forms
 /// the same margins and column as SettingsPage, a title and description, a row of
 /// actions, and the list in a rounded card that follows the light/dark theme.
 type SettingsListPage(title:string, description:string, list:Control, actions:Control list, ?helpText:string,
-                      ?links:(string*string) list, ?extra:Control) as this =
+                      ?links:(string*string) list, ?extra:Control, ?footer:Control) as this =
     inherit Panel()
     let inset() = Dpi.scale 32
     let mutable arranging = false
@@ -60,11 +60,12 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
         helpButton |> Option.iter(fun button -> this.Controls.Add(button))
         linkRow |> Option.iter(fun row -> this.Controls.Add(row))
         extra |> Option.iter(fun control -> this.Controls.Add(control))
-        // The link row is measured in OnLayout. The extra block sizes itself: its rows only settle
+        footer |> Option.iter(fun control -> this.Controls.Add(control))
+        // The link row is measured in OnLayout. The extra and footer blocks size themselves: rows only settle
         // once they have their real width, which can be after the pass that placed it, so a size
         // change lays the page out again afterwards rather than inside that pass.
         linkRow |> Option.iter(fun row -> row.AutoSize <- false)
-        extra |> Option.iter(fun control ->
+        Option.toList extra @ Option.toList footer |> List.iter(fun control ->
             control.SizeChanged.Add(fun _ ->
                 if this.IsHandleCreated && not relayoutPending then
                     relayoutPending <- true
@@ -134,5 +135,14 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
                     else
                         status.Bounds <- Rectangle(left+actionRow.Width+statusGap,actionRow.Top,statusWidth,actionRow.Height)
                     (if statusOnNextLine then status.Bottom else actionRow.Bottom)+Dpi.scale 16
-            card.Bounds <- Rectangle(left,top,width,max (Dpi.scale 80) (this.ClientSize.Height-top-inset()))
+            // Below the list, which takes the height the footer leaves.
+            let footerHeight =
+                match footer with
+                | Some control ->
+                    control.MinimumSize <- Size(width,0)
+                    control.MaximumSize <- Size(width,0)
+                    control.Height+Dpi.scale 12
+                | None -> 0
+            card.Bounds <- Rectangle(left,top,width,max (Dpi.scale 80) (this.ClientSize.Height-top-inset()-footerHeight))
+            footer |> Option.iter(fun control -> control.Location <- Point(left,card.Bottom+Dpi.scale 12))
           finally arranging <- false

@@ -32,12 +32,12 @@ module private ProgramItems =
     let tabsColumn,groupingColumn = 1,2
     /// The icon the app shows on the taskbar (its first window), else the executable's own
     /// icon. A host without icons of its own (ApplicationFrameHost.exe) gets a line glyph
-    /// rather than borrowing one hosted app's logo.
-    let exe (path:string) (first:Window) =
+    /// rather than borrowing one hosted app's logo. An app that is not running has no window.
+    let exe (path:string) (first:Window option) =
         let icon =
             if not (AppIcons.HasOwnIcon path) then None
             else
-                match ImgHelper.windowIcon first with
+                match first |> Option.bind ImgHelper.windowIcon with
                 | Some icon -> Some icon
                 | None -> try Some(use icon = Icon.ExtractAssociatedIcon(path) in ImgHelper.imgFromIcon icon) with _ -> None
         let tabs = Services.filter.getIsTabbingEnabledForProcess path
@@ -52,20 +52,45 @@ type ProgramView() as this=
         new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn)
                               TreeListColumn(tr Strings.AppRules.tabs,130,CheckColumn)
                               TreeListColumn(tr Strings.AppRules.autoGroup,130,CheckColumn)])
-    let refresh =
-        let button = SettingsUi.button (tr Strings.Common.refresh)
-        button.Click.Add(fun _ -> this.populateNodes())
-        button
+    let all = TreeListItem(tr Strings.AppRules.allApps,Glyph=AppsGlyph,Checks=[|None;Some false;Some false|],
+                           CheckEnabled=[|true;true;true|],Mixed=[|false;false;false|])
+    let apps() = list.Roots |> Seq.filter(fun item -> not (obj.ReferenceEquals(item,all))) |> List.ofSeq
+    let path (item:TreeListItem) = item.Tag :?> string
+    /// Each of the All row's boxes is on when every app's is, and a dash when only some are.
+    let updateAll() =
+        let summarise column (items:TreeListItem list) =
+            let on = items |> List.filter(fun item -> item.check column = Some true) |> List.length
+            all.Checks.[column] <- Some(on>0 && on=items.Length)
+            all.Mixed.[column] <- on>0 && on<items.Length
+            all.CheckEnabled.[column] <- not items.IsEmpty
+        let apps = apps()
+        summarise ProgramItems.tabsColumn apps
+        // Auto grouping is only offered for apps with tabs.
+        summarise ProgramItems.groupingColumn (apps |> List.filter(fun item -> item.checkEnabled ProgramItems.groupingColumn))
+    /// For apps that have not been turned on or off in the list.
+    let footer =
+        let table = new TableLayoutPanel(ColumnCount=1,Margin=Padding.Empty,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink)
+        table.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+        let card = new SettingsCard()
+        SettingsUi.add table card
+        SettingsBindings.toggleRow card "enable-tabs-for-new-apps"
+        table :> Control
     let panel =
         new SettingsListPage(tr Strings.Pages.appRules,
                              tr Strings.AppRules.description,
-                             list,[refresh :> Control])
+                             list,[],footer=footer)
 
     let scanner = new LatestWork<TreeListItem list>(invoker :> IDispatcher,
         (fun items ->
+            // A rescan keeps the apps that were open still open.
+            let expanded = apps() |> List.filter(fun item -> item.Expanded) |> List.map path |> Set.ofList
             ImgHelper.disposeItems list.Roots
             list.Roots.Clear()
+            list.Roots.Add(all)
+            for item in items do item.Expanded <- expanded.Contains(path item)
+            items |> List.tryHead |> Option.iter(fun item -> item.SeparatorAbove <- true)
             list.Roots.AddRange(items)
+            updateAll()
             list.Rebuild()
             panel.Status <- tr (Strings.AppRules.appCount items.Length)),
         ImgHelper.disposeItems,
@@ -73,22 +98,50 @@ type ProgramView() as this=
 
     do
         list.CheckChanged.Add(fun (item,column,value) ->
-            let path = item.Tag :?> string
+            let isAll = obj.ReferenceEquals(item,all)
+            let changed = if isAll then apps() else [item]
             if column=ProgramItems.tabsColumn then
-                Services.filter.setIsTabbingEnabledForProcess path value
-                item.CheckEnabled.[ProgramItems.groupingColumn] <- value
-                list.Invalidate()
-            elif column=ProgramItems.groupingColumn then Services.program.setAutoGroupingEnabled path value)
+                Services.filter.setIsTabbingEnabledForProcesses (changed |> List.map path) value
+                for app in changed do
+                    app.Checks.[column] <- Some value
+                    app.CheckEnabled.[ProgramItems.groupingColumn] <- value
+            elif column=ProgramItems.groupingColumn then
+                for app in changed do
+                    // Turning grouping on regroups the app's windows, so apps already set are left alone.
+                    if app.checkEnabled column && (not isAll || app.check column <> Some value) then
+                        Services.program.setAutoGroupingEnabled (path app) value
+                        app.Checks.[column] <- Some value
+            updateAll()
+            list.Invalidate())
         this.populateNodes()
         let subscription = Services.settings.notifyValue "enableTabbingByDefault" (fun _ ->
             if not panel.IsDisposed then invoker.asyncInvoke(fun () -> if not panel.IsDisposed then this.populateNodes()))
+        // Apps opened since the last look join the list when the page is shown again or the
+        // settings window comes back to the front.
+        let rescan = EventHandler(fun _ _ -> if panel.Visible then this.populateNodes())
+        let mutable owner : Form = null
+        let watchOwner() =
+            let form = panel.FindForm()
+            if not (obj.ReferenceEquals(form,owner)) then
+                if not (isNull owner) then owner.Activated.RemoveHandler(rescan)
+                owner <- form
+                if not (isNull owner) then owner.Activated.AddHandler(rescan)
+        panel.HandleCreated.Add(fun _ -> watchOwner())
+        panel.ParentChanged.Add(fun _ -> watchOwner())
+        panel.VisibleChanged.Add(fun _ ->
+            watchOwner()
+            if panel.Visible then this.populateNodes())
         panel.Disposed.Add(fun _ ->
+            if not (isNull owner) then owner.Activated.RemoveHandler(rescan)
             (scanner :> IDisposable).Dispose()
             subscription.Dispose()
             ImgHelper.disposeItems list.Roots)
 
     member private this.populateNodes() =
-        panel.Status <- tr Strings.AppRules.scanning
+        // Only the first scan says so: later ones replace the list in place.
+        if list.Roots.Count=0 then panel.Status <- tr Strings.AppRules.scanning
+        // Apps with a rule are listed even when they are not running, so they can be changed.
+        let ruled = SettingsCatalog.appRuleKeys |> List.collect(fun key -> (Services.settings.getValue(key).cast<Set2<string>>()).items.list)
         scanner.Request(fun cancellation ->
             let items = ResizeArray<TreeListItem>()
             try
@@ -105,7 +158,7 @@ type ProgramView() as this=
                                     match procs.TryGetValue(path) with
                                     | true,item -> item
                                     | _ ->
-                                        let item = ProgramItems.exe path window
+                                        let item = ProgramItems.exe path (Some window)
                                         procs.Add(path,item)
                                         items.Add(item)
                                         item
@@ -114,6 +167,13 @@ type ProgramView() as this=
                     with
                     | :? OperationCanceledException -> reraise()
                     | _ -> () // A window/process can disappear while scanning.
+                // An app that has since been uninstalled is left out.
+                for path in ruled do
+                    cancellation.ThrowIfCancellationRequested()
+                    if not (String.IsNullOrEmpty path) && not (procs.ContainsKey path) && File.Exists path then
+                        let item = ProgramItems.exe path None
+                        procs.Add(path,item)
+                        items.Add(item)
                 cancellation.ThrowIfCancellationRequested()
                 items |> Seq.sortBy(fun item -> item.Text.ToUpperInvariant()) |> Seq.toList
             with error ->

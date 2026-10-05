@@ -5,9 +5,8 @@ open System.Windows.Forms
 type GeneralView() =
     let panel,table = SettingsUi.page()
     do
-        let startup = SettingsUi.sectionCard table (tr Strings.General.startupAndDefaults)
+        let startup = SettingsUi.sectionCard table (tr Strings.General.startup)
         SettingsBindings.toggleRow startup "launch-at-sign-in"
-        SettingsBindings.toggleRow startup "enable-tabs-for-new-apps"
         let behaviour = SettingsUi.sectionCard table (tr Strings.General.tabBehavior)
         SettingsBindings.toggleRow behaviour "dim-inactive-groups"
         // Same order as the tab menu: position, then auto-hide.

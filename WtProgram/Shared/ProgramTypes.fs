@@ -50,6 +50,7 @@ type IFilterService =
     abstract member isTabbableWindow : IntPtr -> bool
     abstract member isTabbingEnabledForAllProcessesByDefault : bool with get, set
     abstract member setIsTabbingEnabledForProcess : string -> bool -> unit
+    abstract member setIsTabbingEnabledForProcesses : string list -> bool -> unit
     abstract member getIsTabbingEnabledForProcess : string -> bool
 
 type SettingsViewType =

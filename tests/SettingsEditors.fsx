@@ -462,6 +462,103 @@ let main() =
         call "OnMouseEnter" EventArgs.Empty
         call "OnMouseDown" mouse
         assertTrue (not button.IsPressed) "A disabled button looks pressed"
+    // App rules: a choice made for an app outlasts a change of the default for new apps.
+    let filter = FilterService() :> IFilterService
+    // The settings fake lives in this script's static initialiser, which the whole test runs
+    // inside: a background thread reading it would wait for the test to end. The App rules page
+    // scans on one, so it gets rules of its own below.
+    let rules = ref filter
+    Services.register<IFilterService>({ new IFilterService with
+        member _.isAppWindow hwnd = rules.Value.isAppWindow hwnd
+        member _.isAppWindowStyle hwnd = rules.Value.isAppWindowStyle hwnd
+        member _.isTabbableWindow hwnd = rules.Value.isTabbableWindow hwnd
+        member _.isTabbingEnabledForAllProcessesByDefault with get() = rules.Value.isTabbingEnabledForAllProcessesByDefault and set value = rules.Value.isTabbingEnabledForAllProcessesByDefault <- value
+        member _.setIsTabbingEnabledForProcess path enabled = rules.Value.setIsTabbingEnabledForProcess path enabled
+        member _.setIsTabbingEnabledForProcesses paths enabled = rules.Value.setIsTabbingEnabledForProcesses paths enabled
+        member _.getIsTabbingEnabledForProcess path = rules.Value.getIsTabbingEnabledForProcess path })
+    let rule key = settingValues.[key] :?> Set2<string>
+    settingValues.["includedPaths"] <- box (Set2(List2(["both.exe"])))
+    settingValues.["excludedPaths"] <- box (Set2(List2(["both.exe"])))
+    settingValues.["autoGroupingPaths"] <- box (Set2<string>())
+    settingValues.["enableTabbingByDefault"] <- box true
+    assertTrue (filter.getIsTabbingEnabledForProcess "new.exe") "An app without a rule does not follow the default"
+    assertTrue (not (filter.getIsTabbingEnabledForProcess "both.exe")) "An app in both lists does not follow the list of the current default"
+    filter.setIsTabbingEnabledForProcesses ["off.exe";"both.exe"] false
+    filter.setIsTabbingEnabledForProcess "on.exe" true
+    settingValues.["enableTabbingByDefault"] <- box false
+    assertTrue (not (filter.getIsTabbingEnabledForProcess "off.exe") && filter.getIsTabbingEnabledForProcess "on.exe")
+               "Changing the default for new apps changed apps that were set"
+    assertTrue (not (filter.getIsTabbingEnabledForProcess "new.exe") && not (filter.getIsTabbingEnabledForProcess "both.exe"))
+               "An app set off, or one without a rule, does not follow its rule and the default"
+    filter.setIsTabbingEnabledForProcess "off.exe" true
+    assertTrue (filter.getIsTabbingEnabledForProcess "off.exe" && not ((rule "excludedPaths").contains "off.exe")) "Turning an app back on left it in the off list"
+    // The App rules page lists apps with a rule even when they are not running, under a row for all of them.
+    do
+        let installed = [Diagnostics.Process.GetCurrentProcess().MainModule.FileName;Path.Combine(__SOURCE_DIRECTORY__,"Debug","WindowTabs.exe")]
+        settingValues.["includedPaths"] <- box (Set2<string>())
+        settingValues.["excludedPaths"] <- box (Set2(List2(installed)))
+        let on = Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        let saves = ref 0
+        rules.Value <- { new IFilterService with
+            member _.isAppWindow hwnd = filter.isAppWindow hwnd
+            member _.isAppWindowStyle hwnd = filter.isAppWindowStyle hwnd
+            member _.isTabbableWindow _ = false
+            member _.isTabbingEnabledForAllProcessesByDefault with get() = true and set _ = ()
+            member x.setIsTabbingEnabledForProcess path enabled = x.setIsTabbingEnabledForProcesses [path] enabled
+            member _.setIsTabbingEnabledForProcesses paths enabled =
+                lock on (fun () ->
+                    saves.Value <- saves.Value+1
+                    for path in paths do (if enabled then on.Add path else on.Remove path) |> ignore)
+            member _.getIsTabbingEnabledForProcess path = lock on (fun () -> on.Contains path) }
+        use form = new Form(ClientSize=Size(920,560),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false,Font=SettingsUi.bodyFont)
+        let view = ProgramView() :> ISettingsView
+        form.Controls.Add(view.control)
+        SettingsUi.apply form
+        form.Show()
+        let rec findList (control:Control) =
+            match control with
+            | :? SettingsTreeList as list -> Some list
+            | _ -> control.Controls |> Seq.cast<Control> |> Seq.tryPick findList
+        let list = findList view.control |> Option.get
+        let clock = Diagnostics.Stopwatch.StartNew()
+        // Showing the page and activating its window each rescan; wait for the list to settle.
+        while (list.Roots.Count<2 || clock.ElapsedMilliseconds<1500L) && clock.ElapsedMilliseconds<10000L do
+            Application.DoEvents()
+            Threading.Thread.Sleep(20)
+        let status = view.control.Controls |> Seq.cast<Control> |> Seq.choose(function :? Label as l -> Some l.Text | _ -> None) |> String.concat " | "
+        assertTrue (list.Roots.Count>=2) ("The App rules page did not list its apps: "+status)
+        let all = list.Roots.[0]
+        let apps() = list.Roots |> Seq.skip 1 |> List.ofSeq
+        let listed path = apps() |> List.tryFind(fun item -> String.Equals(item.Tag :?> string,path,StringComparison.OrdinalIgnoreCase))
+        assertTrue (all.Text=tr Strings.AppRules.allApps && all.Glyph=AppsGlyph) "The App rules list does not start with All apps"
+        assertTrue (installed |> List.forall(fun path -> (listed path).IsSome)) "An app with a rule is missing from the list when it is not running"
+        assertTrue ((apps()).Head.SeparatorAbove) "Nothing sets All apps apart from the apps"
+        assertTrue (view.control.Controls.Find("enable-tabs-for-new-apps",true).Length=1) "The default for new apps is not on the App rules page"
+        let tabs = 1
+        let space item =
+            list.SelectedItem <- item
+            key list Keys.Space
+        // Every app off: All is off. Pressing it turns every app on; again, every app off.
+        let isOn path = lock on (fun () -> on.Contains path)
+        assertTrue (all.check tabs=Some false && not (all.mixed tabs)) "All apps is not off while every app is"
+        space all
+        assertTrue (apps() |> List.forall(fun app -> app.check tabs=Some true) && all.check tabs=Some true && not (all.mixed tabs)) "All apps does not turn every app on"
+        assertTrue (installed |> List.forall isOn && saves.Value=1) "All apps did not save every app as on, at once"
+        space all
+        assertTrue (apps() |> List.forall(fun app -> app.check tabs=Some false) && all.check tabs=Some false) "All apps pressed again does not turn every app off"
+        assertTrue (installed |> List.forall(isOn >> not)) "All apps did not save every app as off"
+        // One app on: All shows a dash, and pressing it turns the rest on.
+        space (listed installed.Head).Value
+        assertTrue (all.mixed tabs && all.check tabs=Some false) "All apps does not show that only some apps are on"
+        space all
+        assertTrue (apps() |> List.forall(fun app -> app.check tabs=Some true) && not (all.mixed tabs)) "Pressing a dashed All apps does not turn every app on"
+        form.PerformLayout()
+        Application.DoEvents()
+        use bitmap = new Bitmap(form.Width,form.Height)
+        form.DrawToBitmap(bitmap,Rectangle(Point.Empty,bitmap.Size))
+        bitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","app-rules.png"),Imaging.ImageFormat.Png)
+        form.Close()
+        rules.Value <- filter
     printfn "PASS: input validation, no-op changes, HSV colours, repeated popup dismissal, shortcut recording and light/dark renders."
 
 TestInit.run main

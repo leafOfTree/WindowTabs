@@ -103,6 +103,7 @@ type DispatchedFilterService(inner:IFilterService, dispatcher:IDispatcher) =
             with get() = dispatcher.Send(fun () -> inner.isTabbingEnabledForAllProcessesByDefault)
             and set value = dispatcher.Send(fun () -> inner.isTabbingEnabledForAllProcessesByDefault <- value)
         member _.setIsTabbingEnabledForProcess path enabled = dispatcher.Send(fun () -> inner.setIsTabbingEnabledForProcess path enabled)
+        member _.setIsTabbingEnabledForProcesses paths enabled = dispatcher.Send(fun () -> inner.setIsTabbingEnabledForProcesses paths enabled)
         member _.getIsTabbingEnabledForProcess path = dispatcher.Send(fun () -> inner.getIsTabbingEnabledForProcess path)
 
 type DispatchedManagerView(inner:IManagerView, dispatcher:IDispatcher) =

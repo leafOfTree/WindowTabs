@@ -136,6 +136,7 @@ let main() =
             member _.isTabbableWindow _ = false
             member _.isTabbingEnabledForAllProcessesByDefault with get()=false and set _=()
             member _.setIsTabbingEnabledForProcess _ _ = ()
+            member _.setIsTabbingEnabledForProcesses _ _ = ()
             member _.getIsTabbingEnabledForProcess _ = false})
         let desktop = Desktop({new IDesktopNotification with
                                 member _.dragDrop _ = ()
