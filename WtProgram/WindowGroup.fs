@@ -586,13 +586,18 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
    
 
+    /// Skips windows already there with no request of ours in flight. The tab that started the
+    /// change never acknowledges a request, and while it is queued that tab's next change looks like ours.
+    member private this.needsMinimizeState minimized hwnd =
+        isMinimized hwnd<>minimized || requestedMinimizeStates.ContainsKey hwnd
+
     member this.minimizeAll = fun() ->
-        zorderCell.value.reverse.iter <| fun hwnd ->
+        zorderCell.value.reverse.where(this.needsMinimizeState true).iter <| fun hwnd ->
             requestedMinimizeStates.[hwnd] <- true
             FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.minimizeRequest hwnd true)
         
     member this.restoreAll = fun() ->
-        zorderCell.value.iter <| fun hwnd ->
+        zorderCell.value.where(this.needsMinimizeState false).iter <| fun hwnd ->
             requestedMinimizeStates.[hwnd] <- false
             FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.minimizeRequest hwnd false)
         
