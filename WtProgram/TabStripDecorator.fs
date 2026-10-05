@@ -238,7 +238,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 image = None
                 items = List2([
                     (tr Strings.Common.never, "Never")
-                    (tr Strings.Common.whenMaximizedOrSnapped, "Maximized")
+                    (tr Strings.Common.whenMaximized, "Maximized")
                     (tr Strings.Common.always, "Always")
                 ]).map(autoHideMenuItem)
             })

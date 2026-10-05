@@ -13,7 +13,7 @@ type GeneralView() =
         SettingsBindings.choiceRow behaviour "tab-alignment"
             [|tr Strings.Common.left;tr Strings.Common.center;tr Strings.Common.right|] |> ignore
         let autoHide = SettingsBindings.choiceRow behaviour "auto-hide-tabs"
-                           [|tr Strings.Common.never;tr Strings.Common.whenMaximizedOrSnapped;tr Strings.Common.always|]
+                           [|tr Strings.Common.never;tr Strings.Common.whenMaximized;tr Strings.Common.always|]
         let showOnSwitch = SettingsUi.settingRowControl behaviour "show-tabs-on-switch" (SettingsBindings.settingToggle "showTabsOnSwitch")
         SettingsUi.indentDependentRow showOnSwitch
         // Index 0 is Never: nothing is hidden, so there is nothing to show.
