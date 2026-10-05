@@ -123,7 +123,7 @@ type SettingsAlertDialog(kind:AlertKind, title:string, message:string, owned:boo
             if e.Control && e.KeyCode=Keys.C then
                 try Clipboard.SetText(title+Environment.NewLine+Environment.NewLine+message) with _ -> ()
                 e.SuppressKeyPress <- true)
-        this.HandleCreated.Add(fun _ -> SettingsUi.apply this)
+        ThemeBinding.watch this (fun () -> SettingsUi.apply this)
     /// Whether each switch is on, in the order given.
     member _.Choices = switches |> List.map(fun (switch,_,_) -> switch.Checked)
 

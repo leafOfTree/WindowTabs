@@ -32,8 +32,9 @@ module private SettingsFile =
         let settings = Services.settings
         let backup = Path.Combine(Path.GetDirectoryName(settings.path),sprintf "WindowTabsSettings.%s.json" backupName)
         File.WriteAllText(backup,settings.root.ToString(),UTF8Encoding(false))
-        settings.root <- root
+        // Keep the confirmation in the theme of the settings window until it closes.
         Alert.show AlertKind.Info title (message backup)
+        settings.root <- root
         // The new instance waits for this one, whose shutdown writes the new settings.
         Diagnostics.Process.Start(Application.ExecutablePath,"--restart") |> ignore
         Services.program.shutdown()

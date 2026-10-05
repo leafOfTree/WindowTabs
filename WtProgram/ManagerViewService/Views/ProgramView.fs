@@ -43,7 +43,7 @@ module private ProgramItems =
         let tabs = Services.filter.getIsTabbingEnabledForProcess path
         // Auto grouping only decides which group a tabbed window joins.
         TreeListItem(Path.GetFileName(path),Icon=Option.toObj icon,Glyph=WindowGlyph,Tag=path,
-                     Checks=[|None;Some tabs;Some(Services.program.getAutoGroupingEnabled path)|],CheckEnabled=[|true;true;tabs|])
+                     Checks=[|None;Some tabs;Some(Services.program.getAutoGroupingEnabled path)|],CheckEnabled=[|true;true;true|])
     let window (window:Window) =
         TreeListItem(window.text,Icon=Option.toObj (ImgHelper.windowIcon window),Glyph=WindowGlyph)
 type ProgramView() as this=
@@ -65,8 +65,7 @@ type ProgramView() as this=
             all.CheckEnabled.[column] <- not items.IsEmpty
         let apps = apps()
         summarise ProgramItems.tabsColumn apps
-        // Auto grouping is only offered for apps with tabs.
-        summarise ProgramItems.groupingColumn (apps |> List.filter(fun item -> item.checkEnabled ProgramItems.groupingColumn))
+        summarise ProgramItems.groupingColumn apps
     /// For apps that have not been turned on or off in the list.
     let footer =
         let table = new TableLayoutPanel(ColumnCount=1,Margin=Padding.Empty,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink)
@@ -104,8 +103,14 @@ type ProgramView() as this=
                 Services.filter.setIsTabbingEnabledForProcesses (changed |> List.map path) value
                 for app in changed do
                     app.Checks.[column] <- Some value
-                    app.CheckEnabled.[ProgramItems.groupingColumn] <- value
+                    // Auto grouping needs tabs, so it goes off with them; each change saves settings.
+                    if not value && app.check ProgramItems.groupingColumn = Some true then
+                        Services.program.setAutoGroupingEnabled (path app) false
+                        app.Checks.[ProgramItems.groupingColumn] <- Some false
             elif column=ProgramItems.groupingColumn then
+                if value then
+                    Services.filter.setIsTabbingEnabledForProcesses (changed |> List.map path) true
+                    for app in changed do app.Checks.[ProgramItems.tabsColumn] <- Some true
                 for app in changed do
                     // Turning grouping on regroups the app's windows, so apps already set are left alone.
                     if app.checkEnabled column && (not isAll || app.check column <> Some value) then

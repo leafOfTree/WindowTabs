@@ -254,6 +254,7 @@ let main() =
     assertTrue (SettingsShortcut.text 1614="Ctrl+Alt+N" && SettingsShortcut.text 0="") "Menus show shortcuts as Ctrl+Alt+N"
     let hotKeys = Collections.Generic.Dictionary<string,int>(dict ["nextTab",3623;"prevTab",3621;"searchTabs",0;"newTab",0])
     let rejected = SettingsShortcut.encode (Keys.Control ||| Keys.B)
+    let grouping = Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
     let mouse = Event<int32 * IntPtr>()
     Services.register<IProgram>({new IProgram with
         member _.version = "test"
@@ -263,8 +264,9 @@ let main() =
         member _.setWindowNameOverride _ = ()
         member _.getWindowNameOverride _ = None
         member _.appWindows = List2()
-        member _.getAutoGroupingEnabled _ = false
-        member _.setAutoGroupingEnabled _ _ = ()
+        member _.getAutoGroupingEnabled path = lock grouping (fun () -> grouping.Contains path)
+        member _.setAutoGroupingEnabled path enabled =
+            lock grouping (fun () -> (if enabled then grouping.Add path else grouping.Remove path) |> ignore)
         member _.tabAppearanceInfo = ThemeService.currentAppearance()
         member _.setHotKey key value = (if value<>rejected then hotKeys.[key] <- value); value<>rejected
         member _.getHotKey key = hotKeys.[key]
@@ -515,6 +517,18 @@ let main() =
         call "OnMouseEnter" EventArgs.Empty
         call "OnMouseDown" mouse
         assertTrue (not button.IsPressed) "A disabled button looks pressed"
+    do
+        let mode = preferences.mode
+        use dialog = new SettingsAlertDialog(AlertKind.Info,tr Strings.Common.ok,tr Strings.General.exported,false)
+        dialog.StartPosition <- FormStartPosition.Manual
+        dialog.Location <- Point(-20000,-20000)
+        dialog.Show()
+        for theme in [LightTheme;DarkTheme;LightTheme] do
+            settings.updateAppearance(fun p -> {p with mode=theme})
+            Application.DoEvents()
+            assertTrue (dialog.BackColor=(SettingsColors.current()).background && dialog.ForeColor=(SettingsColors.current()).text) "An open alert did not follow the theme"
+        dialog.Close()
+        settings.updateAppearance(fun p -> {p with mode=mode})
     // App rules: a choice made for an app outlasts a change of the default for new apps.
     let filter = FilterService() :> IFilterService
     // The settings fake lives in this script's static initialiser, which the whole test runs
@@ -600,6 +614,18 @@ let main() =
         space all
         assertTrue (apps() |> List.forall(fun app -> app.check tabs=Some false) && all.check tabs=Some false) "All apps pressed again does not turn every app off"
         assertTrue (installed |> List.forall(isOn >> not)) "All apps did not save every app as off"
+        let group (item:TreeListItem) =
+            typeof<SettingsTreeList>.GetMethod("toggleCheck",BindingFlags.Instance ||| BindingFlags.NonPublic).Invoke(list,[|box item;box 2|]) |> ignore
+        let first = (listed installed.Head).Value
+        assertTrue (first.checkEnabled 2) "Auto-group cannot be selected while tabs are off"
+        group first
+        assertTrue (first.check tabs=Some true && first.check 2=Some true && isOn installed.Head && grouping.Contains installed.Head) "Auto-group did not enable tabs"
+        space first
+        assertTrue (first.check 2=Some false && not (grouping.Contains installed.Head)) "Tabs off did not clear auto-group"
+        group all
+        assertTrue (apps() |> List.forall(fun app -> app.check tabs=Some true && app.check 2=Some true && isOn (app.Tag :?> string) && grouping.Contains(app.Tag :?> string))) "All apps auto-group did not enable both rules"
+        space all
+        assertTrue (apps() |> List.forall(fun app -> app.check tabs=Some false && app.check 2=Some false && not (grouping.Contains(app.Tag :?> string)))) "All apps tabs off did not clear auto-group"
         // One app on: All shows a dash, and pressing it turns the rest on.
         space (listed installed.Head).Value
         assertTrue (all.mixed tabs && all.check tabs=Some false) "All apps does not show that only some apps are on"
