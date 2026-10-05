@@ -397,6 +397,66 @@ let main() =
         Application.DoEvents()
         assertTrue (view.TextBox.Top < 0 && abs(view.TextBox.Bottom-view.ClientSize.Height) <= 1)
                    (sprintf "Settings scrollbar did not scroll the report to its end (top %d, bottom %d)" view.TextBox.Top view.TextBox.Bottom)
+    // A button shows it is held down, by mouse or Space, so a click is seen to land.
+    do
+        use host = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ClientSize=Size(200,80))
+        let button = SettingsUi.button "Reset"
+        host.Controls.Add(button)
+        host.Show()
+        Application.DoEvents()
+        let call name (args:EventArgs) =
+            typeof<SettingsActionButton>.GetMethod(name,BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(button,[|box args|]) |> ignore
+        let render () =
+            let bitmap = new Bitmap(button.Width,button.Height)
+            button.DrawToBitmap(bitmap,Rectangle(Point.Empty,bitmap.Size))
+            bitmap
+        let mouse = MouseEventArgs(MouseButtons.Left,1,5,5,0)
+        call "OnMouseEnter" EventArgs.Empty
+        use hovered = render()
+        call "OnMouseDown" mouse
+        assertTrue button.IsPressed "A held button does not count as pressed"
+        use pressed = render()
+        let differs = seq { for x in 0..pressed.Width-1 do for y in 0..pressed.Height-1 -> pressed.GetPixel(x,y)<>hovered.GetPixel(x,y) } |> Seq.exists id
+        assertTrue differs "A held button looks the same as a hovered one"
+        call "OnMouseLeave" EventArgs.Empty
+        assertTrue (not button.IsPressed) "A button still looks pressed after the pointer leaves it"
+        call "OnMouseUp" mouse
+        key button Keys.Space
+        assertTrue button.IsPressed "Space does not press a button"
+        typeof<SettingsActionButton>.GetMethod("OnKeyUp",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(button,[|box(KeyEventArgs(Keys.Space))|]) |> ignore
+        assertTrue (not button.IsPressed) "A button stays pressed after Space is released"
+        // Rest, hover, pressed and disabled in light and dark, for looking at.
+        let states () =
+            button.Enabled <- true
+            call "OnMouseLeave" EventArgs.Empty
+            let rest = render()
+            call "OnMouseEnter" EventArgs.Empty
+            let hot = render()
+            call "OnMouseDown" mouse
+            let down = render()
+            call "OnMouseUp" mouse
+            button.Enabled <- false
+            [rest;hot;down;render()]
+        let mode = preferences.mode
+        let rows =
+            [LightTheme;DarkTheme] |> List.map(fun theme ->
+                settings.updateAppearance(fun p -> {p with mode=theme})
+                host.BackColor <- (SettingsColors.current()).background
+                Application.DoEvents()
+                states())
+        settings.updateAppearance(fun p -> {p with mode=mode})
+        do
+            use sheet = new Bitmap((button.Width+8)*4+8,(button.Height+8)*2+8)
+            use g = Graphics.FromImage(sheet)
+            g.Clear(Color.Gray)
+            rows |> List.iteri(fun row images ->
+                images |> List.iteri(fun column (image:Bitmap) ->
+                    g.DrawImage(image,8+column*(button.Width+8),8+row*(button.Height+8))
+                    image.Dispose()))
+            sheet.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-button-states.png"),Imaging.ImageFormat.Png)
+        call "OnMouseEnter" EventArgs.Empty
+        call "OnMouseDown" mouse
+        assertTrue (not button.IsPressed) "A disabled button looks pressed"
     printfn "PASS: input validation, no-op changes, HSV colours, repeated popup dismissal, shortcut recording and light/dark renders."
 
 TestInit.run main

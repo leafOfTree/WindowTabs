@@ -65,6 +65,8 @@ type AppearanceView(?settings:ISettings) =
                                  Margin=Padding(0,Dpi.scale 16,0,Dpi.scale 8))
     let preset = SettingsUi.choice (Array.append (ThemePresets.names |> Array.map tr) [|tr Strings.Appearance.custom|])
     let tabStyle = SettingsUi.choice (Strings.Appearance.tabStyles |> Array.map tr)
+    let resetColorsButton = SettingsUi.button (tr Strings.Appearance.resetColors)
+    let resetLayoutButton = SettingsUi.button (tr Strings.Appearance.resetTabLayout)
     let rightActions (button:Control) =
         let row = new FlowLayoutPanel(AutoSize=true,WrapContents=false,FlowDirection=FlowDirection.RightToLeft,
                                       Margin=Padding(0,Dpi.scale 8,0,Dpi.scale 8))
@@ -187,6 +189,12 @@ type AppearanceView(?settings:ISettings) =
             // One height for any usual tab height: the window below the tabs gives up the room.
             // Only tabs too tall to leave its toolbar visible make the panel grow.
             preview.Height <- max (Dpi.scale 145) (ThemeService.currentAppearance().scaled.tabHeight+Dpi.scale (14+14+28)+2)
+            // A reset with nothing to undo would do nothing visible, so it is not offered.
+            resetColorsButton.Enabled <-
+                match selection settings with
+                | Some index -> values palette<>values (original index)
+                | None -> true
+            resetLayoutButton.Enabled <- geometry<>Theme.defaultGeometry
             let frame = Some(SettingsColors.current(),editingDark,settings.geometry)
             if frame=previewFrame then preview.Invalidate(previewTabs())
             else
@@ -279,16 +287,16 @@ type AppearanceView(?settings:ISettings) =
         contrastNote.MaximumSize <- Size(Dpi.scale 700,0)
         SettingsUi.add table contrastNote
         SettingsUi.add table contrastComparison
-        let reset = SettingsUi.button (tr Strings.Appearance.resetColors)
-        reset.Click.Add(fun _ -> resetColors())
-        rightActions reset
+        resetColorsButton.Name <- "reset-colors"
+        resetColorsButton.Click.Add(fun _ -> resetColors())
+        rightActions resetColorsButton
         let layoutCard = SettingsUi.sectionCard table (tr Strings.Appearance.tabLayout)
         SettingsUi.note layoutCard (tr Strings.Appearance.sizesStayTheSame)
         for key,read,write,editor in dimensions do SettingsUi.settingRow layoutCard key editor
-        let resetLayout = SettingsUi.button (tr Strings.Appearance.resetTabLayout)
-        resetLayout.Click.Add(fun _ ->
+        resetLayoutButton.Name <- "reset-tab-layout"
+        resetLayoutButton.Click.Add(fun _ ->
             update Theme.resetLayout)
-        rightActions resetLayout
+        rightActions resetLayoutButton
         refresh()
         tabStyle.SelectedIndexChanged.Add(fun _ ->
             if not refreshing && tabStyle.SelectedIndex>=0 then

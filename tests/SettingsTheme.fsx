@@ -670,6 +670,24 @@ Group #2: No valid windows in this group.";
         api.updateAppearance(fun s -> {s with geometry={s.geometry with height=originalHeight}})
         Application.DoEvents()
         check (previewHeights |> List.distinct |> List.length = 1) (sprintf "Tab preview height follows the tab height: %A" previewHeights)
+        // A reset with nothing to undo is not offered; an edit offers it again.
+        do
+            let before = settings.settings.appearance
+            let button name = controls appearance.control |> Seq.pick(function :? SettingsActionButton as b when b.Name=name -> Some b | _ -> None)
+            let colors,layout = button "reset-colors",button "reset-tab-layout"
+            api.updateAppearance(fun s -> {s with lightPalette=Theme.lightPalette;lightPreset=ThemePresets.keys.[0];presetEdits=Map.empty
+                                                  useCustomColors=true;geometry=Theme.defaultGeometry})
+            Application.DoEvents()
+            check (not colors.Enabled && not layout.Enabled) "Reset buttons are offered with nothing to reset"
+            api.updateAppearance(fun s -> {s with lightPalette={s.lightPalette with tabActiveBgColor=Color.Red};geometry={s.geometry with height=30}})
+            Application.DoEvents()
+            check (colors.Enabled && layout.Enabled) "Reset buttons are not offered after an edit"
+            colors.PerformClick()
+            layout.PerformClick()
+            Application.DoEvents()
+            check (not colors.Enabled && not layout.Enabled) "Reset buttons are still offered after resetting"
+            api.updateAppearance(fun _ -> before)
+            Application.DoEvents()
         let ap = appearance.control :?> SettingsPage
         check (ap.contentTable.Height>500) "Appearance page failed to lay out on first visit"
         let scroll = controls ap |> Seq.choose (function :? SettingsScrollBar as s -> Some s | _ -> None) |> Seq.head

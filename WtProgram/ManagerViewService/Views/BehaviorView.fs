@@ -42,7 +42,13 @@ type HotKeyView() =
         updateNumeric()
         numericEnabled.CheckedChanged.Add(fun _ -> updateNumeric())
         let restore = SettingsUi.button (tr Strings.Shortcuts.restoreDefaults)
-        restore.Click.Add(fun _ -> restoreDefaults())
+        restore.Name <- "restore-shortcuts"
+        // Offered only while a shortcut differs from its default; otherwise it would do nothing.
+        let updateRestore() =
+            restore.Enabled <- editors |> List.exists(fun (key,editor) -> editor.Shortcut<>SettingsCatalog.shortcutDefault key)
+        for _,editor in editors do editor.Changed.Add(fun _ -> updateRestore())
+        restore.Click.Add(fun _ -> restoreDefaults(); updateRestore())
+        updateRestore()
         let actionsRow = new FlowLayoutPanel(AutoSize=true,WrapContents=false,FlowDirection=FlowDirection.RightToLeft,
                                              Margin=Padding(0,Dpi.scale 8,0,Dpi.scale 8))
         actionsRow.Controls.Add(restore)

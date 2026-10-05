@@ -16,14 +16,35 @@ type SettingsButtonKind =
 type SettingsActionButton() as this =
     inherit Button()
     let mutable hovering = false
+    let mutable mousePressed = false
+    let mutable keyPressed = false
     let mutable kind = SettingsButtonKind.Standard
     do
         this.FlatStyle <- FlatStyle.Flat
         this.FlatAppearance.BorderSize <- 0
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
     member this.Kind with get() = kind and set value = kind <- value; this.Invalidate()
+    /// Held down by the mouse while over the button, or by Space, as a click is about to happen.
+    member this.IsPressed = this.Enabled && ((mousePressed && hovering) || keyPressed)
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); hovering <- true; this.Invalidate()
     override this.OnMouseLeave(e) = base.OnMouseLeave(e); hovering <- false; this.Invalidate()
+    override this.OnMouseDown(e) =
+        base.OnMouseDown(e)
+        if e.Button=MouseButtons.Left then mousePressed <- true; this.Invalidate()
+    override this.OnMouseUp(e) =
+        base.OnMouseUp(e)
+        if e.Button=MouseButtons.Left then mousePressed <- false; this.Invalidate()
+    override this.OnKeyDown(e) =
+        base.OnKeyDown(e)
+        if e.KeyCode=Keys.Space then keyPressed <- true; this.Invalidate()
+    override this.OnKeyUp(e) =
+        base.OnKeyUp(e)
+        if e.KeyCode=Keys.Space then keyPressed <- false; this.Invalidate()
+    override this.OnLostFocus(e) =
+        base.OnLostFocus(e)
+        mousePressed <- false
+        keyPressed <- false
+        this.Invalidate()
     override this.OnPaint(e) =
         let p = SettingsColors.current()
         e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
@@ -32,32 +53,39 @@ type SettingsActionButton() as this =
         let highContrast = SystemInformation.HighContrast
         let light = not highContrast && not (ThemeService.currentIsDark())
         let hot = hovering && this.Enabled
+        let pressed = this.IsPressed
+        let mix (a:Color) (b:Color) (t:float32) =
+            Color.FromArgb(int(float32 a.R*(1.0f-t)+float32 b.R*t),int(float32 a.G*(1.0f-t)+float32 b.G*t),int(float32 a.B*(1.0f-t)+float32 b.B*t))
         let neutral() =
             let fill =
-                if light then Color.FromRGB(if hot then 0xEAEAE8 else 0xF3F3F1)
+                if light then Color.FromRGB(if pressed then 0xE0E0DE elif hot then 0xEAEAE8 else 0xF3F3F1)
+                // Dark buttons dim when pressed rather than brighten further, as Windows' do.
+                elif pressed then mix p.hover p.surface 0.5f
                 elif hot then p.hover
                 else p.surface
             fill,(if light then fill else p.border)
-        // Hover moves a filled colour towards the page, as Windows accent buttons do.
+        // Hover moves a filled colour towards the page, as Windows accent buttons do; pressing
+        // moves it further.
         let hoverShade (color:Color) =
-            if not hot then color
-            else Color.FromArgb(int(float32 color.R*0.9f+float32 p.background.R*0.1f),
-                                int(float32 color.G*0.9f+float32 p.background.G*0.1f),
-                                int(float32 color.B*0.9f+float32 p.background.B*0.1f))
+            if pressed then mix color p.background 0.2f
+            elif hot then mix color p.background 0.1f
+            else color
         let fillColor,borderColor,textColor =
             match kind with
-            | _ when not this.Enabled -> let fill,border = neutral() in fill,border,p.muted
+            | _ when not this.Enabled -> let fill,border = neutral() in fill,border,p.disabledText
+            | _ when pressed && highContrast -> SystemColors.Highlight,SystemColors.Highlight,SystemColors.HighlightText
             | SettingsButtonKind.Primary ->
                 let accent = if highContrast then SystemColors.Highlight else hoverShade p.accent
                 accent,accent,(if highContrast then SystemColors.HighlightText else Color.White)
             | SettingsButtonKind.Danger when not highContrast ->
-                if hot then
-                    let red = Color.FromRGB(0xC42B1C)
+                if hot || pressed then
+                    let red = Color.FromRGB(if pressed then 0xA52314 else 0xC42B1C)
                     red,red,Color.White
                 else
                     let fill,border = neutral()
                     fill,border,(if light then Color.FromRGB(0xC42B1C) else Color.FromRGB(0xFF99A4))
-            | _ -> let fill,border = neutral() in fill,border,p.text
+            // The label softens while held, the way a Windows button acknowledges the press.
+            | _ -> let fill,border = neutral() in fill,border,(if pressed then p.muted else p.text)
         use fill = new SolidBrush(fillColor)
         use border = new Pen(borderColor)
         e.Graphics.FillPath(fill,shape)
