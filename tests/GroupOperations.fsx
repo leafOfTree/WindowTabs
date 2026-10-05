@@ -13,7 +13,13 @@ open System.Threading
 open System.Windows.Forms
 open Bemo
 
+module Timer =
+    [<DllImport("winmm.dll")>]
+    extern uint32 timeBeginPeriod(uint32 period)
+
 let check condition message = if not condition then failwith message
+/// Each wait sleeps at least one timer tick; main shortens it to 1ms. At the default 15.6ms a
+/// sampled operation's half a dozen waits cost about 95ms and the suite ran past its timeout.
 let pumpUntil predicate =
     let timer = Stopwatch.StartNew()
     while not(predicate()) && timer.ElapsedMilliseconds < 10000L do
@@ -54,6 +60,8 @@ type HelperWindow() =
         base.WndProc(&message)
 
 let main() =
+    // Lasts until the test process exits.
+    Timer.timeBeginPeriod 1u |> ignore
     // Hold a native-like call in flight, then replace its queued successors and
     // transfer the HWND. The old owner cannot publish its second phase or cancel
     // the new owner's work; removal also drops work that has not started.
