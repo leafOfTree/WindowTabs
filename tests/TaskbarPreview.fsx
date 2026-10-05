@@ -69,6 +69,8 @@ let main() =
                         StartPosition=System.Windows.Forms.FormStartPosition.Manual,
                         Location=Point(-20000,-20000),Size=Size(320,200),BackColor=Color.CornflowerBlue)
     captureForm.Show()
+    // Paint now: captured before its first WM_PAINT, the window is sometimes still white.
+    captureForm.Refresh()
     let mutable captured = false
     use capturedBitmap = Win32Helper.PrintWindow(captureForm.Handle,&captured)
     check (captured && capturedBitmap.Size=captureForm.Size) "Full-window capture failed or changed its coordinate extent"
