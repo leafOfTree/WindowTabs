@@ -387,6 +387,59 @@ let main() =
     treeList.Rebuild()
     assertTrue (isNull treeList.SelectedItem) "Tree list: removed selection is cleared"
     treeList.Dispose()
+    // Row actions: buttons beside the name of the row under the pointer. A press selects the row
+    // and acts, and a double-click on one does not also open the row.
+    do
+        use host = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ClientSize=Size(420,200))
+        let list = new SettingsTreeList([TreeListColumn("Name",0,TextColumn);TreeListColumn("Title",120,TextColumn);TreeListColumn("",60,ActionColumn)],Dock=DockStyle.Fill)
+        host.Controls.Add(list)
+        SettingsUi.apply host
+        host.Show()
+        let workspace = TreeListItem("Morning",Glyph=WorkspaceGlyph)
+        let group = workspace.Add(TreeListItem("Editors",Glyph=GroupGlyph))
+        group.Add(TreeListItem("notes.txt",Glyph=WindowGlyph)) |> ignore
+        list.Roots.AddRange([workspace;TreeListItem("Evening",Glyph=WorkspaceGlyph)])
+        list.RowActions <- [EditGlyph;DeleteGlyph]
+        list.ExpandOnDoubleClick <- false
+        list.Rebuild()
+        let mutable invoked = []
+        let mutable activated = 0
+        let mutable expandedRows = []
+        list.ActionInvoked.Add(fun (item,index) -> invoked <- invoked @ [item.Text,index])
+        list.ItemActivated.Add(fun _ -> activated <- activated+1)
+        list.ExpandedChanged.Add(fun item -> expandedRows <- expandedRows @ [item.Text,item.Expanded])
+        let send name (args:EventArgs) =
+            typeof<SettingsTreeList>.GetMethod(name,BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(list,[|box args|]) |> ignore
+        let at x y = MouseEventArgs(MouseButtons.Left,1,x,y,0)
+        let hoveredAction() = typeof<SettingsTreeList>.GetField("hoveredAction",BindingFlags.Instance ||| BindingFlags.NonPublic).GetValue(list) :?> int
+        // The second row, Evening, under the pointer: find its two buttons by moving along it.
+        let y = Dpi.scale 30+Dpi.scale 30+Dpi.scale 15
+        let buttons =
+            [0..2..list.Width-1] |> List.choose(fun x ->
+                send "OnMouseMove" (at x y)
+                if hoveredAction()>=0 then Some(hoveredAction(),x) else None)
+            |> List.groupBy fst |> List.map(fun (index,xs) -> index,snd (List.head xs))
+        assertTrue (List.map fst buttons = [0;1]) (sprintf "The row under the pointer does not show its two actions: %A" buttons)
+        let editX = snd buttons.Head
+        // In the action column, wherever the name ends: the first row's buttons start at the same place.
+        let actionColumn = list.Width-Dpi.scale 60
+        assertTrue (abs(editX-actionColumn) <= Dpi.scale 4) (sprintf "The actions are not at the start of their column: %d, not %d" editX actionColumn)
+        send "OnMouseMove" (at editX (Dpi.scale 30+Dpi.scale 15))
+        assertTrue (hoveredAction()=0) "The first row's actions are not in the same place as the second's"
+        send "OnMouseMove" (at editX y)
+        do
+            use bitmap = new Bitmap(host.ClientSize.Width,host.ClientSize.Height)
+            host.DrawToBitmap(bitmap,Rectangle(Point.Empty,bitmap.Size))
+            bitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","row-actions.png"),Imaging.ImageFormat.Png)
+        send "OnMouseDown" (at (snd buttons.[1]) y)
+        assertTrue (invoked=["Evening",1] && list.SelectedItem.Text="Evening") "Pressing a row action does not select the row and act"
+        send "OnMouseDoubleClick" (at editX y)
+        assertTrue (activated=0) "A double-click on a row action also opens the row"
+        // The first row's buttons are gone once the pointer leaves it.
+        send "OnMouseMove" (at editX (Dpi.scale 30+Dpi.scale 15+Dpi.scale 30*5))
+        assertTrue (hoveredAction() = -1) "A row's actions stay after the pointer leaves it"
+        list.SetExpanded(workspace,true)
+        assertTrue (expandedRows=["Morning",true]) "Expanding a row is not reported"
     // The report view scrolls its full-height text box by pixels from the settings scrollbar.
     do
         use host = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ClientSize=Size(300,200))

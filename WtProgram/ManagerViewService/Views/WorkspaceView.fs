@@ -22,12 +22,25 @@ type WorkspaceView() as this =
         let list =
             new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn)
                                   TreeListColumn(tr Strings.Workspaces.matchMethod,130,TextColumn)
-                                  TreeListColumn(tr Strings.Common.title,240,TextColumn)])
+                                  TreeListColumn(tr Strings.Common.title,240,TextColumn)
+                                  // Edit and delete for the row under the pointer, in one place on every row.
+                                  TreeListColumn("",60,ActionColumn)])
         list.SelectionChanged.Add(fun _ ->
             this.wm.selected <- (if isNull list.SelectedItem then null else list.SelectedItem.Tag :?> Dynamic))
         // Double-click (or Enter) edits the item, as the Edit button does; the arrow expands.
         list.ExpandOnDoubleClick <- false
         list.ItemActivated.Add(fun _ -> this.editSelected())
+        list.ExpandedChanged.Add(fun row ->
+            // Opening a workspace opens its groups too, so its windows show at once.
+            if row.Expanded && (row.Tag :? Workspace) then
+                for group in row.Children do group.Expanded <- group.Children.Count>0
+            for model in Seq.append [row] row.Children do
+                if model.Expanded then expanded.Add(model.Tag) |> ignore else expanded.Remove(model.Tag) |> ignore)
+        list.ActionInvoked.Add(fun (_,action) ->
+            if action=0 then this.editSelected()
+            else
+                this.wm.remove()
+                this.reload())
         list
 
     member this.panel : SettingsListPage = Cell.cacheProp this <| fun() ->
@@ -37,7 +50,8 @@ type WorkspaceView() as this =
                                  this.list,
                                  [this.newButton :> Control;this.restoreButton;this.editButton;this.removeButton],
                                  helpText=tr Strings.Workspaces.help)
-        this.wm |> ignore
+        // In the order ActionInvoked expects them.
+        if not this.wm.isReadOnly then this.list.RowActions <- [EditGlyph;DeleteGlyph]
         loaded <- true
         this.reload(lastAdded)
         panel

@@ -8,6 +8,8 @@ open System.Windows.Forms
 type TreeListColumnKind =
     | TextColumn
     | CheckColumn
+    /// Holds the RowActions buttons of the row under the pointer.
+    | ActionColumn
 
 /// Line icons drawn in the theme's muted colour, in the style of the settings sidebar icons.
 /// Used for the app's own objects and wherever no real icon is available.
@@ -17,6 +19,8 @@ type TreeListGlyph =
     | GroupGlyph
     | WorkspaceGlyph
     | AppsGlyph
+    | EditGlyph
+    | DeleteGlyph
 
 /// A column of SettingsTreeList. Width is in logical pixels; 0 fills the remaining width.
 /// Column 0 is the tree column: expand chevron, icon and the item's Text.
@@ -66,10 +70,14 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     let selectionChanged = Event<EventArgs>()
     let itemActivated = Event<TreeListItem>()
     let checkChanged = Event<TreeListItem * int * bool>()
+    let expandedChanged = Event<TreeListItem>()
+    let actionInvoked = Event<TreeListItem * int>()
     let mutable rows : (TreeListItem * int)[] = [||]
     let mutable offset = 0
     let mutable selected : TreeListItem = null
     let mutable hovered : TreeListItem = null
+    /// The row action under the pointer, or -1.
+    let mutable hoveredAction = -1
     let mutable tooltipText = ""
     let columns = List.toArray columns
     let smooth = new SmoothScroller((fun () -> offset),
@@ -99,6 +107,13 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member _.SelectionChanged = selectionChanged.Publish
     /// Raised after a check box is toggled by the user: item, column, new value.
     member _.CheckChanged = checkChanged.Publish
+    /// Raised when a row is expanded or collapsed, before the rows are laid out again, so a
+    /// handler can expand or collapse the rows under it too.
+    member _.ExpandedChanged = expandedChanged.Publish
+    /// Buttons drawn in the action column on the row under the pointer, as their glyphs.
+    member val RowActions : TreeListGlyph list = [] with get,set
+    /// Raised when a row action is clicked, after its row is selected: item, index in RowActions.
+    member _.ActionInvoked = actionInvoked.Publish
 
     member private this.rowHeight = Dpi.scale this.RowHeight
     member private this.headerHeight = if this.ShowHeader then Dpi.scale 30 else 0
@@ -158,6 +173,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member this.SetExpanded(item:TreeListItem, expanded:bool) =
         if item.Children.Count>0 && item.Expanded<>expanded then
             item.Expanded <- expanded
+            expandedChanged.Trigger(item)
             this.Rebuild()
 
     member private this.rowAt(y:int) =
@@ -180,6 +196,33 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member private this.textLeft(level:int) =
         let expander = if this.ShowExpanders then Dpi.scale 8+level*Dpi.scale 20+Dpi.scale 20 else Dpi.scale 10
         expander
+
+    /// The name cell of a row: its icon box and its text bounds.
+    member private this.nameLayout(item:TreeListItem, level:int, top:int) =
+        let cell = this.columnBounds.[0]
+        let size = Dpi.scale this.IconSize
+        let left = cell.X+this.textLeft level
+        let iconBox = Rectangle(left,top+(this.rowHeight-size)/2,size,size)
+        let x = if not (isNull item.Icon) || item.Glyph<>NoGlyph then left+size+Dpi.scale 8 else left
+        iconBox,Rectangle(x,top,max 1 (cell.Right-Dpi.scale 8-x),this.rowHeight)
+
+    /// The action buttons of the row under the pointer, at the start of the action column, so
+    /// they stay in one place from row to row.
+    member private this.actionButtons(item:TreeListItem, top:int) =
+        match columns |> Array.tryFindIndex(fun column -> column.Kind=ActionColumn) with
+        | Some column when Object.ReferenceEquals(item,hovered) ->
+            let cell = this.columnBounds.[column]
+            let button,gap = Dpi.scale 24,Dpi.scale 2
+            this.RowActions |> List.mapi(fun i _ -> Rectangle(cell.X+i*(button+gap),top+(this.rowHeight-button)/2,button,button))
+        | _ -> []
+
+    /// The row action under a point, with its row.
+    member private this.actionAt(point:Point) =
+        match this.rowAt point.Y with
+        | Some(index,(item,_)) ->
+            this.actionButtons(item,this.headerHeight+index*this.rowHeight-offset)
+            |> List.tryFindIndex(fun (button:Rectangle) -> button.Contains(point)) |> Option.map(fun action -> item,action)
+        | None -> None
 
     member private this.toggleCheck(item:TreeListItem, column:int) =
         match item.check column with
@@ -216,6 +259,18 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             for x,y in [1.5f,1.5f;9.0f,1.5f;1.5f,9.0f;9.0f,9.0f] do
                 use square = SettingsShapes.rounded (RectangleF(x,y,5.5f,5.5f)) 1.5f
                 g.DrawPath(pen,square)
+        | EditGlyph ->
+            use pencil = new GraphicsPath()
+            pencil.AddLines([|PointF(2.5f,13.5f);PointF(3.2f,10.6f);PointF(10.8f,3.0f);PointF(13.0f,5.2f);PointF(5.4f,12.8f)|])
+            pencil.CloseFigure()
+            g.DrawPath(pen,pencil)
+            g.DrawLine(pen,9.2f,4.6f,11.4f,6.8f)
+        | DeleteGlyph ->
+            g.DrawLine(pen,2.5f,4.5f,13.5f,4.5f)
+            g.DrawLines(pen,[|PointF(6.0f,4.5f);PointF(6.0f,2.5f);PointF(10.0f,2.5f);PointF(10.0f,4.5f)|])
+            g.DrawLines(pen,[|PointF(3.8f,4.5f);PointF(4.6f,13.5f);PointF(11.4f,13.5f);PointF(12.2f,4.5f)|])
+            g.DrawLine(pen,6.8f,7.0f,6.8f,11.0f)
+            g.DrawLine(pen,9.2f,7.0f,9.2f,11.0f)
         | NoGlyph -> ()
         g.Restore(state)
 
@@ -263,24 +318,28 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     override this.OnMouseDown(e) =
         base.OnMouseDown(e)
         this.Focus() |> ignore
-        match this.rowAt e.Y with
-        | Some(index,(item,level)) when e.Button=MouseButtons.Left ->
+        match this.rowAt e.Y, this.actionAt e.Location with
+        | _,Some(item,action) when e.Button=MouseButtons.Left ->
+            this.SelectedItem <- item
+            actionInvoked.Trigger((item,action))
+        | Some(index,(item,level)),_ when e.Button=MouseButtons.Left ->
             let checkColumn = this.checkAt(index,item,e.Location)
             if this.onExpander(index,item,level,e.Location) then
                 this.SetExpanded(item,not item.Expanded)
             else
                 this.SelectedItem <- item
                 checkColumn |> Option.iter(fun column -> this.toggleCheck(item,column))
-        | Some(_,(item,_)) -> this.SelectedItem <- item
-        | None -> ()
+        | Some(_,(item,_)),_ -> this.SelectedItem <- item
+        | None,_ -> ()
 
     override this.OnMouseDoubleClick(e) =
         base.OnMouseDoubleClick(e)
         match this.rowAt e.Y with
-        // Each press on the arrow or a check box already acted; a quick second press there must not
-        // also expand or collapse the row.
+        // Each press on the arrow, a check box or a row action already acted; a quick second press
+        // there must not also expand, collapse or open the row.
         | Some(index,(item,level)) when not (this.onExpander(index,item,level,e.Location))
-                                        && (this.checkAt(index,item,e.Location)).IsNone ->
+                                        && (this.checkAt(index,item,e.Location)).IsNone
+                                        && (this.actionAt e.Location).IsNone ->
             if not this.ExpandOnDoubleClick then itemActivated.Trigger(item)
             elif item.Children.Count>0 then this.SetExpanded(item,not item.Expanded)
         | _ -> ()
@@ -291,12 +350,16 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         if not (Object.ReferenceEquals(item,hovered)) then
             hovered <- item
             this.Invalidate()
+        let action = this.actionAt e.Location |> Option.map snd |> Option.defaultValue -1
+        if action<>hoveredAction then
+            hoveredAction <- action
+            this.Invalidate()
         // Show the full text when the tree column truncates it.
         let text =
             match this.rowAt e.Y with
-            | Some(_,(item,level)) when e.X < (this.columnBounds).[0].Right ->
-                let available = (this.columnBounds).[0].Width-this.textLeft level-Dpi.scale (this.IconSize+14)
-                if TextRenderer.MeasureText(item.Text,this.Font).Width > available then item.Text else ""
+            | Some(index,(item,level)) when e.X < (this.columnBounds).[0].Right ->
+                let _,bounds = this.nameLayout(item,level,this.headerHeight+index*this.rowHeight-offset)
+                if TextRenderer.MeasureText(item.Text,this.Font).Width > bounds.Width then item.Text else ""
             | _ -> ""
         if text<>tooltipText then
             tooltipText <- text
@@ -305,6 +368,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     override this.OnMouseLeave(e) =
         base.OnMouseLeave(e)
         hovered <- null
+        hoveredAction <- -1
         tooltipText <- ""
         tooltip.Hide(this)
         this.Invalidate()
@@ -383,19 +447,27 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                             else [|PointF(cx-s/2.0f,cy-s);PointF(cx+s/2.0f,cy);PointF(cx-s/2.0f,cy+s)|]
                         use pen = new Pen(p.muted,1.5f)
                         g.DrawLines(pen,points)
-                    let mutable x = cell.X+this.textLeft level
-                    let size = Dpi.scale this.IconSize
-                    let iconBox = Rectangle(x,top+(rowHeight-size)/2,size,size)
+                    let iconBox,bounds = this.nameLayout(item,level,top)
                     if not (isNull item.Icon) then
                         g.InterpolationMode <- InterpolationMode.HighQualityBicubic
                         g.DrawImage(item.Icon,iconBox)
-                        x <- x+size+Dpi.scale 8
                     elif item.Glyph<>NoGlyph then
                         SettingsTreeList.drawGlyph(g,item.Glyph,iconBox,p.muted)
-                        x <- x+size+Dpi.scale 8
-                    let bounds = Rectangle(x,top,max 1 (cell.Right-x-Dpi.scale 8),rowHeight)
                     this.drawHighlights(g,item.Text,item.highlights 0,bounds,flags,p)
                     TextRenderer.DrawText(g,item.Text,this.Font,bounds,text,flags)
+                | ActionColumn ->
+                    this.actionButtons(item,top) |> List.iteri(fun index (button:Rectangle) ->
+                        let pointed = index=hoveredAction
+                        let highContrast = SystemInformation.HighContrast
+                        // A shade of the text over the row's own highlight, so it shows on either.
+                        if pointed then
+                            use shape = SettingsShapes.rounded (RectangleF(float32 button.X,float32 button.Y,float32 button.Width,float32 button.Height)) (float32(Dpi.scale 4))
+                            use fill = new SolidBrush(if highContrast then SystemColors.Highlight else Color.FromArgb(36,p.text))
+                            g.FillPath(fill,shape)
+                        let glyph = this.RowActions.[index]
+                        let color = if pointed && highContrast then SystemColors.HighlightText elif pointed || highContrast then text else p.muted
+                        let side = Dpi.scale this.IconSize
+                        SettingsTreeList.drawGlyph(g,glyph,Rectangle(button.X+(button.Width-side)/2,button.Y+(button.Height-side)/2,side,side),color))
                 | TextColumn ->
                     let bounds = Rectangle(cell.X+Dpi.scale 8,top,max 1 (cell.Width-Dpi.scale 16),rowHeight)
                     this.drawHighlights(g,item.value column,item.highlights column,bounds,flags,p)
