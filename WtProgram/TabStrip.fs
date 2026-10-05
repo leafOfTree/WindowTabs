@@ -135,7 +135,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             onlyIcons = this.isIconOnly
             transparent = this.transparent
             held = heldLayoutCell.value
-            appearance = 
+            centerShift =
+                if this.showInside then float(this.appearance.tabIndentFlipped - this.appearance.tabIndentNormal) / 2.0
+                else 0.0
+            appearance =
                 if this.isIconOnly then
                     { this.appearance with tabMaxWidth = Dpi.scale 50 }
                 else

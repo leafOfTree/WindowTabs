@@ -130,7 +130,7 @@ let main () =
     let ts : TabStripSprite<int> = {
         tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"]))
         lorder=List2([1;2]); zorder=List2([1;2]); size=Sz(420,28)
-        slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; held=None
+        slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; held=None; centerShift=0.0
         transparent=true; appearance=appearance; hover=None; captured=None }
     let tabImage = ts.render
     // Short tabs shrink their contents to fit instead of clipping them.
@@ -200,6 +200,18 @@ let main () =
         check ((fst first).x=60 && (snd first).size.width=100) "A held layout moved the tabs after a close"
         let overflowing = { strip 5 with held=Some(100.0,60.0) }
         check ((tabs overflowing) |> List.forall(fun (_,tab) -> tab.size.width<100)) "A held layout that no longer fits was kept"
+        // Inside the title bar centred tabs centre on the window, not the narrower strip,
+        // but never run past the strip into the caption buttons.
+        let span (s:TabStripSprite<int>) =
+            let all = tabs s
+            all |> List.map(fun (location,_) -> location.x) |> List.min,
+            all |> List.map(fun (location,tab) -> location.x+tab.size.width) |> List.max
+        let wide count = { strip count with size=Sz(800,28) }
+        let left,right = span { wide 2 with centerShift=40.0 }
+        let plainLeft,plainRight = span (wide 2)
+        check (left-plainLeft=40 && right-plainRight=40) "Centred tabs in the title bar did not centre on the window"
+        let _,crowdedRight = span { wide 3 with centerShift=200.0 }
+        check (crowdedRight = 800) "Centred tabs shifted into the caption buttons"
     // Folder and pill styles: the inactive tabs are the bar, the active tab a shape raised on it.
     // Three 140px tabs, the middle one active, each 27px tall from y=1.
     do

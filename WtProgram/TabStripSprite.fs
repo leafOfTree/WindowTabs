@@ -437,6 +437,9 @@ type TabStripSprite<'id> when 'id : equality = {
     /// Tab length and left offset kept from before a tab was closed with the pointer,
     /// so the next tab's close button lands under it, as in a browser.
     held: (float * float) option
+    /// How far right of the strip's middle the window's middle lies. Inside the title bar the
+    /// strip leaves room for the caption buttons on the right only, so its middle is left of the window's.
+    centerShift: float
     } with
 
     member private this.tabOverlap = float(this.appearance.tabOverlap)
@@ -550,6 +553,7 @@ type TabStripSprite<'id> when 'id : equality = {
         float(index) * tabOffset
 
     /// Never negative: when the tabs fill the strip the first one stays in view.
+    /// Centred tabs centre on the window, moving left only as far as needed to stay in the strip.
     member private this.alignmentOffset =
         match this.heldLayout with
         | Some(_,offset) -> offset
@@ -558,7 +562,7 @@ type TabStripSprite<'id> when 'id : equality = {
             let offset =
                 match this.alignment with
                 | TabLeft -> 0.0
-                | TabCenter -> widthOfEmptySpace / 2.0
+                | TabCenter -> min widthOfEmptySpace (widthOfEmptySpace / 2.0 + this.centerShift)
                 | TabRight -> widthOfEmptySpace - 60.0
             max 0.0 offset
 
