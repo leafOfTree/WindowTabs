@@ -10,12 +10,15 @@ open System.Windows.Forms
 open Bemo
 
 let check condition message = if not condition then failwith message
+/// Checks the state it saw rather than asking again, which can catch a later change.
 let pumpUntil description predicate =
     let clock = Diagnostics.Stopwatch.StartNew()
-    while not(predicate()) && clock.ElapsedMilliseconds < 5000L do
+    let mutable satisfied = predicate()
+    while not satisfied && clock.ElapsedMilliseconds < 5000L do
         Application.DoEvents()
         Thread.Sleep(5)
-    check (predicate()) description
+        satisfied <- predicate()
+    check satisfied description
 
 let main() =
     Application.EnableVisualStyles()

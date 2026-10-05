@@ -20,12 +20,16 @@ module Timer =
 let check condition message = if not condition then failwith message
 /// Each wait sleeps at least one timer tick; main shortens it to 1ms. At the default 15.6ms a
 /// sampled operation's half a dozen waits cost about 95ms and the suite ran past its timeout.
+/// Checks the state it saw: asking again after the loop can catch a later, transient change,
+/// such as the alignment queued once a group has been restored.
 let pumpUntil predicate =
     let timer = Stopwatch.StartNew()
-    while not(predicate()) && timer.ElapsedMilliseconds < 10000L do
+    let mutable satisfied = predicate()
+    while not satisfied && timer.ElapsedMilliseconds < 10000L do
         Application.DoEvents()
         Thread.Sleep(1)
-    check (predicate()) "Group operation timed out"
+        satisfied <- predicate()
+    check satisfied "Group operation timed out"
 
 // A separate STA models an application's message pump without taking focus.
 type HelperWindow() =

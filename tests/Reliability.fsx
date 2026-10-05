@@ -295,8 +295,11 @@ let main() =
         while queue.TryDequeue(&action) do action()
     let until predicate =
         let watch = Diagnostics.Stopwatch.StartNew()
-        while not(predicate()) && watch.ElapsedMilliseconds<5000L do Thread.Sleep(2)
-        check (predicate()) "Worker timed out"
+        let mutable satisfied = predicate()
+        while not satisfied && watch.ElapsedMilliseconds<5000L do
+            Thread.Sleep(2)
+            satisfied <- predicate()
+        check satisfied "Worker timed out"
     let applied,discarded = ResizeArray<int>(),ConcurrentBag<int>()
     let failures = ResizeArray<exn>()
     use started = new ManualResetEventSlim(false)

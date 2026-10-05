@@ -20,12 +20,14 @@ let cacheChecks() =
         member _.Post action = callbacks.Enqueue(action)}
     let pumpUntil predicate =
         let timer = Stopwatch.StartNew()
-        while not(predicate()) && timer.ElapsedMilliseconds<5000L do
+        let mutable satisfied = predicate()
+        while not satisfied && timer.ElapsedMilliseconds<5000L do
             let mutable callback = Unchecked.defaultof<unit -> unit>
             while callbacks.TryDequeue(&callback) do callback()
             Application.DoEvents()
             Thread.Sleep(1)
-        check (predicate()) "Icon cache did not complete"
+            satisfied <- predicate()
+        check satisfied "Icon cache did not complete"
     let created = ConcurrentBag<WindowIconPair>()
     use entered = new ManualResetEventSlim(false)
     use release = new ManualResetEventSlim(false)
