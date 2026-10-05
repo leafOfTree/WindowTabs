@@ -107,6 +107,8 @@ type TabStripDecorator(group:WindowGroup) as this =
                 if tabSprite.id = tab then 
                     Some(Rect(tabSprite.textLocation.add(tabOffset), tabSprite.textSize))
                 else None
+        // A compact tab has almost no text area; give the name room to be edited.
+        let textBounds = Rect(textBounds.location, Sz(max textBounds.size.width (Dpi.scale 120), textBounds.size.height))
         let verticalMargin = 2
         let form = new FloatingTextBox()
         form.textBox.Font <- SystemFonts.MenuFont

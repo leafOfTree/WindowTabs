@@ -299,6 +299,9 @@ type TabStripSprite<'id> when 'id : equality = {
     direction: TabDirection
     transparent: bool
     onlyIcons: bool
+    /// Tab length and left offset kept from before a tab was closed with the pointer,
+    /// so the next tab's close button lands under it, as in a browser.
+    held: (float * float) option
     } with
 
     member private this.tabOverlap = float(this.appearance.tabOverlap)
@@ -330,7 +333,7 @@ type TabStripSprite<'id> when 'id : equality = {
             displayInfo = this.tabs.find(tab)
             appearance = this.appearance
             size = this.tabSize
-            onlyIcon = this.onlyIcons
+            onlyIcon = this.isCompact
             direction = this.direction
             showLeftSeparator =
                 // Never before the first tab, and never where either side is
@@ -370,29 +373,60 @@ type TabStripSprite<'id> when 'id : equality = {
         gr.FillRectangle(brush, bounds.Rectangle)
         img
 
-    member private this.tabLengthWithOverlap tabOverlap =
+    /// Narrowest a tab gets: its icon with room either side to click it. Tabs that still do
+    /// not fit run past the strip's end; tab search reaches them.
+    member private this.tabMinLen =
+        let h = this.appearance.tabHeight
+        float(TabMetrics.iconSide h + 2*TabMetrics.scaled h 6)
+
+    /// Below this a tab cannot show its icon, a few letters and the close button side by side.
+    member private this.compactLen =
+        let h = this.appearance.tabHeight
+        float(2*TabMetrics.scaled h 10 + 2*TabMetrics.iconSide h + TabMetrics.scaled h 5 + TabMetrics.scaled h 20)
+
+    member private this.fittedLength =
         let tsWidth = float(this.size.width)
         let tsWidth =
             if this.count < 2 then tsWidth 
             else 
-                let tsWidth = tsWidth + float(this.count - 1) * tabOverlap
+                let tsWidth = tsWidth + float(this.count - 1) * this.tabOverlap
                 tsWidth / float(this.count)
-        min tsWidth this.tabMaxLen
+        max this.tabMinLen (min tsWidth this.tabMaxLen)
 
-    member private this.tabLength = this.tabLengthWithOverlap this.tabOverlap
+    member private this.rightOf (length:float) offset =
+        offset + float(max 0 (this.count - 1)) * (length - this.tabOverlap) + length
+
+    /// A held layout lasts only while the remaining tabs still fit inside it.
+    member private this.heldLayout =
+        this.held |> Option.filter(fun (length,offset) -> this.rightOf length offset <= float this.size.width + 0.5)
+
+    member private this.tabLength =
+        match this.heldLayout with
+        | Some(length,_) -> length
+        | None -> this.fittedLength
+
+    /// Tabs too narrow for their title show only the icon, as with "Show icons only".
+    member this.isCompact = this.onlyIcons || this.tabLength < this.compactLen
 
     member private this.tabOffset index =
         let tabOffset = this.tabLength - this.tabOverlap
         float(index) * tabOffset
 
+    /// Never negative: when the tabs fill the strip the first one stays in view.
     member private this.alignmentOffset =
-        let lastIndex = this.count - 1
-        let lastTabRight = this.tabOffset lastIndex + this.tabLength
-        let widthOfEmptySpace = float(this.size.width) - lastTabRight
-        match this.alignment with
-        | TabLeft -> 0.0
-        | TabCenter -> widthOfEmptySpace / 2.0
-        | TabRight -> widthOfEmptySpace - 60.0
+        match this.heldLayout with
+        | Some(_,offset) -> offset
+        | None ->
+            let widthOfEmptySpace = float(this.size.width) - this.rightOf this.tabLength 0.0
+            let offset =
+                match this.alignment with
+                | TabLeft -> 0.0
+                | TabCenter -> widthOfEmptySpace / 2.0
+                | TabRight -> widthOfEmptySpace - 60.0
+            max 0.0 offset
+
+    /// The current tab length and left offset, for holding while tabs are closed.
+    member this.layout = this.tabLength,this.alignmentOffset
             
     member this.tabLocation tab =
         match this.slide with

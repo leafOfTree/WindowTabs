@@ -55,6 +55,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let capturedCell = Bemo.Cell<Option<Tab*TabPart>>(Cell, None, (=))
     let hoverCell = Bemo.Cell<Option<Tab*TabPart>>(Cell, None, (=))
     let slideCell = Cell.create(None)
+    let heldLayoutCell = Bemo.Cell<(float * float) option>(Cell, None, (=))
     let ptCell = Cell.create(None)
     let tabInfoCell = Cell.create(Map2():Map2<Tab,TabInfo>)
     let layeredWindowCell = Cell.create(None)
@@ -133,6 +134,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             alignment = alignment.value.find direction
             onlyIcons = this.isIconOnly
             transparent = this.transparent
+            held = heldLayoutCell.value
             appearance = 
                 if this.isIconOnly then
                     { this.appearance with tabMaxWidth = Dpi.scale 50 }
@@ -172,8 +174,11 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                         capturedCell.set(Some(hitTab, hitPart))
                     | MouseUp ->
                         capturedCell.value.iter <| fun(capturedTab, capturedPart) ->
-                        if btn = MouseLeft && hitTab = capturedTab &&
-                           hitPart = capturedPart && hitPart = TabClose then
+                        let closeClick = btn = MouseLeft && hitPart = capturedPart && hitPart = TabClose
+                        // Middle-click closes too (TabStripDecorator); both keep the layout.
+                        if hitTab = capturedTab && (closeClick || btn = MouseMiddle) then
+                            heldLayoutCell.set(Some(this.ts.layout))
+                        if hitTab = capturedTab && closeClick then
                             monitor.tabClose(hitTab)
                         capturedCell.set(None)
                     | MouseDblClick -> ()
@@ -182,7 +187,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             | MouseLeave ->
                 this.setPt(None)
                 capturedCell.set(None)
-                hoverCell.set(None))
+                hoverCell.set(None)
+                heldLayoutCell.set(None))
 
     member private this.wndProc(msg:Win32Message) =
         let mousePt() =

@@ -130,7 +130,7 @@ let main () =
     let ts : TabStripSprite<int> = {
         tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"]))
         lorder=List2([1;2]); zorder=List2([1;2]); size=Sz(420,28)
-        slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false
+        slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; held=None
         transparent=true; appearance=appearance; hover=None; captured=None }
     let tabImage = ts.render
     // Short tabs shrink their contents to fit instead of clipping them.
@@ -183,6 +183,23 @@ let main () =
         let row = bar.Height/2
         check (bar.GetPixel(Dpi.scale 3,row).R=appearance.tabNormalBgColor.R) "The minimal bar's end mark is missing"
         check (bar.GetPixel(Dpi.scale 9,row).R=appearance.tabActiveBgColor.R) "The minimal bar's end mark is wider than 6 px"
+    // Many tabs: titles give way to icons, tabs stop at a clickable width and the first stays in view.
+    do
+        let strip count = { ts with alignment=TabCenter; size=Sz(420,28)
+                                    tabs=Map2(List2([for i in 1..count -> i,info "Window"]))
+                                    lorder=List2([1..count]); zorder=List2([1..count]) }
+        let tabs (s:TabStripSprite<int>) = s.sprite.children.list |> List.map(fun (location,tab) -> location,(tab :?> TabSprite<int>))
+        check (not (strip 3).isCompact && (tabs (strip 3)) |> List.forall(fun (_,tab) -> not tab.onlyIcon)) "Three tabs lost their titles"
+        check ((strip 6).isCompact && (tabs (strip 6)) |> List.forall(fun (_,tab) -> tab.onlyIcon)) "Tabs too narrow for a title kept it"
+        let crowded = tabs (strip 40)
+        let minimum = TabMetrics.iconSide 26 + 2*TabMetrics.scaled 26 6
+        check (crowded |> List.forall(fun (_,tab) -> tab.size.width >= minimum)) "Crowded tabs shrank below a clickable width"
+        check (crowded |> List.forall(fun (location,_) -> location.x >= 0)) "Crowded centred tabs pushed the first tab out of view"
+        let held = { strip 3 with held=Some(100.0,60.0) }
+        let first = tabs held |> List.find(fun (_,tab) -> tab.id=1)
+        check ((fst first).x=60 && (snd first).size.width=100) "A held layout moved the tabs after a close"
+        let overflowing = { strip 5 with held=Some(100.0,60.0) }
+        check ((tabs overflowing) |> List.forall(fun (_,tab) -> tab.size.width<100)) "A held layout that no longer fits was kept"
     let originalDpi = Dpi.value()
     try
         for dpi in [96;144;192] do
