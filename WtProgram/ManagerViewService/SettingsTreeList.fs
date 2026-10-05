@@ -507,5 +507,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                 TextRenderer.DrawText(g,columns.[column].Header,this.Font,
                                       Rectangle(cell.X+left+(if columns.[column].Kind=CheckColumn then 0 else Dpi.scale 8),0,
                                                 max 1 (cell.Width-left-Dpi.scale 8),this.headerHeight),p.muted,flags ||| align)
-        if this.Focused && isNull selected && rows.Length>0 then
+        // Only for the keyboard: after a row under the pointer is deleted the list keeps the focus,
+        // and a box round the first row would look like something left behind.
+        if this.Focused && this.ShowFocusCues && isNull selected && rows.Length>0 then
             ControlPaint.DrawFocusRectangle(g,Rectangle(0,this.headerHeight,this.contentWidth,rowHeight))

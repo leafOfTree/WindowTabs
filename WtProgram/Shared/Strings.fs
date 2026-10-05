@@ -324,8 +324,6 @@ module Strings =
                      zh="使用说明\n1  将窗口分组并调整位置，然后点击“保存”。\n2  选中工作区，点击“恢复”。\n3  双击任意项，或将鼠标移到该项上点击编辑按钮，可修改名称或窗口标题的匹配方式。\n恢复仅适用于已打开的窗口，不会启动应用。"
                      ja="使い方\n1  ウィンドウをグループ化して配置し、「保存」をクリックします。\n2  ワークスペースを選び、「復元」をクリックします。\n3  項目をダブルクリックするか、項目にポインターを合わせて編集ボタンをクリックすると、名前やタイトルの一致方法を変更できます。\n復元は開いているウィンドウのみが対象です。アプリは起動しません。" }
         let restore = { en="Restore"; zh="恢复"; ja="復元" }
-        let delete = { en="Delete"; zh="删除"; ja="削除" }
-        let edit = { en="Edit"; zh="编辑"; ja="編集" }
         let editTitle name = { en=sprintf "Edit %s" name; zh=sprintf "编辑 %s" name; ja=sprintf "%s を編集" name }
         let matchMethod = { en="Match method"; zh="匹配方式"; ja="一致方法" }
         let exactMatch = { en="Exact match"; zh="完全匹配"; ja="完全一致" }

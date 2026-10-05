@@ -27,7 +27,7 @@ type WorkspaceView() as this =
                                   TreeListColumn("",60,ActionColumn)])
         list.SelectionChanged.Add(fun _ ->
             this.wm.selected <- (if isNull list.SelectedItem then null else list.SelectedItem.Tag :?> Dynamic))
-        // Double-click (or Enter) edits the item, as the Edit button does; the arrow expands.
+        // Double-click (or Enter) edits the item, as its edit button does; the arrow expands.
         list.ExpandOnDoubleClick <- false
         list.ItemActivated.Add(fun _ -> this.editSelected())
         list.ExpandedChanged.Add(fun row ->
@@ -36,11 +36,12 @@ type WorkspaceView() as this =
                 for group in row.Children do group.Expanded <- group.Children.Count>0
             for model in Seq.append [row] row.Children do
                 if model.Expanded then expanded.Add(model.Tag) |> ignore else expanded.Remove(model.Tag) |> ignore)
-        list.ActionInvoked.Add(fun (_,action) ->
-            if action=0 then this.editSelected()
-            else
-                this.wm.remove()
-                this.reload())
+        list.ActionInvoked.Add(fun (_,action) -> if action=0 then this.editSelected() else this.removeSelected())
+        // The keyboard's way to the delete button.
+        list.KeyDown.Add(fun e ->
+            if e.KeyCode=Keys.Delete then
+                e.Handled <- true
+                this.removeSelected())
         list
 
     member this.panel : SettingsListPage = Cell.cacheProp this <| fun() ->
@@ -48,7 +49,7 @@ type WorkspaceView() as this =
             new SettingsListPage(tr Strings.Pages.workspaces,
                                  tr Strings.Workspaces.description,
                                  this.list,
-                                 [this.newButton :> Control;this.restoreButton;this.editButton;this.removeButton],
+                                 [this.newButton :> Control;this.restoreButton],
                                  helpText=tr Strings.Workspaces.help)
         // In the order ActionInvoked expects them.
         if not this.wm.isReadOnly then this.list.RowActions <- [EditGlyph;DeleteGlyph]
@@ -92,28 +93,16 @@ type WorkspaceView() as this =
             btn.Enabled <- canRestore
         btn
 
-    member this.removeButton : Button = Cell.cacheProp this <| fun() ->
-        let btn = SettingsUi.button (tr Strings.Workspaces.delete)
-        btn.Kind <- SettingsButtonKind.Danger
-        btn.Enabled <- false
-        this.wm.selectedChanged.Add(fun selected -> btn.Enabled <- not this.wm.isReadOnly && not (isNull selected))
-        btn.Click.Add <| fun _ ->
-            this.wm.remove()
-            this.reload()
-        btn
-
-    member this.editButton : Button = Cell.cacheProp this <| fun() ->
-        let btn = SettingsUi.button (tr Strings.Workspaces.edit)
-        btn.Enabled <- false
-        this.wm.selectedChanged.Add(fun selected -> btn.Enabled <- not this.wm.isReadOnly && not (isNull selected))
-        btn.Click.Add(fun _ -> this.editSelected())
-        btn
-
     member private this.editSelected() =
         if not this.wm.isReadOnly && not (isNull this.wm.selected) then
             match this.wm.beginEdit() with
             | Some editInfo -> if this.showEditDialog editInfo then this.reload()
             | None -> ()
+
+    member private this.removeSelected() =
+        if not this.wm.isReadOnly && not (isNull this.wm.selected) then
+            this.wm.remove()
+            this.reload()
 
     member private this.showEditDialog(editInfo:IEditInfo) =
         let fields = editInfo.fields
