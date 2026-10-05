@@ -338,6 +338,13 @@ let main() =
                     let strip = group.ts.bounds
                     check (form.Top>=strip.y && form.Bottom<=strip.y+strip.size.height) "The rename field reaches outside the tab"
                     check (text.Text=group.ts.tabInfo(Tab(handles.Head)).text && text.SelectionLength=text.Text.Length) "The rename field does not start with the whole name selected"
+                    // The whole name shows, however long: the field widens past the tab, within the strip.
+                    let longName = "Quarterly report draft - shared with the design team"
+                    text.Text <- longName
+                    text.SelectAll()
+                    let needed = TextRenderer.MeasureText(longName,text.Font,Size.Empty,TextFormatFlags.NoPadding).Width
+                    check (text.Width>=needed || form.Width=strip.size.width) "The rename field does not widen to show the whole name"
+                    check (form.Left>=strip.x && form.Right<=strip.x+strip.size.width) "The rename field runs off the tab strip"
                     // The field over its tab, drawn off screen, for a look at the result.
                     use tabImage = (sprite :> ISprite).render.bitmap
                     let at = Point(form.Left-strip.x-offset.x,form.Top-strip.y-offset.y)
@@ -346,9 +353,6 @@ let main() =
                         use g = Graphics.FromImage(shot)
                         g.Clear(group.tabAppearance.tabNormalBgColor)
                         g.DrawImageUnscaled(tabImage,0,0)
-                        // The helper windows have no titles; a name shows how the text sits.
-                        text.Text <- "Project notes"
-                        text.SelectAll()
                         use fieldImage = new Bitmap(form.Width,form.Height)
                         form.DrawToBitmap(fieldImage,Rectangle(Point.Empty,form.Size))
                         g.DrawImageUnscaled(fieldImage,at)

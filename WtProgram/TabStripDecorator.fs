@@ -115,24 +115,39 @@ type TabStripDecorator(group:WindowGroup) as this =
         // The field starts this far left of the name, so the name stays where the tab drew it.
         let padding = Dpi.scale 4
         let height = min text.size.height (max (font.Height + Dpi.scale 2) (min (text.size.height - Dpi.scale 4) (font.Height + Dpi.scale 6)))
-        // A compact tab has almost no text area; give the name room to be edited.
-        let size = Sz(max (text.size.width + padding) (Dpi.scale 120), height)
-        let location = Pt(text.location.x - padding, text.location.y + (text.size.height - height) / 2)
+        let top = text.location.y + (text.size.height - height) / 2
+        let strip = this.placement.bounds
+        let name = this.ts.tabInfo(tab).text
+        /// Wide enough for the whole name and the caret after it, and never narrower than the
+        /// tab's own text area or room for a short name; only one tab is edited, so it may cover
+        /// its neighbours, but it stays on the strip.
+        let widthFor (value:string) =
+            let measured = TextRenderer.MeasureText(value + " ", font, Size.Empty, TextFormatFlags.NoPadding ||| TextFormatFlags.NoPrefix).Width
+            min strip.size.width (List.max [text.size.width + padding; Dpi.scale 120; measured + 2 * padding])
         let form = new FloatingTextBox()
         form.BackColor <- fill
-        form.Location <- location.add(this.placement.bounds.location).Point
-        form.SetSize(size.Size)
         let box = form.textBox
         box.BorderStyle <- BorderStyle.None
         box.Font <- font
         box.BackColor <- fill
         box.ForeColor <- ink
-        box.SetBounds(padding, (height - font.Height) / 2, size.width - 2 * padding, font.Height)
+        /// Starts at the name; a name too long to fit there moves the field left along the strip.
+        let place width =
+            let left = max 0 (min (text.location.x - padding) (strip.size.width - width))
+            form.Location <- Pt(left, top).add(strip.location).Point
+            form.SetSize(Size(width, height))
+            box.SetBounds(padding, (height - font.Height) / 2, width - 2 * padding, font.Height)
+            form.Invalidate()
+        place (widthFor name)
+        // A name that grows past the field widens it; one that shrinks leaves it as it is.
+        box.TextChanged.Add <| fun _ ->
+            let width = widthFor box.Text
+            if width > form.Width then place width
         // No inner margins: the field's own padding already places the text.
         WinUserApi.SendMessage(box.Handle, 0xD3, IntPtr(3), IntPtr.Zero) |> ignore
         form.Paint.Add <| fun e ->
             use pen = new Pen(accent)
-            e.Graphics.DrawRectangle(pen, 0, 0, size.width - 1, height - 1)
+            e.Graphics.DrawRectangle(pen, 0, 0, form.ClientSize.Width - 1, form.ClientSize.Height - 1)
         // Windows 11 rounds the field and draws its outline smoothly; earlier versions keep the painted square one.
         let window = os.windowFromHwnd(form.Handle)
         window.dwmSetAttribute 33 3
@@ -147,10 +162,9 @@ type TabStripDecorator(group:WindowGroup) as this =
             elif e.KeyChar = char(Keys.Escape) then
                 e.Handled <- true
                 form.Close()
-        let tabText = this.ts.tabInfo(Tab(hwnd)).text
-        form.textBox.Text <- tabText
-        form.textBox.SelectionStart <- 0
-        form.textBox.SelectionLength <- tabText.Length
+        box.Text <- name
+        box.SelectionStart <- 0
+        box.SelectionLength <- name.Length
         form.textBox.LostFocus.Add <| fun _ ->
             form.Close()
         group.bb.write("renamingTab", true)
