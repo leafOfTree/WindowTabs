@@ -25,7 +25,7 @@ let pixels (bitmap:Bitmap) =
 let strip count dpi font =
     Dpi.set dpi
     let appearance : TabAppearanceInfo = {
-        tabHeight=Dpi.scale 26; tabMaxWidth=Dpi.scale 210; tabOverlap=0; tabHeightOffset=0
+        tabStyle=JoinedTabs; tabHeight=Dpi.scale 26; tabMaxWidth=Dpi.scale 210; tabOverlap=0; tabHeightOffset=0
         tabIndentFlipped=0; tabIndentNormal=0; tabTextColor=Color.Black; tabFlashBgColor=Color.Orange
         tabNormalBgColor=Color.FromArgb(204,204,204); tabActiveBgColor=Color.White
         tabHighlightBgColor=Color.FromArgb(228,228,228); tabBorderColor=Color.FromArgb(168,168,168) }

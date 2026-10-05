@@ -102,8 +102,7 @@ type TabStripDecorator(group:WindowGroup) as this =
     member this.beginRename(hwnd) =
         let tab = Tab(hwnd)
         let textBounds = 
-            this.ts.sprite.children.pick <| fun (tabOffset, tabSprite) ->
-                let tabSprite = tabSprite :?> TabSprite<Tab>
+            this.ts.tabSprites.pick <| fun (tabOffset, tabSprite) ->
                 if tabSprite.id = tab then 
                     Some(Rect(tabSprite.textLocation.add(tabOffset), tabSprite.textSize))
                 else None

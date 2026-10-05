@@ -10,7 +10,7 @@ module Theme =
 
 
     let light : TabAppearanceInfo = {
-        tabHeight=25; tabMaxWidth=200; tabOverlap=0
+        tabStyle=JoinedTabs; tabHeight=25; tabMaxWidth=200; tabOverlap=0
         tabTextColor=Color.FromRGB(0x1F1F1F)
         tabNormalBgColor=Color.FromRGB(0xCCCCCC)
         tabHighlightBgColor=Color.FromRGB(0xE4E4E4)

@@ -219,6 +219,10 @@ module RuntimeDiagnostics =
                 match appearance.[key] with
                 | :? JValue as value when value.Type=JTokenType.Integer -> tabs.[name] <- value.DeepClone()
                 | _ -> ()
+            match appearance.["tabStyle"] with
+            | :? JValue as value when value.Type=JTokenType.String && List.contains (string value.Value) TabStyle.names ->
+                tabs.["style"] <- value.DeepClone()
+            | _ -> ()
             result.["tabs"] <- tabs
         | _ -> ()
         match settings.["tabUseCustomColors"] with

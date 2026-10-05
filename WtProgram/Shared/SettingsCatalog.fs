@@ -43,6 +43,8 @@ module SettingsCatalog =
         { id="tabHighlightBgColor"; page=AppearanceSettings; text=Strings.Settings.tabHighlightBgColor; binding=Colour }
         { id="tabBorderColor"; page=AppearanceSettings; text=Strings.Settings.tabBorderColor; binding=Colour }
         { id="tabFlashBgColor"; page=AppearanceSettings; text=Strings.Settings.tabFlashBgColor; binding=Colour }
+        // Kept with the tab sizes in the "tabAppearance" object, not at the top of the file.
+        { id="tabStyle"; page=AppearanceSettings; text=Strings.Settings.tabStyle; binding=Choice("tabStyle",TabStyle.names,"joined") }
         { id="tabHeight"; page=AppearanceSettings; text=Strings.Settings.tabHeight; binding=Number(12,120) }
         { id="tabMaxWidth"; page=AppearanceSettings; text=Strings.Settings.tabMaxWidth; binding=Number(60,1000) }
         { id="tabOverlap"; page=AppearanceSettings; text=Strings.Settings.tabOverlap; binding=Number(0,100) }

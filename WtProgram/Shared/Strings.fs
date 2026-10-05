@@ -169,6 +169,9 @@ module Strings =
         let tabHighlightBgColor = { caption={ en="Hovered tab"; zh="悬停标签"; ja="ホバー中のタブ" }; description=none; keywords=colorWords }
         let tabBorderColor = { caption={ en="Separator"; zh="分隔线"; ja="区切り線" }; description=none; keywords=colorWords }
         let tabFlashBgColor = { caption={ en="Flashing tab"; zh="闪烁标签"; ja="点滅するタブ" }; description=none; keywords=colorWords }
+        let tabStyle = { caption={ en="Tab style"; zh="标签样式"; ja="タブのスタイル" }
+                         description={ en="How the active tab stands out from the rest."; zh="活动标签以何种方式与其他标签区分。"; ja="アクティブなタブをほかのタブとどう見分けるかを選びます。" }
+                         keywords={ en="shape rounded folder pill browser look"; zh="形状 圆角 文件夹 胶囊 浏览器 外观"; ja="形 角丸 フォルダー ピル ブラウザー 外観" } }
         let tabHeight = { caption={ en="Tab height"; zh="标签高度"; ja="タブの高さ" }; description=none; keywords=sizeWords }
         let tabMaxWidth = { caption={ en="Maximum tab width"; zh="标签最大宽度"; ja="タブの最大幅" }; description=none; keywords=sizeWords }
         let tabOverlap = { caption={ en="Tab spacing"; zh="标签间距"; ja="タブの間隔" }
@@ -242,6 +245,11 @@ module Strings =
         /// Switcher styles: large icons in a row, or window titles in a column.
         let switcherHorizontal = { en="Horizontal"; zh="横向"; ja="横" }
         let switcherVertical = { en="Vertical"; zh="纵向"; ja="縦" }
+        /// Tab styles, in TabStyle.names order.
+        let tabStyles =
+            [| { en="Joined"; zh="连成一条"; ja="連結" }
+               { en="Folder"; zh="文件夹式"; ja="フォルダー型" }
+               { en="Pill"; zh="胶囊"; ja="ピル型" } |]
         /// The tab colours on which the text is shown darker or lighter than chosen.
         /// Samples of the tab text as chosen and as shown, side by side.
         let textBefore = { en="Before"; zh="调整前"; ja="調整前" }

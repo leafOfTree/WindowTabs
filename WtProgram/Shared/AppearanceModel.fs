@@ -4,6 +4,7 @@ open System.Drawing
 /// Logical or scaled geometry, matching the units of the source appearance.
 /// This record deliberately contains no palette fields.
 type TabGeometry = {
+    style:TabStyle
     height:int; maxWidth:int; overlap:int; heightOffset:int
     indentNormal:int }
 
@@ -12,9 +13,16 @@ module TabGeometry =
     /// them clear of the caption buttons. One side margin setting covers both cases.
     let captionButtonsReserve = 77
     let fromAppearance (appearance:TabAppearanceInfo) = {
+        style=appearance.tabStyle
         height=appearance.tabHeight; maxWidth=appearance.tabMaxWidth
         overlap=appearance.tabOverlap; heightOffset=appearance.tabHeightOffset
         indentNormal=appearance.tabIndentNormal }
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module TabStyle =
+    /// Stored names, in the order the settings page lists them.
+    let names = ["joined";"folder";"pill"]
+    let parse = function "folder" -> FolderTabs | "pill" -> PillTabs | _ -> JoinedTabs
+    let serialize = function FolderTabs -> "folder" | PillTabs -> "pill" | JoinedTabs -> "joined"
 type TabPalette = {
     tabTextColor:Color; tabNormalBgColor:Color; tabHighlightBgColor:Color
     tabActiveBgColor:Color; tabBorderColor:Color; tabFlashBgColor:Color }
@@ -25,7 +33,7 @@ module TabPalette =
         tabHighlightBgColor=a.tabHighlightBgColor; tabActiveBgColor=a.tabActiveBgColor
         tabBorderColor=a.tabBorderColor; tabFlashBgColor=a.tabFlashBgColor }
     let compose (g:TabGeometry) (p:TabPalette) : TabAppearanceInfo = {
-        tabHeight=g.height; tabMaxWidth=g.maxWidth; tabOverlap=g.overlap
+        tabStyle=g.style; tabHeight=g.height; tabMaxWidth=g.maxWidth; tabOverlap=g.overlap
         tabHeightOffset=g.heightOffset; tabIndentNormal=g.indentNormal
         tabIndentFlipped=g.indentNormal+TabGeometry.captionButtonsReserve
         tabTextColor=p.tabTextColor; tabNormalBgColor=p.tabNormalBgColor

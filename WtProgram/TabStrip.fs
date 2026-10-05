@@ -336,6 +336,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             if next.list <> zorderCell.value.list then zorderCell.set(next)
 
     member this.sprite = this.ts.sprite
+
+    member this.tabSprites = this.ts.tabSprites
             
     member this.isIconOnly 
         with get() = iconOnlyCell.value

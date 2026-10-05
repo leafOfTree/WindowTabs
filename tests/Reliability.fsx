@@ -195,6 +195,12 @@ let main() =
     check (geometry.height=12 && geometry.maxWidth=1000 && geometry.overlap=0) "Invalid persisted dimensions bypassed shared bounds"
     let gap = AppearanceJson.readGeometry (JObject.Parse("""{"tabOverlap":-30}""")) Theme.defaultGeometry
     check (gap.overlap= -30 && (AppearanceJson.normalizeGeometry {gap with overlap= -500}).overlap= -100) "Tab gap lost its stored sign or bounds"
+    check (Theme.defaultGeometry.style=JoinedTabs) "Tabs no longer join into one bar by default"
+    for style in [JoinedTabs;FolderTabs;PillTabs] do
+        let stored = AppearanceJson.writeLegacy {Theme.defaultGeometry with style=style} Theme.lightPalette
+        check ((AppearanceJson.readGeometry stored Theme.defaultGeometry).style=style) (sprintf "Tab style %A was not kept" style)
+    check ((AppearanceJson.readGeometry (JObject.Parse("""{"tabStyle":"zigzag"}""")) {Theme.defaultGeometry with style=PillTabs}).style=JoinedTabs)
+        "An unknown tab style was not read as the joined style"
     check (SettingsCatalog.normalizeChoice "alignment" "invalid"="Center") "Invalid choice was not normalized"
     check (SettingsCatalog.normalizeChoice "language" "fr"="system") "Unknown language was not normalized"
     // File icons must resolve for paths outside the ANSI code page (SHGetFileInfo is called as Unicode).

@@ -141,7 +141,15 @@ type TabSprite<'id> = {
     // swallows a short one.
     member private this.cornerRadius = max (Dpi.scale 4) (this.size.height * 30 / 100)
 
-    member private this.bgColor =
+    member private this.style = this.appearance.tabStyle
+
+    /// Folder and pill tabs set the active, hovered or flashing tab off as a shape raised on the
+    /// bar; the other tabs are the bar itself.
+    member this.isRaised =
+        this.displayInfo.bgColor.IsSome || this.isTop || this.hover.IsSome || this.captured.IsSome
+
+    /// The tab's own colour: its whole slot in the joined style, its raised shape otherwise.
+    member this.fillColor =
         match this.displayInfo.bgColor with
         | Some(color) -> color
         | None ->
@@ -152,11 +160,93 @@ type TabSprite<'id> = {
             elif this.hover.IsSome || this.captured.IsSome then highlight
             else inactive
 
-    member private this.bgBrush = new SolidBrush(this.bgColor)
-
     /// The text and close button colour for this tab's own background: the chosen colour,
-    /// or a darker or lighter shade of it where that would be hard to read.
-    member this.textColor = TextContrast.readable this.appearance.tabTextColor this.bgColor
+    /// or a darker or lighter shade of it where that would be hard to read. On the bar of a
+    /// folder or pill strip it is taken part way towards the bar, as a browser greys out the
+    /// titles of the tabs behind, but never below readable contrast.
+    member this.textColor =
+        let chosen = this.appearance.tabTextColor
+        let chosen =
+            if this.style = JoinedTabs || this.isRaised then chosen
+            else
+                let bar = this.fillColor
+                let mix (a:byte) (b:byte) = int(Math.Round(float a+(float b-float a)*0.3))
+                Color.FromArgb(255,mix chosen.R bar.R,mix chosen.G bar.G,mix chosen.B bar.B)
+        TextContrast.readable chosen this.fillColor
+
+    /// How much bar shows beside a raised tab: about a tenth of the height, so a raised tab still
+    /// fits its icon with room to spare on a tab as short as the default 25px.
+    member private this.raisedInset = max 1 (this.size.height * 9 / 100)
+
+    /// Folder tabs leave the top of the bar showing above the raised tab, so the contents of
+    /// every tab sit lower to stay centred in it.
+    member private this.contentInset = if this.style = FolderTabs then this.raisedInset else 0
+    member private this.contentTop = if this.direction = TabUp then this.contentInset else 0
+    member private this.contentHeight = this.size.height - this.contentInset
+
+    /// Rounding in proportion to the raised shape, as for the strip's ends, so a short tab is not
+    /// all corner; capped so a tall one does not turn into a lozenge.
+    member private this.raisedRadius (height:int) (cap:int) =
+        max 1 (min (TabMetrics.scaled this.appearance.tabHeight cap) (height * 30 / 100))
+
+    /// The rounding of a folder tab's top corners.
+    member this.folderRadius = this.raisedRadius this.contentHeight 7
+
+    /// The feet that run a folder tab into the bar are rounded half as much as its top, so they
+    /// read as a slight flare rather than a second set of corners.
+    member this.footRadius = max 1 (this.folderRadius / 2)
+
+    /// The rounding of the strip's ends, as shapePath draws them.
+    member private this.endRadius = float32(min this.cornerRadius (this.size.height / 2))
+
+    /// The raised shape. A folder tab is square where it meets the window and runs past it, so
+    /// that edge is solid; side is how far inside the slot its sides lie, half a pixel outside it
+    /// for the fill for the same reason as shapePath, half a pixel inside it for an outline.
+    member private this.raisedShape (side:float32) =
+        let w,h = float32 this.size.width,float32 this.size.height
+        let path = new GraphicsPath()
+        match this.style with
+        | PillTabs ->
+            let inset = this.raisedInset
+            let side = float32(TabMetrics.scaled this.appearance.tabHeight 2)
+            let l,t,r,b = side,float32 inset,w - side,h - float32 inset
+            let d = 2.0f * float32(this.raisedRadius (this.size.height - 2 * inset) 6)
+            path.AddArc(l,t,d,d,180.0f,90.0f)
+            path.AddArc(r - d,t,d,d,270.0f,90.0f)
+            path.AddArc(r - d,b - d,d,d,0.0f,90.0f)
+            path.AddArc(l,b - d,d,d,90.0f,90.0f)
+        | _ ->
+            let rad = float32 this.folderRadius
+            let inset = float32 this.raisedInset
+            // Each side as its inset and corner radius. At an end of the strip the bar wraps the
+            // tab's side as it does its top, with a corner that follows the bar's own; elsewhere
+            // the side meets the next tab. A hovered tab fills its slot just as the active one does.
+            let edge atEnd =
+                if atEnd then inset,max 1.0f (this.endRadius - inset)
+                else side,rad
+            let l,rl = edge this.roundLeft
+            let rightInset,rr = edge this.roundRight
+            let r = w - rightInset
+            match this.direction with
+            | TabUp ->
+                let t,b = inset,h + 1.0f
+                path.AddLine(l,b,l,t + rl)
+                path.AddArc(l,t,rl * 2.0f,rl * 2.0f,180.0f,90.0f)
+                path.AddArc(r - rr * 2.0f,t,rr * 2.0f,rr * 2.0f,270.0f,90.0f)
+                path.AddLine(r,t + rr,r,b)
+            | TabDown ->
+                let t,b = -1.0f,h - inset
+                path.AddLine(l,t,l,b - rl)
+                path.AddArc(l,b - rl * 2.0f,rl * 2.0f,rl * 2.0f,180.0f,-90.0f)
+                path.AddArc(r - rr * 2.0f,b - rr * 2.0f,rr * 2.0f,rr * 2.0f,90.0f,-90.0f)
+                path.AddLine(r,b - rr,r,t)
+        path.CloseFigure()
+        path
+
+    /// A raised tab hardly lighter or darker than the bar (high contrast, or a palette that makes
+    /// them alike) would vanish into it, so it is outlined.
+    member private this.needsOutline =
+        TextContrast.ratio this.fillColor this.appearance.tabNormalBgColor < 1.25
 
     // The inset exists because GDI+ puts pixel centres on integer coordinates
     // once antialiasing is on, so column k spans k-0.5 to k+0.5, and a fill run
@@ -200,7 +290,7 @@ type TabSprite<'id> = {
     member private this.iconLocation =
         // Centre against the icon's own height. This used to divide by a
         // hardcoded 16, which left the icon off centre once it was scaled.
-        let y = (this.size.height - this.iconSize.height) / 2
+        let y = this.contentTop + (this.contentHeight - this.iconSize.height) / 2
         // Alone in the tab, the icon is centred.
         let x = if this.onlyIcon then (this.size.width - this.iconSize.width) / 2 else this.edgeWidth
         Pt(x, y)
@@ -215,7 +305,7 @@ type TabSprite<'id> = {
     member private this.closeButtonLocation =
         let inset = if this.onlyIcon then TabMetrics.scaled this.appearance.tabHeight 4 else this.edgeWidth
         let x = this.size.width - inset - this.closeButtonSize.width
-        let y = (this.size.height - this.closeButtonSize.height) / 2
+        let y = this.contentTop + (this.contentHeight - this.closeButtonSize.height) / 2
         Pt(x, y)
 
     /// With icons only the button must clear the icon; tabs too narrow for that close by
@@ -226,7 +316,7 @@ type TabSprite<'id> = {
 
     member this.textLocation =
         let x = this.iconLocation.x + this.iconSize.width + TabMetrics.scaled this.appearance.tabHeight 5
-        Pt(x, 0)
+        Pt(x, this.contentTop)
 
     // Browser behaviour: the close button only appears on the active tab and on
     // whichever tab the pointer is over. The space it occupies is reserved
@@ -241,7 +331,7 @@ type TabSprite<'id> = {
     member this.textSize =
         let width = this.size.width - this.textLocation.x - this.edgeWidth - this.closeButtonSize.width
         let width = max 1 width
-        Sz(width, this.size.height)
+        Sz(width, this.contentHeight)
 
     member this.tabTextBrush =
         new SolidBrush(this.textColor)
@@ -250,9 +340,22 @@ type TabSprite<'id> = {
         member this.image =
             let img = Img(this.size)
             use g = img.graphics
-            use background = this.bgBrush
             use path = this.fillPath
-            do g.FillPath(background, path)
+            match this.style with
+            | JoinedTabs ->
+                use background = new SolidBrush(this.fillColor)
+                g.FillPath(background, path)
+            | FolderTabs | PillTabs ->
+                use bar = new SolidBrush(this.appearance.tabNormalBgColor)
+                g.FillPath(bar, path)
+                if this.isRaised then
+                    use raised = this.raisedShape -0.5f
+                    use fill = new SolidBrush(this.fillColor)
+                    g.FillPath(fill, raised)
+                    if this.needsOutline then
+                        use outline = this.raisedShape 0.5f
+                        use pen = new Pen(this.appearance.tabBorderColor, 1.0f)
+                        g.DrawPath(pen, outline)
             // No outline on any tab, the way a browser draws them: the active
             // tab is told apart by its fill, and a hairline divides adjacent
             // plain tabs. An outline round the active tab made it read as a box
@@ -283,6 +386,40 @@ type TabSprite<'id> = {
                 Some(this.iconLocation,this.iconSprite) 
                 (if this.showCloseButton then Some(this.closeButtonLocation, this.closeButtonSprite) else None)
                 ]).choose(id)
+
+/// The concave foot where an active folder tab meets the bar beside it. It is drawn over
+/// the neighbouring tab, so it never takes the pointer from that tab.
+type TabFootSprite = {
+    color: Color
+    radius: int
+    onLeft: bool
+    direction: TabDirection
+    } with
+    interface ISpriteHitTest with
+        member this.containsPoint _ = false
+    interface ISprite with
+        member this.image =
+            let img = Img(Sz(this.radius, this.radius))
+            use g = img.graphics
+            let r = float32 this.radius
+            use path = new GraphicsPath()
+            // Laid out as the left foot of an upward tab: the corner at the tab's foot is filled,
+            // a quarter circle round the far corner cut away. It runs half a pixel past the tab's
+            // side and the window edge so neither seam shows.
+            path.AddLine(r, 0.0f, r + 0.5f, 0.0f)
+            path.AddLine(r + 0.5f, 0.0f, r + 0.5f, r + 0.5f)
+            path.AddLine(r + 0.5f, r + 0.5f, 0.0f, r + 0.5f)
+            path.AddLine(0.0f, r + 0.5f, 0.0f, r)
+            path.AddArc(-r, -r, 2.0f * r, 2.0f * r, 90.0f, -90.0f)
+            path.CloseFigure()
+            let mirrorX,mirrorY = not this.onLeft,this.direction = TabDown
+            use flip = new Matrix((if mirrorX then -1.0f else 1.0f), 0.0f, 0.0f, (if mirrorY then -1.0f else 1.0f),
+                                  (if mirrorX then r else 0.0f), (if mirrorY then r else 0.0f))
+            path.Transform(flip)
+            use brush = new SolidBrush(this.color)
+            g.FillPath(brush, path)
+            img
+        member this.children = List2()
 
 type TabStripSprite<'id> when 'id : equality = {
     tabs: Map2<'id, TabDisplayInfo>
@@ -321,7 +458,7 @@ type TabStripSprite<'id> when 'id : equality = {
             | _ -> false
         isActive.not && isHovered.not
 
-    member private this.tabSprite (tab:'id) =
+    member private this.tabSpriteOf (tab:'id) : TabSprite<'id> =
         {
             TabSprite.id = tab
             isTop =
@@ -356,7 +493,9 @@ type TabStripSprite<'id> when 'id : equality = {
                 match this.captured with
                 | Some(id, part) when id = tab -> Some(part)
                 | _ -> None
-        } :> ISprite
+        }
+
+    member private this.tabSprite (tab:'id) = this.tabSpriteOf tab :> ISprite
 
     member private this.count = this.lorder.length
 
@@ -462,12 +601,35 @@ type TabStripSprite<'id> when 'id : equality = {
         | None -> this.lorder
 
     
+    /// Every tab with its location, the top one first.
+    member this.tabSprites = this.zorder.map <| fun (tab:'id) -> this.tabLocation tab, this.tabSpriteOf tab
+
+    /// Folder style: feet run the active tab into the bar on each side where a tab adjoins it.
+    /// Tabs set apart by a gap have no bar between them to run into.
+    member private this.feet =
+        match this.appearance.tabStyle, this.zorder.tryHead with
+        | FolderTabs, Some(top) when this.tabOverlap >= 0.0 ->
+            let tab = this.tabSpriteOf top
+            let location = this.tabLocation top
+            let index = this.adjustedLorder.findIndex((=)top)
+            let radius = tab.footRadius
+            let y = if this.direction = TabUp then location.y + tab.size.height - radius else location.y
+            let foot onLeft = { TabFootSprite.color = tab.fillColor; radius = radius; onLeft = onLeft; direction = this.direction } :> ISprite
+            // A hovered neighbour is raised too and fills its slot, so the two tabs simply meet.
+            let plainAt offset =
+                let at = index + offset
+                at >= 0 && at < this.count && not (this.tabSpriteOf (this.adjustedLorder.at at)).isRaised
+            [ if plainAt -1 then yield Pt(location.x - radius, y), foot true
+              if plainAt 1 then yield Pt(location.x + tab.size.width, y), foot false ]
+        | _ -> []
+
     member this.sprite =
         {
             new ISprite with
-            member x.image = this.bgImage 
-            member x.children = this.zorder.map <| fun (tab:'id) -> 
-                (this.tabLocation tab, this.tabSprite(tab))
+            member x.image = this.bgImage
+            // The feet come first so they are drawn over the tabs they reach into.
+            member x.children =
+                List2(this.feet @ (this.tabSprites.map(fun (location, tab) -> location, tab :> ISprite)).list)
         }
 
     member this.renderTab tab = this.tabSprite(tab).render
@@ -498,8 +660,7 @@ type TabStripSprite<'id> when 'id : equality = {
             if roundRight then path.AddArc(right-cap,0.0f,cap,height,270.0f,180.0f) else path.AddLine(right,0.0f,right,height)
             path.CloseFigure()
             graphics.FillPath(brush,path)
-        for location,sprite in this.sprite.children.list do
-            let tab = sprite :?> TabSprite<'id>
+        for location,tab in this.tabSprites.list do
             let first = tab.id=this.lorder.head
             let last = tab.id=this.lorder.list.[this.lorder.count-1]
             let leftInset = if first then 0 else gapInset

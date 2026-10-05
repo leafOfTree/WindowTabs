@@ -30,6 +30,11 @@ module AppearanceJson =
         let low,high = SettingsCatalog.range "tabOverlap"
         max -high (min -low overlap)
     let readGeometry (json:JObject) fallback =
+        let fallback =
+            match json.["tabStyle"] with
+            | :? JValue as value when value.Type=JTokenType.String ->
+                {fallback with style=SettingsCatalog.normalizeChoice "tabStyle" (string value.Value) |> TabStyle.parse}
+            | _ -> fallback
         geometryFields |> List.fold(fun geometry (key,_,set) ->
             try
                 match json.[key] with
@@ -44,7 +49,8 @@ module AppearanceJson =
                 | _ -> geometry
             with _ -> geometry) fallback
     let normalizeGeometry (geometry:TabGeometry) =
-        { height=SettingsCatalog.normalizeNumber "tabHeight" geometry.height
+        { style=geometry.style
+          height=SettingsCatalog.normalizeNumber "tabHeight" geometry.height
           maxWidth=SettingsCatalog.normalizeNumber "tabMaxWidth" geometry.maxWidth
           overlap=normalizeOverlap geometry.overlap
           heightOffset=max -120 (min 120 geometry.heightOffset)
@@ -56,4 +62,5 @@ module AppearanceJson =
     let writeLegacy geometry palette =
         let json = writePalette palette
         for key,get,_ in geometryFields do json.setInt64(key,int64(get geometry))
+        json.setString("tabStyle",TabStyle.serialize geometry.style)
         json

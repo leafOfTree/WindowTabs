@@ -64,6 +64,7 @@ type AppearanceView(?settings:ISettings) =
     let paletteTitle = new Label(AutoSize=true,Font=SettingsUi.sectionFont,
                                  Margin=Padding(0,Dpi.scale 16,0,Dpi.scale 8))
     let preset = SettingsUi.choice (Array.append (ThemePresets.names |> Array.map tr) [|tr Strings.Appearance.custom|])
+    let tabStyle = SettingsUi.choice (Strings.Appearance.tabStyles |> Array.map tr)
     let rightActions (button:Control) =
         let row = new FlowLayoutPanel(AutoSize=true,WrapContents=false,FlowDirection=FlowDirection.RightToLeft,
                                       Margin=Padding(0,Dpi.scale 8,0,Dpi.scale 8))
@@ -176,6 +177,7 @@ type AppearanceView(?settings:ISettings) =
                 editor.value <- box(read palette)
             updateContrastNote palette
             let geometry = settings.geometry
+            tabStyle.SelectedIndex <- TabStyle.names |> List.findIndex ((=) (TabStyle.serialize geometry.style))
             for key,read,write,editor in dimensions do
                 let value = decimal (read geometry)
                 // Opening the page must not rewrite a legacy out-of-range value.
@@ -251,6 +253,10 @@ type AppearanceView(?settings:ISettings) =
                 appearance=appearance;hover=Some(2,TabBackground);captured=None }
             use bitmap = ts.render.bitmap
             e.Graphics.DrawImageUnscaled(bitmap,left,top))
+        // Beside the preview, which shows the change at once.
+        let styleCard = new SettingsCard()
+        SettingsUi.add table styleCard
+        SettingsUi.settingRow styleCard "tabStyle" tabStyle
         let paletteHeader = new Panel(Height=Dpi.scale 36,Margin=Padding(0,Dpi.scale 16,0,Dpi.scale 8))
         paletteTitle.AutoSize <- false
         paletteTitle.Dock <- DockStyle.Fill
@@ -284,6 +290,10 @@ type AppearanceView(?settings:ISettings) =
             update Theme.resetLayout)
         rightActions resetLayout
         refresh()
+        tabStyle.SelectedIndexChanged.Add(fun _ ->
+            if not refreshing && tabStyle.SelectedIndex>=0 then
+                let style = TabStyle.parse TabStyle.names.[tabStyle.SelectedIndex]
+                update(fun s -> {s with geometry={s.geometry with style=style}}))
         for key,read,write,editor in colors do
             editor.changed.Add(fun () ->
                 if not refreshing then
