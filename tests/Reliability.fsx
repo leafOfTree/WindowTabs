@@ -108,18 +108,12 @@ let main() =
         check (TextContrast.ratio fixedText green >= TextContrast.minimum && fixedText.ToArgb()<>System.Drawing.Color.Black.ToArgb() && fixedText.R>fixedText.G)
               (sprintf "Pink text on green is not made readable in its own hue: %A" fixedText)
         check (TextContrast.readable System.Drawing.Color.White System.Drawing.Color.Black = System.Drawing.Color.White) "Readable text was changed"
-        // Among light tabs one shade serves all three, so the text does not change as a tab
-        // is hovered or activated.
-        let lightGray,white = System.Drawing.Color.FromArgb(0xE0,0xE0,0xE0),System.Drawing.Color.White
-        let onLight = [green;lightGray;white] |> List.map(TextContrast.onTab pink green lightGray white)
-        check (onLight |> List.distinct |> List.length = 1 && onLight.Head <> pink
-               && [green;lightGray;white] |> List.forall(fun background -> TextContrast.ratio onLight.Head background >= TextContrast.minimum))
-              (sprintf "Light tabs do not share one readable text shade: %A" onLight)
-        // A light active tab among dark ones has no shade that reads on both; each gets its own.
-        let darkGray = System.Drawing.Color.FromArgb(0x2B,0x2B,0x2B)
-        check (TextContrast.shared pink [green;darkGray]).IsNone "A shade was shared between a light and a dark tab"
-        check ([green;darkGray] |> List.forall(fun background -> TextContrast.ratio (TextContrast.onTab pink green darkGray darkGray background) background >= TextContrast.minimum))
-              "Text on mixed light and dark tabs is not readable"
+        // Each tab is judged on its own: a pale inactive tab does not change the text on a
+        // dark active tab where the chosen colour already reads well.
+        let teal,darkNavy,slate = System.Drawing.Color.FromArgb(0x00,0xB4,0xB4),System.Drawing.Color.FromArgb(0x11,0x18,0x27),System.Drawing.Color.FromArgb(0x4B,0x59,0x70)
+        check (TextContrast.readable teal darkNavy = teal) "Text that reads on the active tab was adjusted for another tab"
+        let onSlate = TextContrast.readable teal slate
+        check (onSlate <> teal && TextContrast.ratio onSlate slate >= TextContrast.minimum) "Text on a low-contrast tab is not made readable"
         for palette in [Theme.lightPalette;Theme.darkPalette] do
             for background in [palette.tabActiveBgColor;palette.tabHighlightBgColor;palette.tabNormalBgColor] do
                 check (TextContrast.readable palette.tabTextColor background = palette.tabTextColor)

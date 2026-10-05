@@ -156,9 +156,7 @@ type TabSprite<'id> = {
 
     /// The text and close button colour for this tab's own background: the chosen colour,
     /// or a darker or lighter shade of it where that would be hard to read.
-    member this.textColor =
-        let a = this.appearance
-        TextContrast.onTab a.tabTextColor a.tabActiveBgColor a.tabHighlightBgColor a.tabNormalBgColor this.bgColor
+    member this.textColor = TextContrast.readable this.appearance.tabTextColor this.bgColor
 
     // The inset exists because GDI+ puts pixel centres on integer coordinates
     // once antialiasing is on, so column k spans k-0.5 to k+0.5, and a fill run

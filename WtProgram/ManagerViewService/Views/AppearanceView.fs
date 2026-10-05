@@ -150,8 +150,7 @@ type AppearanceView(?settings:ISettings) =
               Strings.Settings.tabHighlightBgColor,palette.tabHighlightBgColor
               Strings.Settings.tabNormalBgColor,palette.tabNormalBgColor ]
             |> List.map(fun (name,background) ->
-                tr name.caption,background,text,
-                TextContrast.onTab text palette.tabActiveBgColor palette.tabHighlightBgColor palette.tabNormalBgColor background)
+                tr name.caption,background,text,TextContrast.readable text background)
             |> List.filter(fun (_,_,before,after) -> after <> before)
         let adjusted = not samples.IsEmpty
         contrastComparison.Samples <- samples

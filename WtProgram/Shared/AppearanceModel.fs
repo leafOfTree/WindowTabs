@@ -33,7 +33,8 @@ module TabPalette =
         tabBorderColor=p.tabBorderColor; tabFlashBgColor=p.tabFlashBgColor }
 
 /// Keeps tab text readable on each tab colour. One text colour serves the active, hovered,
-/// inactive and flashing tabs, and no single choice suits every combination a user can pick.
+/// inactive and flashing tabs, and no single choice suits every combination a user can pick,
+/// so each tab is judged on its own: one that reads well keeps the colour as chosen.
 module TextContrast =
     /// WCAG 2 contrast for normal-sized text.
     let minimum = 4.5
@@ -62,23 +63,6 @@ module TextContrast =
             shades text target
             |> List.tryFind(fun candidate -> ratio candidate background >= minimum)
             |> Option.defaultValue target
-    /// One shade of the text that reads well on all the backgrounds, the nearest one to it.
-    /// None when some need it darker and others lighter, as with a light active tab among
-    /// dark ones.
-    let shared (text:Color) (backgrounds:Color list) =
-        let reads (candidate:Color) = backgrounds |> List.forall(fun background -> ratio candidate background >= minimum)
-        if reads text then Some text
-        else
-            [Color.Black;Color.White]
-            |> List.choose(fun target ->
-                let candidates = shades text target
-                candidates |> List.tryFindIndex reads |> Option.map(fun step -> step,candidates.[step]))
-            |> List.sortBy fst |> List.tryHead |> Option.map snd
-    /// The text colour on one tab. The active, hovered and inactive tabs share one shade where
-    /// one reads on all three, so the text looks the same as it moves between them; otherwise,
-    /// and on any other background such as a flashing tab, each gets its own.
-    let onTab (text:Color) (active:Color) (hovered:Color) (inactive:Color) (background:Color) =
-        readable (shared text [active;hovered;inactive] |> Option.defaultValue text) background
 
 type ThemeMode = SystemTheme | LightTheme | DarkTheme
 module ThemeMode =
