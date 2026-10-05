@@ -119,7 +119,13 @@ The reader accepts the previous flat placement format, validates each entry, and
 retains valid siblings. Unsupported schema versions are read-only. Rejected data
 is retained in `workspaceRecovery` on subsequent save. Opening the workspace page
 does not save or migrate its contents. Title regexes have a 100 ms match timeout.
-Restore reports restored, missing and failed windows and restores monitoring in
+New workspace snapshots record the executable path alongside each title. Restore
+matches both (paths ignore case); older snapshots without a path keep title-only
+matching. The saved window array retains tab order, while each window's zorder
+restores stacking separately. Normal bounds are fitted to a current monitor's
+work area using WINDOWPLACEMENT workspace coordinates; moved layouts discard stale
+minimize/maximize points. Restore reports restored, missing and failed windows and
+restores monitoring in
 `finally`.
 
 `LatestWork` runs one scan at a time and keeps only the latest pending request.

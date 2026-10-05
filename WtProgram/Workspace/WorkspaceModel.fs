@@ -47,10 +47,13 @@ type WorkspaceWindow() as this =
     inherit Dynamic()
     let removedEvent = Event<_>()
     let data = ModelObject()
+    let mutable savedProcessPath = ""
 
     member this.name 
         with get() = data.get("name").cast<string>()
         and set(value) = data.set("name", value)
+
+    member _.processPath with get() = savedProcessPath and set(value) = savedProcessPath <- value
 
     member this.title 
         with get() = data.get("title").cast<string>()
@@ -97,6 +100,7 @@ type WorkspaceWindow() as this =
         let obj = JObject()
         obj.setString("name", this.name)
         obj.setString("title", this.title)
+        obj.setString("processPath", this.processPath)
         obj.setInt32("zorder", this.zorder)
         obj.setInt32("matchType", int32(this.matchType))
         obj
@@ -105,6 +109,7 @@ type WorkspaceWindow() as this =
         let window = WorkspaceWindow()
         window.name <- obj.getString("name").Value
         window.title <-  obj.getString("title").Value
+        window.processPath <- WorkspaceData.text obj "processPath" ""
         window.zorder <- obj.getInt32("zorder").Value
         window.matchType <- enum<WorkspaceWindowTitleMatchType>(obj.getInt32("matchType").Value)
         window
@@ -209,22 +214,42 @@ and
         groups.iter(ws.addGroup)
         ws
 
-type WindowResolver() =
-    let os = OS()
-    let mutable hwnds = Services.program.appWindows
-    let hwndToTitle = Map2(hwnds.map(fun hwnd -> (hwnd, os.windowFromHwnd(hwnd).text)))
+type WindowResolver(?windows:List2<IntPtr * string * string>) =
+    let mutable remaining =
+        match windows with
+        | Some windows -> windows
+        | None ->
+            let os = OS()
+            Services.program.appWindows.choose(fun hwnd ->
+                try
+                    let window = os.windowFromHwnd(hwnd)
+                    let title = window.text
+                    let path = try window.pid.processPath with _ -> ""
+                    Some(hwnd,title,path)
+                with _ -> None)
 
-    member this.title(hwnd) = hwndToTitle.find(hwnd)
-    member this.removeHwnd(hwnd) =
-        hwnds <- hwnds.where((<>) hwnd)
+    member _.resolve(windowInfo:WorkspaceWindow) =
+        let isMatch = WindowTitleMatcher.compile (int windowInfo.matchType) windowInfo.title
+        let matched = remaining.tryFind(fun (_,title,path) ->
+            (String.IsNullOrEmpty windowInfo.processPath ||
+             String.Equals(windowInfo.processPath,path,StringComparison.OrdinalIgnoreCase)) && isMatch title)
+        matched.map(fun (hwnd,_,_) ->
+            remaining <- remaining.where(fun (candidate,_,_) -> candidate<>hwnd)
+            hwnd)
 
-    member this.resolve(windowInfo:Dynamic) =
-        let target : string = windowInfo?title
+/// The saved list is tab order; z-order only determines which restored window sits on top.
+module WorkspaceRestore =
+    let resolve (resolver:WindowResolver) (windows:List2<Dynamic>) missing failed =
+        windows.choose(fun item ->
+            try
+                let window = item :?> WorkspaceWindow
+                let result = resolver.resolve(window)
+                if result.IsNone then missing()
+                result.map(fun hwnd -> window,hwnd)
+            with ex -> failed ex; None)
 
-        let isMatch = WindowTitleMatcher.compile (int (windowInfo?matchType : WorkspaceWindowTitleMatchType)) target
-        let matched = hwnds.tryFind(this.title >> isMatch)
-        matched.iter this.removeHwnd
-        matched
+    let zorder (windows:List2<WorkspaceWindow * IntPtr>) =
+        windows.sortBy(fun (window,_) -> window.zorder).map snd
 
 type IWorkspaceModel =
     abstract member list : List2<Workspace>
@@ -281,6 +306,7 @@ type WorkspaceModel() as this =
                 let ww = WorkspaceWindow()
                 ww.name <- window.pid.exeName
                 ww.title <- window.text
+                ww.processPath <- window.pid.processPath
                 ww.zorder <- innerZorder.find(hwnd)
                 ww.matchType <- WorkspaceWindowTitleMatchType.ExactMatch
                 wsGroup.addWindow(ww)
@@ -302,28 +328,27 @@ type WorkspaceModel() as this =
             let owners = Map2(Services.desktop.groups.collect(fun group -> group.windows.map(fun hwnd -> hwnd,group)))
             workspace.children.iter(fun groupInfo ->
                 let candidates : List2<Dynamic> = groupInfo?windows
-                let resolved = candidates.sortBy(fun w -> w?zorder).choose(fun item ->
-                    try
-                        let result = resolver.resolve(item)
-                        if result.IsNone then missing <- missing+1
-                        result
-                    with ex -> errors.Add(ex.Message); None)
+                let resolved = WorkspaceRestore.resolve resolver candidates
+                                   (fun () -> missing <- missing+1) (fun ex -> errors.Add(ex.Message))
                 if not resolved.isEmpty then
                     let mutable destination : IGroup option = None
-                    resolved.iter(fun hwnd ->
+                    let successful = ResizeArray<WorkspaceWindow * IntPtr>()
+                    let placement = WorkspaceData.fitPlacement (Mon.all.map(fun mon -> mon.displayRect,mon.workRect).list) (groupInfo?placement)
+                    resolved.iter(fun (saved,hwnd) ->
                         try
                             let window = os.windowFromHwnd(hwnd)
                             if window.isWindow then
                                 // Complete native placement before detaching from the old group.
                                 WinUserApi.ShowWindow(hwnd,ShowWindowCommands.SW_RESTORE) |> ignore
-                                window.setPlacement(groupInfo?placement)
+                                window.setPlacement(placement)
                                 if destination.IsNone then destination <- Some(Services.desktop.createGroup(Services.settings.getValue("combineIconsInTaskbar").cast<bool>()))
                                 owners.tryFind(hwnd).iter(fun owner -> owner.removeWindow(hwnd))
                                 destination.Value.addWindow(hwnd,false)
+                                successful.Add(saved,hwnd)
                                 restored <- restored+1
                             else missing <- missing+1
                         with ex -> errors.Add(ex.Message))
-                    try os.setZorder(resolved) with ex -> errors.Add(ex.Message)))
+                    try os.setZorder(WorkspaceRestore.zorder (List2(successful))) with ex -> errors.Add(ex.Message)))
         let details = if errors.Count=0 then "" else "\n\n"+String.concat "\n" (errors |> Seq.truncate 5)
         Alert.show (if errors.Count=0 then AlertKind.Info else AlertKind.Warning) (tr Strings.Workspaces.restoreTitle)
                    (tr (Strings.Workspaces.restoreSummary restored missing errors.Count details))

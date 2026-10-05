@@ -30,6 +30,26 @@ module WorkspaceData =
         | null -> fallback
         | value when value.Type=JTokenType.String -> value.Value<string>()
         | _ -> invalidArg key ("Invalid text: "+key)
+    /// Normal placement uses workspace coordinates, including the taskbar offset.
+    let fitPlacement (monitors:(Rect * Rect) list) (value:OSWindowPlacement) =
+        let areas = monitors |> List.map(fun (display,work) ->
+            work.move(display.x-work.x,display.y-work.y))
+        let bounds = value.rcNormalPosition
+        if areas.IsEmpty || areas |> List.exists(fun area -> area.completlyContains bounds) then value
+        else
+            let distance (area:Rect) =
+                let dx = max 0L (max (int64 area.left-int64 bounds.right) (int64 bounds.left-int64 area.right))
+                let dy = max 0L (max (int64 area.top-int64 bounds.bottom) (int64 bounds.top-int64 area.bottom))
+                dx*dx+dy*dy
+            let area = areas |> List.minBy(fun area ->
+                let overlap = area.intersection bounds
+                -(int64 overlap.width * int64 overlap.height),distance area)
+            let width,height = min bounds.width area.width,min bounds.height area.height
+            let x = max area.left (min bounds.x (area.right-width))
+            let y = max area.top (min bounds.y (area.bottom-height))
+            { value with rcNormalPosition=Rect(Pt(x,y),Sz(width,height))
+                         ptMaxPosition=Pt(-1,-1);ptMinPosition=Pt(-1,-1) }
+
     let placement (obj:JObject) =
         let point key fallback =
             match obj.[key] with
@@ -70,6 +90,7 @@ module WorkspaceData =
             WindowTitleMatcher.compile kind title |> ignore
             obj.["title"] <- JValue(title)
             obj.["name"] <- JValue(text obj "name" "Window")
+            obj.["processPath"] <- JValue(text obj "processPath" "")
             obj.["matchType"] <- JValue(kind)
             obj.["zorder"] <- JValue(number obj "zorder" 0)
             obj

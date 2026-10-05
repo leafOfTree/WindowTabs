@@ -77,6 +77,52 @@ let main() =
     let loaded = Workspace.deserialize workspaces.Head
     let window = (group.["windows"].[0] :?> JObject)
     check (loaded.name="valid" && JObject(JProperty("n",JValue(7))).getInt32("n")=Some 7 && window.getInt32("matchType")=Some 0) "Normalized workspace could not be loaded"
+    // New snapshots use app identity; older snapshots still match by title.
+    let savedWindow title path zorder =
+        let window = WorkspaceWindow()
+        window.name <- "App"
+        window.title <- title
+        window.processPath <- path
+        window.matchType <- WorkspaceWindowTitleMatchType.ExactMatch
+        window.zorder <- zorder
+        window
+    let first = savedWindow "Shared title" @"C:\Apps\Editor.exe" 1
+    let second = savedWindow "Shared title" @"C:\Apps\Browser.exe" 0
+    let savedGroup = WorkspaceGroup(name="ordered",placement=placement)
+    savedGroup.addWindow first
+    savedGroup.addWindow second
+    let roundTrip = WorkspaceGroup.deserialize(savedGroup.serialize())
+    let resolver = WindowResolver(List2([IntPtr(10),"Shared title",@"c:\apps\browser.EXE";
+                                         IntPtr(20),"Shared title",@"c:\apps\editor.EXE"]))
+    let matched = WorkspaceRestore.resolve resolver roundTrip.windows (fun () -> failwith "Missing saved app") raise
+    check (matched.map snd |> fun handles -> handles.list=[IntPtr(20);IntPtr(10)]) "Restoring sorted tabs by z-order or matched another app"
+    check ((WorkspaceRestore.zorder matched).list=[IntPtr(10);IntPtr(20)]) "Restoring tab order lost window z-order"
+    check ((resolver.resolve first).IsNone) "A window was matched twice"
+    let wrongApp = WindowResolver(List2([IntPtr(30),"Shared title",@"C:\Other.exe"]))
+    check ((wrongApp.resolve first).IsNone) "A title from another app matched"
+    let legacy = WorkspaceWindow.deserialize window
+    check (legacy.processPath="" && (WindowResolver(List2([IntPtr(30),"Documents",@"C:\Other.exe"]))).resolve(legacy)=Some(IntPtr(30))) "Old title-only workspaces stopped matching"
+    let missingCount = ref 0
+    let unavailable = WindowResolver(List2([IntPtr(40),"Shared title",""]))
+    check ((WorkspaceRestore.resolve unavailable roundTrip.windows (fun () -> missingCount.Value <- missingCount.Value+1) raise).isEmpty && missingCount.Value=2) "Unknown executable paths matched a saved app or lost missing counts"
+    check ((roundTrip.windows.head :?> WorkspaceWindow).processPath=first.processPath) "Snapshot round trip lost app identity"
+    // Monitor work areas are converted to WINDOWPLACEMENT's workspace coordinates.
+    let screen x y w h = Rect(Pt(x,y),Sz(w,h))
+    let primary = screen 0 0 1920 1080,screen 0 40 1920 1040
+    let fit bounds = WorkspaceData.fitPlacement [primary] {placement with rcNormalPosition=bounds}
+    check (fit placement.rcNormalPosition=placement) "An unchanged visible layout moved"
+    let moved = fit (screen 2500 1500 800 600)
+    check (moved.rcNormalPosition=screen 1120 440 800 600 && moved.showCmd=placement.showCmd) "Disconnected monitor layout was not fitted to the work area"
+    let smaller = fit (screen -2000 -2000 3000 1800)
+    check (smaller.rcNormalPosition=screen 0 0 1920 1040) "Oversized restored window is outside the screen"
+    let secondary = screen -1280 0 1280 1024,screen -1280 0 1280 984
+    let onSecondary = {placement with rcNormalPosition=screen -1200 30 800 600}
+    check (WorkspaceData.fitPlacement [primary;secondary] onSecondary=onSecondary) "Valid negative monitor coordinates moved"
+    let leftTaskbar = screen 0 0 1920 1080,screen 40 0 1880 1080
+    let leftFit = WorkspaceData.fitPlacement [leftTaskbar] {placement with rcNormalPosition=screen 1800 20 800 600}
+    check (leftFit.rcNormalPosition.x=1080) "Left taskbar offset was applied twice"
+    let maximized = WorkspaceData.fitPlacement [primary] {placement with showCmd=3;ptMaxPosition=Pt(3000,0);rcNormalPosition=screen 3000 0 800 600}
+    check (maximized.showCmd=3 && maximized.ptMaxPosition=Pt(-1,-1)) "Relocated layout kept obsolete maximize coordinates"
     let emptyGroups = JObject.Parse("""{"workspaces":[{"name":"w","groups":[{"placement":{"x":0,"y":0,"width":800,"height":600},"windows":[]},{"placement":{"x":0,"y":0,"width":800,"height":600}},{"placement":{"x":0,"y":0,"width":800,"height":600},"windows":[{"title":"Documents","matchType":0}]}]}]}""")
     let kept,emptyWarnings,_ = WorkspaceData.read emptyGroups
     check (emptyWarnings.IsEmpty && (kept.Head.["groups"] :?> JArray).Count=1) "Groups saved without windows were not dropped quietly"
