@@ -263,6 +263,8 @@ type TabStripDecorator(group:WindowGroup) as this =
                 flags = List2()
             })
 
+        // With every tab from the same program, closing its windows is just "Close all".
+        let mixesApps = group.windows.items.any(fun other -> os.windowFromHwnd(other).pid.exeName <> exeName)
         let closeAllExeTabsItem =
             CmiRegular({
                 text = tr (Strings.TabMenu.closeAllOf exeName)
@@ -299,7 +301,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(CmiSeparator)
             Some(closeTabItem)
             Some(closeOtherTabsItem)
-            Some(closeAllExeTabsItem)
+            (if mixesApps then Some(closeAllExeTabsItem) else None)
             Some(closeAllTabsItem)
             Some(CmiSeparator)
             Some(enableTabsItem)
