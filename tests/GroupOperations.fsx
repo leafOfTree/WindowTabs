@@ -113,13 +113,17 @@ let main() =
         api.setValue("autoHideMode",box "Never")
         let mouse = Event<int * IntPtr>()
         let newTabRequests = Collections.Concurrent.ConcurrentQueue<IntPtr>()
+        let names = Collections.Concurrent.ConcurrentDictionary<IntPtr,string>()
         Services.register<IProgram>({new IProgram with
             member _.version = "test"
             member _.isFirstRun = false
             member _.refresh() = ()
             member _.shutdown() = ()
-            member _.setWindowNameOverride _ = ()
-            member _.getWindowNameOverride _ = None
+            member _.setWindowNameOverride((hwnd,name)) =
+                match name with
+                | Some name -> names.[hwnd] <- name
+                | None -> names.TryRemove(hwnd) |> ignore
+            member _.getWindowNameOverride hwnd = match names.TryGetValue(hwnd) with | true,name -> Some name | _ -> None
             member _.appWindows = List2()
             member _.getAutoGroupingEnabled _ = false
             member _.setAutoGroupingEnabled _ _ = ()
@@ -337,7 +341,7 @@ let main() =
                     check (text.Top>=0 && text.Bottom<=form.ClientSize.Height && abs(text.Top-(form.ClientSize.Height-text.Bottom))<=1) "The name is not centred in the rename field"
                     let strip = group.ts.bounds
                     check (form.Top>=strip.y && form.Bottom<=strip.y+strip.size.height) "The rename field reaches outside the tab"
-                    check (text.Text=group.ts.tabInfo(Tab(handles.Head)).text && text.SelectionLength=text.Text.Length) "The rename field does not start with the whole name selected"
+                    check (text.Text=group.tabName handles.Head && text.SelectionLength=text.Text.Length) "The rename field does not start with the whole name selected"
                     // The whole name shows, however long: the field widens past the tab, within the strip.
                     let longName = "Quarterly report draft - shared with the design team"
                     text.Text <- longName
@@ -367,6 +371,22 @@ let main() =
                     renameBox() |> Option.iter(fun form -> form.textBox.Text <- "Renamed"; form.Close()))
                 pumpUntil(fun () -> onGroup(fun group -> renameBox().IsNone && not (group.bb.read("renamingTab",true))))
                 check (not (onGroup(fun group -> group.isRenamed handles.Head))) "Leaving the rename field without Enter renamed the tab"
+                // Enter keeps a new name; the name as it was, or the window's own, leaves the tab unrenamed.
+                let renameWith (typed:string option) =
+                    onGroup(fun group ->
+                        let decorator = typeof<TabStrip>.GetFields(flags) |> Array.find(fun field -> field.FieldType=typeof<ITabStripMonitor>)
+                                        |> fun field -> field.GetValue(group.ts)
+                        decorator.GetType().GetMethod("beginRename").Invoke(decorator,[|box handles.Head|]) |> ignore
+                        let form = renameBox() |> Option.get
+                        typed |> Option.iter(fun typed -> form.textBox.Text <- typed)
+                        typeof<TextBox>.GetMethod("OnKeyPress",flags).Invoke(form.textBox,[|box(KeyPressEventArgs(char Keys.Enter))|]) |> ignore)
+                    pumpUntil(fun () -> onGroup(fun _ -> renameBox().IsNone))
+                    onGroup(fun group -> group.isRenamed handles.Head,group.tabName handles.Head)
+                check (renameWith None = (false,onGroup(fun group -> group.windowName handles.Head))) "Enter on the name as it was marks the tab renamed"
+                check (renameWith (Some "Notes") = (true,"Notes")) "Enter on a new name does not rename the tab"
+                check (renameWith None = (true,"Notes")) "Enter on a renamed tab's own name changes it"
+                check (renameWith (Some (onGroup(fun group -> group.windowName handles.Head))) |> fst |> not) "Typing the window's own name keeps the tab renamed"
+                check (renameWith (Some "") |> fst |> not) "An empty name keeps the tab renamed"
                 check (List.contains (Localization.tr Strings.TabMenu.closeAll) alone) "The tab menu lost Close all"
                 check (not (List.contains (closeAllOf handles.Head) alone)) "A group of one program offers closing that program's windows"
                 (info :> IGroup).addWindow(foreignHwnd,false)

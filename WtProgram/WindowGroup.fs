@@ -245,9 +245,15 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         let parts = text.Split(separators, System.StringSplitOptions.RemoveEmptyEntries)
         if parts.Length > 0 then parts.[parts.Length - 1] else text
     
-    member private this.hwndText hwnd = 
-        let window = this.os.windowFromHwnd(hwnd)
-        let text = Services.program.getWindowNameOverride(hwnd).def(this.getLastName(window.text))
+    /// The name the window itself gives the tab: the last part of its title.
+    member this.windowName hwnd = this.getLastName(this.os.windowFromHwnd(hwnd).text)
+
+    /// The tab's name as the user reads and edits it: their own, else the window's.
+    member this.tabName hwnd = Services.program.getWindowNameOverride(hwnd).def(this.windowName hwnd)
+
+    /// Under a debugger the window handle goes in front, for display only.
+    member private this.hwndText hwnd =
+        let text = this.tabName hwnd
         if System.Diagnostics.Debugger.IsAttached then sprintf "%X - %s" hwnd text else text
 
     member private this.getTabInfo(hwnd) =

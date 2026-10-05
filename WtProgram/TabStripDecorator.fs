@@ -117,7 +117,8 @@ type TabStripDecorator(group:WindowGroup) as this =
         let height = min text.size.height (max (font.Height + Dpi.scale 2) (min (text.size.height - Dpi.scale 4) (font.Height + Dpi.scale 6)))
         let top = text.location.y + (text.size.height - height) / 2
         let strip = this.placement.bounds
-        let name = this.ts.tabInfo(tab).text
+        // Without the window handle a debugger session shows in front, which is not part of the name.
+        let name = group.tabName hwnd
         /// Wide enough for the whole name and the caret after it, and never narrower than the
         /// tab's own text area or room for a short name; only one tab is edited, so it may cover
         /// its neighbours, but it stays on the strip.
@@ -156,8 +157,11 @@ type TabStripDecorator(group:WindowGroup) as this =
             if e.KeyChar = char(Keys.Enter) then
                 // Handled, so the edit control does not beep at a key it has no use for.
                 e.Handled <- true
-                let newName = box.Text
-                group.setTabName(hwnd, if newName.Length = 0 then None else Some(newName))
+                // An empty name, or the window's own, is no name of the user's: the tab follows the
+                // window again. A name left as it was changes nothing, so it is not marked renamed.
+                let typed = box.Text
+                let newName = if typed.Length = 0 || typed = group.windowName hwnd then None else Some typed
+                if newName <> Services.program.getWindowNameOverride hwnd then group.setTabName(hwnd, newName)
                 form.Close()
             elif e.KeyChar = char(Keys.Escape) then
                 e.Handled <- true
