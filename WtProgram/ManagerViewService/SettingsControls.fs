@@ -972,9 +972,11 @@ type SettingsCombo(items:string[]) as this =
         and set(value:Color array) =
             if isNull value || (value.Length<>0 && value.Length<>items.Length) then
                 invalidArg "value" "Provide one colour per option, or an empty array."
-            itemColors <- Array.copy value
-            this.Invalidate()
-            popup |> Option.iter(fun window -> window.Invalidate(true))
+            let argb (colors:Color array) = colors |> Array.map(fun color -> color.ToArgb())
+            if argb value<>argb itemColors then
+                itemColors <- Array.copy value
+                this.Invalidate()
+                popup |> Option.iter(fun window -> window.Invalidate(true))
     member this.CreateDropDown() =
         if this.Enabled && items.Length>0 && popup.IsNone then
             let p = SettingsColors.current()

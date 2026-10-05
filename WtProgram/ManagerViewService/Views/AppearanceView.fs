@@ -48,6 +48,13 @@ type ContrastComparison() as this =
             let caption = sprintf "%s  %.1f → %.1f" name (TextContrast.ratio before background) (TextContrast.ratio after background)
             TextRenderer.DrawText(g,caption,captionFont,Point(x,y+chipHeight+Dpi.scale 4),p.muted,p.background,TextFormatFlags.NoPrefix))
 
+/// The tab preview, double-buffered so redrawing its tabs on a colour edit does not flicker.
+type TabPreview() as this =
+    inherit Panel()
+    do
+        this.DoubleBuffered <- true
+        this.ResizeRedraw <- true
+
 type AppearanceView(?settings:ISettings) =
     let settings = defaultArg settings Services.settings
     let panel,table = SettingsUi.page()
@@ -107,8 +114,14 @@ type AppearanceView(?settings:ISettings) =
         update(fun s ->
             let index = selection s |> Option.defaultValue 0
             {(setActive (original index) s) with presetEdits=s.presetEdits.Remove(editKey index)} |> setPreset ThemePresets.keys.[index])
-    let preview = new Panel(Name="tab-preview",Height=Dpi.scale 145,Margin=Padding(0,Dpi.scale 4,0,0),
-                            AccessibleName=tr Strings.Appearance.explorerPreview)
+    let preview = new TabPreview(Name="tab-preview",Height=Dpi.scale 145,Margin=Padding(0,Dpi.scale 4,0,0),
+                                 AccessibleName=tr Strings.Appearance.explorerPreview)
+    /// Where the preview draws its tabs: all that a colour edit changes.
+    let previewTabs() =
+        let height = max 12 (ThemeService.currentAppearance().scaled.tabHeight)
+        Rectangle(Dpi.scale 16,Dpi.scale 14,max 100 (preview.ClientSize.Width-Dpi.scale 32),height+2)
+    /// What the rest of the preview is drawn from besides its size, so it is redrawn only when one changes.
+    let mutable previewFrame = None
     let colorFields : (string * (TabPalette -> Color) * (Color -> TabPalette -> TabPalette)) list = [
         "tabTextColor",(fun p -> p.tabTextColor),(fun v p -> {p with tabTextColor=v})
         "tabActiveBgColor",(fun p -> p.tabActiveBgColor),(fun v p -> {p with tabActiveBgColor=v})
@@ -173,7 +186,11 @@ type AppearanceView(?settings:ISettings) =
             // One height for any usual tab height: the window below the tabs gives up the room.
             // Only tabs too tall to leave its toolbar visible make the panel grow.
             preview.Height <- max (Dpi.scale 145) (ThemeService.currentAppearance().scaled.tabHeight+Dpi.scale (14+14+28)+2)
-            preview.Invalidate()
+            let frame = Some(SettingsColors.current(),editingDark,settings.geometry)
+            if frame=previewFrame then preview.Invalidate(previewTabs())
+            else
+                previewFrame <- frame
+                preview.Invalidate()
         finally refreshing <- false
 
     do
@@ -190,11 +207,9 @@ type AppearanceView(?settings:ISettings) =
             e.Graphics.FillPath(frameFill,frame)
             e.Graphics.DrawPath(border,frame)
             let appearance = ThemeService.currentAppearance().scaled
-            let height = max 12 appearance.tabHeight
-            let width = max 100 (preview.ClientSize.Width-Dpi.scale 32)
-            let left = Dpi.scale 16
-            let top = Dpi.scale 14
-            let bodyTop = top+height+2
+            let tabs = previewTabs()
+            let height,width,left,top = tabs.Height-2,tabs.Width,tabs.Left,tabs.Top
+            let bodyTop = tabs.Bottom
             // The panel keeps one height; taller tabs leave less room for the window below them.
             let bodyHeight = max 0 (preview.Height-bodyTop-Dpi.scale 14)
             let fill color (rect:Rectangle) =

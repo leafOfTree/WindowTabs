@@ -180,6 +180,20 @@ let main() =
             Application.DoEvents()
             assertTrue (not popup.Visible && not popup.IsDisposed) "Popup reusable after outside close"
             assertTrue form.Visible "Owner remains visible"
+        // A colour edit redraws the preview's tabs, not the whole window drawn around them.
+        let preview = view.control.Controls.Find("tab-preview",true).[0]
+        let redrawn = Collections.Generic.List<Rectangle>()
+        let before = preferences
+        do
+            use _ = preview.Invalidated.Subscribe(fun e -> redrawn.Add(e.InvalidRect))
+            settings.updateAppearance(fun s ->
+                if mode=DarkTheme then {s with darkPalette={s.darkPalette with tabNormalBgColor=Color.Teal}}
+                else {s with lightPalette={s.lightPalette with tabNormalBgColor=Color.Teal}})
+            Application.DoEvents()
+        assertTrue (redrawn.Count>0 && redrawn |> Seq.forall(fun bounds -> bounds.Height<preview.Height/2)) "A colour edit redraws the whole preview"
+        preferences <- before
+        ThemeService.notifyChanged()
+        Application.DoEvents()
         let rec findReset (control:Control) =
             if control.Text=tr Strings.Appearance.resetColors then Some(control :?> Button)
             else control.Controls |> Seq.cast<Control> |> Seq.tryPick findReset
