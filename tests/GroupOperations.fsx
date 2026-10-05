@@ -120,6 +120,13 @@ let main() =
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
             member _.llMouse = mouse.Publish})
+        Services.register<IFilterService>({new IFilterService with
+            member _.isAppWindow _ = false
+            member _.isAppWindowStyle _ = false
+            member _.isTabbableWindow _ = false
+            member _.isTabbingEnabledForAllProcessesByDefault with get()=false and set _=()
+            member _.setIsTabbingEnabledForProcess _ _ = ()
+            member _.getIsTabbingEnabledForProcess _ = false})
         let desktop = Desktop({new IDesktopNotification with
                                 member _.dragDrop _ = ()
                                 member _.dragEnd() = ()},api,InvokerService.invoker :> IDispatcher)
@@ -290,10 +297,22 @@ let main() =
                     |> Option.iter(fun line -> foreignHwnd <- IntPtr(Int64.Parse(line.Substring(11))))
                     foreignHwnd<>IntPtr.Zero || foreign.HasExited)
                 check (foreignHwnd<>IntPtr.Zero) "Foreign icon helper did not start"
+                // The tab menu as the decorator builds it on a right click.
+                let menuTexts hwnd = onGroup(fun group ->
+                    let decorator = typeof<TabStrip>.GetFields(flags) |> Array.find(fun field -> field.FieldType=typeof<ITabStripMonitor>)
+                                    |> fun field -> field.GetValue(group.ts)
+                    let items = decorator.GetType().GetMethod("contextMenu",flags).Invoke(decorator,[|box hwnd|]) :?> List2<ContextMenuItem>
+                    items.list |> List.choose(function CmiRegular item -> Some item.text | _ -> None))
+                let closeAllOf hwnd = Localization.tr (Strings.TabMenu.closeAllOf (OS().windowFromHwnd(hwnd).pid.exeName))
+                let alone = menuTexts handles.Head
+                check (List.contains (Localization.tr Strings.TabMenu.closeAll) alone) "The tab menu lost Close all"
+                check (not (List.contains (closeAllOf handles.Head) alone)) "A group of one program offers closing that program's windows"
                 (info :> IGroup).addWindow(foreignHwnd,false)
                 pumpUntil(fun () -> onGroup(fun group ->
                     group.windows.contains(foreignHwnd) &&
                     not(obj.ReferenceEquals(group.ts.tabInfo(Tab(foreignHwnd)).iconSmall,SystemIcons.Application))))
+                check (List.contains (closeAllOf handles.Head) (menuTexts handles.Head)) "A mixed group does not offer closing one program's windows"
+                check (List.contains (closeAllOf foreignHwnd) (menuTexts foreignHwnd)) "The foreign tab's menu does not name its own program"
                 let iconRequests() = output.ToArray() |> Array.filter((=) "ICON_REQUEST") |> Array.length
                 WinUserApi.SendMessage(foreignHwnd,0x804C,IntPtr(80),IntPtr.Zero) |> ignore
                 let before = iconRequests()
