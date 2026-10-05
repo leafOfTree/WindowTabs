@@ -471,7 +471,7 @@ type TabStripSprite<'id> when 'id : equality = {
                 | None -> false 
             displayInfo = this.tabs.find(tab)
             appearance = this.appearance
-            size = this.tabSize
+            size = this.tabSizeOf tab
             onlyIcon = this.isCompact
             direction = this.direction
             showLeftSeparator =
@@ -576,22 +576,30 @@ type TabStripSprite<'id> when 'id : equality = {
     /// The current tab length and left offset, for holding while tabs are closed.
     member this.layout = this.tabLength,this.alignmentOffset
             
-    member this.tabLocation tab =
+    /// A tab's left and right edges in whole pixels. Each is cut down from its fractional
+    /// position on its own, so a tab runs exactly to where the next one starts: one width
+    /// for every tab left a column uncovered wherever two edges rounded a pixel further apart.
+    member private this.tabSpan tab =
         match this.slide with
-        | Some(slideTab, x) when tab = slideTab-> 
+        | Some(slideTab, x) when tab = slideTab->
             let bounds = (0, this.size.width - int(this.tabLength))
-            Pt(between bounds x, 1)
-        | _ -> 
-            let x = this.tabOffset (this.adjustedLorder.findIndex((=)tab))
-            let x = x + this.alignmentOffset
-            Pt(int(x), 1)
+            let x = between bounds x
+            x, x + int(this.tabLength)
+        | _ ->
+            let x = this.tabOffset (this.adjustedLorder.findIndex((=)tab)) + this.alignmentOffset
+            int(x), int(x + this.tabLength)
+
+    member this.tabLocation tab =
+        let x,_ = this.tabSpan tab
+        Pt(x, 1)
 
     // Tabs start one pixel into the strip. Above a window they then run to the strip's
     // bottom row, which overlaps the window's top edge by tabHeightOffset, so they cover
     // its border line. Inside the title bar the strip starts a pixel above the window and
     // that first row is already the window's edge.
-    member this.tabSize =
-        Sz(int(this.tabLength), this.size.height - (if this.direction = TabUp then 1 else 2))
+    member private this.tabSizeOf tab =
+        let left,right = this.tabSpan tab
+        Sz(right - left, this.size.height - (if this.direction = TabUp then 1 else 2))
 
     member this.movedTab =
         match this.slide with

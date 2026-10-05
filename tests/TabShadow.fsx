@@ -225,6 +225,17 @@ let main () =
             use bitmap = s.render.bitmap
             bitmap.GetPixel(x,y)
         let pill = strip PillTabs
+        // Tabs a fraction of a pixel wide, up and down: every column from the first tab to the last
+        // is covered, or the window behind shows through as a dark line beside the active tab.
+        for direction in [TabUp;TabDown] do
+            for style in [JoinedTabs;PillTabs;FolderTabs] do
+                let uneven = { strip style with size=Sz(637,28); direction=direction
+                                                appearance={ appearance with tabStyle=style; tabMaxWidth=400 } }
+                use bitmap = uneven.render.bitmap
+                let spans = uneven.tabSprites.list |> List.map(fun (location,tab) -> location.x,location.x+tab.size.width)
+                let left,right = spans |> List.map fst |> List.min,spans |> List.map snd |> List.max
+                check (right-left>=636 && [left..right-1] |> List.forall(fun x -> bitmap.GetPixel(x,14).A=255uy))
+                    (sprintf "A column between %A tabs facing %A is left uncovered" style direction)
         check (same (pixel pill 145 14) active) "The active pill is not filled with the active colour"
         check (same (pixel pill 210 2) normal) "The bar does not show above the active pill"
         check (same (pixel pill 3 14) normal) "An inactive pill-style tab is not the bar colour"
