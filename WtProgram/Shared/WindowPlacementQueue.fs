@@ -110,7 +110,9 @@ type WindowPlacementQueue<'a>(apply:IntPtr -> 'a -> (unit -> bool) -> unit, ?wor
 
 type FollowerPlacementRequest =
     | AlignWindow of Rect * OSWindowPlacement
-    | SetMinimized of bool
+    /// A window restored without activation can still rise above the tab that asked for it;
+    /// the handle it should stay below goes with the request.
+    | SetMinimized of bool * IntPtr option
     | HideForMove
 
 module FollowerPlacement =
@@ -125,9 +127,10 @@ module FollowerPlacement =
             let window = OS().windowFromHwnd(hwnd)
             match request with
             | HideForMove -> if valid() && not window.isMinimized then window.hideOffScreen(None)
-            | SetMinimized minimized ->
+            | SetMinimized(minimized,below) ->
                 if window.isMinimized<>minimized && valid() then
                     window.showWindow(if minimized then ShowWindowCommands.SW_SHOWMINNOACTIVE else ShowWindowCommands.SW_SHOWNOACTIVATE)
+                    below |> Option.iter(fun top -> if valid() && WinUserApi.IsWindow(top) then window.insertAfter(top))
             | AlignWindow(bounds,wp) ->
                 let actual = window.placement
                 let move() = if valid() then window.move(bounds)
@@ -147,7 +150,8 @@ module FollowerPlacement =
 
     let queue = WindowPlacementQueue(apply)
     let request hwnd bounds placement = identity hwnd,AlignWindow(bounds,placement)
-    let minimizeRequest hwnd minimized = identity hwnd,SetMinimized minimized
+    let minimizeRequest hwnd minimized = identity hwnd,SetMinimized(minimized,None)
+    let restoreBelowRequest hwnd top = identity hwnd,SetMinimized(false,Some top)
     let hideRequest hwnd = identity hwnd,HideForMove
     let isChangingMinimizeState owner hwnd =
         queue.isWindowBusyWith(owner,hwnd,fun (_,request) -> match request with SetMinimized _ -> true | _ -> false)

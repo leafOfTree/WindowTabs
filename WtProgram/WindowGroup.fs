@@ -527,6 +527,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             this.ts.addTab(Tab(hwnd))
             this.adjustWindowPlacement(hwnd)
             addedEvent.Trigger(hwnd)
+            // A visible window joining a minimized group restores it, as restoring any tab does,
+            // so closing that window shows the previous tab instead of minimizing the group again.
+            let others = this.windows.items.where((<>) hwnd)
+            if not window.isMinimized && not others.isEmpty && others.all isMinimized then
+                others.iter(fun other ->
+                    requestedMinimizeStates.[other] <- false
+                    FollowerPlacement.queue.submit(placementOwner,other,FollowerPlacement.restoreBelowRequest other hwnd))
 
     member this.removeWindow(hwnd) = this.withUpdate <| fun() ->
         if this.windows.contains(hwnd) then
