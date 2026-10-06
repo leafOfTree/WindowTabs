@@ -249,11 +249,11 @@ type AppearanceView(?settings:ISettings) =
             e.Graphics.Restore(state)
             // The font real tabs use, so the preview shrinks its text with short tabs too.
             use font = TabMetrics.font appearance.tabHeight FontStyle.Regular
-            let info (caption:string) : TabDisplayInfo = {
-                tint=Some((Theme.tabPalette (ThemeService.currentIsDark())).[caption.Length%8]); colorStyle=settings.getValue("tabColorStyle") :?> string; numberBadge=None; bgColor=None; text=caption; icon=SystemIcons.Application
+            let info index (caption:string) : TabDisplayInfo = {
+                tint=(if settings.getValue("tabColorMode") :?> string = "Off" then None else Some((Theme.tabPalette dark).[index])); colorStyle=settings.getValue("tabColorStyle") :?> string; numberBadge=None; bgColor=None; text=caption; icon=SystemIcons.Application
                 textFont=font; textBrush=SystemBrushes.MenuText }
             let ts : TabStripSprite<int> = {
-                tabs=Map2(List2([1,info (tr Strings.Settings.tabActiveBgColor.caption);2,info (tr Strings.Settings.tabHighlightBgColor.caption);3,info (tr Strings.Settings.tabNormalBgColor.caption)]))
+                tabs=Map2(List2([1,info 1 (tr Strings.Settings.tabActiveBgColor.caption);2,info 2 (tr Strings.Settings.tabHighlightBgColor.caption);3,info 4 (tr Strings.Settings.tabNormalBgColor.caption)]))
                 lorder=List2([1;2;3]);zorder=List2([1;2;3]);size=Sz(width,height+2)
                 slide=None;direction=TabUp;alignment=TabLeft;onlyIcons=false;transparent=true;held=None;centerShift=0.0
                 appearance=appearance;hover=Some(2,TabBackground);captured=None }

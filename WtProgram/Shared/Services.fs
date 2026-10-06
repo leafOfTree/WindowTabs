@@ -82,6 +82,8 @@ type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
         member _.setWindowNameOverride value = dispatcher.Send(fun () -> inner.setWindowNameOverride value)
         // Reads an immutable snapshot; called by tab strips on every title change.
         member _.getWindowNameOverride hwnd = inner.getWindowNameOverride hwnd
+        member _.getTabColorOverride hwnd = inner.getTabColorOverride hwnd
+        member _.setTabColorOverride value = dispatcher.Send(fun () -> inner.setTabColorOverride value)
         member _.getTabColor hwnd = dispatcher.Send(fun () -> inner.getTabColor hwnd)
         member _.appWindows = dispatcher.Send(fun () -> inner.appWindows)
         member _.getAutoGroupingEnabled path = dispatcher.Send(fun () -> inner.getAutoGroupingEnabled path)

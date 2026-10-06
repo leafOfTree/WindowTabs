@@ -193,6 +193,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         isForegroundExport.init()
 
         this.ts.setTabAppearance(this.tabAppearance)
+        let appColorsSubscription = Services.settings.notifyValue "appTabColors" (fun _ ->
+            this.invokeAsync(fun() -> if not isDestroyed.value then this.windows.items.iter this.setTabInfo))
+        exitedEvent.Publish.Add(fun _ -> appColorsSubscription.Dispose())
         let colorModeSubscription = Services.settings.notifyValue "tabColorMode" (fun _ ->
             this.invokeAsync(fun() -> if not isDestroyed.value then this.windows.items.iter this.setTabInfo))
         exitedEvent.Publish.Add(fun _ -> colorModeSubscription.Dispose())
@@ -460,6 +463,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.isPlacementIdle = FollowerPlacement.queue.isIdle(placementOwner)
                      
+    member this.setTabColor(hwnd,color) =
+        Services.program.setTabColorOverride(hwnd,color)
+        this.setTabInfo(hwnd)
+
     member this.setTabName(hwnd,name) =
         Services.program.setWindowNameOverride(hwnd, name)
         this.setTabInfo(hwnd)

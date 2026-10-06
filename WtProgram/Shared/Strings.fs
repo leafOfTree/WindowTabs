@@ -159,6 +159,15 @@ module Strings =
                                keywords={ en="number shortcut modifier"; zh="数字 快捷键 修饰键"; ja="番号 ショートカット 修飾キー" } }
         let enableNumberLeader = { caption={ en="Use a leader key for tab numbers"; zh="使用引导键切换标签"; ja="リーダーキーでタブ番号を選ぶ" }; description={ en="Press the leader, then 1–9 within three seconds. Escape cancels."; zh="按引导键后，三秒内按 1–9。Esc 取消。"; ja="リーダーキーの後、3 秒以内に 1～9 を押します。Esc で解除。" }; keywords=none }
         let numberLeader = { caption={ en="Tab number leader"; zh="数字标签引导键"; ja="タブ番号のリーダーキー" }; description=none; keywords=none }
+        let tabColors = { en="Tab colour"; zh="标签颜色"; ja="タブの色" }
+        let customTabColor = { en="Custom…"; zh="自定义…"; ja="カスタム…" }
+        let clearTabColor = { en="Clear colour"; zh="清除颜色"; ja="色を解除" }
+        let rememberTabColor name = { en=sprintf "Remember colour for %s" name; zh=sprintf "记住 %s 的颜色" name; ja=sprintf "%s の色を記憶" name }
+        let tabColorNames = [|
+            { en="Grey";zh="灰色";ja="グレー" }; { en="Blue";zh="蓝色";ja="青" }
+            { en="Red";zh="红色";ja="赤" }; { en="Yellow";zh="黄色";ja="黄" }
+            { en="Green";zh="绿色";ja="緑" }; { en="Pink";zh="粉色";ja="ピンク" }
+            { en="Purple";zh="紫色";ja="紫" }; { en="Cyan";zh="青色";ja="シアン" } |]
         let tabColorMode = { caption={ en="Automatic tab colours"; zh="自动标签配色"; ja="タブの自動配色" }; description=none; keywords=none }
         let colorsOff = { en="Off"; zh="关闭"; ja="オフ" }
         let rainbow = { en="Rainbow"; zh="彩虹"; ja="レインボー" }

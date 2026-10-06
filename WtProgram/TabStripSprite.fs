@@ -729,6 +729,16 @@ type TabStripSprite<'id> when 'id : equality = {
             let width = tab.size.width-leftInset-rightInset
             if width>0 then
                 fillSegment fill (location.x+leftInset) width first last
+                match tab.tint with
+                | Some tint when tab.displayInfo.colorStyle="Stripe" && tab.displayInfo.bgColor.IsNone ->
+                    let state = graphics.Save()
+                    let thickness = min this.collapsedHeight (Dpi.scale 3)
+                    let y = if this.direction=TabUp then this.collapsedHeight-thickness else 0
+                    graphics.SetClip(Rectangle(location.x+leftInset,y,width,thickness))
+                    use stripe = new SolidBrush(if tab.isTop then tint else Theme.blend 0.60 tint color)
+                    fillSegment stripe (location.x+leftInset) width first last
+                    graphics.Restore(state)
+                | _ -> ()
                 // The active tab's colour matches its window, so over the title bar its segment all
                 // but disappears. Between other tabs it still shows, as the gap in the bar; at either
                 // end the bar only looks shorter. There a short mark in the inactive tabs' colour, so

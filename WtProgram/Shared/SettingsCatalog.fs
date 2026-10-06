@@ -82,7 +82,7 @@ module SettingsCatalog =
         all |> List.choose(fun item -> match item.binding with Toggle(key,fresh,_) -> Some(key,fresh) | _ -> None)
     /// Settings that are the user's own records rather than preferences: a reset keeps them
     /// unless asked to clear them.
-    let appRuleKeys = ["includedPaths";"excludedPaths";"autoGroupingPaths";"numberShortcutPaths";"numberShortcutAppMode"]
+    let appRuleKeys = ["includedPaths";"excludedPaths";"autoGroupingPaths";"numberShortcutPaths";"numberShortcutAppMode";"appTabColors"]
     let workspaceKeys = ["workspaces";"workspaceSchemaVersion";"workspaceRecovery"]
     /// The settings a reset leaves: fresh-install toggles, the version (so the next start does
     /// not take the reset for an upgrade) and, unless cleared, app rules and saved workspaces.

@@ -37,6 +37,8 @@ let run measure iterations (pixels:Bitmap -> string) (results:JArray) (images:JA
             member _.shutdown() = ()
             member _.setWindowNameOverride _ = ()
             member _.getWindowNameOverride _ = None
+            member _.getTabColorOverride _ = None
+            member _.setTabColorOverride _ = ()
             member _.getTabColor _ = None
             member _.appWindows = List2()
             member _.getAutoGroupingEnabled _ = false

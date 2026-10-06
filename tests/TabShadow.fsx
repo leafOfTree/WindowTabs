@@ -140,6 +140,7 @@ let main () =
             check (TextContrast.ratio (TextContrast.readable drawn.Head.foreground drawn.Head.background) drawn.Head.background >= 4.5) "Badge contrast too low"
             use bitmap = badges.render.bitmap
             check (bitmap.Width>0) "Badge render failed"
+            bitmap.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "badges-%d-%b.png" appearance.tabNormalBgColor.R icons),ImageFormat.Png)
     for appearance in [Theme.light;Theme.dark] do
         for style in [JoinedTabs;FolderTabs;PillTabs] do
             for colorStyle in ["Stripe";"Fill"] do

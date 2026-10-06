@@ -20,48 +20,51 @@ and CmiPopUp = {
     items: List2<ContextMenuItem>
     }
 
-module Win32Menu =        
-    let show (hwnd:IntPtr) (pt:Pt) (items:List2<_>) =
-        let id = ref 0
-        
-        let nextId() = 
-            id := id.Value + 1
-            id.Value
-        
-        let handlers = ref (Map2())
-        
-        let menus = ref (Set2())
-        
-        let rec createMenu (items:List2<_>) =
-            let hMenu = WinUserApi.CreatePopupMenu()
-            let addImage id (image:Option<Img>) =
-                image.iter <| fun image ->
-                    let hBitmap = image.resize(Sz(16,16)).hbitmap
-                    WinUserApi.SetMenuItemBitmaps(hMenu, id, 1, hBitmap, hBitmap).ignore                  
-            menus := menus.Value.add hMenu
-            items.iter <| fun item ->
-                match item with
-                | CmiRegular(item) ->
-                    let id = nextId()
-                    WinUserApi.AppendMenu(hMenu, 
-                        item.flags.append(MenuFlags.MF_STRING).reduce((|||)),
-                        id, item.text).ignore
-                    addImage id item.image
-                    handlers := handlers.Value.add id item.click
-                | CmiSeparator ->
-                    let id = nextId()
-                    WinUserApi.AppendMenu(hMenu, MenuFlags.MF_SEPARATOR, id, "").ignore
-                | CmiPopUp(item) ->
-                    let hSubMenu = createMenu item.items
-                    WinUserApi.AppendMenu(hMenu, MenuFlags.MF_POPUP, hSubMenu, item.text).ignore
-                    addImage hSubMenu item.image
-            int(hMenu)
+/// Owns native menus and their copied bitmaps; source images remain the caller's.
+type NativeContextMenu(items:List2<ContextMenuItem>) =
+    let handlers = Collections.Generic.Dictionary<int,unit -> unit>()
+    let roots = Collections.Generic.HashSet<IntPtr>()
+    let bitmaps = ResizeArray<IntPtr>()
+    let mutable disposed = false
+    let mutable nextId = 0
+    let cleanup() =
+        if not disposed then
+            disposed <- true
+            for menu in roots do WinUserApi.DestroyMenu(menu) |> ignore
+            for bitmap in bitmaps do WinGdiApi.DeleteObject(bitmap) |> ignore
+    let rec create items =
+        let menu = WinUserApi.CreatePopupMenu()
+        roots.Add(menu) |> ignore
+        let imageAt position image =
+            image |> Option.iter(fun (image:Img) ->
+                let side = max 1 (int(Math.Round(float(WinUserApi.GetSystemMetrics(SystemMetrics.SM_CXMENUCHECK))*float(Dpi.value())/float(Dpi.system()))))
+                use bitmap = image.resize(Sz(side,side)).bitmap
+                let handle = bitmap.GetHbitmap(Color.Transparent)
+                bitmaps.Add(handle)
+                WinUserApi.SetMenuItemBitmaps(menu,position,MenuFlags.MF_BYPOSITION,handle,handle) |> ignore)
+        items |> List.iteri(fun position item ->
+            match item with
+            | CmiRegular item ->
+                nextId <- nextId+1
+                WinUserApi.AppendMenu(menu,item.flags.append(MenuFlags.MF_STRING).reduce((|||)),nextId,item.text) |> ignore
+                handlers.Add(nextId,item.click)
+                imageAt position item.image
+            | CmiSeparator -> WinUserApi.AppendMenu(menu,MenuFlags.MF_SEPARATOR,0,"") |> ignore
+            | CmiPopUp item ->
+                let child = create item.items.list
+                if WinUserApi.AppendMenu(menu,MenuFlags.MF_POPUP,int child,item.text) then roots.Remove(child) |> ignore
+                imageAt position item.image)
+        menu
+    let root = try create items.list with _ -> cleanup(); reraise()
+    member _.handle = root
+    member _.track hwnd (pt:Pt) =
+        let id = WinUserApi.TrackPopupMenuEx(root,TrackPopupMenuFlags.TPM_RETURNCMD,pt.x,pt.y,hwnd,IntPtr.Zero)
+        match handlers.TryGetValue(id) with true,action -> Some action | _ -> None
+    interface IDisposable with member _.Dispose() = cleanup()
 
-        let hMenu = IntPtr(createMenu items)
-        let id = WinUserApi.TrackPopupMenuEx(hMenu, TrackPopupMenuFlags.TPM_RETURNCMD, pt.x, pt.y, hwnd, IntPtr.Zero)
-        if id <> 0 then
-            match handlers.Value.tryFind id with
-            | Some(click) -> click()
-            | None -> ()
-        menus.Value.items.iter <| fun hMenu ->
-            WinUserApi.DestroyMenu(hMenu).ignore
+module Win32Menu =
+    let show hwnd pt items =
+        let action =
+            use menu = new NativeContextMenu(items)
+            menu.track hwnd pt
+        action |> Option.iter(fun click -> click())

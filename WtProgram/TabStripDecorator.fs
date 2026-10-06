@@ -42,8 +42,11 @@ type TabStripDecorator(group:WindowGroup) as this =
             | MouseUp, MouseRight ->
                 let ptScreen = os.windowFromHwnd(group.hwnd).ptToScreen(pt)
                 group.bb.write("contextMenuVisible", true)
-                Win32Menu.show group.hwnd ptScreen (this.contextMenu(hwnd))
-                group.bb.write("contextMenuVisible", false)
+                let images = ResizeArray<Img>()
+                try Win32Menu.show group.hwnd ptScreen (this.contextMenu(hwnd,images))
+                finally
+                    for image in images do image.bitmap.Dispose()
+                    group.bb.write("contextMenuVisible", false)
             | MouseDown, _ ->
                 capturedHwnd := Some(hwnd)
             | MouseUp, MouseMiddle -> 
@@ -190,7 +193,7 @@ type TabStripDecorator(group:WindowGroup) as this =
     member private this.onCloseAllWindows() =
         group.windows.items.iter this.onCloseWindow
 
-    member private this.contextMenu(hwnd) =
+    member private this.contextMenu(hwnd,images:ResizeArray<Img>) =
         let checkedFlag(isChecked) = if isChecked then List2([MenuFlags.MF_CHECKED]) else List2()
         let grayed(isGrayed) = if isGrayed then List2([MenuFlags.MF_GRAYED]) else List2()
         let iconOnlyItem = CmiRegular({
@@ -269,6 +272,37 @@ type TabStripDecorator(group:WindowGroup) as this =
                 click = fun() ->
                     this.beginRename(hwnd)
             })
+        let colors() = Services.settings.getValue("appTabColors") :?> Map<string,string>
+        let colorPath = processPath.ToUpperInvariant()
+        let remembered = (colors()).ContainsKey colorPath
+        let currentColor = Services.program.getTabColor hwnd
+        let saveAppColor color =
+            let next = match color with Some value -> (colors()).Add(colorPath,Theme.formatTabColor value) | None -> (colors()).Remove colorPath
+            Services.settings.setValue("appTabColors",box next)
+        let choose color =
+            group.setTabColor(hwnd,Some color)
+            if remembered then saveAppColor (Some color)
+        let colorItems =
+            Theme.tabPalette (ThemeService.currentIsDark()) |> Array.mapi(fun index color ->
+                let image = Img(Sz(Dpi.scale 16,Dpi.scale 16))
+                images.Add(image)
+                use graphics = image.graphics
+                graphics.Clear(color)
+                CmiRegular({text=tr Strings.Settings.tabColorNames.[index];image=Some image
+                            flags=checkedFlag(currentColor |> Option.exists(fun current -> current.ToArgb()=color.ToArgb()))
+                            click=fun() -> choose color})) |> Array.toList
+        let colorMenu = CmiPopUp({text=tr Strings.Settings.tabColors;image=None;items=List2(colorItems @ [
+            CmiSeparator
+            CmiRegular({text=tr Strings.Settings.customTabColor;image=None;flags=List2();click=fun() ->
+                use dialog = new ColorDialog(FullOpen=true,Color=defaultArg currentColor Color.SteelBlue)
+                let owner = {new IWin32Window with member _.Handle=group.hwnd}
+                if dialog.ShowDialog(owner)=DialogResult.OK then choose dialog.Color})
+            CmiRegular({text=tr (Strings.Settings.rememberTabColor exeName);image=None
+                        flags=checkedFlag remembered |> fun flags -> if not remembered && currentColor.IsNone then flags.append(MenuFlags.MF_GRAYED) else flags
+                        click=fun() -> saveAppColor (if remembered then None else currentColor)})
+            CmiRegular({text=tr Strings.Settings.clearTabColor;image=None;flags=List2();click=fun() ->
+                saveAppColor None
+                group.setTabColor(hwnd,None)})])})
         let restoreTabNameItem =
             CmiRegular({
                 text = tr Strings.TabMenu.restoreTabName
@@ -343,6 +377,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         List2([
             Some(newTabItem)
             Some(renameTabItem)
+            Some(colorMenu)
             (if group.isRenamed(hwnd) then Some(restoreTabNameItem) else None)
             Some(CmiSeparator)
             Some(iconOnlyItem)

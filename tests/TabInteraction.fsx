@@ -25,6 +25,32 @@ let main() =
         let api = settings :> ISettings
         check (Theme.leastUsedColor [0;1;2;0;3]=4) "Rainbow allocation did not balance colours"
         check (Theme.appColorIndex "Editor.exe"=Theme.appColorIndex "EDITOR.EXE") "App colour hash changed with case"
+        let colors = WindowTabColors()
+        let resolve hwnd peers remembered = colors.resolve hwnd peers "editor.exe" "Rainbow" false remembered
+        let a,b,c = IntPtr(1),IntPtr(2),IntPtr(3)
+        let first = resolve a [a;b] Map.empty
+        check (resolve b [a;b] Map.empty<>first) "Rainbow repeated a used colour too soon"
+        colors.setOverride a (Some Color.Red)
+        check (resolve a [a;c] Map.empty=Some Color.Red) "Window colour was lost across groups"
+        colors.setOverride a None
+        check (resolve a [a;c] Map.empty=first) "Clearing custom colour changed its automatic assignment"
+        let remembered = Map.ofList ["EDITOR.EXE","#00FF00"]
+        check (resolve a [a;c] remembered=Some(Color.FromArgb(0,255,0))) "Remembered colour did not override automatic colour"
+        colors.setOverride a (Some Color.Red)
+        check (resolve a [a;c] remembered=Some Color.Red) "Remembered colour overrode window colour"
+        colors.remove a
+        check (colors.getOverride a=None) "Destroyed HWND retained custom colour"
+        use swatch = new Bitmap(16,16)
+        use ink = Graphics.FromImage(swatch)
+        ink.Clear(Color.Red)
+        let item = CmiRegular({text="Colour";image=Some(Img(swatch));flags=List2();click=ignore})
+        let menus = List2([CmiPopUp({text="Colours";image=None;items=List2([item])})])
+        let before,_,_,_ = RuntimeDiagnostics.resourceCounts()
+        for _ in 1..100 do
+            use menu = new NativeContextMenu(menus)
+            check (menu.handle<>IntPtr.Zero) "Native colour menu was not created"
+        let after,_,_,_ = RuntimeDiagnostics.resourceCounts()
+        check (after-before<5) "Native colour menus leaked GDI bitmaps"
         let leader = NumberLeaderState()
         let now = DateTime.UtcNow
         leader.arm (IntPtr(1)) now

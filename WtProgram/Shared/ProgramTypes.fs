@@ -17,6 +17,7 @@ type SettingsRec = {
     groupWindowsInSwitcher: bool
     enableCtrlNumberHotKey: bool
     enableNumberLeader: bool
+    appTabColors: Map<string,string>
     tabColorMode: string
     tabColorStyle: string
     numberHotKeyModifier: string
@@ -89,6 +90,8 @@ type IProgram =
     abstract member shutdown : unit -> unit
     abstract member setWindowNameOverride : (IntPtr * Option<string>) -> unit
     abstract member getWindowNameOverride : IntPtr -> Option<string>
+    abstract member getTabColorOverride : IntPtr -> Drawing.Color option
+    abstract member setTabColorOverride : (IntPtr * Drawing.Color option) -> unit
     abstract member getTabColor : IntPtr -> Drawing.Color option
     abstract member appWindows : List2<IntPtr>
     abstract member getAutoGroupingEnabled : string -> bool

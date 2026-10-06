@@ -131,6 +131,8 @@ let main() =
                 | Some name -> names.[hwnd] <- name
                 | None -> names.TryRemove(hwnd) |> ignore
             member _.getWindowNameOverride hwnd = match names.TryGetValue(hwnd) with | true,name -> Some name | _ -> None
+            member _.getTabColorOverride _ = None
+            member _.setTabColorOverride _ = ()
             member _.getTabColor _ = None
             member _.appWindows = List2()
             member _.getAutoGroupingEnabled _ = false
@@ -461,8 +463,11 @@ let main() =
                 let menu hwnd = onGroup(fun group ->
                     let decorator = typeof<TabStrip>.GetFields(flags) |> Array.find(fun field -> field.FieldType=typeof<ITabStripMonitor>)
                                     |> fun field -> field.GetValue(group.ts)
-                    let items = decorator.GetType().GetMethod("contextMenu",flags).Invoke(decorator,[|box hwnd|]) :?> List2<ContextMenuItem>
-                    items.list |> List.choose(function CmiRegular item -> Some item | _ -> None))
+                    let images = ResizeArray<Img>()
+                    try
+                        let items = decorator.GetType().GetMethod("contextMenu",flags).Invoke(decorator,[|box hwnd;box images|]) :?> List2<ContextMenuItem>
+                        items.list |> List.choose(function CmiRegular item -> Some item | _ -> None)
+                    finally for image in images do image.bitmap.Dispose())
                 let menuTexts hwnd = menu hwnd |> List.map(fun item -> item.text)
                 let closeAllOf hwnd = Localization.tr (Strings.TabMenu.closeAllOf (OS().windowFromHwnd(hwnd).pid.exeName))
                 let alone = menuTexts handles.Head

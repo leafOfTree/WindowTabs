@@ -261,7 +261,7 @@ static class DesktopE2E
         File.WriteAllText(Path.Combine(Root,"WindowTabsSettings.json"),Json.Serialize(new {
             enableTabbingByDefault=false, includedPaths=new[]{own},autoGroupingPaths=new string[0],
             runAtStartup=false,replaceAltTab=false,combineIconsInTaskbar=false,hideInactiveTabs=false,
-            enableCtrlNumberHotKey=true,enableHoverActivate=false,autoHideMode="Never",alignment="Left",language="en",
+            enableCtrlNumberHotKey=true,numberHotKeyModifier="Both",enableNumberLeader=true,enableHoverActivate=false,autoHideMode="Never",alignment="Left",language="en",
             hotKeys=new { nextTab=0x67A, prevTab=0x67B },
             tabAppearance=new { tabMaxWidth=160,tabHeight=28,tabOverlap=0,tabHeightOffset=0 }
         }));
@@ -290,7 +290,11 @@ static class DesktopE2E
             // Retain surviving foreign HWNDs across app restarts, then replenish
             // the helper closed by the previous cycle.
             Forms.RemoveAll(f=>f.IsDisposed);
-            while(Forms.Count<3) Forms.Add(new Form());
+            while(Forms.Count<3) {
+                var helper=new Form();
+                helper.Menu=new MainMenu(new[]{new MenuItem("&File",new[]{new MenuItem("&Test")})});
+                Forms.Add(helper);
+            }
             for(int i=0;i<3;i++)
             {
                 var f=Forms[i]; f.Text="WindowTabs E2E "+(char)('A'+i);
@@ -313,6 +317,20 @@ static class DesktopE2E
             await Drag(source,target,2);
             await Until("Second drag did not merge groups",()=>Strips().Count==1);
             var order=await ReadOrder(target,3,handles);
+            phase="Alt number menu masking";
+            int selected=(order.IndexOf(GetForegroundWindow())+1)%order.Count;
+            Chord(0x12,0x31+selected);
+            await Activated(order[selected],target);
+            await Task.Delay(150);
+            uint process; uint thread=GetWindowThreadProcessId(order[selected],out process);
+            var gui=new GuiThread { Size=Marshal.SizeOf(typeof(GuiThread)) };
+            Check(GetGUIThreadInfo(thread,ref gui) && (gui.Flags & 4)==0,"Alt number activated the application menu");
+            phase="Number leader";
+            Chord(0x12,0xC0);
+            await Task.Delay(100);
+            selected=(selected+1)%order.Count;
+            Chord(0x31+selected);
+            await Activated(order[selected],target);
             phase="cycle "+(cycle+1)+" frequent switching";
             var switching=Stopwatch.StartNew();
             int[] switchingBaseline=null;

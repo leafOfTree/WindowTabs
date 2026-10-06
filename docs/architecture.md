@@ -227,3 +227,22 @@ drift over moves made while a page is hidden. Architecture tests measure GDI,
 USER and process handles across 100 native group cycles after warmup. These tests do not
 replace physical mixed-monitor dragging, sleep/resume, Explorer restart or multi-hour
 soak testing; those environmental scenarios still need manual validation.
+
+## Number shortcuts and tab colours
+
+Direct number shortcuts retain Ctrl as their installation/reset default. They pass
+through when the target is absent or already foreground. Alt selections inject a
+marked menu-mask key; the keyboard hook ignores that marker. Per-app rules apply
+only to direct shortcuts. The independent leader (Alt+backtick by default) arms the
+foreground group for three seconds and posts badge visibility to its STA. Digits
+and Escape capture matching releases; other keys cancel and pass through. Mouse
+buttons, foreground changes and timeout cancel the leader. Fresh installs enable
+the leader; existing settings without its toggle leave it disabled.
+
+WindowTabColors is owned by the main STA. Rainbow indices and per-window overrides
+stay with the HWND across group transfers and are removed when it is destroyed.
+App colours use normalized paths and survive settings reset with other app rules.
+The rendering priority is attention, window override, app colour, automatic colour.
+High contrast suppresses tints, and tints never make an inactive tab raised.
+NativeContextMenu owns copied HBITMAPs until after its menu is destroyed; callers
+retain and dispose their source images. Custom colours use the system ColorDialog.

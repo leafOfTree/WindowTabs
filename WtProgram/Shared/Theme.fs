@@ -27,6 +27,11 @@ module Theme =
                     tabBorderColor=Color.FromRGB(0x747474)
                     tabFlashBgColor=Color.FromRGB(0x772222) }
 
+    let parseTabColor (value:string) =
+        let mutable rgb = 0
+        if not (isNull value) && value.Length=7 && value.[0]='#' && Int32.TryParse(value.Substring(1),Globalization.NumberStyles.HexNumber,Globalization.CultureInfo.InvariantCulture,&rgb) then Some(Color.FromRGB rgb)
+        else None
+    let formatTabColor (color:Color) = sprintf "#%02X%02X%02X" color.R color.G color.B
     let tabPalette dark =
         (if dark then [|0x9AA0A6;0x8AB4F8;0xF28B82;0xFDD663;0x81C995;0xFF8BCB;0xC58AF9;0x78D9EC|]
          else [|0x70757A;0x1A73E8;0xD93025;0xE8A200;0x188038;0xD01884;0x8430CE;0x008B9A|]) |> Array.map Color.FromRGB
@@ -86,3 +91,30 @@ module Theme =
             elif usesDark mode systemDark then if custom then darkColors else darkPalette
             else if custom then lightColors else lightPalette
         TabPalette.compose geometry colors
+
+/// Main-thread writes retain window identity across group transfers; reads use immutable maps.
+type WindowTabColors() =
+    let mutable indices : Map<IntPtr,int> = Map.empty
+    let mutable overrides : Map<IntPtr,Color> = Map.empty
+    member _.getOverride hwnd = overrides.TryFind hwnd
+    member _.setOverride hwnd color = overrides <- match color with Some color -> overrides.Add(hwnd,color) | None -> overrides.Remove hwnd
+    member _.remove hwnd =
+        indices <- indices.Remove hwnd
+        overrides <- overrides.Remove hwnd
+    member _.resolve hwnd peers (path:string) mode dark (remembered:Map<string,string>) =
+        let index =
+            match indices.TryFind hwnd with
+            | Some index -> index
+            | None ->
+                let index = peers |> List.choose indices.TryFind |> Theme.leastUsedColor
+                indices <- indices.Add(hwnd,index)
+                index
+        let app = remembered.TryFind(path.ToUpperInvariant()) |> Option.bind Theme.parseTabColor
+        let palette = Theme.tabPalette dark
+        match overrides.TryFind hwnd,app with
+        | Some color,_ | _,Some color -> Some color
+        | _ ->
+            match mode with
+            | "Rainbow" -> Some palette.[index]
+            | "ByApp" -> Some palette.[Theme.appColorIndex (IO.Path.GetFileName path)]
+            | _ -> None

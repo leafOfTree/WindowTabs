@@ -45,7 +45,8 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
     let mutable leaderGroup : GroupInfo option = None
     let timer = new System.Windows.Forms.Timer(Interval=50)
     let owned = new LifetimeScope(ignore)
-    let mutable leaderKey = 0xC0
+    let mutable leaderCode = 1216
+    let mutable leaderEnabled = false
     let mutable mouseHook = IntPtr.Zero
     let mutable cachedPath = (IntPtr.Zero, "")
     let pathFor hwnd =
@@ -64,9 +65,15 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
         leaderGroup |> Option.iter(fun group -> group.invokeGroup(fun() -> group.group.bb.write("numberBadges",false)))
         leaderGroup <- None
 
+    member private this.validateLeader() =
+        let sameGroup = leaderGroup |> Option.exists(fun group ->
+            not group.isExited && (this.foregroundGroup |> Option.exists(fun current -> current.hwnd=group.hwnd)))
+        if not sameGroup then leader.cancel()
+        leader.validate (WinUserApi.GetForegroundWindow()) DateTime.UtcNow
+
     member private this.toggleLeader() =
         if leader.active then this.cancelLeader()
-        elif Services.settings.getValue("enableNumberLeader") :?> bool then
+        elif leaderEnabled then
             this.foregroundGroup |> Option.iter(fun group ->
                 let info = group.cast<GroupInfo>()
                 leaderGroup <- Some info
@@ -77,7 +84,7 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
     member this.llHook nCode (wParam:IntPtr) lParam = 
         let msg = wParam.ToInt32()
         if nCode>=0 && List.contains msg [WindowMessages.WM_LBUTTONDOWN;WindowMessages.WM_RBUTTONDOWN;WindowMessages.WM_MBUTTONDOWN;WindowMessages.WM_XBUTTONDOWN] then this.cancelLeader()
-        if msgSet.contains(msg) then
+        if nCode>=0 && msgSet.contains(msg) then
             this.foregroundGroup.iter <| fun group ->
                 let hookStruct = unbox<MSLLHOOKSTRUCT>(Marshal.PtrToStructure(lParam, typeof<MSLLHOOKSTRUCT>))
                 let pt = hookStruct.pt.Pt
@@ -104,22 +111,25 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
                                 Win32Helper.IsKeyPressed(int System.Windows.Forms.Keys.LWin) ||
                                 Win32Helper.IsKeyPressed(int System.Windows.Forms.Keys.RWin)
             let wasArmed = leader.active
+            if wasArmed then this.validateLeader() |> ignore
             let down = int key=WindowMessages.WM_KEYDOWN || int key=WindowMessages.WM_SYSKEYDOWN
+            let shiftPressed = Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_SHIFT)
+            let chordMatches = data.vkCode=(leaderCode &&& 0xFF) && controlPressed=((leaderCode &&& 0x200)<>0) && altPressed=((leaderCode &&& 0x400)<>0) && shiftPressed=((leaderCode &&& 0x100)<>0)
             let leaderConsumed,leaderTarget =
-                if down && data.vkCode<>leaderKey then
+                if down && not chordMatches then
                     leader.key foregroundHwnd DateTime.UtcNow data.vkCode (foreground |> Option.map(fun g -> g.windows.length) |> Option.defaultValue 0)
                 else false,None
             if wasArmed && not leader.active then this.cancelLeader()
             let capturedLeader,_ = leaderCapture.handle(int key,data.vkCode,if leaderConsumed then Some 0 else None)
             let target =
-                if wasArmed || capturedLeader || extraModifier then None
+                if wasArmed || capturedLeader || extraModifier || (leaderEnabled && chordMatches) then None
                 else foreground |> Option.bind(fun group ->
                     numeric.targetIndex(int key,data.vkCode,controlPressed,altPressed=altPressed)
                     |> Option.filter(NumericShortcutTarget.available group.windows.list (WinUserApi.GetForegroundWindow())))
             let target = target |> Option.filter(fun _ -> NumberShortcutRules.enabled (pathFor (WinUserApi.GetForegroundWindow())))
             let consumed,activate = numericCapture.handle(int key,data.vkCode,target)
             let activate = if leaderConsumed then leaderTarget else activate
-            if activate.IsSome && altPressed then AltMenuMask.send()
+            if (activate.IsSome || leaderConsumed) && altPressed then AltMenuMask.send()
             activate |> Option.iter(fun index ->
                 foreground.iter <| fun group ->
                     let groupInfo = group.cast<GroupInfo>()
@@ -128,16 +138,17 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
 
     interface IPlugin with
         member x.init() =
-            leaderKey <- Services.program.getHotKey "numberLeader" &&& 0xFF
-            owned.Own(Services.settings.notifyValue "hotKeys" (fun _ -> leaderKey <- Services.program.getHotKey "numberLeader" &&& 0xFF; this.cancelLeader())) |> ignore
+            leaderCode <- Services.program.getHotKey "numberLeader"
+            leaderEnabled <- Services.settings.getValue("enableNumberLeader") :?> bool
+            owned.Own(Services.settings.notifyValue "hotKeys" (fun _ -> leaderCode <- Services.program.getHotKey "numberLeader"; this.cancelLeader())) |> ignore
             this.registerMouseLLHook()
             this.registerKeyboardLLHook()
             owned.Own(NumberLeaderRequest.toggle.Publish.Subscribe(fun() -> this.toggleLeader())) |> ignore
-            owned.Own(Services.settings.notifyValue "enableNumberLeader" (fun _ -> this.cancelLeader())) |> ignore
+            owned.Own(Services.settings.notifyValue "enableNumberLeader" (fun _ -> leaderEnabled <- Services.settings.getValue("enableNumberLeader") :?> bool; this.cancelLeader())) |> ignore
             owned.Own(OS.setSingleWinEvent WinEvent.EVENT_SYSTEM_FOREGROUND (fun _ ->
                 cachedPath <- (IntPtr.Zero, "")
-                if leader.active && not (leader.validate (WinUserApi.GetForegroundWindow()) DateTime.UtcNow) then this.cancelLeader())) |> ignore
-            timer.Tick.Add(fun _ -> if not (leader.validate (WinUserApi.GetForegroundWindow()) DateTime.UtcNow) then this.cancelLeader())
+                if leader.active && not (this.validateLeader()) then this.cancelLeader())) |> ignore
+            timer.Tick.Add(fun _ -> if not (this.validateLeader()) then this.cancelLeader())
 
     interface IDisposable with
         member _.Dispose() =

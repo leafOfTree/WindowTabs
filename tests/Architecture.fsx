@@ -170,6 +170,8 @@ let main() =
             member _.shutdown() = ()
             member _.setWindowNameOverride _ = ()
             member _.getWindowNameOverride _ = None
+            member _.getTabColorOverride _ = None
+            member _.setTabColorOverride _ = ()
             member _.getTabColor _ = None
             member _.appWindows = List2()
             member _.getAutoGroupingEnabled _ = false
@@ -289,6 +291,14 @@ let main() =
         api.setValue("enableCtrlNumberHotKey",box false)
         check (target WindowMessages.WM_KEYDOWN 0x31 true=None) "Numeric shortcuts retained their enabled state"
         let altTarget msg ctrl alt = onGroup(fun _ -> numeric.targetIndex(msg,0x31,ctrl,altPressed=alt))
+        api.setValue("appTabColors",box(Map.ofList [@"C:\Apps\Editor.exe","#1234AB"]))
+        let kept = SettingsCatalog.resetRoot api.root false false
+        api.root <- kept
+        check (api.getValue("numberHotKeyModifier")=box "Ctrl") "Reset must retain the deferred Ctrl default"
+        let colors = api.getValue("appTabColors") :?> Map<string,string>
+        check (colors.[@"C:\APPS\EDITOR.EXE"]="#1234AB") "App colours did not survive save/reset/reload"
+        check (isNull (SettingsCatalog.resetRoot api.root true false).["appTabColors"]) "Clear rules retained app colours"
+        check (Theme.parseTabColor "#notrgb"=None && Theme.parseTabColor "#001122"=Some(System.Drawing.Color.FromArgb(0,17,34))) "Colour validation accepted malformed input"
         let paths = Set2(List2([@"C:\Apps\Editor.exe"]))
         for mode in ["AllExcept";"OnlyListed"] do
             check (NumberShortcutRules.allows mode paths @"c:\apps\EDITOR.exe" = (mode="OnlyListed")) "Listed application rule must ignore path case"

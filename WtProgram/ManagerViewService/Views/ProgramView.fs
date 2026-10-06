@@ -153,6 +153,7 @@ type ProgramView() as this=
         if list.Roots.Count=0 then panel.Status <- tr Strings.AppRules.scanning
         // Apps with a rule are listed even when they are not running, so they can be changed.
         let ruled = ["includedPaths";"excludedPaths";"autoGroupingPaths";"numberShortcutPaths"] |> List.collect(fun key -> (Services.settings.getValue(key).cast<Set2<string>>()).items.list)
+        let ruled = ruled @ ((Services.settings.getValue("appTabColors") :?> Map<string,string>) |> Map.toList |> List.map fst)
         let mode = Services.settings.getValue("numberShortcutAppMode") :?> string
         let paths = Services.settings.getValue("numberShortcutPaths") :?> Set2<string>
         let numberEnabled = NumberShortcutRules.allows mode paths
