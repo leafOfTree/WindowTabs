@@ -45,7 +45,13 @@ for native calls and releases queue entries when outstanding work ends.
 
 Minimize/restore uses the same stream and acknowledges its own WinEvents to avoid
 feeding an older transition back into the group. Native animation settings are
-left unchanged. Maximized cross-monitor positioning still moves before applying
+left unchanged. The group transition timer also waits for queued minimize/restore
+work to finish, then reconciles strip visibility and placement without requiring
+another foreground event. It stops when the transition checks are complete.
+Reconciliation also puts the strip immediately above its owner even when neither
+the owner nor the group's tab order changed: native visibility alone does not
+mean the strip is above restored windows. This does not activate the group.
+Maximized cross-monitor positioning still moves before applying
 placement; normal positioning still uses `MoveWindow` to preserve snapped bounds.
 
 `WindowRefreshQueue` batches events for 30 ms without continually resetting its

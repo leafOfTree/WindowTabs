@@ -63,6 +63,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let pendingMinimizeStates = Collections.Generic.Dictionary<IntPtr,bool * int64>()
     let requestedMinimizeStates = Collections.Generic.Dictionary<IntPtr,bool>()
     let minimizeStateTimer = new System.Windows.Forms.Timer(Interval=16)
+    let mutable reconcileMinimizeState = false
     let transitionClock = Stopwatch.StartNew()
     let iconCache = new WindowIconCache(invoker :> IDispatcher,fun hwnd ->
         Cell.beginUpdate()
@@ -91,7 +92,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 elif this.os.windowFromHwnd(hwnd).isMinimized=minimized then
                     pendingMinimizeStates.Remove(hwnd) |> ignore
                     this.main(hwnd,if minimized then WinEvent.EVENT_SYSTEM_MINIMIZESTART else WinEvent.EVENT_SYSTEM_MINIMIZEEND)
-            if pendingMinimizeStates.Count=0 then minimizeStateTimer.Stop())
+            // WinEvents report the start of restoration, before ShowWindow and its
+            // owned-popup visibility changes finish on the placement worker.
+            if reconcileMinimizeState && FollowerPlacement.queue.isIdle(placementOwner) then
+                reconcileMinimizeState <- false
+                this.withUpdate(fun () ->
+                    this.saveZorder()
+                    if not this.isEmpty then this.saveTopWindowPlacement()
+                    this.updateIsVisible()
+                    this.foreground <- this.os.foreground.hwnd)
+                if not this.isEmpty then this.setTsParent(this.topWindow)
+            if pendingMinimizeStates.Count=0 && not reconcileMinimizeState then minimizeStateTimer.Stop())
 
         winEventHandler.set(Some(
             _os.setSingleWinEvent WinEvent.EVENT_SYSTEM_FOREGROUND <| fun(hwnd) -> 
@@ -177,7 +188,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.tabAppearance = appearanceSnapshot
     member this.geometryChanged = geometryChangedEvent.Publish
 
-    member private this.withUpdate f =
+    member private this.withUpdate<'a> (f:unit -> 'a) : 'a =
         Cell.beginUpdate()
         try f()
         finally Cell.endUpdate()
@@ -295,7 +306,14 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             tabInfoChangedEvent.Trigger(hwnd)
 
     member private this.setTsParent(parentHwnd) =
-        this.os.windowFromHwnd(this.ts.hwnd).setParent(this.os.windowFromHwnd(parentHwnd))
+        let strip = this.os.windowFromHwnd(this.ts.hwnd)
+        let parent = this.os.windowFromHwnd(parentHwnd)
+        strip.setOwner(parent)
+        // Restore can leave an owned popup visible but behind its unchanged owner.
+        // Keep it adjacent to that window without activating or raising the group.
+        if parentHwnd<>IntPtr.Zero && not parent.isMinimized then
+            let previous = parent.prevZorder
+            if previous.hwnd<>strip.hwnd then strip.insertAfter(previous)
         this.ts.refreshShadow()
         
     member this.isIconOnly 
@@ -490,6 +508,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         | WinEvent.EVENT_SYSTEM_FOREGROUND ->
             this.foreground <- hwnd
             this.saveZorder()
+            // Windows can hide an owned strip during minimize/restore after our last
+            // update. Reconcile even when focus and tab order have not changed.
+            if this.windows.contains(hwnd) then
+                this.saveTopWindowPlacement()
+                this.updateIsVisible()
             this.ts.refreshShadow()
         | _ -> ()
       
@@ -534,6 +557,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 others.iter(fun other ->
                     requestedMinimizeStates.[other] <- false
                     FollowerPlacement.queue.submit(placementOwner,other,FollowerPlacement.restoreBelowRequest other hwnd))
+                this.watchMinimizeCompletion()
 
     member this.removeWindow(hwnd) = this.withUpdate <| fun() ->
         if this.windows.contains(hwnd) then
@@ -591,15 +615,21 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.needsMinimizeState minimized hwnd =
         isMinimized hwnd<>minimized || requestedMinimizeStates.ContainsKey hwnd
 
+    member private this.watchMinimizeCompletion() =
+        reconcileMinimizeState <- true
+        minimizeStateTimer.Start()
+
     member this.minimizeAll = fun() ->
         zorderCell.value.reverse.where(this.needsMinimizeState true).iter <| fun hwnd ->
             requestedMinimizeStates.[hwnd] <- true
             FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.minimizeRequest hwnd true)
+        this.watchMinimizeCompletion()
         
     member this.restoreAll = fun() ->
         zorderCell.value.where(this.needsMinimizeState false).iter <| fun hwnd ->
             requestedMinimizeStates.[hwnd] <- false
             FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.minimizeRequest hwnd false)
+        this.watchMinimizeCompletion()
         
     member this.tabActivate(Tab(hwnd), force) =
         let window = this.os.windowFromHwnd(hwnd)

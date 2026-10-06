@@ -218,6 +218,15 @@ let main() =
                     pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle))
                     check (not(isMinimized handles.Head)) "A visible window joining a minimized group left the other tabs minimized"
                     check (referenceOS.windowFromHwnd(joining).zorder < referenceOS.windowFromHwnd(handles.Head).zorder) "The restored tab covered the window that joined the group"
+                    check (onGroup(fun group -> group.ts.visible && OS().windowFromHwnd(group.hwnd).isVisible)) "Joining a minimized group left the native tab strip hidden"
+                    check (onGroup(fun group -> OS().windowFromHwnd(group.hwnd).zorder < OS().windowFromHwnd(joining).zorder)) "Joining a minimized group left the tab strip behind the new window"
+                    // Owned popups can be hidden by Windows after our visibility update.
+                    // A foreground notification must reconcile the HWND even if the tab order is unchanged.
+                    onGroup(fun group -> invoke "handleWindowEvent" group [|box joining; box WinEvent.EVENT_SYSTEM_FOREGROUND|] |> ignore)
+                    onGroup(fun group ->
+                        OS().windowFromHwnd(group.hwnd).hide()
+                        invoke "handleWindowEvent" group [|box joining; box WinEvent.EVENT_SYSTEM_FOREGROUND|] |> ignore)
+                    check (onGroup(fun group -> OS().windowFromHwnd(group.hwnd).isVisible)) "Foreground reconciliation left an externally hidden tab strip invisible"
                     onGroup(fun group -> group.removeWindow joining)
                     check (onGroup(fun group -> group.ts.visible)) "Closing the joined window minimized its group again"
                     onGroup(fun group -> group.addWindow(joining,false))
@@ -243,6 +252,38 @@ let main() =
                     hooks.values.iter(fun hook -> hook.Dispose())
                     let empty = hooks.items.map(fun (hwnd,_) -> hwnd, {new IDisposable with member _.Dispose() = ()})
                     cell.GetType().GetMethod("set").Invoke(cell,[|box (Map2(empty))|]) |> ignore)
+                if count=2 then
+                    // Reproduce an owned strip being hidden after the early restore events.
+                    // No foreground event or click is allowed to repair it for us.
+                    let joining = handles.[1]
+                    onGroup(fun group -> group.minimizeAll())
+                    pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle) && handles |> List.take 2 |> List.forall(fun hwnd -> OS().windowFromHwnd(hwnd).isMinimized))
+                    onGroup(fun group -> group.removeWindow joining)
+                    onHelper(fun () -> OS().windowFromHwnd(joining).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
+                    onHelper(fun () -> forms.Head.Delay <- 300)
+                    try
+                        onGroup(fun group -> group.addWindow(joining,false))
+                        onGroup(fun group ->
+                            check (not group.isPlacementIdle) "Restore completed before the late-hide fixture"
+                            OS().windowFromHwnd(group.hwnd).hide())
+                        pumpUntil(fun () -> onGroup(fun group ->
+                            let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="minimizeStateTimer")
+                            group.isPlacementIdle && OS().windowFromHwnd(group.hwnd).isVisible && not((field.GetValue(group) :?> System.Windows.Forms.Timer).Enabled)))
+                        check (not(OS().windowFromHwnd(handles.Head).isMinimized)) "Restore completion left an existing tab minimized"
+                        check (onGroup(fun group -> OS().windowFromHwnd(group.hwnd).zorder < OS().windowFromHwnd(joining).zorder)) "Restore completion left the strip behind the joined window"
+                    finally onHelper(fun () -> forms.Head.Delay <- 0)
+                    // Live Neovide snapshot: the strip is visible and has the right owner,
+                    // but SWP_NOOWNERZORDER has left it behind that owner. No click follows.
+                    onGroup(fun group ->
+                        let strip = OS().windowFromHwnd(group.hwnd)
+                        strip.insertAfter(WindowHandleTypes.HWND_BOTTOM)
+                        check strip.isVisible "Layering fixture unexpectedly hid the strip"
+                        check (strip.zorder > OS().windowFromHwnd(joining).zorder) "Layering fixture did not put the strip behind its owner"
+                        invoke "watchMinimizeCompletion" group [||] |> ignore)
+                    pumpUntil(fun () -> onGroup(fun group ->
+                        let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="minimizeStateTimer")
+                        not((field.GetValue(group) :?> System.Windows.Forms.Timer).Enabled)))
+                    check (onGroup(fun group -> OS().windowFromHwnd(group.hwnd).zorder < OS().windowFromHwnd(joining).zorder)) "Visible tab strip stayed behind its owner after restore reconciliation"
                 onGroup(fun group ->
                     let actual = invoke "inZorder" group [|box group.windows.items|] :?> List2<IntPtr>
                     let expected = group.windows.items.sortBy(fun hwnd -> referenceOS.windowFromHwnd(hwnd).zorder)
