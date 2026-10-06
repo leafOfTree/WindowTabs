@@ -59,9 +59,49 @@ let main() =
             check (abs(sidebar.Width-width)<=2) "Repeated DPI changes caused layout drift"
         finally Marshal.FreeHGlobal(memory)
         form.Close()
+        // A settings page first created after the window moved to a monitor with another scale
+        // takes fonts for that scale, like the pages WinForms rescaled.
+        Dpi.set start
+        Services.register<IFilterService>({
+            new IFilterService with
+                member _.isAppWindow _ = false
+                member _.isAppWindowStyle _ = false
+                member _.isTabbableWindow _ = false
+                member _.isTabbingEnabledForAllProcessesByDefault with get()=true and set _=()
+                member _.setIsTabbingEnabledForProcess _ _ = ()
+                member _.setIsTabbingEnabledForProcesses _ _ = ()
+                member _.getIsTabbingEnabledForProcess _ = false })
+        let frame = DesktopManagerForm(viewFactories=[
+            GeneralSettings,"General",(fun () -> GeneralView() :> ISettingsView)
+            AppearanceSettings,"Appearance",(fun () -> AppearanceView() :> ISettingsView)])
+        use settingsForm = frame.window
+        settingsForm.ShowInTaskbar <- false
+        settingsForm.StartPosition <- FormStartPosition.Manual
+        settingsForm.Location <- Point(-20000,-20000)
+        settingsForm.Show()
+        let rec labels (control:Control) = seq { if control :? Label then yield control
+                                                 for child in control.Controls do yield! labels child }
+        Application.DoEvents()
+        let target = start*2
+        let bounds = settingsForm.Bounds
+        let memory = Marshal.AllocHGlobal(16)
+        try
+            [bounds.Left;bounds.Top;bounds.Right;bounds.Bottom] |> List.iteri(fun i value -> Marshal.WriteInt32(memory,i*4,value))
+            Native.SendMessage(settingsForm.Handle,0x02E0,IntPtr(target ||| (target <<< 16)),memory) |> ignore
+        finally Marshal.FreeHGlobal(memory)
+        Application.DoEvents()
+        check (Dpi.value()=target) "Settings window did not process the DPI change"
+        frame.showView(AppearanceSettings)
+        Application.DoEvents()
+        let expected = 10.5f*float32 target/float32(Dpi.system())
+        let sizes = Seq.append (labels settingsForm) (settingsForm.Controls.Find("tabStyle",true) |> Seq.cast<Control>)
+                    |> Seq.filter(fun c -> c.Visible && c.Font.Style=FontStyle.Regular) |> Seq.map(fun c -> c.Font.Size) |> Seq.distinct |> List.ofSeq
+        check (not sizes.IsEmpty && sizes |> List.forall(fun size -> abs(size-expected)<0.05f))
+              (sprintf "Page created after the DPI change has fonts %A, expected %.2f" sizes expected)
+        settingsForm.Close()
     finally
         Dpi.set originalDpi
         Native.SetThreadDpiAwarenessContext(previous) |> ignore
         Environment.CurrentDirectory <- originalDirectory
-    printfn "PASS: repeated native WM_DPICHANGED transitions, sidebar sizing and editor layout."
+    printfn "PASS: repeated native WM_DPICHANGED transitions, sidebar sizing, editor layout and settings pages created at a new scale."
 TestInit.run main

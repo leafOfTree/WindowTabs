@@ -40,13 +40,13 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
     let mutable activePage = pages.Head.key
     let mutable suppressSearch = false
     let themedPages = Collections.Generic.HashSet<SettingsViewType>()
-    let form = new Form(Text=tr Strings.SettingsWindow.title,AccessibleName=tr Strings.SettingsWindow.title,Font=SettingsUi.bodyFont)
+    let form = new Form(Text=tr Strings.SettingsWindow.title,AccessibleName=tr Strings.SettingsWindow.title,Font=SettingsUi.bodyFont())
     do SettingsUi.hideCaptionText form
     let navigation = new Panel(Dock=DockStyle.Left,Width=Dpi.scale 208,Padding=Padding(Dpi.scale 12),Tag="sidebar")
     let links = new TableLayoutPanel(Dock=DockStyle.Top,AutoSize=true,ColumnCount=1)
     let body = new Panel(Dock=DockStyle.Fill)
     let host = new Panel(Dock=DockStyle.Fill)
-    let search = new TextBox(Font=SettingsUi.bodyFont,BorderStyle=BorderStyle.None,
+    let search = new TextBox(Font=SettingsUi.bodyFont(),BorderStyle=BorderStyle.None,
                              AccessibleName=tr Strings.SettingsWindow.searchSettings,Tag="search-input")
     let searchResults = new SettingsSearchResults(Visible=false,AccessibleName=tr Strings.SettingsWindow.searchSuggestions)
     // Each language names itself, so the list stays readable whatever is selected.
@@ -66,7 +66,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         choice
     let searchFocusFilter = new SettingsSearchFocusFilter(form,search,searchResults) :> IMessageFilter
     let results = new SettingsChoiceList(BorderStyle=BorderStyle.None,
-                             Font=SettingsUi.bodyFont,IntegralHeight=false,
+                             Font=SettingsUi.bodyFont(),IntegralHeight=false,
                              DrawMode=DrawMode.OwnerDrawFixed,ItemHeight=Dpi.scale 48,Cursor=Cursors.Hand,
                              AccessibleName=tr Strings.SettingsWindow.searchResults)
     // More results than fit scroll with the settings scrollbar, not the system one.
@@ -75,7 +75,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                                  Text=tr Strings.SettingsWindow.noMatches)
     let captions key fallback = tr (Strings.Pages.title key)
     let buttons = pages |> List.map (fun page ->
-        let button = new SettingsNavigationButton(page.key,Text=captions page.key page.title,Font=SettingsUi.bodyFont)
+        let button = new SettingsNavigationButton(page.key,Text=captions page.key page.title,Font=SettingsUi.bodyFont())
         button.TextAlign <- ContentAlignment.MiddleLeft
         button.AutoSize <- false
         button.Height <- Dpi.scale 38
@@ -135,7 +135,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 select page.key)
         let footer = new Panel(Dock=DockStyle.Bottom,Height=Dpi.scale 72,
                                Padding=Padding(Dpi.scale 12,Dpi.scale 12,Dpi.scale 8,Dpi.scale 8))
-        let brand = new Label(Text="WindowTabs",Font=SettingsUi.sectionFont,AutoSize=false,
+        let brand = new Label(Text="WindowTabs",Font=SettingsUi.sectionFont(),AutoSize=false,
                               Dock=DockStyle.Top,Height=Dpi.scale 24,UseMnemonic=false)
         let version = new Label(Text=sprintf "v%s" AssemblyInfo.informationalVersion,AutoSize=false,
                                 Dock=DockStyle.Fill,Tag="muted",UseMnemonic=false,TextAlign=ContentAlignment.MiddleLeft)
@@ -201,13 +201,13 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 e.Graphics.FillRectangle(background,e.Bounds)
                 let left = e.Bounds.Left+Dpi.scale 14
                 let right = e.Bounds.Width-Dpi.scale 28
-                drawMatch e.Graphics (tr item.text.caption) SettingsUi.rowFont
+                drawMatch e.Graphics (tr item.text.caption) (SettingsUi.rowFont())
                     (Rectangle(left,e.Bounds.Top+Dpi.scale 7,right,Dpi.scale 23)) p.text
                 // The language picker is in the sidebar, on every page, not on General.
                 let context = tr (SettingsCatalog.searchContext item)
                 let evidence = SettingsCatalog.searchEvidence (search.Text.Trim()) item
                 drawMatch e.Graphics (String.concat " · " (context::evidence))
-                    SettingsUi.bodyFont (Rectangle(left,e.Bounds.Top+Dpi.scale 27,right,Dpi.scale 19)) p.muted
+                    (SettingsUi.bodyFont()) (Rectangle(left,e.Bounds.Top+Dpi.scale 27,right,Dpi.scale 19)) p.muted
                 ())
         let styleSearch() =
             let p = SettingsColors.current()

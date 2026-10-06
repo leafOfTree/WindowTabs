@@ -73,7 +73,7 @@ module private SettingsFile =
 type DiagnosticsView() =
     let view = new SettingsTextView()
     let text = view.TextBox
-    do text.Font <- new Font("Consolas",SettingsUi.bodyFont.SizeInPoints,GraphicsUnit.Point)
+    do text.Font <- SettingsUi.font "Consolas" 10.5f FontStyle.Regular
     // Buttons are built before the page, which owns their dialogs.
     let mutable owner : IWin32Window = null
     let includeWindows = new SettingsIconButton(WindowListIcon,tr Strings.Diagnostics.includeWindowsHelp,toggle=true)

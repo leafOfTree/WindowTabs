@@ -253,7 +253,7 @@ type TaskSwitchForm(control:ITaskSwitchListControl) =
         let formSize = Size(min (control.contentWidth+padding*2) (area.Width-Dpi.scale 32),min height (area.Height*85/100))
         f.AutoScaleMode <- AutoScaleMode.None
         f.Padding <- Padding(padding)
-        f.Font <- SettingsUi.bodyFont
+        f.Font <- SettingsUi.bodyFont()
         f.ShowInTaskbar <- false
         f.StartPosition <- FormStartPosition.Manual
         f.FormBorderStyle <- FormBorderStyle.None
@@ -343,7 +343,7 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
     // Wide enough for a readable title even with one or two windows.
     let width = max (Dpi.scale 360) (columns*cell+(columns-1)*gap+padding*2)
     let height = padding+rows*cell+(rows-1)*gap+titleHeight+padding/2
-    let titleFont = new Font("Segoe UI",11.0f)
+    let titleFont = SettingsUi.font "Segoe UI" 11.0f FontStyle.Regular
     let badge =
         use icon = Services.openIcon("Bemo.ico")
         new Bitmap(icon.ToBitmap(),Size(Dpi.scale 24,Dpi.scale 24))
@@ -453,7 +453,6 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
             shadow |> Option.iter(fun item -> (item :> IDisposable).Dispose())
             form.Hide()
             form.Dispose()
-            titleFont.Dispose()
             badge.Dispose()
             if not (isNull frame) then frame.Dispose()
             for _,icon,_ in items do icon |> Option.iter(fun image -> image.Dispose())

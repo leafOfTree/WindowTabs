@@ -18,10 +18,17 @@ module SettingsUi =
             try SetWindowThemeAttribute(form.Handle,1,[|1u;1u|],8u) |> ignore with _ -> ())
 
 
-    let bodyFont = new Font("Segoe UI", 10.5f, FontStyle.Regular)
-    let titleFont = new Font("Segoe UI", 20.0f, FontStyle.Regular)
-    let rowFont = bodyFont
-    let sectionFont = new Font("Segoe UI", 11.0f, FontStyle.Bold)
+    let private fonts = Collections.Concurrent.ConcurrentDictionary<struct(string*float32*FontStyle*int),Font>()
+    /// A font for the current thread's DPI. GDI sizes points at the system DPI, so on a monitor
+    /// with another scale the size is in proportion, as WinForms rescales fonts when a window
+    /// moves there. Shared and kept for the process: never dispose one.
+    let font (family:string) (points:float32) (style:FontStyle) =
+        let dpi = Dpi.value()
+        fonts.GetOrAdd(struct(family,points,style,dpi),fun _ ->
+            new Font(family,points*float32 dpi/float32(Dpi.system()),style))
+    let bodyFont() = font "Segoe UI" 10.5f FontStyle.Regular
+    let rowFont() = bodyFont()
+    let sectionFont() = font "Segoe UI" 11.0f FontStyle.Bold
 
     let palette() = SettingsColors.current()
 
@@ -122,17 +129,17 @@ module SettingsUi =
     let button caption =
         let button = new SettingsActionButton(Text=caption, AutoSize=true, MinimumSize=Size(Dpi.scale 76,Dpi.scale 30))
         button.Padding <- Padding(Dpi.scale 8,Dpi.scale 2,Dpi.scale 8,Dpi.scale 2)
-        button.Font <- bodyFont
+        button.Font <- bodyFont()
         button
 
     let choice (items:string[]) =
-        let combo = new SettingsCombo(items,Font=bodyFont)
+        let combo = new SettingsCombo(items,Font=bodyFont())
         combo.FitToItems()
         combo
 
     let page() =
         let panel = new SettingsPage()
-        panel.Font <- bodyFont
+        panel.Font <- bodyFont()
         panel :> Panel,panel.contentTable
     let add (table:TableLayoutPanel) (control:Control) =
         let row = table.RowCount
@@ -142,7 +149,7 @@ module SettingsUi =
         table.Controls.Add(control,0,row)
 
     let section (table:TableLayoutPanel) caption =
-        let label = new Label(Text=caption,AutoSize=true,Font=sectionFont)
+        let label = new Label(Text=caption,AutoSize=true,Font=sectionFont())
         // Close to its first row, which has its own top padding.
         label.Margin <- Padding(0,(if table.RowCount=0 then 0 else Dpi.scale 24),0,Dpi.scale 4)
         add table label
@@ -161,14 +168,14 @@ module SettingsUi =
         let labels = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=1,
                                          Anchor=(AnchorStyles.Left ||| AnchorStyles.Right),Margin=Padding(0,0,Dpi.scale 16,0))
         labels.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
-        let name = new Label(Text=caption,AutoSize=true,Dock=DockStyle.Fill,Font=rowFont,UseMnemonic=false,Margin=Padding.Empty)
-        let detail = new SettingsEllipsisLabel(Text=description,AutoSize=false,Font=rowFont,Height=rowFont.Height,
-                               MinimumSize=Size(0,rowFont.Height),Dock=DockStyle.Fill,Tag="muted",
+        let name = new Label(Text=caption,AutoSize=true,Dock=DockStyle.Fill,Font=rowFont(),UseMnemonic=false,Margin=Padding.Empty)
+        let detail = new SettingsEllipsisLabel(Text=description,AutoSize=false,Font=rowFont(),Height=rowFont().Height,
+                               MinimumSize=Size(0,rowFont().Height),Dock=DockStyle.Fill,Tag="muted",
                                Margin=Padding(0,Dpi.scale 4,0,0))
         labels.RowCount <- if String.IsNullOrWhiteSpace(description) then 1 else 2
         labels.RowStyles.Add(RowStyle(SizeType.AutoSize)) |> ignore
         if labels.RowCount=2 then
-            let style = RowStyle(SizeType.Absolute,float32(rowFont.Height+detail.Margin.Vertical))
+            let style = RowStyle(SizeType.Absolute,float32(rowFont().Height+detail.Margin.Vertical))
             labels.RowStyles.Add(style) |> ignore
             // The description wraps to as many lines as the column's width needs. Its height is set
             // here, on every layout, rather than by auto-size: an auto-size row collapses around
@@ -176,13 +183,13 @@ module SettingsUi =
             // window that has already been laid out.
             labels.Layout.Add(fun _ ->
                 let width = max 40 (labels.ClientSize.Width-Dpi.scale 8)
-                let text = TextRenderer.MeasureText(description,rowFont,Size(width,Int32.MaxValue),
+                let text = TextRenderer.MeasureText(description,rowFont(),Size(width,Int32.MaxValue),
                                                     TextFormatFlags.NoPrefix ||| TextFormatFlags.WordBreak)
-                let height = float32(max rowFont.Height text.Height+detail.Margin.Vertical)
+                let height = float32(max (rowFont().Height) text.Height+detail.Margin.Vertical)
                 if style.Height<>height then style.Height <- height)
         if not (String.IsNullOrWhiteSpace(description)) then labels.Controls.Add(detail,0,1)
         let helpButton = help |> Option.map(fun text ->
-            new SettingsHelpButton(text,Anchor=AnchorStyles.Left,Margin=Padding(Dpi.scale 4,0,0,0),Font=rowFont,
+            new SettingsHelpButton(text,Anchor=AnchorStyles.Left,Margin=Padding(Dpi.scale 4,0,0,0),Font=rowFont(),
                                    AccessibleName=caption))
         match helpButton with
         | None -> labels.Controls.Add(name,0,0)
@@ -250,9 +257,9 @@ module SettingsUi =
     let sectionCardWithHelp (table:TableLayoutPanel) caption (help:string) =
         let heading = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
                                           Margin=Padding(0,(if table.RowCount=0 then 0 else Dpi.scale 24),0,Dpi.scale 4))
-        let label = new Label(Text=caption,AutoSize=true,Font=sectionFont,Anchor=AnchorStyles.Left,Margin=Padding.Empty)
+        let label = new Label(Text=caption,AutoSize=true,Font=sectionFont(),Anchor=AnchorStyles.Left,Margin=Padding.Empty)
         let button = new SettingsHelpButton(help,Anchor=AnchorStyles.Left,Margin=Padding(Dpi.scale 6,0,0,0),
-                                            Font=rowFont,AccessibleName=caption)
+                                            Font=rowFont(),AccessibleName=caption)
         heading.Controls.Add(label)
         heading.Controls.Add(button)
         add table heading

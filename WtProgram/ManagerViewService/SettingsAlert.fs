@@ -57,7 +57,7 @@ type SettingsAlertDialog(kind:AlertKind, title:string, message:string, owned:boo
             new SettingsToggle(AccessibleName=caption,Anchor=AnchorStyles.Left,Margin=Padding(0,0,Dpi.scale 10,0)),page,caption)
     do
         this.Text <- title
-        this.Font <- SettingsUi.bodyFont
+        this.Font <- SettingsUi.bodyFont()
         this.FormBorderStyle <- FormBorderStyle.FixedDialog
         this.MaximizeBox <- false
         this.MinimizeBox <- false

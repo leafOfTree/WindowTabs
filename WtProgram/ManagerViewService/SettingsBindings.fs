@@ -45,7 +45,7 @@ module SettingsBindings =
         let choices =
             [|"system",tr Strings.Appearance.system;"light",tr Strings.Appearance.light;"dark",tr Strings.Appearance.dark|]
             |> Array.mapi (fun index (mode,label) ->
-                let tile = new SettingsThemeTile(mode,Text=label,Font=bodyFont,AccessibleName=label)
+                let tile = new SettingsThemeTile(mode,Text=label,Font=bodyFont(),AccessibleName=label)
                 table.Controls.Add(tile,index,0)
                 tile.CheckedChanged.Add(fun _ ->
                     if tile.Checked && not refreshing then Services.settings.updateAppearance(fun s -> {s with mode=ThemeMode.parse mode}))

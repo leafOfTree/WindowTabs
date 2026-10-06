@@ -17,6 +17,8 @@ module Dpi =
         with _ -> 96)
     let private current = new Threading.ThreadLocal<int>(fun () -> systemDpi.Value)
     let value() = current.Value
+    /// GDI sizes point fonts at this DPI whatever the monitor.
+    let system() = systemDpi.Value
     let set value = current.Value <- max 48 (min 768 value)
     let currentFactor() = float(value()) / 96.0
     let scaleAt dpi (value:int) = int(Math.Round(float value * float dpi / 96.0))

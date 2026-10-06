@@ -88,7 +88,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                       ControlStyles.Selectable ||| ControlStyles.ResizeRedraw,true)
         this.TabStop <- true
         this.AccessibleRole <- AccessibleRole.Outline
-        this.Font <- SettingsUi.bodyFont
+        this.Font <- SettingsUi.bodyFont()
         this.Controls.Add(scroll)
         scroll.changed.Add(fun value -> smooth.stop(); offset <- value; this.Invalidate())
         this.Disposed.Add(fun _ -> tooltip.Dispose(); (smooth :> IDisposable).Dispose())

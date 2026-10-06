@@ -106,7 +106,7 @@ type WorkspaceView() as this =
 
     member private this.showEditDialog(editInfo:IEditInfo) =
         let fields = editInfo.fields
-        use form = new Form(Font=SettingsUi.bodyFont,FormBorderStyle=FormBorderStyle.FixedDialog,
+        use form = new Form(Font=SettingsUi.bodyFont(),FormBorderStyle=FormBorderStyle.FixedDialog,
                             MaximizeBox=false,MinimizeBox=false,ShowInTaskbar=false,
                             StartPosition=FormStartPosition.CenterParent)
         form.ClientSize <- Size(Dpi.scale 440,Dpi.scale (96+fields.Length*48))

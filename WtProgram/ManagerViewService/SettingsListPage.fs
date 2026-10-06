@@ -13,9 +13,9 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
     let mutable arranging = false
     let mutable relayoutPending = false
     let topInset() = Dpi.scale 16
-    let heading = new Label(Text=title,AutoSize=true,Font=SettingsUi.sectionFont,UseMnemonic=false)
+    let heading = new Label(Text=title,AutoSize=true,Font=SettingsUi.sectionFont(),UseMnemonic=false)
     let helpButton = helpText |> Option.map(fun text ->
-        new SettingsHelpButton(text,AccessibleName=tr Strings.SettingsWindow.howToUse,Font=SettingsUi.bodyFont))
+        new SettingsHelpButton(text,AccessibleName=tr Strings.SettingsWindow.howToUse,Font=SettingsUi.bodyFont()))
     let detail = new Label(Text=description,AutoSize=true,Tag="muted",UseMnemonic=false)
     let status = new Label(AutoSize=false,AutoEllipsis=true,TextAlign=ContentAlignment.MiddleRight,Tag="muted",UseMnemonic=false)
     let actionRow = new FlowLayoutPanel(AutoSize=true,WrapContents=false,FlowDirection=FlowDirection.LeftToRight)

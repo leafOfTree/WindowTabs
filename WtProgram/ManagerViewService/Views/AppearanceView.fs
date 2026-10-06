@@ -9,7 +9,7 @@ type ContrastComparison() as this =
     inherit Control()
     let mutable samples : (string*Color*Color*Color) list = []
     let chipWidth,chipHeight,gap = Dpi.scale 168,Dpi.scale 32,Dpi.scale 10
-    let captionFont = new Font("Segoe UI",9.0f)
+    let captionFont = SettingsUi.font "Segoe UI" 9.0f FontStyle.Regular
     let columns () = max 1 ((this.Width+gap)/(chipWidth+gap))
     let rowHeight () = chipHeight+Dpi.scale 4+captionFont.Height+gap
     let fit () =
@@ -62,7 +62,7 @@ type AppearanceView(?settings:ISettings) =
     let mutable editingDark = ThemeService.currentIsDark()
     let update = settings.updateAppearance
     /// The theme tiles above show which theme's colours these are.
-    let paletteTitle = new Label(AutoSize=true,Font=SettingsUi.sectionFont,Text=tr Strings.Appearance.tabColors,
+    let paletteTitle = new Label(AutoSize=true,Font=SettingsUi.sectionFont(),Text=tr Strings.Appearance.tabColors,
                                  Margin=Padding(0,Dpi.scale 16,0,Dpi.scale 8))
     let preset = SettingsUi.choice (Array.append (ThemePresets.names |> Array.map tr) [|tr Strings.Appearance.custom|])
     let tabStyle = SettingsUi.choice (Strings.Appearance.tabStyles |> Array.map tr)
@@ -133,7 +133,7 @@ type AppearanceView(?settings:ISettings) =
         "tabNormalBgColor",(fun p -> p.tabNormalBgColor),(fun v p -> {p with tabNormalBgColor=v})
         "tabBorderColor",(fun p -> p.tabBorderColor),(fun v p -> {p with tabBorderColor=v})
         "tabFlashBgColor",(fun p -> p.tabFlashBgColor),(fun v p -> {p with tabFlashBgColor=v}) ]
-    let colors = colorFields |> List.map(fun (key,get,set) -> key,get,set,(new SettingsColorInput(Font=SettingsUi.bodyFont) :> IPropEditor))
+    let colors = colorFields |> List.map(fun (key,get,set) -> key,get,set,(new SettingsColorInput(Font=SettingsUi.bodyFont()) :> IPropEditor))
     let dimensionFields : (string * (TabGeometry -> int) * (int -> TabGeometry -> TabGeometry)) list = [
         "tabHeight",(fun g -> g.height),(fun v g -> {g with height=v})
         "tabMaxWidth",(fun g -> g.maxWidth),(fun v g -> {g with maxWidth=v})
@@ -142,7 +142,7 @@ type AppearanceView(?settings:ISettings) =
 
     let dimensions = dimensionFields |> List.map(fun (key,get,set) ->
         let low,high = SettingsCatalog.range key
-        key,get,set,new SettingsNumberInput(Minimum=decimal low,Maximum=decimal high,Font=SettingsUi.bodyFont))
+        key,get,set,new SettingsNumberInput(Minimum=decimal low,Maximum=decimal high,Font=SettingsUi.bodyFont()))
     /// Says when the text colour is shown darker or lighter than chosen, so it stays readable.
     let contrastNote = new Label(AutoSize=true,Tag="muted",UseMnemonic=false,Visible=false,Margin=Padding(0,Dpi.scale 8,0,0))
     let contrastComparison = new ContrastComparison(Name="contrast-comparison",Visible=false)

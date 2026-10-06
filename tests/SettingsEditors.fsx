@@ -84,13 +84,13 @@ let main() =
     do
         let path = @"C:\Users\someone\repository\WindowTabs\WtProgram\bin\Debug\WindowTabsCrash.log"
         let width = 220
-        let measure (line:string) = TextRenderer.MeasureText(line,SettingsUi.bodyFont,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPrefix).Width
-        let lines = SettingsTextWrap.lines path SettingsUi.bodyFont width
+        let measure (line:string) = TextRenderer.MeasureText(line,SettingsUi.bodyFont(),Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPrefix).Width
+        let lines = SettingsTextWrap.lines path (SettingsUi.bodyFont()) width
         assertTrue (lines.Length>1 && lines |> List.forall(fun line -> measure line<=width)) "A long path is not wrapped to the width"
         assertTrue (String.concat "" lines = path) "Wrapping a path lost characters"
         assertTrue (lines |> List.take (lines.Length-1) |> List.forall(fun line -> line.EndsWith("\\"))) "A path is not broken after its separators"
-        assertTrue (SettingsTextWrap.lines "Short text" SettingsUi.bodyFont width = ["Short text"]) "Text that fits is wrapped"
-        let sentence = SettingsTextWrap.lines "Words wrap at spaces when the line runs out of room" SettingsUi.bodyFont 150
+        assertTrue (SettingsTextWrap.lines "Short text" (SettingsUi.bodyFont()) width = ["Short text"]) "Text that fits is wrapped"
+        let sentence = SettingsTextWrap.lines "Words wrap at spaces when the line runs out of room" (SettingsUi.bodyFont()) 150
         assertTrue (sentence.Length>1 && sentence |> List.forall(fun line -> not (line.StartsWith(" ") || line.EndsWith(" ")))) "A sentence is not wrapped at spaces"
     let number = new SettingsNumberInput(Minimum= -10M,Maximum=100M,Value=10M)
     let numberText = number.Controls |> Seq.cast<Control> |> Seq.pick(function :? TextBox as t -> Some t | _ -> None)
@@ -132,7 +132,7 @@ let main() =
 
     for mode,name in [DarkTheme,"dark";LightTheme,"light"] do
         preferences <- { preferences with mode=mode }
-        use form = new Form(ClientSize=Size(920,1040),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false,Font=SettingsUi.bodyFont)
+        use form = new Form(ClientSize=Size(920,1040),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false,Font=SettingsUi.bodyFont())
         let view = AppearanceView() :> ISettingsView
         form.Controls.Add(view.control)
         SettingsUi.apply form
@@ -282,7 +282,7 @@ let main() =
         hotKeys.["searchTabs"] <- 0
         hotKeys.["newTab"] <- 0
         preferences <- { preferences with mode=mode }
-        use form = new Form(ClientSize=Size(920,560),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false,Font=SettingsUi.bodyFont)
+        use form = new Form(ClientSize=Size(920,560),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false,Font=SettingsUi.bodyFont())
         let view = HotKeyView() :> ISettingsView
         form.Controls.Add(view.control)
         SettingsUi.apply form
@@ -577,7 +577,7 @@ let main() =
                     saves.Value <- saves.Value+1
                     for path in paths do (if enabled then on.Add path else on.Remove path) |> ignore)
             member _.getIsTabbingEnabledForProcess path = lock on (fun () -> on.Contains path) }
-        use form = new Form(ClientSize=Size(920,560),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false,Font=SettingsUi.bodyFont)
+        use form = new Form(ClientSize=Size(920,560),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false,Font=SettingsUi.bodyFont())
         let view = ProgramView() :> ISettingsView
         form.Controls.Add(view.control)
         SettingsUi.apply form

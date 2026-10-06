@@ -142,12 +142,12 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list) =
     /// Only when the group is worth searching on its own and is not every tab.
     let canSwitchScope = groupItems.Length>1 && groupItems.Length<items.Length
     let scoped() = match scope with GroupTabs -> groupItems | AllTabs -> items
-    let input = new TextBox(Font=SettingsUi.bodyFont,BorderStyle=BorderStyle.None,Tag="search-input",
+    let input = new TextBox(Font=SettingsUi.bodyFont(),BorderStyle=BorderStyle.None,Tag="search-input",
                             BackColor=palette.surface,ForeColor=palette.text,
                             AccessibleName=tr Strings.TabSearch.prompt)
     let searchBox = new SettingsSearchBox(input,Dock=DockStyle.Top,Height=boxHeight)
     /// Smaller than the segments' text, as key caps are.
-    let keyFont = new Font("Segoe UI",8.5f)
+    let keyFont = SettingsUi.font "Segoe UI" 8.5f FontStyle.Regular
     let caption target =
         match target with
         | GroupTabs -> tr (Strings.TabSearch.groupTabs groupItems.Length)
@@ -157,7 +157,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list) =
     let segments() =
         let height = scopeHeight-Dpi.scale 8
         let top = (scopeHeight-height)/2
-        let width text = TextRenderer.MeasureText(text,SettingsUi.bodyFont,Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 24
+        let width text = TextRenderer.MeasureText(text,SettingsUi.bodyFont(),Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 24
         let choices = if canSwitchScope then [GroupTabs;AllTabs] else [scope]
         let inset = Dpi.scale 2
         let placed,right =
@@ -195,7 +195,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list) =
                         if current && SystemInformation.HighContrast then SystemColors.HighlightText
                         elif current || hovered=Some target then p.text
                         else p.muted
-                    TextRenderer.DrawText(g,caption target,SettingsUi.bodyFont,bounds,color,centred)
+                    TextRenderer.DrawText(g,caption target,SettingsUi.bodyFont(),bounds,color,centred)
                 // A key, not another segment: an outline on the surface with a thicker bottom edge.
                 key |> Option.iter(fun cap ->
                     let edge = if SystemInformation.HighContrast then SystemColors.WindowText else Color.FromArgb(140,p.muted)
@@ -213,7 +213,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list) =
                                     RowHeight=rowHeight,IconSize=24,TabStop=false,Dock=DockStyle.Fill,
                                     BackColor=palette.surface,ForeColor=palette.text)
     let empty = new Label(Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleCenter,Visible=false,
-                          Font=SettingsUi.bodyFont,BackColor=palette.surface,ForeColor=palette.muted,
+                          Font=SettingsUi.bodyFont(),BackColor=palette.surface,ForeColor=palette.muted,
                           Text=tr Strings.TabSearch.noMatches)
     let form =
         let f =
@@ -237,7 +237,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list) =
         f.ShowInTaskbar <- false
         f.StartPosition <- FormStartPosition.Manual
         f.TopMost <- true
-        f.Font <- SettingsUi.bodyFont
+        f.Font <- SettingsUi.bodyFont()
         f.BackColor <- palette.surface
         f.ForeColor <- palette.text
         f.Padding <- Padding(padding)
@@ -283,7 +283,6 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list) =
             // Not inside the form's own Deactivate or key handler.
             let dispose() =
                 form.Dispose()
-                keyFont.Dispose()
                 ImgHelper.disposeItems (Array.map fst items)
             if form.IsHandleCreated then form.BeginInvoke(Action dispose) |> ignore else dispose()
     let setScope target =
