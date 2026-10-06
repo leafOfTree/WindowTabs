@@ -99,9 +99,74 @@ let main() =
         check (not sizes.IsEmpty && sizes |> List.forall(fun size -> abs(size-expected)<0.05f))
               (sprintf "Page created after the DPI change has fonts %A, expected %.2f" sizes expected)
         settingsForm.Close()
+        // A settings page lays each panel out a few times when first shown, instead of again for
+        // every row added; not at all when shown again; and not while hidden as the window moves
+        // to a monitor with another scale. Counted rather than timed, so it holds on any machine.
+        Dpi.set start
+        let general = GeneralView() :> ISettingsView
+        let appearance = AppearanceView() :> ISettingsView
+        let rec panels (control:Control) = seq {
+            if control :? ScrollableControl && not (control :? ContainerControl) then yield control
+            for child in control.Controls do yield! panels child }
+        let layouts = Collections.Generic.Dictionary<Control,int>(HashIdentity.Reference)
+        for page in [general;appearance] do
+            for panel in panels page.control do
+                layouts.[panel] <- 0
+                panel.Layout.Add(fun _ -> layouts.[panel] <- layouts.[panel]+1)
+        let reset() = for panel in List.ofSeq layouts.Keys do layouts.[panel] <- 0
+        let expectLayouts name (page:ISettingsView) most =
+            let counts = panels page.control |> Seq.map(fun panel -> layouts.[panel]) |> List.ofSeq
+            check (List.max counts<=most && (most=0 || List.sum counts>0))
+                  (sprintf "%s: (layouts, panels) %A; expected at most %d layouts per panel" name (counts |> List.countBy id |> List.sort) most)
+        let pagesFrame = DesktopManagerForm(views=[general;appearance])
+        use pagesForm = pagesFrame.window
+        pagesForm.ShowInTaskbar <- false
+        pagesForm.StartPosition <- FormStartPosition.Manual
+        pagesForm.Location <- Point(-20000,-20000)
+        pagesForm.Show()
+        Application.DoEvents()
+        let rec all (control:Control) = seq { yield control; for child in control.Controls do yield! all child }
+        let show caption =
+            let button = all pagesForm |> Seq.pick(function :? SettingsNavigationButton as b when b.Text=caption -> Some b | _ -> None)
+            button.PerformClick()
+            Application.DoEvents()
+        let rescale (dpi:int) =
+            let bounds = pagesForm.Bounds
+            let memory = Marshal.AllocHGlobal(16)
+            try
+                [bounds.Left;bounds.Top;bounds.Right;bounds.Bottom] |> List.iteri(fun i value -> Marshal.WriteInt32(memory,i*4,value))
+                Native.SendMessage(pagesForm.Handle,0x02E0,IntPtr(dpi ||| (dpi <<< 16)),memory) |> ignore
+            finally Marshal.FreeHGlobal(memory)
+            Application.DoEvents()
+        expectLayouts "General as the window opens" general 6
+        reset()
+        show (tr Strings.Pages.appearance)
+        expectLayouts "Appearance opened from the sidebar" appearance 6
+        reset()
+        show (tr Strings.Pages.general)
+        expectLayouts "General shown again" general 0
+        expectLayouts "Appearance hidden" appearance 0
+        reset()
+        rescale (start*3/2)
+        expectLayouts "General moved to another scale" general 6
+        expectLayouts "Appearance moved to another scale while hidden" appearance 0
+        reset()
+        show (tr Strings.Pages.appearance)
+        expectLayouts "Appearance shown after moving to another scale" appearance 6
+        rescale start
+        // Moving back and forth while a page is hidden must not let its fixed sizes drift.
+        show (tr Strings.Pages.general)
+        for _ in 1..3 do
+            rescale (start*3/2)
+            rescale start
+        show (tr Strings.Pages.appearance)
+        let tiles = appearance.control.Controls.Find("theme",true).[0] :?> TableLayoutPanel
+        check (abs(tiles.RowStyles.[0].Height-float32(Dpi.scaleAt start 92))<=1.0f && abs(tiles.Height-Dpi.scaleAt start 92)<=1)
+              (sprintf "Theme tiles drifted to %.0f (row) and %d px after moves while hidden, expected %d" tiles.RowStyles.[0].Height tiles.Height (Dpi.scaleAt start 92))
+        pagesForm.Close()
     finally
         Dpi.set originalDpi
         Native.SetThreadDpiAwarenessContext(previous) |> ignore
         Environment.CurrentDirectory <- originalDirectory
-    printfn "PASS: repeated native WM_DPICHANGED transitions, sidebar sizing, editor layout and settings pages created at a new scale."
+    printfn "PASS: repeated native WM_DPICHANGED transitions, sidebar sizing, editor layout, settings pages created at a new scale and settings page layout passes."
 TestInit.run main

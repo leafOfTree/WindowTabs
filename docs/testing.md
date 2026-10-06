@@ -40,7 +40,7 @@ branch. The first complete local measurement on 2026-09-29 was 48.6% lines
 first attempt. The original native teardown failure was diagnosed and corrected
 on 2026-09-30; see below. Confirm CI stability before tightening these initial floors.
 
-`-Suites` selects one or more suites (all eight by default). `-Repeat` builds once
+`-Suites` selects one or more suites (by default every suite in its list). `-Repeat` builds once
 and runs fresh test processes for each round. `-NoRetry` remains accepted for old
 commands but is no longer needed. Repeated runs include round numbers in filenames and JSON records. Use
 the full default suite when evaluating the CI coverage floors.
@@ -84,7 +84,7 @@ for run evidence, activation requirements and remaining limitations.
 | Persistence and recovery | Architecture, Reliability | Generated malformed data, interrupted writes |
 | Threads and resource ownership | Architecture, Reliability, menu-hook teardown guard | Randomized event ordering, broader shutdown scenarios |
 | Settings and visuals | SettingsTheme, SettingsEditors | Reviewed screenshot baselines per DPI/theme/language |
-| DPI | DpiLayout message transitions | Physical mixed-monitor movement and docking |
+| DPI | DpiLayout message transitions, settings page layout passes | Physical mixed-monitor movement and docking |
 | Release packaging | Isolated assembly smoke; desktop E2E startup, exit and restart | UI-driven settings edits and import-triggered restart |
 | Window grouping | GroupLifecycle plus desktop E2E drag/focus on foreign helper HWNDs | Third-party application scenarios, drag-out and cancellation |
 | Frequent tab switching | Desktop E2E clicks, numeric and next/previous shortcuts, maximized/closed tabs; deterministic stale-focus and Ctrl snapshot checks | Mixed-monitor switching, minimize/restore, prolonged soak |

@@ -10,6 +10,7 @@
   <ItemGroup>
     <Compile Include="Ownership.fs" />
     <Compile Include="Native.fs" />
+    <Compile Include="SettingsWindow.fs" />
     <Compile Include="Program.fs" />
     <PackageReference Update="FSharp.Core" Version="10.1.401" />
     <Reference Include="WindowTabs" HintPath="$(BenchmarkAppDir)/WindowTabs.exe" />

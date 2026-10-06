@@ -659,3 +659,66 @@ all 13 results, and the report is in
 Release smoke logs remain in `snapshot/tests/Debug`; preceding failures are in
 `first-coverage-logs` and `second-coverage-logs`. The separate foreground probe
 source/output is in `tests/Debug/PlacementFocusProbe.*`.
+
+## Settings window pages: 2026-10-06
+
+Building a settings page took 130–200 ms, showing an already built page 65–115 ms, and
+moving the window to a monitor with another scale about 55 ms for every built page.
+A stack sampler (a background thread suspending the UI thread every 2 ms for
+`StackTrace(thread,false)`) showed almost all of it in layout:
+
+- Construction laid the whole page out after every row: each `SettingsUi.add` resized the
+  auto-size content table, and `SettingsPage.OnLayout` measured the whole table again.
+- Showing a page made WinForms lay out every nested panel (`ScrollableControl.OnVisibleChanged`),
+  although nothing had changed.
+- Each layout of nested auto-size `TableLayoutPanel`s measures every label many times,
+  and once a control has a window each measurement also sends `WM_GETTEXTLENGTH` and
+  `WM_GETTEXT` (`Control.CacheTextInternal`), and each placement a `SetWindowPos`.
+- A description's height is only known after its row has laid out, so laying parents
+  out first made every row lay its card, the table and the page out again.
+- Theming set `ButtonBase.FlatStyle` again, which lays an auto-size button's parent out
+  even with the same value; descriptions were measured again on every layout.
+
+`SettingsPage` now holds its panels' layout while it is built, while WinForms rescales
+it and while it is hidden after a rescale; it is laid out widths-first then
+heights-first in one pass each. A new page is themed and laid out before it has
+windows. See [architecture](architecture.md#dpi-and-stress-verification) for the rules.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-RenderingPerf.ps1 -Settings -Label settings-after -Iterations 100 -TimeoutSeconds 1800
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/Compare-RenderingPerf.ps1 -Before <before>/results.json -After tests/Debug/performance/settings-after/results.json
+```
+
+`-Settings` opens the settings window off screen with isolated settings and stand-in
+filter and program services, and times opening it (which builds General), building
+Appearance and Shortcuts from the sidebar, showing a built page again, and moving
+between 120 and 96 DPI with three pages built (synthetic `WM_DPICHANGED`), both back and
+forth and once after every page was seen. Each operation is timed alone; window
+creation and closing around it count only towards `cpuMs`. It also hashes each page's
+pixels after the moves and saves them as PNGs beside the report, so the comparison
+fails if a page looks different. The before run used the previous application with this
+benchmark host. Release, 100 iterations, 120 DPI, one machine, sequential runs:
+
+| Scenario | Before median | After median | Change |
+|---|---:|---:|---:|
+| Open the window (builds General) | 190.4 ms | 35.1 ms | −81.6% |
+| Build Appearance | 203.3 ms | 59.4 ms | −70.8% |
+| Build Shortcuts | 134.8 ms | 33.7 ms | −75.0% |
+| Show a built page again | 68.7 ms | 0.8 ms | −98.8% |
+| Move once, 3 pages built | 253.5 ms | 118.6 ms | −53.2% |
+| Move back and forth, 3 pages built | 212.0 ms | 186.2 ms | −12.2% |
+
+Moving back and forth gains least: a hidden page must be laid out before the next
+rescale (above), so only a single move leaves hidden pages for later. The window was
+off screen, so on-screen painting is not included, and the DPI changes were synthetic
+messages to the form, without the per-child messages of a physical move.
+
+`DpiLayout` counts layout passes instead of time, so it holds on any machine: none when
+a built page is shown again or when a hidden page is rescaled once, at most six per
+panel when a page is first shown or rescaled while shown (the previous code reached 30),
+and no drift of fixed sizes over moves made while a page is hidden. A layout
+fingerprint of every control's bounds, visibility, row styles, font and colours matched
+the previous code in 18 states (built, switched, rescaled, shown after a rescale and after
+a resize while hidden, collapsed rows, dark theme, 20 round trips), and all deterministic
+`SettingsTheme`, `SettingsEditors` and `DpiLayout` PNGs were pixel-identical. High
+contrast was not rendered, as it needs a system setting; the change does not touch colours.

@@ -50,7 +50,8 @@ module SettingsUi =
             control.ForeColor <- if tag = "muted" then p.muted else p.text
         match control with
         | :? Button as button when tag <> "color-swatch" ->
-            button.FlatStyle <- FlatStyle.Flat
+            // Even the same style lays an auto-size button's parent out again.
+            if button.FlatStyle <> FlatStyle.Flat then button.FlatStyle <- FlatStyle.Flat
             button.FlatAppearance.BorderColor <- p.border
             button.FlatAppearance.MouseOverBackColor <- p.hover
             button.FlatAppearance.MouseDownBackColor <- p.selection
@@ -167,6 +168,9 @@ module SettingsUi =
         row.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
         let labels = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=1,
                                          Anchor=(AnchorStyles.Left ||| AnchorStyles.Right),Margin=Padding(0,0,Dpi.scale 16,0))
+        // Laid out once, in the table, instead of after each part is added.
+        row.SuspendLayout()
+        labels.SuspendLayout()
         labels.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
         let name = new Label(Text=caption,AutoSize=true,Dock=DockStyle.Fill,Font=rowFont(),UseMnemonic=false,Margin=Padding.Empty)
         let detail = new SettingsEllipsisLabel(Text=description,AutoSize=false,Font=rowFont(),Height=rowFont().Height,
@@ -181,11 +185,20 @@ module SettingsUi =
             // here, on every layout, rather than by auto-size: an auto-size row collapses around
             // this docked label, and WinForms rescales absolute heights when a page is added to a
             // window that has already been laid out.
+            // Every layout of the row asks again, mostly at the same width.
+            let mutable measured = struct(0,(null:Font),0)
             labels.Layout.Add(fun _ ->
                 let width = max 40 (labels.ClientSize.Width-Dpi.scale 8)
-                let text = TextRenderer.MeasureText(description,rowFont(),Size(width,Int32.MaxValue),
-                                                    TextFormatFlags.NoPrefix ||| TextFormatFlags.WordBreak)
-                let height = float32(max (rowFont().Height) text.Height+detail.Margin.Vertical)
+                let font = rowFont()
+                let textHeight =
+                    match measured with
+                    | struct(w,f,h) when w=width && obj.ReferenceEquals(f,font) -> h
+                    | _ ->
+                        let h = TextRenderer.MeasureText(description,font,Size(width,Int32.MaxValue),
+                                                         TextFormatFlags.NoPrefix ||| TextFormatFlags.WordBreak).Height
+                        measured <- struct(width,font,h)
+                        h
+                let height = float32(max font.Height textHeight+detail.Margin.Vertical)
                 if style.Height<>height then style.Height <- height)
         if not (String.IsNullOrWhiteSpace(description)) then labels.Controls.Add(detail,0,1)
         let helpButton = help |> Option.map(fun text ->
@@ -222,6 +235,9 @@ module SettingsUi =
                 use pen = new Pen((palette()).border)
                 e.Graphics.DrawLine(pen,row.Padding.Left,row.Height-1,row.Width,row.Height-1))
         add table row
+        // Outermost first: the row places the labels, which then lay out at that width.
+        row.ResumeLayout(true)
+        labels.ResumeLayout(true)
         row
 
     let row table caption description editor = rowWithHelp table caption description None editor |> ignore

@@ -9,7 +9,7 @@ $candidate = Get-Content -LiteralPath $After -Raw | ConvertFrom-Json
 foreach ($field in @('runtime','os','processBits')) {
     if ($baseline.$field -ne $candidate.$field) { throw "Benchmark environment differs: $field" }
 }
-if ([bool]$baseline.nativeStrip -ne [bool]$candidate.nativeStrip) { throw 'Benchmark modes differ.' }
+if ([bool]$baseline.nativeStrip -ne [bool]$candidate.nativeStrip -or [bool]$baseline.settingsWindow -ne [bool]$candidate.settingsWindow) { throw 'Benchmark modes differ.' }
 $oldImages = @($baseline.images | ForEach-Object { "$($_.name):$($_.sha256)" })
 $newImages = @($candidate.images | ForEach-Object { "$($_.name):$($_.sha256)" })
 if (-not $candidate.nativeStrip -and ($oldImages.Count -eq 0 -or (Compare-Object $oldImages $newImages))) {

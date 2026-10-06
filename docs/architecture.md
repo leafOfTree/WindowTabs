@@ -205,9 +205,22 @@ with another scale. Native groups recompute appearance from logical values when 
 host monitor changes. Fonts and shadows are rebuilt for the new scale and disposed.
 Never scale persisted settings or an already-scaled appearance snapshot.
 
+A settings page is nested auto-size `TableLayoutPanel`s, where each layout measures
+every row below it. `SettingsPage` therefore keeps its panels' layout suspended while
+it is built, and `DesktopManagerForm` lays a new page out at the host's size before it
+has window handles (`Prepare`), so it lays out once. Showing a built page again drops
+the layout WinForms would run for every panel; a new size still arrives through the
+host. During `WM_DPICHANGED` every page is held (`HoldLayout`) and only the shown one
+is laid out afterwards (`ReleaseLayout`); a hidden page waits until shown, but is laid
+out before a second rescale, because WinForms rescales a table's last fixed row from
+its size at the last layout. Add rows through `SettingsUi` helpers and keep the
+release out of `OnLayout`: WinForms drops layouts a control asks for during its own.
+
 `DpiLayout` sends repeated `WM_DPICHANGED` transitions at 96/120/144/192 DPI to a real
 form under the production manifest and startup option, and checks that a settings page
-first created after a change has fonts for the new scale. Architecture tests measure GDI,
+first created after a change has fonts for the new scale. It also counts settings page
+layout passes on opening, switching and rescaling, and checks that fixed sizes do not
+drift over moves made while a page is hidden. Architecture tests measure GDI,
 USER and process handles across 100 native group cycles after warmup. These tests do not
 replace physical mixed-monitor dragging, sleep/resume, Explorer restart or multi-hour
 soak testing; those environmental scenarios still need manual validation.

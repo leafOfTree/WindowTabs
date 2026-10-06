@@ -37,8 +37,12 @@ let strip count dpi font =
       slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false
       transparent=true; held=None; centerShift=0.0; appearance=appearance; hover=None; captured=None }
 
-let measure name iterations action =
-    for i in 0..19 do action i
+/// Times each action alone; setup and cleanup run around it, untimed but within cpuMs.
+let measureWith name iterations (setup:int -> 'state) (action:'state -> unit) (cleanup:'state -> unit) =
+    for i in 0..19 do
+        let state = setup i
+        action state
+        cleanup state
     collect()
     let gdi0,user0,handles0,memory0 = RuntimeDiagnostics.resourceCounts()
     let gc0 = Array.init 3 GC.CollectionCount
@@ -47,9 +51,11 @@ let measure name iterations action =
     let samples = Array.zeroCreate<float> iterations
     let watch = Stopwatch()
     for i in 0..iterations-1 do
+        let state = setup i
         watch.Restart()
-        action i
+        action state
         samples.[i] <- watch.Elapsed.TotalMilliseconds
+        cleanup state
     currentProcess.Refresh()
     let cpu = (currentProcess.TotalProcessorTime-cpu0).TotalMilliseconds
     let collections = Array.init 3 (fun i -> GC.CollectionCount(i)-gc0.[i])
@@ -65,16 +71,25 @@ let measure name iterations action =
         JProperty("beforeCollectionDelta",JObject(JProperty("gdi",gdi1-gdi0),JProperty("user",user1-user0),JProperty("handles",handles1-handles0),JProperty("privateBytes",memory1-memory0))),
         JProperty("afterCollectionDelta",JObject(JProperty("gdi",gdi2-gdi0),JProperty("user",user2-user0),JProperty("handles",handles2-handles0),JProperty("privateBytes",memory2-memory0))))
 
+let measure name iterations (action:int -> unit) = measureWith name iterations id action ignore
+
 [<STAThread;EntryPoint>]
 let main args =
     try
         let output = args.[0]
         let forceGc = Boolean.Parse(args.[1])
         let iterations = Int32.Parse(args.[2])
+        let settingsWindow = Array.contains "settings" args
+        if settingsWindow then
+            // As Bootstrap.main sets up WinForms, before the first control.
+            Dpi.enableWinFormsRescaling()
+            System.Windows.Forms.Application.EnableVisualStyles()
+            System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false)
+            ThemeService.moveSystemEventsOffMainThread()
         if Array.contains "verify" args then RenderingOwnership.verify()
         let results,images = JArray(),JArray()
         let native = Array.contains "native" args
-        for dpi in (if native then [] else [96;144;192]) do
+        for dpi in (if native || settingsWindow then [] else [96;144;192]) do
             Dpi.set dpi
             use font = TabMetrics.font (Dpi.scale 26) FontStyle.Regular
             for count in [1;10;30] do
@@ -94,9 +109,12 @@ let main args =
                     ts.tryHit(Pt(i%ts.size.width,Dpi.scale 14)) |> ignore))
         if native then
             NativeRenderingPerf.run measure iterations |> Seq.iter(fun result -> results.Add(result))
+        if settingsWindow then
+            try SettingsWindowPerf.run measureWith iterations pixels results images
+            finally (InvokerService.invoker :> IDisposable).Dispose()
         let report = JObject(JProperty("utc",DateTime.UtcNow),JProperty("runtime",Environment.Version.ToString()),
                         JProperty("os",Environment.OSVersion.ToString()),JProperty("processBits",IntPtr.Size*8),
-                        JProperty("forcedGcPerRender",forceGc),JProperty("nativeStrip",native),JProperty("results",results),JProperty("images",images))
+                        JProperty("forcedGcPerRender",forceGc),JProperty("nativeStrip",native),JProperty("settingsWindow",settingsWindow),JProperty("results",results),JProperty("images",images))
         File.WriteAllText(output,report.ToString())
         0
     with ex -> eprintfn "%O" ex; 1

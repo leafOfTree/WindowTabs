@@ -17,6 +17,15 @@ type SettingsSearchFocusFilter(form:Form, search:TextBox, results:Control) =
                     results.Hide()
                     if search.Focused then form.ActiveControl <- null
             false
+/// Raises Rescaled once WinForms has rescaled every control for a monitor with another scale;
+/// DpiChanged comes before.
+type SettingsWindow() =
+    inherit Form()
+    let rescaled = Event<EventArgs>()
+    member _.Rescaled = rescaled.Publish
+    override this.OnDpiChanged(e) =
+        base.OnDpiChanged(e)
+        rescaled.Trigger(EventArgs.Empty)
 /// Page metadata is available without constructing native controls or loading application data.
 type SettingsPageRegistration(key:SettingsViewType, title:string, create:unit -> ISettingsView) =
     let view = lazy(create())
@@ -40,7 +49,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
     let mutable activePage = pages.Head.key
     let mutable suppressSearch = false
     let themedPages = Collections.Generic.HashSet<SettingsViewType>()
-    let form = new Form(Text=tr Strings.SettingsWindow.title,AccessibleName=tr Strings.SettingsWindow.title,Font=SettingsUi.bodyFont())
+    let form = new SettingsWindow(Text=tr Strings.SettingsWindow.title,AccessibleName=tr Strings.SettingsWindow.title,Font=SettingsUi.bodyFont())
     do SettingsUi.hideCaptionText form
     let navigation = new Panel(Dock=DockStyle.Left,Width=Dpi.scale 208,Padding=Padding(Dpi.scale 12),Tag="sidebar")
     let links = new TableLayoutPanel(Dock=DockStyle.Top,AutoSize=true,ColumnCount=1)
@@ -91,10 +100,20 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
             if activePage=key && page.isCreated && page.control.Parent=host && page.control.Visible then () else
                 // Construct before suspending layout: a failed page must not freeze navigation.
                 let nextControl = page.control
+                // A new page is themed and laid out before it has windows, which then open in place.
+                if nextControl.Parent<>host then
+                    if not (themedPages.Contains(key)) then
+                        SettingsUi.apply nextControl
+                        themedPages.Add(key) |> ignore
+                    match nextControl with
+                    | :? SettingsPage as settingsPage -> settingsPage.Prepare(host.DisplayRectangle.Size)
+                    | _ -> ()
                 host.SuspendLayout()
                 try
                     nextControl.Dock <- DockStyle.Fill
                     if nextControl.Parent<>host then host.Controls.Add(nextControl)
+                    // A hidden page keeps its old size; given the new one first, it lays out once.
+                    elif not nextControl.Visible then nextControl.Bounds <- host.DisplayRectangle
                     for control in host.Controls do control.Visible <- (control=nextControl)
                     nextControl.BringToFront()
                     activePage <- key
@@ -107,14 +126,23 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                         SettingsUi.apply nextControl
                         themedPages.Add(key) |> ignore
                 finally host.ResumeLayout(true)
+                match nextControl with
+                | :? SettingsPage as settingsPage -> settingsPage.ReleaseLayout()
+                | _ -> ()
     do
         form.AutoScaleDimensions <- SizeF(float32(Dpi.value()),float32(Dpi.value()))
         form.AutoScaleMode <- AutoScaleMode.Dpi
+        // WinForms lays every control out again, bottom up, as it rescales each; the pages are
+        // laid out once afterwards instead, and a hidden page only when it is shown.
+        let settingsPages() = pages |> List.choose(fun page ->
+            if page.isCreated then (match page.control with :? SettingsPage as p -> Some p | _ -> None) else None)
         form.DpiChanged.Add(fun e ->
             Dpi.set e.DeviceDpiNew
+            for page in settingsPages() do page.HoldLayout()
             searchResults.Hide()
             results.ItemHeight <- Dpi.scale 48
             form.Invalidate(true))
+        form.Rescaled.Add(fun _ -> for page in settingsPages() do page.ReleaseLayout())
         form.StartPosition <- FormStartPosition.CenterScreen
         form.FormBorderStyle <- FormBorderStyle.Sizable
         form.Padding <- Padding.Empty
@@ -344,5 +372,5 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         if form.WindowState=FormWindowState.Minimized then form.WindowState <- FormWindowState.Normal
         form.Show()
         form.Activate()
-    member _.window = form
+    member _.window = form :> Form
     member _.activeView = activePage
