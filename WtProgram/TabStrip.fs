@@ -326,6 +326,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         lorderCell.map(fun l -> l.where((<>) tab))
         zorderCell.map(fun z -> z.where((<>) tab))
         tabInfoCell.map(fun m -> m.remove tab)
+        tabTint.map(fun m -> m.remove tab)
+        tabBgColor.map(fun m -> m.remove tab)
         Cell.endUpdate()
 
     member this.tabs : Set2<Tab> = Set2(lorderCell.value)

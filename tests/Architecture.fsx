@@ -170,6 +170,7 @@ let main() =
             member _.shutdown() = ()
             member _.setWindowNameOverride _ = ()
             member _.getWindowNameOverride _ = None
+            member _.getTabColor _ = None
             member _.appWindows = List2()
             member _.getAutoGroupingEnabled _ = false
             member _.setAutoGroupingEnabled _ _ = ()

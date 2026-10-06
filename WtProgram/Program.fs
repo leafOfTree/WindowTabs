@@ -43,6 +43,7 @@ type Program(lifetime:LifetimeScope) as this =
     let isDroppedAndAwaitingGrouping = Cell.create(Set2())
     // An immutable map swapped whole on the main thread, so tab strips on group threads
     // read renames without waiting for it: tab text is rebuilt on every title change.
+    let mutable windowColorIndices : Map<IntPtr,int> = Map.empty
     let mutable windowNameOverride : Map2<IntPtr,string option> = Map2()
    
     let isFirstRun = settingsManager.fileExists.not
@@ -231,6 +232,7 @@ type Program(lifetime:LifetimeScope) as this =
                 isSubscribed.Remove(hwnd)
                 isDroppedAndAwaitingGrouping.map(fun s -> s.remove hwnd)
                 windowNameOverride <- windowNameOverride.remove hwnd
+                windowColorIndices <- windowColorIndices.Remove hwnd
             | _ ->()
             refreshQueue.RequestWindow(hwnd)
 
@@ -321,6 +323,23 @@ type Program(lifetime:LifetimeScope) as this =
 
         member x.getWindowNameOverride(hwnd) =
             windowNameOverride.tryFind(hwnd).bind(id)
+
+        member x.getTabColor hwnd =
+            let index =
+                match windowColorIndices.TryFind hwnd with
+                | Some index -> index
+                | None ->
+                    let peers = this.desktop.groups.list |> List.tryFind(fun g -> g.windows.contains((=) hwnd)) |> Option.map(fun g -> g.windows.list) |> Option.defaultValue []
+                    let index = peers |> List.choose windowColorIndices.TryFind |> Theme.leastUsedColor
+                    windowColorIndices <- windowColorIndices.Add(hwnd,index)
+                    index
+            let palette = Theme.tabPalette (ThemeService.currentIsDark())
+            match settingsManager.settings.tabColorMode with
+            | "Rainbow" -> Some palette.[index]
+            | "ByApp" ->
+                let name = try os.windowFromHwnd(hwnd).pid.exeName with _ -> ""
+                Some palette.[Theme.appColorIndex name]
+            | _ -> None
 
         member x.appWindows = 
             os.windowsInZorder.where(this.isAppWindow).map(fun w -> w.hwnd)

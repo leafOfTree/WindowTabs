@@ -159,6 +159,10 @@ module Strings =
                                keywords={ en="number shortcut modifier"; zh="数字 快捷键 修饰键"; ja="番号 ショートカット 修飾キー" } }
         let enableNumberLeader = { caption={ en="Use a leader key for tab numbers"; zh="使用引导键切换标签"; ja="リーダーキーでタブ番号を選ぶ" }; description={ en="Press the leader, then 1–9 within three seconds. Escape cancels."; zh="按引导键后，三秒内按 1–9。Esc 取消。"; ja="リーダーキーの後、3 秒以内に 1～9 を押します。Esc で解除。" }; keywords=none }
         let numberLeader = { caption={ en="Tab number leader"; zh="数字标签引导键"; ja="タブ番号のリーダーキー" }; description=none; keywords=none }
+        let tabColorMode = { caption={ en="Automatic tab colours"; zh="自动标签配色"; ja="タブの自動配色" }; description=none; keywords=none }
+        let colorsOff = { en="Off"; zh="关闭"; ja="オフ" }
+        let rainbow = { en="Rainbow"; zh="彩虹"; ja="レインボー" }
+        let byApp = { en="By app"; zh="按应用"; ja="アプリ別" }
         let tabColorStyle = { caption={ en="Tab colour style"; zh="标签颜色样式"; ja="タブの色の表示" }; description=none; keywords=none }
         let stripe = { en="Stripe"; zh="色条"; ja="色のライン" }
         let fill = { en="Fill"; zh="填充"; ja="塗りつぶし" }

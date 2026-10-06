@@ -17,6 +17,7 @@ type SettingDefinition = {
 
 module SettingsCatalog =
     let all = [
+        { id="tab-color-mode"; page=AppearanceSettings; text=Strings.Settings.tabColorMode; binding=Choice("tabColorMode",["Off";"Rainbow";"ByApp"],"Off") }
         { id="tab-color-style"; page=AppearanceSettings; text=Strings.Settings.tabColorStyle; binding=Choice("tabColorStyle",["Stripe";"Fill"],"Stripe") }
         { id="theme"; page=AppearanceSettings; text=Strings.Settings.theme; binding=Choice("tabThemeMode",["system";"light";"dark"],"system") }
         { id="language"; page=GeneralSettings; text=Strings.Settings.language; binding=Choice("language",Localization.preferences,"system") }

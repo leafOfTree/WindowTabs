@@ -23,6 +23,8 @@ let main() =
     try
         use settings = new Settings(true,saveDelay=0)
         let api = settings :> ISettings
+        check (Theme.leastUsedColor [0;1;2;0;3]=4) "Rainbow allocation did not balance colours"
+        check (Theme.appColorIndex "Editor.exe"=Theme.appColorIndex "EDITOR.EXE") "App colour hash changed with case"
         let leader = NumberLeaderState()
         let now = DateTime.UtcNow
         leader.arm (IntPtr(1)) now

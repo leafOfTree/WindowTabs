@@ -33,7 +33,7 @@ let mutable preferences = {
     lightPalette=Theme.lightPalette;darkPalette=Theme.darkPalette
     lightCustomPalette=Theme.lightPalette;darkCustomPalette=Theme.darkPalette
     mode=DarkTheme;useCustomColors=true;lightPreset="";darkPreset="";presetEdits=Map.empty }
-let settingValues = Collections.Generic.Dictionary<string,obj>(dict ["tabColorStyle",box "Stripe";"numberHotKeyModifier",box "Ctrl";"numberShortcutAppMode",box "AllExcept";"numberShortcutPaths",box(Set2<string>())])
+let settingValues = Collections.Generic.Dictionary<string,obj>(dict ["tabColorMode",box "Off";"tabColorStyle",box "Stripe";"numberHotKeyModifier",box "Ctrl";"numberShortcutAppMode",box "AllExcept";"numberShortcutPaths",box(Set2<string>())])
 let settings = { new ISettings with
     member _.appearance = preferences
     member _.updateAppearance update = preferences <- update preferences; ThemeService.notifyChanged()
@@ -263,6 +263,7 @@ let main() =
         member _.shutdown() = ()
         member _.setWindowNameOverride _ = ()
         member _.getWindowNameOverride _ = None
+        member _.getTabColor _ = None
         member _.appWindows = List2()
         member _.getAutoGroupingEnabled path = lock grouping (fun () -> grouping.Contains path)
         member _.setAutoGroupingEnabled path enabled =

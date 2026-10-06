@@ -131,6 +131,7 @@ let main() =
                 | Some name -> names.[hwnd] <- name
                 | None -> names.TryRemove(hwnd) |> ignore
             member _.getWindowNameOverride hwnd = match names.TryGetValue(hwnd) with | true,name -> Some name | _ -> None
+            member _.getTabColor _ = None
             member _.appWindows = List2()
             member _.getAutoGroupingEnabled _ = false
             member _.setAutoGroupingEnabled _ _ = ()

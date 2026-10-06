@@ -193,6 +193,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         isForegroundExport.init()
 
         this.ts.setTabAppearance(this.tabAppearance)
+        let colorModeSubscription = Services.settings.notifyValue "tabColorMode" (fun _ ->
+            this.invokeAsync(fun() -> if not isDestroyed.value then this.windows.items.iter this.setTabInfo))
+        exitedEvent.Publish.Add(fun _ -> colorModeSubscription.Dispose())
         let colorStyleSubscription = Services.settings.notifyValue "tabColorStyle" (fun value ->
             this.invokeAsync(fun() -> if not isDestroyed.value then this.ts.colorStyle <- unbox value))
         exitedEvent.Publish.Add(fun _ -> colorStyleSubscription.Dispose())
@@ -200,6 +203,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             this.invokeAsync <| fun() ->
                 if not isDestroyed.value then
                     logicalAppearance <- ThemeService.currentAppearance()
+                    this.windows.items.iter this.setTabInfo
                     let next = logicalAppearance.scaled
                     let geometryChanged = TabGeometry.fromAppearance next <> TabGeometry.fromAppearance appearanceSnapshot
                     if next <> appearanceSnapshot then
@@ -391,6 +395,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         }
     
     member private this.setTabInfo(hwnd) =
+        this.ts.setTabTint(Tab(hwnd), Services.program.getTabColor hwnd)
         let info = this.getTabInfo(hwnd)
         let previous = this.ts.tabInfo(Tab(hwnd))
         if not(this.ts.hasTabInfo(Tab(hwnd))) || info.text <> previous.text || info.isRenamed <> previous.isRenamed ||

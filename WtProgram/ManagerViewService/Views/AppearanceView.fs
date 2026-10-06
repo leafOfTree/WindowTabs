@@ -263,6 +263,8 @@ type AppearanceView(?settings:ISettings) =
         let styleCard = new SettingsCard()
         SettingsUi.add table styleCard
         SettingsUi.settingRow styleCard "tabStyle" tabStyle
+        let colorMode = SettingsBindings.choiceRow styleCard "tab-color-mode" [|tr Strings.Settings.colorsOff;tr Strings.Settings.rainbow;tr Strings.Settings.byApp|]
+        colorMode.SelectedIndexChanged.Add(fun _ -> preview.Invalidate())
         let colorStyle = SettingsBindings.choiceRow styleCard "tab-color-style" [|tr Strings.Settings.stripe;tr Strings.Settings.fill|]
         colorStyle.SelectedIndexChanged.Add(fun _ -> preview.Invalidate())
         let paletteHeader = new Panel(Height=Dpi.scale 36,Margin=Padding(0,Dpi.scale 16,0,Dpi.scale 8))

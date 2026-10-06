@@ -30,6 +30,14 @@ module Theme =
     let tabPalette dark =
         (if dark then [|0x9AA0A6;0x8AB4F8;0xF28B82;0xFDD663;0x81C995;0xFF8BCB;0xC58AF9;0x78D9EC|]
          else [|0x70757A;0x1A73E8;0xD93025;0xE8A200;0x188038;0xD01884;0x8430CE;0x008B9A|]) |> Array.map Color.FromRGB
+    /// FNV-1a over the executable name, independent of runtime hash randomisation.
+    let appColorIndex (exe:string) =
+        let hash = exe.ToUpperInvariant() |> Seq.fold(fun hash c -> (hash ^^^ uint32 c)*16777619u) 2166136261u
+        int(hash % 8u)
+    let leastUsedColor indices =
+        let counts = Array.zeroCreate 8
+        for index in indices do if index>=0 && index<8 then counts.[index] <- counts.[index]+1
+        [0..7] |> List.minBy(fun index -> counts.[index],index)
     let blend amount (tint:Color) (background:Color) =
         let channel a b = int(Math.Round(float b + (float a-float b)*amount))
         Color.FromArgb(255,channel tint.R background.R,channel tint.G background.G,channel tint.B background.B)
