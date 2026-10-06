@@ -216,7 +216,7 @@ let main() =
         check (navigate [] a (Some a) true=None && navigate [a] IntPtr.Zero None false=None) "Empty/unknown tab navigation fabricated a target"
         check (TabNavigation.neighbour [a;b;c] b=Some c) "Closing the active middle tab did not select its right neighbor"
         check (TabNavigation.neighbour [a;b;c] c=Some b) "Closing the last tab did not select its left neighbor"
-        check (TabNavigation.closeTarget [a;b;c] (fun hwnd -> hwnd<>b) b a (Some a) None=None) "Closing a background tab changed selection"
+        check (TabNavigation.closeTarget [a;b;c] (fun hwnd -> hwnd<>b) b a (Some a) None false=None) "Closing a background tab changed selection"
         check (TabNavigation.neighbour [a] a=None) "Closing the only tab fabricated a successor"
         check (TabNavigation.neighbour [c;a;b] a=Some b) "Close selection ignored reordered tabs"
         let six = [1..6] |> List.map IntPtr
@@ -238,12 +238,18 @@ let main() =
         let closing hwnd = hwnd<>added
         let active = TabNavigation.rememberActive [a;b;c;added] closing (Some added) a
         check (active=Some added) "Early activation of the opener lost the hidden new tab"
-        check (TabNavigation.closeTarget [a;b;c;added] closing added a active None=Some c) "Closing a tab without an opener did not select its neighbor"
-        check (TabNavigation.closeTarget [a;b;c] (fun _ -> true) b a (Some b) None=None) "Dragging out a live tab was treated as a close"
-        check (TabNavigation.closeTarget [a;b;c] (fun hwnd -> hwnd<>b) b (IntPtr 999) (Some b) None=None) "Closing a tab activated a background group"
+        check (TabNavigation.closeTarget [a;b;c;added] closing added a active None false=Some c) "Closing a tab without an opener did not select its neighbor"
+        check (TabNavigation.closeTarget [a;b;c] (fun _ -> true) b a (Some b) None false=None) "Dragging out a live tab was treated as a close"
+        check (TabNavigation.closeTarget [a;b;c] (fun hwnd -> hwnd<>b) b (IntPtr 999) (Some b) None false=None) "Closing a tab activated a background group"
+        // Notepad opened from a launcher and closed: as part of the close Windows activates the
+        // launcher's previous window, outside the group.
+        check (TabNavigation.closeTarget [a;b;c] (fun hwnd -> hwnd<>b) b (IntPtr 999) (Some b) None true=Some c) "Closing the active tab left the group behind the window Windows activated"
+        check (TabNavigation.leftGroupJustBefore (Some(b,1000L)) b 1300L) "A tab closed right after the foreground left the group was treated as left by the user"
+        check (not(TabNavigation.leftGroupJustBefore (Some(b,1000L)) b 1600L)) "A tab closed long after the user left the group activated the group"
+        check (not(TabNavigation.leftGroupJustBefore (Some(b,1000L)) c 1300L)) "Another tab's close was treated as the tab that left the group"
         // Browser opener rule: closing a tab before selecting another returns to its opener.
         let opened = Some(added,a)
-        check (TabNavigation.closeTarget [a;b;c;added] closing added a active opened=Some a) "Closing a new tab did not return to the tab it was opened from"
+        check (TabNavigation.closeTarget [a;b;c;added] closing added a active opened false=Some a) "Closing a new tab did not return to the tab it was opened from"
         check (TabNavigation.successor [a;b;c;added] (fun _ -> true) added opened=Some a) "A new tab did not have its opener as successor"
         check (TabNavigation.successor [a;b;c;added] (fun _ -> true) b opened=Some c) "Another tab's opener changed this tab's successor"
         check (TabNavigation.successor [a;b;c;added] (fun hwnd -> hwnd<>a) added opened=Some c) "A closed opener was selected"

@@ -38,10 +38,12 @@ module TabNavigation =
         | _ -> neighbour (order |> List.filter(fun item -> item=closed || isOpen item)) closed
 
     /// Only closing the active tab selects another. A removed HWND that is still open
-    /// is being dragged or ungrouped, and a background group is never activated.
-    let closeTarget (order:IntPtr list) isOpen closed foreground active opener =
+    /// is being dragged or ungrouped, and a background group is never activated. Windows
+    /// can activate a window outside the group as the active tab closes; the group is not
+    /// in the background when the foreground left the tab for that close.
+    let closeTarget (order:IntPtr list) isOpen closed foreground active opener leftOnClose =
         if isOpen closed || active<>Some closed then None
-        elif foreground<>IntPtr.Zero && foreground<>closed && not(List.contains foreground order) then None
+        elif foreground<>IntPtr.Zero && foreground<>closed && not(List.contains foreground order) && not leftOnClose then None
         else successor order isOpen closed opener
 
     /// Windows and some applications activate another window before hiding, destroying or
@@ -50,6 +52,14 @@ module TabNavigation =
     let leftJustBefore (left:(IntPtr * IntPtr * int64) option) gone active now =
         match left with
         | Some(tab,next,time) -> tab=gone && active=Some next && now-time <= 500L
+        | None -> false
+
+    /// Closing the active tab activates the previously used window, which can be outside the
+    /// group. A tab that goes soon after the foreground left it for another application closed
+    /// in the foreground, unlike one the user left first.
+    let leftGroupJustBefore (left:(IntPtr * int64) option) gone now =
+        match left with
+        | Some(tab,time) -> tab=gone && now-time <= 500L
         | None -> false
 
     /// Selecting another tab forgets the opener, but Windows activating the window
@@ -111,6 +121,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// The last switch between tabs not made by WindowTabs: from, to and when, with the opener before it.
     let mutable leftTab : (IntPtr * IntPtr * int64) option = None
     let mutable leftOpener : (IntPtr * IntPtr) option = None
+    /// The last tab the foreground left for a window outside the group, and when.
+    let mutable leftGroup : (IntPtr * int64) option = None
     let isMinimized hwnd = this.os.windowFromHwnd(hwnd).isMinimized
     let isOpen hwnd = WinUserApi.IsWindow(hwnd) && WinUserApi.IsWindowVisible(hwnd)
     let hookCleanup = Cell.create(Map2<IntPtr, IDisposable>())
@@ -229,6 +241,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             lastActiveTab <- active
             let prev = foregroundCell.value
             if prev <> value then
+                if List.contains prev this.lorder.list && not(List.contains value this.lorder.list) then
+                    leftGroup <- Some(prev,transitionClock.ElapsedMilliseconds)
                 opener <- TabNavigation.keepOpener this.lorder.list isOpen opener value
                 foregroundCell.set(value)
                 foregroundEvent.Trigger()
@@ -653,7 +667,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if this.windows.contains(hwnd) then
             this.reclaimLeftTab(hwnd)
             let foreground = this.os.foreground.hwnd
-            let next = TabNavigation.closeTarget this.lorder.list isOpen hwnd foreground lastActiveTab opener
+            let next = TabNavigation.closeTarget this.lorder.list isOpen hwnd foreground lastActiveTab opener (this.leftOnClose hwnd)
             if opener |> Option.exists(fun (tab,owner) -> tab=hwnd || owner=hwnd) then opener <- None
             FollowerPlacement.queue.release(placementOwner,hwnd)
             //CASE 777 - chrome windows can close when you merge a single chrome tab
@@ -691,13 +705,18 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             opener <- leftOpener
             leftTab <- None
 
+    /// The group's last foreground event is still this tab, or the foreground left it for
+    /// another application just before it closed: Windows chose that window for the close.
+    member private this.leftOnClose(hwnd) =
+        foregroundCell.value=hwnd || TabNavigation.leftGroupJustBefore leftGroup hwnd transitionClock.ElapsedMilliseconds
+
     /// Windows activates the previously used window when a tab closes, before discovery
     /// removes it. Select the successor as soon as the active tab is hidden, destroyed or
     /// loses the foreground, so the wrong tab shows as briefly as possible.
     member private this.followClosedTab(foreground) =
         match lastActiveTab with
         | Some closed when followedClose |> Option.forall(fun (followed,_) -> followed<>closed) ->
-            TabNavigation.closeTarget this.lorder.list isOpen closed foreground lastActiveTab opener
+            TabNavigation.closeTarget this.lorder.list isOpen closed foreground lastActiveTab opener (this.leftOnClose closed)
             |> Option.iter(fun target ->
                 if target<>foreground then this.tabActivate(Tab(target),false)
                 // Activation can be refused; a later foreground event or removal retries.

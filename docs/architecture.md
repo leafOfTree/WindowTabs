@@ -123,8 +123,11 @@ above, so it needs no correction. Otherwise the group selects the successor on t
 first of the closed tab's hide or destroy event or the next foreground event inside
 the group, which keeps the wrong tab on screen as briefly as possible. Selection
 preserves the closed active tab across those early foreground events and does not
-activate a background group. Removing a visible HWND for a drag or ungroup is not
-a close.
+activate a background group. The previously used window can be outside the group,
+such as the window that was active before a launcher opened the closed tab. A group
+whose last foreground was the closed tab, or which lost the foreground to another
+application within 500 ms of the close, is not in the background and still selects
+the successor. Removing a visible HWND for a drag or ungroup is not a close.
 
 Some applications, such as Notepad and Explorer, activate another window before
 hiding the one they close, so the close first looks like a switch to that tab. A
