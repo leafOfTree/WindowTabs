@@ -244,35 +244,44 @@ noninteractive process fixture proving cleanup preserves another run with the
 same EXE name. The new 30-minute Soak profile has not yet been executed for its
 full duration, and the self-hosted workflow has not been dispatched on GitHub.
 
-## Manual close-order scenario
+## Manual real-application scenario
 
-`tests/Run-CloseOrderScenario.ps1` checks which tab a group of a real application
-selects when its active tab closes, and whether another tab flashes on top first.
-It drives the WindowTabs instance that is already running, so start the build under
-test first, with Ctrl+number tab shortcuts enabled (the default) and automatic
-grouping enabled for the application. Close the application's own windows first;
-the script refuses to run otherwise, because grouping would mix them with its
-fixture windows.
+`tests/Run-RealAppScenario.ps1` checks the core tab flows against windows of a real
+application and the WindowTabs instance that is already running. Start the build
+under test first, with automatic grouping enabled for the application and number
+shortcuts enabled (the default). The script reads the next, previous and new-tab
+shortcuts from that instance's settings (`-SettingsPath` overrides the location).
+Close the application's own windows first; the script refuses to run otherwise,
+because grouping would mix them with its fixture windows, and it only ever closes
+windows it opened.
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-CloseOrderScenario.ps1 -Exe 'C:\Program Files\Neovide\neovide.exe' -Scenario Switch -Interactive
-powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-CloseOrderScenario.ps1 -Exe 'C:\Program Files\Neovide\neovide.exe' -Scenario Opener -Interactive
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-RealAppScenario.ps1 -Exe 'C:\Program Files\Neovide\neovide.exe' -Interactive
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-RealAppScenario.ps1 -Exe "$env:WINDIR\explorer.exe" -Arguments $env:WINDIR -WindowClass CabinetWClass -Interactive
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-RealAppScenario.ps1 -Exe notepad.exe -WindowClass Notepad -Interactive
 ```
 
-It launches `-Count` windows (default 5), one per process. Each launched window
-takes the foreground, so each one's opener is the tab before it. **Switch** selects
-tabs 1 and 2 with Ctrl+1 and Ctrl+2 and then closes the active tab repeatedly, so
-the expected order is 2, 3, 4, 5, 1. **Opener** closes the newest tab right away and
-expects its opener, then neighbours: 5, 4, 3, 2, 1. Windows are closed with
-`WM_CLOSE`. Foreground and topmost fixture window are sampled every few
-milliseconds; each close reports `ok`, `WRONG` (wrong final tab) or `FLASH` with
-how long another tab was on top before the right one. Any `WRONG`, or a flash
-longer than `-FlashToleranceMs` (default 0), fails the run.
+It opens `-Count` windows (default 4) and runs the phases in order; `-Phases`
+selects some of them.
 
-Sampling cannot see sub-frame changes, so `ok` is not proof that no frame was
-presented. With Neovide, about one close in four of the Switch scenario still
-shows the previously used tab for roughly 15 ms: Windows activates it as part of
-the close, before WindowTabs can select the successor. The script assumes tab order is launch order and that the application
-uses one process per window. It was written while fixing Neovide's close order,
-where Windows activates the previously used window rather than the window below
-the closed one; see "Startup and shortcuts" in [architecture.md](architecture.md).
+| Phase | Checks |
+| --- | --- |
+| Group | Each number shortcut activates the tab in launch order, with one visible strip above it |
+| Switch | Next and previous shortcuts walk every tab and wrap around |
+| NewTab | The new-tab shortcut opens a window in the group, which closes back to its opener |
+| Minimize | Minimizing a tab minimizes every tab and hides the strip; restoring brings both back |
+| Maximize | Maximizing a tab maximizes every tab with the strip inside; restoring undoes both |
+| Close | From tab 2, closing the active tab repeatedly selects the right neighbour, or the left one at the end |
+
+Windows are minimized, maximized and closed with `WM_SYSCOMMAND` and `WM_CLOSE`.
+After each close the foreground and topmost fixture window are sampled every few
+milliseconds. A wrong final tab fails the run, as does another tab shown on top
+for longer than `-FlashToleranceMs` (default 0). Applications activate the previous
+window as part of a close, so a short flash is expected: about 15 ms for Neovide
+and Explorer and up to about 100 ms for Notepad, which drives all its windows from
+one busy thread while it closes one. Sampling cannot see sub-frame changes.
+
+The script assumes tab order is launch order. An application that opens a second
+launch as a tab, or prompts to save on close, cannot be tested. Windows 11 Notepad
+restores unsaved tabs from its previous session into the first window it opens, so
+discard or save those first; such a window counts as a fixture window.
