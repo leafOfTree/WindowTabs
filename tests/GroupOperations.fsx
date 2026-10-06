@@ -391,6 +391,28 @@ let main() =
                         check ((field "lastActiveTab").GetValue(group) :?> IntPtr option=Some added) "A tab hidden right after losing the foreground was not treated as closing"
                         group.removeWindow added)
                     onHelper(fun () -> OS().windowFromHwnd(added).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
+                    // Minimizing the active tab makes Windows activate another tab before the group
+                    // minimizes that one too. Neither activation is a selection: a window opened
+                    // into the minimized group must still have the minimized tab as its opener.
+                    let order = onGroup(fun group -> group.lorder.list)
+                    let active = order.[3]
+                    let other = order.[2]
+                    let lastActive group = (field "lastActiveTab").GetValue(group) :?> IntPtr option
+                    onGroup(fun group ->
+                        // As if Windows had just moved the foreground from the active tab to another.
+                        let now = (field "transitionClock").GetValue(group) :?> Stopwatch
+                        (field "lastActiveTab").SetValue(group,box (Some other))
+                        (field "leftTab").SetValue(group,box (Some(active,other,now.ElapsedMilliseconds))))
+                    onHelper(fun () -> OS().windowFromHwnd(active).showWindow(ShowWindowCommands.SW_SHOWMINNOACTIVE))
+                    pumpUntil(fun () -> OS().windowFromHwnd(active).isMinimized)
+                    onGroup(fun group ->
+                        invoke "handleWindowEvent" group [|box active; box WinEvent.EVENT_SYSTEM_MINIMIZESTART|] |> ignore
+                        check (lastActive group=Some active) "Minimizing the active tab made the tab Windows activated meanwhile current"
+                        group.foreground <- other
+                        check (lastActive group=Some active) "A tab activated while its group minimized became current")
+                    pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle))
+                    onGroup(fun group -> group.restoreAll())
+                    pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle) && order |> List.forall(fun hwnd -> not(OS().windowFromHwnd(hwnd).isMinimized)))
             // Controlled latency in an application's synchronous positioning handler.
             onHelper(fun () -> forms.[1].Delay <- 50)
             samples "20tabs-move-one-50ms-handler" 5 (fun group index ->

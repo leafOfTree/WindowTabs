@@ -135,6 +135,11 @@ event for one tab while another tab of the group is in the foreground uses the r
 foreground. When discovery removes the closed tab, the selected successor becomes
 the active tab even if Windows still shows the tab it activated itself.
 
+Minimizing the active tab likewise makes Windows activate another tab of the group
+before the group minimizes it too. Neither activation selects that tab: the
+minimized tab stays active, so a window that later opens into the minimized group
+gets it as opener and closes back to it.
+
 The entry point installs exception reporting and acquires the single-instance mutex
 before constructing services. `LifetimeScope` owns resources immediately and releases
 them in reverse order, continuing when one cleanup fails. OLE drop targets revoke

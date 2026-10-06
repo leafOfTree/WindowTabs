@@ -44,12 +44,12 @@ module TabNavigation =
         elif foreground<>IntPtr.Zero && foreground<>closed && not(List.contains foreground order) then None
         else successor order isOpen closed opener
 
-    /// Some applications activate another window before hiding the one they close. A tab
-    /// hidden soon after the foreground moved from it to another tab, with no selection
-    /// since, was closed rather than left.
-    let closedAfterSwitch (left:(IntPtr * IntPtr * int64) option) closed active now =
+    /// Windows and some applications activate another window before hiding, destroying or
+    /// minimizing the active one. A tab that goes soon after the foreground moved from it
+    /// to another tab, with no selection since, was not left for that tab.
+    let leftJustBefore (left:(IntPtr * IntPtr * int64) option) gone active now =
         match left with
-        | Some(tab,next,time) -> tab=closed && active=Some next && now-time <= 500L
+        | Some(tab,next,time) -> tab=gone && active=Some next && now-time <= 500L
         | None -> false
 
     /// Selecting another tab forgets the opener, but Windows activating the window
@@ -216,6 +216,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         and set(value) =
             let value = TabNavigation.currentForeground this.lorder.list value this.os.foreground.hwnd
             let active = TabNavigation.rememberActive this.lorder.list isOpen lastActiveTab value
+            // Minimizing the active tab activates another tab that the group minimizes next.
+            let active =
+                match lastActiveTab,active with
+                | Some left,Some next when left<>next && isMinimized left && this.isMinimizing next -> lastActiveTab
+                | _ -> active
             match lastActiveTab,active with
             | Some left,Some next when left<>next ->
                 leftTab <- Some(left,next,transitionClock.ElapsedMilliseconds)
@@ -522,6 +527,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             // Queued notifications may be overtaken by a fast restore.
             if minimizeReady && this.windows.contains(hwnd) && this.os.windowFromHwnd(hwnd).isMinimized then
                 if not propagated then
+                    this.reclaimLeftTab(hwnd)
                     let needsMinimized = zorderCell.value.any <| fun hwnd -> this.os.windowFromHwnd(hwnd).isMinimized.not
                     if needsMinimized then
                         this.minimizeAll()
@@ -588,7 +594,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 this.updateIsVisible()
             this.ts.refreshShadow()
         | WinEvent.EVENT_OBJECT_HIDE | WinEvent.EVENT_OBJECT_DESTROY ->
-            this.reclaimClosedTab(hwnd)
+            this.reclaimLeftTab(hwnd)
             if lastActiveTab=Some hwnd then this.followClosedTab(this.os.foreground.hwnd)
         | _ -> ()
       
@@ -645,7 +651,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.removeWindow(hwnd) = this.withUpdate <| fun() ->
         if this.windows.contains(hwnd) then
-            this.reclaimClosedTab(hwnd)
+            this.reclaimLeftTab(hwnd)
             let foreground = this.os.foreground.hwnd
             let next = TabNavigation.closeTarget this.lorder.list isOpen hwnd foreground lastActiveTab opener
             if opener |> Option.exists(fun (tab,owner) -> tab=hwnd || owner=hwnd) then opener <- None
@@ -677,10 +683,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if followedClose |> Option.exists(fun (closed,_) -> closed=hwnd) then followedClose <- None
             else next |> Option.iter(fun target -> this.tabActivate(Tab(target),false))
 
-    /// The foreground left this tab just before it closed: it is still the tab being closed.
-    member private this.reclaimClosedTab(hwnd) =
-        if lastActiveTab<>Some hwnd && not(isOpen hwnd) &&
-           TabNavigation.closedAfterSwitch leftTab hwnd lastActiveTab transitionClock.ElapsedMilliseconds then
+    /// The foreground left this tab just before it closed or minimized: it is still the active tab.
+    member private this.reclaimLeftTab(hwnd) =
+        if lastActiveTab<>Some hwnd && (not(isOpen hwnd) || isMinimized hwnd) &&
+           TabNavigation.leftJustBefore leftTab hwnd lastActiveTab transitionClock.ElapsedMilliseconds then
             lastActiveTab <- Some hwnd
             opener <- leftOpener
             leftTab <- None
@@ -731,6 +737,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             (invoker :> IDisposable).Dispose()
 
    
+
+    /// Minimized, or about to be by a group minimize in progress.
+    member private this.isMinimizing hwnd =
+        isMinimized hwnd ||
+        (match requestedMinimizeStates.TryGetValue(hwnd) with | true,minimized -> minimized | _ -> false)
 
     /// Skips windows already there with no request of ours in flight. The tab that started the
     /// change never acknowledges a request, and while it is queued that tab's next change looks like ours.
