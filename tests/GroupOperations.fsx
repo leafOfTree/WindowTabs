@@ -61,7 +61,10 @@ type HelperWindow() =
                 position.cx <- min position.cx 660
                 position.cy <- min position.cy 500
             Marshal.StructureToPtr(position,message.LParam,false)
-        base.WndProc(&message)
+        // Stand in for a native window that ignores WM_DPICHANGED. Off screen, Windows moves these
+        // windows between monitors of different DPI, and a Form then resizes itself and, when the
+        // DPI drops, pins MinimumSize to the clamped size, so it no longer takes the group's size.
+        if message.Msg <> 0x2E0 then base.WndProc(&message)
 
 let main() =
     // Lasts until the test process exits.
@@ -315,6 +318,7 @@ let main() =
                         check (group.placementBounds=bounds) "Grouped windows were not restored to the full window rect")
                 onGroup(fun group -> setBounds group bounds; invoke "updatePlacements" group [||] |> ignore)
                 samples (sprintf "%dtabs-repeat-placement" count) 20 (fun group _ -> invoke "updatePlacements" group [||] |> ignore)
+                check (onGroup(fun group -> group.zorder.value.list.Tail |> List.forall(fun hwnd -> OS().windowFromHwnd(hwnd).bounds=bounds))) (sprintf "Tabs did not take the group bounds, so every placement moves them again: %A" (onHelper(fun () -> forms |> List.take count |> List.map(fun form -> form.MinimumSize))))
                 let changes = forms |> List.sumBy(fun form -> form.Changes)
                 onGroup(fun group -> invoke "updatePlacements" group [||] |> ignore)
                 pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle))
