@@ -157,6 +157,10 @@ module Strings =
         let numberShortcut = { caption={ en="Modifier key for 1–9"; zh="数字键搭配的修饰键"; ja="1～9 と組み合わせるキー" }
                                description=none
                                keywords={ en="number shortcut modifier"; zh="数字 快捷键 修饰键"; ja="番号 ショートカット 修飾キー" } }
+        let numberShortcutApps = { caption={ en="Apps using number shortcuts"; zh="使用数字快捷键的应用"; ja="番号ショートカットを使うアプリ" }; description=none; keywords=none }
+        let allExcept = { en="All except listed apps"; zh="除列表外的所有应用"; ja="一覧以外のすべてのアプリ" }
+        let onlyListed = { en="Only listed apps"; zh="仅列表中的应用"; ja="一覧のアプリのみ" }
+        let numberShortcutFor name = { en=sprintf "Use number shortcuts in %s" name; zh=sprintf "在 %s 中使用数字快捷键" name; ja=sprintf "%s で番号ショートカットを使う" name }
         let numberShortcutCtrl = { en="Ctrl + 1–9"; zh="Ctrl + 1–9"; ja="Ctrl + 1～9" }
         let numberShortcutAlt = { en="Alt + 1–9"; zh="Alt + 1–9"; ja="Alt + 1～9" }
         let numberShortcutBoth = { en="Ctrl or Alt + 1–9"; zh="Ctrl 或 Alt + 1–9"; ja="Ctrl または Alt + 1～9" }

@@ -36,6 +36,7 @@ module SettingsCatalog =
         // Ctrl+Alt+N: Ctrl+N and Ctrl+Shift+N belong to the apps themselves.
         { id="new-tab"; page=HotKeySettings; text=Strings.Settings.newTab; binding=Shortcut("newTab",1614) }
         { id="switch-tabs-by-number"; page=HotKeySettings; text=Strings.Settings.switchTabsByNumber; binding=Toggle("enableCtrlNumberHotKey",true,true) }
+        { id="number-shortcut-apps"; page=HotKeySettings; text=Strings.Settings.numberShortcutApps; binding=Choice("numberShortcutAppMode",["AllExcept";"OnlyListed"],"AllExcept") }
         { id="number-shortcut"; page=HotKeySettings; text=Strings.Settings.numberShortcut; binding=Choice("numberHotKeyModifier",["Ctrl";"Alt";"Both"],"Ctrl") }
         { id="activate-on-hover"; page=HotKeySettings; text=Strings.Settings.activateOnHover; binding=Toggle("enableHoverActivate",false,false) }
         { id="shift-scroll"; page=HotKeySettings; text=Strings.Settings.shiftScroll; binding=Toggle("enableShiftScroll",true,true) }
@@ -77,7 +78,7 @@ module SettingsCatalog =
         all |> List.choose(fun item -> match item.binding with Toggle(key,fresh,_) -> Some(key,fresh) | _ -> None)
     /// Settings that are the user's own records rather than preferences: a reset keeps them
     /// unless asked to clear them.
-    let appRuleKeys = ["includedPaths";"excludedPaths";"autoGroupingPaths"]
+    let appRuleKeys = ["includedPaths";"excludedPaths";"autoGroupingPaths";"numberShortcutPaths";"numberShortcutAppMode"]
     let workspaceKeys = ["workspaces";"workspaceSchemaVersion";"workspaceRecovery"]
     /// The settings a reset leaves: fresh-install toggles, the version (so the next start does
     /// not take the reset for an upgrade) and, unless cleared, app rules and saved workspaces.

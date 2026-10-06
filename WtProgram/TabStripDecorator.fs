@@ -286,6 +286,9 @@ type TabStripDecorator(group:WindowGroup) as this =
                 flags = checkedFlag(isTabbingEnabled)
             })
 
+        let numberEnabled = NumberShortcutRules.enabled processPath
+        let numberItem = CmiRegular({ text=tr (Strings.Settings.numberShortcutFor exeName); image=None; flags=checkedFlag numberEnabled
+                                      click=fun() -> NumberShortcutRules.setEnabled processPath (not numberEnabled) })
         let isGrouped = Services.program.getAutoGroupingEnabled processPath
         let groupTabsItem =
             CmiRegular({
@@ -353,6 +356,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(closeAllTabsItem)
             Some(CmiSeparator)
             Some(enableTabsItem)
+            Some(numberItem)
             Some(groupTabsItem)
             Some(CmiSeparator)
             Some(managerItem)

@@ -288,6 +288,18 @@ let main() =
         api.setValue("enableCtrlNumberHotKey",box false)
         check (target WindowMessages.WM_KEYDOWN 0x31 true=None) "Numeric shortcuts retained their enabled state"
         let altTarget msg ctrl alt = onGroup(fun _ -> numeric.targetIndex(msg,0x31,ctrl,altPressed=alt))
+        let paths = Set2(List2([@"C:\Apps\Editor.exe"]))
+        for mode in ["AllExcept";"OnlyListed"] do
+            check (NumberShortcutRules.allows mode paths @"c:\apps\EDITOR.exe" = (mode="OnlyListed")) "Listed application rule must ignore path case"
+            check (NumberShortcutRules.allows mode paths @"C:\Other.exe" = (mode="AllExcept")) "Unlisted application rule inverted"
+        api.setValue("numberShortcutAppMode",box "OnlyListed")
+        api.setValue("numberShortcutPaths",box paths)
+        let reset = SettingsCatalog.resetRoot api.root false false
+        check (string reset.["numberShortcutAppMode"]="OnlyListed" && reset.["numberShortcutPaths"].HasValues) "Reset lost number shortcut rules"
+        api.root <- reset
+        check (NumberShortcutRules.enabled @"C:\Apps\Editor.exe") "Number shortcut rules failed to round trip"
+        api.setValue("numberShortcutAppMode",box "AllExcept")
+        api.setValue("numberShortcutPaths",box(Set2<string>()))
         let capture = NumericShortcutCapture()
         check (not (NumericShortcutTarget.available [IntPtr(1)] (IntPtr(1)) 0)) "Current/only tab must pass through"
         check (NumericShortcutTarget.available [IntPtr(1);IntPtr(2)] (IntPtr(1)) 1) "Other tab must remain available"

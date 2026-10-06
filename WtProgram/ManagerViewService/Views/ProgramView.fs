@@ -29,7 +29,7 @@ module ImgHelper =
 
 module private ProgramItems =
     /// Column indexes of the check boxes.
-    let tabsColumn,groupingColumn = 1,2
+    let tabsColumn,groupingColumn,numberColumn = 1,2,3
     /// The icon the app shows on the taskbar (its first window), else the executable's own
     /// icon. A host without icons of its own (ApplicationFrameHost.exe) gets a line glyph
     /// rather than borrowing one hosted app's logo. An app that is not running has no window.
@@ -43,7 +43,7 @@ module private ProgramItems =
         let tabs = Services.filter.getIsTabbingEnabledForProcess path
         // Auto grouping only decides which group a tabbed window joins.
         TreeListItem(Path.GetFileName(path),Icon=Option.toObj icon,Glyph=WindowGlyph,Tag=path,
-                     Checks=[|None;Some tabs;Some(Services.program.getAutoGroupingEnabled path)|],CheckEnabled=[|true;true;true|])
+                     Checks=[|None;Some tabs;Some(Services.program.getAutoGroupingEnabled path);Some(NumberShortcutRules.enabled path)|],CheckEnabled=[|true;true;true;true|])
     let window (window:Window) =
         TreeListItem(window.text,Icon=Option.toObj (ImgHelper.windowIcon window),Glyph=WindowGlyph)
 type ProgramView() as this=
@@ -51,9 +51,10 @@ type ProgramView() as this=
     let list =
         new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn)
                               TreeListColumn(tr Strings.AppRules.tabs,130,CheckColumn)
-                              TreeListColumn(tr Strings.AppRules.autoGroup,130,CheckColumn)])
-    let all = TreeListItem(tr Strings.AppRules.allApps,Glyph=AppsGlyph,Checks=[|None;Some false;Some false|],
-                           CheckEnabled=[|true;true;true|],Mixed=[|false;false;false|])
+                              TreeListColumn(tr Strings.AppRules.autoGroup,130,CheckColumn)
+                              TreeListColumn(tr Strings.Settings.switchTabsByNumber.caption,150,CheckColumn)])
+    let all = TreeListItem(tr Strings.AppRules.allApps,Glyph=AppsGlyph,Checks=[|None;Some false;Some false;Some false|],
+                           CheckEnabled=[|true;true;true;true|],Mixed=[|false;false;false;false|])
     let apps() = list.Roots |> Seq.filter(fun item -> not (obj.ReferenceEquals(item,all))) |> List.ofSeq
     let path (item:TreeListItem) = item.Tag :?> string
     /// Each of the All row's boxes is on when every app's is, and a dash when only some are.
@@ -66,6 +67,7 @@ type ProgramView() as this=
         let apps = apps()
         summarise ProgramItems.tabsColumn apps
         summarise ProgramItems.groupingColumn apps
+        summarise ProgramItems.numberColumn apps
     /// For apps that have not been turned on or off in the list.
     let footer =
         let table = new TableLayoutPanel(ColumnCount=1,Margin=Padding.Empty,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink)
@@ -116,6 +118,10 @@ type ProgramView() as this=
                     if app.checkEnabled column && (not isAll || app.check column <> Some value) then
                         Services.program.setAutoGroupingEnabled (path app) value
                         app.Checks.[column] <- Some value
+            elif column=ProgramItems.numberColumn then
+                for app in changed do
+                    NumberShortcutRules.setEnabled (path app) value
+                    app.Checks.[column] <- Some value
             updateAll()
             list.Invalidate())
         this.populateNodes()
@@ -146,7 +152,7 @@ type ProgramView() as this=
         // Only the first scan says so: later ones replace the list in place.
         if list.Roots.Count=0 then panel.Status <- tr Strings.AppRules.scanning
         // Apps with a rule are listed even when they are not running, so they can be changed.
-        let ruled = SettingsCatalog.appRuleKeys |> List.collect(fun key -> (Services.settings.getValue(key).cast<Set2<string>>()).items.list)
+        let ruled = ["includedPaths";"excludedPaths";"autoGroupingPaths";"numberShortcutPaths"] |> List.collect(fun key -> (Services.settings.getValue(key).cast<Set2<string>>()).items.list)
         scanner.Request(fun cancellation ->
             let items = ResizeArray<TreeListItem>()
             try

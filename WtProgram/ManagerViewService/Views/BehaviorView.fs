@@ -36,6 +36,7 @@ type HotKeyView() =
         SettingsUi.settingRow keyboard "switch-tabs-by-number" numericEnabled
         let numericChoice = SettingsBindings.choiceRow keyboard "number-shortcut"
                                 [|tr Strings.Settings.numberShortcutCtrl;tr Strings.Settings.numberShortcutAlt;tr Strings.Settings.numberShortcutBoth|]
+        SettingsBindings.choiceRow keyboard "number-shortcut-apps" [|tr Strings.Settings.allExcept;tr Strings.Settings.onlyListed|] |> ignore
         let numericRow = numericChoice.Parent :?> SettingsRow
         SettingsUi.indentDependentRow numericRow
         let updateNumeric() = numericRow.Collapsed <- not numericEnabled.Checked

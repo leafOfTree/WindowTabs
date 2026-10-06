@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Windows.Forms
 open Newtonsoft.Json
@@ -17,6 +17,8 @@ type SettingsRec = {
     groupWindowsInSwitcher: bool
     enableCtrlNumberHotKey: bool
     numberHotKeyModifier: string
+    numberShortcutAppMode: string
+    numberShortcutPaths: Set2<string>
     combineIconsInTaskbar: bool
     enableHoverActivate: bool
     /// "Never", "Maximized" or "Always".

@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Drawing
 open System.Collections.Generic
@@ -114,6 +114,8 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         replaceAltTab = settingsJson.getBool("replaceAltTab").def(SettingsCatalog.toggleDefault "replaceAltTab" hasExistingSettings)
                         groupWindowsInSwitcher = settingsJson.getBool("groupWindowsInSwitcher").def(SettingsCatalog.toggleDefault "groupWindowsInSwitcher" hasExistingSettings)
                         enableCtrlNumberHotKey = settingsJson.getBool("enableCtrlNumberHotKey").def(SettingsCatalog.toggleDefault "enableCtrlNumberHotKey" hasExistingSettings)
+                        numberShortcutPaths = Set2(settingsJson.getStringArray("numberShortcutPaths").def(List2()))
+                        numberShortcutAppMode = settingsJson.getString("numberShortcutAppMode").def("AllExcept") |> SettingsCatalog.normalizeChoice "numberShortcutAppMode"
                         numberHotKeyModifier = settingsJson.getString("numberHotKeyModifier").def("Ctrl") |> SettingsCatalog.normalizeChoice "numberHotKeyModifier"
                         enableHoverActivate = settingsJson.getBool("enableHoverActivate").def(SettingsCatalog.toggleDefault "enableHoverActivate" hasExistingSettings)
                         // Older versions stored two toggles: minimalMode (every window) and autoHide (maximized only).
@@ -187,6 +189,8 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setBool("replaceAltTab", settings.replaceAltTab)
             settingsJson.setBool("groupWindowsInSwitcher", settings.groupWindowsInSwitcher)
             settingsJson.setBool("enableCtrlNumberHotKey", settings.enableCtrlNumberHotKey)
+            settingsJson.setStringArray("numberShortcutPaths", settings.numberShortcutPaths.items)
+            settingsJson.setString("numberShortcutAppMode", settings.numberShortcutAppMode)
             settingsJson.setString("numberHotKeyModifier", settings.numberHotKeyModifier)
             settingsJson.setBool("enableHoverActivate", settings.enableHoverActivate)
             settingsJson.setString("autoHideMode", settings.autoHideMode)
@@ -238,7 +242,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
         // Compatibility adapter for older callers; new appearance code uses the typed API.
         member x.setValue((key,value)) =
             let api = x :> ISettings
-            let value = if key="alignment" || key="language" || key="autoHideMode" || key="switcherStyle" || key="numberHotKeyModifier" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
+            let value = if key="alignment" || key="language" || key="autoHideMode" || key="switcherStyle" || key="numberHotKeyModifier" || key="numberShortcutAppMode" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
             match key with
             | "tabAppearance" ->
                 let appearance = value :?> TabAppearanceInfo

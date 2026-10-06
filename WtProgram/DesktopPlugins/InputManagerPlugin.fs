@@ -21,6 +21,12 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
     let OS = OS()
     let numeric = NumericTabHotKeyPlugin()
     let numericCapture = NumericShortcutCapture()
+    let mutable cachedPath = (IntPtr.Zero, "")
+    let pathFor hwnd =
+        if fst cachedPath <> hwnd then
+            let path = try OS.windowFromHwnd(hwnd).pid.processPath with _ -> ""
+            cachedPath <- (hwnd,path)
+        snd cachedPath
 
     member this.desktop = Services.desktop
 
@@ -58,6 +64,7 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
                 else foreground |> Option.bind(fun group ->
                     numeric.targetIndex(int key,data.vkCode,controlPressed,altPressed=altPressed)
                     |> Option.filter(NumericShortcutTarget.available group.windows.list (WinUserApi.GetForegroundWindow())))
+            let target = target |> Option.filter(fun _ -> NumberShortcutRules.enabled (pathFor (WinUserApi.GetForegroundWindow())))
             let consumed,activate = numericCapture.handle(int key,data.vkCode,target)
             if activate.IsSome && altPressed then AltMenuMask.send()
             activate |> Option.iter(fun index ->
