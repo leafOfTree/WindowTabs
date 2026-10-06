@@ -68,7 +68,7 @@ escape the budget by resetting the baseline. `-Switches`, `-Cycles`,
 These timeouts are upper bounds, not expected runtimes. Live progress is streamed
 to the console and GitHub log while the driver runs.
 
-The runner builds Release and copies only the shipped EXE/configuration into a
+The runner builds Release and copies only the shipped EXE into a
 unique `tests/Debug/desktop-e2e-<id>` directory. A separately compiled x86 WinForms
 driver creates three foreign helper HWNDs. Portable settings opt in only that
 driver's executable, disable automatic grouping and use fixed tab geometry,

@@ -2,7 +2,8 @@
 
   <!-- Compiles one regression script into its own executable:
        dotnet build tests\TestHost.fsproj -p:TestName=Reliability
-       An STA executable loads the production DPI configuration. Each script
+       An STA executable with the production manifest;
+       TestInit applies the WinForms DPI option as Bootstrap does. Each script
        uses TestInit.run so popup menus execute inside Application.Run. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -12,7 +13,6 @@
     <OutDir>$(MSBuildThisFileDirectory)Debug\</OutDir>
     <IntermediateOutputPath>obj\$(TestName)\</IntermediateOutputPath>
     <ApplicationManifest>..\WtProgram\app.manifest</ApplicationManifest>
-    <AppConfig>..\WtProgram\App.config</AppConfig>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <NoWarn>$(NoWarn);0040;0046;0058;0760;1183</NoWarn>

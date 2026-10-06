@@ -56,7 +56,7 @@ Test hosts print remaining native window classes after managed cleanup and befor
 `TEST_BODY_COMPLETE`, without window titles. Framework windows alone are not proof
 of a leak; the specific menu hook identified in the dump is checked separately.
 
-The Release smoke test copies only the shipped EXE and configuration into an
+The Release smoke test copies only the shipped EXE into an
 isolated directory, then uses a separate Framework STA host to check type loading,
 external dependencies, icon decoding, theme behavior and real control rendering.
 The host initializes SystemEvents like production and registers a standalone

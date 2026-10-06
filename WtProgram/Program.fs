@@ -382,6 +382,7 @@ type Program(lifetime:LifetimeScope) as this =
 module Bootstrap =
     [<STAThread; EntryPoint>]
     let main argv =
+        Dpi.enableWinFormsRescaling()
         ThemeService.moveSystemEventsOffMainThread()
         Application.SetCompatibleTextRenderingDefault(false)
         use logger = new ExceptionHandlerPlugin()

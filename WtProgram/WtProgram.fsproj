@@ -5,8 +5,6 @@
     <TargetFramework>net48</TargetFramework>
     <AssemblyName>WindowTabs</AssemblyName>
     <RootNamespace>WindowTabs</RootNamespace>
-    <!-- F# projects do not pick up App.config on their own; it carries the DPI awareness settings. -->
-    <AppConfig>App.config</AppConfig>
     <ApplicationIcon>Resources\Bemo.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- The release workflow overrides this from the tag: dotnet build -c Release -p:Version=2025.10.01 -->

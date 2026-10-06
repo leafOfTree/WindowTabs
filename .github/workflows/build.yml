@@ -53,5 +53,4 @@ jobs:
           name: WindowTabs
           path: |
             WtProgram/bin/Release/WindowTabs.exe
-            WtProgram/bin/Release/WindowTabs.exe.config
           if-no-files-found: error

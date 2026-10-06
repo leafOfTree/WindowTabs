@@ -3,6 +3,8 @@ open System
 open System.Runtime.ExceptionServices
 open System.Windows.Forms
 
+// Before any control, as in Bootstrap.main: test hosts have no .config file either.
+Bemo.Dpi.enableWinFormsRescaling()
 // Surface paint/event exceptions as test failures rather than modal dialogs.
 Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException)
 printfn "TEST_APPLICATION_ASSEMBLY=%s" typeof<Bemo.WindowGroup>.Assembly.Location

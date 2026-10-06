@@ -4,7 +4,6 @@
     <TargetFramework>net48</TargetFramework>
     <PlatformTarget>x86</PlatformTarget>
     <Optimize>true</Optimize>
-    <AppConfig>../../WtProgram/App.config</AppConfig>
     <ApplicationManifest>../../WtProgram/app.manifest</ApplicationManifest>
     <BenchmarkAppDir Condition="'$(BenchmarkAppDir)' == ''">../Debug/performance/current/</BenchmarkAppDir>
   </PropertyGroup>

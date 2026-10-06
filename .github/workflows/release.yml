@@ -36,13 +36,6 @@ jobs:
         shell: powershell
         run: ./tests/Run-ReleaseSmoke.ps1
 
-      - name: Package
-        shell: pwsh
-        run: |
-          # WindowTabs.exe.config carries the WinForms per-monitor DPI settings and must sit next to the exe.
-          Compress-Archive -Path WtProgram/bin/Release/WindowTabs.exe, WtProgram/bin/Release/WindowTabs.exe.config `
-                           -DestinationPath WindowTabs-${{ github.ref_name }}.zip
-
       - name: Draft GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -50,8 +43,7 @@ jobs:
         run: |
           $flags = @('--draft', '--generate-notes', '--title', '${{ github.ref_name }}')
           if ('${{ steps.version.outputs.prerelease }}' -eq 'true') { $flags += '--prerelease' }
-          gh release create '${{ github.ref_name }}' WindowTabs-${{ github.ref_name }}.zip `
-            WtProgram/bin/Release/WindowTabs.exe WtProgram/bin/Release/WindowTabs.exe.config @flags
+          gh release create '${{ github.ref_name }}' WtProgram/bin/Release/WindowTabs.exe @flags
 
       - name: Upload regression diagnostics
         if: failure()

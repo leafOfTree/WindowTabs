@@ -23,12 +23,17 @@ internal static class ReleaseSmoke
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
             var assembly = Assembly.LoadFrom(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WindowTabs.exe"));
             Console.WriteLine("Release smoke: assembly loaded");
+            // The exe ships without a .config file; Bootstrap supplies its WinForms DPI option first.
+            assembly.GetType("Bemo.Dpi", true).GetMethod("enableWinFormsRescaling").Invoke(null, null);
             // Match Bootstrap before creating controls; SystemEvents must not
             // own its broadcast window on the main STA.
             assembly.GetType("Bemo.ThemeService", true).GetMethod("moveSystemEventsOffMainThread").Invoke(null, null);
             Application.EnableVisualStyles();
             assembly.GetTypes(); // Resolve signatures, including statically linked dependencies.
             Console.WriteLine("Release smoke: types resolved");
+            var dpiHelper = typeof(Form).Assembly.GetType("System.Windows.Forms.DpiHelper", true);
+            if (!(bool)dpiHelper.GetProperty("EnableDpiChangedMessageHandling", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null, null))
+                throw new Exception("Forms would not rescale on a monitor with another scale");
             foreach (var reference in assembly.GetReferencedAssemblies())
                 if (reference.Name == "FSharp.Core" || reference.Name == "Newtonsoft.Json" || reference.Name == "Win32")
                     throw new Exception("Unexpected external dependency: " + reference.Name);

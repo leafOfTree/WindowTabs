@@ -13,14 +13,11 @@ $stage = Join-Path $PSScriptRoot ('Debug/desktop-latency-' + [guid]::NewGuid().T
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 dotnet build (Join-Path $repo 'WindowTabs.sln') -c Release -v:minimal
 if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
-foreach ($name in @('WindowTabs.exe','WindowTabs.exe.config')) {
-    Copy-Item -LiteralPath (Join-Path $repo "WtProgram/bin/Release/$name") -Destination $stage
-}
+Copy-Item -LiteralPath (Join-Path $repo 'WtProgram/bin/Release/WindowTabs.exe') -Destination $stage
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319/csc.exe'
 $hostExe = Join-Path $stage 'DesktopLatency.exe'
 & $compiler /nologo /target:exe /platform:x86 "/out:$hostExe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll "/win32manifest:$repo/WtProgram/app.manifest" (Join-Path $PSScriptRoot 'DesktopLatency.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Desktop latency driver compilation failed.' }
-Copy-Item -LiteralPath (Join-Path $stage 'WindowTabs.exe.config') -Destination "$hostExe.config"
 @{ appSha256=(Get-FileHash -LiteralPath (Join-Path $stage 'WindowTabs.exe')).Hash; browserPath=$BrowserPath; browserVersion=(Get-Item -LiteralPath $BrowserPath).VersionInfo.FileVersion; switches=$Switches; maximizeSamples=$MaximizeSamples; slowWindowMs=$SlowWindowMs; createdUtc=[DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'manifest.json')
 Write-Host "Desktop latency artifacts: $stage"
 if ($BuildOnly) { return }

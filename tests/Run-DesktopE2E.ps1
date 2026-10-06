@@ -27,14 +27,11 @@ New-Item -ItemType Directory -Path $stage -Force | Out-Null
 if ($env:GITHUB_OUTPUT) { Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "stage=$stage" }
 dotnet build (Join-Path $repo 'WindowTabs.sln') -c Release -v:minimal
 if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
-foreach ($name in @('WindowTabs.exe','WindowTabs.exe.config')) {
-    Copy-Item -LiteralPath (Join-Path $repo "WtProgram/bin/Release/$name") -Destination $stage
-}
+Copy-Item -LiteralPath (Join-Path $repo 'WtProgram/bin/Release/WindowTabs.exe') -Destination $stage
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319/csc.exe'
 $hostExe = Join-Path $stage 'DesktopE2E.exe'
 & $compiler /nologo /target:exe /platform:x86 "/out:$hostExe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll "/win32manifest:$repo/WtProgram/app.manifest" (Join-Path $PSScriptRoot 'DesktopE2E.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Desktop E2E compilation failed.' }
-Copy-Item -LiteralPath (Join-Path $stage 'WindowTabs.exe.config') -Destination "$hostExe.config"
 @{ appSha256=(Get-FileHash -LiteralPath (Join-Path $stage 'WindowTabs.exe')).Hash; profile=$Profile; switches=$Switches; cycles=$Cycles; durationMinutes=$DurationMinutes; createdUtc=[DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'manifest.json')
 Write-Host "Desktop E2E artifacts: $stage"
 if ($BuildOnly) { return }

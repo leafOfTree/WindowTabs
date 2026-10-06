@@ -4,15 +4,12 @@ $repo = Split-Path $PSScriptRoot -Parent
 $release = Join-Path $repo 'WtProgram/bin/Release'
 $stage = Join-Path $PSScriptRoot ('Debug/release-smoke-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
-foreach ($name in @('WindowTabs.exe', 'WindowTabs.exe.config')) {
-    Copy-Item -LiteralPath (Join-Path $release $name) -Destination $stage
-}
+Copy-Item -LiteralPath (Join-Path $release 'WindowTabs.exe') -Destination $stage
 # Framework compiler gives us a standalone STA host without NuGet dependencies.
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319/csc.exe'
 $hostExe = Join-Path $stage 'ReleaseSmoke.exe'
 & $compiler /nologo /target:exe /platform:x86 "/out:$hostExe" /r:System.Drawing.dll /r:System.Windows.Forms.dll "/win32manifest:$repo/WtProgram/app.manifest" (Join-Path $PSScriptRoot 'ReleaseSmoke.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Release smoke compilation failed.' }
-Copy-Item -LiteralPath (Join-Path $stage 'WindowTabs.exe.config') -Destination "$hostExe.config"
 $stdout = Join-Path $PSScriptRoot 'Debug/ReleaseSmoke.stdout.log'
 $stderr = Join-Path $PSScriptRoot 'Debug/ReleaseSmoke.stderr.log'
 $process = Start-Process -FilePath $hostExe -WorkingDirectory $stage -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr

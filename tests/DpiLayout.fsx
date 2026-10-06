@@ -24,6 +24,10 @@ let main() =
     Directory.CreateDirectory(isolated) |> ignore
     Environment.CurrentDirectory <- isolated
     use settings = new Settings(true, saveDelay=0)
+    // The host has no .config file, like the shipped exe: TestInit supplied the option.
+    let dpiHelper = typeof<Form>.Assembly.GetType("System.Windows.Forms.DpiHelper",true)
+    check (dpiHelper.GetProperty("EnableDpiChangedMessageHandling",Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Static).GetValue(null) :?> bool)
+          "WinForms will not rescale forms without WindowTabs.exe.config"
     let previous = Native.SetThreadDpiAwarenessContext(IntPtr(-4))
     let originalDpi = Dpi.value()
     try

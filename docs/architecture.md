@@ -194,14 +194,16 @@ views dispose icons they create (`ImgHelper.disposeItems`). It replaced the vend
 
 ## DPI and stress verification
 
-The manifest and .NET 4.8 configuration opt into PerMonitorV2. WinForms owns form
-rescaling; `Dpi` tracks the current UI thread's scale for custom painting and lazy
-page creation. Native groups recompute appearance from logical values when the host
-monitor changes. Fonts and shadows are rebuilt for the new scale and disposed.
+The manifest opts the process into PerMonitorV2. WinForms rescales forms only when its
+`DpiAwareness` option is PerMonitorV2, which it normally reads from a .config file;
+`Dpi.enableWinFormsRescaling`, first in `Bootstrap.main`, supplies it so the exe ships
+alone. WinForms owns form rescaling; `Dpi` tracks the current UI thread's scale for
+custom painting and lazy page creation. Native groups recompute appearance from logical
+values when the host monitor changes. Fonts and shadows are rebuilt for the new scale and disposed.
 Never scale persisted settings or an already-scaled appearance snapshot.
 
 `DpiLayout` sends repeated `WM_DPICHANGED` transitions at 96/120/144/192 DPI to a real
-form under the production manifest/config. Architecture tests measure GDI, USER and
-process handles across 100 native group cycles after warmup. These tests do not
+form under the production manifest and startup option. Architecture tests measure GDI,
+USER and process handles across 100 native group cycles after warmup. These tests do not
 replace physical mixed-monitor dragging, sleep/resume, Explorer restart or multi-hour
 soak testing; those environmental scenarios still need manual validation.
