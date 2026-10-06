@@ -3,17 +3,19 @@
 param([Parameter(Mandatory)][string]$Exe,
       [string]$Arguments = '',
       [string]$WindowClass = '',
-      [ValidateSet('Group','Switch','NewTab','Minimize','Maximize','Close')][string[]]$Phases = @('Group','Switch','NewTab','Minimize','Maximize','Close'),
+      # The process that owns the windows, when it is not -Exe (cmd.exe opens in Windows Terminal).
+      [string]$WindowProcess = '',
+      [ValidateSet('Group','Switch','NewTab','Minimize','Maximize','MinimizedNewTab','Close')][string[]]$Phases = @('Group','Switch','NewTab','Minimize','Maximize','MinimizedNewTab','Close'),
       [ValidateRange(3, 9)][int]$Count = 4,
       [ValidateRange(500, 10000)][int]$OpenDelayMs = 3000,
-      [ValidateRange(0, 1000)][int]$FlashToleranceMs = 0,
+      [ValidateRange(0, 1000)][int]$FlashToleranceMs = 100,
       [string]$SettingsPath = '',
       [switch]$Interactive)
 $ErrorActionPreference = 'Stop'
 if (-not $Interactive) { throw 'This scenario owns foreground/keyboard input. Use -Interactive on an unlocked, idle desktop.' }
 $app = Get-Process WindowTabs -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $app) { throw 'Start the WindowTabs build under test first.' }
-$name = [IO.Path]::GetFileNameWithoutExtension($Exe)
+$name = if ($WindowProcess) { $WindowProcess } else { [IO.Path]::GetFileNameWithoutExtension($Exe) }
 
 Add-Type @"
 using System; using System.Collections.Generic; using System.Runtime.InteropServices; using System.Text;
@@ -242,6 +244,23 @@ try {
         Check (WaitFor { @($order | Where-Object { [RealApp]::IsZoomed($_) }).Count -eq 0 } 3000) 'restoring one tab restores every tab'
         Check (WaitFor { (StripState) -eq "owner=tab2 visible=True above=True" } 3000) "the strip is visible above tab2 ($(StripState))"
     }
+    if ($Phases -contains 'MinimizedNewTab') {
+        $script:phase = 'MinimizedNewTab'; Write-Host 'MinimizedNewTab: a window opened into a minimized group closes back to the tab active before'
+        Activate $Count
+        $active = $order[$Count-1]
+        SysCommand $active 0xF020
+        Check (WaitFor { @($order | Where-Object { -not [RealApp]::IsIconic($_) }).Count -eq 0 } 3000) 'every tab is minimized'
+        $hwnd = OpenWindow { if ($Arguments) { Start-Process $Exe -ArgumentList $Arguments } else { Start-Process $Exe } }
+        Check ($hwnd -ne [IntPtr]::Zero) 'launching the application opens one window'
+        if ($hwnd -ne [IntPtr]::Zero) {
+            Write-Host "  opened $(Tab $hwnd) ($hwnd)"
+            Check (WaitFor { @($order | Where-Object { [RealApp]::IsIconic($_) }).Count -eq 0 } 3000) 'the window joining the group restores every tab'
+            Check ((Fg) -eq $hwnd) "the new window $(Tab $hwnd) is active"
+            Check ((StripState) -eq "owner=$(Tab $hwnd) visible=True above=True") "the new window joins the group ($(StripState))"
+            CloseAndExpect $hwnd $active
+            [void]$fixture.Remove($hwnd); [void]$order.Remove($hwnd)
+        }
+    }
     if ($Phases -contains 'Close') {
         $script:phase = 'Close'; Write-Host 'Close: closing the active tab selects its right neighbour, or the left one at the end'
         Activate 1; Activate 2
@@ -259,7 +278,20 @@ try {
 }
 finally {
     # Only the fixture's own windows are closed; other windows of the app are never touched.
-    $order | Where-Object { IsOpen $_ } | ForEach-Object { [void][RealApp]::PostMessage($_, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) }
+    $left = @($order | Where-Object { IsOpen $_ })
+    $left | ForEach-Object { [void][RealApp]::PostMessage($_, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) }
+    [void](WaitFor { @($left | Where-Object { IsOpen $_ }).Count -eq 0 } 5000)
+    # Neovide sometimes ignores WM_CLOSE. End a process only when every window it shows is a
+    # fixture window: Explorer and Notepad share one process with the user's windows.
+    $left | Where-Object { IsOpen $_ } | ForEach-Object { [RealApp]::Pid($_) } | Select-Object -Unique | ForEach-Object {
+        $owner = $_
+        $ownerIds = New-Object 'System.Collections.Generic.HashSet[uint32]'; [void]$ownerIds.Add([uint32]$owner)
+        $shown = @([RealApp]::Windows($ownerIds, ''))
+        if (@($shown | Where-Object { -not $fixture.Contains($_) }).Count -eq 0) {
+            Write-Host "  ending $name process $owner, which ignored WM_CLOSE"
+            Stop-Process -Id $owner -Force -ErrorAction SilentlyContinue
+        } else { Write-Host "  WARNING: a fixture window of shared process $owner is still open" }
+    }
 }
 if ($script:failures) { throw "Real app scenario failed:`n  $($script:failures -join "`n  ")" }
 Write-Host "PASS: $($Phases -join ', ') for $Count $name windows."

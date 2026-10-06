@@ -253,13 +253,19 @@ shortcuts enabled (the default). The script reads the next, previous and new-tab
 shortcuts from that instance's settings (`-SettingsPath` overrides the location).
 Close the application's own windows first; the script refuses to run otherwise,
 because grouping would mix them with its fixture windows, and it only ever closes
-windows it opened.
+windows it opened. A fixture window that ignores `WM_CLOSE`, as Neovide sometimes
+does, has its process ended only when that process shows no other window.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-RealAppScenario.ps1 -Exe 'C:\Program Files\Neovide\neovide.exe' -Interactive
 powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-RealAppScenario.ps1 -Exe "$env:WINDIR\explorer.exe" -Arguments $env:WINDIR -WindowClass CabinetWClass -Interactive
 powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-RealAppScenario.ps1 -Exe notepad.exe -WindowClass Notepad -Interactive
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-RealAppScenario.ps1 -Exe cmd.exe -WindowProcess WindowsTerminal -WindowClass CASCADIA_HOSTING_WINDOW_CLASS -Interactive
 ```
+
+`-WindowProcess` names the process that owns the windows when it is not `-Exe`:
+Command Prompt opens in Windows Terminal when that is the default terminal, so
+automatic grouping must be enabled for `WindowsTerminal.exe`.
 
 It opens `-Count` windows (default 4) and runs the phases in order; `-Phases`
 selects some of them.
@@ -271,15 +277,17 @@ selects some of them.
 | NewTab | The new-tab shortcut opens a window in the group, which closes back to its opener |
 | Minimize | Minimizing a tab minimizes every tab and hides the strip; restoring brings both back |
 | Maximize | Maximizing a tab maximizes every tab with the strip inside; restoring undoes both |
+| MinimizedNewTab | From the last tab, minimize the group and launch the application again; the new window restores the group and closes back to that last tab |
 | Close | From tab 2, closing the active tab repeatedly selects the right neighbour, or the left one at the end |
 
 Windows are minimized, maximized and closed with `WM_SYSCOMMAND` and `WM_CLOSE`.
 After each close the foreground and topmost fixture window are sampled every few
 milliseconds. A wrong final tab fails the run, as does another tab shown on top
-for longer than `-FlashToleranceMs` (default 0). Applications activate the previous
-window as part of a close, so a short flash is expected: about 15 ms for Neovide
-and Explorer and up to about 100 ms for Notepad, which drives all its windows from
-one busy thread while it closes one. Sampling cannot see sub-frame changes.
+for longer than `-FlashToleranceMs`. Applications activate the previous window as
+part of a close, so a short flash is expected: about 15 ms for Neovide and
+Explorer and up to about 100 ms for Notepad, which drives all its windows from one
+busy thread while it closes one. The default tolerance, 100 ms, is that longest
+measured flash. Sampling cannot see sub-frame changes.
 
 The script assumes tab order is launch order. An application that opens a second
 launch as a tab, or prompts to save on close, cannot be tested. Windows 11 Notepad
