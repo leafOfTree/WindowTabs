@@ -365,9 +365,31 @@ let main() =
                         // Activation of a test window may be refused; only an activation that
                         // happened marks the close as followed, otherwise removal retries.
                         let activated = OS().foreground.hwnd=expected
-                        check ((field "followedClose").GetValue(group) :?> IntPtr option=(if activated then Some added else None)) "A refused activation was treated as a followed close, or a successful one was not"
+                        check ((field "followedClose").GetValue(group) :?> (IntPtr*IntPtr) option=(if activated then Some(added,expected) else None)) "A refused activation was treated as a followed close, or a successful one was not"
+                        // Removal keeps the selected successor active even while Windows still
+                        // shows the tab it activated itself.
+                        (field "followedClose").SetValue(group,box (Some(added,expected)))
                         group.removeWindow added
-                        check ((field "followedClose").GetValue(group) :?> IntPtr option=None) "Removing a closed tab kept its marker")
+                        check ((field "followedClose").GetValue(group) :?> (IntPtr*IntPtr) option=None) "Removing a closed tab kept its marker"
+                        check ((field "lastActiveTab").GetValue(group) :?> IntPtr option=Some expected) "Removing a closed tab made the tab Windows activated current instead of its successor")
+                    onHelper(fun () -> OS().windowFromHwnd(added).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
+                    onGroup(fun group -> group.addWindow(added,false))
+                    pumpUntil(fun () -> onGroup(fun group -> group.windows.contains added))
+                    // Notepad and Explorer activate the previously used tab before hiding the one they
+                    // close. That foreground change must not make the closing tab look merely left.
+                    onGroup(fun group ->
+                        let order = group.lorder.list
+                        // A test window may hold the real foreground, which a foreground event defers to.
+                        let current = OS().foreground.hwnd
+                        let other = if current<>added && List.contains current order then current else order |> List.find((<>) added)
+                        (field "lastActiveTab").SetValue(group,box (Some added))
+                        group.foreground <- other
+                        check ((field "lastActiveTab").GetValue(group) :?> IntPtr option=Some other) "Activating another tab while the old one was open did not select it")
+                    onHelper(fun () -> OS().windowFromHwnd(added).hide())
+                    onGroup(fun group ->
+                        invoke "handleWindowEvent" group [|box added; box WinEvent.EVENT_OBJECT_HIDE|] |> ignore
+                        check ((field "lastActiveTab").GetValue(group) :?> IntPtr option=Some added) "A tab hidden right after losing the foreground was not treated as closing"
+                        group.removeWindow added)
                     onHelper(fun () -> OS().windowFromHwnd(added).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
             // Controlled latency in an application's synchronous positioning handler.
             onHelper(fun () -> forms.[1].Delay <- 50)

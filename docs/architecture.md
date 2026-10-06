@@ -126,6 +126,15 @@ preserves the closed active tab across those early foreground events and does no
 activate a background group. Removing a visible HWND for a drag or ungroup is not
 a close.
 
+Some applications, such as Notepad and Explorer, activate another window before
+hiding the one they close, so the close first looks like a switch to that tab. A
+tab hidden or destroyed within 500 ms of losing the foreground to another tab of
+the group, with no selection since, is treated as the closed active tab. Foreground
+events can also arrive out of order, after the successor was already activated; an
+event for one tab while another tab of the group is in the foreground uses the real
+foreground. When discovery removes the closed tab, the selected successor becomes
+the active tab even if Windows still shows the tab it activated itself.
+
 The entry point installs exception reporting and acquires the single-instance mutex
 before constructing services. `LifetimeScope` owns resources immediately and releases
 them in reverse order, continuing when one cleanup fails. OLE drop targets revoke

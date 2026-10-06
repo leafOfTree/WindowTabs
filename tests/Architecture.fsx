@@ -242,6 +242,17 @@ let main() =
         check (TabNavigation.keepOpener [a;b;c;added] (fun _ -> true) opened added=opened) "Activating the new tab forgot its opener"
         check (TabNavigation.keepOpener [a;b;c;added] (fun _ -> true) opened (IntPtr 999)=opened) "Leaving the group forgot the opener"
         check (TabNavigation.keepOpener [a;b;c;added] closing opened a=opened) "Windows activating the opener of a closing tab forgot the opener"
+        // Windows activated a while our successor c was activated; a's event arrived last.
+        check (TabNavigation.currentForeground [a;b;c] a c=c) "A late foreground event undid a later activation in the group"
+        check (TabNavigation.currentForeground [a;b;c] a a=a) "A current foreground event was replaced"
+        check (TabNavigation.currentForeground [a;b;c] a (IntPtr 999)=a) "Focus outside the group replaced the group's foreground event"
+        // Notepad and Explorer activate the previous window before hiding the one they close.
+        let left = Some(b,a,1000L)
+        check (TabNavigation.closedAfterSwitch left b (Some a) 1300L) "A tab hidden right after it lost the foreground was not treated as closed"
+        check (not(TabNavigation.closedAfterSwitch left b (Some a) 1600L)) "A tab hidden long after it was left was treated as closed"
+        check (not(TabNavigation.closedAfterSwitch left b (Some c) 1300L)) "A tab hidden after a later selection was treated as closed"
+        check (not(TabNavigation.closedAfterSwitch left c (Some a) 1300L)) "Another tab's hide was treated as the left tab closing"
+        check (not(TabNavigation.closedAfterSwitch None b (Some a) 1300L)) "A hide with no recent switch was treated as a close"
         let target msg key ctrl = onGroup(fun _ -> numeric.targetIndex(msg,key,ctrl))
         check (target WindowMessages.WM_KEYDOWN 0x31 true=None) "Disabled numeric shortcut still activates"
         api.setValue("enableCtrlNumberHotKey",box true)
