@@ -2,6 +2,25 @@ namespace Bemo
 open System
 open System.Runtime.InteropServices
 
+/// The deadline and foreground belong to the first press, not subsequent repeats.
+type NumberLeaderState() =
+    let mutable armed : (IntPtr * DateTime) option = None
+    member _.active = armed.IsSome
+    member _.cancel() = armed <- None
+    member _.arm foreground (now:DateTime) = armed <- Some(foreground,now.AddSeconds(3.0))
+    member _.validate foreground now =
+        match armed with
+        | Some(hwnd,deadline) when hwnd=foreground && now<deadline -> true
+        | _ -> armed <- None; false
+    member this.key foreground now key count =
+        if not (this.validate foreground now) then false,None
+        elif key>=0x31 && key<=0x39 then
+            armed <- None
+            true,(if key-0x31<count then Some(key-0x31) else None)
+        elif key=0x1B then armed <- None; true,None
+        elif List.contains key [0x10;0x11;0x12;0xA0;0xA1;0xA2;0xA3;0xA4;0xA5] then false,None
+        else armed <- None; false,None
+
 /// Keep releases paired with swallowed presses even if focus or modifiers change.
 type NumericShortcutCapture() =
     let pressed = Collections.Generic.HashSet<int>()
@@ -21,6 +40,13 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
     let OS = OS()
     let numeric = NumericTabHotKeyPlugin()
     let numericCapture = NumericShortcutCapture()
+    let leader = NumberLeaderState()
+    let leaderCapture = NumericShortcutCapture()
+    let mutable leaderGroup : GroupInfo option = None
+    let timer = new System.Windows.Forms.Timer(Interval=50)
+    let owned = new LifetimeScope(ignore)
+    let mutable leaderKey = 0xC0
+    let mutable mouseHook = IntPtr.Zero
     let mutable cachedPath = (IntPtr.Zero, "")
     let pathFor hwnd =
         if fst cachedPath <> hwnd then
@@ -32,8 +58,25 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
 
     member this.foregroundGroup = Services.desktop.foregroundGroup
 
+    member private _.cancelLeader() =
+        leader.cancel()
+        timer.Stop()
+        leaderGroup |> Option.iter(fun group -> group.invokeGroup(fun() -> group.group.bb.write("numberBadges",false)))
+        leaderGroup <- None
+
+    member private this.toggleLeader() =
+        if leader.active then this.cancelLeader()
+        elif Services.settings.getValue("enableNumberLeader") :?> bool then
+            this.foregroundGroup |> Option.iter(fun group ->
+                let info = group.cast<GroupInfo>()
+                leaderGroup <- Some info
+                leader.arm (WinUserApi.GetForegroundWindow()) DateTime.UtcNow
+                info.invokeGroup(fun() -> info.group.bb.write("numberBadges",true))
+                timer.Start())
+
     member this.llHook nCode (wParam:IntPtr) lParam = 
         let msg = wParam.ToInt32()
+        if nCode>=0 && List.contains msg [WindowMessages.WM_LBUTTONDOWN;WindowMessages.WM_RBUTTONDOWN;WindowMessages.WM_MBUTTONDOWN;WindowMessages.WM_XBUTTONDOWN] then this.cancelLeader()
         if msgSet.contains(msg) then
             this.foregroundGroup.iter <| fun group ->
                 let hookStruct = unbox<MSLLHOOKSTRUCT>(Marshal.PtrToStructure(lParam, typeof<MSLLHOOKSTRUCT>))
@@ -46,7 +89,7 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
         WinUserApi.CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam)
 
     member this.registerMouseLLHook() =
-        WinUserApi.SetWindowsHookEx(WindowHookTypes.WH_MOUSE_LL, hookProcDelegate, IntPtr.Zero, 0).ignore
+        mouseHook <- WinUserApi.SetWindowsHookEx(WindowHookTypes.WH_MOUSE_LL, hookProcDelegate, IntPtr.Zero, 0)
 
     member this.registerKeyboardLLHook() =
         kbHook <- OS.registerKeyboardLLHook <| fun(key, data) ->
@@ -55,25 +98,51 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
             // this key. Preserve the modifier state belonging to this input event.
             let controlPressed = Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_CONTROL)
             let foreground = this.foregroundGroup
+            let foregroundHwnd = WinUserApi.GetForegroundWindow()
             let altPressed = (data.flags &&& LlKeyboardHookFlags.LLKHF_ALTDOWN) <> 0
             let extraModifier = Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_SHIFT) ||
                                 Win32Helper.IsKeyPressed(int System.Windows.Forms.Keys.LWin) ||
                                 Win32Helper.IsKeyPressed(int System.Windows.Forms.Keys.RWin)
+            let wasArmed = leader.active
+            let down = int key=WindowMessages.WM_KEYDOWN || int key=WindowMessages.WM_SYSKEYDOWN
+            let leaderConsumed,leaderTarget =
+                if down && data.vkCode<>leaderKey then
+                    leader.key foregroundHwnd DateTime.UtcNow data.vkCode (foreground |> Option.map(fun g -> g.windows.length) |> Option.defaultValue 0)
+                else false,None
+            if wasArmed && not leader.active then this.cancelLeader()
+            let capturedLeader,_ = leaderCapture.handle(int key,data.vkCode,if leaderConsumed then Some 0 else None)
             let target =
-                if extraModifier then None
+                if wasArmed || capturedLeader || extraModifier then None
                 else foreground |> Option.bind(fun group ->
                     numeric.targetIndex(int key,data.vkCode,controlPressed,altPressed=altPressed)
                     |> Option.filter(NumericShortcutTarget.available group.windows.list (WinUserApi.GetForegroundWindow())))
             let target = target |> Option.filter(fun _ -> NumberShortcutRules.enabled (pathFor (WinUserApi.GetForegroundWindow())))
             let consumed,activate = numericCapture.handle(int key,data.vkCode,target)
+            let activate = if leaderConsumed then leaderTarget else activate
             if activate.IsSome && altPressed then AltMenuMask.send()
             activate |> Option.iter(fun index ->
                 foreground.iter <| fun group ->
                     let groupInfo = group.cast<GroupInfo>()
                     groupInfo.invokeGroup <| fun() -> groupInfo.group.activateIndex(index,true))
-            if consumed then Some 1 else None
+            if consumed || capturedLeader then Some 1 else None
 
     interface IPlugin with
         member x.init() =
+            leaderKey <- Services.program.getHotKey "numberLeader" &&& 0xFF
+            owned.Own(Services.settings.notifyValue "hotKeys" (fun _ -> leaderKey <- Services.program.getHotKey "numberLeader" &&& 0xFF; this.cancelLeader())) |> ignore
             this.registerMouseLLHook()
             this.registerKeyboardLLHook()
+            owned.Own(NumberLeaderRequest.toggle.Publish.Subscribe(fun() -> this.toggleLeader())) |> ignore
+            owned.Own(Services.settings.notifyValue "enableNumberLeader" (fun _ -> this.cancelLeader())) |> ignore
+            owned.Own(OS.setSingleWinEvent WinEvent.EVENT_SYSTEM_FOREGROUND (fun _ ->
+                cachedPath <- (IntPtr.Zero, "")
+                if leader.active && not (leader.validate (WinUserApi.GetForegroundWindow()) DateTime.UtcNow) then this.cancelLeader())) |> ignore
+            timer.Tick.Add(fun _ -> if not (leader.validate (WinUserApi.GetForegroundWindow()) DateTime.UtcNow) then this.cancelLeader())
+
+    interface IDisposable with
+        member _.Dispose() =
+            this.cancelLeader()
+            timer.Dispose()
+            (owned :> IDisposable).Dispose()
+            if mouseHook<>IntPtr.Zero then WinUserApi.UnhookWindowsHookEx(mouseHook) |> ignore
+            if not (isNull kbHook) then kbHook.Dispose()

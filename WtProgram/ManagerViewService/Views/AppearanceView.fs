@@ -250,7 +250,7 @@ type AppearanceView(?settings:ISettings) =
             // The font real tabs use, so the preview shrinks its text with short tabs too.
             use font = TabMetrics.font appearance.tabHeight FontStyle.Regular
             let info caption : TabDisplayInfo = {
-                bgColor=None; text=caption; icon=SystemIcons.Application
+                numberBadge=None; bgColor=None; text=caption; icon=SystemIcons.Application
                 textFont=font; textBrush=SystemBrushes.MenuText }
             let ts : TabStripSprite<int> = {
                 tabs=Map2(List2([1,info (tr Strings.Settings.tabActiveBgColor.caption);2,info (tr Strings.Settings.tabHighlightBgColor.caption);3,info (tr Strings.Settings.tabNormalBgColor.caption)]))

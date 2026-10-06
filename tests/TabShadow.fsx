@@ -125,13 +125,21 @@ let main () =
         tabActiveBgColor=Color.White; tabHighlightBgColor=Color.FromArgb(228,228,228)
         tabBorderColor=Color.FromArgb(168,168,168) }
     let info text : TabDisplayInfo = {
-        bgColor=None; text=text; icon=SystemIcons.Application
+        numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application
         textFont=SystemFonts.MenuFont; textBrush=Brushes.Black }
     let ts : TabStripSprite<int> = {
         tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"]))
         lorder=List2([1;2]); zorder=List2([1;2]); size=Sz(420,28)
         slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; held=None; centerShift=0.0
         transparent=true; appearance=appearance; hover=None; captured=None }
+    for appearance in [Theme.light;Theme.dark] do
+        for icons in [false;true] do
+            let badges = { ts with appearance=appearance;onlyIcons=icons;tabs=Map2(List2([1,{info "One" with numberBadge=Some 1};2,{info "Ten" with numberBadge=Some 10}])) }
+            let drawn = badges.sprite.children.list |> List.collect(fun (_,tab) -> tab.children.list) |> List.choose(fun (_,child) -> match child with :? NumberBadgeSprite as badge -> Some badge | _ -> None)
+            check (drawn.Length=1 && drawn.Head.number=1) "Badges missing or shown beyond nine"
+            check (TextContrast.ratio (TextContrast.readable drawn.Head.foreground drawn.Head.background) drawn.Head.background >= 4.5) "Badge contrast too low"
+            use bitmap = badges.render.bitmap
+            check (bitmap.Width>0) "Badge render failed"
     let tabImage = ts.render
     // Short tabs shrink their contents to fit instead of clipping them.
     do
@@ -142,7 +150,7 @@ let main () =
         heights |> List.fold(fun y h ->
             use font = TabMetrics.font h FontStyle.Regular
             check (font.Height <= max h (SystemFonts.MenuFont.Height)) (sprintf "Text line does not fit a %dpx tab" h)
-            let info text : TabDisplayInfo = { bgColor=None; text=text; icon=SystemIcons.Application; textFont=font; textBrush=Brushes.Black }
+            let info text : TabDisplayInfo = { numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application; textFont=font; textBrush=Brushes.Black }
             let strip = { ts with appearance={ appearance with tabHeight=h }; size=Sz(420,h+1)
                                   tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"])) }
             for _,tab in strip.sprite.children.list do

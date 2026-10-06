@@ -4,7 +4,7 @@ open System.Windows.Forms
 type HotKeyView() =
     let panel,table = SettingsUi.page()
     // Setting id for each program hotkey, so a conflict can name the other action.
-    let actions = ["nextTab","next-tab";"prevTab","previous-tab";"searchTabs","search-tabs";"newTab","new-tab"]
+    let actions = ["nextTab","next-tab";"prevTab","previous-tab";"searchTabs","search-tabs";"newTab","new-tab";"numberLeader","number-leader"]
     let hotKey key =
         let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=Services.program.getHotKey key)
         editor.Changed.Add(fun _ ->
@@ -32,6 +32,7 @@ type HotKeyView() =
         let keyboard = SettingsUi.sectionCard table (tr Strings.Shortcuts.keyboard)
         SettingsUi.note keyboard (tr Strings.Shortcuts.keyboardNote)
         for (key,editor),(_,id) in List.zip editors actions do SettingsUi.settingRow keyboard id editor
+        SettingsBindings.toggleRow keyboard "enable-number-leader"
         let numericEnabled = SettingsBindings.settingToggle "enableCtrlNumberHotKey"
         SettingsUi.settingRow keyboard "switch-tabs-by-number" numericEnabled
         let numericChoice = SettingsBindings.choiceRow keyboard "number-shortcut"

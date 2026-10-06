@@ -114,6 +114,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         replaceAltTab = settingsJson.getBool("replaceAltTab").def(SettingsCatalog.toggleDefault "replaceAltTab" hasExistingSettings)
                         groupWindowsInSwitcher = settingsJson.getBool("groupWindowsInSwitcher").def(SettingsCatalog.toggleDefault "groupWindowsInSwitcher" hasExistingSettings)
                         enableCtrlNumberHotKey = settingsJson.getBool("enableCtrlNumberHotKey").def(SettingsCatalog.toggleDefault "enableCtrlNumberHotKey" hasExistingSettings)
+                        enableNumberLeader = settingsJson.getBool("enableNumberLeader").def(SettingsCatalog.toggleDefault "enableNumberLeader" hasExistingSettings)
                         numberShortcutPaths = Set2(settingsJson.getStringArray("numberShortcutPaths").def(List2()))
                         numberShortcutAppMode = settingsJson.getString("numberShortcutAppMode").def("AllExcept") |> SettingsCatalog.normalizeChoice "numberShortcutAppMode"
                         numberHotKeyModifier = settingsJson.getString("numberHotKeyModifier").def("Ctrl") |> SettingsCatalog.normalizeChoice "numberHotKeyModifier"
@@ -189,6 +190,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setBool("replaceAltTab", settings.replaceAltTab)
             settingsJson.setBool("groupWindowsInSwitcher", settings.groupWindowsInSwitcher)
             settingsJson.setBool("enableCtrlNumberHotKey", settings.enableCtrlNumberHotKey)
+            settingsJson.setBool("enableNumberLeader", settings.enableNumberLeader)
             settingsJson.setStringArray("numberShortcutPaths", settings.numberShortcutPaths.items)
             settingsJson.setString("numberShortcutAppMode", settings.numberShortcutAppMode)
             settingsJson.setString("numberHotKeyModifier", settings.numberHotKeyModifier)

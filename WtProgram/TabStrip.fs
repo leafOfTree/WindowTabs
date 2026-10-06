@@ -38,6 +38,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let transparentCell = Cell.create(true)
     let showInsideCell = Bemo.Cell<bool>(Cell, false, (=))
     let isInAltTabCell = Cell.create(false)
+    let numberBadgesCell = Bemo.Cell<bool>(Cell, false, (=))
     let iconOnlyCell = Cell.create(false)
     let alignmentMap = 
         Map.ofList [
@@ -98,6 +99,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         Cell.listen <| fun() ->
             this.update()
 
+    member _.numberBadges with get() = numberBadgesCell.value and set value = numberBadgesCell.value <- value
+
     member private this.inAltSwitch = isInAltTabCell.value
 
     member private this.layeredWindow = layeredWindowCell.value.Value
@@ -116,6 +119,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             tabs = Map2(this.tabs.items.map <| fun tab ->
                 let ti = this.tabInfo(tab)
                 let tabInfo = {
+                    numberBadge = if numberBadgesCell.value then lorderCell.value.list |> List.tryFindIndex ((=) tab) |> Option.filter(fun i -> i<9) |> Option.map ((+) 1) else None
                     bgColor = tabBgColor.value.tryFind(tab)
                     TabDisplayInfo.text = ti.text
                     icon = ti.iconSmall

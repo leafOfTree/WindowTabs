@@ -79,6 +79,7 @@ type Program(lifetime:LifetimeScope) as this =
         ("prevTab", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.switchWindow(false, false)))
         ("nextTab", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.switchWindow(true, false)))
         ("searchTabs", fun () -> this.toggleTabSearch())
+        ("numberLeader", fun () -> if settingsManager.settings.enableNumberLeader then NumberLeaderRequest.toggle.Trigger())
         ("newTab", fun () -> this.openNewTab(WinUserApi.GetForegroundWindow()))
         ]))
         
@@ -92,6 +93,7 @@ type Program(lifetime:LifetimeScope) as this =
         lifetime.Own({new IDisposable with
             member _.Dispose() = tabSearchCell.value.iter(fun search -> search.Close())}) |> ignore
         this.registerHotKeys()
+        lifetime.Own(Services.settings.notifyValue "enableNumberLeader" (fun _ -> this.registerHotKeys())) |> ignore
         this.updateTaskSwitcher(Services.settings.getValue("replaceAltTab"))
         let startupSubscription = Services.settings.notifyValue "runAtStartup" this.updateRunAtStartup
         let switcherSubscription = Services.settings.notifyValue "replaceAltTab" this.updateTaskSwitcher
@@ -279,7 +281,7 @@ type Program(lifetime:LifetimeScope) as this =
     /// start; choosing it again in Settings says it is in use.
     member this.registerHotKeys() =
         hotKeyInfo.items.iter <| fun(key,action) ->
-            let shortcut = this.cast<IProgram>().getHotKey(key)
+            let shortcut = if key="numberLeader" && not settingsManager.settings.enableNumberLeader then 0 else this.cast<IProgram>().getHotKey(key)
             let shortcut = HotKeyShortcut(HotKeyControlCode=int16(shortcut))
             hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags, shortcut.RegisterHotKeyVirtualKeyCode) action |> ignore
 
@@ -350,7 +352,9 @@ type Program(lifetime:LifetimeScope) as this =
             let action = hotKeyInfo.find(key)
             let shortcut = HotKeyShortcut(HotKeyControlCode=int16(value))
             let registered = hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags,shortcut.RegisterHotKeyVirtualKeyCode) action
-            if registered then (settingsManager :> ISettings).setHotKey key value
+            if registered then
+                (settingsManager :> ISettings).setHotKey key value
+                if key="numberLeader" && not settingsManager.settings.enableNumberLeader then hotKeyManager.unregister key
             registered
 
         member x.newTab hwnd = this.openNewTab hwnd
@@ -399,7 +403,7 @@ module Bootstrap =
                 use lifetime = new LifetimeScope(fun error -> logger.log "Shutdown" error)
                 let program = Program(lifetime)
                 program.run(List2<IPlugin>([
-                    InputManagerPlugin(Set2(List2([WindowMessages.WM_MOUSEWHEEL]))) :> IPlugin
+                    lifetime.Own(new InputManagerPlugin(Set2(List2([WindowMessages.WM_MOUSEWHEEL])))) :> IPlugin
                     new NotifyIconPlugin() :> IPlugin ]))
                 0
         with error ->

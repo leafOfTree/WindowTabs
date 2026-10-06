@@ -23,6 +23,20 @@ let main() =
     try
         use settings = new Settings(true,saveDelay=0)
         let api = settings :> ISettings
+        let leader = NumberLeaderState()
+        let now = DateTime.UtcNow
+        leader.arm (IntPtr(1)) now
+        check (leader.key (IntPtr(1)) now 0x32 3 = (true,Some 1) && not leader.active) "Leader digit did not select and disarm"
+        leader.arm (IntPtr(1)) now
+        check (leader.key (IntPtr(1)) now 0x1B 3 = (true,None) && not leader.active) "Escape did not cancel and consume"
+        leader.arm (IntPtr(1)) now
+        check (leader.key (IntPtr(1)) now 0x41 3 = (false,None) && not leader.active) "Other key must cancel and pass through"
+        leader.arm (IntPtr(1)) now
+        check (not (leader.validate (IntPtr(1)) (now.AddSeconds(3.0)))) "Leader did not time out"
+        leader.arm (IntPtr(1)) now
+        check (not (leader.validate (IntPtr(2)) now)) "Leader survived foreground change"
+        leader.arm (IntPtr(1)) now
+        check (leader.key (IntPtr(1)) now 0x39 3 = (true,None)) "Missing leader digit must be consumed without activation"
         for dpi in [96;144] do
             Dpi.set dpi
             api.setValue("enableHoverActivate",box false)

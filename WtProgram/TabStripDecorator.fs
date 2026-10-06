@@ -396,6 +396,8 @@ type TabStripDecorator(group:WindowGroup) as this =
             callbackRef.Value.iter(fun (pending:IDisposable) -> pending.Dispose())
             callbackRef := None)
         let contextMenuVisibleCell = propCell("contextMenuVisible", false)
+        let numberBadgesCell = propCell("numberBadges", false)
+        Cell.listen(fun() -> this.ts.numberBadges <- numberBadgesCell.value)
         let renamingTabCell = propCell("renamingTab", false)
         let isRecentlyChangedZorderCell =
             let cell = Cell.create(false)
@@ -417,6 +419,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 isMouseOver.value.not &&
                 isDraggingCell.value.not &&
                 contextMenuVisibleCell.value.not &&
+                numberBadgesCell.value.not &&
                 renamingTabCell.value.not &&
                 (showOnSwitchCell.value.not || isRecentlyChangedZorderCell.value.not)
             callbackRef.Value.iter <| fun(d:IDisposable) -> d.Dispose()

@@ -31,7 +31,7 @@ let strip count dpi font =
         tabHighlightBgColor=Color.FromArgb(228,228,228); tabBorderColor=Color.FromArgb(168,168,168) }
     let ids = [1..count]
     { TabStripSprite.tabs=Map2(List2(ids |> List.map(fun id -> id, {
-          bgColor=None; text=sprintf "Window %d" id; icon=SystemIcons.Application
+          numberBadge=None; bgColor=None; text=sprintf "Window %d" id; icon=SystemIcons.Application
           textFont=font; textBrush=Brushes.Black })))
       lorder=List2(ids); zorder=List2(ids); size=Dpi.scaleSize(Sz(min 1800 (count*210),28))
       slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false

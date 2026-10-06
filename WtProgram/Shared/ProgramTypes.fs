@@ -16,6 +16,7 @@ type SettingsRec = {
     replaceAltTab: bool
     groupWindowsInSwitcher: bool
     enableCtrlNumberHotKey: bool
+    enableNumberLeader: bool
     numberHotKeyModifier: string
     numberShortcutAppMode: string
     numberShortcutPaths: Set2<string>

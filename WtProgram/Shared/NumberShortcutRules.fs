@@ -1,6 +1,9 @@
 namespace Bemo
 open System
 
+module NumberLeaderRequest =
+    let toggle = Event<unit>()
+
 module NumberShortcutRules =
     let allows mode (paths:Set2<string>) path =
         let listed = paths.items.list |> List.exists(fun item -> String.Equals(item,path,StringComparison.OrdinalIgnoreCase))

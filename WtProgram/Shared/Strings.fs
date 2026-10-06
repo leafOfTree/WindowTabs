@@ -157,6 +157,8 @@ module Strings =
         let numberShortcut = { caption={ en="Modifier key for 1–9"; zh="数字键搭配的修饰键"; ja="1～9 と組み合わせるキー" }
                                description=none
                                keywords={ en="number shortcut modifier"; zh="数字 快捷键 修饰键"; ja="番号 ショートカット 修飾キー" } }
+        let enableNumberLeader = { caption={ en="Use a leader key for tab numbers"; zh="使用引导键切换标签"; ja="リーダーキーでタブ番号を選ぶ" }; description={ en="Press the leader, then 1–9 within three seconds. Escape cancels."; zh="按引导键后，三秒内按 1–9。Esc 取消。"; ja="リーダーキーの後、3 秒以内に 1～9 を押します。Esc で解除。" }; keywords=none }
+        let numberLeader = { caption={ en="Tab number leader"; zh="数字标签引导键"; ja="タブ番号のリーダーキー" }; description=none; keywords=none }
         let numberShortcutApps = { caption={ en="Apps using number shortcuts"; zh="使用数字快捷键的应用"; ja="番号ショートカットを使うアプリ" }; description=none; keywords=none }
         let allExcept = { en="All except listed apps"; zh="除列表外的所有应用"; ja="一覧以外のすべてのアプリ" }
         let onlyListed = { en="Only listed apps"; zh="仅列表中的应用"; ja="一覧のアプリのみ" }

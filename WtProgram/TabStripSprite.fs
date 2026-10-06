@@ -38,6 +38,22 @@ type IconSprite = {
             bitmap
         member this.children = List2()
 
+type NumberBadgeSprite = { number:int; size:Sz; background:Color; foreground:Color } with
+    interface ISpriteHitTest with member _.containsPoint _ = false
+    interface ISprite with
+        member this.image =
+            let img = Img(this.size)
+            use g = img.graphics
+            use bg = new SolidBrush(this.background)
+            g.SmoothingMode <- SmoothingMode.AntiAlias
+            g.FillEllipse(bg,0,0,this.size.width-1,this.size.height-1)
+            use font = TabMetrics.font (this.size.height-2) FontStyle.Bold
+            use brush = new SolidBrush(TextContrast.readable this.foreground this.background)
+            use format = new StringFormat(Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center)
+            g.DrawString(string this.number,font,brush,RectangleF(0.0f,0.0f,float32 this.size.width,float32 this.size.height),format)
+            img
+        member _.children = List2()
+
 type CloseButtonSprite = {
     hover: bool
     captured: bool
@@ -92,6 +108,7 @@ type CloseButtonSprite = {
         member this.children = List2()
 
 type TabDisplayInfo = {
+    numberBadge: int option
     bgColor : Color option
     text: string
     textFont: Font
@@ -383,7 +400,11 @@ type TabSprite<'id> = {
             img
         member this.children = 
             List2([
-                Some(this.iconLocation,this.iconSprite) 
+                Some(this.iconLocation,this.iconSprite)
+                (this.displayInfo.numberBadge |> Option.filter(fun n -> n>=1 && n<=9) |> Option.map(fun n ->
+                    let side = min this.size.height (Dpi.scale 14)
+                    let point = this.iconLocation.add(Pt(this.iconSize.width-side/2,this.iconSize.height-side+2))
+                    point,({number=n;size=Sz(side,side);background=this.textColor;foreground=this.fillColor} : NumberBadgeSprite) :> ISprite)) 
                 (if this.showCloseButton then Some(this.closeButtonLocation, this.closeButtonSprite) else None)
                 ]).choose(id)
 
