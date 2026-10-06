@@ -10,6 +10,47 @@ open System.Windows.Forms
 open Bemo.Win32.Forms
 
 module TabNavigation =
+    /// Right neighbour in tab order, or the left one when the closed tab was last.
+    let neighbour (order:IntPtr list) closed =
+        order |> List.tryFindIndex ((=) closed)
+        |> Option.bind(fun index ->
+            let remaining = order |> List.filter ((<>) closed)
+            if remaining.IsEmpty then None
+            else Some remaining.[min index (remaining.Length-1)])
+
+    /// Closing hides a window before destroying it, and Windows activates the window
+    /// below it before discovery removes it. Until then the tab is closing, not gone.
+    let isClosing order isOpen hwnd = List.contains hwnd order && not(isOpen hwnd)
+
+    /// An early foreground event for the window below a closing tab is not a selection.
+    let rememberActive order isOpen previous foreground =
+        if not(List.contains foreground order) then previous
+        else
+            match previous with
+            | Some hwnd when isClosing order isOpen hwnd -> previous
+            | _ -> Some foreground
+
+    /// As in a browser, a tab closed before another tab was selected returns to the
+    /// tab it was opened from; otherwise to its neighbour.
+    let successor (order:IntPtr list) isOpen closed opener =
+        match opener with
+        | Some(tab,owner) when tab=closed && owner<>closed && List.contains owner order && isOpen owner -> Some owner
+        | _ -> neighbour (order |> List.filter(fun item -> item=closed || isOpen item)) closed
+
+    /// Only closing the active tab selects another. A removed HWND that is still open
+    /// is being dragged or ungrouped, and a background group is never activated.
+    let closeTarget (order:IntPtr list) isOpen closed foreground active opener =
+        if isOpen closed || active<>Some closed then None
+        elif foreground<>IntPtr.Zero && foreground<>closed && not(List.contains foreground order) then None
+        else successor order isOpen closed opener
+
+    /// Selecting another tab forgets the opener, but Windows activating the window
+    /// below a closing tab does not.
+    let keepOpener order isOpen opener foreground =
+        match opener with
+        | Some(tab,_) when foreground<>tab && List.contains foreground order && not(isClosing order isOpen tab) -> None
+        | _ -> opener
+
     /// Foreground events are asynchronous. Prefer current OS focus when it is in
     /// this group; a background group can still navigate from its last top tab.
     let targetIndex (order:IntPtr list) foreground previousTop next =
@@ -49,7 +90,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let inMoveSize = Cell.create(false)
     let foregroundCell = Cell.create(_os.foreground.hwnd)
     let prevForegroundCell = ref None
+    let mutable lastActiveTab : IntPtr option = None
+    /// A closing tab whose successor was already selected from a foreground event.
+    let mutable followedClose : IntPtr option = None
+    /// The active tab that joined the group in the foreground, and the tab active before it.
+    let mutable opener : (IntPtr * IntPtr) option = None
     let isMinimized hwnd = this.os.windowFromHwnd(hwnd).isMinimized
+    let isOpen hwnd = WinUserApi.IsWindow(hwnd) && WinUserApi.IsWindowVisible(hwnd)
     let hookCleanup = Cell.create(Map2<IntPtr, IDisposable>())
     let shellHookWindow = Cell.create(None)
     let winEventHandler = Cell.create(None)
@@ -151,8 +198,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.foreground
         with get() = foregroundCell.value
         and set(value) =
+            lastActiveTab <- TabNavigation.rememberActive this.lorder.list isOpen lastActiveTab value
             let prev = foregroundCell.value
             if prev <> value then
+                opener <- TabNavigation.keepOpener this.lorder.list isOpen opener value
                 foregroundCell.set(value)
                 foregroundEvent.Trigger()
 
@@ -507,6 +556,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     isMaximizedExport.update()
         | WinEvent.EVENT_SYSTEM_FOREGROUND ->
             this.foreground <- hwnd
+            this.followClosedTab(this.os.foreground.hwnd)
             this.saveZorder()
             // Windows can hide an owned strip during minimize/restore after our last
             // update. Reconcile even when focus and tab order have not changed.
@@ -514,6 +564,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 this.saveTopWindowPlacement()
                 this.updateIsVisible()
             this.ts.refreshShadow()
+        | WinEvent.EVENT_OBJECT_HIDE | WinEvent.EVENT_OBJECT_DESTROY ->
+            if lastActiveTab=Some hwnd then this.followClosedTab(this.os.foreground.hwnd)
         | _ -> ()
       
     member this.addWindow(hwnd, withDelay) = this.withUpdate <| fun() ->
@@ -537,6 +589,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     WinEvent.EVENT_SYSTEM_MOVESIZEEND
                     WinEvent.EVENT_SYSTEM_MINIMIZESTART
                     WinEvent.EVENT_SYSTEM_MINIMIZEEND
+                    WinEvent.EVENT_OBJECT_HIDE
+                    WinEvent.EVENT_OBJECT_DESTROY
                 ]).map(registerEvent)
             let dispose = 
                 {
@@ -548,6 +602,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
 
             this.ts.addTab(Tab(hwnd))
+            // Only a window that opens in the foreground has an opener. Windows found at
+            // startup or dropped in the background then close like any other tab.
+            let foreground = this.os.foreground.hwnd
+            if foreground=hwnd then
+                opener <- lastActiveTab |> Option.filter(fun owner -> owner<>hwnd && this.windows.contains(owner) && isOpen owner) |> Option.map(fun owner -> hwnd,owner)
+            lastActiveTab <- TabNavigation.rememberActive this.lorder.list isOpen lastActiveTab foreground
             this.adjustWindowPlacement(hwnd)
             addedEvent.Trigger(hwnd)
             // A visible window joining a minimized group restores it, as restoring any tab does,
@@ -561,6 +621,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.removeWindow(hwnd) = this.withUpdate <| fun() ->
         if this.windows.contains(hwnd) then
+            let foreground = this.os.foreground.hwnd
+            let next = TabNavigation.closeTarget this.lorder.list isOpen hwnd foreground lastActiveTab opener
+            if opener |> Option.exists(fun (tab,owner) -> tab=hwnd || owner=hwnd) then opener <- None
             FollowerPlacement.queue.release(placementOwner,hwnd)
             //CASE 777 - chrome windows can close when you merge a single chrome tab
             //into another chrome group, need to exit the move/size and restore windows on screen in this case
@@ -575,7 +638,24 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             pendingMinimizeStates.Remove(hwnd) |> ignore
             requestedMinimizeStates.Remove(hwnd) |> ignore
             iconCache.remove(hwnd)
-    
+            if lastActiveTab=Some hwnd then
+                lastActiveTab <- if this.windows.contains(foreground) then Some foreground else None
+            if followedClose=Some hwnd then followedClose <- None
+            else next |> Option.iter(fun target -> this.tabActivate(Tab(target),false))
+
+    /// Windows activates the previously used window when a tab closes, before discovery
+    /// removes it. Select the successor as soon as the active tab is hidden, destroyed or
+    /// loses the foreground, so the wrong tab shows as briefly as possible.
+    member private this.followClosedTab(foreground) =
+        match lastActiveTab with
+        | Some closed when followedClose<>Some closed ->
+            TabNavigation.closeTarget this.lorder.list isOpen closed foreground lastActiveTab opener
+            |> Option.iter(fun target ->
+                if target<>foreground then this.tabActivate(Tab(target),false)
+                // Activation can be refused; a later foreground event or removal retries.
+                if this.os.foreground.hwnd=target then followedClose <- Some closed)
+        | _ -> ()
+
     member this.activateIndex(index, force) =
         let nextTab = this.ts.lorder.tryAt(index)
         nextTab.iter <| fun(nextTab) ->
@@ -641,6 +721,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if this.windows.contains(hwnd) then strip.setOwner(window)
         window.setForegroundOrRestore(force)
         window.bringToTop()
+        if this.os.foreground.hwnd=hwnd then lastActiveTab <- Some hwnd
         // Activation can be refused (foreground lock); keep the strip with the real top window.
         this.inZorder(this.windows.items).tryHead |> Option.iter (fun top ->
             if top <> hwnd then strip.setOwner(this.os.windowFromHwnd(top)))
@@ -657,4 +738,4 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.tabInfoChanged = tabInfoChangedEvent.Publish
     member this.flash = flashEvent.Publish
     member this.removed = removedEvent.Publish
-    member this.lorder = this.ts.lorder.map(fun(Tab(hwnd)) -> hwnd)
+    member this.lorder : List2<IntPtr> = this.ts.lorder.map(fun(Tab(hwnd)) -> hwnd)

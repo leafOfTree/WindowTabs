@@ -347,6 +347,28 @@ let main() =
                         samples "5tabs-selection-info-one-50ms-icon-handler" 3 (fun group _ ->
                             invoke "setTabInfo" group [|box handles.Head|] |> ignore)
                     finally onHelper(fun () -> forms.Head.IconDelay <- 0)
+                    // Closing hides the active tab before discovery removes it, and Windows then
+                    // activates the previously used tab. The successor is selected right away.
+                    let field name = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name=name)
+                    let added = handles.[4]
+                    onGroup(fun group -> (field "lastActiveTab").SetValue(group,box (Some added)))
+                    onHelper(fun () -> OS().windowFromHwnd(added).hide())
+                    onGroup(fun group ->
+                        let order = group.lorder.list
+                        let expected = (TabNavigation.neighbour order added).Value
+                        let other = order |> List.find(fun hwnd -> hwnd<>added && hwnd<>expected)
+                        OS().windowFromHwnd(other).bringToTop()
+                        // As if Windows had activated that previously used tab.
+                        invoke "followClosedTab" group [|box other|] |> ignore
+                        let top = (invoke "inZorder" group [|box group.windows.items|] :?> List2<IntPtr>).list |> List.find((<>) added)
+                        check (top=expected) "Closing the active tab did not select its successor"
+                        // Activation of a test window may be refused; only an activation that
+                        // happened marks the close as followed, otherwise removal retries.
+                        let activated = OS().foreground.hwnd=expected
+                        check ((field "followedClose").GetValue(group) :?> IntPtr option=(if activated then Some added else None)) "A refused activation was treated as a followed close, or a successful one was not"
+                        group.removeWindow added
+                        check ((field "followedClose").GetValue(group) :?> IntPtr option=None) "Removing a closed tab kept its marker")
+                    onHelper(fun () -> OS().windowFromHwnd(added).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
             // Controlled latency in an application's synchronous positioning handler.
             onHelper(fun () -> forms.[1].Delay <- 50)
             samples "20tabs-move-one-50ms-handler" 5 (fun group index ->

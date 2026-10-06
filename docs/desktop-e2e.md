@@ -243,3 +243,36 @@ and driver compilation, profile/override and duration-bound checks, and a
 noninteractive process fixture proving cleanup preserves another run with the
 same EXE name. The new 30-minute Soak profile has not yet been executed for its
 full duration, and the self-hosted workflow has not been dispatched on GitHub.
+
+## Manual close-order scenario
+
+`tests/Run-CloseOrderScenario.ps1` checks which tab a group of a real application
+selects when its active tab closes, and whether another tab flashes on top first.
+It drives the WindowTabs instance that is already running, so start the build under
+test first, with Ctrl+number tab shortcuts enabled (the default) and automatic
+grouping enabled for the application. Close the application's own windows first;
+the script refuses to run otherwise, because grouping would mix them with its
+fixture windows.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-CloseOrderScenario.ps1 -Exe 'C:\Program Files\Neovide\neovide.exe' -Scenario Switch -Interactive
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-CloseOrderScenario.ps1 -Exe 'C:\Program Files\Neovide\neovide.exe' -Scenario Opener -Interactive
+```
+
+It launches `-Count` windows (default 5), one per process. Each launched window
+takes the foreground, so each one's opener is the tab before it. **Switch** selects
+tabs 1 and 2 with Ctrl+1 and Ctrl+2 and then closes the active tab repeatedly, so
+the expected order is 2, 3, 4, 5, 1. **Opener** closes the newest tab right away and
+expects its opener, then neighbours: 5, 4, 3, 2, 1. Windows are closed with
+`WM_CLOSE`. Foreground and topmost fixture window are sampled every few
+milliseconds; each close reports `ok`, `WRONG` (wrong final tab) or `FLASH` with
+how long another tab was on top before the right one. Any `WRONG`, or a flash
+longer than `-FlashToleranceMs` (default 0), fails the run.
+
+Sampling cannot see sub-frame changes, so `ok` is not proof that no frame was
+presented. With Neovide, about one close in four of the Switch scenario still
+shows the previously used tab for roughly 15 ms: Windows activates it as part of
+the close, before WindowTabs can select the successor. The script assumes tab order is launch order and that the application
+uses one process per window. It was written while fixing Neovide's close order,
+where Windows activates the previously used window rather than the window below
+the closed one; see "Startup and shortcuts" in [architecture.md](architecture.md).

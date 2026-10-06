@@ -204,6 +204,44 @@ let main() =
         check (navigate [a;c] c (Some b) false=Some 0) "Closed tab influenced navigation"
         check (navigate [a;c] IntPtr.Zero (Some c) true=Some 0) "Background group lost its last top tab"
         check (navigate [] a (Some a) true=None && navigate [a] IntPtr.Zero None false=None) "Empty/unknown tab navigation fabricated a target"
+        check (TabNavigation.neighbour [a;b;c] b=Some c) "Closing the active middle tab did not select its right neighbor"
+        check (TabNavigation.neighbour [a;b;c] c=Some b) "Closing the last tab did not select its left neighbor"
+        check (TabNavigation.closeTarget [a;b;c] (fun hwnd -> hwnd<>b) b a (Some a) None=None) "Closing a background tab changed selection"
+        check (TabNavigation.neighbour [a] a=None) "Closing the only tab fabricated a successor"
+        check (TabNavigation.neighbour [c;a;b] a=Some b) "Close selection ignored reordered tabs"
+        let six = [1..6] |> List.map IntPtr
+        let rec closeFromRight order =
+            match List.rev order with
+            | [] -> []
+            | closing::remaining ->
+                let next = TabNavigation.neighbour order closing
+                check (next=List.tryHead remaining) "Repeated close jumped over the last remaining tab"
+                closing::closeFromRight(List.rev remaining)
+        check (closeFromRight six=List.rev six) "Six restored tabs did not close right to left"
+        let dead hwnd = hwnd<>b
+        check (TabNavigation.rememberActive [a;b;c] dead (Some b) a=Some b) "Early OS activation lost the closed active tab"
+        check (TabNavigation.rememberActive [a;b;c] (fun _ -> true) (Some b) a=Some a) "A deliberate tab switch kept the old active tab"
+        check (TabNavigation.rememberActive [a;b;c] dead (Some b) (IntPtr 999)=Some b) "Leaving the group lost its active tab"
+        // A new tab opened from a closes: it is hidden but not yet destroyed when Windows
+        // activates a (next in z-order) and when discovery removes it.
+        let added = IntPtr 4
+        let closing hwnd = hwnd<>added
+        let active = TabNavigation.rememberActive [a;b;c;added] closing (Some added) a
+        check (active=Some added) "Early activation of the opener lost the hidden new tab"
+        check (TabNavigation.closeTarget [a;b;c;added] closing added a active None=Some c) "Closing a tab without an opener did not select its neighbor"
+        check (TabNavigation.closeTarget [a;b;c] (fun _ -> true) b a (Some b) None=None) "Dragging out a live tab was treated as a close"
+        check (TabNavigation.closeTarget [a;b;c] (fun hwnd -> hwnd<>b) b (IntPtr 999) (Some b) None=None) "Closing a tab activated a background group"
+        // Browser opener rule: closing a tab before selecting another returns to its opener.
+        let opened = Some(added,a)
+        check (TabNavigation.closeTarget [a;b;c;added] closing added a active opened=Some a) "Closing a new tab did not return to the tab it was opened from"
+        check (TabNavigation.successor [a;b;c;added] (fun _ -> true) added opened=Some a) "A new tab did not have its opener as successor"
+        check (TabNavigation.successor [a;b;c;added] (fun _ -> true) b opened=Some c) "Another tab's opener changed this tab's successor"
+        check (TabNavigation.successor [a;b;c;added] (fun hwnd -> hwnd<>a) added opened=Some c) "A closed opener was selected"
+        check (TabNavigation.keepOpener [a;b;c;added] (fun _ -> true) opened b=None) "Selecting another tab kept the opener"
+        check (TabNavigation.keepOpener [a;b;c;added] (fun _ -> true) opened a=None) "Returning to the opener kept the opener"
+        check (TabNavigation.keepOpener [a;b;c;added] (fun _ -> true) opened added=opened) "Activating the new tab forgot its opener"
+        check (TabNavigation.keepOpener [a;b;c;added] (fun _ -> true) opened (IntPtr 999)=opened) "Leaving the group forgot the opener"
+        check (TabNavigation.keepOpener [a;b;c;added] closing opened a=opened) "Windows activating the opener of a closing tab forgot the opener"
         let target msg key ctrl = onGroup(fun _ -> numeric.targetIndex(msg,key,ctrl))
         check (target WindowMessages.WM_KEYDOWN 0x31 true=None) "Disabled numeric shortcut still activates"
         api.setValue("enableCtrlNumberHotKey",box true)

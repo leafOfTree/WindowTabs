@@ -111,6 +111,21 @@ rendering suites cover tab shadows and window icons.
 
 ## Startup and shortcuts
 
+Closing the active tab selects its right neighbor in tab order, or its left
+neighbor at the end. As in Firefox and Chrome, a tab that joined the group in the
+foreground and is closed before another tab is selected returns instead to the tab
+that was active when it joined; selecting any other tab forgets that opener.
+
+A tab counts as closed once its HWND is hidden or destroyed. When the active tab
+closes, Windows activates the previously used window, not the window below it in
+z-order, before discovery removes the closed tab. That is the opener in the case
+above, so it needs no correction. Otherwise the group selects the successor on the
+first of the closed tab's hide or destroy event or the next foreground event inside
+the group, which keeps the wrong tab on screen as briefly as possible. Selection
+preserves the closed active tab across those early foreground events and does not
+activate a background group. Removing a visible HWND for a drag or ungroup is not
+a close.
+
 The entry point installs exception reporting and acquires the single-instance mutex
 before constructing services. `LifetimeScope` owns resources immediately and releases
 them in reverse order, continuing when one cleanup fails. OLE drop targets revoke
