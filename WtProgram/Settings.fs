@@ -115,6 +115,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         groupWindowsInSwitcher = settingsJson.getBool("groupWindowsInSwitcher").def(SettingsCatalog.toggleDefault "groupWindowsInSwitcher" hasExistingSettings)
                         enableCtrlNumberHotKey = settingsJson.getBool("enableCtrlNumberHotKey").def(SettingsCatalog.toggleDefault "enableCtrlNumberHotKey" hasExistingSettings)
                         enableNumberLeader = settingsJson.getBool("enableNumberLeader").def(SettingsCatalog.toggleDefault "enableNumberLeader" hasExistingSettings)
+                        tabColorStyle = settingsJson.getString("tabColorStyle").def("Stripe") |> SettingsCatalog.normalizeChoice "tabColorStyle"
                         numberShortcutPaths = Set2(settingsJson.getStringArray("numberShortcutPaths").def(List2()))
                         numberShortcutAppMode = settingsJson.getString("numberShortcutAppMode").def("AllExcept") |> SettingsCatalog.normalizeChoice "numberShortcutAppMode"
                         numberHotKeyModifier = settingsJson.getString("numberHotKeyModifier").def("Ctrl") |> SettingsCatalog.normalizeChoice "numberHotKeyModifier"
@@ -191,6 +192,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setBool("groupWindowsInSwitcher", settings.groupWindowsInSwitcher)
             settingsJson.setBool("enableCtrlNumberHotKey", settings.enableCtrlNumberHotKey)
             settingsJson.setBool("enableNumberLeader", settings.enableNumberLeader)
+            settingsJson.setString("tabColorStyle",settings.tabColorStyle)
             settingsJson.setStringArray("numberShortcutPaths", settings.numberShortcutPaths.items)
             settingsJson.setString("numberShortcutAppMode", settings.numberShortcutAppMode)
             settingsJson.setString("numberHotKeyModifier", settings.numberHotKeyModifier)
@@ -244,7 +246,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
         // Compatibility adapter for older callers; new appearance code uses the typed API.
         member x.setValue((key,value)) =
             let api = x :> ISettings
-            let value = if key="alignment" || key="language" || key="autoHideMode" || key="switcherStyle" || key="numberHotKeyModifier" || key="numberShortcutAppMode" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
+            let value = if key="alignment" || key="language" || key="autoHideMode" || key="switcherStyle" || key="numberHotKeyModifier" || key="numberShortcutAppMode" || key="tabColorStyle" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
             match key with
             | "tabAppearance" ->
                 let appearance = value :?> TabAppearanceInfo

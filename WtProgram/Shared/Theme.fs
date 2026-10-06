@@ -27,6 +27,14 @@ module Theme =
                     tabBorderColor=Color.FromRGB(0x747474)
                     tabFlashBgColor=Color.FromRGB(0x772222) }
 
+    let tabPalette dark =
+        (if dark then [|0x9AA0A6;0x8AB4F8;0xF28B82;0xFDD663;0x81C995;0xFF8BCB;0xC58AF9;0x78D9EC|]
+         else [|0x70757A;0x1A73E8;0xD93025;0xE8A200;0x188038;0xD01884;0x8430CE;0x008B9A|]) |> Array.map Color.FromRGB
+    let blend amount (tint:Color) (background:Color) =
+        let channel a b = int(Math.Round(float b + (float a-float b)*amount))
+        Color.FromArgb(255,channel tint.R background.R,channel tint.G background.G,channel tint.B background.B)
+    let tabTint highContrast tint = if highContrast then None else tint
+
     let sameColors (a:TabAppearanceInfo) (b:TabAppearanceInfo) =
         let values (c:TabAppearanceInfo) =
             [c.tabTextColor;c.tabNormalBgColor;c.tabHighlightBgColor;c.tabActiveBgColor;c.tabBorderColor;c.tabFlashBgColor]

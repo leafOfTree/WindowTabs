@@ -193,6 +193,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         isForegroundExport.init()
 
         this.ts.setTabAppearance(this.tabAppearance)
+        let colorStyleSubscription = Services.settings.notifyValue "tabColorStyle" (fun value ->
+            this.invokeAsync(fun() -> if not isDestroyed.value then this.ts.colorStyle <- unbox value))
+        exitedEvent.Publish.Add(fun _ -> colorStyleSubscription.Dispose())
         themeSubscription <- Some(ThemeService.changed.Subscribe(fun () ->
             this.invokeAsync <| fun() ->
                 if not isDestroyed.value then

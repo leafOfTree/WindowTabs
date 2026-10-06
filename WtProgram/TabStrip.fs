@@ -61,6 +61,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let tabInfoCell = Cell.create(Map2():Map2<Tab,TabInfo>)
     let layeredWindowCell = Cell.create(None)
     let eventHandlersCell = Cell.create(Set2())
+    let tabTint = Cell.create(Map2())
+    let colorStyleCell = Cell.create(Services.settings.getValue("tabColorStyle") :?> string)
     let tabBgColor = Cell.create(Map2())
     let mutable shadowWindow : TabShadowWindow option = None
     let mutable shadowRefreshPending = false
@@ -99,6 +101,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         Cell.listen <| fun() ->
             this.update()
 
+    member _.setTabTint(tab,color) =
+        if tabTint.value.tryFind(tab) <> color then tabTint.value <- match color with Some c -> tabTint.value.add tab c | None -> tabTint.value.remove tab
+    member _.colorStyle with get() = colorStyleCell.value and set value = colorStyleCell.value <- value
     member _.numberBadges with get() = numberBadgesCell.value and set value = numberBadgesCell.value <- value
 
     member private this.inAltSwitch = isInAltTabCell.value
@@ -119,6 +124,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             tabs = Map2(this.tabs.items.map <| fun tab ->
                 let ti = this.tabInfo(tab)
                 let tabInfo = {
+                    tint = tabTint.value.tryFind(tab)
+                    colorStyle = colorStyleCell.value
                     numberBadge = if numberBadgesCell.value then lorderCell.value.list |> List.tryFindIndex ((=) tab) |> Option.filter(fun i -> i<9) |> Option.map ((+) 1) else None
                     bgColor = tabBgColor.value.tryFind(tab)
                     TabDisplayInfo.text = ti.text

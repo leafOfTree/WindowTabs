@@ -17,6 +17,7 @@ type SettingsRec = {
     groupWindowsInSwitcher: bool
     enableCtrlNumberHotKey: bool
     enableNumberLeader: bool
+    tabColorStyle: string
     numberHotKeyModifier: string
     numberShortcutAppMode: string
     numberShortcutPaths: Set2<string>

@@ -108,6 +108,8 @@ type CloseButtonSprite = {
         member this.children = List2()
 
 type TabDisplayInfo = {
+    tint: Color option
+    colorStyle: string
     numberBadge: int option
     bgColor : Color option
     text: string
@@ -166,6 +168,8 @@ type TabSprite<'id> = {
         this.displayInfo.bgColor.IsSome || this.isTop || this.hover.IsSome || this.captured.IsSome
 
     /// The tab's own colour: its whole slot in the joined style, its raised shape otherwise.
+    member this.tint = Theme.tabTint SystemInformation.HighContrast this.displayInfo.tint
+
     member this.fillColor =
         match this.displayInfo.bgColor with
         | Some(color) -> color
@@ -173,9 +177,13 @@ type TabSprite<'id> = {
             let active = this.appearance.tabActiveBgColor
             let inactive = this.appearance.tabNormalBgColor
             let highlight = this.appearance.tabHighlightBgColor
-            if this.isTop then active
-            elif this.hover.IsSome || this.captured.IsSome then highlight
-            else inactive
+            let hovered = this.hover.IsSome || this.captured.IsSome
+            let basis = if this.isTop then active elif hovered then highlight else inactive
+            match this.tint with
+            | Some tint when this.displayInfo.colorStyle="Fill" ->
+                if this.isTop then tint else Theme.blend (if hovered then 0.50 else 0.35) tint inactive
+            | Some tint when not this.isTop -> Theme.blend 0.15 tint basis
+            | _ -> basis
 
     /// The text and close button colour for this tab's own background: the chosen colour,
     /// or a darker or lighter shade of it where that would be hard to read. On the bar of a
@@ -363,7 +371,7 @@ type TabSprite<'id> = {
                 use background = new SolidBrush(this.fillColor)
                 g.FillPath(background, path)
             | FolderTabs | PillTabs ->
-                use bar = new SolidBrush(this.appearance.tabNormalBgColor)
+                use bar = new SolidBrush(if this.isRaised then this.appearance.tabNormalBgColor else this.fillColor)
                 g.FillPath(bar, path)
                 if this.isRaised then
                     use raised = this.raisedShape -0.5f
@@ -379,6 +387,16 @@ type TabSprite<'id> = {
             // sitting on the title bar rather than one tab among several.
             // Exterior shadows are rendered by TabShadowWindow, outside the
             // strip bounds so the tabs remain flush with the original window.
+            match this.tint with
+            | Some tint when this.displayInfo.colorStyle="Stripe" && this.displayInfo.bgColor.IsNone ->
+                let state = g.Save()
+                g.SetClip(path)
+                let thickness = min this.size.height (Dpi.scale 3)
+                let y = if this.direction=TabUp then this.size.height-thickness else 0
+                use stripe = new SolidBrush(if this.isTop then tint else Theme.blend 0.60 tint this.fillColor)
+                g.FillRectangle(stripe,0,y,this.size.width,thickness)
+                g.Restore(state)
+            | _ -> ()
             if this.showLeftSeparator then
                 let inset = float32 this.size.height * 0.28f
                 let x = 0.0f
@@ -706,10 +724,7 @@ type TabStripSprite<'id> when 'id : equality = {
             let leftInset = if first then 0 else gapInset
             let rightInset = if last then 0 else gapInset
             // A flashing tab keeps its colour here too, so a call for attention still shows.
-            let color =
-                match tab.displayInfo.bgColor with
-                | Some(color) -> color
-                | None -> if tab.isTop then this.appearance.tabActiveBgColor else this.appearance.tabNormalBgColor
+            let color = tab.fillColor
             use fill = new SolidBrush(color)
             let width = tab.size.width-leftInset-rightInset
             if width>0 then

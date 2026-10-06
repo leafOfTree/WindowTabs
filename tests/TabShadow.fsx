@@ -125,7 +125,7 @@ let main () =
         tabActiveBgColor=Color.White; tabHighlightBgColor=Color.FromArgb(228,228,228)
         tabBorderColor=Color.FromArgb(168,168,168) }
     let info text : TabDisplayInfo = {
-        numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application
+        tint=None; colorStyle="Stripe"; numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application
         textFont=SystemFonts.MenuFont; textBrush=Brushes.Black }
     let ts : TabStripSprite<int> = {
         tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"]))
@@ -140,6 +140,20 @@ let main () =
             check (TextContrast.ratio (TextContrast.readable drawn.Head.foreground drawn.Head.background) drawn.Head.background >= 4.5) "Badge contrast too low"
             use bitmap = badges.render.bitmap
             check (bitmap.Width>0) "Badge render failed"
+    for appearance in [Theme.light;Theme.dark] do
+        for style in [JoinedTabs;FolderTabs;PillTabs] do
+            for colorStyle in ["Stripe";"Fill"] do
+                let tinted = { ts with appearance={appearance with tabStyle=style}; tabs=Map2(List2([1,{info "One" with tint=Some Color.Blue;colorStyle=colorStyle};2,{info "Two" with tint=Some Color.Blue;colorStyle=colorStyle}])) }
+                let tabs = tinted.sprite.children.list |> List.choose(fun (_,child) -> match child with :? TabSprite<int> as tab -> Some tab | _ -> None)
+                let active,inactive = tabs |> List.find(fun t -> t.isTop),tabs |> List.find(fun t -> not t.isTop)
+                check (not inactive.isRaised) "Tint raised an inactive tab"
+                check (active.fillColor<>inactive.fillColor) "Tint hid the active tab"
+                for tab in tabs do check (TextContrast.ratio tab.textColor tab.fillColor>=4.5) "Tint made text unreadable"
+                let flash = {inactive with displayInfo={inactive.displayInfo with bgColor=Some Color.Orange}}
+                check (flash.fillColor=Color.Orange) "Tint overrode attention"
+                use bitmap = tinted.render.bitmap
+                bitmap.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "tint-%A-%s-%d.png" style colorStyle appearance.tabNormalBgColor.R),ImageFormat.Png)
+    check (Theme.tabTint true (Some Color.Red)=None) "High contrast retained tint"
     let tabImage = ts.render
     // Short tabs shrink their contents to fit instead of clipping them.
     do
@@ -150,7 +164,7 @@ let main () =
         heights |> List.fold(fun y h ->
             use font = TabMetrics.font h FontStyle.Regular
             check (font.Height <= max h (SystemFonts.MenuFont.Height)) (sprintf "Text line does not fit a %dpx tab" h)
-            let info text : TabDisplayInfo = { numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application; textFont=font; textBrush=Brushes.Black }
+            let info text : TabDisplayInfo = { tint=None; colorStyle="Stripe"; numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application; textFont=font; textBrush=Brushes.Black }
             let strip = { ts with appearance={ appearance with tabHeight=h }; size=Sz(420,h+1)
                                   tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"])) }
             for _,tab in strip.sprite.children.list do

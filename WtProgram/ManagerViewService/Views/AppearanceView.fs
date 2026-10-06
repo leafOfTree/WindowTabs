@@ -249,8 +249,8 @@ type AppearanceView(?settings:ISettings) =
             e.Graphics.Restore(state)
             // The font real tabs use, so the preview shrinks its text with short tabs too.
             use font = TabMetrics.font appearance.tabHeight FontStyle.Regular
-            let info caption : TabDisplayInfo = {
-                numberBadge=None; bgColor=None; text=caption; icon=SystemIcons.Application
+            let info (caption:string) : TabDisplayInfo = {
+                tint=Some((Theme.tabPalette (ThemeService.currentIsDark())).[caption.Length%8]); colorStyle=settings.getValue("tabColorStyle") :?> string; numberBadge=None; bgColor=None; text=caption; icon=SystemIcons.Application
                 textFont=font; textBrush=SystemBrushes.MenuText }
             let ts : TabStripSprite<int> = {
                 tabs=Map2(List2([1,info (tr Strings.Settings.tabActiveBgColor.caption);2,info (tr Strings.Settings.tabHighlightBgColor.caption);3,info (tr Strings.Settings.tabNormalBgColor.caption)]))
@@ -263,6 +263,8 @@ type AppearanceView(?settings:ISettings) =
         let styleCard = new SettingsCard()
         SettingsUi.add table styleCard
         SettingsUi.settingRow styleCard "tabStyle" tabStyle
+        let colorStyle = SettingsBindings.choiceRow styleCard "tab-color-style" [|tr Strings.Settings.stripe;tr Strings.Settings.fill|]
+        colorStyle.SelectedIndexChanged.Add(fun _ -> preview.Invalidate())
         let paletteHeader = new Panel(Height=Dpi.scale 36,Margin=Padding(0,Dpi.scale 16,0,Dpi.scale 8))
         paletteTitle.AutoSize <- false
         paletteTitle.Dock <- DockStyle.Fill
