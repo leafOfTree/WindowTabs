@@ -227,6 +227,8 @@ let main() =
         check (capture.handle(WindowMessages.WM_KEYDOWN,0x31,Some 0)=(true,Some 0)) "Matched digit must be swallowed and activated"
         check (capture.handle(WindowMessages.WM_KEYDOWN,0x31,Some 0)=(true,Some 0)) "Held digit repeat leaked to the application"
         check (capture.handle(WindowMessages.WM_KEYDOWN,0x31,None)=(true,None)) "Captured repeat leaked after focus or modifiers changed"
+        for key in [0x11;0xA2;0xA3;0xDB;0xDD] do
+            check (capture.handle(WindowMessages.WM_KEYUP,key,None)=(false,None)) "Numeric capture swallowed Ctrl or bracket release"
         check (capture.handle(WindowMessages.WM_KEYUP,0x31,None)=(true,None)) "Captured release leaked after focus or modifiers changed"
         check (capture.handle(WindowMessages.WM_KEYDOWN,0x31,None)=(false,None)) "Unmatched digit was swallowed"
         check (capture.handle(WindowMessages.WM_SYSKEYDOWN,0x32,Some 1)=(true,Some 1) && capture.handle(WindowMessages.WM_SYSKEYUP,0x32,None)=(true,None)) "Alt digit press/release was not swallowed"
