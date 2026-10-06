@@ -2,172 +2,138 @@
 
 # WindowTabs
 
-A utility that brings browser-style tabbed window management to the desktop.
+Browser-style tabs for every window on your Windows desktop.
+
+[![Downloads](https://img.shields.io/github/downloads/leafoftree/windowtabs/total)](https://github.com/leafOfTree/WindowTabs/releases)
+[![Build](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml/badge.svg)](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml)
 
 <p>
 <img alt="screenshot" src="https://raw.githubusercontent.com/leafOfTree/leafOfTree.github.io/master/WindowTabs-example.png" width="560" style="border-radius: 8px" />
 </p>
 
-## History
-It was originally developed by Maurice Flanagan in 2009 and was provided as free and paid versions.
-The author who no longer has time to maintain it has open-sourced it. See the original repository: [mauricef/WindowTabs](https://github.com/mauricef/WindowTabs).
+Drag one window onto another and they become tabs of a single window: they move, resize,
+minimize and restore together, and you switch between them the way you switch browser tabs.
+It works with any app, from File Explorer and terminals to editors and Office.
 
-This repository is a fork of [payaneco's repository](https://github.com/payaneco/WindowTabs) which is from [redgis'](https://github.com/redgis/WindowTabs). It is tested on Windows 10 and 11. Windows 7 SP1 can run .NET Framework 4.8, but current builds are untested there.
+## Features
 
-## Download
+**Tabs for any app**
 
-<a href="https://github.com/leafOfTree/WindowTabs/releases">![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/leafoftree/windowtabs/total)</a>
+- Group windows by dragging a tab onto another window's tabs; drag it away to split it off.
+- Auto-group new windows of the apps you choose, or keep tabs off for apps that should stay alone.
+- Rename a tab, show icons only, open a new tab of the same app, close others or close all.
+- When the active tab closes, the next one is selected like in a browser.
 
-You can download my prebuilt files from the [releases](https://github.com/leafOfTree/WindowTabs/releases) page: the `WindowTabs-<version>.zip` contains `WindowTabs.exe` and its `WindowTabs.exe.config`. You can also compile the `exe` file as below.
+**Looks at home on Windows 10 and 11**
 
-## Usage
+- Light, dark or follow-Windows theme, with nine colour presets or your own colours.
+- Joined, folder or pill tab styles; adjustable height, width, spacing and margins.
+- Tabs on the left, centre or right of the title bar, kept clear of the caption buttons.
+- Auto-hide to a thin strip on maximized windows (or always), shown again on hover or briefly after switching.
+- Crowded groups fall back to icon-only tabs with a minimum width; flashing windows show up on their tab.
+- Sharp at any scaling: per-monitor DPI aware.
 
-- Keep `WindowTabs.exe.config` beside `WindowTabs.exe` (required for WinForms per-monitor DPI support). Run `WindowTabs.exe`; it will run in the background.
+**Fast to drive from the keyboard and mouse**
 
-- Configure for which window group and tab are enabled, along with other settings.
-    - Right click on the notification icon at the bottom right corner.
-    - Right click on the tab title.
-- Settings are kept in `%AppData%\WindowTabs\WindowTabsSettings.json`. For a portable copy, put a `WindowTabsSettings.json` next to `WindowTabs.exe`; WindowTabs then uses that file instead. Settings files from older versions, `WindowTabsSettings.txt`, are read when no `.json` file exists yet and are left unchanged. Settings › Support › Settings file shows which file is in use and can export or import it.
-- If WindowTabs crashes, it writes `WindowTabsCrash.log` next to `WindowTabs.exe`, or to `%AppData%\WindowTabs` when that folder is not writable. The newest crash is at the top. Attaching it to an issue makes the problem much easier to track down: Settings › Support shows a *Crash log* link when there is one, and the troubleshooting report there lists the latest three crashes without their messages or file paths. If WindowTabs keeps running after an error, a tray notification says so once per session.
+- Switch tabs with shortcuts, by number (Ctrl or Alt + 1–9), with Shift + scroll, or by hovering.
+- Search all tabs by title or app name and jump straight to one.
+- An optional Alt+Tab replacement, as a row of large icons or a list with full titles, that can show each group as one item.
 
-## Contribution
+**Workspaces**
 
-Any help is very welcome. Feel free to create issues or pull requests. If you'd like to fix issues, you can pick [any open issue](https://github.com/leafOfTree/WindowTabs/issues?q=is%3Aissue%20state%3Aopen).
+- Save the current window groups and positions, then restore them later in one click.
+- Open windows are matched by title: exact, starts with, ends with, contains or a regular expression.
 
-## Compilation
+**Easy to set up and to support**
 
-Tested on Win10 and Win11. The projects are SDK-style and target .NET Framework 4.8, so they build
-with either the .NET SDK or Visual Studio 2022/2026. NuGet packages are restored on the first build.
+- A searchable Settings window in English, 中文 and 日本語.
+- Taskbar icons can be combined per group.
+- Portable mode, settings export/import and reset to defaults.
+- A crash log and a privacy-safe troubleshooting report to attach to issues.
 
-- Clone
+## Get started
 
-    ```
-    git clone https://github.com/leafOfTree/WindowTabs
-    ```
+Requires Windows 10 or 11 with .NET Framework 4.8, which is built in from Windows 10 version 1903.
 
-- Install one of
+1. Download `WindowTabs.exe` from [Releases](https://github.com/leafOfTree/WindowTabs/releases)
+   and put it anywhere.
+2. Run it. WindowTabs lives in the system tray.
 
-    - [.NET SDK](https://dotnet.microsoft.com/download) (tested with 10.0), for command-line builds.
-    - [Visual Studio community edition](https://visualstudio.microsoft.com/) with `.NET desktop development` selected in the installer.
+Open **Settings** from the tray icon or by right-clicking any tab. Turn on *Start with Windows*
+under General to have it ready after you sign in.
 
-- Compile and Release
+## Default shortcuts
 
-    ```
-    dotnet build WindowTabs.sln -c Release
-    ```
+| Action | Shortcut |
+| --- | --- |
+| Next tab | Ctrl + Alt + → |
+| Previous tab | Ctrl + Alt + ← |
+| Go to tab 1–9 | Ctrl + 1–9 (or Alt, or both) |
+| Search tabs | Alt + Space |
+| Open new tab | Ctrl + Alt + N |
+| Switch tabs with the mouse | Shift + scroll over a grouped window, or scroll over the tabs |
 
-    produces a single self-contained `WtProgram\bin\Release\WindowTabs.exe`. In Visual Studio, open `WindowTabs.sln`,
-    choose the `Release` configuration and build.
+Every shortcut can be changed or turned off under Settings › Shortcuts.
 
-- Debug
+## Settings and portable mode
 
-    `dotnet build WindowTabs.sln` (or the `Debug` configuration in Visual Studio) compiles to `WtProgram\bin\Debug\WindowTabs.exe`.
+Settings are saved in `%AppData%\WindowTabs\WindowTabsSettings.json`. To run portably, put a
+`WindowTabsSettings.json` next to `WindowTabs.exe` and WindowTabs uses that file instead.
+Settings › Support › Settings file shows which file is in use and can export, import or reset it.
 
-- Release
+Settings from older versions (`WindowTabsSettings.txt`) are read when no `.json` file exists yet
+and are left untouched.
 
-    Push a tag such as `v2025.10.01`. The `release` workflow builds with that version, runs the regression suite and drafts a GitHub release with the zip, `WindowTabs.exe` and `WindowTabs.exe.config` attached; review the notes and publish it. The default version for local builds is `<Version>` in `WtProgram/WtProgram.fsproj`.
+## Troubleshooting
 
-Tips
+- If something goes wrong, WindowTabs writes `WindowTabsCrash.log` next to `WindowTabs.exe`, or to
+  `%AppData%\WindowTabs` when that folder is read-only. A tray notification tells you when it
+  kept running after an error.
+- Settings › Support opens the crash log and copies a troubleshooting report. The report contains
+  no window titles, file paths or other personal information, so it is safe to paste into an
+  [issue](https://github.com/leafOfTree/WindowTabs/issues).
 
-- In Visual Studio editor, click on the left gray column to add a breakpoint on the current line. Then start `Debug` and you can see runtime details.
-- You can also debug using `System.Diagnostics.Debug.WriteLine("Hello, world");` in code to print logs
+## Build from source
 
-## Project Structure
+You need the [.NET SDK](https://dotnet.microsoft.com/download) (tested with 10.0), or Visual Studio
+2022/2026 with the *.NET desktop development* workload.
 
-Architecture and ownership conventions: [docs/architecture.md](docs/architecture.md).
+```powershell
+git clone https://github.com/leafOfTree/WindowTabs
+cd WindowTabs
+dotnet build WindowTabs.sln -c Release    # single exe: WtProgram\bin\Release\WindowTabs.exe
+dotnet build WindowTabs.sln               # debug build: WtProgram\bin\Debug\WindowTabs.exe
+```
 
-Run the regression suite (requires the .NET SDK):
+Run the regression suites (they open real windows, so use an interactive desktop):
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-Tests.ps1
 ```
 
-The script builds a separate Debug output in `tests/Debug/`, compiles each test script with
-`tests/TestHost.fsproj` and runs the native UI tests serially.
-Logs and rendered previews are written to `tests/Debug/`.
-Coverage and isolated Release smoke commands, limitations and the remaining test
-matrix are documented in [docs/testing.md](docs/testing.md).
+Exit a running WindowTabs from the tray before building, since it locks the output file.
+Pushing a `v*` tag such as `v2026.10.06` makes the release workflow build, test and draft a
+GitHub release.
 
-- Entry point: `Program.fs` this.run
-- Tray icon (Notify icon): `NotifyIconPlugin.fs` this.icon
-- Settings Window: `DesktopManagerForm.fs`. Its tabs are under `ManagerViewService/Views/`
-- Lists (App rules, Workspaces, Alt+Tab switcher): `SettingsTreeList.fs`
-- Taskbar group: `SuperBarPlugin.fs`
-- GUI framework: WinForms
+## Contributing
 
-## Changes
+Issues and pull requests are welcome; [open issues](https://github.com/leafOfTree/WindowTabs/issues?q=is%3Aissue%20state%3Aopen)
+are a good place to start. Before changing code, read:
 
-2025
+- [AGENTS.md](AGENTS.md): layout, build and the project's rules on threads, text, settings, DPI and theme.
+- [docs/architecture.md](docs/architecture.md), [docs/testing.md](docs/testing.md),
+  [docs/settings-architecture.md](docs/settings-architecture.md) and [docs/performance.md](docs/performance.md).
 
-- Replace the 2009 TreeViewAdv library with a small built-in list control: App rules, Workspaces and the Alt+Tab switcher follow the light/dark theme and DPI, and the executable no longer bundles the library
+WindowTabs is written in F# with WinForms on .NET Framework 4.8. User-visible text is
+translated into English, Chinese and Japanese.
 
-- Add a language setting (follow Windows, English, 中文, 日本語) and translate the tray menu, tab menu and dialogs into Chinese; the Japanese translation now ships in the released exe
+## Credits
 
-- Draft GitHub releases automatically from `v*` tags; the version comes from the tag instead of being edited in `AssemblyInfo.fs`
+WindowTabs was created by Maurice Flanagan in 2009 and later open-sourced
+([mauricef/WindowTabs](https://github.com/mauricef/WindowTabs)). This project continues from the
+forks by [redgis](https://github.com/redgis/WindowTabs) and
+[payaneco](https://github.com/payaneco/WindowTabs).
 
-- Update FSharp.Core from 6.0.7 to 10.1.401. Newtonsoft.Json is pinned to 13.0.1: later versions cannot be statically linked into the single exe alongside FSharp.Core 7+
+## License
 
-- Build with the .NET SDK (`dotnet build`) as well as Visual Studio: SDK-style projects, and NuGet packages restored instead of committed
-
-- Support Visual Studio 2026: retarget to .NET Framework 4.8 and drop the unused WiX installer project
-
-- Redesign the tab strip: rounded corners instead of the old bezier trapezoid, a neutral grey palette in place of the Aero blue, and a close button that follows the text colour so it stays legible on dark themes. Upgrading resets the tab overlap to 0 only if it was still on the old default of 20
-
-- Declare the process DPI aware, so tabs and labels are drawn at the real pixel size instead of being bitmap-stretched by Windows. On a display at 125% scaling everything the app draws was previously blurred by the compositor
-
-- Update Newtonsoft.Json from 4.0.5 (2012) to 13.0.4
-
-- Sort the process list in Programs case insensitively, so `chrome.exe` no longer sorts after `WindowTabs.exe`
-
-- Release GDI region handles deterministically instead of waiting for the garbage collector, removing a source of instability during long sessions with many windows
-
-- Fix a rare silent loss of tabs and window groups caused by hash collisions in the internal collections; drop the unmaintained FSharp.PowerPack dependency, shrinking the executable by about 410 KB
-
-- Write unhandled exceptions to `WindowTabsCrash.log` so crash reports are actionable
-
-- Add version and product metadata to the executable
-
-- Remove dead projects (WtDesktop, WtGroup, WtLauncher, Settings) and unused code
-
-- Add an option to toggle whether `shift+scroll` switches tabs in Behavior
-
-- Add text color option in Appearnce
-- Add buttons to use preset theme colors: dark mode and blue variant in Appearnce
-- Fix tabs overlap the minimize button when aligning right
-- Support mouse hover to activate tab
-- Add options to save default values of auto hide and align tabs
-
-2024
-
-- Improve UI - layout, color, and font
-- Support close all tabs from taskbar button rightclick menu
-- Fix WindowTabs's alt+tab collapse when there is no open window
-
-- Support Visual Studio 2022
-
-- Remove task window peek (preview) to fix task switch error
-- Use the last file name as tab name
-- UI improvement on icon and task switch form border
-
-- Add option to deactivate `ctrl+1`... hotkeys
-- Add `New window` item to tab context menu
-- Support settings file at the same path of exe file
-
-2023
-
-- Recognize ApplicationFrameWindow based Apps like Photo and Mail.
-- Fix null exception on toggling Fade out... option.
-- Adjust settings font and display.
-- Fix the extra empty tab for File Explorer.
-- Update packages for Win10.
-- Fix desktop `Programs` title missing issue.
-
-## Refs
-
-- [mauricef/WindowTabs](https://github.com/mauricef/WindowTabs) the original repository
-
-- [redgis/WindowTabs](https://github.com/redgis/WindowTabs)
-
-- [payaneco/WindowTabs](https://github.com/payaneco/WindowTabs)
-
-- [leafoftree/WindowTabs](https://github.com/leafOfTree/WindowTabs)
+[MIT](LICENSE)
