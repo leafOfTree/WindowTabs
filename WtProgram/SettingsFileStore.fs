@@ -12,6 +12,12 @@ type SettingsFileStore(path:string, delay:int, reportError:exn -> unit, ?legacyP
     let timer = new Timer(Interval=max 1 delay)
     let mutable pending : string option = None
     let mutable reported = false
+    let mutable failures = 0
+    /// Antivirus or indexing can briefly hold the file, so File.Replace cannot remove it.
+    /// Retry such failures before warning; a persistent one waits for the next edit or exit.
+    let retries = 3
+    let retryDelay = 200
+    let transient (ex:exn) = ex :? IOException || ex :? UnauthorizedAccessException
     let mutable disposed = false
     let validate text = JObject.Parse(text) |> ignore; text
     let write text =
@@ -37,9 +43,14 @@ type SettingsFileStore(path:string, delay:int, reportError:exn -> unit, ?legacyP
                 write text
                 pending <- None
                 reported <- false
+                failures <- 0
                 true
             with ex ->
-                if not reported then
+                failures <- failures+1
+                if transient ex && failures<retries then
+                    timer.Interval <- retryDelay
+                    timer.Start()
+                elif not reported then
                     reported <- true
                     reportError ex
                 false
@@ -75,12 +86,18 @@ type SettingsFileStore(path:string, delay:int, reportError:exn -> unit, ?legacyP
     member _.Schedule(text) =
         if disposed then raise(ObjectDisposedException("SettingsFileStore"))
         pending <- Some text
+        failures <- 0
         timer.Stop()
+        timer.Interval <- max 1 delay
         if delay=0 then flush() |> ignore else timer.Start()
     member _.Flush() = flush()
     interface IDisposable with
         member _.Dispose() =
             if not disposed then
-                flush() |> ignore
+                // No later edit will retry, so give a briefly held file the same chances now.
+                let mutable attempt = 1
+                while not(flush()) && pending.IsSome && attempt<retries do
+                    Threading.Thread.Sleep(retryDelay/2)
+                    attempt <- attempt+1
                 disposed <- true
                 timer.Dispose()

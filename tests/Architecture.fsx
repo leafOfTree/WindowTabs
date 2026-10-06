@@ -40,14 +40,24 @@ let main() =
     store.Schedule("{\"value\":101}")
     check (store.Flush()) "Explicit flush failed"
     check (File.ReadAllText(path+".bak")="{\"value\":100}") "Atomic backup was not preserved"
+    // Antivirus or indexing can hold the file for a moment: retry without a warning.
     do
         use locked = new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.None)
         store.Schedule("{\"value\":102}")
         check (not(store.Flush()) && store.HasPending) "Write failure lost pending changes"
+        check (errors=0) "A briefly held settings file was reported before retrying"
+    pumpUntil "A briefly held settings file was not saved by the retry" (fun () -> not store.HasPending)
+    check (errors=0 && File.ReadAllText(path)="{\"value\":102}") "Retry after a brief lock warned or lost the value"
+    // A file held through every retry warns once and keeps the edit for the next attempt.
+    do
+        use locked = new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.None)
+        store.Schedule("{\"value\":103}")
+        for _ in 1..3 do store.Flush() |> ignore
+        check (errors=1 && store.HasPending) "A persistently held settings file was not reported once"
         check (not(store.Flush()) && errors=1) "Repeated failure repeated the warning"
     check (store.Flush() && not store.HasPending) "Failed write could not be retried"
     File.WriteAllText(path,"invalid-json")
-    check (store.Read()=Some "{\"value\":101}") "Valid backup was not recovered"
+    check (store.Read()=Some "{\"value\":102}") "Valid backup was not recovered"
     check (Directory.GetFiles(directory,"*.corrupt-*").Length=1) "Corrupt original not preserved"
     check (Directory.GetFiles(directory,"*.tmp").Length=0) "Temporary save files leaked"
     let exitPath = Path.Combine(directory,"exit.json")
@@ -248,11 +258,11 @@ let main() =
         check (TabNavigation.currentForeground [a;b;c] a (IntPtr 999)=a) "Focus outside the group replaced the group's foreground event"
         // Notepad and Explorer activate the previous window before hiding the one they close.
         let left = Some(b,a,1000L)
-        check (TabNavigation.closedAfterSwitch left b (Some a) 1300L) "A tab hidden right after it lost the foreground was not treated as closed"
-        check (not(TabNavigation.closedAfterSwitch left b (Some a) 1600L)) "A tab hidden long after it was left was treated as closed"
-        check (not(TabNavigation.closedAfterSwitch left b (Some c) 1300L)) "A tab hidden after a later selection was treated as closed"
-        check (not(TabNavigation.closedAfterSwitch left c (Some a) 1300L)) "Another tab's hide was treated as the left tab closing"
-        check (not(TabNavigation.closedAfterSwitch None b (Some a) 1300L)) "A hide with no recent switch was treated as a close"
+        check (TabNavigation.leftJustBefore left b (Some a) 1300L) "A tab hidden right after it lost the foreground was not treated as closed"
+        check (not(TabNavigation.leftJustBefore left b (Some a) 1600L)) "A tab hidden long after it was left was treated as closed"
+        check (not(TabNavigation.leftJustBefore left b (Some c) 1300L)) "A tab hidden after a later selection was treated as closed"
+        check (not(TabNavigation.leftJustBefore left c (Some a) 1300L)) "Another tab's hide was treated as the left tab closing"
+        check (not(TabNavigation.leftJustBefore None b (Some a) 1300L)) "A hide with no recent switch was treated as a close"
         let target msg key ctrl = onGroup(fun _ -> numeric.targetIndex(msg,key,ctrl))
         check (target WindowMessages.WM_KEYDOWN 0x31 true=None) "Disabled numeric shortcut still activates"
         api.setValue("enableCtrlNumberHotKey",box true)
