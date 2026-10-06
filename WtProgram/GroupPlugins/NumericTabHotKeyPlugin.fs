@@ -2,6 +2,28 @@
 open System
 open System.Runtime.InteropServices
 
+module NumericShortcutTarget =
+    let available (windows:IntPtr list) foreground index =
+        index >= 0 && index < windows.Length && windows.[index] <> foreground
+
+module AltMenuMask =
+    let marker = 0x57544D
+    let inputs() =
+        [| for flags in [0; SendInputConstants.KEYEVENTF_KEYUP] do
+            let mutable keyboard = KEYBDINPUT()
+            keyboard.wVk <- 0xE8s
+            keyboard.dwFlags <- flags
+            keyboard.dwExtraInfo <- IntPtr(marker)
+            let mutable union = MOUSEKEYBDHARDWAREINPUT()
+            union.ki <- keyboard
+            let mutable input = INPUT()
+            input.``type`` <- 1
+            input.mkhi <- union
+            yield input |]
+    let send() =
+        let events = inputs()
+        WinUserApi.SendInput(events.Length, events, Marshal.SizeOf(typeof<INPUT>)) |> ignore
+
 type NumericTabHotKeyPlugin() as this =
     member this.wtGroup = Services.get<WindowGroup>()
 

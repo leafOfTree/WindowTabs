@@ -44,6 +44,7 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
 
     member this.registerKeyboardLLHook() =
         kbHook <- OS.registerKeyboardLLHook <| fun(key, data) ->
+            if data.dwExtraInfo = AltMenuMask.marker then None else
             // The group runs asynchronously; Ctrl may be released before it handles
             // this key. Preserve the modifier state belonging to this input event.
             let controlPressed = Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_CONTROL)
@@ -56,8 +57,9 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
                 if extraModifier then None
                 else foreground |> Option.bind(fun group ->
                     numeric.targetIndex(int key,data.vkCode,controlPressed,altPressed=altPressed)
-                    |> Option.filter(fun index -> index < group.windows.length))
+                    |> Option.filter(NumericShortcutTarget.available group.windows.list (WinUserApi.GetForegroundWindow())))
             let consumed,activate = numericCapture.handle(int key,data.vkCode,target)
+            if activate.IsSome && altPressed then AltMenuMask.send()
             activate |> Option.iter(fun index ->
                 foreground.iter <| fun group ->
                     let groupInfo = group.cast<GroupInfo>()
