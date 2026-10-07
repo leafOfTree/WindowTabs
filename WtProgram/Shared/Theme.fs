@@ -147,21 +147,22 @@ type WindowTabColors() =
         indices <- indices.Remove hwnd
         overrides <- overrides.Remove hwnd
         paths <- paths.Remove hwnd
-    /// Peers are listed only the first time, when the window is given its own colour.
-    member _.resolve hwnd (peers:unit -> IntPtr list) (path:string) mode (remembered:Map<string,string>) =
-        let index =
-            match indices.TryFind hwnd with
-            | Some index -> index
-            | None ->
-                let index = peers() |> List.choose indices.TryFind |> Theme.leastUsedColor
-                indices <- indices.Add(hwnd,index)
-                index
+    /// Allocate only when needed, across windows so colours survive later grouping.
+    member _.resolve hwnd (path:string) mode (remembered:Map<string,string>) =
         let app = remembered |> Map.tryPick(fun key value ->
             if String.Equals(key,path,StringComparison.OrdinalIgnoreCase) then Theme.parseTabColor value else None)
         match overrides.TryFind hwnd,app with
         | Some color,_ | _,Some color -> Some color
         | _ ->
             match mode with
-            | "ByWindow" -> Some(PaletteColor index)
+            | "ByWindow" ->
+                let index =
+                    match indices.TryFind hwnd with
+                    | Some index -> index
+                    | None ->
+                        let index = indices |> Map.toList |> List.map snd |> Theme.leastUsedColor
+                        indices <- indices.Add(hwnd,index)
+                        index
+                Some(PaletteColor index)
             | "ByApp" -> Some(PaletteColor(Theme.appColorIndex (IO.Path.GetFileName path)))
             | _ -> None

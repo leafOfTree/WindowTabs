@@ -64,19 +64,31 @@ let main() =
                     use marked = MenuImages.checkedCopy dot
                     check (marked.GetPixel(0,0).A=0uy) "Checked colour dot lost its transparent corners"
         let colors = WindowTabColors()
-        let peersAsked = ref 0
-        let resolve hwnd peers remembered = colors.resolve hwnd (fun () -> peersAsked.Value <- peersAsked.Value+1; peers) "editor.exe" "ByWindow" remembered
+        let resolve hwnd remembered = colors.resolve hwnd "editor.exe" "ByWindow" remembered
         let a,b,c = IntPtr(1),IntPtr(2),IntPtr(3)
-        let first = resolve a [a;b] Map.empty
-        check (resolve b [a;b] Map.empty<>first) "By-window colours repeated a used colour too soon"
+        for hwnd in [a;b;c] do
+            check (colors.resolve hwnd "editor.exe" "Off" Map.empty=None) "Disabled automatic colours tint an existing window"
+            check (colors.resolve hwnd "editor.exe" "ByApp" Map.empty=Some(PaletteColor(Theme.appColorIndex "editor.exe"))) "By-app mode stopped sharing an app's colour"
+        check (resolve (IntPtr(50)) Map.empty=Some(PaletteColor Theme.tabColorOrder.Head))
+              "Disabled or by-app mode reserved window colours before by-window mode was enabled"
+        let first = resolve a Map.empty
+        let existing = [first;resolve b Map.empty;resolve c Map.empty]
+        check ((existing |> List.distinct).Length=3) "Existing windows share a colour after enabling by-window mode"
+        check ([resolve a Map.empty;resolve b Map.empty;resolve c Map.empty]=existing) "Refreshing or grouping windows changes their allocated colours"
         let red = CustomColor Color.Red
         colors.setOverride a (Some red)
-        check (resolve a [a;c] Map.empty=Some red) "Window colour was lost across groups"
+        check (resolve a Map.empty=Some red) "Window colour was lost across groups"
         colors.setOverride a None
-        check (resolve a [a;c] Map.empty=first) "Clearing custom colour changed its automatic assignment"
-        check (peersAsked.Value=2) "Peers were listed again after the window had its colour"
+        check (resolve a Map.empty=first) "Clearing custom colour changed its automatic assignment"
+        let later = resolve (IntPtr(4)) Map.empty
+        check (not (List.contains later existing)) "A new window reused an existing colour before the palette was exhausted"
+        let palette = WindowTabColors()
+        let allocated = [for id in 1..Theme.tabPaletteSize -> palette.resolve (IntPtr(id)) "editor.exe" "ByWindow" Map.empty]
+        check ((allocated |> List.distinct).Length=Theme.tabPaletteSize) "Automatic colours repeat before every palette colour is used"
+        palette.remove (IntPtr(2))
+        check (palette.resolve (IntPtr(100)) "editor.exe" "ByWindow" Map.empty=allocated.[1]) "Closed windows do not release their automatic colour"
         let remembered = Map.ofList [@"C:\Apps\EDITOR.EXE","#00FF00"]
-        let resolveAt path hwnd = colors.resolve hwnd (fun () -> [hwnd]) path "ByWindow" remembered
+        let resolveAt path hwnd = colors.resolve hwnd path "ByWindow" remembered
         check (resolveAt @"c:\apps\editor.exe" a=Some(CustomColor(Color.FromArgb(0,255,0)))) "Remembered colour did not override automatic colour or depended on path case"
         check (resolveAt @"C:\Other\EDITOR.EXE" a=first) "Remembered colour applied to another app with the same name"
         colors.setOverride a (Some red)

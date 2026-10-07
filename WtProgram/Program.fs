@@ -336,9 +336,8 @@ type Program(lifetime:LifetimeScope) as this =
         member _.setTabColorOverride((hwnd,color)) = windowColors.setOverride hwnd color
 
         member x.getTabColor hwnd =
-            let peers() = this.desktop.groups.list |> List.tryFind(fun g -> g.windows.contains((=) hwnd)) |> Option.map(fun g -> g.windows.list) |> Option.defaultValue []
             let path = windowColors.path hwnd (fun () -> try os.windowFromHwnd(hwnd).pid.processPath with _ -> "")
-            windowColors.resolve hwnd peers path settingsManager.settings.tabColorMode settingsManager.settings.appTabColors
+            windowColors.resolve hwnd path settingsManager.settings.tabColorMode settingsManager.settings.appTabColors
 
         member x.appWindows = 
             os.windowsInZorder.where(this.isAppWindow).map(fun w -> w.hwnd)
