@@ -190,7 +190,7 @@ static class DesktopE2E
     {
         var timings=new List<double>();
         // Warm caches before measuring growth; do not force GC inside the application.
-        for(int i=0;i<30;i++) { step="warmup "+i; int n=i%order.Count; Chord(0x11,0x31+n); await Activated(order[n],strip); }
+        for(int i=0;i<30;i++) { step="warmup "+i; int n=i%order.Count; Chord(0x12,0x31+n); await Activated(order[n],strip); }
         await Task.Delay(250);
         int[] before=Resources();
         for(int i=0;i<count;i++)
@@ -203,7 +203,7 @@ static class DesktopE2E
             switch(i%4)
             {
                 case 0: await Click(strip,target,order.Count); break;
-                case 1: Chord(0x11,0x31+target); break;
+                case 1: Chord(0x12,0x31+target); break;
                 case 2: Chord(0x11,0x12,0x7A); break; // configured Ctrl+Alt+F11: next
                 default: Chord(0x11,0x12,0x7B); break; // Ctrl+Alt+F12: previous
             }
@@ -213,7 +213,7 @@ static class DesktopE2E
             if(i%50==49) { ResourceSamples.Add(new { phase,verifiedSwitches=totalSwitches,resources=Resources() }); Log("Verified switches: "+totalSwitches); }
         }
         // A burst sends input without awaiting each switch; compare final focus to a model.
-        for(int i=0;i<20;i++) { Chord(0x11,0x31+i%order.Count); await Task.Delay(15); }
+        for(int i=0;i<20;i++) { Chord(0x12,0x31+i%order.Count); await Task.Delay(15); }
         await Activated(order[19%order.Count],strip);
         await Task.Delay(500);
         int[] after=Resources();
@@ -261,8 +261,8 @@ static class DesktopE2E
         File.WriteAllText(Path.Combine(Root,"WindowTabsSettings.json"),Json.Serialize(new {
             enableTabbingByDefault=false, includedPaths=new[]{own},autoGroupingPaths=new string[0],
             runAtStartup=false,replaceAltTab=false,combineIconsInTaskbar=false,hideInactiveTabs=false,
-            enableCtrlNumberHotKey=true,numberHotKeyModifier="Both",enableNumberLeader=true,enableHoverActivate=false,autoHideMode="Never",alignment="Left",language="en",
-            hotKeys=new { nextTab=0x67A, prevTab=0x67B },
+            enableCtrlNumberHotKey=true,numberHotKeyModifier="Alt",enableNumberLeader=true,enableHoverActivate=false,autoHideMode="Never",alignment="Left",language="en",
+            hotKeys=new { nextTab=0x67A, prevTab=0x67B, numberLeader=0x453 },
             tabAppearance=new { tabMaxWidth=160,tabHeight=28,tabOverlap=0,tabHeightOffset=0 }
         }));
     }
@@ -326,7 +326,7 @@ static class DesktopE2E
             var gui=new GuiThread { Size=Marshal.SizeOf(typeof(GuiThread)) };
             Check(GetGUIThreadInfo(thread,ref gui) && (gui.Flags & 4)==0,"Alt number activated the application menu");
             phase="Number leader";
-            Chord(0x12,0xC0);
+            Chord(0x12,0x53);
             await Task.Delay(100);
             selected=(selected+1)%order.Count;
             Chord(0x31+selected);

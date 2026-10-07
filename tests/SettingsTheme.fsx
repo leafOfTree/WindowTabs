@@ -514,8 +514,11 @@ Group #2: No valid windows in this group.";
                 check (control.IndexAt(Point(Dpi.scale 40,row*2+row/2))=Some 2 && control.IndexAt(Point(Dpi.scale 40,row/2))=Some 0)
                       "List rows are not where the pointer finds them"
                 check (control.IndexAt(Point(Dpi.scale 40,row*3+row/2)).IsNone) "Space below the list picks a window"
-            check (few >= 12*Dpi.scale 52) (sprintf "Switcher does not show all 12 windows: %d px" few)
-            check (many <= area.Height*85/100 && many > few) (sprintf "Switcher outgrows the screen: %d px of %d" many area.Height)
+            // Hosted desktops can cap twelve rows already; both counts then reach the same limit.
+            let heightLimit = area.Height*85/100
+            check (few >= min (12*Dpi.scale 52) heightLimit && few <= heightLimit)
+                  (sprintf "Switcher neither fits twelve rows nor respects the screen limit: %d px" few)
+            check (many <= heightLimit && many >= few) (sprintf "Switcher outgrows the screen: %d px of %d" many area.Height)
             // The icon style: one row for a few windows, more rows for many, never wider than
             // most of the screen; rendered in both themes for review.
             let windows = [ for title in ["Inbox - Mail";"Project plan.docx - Word";"WindowTabs - Visual Studio"] ->

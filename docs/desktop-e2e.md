@@ -72,7 +72,8 @@ The runner builds Release and copies only the shipped EXE into a
 unique `tests/Debug/desktop-e2e-<id>` directory. A separately compiled x86 WinForms
 driver creates three foreign helper HWNDs. Portable settings opt in only that
 driver's executable, disable automatic grouping and use fixed tab geometry,
-English labels and dedicated Ctrl+Alt+F11/F12 next/previous shortcuts. No product
+English labels, Alt+number selection, Alt+S leader selection and dedicated
+Ctrl+Alt+F11/F12 next/previous shortcuts. No product
 test mode, reflection service injection or private IPC is used. Startup consumes
 the actual persisted settings and runs the real singleton, hooks and plugins.
 
@@ -81,13 +82,13 @@ Each cycle checks:
 1. Actual startup discovers three helpers and produces three independent strips.
 2. Two `SendInput` mouse drags merge them. Clicking every resulting tab must
    activate each distinct expected HWND; the final strip count must be one.
-3. Mixed mouse clicks, Ctrl+number, next and previous shortcuts activate the
+3. Mixed mouse clicks, Alt+number, next and previous shortcuts activate the
    expected window on every step, including wraparound. The strip must be visible,
    owned by that HWND and above it at the probe point. Single-click positions
    alternate outside Windows' double-click rectangle so this does not accidentally
    test the intentional double-click-to-rename behavior.
-4. A burst of 20 Ctrl+number chords checks its final target without waiting for
-   each intermediate activation. Ctrl is released immediately after each digit;
+4. A burst of 20 Alt+number chords checks its final target without waiting for
+   each intermediate activation. Alt is released immediately after each digit;
    the asynchronous handler must preserve the event's modifier snapshot.
 5. Maximizing the group moves tabs inside the window; another 30 mixed switches
    check activation and layering there. Restore must move them back.
