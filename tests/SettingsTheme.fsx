@@ -518,7 +518,8 @@ Group #2: No valid windows in this group.";
             let heightLimit = area.Height*85/100
             check (few >= min (12*Dpi.scale 52) heightLimit && few <= heightLimit)
                   (sprintf "Switcher neither fits twelve rows nor respects the screen limit: %d px" few)
-            check (many <= heightLimit && many >= few) (sprintf "Switcher outgrows the screen: %d px of %d" many area.Height)
+            check (many <= heightLimit && (many > few || (many=few && few=heightLimit)))
+                  (sprintf "Switcher outgrows the screen or does not grow with more windows: %d px of %d" many area.Height)
             // The icon style: one row for a few windows, more rows for many, never wider than
             // most of the screen; rendered in both themes for review.
             let windows = [ for title in ["Inbox - Mail";"Project plan.docx - Word";"WindowTabs - Visual Studio"] ->
@@ -539,8 +540,7 @@ Group #2: No valid windows in this group.";
                     let titleRow = [ for x in 0..image.Width-1 do for y in image.Height-Dpi.scale 40..image.Height-Dpi.scale 8 -> image.GetPixel(x,y).ToArgb() ]
                     check (image.GetPixel(Dpi.scale 4,image.Height/2).ToArgb()=surface && titleRow |> List.exists((<>) surface))
                           "Icon switcher panel or title is missing"
-                // The vertical style fills more columns when windows outnumber the screen's height,
-                // so every window stays in view.
+                // The vertical style fills more columns, then scrolls when screen width limits them.
                 do
                     let columns = TaskSwitchListControl(items 60)
                     let listControl = columns :> ITaskSwitchListControl
@@ -548,7 +548,7 @@ Group #2: No valid windows in this group.";
                     let switcher = TaskSwitchForm(columns)
                     use listForm = Control.FromHandle(switcher.hwnd) :?> Form
                     check (listForm.Height <= area.Height*85/100 && listForm.Width <= area.Width-Dpi.scale 32
-                           && listControl.contentHeight <= area.Height*85/100)
+                           && listControl.control.Height <= area.Height*85/100)
                           (sprintf "Columned switcher does not fit the screen: %A" listForm.Size)
                     // As in a switch: the first window is chosen, the switcher shows, then the choice moves.
                     listControl.select 0
