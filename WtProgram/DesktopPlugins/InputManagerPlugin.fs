@@ -7,7 +7,7 @@ type NumberLeaderState() =
     let mutable armed : (IntPtr * DateTime) option = None
     member _.active = armed.IsSome
     member _.cancel() = armed <- None
-    member _.arm foreground (now:DateTime) = armed <- Some(foreground,now.AddSeconds(3.0))
+    member _.arm foreground (now:DateTime) = armed <- Some(foreground,now.AddSeconds(10.0))
     member _.validate foreground now =
         match armed with
         | Some(hwnd,deadline) when hwnd=foreground && now<deadline -> true

@@ -120,30 +120,30 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                             |> Seq.choose(fun p -> if p.Value.Type=JTokenType.String then Theme.parseTabColor (p.Value.Value<string>()) |> Option.map(fun color -> p.Name,Theme.formatTabColor color) else None)
                             |> Map.ofSeq
                         // Development builds called the by-window mode "Rainbow".
-                        tabColorMode = settingsJson.getString("tabColorMode").def("Off") |> (fun mode -> if mode="Rainbow" then "ByWindow" else mode) |> SettingsCatalog.normalizeChoice "tabColorMode"
-                        tabColorStyle = settingsJson.getString("tabColorStyle").def("Fill") |> SettingsCatalog.normalizeChoice "tabColorStyle"
+                        tabColorMode = settingsJson.getString("tabColorMode").def(SettingsCatalog.choiceDefault "tabColorMode") |> (fun mode -> if mode="Rainbow" then "ByWindow" else mode) |> SettingsCatalog.normalizeChoice "tabColorMode"
+                        tabColorStyle = settingsJson.getString("tabColorStyle").def(SettingsCatalog.choiceDefault "tabColorStyle") |> SettingsCatalog.normalizeChoice "tabColorStyle"
                         disabledNumberShortcutPaths = Set2(settingsJson.getStringArray("disabledNumberShortcutPaths").def(List2()))
                         numberLeaderKeys = settingsJson.getString("numberLeaderKeys").def(SettingsCatalog.textDefault "numberLeaderKeys") |> NumberLeaderKeys.normalize
-                        numberHotKeyModifier = settingsJson.getString("numberHotKeyModifier").def("Ctrl") |> SettingsCatalog.normalizeChoice "numberHotKeyModifier"
+                        numberHotKeyModifier = settingsJson.getString("numberHotKeyModifier").def(SettingsCatalog.choiceDefault "numberHotKeyModifier") |> SettingsCatalog.normalizeChoice "numberHotKeyModifier"
                         enableHoverActivate = settingsJson.getBool("enableHoverActivate").def(SettingsCatalog.toggleDefault "enableHoverActivate" hasExistingSettings)
                         // Older versions stored two toggles: minimalMode (every window) and autoHide (maximized only).
                         autoHideMode =
                             settingsJson.getString("autoHideMode").def(
                                 if settingsJson.getBool("minimalMode").def(false) then "Always"
-                                elif settingsJson.getBool("autoHide").def(true) then "Maximized"
-                                else "Never")
+                                elif settingsJson.getBool("autoHide")=Some true then "Maximized"
+                                elif settingsJson.getBool("autoHide")=Some false then "Never"
+                                else SettingsCatalog.choiceDefault "autoHideMode")
                             |> SettingsCatalog.normalizeChoice "autoHideMode"
-                        // Minimal mode never expanded on a switch; keep that for people who used it.
-                        showTabsOnSwitch = settingsJson.getBool("showTabsOnSwitch").def(not (settingsJson.getBool("minimalMode").def(false)))
+                        showTabsOnSwitch = settingsJson.getBool("showTabsOnSwitch").def(SettingsCatalog.toggleDefault "showTabsOnSwitch" hasExistingSettings)
                         enableShiftScroll = settingsJson.getBool("enableShiftScroll").def(SettingsCatalog.toggleDefault "enableShiftScroll" hasExistingSettings)
                         version = settingsJson.getString("version").def(String.Empty)
-                        alignment = settingsJson.getString("alignment").def("Center") |> SettingsCatalog.normalizeChoice "alignment"
-                        switcherStyle = settingsJson.getString("switcherStyle").def("Icons") |> SettingsCatalog.normalizeChoice "switcherStyle"
-                        language = settingsJson.getString("language").def("system") |> SettingsCatalog.normalizeChoice "language"
+                        alignment = settingsJson.getString("alignment").def(SettingsCatalog.choiceDefault "alignment") |> SettingsCatalog.normalizeChoice "alignment"
+                        switcherStyle = settingsJson.getString("switcherStyle").def(SettingsCatalog.choiceDefault "switcherStyle") |> SettingsCatalog.normalizeChoice "switcherStyle"
+                        language = settingsJson.getString("language").def(SettingsCatalog.choiceDefault "language") |> SettingsCatalog.normalizeChoice "language"
                         appearance = {
                             geometry = geometry
                             legacyPalette = legacyPalette
-                            mode = settingsJson.getString("tabThemeMode").def("system") |> ThemeMode.parse
+                            mode = settingsJson.getString("tabThemeMode").def(SettingsCatalog.choiceDefault "tabThemeMode") |> ThemeMode.parse
                             useCustomColors = custom
                             lightPalette = lightColors
                             darkPalette = darkColors

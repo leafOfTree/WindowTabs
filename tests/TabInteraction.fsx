@@ -93,7 +93,10 @@ let main() =
         leader.arm (IntPtr(1)) now
         check (leader.key (IntPtr(1)) now 0x41 3 "123456789" = (false,None) && not leader.active) "Other key must cancel and pass through"
         leader.arm (IntPtr(1)) now
-        check (not (leader.validate (IntPtr(1)) (now.AddSeconds(3.0)))) "Leader did not time out"
+        check (leader.validate (IntPtr(1)) (now.AddSeconds(9.99))) "Leader expired before the ten-second selection window"
+        check (not (leader.validate (IntPtr(1)) (now.AddSeconds(10.0)))) "Leader did not time out"
+        leader.arm (IntPtr(1)) now
+        check (leader.key (IntPtr(1)) (now.AddSeconds(9.0)) 0x32 3 "123456789"=(true,Some 1)) "A selection late in the ten-second window did not activate"
         leader.arm (IntPtr(1)) now
         check (not (leader.validate (IntPtr(2)) now)) "Leader survived foreground change"
         leader.arm (IntPtr(1)) now

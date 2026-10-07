@@ -157,7 +157,7 @@ module Strings =
         let numberShortcut = { caption={ en="Modifier key for 1–9"; zh="数字键搭配的修饰键"; ja="1～9 と組み合わせるキー" }
                                description=none
                                keywords={ en="number shortcut modifier"; zh="数字 快捷键 修饰键"; ja="番号 ショートカット 修飾キー" } }
-        let enableNumberLeader = { caption={ en="Use a leader key to select tabs"; zh="使用引导键切换标签"; ja="リーダーキーでタブを選ぶ" }; description={ en="Press the leader, then a selection key within three seconds. Escape cancels."; zh="按引导键后，三秒内按选择键。Esc 取消。"; ja="リーダーキーの後、3 秒以内に選択キーを押します。Esc で解除。" }; keywords=none }
+        let enableNumberLeader = { caption={ en="Use a leader key to select tabs"; zh="使用引导键切换标签"; ja="リーダーキーでタブを選ぶ" }; description={ en="Press the leader, then a selection key. Escape cancels."; zh="先按引导键，再按选择键。Esc 取消。"; ja="リーダーキーの後、選択キーを押します。Esc で解除。" }; keywords=none }
         let leaderKeys = { caption={en="Selection keys";zh="选择键";ja="選択キー"}; description={en="Use unique letters or digits, in tab order.";zh="按标签顺序，使用不重复的字母或数字。";ja="タブ順に、重複しない英字または数字を指定します。"}; keywords={en="leader keys letters home row";zh="引导键 字母 主键区";ja="リーダーキー 英字 ホームポジション"} }
         let leaderKeyPresets = [| {en="123456789";zh="123456789";ja="123456789"}; {en="QWERTYUIOP";zh="QWERTYUIOP";ja="QWERTYUIOP"}; {en="ASDFGHJKL;";zh="ASDFGHJKL;";ja="ASDFGHJKL;"} |]
         let invalidLeaderKeys = {en="Use at least one unique letter, digit or unshifted punctuation key.";zh="请使用至少一个不重复的字母、数字或无需 Shift 的标点键。";ja="重複しない英字、数字、Shift 不要の記号を 1 つ以上指定してください。"}
