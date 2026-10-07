@@ -155,8 +155,31 @@ let main() =
         let legacyJson = JObject.Parse("""{"tabAppearance":{"tabActiveBgColor":"123456","tabHeight":31},"unrelated":"keep"}""")
         api.root <- legacyJson
         check settings.settings.appearance.useCustomColors "Legacy custom colours lost"
-        for appearance in [settings.settings.appearance.lightPalette;settings.settings.appearance.darkPalette] do
-            check (appearance.tabActiveBgColor.ToArgb()=Color.FromArgb(0x12,0x34,0x56).ToArgb()) "Legacy palette overwritten"
+        check (settings.settings.appearance.lightPalette.tabActiveBgColor.ToArgb()=Color.FromArgb(0x12,0x34,0x56).ToArgb()) "Legacy light palette overwritten"
+        check (settings.settings.appearance.darkPalette=Theme.darkPalette) "Legacy light colours leaked into the dark theme"
+        let samePalette a b = Theme.sameColors (TabPalette.compose Theme.defaultGeometry a) (TabPalette.compose Theme.defaultGeometry b)
+        let oldLight = {Theme.lightPalette with
+                           tabTextColor=Color.FromRGB(0x000000);tabNormalBgColor=Color.FromRGB(0x9FC4F0)
+                           tabHighlightBgColor=Color.FromRGB(0xBDD5F4);tabActiveBgColor=Color.FromRGB(0xFAFCFE)
+                           tabBorderColor=Color.FromRGB(0x3A70B1)}
+        for palette,isDark in [oldLight,false;Theme.bluePalette,true] do
+            api.root <- JObject(JProperty("tabAppearance",AppearanceJson.writeLegacy Theme.defaultGeometry palette))
+            let migrated = api.appearance
+            check (migrated.lightPalette=(if isDark then Theme.lightPalette else palette)) "Legacy upgrade changed the light theme incorrectly"
+            check (migrated.darkPalette=(if isDark then palette else Theme.darkPalette)) "Legacy upgrade changed the dark theme incorrectly"
+            let resolved = Theme.resolve DarkTheme false false migrated.useCustomColors migrated.geometry migrated.lightPalette migrated.darkPalette
+            check (resolved.tabNormalBgColor.ToArgb()=migrated.darkPalette.tabNormalBgColor.ToArgb()) "Dark selection resolves the old light palette"
+            api.setValue("tabThemeMode",box "dark")
+            settings.clearCaches()
+            check (samePalette api.appearance.lightPalette migrated.lightPalette && samePalette api.appearance.darkPalette migrated.darkPalette)
+                  "Saving the migrated appearance changed theme colours"
+        let distinct = JObject(JProperty("tabAppearance",AppearanceJson.writeLegacy Theme.defaultGeometry oldLight),
+                               JProperty("tabUseCustomColors",true),
+                               JProperty("tabLightColors",AppearanceJson.writePalette Theme.lightPalette),
+                               JProperty("tabDarkColors",AppearanceJson.writePalette Theme.bluePalette))
+        api.root <- distinct
+        check (samePalette api.appearance.lightPalette Theme.lightPalette && samePalette api.appearance.darkPalette Theme.bluePalette) "Upgrade replaced explicit per-theme colours"
+        api.root <- legacyJson
         check (api.hotKey "nextTab" = None) "Unchanged shortcut reported as customised"
         api.setHotKey "nextTab" 0x2DD
         check (api.hotKey "nextTab" = Some 0x2DD && int api.root.["hotKeys"].["nextTab"] = 0x2DD) "Shortcut not saved"

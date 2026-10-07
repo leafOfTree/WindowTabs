@@ -100,8 +100,10 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                     let legacyPalette = AppearanceJson.readPalette legacyJson (Theme.lightPalette)
                     let legacy = TabPalette.compose geometry legacyPalette
                     let custom = settingsJson.getBool("tabUseCustomColors").def(not (Theme.sameColors legacy Theme.light))
-                    let lightColors = AppearanceJson.readPalette (settingsJson.getObject("tabLightColors").def(JObject())) (if custom then legacyPalette else Theme.lightPalette)
-                    let darkColors = AppearanceJson.readPalette (settingsJson.getObject("tabDarkColors").def(JObject())) (if custom then legacyPalette else Theme.darkPalette)
+                    // A single old palette belongs to one theme; copying it to both defeats theme switching.
+                    let legacyDark = Theme.darkBar legacyPalette.tabNormalBgColor
+                    let lightColors = AppearanceJson.readPalette (settingsJson.getObject("tabLightColors").def(JObject())) (if custom && not legacyDark then legacyPalette else Theme.lightPalette)
+                    let darkColors = AppearanceJson.readPalette (settingsJson.getObject("tabDarkColors").def(JObject())) (if custom && legacyDark then legacyPalette else Theme.darkPalette)
                                      |> Theme.upgradeDarkPalette
                     let settings = {
                         includedPaths = Set2(settingsJson.getStringArray("includedPaths").def(List2()))
