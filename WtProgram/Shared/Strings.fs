@@ -284,9 +284,9 @@ module Strings =
         let switcherVertical = { en="Vertical"; zh="纵向"; ja="縦" }
         /// Tab styles, in TabStyle.names order.
         let tabStyles =
-            [| { en="Joined"; zh="连成一条"; ja="連結" }
-               { en="Folder"; zh="文件夹式"; ja="フォルダー型" }
-               { en="Floating"; zh="悬浮式"; ja="フローティング" } |]
+            [| { en="Joined"; zh="连贯"; ja="連結" }
+               { en="Folder"; zh="文件夹"; ja="フォルダー型" }
+               { en="Floating"; zh="悬浮"; ja="フローティング" } |]
         /// The tab colours on which the text is shown darker or lighter than chosen.
         /// Samples of the tab text as chosen and as shown, side by side.
         let textBefore = { en="Before"; zh="调整前"; ja="調整前" }
