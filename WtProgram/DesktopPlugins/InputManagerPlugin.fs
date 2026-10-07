@@ -45,7 +45,7 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
     let mutable leaderGroup : GroupInfo option = None
     let timer = new System.Windows.Forms.Timer(Interval=50)
     let owned = new LifetimeScope(ignore)
-    let mutable leaderCode = 1216
+    let mutable leaderCode = SettingsCatalog.shortcutDefault "numberLeader"
     let mutable leaderEnabled = false
     let mutable leaderKeys = SettingsCatalog.textDefault "numberLeaderKeys"
     let mutable mouseHook = IntPtr.Zero

@@ -23,6 +23,7 @@ let main() =
     try
         use settings = new Settings(true,saveDelay=0)
         let api = settings :> ISettings
+        check (SettingsCatalog.shortcutDefault "numberLeader"=0x0453) "Tab selection must default to Alt+S"
         check (Theme.leastUsedColor [0;1;2;0;3]=4) "By-window allocation did not balance colours"
         check (Theme.tabColorOrder.Head=1 && List.last Theme.tabColorOrder=0 && (Theme.tabColorOrder |> List.sort)=[0..15]) "Colour menu must start with blue, end with grey and retain every stored index"
         check (Theme.leastUsedColor []=1) "The first window must use blue rather than grey"
