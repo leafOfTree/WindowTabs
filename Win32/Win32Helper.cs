@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Text;
@@ -87,32 +87,36 @@ namespace Bemo
         }
         public static Bitmap PrintWindow(IntPtr hwnd)
         {
+            bool captured;
+            return PrintWindow(hwnd, out captured);
+        }
+        public static Bitmap PrintWindow(IntPtr hwnd, out bool captured)
+        {
             RECT windowRect;
             WinUserApi.GetWindowRect(hwnd, out windowRect);
-            IntPtr hdc = WinUserApi.GetWindowDC(hwnd);
-            Bitmap bmp = new Bitmap(windowRect.Width, windowRect.Height, PixelFormat.Format32bppArgb);
-            Graphics gfxBmp = Graphics.FromImage(bmp);
-            gfxBmp.FillRectangle(new SolidBrush(Color.FromArgb(0,0,0,0)), new Rectangle(Point.Empty, bmp.Size));
-            IntPtr hdcBitmap = gfxBmp.GetHdc();
-            bool succeeded = WinUserApi.PrintWindow(hwnd, hdcBitmap, 0);
-            gfxBmp.ReleaseHdc(hdcBitmap);
-            if (!succeeded)
+            Bitmap bmp = new Bitmap(windowRect.Width, windowRect.Height, PixelFormat.Format32bppRgb);
+            try
             {
-                gfxBmp.FillRectangle(new SolidBrush(Color.Gray), new Rectangle(Point.Empty, bmp.Size));
+                using (Graphics graphics = Graphics.FromImage(bmp))
+                {
+                    graphics.Clear(Color.Gray);
+                    IntPtr dc = graphics.GetHdc();
+                    try
+                    {
+                        // Full-content capture includes composition-backed application content.
+                        const int PW_RENDERFULLCONTENT = 0x00000002;
+                        captured = WinUserApi.PrintWindow(hwnd, dc, PW_RENDERFULLCONTENT);
+                        if (!captured) captured = WinUserApi.PrintWindow(hwnd, dc, 0);
+                    }
+                    finally { graphics.ReleaseHdc(dc); }
+                }
+                return bmp;
             }
-            IntPtr hRgn = WinGdiApi.CreateRectRgn(0, 0, 0, 0);
-            WinUserApi.GetWindowRgn(hwnd, hRgn);
-            Region region = Region.FromHrgn(hRgn);
-            if (!region.IsEmpty(gfxBmp))
+            catch
             {
-                gfxBmp.ExcludeClip(region);
-                gfxBmp.Clear(Color.FromArgb(0, 0, 0, 0));
+                bmp.Dispose();
+                throw;
             }
-            region.Dispose();
-            WinGdiApi.DeleteObject(hRgn);
-            gfxBmp.Dispose();
-            WinUserApi.ReleaseDC(hwnd, hdc);
-            return bmp;
         }
  
         public static void UpdateLayeredWindow(IntPtr hwnd, Point location, Bitmap bitmap, byte alpha)
@@ -146,18 +150,35 @@ namespace Bemo
             POINT dstLocation = POINT.FromPoint(location);
             WinUserApi.UpdateLayeredWindow(hwnd, IntPtr.Zero, ref dstLocation, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0, IntPtr.Zero, 0);
         }
-        public static IntPtr GetWindowIcon(IntPtr handle, int iconType)
+        private static IntPtr QueryWindowIcon(IntPtr handle, int iconType)
         {
             IntPtr icon;
-            icon = WinUserApi.SendMessage(handle, WindowMessages.WM_GETICON, (IntPtr)iconType, IntPtr.Zero);
+            // Foreign windows can be busy or hung. Never block the tab UI indefinitely.
+            if (WinUserApi.SendMessageTimeout(handle, WindowMessages.WM_GETICON,
+                (IntPtr)iconType, IntPtr.Zero, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG,
+                100, out icon) == IntPtr.Zero)
+                return IntPtr.Zero;
+            return icon;
+        }
+
+        public static IntPtr GetWindowIcon(IntPtr handle, int iconType)
+        {
+            bool small = iconType != IconTypeCodes.ICON_BIG;
+            IntPtr icon = QueryWindowIcon(handle, iconType);
+            if (icon == IntPtr.Zero && small && iconType != IconTypeCodes.ICON_SMALL2)
+                icon = QueryWindowIcon(handle, IconTypeCodes.ICON_SMALL2);
+            // Preserve a successful ICON_SMALL2 result.
             if (icon == IntPtr.Zero)
-            {
-                if (iconType == IconTypeCodes.ICON_SMALL)
-                {
-                    icon = WinUserApi.SendMessage(handle, WindowMessages.WM_GETICON, (IntPtr)IconTypeCodes.ICON_SMALL2, IntPtr.Zero);
-                }
-                icon = WinUserApi.GetClassLong(handle, iconType == IconTypeCodes.ICON_SMALL ? ClassLongFieldOffset.GCL_HICONSM : ClassLongFieldOffset.GCL_HICON);
-            }
+                icon = WinUserApi.GetClassLong(handle,
+                    small ? ClassLongFieldOffset.GCL_HICONSM : ClassLongFieldOffset.GCL_HICON);
+            // Some applications only publish one size. Drawing scales it for the tab.
+            if (icon == IntPtr.Zero)
+                icon = QueryWindowIcon(handle, small ? IconTypeCodes.ICON_BIG : IconTypeCodes.ICON_SMALL);
+            if (icon == IntPtr.Zero && !small)
+                icon = QueryWindowIcon(handle, IconTypeCodes.ICON_SMALL2);
+            if (icon == IntPtr.Zero)
+                icon = WinUserApi.GetClassLong(handle,
+                    small ? ClassLongFieldOffset.GCL_HICON : ClassLongFieldOffset.GCL_HICONSM);
             return icon;
         }
         public static String GetWindowText(IntPtr handle)
@@ -203,6 +224,20 @@ namespace Bemo
             RECT rect;
             WinUserApi.GetWindowRect(hwnd, out rect);
             return rect.ToRectangle();
+        }
+        /// <summary>The window as drawn, without the invisible resize borders that
+        /// GetWindowRect includes on Windows 10 and later.</summary>
+        public static Rectangle GetVisibleWindowRectangle(IntPtr hwnd)
+        {
+            RECT rect;
+            try
+            {
+                if (DwmApi.DwmGetWindowAttribute(hwnd, DWMWINDOWATTRIBUTE.DWMWA_EXTENDED_FRAME_BOUNDS,
+                        out rect, Marshal.SizeOf(typeof(RECT))) == 0 && rect.Right > rect.Left && rect.Bottom > rect.Top)
+                    return rect.ToRectangle();
+            }
+            catch (DllNotFoundException) { }
+            return GetWindowRectangle(hwnd);
         }
         public static Rectangle GetRgnBox(IntPtr hRegion)
         {

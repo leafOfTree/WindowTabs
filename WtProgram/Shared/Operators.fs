@@ -8,7 +8,6 @@ open System.Text.RegularExpressions
 open System.Threading
 open System.Windows.Forms
 open System.Drawing
-open Microsoft.FSharp.Collections.Tagged
 
 type IProperty<'a> =
     abstract member value : 'a with get,set
@@ -24,16 +23,6 @@ module BaseExtensions =
             stream.Position <- 0L
             new Icon(stream)
 
-    type System.Drawing.Bitmap with
-        member this.toIcon() =
-            let hBitmap = this.GetHbitmap()
-            let hIcon = this.GetHicon()
-            let icon = Icon.FromHandle(hIcon)
-            printfn "%A %A" hBitmap hIcon
-            //need to make a copy otherwise you need to keep bitmap inscope so hbitmap remains valid
-            let iconCopy = icon.clone()
-            GC.KeepAlive(this)
-            iconCopy
 
     type System.IntPtr with
         member this.hasFlag (f:IntPtr) = this &&& f = f
@@ -100,7 +89,6 @@ module BaseExtensions =
         member this.iter f = Option.iter f this
 
     type System.Object with
-        member this.print() = printfn "%A" this
         member this.ignore = ()
         member this.cast<'a>() = unbox<'a>(this)
 
@@ -173,10 +161,6 @@ type List2<'a>(?items) =
     member this.skip count = List2(Seq.toList(Seq.skip count items))
     member this.splitn idx = this.take idx, this.skip idx
 
-type Comparer<'a>()=
-    interface IComparer<'a> with
-        member x.Compare(a,b) = (box(a)).GetHashCode().CompareTo(box(b).GetHashCode())
-
 
 [<AutoOpen>]
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
@@ -184,26 +168,6 @@ module List2 =
     type List2<'a> with
         //this does not work if its part of List2 class, constrains return to List2<'a>
         member this.map f = List2<'b>(List.map f this.list)
-        member this.pmap f =
-            let mutex = new System.Threading.Mutex()
-            let completedEvent = new System.Threading.EventWaitHandle(false, EventResetMode.ManualReset)
-            let results = ref (List2())
-            let doTask(i, item) =
-                let result = f(item)
-                let completed = ref false
-                mutex.WaitOne() |> ignore
-                results := (!results).append((i,result))
-                if results.Value.length = this.length then
-                    completed := true
-                mutex.ReleaseMutex()
-                if !completed then
-                    completedEvent.Set() |> ignore
-            this.iteri <| fun i item -> 
-                ThreadPool.QueueUserWorkItem(Threading.WaitCallback(fun _ -> doTask(i, item))) |> ignore
-            
-            completedEvent.WaitOne() |> ignore
-            results.Value.sortBy(fst).map(snd)
-
         member this.choose f = List2<'b>(List.choose f this.list)
         member this.collect f = List2<'b>(List.collect (f >> (fun (l:List2<_>) -> l.list)) this.list)
         member this.enumerate = List2<int*'a>(List.mapi (fun i item -> (i,item)) this.list)
@@ -239,34 +203,56 @@ module List2 =
 
     let distinct (this:List2<_>) = List2(Seq.toList(Seq.distinct (this.list)))    
      
-type Map2<'a, 'b> when 'a : equality (map) =
-    new(?l:List2<_>) = Map2<'a, 'b>(Tagged.Map<'a, 'b, Comparer<'a>>.Create(Comparer<'a>(),(defaultArg l (List2())).list))
-    member this.items : List2<'a * 'b> = List2(map.ToList())
-    member this.add key value = Map2(map.Add(key, value))
-    member this.remove key = Map2(map.Remove(key))
+// Map2 and Set2 are immutable wrappers: every update returns a new instance and
+// leaves the receiver alone, which the Cell/Model code depends on.
+//
+// They used to be backed by FSharp.PowerPack's Tagged.Map/Tagged.Set ordered by
+// a comparer that compared GetHashCode values. That made two distinct keys with
+// colliding hashes compare equal, so one silently displaced the other. These
+// collections only ever needed equality, never ordering, so they are now backed
+// by Dictionary/HashSet with the standard structural comparer. Copying on write
+// is O(n), but these hold tabs, windows and groups - tens of items at most.
+type Map2<'a, 'b when 'a : equality>(map:Dictionary<'a, 'b>) =
+    let copyWith (mutate:Dictionary<'a, 'b> -> unit) =
+        let copy = Dictionary<'a, 'b>(map, HashIdentity.Structural)
+        mutate copy
+        Map2<'a, 'b>(copy)
+
+    new(?l:List2<'a * 'b>) =
+        let map = Dictionary<'a, 'b>(HashIdentity.Structural)
+        (defaultArg l (List2())).list |> List.iter (fun (key, value) -> map.[key] <- value)
+        Map2<'a, 'b>(map)
+
+    member this.items : List2<'a * 'b> = List2(map |> Seq.map (fun kv -> (kv.Key, kv.Value)) |> Seq.toList)
+    member this.add key value = copyWith (fun map -> map.[key] <- value)
+    member this.remove key = copyWith (fun map -> map.Remove(key).ignore)
     member this.removeWhereValue pred = Map2(this.items.choose(fun(key,value) -> if pred value then None else Some(key, value)))
-    member this.tryFind key = map.TryFind(key)
+    member this.tryFind key =
+        match map.TryGetValue(key) with
+        | true, value -> Some(value)
+        | _ -> None
     member this.contains key = map.ContainsKey(key)
-    member this.find key = map.Item(key)
+    member this.find key = map.[key]
     member this.keys = this.items.map(fst)
     member this.values = this.items.map(snd)
 
-type Set2<'a when 'a : equality>(set) =
-    new(?l:List2<_>) = Set2<'a>(Tagged.Set<'a, Comparer<'a>>.Create(Comparer<'a>(),(defaultArg l (List2())).list))
+type Set2<'a when 'a : equality>(set:HashSet<'a>) =
+    let copyWith (mutate:HashSet<'a> -> unit) =
+        let copy = HashSet<'a>(set, HashIdentity.Structural)
+        mutate copy
+        Set2<'a>(copy)
+
+    new(?l:List2<'a>) = Set2<'a>(HashSet<'a>((defaultArg l (List2())).list, HashIdentity.Structural))
     member this.innerSet = set
-    member this.items = List2(set.ToList())
-    member this.add item = Set2(set.Add(item))
-    member this.remove item = Set2(set.Remove(item))
+    member this.items = List2(set |> Seq.toList)
+    member this.add item = copyWith (fun set -> set.Add(item).ignore)
+    member this.remove item = copyWith (fun set -> set.Remove(item).ignore)
     member this.contains item = set.Contains(item)
-    member this.isEmpty = this.items.isEmpty
+    member this.isEmpty = set.Count = 0
     member this.toggle item = if this.contains item then this.remove item else this.add item
     member this.count = set.Count
-    member this.sub (setToRemove:Set2<_>)=
-        let t,f = set.Partition(setToRemove.contains)
-        Set2(f)
-    member this.union (setToAdd:Set2<'a>) = 
-        let s = Set<'a, Comparer<'a>>.Union(this.innerSet, setToAdd.innerSet)
-        Set2(s)
+    member this.sub (setToRemove:Set2<'a>) = copyWith (fun set -> set.ExceptWith(setToRemove.innerSet))
+    member this.union (setToAdd:Set2<'a>) = copyWith (fun set -> set.UnionWith(setToAdd.innerSet))
     member this.map f = Set2(this.items.map(f))
 
 module Seq =

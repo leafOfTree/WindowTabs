@@ -11,7 +11,7 @@ type DragDetectingStateInfo = {
     onBegin : unit -> unit
     }
 
-type DragDetectingState(info:DragDetectingStateInfo) as this =
+type DragDetectingState(info:DragDetectingStateInfo) =
     let dragStartDistance = 5.0
     interface IDragState with
         member this.mouseMove(ptScreen) =
@@ -26,7 +26,7 @@ type DragCapturedStateInfo = {
     onDragOut : Pt -> unit
     }
 
-type DragCapturedState(info:DragCapturedStateInfo) as this =
+type DragCapturedState(info:DragCapturedStateInfo) =
     let dragOutDistance = 20
     interface IDragState with
         member this.mouseMove(ptScreen) =
@@ -73,7 +73,7 @@ type DragActionInfo = {
     onEnd : unit -> unit
     }
 
-type DragAction(info:DragActionInfo) as this =
+type DragAction(info:DragActionInfo) =
     let os = OS()
     let dragScale = 0.5
     let Cell = CellScope(true, false)
@@ -162,7 +162,8 @@ type DragAction(info:DragActionInfo) as this =
                     animationWindow.setAlpha(byte(0xAA))
                     try
                         //this may fail if the image coming back is too small
-                        animationWindow.setImage(info.image().scale(dragScale))
+                        use full = info.image().bitmap
+                        animationWindow.setImage(full.img.scale(dragScale))
                     with _ -> ()
                     Some(animationWindow)
                 info.targets.values.iter <| fun target -> target.dragBegin()

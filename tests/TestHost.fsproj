@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Compiles one regression script into its own executable:
+       dotnet build tests\TestHost.fsproj -p:TestName=Reliability
+       An STA executable with the production manifest;
+       TestInit applies the WinForms DPI option as Bootstrap does. Each script
+       uses TestInit.run so popup menus execute inside Application.Run. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x86</PlatformTarget>
+    <AssemblyName>$(TestName)</AssemblyName>
+    <OutDir>$(MSBuildThisFileDirectory)Debug\</OutDir>
+    <IntermediateOutputPath>obj\$(TestName)\</IntermediateOutputPath>
+    <ApplicationManifest>..\WtProgram\app.manifest</ApplicationManifest>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <NoWarn>$(NoWarn);0040;0046;0058;0760;1183</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The script's #r lines reference the app build in Debug\. -->
+    <Compile Include="TestInit.fsx" />
+    <Compile Include="$(TestName).fsx" />
+    <Compile Include="TestEntry.fs" />
+    <!-- #r lines are not build inputs: without these a script left unchanged keeps a build
+         made against an older app, and fails with MissingMethodException at run time. -->
+    <CustomAdditionalCompileInputs Include="Debug\WindowTabs.exe;Debug\Win32.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="FSharp.Core" Version="10.1.401" />
+    <Reference Include="System.Windows.Forms" />
+  </ItemGroup>
+
+</Project>

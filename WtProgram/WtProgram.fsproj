@@ -1,190 +1,142 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProductVersion>8.0.30703</ProductVersion>
-    <SchemaVersion>2.0</SchemaVersion>
-    <ProjectGuid>{ae7d5e18-ac62-4bd3-ab9e-02cbb2eb29d6}</ProjectGuid>
     <OutputType>WinExe</OutputType>
-    <RootNamespace>WindowTabs</RootNamespace>
+    <TargetFramework>net48</TargetFramework>
     <AssemblyName>WindowTabs</AssemblyName>
-    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
-    <Name>WtProgram</Name>
-    <TargetFrameworkProfile />
-    <SccProjectName>&lt;Project Location In Database&gt;</SccProjectName>
-    <SccProvider>Mercurial Source Control Package</SccProvider>
-    <SccAuxPath>&lt;Source Control Database&gt;</SccAuxPath>
-    <SccLocalPath>&lt;Local Binding Root of Project&gt;</SccLocalPath>
-    <Win32Resource>.\app.res</Win32Resource>
-    <TargetFSharpCoreVersion>2.3.0.0</TargetFSharpCoreVersion>
-    <MinimumVisualStudioVersion Condition="'$(MinimumVisualStudioVersion)' == ''">11</MinimumVisualStudioVersion>
+    <RootNamespace>WindowTabs</RootNamespace>
+    <ApplicationIcon>Resources\Bemo.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- The release workflow overrides this from the tag: dotnet build -c Release -p:Version=2026.10.07 -->
+    <Version>2026.10.07</Version>
+    <!-- Shown to users (tray, settings, crash log), so no "+commit" suffix. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <AssemblyTitle>WindowTabs</AssemblyTitle>
+    <Product>WindowTabs</Product>
+    <Description>Brings browser-style tabbed window management to the desktop</Description>
+    <Company>WindowTabs contributors</Company>
+    <Copyright>Licensed under the terms in LICENSE</Copyright>
+    <!-- Keep bin\<Configuration>\ so scripts and CI find WindowTabs.exe where they always have. -->
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- FSharp.Core ships translated messages for many cultures; the app only needs the neutral ones. -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <WarningLevel>3</WarningLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
     <Tailcalls>false</Tailcalls>
-    <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>TRACE;DEBUG</DefineConstants>
-    <WarningLevel>3</WarningLevel>
-    <NoWarn>0040,0058,0046,0760,1183</NoWarn>
-    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
-    <StartArguments>
-    </StartArguments>
-    <OtherFlags>
-    </OtherFlags>
   </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <DebugType>pdbonly</DebugType>
-    <Optimize>true</Optimize>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <Tailcalls>true</Tailcalls>
-    <OutputPath>bin\Release</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-    <WarningLevel>3</WarningLevel>
-    <OtherFlags>--standalone --staticlink:Win32   --staticlink:Newtonsoft.Json --staticlink:Aga.Controls --staticlink:Interop.SHDocVw --staticlink:Interop.Shell32</OtherFlags>
-    <NoWarn>0058,2009,0760,1183, 0046</NoWarn>
+    <!-- Release is a single self-contained WindowTabs.exe. -->
+    <OtherFlags>$(OtherFlags) --standalone --staticlink:Win32 --staticlink:Newtonsoft.Json --staticlink:Interop.SHDocVw --staticlink:Interop.Shell32</OtherFlags>
+    <!-- FS2011: framework internals (SMDiagnostics, System.ServiceModel.Internals) reached through
+         System.Runtime.Serialization are not in the reference assemblies; they stay in the GAC, not the exe. -->
+    <NoWarn>$(NoWarn);2009;2011</NoWarn>
   </PropertyGroup>
-  <Choose>
-    <When Condition="'$(VisualStudioVersion)' == '11.0'">
-      <PropertyGroup>
-        <FSharpTargetsPath>$(MSBuildExtensionsPath32)\..\Microsoft SDKs\F#\3.0\Framework\v4.0\Microsoft.FSharp.Targets</FSharpTargetsPath>
-      </PropertyGroup>
-    </When>
-    <Otherwise>
-      <PropertyGroup>
-        <FSharpTargetsPath>$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\FSharp\Microsoft.FSharp.Targets</FSharpTargetsPath>
-      </PropertyGroup>
-    </Otherwise>
-  </Choose>
-  <Import Project="$(FSharpTargetsPath)" Condition="Exists('$(FSharpTargetsPath)')" />
-  <PropertyGroup>
-    <PostBuildEvent>
-    </PostBuildEvent>
-  </PropertyGroup>
-  <PropertyGroup>
-    <PostBuildEvent>
-    </PostBuildEvent>
-  </PropertyGroup>
-  <PropertyGroup>
-    <PostBuildEvent>
-    </PostBuildEvent>
-  </PropertyGroup>
+
   <ItemGroup>
-    <Compile Include="Shared/Operators.fs" />
-    <Compile Include="Shared/Dynamic.fs" />
-    <Compile Include="Shared/Observable.fs" />
-    <Compile Include="Shared/Blackboard.fs" />
-    <Compile Include="Shared/Invoker.fs" />
-    <Compile Include="Shared/Cell.fs" />
-    <Compile Include="Shared/Drawing.fs" />
-    <Compile Include="Shared/Sprite.fs" />
+    <Compile Include="AssemblyInfo.fs" />
+    <Compile Include="Shared\Operators.fs" />
+    <Compile Include="Shared\Dynamic.fs" />
+    <Compile Include="Shared\Observable.fs" />
+    <Compile Include="Shared\Blackboard.fs" />
+    <Compile Include="Shared\Invoker.fs" />
+    <Compile Include="Shared\Lifetime.fs" />
+    <Compile Include="Shared\BackgroundWork.fs" />
+    <Compile Include="Shared\Cell.fs" />
+    <Compile Include="Shared\Drawing.fs" />
+    <Compile Include="Shared\Sprite.fs" />
     <Compile Include="Shared\TabStripTypes.fs" />
-    <Compile Include="Shared/Win32.fs" />
+    <Compile Include="Shared\Dpi.fs" />
+    <Compile Include="Shared\Win32.fs" />
+    <Compile Include="Shared\WindowIconCache.fs" />
+    <Compile Include="Shared\WindowPlacementQueue.fs" />
+    <Compile Include="Shared\AppearanceModel.fs" />
     <Compile Include="Shared\ProgramTypes.fs" />
-    <Compile Include="Shared/DragDrop.fs" />
-    <Compile Include="Shared/Serialize.fs" />
-    <Compile Include="Shared/Win32Menu.fs" />
-    <Compile Include="Shared/Services.fs" />
-    <Compile Include="Shared/AnimationWindow.fs" />
-    <Compile Include="Shared/Forms.fs" />
-    <Compile Include="Shared/Json.fs" />
-    <Compile Include="Shared/Shell.fs" />
-    <Compile Include="Shared/Model.fs" />
+    <Compile Include="Shared\Localization.fs" />
+    <Compile Include="Shared\Strings.fs" />
+    <Compile Include="Shared\Alert.fs" />
+    <Compile Include="Shared\SettingsCatalog.fs" />
+    <Compile Include="Shared\SettingsShortcut.fs" />
+    <Compile Include="Shared\DragDrop.fs" />
+    <Compile Include="Shared\Serialize.fs" />
+    <Compile Include="Shared\Win32Menu.fs" />
+    <Compile Include="Shared\Services.fs" />
+    <Compile Include="Shared\NumberShortcutRules.fs" />
+    <Compile Include="Shared\RuntimeDiagnostics.fs" />
+    <Compile Include="Shared\Theme.fs" />
+    <Compile Include="Shared\ThemePresets.fs" />
+    <Compile Include="Shared\ThemeService.fs" />
+    <Compile Include="Shared\AnimationWindow.fs" />
+    <Compile Include="Shared\Forms.fs" />
+    <Compile Include="Shared\Json.fs" />
+    <Compile Include="Shared\Shell.fs" />
+    <Compile Include="Shared\Model.fs" />
     <Compile Include="Shared\UIHelper.fs" />
     <Compile Include="HotKeyManager.fs" />
     <Compile Include="DragDropController.fs" />
     <Compile Include="TabStripSprite.fs" />
+    <Compile Include="TabShadow.fs" />
     <Compile Include="TabStrip.fs" />
+    <Compile Include="AppearanceJson.fs" />
+    <Compile Include="SettingsFileStore.fs" />
     <Compile Include="Settings.fs" />
-    <Compile Include="TaskSwitch.fs" />
     <Compile Include="WindowDecorator.fs" />
     <Compile Include="OleDropTarget.fs" />
     <Compile Include="WindowGroup.fs" />
     <Compile Include="TabStripDecorator.fs" />
-    <Compile Include="GroupPlugins/SuperBarPlugin.fs" />
-    <Compile Include="GroupPlugins/MouseScrollPlugin.fs" />
-    <Compile Include="GroupPlugins/NumericTabHotKeyPlugin.fs" />
-    <Compile Include="GroupPlugins/HideTabsOnInactiveGroupPlugin.fs" />
+    <Compile Include="GroupPlugins\SuperBarPlugin.fs" />
+    <Compile Include="GroupPlugins\MouseScrollPlugin.fs" />
+    <Compile Include="GroupPlugins\NumericTabHotKeyPlugin.fs" />
+    <Compile Include="GroupPlugins\HideTabsOnInactiveGroupPlugin.fs" />
     <Compile Include="Desktop.fs" />
-    <Compile Include="Launcher.fs" />
+    <Compile Include="Workspace\WorkspaceData.fs" />
     <Compile Include="Workspace\WorkspaceModel.fs" />
-    <Compile Include="Workspace\WorkspaceView.fs" />
+    <Compile Include="ManagerViewService\ThemeBinding.fs" />
+    <Compile Include="ManagerViewService\SettingsStyle.fs" />
+    <Compile Include="ManagerViewService\SettingsControls.fs" />
+    <Compile Include="ManagerViewService\SettingsEditors.fs" />
+    <Compile Include="ManagerViewService\SettingsPage.fs" />
+    <Compile Include="ManagerViewService\SettingsUi.fs" />
+    <Compile Include="ManagerViewService\SettingsAlert.fs" />
+    <Compile Include="ManagerViewService\SettingsTreeList.fs" />
+    <Compile Include="ManagerViewService\SettingsBindings.fs" />
+    <Compile Include="ManagerViewService\SettingsListPage.fs" />
+    <Compile Include="ManagerViewService\Views\GeneralView.fs" />
     <Compile Include="ManagerViewService\Views\AppearanceView.fs" />
     <Compile Include="ManagerViewService\Views\BehaviorView.fs" />
     <Compile Include="ManagerViewService\Views\DiagnosticsView.fs" />
-    <Compile Include="ManagerViewService\Views\LicenseView.fs" />
     <Compile Include="ManagerViewService\Views\ProgramView.fs" />
+    <Compile Include="ManagerViewService\Views\WorkspaceView.fs" />
     <Compile Include="ManagerViewService\DesktopManagerForm.fs" />
     <Compile Include="ManagerViewService\ManagerViewService.fs" />
     <Compile Include="FilterService.fs" />
-    <Compile Include="DesktopPlugins/InputManagerPlugin.fs" />
-    <Compile Include="DesktopPlugins/NotifyIconPlugin.fs" />
-    <Compile Include="DesktopPlugins/ExceptionHandlerPlugin.fs" />
+    <Compile Include="DesktopPlugins\InputManagerPlugin.fs" />
+    <Compile Include="DesktopPlugins\NotifyIconPlugin.fs" />
+    <Compile Include="DesktopPlugins\ExceptionHandlerPlugin.fs" />
+    <Compile Include="TaskSwitch.fs" />
+    <Compile Include="TabSearch.fs" />
     <Compile Include="Program.fs" />
-    <EmbeddedResource Include="Resources\Bemo.ico" />
-    <EmbeddedResource Include="Resources\workspace.png" />
-    <EmbeddedResource Include="Resources\add.png" />
-    <EmbeddedResource Include="Resources\delete.png" />
-    <EmbeddedResource Include="Resources\edit.ico" />
-    <EmbeddedResource Include="Resources\edit.png" />
-    <EmbeddedResource Include="Resources\group.png" />
-    <EmbeddedResource Include="Resources\group-closed.png" />
-    <EmbeddedResource Include="Resources\restore.png" />
-    <EmbeddedResource Include="Resources\window.png" />
-    <None Include="App.config">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <Content Include="packages.config" />
-    <EmbeddedResource Include="Properties\Resources.resx" />
-    <EmbeddedResource Include="Properties\Resources.ja-JP.resx" />
   </ItemGroup>
+
   <ItemGroup>
-    <Reference Include="Aga.Controls">
-      <HintPath>..\Aga.Controls.dll</HintPath>
-    </Reference>
-    <Reference Include="FSharp.Core">
-      <HintPath>..\packages\FSharp.Core.4.3.0.0.Microsoft.Signed.3.0.0.1\lib\net40\FSharp.Core.dll</HintPath>
-    </Reference>
-    <Reference Include="FSharp.PowerPack">
-      <HintPath>..\packages\FSPowerPack.Core.Community.3.0.0.0\lib\Net40\FSharp.PowerPack.dll</HintPath>
-    </Reference>
-    <Reference Include="FSharp.PowerPack.Linq">
-      <HintPath>..\packages\FSPowerPack.Linq.Community.3.0.0.0\lib\Net40\FSharp.PowerPack.Linq.dll</HintPath>
-    </Reference>
-    <Reference Include="FSharp.PowerPack.Metadata">
-      <HintPath>..\packages\FSPowerPack.Metadata.Community.3.0.0.0\lib\Net40\FSharp.PowerPack.Metadata.dll</HintPath>
-    </Reference>
-    <Reference Include="FSharp.PowerPack.Parallel.Seq">
-      <HintPath>..\packages\FSPowerPack.Parallel.Seq.Community.3.0.0.0\lib\Net40\FSharp.PowerPack.Parallel.Seq.dll</HintPath>
-    </Reference>
-    <Reference Include="Interop.SHDocVw">
-      <HintPath>..\Interop.SHDocVw.dll</HintPath>
-    </Reference>
-    <Reference Include="Interop.Shell32">
-      <HintPath>..\Interop.Shell32.dll</HintPath>
-    </Reference>
-    <Reference Include="mscorlib" />
-    <Reference Include="Newtonsoft.Json">
-      <HintPath>..\Newtonsoft.Json.dll</HintPath>
-    </Reference>
-    <Reference Include="System" />
-    <Reference Include="System.Drawing" />
-    <Reference Include="System.ValueTuple">
-      <HintPath>..\packages\System.ValueTuple.4.3.0\lib\portable-net40+sl4+win8+wp8\System.ValueTuple.dll</HintPath>
-    </Reference>
-    <Reference Include="System.Windows.Forms" />
-    <ProjectReference Include="..\Win32\Win32.csproj">
-      <Name>Win32</Name>
-      <Project>{08d5e815-cc69-4d6e-83bd-ef119618ea9c}</Project>
-      <Private>True</Private>
-    </ProjectReference>
+    <!-- Loaded by file name (GetManifestResourceStream "Bemo.ico"), so keep the bare names. -->
+    <EmbeddedResource Include="Resources\*.ico" LogicalName="%(Filename)%(Extension)" />
   </ItemGroup>
-  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
-	     Other similar extension points exist, see Microsoft.Common.targets.
-	<Target Name="BeforeBuild">
-	</Target>
-	<Target Name="AfterBuild">
-	</Target>
-	-->
+
+  <ItemGroup>
+    <PackageReference Update="FSharp.Core" Version="10.1.401" />
+    <!-- 13.0.2+ carries internal copies of System.Diagnostics.CodeAnalysis attributes that FSharp.Core 7+
+         also carries, and F# static linking (Release) cannot merge the duplicates.
+         13.0.1 already has the deep-nesting security fix. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="Interop.SHDocVw" HintPath="..\Interop.SHDocVw.dll" />
+    <Reference Include="Interop.Shell32" HintPath="..\Interop.Shell32.dll" />
+    <ProjectReference Include="..\Win32\Win32.csproj" />
+  </ItemGroup>
+
 </Project>

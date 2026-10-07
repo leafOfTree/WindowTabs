@@ -1,5 +1,7 @@
 Release/
 Debug/
+**/bin/
+**/obj/
 
 *.sdf
 /UpgradeLog.htm
@@ -7,3 +9,8 @@ Debug/
 /.vs/WindowTabs/v15
 .vs
 WtProgram/obj
+CppProperties.json
+
+# NuGet packages are restored to the user cache (PackageReference), never into the repository.
+packages/
+tests/coverage/

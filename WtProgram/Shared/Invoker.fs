@@ -4,6 +4,12 @@ open System.Threading
 open System.Windows.Forms
 
 type InvokeDelegate<'a> = delegate of unit -> 'a
+/// Explicit thread boundary. Send completes a request; notifications use Post.
+[<AllowNullLiteral>]
+type IDispatcher =
+    abstract member CheckAccess : bool
+    abstract member Send<'a> : (unit -> 'a) -> 'a
+    abstract member Post : (unit -> unit) -> unit
 [<AllowNullLiteral>]
 type Invoker() as this =
     let form = 
@@ -13,9 +19,6 @@ type Invoker() as this =
 
     let lockDispose f = lock this <| fun() -> if form.IsDisposed.not then f()
 
-    do
-        printfn "Invoker for %d" (System.Threading.Thread.CurrentThread.ManagedThreadId)
-    
     member this.invokeRequired = form.InvokeRequired
 
     member this.invoke f= 
@@ -27,6 +30,11 @@ type Invoker() as this =
     member this.asyncInvoke f = 
         lockDispose <| fun() ->
             form.BeginInvoke(MethodInvoker(fun() -> f())).ignore
+
+    interface IDispatcher with
+        member _.CheckAccess = not this.invokeRequired
+        member _.Send action = this.invoke action
+        member _.Post action = this.asyncInvoke action
 
     interface IDisposable with
         member this.Dispose() =
@@ -41,7 +49,7 @@ type InvokerService =
     static member invoker
         with get() =
             if InvokerService._invoker = null then
-                InvokerService._invoker <- Invoker()
+                InvokerService._invoker <- new Invoker()
             InvokerService._invoker
 
 module ThreadHelper =
@@ -49,19 +57,24 @@ module ThreadHelper =
         System.Threading.ThreadPool.QueueUserWorkItem(Threading.WaitCallback(fun _ -> f())).ignore
 
     let startOnThreadAndWait fStart =
-        let evt = ManualResetEvent(false)
+        use evt = new ManualResetEvent(false)
         let results = ref None
+        let error = ref None
         let start() =
-            results := Some(fStart())
-            evt.Set().ignore
-            Application.EnableVisualStyles()
-            Application.Run()
+            try
+                try results := Some(fStart())
+                with ex -> error := Some(System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex))
+            finally evt.Set().ignore
+            if error.Value.IsNone then
+                Application.EnableVisualStyles()
+                Application.Run()
         let thread = Thread(ThreadStart(start))
         thread.SetApartmentState(ApartmentState.STA)
         thread.Start()
         evt.WaitOne().ignore
-        results.Value.Value
-
+        match error.Value with
+        | Some failure -> failure.Throw(); Unchecked.defaultof<_>
+        | None -> results.Value.Value
     let cancelablePostBack interval f =
         let timer = new System.Windows.Forms.Timer()
         timer.Interval <- interval

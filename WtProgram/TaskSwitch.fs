@@ -4,10 +4,88 @@ open System.Drawing
 open System.Runtime.InteropServices
 open System.Windows.Forms
 open Bemo.Win32
-open Aga.Controls
-open Aga.Controls.Tree
-open System.Resources
-open System.Reflection
+open Bemo.Win32.Forms
+
+/// CPU-generated alpha pixels are independent of owner handles and theme.
+/// Keep at most four layouts / 8 MiB; each helper owns its native bitmap.
+module TaskSwitchShadowCache =
+    let private gate = obj()
+    let mutable private cached : ((int*int*int)*byte[]) list = []
+    let private create dpi width height =
+        let padding = Dpi.scaleAt dpi 28
+        let radius = float (Dpi.scaleAt dpi 12)
+        let offset = float (Dpi.scaleAt dpi 6)
+        let sigma = float (Dpi.scaleAt dpi 10)
+        let w,h = width+padding*2,height+padding*2
+        let halfW,halfH = float width/2.0,float height/2.0
+        let distance x y =
+            let dx,dy = abs(x-halfW)-(halfW-radius),abs(y-halfH)-(halfH-radius)
+            sqrt(max dx 0.0 ** 2.0 + max dy 0.0 ** 2.0) + min (max dx dy) 0.0 - radius
+        let pixels = Array.zeroCreate<byte> (w*h*4)
+        let draw y x py =
+            let px = float(x-padding)+0.5
+            // The owned window sits above its owner, so leave the body transparent.
+            if distance px py >= 0.0 then
+                let d = max 0.0 (distance px (py-offset))
+                let fade = min 1.0 (float (min (min x (w-1-x)) (min y (h-1-y))) / float (max 1 (Dpi.scaleAt dpi 4)))
+                pixels.[(y*w+x)*4+3] <- byte (Math.Round(48.0 * exp(-d*d/(2.0*sigma*sigma)) * fade))
+        for y in 0..h-1 do
+            let py = float(y-padding)+0.5
+            // The rounded rectangle's interior is transparent in the shadow.
+            // Only its exterior and corner bands need distance calculations.
+            let left,right =
+                if float width>=radius*2.0 && float height>=radius*2.0 && py>=0.0 && py<float height then
+                    if py>=radius && py<float height-radius then padding,padding+width
+                    else padding+int radius,padding+width-int radius
+                else 0,0
+            for x in 0..left-1 do draw y x py
+            for x in right..w-1 do draw y x py
+        pixels
+    let get dpi width height =
+        lock gate (fun () ->
+            let key = dpi,width,height
+            match cached |> List.tryFind(fun (existing,_) -> existing=key) with
+            | Some(_,pixels) ->
+                cached <- (key,pixels)::(cached |> List.filter(fun (existing,_) -> existing<>key))
+                pixels
+            | None ->
+                let pixels = create dpi width height
+                if pixels.Length <= 4*1024*1024 then
+                    let rec fit bytes count (entries:((int*int*int)*byte[]) list) =
+                        match entries with
+                        | (entryKey,image)::tail when count<4 && bytes+image.Length<=8*1024*1024 ->
+                            (entryKey,image)::fit (bytes+image.Length) (count+1) tail
+                        | _ -> []
+                    cached <- fit 0 0 ((key,pixels)::cached)
+                pixels)
+
+/// A transparent, nonactivating shadow around the rounded switcher.
+type internal TaskSwitchShadow(owner:Form) =
+    let os = OS()
+    let padding = Dpi.scale 28
+    let helper =
+        os.createWindow (fun msg -> msg.def()) WindowsStyles.WS_POPUP
+            (WindowsExtendedStyles.WS_EX_LAYERED ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW |||
+             WindowsExtendedStyles.WS_EX_NOACTIVATE ||| WindowsExtendedStyles.WS_EX_TRANSPARENT)
+    let window = os.windowFromHwnd(helper.hwnd)
+    let bitmap =
+        let w,h = owner.Width+padding*2,owner.Height+padding*2
+        let pixels = TaskSwitchShadowCache.get (Dpi.value()) owner.Width owner.Height
+        let image = new Bitmap(w,h,Imaging.PixelFormat.Format32bppArgb)
+        let data = image.LockBits(Rectangle(0,0,w,h),Imaging.ImageLockMode.WriteOnly,Imaging.PixelFormat.Format32bppArgb)
+        try
+            for y in 0..h-1 do
+                Marshal.Copy(pixels,y*w*4,IntPtr.Add(data.Scan0,y*data.Stride),w*4)
+        finally image.UnlockBits(data)
+        image
+    do window.setParent(os.windowFromHwnd(owner.Handle))
+    member _.Show() =
+        Win32Helper.UpdateLayeredWindow(helper.hwnd,Point(owner.Left-padding,owner.Top-padding),bitmap,255uy)
+        window.showNoActivate()
+    interface IDisposable with
+        member _.Dispose() =
+            (helper :?> IDisposable).Dispose()
+            bitmap.Dispose()
 
 type ITaskSwitchGroup =
     abstract member hwnd : IntPtr
@@ -19,118 +97,382 @@ type ITaskSwitchDesktop =
 type TaskWindowItem = TaskWindowItem of IntPtr * bool
 
     
+/// What the Alt+Tab logic needs from either switcher style.
+type ITaskSwitchView =
+    abstract member show : unit -> unit
+    abstract member hide : unit -> unit
+    abstract member select : int -> unit
+    /// Takes the keyboard while the switcher is open.
+    abstract member inputControl : Control
+    /// Another window became active: the switch is cancelled.
+    abstract member deactivated : IEvent<unit>
+    /// The pointer moved onto a window: it becomes the chosen one.
+    abstract member hovered : IEvent<int>
+    /// A window was clicked: switch to it now.
+    abstract member clicked : IEvent<int>
+
 type ITaskSwitchListControl =
     abstract member select : int -> unit
     abstract member control : Control
     abstract member onShow : Form -> unit
+    /// The height that shows every window without scrolling.
+    abstract member contentHeight : int
+    /// The width of all columns together.
+    abstract member contentWidth : int
+    /// The pointer moved onto a window: it becomes the chosen one.
+    abstract member hovered : IEvent<int>
+    /// A window was clicked: switch to it now.
+    abstract member clicked : IEvent<int>
 
-type TaskWindowNode(item) as this=
-    inherit Node()
-    let os = OS()
-    let (TaskWindowItem(hwnd,isGroup)) = item
-    let window = os.windowFromHwnd(hwnd)
-    let image = 
-        let icon = if window.iconBig.Width > window.iconSmall.Width then window.iconBig else window.iconSmall
-        let image = Img(icon.ToBitmap()).resize(Sz(32,32))
-        if isGroup then
-            let badge = Img(Services.openIcon("Bemo.ico").ToBitmap()).resize(Sz(16,16)).bitmap
-            let g = image.graphics
-            g.DrawImage(badge, Point(16,16))
-        image.bitmap
+module private TaskWindowItems =
+    let create (TaskWindowItem(hwnd,isGroup)) =
+        let window = OS().windowFromHwnd(hwnd)
+        match ImgHelper.windowIcon window with
+        | Some icon ->
+            let image = Img(new Bitmap(icon)).resize(Sz(32,32))
+            icon.Dispose()
+            if isGroup then
+                use badgeIcon = Services.openIcon("Bemo.ico")
+                let badge = Img(badgeIcon.ToBitmap()).resize(Sz(16,16)).bitmap
+                let g = image.graphics
+                g.DrawImage(badge, Point(16,16))
+            TreeListItem(window.text,Icon=image.bitmap)
+        | None -> TreeListItem(window.text,Glyph=WindowGlyph)
+
+/// The vertical switcher: windows listed by title. When more than fit in most of the screen's
+/// height, they fill further columns side by side (column by column), so all stay in view.
+type TaskSwitchListControl(windows:List2<TaskWindowItem>) =
+    let rowHeight = 52
+    let area = Screen.FromHandle(WinUserApi.GetForegroundWindow()).WorkingArea
+    // The form's padding on each side.
+    let inset = Dpi.scale 24
+    let items = windows.list |> List.map TaskWindowItems.create |> Array.ofList
+    let fit = max 1 ((area.Height*85/100-inset)/Dpi.scale rowHeight)
+    // Columns no narrower than this, so titles stay readable.
+    let maxColumns = max 1 ((area.Width*9/10-inset)/Dpi.scale 280)
+    let columns = max 1 (min maxColumns ((items.Length+fit-1)/fit))
+    // Balanced columns: the last is at most one row shorter.
+    let perColumn = max 1 ((items.Length+columns-1)/columns)
+    let columnWidth =
+        if columns=1 then Dpi.scale 600-inset
+        else min (Dpi.scale 600-inset) ((area.Width*9/10-inset)/columns)
+    let newList() =
+        new SettingsTreeList([TreeListColumn("",0,TextColumn)],
+                             ShowHeader=false,ShowExpanders=false,RowHeight=rowHeight,IconSize=32,
+                             BackColor=(SettingsColors.current()).surface,ForeColor=(SettingsColors.current()).text,
+                             Margin=Padding.Empty)
+    let lists = Array.init columns (fun _ -> newList())
+    /// Where a window sits: its column and its row in that column.
+    let place index = if columns=1 then 0,index else index/perColumn,index%perColumn
+    let control : Control =
+        if columns=1 then lists.[0] :> Control
+        else
+            let table = new TableLayoutPanel(ColumnCount=columns,RowCount=1,Margin=Padding.Empty,Padding=Padding.Empty,
+                                             BackColor=(SettingsColors.current()).surface)
+            table.RowStyles.Add(RowStyle(SizeType.Percent,100.0f)) |> ignore
+            for column,list in Array.indexed lists do
+                table.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f/float32 columns)) |> ignore
+                list.Dock <- DockStyle.Fill
+                table.Controls.Add(list,column,0)
+            table :> Control
+    let hovered = Event<int>()
+    let clicked = Event<int>()
+    // The pointer may already rest over a row when Alt+Tab opens; only moving it chooses.
+    let mutable start = Point.Empty
+    let indexIn column (point:Point) =
+        let list = lists.[column]
+        list.ItemAt(point) |> Option.map(fun item -> list.Roots.IndexOf(item)) |> Option.filter(fun row -> row>=0)
+        |> Option.map(fun row -> if columns=1 then row else column*perColumn+row)
     do
-        this.Text <- window.text
-    member this.IconImage with get() = image
-
-type TaskSwitchTreeViewControl(windows:List2<TaskWindowItem>) =
-    let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
-    let font = Font(resources.GetString("Font"), 10f)
-    let nameColumn = TreeColumn("Name", 200)
-        
-    let nodes = windows.map <| fun window -> TaskWindowNode(window)
-    let tree,model = 
-        let tree = TreeViewAdv()
-        let model = TreeModel()
-        tree.FullRowSelect <- true
-        tree.UseColumns <- false
-        tree.ShowLines <- false
-        tree.ShowPlusMinus <- false
-        tree.Columns.Add(nameColumn)
-        tree.RowHeight <- 48
-        tree.Font <- font
-        tree.BorderStyle <- BorderStyle.None
-        tree.NodeControls.Add(
-            let control = NodeControls.NodeIcon()
-            control.ParentColumn <- nameColumn
-            control.LeftMargin <- 3
-            control.DataPropertyName <- "IconImage"
-            control)
-        tree.NodeControls.Add(
-            let control = SmoothNodeTextBox()
-            control.Trimming <- StringTrimming.EllipsisCharacter
-            control.DisplayHiddenContentInToolTip <- true
-            control.ParentColumn <- nameColumn
-            control.DataPropertyName <- "Text"
-            control.LeftMargin <- 3
-            control)
-        nodes.iter(model.Nodes.Add)
-        tree.Model <- model
-        tree,model
+        for column,list in Array.indexed lists do
+            let rows = if columns=1 then items else items.[column*perColumn..min (items.Length-1) ((column+1)*perColumn-1)]
+            list.Roots.AddRange(rows)
+            list.Rebuild()
+            list.Disposed.Add(fun _ -> ImgHelper.disposeItems list.Roots)
+            list.MouseMove.Add(fun e ->
+                if Cursor.Position<>start then
+                    indexIn column e.Location |> Option.iter(fun index ->
+                        let _,row = place index
+                        if not (obj.ReferenceEquals(list.SelectedItem,list.Roots.[row])) then hovered.Trigger(index)))
+            list.MouseClick.Add(fun e -> if e.Button=MouseButtons.Left then indexIn column e.Location |> Option.iter clicked.Trigger)
+    /// The window on the row at a point in the first column, if any.
+    member _.IndexAt(point:Point) = indexIn 0 point
+    /// How many columns the windows fill.
+    member _.Columns = columns
 
     interface ITaskSwitchListControl with
-        member this.select index =  
-            tree.SelectedNode <- tree.Root.Children.Item(index)
-        member this.control = tree :> Control
-        member this.onShow form = 
-            let scrollBarWidth = 40
-            nameColumn.Width <- form.Width - scrollBarWidth
-
-type TaskSwitchForm(control:ITaskSwitchListControl) as this =
+        member this.hovered = hovered.Publish
+        member this.clicked = clicked.Publish
+        member this.select index =
+            let column,row = place index
+            for other,list in Array.indexed lists do
+                list.SelectedItem <- if other=column then list.Roots.[row] else null
+            // Focus follows the choice: a focused column with nothing chosen outlines its first row.
+            if columns>1 && lists.[column].Visible && not lists.[column].Focused then lists.[column].Focus() |> ignore
+        member this.control = control
+        member this.contentHeight = (lists |> Array.map(fun list -> list.Roots.Count) |> Array.max)*Dpi.scale rowHeight
+        member this.contentWidth = columns*columnWidth
+        member this.onShow form =
+            start <- Cursor.Position
+            let p = SettingsColors.current()
+            form.BackColor <- p.surface
+            control.BackColor <- p.surface
+            form.ForeColor <- p.text
+            for list in lists do
+                list.BackColor <- p.surface
+                list.ForeColor <- p.text
+type TaskSwitchForm(control:ITaskSwitchListControl) =
     let os = OS()
+    let mutable shadow : TaskSwitchShadow option = None
     let form = 
         let f = { 
             new Form() with
                 override this.CreateParams with get() =
-                    let params = base.CreateParams
-                    params.ExStyle <- params.ExStyle ||| 
-                        WindowsExtendedStyles.WS_EX_DLGMODALFRAME |||
-                        WindowsExtendedStyles.WS_EX_TOPMOST
-                    params
+                    let createParams = base.CreateParams
+                    // The list is a child HWND: buffer the complete popup, not
+                    // just the form background, while it becomes visible.
+                    createParams.ExStyle <- createParams.ExStyle ||| WindowsExtendedStyles.WS_EX_TOPMOST ||| WindowsExtendedStyles.WS_EX_COMPOSITED
+                    createParams
+                override this.OnPaint(e) =
+                    base.OnPaint(e)
+                    e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+                    use outline = SettingsShapes.rounded
+                                      (SettingsShapes.outlineRect this.ClientSize.Width this.ClientSize.Height)
+                                      (float32(Dpi.scale 12))
+                    use border = new Pen((SettingsColors.current()).border)
+                    e.Graphics.DrawPath(border,outline)
         }
-        let formSize = Size(600,400)
-        let screenSize= Screen.PrimaryScreen.Bounds.Size
-        f.AutoScroll <- true
+        let palette = SettingsColors.current()
+        f.BackColor <- palette.surface
+        f.ForeColor <- palette.text
+        let area = Screen.FromHandle(WinUserApi.GetForegroundWindow()).WorkingArea
+        let padding = Dpi.scale 12
+        // Tall enough for every window, so each is one glance away; only more windows than
+        // most of the screen can hold scroll.
+        let height = max (Dpi.scale 120) (control.contentHeight+padding*2)
+        let formSize = Size(min (control.contentWidth+padding*2) (area.Width-Dpi.scale 32),min height (area.Height*85/100))
+        f.AutoScaleMode <- AutoScaleMode.None
+        f.Padding <- Padding(padding)
+        f.Font <- SettingsUi.bodyFont()
         f.ShowInTaskbar <- false
         f.StartPosition <- FormStartPosition.Manual
-        f.Location <- Point((screenSize.Width - formSize.Width) / 2,  (screenSize.Height - formSize.Height) / 2)
-        f.Size <- formSize
+        f.FormBorderStyle <- FormBorderStyle.None
+        f.ClientSize <- formSize
+        f.Location <- Point(area.Left+(area.Width-formSize.Width)/2,area.Top+(area.Height-formSize.Height)/2)
         f.ControlBox <- false
+        control.control.Dock <- DockStyle.Fill
         f.Controls.Add(control.control)
-        f.FormBorderStyle <- FormBorderStyle.Fixed3D
-        let window = os.windowFromHwnd(f.Handle)
+        use shape = SettingsShapes.rounded
+                        (RectangleF(0.0f,0.0f,float32 formSize.Width,float32 formSize.Height))
+                        (float32(Dpi.scale 12))
+        f.Region <- new Region(shape)
         f    
 
     member this.hwnd = form.Handle
 
     member this.show() = 
-        form.Show()
-        control.control.Dock <- DockStyle.Fill
         control.onShow(form)
+        // Shadow generation walks every pixel. Do it while the owner is hidden,
+        // so it cannot delay the first themed paint of an already-visible form.
+        if not SystemInformation.HighContrast then
+            if shadow.IsNone then shadow <- Some(new TaskSwitchShadow(form))
+        form.Show()
+        form.Refresh()
+        shadow |> Option.iter(fun item -> item.Show())
         let os = OS()
         os.windowFromHwnd(form.Handle).setForegroundOrRestore(true)
                 
-    member this.hide() = form.Hide()
+    member this.hide() =
+        shadow |> Option.iter(fun item -> (item :> IDisposable).Dispose())
+        shadow <- None
+        form.Hide()
 
     member this.select(index) =
         control.select(index)
 
     member this.inputControl = control.control
 
-type TaskSwitchAction(windows:List2<TaskWindowItem>) as this =
+    interface ITaskSwitchView with
+        member this.show() = this.show()
+        member this.hide() = this.hide()
+        member this.select index = this.select index
+        member this.inputControl = this.inputControl
+        member this.deactivated = form.Deactivate |> Event.map ignore
+        member this.hovered = control.hovered
+        member this.clicked = control.clicked
+
+module private TaskWindowIcons =
+    /// A window's app icon at the given size: the shell's icon for its program, which comes in
+    /// large sizes, or the window's own when the program has no icon of its own.
+    let large (window:Window) (size:int) : Bitmap option =
+        let fromShell() =
+            try
+                if window.className="ApplicationFrameWindow" then AppIcons.GetAppIcon(AppIcons.GetHostedAppId(window.hwnd),size)
+                else
+                    let path = window.pid.processPath
+                    if AppIcons.HasOwnIcon(path) then AppIcons.GetFileIcon(path,size) else null
+            with _ -> null
+        let fromWindow() =
+            match ImgHelper.windowIcon window with
+            | Some icon ->
+                let bitmap = new Bitmap(icon)
+                icon.Dispose()
+                Some bitmap
+            | None -> None
+        match fromShell() with
+        | null -> fromWindow()
+        | icon -> Some icon
+
+/// The horizontal switcher: large app icons in a row, wrapping onto more rows when there are
+/// many, with the chosen window's title beneath them. The panel matches the vertical list:
+/// the same surface, border, rounded corners and shadow.
+type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
+    let iconSize = Dpi.scale 64
+    let cell = Dpi.scale 96
+    let gap = Dpi.scale 8
+    let padding = Dpi.scale 20
+    let titleHeight = Dpi.scale 36
+    let radius = Dpi.scale 12
+    let items =
+        windows.list |> List.map(fun (TaskWindowItem(hwnd,isGroup)) ->
+            let window = OS().windowFromHwnd(hwnd)
+            window.text,TaskWindowIcons.large window iconSize,isGroup) |> Array.ofList
+    let area = Screen.FromHandle(WinUserApi.GetForegroundWindow()).WorkingArea
+    let columns = max 1 (min items.Length ((area.Width*9/10-padding*2+gap)/(cell+gap)))
+    let rows = max 1 ((items.Length+columns-1)/columns)
+    // Wide enough for a readable title even with one or two windows.
+    let width = max (Dpi.scale 360) (columns*cell+(columns-1)*gap+padding*2)
+    let height = padding+rows*cell+(rows-1)*gap+titleHeight+padding/2
+    let titleFont = SettingsUi.font "Segoe UI" 11.0f FontStyle.Regular
+    let badge =
+        use icon = Services.openIcon("Bemo.ico")
+        new Bitmap(icon.ToBitmap(),Size(Dpi.scale 24,Dpi.scale 24))
+    let mutable selected = 0
+    let mutable closed = false
+    let mutable shadow : TaskSwitchShadow option = None
+    let hovered = Event<int>()
+    let clicked = Event<int>()
+    /// The panel as last rendered, which the window paints.
+    let mutable frame : Bitmap = null
+    let form =
+        let f =
+            { new Form() with
+                override this.CreateParams =
+                    let createParams = base.CreateParams
+                    createParams.ExStyle <- createParams.ExStyle ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW ||| WindowsExtendedStyles.WS_EX_TOPMOST
+                    createParams
+                // The rendered panel covers the whole window.
+                override this.OnPaintBackground(e) = ()
+                override this.OnPaint(e) = if not (isNull frame) then e.Graphics.DrawImageUnscaled(frame,0,0) }
+        f.FormBorderStyle <- FormBorderStyle.None
+        f.ShowInTaskbar <- false
+        f.StartPosition <- FormStartPosition.Manual
+        // The style bit alone is not enough: showing a form whose TopMost is false moves it
+        // below other always-on-top windows.
+        f.TopMost <- true
+        f.BackColor <- (SettingsColors.current()).surface
+        f.Bounds <- Rectangle(area.Left+(area.Width-width)/2,area.Top+(area.Height-height)/2,width,height)
+        use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 width,float32 height)) (float32 radius)
+        f.Region <- new Region(shape)
+        f
+    /// Each row is centred, so a short last row sits in the middle.
+    let cellBounds index =
+        let row,column = index/columns,index%columns
+        let inRow = if row=rows-1 then items.Length-row*columns else columns
+        let left = (width-(inRow*cell+(inRow-1)*gap))/2
+        Rectangle(left+column*(cell+gap),padding+row*(cell+gap),cell,cell)
+    member _.Size = Size(width,height)
+    /// The window whose icon is at a point in the panel, if any.
+    member _.IndexAt(point:Point) =
+        Seq.init items.Length id |> Seq.tryFind(fun index -> (cellBounds index).Contains(point))
+    /// The panel as drawn, transparent outside its rounded shape.
+    member _.Render() =
+        // Opaque, like the list: the window's rounded region trims the corners. With no alpha
+        // channel the title can be drawn with ClearType as everywhere else in the settings UI;
+        // text drawn over transparency only gets greyscale smoothing, and looks washed out.
+        let bitmap = new Bitmap(width,height,Imaging.PixelFormat.Format24bppRgb)
+        use g = Graphics.FromImage(bitmap)
+        g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
+        let p = SettingsColors.current()
+        let highContrast = SystemInformation.HighContrast
+        g.Clear(p.surface)
+        use outline = SettingsShapes.rounded (SettingsShapes.outlineRect width height) (float32 radius)
+        use border = new Pen(p.border)
+        g.DrawPath(border,outline)
+        items |> Array.iteri(fun index (_,icon,isGroup) ->
+            let bounds = cellBounds index
+            if index=selected then
+                use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X,float32 bounds.Y,float32 bounds.Width,float32 bounds.Height)) (float32(Dpi.scale 10))
+                use highlight = new SolidBrush(if highContrast then SystemColors.Highlight else p.selection)
+                g.FillPath(highlight,shape)
+            let iconBounds = Rectangle(bounds.X+(cell-iconSize)/2,bounds.Y+(cell-iconSize)/2,iconSize,iconSize)
+            match icon with
+            | Some image -> g.DrawImage(image,iconBounds)
+            | None ->
+                use pen = new Pen(p.text,float32(Dpi.scale 2))
+                g.DrawRectangle(pen,Rectangle.Inflate(iconBounds,-Dpi.scale 8,-Dpi.scale 12))
+            // A tab group shows the WindowTabs badge on its icon.
+            if isGroup then g.DrawImage(badge,iconBounds.Right-badge.Width+Dpi.scale 4,iconBounds.Bottom-badge.Height+Dpi.scale 4))
+        if items.Length>0 then
+            let title,_,_ = items.[max 0 (min (items.Length-1) selected)]
+            let bottom = padding+rows*cell+(rows-1)*gap
+            TextRenderer.DrawText(g,title,titleFont,Rectangle(padding,bottom,width-padding*2,titleHeight),
+                                  (if highContrast then SystemColors.WindowText else p.text),p.surface,
+                                  TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.HorizontalCenter
+                                  ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
+        bitmap
+    member private this.wirePointer() =
+        // The pointer may already rest over an icon when Alt+Tab opens; only moving it chooses.
+        let mutable start = Cursor.Position
+        form.Shown.Add(fun _ -> start <- Cursor.Position)
+        form.MouseMove.Add(fun e ->
+            if Cursor.Position<>start then
+                this.IndexAt(e.Location) |> Option.iter(fun index -> if index<>selected then hovered.Trigger(index)))
+        form.MouseClick.Add(fun e ->
+            if e.Button=MouseButtons.Left then this.IndexAt(e.Location) |> Option.iter clicked.Trigger)
+    member private this.present() =
+        let previous = frame
+        frame <- this.Render()
+        if not (isNull previous) then previous.Dispose()
+        form.Invalidate()
+    interface ITaskSwitchView with
+        member this.show() =
+            this.wirePointer()
+            this.present()
+            // Built while hidden, like the list's, so it cannot delay the first paint.
+            if not SystemInformation.HighContrast then shadow <- Some(new TaskSwitchShadow(form))
+            form.Show()
+            form.Update()
+            shadow |> Option.iter(fun item -> item.Show())
+            OS().windowFromHwnd(form.Handle).setForegroundOrRestore(true)
+        member this.hide() =
+          // Ending a switch can hide twice: once for the choice, again as the panel loses focus.
+          if not closed then
+            closed <- true
+            shadow |> Option.iter(fun item -> (item :> IDisposable).Dispose())
+            form.Hide()
+            form.Dispose()
+            badge.Dispose()
+            if not (isNull frame) then frame.Dispose()
+            for _,icon,_ in items do icon |> Option.iter(fun image -> image.Dispose())
+        member this.select index =
+            selected <- index
+            if form.IsHandleCreated then this.present()
+        member this.inputControl = form :> Control
+        member this.deactivated = form.Deactivate |> Event.map ignore
+        member this.hovered = hovered.Publish
+        member this.clicked = clicked.Publish
+
+type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string) as this =
     let os = OS()
-    let Cell = CellScope()        
+    let Cell = CellScope()
     let switchIndex = Cell.create(0)
-    let form = TaskSwitchForm(TaskSwitchTreeViewControl(windows))
+    let form : ITaskSwitchView =
+        if style="List" then TaskSwitchForm(TaskSwitchListControl(windows)) :> ITaskSwitchView
+        else TaskSwitchIconView(windows) :> ITaskSwitchView
     let endedEvent = Event<_>()
+    let mutable finished = false
 
     let setIndex index =
         switchIndex.set(index)
@@ -147,12 +489,19 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>) as this =
             setIndex index
 
     do
-        form.show()
         if windows.length > 0 then
             setIndex 0
+        form.show()
         
-        form.inputControl.LostFocus.Add <| fun e ->
+        // Clicking another column moves focus inside the switcher; only another window taking
+        // over cancels it.
+        form.deactivated.Add <| fun () ->
             this.switchEnd(true)
+
+        form.hovered.Add setIndex
+        form.clicked.Add <| fun index ->
+            setIndex index
+            this.switchEnd(false)
 
         form.inputControl.KeyDown.Add <| fun e ->
             this.processKeys(e)
@@ -167,11 +516,14 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>) as this =
     member this.switchNext() = doSwitch true
     member this.switchPrev() = doSwitch false
     member this.switchEnd(cancel:bool) =
-        if cancel.not && windows.length > 0 then
-            let (TaskWindowItem(hwnd,_)) = windows.at(switchIndex.value)
-            os.windowFromHwnd(hwnd).setForegroundOrRestore(false)
-        form.hide()
-        endedEvent.Trigger()
+        // Switching away makes the panel lose focus, which asks to end again: once is enough.
+        if not finished then
+            finished <- true
+            if cancel.not && windows.length > 0 then
+                let (TaskWindowItem(hwnd,_)) = windows.at(switchIndex.value)
+                os.windowFromHwnd(hwnd).setForegroundOrRestore(false)
+            form.hide()
+            endedEvent.Trigger()
 
     member this.selectedHwnd =
         let (TaskWindowItem(hwnd,_)) = windows.at(switchIndex.value)
@@ -182,11 +534,11 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>) as this =
 type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop) as this=
     let os = OS()
     let Cell = CellScope()
-    let hotKeyManager = HotKeyManager()
+    let hotKeyManager = new HotKeyManager()
     let switcherCell = Cell.create(None:TaskSwitchAction option)
     let doTaskSwitch prev =
         if switcherCell.value.IsNone then
-            let switcher = TaskSwitchAction(this.windows)
+            let switcher = TaskSwitchAction(this.windows,settings.settings.switcherStyle)
             switcher.ended.Add <| fun() ->
                 switcherCell.set(None)
             switcherCell.set(Some(switcher))
@@ -225,9 +577,10 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop) as this=
     
     member this.windows =
         let windowsInZorder = os.windowsInZorder.where(fun w -> 
-            w.isAltTabWindow 
-            && w.pid.isCurrentProcess.not 
-            && not(String.IsNullOrEmpty w.text) 
+            // WindowTabs' own windows, such as Settings, are listed like any other. The switcher
+            // is not shown yet when this runs, so it does not list itself.
+            w.isAltTabWindow
+            && not(String.IsNullOrEmpty w.text)
             && w.text <> "Microsoft Text Input Application"
             && w.className <> "Windows.UI.Core.CoreWindow"
         )

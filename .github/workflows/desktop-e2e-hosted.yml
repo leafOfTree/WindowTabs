@@ -1,0 +1,62 @@
+name: Desktop E2E Hosted
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'Test depth: Quick or Full with exit/restart'
+        type: choice
+        options: [Quick, Full]
+        default: Quick
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-e2e-hosted-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  desktop:
+    name: Desktop E2E (${{ inputs.profile || 'Quick' }})
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      # Precondition failures remain failures: never skip an unusable desktop.
+      - name: Run on the hosted desktop
+        id: e2e
+        shell: powershell
+        env:
+          E2E_PROFILE: ${{ inputs.profile || 'Quick' }}
+        run: ./tests/Run-DesktopE2E.ps1 -Interactive -Profile $env:E2E_PROFILE
+
+      - name: Clean up this test's processes
+        if: always() && steps.e2e.outputs.stage != ''
+        shell: powershell
+        env:
+          E2E_STAGE: ${{ steps.e2e.outputs.stage }}
+        run: ./tests/Stop-DesktopE2E.ps1 -Stage $env:E2E_STAGE
+
+      - name: Upload desktop diagnostics
+        if: always() && steps.e2e.outputs.stage != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: desktop-e2e-hosted-${{ inputs.profile || 'Quick' }}-${{ github.run_id }}
+          retention-days: 14
+          path: |
+            ${{ steps.e2e.outputs.stage }}/manifest.json
+            ${{ steps.e2e.outputs.stage }}/result.json
+            ${{ steps.e2e.outputs.stage }}/stdout.log
+            ${{ steps.e2e.outputs.stage }}/stderr.log
+            ${{ steps.e2e.outputs.stage }}/failure.txt
+            ${{ steps.e2e.outputs.stage }}/windows.json
+            ${{ steps.e2e.outputs.stage }}/WindowTabsCrash.log
+          if-no-files-found: warn

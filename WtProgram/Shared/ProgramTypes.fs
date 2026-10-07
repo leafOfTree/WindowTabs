@@ -1,52 +1,59 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Windows.Forms
 open Newtonsoft.Json
 open Newtonsoft.Json.Linq
 
-[<AttributeUsage(System.AttributeTargets.Method)>]
-type ServiceMethodAttribute() =
-    inherit Attribute()
-    let mutable _async = false
-
-    member this.async
-        with get() = _async
-        and set(value) = _async <- value
-
-type IServiceAsyncResult =
-    abstract member onCompleted : (obj -> unit) -> unit
+/// A palette colour is kept by its place in the palette, so it follows the light or dark theme.
+type TabColorChoice =
+    | PaletteColor of int
+    | CustomColor of Drawing.Color
 
 type SettingsRec = {
-    licenseKey: string
-    ticket: string option
     includedPaths: Set2<string>
     excludedPaths: Set2<string>
     autoGroupingPaths : Set2<string>
     version: string
-    tabAppearance: TabAppearanceInfo
+    appearance: AppearancePreferences
     runAtStartup: bool
     hideInactiveTabs: bool
     enableTabbingByDefault: bool
     replaceAltTab: bool
     groupWindowsInSwitcher: bool
     enableCtrlNumberHotKey: bool
+    enableNumberLeader: bool
+    appTabColors: Map<string,string>
+    tabColorMode: string
+    tabColorStyle: string
+    numberLeaderKeys: string
+    numberHotKeyModifier: string
+    disabledNumberShortcutPaths: Set2<string>
     combineIconsInTaskbar: bool
     enableHoverActivate: bool
-    autoHide: bool
+    /// "Never", "Maximized" or "Always".
+    autoHideMode: string
+    /// Expand auto-hidden tabs for a moment after switching tabs.
+    showTabsOnSwitch: bool
     enableShiftScroll: bool
+    /// "Icons" (large icons in a row) or "List" (window titles in a column).
+    switcherStyle: string
     alignment: string
+    /// "system", "en", "zh" or "ja".
+    language: string
     }
-
-type ILicenseManager =
-    abstract member isLicensed : bool
-    abstract member licenseKey : string with get,set
-    abstract member setTicketString : string -> unit
 
 type ISettings =
     abstract member setValue: (string * obj) -> unit
     abstract member getValue: string -> obj
-    abstract member notifyValue: string -> (obj -> unit) -> unit
+    abstract member notifyValue: string -> (obj -> unit) -> IDisposable
+    abstract member appearance: AppearancePreferences
+    abstract member updateAppearance: (AppearancePreferences -> AppearancePreferences) -> unit
     abstract member root : JObject with get,set
+    /// The settings file in use: next to WindowTabs.exe for a portable copy, else in AppData.
+    abstract member path : string
+    /// The user's shortcut for a program hotkey (hotkey-control encoding; 0 = none), if changed.
+    abstract member hotKey: string -> int option
+    abstract member setHotKey: string -> int -> unit
 
 type IFilterService =
     abstract member isAppWindow : IntPtr -> bool
@@ -54,11 +61,12 @@ type IFilterService =
     abstract member isTabbableWindow : IntPtr -> bool
     abstract member isTabbingEnabledForAllProcessesByDefault : bool with get, set
     abstract member setIsTabbingEnabledForProcess : string -> bool -> unit
+    abstract member setIsTabbingEnabledForProcesses : string list -> bool -> unit
     abstract member getIsTabbingEnabledForProcess : string -> bool
 
 type SettingsViewType =
+    | GeneralSettings
     | ProgramSettings
-    | LicenseSettings
     | AppearanceSettings
     | DiagnosticsSettings
     | LayoutSettings
@@ -80,29 +88,24 @@ type IManagerView =
 
 type IProgram =
     abstract member version : string
-    abstract member isUpgrade : bool
     abstract member isFirstRun : bool
-    [<ServiceMethod(async=true)>]
+    /// Posted to the UI thread; returns before the work runs.
     abstract member refresh : unit -> unit
-    [<ServiceMethod(async=true)>]
+    /// Posted to the UI thread; returns before the work runs.
     abstract member shutdown : unit -> unit
-    abstract member tabLimit : int option
     abstract member setWindowNameOverride : (IntPtr * Option<string>) -> unit
     abstract member getWindowNameOverride : IntPtr -> Option<string>
+    abstract member getTabColorOverride : IntPtr -> TabColorChoice option
+    abstract member setTabColorOverride : (IntPtr * TabColorChoice option) -> unit
+    abstract member getTabColor : IntPtr -> TabColorChoice option
     abstract member appWindows : List2<IntPtr>
     abstract member getAutoGroupingEnabled : string -> bool
     abstract member setAutoGroupingEnabled : string -> bool -> unit
     abstract member tabAppearanceInfo : TabAppearanceInfo
-    abstract member defaultTabAppearanceInfo : TabAppearanceInfo
-    abstract member darkModeTabAppearanceInfo : TabAppearanceInfo
-    abstract member darkModeBlueTabAppearanceInfo : TabAppearanceInfo
-    [<ServiceMethod(async=true)>]
-    abstract member ping : unit -> unit
-    abstract member setHotKey: string -> int -> unit
+    abstract member setHotKey: string -> int -> bool
     abstract member getHotKey: string -> int
-    [<ServiceMethod(async=true)>]
-    abstract member notifyNewVersion : unit -> unit
-    abstract member newVersion : IEvent<unit>
+    /// Starts the tab's program again. Posted to the UI thread; returns before the work runs.
+    abstract member newTab : IntPtr -> unit
     abstract member suspendTabMonitoring : unit -> unit
     abstract member resumeTabMonitoring : unit -> unit
     abstract member llMouse : IEvent<int32 * IntPtr>

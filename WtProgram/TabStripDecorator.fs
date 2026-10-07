@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Drawing
 open System.Windows.Forms
@@ -25,7 +25,10 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         Services.dragDrop.registerTarget(this.ts.hwnd, this:>IDragDropTarget)
     
-        dropTarget.set(Some(OleDropTarget(this.ts)))
+        dropTarget.set(Some(new OleDropTarget(this.ts)))
+        this.ts.destroying.Add(fun () ->
+            dropTarget.value.iter(fun target -> (target :> IDisposable).Dispose())
+            dropTarget.set(None))
         
         this.initAutoHide()
 
@@ -39,8 +42,11 @@ type TabStripDecorator(group:WindowGroup) as this =
             | MouseUp, MouseRight ->
                 let ptScreen = os.windowFromHwnd(group.hwnd).ptToScreen(pt)
                 group.bb.write("contextMenuVisible", true)
-                Win32Menu.show group.hwnd ptScreen (this.contextMenu(hwnd))
-                group.bb.write("contextMenuVisible", false)
+                let images = ResizeArray<Img>()
+                try Win32Menu.show group.hwnd ptScreen (this.contextMenu(hwnd,images))
+                finally
+                    for image in images do image.bitmap.Dispose()
+                    group.bb.write("contextMenuVisible", false)
             | MouseDown, _ ->
                 capturedHwnd := Some(hwnd)
             | MouseUp, MouseMiddle -> 
@@ -52,7 +58,16 @@ type TabStripDecorator(group:WindowGroup) as this =
         group.bounds.changed.Add <| fun() ->
             this.updateTsPlacement()
 
+        let geometrySubscription = group.geometryChanged.Subscribe(fun () -> this.updateTsPlacement())
+        let mutable disposed = false
+        let alignmentSubscription = Services.settings.notifyValue "alignment" (fun value ->
+            let alignment = value.cast<string>()
+            group.invokeAsync(fun () -> if not disposed then this.ts.setDefaultAlignment(alignment)))
+
         group.exited.Add <| fun() ->
+            disposed <- true
+            alignmentSubscription.Dispose()
+            geometrySubscription.Dispose()
             Services.dragDrop.unregisterTarget(this.ts.hwnd)
     
 
@@ -89,33 +104,80 @@ type TabStripDecorator(group:WindowGroup) as this =
 
     member this.beginRename(hwnd) =
         let tab = Tab(hwnd)
-        let textBounds = 
-            this.ts.sprite.children.pick <| fun (tabOffset, tabSprite) ->
-                let tabSprite = tabSprite :?> TabSprite<Tab>
-                if tabSprite.id = tab then 
-                    Some(Rect(tabSprite.textLocation.add(tabOffset), tabSprite.textSize))
-                else None
-        let verticalMargin = 2
+        let offset, sprite =
+            this.ts.tabSprites.pick <| fun (tabOffset, tabSprite) ->
+                if tabSprite.id = tab then Some(tabOffset, tabSprite) else None
+        let text = Rect(sprite.textLocation.add(offset), sprite.textSize)
+        // The font the tab draws its name in, so the name does not change size when editing starts.
+        let font = TabMetrics.font group.tabAppearance.tabHeight FontStyle.Regular
+        let highContrast = SystemInformation.HighContrast
+        let fill = if highContrast then SystemColors.Window else sprite.fillColor
+        let ink = if highContrast then SystemColors.WindowText else sprite.textColor
+        // The outline of a focused field, in the colour the selected name is drawn with.
+        let accent = SystemColors.Highlight
+        // The field starts this far left of the name, so the name stays where the tab drew it.
+        let padding = Dpi.scale 4
+        let height = min text.size.height (max (font.Height + Dpi.scale 2) (min (text.size.height - Dpi.scale 4) (font.Height + Dpi.scale 6)))
+        let top = text.location.y + (text.size.height - height) / 2
+        let strip = this.placement.bounds
+        // Without the window handle a debugger session shows in front, which is not part of the name.
+        let name = group.tabName hwnd
+        /// Wide enough for the whole name and the caret after it, and never narrower than the
+        /// tab's own text area or room for a short name; only one tab is edited, so it may cover
+        /// its neighbours, but it stays on the strip.
+        let widthFor (value:string) =
+            let measured = TextRenderer.MeasureText(value + " ", font, Size.Empty, TextFormatFlags.NoPadding ||| TextFormatFlags.NoPrefix).Width
+            min strip.size.width (List.max [text.size.width + padding; Dpi.scale 120; measured + 2 * padding])
         let form = new FloatingTextBox()
-        form.textBox.Font <- SystemFonts.MenuFont
-        form.Location <- textBounds.location.add(this.placement.bounds.location).add(Pt(0, verticalMargin)).Point
-        form.SetSize(textBounds.size.add(Sz(0, -2 * verticalMargin)).Size)
-        form.textBox.KeyPress.Add <| fun e ->
+        form.BackColor <- fill
+        let box = form.textBox
+        box.BorderStyle <- BorderStyle.None
+        box.Font <- font
+        box.BackColor <- fill
+        box.ForeColor <- ink
+        /// Starts at the name; a name too long to fit there moves the field left along the strip.
+        let place width =
+            let left = max 0 (min (text.location.x - padding) (strip.size.width - width))
+            form.Location <- Pt(left, top).add(strip.location).Point
+            form.SetSize(Size(width, height))
+            box.SetBounds(padding, (height - font.Height) / 2, width - 2 * padding, font.Height)
+            form.Invalidate()
+        place (widthFor name)
+        // A name that grows past the field widens it; one that shrinks leaves it as it is.
+        box.TextChanged.Add <| fun _ ->
+            let width = widthFor box.Text
+            if width > form.Width then place width
+        // No inner margins: the field's own padding already places the text.
+        WinUserApi.SendMessage(box.Handle, 0xD3, IntPtr(3), IntPtr.Zero) |> ignore
+        form.Paint.Add <| fun e ->
+            use pen = new Pen(accent)
+            e.Graphics.DrawRectangle(pen, 0, 0, form.ClientSize.Width - 1, form.ClientSize.Height - 1)
+        // Windows 11 rounds the field and draws its outline smoothly; earlier versions keep the painted square one.
+        let window = os.windowFromHwnd(form.Handle)
+        window.dwmSetAttribute 33 3
+        window.dwmSetAttribute 34 (ColorTranslator.ToWin32(accent))
+        box.KeyPress.Add <| fun e ->
             if e.KeyChar = char(Keys.Enter) then
-                let newName = form.textBox.Text
-                group.setTabName(hwnd, if newName.Length = 0 then None else Some(newName))
+                // Handled, so the edit control does not beep at a key it has no use for.
+                e.Handled <- true
+                // An empty name, or the window's own, is no name of the user's: the tab follows the
+                // window again. A name left as it was changes nothing, so it is not marked renamed.
+                let typed = box.Text
+                let newName = if typed.Length = 0 || typed = group.windowName hwnd then None else Some typed
+                if newName <> Services.program.getWindowNameOverride hwnd then group.setTabName(hwnd, newName)
                 form.Close()
             elif e.KeyChar = char(Keys.Escape) then
+                e.Handled <- true
                 form.Close()
-        let tabText = this.ts.tabInfo(Tab(hwnd)).text
-        form.textBox.Text <- tabText
-        form.textBox.SelectionStart <- 0
-        form.textBox.SelectionLength <- tabText.Length
+        box.Text <- name
+        box.SelectionStart <- 0
+        box.SelectionLength <- name.Length
         form.textBox.LostFocus.Add <| fun _ ->
             form.Close()
         group.bb.write("renamingTab", true)
         form.Closed.Add <| fun _ ->
             group.bb.write("renamingTab", false)
+        form.Disposed.Add <| fun _ -> font.Dispose()
         form.Show()
 
     member private this.onCloseWindow hwnd =
@@ -131,11 +193,11 @@ type TabStripDecorator(group:WindowGroup) as this =
     member private this.onCloseAllWindows() =
         group.windows.items.iter this.onCloseWindow
 
-    member private this.contextMenu(hwnd) =
-        let checked(isChecked) = if isChecked then List2([MenuFlags.MF_CHECKED]) else List2()
+    member private this.contextMenu(hwnd,images:ResizeArray<Img>) =
+        let checkedFlag(isChecked) = if isChecked then List2([MenuFlags.MF_CHECKED]) else List2()
         let grayed(isGrayed) = if isGrayed then List2([MenuFlags.MF_GRAYED]) else List2()
         let iconOnlyItem = CmiRegular({
-            text = (if group.isIconOnly then "Expand" else "Shrink") + " tabs"
+            text = (if group.isIconOnly then tr Strings.TabMenu.showTabTitles else tr Strings.TabMenu.showIconsOnly)
             image = None
             click = fun() -> group.isIconOnly <- group.isIconOnly.not
             flags = List2()
@@ -153,82 +215,131 @@ type TabStripDecorator(group:WindowGroup) as this =
             let alignmentMenuItem(text,alignment) = CmiRegular({
                 text = text
                 image = None
-                flags = checked(currentAlignment = alignment)
+                flags = checkedFlag(currentAlignment = alignment)
                 click = setAlignment alignment
             })
             CmiPopUp({
-                text = "Align tabs"
+                text = tr Strings.Settings.tabAlignment.caption
                 image = None
                 items = List2([
-                    ("Left", TabLeft)
-                    ("Center", TabCenter)
-                    ("Right",TabRight)
+                    (tr Strings.Common.left, TabLeft)
+                    (tr Strings.Common.center, TabCenter)
+                    (tr Strings.Common.right,TabRight)
                 ]).map(alignmentMenuItem)
             })
 
         let autoHideItem =
-            let isAutoHideEnabledDef = Services.settings.getValue("autoHide").cast<bool>()
-            let isEnabled = group.bb.read("autoHide", isAutoHideEnabledDef)
-            CmiRegular({
-                text = "Auto hide maximized"
-                flags = checked(isEnabled)
+            let currentMode = group.bb.read("autoHideMode", Services.settings.getValue("autoHideMode").cast<string>())
+            let autoHideMenuItem(text,mode:string) = CmiRegular({
+                text = text
                 image = None
-                click = fun() ->
-                    group.bb.write("autoHide", isEnabled.not)
+                flags = checkedFlag(currentMode = mode)
+                click = fun() -> group.bb.write("autoHideMode", mode)
+            })
+            CmiPopUp({
+                text = tr Strings.Settings.autoHide.caption
+                image = None
+                items = List2([
+                    (tr Strings.Common.never, "Never")
+                    (tr Strings.Common.whenMaximized, "Maximized")
+                    (tr Strings.Common.always, "Always")
+                ]).map(autoHideMenuItem)
             })
 
-        let newWindowItem = 
+        let newTabItem =
+            // The menu shows the shortcut right-aligned after a tab character.
+            let shortcut = SettingsShortcut.text (Services.program.getHotKey "newTab")
             CmiRegular({
-                text = "New window"
+                text = tr Strings.TabMenu.newTab + (if shortcut = "" then "" else "\t" + shortcut)
                 flags = List2()
                 image = None
-                click = fun() -> Process.Start(processPath) |> ignore
+                click = fun() -> Services.program.newTab hwnd
             })
 
         let combineIconsInTaskbar =
             CmiRegular({
-                text = "Combine icons in taskbar"
+                text = tr Strings.Settings.combineTaskbarIcons.caption
                 image = None
                 click = fun() -> Services.desktop.restartGroup(group.hwnd, group.isSuperBarEnabled.not)
-                flags = checked(group.isSuperBarEnabled)
+                flags = checkedFlag(group.isSuperBarEnabled)
             })
         
         let renameTabItem =
             CmiRegular({
-                text = "Rename tab"
+                text = tr Strings.TabMenu.renameTab
                 image = None
                 flags = List2()
                 click = fun() ->
                     this.beginRename(hwnd)
             })
+        let colors() = Services.settings.getValue("appTabColors") :?> Map<string,string>
+        let sameApp path = String.Equals(path,processPath,StringComparison.OrdinalIgnoreCase)
+        let remembered = colors() |> Map.exists(fun path _ -> sameApp path)
+        let currentColor = group.tabColor hwnd
+        let dark = Theme.darkBar group.tabAppearance.tabNormalBgColor
+        let saveAppColor color =
+            let others = colors() |> Map.filter(fun path _ -> not (sameApp path))
+            let next = match color with Some value -> others.Add(processPath,Theme.formatTabColor value) | None -> others
+            Services.settings.setValue("appTabColors",box next)
+        let choose color =
+            group.setTabColor(hwnd,Some color)
+            if remembered then saveAppColor (Some color)
+        let colorItems =
+            let palette = Theme.tabPalette dark
+            Theme.tabColorOrder |> List.map(fun index ->
+                let color = palette.[index]
+                let image = Img(MenuImages.colorDot (Dpi.scale 16) color)
+                images.Add(image)
+                CmiRegular({text=tr Strings.Settings.tabColorNames.[index];image=Some image
+                            flags=checkedFlag(currentColor=Some(PaletteColor index))
+                            click=fun() -> choose (PaletteColor index)}))
+            // The main colours, then the ones used once those are taken.
+            |> List.splitAt 10 |> fun (main,more) -> main @ [CmiSeparator] @ more
+        let colorMenu = CmiPopUp({text=tr Strings.Settings.tabColors;image=None;items=List2(colorItems @ [
+            CmiSeparator
+            CmiRegular({text=tr Strings.Settings.customTabColor;image=None;flags=List2();click=fun() ->
+                let initial = currentColor |> Option.map(Theme.tabColor dark) |> Option.defaultValue Color.SteelBlue
+                use dialog = new ColorDialog(FullOpen=true,Color=initial)
+                let owner = {new IWin32Window with member _.Handle=group.hwnd}
+                if dialog.ShowDialog(owner)=DialogResult.OK then choose (CustomColor dialog.Color)})
+            CmiRegular({text=tr (Strings.Settings.rememberTabColor exeName);image=None
+                        flags=checkedFlag remembered |> fun flags -> if not remembered && currentColor.IsNone then flags.append(MenuFlags.MF_GRAYED) else flags
+                        click=fun() -> saveAppColor (if remembered then None else currentColor)})
+            CmiRegular({text=tr Strings.Settings.clearTabColor;image=None;flags=List2();click=fun() ->
+                saveAppColor None
+                group.setTabColor(hwnd,None)})])})
         let restoreTabNameItem =
             CmiRegular({
-                text = "Restore tab name"
+                text = tr Strings.TabMenu.restoreTabName
                 image = None
                 click = fun() -> group.setTabName(hwnd, None)
                 flags = List2()
             })
 
-        let removeTabsItem =
+        let isTabbingEnabled = Services.filter.getIsTabbingEnabledForProcess processPath
+        let enableTabsItem =
             CmiRegular({
-                text = sprintf "Remove tabs for '%s' windows" exeName
+                text = tr (Strings.TabMenu.enableTabsFor exeName)
                 image = None
-                click = fun() -> Services.filter.setIsTabbingEnabledForProcess processPath false
-                flags = List2()
+                click = fun() -> Services.filter.setIsTabbingEnabledForProcess processPath isTabbingEnabled.not
+                flags = checkedFlag(isTabbingEnabled)
             })
 
+        let numberEnabled = NumberShortcutRules.enabled processPath
+        let numberItem = CmiRegular({ text=tr (Strings.Settings.numberShortcutFor exeName); image=None; flags=checkedFlag numberEnabled
+                                      click=fun() -> NumberShortcutRules.setEnabled processPath (not numberEnabled) })
         let isGrouped = Services.program.getAutoGroupingEnabled processPath
         let groupTabsItem =
             CmiRegular({
-                text = sprintf "Group tabs for '%s' windows" exeName
+                text = tr (Strings.TabMenu.autoGroupWindowsOf exeName)
                 image = None
                 click = fun() -> Services.program.setAutoGroupingEnabled processPath isGrouped.not
-                flags = checked(isGrouped)
+                flags = checkedFlag(isGrouped)
             })
                  
         let closeTabItem = 
             CmiRegular({
-                text = "Close"
+                text = tr Strings.TabMenu.close
                 image = None
                 click = fun() -> this.onCloseWindow hwnd
                 flags = List2()
@@ -236,15 +347,17 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         let closeOtherTabsItem =
             CmiRegular({
-                text = "Close others"
+                text = tr Strings.TabMenu.closeOthers
                 image = None
                 click = fun() -> this.onCloseOtherWindows hwnd
                 flags = List2()
             })
 
+        // With every tab from the same program, closing its windows is just "Close all".
+        let mixesApps = group.windows.items.any(fun other -> os.windowFromHwnd(other).pid.exeName <> exeName)
         let closeAllExeTabsItem =
             CmiRegular({
-                text = sprintf "Close all '%s' windows" exeName
+                text = tr (Strings.TabMenu.closeAllOf exeName)
                 image = None
                 click = fun() -> this.onCloseAllExeWindows exeName
                 flags = List2()
@@ -252,7 +365,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         let closeAllTabsItem =
             CmiRegular({
-                text = "Close all"
+                text = tr Strings.TabMenu.closeAll
                 image = None
                 click = fun() -> this.onCloseAllWindows()
                 flags = List2()
@@ -260,29 +373,31 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         let managerItem =
             CmiRegular({
-                text = "Settings..."
+                text = tr Strings.TabMenu.settings
                 image = None
                 click = fun() -> Services.managerView.show()
                 flags = List2()
             })
 
         List2([
-            Some(newWindowItem)
+            Some(newTabItem)
+            Some(renameTabItem)
+            Some(colorMenu)
+            (if group.isRenamed(hwnd) then Some(restoreTabNameItem) else None)
             Some(CmiSeparator)
             Some(iconOnlyItem)
             Some(alignmentItem)
             Some(autoHideItem)
             Some(combineIconsInTaskbar)
-            Some(renameTabItem)
-            (if group.isRenamed(hwnd) then Some(restoreTabNameItem) else None)
             Some(CmiSeparator)
             Some(closeTabItem)
             Some(closeOtherTabsItem)
-            Some(closeAllExeTabsItem)
+            (if mixesApps then Some(closeAllExeTabsItem) else None)
             Some(closeAllTabsItem)
             Some(CmiSeparator)
-            Some(removeTabsItem)
+            Some(enableTabsItem)
             Some(groupTabsItem)
+            Some(numberItem)
             Some(CmiSeparator)
             Some(managerItem)
         ]).choose(id)
@@ -290,6 +405,7 @@ type TabStripDecorator(group:WindowGroup) as this =
     member private this.initAutoHide() =
         let callbackRef = ref None
         let isMaximized = Cell.import(group.isMaximized)
+        let isShownInside = Cell.import(this.ts.isShownInside)
         let isMouseOver = Cell.import(group.isMouseOver)
         let propCell(key,def) =
             let cell = Cell.create(group.bb.read(key, def))
@@ -297,13 +413,40 @@ type TabStripDecorator(group:WindowGroup) as this =
             group.bb.subscribe key update
             cell
 
-        let isAutoHideEnabledDef = Services.settings.getValue("autoHide").cast<bool>()
-        let autoHideCell = propCell("autoHide", isAutoHideEnabledDef)
+        // "Never", "Maximized" or "Always"; a choice made in this group's tab menu beats the global default.
+        let mutable autoHideDefault = Services.settings.getValue("autoHideMode").cast<string>()
+        let autoHideCell = Cell.create(group.bb.read("autoHideMode", autoHideDefault))
+        let updateAutoHide() = autoHideCell.value <- group.bb.read("autoHideMode", autoHideDefault)
+        group.bb.subscribe "autoHideMode" updateAutoHide
+        let mutable disposed = false
+        let autoHideSubscription = Services.settings.notifyValue "autoHideMode" (fun value ->
+            let mode = value.cast<string>()
+            group.invokeAsync(fun () ->
+                if not disposed then
+                    autoHideDefault <- mode
+                    updateAutoHide()))
+        let showOnSwitchCell = Cell.create(Services.settings.getValue("showTabsOnSwitch").cast<bool>())
+        let showOnSwitchSubscription = Services.settings.notifyValue "showTabsOnSwitch" (fun value ->
+            let enabled = value.cast<bool>()
+            group.invokeAsync(fun () -> if not disposed then showOnSwitchCell.value <- enabled))
+        group.exited.Add(fun _ ->
+            disposed <- true
+            autoHideSubscription.Dispose()
+            showOnSwitchSubscription.Dispose()
+            callbackRef.Value.iter(fun (pending:IDisposable) -> pending.Dispose())
+            callbackRef := None)
         let contextMenuVisibleCell = propCell("contextMenuVisible", false)
+        let numberBadgeKeysCell = propCell("numberBadgeKeys", SettingsCatalog.textDefault "numberLeaderKeys")
+        Cell.listen(fun() -> this.ts.numberBadgeKeys <- numberBadgeKeysCell.value)
+        let numberBadgesCell = propCell("numberBadges", false)
+        Cell.listen(fun() -> this.ts.numberBadges <- numberBadgesCell.value)
         let renamingTabCell = propCell("renamingTab", false)
         let isRecentlyChangedZorderCell =
             let cell = Cell.create(false)
             let cbRef = ref None
+            group.exited.Add(fun _ ->
+                cbRef.Value.iter(fun (pending:IDisposable) -> pending.Dispose())
+                cbRef := None)
             group.zorder.changed.Add <| fun() ->
                 cell.value <- true
                 cbRef.Value.iter <| fun(d:IDisposable) -> d.Dispose()
@@ -312,19 +455,20 @@ type TabStripDecorator(group:WindowGroup) as this =
                 )
             cell
         Cell.listen <| fun() ->
-            let shrink = 
-                isMaximized.value && 
-                isMouseOver.value.not && 
+            let shrink =
+                (autoHideCell.value = "Always" ||
+                 ((isMaximized.value || isShownInside.value) && autoHideCell.value = "Maximized")) &&
+                isMouseOver.value.not &&
                 isDraggingCell.value.not &&
-                autoHideCell.value &&
                 contextMenuVisibleCell.value.not &&
+                numberBadgesCell.value.not &&
                 renamingTabCell.value.not &&
-                isRecentlyChangedZorderCell.value.not
+                (showOnSwitchCell.value.not || isRecentlyChangedZorderCell.value.not)
             callbackRef.Value.iter <| fun(d:IDisposable) -> d.Dispose()
             callbackRef := None
             if shrink then
                 callbackRef := Some(ThreadHelper.cancelablePostBack 100 <| fun() ->
-                    this.ts.isShrunk <- true
+                    if not disposed then this.ts.isShrunk <- true
                 )
             else
                 this.ts.isShrunk <- false
@@ -383,7 +527,8 @@ type TabStripDecorator(group:WindowGroup) as this =
                         dragPtCell.set(pt)
                         dragInfoCell.set(Some(dragInfo))
                         this.ts.addTabSlide dragInfo.tab this.tabSlide
-                        this.ts.setTabInfo(dragInfo.tab, dragInfo.tabInfo)
+                        // The destination group owns its cached icons. Drag data
+                        // can outlive the source group's membership and cache.
                         group.addWindow(hwnd, false)
                         true
                 this.updateTsSlide()

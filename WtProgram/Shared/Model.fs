@@ -4,7 +4,7 @@ open System.Collections
 open System.Collections.Generic
 open System.IO
 
-type ModelObject() as this =
+type ModelObject() =
     let mutable values = Dictionary<string, obj>()
     let changedEvent = Event<_>()
 
@@ -22,7 +22,7 @@ type ModelObject() as this =
 
     member this.get(key) = 
         if values.ContainsKey(key) then
-            values.GetValue(key).Value
+            values.tryFind(key).Value
         else
             null
 
@@ -31,7 +31,7 @@ type ModelObject() as this =
     member this.changed = changedEvent.Publish
 
     
-type ModelCollection() as this =
+type ModelCollection() =
     inherit ModelObject()
         
     member this.indicies = this.keys.list.map(int)

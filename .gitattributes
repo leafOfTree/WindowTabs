@@ -1,0 +1,22 @@
+# Text files are stored with LF in the repository; Git converts to the platform's
+# line endings on checkout (CRLF on Windows with core.autocrlf=true).
+* text=auto
+
+# Visual Studio rewrites solution files with CRLF.
+*.sln text eol=crlf
+
+# Binaries must never be converted or diffed as text.
+*.dll binary
+*.exe binary
+*.pdb binary
+*.res binary
+*.ico binary
+*.bmp binary
+*.cur binary
+*.gif binary
+*.png binary
+*.jpg binary
+*.snk binary
+*.nupkg binary
+*.p7s binary
+Thumbs.db binary

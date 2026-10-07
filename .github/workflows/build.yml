@@ -1,0 +1,56 @@
+name: build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      # The SDK-style projects target .NET Framework 4.8 and restore their NuGet
+      # packages; the Release configuration static-links them into a single exe.
+      - name: Build Release
+        run: dotnet build WindowTabs.sln -c Release
+
+      - name: Run regression tests serially
+        shell: powershell
+        run: ./tests/Run-Tests.ps1 -Coverage -MinimumLineCoverage 50 -MinimumBranchCoverage 50
+
+      - name: Smoke test isolated Release assembly
+        shell: powershell
+        run: ./tests/Run-ReleaseSmoke.ps1
+
+      # Real input runs separately on an unlocked interactive desktop.
+      - name: Compile desktop E2E harness
+        shell: powershell
+        run: ./tests/Run-DesktopE2E.ps1 -BuildOnly
+
+      - name: Upload regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: regression-diagnostics
+          path: |
+            tests/Debug/*.log
+            tests/Debug/*.png
+            tests/Debug/test-results.jsonl
+            tests/coverage/*/coverage.xml
+            tests/coverage/*/report/**
+          if-no-files-found: ignore
+
+      - name: Upload WindowTabs.exe
+        uses: actions/upload-artifact@v6
+        with:
+          name: WindowTabs
+          path: |
+            WtProgram/bin/Release/WindowTabs.exe
+          if-no-files-found: error

@@ -8,13 +8,15 @@ open System.Windows.Forms
 open Bemo.Win32.Forms
 open Newtonsoft.Json
 open Newtonsoft.Json.Linq
-open Aga.Controls
-open Aga.Controls.Tree
+
+/// One field of an edit dialog; the settings UI builds the controls.
+type EditField =
+    | TextField of caption:string * editor:IPropEditor
+    | ChoiceField of caption:string * choices:string[] * selected:int ref
 
 type IEditInfo =
     abstract member title : string
-    abstract member fields : List2<string * Control>
-    abstract member height : int
+    abstract member fields : EditField list
     abstract member ok : unit -> unit
 
 [<AllowNullLiteral>]
@@ -31,15 +33,27 @@ type WorkspaceWindowTitleMatchType =
     | Contains = 3
     | RegEx = 4
 
+module MatchTypeText =
+    let label (value:WorkspaceWindowTitleMatchType) =
+        match value with
+        | WorkspaceWindowTitleMatchType.ExactMatch -> tr Strings.Workspaces.exactMatch
+        | WorkspaceWindowTitleMatchType.StartsWith -> tr Strings.Workspaces.startsWith
+        | WorkspaceWindowTitleMatchType.EndsWith -> tr Strings.Workspaces.endsWith
+        | WorkspaceWindowTitleMatchType.Contains -> tr Strings.Workspaces.contains
+        | WorkspaceWindowTitleMatchType.RegEx -> tr Strings.Workspaces.regularExpression
+        | other -> string other
+
 type WorkspaceWindow() as this = 
     inherit Dynamic()
-    let _icon = Services.openImage("window.png")
     let removedEvent = Event<_>()
     let data = ModelObject()
+    let mutable savedProcessPath = ""
 
     member this.name 
         with get() = data.get("name").cast<string>()
         and set(value) = data.set("name", value)
+
+    member _.processPath with get() = savedProcessPath and set(value) = savedProcessPath <- value
 
     member this.title 
         with get() = data.get("title").cast<string>()
@@ -53,7 +67,6 @@ type WorkspaceWindow() as this =
         with get() = data.get("zorder").cast<int>()
         and set(value) = data.set("zorder", value)
 
-    member this.icon = _icon
     member this.children = List2<Dynamic>()
     interface IWorkspaceNode with
         member x.showSettings = true
@@ -65,27 +78,29 @@ type WorkspaceWindow() as this =
             nameEditor.value <- this.name
             let titleEditor = TextEditor() :> IPropEditor
             titleEditor.value <- this.title
-            let matchTypeEditor = EnumEditor<WorkspaceWindowTitleMatchType>()
-            matchTypeEditor.value <- this.matchType
+            let matchTypes = [| WorkspaceWindowTitleMatchType.ExactMatch; WorkspaceWindowTitleMatchType.StartsWith;
+                               WorkspaceWindowTitleMatchType.EndsWith; WorkspaceWindowTitleMatchType.Contains;
+                               WorkspaceWindowTitleMatchType.RegEx |]
+            let matchTypeIndex = ref (Array.IndexOf(matchTypes,this.matchType))
             { new IEditInfo with
                 member x.title = this.name
-                member x.fields = 
-                    List2([
-                        ("Name", nameEditor.control)
-                        ("Title", titleEditor.control)
-                        ("Match Type", matchTypeEditor.cast<IPropEditor>().control)
-                    ])
-                member x.height  = 250
-                member x.ok() = 
+                member x.fields =
+                    [ TextField(tr Strings.Common.name, nameEditor)
+                      TextField(tr Strings.Common.title, titleEditor)
+                      ChoiceField(tr Strings.Workspaces.matchMethod, matchTypes |> Array.map MatchTypeText.label, matchTypeIndex) ]
+                member x.ok() =
+                    let matchType = matchTypes.[max 0 matchTypeIndex.Value]
+                    WindowTitleMatcher.compile (int matchType) (titleEditor.value.cast<string>()) |> ignore
                     this.name <- nameEditor.value.cast<string>()
                     this.title <- titleEditor.value.cast<string>()
-                    this.matchType <- matchTypeEditor.value
+                    this.matchType <- matchType
             }
 
     member this.serialize() =
         let obj = JObject()
         obj.setString("name", this.name)
         obj.setString("title", this.title)
+        obj.setString("processPath", this.processPath)
         obj.setInt32("zorder", this.zorder)
         obj.setInt32("matchType", int32(this.matchType))
         obj
@@ -94,6 +109,7 @@ type WorkspaceWindow() as this =
         let window = WorkspaceWindow()
         window.name <- obj.getString("name").Value
         window.title <-  obj.getString("title").Value
+        window.processPath <- WorkspaceData.text obj "processPath" ""
         window.zorder <- obj.getInt32("zorder").Value
         window.matchType <- enum<WorkspaceWindowTitleMatchType>(obj.getInt32("matchType").Value)
         window
@@ -115,6 +131,8 @@ and
 
     member this.removeWindow(window) =
         _windows.Remove(window).ignore
+        // A group without windows restores nothing, so deleting its last window deletes it too.
+        if _windows.Count=0 then removedEvent.Trigger()
 
     member this.windows = List2(_windows)
     member this.children = this.windows
@@ -129,19 +147,12 @@ and
             nameEditor.value <- this?name
             { new IEditInfo with
                 member x.title = this?name
-                member x.fields = List2([("Name", nameEditor.control)])
-                member x.height  = 200
+                member x.fields = [TextField(tr Strings.Common.name, nameEditor)]
                 member x.ok() = this?name <- nameEditor.value.cast<string>()
             }
     
     member this.serialize() =
-        let placementObj = 
-            let obj = JObject()
-            obj.setInt32("showCmd", this.placement.showCmd)
-            obj.setPt("ptMaxPosition", this.placement.ptMaxPosition)
-            obj.setPt("ptMinPosition", this.placement.ptMinPosition)
-            obj.setRect("rcNormalPosition", this.placement.rcNormalPosition)
-            obj
+        let placementObj = WorkspaceData.writePlacement this.placement
         let windowObjects = this.children.map <| fun child -> child?serialize()
         let groupObj = JObject()
         groupObj.setString("name", this.name)
@@ -152,16 +163,7 @@ and
     static member deserialize(obj:JObject) =
         let group = WorkspaceGroup(
             name = obj.getString("name").Value,
-            placement =(
-                let obj = obj.getObject("placement").Value
-                {
-                    flags = 0
-                    showCmd = obj.getInt32("showCmd").Value
-                    ptMaxPosition = obj.getPt("ptMaxPosition")
-                    ptMinPosition = obj.getPt("ptMinPosition")
-                    rcNormalPosition = obj.getRect("rcNormalPosition")
-                })
-        )
+            placement = WorkspaceData.placement (obj.getObject("placement").Value))
         obj.getObjectArray("windows").Value.map(WorkspaceWindow.deserialize).iter(group.addWindow)
         group
 
@@ -173,7 +175,6 @@ and
     let removedEvent = Event<_>()
     [<DefaultValue>] val mutable name : string
     let mutable _groups  = System.Collections.Generic.List<Dynamic>()
-    let _icon = Services.openImage("workspace.png")
     
     member this.addGroup(group) =
         group.cast<IWorkspaceNode>().removed.Add <| fun()-> this.removeGroup(group)
@@ -184,7 +185,6 @@ and
 
     member this.groups = List2(_groups)
     member this.children = this.groups
-    member this.icon = _icon
 
     interface IWorkspaceNode with
         member x.showSettings = false
@@ -196,8 +196,7 @@ and
             nameEditor.value <- this?name
             { new IEditInfo with
                 member x.title = this?name
-                member x.fields = List2([("Name", nameEditor.control)])
-                member x.height  = 200
+                member x.fields = [TextField(tr Strings.Common.name, nameEditor)]
                 member x.ok() = this?name <- nameEditor.value.cast<string>()
             }
 
@@ -215,35 +214,59 @@ and
         groups.iter(ws.addGroup)
         ws
 
-type WindowResolver() as this =
-    let os = OS()
-    let mutable hwnds = Services.program.appWindows
-    let hwndToTitle = Map2(hwnds.map(fun hwnd -> (hwnd, os.windowFromHwnd(hwnd).text)))
+type WindowResolver(?windows:List2<IntPtr * string * string>) =
+    let mutable remaining =
+        match windows with
+        | Some windows -> windows
+        | None ->
+            let os = OS()
+            Services.program.appWindows.choose(fun hwnd ->
+                try
+                    let window = os.windowFromHwnd(hwnd)
+                    let title = window.text
+                    let path = try window.pid.processPath with _ -> ""
+                    Some(hwnd,title,path)
+                with _ -> None)
 
-    member this.title(hwnd) = hwndToTitle.find(hwnd)
-    member this.removeHwnd(hwnd) =
-        hwnds <- hwnds.where((<>) hwnd)
+    /// Without samePath any window with the title matches, e.g. an app updated into a new folder.
+    member _.resolve(windowInfo:WorkspaceWindow,samePath) =
+        let isMatch = WindowTitleMatcher.compile (int windowInfo.matchType) windowInfo.title
+        let matched = remaining.tryFind(fun (_,title,path) ->
+            (not samePath || String.IsNullOrEmpty windowInfo.processPath ||
+             String.Equals(windowInfo.processPath,path,StringComparison.OrdinalIgnoreCase)) && isMatch title)
+        matched.map(fun (hwnd,_,_) ->
+            remaining <- remaining.where(fun (candidate,_,_) -> candidate<>hwnd)
+            hwnd)
 
-    member this.resolve(windowInfo:Dynamic) =
-        let target : string = windowInfo?title
+/// The saved list is tab order; z-order only determines which restored window sits on top.
+module WorkspaceRestore =
+    type private Slot =
+        | Unmatched of Dynamic
+        | Matched of WorkspaceWindow * IntPtr
+        | Failed
 
-        let isMatch =
-            match windowInfo?matchType with
-            | WorkspaceWindowTitleMatchType.ExactMatch ->
-                fun(title) -> title = target
-            | WorkspaceWindowTitleMatchType.Contains ->
-                fun(title) -> title.Contains(target)
-            | WorkspaceWindowTitleMatchType.StartsWith ->
-                fun(title) -> title.StartsWith(target)
-            | WorkspaceWindowTitleMatchType.EndsWith ->
-                fun(title) -> title.EndsWith(target)
-            | WorkspaceWindowTitleMatchType.RegEx ->
-                let re = Regex(target)
-                fun(title) -> re.IsMatch(title)
-            | _ -> fun(title) -> false
+    /// Every saved window first claims a window of its own app, anywhere in the workspace, so
+    /// the title-only fallback cannot take the window of another saved app with the same title.
+    let resolve (resolver:WindowResolver) (groups:List2<'group * List2<Dynamic>>) missing failed =
+        let pass samePath slot =
+            match slot with
+            | Unmatched item ->
+                try
+                    let window = item :?> WorkspaceWindow
+                    match resolver.resolve(window,samePath) with
+                    | Some hwnd -> Matched(window,hwnd)
+                    | None -> slot
+                with ex -> failed ex; Failed
+            | _ -> slot
+        let ownApp = groups.map(fun (group,windows) -> group,windows.map(Unmatched >> pass true))
+        ownApp.map(fun (group,slots) ->
+            group,slots.map(pass false).choose(function
+                | Matched(window,hwnd) -> Some(window,hwnd)
+                | Unmatched _ -> missing(); None
+                | Failed -> None))
 
-        hwnds.tryFind(this.title >> isMatch)
-  
+    let zorder (windows:List2<WorkspaceWindow * IntPtr>) =
+        windows.sortBy(fun (window,_) -> window.zorder).map snd
 
 type IWorkspaceModel =
     abstract member list : List2<Workspace>
@@ -260,11 +283,15 @@ type WorkspaceModel() as this =
     let canRestoreChangedEvt = Event<_>()
     let _workspaces = System.Collections.Generic.List<Workspace>()
     let mutable _selected = null : obj
+    let mutable loading = false
+    let mutable readOnly = false
+    let mutable recovery : JToken option = None
 
     do
         Observable.init(this)
 
     member this.workspaces =  _workspaces.list
+    member _.isReadOnly = readOnly
     member this.workspaceAdded = workspaceAddedEvt.Publish
 
     member this.selected
@@ -282,7 +309,7 @@ type WorkspaceModel() as this =
 
     member private this.createWorkspace() =
         let zorder = os.windowZorders
-        let groups = Services.desktop.groups.enumerate.map <| fun (i, group) ->
+        let groups = Services.desktop.groups.where(fun group -> not group.windows.isEmpty).enumerate.map <| fun (i, group) ->
             let windowsInZorder = group.windows.sortBy(zorder.find)
             let innerZorder = Map2(windowsInZorder.enumerate.map(fun(innerZorder, hwnd) -> hwnd, innerZorder))
             let wsGroup = WorkspaceGroup(
@@ -296,6 +323,7 @@ type WorkspaceModel() as this =
                 let ww = WorkspaceWindow()
                 ww.name <- window.pid.exeName
                 ww.title <- window.text
+                ww.processPath <- window.pid.processPath
                 ww.zorder <- innerZorder.find(hwnd)
                 ww.matchType <- WorkspaceWindowTitleMatchType.ExactMatch
                 wsGroup.addWindow(ww)
@@ -309,29 +337,37 @@ type WorkspaceModel() as this =
         ws
 
     member private this.restoreWorkspace(workspace:Workspace) =
-        let windowResolver = WindowResolver()
-      
-        Services.program.suspendTabMonitoring()
-
-        let hwndToGroup = Map2(Services.desktop.groups.collect <| fun group ->
-            group.windows.map <| fun hwnd -> (hwnd, group)
-        )
-        let removeWindow hwnd = hwndToGroup.find(hwnd).removeWindow(hwnd)
-
-        workspace.children.iter <| fun (groupInfo) ->
-            let windows : List2<Dynamic> = groupInfo?windows
-            let windows = windows.reverse
-            let windows = windows.sortBy(fun w -> w?zorder).choose windowResolver.resolve
-            
-            windows.iter removeWindow
-            windows.iter <| fun hwnd -> WinUserApi.ShowWindow(hwnd, ShowWindowCommands.SW_RESTORE).ignore
-            windows.iter <| fun hwnd -> os.windowFromHwnd(hwnd).setPlacement(groupInfo?placement)
-            os.setZorder(windows)
-
-            let group = Services.desktop.createGroup(Services.settings.getValue("combineIconsInTaskbar").cast<bool>())
-            windows.iter <| fun hwnd -> group.addWindow(hwnd, false)
-
-        Services.program.resumeTabMonitoring()
+        let resolver = WindowResolver()
+        let errors = ResizeArray<string>()
+        let mutable restored = 0
+        let mutable missing = 0
+        TemporaryState.run Services.program.suspendTabMonitoring Services.program.resumeTabMonitoring (fun () ->
+            let owners = Map2(Services.desktop.groups.collect(fun group -> group.windows.map(fun hwnd -> hwnd,group)))
+            let saved = workspace.children.map(fun groupInfo -> groupInfo,(groupInfo?windows : List2<Dynamic>))
+            let groups = WorkspaceRestore.resolve resolver saved (fun () -> missing <- missing+1) (fun ex -> errors.Add(ex.Message))
+            groups.iter(fun (groupInfo:Dynamic,resolved) ->
+                if not resolved.isEmpty then
+                    let mutable destination : IGroup option = None
+                    let successful = ResizeArray<WorkspaceWindow * IntPtr>()
+                    let placement = WorkspaceData.fitPlacement (Mon.all.map(fun mon -> mon.displayRect,mon.workRect).list) (groupInfo?placement)
+                    resolved.iter(fun (saved,hwnd) ->
+                        try
+                            let window = os.windowFromHwnd(hwnd)
+                            if window.isWindow then
+                                // Complete native placement before detaching from the old group.
+                                WinUserApi.ShowWindow(hwnd,ShowWindowCommands.SW_RESTORE) |> ignore
+                                window.setPlacement(placement)
+                                if destination.IsNone then destination <- Some(Services.desktop.createGroup(Services.settings.getValue("combineIconsInTaskbar").cast<bool>()))
+                                owners.tryFind(hwnd).iter(fun owner -> owner.removeWindow(hwnd))
+                                destination.Value.addWindow(hwnd,false)
+                                successful.Add(saved,hwnd)
+                                restored <- restored+1
+                            else missing <- missing+1
+                        with ex -> errors.Add(ex.Message))
+                    try os.setZorder(WorkspaceRestore.zorder (List2(successful))) with ex -> errors.Add(ex.Message)))
+        let details = if errors.Count=0 then "" else "\n\n"+String.concat "\n" (errors |> Seq.truncate 5)
+        Alert.show (if errors.Count=0 then AlertKind.Info else AlertKind.Warning) (tr Strings.Workspaces.restoreTitle)
+                   (tr (Strings.Workspaces.restoreSummary restored missing errors.Count details))
 
     member this.addWorkspace(ws:Workspace) =
         ws.cast<IWorkspaceNode>().removed.Add <| fun() -> this.onWorkspaceRemoved(ws)
@@ -340,12 +376,14 @@ type WorkspaceModel() as this =
         workspaceAddedEvt.Trigger(ws) 
          
     member this.create() =
-        let ws = this.createWorkspace()
-        this.addWorkspace(ws)
+        if not readOnly then
+            let ws = this.createWorkspace()
+            this.addWorkspace(ws)
     
     member this.remove() =
-        if this.selected <> null then
+        if not readOnly && this.selected <> null then
             this.selected?remove()
+            this.saveSettings()
 
     member this.canRestore =
         this.selected <> null && this.selected.GetType() = typeof<Workspace>
@@ -353,45 +391,45 @@ type WorkspaceModel() as this =
     member this.canRestoreChanged = canRestoreChangedEvt.Publish
 
     member this.restore() =
-        if this.selected <> null then
+        if this.canRestore then
             let ws = this.selected :?> Workspace
             this.restoreWorkspace(ws)
 
-    member this.edit(parent) =
-        let selected = this.selected
-        if selected <> null then
-            let editInfo = selected?beginEdit()
-            let table = UIHelper.form(editInfo?fields)
-            let form = UIHelper.okCancelForm table
-            let icon = Services.openIcon("edit.ico")
-            form.Icon <- icon
-            form.Width <- 300
-            form.Height <- editInfo?height
-            form.StartPosition <- FormStartPosition.CenterParent
-            form.Text <- editInfo?title
-            let ok = form.ShowDialog(parent) = DialogResult.OK
-            if ok then    
-                editInfo?ok()
-                this.saveSettings()
-            ok
-        else
-            false
+    /// The selected node's edit fields, or None when it cannot be edited.
+    member this.beginEdit() : IEditInfo option =
+        if not readOnly && this.selected <> null then Some(this.selected?beginEdit()) else None
+
+    /// Applies an edit and saves it; throws when a field is invalid.
+    member this.commitEdit(editInfo:IEditInfo) =
+        editInfo.ok()
+        this.saveSettings()
 
     member this.init() =
         this.loadSettings()
 
     member this.loadSettings() =
-        let settingsObj = Services.settings.root
-        let workspaces = settingsObj.getObjectArray("workspaces").def(List2()).map(Workspace.deserialize)
-        workspaces.iter this.addWorkspace
+        let root = Services.settings.root
+        let workspaces,warnings,unsupported = WorkspaceData.read root
+        readOnly <- unsupported
+        recovery <- if warnings.IsEmpty || isNull root.["workspaces"] then None else Some(root.["workspaces"].DeepClone())
+        loading <- true
+        try
+            _workspaces.Clear()
+            workspaces |> List.iter(fun json -> this.addWorkspace(Workspace.deserialize(json)))
+        finally loading <- false
+        if not warnings.IsEmpty then
+            Alert.show AlertKind.Warning (tr Strings.Workspaces.dataWarnings) (String.concat "\n" (warnings |> List.truncate 8))
 
     member this.saveSettings() =
-        let settingsObj = Services.settings.root
-        let workspaceObjs = this.workspaces.map <| fun ws -> ws.serialize()
-        settingsObj.setObjectArray("workspaces", workspaceObjs)
-        Services.settings.root <- settingsObj
+        if not loading && not readOnly then
+            let root = Services.settings.root
+            let workspaceObjs = this.workspaces.map(fun ws -> ws.serialize())
+            root.setObjectArray("workspaces",workspaceObjs)
+            root.setInt32("workspaceSchemaVersion",WorkspaceData.version)
+            recovery |> Option.iter(fun data -> root.["workspaceRecovery"] <- data.DeepClone())
+            Services.settings.root <- root
 
 
     member this.onWorkspaceRemoved(ws) =
         _workspaces.Remove(ws).ignore
-        this.saveSettings() 
+        this.saveSettings()

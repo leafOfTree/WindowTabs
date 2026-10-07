@@ -5,6 +5,36 @@ open System.Drawing.Imaging
 open System.Runtime.InteropServices
 open System.Windows.Forms
 
+/// Preview producers transfer ownership of their bitmap to this request.
+module TaskbarPreview =
+    let relativeLocation (previewBounds:Rect) (windowBounds:Rect) =
+        windowBounds.location.sub(previewBounds.location).Point
+
+    let send (preview:unit -> Img option) (transform:Img -> Img) (publish:Img -> unit) =
+        preview() |> Option.iter(fun source ->
+            try
+                let prepared = transform source
+                try publish prepared
+                finally
+                    if not (obj.ReferenceEquals(prepared.bitmap,source.bitmap)) then prepared.bitmap.Dispose()
+            finally source.bitmap.Dispose())
+
+    let compose (size:Sz) (contentLocation:Point) (stripLocation:Point) (content:unit -> Img) (strip:unit -> Img) =
+        let contentImage = content()
+        use contentBitmap = contentImage.bitmap
+        let stripImage = strip()
+        use stripBitmap = stripImage.bitmap
+        let result = Img(size)
+        try
+            use graphics = result.graphics
+            graphics.Clear(Color.Transparent)
+            graphics.DrawImage(contentBitmap,contentLocation)
+            graphics.DrawImage(stripBitmap,stripLocation)
+            result
+        with _ ->
+            result.bitmap.Dispose()
+            reraise()
+
 type TbButton = {
     icon : Icon
     text : string
@@ -35,7 +65,7 @@ type DwmWindow = {
 type TaskBarButton(info) as this =
     let Cell = CellScope()
     let _os = OS()
-    let invoker = Invoker()
+    let invoker = new Invoker()
     let mutable overlayInitialized = false
     let taskbar = _os.getTaskbar().Value
     let infoCell = Cell.create(None)
@@ -123,6 +153,10 @@ type TaskBarButton(info) as this =
         let prevInfo = infoCell.value
         infoCell.set(Some(info))
 
+        // Notify the shell before the group releases its previous icon copies.
+        if prevInfo |> Option.exists(fun previous -> obj.ReferenceEquals(previous.icon,info.icon)) |> not then
+            this.window.setIcons(info.icon)
+
         this.window.move(info.bounds)
         this.window.setText(info.text)
         
@@ -139,6 +173,10 @@ type TaskBarButton(info) as this =
 
             tabWindow.window.move(info.bounds)
             tabWindow.window.setText(tabConfig.text)
+            let previousIcon = prevInfo |> Option.bind(fun previous ->
+                previous.tabs.tryFind(fst >> (=) tab) |> Option.map(fun (_,config) -> config.icon))
+            if previousIcon |> Option.exists(fun icon -> obj.ReferenceEquals(icon,tabConfig.icon)) |> not then
+                tabWindow.window.setIcons(tabConfig.icon)
             
         let prevTabOrder = 
             match prevInfo with
@@ -150,8 +188,8 @@ type TaskBarButton(info) as this =
             tabOrder.iter <| fun tabWindow ->  setTabOrder(tabWindow.window.hwnd, IntPtr.Zero)
 
         invoker.asyncInvoke <| fun() ->
-            let hicon = Services.openIcon("Bemo.ico").Handle
-            taskbar.SetOverlayIcon(this.window.hwnd, hicon, "WindowTabs")
+            use icon = Services.openIcon("Bemo.ico")
+            taskbar.SetOverlayIcon(this.window.hwnd, icon.Handle, "WindowTabs")
        
     member this.tabWindow key = tabWindowsCell.value.find(key).window
 
@@ -197,17 +235,15 @@ and TaskbarTab(parent:TaskBarButton, config,size) =
                         msg.def()
                 | WindowMessages.WM_DWMSENDICONICTHUMBNAIL ->
                     let msgWindow = os.windowFromHwnd(msg.hwnd)
-                    config().preview(true).iter <| fun img ->
-                        msgWindow.dwmSetIconicThumbnail(img.resize(msg.lParam.size))
-                    GC.Collect()
+                    TaskbarPreview.send (fun () -> config().preview(true))
+                        (fun img -> img.resize(msg.lParam.size)) msgWindow.dwmSetIconicThumbnail
                     msg.def()
                 | WindowMessages.WM_DWMSENDICONICLIVEPREVIEWBITMAP ->
                     let msgWindow = os.windowFromHwnd(msg.hwnd)
                     //DwmSetIconic fails if the image is larger than the preview window, windows can't be larger than
                     //a certain size determined by the workspace - this happens when the window is maximized
-                    config().preview(false).iter <| fun img ->
-                        msgWindow.dwmSetIconicLivePreview(img.crop(size()))
-                    GC.Collect()
+                    TaskbarPreview.send (fun () -> config().preview(false))
+                        (fun img -> img.crop(size())) msgWindow.dwmSetIconicLivePreview
                     msg.def()
                 // a ghost window is shown during peek preview if this isn't here
                 | WindowMessages.WM_NCCALCSIZE -> 0
@@ -278,15 +314,13 @@ type SuperBarPlugin() as this =
                                 this.os.windowFromHwnd(hwnd).close()
                             preview = fun(isThumbnail) -> 
                                 try
-                                    let bmpTs = this.ts.renderTs(Some(tab))
-                                    let bmpHwnd = this.ts.tabInfo(tab).preview()
-                                    let previewBmp = Img(Sz(previewBounds.width, previewBounds.height))
-                                    let previewGfx = previewBmp.graphics
-                                    previewGfx.FillRectangle(new SolidBrush(Color.Transparent), Rectangle(Point.Empty, previewBounds.size.Size))
-                                    previewGfx.DrawImage(bmpHwnd.bitmap, this.ts.contentBounds.location.sub(previewBounds.location).Point)
-                                    previewGfx.DrawImage(bmpTs.bitmap, this.ts.bounds.location.sub(previewBounds.location).Point)
-                                    previewGfx.Dispose()
-                                    Some(previewBmp)
+                                    let (Tab(hwnd)) = tab
+                                    let contentLocation = TaskbarPreview.relativeLocation previewBounds (this.os.windowFromHwnd(hwnd).bounds)
+                                    Some(TaskbarPreview.compose previewBounds.size
+                                        contentLocation
+                                        (this.ts.bounds.location.sub(previewBounds.location).Point)
+                                        (fun () -> this.ts.tabInfo(tab).preview())
+                                        (fun () -> this.ts.renderTs(Some(tab))))
                                 with _ -> None
                             activate = fun() -> this.invokeAsync <| fun() ->
                                 this.tabActivate(tab, false)
@@ -356,6 +390,7 @@ type SuperBarPlugin() as this =
     interface IPlugin with
         member x.init() =
             this.wtGroup.foregroundChanged.Add this.onForegroundChanged
+            this.wtGroup.tabInfoChanged.Add(fun _ -> this.updateTaskbar())
             this.wtGroup.added.Add this.onAdded
             this.wtGroup.removed.Add this.onRemoved
             this.wtGroup.flash.Add this.onFlash

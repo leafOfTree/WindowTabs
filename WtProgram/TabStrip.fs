@@ -25,15 +25,21 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let appearanceCell = Cell.create(None)
     let foregroundCell = Cell.create(None:Tab option)
     let prevForegroundCell = Cell.create(None)
-    let sizeCell = Cell.create(Sz.empty)
+    let sizeCell = Bemo.Cell<Sz>(Cell, Sz.empty, (=))
     let alphaCell = Cell.create(byte(0xFF))
-    let locationCell = Cell.create(Pt.empty)
+    // Position is presentation state, not an input to pixel rendering.
+    let mutable location = Pt.empty
+    let mutable renderedFrames = 0L
+    let mutable renderedOffset = 0
+    let mutable relocating = false
     let lorderCell = Cell.create(List2())
     let zorderCell = Cell.create(List2())
-    let visibleCell = Cell.create(false)
+    let visibleCell = Bemo.Cell<bool>(Cell, false, (=))
     let transparentCell = Cell.create(true)
-    let showInsideCell = Cell.create(false)
+    let showInsideCell = Bemo.Cell<bool>(Cell, false, (=))
     let isInAltTabCell = Cell.create(false)
+    let numberBadgeKeysCell = Bemo.Cell<string>(Cell, SettingsCatalog.textDefault "numberLeaderKeys", (=))
+    let numberBadgesCell = Bemo.Cell<bool>(Cell, false, (=))
     let iconOnlyCell = Cell.create(false)
     let alignmentMap = 
         Map.ofList [
@@ -47,19 +53,33 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         | Some align -> align
         | None -> TabCenter
     let alignment = Cell.create(Map2(List2([(TabUp,alignmentDefault);(TabDown,alignmentDefault)])))
-    let capturedCell = Cell.create(None : Option<Tab*TabPart>)
-    let hoverCell = Cell.create(None : Option<Tab*TabPart>)
+    let mutable alignmentOverrides = Set.empty
+    let capturedCell = Bemo.Cell<Option<Tab*TabPart>>(Cell, None, (=))
+    let hoverCell = Bemo.Cell<Option<Tab*TabPart>>(Cell, None, (=))
     let slideCell = Cell.create(None)
+    let heldLayoutCell = Bemo.Cell<(float * float) option>(Cell, None, (=))
     let ptCell = Cell.create(None)
     let tabInfoCell = Cell.create(Map2():Map2<Tab,TabInfo>)
     let layeredWindowCell = Cell.create(None)
     let eventHandlersCell = Cell.create(Set2())
+    let tabTint = Cell.create(Map2())
+    let colorStyleCell = Cell.create(Services.settings.getValue("tabColorStyle") :?> string)
     let tabBgColor = Cell.create(Map2())
+    let mutable shadowWindow : TabShadowWindow option = None
+    let mutable shadowRefreshPending = false
+    let shadowRefreshMessage = 0x8000 + 67
     let hwndRef = ref IntPtr.Zero
-    let isShrunkCell = Cell.create(false)
+    let isShrunkCell = Bemo.Cell<bool>(Cell, false, (=))
+    let destroyingEvent = Event<unit>()
+    let makeFont = TabMetrics.font
+    let mutable fontKey = Dpi.value(),0
+    let mutable normalFont = makeFont 0 FontStyle.Regular
+    let mutable renamedFont = makeFont 0 FontStyle.Italic
 
     let isMouseOverExport = Cell.export <| fun() ->
         hoverCell.value.IsSome
+
+    let showInsideExport = Cell.export <| fun() -> showInsideCell.value
 
     let addEvent(evt,handler) =
         eventHandlersCell.map(fun s -> s.add(_os.setSingleWinEvent evt handler))
@@ -74,11 +94,19 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 WindowsExtendedStyles.WS_EX_TOOLWINDOW
             Some(_os.createWindow this.wndProc style styleExe)
         hwndRef := layeredWindowCell.value.Value.hwnd
+        shadowWindow <- Some(new TabShadowWindow(_os, hwndRef.Value))
         
         isMouseOverExport.init()
+        showInsideExport.init()
 
         Cell.listen <| fun() ->
             this.update()
+
+    member _.setTabTint(tab,color) =
+        if tabTint.value.tryFind(tab) <> color then tabTint.value <- match color with Some c -> tabTint.value.add tab c | None -> tabTint.value.remove tab
+    member _.colorStyle with get() = colorStyleCell.value and set value = colorStyleCell.value <- value
+    member _.numberBadgeKeys with get() = numberBadgeKeysCell.value and set value = numberBadgeKeysCell.value <- value
+    member _.numberBadges with get() = numberBadgesCell.value and set value = numberBadgesCell.value <- value
 
     member private this.inAltSwitch = isInAltTabCell.value
 
@@ -98,12 +126,13 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             tabs = Map2(this.tabs.items.map <| fun tab ->
                 let ti = this.tabInfo(tab)
                 let tabInfo = {
+                    tint = tabTint.value.tryFind(tab)
+                    colorStyle = colorStyleCell.value
+                    numberBadge = if numberBadgesCell.value then lorderCell.value.list |> List.tryFindIndex ((=) tab) |> Option.filter(fun i -> i<numberBadgeKeysCell.value.Length) |> Option.map(fun i -> string numberBadgeKeysCell.value.[i]) else None
                     bgColor = tabBgColor.value.tryFind(tab)
                     TabDisplayInfo.text = ti.text
                     icon = ti.iconSmall
-                    textFont = 
-                        let font = SystemFonts.MenuFont
-                        if ti.isRenamed then Font(font, FontStyle.Italic) else font
+                    textFont = if ti.isRenamed then renamedFont else normalFont
                     textBrush = SystemBrushes.MenuText
                 }
                 tab,tabInfo
@@ -118,9 +147,13 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             alignment = alignment.value.find direction
             onlyIcons = this.isIconOnly
             transparent = this.transparent
-            appearance = 
+            held = heldLayoutCell.value
+            centerShift =
+                if this.showInside then float(this.appearance.tabIndentFlipped - this.appearance.tabIndentNormal) / 2.0
+                else 0.0
+            appearance =
                 if this.isIconOnly then
-                    { this.appearance with tabMaxWidth = 50 }
+                    { this.appearance with tabMaxWidth = Dpi.scale 50 }
                 else
                     this.appearance
         }
@@ -136,42 +169,47 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         }
     
     member private this.processMouse(mouse) =
-        match mouse with
-        | MouseMove(pt) ->
-            this.setPt(Some(pt))
-            if this.window.hasCapture.not then 
-                this.window.trackMouseLeave()
-            hoverCell.set(this.hit)
-            let enableHoverActivate = Services.settings.getValue("enableHoverActivate").cast<bool>()
-            if enableHoverActivate then 
+        // Hover/capture changes share one render. Equal hover values leave the
+        // render listener untouched, while pointer/click callbacks still run.
+        this.withUpdate(fun () ->
+            match mouse with
+            | MouseMove(pt) ->
+                this.setPt(Some(pt))
+                if this.window.hasCapture.not then
+                    this.window.trackMouseLeave()
+                let hit = this.hit
+                hoverCell.set(hit)
+                let enableHoverActivate = Services.settings.getValue("enableHoverActivate").cast<bool>()
+                if enableHoverActivate then
+                    hit.iter <| fun(hitTab, hitPart) -> monitor.tabActivate(hitTab)
+            | MouseClick(pt, btn, action) ->
+                this.setPt(Some(pt))
                 this.hit.iter <| fun(hitTab, hitPart) ->
-                    monitor.tabActivate(hitTab)
-        | MouseClick(pt, btn, action) ->
-            this.setPt(Some(pt))
-            this.hit.iter <| fun(hitTab, hitPart) ->
-                match action with
-                | MouseDown ->
-                    capturedCell.set(Some(hitTab, hitPart))
-                | MouseUp ->
-                    capturedCell.value.iter <| fun(capturedTab, capturedPart) ->
-                    if  btn = MouseLeft && 
-                        hitTab = capturedTab &&
-                        hitPart = capturedPart &&
-                        hitPart = TabClose then
-                        monitor.tabClose(hitTab)
-                    capturedCell.set(None)
-                | MouseDblClick ->
-                    ()
-                this.onMouse(action, pt, btn, (hitTab, hitPart))
-            hoverCell.set(this.hit)
-        | MouseLeave ->
-            this.setPt(None)
-            capturedCell.set(None)
-            hoverCell.set(None)
-        this.update()
+                    match action with
+                    | MouseDown ->
+                        capturedCell.set(Some(hitTab, hitPart))
+                    | MouseUp ->
+                        capturedCell.value.iter <| fun(capturedTab, capturedPart) ->
+                        let closeClick = btn = MouseLeft && hitPart = capturedPart && hitPart = TabClose
+                        // Middle-click closes too (TabStripDecorator); both keep the layout.
+                        if hitTab = capturedTab && (closeClick || btn = MouseMiddle) then
+                            heldLayoutCell.set(Some(this.ts.layout))
+                        if hitTab = capturedTab && closeClick then
+                            monitor.tabClose(hitTab)
+                        capturedCell.set(None)
+                    | MouseDblClick -> ()
+                    this.onMouse(action, pt, btn, (hitTab, hitPart))
+                hoverCell.set(this.hit)
+            | MouseLeave ->
+                this.setPt(None)
+                capturedCell.set(None)
+                hoverCell.set(None)
+                heldLayoutCell.set(None))
 
     member private this.wndProc(msg:Win32Message) =
-        let mousePt() = msg.lParam.location
+        let mousePt() =
+            let pt = msg.lParam.location
+            if this.isShrunk then pt.add(Pt(0,this.ts.collapsedOffset)) else pt
         let mouseDown btn =
             this.processMouse(MouseClick(mousePt(), btn, MouseDown))
             msg.def()
@@ -187,6 +225,17 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             monitor.windowMsg(msg)
 
         match msg.msg with
+        | message when message = shadowRefreshMessage ->
+            shadowRefreshPending <- false
+            shadowWindow |> Option.iter (fun shadow -> shadow.sync())
+            0
+        | WindowMessages.WM_WINDOWPOSCHANGED
+        | WindowMessages.WM_SHOWWINDOW ->
+            let result = msg.def()
+            if not relocating then
+                shadowWindow |> Option.iter (fun shadow -> shadow.sync())
+                this.refreshShadow()
+            result
         | WindowMessages.WM_MOUSEACTIVATE ->
             MouseActivateReturnCodes.MA_NOACTIVATE
         | WindowMessages.WM_MOUSEMOVE ->
@@ -209,30 +258,55 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member private this.top = zorderCell.value.head
     member private this.isEmpty = this.lorder.isEmpty
     member private this.contentOffset = this.appearance.tabHeightOffset
-    member private this.location = locationCell.value 
+    member private this.location = location
+    // Used by native performance/regression hosts to verify that unchanged
+    // hover and movement do not regenerate pixels; not a user-facing setting.
+    member internal _.renderCount = renderedFrames
     
     member private this.update() = 
         if this.visible then 
-            this.window.update(this.render, this.location, this.alpha)
-            GC.Collect()
-        else this.window.hide()
+            let image = this.render
+            try
+                renderedOffset <- if this.isShrunk then this.ts.collapsedOffset else 0
+                renderedFrames <- renderedFrames+1L
+                this.window.update(image, this.location.add(Pt(0,renderedOffset)), this.alpha)
+                shadowWindow |> Option.iter (fun shadow ->
+                    if this.isShrunk || this.isEmpty then shadow.hide()
+                    else shadow.update(image, this.alpha, this.direction))
+            finally
+                image.bitmap.Dispose()
+        else
+            shadowWindow |> Option.iter (fun shadow -> shadow.hide())
+            this.window.hide()
     
     member private this.render : Img = 
         try
-            let img = this.ts.render
-            if this.isShrunk && this.direction = TabDirection.TabDown then
-                img.clip(Rect(Pt(0, img.height - 7), Sz(img.width, 7)))
-            else
-                img
+            if this.isShrunk then this.ts.renderCollapsed else this.ts.render
         with ex -> 
             Img(Sz(1,1))
 
     
     member private this.withUpdate f =
         Cell.beginUpdate()
-        let result = f()
-        Cell.endUpdate()
-        result
+        try f()
+        finally Cell.endUpdate()
+
+    member private this.move() =
+        // Layered HWNDs retain their pixels. Moving them needs neither a new
+        // strip bitmap nor extraction/comparison of the shadow silhouette.
+        relocating <- true
+        try
+            this.window.updateLocation(this.location.add(Pt(0,renderedOffset)))
+            shadowWindow |> Option.iter(fun shadow -> shadow.move())
+        finally relocating <- false
+
+    // Run after Windows finishes activation/owner popup bookkeeping. Coalescing
+    // prevents resize/move message bursts from producing redundant refreshes.
+    member this.refreshShadow() =
+        if this.hwnd <> IntPtr.Zero && shadowWindow.IsSome && not shadowRefreshPending then
+            shadowRefreshPending <- true
+            if not (WinUserApi.PostMessage(this.hwnd, shadowRefreshMessage, IntPtr.Zero, IntPtr.Zero)) then
+                shadowRefreshPending <- false
 
     member this.hwnd = hwndRef.Value
     
@@ -254,6 +328,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         lorderCell.map(fun l -> l.where((<>) tab))
         zorderCell.map(fun z -> z.where((<>) tab))
         tabInfoCell.map(fun m -> m.remove tab)
+        tabTint.map(fun m -> m.remove tab)
+        tabBgColor.map(fun m -> m.remove tab)
         Cell.endUpdate()
 
     member this.tabs : Set2<Tab> = Set2(lorderCell.value)
@@ -274,9 +350,12 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.zorder
         with get() = zorderCell.value
         and set(zorder:List2<Tab>) =
-            zorderCell.set(zorder.where(this.tabs.contains))
+            let next = zorder.where(this.tabs.contains)
+            if next.list <> zorderCell.value.list then zorderCell.set(next)
 
     member this.sprite = this.ts.sprite
+
+    member this.tabSprites = this.ts.tabSprites
             
     member this.isIconOnly 
         with get() = iconOnlyCell.value
@@ -288,9 +367,21 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member this.isMouseOver = isMouseOverExport :> ICellOutput<_>
 
+    /// No room above the window on its monitor, so the tabs sit inside it over the title bar:
+    /// true when the window is maximized, snapped to the top, or moved against the top edge.
+    member this.isShownInside = showInsideExport :> ICellOutput<bool>
+
     member this.getAlignment direction = alignment.value.find(direction)
 
-    member this.setAlignment((direction, newAlignment)) = alignment.map(fun m -> m.add direction newAlignment)
+    member this.setAlignment((direction, newAlignment)) =
+        alignmentOverrides <- alignmentOverrides.Add(direction)
+        alignment.map(fun m -> m.add direction newAlignment)
+
+    member this.setDefaultAlignment(value:string) =
+        let next = alignmentMap.TryFind(value) |> Option.defaultValue TabCenter
+        alignment.map(fun current ->
+            [TabUp;TabDown] |> List.fold (fun result direction ->
+                if alignmentOverrides.Contains(direction) then result else result.add direction next) current)
             
     member this.direction = if showInsideCell.value then TabDown else TabUp
     
@@ -305,27 +396,42 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member this.setTabInfo((tab, tabInfo)) = 
         tabInfoCell.map(fun m -> m.add tab tabInfo)
+
+    member internal this.hasTabInfo(tab) = tabInfoCell.value.contains(tab)
             
     member this.tabLocation = this.ts.tabLocation
     
+    /// The window capture is full size; release it here rather than waiting for the GC.
     member this.dragImage (tab:Tab) : Img= 
-        let bmpTab = this.tsBase(TabUp).renderTab(tab)
-        let bmpHwnd : Img = this.tabInfo(tab).preview()
-        let bmpOverlay = Img(Sz(bmpHwnd.width, bmpHwnd.height + bmpTab.height - this.contentOffset))
-        let gCapture = bmpOverlay.graphics
-        gCapture.DrawImage(bmpTab.bitmap, Point.Empty)
-        gCapture.DrawImage(bmpHwnd.bitmap, new Point(0, this.size.height - this.contentOffset))
-        gCapture.Dispose()
-        bmpOverlay
+        use bmpTab = this.tsBase(TabUp).renderTab(tab).bitmap
+        use bmpHwnd = this.tabInfo(tab).preview().bitmap
+        let bmpOverlay = Img(Sz(bmpHwnd.Width, bmpHwnd.Height + bmpTab.Height - this.contentOffset))
+        try
+            use gCapture = bmpOverlay.graphics
+            gCapture.DrawImage(bmpTab, Point.Empty)
+            gCapture.DrawImage(bmpHwnd, new Point(0, this.size.height - this.contentOffset))
+            bmpOverlay
+        with _ ->
+            bmpOverlay.bitmap.Dispose()
+            reraise()
 
     member this.setTabBgColor((tab, color)) =
+        if tabBgColor.value.tryFind(tab) <> color then
             match color with
             | Some(color) -> 
                 tabBgColor.map(fun m -> m.add tab color)
             | None -> 
                 tabBgColor.map(fun m -> m.remove tab)
         
-    member this.setTabAppearance(appearance) = appearanceCell.set(Some(appearance))
+    member this.setTabAppearance(appearance:TabAppearanceInfo) =
+        let key = Dpi.value(),appearance.tabHeight
+        if fontKey <> key then
+            normalFont.Dispose()
+            renamedFont.Dispose()
+            normalFont <- makeFont appearance.tabHeight FontStyle.Regular
+            renamedFont <- makeFont appearance.tabHeight FontStyle.Italic
+            fontKey <- key
+        appearanceCell.set(Some(appearance))
             
     member this.contentBounds 
         with get() = contentBoundsCell.value
@@ -340,9 +446,16 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.bounds = this.window.bounds
 
     member this.setPlacement(placement) =
-        showInsideCell.set(placement.showInside)
-        sizeCell.set(placement.bounds.size)
-        locationCell.set(placement.bounds.location)   
+        let moved = location <> placement.bounds.location
+        let previousRender = renderedFrames
+        location <- placement.bounds.location
+        this.withUpdate(fun () ->
+            showInsideCell.set(placement.showInside)
+            sizeCell.set(placement.bounds.size))
+        // A size/direction change already uploaded fresh pixels at the new
+        // position. Otherwise keep the existing strip/shadow surfaces.
+        if moved && this.visible && renderedFrames>0L && renderedFrames=previousRender then
+            this.move()
      
     member this.alpha
         with get() = alphaCell.value
@@ -350,7 +463,11 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member this.visible 
         with get() = visibleCell.value
-        and set(value) = visibleCell.set(value)
+        and set(value) =
+            // Windows may hide an owned popup independently of our desired state.
+            // Keep the equal-value fast path, but restore externally hidden strips.
+            if value && visibleCell.value && not this.window.isVisible then this.update()
+            else visibleCell.set(value)
             
     member this.transparent 
         with get() = transparentCell.value
@@ -371,9 +488,16 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             }
         ts.render
 
+    member _.destroying = destroyingEvent.Publish
     member this.destroy() = 
+        destroyingEvent.Trigger()
+        normalFont.Dispose()
+        renamedFont.Dispose()
+        shadowWindow |> Option.iter (fun shadow -> (shadow :> IDisposable).Dispose())
+        shadowWindow <- None
         eventHandlersCell.value.items.iter(fun d -> d.Dispose())
         layeredWindowCell.value.iter <| fun w -> (w :?> IDisposable).Dispose()
         this.window.destroy()
             
-    member this.tryHit(pt) : Option<_> = this.ts.tryHit(pt)
+    member this.tryHit(pt:Pt) : Option<_> =
+        this.ts.tryHit(if this.isShrunk then pt.add(Pt(0,this.ts.collapsedOffset)) else pt)

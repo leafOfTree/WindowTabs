@@ -7,29 +7,30 @@ open Newtonsoft.Json.Linq
 [<AutoOpen>]
 module JObjectHelper =
     type System.Collections.Generic.IDictionary<'k,'v> with
-        member this.GetValue(key) =
+        member this.tryFind(key) =
             if this.ContainsKey(key) then Some(this.Item(key)) else None
 
     type JObject with 
         member this.items = List2(this:>IDictionary<_,_>).map(fun pair -> pair.Key,pair.Value)
-        member this.getString(key) = this.GetValue(key).map(fun t -> unbox<string>((t :?> JValue).Value))
-        member this.getBool(key) = this.GetValue(key).map(fun t -> unbox<bool>((t :?> JValue).Value))
-        member this.getInt32(key) = this.GetValue(key).map(fun t -> unbox<int64>((t :?> JValue).Value).Int32)
-        member this.getIntPtr(key) = this.GetValue(key).map(fun t -> IntPtr(unbox<int64>((t :?> JValue).Value)))
+        member this.getString(key) = this.tryFind(key).map(fun t -> unbox<string>((t :?> JValue).Value))
+        member this.getBool(key) = this.tryFind(key).map(fun t -> unbox<bool>((t :?> JValue).Value))
+        // Parsed JSON holds Int64, but values written back in code (JValue(int)) hold Int32.
+        member this.getInt32(key) = this.tryFind(key).map(fun t -> Convert.ToInt32((t :?> JValue).Value))
+        member this.getIntPtr(key) = this.tryFind(key).map(fun t -> IntPtr(Convert.ToInt64((t :?> JValue).Value)))
         member this.getPt(key) = Pt(this.getInt32("x").Value, this.getInt32("y").Value)
         member this.getSz(key) = Sz(this.getInt32("width").Value, this.getInt32("height").Value)
         member this.getRect(key) = Rect(this.getPt("location"), this.getSz("size"))
         member this.getArray<'t>(key) =
             let parse(token:JToken) =
                 List2(token :?> JArray).map(fun t -> unbox<'t>((t :?> JValue).Value))
-            this.GetValue(key).map(parse)
+            this.tryFind(key).map(parse)
         member this.getObjectArray(key) = 
             let parse(token:JToken) =
                 List2(token :?> JArray).map(fun t -> t :?> JObject)
-            this.GetValue(key).map(parse)
+            this.tryFind(key).map(parse)
         member this.getStringArray(key) = this.getArray<string>(key)
-        member this.getInt32Array(key) = this.getArray<Int64>(key).map(fun l -> l.map(int32))
-        member this.getObject(key) = this.GetValue(key).map(fun t -> unbox<JObject>(t))
+        member this.getInt32Array(key) = this.tryFind(key).map(fun token -> List2(token :?> JArray).map(fun t -> Convert.ToInt32((t :?> JValue).Value)))
+        member this.getObject(key) = this.tryFind(key).map(fun t -> unbox<JObject>(t))
         member this.update(key:string, token:JToken option) =
             match token with
             | Some(token) ->

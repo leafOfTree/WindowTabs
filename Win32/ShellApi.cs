@@ -8,11 +8,12 @@ using System.Runtime.CompilerServices;
 namespace Bemo
 {
 	#region Structures
-    [StructLayout(LayoutKind.Sequential)]
+    // Unicode: an ANSI call cannot see paths with characters outside the system code page.
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public struct SHFILEINFO
     {
         public IntPtr hIcon;
-        public IntPtr iIcon;
+        public int iIcon;
         public uint dwAttributes;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
         public string szDisplayName;
@@ -335,7 +336,7 @@ namespace Bemo
 
         public const String IID_IPropertyStore = "886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99";
 
-        [DllImport("shell32.dll")]
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
         public static extern IntPtr SHGetFileInfo(string pszPath, uint dwFileAttributes, ref SHFILEINFO psfi, uint cbSizeFileInfo, uint uFlags);
         [DllImport("shell32.dll")]
 		public static extern IntPtr SHAppBarMessage(int dwMessage, ref APPBARDATA pData);

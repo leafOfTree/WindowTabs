@@ -48,6 +48,8 @@ type FilterService() as this =
             fun() -> (window.className <> "ApplicationFrameWindow") || not(String.IsNullOrEmpty window.text)
             fun() -> this.isBanned(window).not
             fun() -> this.isOnScreenOrMinimized(window)
+            // Background UWP apps keep a "visible" but cloaked frame window.
+            fun() -> not (WindowCloaking.IsHiddenOnCurrentDesktop window.hwnd)
             ])
         tests.all(fun pred -> pred()) 
 
@@ -60,13 +62,32 @@ type FilterService() as this =
     member this.screenRegion = os.screenRegion
 
     member this.isOnScreenOrMinimized(window:Window) =
-        window.isMinimized || this.screenRegion.containsRect(window.bounds)
-    
-    member this.getIsTabbingEnabledForProcess(processPath) =
-        if this.isTabbingEnabledForAllProcessesByDefault then
-            this.excludedPaths.contains(processPath).not
+        if window.isMinimized then true
         else
-            this.includedPaths.contains(processPath)
+            use region = this.screenRegion
+            region.containsRect(window.bounds)
+    
+    /// An app turned on or off in the app rules keeps that choice; the default is for the rest.
+    member this.getIsTabbingEnabledForProcess(processPath) =
+        match this.includedPaths.contains processPath, this.excludedPaths.contains processPath with
+        // Each list once applied only under its own default, so an app could be in both: the
+        // list of the current default wins, as it did then.
+        | true, true -> this.isTabbingEnabledForAllProcessesByDefault.not
+        | true, false -> true
+        | false, true -> false
+        | false, false -> this.isTabbingEnabledForAllProcessesByDefault
+
+    /// Records the choice for each app, then applies it to open windows once.
+    member this.setIsTabbingEnabledForProcesses (processPaths:string list) enabled =
+        let add (paths:Set2<string>) = processPaths |> List.fold (fun (paths:Set2<string>) path -> paths.add path) paths
+        let remove (paths:Set2<string>) = processPaths |> List.fold (fun (paths:Set2<string>) path -> paths.remove path) paths
+        if enabled then
+            this.includedPaths <- add this.includedPaths
+            this.excludedPaths <- remove this.excludedPaths
+        else
+            this.excludedPaths <- add this.excludedPaths
+            this.includedPaths <- remove this.includedPaths
+        Services.program.refresh().ignore
 
     member this.isTabbableWindow(window:Window) = 
         this.getIsTabbingEnabledForProcess(window.pid.processPath) && this.isAppWindow(window)
@@ -89,21 +110,11 @@ type FilterService() as this =
             with get() = this.isTabbingEnabledForAllProcessesByDefault
             and set(value) = this.isTabbingEnabledForAllProcessesByDefault <- value
 
-        member x.setIsTabbingEnabledForProcess processPath enabled = 
-            if this.isTabbingEnabledForAllProcessesByDefault then
-                this.excludedPaths <-
-                    if enabled then
-                        this.excludedPaths.remove processPath
-                    else
-                        this.excludedPaths.add processPath
-            else
-                this.includedPaths <-
-                    if enabled then
-                        this.includedPaths.add processPath
-                    else
-                        this.includedPaths.remove processPath
-                
-            Services.program.refresh().ignore
+        member x.setIsTabbingEnabledForProcess processPath enabled =
+            this.setIsTabbingEnabledForProcesses [processPath] enabled
+
+        member x.setIsTabbingEnabledForProcesses processPaths enabled =
+            this.setIsTabbingEnabledForProcesses processPaths enabled
 
         member x.getIsTabbingEnabledForProcess(processPath) = 
             this.getIsTabbingEnabledForProcess(processPath)

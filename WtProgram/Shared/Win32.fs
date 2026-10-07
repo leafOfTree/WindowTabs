@@ -68,14 +68,16 @@ type ShellEvent =
 type IWindow =
     abstract member hwnd : IntPtr
 
-type OS() as this= 
+type OS()= 
     let Cell = CellScope()
 
     member this.getTaskbar() = if this.isWin7OrHigher then Some(ShellApi.GetTaskbar()) else None
     
     member this.isWin7OrHigher =
-        System.Environment.OSVersion.Version.Major >= 6 &&
-        System.Environment.OSVersion.Version.Minor >= 1
+        // Major > 6 matters once the manifest declares a supportedOS: Windows
+        // then reports 10.0, and a plain "Minor >= 1" would read as false.
+        let version = System.Environment.OSVersion.Version
+        version.Major > 6 || (version.Major = 6 && version.Minor >= 1)
     
     member this.lockForeground() = WinUserApi.LockSetForegroundWindow(1)
     member this.unlockForeground() = WinUserApi.LockSetForegroundWindow(2).ignore
@@ -119,14 +121,16 @@ type OS() as this=
             IntPtr.Zero
             )
 
+        let mutable disposed = 0
         { 
             new IWindow with
                 member this.hwnd = hwnd
             interface IDisposable with
                 member this.Dispose() =
-                    WinUserApi.DestroyWindow(hwnd).ignore
-                    WinUserApi.UnregisterClass(className, hModule).ignore
-                    delHandle.Free()
+                    if Threading.Interlocked.Exchange(&disposed,1)=0 then
+                        WinUserApi.DestroyWindow(hwnd).ignore
+                        WinUserApi.UnregisterClass(className, hModule).ignore
+                        delHandle.Free()
         }
 
 
@@ -159,9 +163,12 @@ type OS() as this=
             del, 
             WinBaseApi.GetModuleHandle(IntPtr.Zero),
             0)
+        let mutable disposed = 0
         let dispose() =
-            WinUserApi.UnhookWindowsHookEx(hookId).ignore
-            handle.Free()
+            // Both plugin shutdown and the scope can release the same hook.
+            if Threading.Interlocked.Exchange(&disposed,1)=0 then
+                WinUserApi.UnhookWindowsHookEx(hookId).ignore
+                handle.Free()
         { 
             new Object() with
                 override this.Finalize() = 
@@ -172,11 +179,17 @@ type OS() as this=
                     dispose()
         }
 
+    // Caller owns the returned region and should dispose it. The accumulator and
+    // the per-monitor regions are dead once union has produced the next one.
     member this.screenRegion =
-        Mon.all.fold (Rgn()) <| fun rgn mon ->
-            rgn.union(Rgn(mon.displayRect))
+        Mon.all.fold (new Rgn()) <| fun rgn mon ->
+            use previous = rgn
+            use monitorRegion = new Rgn(mon.displayRect)
+            previous.union(monitorRegion)
 
-    member this.isOnScreen (bounds:Rect) = this.screenRegion.containsRect(bounds)
+    member this.isOnScreen (bounds:Rect) =
+        use region = this.screenRegion
+        region.containsRect(bounds)
 
     member this.capture =
         let hwnd = WinUserApi.GetCapture()
@@ -216,13 +229,15 @@ type OS() as this=
         let del = WINEVENTPROC(proc)
         let delHandle = GCHandle.Alloc(del)
         let hhook = WinUserApi.SetWinEventHook(int(min), int(max), IntPtr.Zero, del, pid, tid, 0)
+        let mutable disposed = 0
         { 
             new IDisposable with
             member this.Dispose() =
-                try
-                    WinUserApi.UnhookWinEvent(hhook).ignore
-                    delHandle.Free()
-                with _ -> ()
+                if Threading.Interlocked.Exchange(&disposed,1)=0 then
+                    try
+                        WinUserApi.UnhookWinEvent(hhook).ignore
+                        delHandle.Free()
+                    with _ -> ()
         }
 
     member this.dosDevices = 
@@ -241,7 +256,7 @@ type OS() as this=
         this.setWinEventHook(event, event, proc, 0, 0)
 
 and
-    Window(hwnd:nativeint, os:OS) as this =
+    Window(hwnd:nativeint, os:OS) =
     let Cell = CellScope()
 
     member this.hwnd = hwnd
@@ -260,14 +275,14 @@ and
         if os.isWin7OrHigher then
             let mutable ptClient = POINT(0, 0)
             let hbitmap = image.hbitmap
-            DwmApi.DwmSetIconicLivePreviewBitmap(hwnd, hbitmap, ref ptClient, 0) |> ignore
-            WinGdiApi.DeleteObject(hbitmap) |> ignore
+            try DwmApi.DwmSetIconicLivePreviewBitmap(hwnd, hbitmap, ref ptClient, 0) |> ignore
+            finally WinGdiApi.DeleteObject(hbitmap) |> ignore
 
     member this.dwmSetIconicThumbnail (image:Img) =
         if os.isWin7OrHigher then
             let hbitmap = image.hbitmap
-            DwmApi.DwmSetIconicThumbnail(hwnd, hbitmap, 0) |> ignore
-            WinGdiApi.DeleteObject(hbitmap) |> ignore
+            try DwmApi.DwmSetIconicThumbnail(hwnd, hbitmap, 0) |> ignore
+            finally WinGdiApi.DeleteObject(hbitmap) |> ignore
 
     member this.style = WinUserApi.GetWindowLong(hwnd, WindowLongFieldOffset.GWL_STYLE)
     member this.styleEx = WinUserApi.GetWindowLong(hwnd, WindowLongFieldOffset.GWL_EXSTYLE)
@@ -300,7 +315,10 @@ and
 
     member this.isOwned = WinUserApi.GetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT) <> IntPtr.Zero
 
-    member this.bounds = Win32Helper.GetWindowRectangle(hwnd).Rect  
+    member this.bounds = Win32Helper.GetWindowRectangle(hwnd).Rect
+
+    /// What the user sees: bounds less the invisible resize borders, for drawing next to the window.
+    member this.visibleBounds = Win32Helper.GetVisibleWindowRectangle(hwnd).Rect
 
     member this.size = this.bounds.size
     
@@ -310,12 +328,34 @@ and
 
     member this.isInMoveSize = this.uiThreadInfo.hwndMoveSize = hwnd
 
-    member this.icon iconType = 
-        Ico.fromHandle(Win32Helper.GetWindowIcon(hwnd, iconType)).def(System.Drawing.SystemIcons.Application)
+    member private this.packagedIcon iconType =
+        // UWP apps behind ApplicationFrameHost publish no window icon; use their package icon
+        // (cached by AppIcons, so callers never dispose it).
+        if this.className = "ApplicationFrameWindow" then
+            let size = if iconType = IconTypeCodes.ICON_BIG then SystemInformation.IconSize.Width else SystemInformation.SmallIconSize.Width
+            AppIcons.GetPackagedWindowIcon(hwnd, size)
+        else null
+
+    member this.icon iconType =
+        let packaged = this.packagedIcon iconType
+        if not (isNull packaged) then packaged
+        else Ico.fromHandle(Win32Helper.GetWindowIcon(hwnd, iconType)).def(System.Drawing.SystemIcons.Application)
+
+    member this.copyIcon iconType =
+        let packaged = this.packagedIcon iconType
+        if not(isNull packaged) then packaged.Clone() :?> Icon
+        else
+            match Ico.fromHandle(Win32Helper.GetWindowIcon(hwnd, iconType)) with
+            | Some icon -> icon
+            | None -> System.Drawing.SystemIcons.Application.Clone() :?> Icon
 
     member this.iconSmall = this.icon IconTypeCodes.ICON_SMALL
 
     member this.iconBig = this.icon IconTypeCodes.ICON_BIG
+
+    member this.setIcons(icon:Icon) =
+        for size in [IconTypeCodes.ICON_SMALL;IconTypeCodes.ICON_BIG] do
+            WinUserApi.SendMessage(hwnd,WindowMessages.WM_SETICON,IntPtr(size),icon.Handle) |> ignore
 
     member this.text = Win32Helper.GetWindowText(hwnd)
         
@@ -412,19 +452,21 @@ and
             WinUserApi.SetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT, parent.hwnd).ignore
             this.insertAfter(parent.prevZorder)
 
+    /// Changes the owner but leaves this window where it is in the z-order.
+    member this.setOwner (owner:Window) =
+        if this.parent.hwnd <> owner.hwnd then
+            WinUserApi.SetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT, owner.hwnd).ignore
+
     member this.showNoActivate() = WinUserApi.ShowWindow(hwnd, ShowWindowCommands.SW_SHOWNOACTIVATE).ignore
 
     member this.update(image:Img, location:Pt, alpha) =       
-        let image =
-            let imageWithBg = new Bitmap(image.width, image.height)
-            let gfx = Graphics.FromImage(imageWithBg)
-            let b = new SolidBrush(Color.Transparent)
-            gfx.FillRectangle(b, new Rectangle(Point.Empty, image.size.Size))
-            b.Dispose()
+        use imageWithBg = new Bitmap(image.width, image.height)
+        do
+            use gfx = Graphics.FromImage(imageWithBg)
+            use brush = new SolidBrush(Color.Transparent)
+            gfx.FillRectangle(brush, new Rectangle(Point.Empty, image.size.Size))
             gfx.DrawImage(image.bitmap, Point.Empty)
-            gfx.Dispose()
-            imageWithBg
-        Win32Helper.UpdateLayeredWindow(hwnd, location.Point, image, alpha)
+        Win32Helper.UpdateLayeredWindow(hwnd, location.Point, imageWithBg, alpha)
         this.showNoActivate()
     
     member this.updateLocation(location:Pt) =       
@@ -470,7 +512,8 @@ and
     member this.isAltTabWindow =
         WinUserApi.IsWindowVisible(hwnd) &&
         this.isOwned.not &&
-        int(this.styleEx) &&& WindowsExtendedStyles.WS_EX_TOOLWINDOW = 0
+        int(this.styleEx) &&& WindowsExtendedStyles.WS_EX_TOOLWINDOW = 0 &&
+        not (WindowCloaking.IsHiddenOnCurrentDesktop hwnd)
     
     member this.registerShellHookWindow() = WinUserApi.RegisterShellHookWindow(this.hwnd) |> ignore 
 

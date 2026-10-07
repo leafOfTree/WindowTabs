@@ -5,10 +5,10 @@ open System.Reflection
 open Microsoft.FSharp.Reflection
 
 
-type ObservableListener(handler:obj->unit) as this =
+type ObservableListener(handler:obj->unit) =
     member this.fire(arg) = handler(arg)
 
-type ObservableEvent(name:string) as this =
+type ObservableEvent(name:string) =
     let listeners = System.Collections.Generic.List<ObservableListener>()
 
     member this.listen(handler:obj->unit) =
@@ -19,7 +19,7 @@ type ObservableEvent(name:string) as this =
         listeners.list.iter <| fun listener ->
             listener.fire(arg)
 
-type Observable() as this =
+type Observable() =
     let events = System.Collections.Generic.Dictionary<string, ObservableEvent>()
 
     member this.event(eventName: string) =

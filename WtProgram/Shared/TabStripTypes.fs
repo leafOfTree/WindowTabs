@@ -43,7 +43,16 @@ and TabDock =
     | TabDockLeft
     | TabDockRight
 
+/// How the tabs are drawn. Joined: one bar, the active tab told apart by its fill. Folder: the
+/// active tab rises out of the bar like the tab of a paper folder, with curved feet into its
+/// neighbours. Pill: the active and hovered tabs are rounded pills set into the bar.
+and TabStyle =
+    | JoinedTabs
+    | FolderTabs
+    | PillTabs
+
 and TabAppearanceInfo = {
+    tabStyle: TabStyle
     tabHeight: int
     tabMaxWidth: int
     tabOverlap: int

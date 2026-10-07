@@ -1,130 +1,111 @@
 namespace Bemo
-open System
-open System.Drawing
-open System.IO
 open System.Windows.Forms
-open Bemo.Win32
-open Bemo.Win32.Forms
-open System.Resources
-open System.Reflection
-
 
 type HotKeyView() =
-    let settingsProperty name =
-        {
-            new IProperty<'a> with
-                member x.value
-                    with get() = unbox<'a>(Services.settings.getValue(name))
-                    and set(value) = Services.settings.setValue(name, box(value))
-        }
-        
-    let resources = new ResourceManager("Properties.Resources", Assembly.GetExecutingAssembly());
-
-    let checkBox (prop:IProperty<bool>) = 
-        let checkbox = BoolEditor() :> IPropEditor
-        checkbox.value <- box(prop.value)
-        checkbox.changed.Add <| fun() -> prop.value <- unbox<bool>(checkbox.value)
-        checkbox.control
-
-    let settingsCheckbox key = checkBox(settingsProperty(key))
-
-    let dropDown (prop:IProperty<string>, items: string list) = 
-        let combo = new ComboBox()
-
-        // First add items
-        combo.Items.AddRange(items |> List.toArray |> Array.map box)
-        
-        // Then set initial value if exists, otherwise select first item
-        let initialIndex = 
-            match items |> List.tryFindIndex ((=) prop.value) with
-            | Some index -> index
-            | None -> if combo.Items.Count > 0 then 0 else -1
-        
-        if initialIndex >= 0 then
-            combo.SelectedIndex <- initialIndex
-            
-        combo.SelectedIndexChanged.Add(fun _ ->
-            if combo.SelectedIndex >= 0 then
-                prop.value <- combo.SelectedItem.ToString()
-        )
-
-        combo :> Control
-
-    let settingsDropDown key value = dropDown(settingsProperty(key), value)
-
-    let basicForm = 
-        let fields = List2([
-            ("runAtStartup", settingsCheckbox "runAtStartup")
-            ("hideInactiveTabs", settingsCheckbox "hideInactiveTabs")
-            ("isTabbingEnabledForAllProcessesByDefault", checkBox(prop<IFilterService, bool>(Services.filter, "isTabbingEnabledForAllProcessesByDefault")))
-            ("autoHide", settingsCheckbox "autoHide")
-            ("alignment", settingsDropDown "alignment" ["Left"; "Center"; "Right"])
-        ])
-        "Basics", UIHelper.form fields
-
-    let taskForm = 
-        let fields = List2([
-            ("combineIconsInTaskbar", settingsCheckbox "combineIconsInTaskbar")
-            ("replaceAltTab", settingsCheckbox "replaceAltTab")
-            ("groupWindowsInSwitcher", settingsCheckbox "groupWindowsInSwitcher")
-        ])
-        "Tasks", UIHelper.form fields
-
-    let switchTabs =
-        let hotKeys = List2([
-            ("nextTab", "nextTab")
-            ("prevTab", "prevTab")
-        ])
-
-        let editors = hotKeys.enumerate.fold (Map2()) <| fun editors (i,(key, text)) ->
-            let caption = resources.GetString text
-            let label = UIHelper.label caption
-            let editor = HotKeyEditor() :> IPropEditor
-            editor.control.Margin <- Padding(0,5,0,5)
-            label.Margin <- Padding(0,5,0,5)
-            editors.add key editor
-
-        hotKeys.iter <| fun (key,_) ->
-            let editor = editors.find key
-            editor.value <- Services.program.getHotKey(key)
-            editor.changed.Add <| fun() ->
-                Services.program.setHotKey key (unbox<int>(editor.value))
-
-        let fields = hotKeys.map <| fun(key,text) ->
-            let editor = editors.find key
-            text, editor.control
-
-        let fields = fields.prependList(List2([
-            ("enableCtrlNumberHotKey", settingsCheckbox "enableCtrlNumberHotKey")
-            ("enableHoverActivate", settingsCheckbox "enableHoverActivate")
-            ("enableShiftScroll", settingsCheckbox "enableShiftScroll")
-        ]))
-
-        "Switch Tabs", UIHelper.form fields
-
-    let sections = List2([
-        basicForm
-        taskForm
-        switchTabs
-        ])
-
-    let table = 
-        let font = Font(resources.GetString("Font"), 10f)
-        let controls = sections.map <| fun(text,control) ->
-            control.Dock <- DockStyle.Fill
-            let group = GroupBox()
-            group.Dock <- DockStyle.Top
-            group.Margin <- Padding(10)
-            group.AutoSize <- true
-            group.Text <- text
-            group.Font <- font
-            group.Controls.Add(control)
-            group :> Control
-        let table = UIHelper.vbox controls
-        table.Dock <- DockStyle.Fill
-        table
-
+    let panel,table = SettingsUi.page()
+    // Setting id for each program hotkey, so a conflict can name the other action.
+    let actions = ["nextTab","next-tab";"prevTab","previous-tab";"searchTabs","search-tabs";"newTab","new-tab";"numberLeader","number-leader"]
+    let hotKey key =
+        let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=Services.program.getHotKey key)
+        editor.Changed.Add(fun _ ->
+            let previous = Services.program.getHotKey key
+            let conflict =
+                if editor.Shortcut=0 then None
+                else actions |> List.tryFind(fun (other,_) -> other<>key && Services.program.getHotKey other=editor.Shortcut)
+            match conflict with
+            | Some(_,id) ->
+                let name = SettingsCatalog.title id
+                editor.Reject(previous,tr (Strings.Shortcuts.usedBy name))
+            | None when not (Services.program.setHotKey key editor.Shortcut) ->
+                editor.Reject(previous,tr Strings.Shortcuts.inUse)
+            | None -> ())
+        editor
+    let editors = actions |> List.map (fun (key,_) -> key,hotKey key)
+    let restoreDefaults() =
+        // Clear first so swapped shortcuts (next <-> previous) do not collide with each other.
+        for key,_ in editors do Services.program.setHotKey key 0 |> ignore
+        for key,editor in editors do
+            let target = SettingsCatalog.shortcutDefault key
+            if Services.program.setHotKey key target then editor.Shortcut <- target
+            else editor.Reject(0,tr Strings.Shortcuts.inUse)
+    do
+        let restore = new SettingsResetButton(tr Strings.Shortcuts.restoreDefaults,Name="restore-shortcuts")
+        SettingsUi.sectionHeading table (tr Strings.Shortcuts.keyboard) [restore]
+        let keyboard = new SettingsCard()
+        SettingsUi.add table keyboard
+        SettingsUi.note keyboard (tr Strings.Shortcuts.keyboardNote)
+        for (key,editor),(_,id) in List.zip editors actions do
+            if key<>"numberLeader" then SettingsUi.settingRow keyboard id editor
+        // Rows inset under a toggle and collapsed while it is off.
+        let dependOn (toggle:SettingsToggle) (rows:SettingsRow list) =
+            for row in rows do SettingsUi.indentDependentRow row
+            let update() = for row in rows do row.Collapsed <- not toggle.Checked
+            update()
+            toggle.CheckedChanged.Add(fun _ -> update())
+        let leaderEnabled = SettingsBindings.settingToggle "enableNumberLeader"
+        SettingsUi.settingRow keyboard "enable-number-leader" leaderEnabled
+        let leaderEditor = editors |> List.find(fun (key,_) -> key="numberLeader") |> snd
+        SettingsUi.settingRow keyboard "number-leader" leaderEditor
+        let keysText = new TextBox(Font=SettingsUi.bodyFont(),Text=(Services.settings.getValue("numberLeaderKeys") :?> string),
+                                   AccessibleName=tr Strings.Settings.leaderKeys.caption,MaxLength=47,TextAlign=HorizontalAlignment.Left)
+        let keysEditor = new SettingsTextInput(keysText,Name="leader-keys",Width=Dpi.scale 140,MinimumSize=System.Drawing.Size(Dpi.scale 140,0))
+        let hint = SettingsHover(keysText,tr Strings.Settings.invalidLeaderKeys,enabled=false)
+        let mutable savingKeys = false
+        let validate() =
+            let valid = NumberLeaderKeys.tryNormalize keysText.Text
+            keysText.AccessibleDescription <- if valid.IsSome then "" else tr Strings.Settings.invalidLeaderKeys
+            hint.Enabled <- valid.IsNone
+            valid
+        let save keys =
+            if Services.settings.getValue("numberLeaderKeys")<>box keys then
+                savingKeys <- true
+                try Services.settings.setValue("numberLeaderKeys",box keys)
+                finally savingKeys <- false
+        // App deactivation can keep the editor focused, so valid input saves as it is typed.
+        keysText.TextChanged.Add(fun _ -> validate() |> Option.iter save)
+        let commit() =
+            match validate() with
+            | Some keys -> save keys; keysText.Text <- keys
+            | None -> hint.Show()
+        keysText.Leave.Add(fun _ -> commit())
+        keysText.KeyDown.Add(fun e ->
+            if e.KeyCode=Keys.Enter then commit(); e.SuppressKeyPress <- true
+            elif e.KeyCode=Keys.Escape then
+                keysText.Text <- Services.settings.getValue("numberLeaderKeys") :?> string
+                e.SuppressKeyPress <- true)
+        let keysSubscription = Services.settings.notifyValue "numberLeaderKeys" (fun value ->
+            if not savingKeys && not keysText.IsDisposed then keysText.Text <- unbox value)
+        keysEditor.Disposed.Add(fun _ -> keysSubscription.Dispose())
+        let presets = SettingsCatalog.leaderKeyPresets |> List.mapi(fun index (keys,label) ->
+            let button = SettingsUi.button (tr label)
+            button.Name <- sprintf "leader-keys-preset-%d" index
+            button.Kind <- SettingsButtonKind.Subtle
+            button.Font <- SettingsUi.font "Segoe UI" 9.0f System.Drawing.FontStyle.Regular
+            button.AutoSize <- false
+            button.MinimumSize <- System.Drawing.Size.Empty
+            let width = TextRenderer.MeasureText(button.Text,button.Font,System.Drawing.Size.Empty,TextFormatFlags.NoPadding).Width
+            button.Size <- System.Drawing.Size(width+Dpi.scale 12,Dpi.scale 24)
+            button.Padding <- Padding.Empty
+            button.Margin <- Padding(0,0,Dpi.scale 4,0)
+            button.Click.Add(fun _ -> keysText.Text <- keys; save keys)
+            button :> Control)
+        SettingsUi.settingRowWithActions keyboard "leader-keys" keysEditor presets |> ignore
+        dependOn leaderEnabled [leaderEditor.Parent :?> SettingsRow;keysEditor.Parent :?> SettingsRow]
+        let numericEnabled = SettingsBindings.settingToggle "enableCtrlNumberHotKey"
+        SettingsUi.settingRow keyboard "switch-tabs-by-number" numericEnabled
+        let numericChoice = SettingsBindings.choiceRow keyboard "number-shortcut"
+                                [|tr Strings.Settings.numberShortcutCtrl;tr Strings.Settings.numberShortcutAlt|]
+        dependOn numericEnabled [numericChoice.Parent :?> SettingsRow]
+        // Offered only while a shortcut differs from its default; otherwise it would do nothing.
+        let updateRestore() =
+            restore.Offered <- editors |> List.exists(fun (key,editor) -> editor.Shortcut<>SettingsCatalog.shortcutDefault key)
+        for _,editor in editors do editor.Changed.Add(fun _ -> updateRestore())
+        restore.Click.Add(fun _ -> restoreDefaults(); updateRestore())
+        updateRestore()
+        let pointer = SettingsUi.sectionCard table (tr Strings.Shortcuts.mouse)
+        SettingsBindings.toggleRow pointer "activate-on-hover"
+        SettingsBindings.toggleRow pointer "shift-scroll"
     interface ISettingsView with
-        member x.key = SettingsViewType.HotKeySettings
-        member x.title = resources.GetString("Behavior")
-        member x.control = table :> Control
+        member _.key = SettingsViewType.HotKeySettings
+        member _.title = tr Strings.Pages.shortcuts
+        member _.control = panel :> Control
