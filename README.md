@@ -1,4 +1,4 @@
-<img src="https://raw.githubusercontent.com/leafOfTree/leafOfTree.github.io/master/windowtabs.png" width="60" height="60" alt="WindowTabs icon" align="left"/>
+<img src="docs/images/logo.svg" width="60" height="60" alt="WindowTabs icon" align="left"/>
 
 # WindowTabs
 
@@ -11,6 +11,13 @@ window, even when they belong to different apps.
 [Download](https://github.com/leafOfTree/WindowTabs/releases/latest) ·
 [Getting started](#install-and-get-started) · [Shortcuts](#keyboard-and-mouse) ·
 [What's changed](CHANGELOG.md)
+
+> [!IMPORTANT]
+> **Major update · v2026.10.07**
+>
+> Refreshed Settings, light and dark themes, more shortcuts, saved workspaces and
+> improved reliability. This is a **preview release**.
+> [See what's changed →](CHANGELOG.md)
 
 | Light tabs | Dark tabs |
 | --- | --- |

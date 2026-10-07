@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">WindowTabs</title>
+  <path d="M30 31H107V65H214V175H30Z" fill="#737373" stroke="#202020" stroke-width="9" stroke-linejoin="round"/>
+  <path d="M48 111H139V89H222V224H48Z" fill="#F5F5F5" stroke="#202020" stroke-width="10" stroke-linejoin="round"/>
+</svg>
