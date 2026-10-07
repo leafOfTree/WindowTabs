@@ -73,7 +73,9 @@ retries. This does not guarantee persistence of the last 250 ms after a forced k
 
 On malformed JSON, a valid backup is restored and the broken primary is retained
 as `.corrupt-<id>`. Without a valid backup, loading still reports failure. The legacy
-appearance fields remain compatible; the old paid version's license key and ticket are
+appearance fields remain compatible. A legacy palette supplies only the light or
+dark palette matching its tab background; the other theme keeps its default.
+Explicit per-theme palettes take precedence. The old paid version's license key and ticket are
 dropped from the file on the next save. Unused activation UI,
 version notification stubs and the uncalled launcher have been removed.
 

@@ -27,15 +27,17 @@ module Theme =
                     tabBorderColor=Color.FromRGB(0x747474)
                     tabFlashBgColor=Color.FromRGB(0x772222) }
 
-    /// Stable stored indices; menu and allocation priority live in tabColorOrder.
+    /// Stored indices keep their colour meanings when display or allocation order changes.
     let tabPalette dark =
         (if dark then [|0x9AA0A6;0x8AB4F8;0xF28B82;0xFDD663;0x81C995;0xFF8BCB;0xC58AF9;0x78D9EC
                         0xFCAD70;0xD1C4E9;0xDCE775;0xF8BBD0;0xC5E1A5;0x7986CB;0x80CBC4;0xFFAB91|]
          else [|0x70757A;0x1A73E8;0xD93025;0xE8A200;0x188038;0xD01884;0x8430CE;0x008B9A
                 0xE8710A;0x7E57C2;0x827717;0xC2185B;0x7CB342;0x1A237E;0x00796B;0xE64A19|]) |> Array.map Color.FromRGB
     let tabPaletteSize = 16
-    /// Display and allocation order; stored indices keep their original colour meanings.
+    /// Keep related colours together in the menu.
     let tabColorOrder = [1;7;14;4;3;8;2;5;11;6;9;10;12;13;15;0]
+    /// Alternate distant hues so neighbouring automatic colours remain easy to distinguish.
+    let tabAllocationOrder = [1;8;4;6;3;13;2;7;5;14;11;10;9;12;15;0]
     /// Whether a bar takes the lighter tints. Decided by the bar rather than the theme: a
     /// custom palette can put a dark bar in the light theme. 0.179 is where black and white
     /// text are equally readable.
@@ -67,7 +69,7 @@ module Theme =
         let counts = Array.zeroCreate tabPaletteSize
         for index in indices do if index>=0 && index<tabPaletteSize then counts.[index] <- counts.[index]+1
         // Exhaust the coloured choices before grey, then repeat in the same order.
-        tabColorOrder |> List.mapi(fun rank index -> rank,index) |> List.minBy(fun (rank,index) -> counts.[index],rank) |> snd
+        tabAllocationOrder |> List.mapi(fun rank index -> rank,index) |> List.minBy(fun (rank,index) -> counts.[index],rank) |> snd
     let blend amount (tint:Color) (background:Color) =
         let channel a b = int(Math.Round(float b + (float a-float b)*amount))
         Color.FromArgb(255,channel tint.R background.R,channel tint.G background.G,channel tint.B background.B)
@@ -147,21 +149,21 @@ type WindowTabColors() =
         indices <- indices.Remove hwnd
         overrides <- overrides.Remove hwnd
         paths <- paths.Remove hwnd
-    /// Peers are listed only the first time, when the window is given its own colour.
-    member _.resolve hwnd (peers:unit -> IntPtr list) (path:string) mode (remembered:Map<string,string>) =
-        let index =
-            match indices.TryFind hwnd with
-            | Some index -> index
-            | None ->
-                let index = peers() |> List.choose indices.TryFind |> Theme.leastUsedColor
-                indices <- indices.Add(hwnd,index)
-                index
+    /// Allocate in group order once; singleton previews do not reserve a colour.
+    member _.resolve hwnd (path:string) mode (remembered:Map<string,string>) (peers:IntPtr list) =
         let app = remembered |> Map.tryPick(fun key value ->
             if String.Equals(key,path,StringComparison.OrdinalIgnoreCase) then Theme.parseTabColor value else None)
         match overrides.TryFind hwnd,app with
         | Some color,_ | _,Some color -> Some color
         | _ ->
             match mode with
-            | "ByWindow" -> Some(PaletteColor index)
+            | "ByWindow" ->
+                if peers.Length>1 then
+                    for peer in peers do
+                        if not(indices.ContainsKey peer) then
+                            let used = peers |> List.choose(fun peer -> indices.TryFind peer)
+                            indices <- indices.Add(peer,Theme.leastUsedColor used)
+                let index = indices.TryFind hwnd |> Option.defaultValue Theme.tabAllocationOrder.Head
+                Some(PaletteColor index)
             | "ByApp" -> Some(PaletteColor(Theme.appColorIndex (IO.Path.GetFileName path)))
             | _ -> None

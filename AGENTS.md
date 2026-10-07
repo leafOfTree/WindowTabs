@@ -61,6 +61,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
 
 ## Pull requests and releases
 
+- Use short, descriptive branch names such as `faster-ci` or `readme-update-banner`.
+  Do not add `codex/`, `claude/` or other tool-name prefixes. Use the user's exact
+  branch name when one is provided.
 - Opening or updating a PR triggers `build` and `Desktop E2E Hosted` automatically.
   When a merge is requested, wait for both workflows and every other PR check to
   succeed for the latest head commit before merging. Pending, skipped, cancelled

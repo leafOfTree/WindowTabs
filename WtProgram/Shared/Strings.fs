@@ -22,6 +22,7 @@ module Strings =
         let never = { en="Never"; zh="从不"; ja="しない" }
         let whenMaximized = { en="When maximized"; zh="最大化时"; ja="最大化時" }
         let always = { en="Always"; zh="始终"; ja="常に" }
+        let selectedChoice (name:LocalizedText) = { en=name.en+"  ✓"; zh=name.zh+"  ✓"; ja=name.ja+"  ✓" }
         let operationFailed = { en="Operation failed"; zh="操作失败"; ja="操作に失敗しました" }
 
     module Messages =
@@ -86,7 +87,7 @@ module Strings =
         let shortcuts = { en="Shortcuts"; zh="快捷键"; ja="ショートカット" }
         let appRules = { en="App rules"; zh="应用规则"; ja="アプリのルール" }
         let workspaces = { en="Workspaces"; zh="工作区"; ja="ワークスペース" }
-        let diagnostics = { en="Support"; zh="帮助与支持"; ja="サポート" }
+        let diagnostics = { en="Support"; zh="支持"; ja="サポート" }
         let title page =
             match page with
             | GeneralSettings -> general
@@ -284,9 +285,9 @@ module Strings =
         let switcherVertical = { en="Vertical"; zh="纵向"; ja="縦" }
         /// Tab styles, in TabStyle.names order.
         let tabStyles =
-            [| { en="Joined"; zh="连成一条"; ja="連結" }
-               { en="Folder"; zh="文件夹式"; ja="フォルダー型" }
-               { en="Floating"; zh="悬浮式"; ja="フローティング" } |]
+            [| { en="Joined"; zh="连贯"; ja="連結" }
+               { en="Folder"; zh="文件夹"; ja="フォルダー型" }
+               { en="Floating"; zh="悬浮"; ja="フローティング" } |]
         /// The tab colours on which the text is shown darker or lighter than chosen.
         /// Samples of the tab text as chosen and as shown, side by side.
         let textBefore = { en="Before"; zh="调整前"; ja="調整前" }

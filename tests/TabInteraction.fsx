@@ -45,10 +45,16 @@ let main() =
         check (alpha dim>0 && float(alpha dim)/float(alpha bright)>0.60 && float(alpha dim)/float(alpha bright)<0.75)
               "Inactive tab icons do not dim while remaining visible"
         check (SettingsCatalog.shortcutDefault "numberLeader"=0x0453) "Tab selection must default to Alt+S"
-        check (Theme.leastUsedColor [0;1;2;0;3]=7) "By-window allocation did not balance colours"
+        check (Theme.leastUsedColor [0;1;2;0;3]=8) "By-window allocation did not balance colours"
         check (Theme.tabColorOrder.Head=1 && List.last Theme.tabColorOrder=0 && (Theme.tabColorOrder |> List.sort)=[0..15]) "Colour menu must start with blue, end with grey and retain every stored index"
+        check ((Theme.tabAllocationOrder |> List.sort)=[0..15] && List.last Theme.tabAllocationOrder=0) "Automatic allocation lost a colour or used grey early"
+        for dark in [false;true] do
+            let palette = Theme.tabPalette dark
+            for a,b in Theme.tabAllocationOrder |> List.filter((<>) 0) |> List.pairwise do
+                let distance = abs(palette.[a].GetHue()-palette.[b].GetHue())
+                check (min distance (360.0f-distance)>50.0f) "Adjacent automatic colours have similar hues"
         check (Theme.leastUsedColor []=1) "The first window must use blue rather than grey"
-        check (Theme.leastUsedColor (Theme.tabColorOrder |> List.take 10)=9) "Colour allocation did not move on to the extra colours"
+        check (Theme.leastUsedColor (Theme.tabAllocationOrder |> List.take 10)=11) "Colour allocation did not move on to the extra colours"
         check (Theme.leastUsedColor [1..15]=0) "Grey must only be used after every coloured choice"
         check (Theme.leastUsedColor [0..15]=1) "The seventeenth window did not start the palette again"
         check ([for c in 'a'..'z' -> Theme.appColorIndex (string c + ".exe")] |> List.forall(fun index -> index>=0 && index<Theme.tabPaletteSize)) "App colour fell outside the palette"
@@ -61,22 +67,44 @@ let main() =
                     check (dot.GetPixel(side/2,side/2).ToArgb()=color.ToArgb()) "Menu dot changed the tab colour"
                     for x,y in [0,0;side-1,0;0,side-1;side-1,side-1] do
                         check (dot.GetPixel(x,y).A=0uy) "Menu colour dot has a square background or border"
-                    use marked = MenuImages.checkedCopy dot
-                    check (marked.GetPixel(0,0).A=0uy) "Checked colour dot lost its transparent corners"
+        check ((Strings.Common.selectedChoice Strings.Settings.tabColorNames.[1]).en="Blue  ✓") "Selected colour is not marked after its name"
         let colors = WindowTabColors()
-        let peersAsked = ref 0
-        let resolve hwnd peers remembered = colors.resolve hwnd (fun () -> peersAsked.Value <- peersAsked.Value+1; peers) "editor.exe" "ByWindow" remembered
         let a,b,c = IntPtr(1),IntPtr(2),IntPtr(3)
-        let first = resolve a [a;b] Map.empty
-        check (resolve b [a;b] Map.empty<>first) "By-window colours repeated a used colour too soon"
+        let mutable peers = [a;b;c]
+        let resolve hwnd remembered = colors.resolve hwnd "editor.exe" "ByWindow" remembered peers
+        for hwnd in peers do
+            check (colors.resolve hwnd "editor.exe" "Off" Map.empty peers=None) "Disabled automatic colours tint an existing window"
+            check (colors.resolve hwnd "editor.exe" "ByApp" Map.empty peers=Some(PaletteColor(Theme.appColorIndex "editor.exe"))) "By-app mode stopped sharing an app's colour"
+            check (colors.resolve hwnd "editor.exe" "ByWindow" Map.empty [hwnd]=Some(PaletteColor Theme.tabAllocationOrder.Head)) "Single-window previews did not start with blue"
+        let first = resolve a Map.empty
+        let existing = [first;resolve b Map.empty;resolve c Map.empty]
+        check (existing=(Theme.tabAllocationOrder |> List.take 3 |> List.map(PaletteColor >> Some))) "A group did not start in alternating colour order"
+        let other = [IntPtr(50);IntPtr(51);IntPtr(52)]
+        let otherColors = other |> List.map(fun hwnd -> colors.resolve hwnd "editor.exe" "ByWindow" Map.empty other)
+        check (otherColors=existing) "Another group did not restart the alternating colour order"
+        peers <- [c;a;b]
+        check ([resolve a Map.empty;resolve b Map.empty;resolve c Map.empty]=existing) "Dragging tabs changed their colours"
+        peers <- [a;c]
+        colors.remove b
+        check (resolve a Map.empty=first && resolve c Map.empty=existing.[2]) "Closing a tab recoloured remaining tabs"
+        peers <- [a;c;IntPtr(4)]
+        check (resolve (IntPtr(4)) Map.empty=existing.[1]) "A new tab did not use the first available automatic colour"
         let red = CustomColor Color.Red
         colors.setOverride a (Some red)
-        check (resolve a [a;c] Map.empty=Some red) "Window colour was lost across groups"
+        check (resolve a Map.empty=Some red) "Window colour was lost across groups"
         colors.setOverride a None
-        check (resolve a [a;c] Map.empty=first) "Clearing custom colour changed its automatic assignment"
-        check (peersAsked.Value=2) "Peers were listed again after the window had its colour"
+        check (resolve a Map.empty=first) "Clearing custom colour changed its automatic assignment"
+        let transferred = colors.resolve c "editor.exe" "ByWindow" Map.empty (other @ [c])
+        check (transferred=existing.[2]) "A transferred tab did not keep its colour"
+        let palette = WindowTabColors()
+        let all = [for id in 1..Theme.tabPaletteSize -> IntPtr(id)]
+        let allocated = all |> List.map(fun hwnd -> palette.resolve hwnd "editor.exe" "ByWindow" Map.empty all)
+        check ((allocated |> List.distinct).Length=Theme.tabPaletteSize) "Automatic colours repeat before every palette colour is used"
+        palette.remove (IntPtr(2))
+        let replacement = all |> List.filter((<>) (IntPtr(2))) |> fun remaining -> remaining @ [IntPtr(100)]
+        check (palette.resolve (IntPtr(100)) "editor.exe" "ByWindow" Map.empty replacement=allocated.[1]) "Closed windows do not release their automatic colour"
         let remembered = Map.ofList [@"C:\Apps\EDITOR.EXE","#00FF00"]
-        let resolveAt path hwnd = colors.resolve hwnd (fun () -> [hwnd]) path "ByWindow" remembered
+        let resolveAt path hwnd = colors.resolve hwnd path "ByWindow" remembered peers
         check (resolveAt @"c:\apps\editor.exe" a=Some(CustomColor(Color.FromArgb(0,255,0)))) "Remembered colour did not override automatic colour or depended on path case"
         check (resolveAt @"C:\Other\EDITOR.EXE" a=first) "Remembered colour applied to another app with the same name"
         colors.setOverride a (Some red)
@@ -165,7 +193,7 @@ let main() =
             check (held.handle(WindowMessages.WM_KEYUP,vk,None)=(true,None)) "Leader selection release leaked"
             check (held.handle(WindowMessages.WM_KEYDOWN,vk,None)=(false,None)) "A fresh press remained captured after release"
         check (NumberLeaderKeys.tryNormalize "asdfghjkl;"=Some "ASDFGHJKL;") "Home-row keys did not normalize"
-        for value in ["";"AA";"aA";"A A";"中文";"!"] do
+        for value in ["";"AA";"aA";"A A";"ä¸­æ–‡";"!"] do
             check ((NumberLeaderKeys.tryNormalize value).IsNone) "Invalid or duplicate selection keys were accepted"
         leader.arm (IntPtr(1)) now
         check (leader.key (IntPtr(1)) now 0xBA 10 "ASDFGHJKL;"=(true,Some 9)) "Home-row semicolon did not select the tenth tab"

@@ -1,4 +1,5 @@
 param([switch]$Interactive, [switch]$BuildOnly, [switch]$Describe,
+      [string]$ReleaseExecutable,
       [ValidateSet('Quick','Full','Soak')][string]$Profile = 'Full',
       [ValidateRange(30, 10000)][int]$Switches = 300,
       [ValidateRange(1, 10)][int]$Cycles = 2,
@@ -19,17 +20,24 @@ if ($DurationMinutes -gt 0 -and $TimeoutSeconds -lt ($DurationMinutes * 60 + 60)
 }
 $configuration = [pscustomobject]@{ Profile=$Profile; Switches=$Switches; Cycles=$Cycles; DurationMinutes=$DurationMinutes; TimeoutSeconds=$TimeoutSeconds }
 if ($Describe) { return $configuration }
+if ($ReleaseExecutable -and -not $BuildOnly) { throw 'ReleaseExecutable is only supported for compile-only checks; interactive tests build their own Release copy.' }
 Write-Host "Desktop E2E profile: $($configuration | ConvertTo-Json -Compress)"
 if (-not $BuildOnly -and -not $Interactive) { throw 'This test owns foreground/mouse/keyboard input. Use -Interactive on an unlocked, idle desktop, or -BuildOnly.' }
 if (-not $BuildOnly -and (Get-Process WindowTabs -ErrorAction SilentlyContinue)) { throw 'Exit existing WindowTabs instances before running desktop E2E.' }
 $stage = Join-Path $PSScriptRoot ('Debug/desktop-e2e-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 if ($env:GITHUB_OUTPUT) { Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "stage=$stage" }
-# Avoid replacing the developer's running Release executable during a compile-only check.
-$taskE2EBuild = Join-Path $stage 'build'
-dotnet build (Join-Path $repo 'WindowTabs.sln') -c Release "-p:OutDir=$taskE2EBuild/" -v:minimal
-if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
-Copy-Item -LiteralPath (Join-Path $taskE2EBuild 'WindowTabs.exe') -Destination $stage
+if ($ReleaseExecutable) {
+    # CI already built this commit's Release executable; only the driver needs compiling.
+    $taskE2EExecutable = (Resolve-Path -LiteralPath $ReleaseExecutable -ErrorAction Stop).Path
+} else {
+    # Avoid replacing the developer's running Release executable during a compile-only check.
+    $taskE2EBuild = Join-Path $stage 'build'
+    dotnet build (Join-Path $repo 'WindowTabs.sln') -c Release "-p:OutDir=$taskE2EBuild/" -v:minimal
+    if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
+    $taskE2EExecutable = Join-Path $taskE2EBuild 'WindowTabs.exe'
+}
+Copy-Item -LiteralPath $taskE2EExecutable -Destination $stage
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319/csc.exe'
 $hostExe = Join-Path $stage 'DesktopE2E.exe'
 & $compiler /nologo /target:exe /platform:x86 "/out:$hostExe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll "/win32manifest:$repo/WtProgram/app.manifest" (Join-Path $PSScriptRoot 'DesktopE2E.cs')
