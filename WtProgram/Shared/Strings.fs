@@ -176,9 +176,9 @@ module Strings =
             { en="Lime";zh="青柠色";ja="ライム" }; { en="Navy";zh="藏青色";ja="ネイビー" }
             { en="Teal";zh="蓝绿色";ja="ティール" }; { en="Coral";zh="珊瑚色";ja="コーラル" } |]
         let tabColorMode = { caption={ en="Tab color coding"; zh="标签着色"; ja="タブの色分け" }
-                             description={ en="Automatically assign colors to distinguish windows or apps."
-                                           zh="自动分配颜色，区分窗口或应用。"
-                                           ja="ウィンドウやアプリを区別する色を自動で割り当てます。" }
+                             description={ en="Auto-assign colors by window or app."
+                                           zh="按窗口或应用自动分配颜色。"
+                                           ja="ウィンドウ・アプリ別に色を自動で割り当てます。" }
                              keywords={ en="rainbow color coding tint per window per app"; zh="彩虹 着色 颜色 区分 按窗口 按应用"; ja="レインボー 色分け 色 ウィンドウ別 アプリ別" } }
         let colorsOff = { en="Off"; zh="关闭"; ja="オフ" }
         let byWindow = { en="By window"; zh="按窗口"; ja="ウィンドウ別" }
