@@ -171,6 +171,7 @@ type AppearanceView(?settings:ISettings) =
                 preset.SetItemText(index,label))
             preset.ItemColors <- Array.append (Array.init ThemePresets.names.Length (fun index -> (presetPalette settings index).tabNormalBgColor))
                                               [|(customForProfile settings).tabNormalBgColor|]
+                                 |> Array.map(ThemePresets.previewColor editingDark)
             preset.SelectedIndex <- selection settings |> Option.defaultValue ThemePresets.names.Length
             for key,read,write,editor in colors do
                 editor.value <- box(read palette)

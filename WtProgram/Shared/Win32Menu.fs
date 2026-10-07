@@ -21,6 +21,17 @@ and CmiPopUp = {
     }
 
 module MenuImages =
+    /// Leave transparent space around the colour so native menus show a clean round dot.
+    let colorDot side (color:Color) =
+        let bitmap = new Bitmap(side,side)
+        use g = Graphics.FromImage(bitmap)
+        g.Clear(Color.Transparent)
+        g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        use brush = new SolidBrush(color)
+        let inset = max 1.0f (float32 side/16.0f)
+        g.FillEllipse(brush,inset,inset,float32 side-inset*2.0f,float32 side-inset*2.0f)
+        bitmap
+
     /// A menu item's image takes the place of its check mark, so a checked item needs a mark
     /// of its own: drawn over a copy, in black or white, whichever stands out from the image.
     let checkedCopy (source:Bitmap) =
@@ -53,7 +64,9 @@ type NativeContextMenu(items:List2<ContextMenuItem>) =
             image |> Option.iter(fun (image:Img) ->
                 let side = max 1 (int(Math.Round(float(WinUserApi.GetSystemMetrics(SystemMetrics.SM_CXMENUCHECK))*float(Dpi.value())/float(Dpi.system()))))
                 let handleOf (bitmap:Bitmap) =
-                    let handle = bitmap.GetHbitmap(Color.Transparent)
+                    // GetHbitmap composites RGB against this colour but retains alpha.
+                    // Transparent is transparent white; black gives native menus premultiplied RGB.
+                    let handle = bitmap.GetHbitmap(Color.FromArgb(0))
                     bitmaps.Add(handle)
                     handle
                 use bitmap = image.resize(Sz(side,side)).bitmap

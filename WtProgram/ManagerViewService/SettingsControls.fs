@@ -876,6 +876,12 @@ type SettingsListFrame(list:SettingsChoiceList) as this =
         bar.Bounds <- Rectangle(size.Width-bar.Width,0,bar.Width,size.Height)
         sync()
     do
+        // Resizing the list briefly exposes its native scrollbar before the custom
+        // bar repaints. Present both child HWNDs together, including during filtering.
+        this.HandleCreated.Add(fun _ ->
+            let style = WinUserApi.GetWindowLong(this.Handle,WindowLongFieldOffset.GWL_EXSTYLE)
+            WinUserApi.SetWindowLong(this.Handle,WindowLongFieldOffset.GWL_EXSTYLE,
+                IntPtr(style.ToInt64() ||| int64 WindowsExtendedStyles.WS_EX_COMPOSITED)) |> ignore)
         this.BackColor <- list.BackColor
         list.Dock <- DockStyle.None
         this.Controls.Add(list)
@@ -892,9 +898,49 @@ type SettingsListFrame(list:SettingsChoiceList) as this =
     member _.List = list
     override this.OnGotFocus(e) = base.OnGotFocus(e); list.Focus() |> ignore
 
+module SettingsPopupShadowPixels =
+    let create dpi width height =
+        let padding = Dpi.scaleAt dpi 6
+        let w,h = width+padding*2,height+padding*2
+        let radius = float (min (min width height/2) (Dpi.scaleAt dpi 10))
+        let sigma = float (max 1 (Dpi.scaleAt dpi 2))
+        let pixels = Array.zeroCreate<byte> (w*h*4)
+        for y in 0..h-1 do
+            for x in 0..w-1 do
+                let dx = abs(float(x-padding)+0.5-float width/2.0)-(float width/2.0-radius)
+                let dy = abs(float(y-padding)+0.5-float height/2.0)-(float height/2.0-radius)
+                let distance = sqrt(max dx 0.0 ** 2.0+max dy 0.0 ** 2.0)+min (max dx dy) 0.0-radius
+                if distance>=0.0 then
+                    pixels.[(y*w+x)*4+3] <- byte(Math.Round(22.0*exp(-distance*distance/(2.0*sigma*sigma))))
+        pixels
+
+/// A click-through halo with no directional offset; owned by the popup's lifetime.
+type private SettingsPopupShadow(owner:Control) =
+    let os = OS()
+    let padding = Dpi.scale 6
+    let helper = os.createWindow (fun message -> message.def()) WindowsStyles.WS_POPUP
+                    (WindowsExtendedStyles.WS_EX_LAYERED ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW |||
+                     WindowsExtendedStyles.WS_EX_NOACTIVATE ||| WindowsExtendedStyles.WS_EX_TRANSPARENT)
+    let window = os.windowFromHwnd(helper.hwnd)
+    do window.setParent(os.windowFromHwnd(owner.Handle))
+    member _.Show() =
+        let width,height = owner.Width+padding*2,owner.Height+padding*2
+        let pixels = SettingsPopupShadowPixels.create (Dpi.value()) owner.Width owner.Height
+        use bitmap = new Bitmap(width,height,Imaging.PixelFormat.Format32bppArgb)
+        let data = bitmap.LockBits(Rectangle(0,0,width,height),Imaging.ImageLockMode.WriteOnly,Imaging.PixelFormat.Format32bppArgb)
+        try
+            for y in 0..height-1 do Marshal.Copy(pixels,y*width*4,IntPtr.Add(data.Scan0,y*data.Stride),width*4)
+        finally bitmap.UnlockBits(data)
+        Win32Helper.UpdateLayeredWindow(helper.hwnd,Point(owner.Left-padding,owner.Top-padding),bitmap,255uy)
+        window.showNoActivate()
+    member _.Hide() = window.hide()
+    interface IDisposable with
+        member _.Dispose() = (helper :?> IDisposable).Dispose()
+
 /// A menu-style popup keeps the settings window active when dismissed outside.
 type SettingsChoicePopup() as this =
     inherit ToolStripDropDown()
+    let mutable shadow : SettingsPopupShadow option = None
     do
         // DoubleBuffered covers this ToolStrip only; the hosted frame/list have
         // their own HWNDs. Composite the entire subtree before it becomes visible.
@@ -909,7 +955,15 @@ type SettingsChoicePopup() as this =
         this.AutoClose <- true
         this.AutoSize <- false
         this.Padding <- Padding(Dpi.scale 6)
-        this.DropShadowEnabled <- not SystemInformation.HighContrast
+        this.DropShadowEnabled <- false
+        this.Opened.Add(fun _ ->
+            if not SystemInformation.HighContrast then
+                if shadow.IsNone then shadow <- Some(new SettingsPopupShadow(this))
+                shadow |> Option.iter(fun halo -> halo.Show()))
+        this.Closed.Add(fun _ -> shadow |> Option.iter(fun halo -> halo.Hide()))
+        this.Disposed.Add(fun _ ->
+            shadow |> Option.iter(fun halo -> (halo :> IDisposable).Dispose())
+            shadow <- None)
     override this.OnOpened(e) =
         // Finish the first themed paint before returning to other UI work.
         this.Refresh()

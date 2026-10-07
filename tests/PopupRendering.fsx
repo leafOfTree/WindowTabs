@@ -49,6 +49,17 @@ let referenceSwitcherShadow dpi width height =
     pixels
 
 let main() =
+    for dpi in [96;144] do
+        let width,height = 180,340
+        let padding = Dpi.scaleAt dpi 6
+        let w,h = width+padding*2,height+padding*2
+        let pixels = SettingsPopupShadowPixels.create dpi width height
+        check (pixels |> Array.max <= 22uy) "Dropdown halo is too dark"
+        check (pixels |> Array.exists(fun value -> value>0uy)) "Dropdown halo is missing"
+        for y in 0..h-1 do
+            for x in 0..w-1 do
+                let alpha x y = pixels.[(y*w+x)*4+3]
+                check (alpha x y=alpha (w-1-x) y && alpha x y=alpha x (h-1-y)) "Dropdown shadow has a directional offset"
     for dpi,width,height in [96,320,180;144,960,420;96,15,10;144,37,37] do
         check (TaskSwitchShadowCache.get dpi width height = referenceSwitcherShadow dpi width height) "Optimized switcher shadow changed pixels"
     let cached = TaskSwitchShadowCache.get 96 320 180
@@ -117,9 +128,7 @@ let main() =
                 popupPaint.AssignHandle(popup.Handle)
                 popup.Show(owner,Point.Empty)
                 check (popupPaint.Paints>0) "Dropdown returned from Show without painting"
-                if not SystemInformation.HighContrast && SystemInformation.IsDropShadowEnabled && not SystemInformation.TerminalServerSession then
-                    check ((WinUserApi.GetClassLong(popup.Handle,-26).ToInt64() &&& int64 ClassStyles.CS_DROPSHADOW)<>0L)
-                          "Dropdown HWND has no native shadow to separate overlapping controls"
+                check (not popup.DropShadowEnabled) "Dropdown still uses the heavy directional system shadow"
                 check (composited popup) "Dropdown children are not composited together"
                 assertTheme()
                 popup.Refresh()

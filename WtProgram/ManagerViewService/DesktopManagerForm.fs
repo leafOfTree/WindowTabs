@@ -165,8 +165,15 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                                Padding=Padding(Dpi.scale 12,Dpi.scale 12,Dpi.scale 8,Dpi.scale 8))
         let brand = new Label(Text="WindowTabs",Font=SettingsUi.sectionFont(),AutoSize=false,
                               Dock=DockStyle.Top,Height=Dpi.scale 24,UseMnemonic=false)
+        let releasesUrl = "https://github.com/leafOfTree/WindowTabs/releases"
         let version = new Label(Text=sprintf "v%s" AssemblyInfo.informationalVersion,AutoSize=false,
-                                Dock=DockStyle.Fill,Tag="muted",UseMnemonic=false,TextAlign=ContentAlignment.MiddleLeft)
+                                Dock=DockStyle.Fill,Tag="muted",UseMnemonic=false,TextAlign=ContentAlignment.MiddleLeft,
+                                Name="version-link",Cursor=Cursors.Hand,AccessibleRole=AccessibleRole.Link,
+                                AccessibleDescription=tr Strings.Diagnostics.releases)
+        version.Click.Add(fun _ ->
+            try Diagnostics.Process.Start(releasesUrl) |> ignore
+            with _ -> ())
+        SettingsHover(version,tr Strings.Diagnostics.releases) |> ignore
         // The compact language picker shares the version line.
         languageChoice.Dock <- DockStyle.Right
         let versionRow = new Panel(Dock=DockStyle.Fill)

@@ -25,6 +25,7 @@ module TabMetrics =
 type IconSprite = {
     icon: Icon
     size: Sz
+    opacity: float32
     } with
     interface ISprite with
         member this.image = 
@@ -33,7 +34,17 @@ type IconSprite = {
             try
                 // WM_GETICON can return a 32/40px icon even for ICON_SMALL.
                 // Scale the whole icon; drawing at its native size clips it.
-                g.DrawIcon(this.icon, Rectangle(0, 0, this.size.width, this.size.height))
+                let bounds = Rectangle(0,0,this.size.width,this.size.height)
+                if this.opacity>=1.0f then g.DrawIcon(this.icon,bounds)
+                else
+                    use source = new Bitmap(this.size.width,this.size.height)
+                    use ink = Graphics.FromImage(source)
+                    ink.DrawIcon(this.icon,bounds)
+                    use attributes = new System.Drawing.Imaging.ImageAttributes()
+                    let matrix = new System.Drawing.Imaging.ColorMatrix()
+                    matrix.Matrix33 <- this.opacity
+                    attributes.SetColorMatrix(matrix)
+                    g.DrawImage(source,bounds,0,0,source.Width,source.Height,System.Drawing.GraphicsUnit.Pixel,attributes)
             with | e -> ()
             bitmap
         member this.children = List2()
@@ -150,6 +161,7 @@ type TabSprite<'id> = {
         {
             IconSprite.icon = this.displayInfo.icon
             size = this.iconSize
+            opacity = if SystemInformation.HighContrast || this.isTop || this.hover.IsSome || this.captured.IsSome then 1.0f else 0.68f
         } :> ISprite
     
     member private this.closeButtonSprite = 

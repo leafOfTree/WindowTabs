@@ -35,7 +35,7 @@ module Theme =
                 0xE8710A;0x7E57C2;0x827717;0xC2185B;0x7CB342;0x1A237E;0x00796B;0xE64A19|]) |> Array.map Color.FromRGB
     let tabPaletteSize = 16
     /// Display and allocation order; stored indices keep their original colour meanings.
-    let tabColorOrder = [1..tabPaletteSize-1] @ [0]
+    let tabColorOrder = [1;7;14;4;3;8;2;5;11;6;9;10;12;13;15;0]
     /// Whether a bar takes the lighter tints. Decided by the bar rather than the theme: a
     /// custom palette can put a dark bar in the light theme. 0.179 is where black and white
     /// text are equally readable.

@@ -10,6 +10,21 @@ open System.IO
 open System.Reflection
 open System.Windows.Forms
 open Bemo
+open System.Runtime.InteropServices
+
+[<Struct; StructLayout(LayoutKind.Sequential)>]
+type NativeBitmap =
+    val mutable kind:int
+    val mutable width:int
+    val mutable height:int
+    val mutable stride:int
+    val mutable planes:uint16
+    val mutable depth:uint16
+    val mutable bits:IntPtr
+
+module NativeBitmapApi =
+    [<DllImport("gdi32.dll",EntryPoint="GetObjectW")>]
+    extern int GetObject(IntPtr bitmap,int size,NativeBitmap& info)
 
 let check condition message = if not condition then failwith message
 let frameProperty = typeof<TabStrip>.GetProperty("renderCount",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public)
@@ -23,16 +38,31 @@ let main() =
     try
         use settings = new Settings(true,saveDelay=0)
         let api = settings :> ISettings
+        let iconSprite opacity = {IconSprite.icon=SystemIcons.Application;size=Sz(16,16);opacity=opacity} :> ISprite
+        use bright = (iconSprite 1.0f).image.bitmap
+        use dim = (iconSprite 0.68f).image.bitmap
+        let alpha (bitmap:Bitmap) = seq {for y in 0..15 do for x in 0..15 do yield int(bitmap.GetPixel(x,y).A)} |> Seq.sum
+        check (alpha dim>0 && float(alpha dim)/float(alpha bright)>0.60 && float(alpha dim)/float(alpha bright)<0.75)
+              "Inactive tab icons do not dim while remaining visible"
         check (SettingsCatalog.shortcutDefault "numberLeader"=0x0453) "Tab selection must default to Alt+S"
-        check (Theme.leastUsedColor [0;1;2;0;3]=4) "By-window allocation did not balance colours"
+        check (Theme.leastUsedColor [0;1;2;0;3]=7) "By-window allocation did not balance colours"
         check (Theme.tabColorOrder.Head=1 && List.last Theme.tabColorOrder=0 && (Theme.tabColorOrder |> List.sort)=[0..15]) "Colour menu must start with blue, end with grey and retain every stored index"
         check (Theme.leastUsedColor []=1) "The first window must use blue rather than grey"
-        check (Theme.leastUsedColor [1..7]=8) "The eighth window did not move on to the extra colours"
+        check (Theme.leastUsedColor (Theme.tabColorOrder |> List.take 10)=9) "Colour allocation did not move on to the extra colours"
         check (Theme.leastUsedColor [1..15]=0) "Grey must only be used after every coloured choice"
         check (Theme.leastUsedColor [0..15]=1) "The seventeenth window did not start the palette again"
         check ([for c in 'a'..'z' -> Theme.appColorIndex (string c + ".exe")] |> List.forall(fun index -> index>=0 && index<Theme.tabPaletteSize)) "App colour fell outside the palette"
         check (([for c in 'a'..'z' -> Theme.appColorIndex (string c + ".exe")] |> List.distinct).Length>8) "App colours did not use the second eight"
         check (Theme.appColorIndex "Editor.exe"=Theme.appColorIndex "EDITOR.EXE") "App colour hash changed with case"
+        for side in [16;24;32] do
+            for dark in [false;true] do
+                for color in Theme.tabPalette dark do
+                    use dot = MenuImages.colorDot side color
+                    check (dot.GetPixel(side/2,side/2).ToArgb()=color.ToArgb()) "Menu dot changed the tab colour"
+                    for x,y in [0,0;side-1,0;0,side-1;side-1,side-1] do
+                        check (dot.GetPixel(x,y).A=0uy) "Menu colour dot has a square background or border"
+                    use marked = MenuImages.checkedCopy dot
+                    check (marked.GetPixel(0,0).A=0uy) "Checked colour dot lost its transparent corners"
         let colors = WindowTabColors()
         let peersAsked = ref 0
         let resolve hwnd peers remembered = colors.resolve hwnd (fun () -> peersAsked.Value <- peersAsked.Value+1; peers) "editor.exe" "ByWindow" remembered
@@ -70,6 +100,26 @@ let main() =
             check (menu.handle<>IntPtr.Zero) "Native colour menu was not created"
         let after,_,_,_ = RuntimeDiagnostics.resourceCounts()
         check (after-before<5) "Native colour menus leaked GDI bitmaps"
+        // Inspect the actual HBITMAP: native alpha blending needs RGB no greater than alpha.
+        for color in Theme.tabPalette true do
+            use dot = MenuImages.colorDot 16 color
+            use menu = new NativeContextMenu(List2([CmiRegular({text="Colour";image=Some(Img(dot));flags=List2();click=ignore})]))
+            let itemInfo = MENUITEMINFO(fMask=0x8)
+            check (WinUserApi.GetMenuItemInfo(menu.handle,0,true,itemInfo)<>0) "Cannot inspect native colour bitmap"
+            let mutable info = Unchecked.defaultof<NativeBitmap>
+            check (NativeBitmapApi.GetObject(itemInfo.hbmpUnchecked,Marshal.SizeOf(typeof<NativeBitmap>),&info)>0 && info.depth=32us && info.bits<>IntPtr.Zero)
+                  "Menu did not create a readable alpha bitmap"
+            let pixels = Array.zeroCreate<byte> (info.stride*info.height)
+            Marshal.Copy(info.bits,pixels,0,pixels.Length)
+            let mutable edgePixels = 0
+            for y in 0..info.height-1 do
+                for x in 0..info.width-1 do
+                    let offset = y*info.stride+x*4
+                    let alpha = pixels.[offset+3]
+                    if alpha>0uy && alpha<255uy then edgePixels <- edgePixels+1
+                    check ([0..2] |> List.forall(fun channel -> pixels.[offset+channel]<=alpha))
+                          "Native menu colour bitmap has a bright fringe from unpremultiplied alpha"
+            check (edgePixels>0) "Colour dot lost its smooth transparent edge"
         // A swatch replaces the check mark, so the checked one must look different.
         for colour in [Color.Red;Color.Yellow;Color.Black;Color.White] do
             ink.Clear(colour)

@@ -42,6 +42,18 @@ let main() =
     try
         use settings = new Settings(true, saveDelay=0)
         let api = settings :> ISettings
+        let presetNames = ThemePresets.names |> Array.map(fun name -> name.en)
+        check (presetNames=[|"Default";"Blue";"Teal";"Green";"Sand";"Amber";"Rose";"Purple";"Slate"|])
+              "Theme presets do not use colour names in the shared colour order"
+        for key,name in ["Ocean","Blue";"Forest","Green";"Slate","Slate";"Plum","Purple"] do
+            let index = ThemePresets.keys |> Array.findIndex ((=) key)
+            check (ThemePresets.names.[index].en=name) "Renaming a preset changed its stored identity"
+        if not SystemInformation.HighContrast then
+            for palette in ThemePresets.palettes true do
+                let color = palette.tabNormalBgColor
+                let preview = ThemePresets.previewColor true color
+                check (max preview.R (max preview.G preview.B)>=174uy) "Dark preset preview is too dim to distinguish"
+                check (ThemePresets.previewColor false color=color) "Light preset preview changed its colour"
         let optionalKeys = ["combineIconsInTaskbar";"replaceAltTab";"groupWindowsInSwitcher";"enableNumberLeader";"enableHoverActivate"]
         let checkMinimalDefaults() =
             for key in optionalKeys do check (api.getValue(key)=box false) (sprintf "%s must be opt-in" key)
@@ -632,6 +644,24 @@ Group #2: No valid windows in this group.";
             Application.DoEvents()
             let frame = result.Parent
             let bar = frame.Controls |> Seq.cast<Control> |> Seq.find(fun c -> c :? SettingsScrollBar)
+            check ((WinUserApi.GetWindowLong(frame.Handle,WindowLongFieldOffset.GWL_EXSTYLE).ToInt64() &&& 0x02000000L)<>0L)
+                  "Search filtering can present the native scrollbar before the settings scrollbar"
+            for query in ["Theme";"switch";"s";"Theme";"switch"] do
+                search.Text <- query
+                Application.DoEvents()
+                frame.Refresh()
+                if bar.Visible then
+                    use bitmap = new Bitmap(form.Width,form.Height)
+                    use graphics = Graphics.FromImage(bitmap)
+                    let hdc = graphics.GetHdc()
+                    try Capture.PrintWindow(form.Handle,hdc,2u) |> ignore
+                    finally graphics.ReleaseHdc(hdc)
+                    let point = frame.PointToScreen(Point(frame.Width-1,frame.Height/2))
+                    let background = bitmap.GetPixel(point.X-form.Left,point.Y-form.Top)
+                    check (background.ToArgb()=(SettingsColors.current()).surface.ToArgb())
+                          (sprintf "Search scrollbar background flashed after filtering for %s: %A" query background)
+            search.Text <- "s"
+            Application.DoEvents()
             check (result.Items.Count*result.ItemHeight > frame.ClientSize.Height) "Search for s does not overflow the list"
             check (bar.Visible && result.ClientSize.Width+bar.Width=frame.ClientSize.Width && result.Width>frame.ClientSize.Width-bar.Width)
                   (sprintf "Search list shows the system scrollbar: list %A client %A frame %A bar %b"
@@ -671,6 +701,11 @@ Group #2: No valid windows in this group.";
         printfn "50 search updates: %d ms" searchTime.ElapsedMilliseconds
         check (searchTime.ElapsedMilliseconds < 2000L) "Search updates are too slow"
         // The title is for the taskbar and Alt+Tab; hideCaptionText keeps it out of the title bar itself.
+        let versionLink = form.Controls.Find("version-link",true).[0] :?> Label
+        check (versionLink.GetType()=typeof<Label> && versionLink.TextAlign=ContentAlignment.MiddleLeft &&
+               string versionLink.Tag="muted" && versionLink.Cursor=Cursors.Hand && versionLink.AccessibleRole=AccessibleRole.Link &&
+               versionLink.Text=sprintf "v%s" AssemblyInfo.informationalVersion && versionLink.AccessibleDescription=tr Strings.Diagnostics.releases)
+              "The version footer is not an accessible link to releases"
         check (form.Text=tr Strings.SettingsWindow.title && form.MinimizeBox && form.MaximizeBox && form.ControlBox) "Native title bar configuration changed"
         search.Text <- "nonexistent-setting-xyz"
         Application.DoEvents()

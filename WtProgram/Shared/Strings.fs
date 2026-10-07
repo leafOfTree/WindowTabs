@@ -176,9 +176,9 @@ module Strings =
             { en="Lime";zh="青柠色";ja="ライム" }; { en="Navy";zh="藏青色";ja="ネイビー" }
             { en="Teal";zh="蓝绿色";ja="ティール" }; { en="Coral";zh="珊瑚色";ja="コーラル" } |]
         let tabColorMode = { caption={ en="Tab color coding"; zh="标签着色"; ja="タブの色分け" }
-                             description={ en="Fill replaces the colors below; stripe keeps them."
-                                           zh="填充会取代下方配色，色条则保留。"
-                                           ja="塗りつぶしは下の色を置き換え、ラインは残します。" }
+                             description={ en="Automatically assign colors to distinguish windows or apps."
+                                           zh="自动分配颜色，区分窗口或应用。"
+                                           ja="ウィンドウやアプリを区別する色を自動で割り当てます。" }
                              keywords={ en="rainbow color coding tint per window per app"; zh="彩虹 着色 颜色 区分 按窗口 按应用"; ja="レインボー 色分け 色 ウィンドウ別 アプリ別" } }
         let colorsOff = { en="Off"; zh="关闭"; ja="オフ" }
         let byWindow = { en="By window"; zh="按窗口"; ja="ウィンドウ別" }
@@ -298,17 +298,17 @@ module Strings =
         let tabLayout = { en="Tab layout"; zh="标签布局"; ja="タブのレイアウト" }
         let sizesStayTheSame = { en="Sizes stay the same when you switch themes."; zh="切换主题不会改变这些尺寸。"; ja="テーマを切り替えてもサイズは変わりません。" }
         let resetTabLayout = { en="Reset tab layout"; zh="重置标签布局"; ja="タブのレイアウトをリセット" }
-        /// In ThemePresets.palettes order.
+        /// Stable source order; ThemePresets arranges the displayed colour families.
         let presets =
             [| { en="Default"; zh="默认"; ja="既定" }
-               { en="Ocean"; zh="海洋蓝"; ja="オーシャン" }
-               { en="Forest"; zh="森林绿"; ja="フォレスト" }
+               Settings.tabColorNames.[1]
+               Settings.tabColorNames.[4]
                { en="Slate"; zh="石板灰"; ja="スレート" }
-               { en="Teal"; zh="青碧"; ja="ティール" }
-               { en="Sand"; zh="沙岩米色"; ja="サンド" }
+               Settings.tabColorNames.[14]
+               { en="Sand"; zh="沙色"; ja="サンド" }
                { en="Amber"; zh="琥珀橙"; ja="アンバー" }
-               { en="Rose"; zh="玫瑰红"; ja="ローズ" }
-               { en="Plum"; zh="梅紫"; ja="プラム" } |]
+               Settings.tabColorNames.[11]
+               Settings.tabColorNames.[6] |]
         let pickerHelp = { en="Color picker: arrow keys adjust saturation and brightness; Shift + arrow keys adjust hue"
                            zh="颜色选择器：方向键调整饱和度和亮度；Shift + 方向键调整色相"
                            ja="色の選択：方向キーで彩度と明るさを調整し、Shift + 方向キーで色相を調整します" }
@@ -395,5 +395,5 @@ module Strings =
         let reportTitle = { en="Troubleshooting report"; zh="故障排查报告"; ja="トラブルシューティング レポート" }
         let projectPage = { en="Project page"; zh="项目主页"; ja="プロジェクトページ" }
         let reportIssue = { en="Report an issue"; zh="报告问题"; ja="問題を報告" }
-        let releases = { en="Releases"; zh="版本发布"; ja="リリース" }
+        let releases = { en="Check Releases"; zh="查看发布版本"; ja="リリースを確認" }
         let openCrashLog = { en="Crash log"; zh="崩溃日志"; ja="クラッシュログ" }

@@ -288,15 +288,13 @@ type TabStripDecorator(group:WindowGroup) as this =
             let palette = Theme.tabPalette dark
             Theme.tabColorOrder |> List.map(fun index ->
                 let color = palette.[index]
-                let image = Img(Sz(Dpi.scale 16,Dpi.scale 16))
+                let image = Img(MenuImages.colorDot (Dpi.scale 16) color)
                 images.Add(image)
-                use graphics = image.graphics
-                graphics.Clear(color)
                 CmiRegular({text=tr Strings.Settings.tabColorNames.[index];image=Some image
                             flags=checkedFlag(currentColor=Some(PaletteColor index))
                             click=fun() -> choose (PaletteColor index)}))
             // The main colours, then the ones used once those are taken.
-            |> List.splitAt 7 |> fun (main,more) -> main @ [CmiSeparator] @ more
+            |> List.splitAt 10 |> fun (main,more) -> main @ [CmiSeparator] @ more
         let colorMenu = CmiPopUp({text=tr Strings.Settings.tabColors;image=None;items=List2(colorItems @ [
             CmiSeparator
             CmiRegular({text=tr Strings.Settings.customTabColor;image=None;flags=List2();click=fun() ->
