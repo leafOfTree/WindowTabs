@@ -86,7 +86,7 @@ module Strings =
         let shortcuts = { en="Shortcuts"; zh="快捷键"; ja="ショートカット" }
         let appRules = { en="App rules"; zh="应用规则"; ja="アプリのルール" }
         let workspaces = { en="Workspaces"; zh="工作区"; ja="ワークスペース" }
-        let diagnostics = { en="Support"; zh="帮助与支持"; ja="サポート" }
+        let diagnostics = { en="Support"; zh="支持"; ja="サポート" }
         let title page =
             match page with
             | GeneralSettings -> general

@@ -10,6 +10,7 @@ window, even when they belong to different apps.
 
 [Download](https://github.com/leafOfTree/WindowTabs/releases/latest) ·
 [Getting started](#install-and-get-started) · [Shortcuts](#keyboard-and-mouse) ·
+[Build and run](#build-and-contribute) · [Troubleshooting](#troubleshooting) ·
 [What's changed](CHANGELOG.md)
 
 > [!IMPORTANT]
@@ -57,6 +58,10 @@ Start with the tab's right-click menu for changes to a window or app:
 
 Use Settings for the overall look and behavior. Its search box takes you directly
 to a setting, and the language picker supports English, 中文 and 日本語.
+
+For a quick way to enable automatic grouping, open **Settings → App rules** and
+turn on **Auto-group** beside the apps you want. Each app's windows group together
+automatically.
 
 | Page | What you can change |
 | --- | --- |
@@ -131,6 +136,9 @@ Click the version number in Settings to **Check Releases**.
 
 ## Troubleshooting
 
+- **Unexpected behavior after upgrading?** Try **Settings → Support → Reset to
+  defaults**. WindowTabs backs up your current settings before resetting and
+  restarting, so you can import them back if needed.
 - **No tabs on a window?** Check **App rules** to make sure tabs are enabled for
   its app. Dialogs, tool windows and some special windows are excluded.
 - **Tabs disappeared after maximizing?** Reveal them at the top edge, or choose
@@ -155,6 +163,7 @@ WindowTabs is an F# WinForms app on .NET Framework 4.8. Building requires the
 git clone https://github.com/leafOfTree/WindowTabs
 cd WindowTabs
 dotnet build WindowTabs.sln -c Release
+.\WtProgram\bin\Release\WindowTabs.exe
 ```
 
 The standalone exe is `WtProgram\bin\Release\WindowTabs.exe`. Exit a running copy
