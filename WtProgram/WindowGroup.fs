@@ -9,6 +9,15 @@ open System.Threading
 open System.Windows.Forms
 open Bemo.Win32.Forms
 
+module TabTitle =
+    /// Release titles stay clean even when launched through a debugger.
+    let display (debuggerAttached:bool) (hwnd:IntPtr) (text:string) =
+#if DEBUG
+        if debuggerAttached then sprintf "%X - %s" hwnd text else text
+#else
+        text
+#endif
+
 module TabNavigation =
     /// Right neighbour in tab order, or the left one when the closed tab was last.
     let neighbour (order:IntPtr list) closed =
@@ -365,10 +374,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// The tab's name as the user reads and edits it: their own, else the window's.
     member this.tabName hwnd = Services.program.getWindowNameOverride(hwnd).def(this.windowName hwnd)
 
-    /// Under a debugger the window handle goes in front, for display only.
+    /// Debug builds show the window handle under a debugger, for display only.
     member private this.hwndText hwnd =
         let text = this.tabName hwnd
-        if System.Diagnostics.Debugger.IsAttached then sprintf "%X - %s" hwnd text else text
+        TabTitle.display System.Diagnostics.Debugger.IsAttached hwnd text
 
     member private this.getTabInfo(hwnd) =
         let window = this.os.windowFromHwnd(hwnd)

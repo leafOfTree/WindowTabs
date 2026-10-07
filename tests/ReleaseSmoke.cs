@@ -31,6 +31,10 @@ internal static class ReleaseSmoke
             Application.EnableVisualStyles();
             assembly.GetTypes(); // Resolve signatures, including statically linked dependencies.
             Console.WriteLine("Release smoke: types resolved");
+            var tabTitle = assembly.GetType("Bemo.TabTitle", true).GetMethod("display");
+            foreach (var debuggerAttached in new[] { false, true })
+                if ((string)tabTitle.Invoke(null, new object[] { debuggerAttached, new IntPtr(0x123), "Editor" }) != "Editor")
+                    throw new Exception("Release tab titles expose a window handle under a debugger");
             var dpiHelper = typeof(Form).Assembly.GetType("System.Windows.Forms.DpiHelper", true);
             if (!(bool)dpiHelper.GetProperty("EnableDpiChangedMessageHandling", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null, null))
                 throw new Exception("Forms would not rescale on a monitor with another scale");
