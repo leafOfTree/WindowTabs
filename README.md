@@ -19,12 +19,13 @@ window, even when they belong to different apps.
 > improved reliability. This is a **preview release**.
 > [See what's changed →](CHANGELOG.md)
 
-| Light tabs | Dark tabs |
-| --- | --- |
-| ![Light WindowTabs tabs grouping three File Explorer windows for empty public folders](docs/images/light.png) | ![Dark WindowTabs tabs grouping three File Explorer windows for empty public folders](docs/images/dark.png) |
+### Light tabs
 
-WindowTabs themes apply to the tab bar and Settings; your apps keep their own theme.
-See [the changelog](CHANGELOG.md) for what's new in v2026.10.07.
+![Light WindowTabs tabs grouping three File Explorer windows for empty public folders](docs/images/light.png)
+
+### Dark tabs
+
+![Dark WindowTabs tabs grouping three File Explorer windows for empty public folders](docs/images/dark.png)
 
 ## Install and get started
 
