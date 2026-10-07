@@ -173,7 +173,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         version.Click.Add(fun _ ->
             try Diagnostics.Process.Start(releasesUrl) |> ignore
             with _ -> ())
-        SettingsHover(version,tr Strings.Diagnostics.releases) |> ignore
+        SettingsHover(version,tr Strings.Diagnostics.releasesHint) |> ignore
         // The compact language picker shares the version line.
         languageChoice.Dock <- DockStyle.Right
         let versionRow = new Panel(Dock=DockStyle.Fill)

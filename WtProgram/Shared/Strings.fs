@@ -396,4 +396,5 @@ module Strings =
         let projectPage = { en="Project page"; zh="项目主页"; ja="プロジェクトページ" }
         let reportIssue = { en="Report an issue"; zh="报告问题"; ja="問題を報告" }
         let releases = { en="Check Releases"; zh="查看发布版本"; ja="リリースを確認" }
+        let releasesHint = { en="Check Releases ↗"; zh="查看发布版本 ↗"; ja="リリースを確認 ↗" }
         let openCrashLog = { en="Crash log"; zh="崩溃日志"; ja="クラッシュログ" }
