@@ -19,8 +19,9 @@ module SettingsBindings =
         let control = settingToggle key
         SettingsUi.settingRow table id control
 
-    /// A dropdown for a Choice setting; labels are listed in the same order as the catalog values.
-    let choiceRow table id (labels:string[]) =
+    /// A dropdown for a Choice setting, without a row; labels are listed in the same order as the
+    /// catalog values.
+    let choice id (labels:string[]) =
         match (SettingsCatalog.find id).binding with
         | Choice(key,values,fallback) ->
             let values = Array.ofList values
@@ -30,9 +31,13 @@ module SettingsBindings =
                                     |> Option.orElse (indexOf fallback) |> Option.defaultValue 0
             choice.SelectedIndexChanged.Add(fun _ ->
                 if choice.SelectedIndex >= 0 then Services.settings.setValue(key,box values.[choice.SelectedIndex]))
-            SettingsUi.settingRow table id choice
             choice
         | _ -> invalidArg "id" "Not a choice"
+
+    let choiceRow table id (labels:string[]) =
+        let choice = choice id labels
+        SettingsUi.settingRow table id choice
+        choice
 
     let themeTiles() =
         let table = new TableLayoutPanel(ColumnCount=3,RowCount=1,Height=Dpi.scale 92,

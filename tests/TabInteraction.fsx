@@ -23,23 +23,38 @@ let main() =
     try
         use settings = new Settings(true,saveDelay=0)
         let api = settings :> ISettings
-        check (Theme.leastUsedColor [0;1;2;0;3]=4) "Rainbow allocation did not balance colours"
+        check (Theme.leastUsedColor [0;1;2;0;3]=4) "By-window allocation did not balance colours"
+        check (Theme.leastUsedColor [0..7]=8) "The ninth window did not move on to the second eight colours"
+        check (Theme.leastUsedColor [0..15]=0) "The seventeenth window did not start the palette again"
+        check ([for c in 'a'..'z' -> Theme.appColorIndex (string c + ".exe")] |> List.forall(fun index -> index>=0 && index<Theme.tabPaletteSize)) "App colour fell outside the palette"
+        check (([for c in 'a'..'z' -> Theme.appColorIndex (string c + ".exe")] |> List.distinct).Length>8) "App colours did not use the second eight"
         check (Theme.appColorIndex "Editor.exe"=Theme.appColorIndex "EDITOR.EXE") "App colour hash changed with case"
         let colors = WindowTabColors()
-        let resolve hwnd peers remembered = colors.resolve hwnd peers "editor.exe" "Rainbow" false remembered
+        let peersAsked = ref 0
+        let resolve hwnd peers remembered = colors.resolve hwnd (fun () -> peersAsked.Value <- peersAsked.Value+1; peers) "editor.exe" "ByWindow" remembered
         let a,b,c = IntPtr(1),IntPtr(2),IntPtr(3)
         let first = resolve a [a;b] Map.empty
-        check (resolve b [a;b] Map.empty<>first) "Rainbow repeated a used colour too soon"
-        colors.setOverride a (Some Color.Red)
-        check (resolve a [a;c] Map.empty=Some Color.Red) "Window colour was lost across groups"
+        check (resolve b [a;b] Map.empty<>first) "By-window colours repeated a used colour too soon"
+        let red = CustomColor Color.Red
+        colors.setOverride a (Some red)
+        check (resolve a [a;c] Map.empty=Some red) "Window colour was lost across groups"
         colors.setOverride a None
         check (resolve a [a;c] Map.empty=first) "Clearing custom colour changed its automatic assignment"
-        let remembered = Map.ofList ["EDITOR.EXE","#00FF00"]
-        check (resolve a [a;c] remembered=Some(Color.FromArgb(0,255,0))) "Remembered colour did not override automatic colour"
-        colors.setOverride a (Some Color.Red)
-        check (resolve a [a;c] remembered=Some Color.Red) "Remembered colour overrode window colour"
+        check (peersAsked.Value=2) "Peers were listed again after the window had its colour"
+        let remembered = Map.ofList [@"C:\Apps\EDITOR.EXE","#00FF00"]
+        let resolveAt path hwnd = colors.resolve hwnd (fun () -> [hwnd]) path "ByWindow" remembered
+        check (resolveAt @"c:\apps\editor.exe" a=Some(CustomColor(Color.FromArgb(0,255,0)))) "Remembered colour did not override automatic colour or depended on path case"
+        check (resolveAt @"C:\Other\EDITOR.EXE" a=first) "Remembered colour applied to another app with the same name"
+        colors.setOverride a (Some red)
+        check (resolveAt @"C:\Apps\EDITOR.EXE" a=Some red) "Remembered colour overrode window colour"
+        let loads = ref 0
+        let load() = loads.Value <- loads.Value+1; @"C:\Apps\Editor.exe"
+        for _ in 1..3 do colors.path a load |> ignore
+        check (loads.Value=1) "Process path was looked up again for the same window"
         colors.remove a
         check (colors.getOverride a=None) "Destroyed HWND retained custom colour"
+        colors.path a load |> ignore
+        check (loads.Value=2) "Destroyed HWND kept its process path"
         use swatch = new Bitmap(16,16)
         use ink = Graphics.FromImage(swatch)
         ink.Clear(Color.Red)
@@ -51,6 +66,20 @@ let main() =
             check (menu.handle<>IntPtr.Zero) "Native colour menu was not created"
         let after,_,_,_ = RuntimeDiagnostics.resourceCounts()
         check (after-before<5) "Native colour menus leaked GDI bitmaps"
+        // A swatch replaces the check mark, so the checked one must look different.
+        for colour in [Color.Red;Color.Yellow;Color.Black;Color.White] do
+            ink.Clear(colour)
+            use marked = MenuImages.checkedCopy swatch
+            let changed = seq { for x in 0..15 do for y in 0..15 do if marked.GetPixel(x,y).ToArgb()<>colour.ToArgb() then yield () } |> Seq.length
+            check (changed>8) (sprintf "Checked %A swatch has no visible mark" colour)
+            check (swatch.GetPixel(8,8).ToArgb()=colour.ToArgb()) "Marking a checked swatch changed the caller's image"
+        let checkedItem = CmiRegular({text="Colour";image=Some(Img(swatch));flags=List2([MenuFlags.MF_CHECKED]);click=ignore})
+        let before,_,_,_ = RuntimeDiagnostics.resourceCounts()
+        for _ in 1..100 do
+            use menu = new NativeContextMenu(List2([checkedItem]))
+            check (menu.handle<>IntPtr.Zero) "Native checked colour menu was not created"
+        let after,_,_,_ = RuntimeDiagnostics.resourceCounts()
+        check (after-before<5) "Checked colour menus leaked GDI bitmaps"
         let leader = NumberLeaderState()
         let now = DateTime.UtcNow
         leader.arm (IntPtr(1)) now
@@ -65,6 +94,8 @@ let main() =
         check (not (leader.validate (IntPtr(2)) now)) "Leader survived foreground change"
         leader.arm (IntPtr(1)) now
         check (leader.key (IntPtr(1)) now 0x39 3 = (true,None)) "Missing leader digit must be consumed without activation"
+        leader.arm (IntPtr(1)) now
+        check (leader.key (IntPtr(1)) now 0x62 3 = (true,Some 1) && not leader.active) "Leader ignored a number-pad digit"
         for dpi in [96;144] do
             Dpi.set dpi
             api.setValue("enableHoverActivate",box false)

@@ -61,18 +61,10 @@ type AppearanceView(?settings:ISettings) =
     let mutable refreshing = false
     let mutable editingDark = ThemeService.currentIsDark()
     let update = settings.updateAppearance
-    /// The theme tiles above show which theme's colours these are.
-    let paletteTitle = new Label(AutoSize=true,Font=SettingsUi.sectionFont(),Text=tr Strings.Appearance.tabColors,
-                                 Margin=Padding(0,Dpi.scale 16,0,Dpi.scale 8))
     let preset = SettingsUi.choice (Array.append (ThemePresets.names |> Array.map tr) [|tr Strings.Appearance.custom|])
     let tabStyle = SettingsUi.choice (Strings.Appearance.tabStyles |> Array.map tr)
-    let resetColorsButton = SettingsUi.button (tr Strings.Appearance.resetColors)
-    let resetLayoutButton = SettingsUi.button (tr Strings.Appearance.resetTabLayout)
-    let rightActions (button:Control) =
-        let row = new FlowLayoutPanel(AutoSize=true,WrapContents=false,FlowDirection=FlowDirection.RightToLeft,
-                                      Margin=Padding(0,Dpi.scale 8,0,Dpi.scale 8))
-        row.Controls.Add(button)
-        SettingsUi.add table row
+    let resetColorsButton = new SettingsResetButton(tr Strings.Appearance.resetColors,Name="reset-colors")
+    let resetLayoutButton = new SettingsResetButton(tr Strings.Appearance.resetTabLayout,Name="reset-tab-layout")
     let paletteForProfile (s:AppearancePreferences) = if editingDark then s.darkPalette else s.lightPalette
     let customForProfile (s:AppearancePreferences) = if editingDark then s.darkCustomPalette else s.lightCustomPalette
     let activePalette (s:AppearancePreferences) =
@@ -103,7 +95,7 @@ type AppearanceView(?settings:ISettings) =
     let editPalette change =
         update(fun s ->
             let current = activePalette s
-            let next = change current
+            let next = change current |> Theme.followSeparator (selection s |> Option.map original) current
             if values next=values current then s
             else
                 match selection s with
@@ -130,9 +122,9 @@ type AppearanceView(?settings:ISettings) =
         "tabTextColor",(fun p -> p.tabTextColor),(fun v p -> {p with tabTextColor=v})
         "tabActiveBgColor",(fun p -> p.tabActiveBgColor),(fun v p -> {p with tabActiveBgColor=v})
         "tabHighlightBgColor",(fun p -> p.tabHighlightBgColor),(fun v p -> {p with tabHighlightBgColor=v})
-        "tabNormalBgColor",(fun p -> p.tabNormalBgColor),(fun v p -> {p with tabNormalBgColor=v})
-        "tabBorderColor",(fun p -> p.tabBorderColor),(fun v p -> {p with tabBorderColor=v})
-        "tabFlashBgColor",(fun p -> p.tabFlashBgColor),(fun v p -> {p with tabFlashBgColor=v}) ]
+        "tabNormalBgColor",(fun p -> p.tabNormalBgColor),(fun v p -> {p with tabNormalBgColor=v}) ]
+    // The separator follows the text and inactive tab colours, and a flashing tab is rare and
+    // brief: neither earns a row of its own. Each palette still carries both.
     let colors = colorFields |> List.map(fun (key,get,set) -> key,get,set,(new SettingsColorInput(Font=SettingsUi.bodyFont()) :> IPropEditor))
     let dimensionFields : (string * (TabGeometry -> int) * (int -> TabGeometry -> TabGeometry)) list = [
         "tabHeight",(fun g -> g.height),(fun v g -> {g with height=v})
@@ -160,6 +152,13 @@ type AppearanceView(?settings:ISettings) =
         contrastComparison.Samples <- samples
         contrastNote.Visible <- adjusted
         contrastNote.Text <- if adjusted then tr Strings.Appearance.textAdjusted else ""
+    /// Filled by automatic color coding, every tab takes its own color: the background rows then
+    /// change nothing, so their editors are disabled. Not hidden and no note, so the page does not
+    /// jump. With coding off, tabs colored from their menu leave the rest to these rows.
+    let updateFilled() =
+        let filled = settings.getValue("tabColorMode") :?> string <> "Off" && settings.getValue("tabColorStyle") :?> string = "Fill"
+        for key,_,_,editor in colors do
+            if key<>"tabTextColor" then editor.control.Enabled <- not filled
     let refresh() =
         refreshing <- true
         try
@@ -188,11 +187,11 @@ type AppearanceView(?settings:ISettings) =
             // Only tabs too tall to leave its toolbar visible make the panel grow.
             preview.Height <- max (Dpi.scale 145) (ThemeService.currentAppearance().scaled.tabHeight+Dpi.scale (14+14+28)+2)
             // A reset with nothing to undo would do nothing visible, so it is not offered.
-            resetColorsButton.Enabled <-
+            resetColorsButton.Offered <-
                 match selection settings with
                 | Some index -> values palette<>values (original index)
                 | None -> true
-            resetLayoutButton.Enabled <- geometry<>Theme.defaultGeometry
+            resetLayoutButton.Offered <- geometry<>Theme.defaultGeometry
             let frame = Some(SettingsColors.current(),editingDark,settings.geometry)
             if frame=previewFrame then preview.Invalidate(previewTabs())
             else
@@ -250,7 +249,7 @@ type AppearanceView(?settings:ISettings) =
             // The font real tabs use, so the preview shrinks its text with short tabs too.
             use font = TabMetrics.font appearance.tabHeight FontStyle.Regular
             let info index (caption:string) : TabDisplayInfo = {
-                tint=(if settings.getValue("tabColorMode") :?> string = "Off" then None else Some((Theme.tabPalette dark).[index])); colorStyle=settings.getValue("tabColorStyle") :?> string; numberBadge=None; bgColor=None; text=caption; icon=SystemIcons.Application
+                tint=(if settings.getValue("tabColorMode") :?> string = "Off" then None else Some((Theme.tabPalette (Theme.darkBar appearance.tabNormalBgColor)).[index])); colorStyle=settings.getValue("tabColorStyle") :?> string; numberBadge=None; bgColor=None; text=caption; icon=SystemIcons.Application
                 textFont=font; textBrush=SystemBrushes.MenuText }
             let ts : TabStripSprite<int> = {
                 tabs=Map2(List2([1,info 1 (tr Strings.Settings.tabActiveBgColor.caption);2,info 2 (tr Strings.Settings.tabHighlightBgColor.caption);3,info 4 (tr Strings.Settings.tabNormalBgColor.caption)]))
@@ -263,21 +262,30 @@ type AppearanceView(?settings:ISettings) =
         let styleCard = new SettingsCard()
         SettingsUi.add table styleCard
         SettingsUi.settingRow styleCard "tabStyle" tabStyle
-        let colorMode = SettingsBindings.choiceRow styleCard "tab-color-mode" [|tr Strings.Settings.colorsOff;tr Strings.Settings.rainbow;tr Strings.Settings.byApp|]
-        colorMode.SelectedIndexChanged.Add(fun _ -> preview.Invalidate())
-        let colorStyle = SettingsBindings.choiceRow styleCard "tab-color-style" [|tr Strings.Settings.stripe;tr Strings.Settings.fill|]
-        colorStyle.SelectedIndexChanged.Add(fun _ -> preview.Invalidate())
-        let paletteHeader = new Panel(Height=Dpi.scale 36,Margin=Padding(0,Dpi.scale 16,0,Dpi.scale 8))
-        paletteTitle.AutoSize <- false
-        paletteTitle.Dock <- DockStyle.Fill
-        paletteTitle.TextAlign <- ContentAlignment.MiddleLeft
+        // Which tabs get a color and how it shows, side by side in one row. Search still finds
+        // each list by its own setting.
+        let colorMode = SettingsBindings.choice "tab-color-mode" [|tr Strings.Settings.colorsOff;tr Strings.Settings.byWindow;tr Strings.Settings.byApp|]
+        let colorStyle = SettingsBindings.choice "tab-color-style" [|tr Strings.Settings.fill;tr Strings.Settings.stripe|]
+        let coloring = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
+                                           Margin=Padding.Empty,Padding=Padding.Empty)
+        colorMode.Margin <- Padding.Empty
+        colorStyle.Margin <- Padding(Dpi.scale 8,0,0,0)
+        coloring.Controls.Add(colorMode)
+        coloring.Controls.Add(colorStyle)
+        SettingsUi.settingRow styleCard "tab-color-mode" coloring
+        coloring.Name <- "tab-color-coding"
+        colorMode.Name <- "tab-color-mode"
+        colorMode.AccessibleName <- tr Strings.Settings.tabColorMode.caption
+        colorMode.AccessibleDescription <- coloring.AccessibleDescription
+        colorStyle.Name <- "tab-color-style"
+        colorStyle.AccessibleName <- tr Strings.Settings.tabColorStyle.caption
+        for choice in [colorMode;colorStyle] do choice.SelectedIndexChanged.Add(fun _ -> preview.Invalidate(); updateFilled())
         preset.Name <- "palette-preset"
         preset.AccessibleName <- tr Strings.Appearance.colorPreset
-        preset.Width <- Dpi.scale 180
-        preset.Dock <- DockStyle.Right
-        paletteHeader.Controls.Add(paletteTitle)
-        paletteHeader.Controls.Add(preset)
-        SettingsUi.add table paletteHeader
+        preset.Width <- Dpi.scale 140
+        resetColorsButton.Margin <- Padding(0,0,Dpi.scale 6,0)
+        // The theme tiles above show which theme's colours these are.
+        SettingsUi.sectionHeading table (tr Strings.Appearance.tabColors) [resetColorsButton;preset]
         preset.SelectedIndexChanged.Add(fun _ ->
             if not refreshing && preset.SelectedIndex>=0 then
                 let index = preset.SelectedIndex
@@ -289,16 +297,15 @@ type AppearanceView(?settings:ISettings) =
         contrastNote.MaximumSize <- Size(Dpi.scale 700,0)
         SettingsUi.add table contrastNote
         SettingsUi.add table contrastComparison
-        resetColorsButton.Name <- "reset-colors"
         resetColorsButton.Click.Add(fun _ -> resetColors())
-        rightActions resetColorsButton
-        let layoutCard = SettingsUi.sectionCard table (tr Strings.Appearance.tabLayout)
+        SettingsUi.sectionHeading table (tr Strings.Appearance.tabLayout) [resetLayoutButton]
+        let layoutCard = new SettingsCard()
+        SettingsUi.add table layoutCard
         SettingsUi.note layoutCard (tr Strings.Appearance.sizesStayTheSame)
         for key,read,write,editor in dimensions do SettingsUi.settingRow layoutCard key editor
-        resetLayoutButton.Name <- "reset-tab-layout"
         resetLayoutButton.Click.Add(fun _ ->
             update Theme.resetLayout)
-        rightActions resetLayoutButton
+        updateFilled()
         refresh()
         tabStyle.SelectedIndexChanged.Add(fun _ ->
             if not refreshing && tabStyle.SelectedIndex>=0 then

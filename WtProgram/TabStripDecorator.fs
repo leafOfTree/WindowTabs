@@ -273,30 +273,35 @@ type TabStripDecorator(group:WindowGroup) as this =
                     this.beginRename(hwnd)
             })
         let colors() = Services.settings.getValue("appTabColors") :?> Map<string,string>
-        let colorPath = processPath.ToUpperInvariant()
-        let remembered = (colors()).ContainsKey colorPath
-        let currentColor = Services.program.getTabColor hwnd
+        let sameApp path = String.Equals(path,processPath,StringComparison.OrdinalIgnoreCase)
+        let remembered = colors() |> Map.exists(fun path _ -> sameApp path)
+        let currentColor = group.tabColor hwnd
+        let dark = Theme.darkBar group.tabAppearance.tabNormalBgColor
         let saveAppColor color =
-            let next = match color with Some value -> (colors()).Add(colorPath,Theme.formatTabColor value) | None -> (colors()).Remove colorPath
+            let others = colors() |> Map.filter(fun path _ -> not (sameApp path))
+            let next = match color with Some value -> others.Add(processPath,Theme.formatTabColor value) | None -> others
             Services.settings.setValue("appTabColors",box next)
         let choose color =
             group.setTabColor(hwnd,Some color)
             if remembered then saveAppColor (Some color)
         let colorItems =
-            Theme.tabPalette (ThemeService.currentIsDark()) |> Array.mapi(fun index color ->
+            Theme.tabPalette dark |> Array.mapi(fun index color ->
                 let image = Img(Sz(Dpi.scale 16,Dpi.scale 16))
                 images.Add(image)
                 use graphics = image.graphics
                 graphics.Clear(color)
                 CmiRegular({text=tr Strings.Settings.tabColorNames.[index];image=Some image
-                            flags=checkedFlag(currentColor |> Option.exists(fun current -> current.ToArgb()=color.ToArgb()))
-                            click=fun() -> choose color})) |> Array.toList
+                            flags=checkedFlag(currentColor=Some(PaletteColor index))
+                            click=fun() -> choose (PaletteColor index)})) |> Array.toList
+            // The main colours, then the ones used once those are taken.
+            |> List.splitAt 8 |> fun (main,more) -> main @ [CmiSeparator] @ more
         let colorMenu = CmiPopUp({text=tr Strings.Settings.tabColors;image=None;items=List2(colorItems @ [
             CmiSeparator
             CmiRegular({text=tr Strings.Settings.customTabColor;image=None;flags=List2();click=fun() ->
-                use dialog = new ColorDialog(FullOpen=true,Color=defaultArg currentColor Color.SteelBlue)
+                let initial = currentColor |> Option.map(Theme.tabColor dark) |> Option.defaultValue Color.SteelBlue
+                use dialog = new ColorDialog(FullOpen=true,Color=initial)
                 let owner = {new IWin32Window with member _.Handle=group.hwnd}
-                if dialog.ShowDialog(owner)=DialogResult.OK then choose dialog.Color})
+                if dialog.ShowDialog(owner)=DialogResult.OK then choose (CustomColor dialog.Color)})
             CmiRegular({text=tr (Strings.Settings.rememberTabColor exeName);image=None
                         flags=checkedFlag remembered |> fun flags -> if not remembered && currentColor.IsNone then flags.append(MenuFlags.MF_GRAYED) else flags
                         click=fun() -> saveAppColor (if remembered then None else currentColor)})

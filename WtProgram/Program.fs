@@ -41,9 +41,9 @@ type Program(lifetime:LifetimeScope) as this =
     let inShutdown = Cell.create(false)
     let isSubscribed = lifetime.Own(new OwnedSubscriptions<IntPtr>())
     let isDroppedAndAwaitingGrouping = Cell.create(Set2())
+    let windowColors = WindowTabColors()
     // An immutable map swapped whole on the main thread, so tab strips on group threads
     // read renames without waiting for it: tab text is rebuilt on every title change.
-    let windowColors = WindowTabColors()
     let mutable windowNameOverride : Map2<IntPtr,string option> = Map2()
    
     let isFirstRun = settingsManager.fileExists.not
@@ -333,9 +333,9 @@ type Program(lifetime:LifetimeScope) as this =
         member _.setTabColorOverride((hwnd,color)) = windowColors.setOverride hwnd color
 
         member x.getTabColor hwnd =
-            let peers = this.desktop.groups.list |> List.tryFind(fun g -> g.windows.contains((=) hwnd)) |> Option.map(fun g -> g.windows.list) |> Option.defaultValue []
-            let path = try os.windowFromHwnd(hwnd).pid.processPath with _ -> ""
-            windowColors.resolve hwnd peers path settingsManager.settings.tabColorMode (ThemeService.currentIsDark()) settingsManager.settings.appTabColors
+            let peers() = this.desktop.groups.list |> List.tryFind(fun g -> g.windows.contains((=) hwnd)) |> Option.map(fun g -> g.windows.list) |> Option.defaultValue []
+            let path = windowColors.path hwnd (fun () -> try os.windowFromHwnd(hwnd).pid.processPath with _ -> "")
+            windowColors.resolve hwnd peers path settingsManager.settings.tabColorMode settingsManager.settings.appTabColors
 
         member x.appWindows = 
             os.windowsInZorder.where(this.isAppWindow).map(fun w -> w.hwnd)

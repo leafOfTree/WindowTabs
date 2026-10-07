@@ -249,6 +249,29 @@ let main() =
                combine.AccessibleDescription.Contains(hint) &&
                (controls combine.Parent |> Seq.exists(fun c -> c :? SettingsHelpButton && c.AccessibleDescription=hint)))
               "Taskbar setting does not explain its scope and tab-menu override"
+        // Color coding sits with the tab style, right under the preview, so a change shows while it is made.
+        let appearanceOrder = controls appearance.control |> Seq.map(fun c -> c.Name) |> Seq.toList
+        let position name = appearanceOrder |> List.findIndex ((=) name)
+        check (position "tabStyle" < position "tab-color-mode" && position "tab-color-mode" < position "tab-color-style" &&
+               position "tab-color-style" < position "palette-preset" && position "palette-preset" < position "tabHeight")
+              "Color coding rows are not under the tab style, before the tab colors"
+        check (not (List.contains "tabBorderColor" appearanceOrder) && not (List.contains "tabFlashBgColor" appearanceOrder))
+              "Separator and flashing tab colors still have rows of their own"
+        let named name = controls appearance.control |> Seq.find(fun c -> c.Name=name)
+        check (obj.ReferenceEquals((named "reset-colors").Parent,(named "palette-preset").Parent)) "Reset colors is not beside the preset list"
+        check ((named "reset-tab-layout").Parent.Controls |> Seq.cast<Control> |> Seq.exists(fun c -> c :? Label && c.Text=tr Strings.Appearance.tabLayout))
+              "Reset tab layout is not in the tab layout heading"
+        let colorMode = controls appearance.control |> Seq.find(fun c -> c.Name="tab-color-mode")
+        let rec rowOf (control:Control) = match control with :? SettingsRow -> control | null -> null | _ -> rowOf control.Parent
+        check (colorMode.AccessibleDescription.Contains(tr Strings.Settings.tabColorMode.description)) "Color coding does not say how it combines with the tab colors"
+        check (colorMode.AccessibleDescription.Contains(tr Strings.Settings.tabColorMenuHint) &&
+               (controls (rowOf colorMode) |> Seq.exists(fun c -> c :? SettingsHelpButton && c.AccessibleDescription=tr Strings.Settings.tabColorMenuHint)))
+              "Color coding has no (i) about picking a tab's own color from the tab menu"
+        check (obj.ReferenceEquals(rowOf colorMode,rowOf (named "tab-color-style")) && not (isNull (rowOf colorMode)))
+              "Color coding and how colors show are not in one row"
+        // Short lists share one width, so the tab style and fill/stripe lists stacked above each other line up.
+        check ((named "tabStyle").Width=(named "tab-color-style").Width && (named "tab-color-mode").Width=(named "tab-color-style").Width)
+              "Short dropdowns stacked in the appearance page have different widths"
         let snapshot name =
             form.PerformLayout()
             Application.DoEvents()
@@ -671,22 +694,60 @@ Group #2: No valid windows in this group.";
         api.updateAppearance(fun s -> {s with geometry={s.geometry with height=originalHeight}})
         Application.DoEvents()
         check (previewHeights |> List.distinct |> List.length = 1) (sprintf "Tab preview height follows the tab height: %A" previewHeights)
+        // Filled by automatic color coding, every tab has its own color: the background rows change
+        // nothing then, so their editors are disabled; no note shifts the page. Tabs colored only from their menu leave them working.
+        do
+            let combo name = controls appearance.control |> Seq.pick(function :? SettingsCombo as c when c.Name=name -> Some c | _ -> None)
+            let mode,style = combo "tab-color-mode",combo "tab-color-style"
+            let editor key = controls appearance.control |> Seq.find(fun c -> c.Name=key)
+            let off key = not (editor key).Enabled
+            let on key = (editor key).Enabled
+            let backgrounds = ["tabActiveBgColor";"tabHighlightBgColor";"tabNormalBgColor"]
+            let modeBefore,styleBefore = mode.SelectedIndex,style.SelectedIndex
+            check (api.getValue("tabColorStyle")=box "Fill" || styleBefore>=0) "Tab color style has no value"
+            mode.SelectedIndex <- 1
+            style.SelectedIndex <- 0
+            Application.DoEvents()
+            check (api.getValue("tabColorMode")=box "ByWindow" && api.getValue("tabColorStyle")=box "Fill") "Color coding choices are not bound to their settings"
+            check (backgrounds |> List.forall off && on "tabTextColor")
+                  "Tab backgrounds a fill replaces are still offered, or the text color is not"
+            check (not (controls appearance.control |> Seq.exists(fun c -> c :? Label && c.Visible && c.Text.Contains("only the text color"))))
+                  "A note about filled tabs still shifts the page"
+            snapshot "settings-appearance-filled"
+            style.SelectedIndex <- 1
+            Application.DoEvents()
+            check (backgrounds |> List.forall on) "A stripe left the tab backgrounds turned off"
+            style.SelectedIndex <- 0
+            mode.SelectedIndex <- 0
+            Application.DoEvents()
+            check (backgrounds |> List.forall on) "Color coding off left the tab backgrounds turned off"
+            mode.SelectedIndex <- modeBefore
+            style.SelectedIndex <- styleBefore
+            Application.DoEvents()
         // A reset with nothing to undo is not offered; an edit offers it again.
         do
             let before = settings.settings.appearance
-            let button name = controls appearance.control |> Seq.pick(function :? SettingsActionButton as b when b.Name=name -> Some b | _ -> None)
+            let button name = controls appearance.control |> Seq.pick(function :? SettingsResetButton as b when b.Name=name -> Some b | _ -> None)
             let colors,layout = button "reset-colors",button "reset-tab-layout"
             api.updateAppearance(fun s -> {s with lightPalette=Theme.lightPalette;lightPreset=ThemePresets.keys.[0];presetEdits=Map.empty
                                                   useCustomColors=true;geometry=Theme.defaultGeometry})
             Application.DoEvents()
-            check (not colors.Enabled && not layout.Enabled) "Reset buttons are offered with nothing to reset"
+            check (not colors.Offered && not layout.Offered) "Reset buttons are offered with nothing to reset"
             api.updateAppearance(fun s -> {s with lightPalette={s.lightPalette with tabActiveBgColor=Color.Red};geometry={s.geometry with height=30}})
             Application.DoEvents()
-            check (colors.Enabled && layout.Enabled) "Reset buttons are not offered after an edit"
+            check (colors.Offered && layout.Offered) "Reset buttons are not offered after an edit"
             colors.PerformClick()
             layout.PerformClick()
             Application.DoEvents()
-            check (not colors.Enabled && not layout.Enabled) "Reset buttons are still offered after resetting"
+            check (not colors.Offered && not layout.Offered) "Reset buttons are still offered after resetting"
+            // A disabled button hands its focus on, and the tab height field it reached showed as selected.
+            check (colors.Enabled && layout.Enabled) "A reset button was disabled, so its focus moved to the next field"
+            api.updateAppearance(fun s -> {s with geometry={s.geometry with height=30}})
+            Application.DoEvents()
+            layout.Offered <- false
+            layout.PerformClick()
+            Application.DoEvents()
+            check (settings.settings.appearance.geometry.height=30) "A reset button that is not offered still reset"
             api.updateAppearance(fun _ -> before)
             Application.DoEvents()
         let ap = appearance.control :?> SettingsPage

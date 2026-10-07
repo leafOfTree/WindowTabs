@@ -159,20 +159,33 @@ module Strings =
                                keywords={ en="number shortcut modifier"; zh="数字 快捷键 修饰键"; ja="番号 ショートカット 修飾キー" } }
         let enableNumberLeader = { caption={ en="Use a leader key for tab numbers"; zh="使用引导键切换标签"; ja="リーダーキーでタブ番号を選ぶ" }; description={ en="Press the leader, then 1–9 within three seconds. Escape cancels."; zh="按引导键后，三秒内按 1–9。Esc 取消。"; ja="リーダーキーの後、3 秒以内に 1～9 を押します。Esc で解除。" }; keywords=none }
         let numberLeader = { caption={ en="Tab number leader"; zh="数字标签引导键"; ja="タブ番号のリーダーキー" }; description=none; keywords=none }
-        let tabColors = { en="Tab colour"; zh="标签颜色"; ja="タブの色" }
+        let tabColors = { en="Tab color"; zh="标签着色"; ja="タブの色分け" }
         let customTabColor = { en="Custom…"; zh="自定义…"; ja="カスタム…" }
-        let clearTabColor = { en="Clear colour"; zh="清除颜色"; ja="色を解除" }
-        let rememberTabColor name = { en=sprintf "Remember colour for %s" name; zh=sprintf "记住 %s 的颜色" name; ja=sprintf "%s の色を記憶" name }
+        let clearTabColor = { en="Clear color"; zh="清除颜色"; ja="色を解除" }
+        let rememberTabColor name = { en=sprintf "Remember color for %s" name; zh=sprintf "记住 %s 的颜色" name; ja=sprintf "%s の色を記憶" name }
         let tabColorNames = [|
             { en="Grey";zh="灰色";ja="グレー" }; { en="Blue";zh="蓝色";ja="青" }
             { en="Red";zh="红色";ja="赤" }; { en="Yellow";zh="黄色";ja="黄" }
             { en="Green";zh="绿色";ja="緑" }; { en="Pink";zh="粉色";ja="ピンク" }
-            { en="Purple";zh="紫色";ja="紫" }; { en="Cyan";zh="青色";ja="シアン" } |]
-        let tabColorMode = { caption={ en="Automatic tab colours"; zh="自动标签配色"; ja="タブの自動配色" }; description=none; keywords=none }
+            { en="Purple";zh="紫色";ja="紫" }; { en="Cyan";zh="青色";ja="シアン" }
+            { en="Orange";zh="橙色";ja="オレンジ" }; { en="Lavender";zh="薰衣草色";ja="ラベンダー" }
+            { en="Olive";zh="橄榄色";ja="オリーブ" }; { en="Rose";zh="玫红色";ja="ローズ" }
+            { en="Lime";zh="青柠色";ja="ライム" }; { en="Navy";zh="藏青色";ja="ネイビー" }
+            { en="Teal";zh="蓝绿色";ja="ティール" }; { en="Coral";zh="珊瑚色";ja="コーラル" } |]
+        let tabColorMode = { caption={ en="Tab color coding"; zh="标签着色"; ja="タブの色分け" }
+                             description={ en="Fill replaces the colors below; stripe keeps them."
+                                           zh="填充会取代下方配色，色条则保留。"
+                                           ja="塗りつぶしは下の色を置き換え、ラインは残します。" }
+                             keywords={ en="rainbow color coding tint per window per app"; zh="彩虹 着色 颜色 区分 按窗口 按应用"; ja="レインボー 色分け 色 ウィンドウ別 アプリ別" } }
         let colorsOff = { en="Off"; zh="关闭"; ja="オフ" }
-        let rainbow = { en="Rainbow"; zh="彩虹"; ja="レインボー" }
+        let byWindow = { en="By window"; zh="按窗口"; ja="ウィンドウ別" }
         let byApp = { en="By app"; zh="按应用"; ja="アプリ別" }
-        let tabColorStyle = { caption={ en="Tab colour style"; zh="标签颜色样式"; ja="タブの色の表示" }; description=none; keywords=none }
+        let tabColorMenuHint = { en="Change it for one tab from the tab menu. That color comes first, and shows even when this is off."
+                                 zh="可在标签菜单中为单个标签选色。它优先于这里的设置，关闭时也有效。"
+                                 ja="タブメニューでタブごとに色を選べます。こちらの設定より優先され、オフでも表示されます。" }
+        let tabColorStyle = { caption={ en="Show colors as"; zh="着色方式"; ja="色の付け方" }
+                              description=none
+                              keywords={ en="stripe fill tint color coding"; zh="色条 填充 着色"; ja="ライン 塗りつぶし 色分け" } }
         let stripe = { en="Stripe"; zh="色条"; ja="色のライン" }
         let fill = { en="Fill"; zh="填充"; ja="塗りつぶし" }
         let numberShortcutApps = { caption={ en="Apps using number shortcuts"; zh="使用数字快捷键的应用"; ja="番号ショートカットを使うアプリ" }; description=none; keywords=none }
@@ -194,20 +207,18 @@ module Strings =
         let tabNormalBgColor = { caption={ en="Inactive tab"; zh="非活动标签"; ja="非アクティブなタブ" }; description=none; keywords=colorWords }
         let tabActiveBgColor = { caption={ en="Active tab"; zh="活动标签"; ja="アクティブなタブ" }; description=none; keywords=colorWords }
         let tabHighlightBgColor = { caption={ en="Hovered tab"; zh="悬停标签"; ja="ホバー中のタブ" }; description=none; keywords=colorWords }
-        let tabBorderColor = { caption={ en="Separator"; zh="分隔线"; ja="区切り線" }; description=none; keywords=colorWords }
-        let tabFlashBgColor = { caption={ en="Flashing tab"; zh="闪烁标签"; ja="点滅するタブ" }; description=none; keywords=colorWords }
         let tabStyle = { caption={ en="Tab style"; zh="标签样式"; ja="タブのスタイル" }
                          description={ en="How the active tab stands out from the rest."; zh="活动标签以何种方式与其他标签区分。"; ja="アクティブなタブをほかのタブとどう見分けるかを選びます。" }
-                         keywords={ en="shape rounded folder pill browser look"; zh="形状 圆角 文件夹 胶囊 浏览器 外观"; ja="形 角丸 フォルダー ピル ブラウザー 外観" } }
+                         keywords={ en="shape rounded folder floating pill browser look"; zh="形状 圆角 文件夹 悬浮 胶囊 浏览器 外观"; ja="形 角丸 フォルダー フローティング ピル ブラウザー 外観" } }
         let tabHeight = { caption={ en="Tab height"; zh="标签高度"; ja="タブの高さ" }; description=none; keywords=sizeWords }
         let tabMaxWidth = { caption={ en="Maximum tab width"; zh="标签最大宽度"; ja="タブの最大幅" }; description=none; keywords=sizeWords }
         let tabOverlap = { caption={ en="Tab spacing"; zh="标签间距"; ja="タブの間隔" }
                            description=none
                            keywords={ en="gap overlap"; zh="间隔 间隙"; ja="隙間 すき間" } }
         let tabIndent = { caption={ en="Side margin"; zh="两侧边距"; ja="左右の余白" }
-                          description={ en="Distance from the window edges. Centered tabs use it only once they fill the row."
-                                        zh="与窗口两侧的距离。标签居中时，排满一行后才生效。"
-                                        ja="ウィンドウの左右端からの距離です。中央揃えでは、タブが行いっぱいになってから適用されます。" }
+                          description={ en="Distance from the window edges."
+                                        zh="与窗口两侧的距离。"
+                                        ja="ウィンドウの左右端からの距離です。" }
                           keywords={ en="inset indent padding maximized"; zh="缩进 内边距 最大化"; ja="インデント 最大化" } }
         let appRules = { caption=Pages.appRules
                          description={ en="Choose apps for tabs and automatic grouping."; zh="选择启用标签和自动分组的应用。"; ja="タブと自動グループ化を使うアプリを選択します。" }
@@ -275,14 +286,14 @@ module Strings =
         let tabStyles =
             [| { en="Joined"; zh="连成一条"; ja="連結" }
                { en="Folder"; zh="文件夹式"; ja="フォルダー型" }
-               { en="Pill"; zh="胶囊"; ja="ピル型" } |]
+               { en="Floating"; zh="悬浮式"; ja="フローティング" } |]
         /// The tab colours on which the text is shown darker or lighter than chosen.
         /// Samples of the tab text as chosen and as shown, side by side.
         let textBefore = { en="Before"; zh="调整前"; ja="調整前" }
         let textAfter = { en="After"; zh="调整后"; ja="調整後" }
         let textAdjusted = { en="Text color is adjusted on some tabs to stay readable."; zh="部分标签上的文字颜色已调整，以保持清晰。"; ja="一部のタブでは、読みやすさのため文字の色を調整しています。" }
         /// A colour preset whose colours the user has changed.
-        let editedPreset name = { en=sprintf "%s (edited)" name; zh=sprintf "%s（已修改）" name; ja=sprintf "%s（変更済み）" name }
+        let editedPreset name = { en=sprintf "%s*" name; zh=sprintf "%s*" name; ja=sprintf "%s*" name }
         let resetColors = { en="Reset colors"; zh="重置配色"; ja="配色をリセット" }
         let tabLayout = { en="Tab layout"; zh="标签布局"; ja="タブのレイアウト" }
         let sizesStayTheSame = { en="Sizes stay the same when you switch themes."; zh="切换主题不会改变这些尺寸。"; ja="テーマを切り替えてもサイズは変わりません。" }

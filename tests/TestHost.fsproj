@@ -23,6 +23,9 @@
     <Compile Include="TestInit.fsx" />
     <Compile Include="$(TestName).fsx" />
     <Compile Include="TestEntry.fs" />
+    <!-- #r lines are not build inputs: without these a script left unchanged keeps a build
+         made against an older app, and fails with MissingMethodException at run time. -->
+    <CustomAdditionalCompileInputs Include="Debug\WindowTabs.exe;Debug\Win32.dll" />
   </ItemGroup>
 
   <ItemGroup>

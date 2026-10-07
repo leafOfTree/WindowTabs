@@ -269,6 +269,18 @@ module SettingsUi =
         add table card
         card :> TableLayoutPanel
 
+    /// A section heading with controls at its right end, such as a reset button or a preset list.
+    let sectionHeading (table:TableLayoutPanel) caption (actions:Control list) =
+        let heading = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=1+actions.Length,RowCount=1,
+                                           Margin=Padding(0,(if table.RowCount=0 then 0 else Dpi.scale 24),0,Dpi.scale 4))
+        heading.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+        for _ in actions do heading.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
+        heading.Controls.Add(new Label(Text=caption,AutoSize=true,Font=sectionFont(),Anchor=AnchorStyles.Left,Margin=Padding.Empty),0,0)
+        actions |> List.iteri(fun index action ->
+            action.Anchor <- AnchorStyles.Right
+            heading.Controls.Add(action,index+1,0))
+        add table heading
+
     /// A section card whose heading has an (i) that explains the whole section.
     let sectionCardWithHelp (table:TableLayoutPanel) caption (help:string) =
         let heading = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,

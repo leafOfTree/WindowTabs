@@ -129,6 +129,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let shellHookWindow = Cell.create(None)
     let winEventHandler = Cell.create(None)
     let mutable themeSubscription : IDisposable option = None
+    /// Each tab's colour as chosen, turned into a colour for the current theme when drawn.
+    let mutable tabColors : Map<IntPtr,TabColorChoice> = Map.empty
     let isDraggingCell = Cell.create(false)
     let isDraggingExport = Cell.export <| fun() -> isDraggingCell.value
     let zorderExport = Cell.export <| fun() -> zorderCell.value
@@ -194,10 +196,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
         this.ts.setTabAppearance(this.tabAppearance)
         let appColorsSubscription = Services.settings.notifyValue "appTabColors" (fun _ ->
-            this.invokeAsync(fun() -> if not isDestroyed.value then this.windows.items.iter this.setTabInfo))
+            this.invokeAsync(fun() -> if not isDestroyed.value then this.refreshTabColors()))
         exitedEvent.Publish.Add(fun _ -> appColorsSubscription.Dispose())
         let colorModeSubscription = Services.settings.notifyValue "tabColorMode" (fun _ ->
-            this.invokeAsync(fun() -> if not isDestroyed.value then this.windows.items.iter this.setTabInfo))
+            this.invokeAsync(fun() -> if not isDestroyed.value then this.refreshTabColors()))
         exitedEvent.Publish.Add(fun _ -> colorModeSubscription.Dispose())
         let colorStyleSubscription = Services.settings.notifyValue "tabColorStyle" (fun value ->
             this.invokeAsync(fun() -> if not isDestroyed.value then this.ts.colorStyle <- unbox value))
@@ -206,7 +208,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             this.invokeAsync <| fun() ->
                 if not isDestroyed.value then
                     logicalAppearance <- ThemeService.currentAppearance()
-                    this.windows.items.iter this.setTabInfo
+                    this.applyTabColors()
                     let next = logicalAppearance.scaled
                     let geometryChanged = TabGeometry.fromAppearance next <> TabGeometry.fromAppearance appearanceSnapshot
                     if next <> appearanceSnapshot then
@@ -397,8 +399,33 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 with ex -> Img(Sz(1, 1))
         }
     
+    member private this.tintTab dark hwnd =
+        this.ts.setTabTint(Tab(hwnd), tabColors.TryFind hwnd |> Option.map(Theme.tabColor dark))
+
+    member private this.tintsDark = Theme.darkBar logicalAppearance.tabNormalBgColor
+
+    member private this.applyTabColors() =
+        this.windows.items.iter(this.tintTab this.tintsDark)
+
+    /// Asks the main thread, so only for a new tab or a changed colour; titles change far more often.
+    member private this.fetchTabColor hwnd =
+        tabColors <-
+            match Services.program.getTabColor hwnd with
+            | Some color -> tabColors.Add(hwnd,color)
+            | None -> tabColors.Remove hwnd
+
+    member private this.refreshTabColor hwnd =
+        this.fetchTabColor hwnd
+        this.tintTab this.tintsDark hwnd
+
+    member private this.refreshTabColors() =
+        this.windows.items.iter this.fetchTabColor
+        this.applyTabColors()
+
+    member this.tabColor hwnd = tabColors.TryFind hwnd
+
     member private this.setTabInfo(hwnd) =
-        this.ts.setTabTint(Tab(hwnd), Services.program.getTabColor hwnd)
+        if not(this.ts.hasTabInfo(Tab(hwnd))) then this.refreshTabColor(hwnd)
         let info = this.getTabInfo(hwnd)
         let previous = this.ts.tabInfo(Tab(hwnd))
         if not(this.ts.hasTabInfo(Tab(hwnd))) || info.text <> previous.text || info.isRenamed <> previous.isRenamed ||
@@ -465,7 +492,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                      
     member this.setTabColor(hwnd,color) =
         Services.program.setTabColorOverride(hwnd,color)
-        this.setTabInfo(hwnd)
+        this.refreshTabColor(hwnd)
 
     member this.setTabName(hwnd,name) =
         Services.program.setWindowNameOverride(hwnd, name)
@@ -691,6 +718,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 this.onExitMoveSize()
             let window = this.os.windowFromHwnd(hwnd)
             this.ts.removeTab(Tab(hwnd))
+            tabColors <- tabColors.Remove hwnd
             this.setWindows(this.windows.remove hwnd)
             hookCleanup.value.find(hwnd).Dispose()
             hookCleanup.map(fun hooks -> hooks.remove(hwnd))

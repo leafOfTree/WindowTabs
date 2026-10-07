@@ -27,26 +27,61 @@ module Theme =
                     tabBorderColor=Color.FromRGB(0x747474)
                     tabFlashBgColor=Color.FromRGB(0x772222) }
 
-    let parseTabColor (value:string) =
-        let mutable rgb = 0
-        if not (isNull value) && value.Length=7 && value.[0]='#' && Int32.TryParse(value.Substring(1),Globalization.NumberStyles.HexNumber,Globalization.CultureInfo.InvariantCulture,&rgb) then Some(Color.FromRGB rgb)
-        else None
-    let formatTabColor (color:Color) = sprintf "#%02X%02X%02X" color.R color.G color.B
+    /// Eight main colours, then eight more used once those are taken, each further from the
+    /// colours before it than the ones after: orange, lavender, olive, rose, lime, navy, teal, coral.
     let tabPalette dark =
-        (if dark then [|0x9AA0A6;0x8AB4F8;0xF28B82;0xFDD663;0x81C995;0xFF8BCB;0xC58AF9;0x78D9EC|]
-         else [|0x70757A;0x1A73E8;0xD93025;0xE8A200;0x188038;0xD01884;0x8430CE;0x008B9A|]) |> Array.map Color.FromRGB
+        (if dark then [|0x9AA0A6;0x8AB4F8;0xF28B82;0xFDD663;0x81C995;0xFF8BCB;0xC58AF9;0x78D9EC
+                        0xFCAD70;0xD1C4E9;0xDCE775;0xF8BBD0;0xC5E1A5;0x7986CB;0x80CBC4;0xFFAB91|]
+         else [|0x70757A;0x1A73E8;0xD93025;0xE8A200;0x188038;0xD01884;0x8430CE;0x008B9A
+                0xE8710A;0x7E57C2;0x827717;0xC2185B;0x7CB342;0x1A237E;0x00796B;0xE64A19|]) |> Array.map Color.FromRGB
+    let tabPaletteSize = 16
+    /// Whether a bar takes the lighter tints. Decided by the bar rather than the theme: a
+    /// custom palette can put a dark bar in the light theme. 0.179 is where black and white
+    /// text are equally readable.
+    let darkBar (bar:Color) = TextContrast.luminance bar < 0.179
+    /// "palette:N" for a palette colour, "#RRGGBB" for a custom one.
+    let parseTabColor (value:string) =
+        let invariant = Globalization.CultureInfo.InvariantCulture
+        let mutable number = 0
+        if isNull value then None
+        elif value.StartsWith("palette:",StringComparison.Ordinal) &&
+             Int32.TryParse(value.Substring(8),Globalization.NumberStyles.None,invariant,&number) && number<tabPaletteSize then
+            Some(PaletteColor number)
+        elif value.Length=7 && value.[0]='#' && Int32.TryParse(value.Substring(1),Globalization.NumberStyles.HexNumber,invariant,&number) then
+            Some(CustomColor(Color.FromRGB number))
+        else None
+    let formatTabColor choice =
+        match choice with
+        | PaletteColor index -> sprintf "palette:%d" index
+        | CustomColor color -> sprintf "#%02X%02X%02X" color.R color.G color.B
+    let tabColor dark choice =
+        match choice with
+        | PaletteColor index -> (tabPalette dark).[index]
+        | CustomColor color -> color
     /// FNV-1a over the executable name, independent of runtime hash randomisation.
     let appColorIndex (exe:string) =
         let hash = exe.ToUpperInvariant() |> Seq.fold(fun hash c -> (hash ^^^ uint32 c)*16777619u) 2166136261u
-        int(hash % 8u)
+        int(hash % uint32 tabPaletteSize)
     let leastUsedColor indices =
-        let counts = Array.zeroCreate 8
-        for index in indices do if index>=0 && index<8 then counts.[index] <- counts.[index]+1
-        [0..7] |> List.minBy(fun index -> counts.[index],index)
+        let counts = Array.zeroCreate tabPaletteSize
+        for index in indices do if index>=0 && index<tabPaletteSize then counts.[index] <- counts.[index]+1
+        // Ties go to the earlier colour, so the main eight come first.
+        [0..tabPaletteSize-1] |> List.minBy(fun index -> counts.[index],index)
     let blend amount (tint:Color) (background:Color) =
         let channel a b = int(Math.Round(float b + (float a-float b)*amount))
         Color.FromArgb(255,channel tint.R background.R,channel tint.G background.G,channel tint.B background.B)
     let tabTint highContrast tint = if highContrast then None else tint
+    /// The separator is not chosen on its own: it follows the text and inactive tab colours, a
+    /// quarter of the way from the inactive tab towards the text, as the presets draw it. Back on
+    /// its preset's text and inactive colours, a palette takes the preset's own separator again.
+    let followSeparator (preset:TabPalette option) (before:TabPalette) (after:TabPalette) =
+        let same (a:Color) (b:Color) = a.ToArgb()=b.ToArgb()
+        if same after.tabTextColor before.tabTextColor && same after.tabNormalBgColor before.tabNormalBgColor then after
+        else
+            match preset with
+            | Some p when same p.tabTextColor after.tabTextColor && same p.tabNormalBgColor after.tabNormalBgColor ->
+                {after with tabBorderColor=p.tabBorderColor}
+            | _ -> {after with tabBorderColor=blend 0.25 after.tabTextColor after.tabNormalBgColor}
 
     let sameColors (a:TabAppearanceInfo) (b:TabAppearanceInfo) =
         let values (c:TabAppearanceInfo) =
@@ -95,26 +130,37 @@ module Theme =
 /// Main-thread writes retain window identity across group transfers; reads use immutable maps.
 type WindowTabColors() =
     let mutable indices : Map<IntPtr,int> = Map.empty
-    let mutable overrides : Map<IntPtr,Color> = Map.empty
+    let mutable overrides : Map<IntPtr,TabColorChoice> = Map.empty
+    let mutable paths : Map<IntPtr,string> = Map.empty
     member _.getOverride hwnd = overrides.TryFind hwnd
     member _.setOverride hwnd color = overrides <- match color with Some color -> overrides.Add(hwnd,color) | None -> overrides.Remove hwnd
+    /// Asked once per window: finding the path opens its process.
+    member _.path hwnd (load:unit -> string) =
+        match paths.TryFind hwnd with
+        | Some path -> path
+        | None ->
+            let path = load()
+            paths <- paths.Add(hwnd,path)
+            path
     member _.remove hwnd =
         indices <- indices.Remove hwnd
         overrides <- overrides.Remove hwnd
-    member _.resolve hwnd peers (path:string) mode dark (remembered:Map<string,string>) =
+        paths <- paths.Remove hwnd
+    /// Peers are listed only the first time, when the window is given its own colour.
+    member _.resolve hwnd (peers:unit -> IntPtr list) (path:string) mode (remembered:Map<string,string>) =
         let index =
             match indices.TryFind hwnd with
             | Some index -> index
             | None ->
-                let index = peers |> List.choose indices.TryFind |> Theme.leastUsedColor
+                let index = peers() |> List.choose indices.TryFind |> Theme.leastUsedColor
                 indices <- indices.Add(hwnd,index)
                 index
-        let app = remembered.TryFind(path.ToUpperInvariant()) |> Option.bind Theme.parseTabColor
-        let palette = Theme.tabPalette dark
+        let app = remembered |> Map.tryPick(fun key value ->
+            if String.Equals(key,path,StringComparison.OrdinalIgnoreCase) then Theme.parseTabColor value else None)
         match overrides.TryFind hwnd,app with
         | Some color,_ | _,Some color -> Some color
         | _ ->
             match mode with
-            | "Rainbow" -> Some palette.[index]
-            | "ByApp" -> Some palette.[Theme.appColorIndex (IO.Path.GetFileName path)]
+            | "ByWindow" -> Some(PaletteColor index)
+            | "ByApp" -> Some(PaletteColor(Theme.appColorIndex (IO.Path.GetFileName path)))
             | _ -> None

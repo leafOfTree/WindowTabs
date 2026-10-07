@@ -14,9 +14,10 @@ type NumberLeaderState() =
         | _ -> armed <- None; false
     member this.key foreground now key count =
         if not (this.validate foreground now) then false,None
-        elif key>=0x31 && key<=0x39 then
+        elif (key>=0x31 && key<=0x39) || (key>=0x61 && key<=0x69) then
             armed <- None
-            true,(if key-0x31<count then Some(key-0x31) else None)
+            let index = key-(if key>=0x61 then 0x61 else 0x31)
+            true,(if index<count then Some index else None)
         elif key=0x1B then armed <- None; true,None
         elif List.contains key [0x10;0x11;0x12;0xA0;0xA1;0xA2;0xA3;0xA4;0xA5] then false,None
         else armed <- None; false,None

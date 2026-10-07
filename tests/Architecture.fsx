@@ -296,9 +296,36 @@ let main() =
         api.root <- kept
         check (api.getValue("numberHotKeyModifier")=box "Ctrl") "Reset must retain the deferred Ctrl default"
         let colors = api.getValue("appTabColors") :?> Map<string,string>
-        check (colors.[@"C:\APPS\EDITOR.EXE"]="#1234AB") "App colours did not survive save/reset/reload"
+        check (colors.[@"C:\Apps\Editor.exe"]="#1234AB") "App colours did not survive save/reset/reload with their path"
         check (isNull (SettingsCatalog.resetRoot api.root true false).["appTabColors"]) "Clear rules retained app colours"
-        check (Theme.parseTabColor "#notrgb"=None && Theme.parseTabColor "#001122"=Some(System.Drawing.Color.FromArgb(0,17,34))) "Colour validation accepted malformed input"
+        check (Theme.parseTabColor "#notrgb"=None && Theme.parseTabColor "#001122"=Some(CustomColor(System.Drawing.Color.FromArgb(0,17,34)))) "Colour validation accepted malformed input"
+        check (Theme.parseTabColor "palette:3"=Some(PaletteColor 3) && Theme.parseTabColor "palette:15"=Some(PaletteColor 15) && Theme.parseTabColor "palette:16"=None && Theme.parseTabColor "palette:-1"=None) "Palette colour validation failed"
+        check (Theme.formatTabColor (PaletteColor 3)="palette:3" && Theme.formatTabColor (CustomColor(System.Drawing.Color.FromArgb(0,17,34)))="#001122") "Tab colours did not format for saving"
+        // A palette colour follows the theme; a custom one stays as chosen.
+        check (Theme.tabColor true (PaletteColor 1)<>Theme.tabColor false (PaletteColor 1)) "Palette colour did not follow the theme"
+        check (Theme.tabColor true (CustomColor System.Drawing.Color.Red)=System.Drawing.Color.Red) "Custom colour changed with the theme"
+        check (SettingsCatalog.appRulePathKeys |> List.forall(fun key -> api.getValue(key) :? Set2<string>)) "App rule path keys must all be path sets"
+        check ([true;false] |> List.forall(fun dark -> (Theme.tabPalette dark).Length=Theme.tabPaletteSize)) "Light and dark palettes differ in size"
+        check (Strings.Settings.tabColorNames.Length=Theme.tabPaletteSize) "A palette colour has no name"
+        // Tints follow the bar: a custom light-theme palette with a dark bar takes the lighter ones.
+        check (not (Theme.darkBar Theme.light.tabNormalBgColor) && Theme.darkBar Theme.dark.tabNormalBgColor) "Default bars took the wrong tints"
+        check (Theme.darkBar Theme.bluePalette.tabNormalBgColor && Theme.darkBar (System.Drawing.Color.FromRGB 0x303030)) "A dark custom bar took the darker tints"
+        check (not (Theme.darkBar (System.Drawing.Color.FromRGB 0xE0E0E0))) "A light custom bar took the lighter tints"
+        // The separator has no row of its own: it follows the text and inactive tab colors.
+        let basis = Theme.lightPalette
+        let recolored = Theme.followSeparator (Some basis) basis {basis with tabNormalBgColor=System.Drawing.Color.FromRGB 0x808080}
+        check (recolored.tabBorderColor.ToArgb()=(Theme.blend 0.25 basis.tabTextColor (System.Drawing.Color.FromRGB 0x808080)).ToArgb()) "Separator did not follow a new inactive tab color"
+        check ((Theme.followSeparator (Some basis) recolored {recolored with tabNormalBgColor=basis.tabNormalBgColor}).tabBorderColor.ToArgb()=basis.tabBorderColor.ToArgb())
+              "Separator did not return to the preset's own when its colors did"
+        let activeOnly = {basis with tabActiveBgColor=System.Drawing.Color.Red}
+        check ((Theme.followSeparator (Some basis) basis activeOnly).tabBorderColor.ToArgb()=basis.tabBorderColor.ToArgb()) "Separator changed with an unrelated color"
+        check (SettingsCatalog.all |> List.forall(fun item -> item.id<>"tabBorderColor" && item.id<>"tabFlashBgColor")) "Search still offers separator or flashing tab colors"
+        let renamed = api.root.DeepClone() :?> Newtonsoft.Json.Linq.JObject
+        renamed.["tabColorMode"] <- Newtonsoft.Json.Linq.JValue("Rainbow")
+        let current = api.root
+        api.root <- renamed
+        check (api.getValue("tabColorMode")=box "ByWindow") "The development name for by-window colours was not carried over"
+        api.root <- current
         let paths = Set2(List2([@"C:\Apps\Editor.exe"]))
         for mode in ["AllExcept";"OnlyListed"] do
             check (NumberShortcutRules.allows mode paths @"c:\apps\EDITOR.exe" = (mode="OnlyListed")) "Listed application rule must ignore path case"

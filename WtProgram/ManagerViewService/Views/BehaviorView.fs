@@ -29,32 +29,36 @@ type HotKeyView() =
             if Services.program.setHotKey key target then editor.Shortcut <- target
             else editor.Reject(0,tr Strings.Shortcuts.inUse)
     do
-        let keyboard = SettingsUi.sectionCard table (tr Strings.Shortcuts.keyboard)
+        let restore = new SettingsResetButton(tr Strings.Shortcuts.restoreDefaults,Name="restore-shortcuts")
+        SettingsUi.sectionHeading table (tr Strings.Shortcuts.keyboard) [restore]
+        let keyboard = new SettingsCard()
+        SettingsUi.add table keyboard
         SettingsUi.note keyboard (tr Strings.Shortcuts.keyboardNote)
-        for (key,editor),(_,id) in List.zip editors actions do SettingsUi.settingRow keyboard id editor
-        SettingsBindings.toggleRow keyboard "enable-number-leader"
+        for (key,editor),(_,id) in List.zip editors actions do
+            if key<>"numberLeader" then SettingsUi.settingRow keyboard id editor
+        // Rows inset under a toggle and collapsed while it is off.
+        let dependOn (toggle:SettingsToggle) (rows:SettingsRow list) =
+            for row in rows do SettingsUi.indentDependentRow row
+            let update() = for row in rows do row.Collapsed <- not toggle.Checked
+            update()
+            toggle.CheckedChanged.Add(fun _ -> update())
+        let leaderEnabled = SettingsBindings.settingToggle "enableNumberLeader"
+        SettingsUi.settingRow keyboard "enable-number-leader" leaderEnabled
+        let leaderEditor = editors |> List.find(fun (key,_) -> key="numberLeader") |> snd
+        SettingsUi.settingRow keyboard "number-leader" leaderEditor
+        dependOn leaderEnabled [leaderEditor.Parent :?> SettingsRow]
         let numericEnabled = SettingsBindings.settingToggle "enableCtrlNumberHotKey"
         SettingsUi.settingRow keyboard "switch-tabs-by-number" numericEnabled
         let numericChoice = SettingsBindings.choiceRow keyboard "number-shortcut"
                                 [|tr Strings.Settings.numberShortcutCtrl;tr Strings.Settings.numberShortcutAlt;tr Strings.Settings.numberShortcutBoth|]
-        SettingsBindings.choiceRow keyboard "number-shortcut-apps" [|tr Strings.Settings.allExcept;tr Strings.Settings.onlyListed|] |> ignore
-        let numericRow = numericChoice.Parent :?> SettingsRow
-        SettingsUi.indentDependentRow numericRow
-        let updateNumeric() = numericRow.Collapsed <- not numericEnabled.Checked
-        updateNumeric()
-        numericEnabled.CheckedChanged.Add(fun _ -> updateNumeric())
-        let restore = SettingsUi.button (tr Strings.Shortcuts.restoreDefaults)
-        restore.Name <- "restore-shortcuts"
+        let appsChoice = SettingsBindings.choiceRow keyboard "number-shortcut-apps" [|tr Strings.Settings.allExcept;tr Strings.Settings.onlyListed|]
+        dependOn numericEnabled [numericChoice.Parent :?> SettingsRow;appsChoice.Parent :?> SettingsRow]
         // Offered only while a shortcut differs from its default; otherwise it would do nothing.
         let updateRestore() =
-            restore.Enabled <- editors |> List.exists(fun (key,editor) -> editor.Shortcut<>SettingsCatalog.shortcutDefault key)
+            restore.Offered <- editors |> List.exists(fun (key,editor) -> editor.Shortcut<>SettingsCatalog.shortcutDefault key)
         for _,editor in editors do editor.Changed.Add(fun _ -> updateRestore())
         restore.Click.Add(fun _ -> restoreDefaults(); updateRestore())
         updateRestore()
-        let actionsRow = new FlowLayoutPanel(AutoSize=true,WrapContents=false,FlowDirection=FlowDirection.RightToLeft,
-                                             Margin=Padding(0,Dpi.scale 8,0,Dpi.scale 8))
-        actionsRow.Controls.Add(restore)
-        SettingsUi.add table actionsRow
         let pointer = SettingsUi.sectionCard table (tr Strings.Shortcuts.mouse)
         SettingsBindings.toggleRow pointer "activate-on-hover"
         SettingsBindings.toggleRow pointer "shift-scroll"

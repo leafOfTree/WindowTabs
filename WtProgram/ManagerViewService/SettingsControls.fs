@@ -373,6 +373,56 @@ type SettingsHelpButton(text:string) as this =
         this.AccessibleDescription <- text
         this.Click.Add(fun _ -> hover.Show())
 
+/// A round arrow beside a section heading that resets the section; hovering says what it resets.
+/// Dimmed while there is nothing to reset.
+type SettingsResetButton(text:string) as this =
+    inherit Button()
+    let mutable offered = true
+    do
+        SettingsHover(this,text) |> ignore
+        this.Text <- text
+        this.AccessibleName <- text
+        this.Size <- Size(Dpi.scale 28,Dpi.scale 28)
+        this.FlatStyle <- FlatStyle.Flat
+        this.FlatAppearance.BorderSize <- 0
+        this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
+    override this.OnPaint(e) =
+        let p = SettingsColors.current()
+        e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
+        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        let hot = this.Focused || this.ClientRectangle.Contains(this.PointToClient(Control.MousePosition))
+        let color =
+            if not this.Enabled || not offered then Color.FromArgb(110,p.muted)
+            elif hot then p.text
+            else p.muted
+        let radius = Dpi.scaleF 6.5
+        let cx,cy = float this.Width/2.0,float this.Height/2.0
+        use pen = new Pen(color,float32(max 1.0 (Dpi.scaleF 1.5)))
+        // Most of a circle, open at the top right, where the arrow points back the way it came.
+        let start = 300.0
+        e.Graphics.DrawArc(pen,float32(cx-radius),float32(cy-radius),float32(radius*2.0),float32(radius*2.0),float32 start,290.0f)
+        let angle = start*Math.PI/180.0
+        let x,y = cx+radius*cos angle,cy+radius*sin angle
+        let along,across = (sin angle,-(cos angle)),(cos angle,sin angle)
+        let length,width = radius*0.75,radius*0.5
+        use brush = new SolidBrush(color)
+        e.Graphics.FillPolygon(brush,[|PointF(float32(x+fst along*length),float32(y+snd along*length))
+                                       PointF(float32(x+fst across*width),float32(y+snd across*width))
+                                       PointF(float32(x-fst across*width),float32(y-snd across*width))|])
+        if this.Focused && this.ShowFocusCues then ControlPaint.DrawFocusRectangle(e.Graphics,this.ClientRectangle)
+    override this.OnMouseEnter(e) = base.OnMouseEnter(e); this.Invalidate()
+    override this.OnMouseLeave(e) = base.OnMouseLeave(e); this.Invalidate()
+    override this.OnEnabledChanged(e) = base.OnEnabledChanged(e); this.Invalidate()
+    /// Whether there is anything to reset. Not Enabled: disabling the focused button just
+    /// clicked would hand the focus to the next field, which then shows as selected.
+    member this.Offered
+        with get() = offered
+        and set value =
+            if offered<>value then
+                offered <- value
+                this.Invalidate()
+    override this.OnClick(e) = if offered then base.OnClick(e)
+
 type SettingsSearchResults() as this =
     inherit Panel()
     do
@@ -965,7 +1015,8 @@ type SettingsCombo(items:string[]) as this =
     member this.FitToItems() =
         let textWidth = items |> Array.map(fun text -> TextRenderer.MeasureText(text,this.Font).Width) |> Array.fold max 0
         let dot = if itemColors.Length>0 then Dpi.scale 22 else 0
-        this.Width <- max (Dpi.scale 96) (textWidth+dot+Dpi.scale 60)
+        // One width for lists of short words, so stacked rows line up their left edges too.
+        this.Width <- max (Dpi.scale 140) (textWidth+dot+Dpi.scale 60)
     member _.CompactLabel with set(label:unit -> string) = compactLabel <- Some label; this.Invalidate()
     member _.ItemColors
         with get() = Array.copy itemColors

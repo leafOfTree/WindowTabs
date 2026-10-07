@@ -17,8 +17,8 @@ type SettingDefinition = {
 
 module SettingsCatalog =
     let all = [
-        { id="tab-color-mode"; page=AppearanceSettings; text=Strings.Settings.tabColorMode; binding=Choice("tabColorMode",["Off";"Rainbow";"ByApp"],"Off") }
-        { id="tab-color-style"; page=AppearanceSettings; text=Strings.Settings.tabColorStyle; binding=Choice("tabColorStyle",["Stripe";"Fill"],"Stripe") }
+        { id="tab-color-mode"; page=AppearanceSettings; text=Strings.Settings.tabColorMode; binding=Choice("tabColorMode",["Off";"ByWindow";"ByApp"],"Off") }
+        { id="tab-color-style"; page=AppearanceSettings; text=Strings.Settings.tabColorStyle; binding=Choice("tabColorStyle",["Fill";"Stripe"],"Fill") }
         { id="theme"; page=AppearanceSettings; text=Strings.Settings.theme; binding=Choice("tabThemeMode",["system";"light";"dark"],"system") }
         { id="language"; page=GeneralSettings; text=Strings.Settings.language; binding=Choice("language",Localization.preferences,"system") }
         { id="launch-at-sign-in"; page=GeneralSettings; text=Strings.Settings.launchAtSignIn; binding=Toggle("runAtStartup",true,false) }
@@ -48,8 +48,6 @@ module SettingsCatalog =
         { id="tabNormalBgColor"; page=AppearanceSettings; text=Strings.Settings.tabNormalBgColor; binding=Colour }
         { id="tabActiveBgColor"; page=AppearanceSettings; text=Strings.Settings.tabActiveBgColor; binding=Colour }
         { id="tabHighlightBgColor"; page=AppearanceSettings; text=Strings.Settings.tabHighlightBgColor; binding=Colour }
-        { id="tabBorderColor"; page=AppearanceSettings; text=Strings.Settings.tabBorderColor; binding=Colour }
-        { id="tabFlashBgColor"; page=AppearanceSettings; text=Strings.Settings.tabFlashBgColor; binding=Colour }
         // Kept with the tab sizes in the "tabAppearance" object, not at the top of the file.
         { id="tabStyle"; page=AppearanceSettings; text=Strings.Settings.tabStyle; binding=Choice("tabStyle",TabStyle.names,"joined") }
         { id="tabHeight"; page=AppearanceSettings; text=Strings.Settings.tabHeight; binding=Number(12,120) }
@@ -68,6 +66,8 @@ module SettingsCatalog =
     let help id =
         // Changeable per group from the tab menu; groups do not save it, so it lasts as long as the group.
         if List.contains id ["auto-hide-tabs";"tab-alignment";"combine-taskbar-icons"] then Some Strings.General.tabMenuHint
+        // A tab's own color, picked from its menu, comes before the automatic one.
+        elif id="tab-color-mode" then Some Strings.Settings.tabColorMenuHint
         else None
     /// A setting shown only while the one it depends on makes it meaningful.
     let parent id =
@@ -82,7 +82,8 @@ module SettingsCatalog =
         all |> List.choose(fun item -> match item.binding with Toggle(key,fresh,_) -> Some(key,fresh) | _ -> None)
     /// Settings that are the user's own records rather than preferences: a reset keeps them
     /// unless asked to clear them.
-    let appRuleKeys = ["includedPaths";"excludedPaths";"autoGroupingPaths";"numberShortcutPaths";"numberShortcutAppMode";"appTabColors"]
+    let appRulePathKeys = ["includedPaths";"excludedPaths";"autoGroupingPaths";"numberShortcutPaths"]
+    let appRuleKeys = appRulePathKeys @ ["numberShortcutAppMode";"appTabColors"]
     let workspaceKeys = ["workspaces";"workspaceSchemaVersion";"workspaceRecovery"]
     /// The settings a reset leaves: fresh-install toggles, the version (so the next start does
     /// not take the reset for an upgrade) and, unless cleared, app rules and saved workspaces.

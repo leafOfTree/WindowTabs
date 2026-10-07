@@ -148,13 +148,44 @@ let main () =
                 let tabs = tinted.sprite.children.list |> List.choose(fun (_,child) -> match child with :? TabSprite<int> as tab -> Some tab | _ -> None)
                 let active,inactive = tabs |> List.find(fun t -> t.isTop),tabs |> List.find(fun t -> not t.isTop)
                 check (not inactive.isRaised) "Tint raised an inactive tab"
-                check (active.fillColor<>inactive.fillColor) "Tint hid the active tab"
+                if colorStyle="Fill" then
+                    // The active tab in its color, the others a shade of it further from the text, never the bar's grey.
+                    let text = appearance.tabTextColor
+                    let tint = TextContrast.readableBackground text Color.Blue
+                    let toward = if TextContrast.ratio text Color.White >= TextContrast.ratio text Color.Black then Color.White else Color.Black
+                    let hovered = {inactive with hover=Some TabBackground}
+                    let inactiveShare,hoverShare = if toward=Color.White then 0.3,0.6 else 0.45,0.7
+                    check (active.fillColor=tint && TextContrast.ratio text tint>=TextContrast.minimum) "A fill did not color the active tab in a shade its text reads on"
+                    check (inactive.fillColor=Theme.blend inactiveShare tint toward) "An inactive filled tab is not a shade of its color"
+                    check (hovered.fillColor=Theme.blend hoverShare tint toward) "Hovering a filled tab gives no feedback"
+                    // Text that flipped between black and white as tabs were switched. It fades behind
+                    // instead, towards its own tab's shade, and stays readable.
+                    let darker (tab:TabSprite<int>) = TextContrast.luminance tab.textColor < TextContrast.luminance tab.fillColor
+                    check (active.textColor=text) "The active filled tab does not use the text color as chosen"
+                    check ([active;inactive;hovered] |> List.forall(fun tab -> darker tab=darker active)) "Filled tabs flipped their text between dark and light"
+                    let contrast (tab:TabSprite<int>) = TextContrast.ratio tab.textColor tab.fillColor
+                    check (contrast inactive<contrast hovered && contrast hovered<contrast active) "Text behind the active filled tab does not fade"
+                    check (contrast inactive>=TextContrast.minimum-0.01) "Faded text fell below readable contrast"
+                else
+                    check (active.fillColor<>inactive.fillColor) "Tint hid the active tab"
+                    check (inactive.fillColor=appearance.tabNormalBgColor) "A stripe mixed its color into the tab"
                 for tab in tabs do check (TextContrast.ratio tab.textColor tab.fillColor>=4.5) "Tint made text unreadable"
                 let flash = {inactive with displayInfo={inactive.displayInfo with bgColor=Some Color.Orange}}
                 check (flash.fillColor=Color.Orange) "Tint overrode attention"
                 use bitmap = tinted.render.bitmap
                 bitmap.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "tint-%A-%s-%d.png" style colorStyle appearance.tabNormalBgColor.R),ImageFormat.Png)
     check (Theme.tabTint true (Some Color.Red)=None) "High contrast retained tint"
+    // A row in several palette colors, the second tab hovered, saved to judge by eye.
+    for appearance,dark in [Theme.light,false;Theme.dark,true] do
+        for style in [JoinedTabs;FolderTabs;PillTabs] do
+            for colorStyle in ["Stripe";"Fill"] do
+                let palette = Theme.tabPalette dark
+                let tab index text = {info text with tint=Some palette.[index];colorStyle=colorStyle}
+                let row = { ts with appearance={appearance with tabStyle=style}; size=Sz(640,28); hover=Some(2,TabBackground)
+                                    tabs=Map2(List2([1,tab 1 "Active";2,tab 2 "Hovered";3,tab 4 "Inactive";4,tab 8 "Inactive"]))
+                                    lorder=List2([1;2;3;4]); zorder=List2([1;2;3;4]) }
+                use bitmap = row.render.bitmap
+                bitmap.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "tint-row-%A-%s-%s.png" style colorStyle (if dark then "dark" else "light")),ImageFormat.Png)
     let tabImage = ts.render
     // Short tabs shrink their contents to fit instead of clipping them.
     do

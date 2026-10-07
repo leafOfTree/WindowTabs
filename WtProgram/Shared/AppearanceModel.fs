@@ -71,6 +71,15 @@ module TextContrast =
             shades text target
             |> List.tryFind(fun candidate -> ratio candidate background >= minimum)
             |> Option.defaultValue target
+    /// The other way round: the background taken lighter or darker, just until the text reads
+    /// on it, for a background that may change where the text must not.
+    let readableBackground (text:Color) (background:Color) =
+        if ratio text background >= minimum then background
+        else
+            let target = if ratio text Color.White >= ratio text Color.Black then Color.White else Color.Black
+            shades background target
+            |> List.tryFind(fun candidate -> ratio text candidate >= minimum)
+            |> Option.defaultValue target
 
 type ThemeMode = SystemTheme | LightTheme | DarkTheme
 module ThemeMode =

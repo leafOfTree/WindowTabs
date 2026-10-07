@@ -239,10 +239,21 @@ and Escape capture matching releases; other keys cancel and pass through. Mouse
 buttons, foreground changes and timeout cancel the leader. Fresh installs enable
 the leader; existing settings without its toggle leave it disabled.
 
-WindowTabColors is owned by the main STA. Rainbow indices and per-window overrides
+The palette has 16 colours: eight main ones, then eight more that by-window colours use
+only once the main ones are taken in the group and by-app colours hash over all sixteen.
+WindowTabColors is owned by the main STA. By-window indices and per-window overrides
 stay with the HWND across group transfers and are removed when it is destroyed.
-App colours use normalized paths and survive settings reset with other app rules.
+App colours keep their path, match it ignoring case and survive settings reset with
+other app rules. Palette colours are stored by index (`palette:N`) so they follow the
+light or dark theme; only custom colours are stored as `#RRGGBB`. A group asks the main
+STA for a tab's colour only when the tab appears or a colour setting changes, never on
+title changes, and the main STA looks up each window's process path once.
 The rendering priority is attention, window override, app colour, automatic colour.
-High contrast suppresses tints, and tints never make an inactive tab raised.
+High contrast suppresses tints, and tints never make an inactive tab raised. A stripe leaves
+the tab colors in place; a fill colors the whole tab, the active one in its color and the
+others in a paler shade on a light bar or a deeper one on a dark bar. Whether the
+lighter or darker tints are used depends on the bar's own luminance, not the theme mode,
+so a custom palette with a dark bar in the light theme still gets readable tints.
 NativeContextMenu owns copied HBITMAPs until after its menu is destroyed; callers
-retain and dispose their source images. Custom colours use the system ColorDialog.
+retain and dispose their source images. An item image replaces the check mark, so a
+checked item gets a copy with a mark drawn on it. Custom colours use the system ColorDialog.

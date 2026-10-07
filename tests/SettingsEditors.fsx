@@ -75,7 +75,10 @@ let main() =
         assertTrue (SettingsCatalog.searchEvidence "windows notif" startup = ["notification"]) "A second term's keyword is not shown on its own"
         assertTrue (SettingsCatalog.searchEvidence "runatstartup" startup = ["runAtStartup"]) "A settings-file key match is not shown"
         assertTrue (SettingsCatalog.searchEvidence "system" startup = [tr startup.text.description]) "A short description match is not shown whole"
-        match SettingsCatalog.searchEvidence "row" (SettingsCatalog.find "tabIndentNormal") with
+        let margin = SettingsCatalog.find "tabIndentNormal"
+        let longDescription = {en="Distance from the window edges. Centered tabs use it only once they fill the row.";zh="";ja=""}
+        let margin = {margin with text={margin.text with description=longDescription}}
+        match SettingsCatalog.searchEvidence "row" margin with
         | [part] -> assertTrue (part = "…they fill the row.") (sprintf "A long description is not cut to the words around the match: %s" part)
         | other -> failwithf "A description match is not shown: %A" other
     finally Localization.setPreference "system"
@@ -141,6 +144,7 @@ let main() =
         SettingsUi.apply form
         let all = view.control.Controls.Find("tabTextColor",true)
         let preset = view.control.Controls.Find("palette-preset",true).[0] :?> SettingsCombo
+        assertTrue (preset.Width=Dpi.scale 140) "Preset does not align with the 140px choices"
         let menu = preset.CreateDropDown().Value
         menu.Show(form,Point(20,20))
         use menuBitmap = new Bitmap(menu.Width,menu.Height)
@@ -211,7 +215,7 @@ let main() =
         Application.DoEvents()
         assertTrue (isBlue (active()) && preset.SelectedIndex=0) "A preset lost its edit after switching away"
         let name = tr ThemePresets.names.[0]
-        assertTrue (preset.Text=tr (Strings.Appearance.editedPreset name) && preset.ItemText(1)=tr ThemePresets.names.[1])
+        assertTrue (preset.Text=name+"*" && preset.ItemText(1)=tr ThemePresets.names.[1])
                    (sprintf "Edited preset is not marked: %s" preset.Text)
         // Reset restores the chosen preset's own colours, and it stays chosen.
         (findReset view.control).Value.PerformClick()
@@ -290,6 +294,10 @@ let main() =
         form.Controls.Add(view.control)
         SettingsUi.apply form
         form.Show()
+        let restore = form.Controls.Find("restore-shortcuts",true).[0]
+        assertTrue (restore :? SettingsResetButton &&
+                    restore.Parent.Controls |> Seq.cast<Control> |> Seq.exists(fun c -> c :? Label && c.Text=tr Strings.Shortcuts.keyboard))
+                   "Restore shortcuts is not a reset icon in the keyboard heading"
         Application.DoEvents()
         let next = view.control.Controls.Find("next-tab",true).[0] :?> SettingsShortcutInput
         let previous = view.control.Controls.Find("previous-tab",true).[0] :?> SettingsShortcutInput

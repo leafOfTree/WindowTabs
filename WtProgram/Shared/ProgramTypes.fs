@@ -4,6 +4,11 @@ open System.Windows.Forms
 open Newtonsoft.Json
 open Newtonsoft.Json.Linq
 
+/// A palette colour is kept by its place in the palette, so it follows the light or dark theme.
+type TabColorChoice =
+    | PaletteColor of int
+    | CustomColor of Drawing.Color
+
 type SettingsRec = {
     includedPaths: Set2<string>
     excludedPaths: Set2<string>
@@ -90,9 +95,9 @@ type IProgram =
     abstract member shutdown : unit -> unit
     abstract member setWindowNameOverride : (IntPtr * Option<string>) -> unit
     abstract member getWindowNameOverride : IntPtr -> Option<string>
-    abstract member getTabColorOverride : IntPtr -> Drawing.Color option
-    abstract member setTabColorOverride : (IntPtr * Drawing.Color option) -> unit
-    abstract member getTabColor : IntPtr -> Drawing.Color option
+    abstract member getTabColorOverride : IntPtr -> TabColorChoice option
+    abstract member setTabColorOverride : (IntPtr * TabColorChoice option) -> unit
+    abstract member getTabColor : IntPtr -> TabColorChoice option
     abstract member appWindows : List2<IntPtr>
     abstract member getAutoGroupingEnabled : string -> bool
     abstract member setAutoGroupingEnabled : string -> bool -> unit

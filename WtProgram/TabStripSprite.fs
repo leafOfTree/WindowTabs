@@ -179,24 +179,43 @@ type TabSprite<'id> = {
             let highlight = this.appearance.tabHighlightBgColor
             let hovered = this.hover.IsSome || this.captured.IsSome
             let basis = if this.isTop then active elif hovered then highlight else inactive
+            // A fill colours the whole tab: the active one in its colour, the others in a shade
+            // of it further from the text. Mixed with the grey bar instead, a row of tabs turned
+            // muddy. The colour gives way to the text rather than the other way round: text picked
+            // for each shade flipped between black and white as tabs were switched.
+            // A stripe leaves the tab as it was.
             match this.tint with
             | Some tint when this.displayInfo.colorStyle="Fill" ->
-                if this.isTop then tint else Theme.blend (if hovered then 0.50 else 0.35) tint inactive
-            | Some tint when not this.isTop -> Theme.blend 0.15 tint basis
+                let text = this.appearance.tabTextColor
+                let tint = TextContrast.readableBackground text tint
+                let toward = if TextContrast.ratio text Color.White >= TextContrast.ratio text Color.Black then Color.White else Color.Black
+                // Taken further towards white than towards black: a colour this dark is near black
+                // and no longer reads as that colour.
+                let inactive,hover = if toward=Color.White then 0.3,0.6 else 0.45,0.7
+                if this.isTop then tint
+                elif hovered then Theme.blend hover tint toward
+                else Theme.blend inactive tint toward
             | _ -> basis
 
     /// The text and close button colour for this tab's own background: the chosen colour,
     /// or a darker or lighter shade of it where that would be hard to read. On the bar of a
     /// folder or pill strip it is taken part way towards the bar, as a browser greys out the
-    /// titles of the tabs behind, but never below readable contrast.
+    /// titles of the tabs behind, but never below readable contrast. Filled tabs fade theirs
+    /// the same way with their shade: half way behind, a quarter when hovered.
     member this.textColor =
         let chosen = this.appearance.tabTextColor
+        let filled = this.displayInfo.colorStyle="Fill" && this.tint.IsSome && this.displayInfo.bgColor.IsNone
+        let fade amount =
+            let bar = this.fillColor
+            let mix (a:byte) (b:byte) = int(Math.Round(float a+(float b-float a)*amount))
+            Color.FromArgb(255,mix chosen.R bar.R,mix chosen.G bar.G,mix chosen.B bar.B)
         let chosen =
-            if this.style = JoinedTabs || this.isRaised then chosen
-            else
-                let bar = this.fillColor
-                let mix (a:byte) (b:byte) = int(Math.Round(float a+(float b-float a)*0.3))
-                Color.FromArgb(255,mix chosen.R bar.R,mix chosen.G bar.G,mix chosen.B bar.B)
+            if filled then
+                if this.isTop then chosen
+                elif this.hover.IsSome || this.captured.IsSome then fade 0.25
+                else fade 0.5
+            elif this.style = JoinedTabs || this.isRaised then chosen
+            else fade 0.3
         TextContrast.readable chosen this.fillColor
 
     /// How much bar shows beside a raised tab: about a tenth of the height, so a raised tab still

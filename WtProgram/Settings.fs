@@ -117,10 +117,11 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         enableNumberLeader = settingsJson.getBool("enableNumberLeader").def(SettingsCatalog.toggleDefault "enableNumberLeader" hasExistingSettings)
                         appTabColors =
                             settingsJson.getObject("appTabColors").def(JObject()).Properties()
-                            |> Seq.choose(fun p -> if p.Value.Type=JTokenType.String then Theme.parseTabColor (p.Value.Value<string>()) |> Option.map(fun color -> p.Name.ToUpperInvariant(),Theme.formatTabColor color) else None)
+                            |> Seq.choose(fun p -> if p.Value.Type=JTokenType.String then Theme.parseTabColor (p.Value.Value<string>()) |> Option.map(fun color -> p.Name,Theme.formatTabColor color) else None)
                             |> Map.ofSeq
-                        tabColorMode = settingsJson.getString("tabColorMode").def("Off") |> SettingsCatalog.normalizeChoice "tabColorMode"
-                        tabColorStyle = settingsJson.getString("tabColorStyle").def("Stripe") |> SettingsCatalog.normalizeChoice "tabColorStyle"
+                        // Development builds called the by-window mode "Rainbow".
+                        tabColorMode = settingsJson.getString("tabColorMode").def("Off") |> (fun mode -> if mode="Rainbow" then "ByWindow" else mode) |> SettingsCatalog.normalizeChoice "tabColorMode"
+                        tabColorStyle = settingsJson.getString("tabColorStyle").def("Fill") |> SettingsCatalog.normalizeChoice "tabColorStyle"
                         numberShortcutPaths = Set2(settingsJson.getStringArray("numberShortcutPaths").def(List2()))
                         numberShortcutAppMode = settingsJson.getString("numberShortcutAppMode").def("AllExcept") |> SettingsCatalog.normalizeChoice "numberShortcutAppMode"
                         numberHotKeyModifier = settingsJson.getString("numberHotKeyModifier").def("Ctrl") |> SettingsCatalog.normalizeChoice "numberHotKeyModifier"
@@ -199,7 +200,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setBool("enableNumberLeader", settings.enableNumberLeader)
             let appColors = JObject()
             for KeyValue(path,color) in settings.appTabColors do
-                Theme.parseTabColor color |> Option.iter(fun parsed -> appColors.[path.ToUpperInvariant()] <- JValue(Theme.formatTabColor parsed))
+                Theme.parseTabColor color |> Option.iter(fun parsed -> appColors.[path] <- JValue(Theme.formatTabColor parsed))
             settingsJson.setObject("appTabColors",appColors)
             settingsJson.setString("tabColorMode",settings.tabColorMode)
             settingsJson.setString("tabColorStyle",settings.tabColorStyle)
