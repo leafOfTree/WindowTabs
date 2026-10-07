@@ -15,11 +15,11 @@
 Defaults keep new optional behavior off. New installations retain core tabbing,
 startup at sign-in, inactive-group dimming, auto-hide when maximized, Ctrl+Alt+Left/Right
 navigation, Ctrl+1–9 and Shift+scroll. Theme/language follow the system and the tab layout
-uses the standard joined style. Temporary expansion after switching, the Alt+Tab
-replacement, taskbar icon combining, leader selection, hover activation and automatic
-coloring are opt-in. Search defaults to
-Ctrl+Alt+T to leave common launcher shortcuts available. The new-tab shortcut
-is unassigned. The configured leader remains Alt+S when enabled.
+uses the standard joined style. Switching briefly expands auto-hidden tabs, and
+Ctrl+Alt+N opens a new tab. The Alt+Tab replacement, taskbar icon combining, leader
+selection, hover activation and automatic coloring are opt-in. Search defaults to
+Ctrl+Alt+T to leave common launcher shortcuts available. The configured leader
+remains Alt+S when enabled.
 
 Stored preferences take priority. Missing optional settings and a full reset use the
 minimal defaults from `SettingsCatalog`; explicit legacy auto-hide settings retain
@@ -55,7 +55,7 @@ The taskbar default is deliberately scoped to **new groups**, which its descript
 | Use tabs for new apps; per-app tabs | Both on the App rules page, and both refresh current windows immediately. An app turned on or off there is kept in `includedPaths` or `excludedPaths` and keeps that choice when the default changes; the default covers every other app. An app in both lists (from before both were kept) follows the list of the current default, as it used to. The page lists running apps and apps with a rule that are still installed, rescanning when it is shown or the settings window is activated; All apps sets a column for every listed app in one save. | `FilterService` → `Program.refresh`; `ProgramView` |
 | Dim inactive groups | Updates existing groups immediately. | `HideTabsOnInactiveGroupPlugin` subscription |
 | Auto-hide tabs (Never / When maximized / Always) | Updates existing groups immediately; "maximized" means the window is maximized or its tabs sit inside it for lack of room above (`TabStrip.isShownInside`), which covers top snaps and windows moved against the top edge; a mode chosen in a group's tab menu takes priority. Pointer, drag and menu state still control expansion. Replaces the former `autoHide` and `minimalMode` toggles, which are migrated on load (minimal mode → Always) and dropped on save. | `TabStripDecorator.initAutoHide` subscription |
-| Show tabs briefly after switching | Updates existing groups immediately; expands auto-hidden tabs for about a second after a tab switch, in either auto-hide mode. Defaults off, including when loading older auto-hide preferences; an explicitly saved value is preserved. Hidden in the page while auto-hide is Never. | `TabStripDecorator.initAutoHide` subscription |
+| Show tabs briefly after switching | Updates existing groups immediately; expands auto-hidden tabs for about a second after a tab switch, in either auto-hide mode. Defaults on, except for legacy minimal mode; an explicitly saved value is preserved. Hidden in the page while auto-hide is Never. | `TabStripDecorator.initAutoHide` subscription |
 | Align tabs | Updates both normal and maximized positions in existing groups. A position explicitly chosen in the tab menu stays overridden for that direction. Previously applied only to new groups. | `TabStripDecorator` → `TabStrip.setDefaultAlignment` |
 | Combine taskbar icons per group | Global preference applies to new groups. Use an existing group's tab menu to change that group without restarting the app. Taskbar plugin and preview-window lifetime are tied to the group; the existing menu action rebuilds it. Automatically rebuilding every group could discard its local state and interrupt interaction, so this remains explicitly scoped. | `GroupInfo` plugin creation; `Desktop.restartGroup` |
 | Replace Alt+Tab | Installs or removes the switcher immediately. | `Program.updateTaskSwitcher` |

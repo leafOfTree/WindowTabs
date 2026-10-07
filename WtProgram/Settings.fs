@@ -134,7 +134,10 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                                 elif settingsJson.getBool("autoHide")=Some false then "Never"
                                 else SettingsCatalog.choiceDefault "autoHideMode")
                             |> SettingsCatalog.normalizeChoice "autoHideMode"
-                        showTabsOnSwitch = settingsJson.getBool("showTabsOnSwitch").def(SettingsCatalog.toggleDefault "showTabsOnSwitch" hasExistingSettings)
+                        // Legacy minimal mode never expanded on a switch.
+                        showTabsOnSwitch = settingsJson.getBool("showTabsOnSwitch").def(
+                            if settingsJson.getBool("minimalMode").def(false) then false
+                            else SettingsCatalog.toggleDefault "showTabsOnSwitch" hasExistingSettings)
                         enableShiftScroll = settingsJson.getBool("enableShiftScroll").def(SettingsCatalog.toggleDefault "enableShiftScroll" hasExistingSettings)
                         version = settingsJson.getString("version").def(String.Empty)
                         alignment = settingsJson.getString("alignment").def(SettingsCatalog.choiceDefault "alignment") |> SettingsCatalog.normalizeChoice "alignment"

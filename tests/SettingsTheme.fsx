@@ -42,11 +42,12 @@ let main() =
     try
         use settings = new Settings(true, saveDelay=0)
         let api = settings :> ISettings
-        let optionalKeys = ["combineIconsInTaskbar";"replaceAltTab";"groupWindowsInSwitcher";"enableNumberLeader";"enableHoverActivate";"showTabsOnSwitch"]
+        let optionalKeys = ["combineIconsInTaskbar";"replaceAltTab";"groupWindowsInSwitcher";"enableNumberLeader";"enableHoverActivate"]
         let checkMinimalDefaults() =
             for key in optionalKeys do check (api.getValue(key)=box false) (sprintf "%s must be opt-in" key)
             check (api.getValue("autoHideMode")=box "Maximized") "Auto-hide lost its existing maximized-window default"
-            check (api.hotKey("newTab").def(SettingsCatalog.shortcutDefault "newTab")=0) "New tab must not claim a shortcut by default"
+            check (api.hotKey("newTab").def(SettingsCatalog.shortcutDefault "newTab")=0x064E) "New tab must retain Ctrl+Alt+N by default"
+            check (api.getValue("showTabsOnSwitch")=box true) "Switching must show auto-hidden tabs by default"
             check (api.hotKey("searchTabs").def(SettingsCatalog.shortcutDefault "searchTabs")=0x0654) "Search must use Ctrl+Alt+T rather than common launcher shortcuts"
             for key in ["enableCtrlNumberHotKey";"enableShiftScroll"] do
                 check (api.getValue(key)=box true) (sprintf "%s lost its existing default" key)
@@ -55,6 +56,9 @@ let main() =
         check (api.getValue("hideInactiveTabs")=box true) "Fresh installs lost their existing inactive-group default"
         check (api.getValue("enableTabbingByDefault")=box true) "Fresh installs lost the core tabbing feature"
         let defaults = api.root.DeepClone() :?> JObject
+        api.setValue("showTabsOnSwitch",box false)
+        settings.clearCaches()
+        check (api.getValue("showTabsOnSwitch")=box false) "Explicitly disabling switch expansion did not persist"
         for key in optionalKeys do api.setValue(key,box true)
         settings.clearCaches()
         for key in optionalKeys do check (api.getValue(key)=box true) (sprintf "%s lost its explicit enabled value" key)
@@ -81,7 +85,7 @@ let main() =
             api.root <- json
             settings.clearCaches()
             check (settings.settings.autoHideMode=expected) (sprintf "Legacy autoHide=%b minimalMode=%b did not migrate to %s" autoHide minimal expected)
-            check (not settings.settings.showTabsOnSwitch) "Legacy auto-hide settings implicitly enabled the new switch expansion feature"
+            check (settings.settings.showTabsOnSwitch=not minimal) "Legacy minimal mode changed whether switching shows tabs"
         api.setValue("autoHideMode",box "Maximized")
         check (api.root.getBool("minimalMode").IsNone && api.root.getBool("autoHide").IsNone) "Legacy auto-hide keys were kept after saving"
         // The chosen preset and its edited colours are saved and read back.

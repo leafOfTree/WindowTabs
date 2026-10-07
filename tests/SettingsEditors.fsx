@@ -413,7 +413,7 @@ let main() =
         assertTrue (hotKeys.["nextTab"]=3623 && hotKeys.["prevTab"]=3621 && next.Shortcut=3623 && previous.Shortcut=3621) "Restore default shortcuts"
         assertTrue (hotKeys.["searchTabs"]=1620 && search.Shortcut=1620) "Restore default must set tab search to Ctrl+Alt+T"
         let newTab = view.control.Controls.Find("new-tab",true).[0] :?> SettingsShortcutInput
-        assertTrue (hotKeys.["newTab"]=0 && newTab.Shortcut=0) "Restore default must leave new tab unassigned"
+        assertTrue (hotKeys.["newTab"]=1614 && newTab.Shortcut=1614) "Restore default must set new tab to Ctrl+Alt+N"
         hotKeys.["prevTab"] <- 3621
         Application.DoEvents()
         use bitmap = new Bitmap(form.ClientSize.Width,form.ClientSize.Height)
