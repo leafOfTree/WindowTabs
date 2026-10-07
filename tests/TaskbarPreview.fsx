@@ -65,12 +65,19 @@ let main() =
     check (positioned.GetPixel(0,20).ToArgb()=Color.CornflowerBlue.ToArgb()
            && positioned.GetPixel(63,51).ToArgb()=Color.CornflowerBlue.ToArgb()
            && positioned.GetPixel(0,0).ToArgb()=Color.Red.ToArgb()) "Preview content shifted or clipped at a nonzero desktop origin"
-    use captureForm = new System.Windows.Forms.Form(ShowInTaskbar=false,
+    // DWM may never paint an entirely off-screen window, even after Refresh.
+    let area = System.Windows.Forms.Screen.PrimaryScreen.WorkingArea
+    use captureForm = { new System.Windows.Forms.Form(ShowInTaskbar=false,
                         StartPosition=System.Windows.Forms.FormStartPosition.Manual,
-                        Location=Point(-20000,-20000),Size=Size(320,200),BackColor=Color.CornflowerBlue)
+                        Location=Point(area.Left+40,area.Top+40),Size=Size(320,200),BackColor=Color.CornflowerBlue) with
+                            override _.ShowWithoutActivation = true }
     captureForm.Show()
-    // Paint now: captured before its first WM_PAINT, the window is sometimes still white.
     captureForm.Refresh()
+    // Let the compositor present the first frame before asking for its surface.
+    let firstFrame = Diagnostics.Stopwatch.StartNew()
+    while firstFrame.ElapsedMilliseconds<250L do
+        System.Windows.Forms.Application.DoEvents()
+        System.Threading.Thread.Sleep(10)
     let mutable captured = false
     use capturedBitmap = Win32Helper.PrintWindow(captureForm.Handle,&captured)
     check (captured && capturedBitmap.Size=captureForm.Size) "Full-window capture failed or changed its coordinate extent"
