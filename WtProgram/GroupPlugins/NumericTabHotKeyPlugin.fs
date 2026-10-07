@@ -40,7 +40,6 @@ type NumericTabHotKeyPlugin() as this =
         let matches =
             match modifier with
             | "Alt" -> altPressed && not controlPressed
-            | "Both" -> controlPressed <> altPressed
             | _ -> controlPressed && not altPressed
         if (msg = WindowMessages.WM_KEYDOWN || msg = WindowMessages.WM_SYSKEYDOWN) && matches &&
            Services.settings.getValue("enableCtrlNumberHotKey").cast<bool>() then

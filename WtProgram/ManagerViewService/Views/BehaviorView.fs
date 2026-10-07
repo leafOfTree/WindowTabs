@@ -46,13 +46,56 @@ type HotKeyView() =
         SettingsUi.settingRow keyboard "enable-number-leader" leaderEnabled
         let leaderEditor = editors |> List.find(fun (key,_) -> key="numberLeader") |> snd
         SettingsUi.settingRow keyboard "number-leader" leaderEditor
-        dependOn leaderEnabled [leaderEditor.Parent :?> SettingsRow]
+        let keysText = new TextBox(Font=SettingsUi.bodyFont(),Text=(Services.settings.getValue("numberLeaderKeys") :?> string),
+                                   AccessibleName=tr Strings.Settings.leaderKeys.caption,MaxLength=47,TextAlign=HorizontalAlignment.Left)
+        let keysEditor = new SettingsTextInput(keysText,Name="leader-keys",Width=Dpi.scale 140,MinimumSize=System.Drawing.Size(Dpi.scale 140,0))
+        let hint = SettingsHover(keysText,tr Strings.Settings.invalidLeaderKeys,enabled=false)
+        let mutable savingKeys = false
+        let validate() =
+            let valid = NumberLeaderKeys.tryNormalize keysText.Text
+            keysText.AccessibleDescription <- if valid.IsSome then "" else tr Strings.Settings.invalidLeaderKeys
+            hint.Enabled <- valid.IsNone
+            valid
+        let save keys =
+            if Services.settings.getValue("numberLeaderKeys")<>box keys then
+                savingKeys <- true
+                try Services.settings.setValue("numberLeaderKeys",box keys)
+                finally savingKeys <- false
+        // App deactivation can keep the editor focused, so valid input saves as it is typed.
+        keysText.TextChanged.Add(fun _ -> validate() |> Option.iter save)
+        let commit() =
+            match validate() with
+            | Some keys -> save keys; keysText.Text <- keys
+            | None -> hint.Show()
+        keysText.Leave.Add(fun _ -> commit())
+        keysText.KeyDown.Add(fun e ->
+            if e.KeyCode=Keys.Enter then commit(); e.SuppressKeyPress <- true
+            elif e.KeyCode=Keys.Escape then
+                keysText.Text <- Services.settings.getValue("numberLeaderKeys") :?> string
+                e.SuppressKeyPress <- true)
+        let keysSubscription = Services.settings.notifyValue "numberLeaderKeys" (fun value ->
+            if not savingKeys && not keysText.IsDisposed then keysText.Text <- unbox value)
+        keysEditor.Disposed.Add(fun _ -> keysSubscription.Dispose())
+        let presets = SettingsCatalog.leaderKeyPresets |> List.mapi(fun index (keys,label) ->
+            let button = SettingsUi.button (tr label)
+            button.Name <- sprintf "leader-keys-preset-%d" index
+            button.Kind <- SettingsButtonKind.Subtle
+            button.Font <- SettingsUi.font "Segoe UI" 9.0f System.Drawing.FontStyle.Regular
+            button.AutoSize <- false
+            button.MinimumSize <- System.Drawing.Size.Empty
+            let width = TextRenderer.MeasureText(button.Text,button.Font,System.Drawing.Size.Empty,TextFormatFlags.NoPadding).Width
+            button.Size <- System.Drawing.Size(width+Dpi.scale 12,Dpi.scale 24)
+            button.Padding <- Padding.Empty
+            button.Margin <- Padding(0,0,Dpi.scale 4,0)
+            button.Click.Add(fun _ -> keysText.Text <- keys; save keys)
+            button :> Control)
+        SettingsUi.settingRowWithActions keyboard "leader-keys" keysEditor presets |> ignore
+        dependOn leaderEnabled [leaderEditor.Parent :?> SettingsRow;keysEditor.Parent :?> SettingsRow]
         let numericEnabled = SettingsBindings.settingToggle "enableCtrlNumberHotKey"
         SettingsUi.settingRow keyboard "switch-tabs-by-number" numericEnabled
         let numericChoice = SettingsBindings.choiceRow keyboard "number-shortcut"
-                                [|tr Strings.Settings.numberShortcutCtrl;tr Strings.Settings.numberShortcutAlt;tr Strings.Settings.numberShortcutBoth|]
-        let appsChoice = SettingsBindings.choiceRow keyboard "number-shortcut-apps" [|tr Strings.Settings.allExcept;tr Strings.Settings.onlyListed|]
-        dependOn numericEnabled [numericChoice.Parent :?> SettingsRow;appsChoice.Parent :?> SettingsRow]
+                                [|tr Strings.Settings.numberShortcutCtrl;tr Strings.Settings.numberShortcutAlt|]
+        dependOn numericEnabled [numericChoice.Parent :?> SettingsRow]
         // Offered only while a shortcut differs from its default; otherwise it would do nothing.
         let updateRestore() =
             restore.Offered <- editors |> List.exists(fun (key,editor) -> editor.Shortcut<>SettingsCatalog.shortcutDefault key)

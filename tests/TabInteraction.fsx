@@ -86,19 +86,46 @@ let main() =
         let leader = NumberLeaderState()
         let now = DateTime.UtcNow
         leader.arm (IntPtr(1)) now
-        check (leader.key (IntPtr(1)) now 0x32 3 = (true,Some 1) && not leader.active) "Leader digit did not select and disarm"
+        check (leader.key (IntPtr(1)) now 0x32 3 "123456789" = (true,Some 1) && not leader.active) "Leader digit did not select and disarm"
         leader.arm (IntPtr(1)) now
-        check (leader.key (IntPtr(1)) now 0x1B 3 = (true,None) && not leader.active) "Escape did not cancel and consume"
+        check (leader.key (IntPtr(1)) now 0x1B 3 "123456789" = (true,None) && not leader.active) "Escape did not cancel and consume"
         leader.arm (IntPtr(1)) now
-        check (leader.key (IntPtr(1)) now 0x41 3 = (false,None) && not leader.active) "Other key must cancel and pass through"
+        check (leader.key (IntPtr(1)) now 0x41 3 "123456789" = (false,None) && not leader.active) "Other key must cancel and pass through"
         leader.arm (IntPtr(1)) now
         check (not (leader.validate (IntPtr(1)) (now.AddSeconds(3.0)))) "Leader did not time out"
         leader.arm (IntPtr(1)) now
         check (not (leader.validate (IntPtr(2)) now)) "Leader survived foreground change"
         leader.arm (IntPtr(1)) now
-        check (leader.key (IntPtr(1)) now 0x39 3 = (true,None)) "Missing leader digit must be consumed without activation"
+        check (leader.key (IntPtr(1)) now 0x39 3 "123456789" = (true,None)) "Missing leader digit must be consumed without activation"
         leader.arm (IntPtr(1)) now
-        check (leader.key (IntPtr(1)) now 0x62 3 = (true,Some 1) && not leader.active) "Leader ignored a number-pad digit"
+        check (leader.key (IntPtr(1)) now 0x62 3 "123456789" = (true,Some 1) && not leader.active) "Leader ignored a number-pad digit"
+        // Switching focus disarms the leader, but the captured key stays owned through release.
+        for vk in [0x41;0xBA;0x1B] do
+            let held = NumericShortcutCapture()
+            leader.arm (IntPtr(1)) now
+            let consumed,_ = leader.key (IntPtr(1)) now vk 10 "ASDFGHJKL;"
+            check (consumed && held.handle(WindowMessages.WM_KEYDOWN,vk,Some 0)=(true,Some 0)) "Leader selection press leaked"
+            for _ in 1..5 do
+                let repeat,_ = leader.key (IntPtr(2)) now vk 10 "ASDFGHJKL;"
+                check (not repeat && held.handle(WindowMessages.WM_KEYDOWN,vk,None)=(true,None)) "Held leader key leaked or activated twice after switching focus"
+            check (held.handle(WindowMessages.WM_KEYUP,vk,None)=(true,None)) "Leader selection release leaked"
+            check (held.handle(WindowMessages.WM_KEYDOWN,vk,None)=(false,None)) "A fresh press remained captured after release"
+        check (NumberLeaderKeys.tryNormalize "asdfghjkl;"=Some "ASDFGHJKL;") "Home-row keys did not normalize"
+        for value in ["";"AA";"aA";"A A";"中文";"!"] do
+            check ((NumberLeaderKeys.tryNormalize value).IsNone) "Invalid or duplicate selection keys were accepted"
+        leader.arm (IntPtr(1)) now
+        check (leader.key (IntPtr(1)) now 0xBA 10 "ASDFGHJKL;"=(true,Some 9)) "Home-row semicolon did not select the tenth tab"
+        leader.arm (IntPtr(1)) now
+        check (leader.key (IntPtr(1)) now 0x5A 26 "ABCDEFGHIJKLMNOPQRSTUVWXYZ"=(true,Some 25)) "Letter keys did not support tabs beyond nine"
+        api.setValue("numberLeaderKeys",box "asdfghjkl;")
+        check (api.getValue("numberLeaderKeys")=box "ASDFGHJKL;" && string api.root.["numberLeaderKeys"]="ASDFGHJKL;") "Selection keys failed to normalize and persist"
+        let savedKeys = api.root.DeepClone() :?> Newtonsoft.Json.Linq.JObject
+        api.root <- savedKeys
+        check (api.getValue("numberLeaderKeys")=box "ASDFGHJKL;") "Custom selection keys failed to round trip"
+        api.root <- SettingsCatalog.resetRoot savedKeys false false
+        check (api.getValue("numberLeaderKeys")=box "123456789") "Settings reset did not restore numeric selection keys"
+        api.setValue("numberLeaderKeys",box "AA")
+        check (api.getValue("numberLeaderKeys")=box "123456789") "Invalid persisted selection keys did not use the default"
         for dpi in [96;144] do
             Dpi.set dpi
             api.setValue("enableHoverActivate",box false)

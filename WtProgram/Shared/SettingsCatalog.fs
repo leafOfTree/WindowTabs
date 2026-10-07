@@ -6,6 +6,7 @@ type SettingBinding =
     | Number of minimum:int * maximum:int
     | Choice of key:string * values:string list * defaultValue:string
     | Shortcut of key:string * defaultCode:int
+    | Text of key:string * defaultValue:string
     | Colour
     | Navigation
 
@@ -16,6 +17,7 @@ type SettingDefinition = {
     binding:SettingBinding }
 
 module SettingsCatalog =
+    let leaderKeyPresets = List.zip ["123456789";"QWERTYUIOP";"ASDFGHJKL;"] (Array.toList Strings.Settings.leaderKeyPresets)
     let all = [
         { id="tab-color-mode"; page=AppearanceSettings; text=Strings.Settings.tabColorMode; binding=Choice("tabColorMode",["Off";"ByWindow";"ByApp"],"Off") }
         { id="tab-color-style"; page=AppearanceSettings; text=Strings.Settings.tabColorStyle; binding=Choice("tabColorStyle",["Fill";"Stripe"],"Fill") }
@@ -40,8 +42,8 @@ module SettingsCatalog =
         { id="switch-tabs-by-number"; page=HotKeySettings; text=Strings.Settings.switchTabsByNumber; binding=Toggle("enableCtrlNumberHotKey",true,true) }
         { id="enable-number-leader"; page=HotKeySettings; text=Strings.Settings.enableNumberLeader; binding=Toggle("enableNumberLeader",true,false) }
         { id="number-leader"; page=HotKeySettings; text=Strings.Settings.numberLeader; binding=Shortcut("numberLeader",1216) }
-        { id="number-shortcut-apps"; page=HotKeySettings; text=Strings.Settings.numberShortcutApps; binding=Choice("numberShortcutAppMode",["AllExcept";"OnlyListed"],"AllExcept") }
-        { id="number-shortcut"; page=HotKeySettings; text=Strings.Settings.numberShortcut; binding=Choice("numberHotKeyModifier",["Ctrl";"Alt";"Both"],"Ctrl") }
+        { id="leader-keys"; page=HotKeySettings; text=Strings.Settings.leaderKeys; binding=Text("numberLeaderKeys","123456789") }
+        { id="number-shortcut"; page=HotKeySettings; text=Strings.Settings.numberShortcut; binding=Choice("numberHotKeyModifier",["Ctrl";"Alt"],"Ctrl") }
         { id="activate-on-hover"; page=HotKeySettings; text=Strings.Settings.activateOnHover; binding=Toggle("enableHoverActivate",false,false) }
         { id="shift-scroll"; page=HotKeySettings; text=Strings.Settings.shiftScroll; binding=Toggle("enableShiftScroll",true,true) }
         { id="tabTextColor"; page=AppearanceSettings; text=Strings.Settings.tabTextColor; binding=Colour }
@@ -68,10 +70,12 @@ module SettingsCatalog =
         if List.contains id ["auto-hide-tabs";"tab-alignment";"combine-taskbar-icons"] then Some Strings.General.tabMenuHint
         // A tab's own color, picked from its menu, comes before the automatic one.
         elif id="tab-color-mode" then Some Strings.Settings.tabColorMenuHint
+        elif id="switch-tabs-by-number" then Some Strings.Settings.numberShortcutMenuHint
         else None
     /// A setting shown only while the one it depends on makes it meaningful.
     let parent id =
         match id with
+        | "number-leader" | "leader-keys" -> Some "enable-number-leader"
         | "show-tabs-on-switch" -> Some "auto-hide-tabs"
         | "group-windows-in-the-switcher" -> Some "use-windowtabs-for-alt-tab"
         | _ -> None
@@ -82,8 +86,8 @@ module SettingsCatalog =
         all |> List.choose(fun item -> match item.binding with Toggle(key,fresh,_) -> Some(key,fresh) | _ -> None)
     /// Settings that are the user's own records rather than preferences: a reset keeps them
     /// unless asked to clear them.
-    let appRulePathKeys = ["includedPaths";"excludedPaths";"autoGroupingPaths";"numberShortcutPaths"]
-    let appRuleKeys = appRulePathKeys @ ["numberShortcutAppMode";"appTabColors"]
+    let appRulePathKeys = ["includedPaths";"excludedPaths";"autoGroupingPaths"]
+    let appRuleKeys = appRulePathKeys @ ["disabledNumberShortcutPaths";"appTabColors"]
     let workspaceKeys = ["workspaces";"workspaceSchemaVersion";"workspaceRecovery"]
     /// The settings a reset leaves: fresh-install toggles, the version (so the next start does
     /// not take the reset for an upgrade) and, unless cleared, app rules and saved workspaces.
@@ -100,6 +104,8 @@ module SettingsCatalog =
     /// Ctrl+Alt+Right / Ctrl+Alt+Left, in hotkey-control encoding.
     let shortcutDefault key =
         all |> List.pick(fun item -> match item.binding with Shortcut(k,code) when k=key -> Some code | _ -> None)
+    let textDefault key =
+        all |> List.pick(fun item -> match item.binding with Text(k,value) when k=key -> Some value | _ -> None)
     let range id = match (find id).binding with Number(low,high) -> low,high | _ -> invalidArg "id" "Not a numeric setting"
     let normalizeNumber id value =
         let low,high = range id
@@ -124,7 +130,7 @@ module SettingsCatalog =
     /// The settings file key, so a setting can also be found by the name users see in settings.json.
     let storageKey item =
         match item.binding with
-        | Toggle(key,_,_) | Choice(key,_,_) | Shortcut(key,_) -> key
+        | Toggle(key,_,_) | Choice(key,_,_) | Shortcut(key,_) | Text(key,_) -> key
         | _ -> ""
     let searchTexts item =
         ([item.text.caption;item.text.keywords;searchContext item] |> List.collect Localization.all) @ [storageKey item]

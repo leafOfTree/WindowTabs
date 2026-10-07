@@ -38,7 +38,7 @@ type IconSprite = {
             bitmap
         member this.children = List2()
 
-type NumberBadgeSprite = { number:int; size:Sz; background:Color; foreground:Color } with
+type NumberBadgeSprite = { label:string; size:Sz; background:Color; foreground:Color } with
     interface ISpriteHitTest with member _.containsPoint _ = false
     interface ISprite with
         member this.image =
@@ -46,11 +46,20 @@ type NumberBadgeSprite = { number:int; size:Sz; background:Color; foreground:Col
             use g = img.graphics
             use bg = new SolidBrush(this.background)
             g.SmoothingMode <- SmoothingMode.AntiAlias
-            g.FillEllipse(bg,0,0,this.size.width-1,this.size.height-1)
+            use shape = new GraphicsPath()
+            let w,h = float32 this.size.width,float32 this.size.height
+            let radius = max 0.5f (min (float32(Dpi.scale 3)) (min w h / 6.0f))
+            let diameter = radius*2.0f
+            shape.AddArc(0.0f,0.0f,diameter,diameter,180.0f,90.0f)
+            shape.AddArc(w-diameter,0.0f,diameter,diameter,270.0f,90.0f)
+            shape.AddArc(w-diameter,h-diameter,diameter,diameter,0.0f,90.0f)
+            shape.AddArc(0.0f,h-diameter,diameter,diameter,90.0f,90.0f)
+            shape.CloseFigure()
+            g.FillPath(bg,shape)
             use font = TabMetrics.font (this.size.height-2) FontStyle.Bold
             use brush = new SolidBrush(TextContrast.readable this.foreground this.background)
             use format = new StringFormat(Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center)
-            g.DrawString(string this.number,font,brush,RectangleF(0.0f,0.0f,float32 this.size.width,float32 this.size.height),format)
+            g.DrawString(this.label,font,brush,RectangleF(0.0f,0.0f,float32 this.size.width,float32 this.size.height),format)
             img
         member _.children = List2()
 
@@ -110,7 +119,7 @@ type CloseButtonSprite = {
 type TabDisplayInfo = {
     tint: Color option
     colorStyle: string
-    numberBadge: int option
+    numberBadge: string option
     bgColor : Color option
     text: string
     textFont: Font
@@ -437,11 +446,14 @@ type TabSprite<'id> = {
             img
         member this.children = 
             List2([
-                Some(this.iconLocation,this.iconSprite)
-                (this.displayInfo.numberBadge |> Option.filter(fun n -> n>=1 && n<=9) |> Option.map(fun n ->
-                    let side = min this.size.height (Dpi.scale 14)
-                    let point = this.iconLocation.add(Pt(this.iconSize.width-side/2,this.iconSize.height-side+2))
-                    point,({number=n;size=Sz(side,side);background=this.textColor;foreground=this.fillColor} : NumberBadgeSprite) :> ISprite)) 
+                (match this.displayInfo.numberBadge with
+                 | Some label when not this.isTop ->
+                     let side = min (this.size.height-2) (TabMetrics.scaled this.size.height 20)
+                     let point = this.iconLocation.add(Pt((this.iconSize.width-side)/2,(this.iconSize.height-side)/2))
+                     let background = if Theme.darkBar this.fillColor then Color.White else Color.Black
+                     let foreground = if background=Color.White then Color.Black else Color.White
+                     Some(point,({label=label;size=Sz(side,side);background=background;foreground=foreground} : NumberBadgeSprite) :> ISprite)
+                 | _ -> Some(this.iconLocation,this.iconSprite))
                 (if this.showCloseButton then Some(this.closeButtonLocation, this.closeButtonSprite) else None)
                 ]).choose(id)
 

@@ -233,8 +233,13 @@ soak testing; those environmental scenarios still need manual validation.
 Direct number shortcuts retain Ctrl as their installation/reset default. They pass
 through when the target is absent or already foreground. Alt selections inject a
 marked menu-mask key; the keyboard hook ignores that marker. Per-app rules apply
-only to direct shortcuts. The independent leader (Alt+backtick by default) arms the
-foreground group for three seconds and posts badge visibility to its STA. Digits
+only to direct shortcuts. They default to enabled; the tab context menu toggles a
+case-insensitive set of disabled application paths. The settings pages do not expose
+these rules. The independent leader (Alt+backtick by default) arms the
+foreground group for three seconds and posts badge visibility and the selection-key
+order to its STA. Unique letters, digits and unshifted US punctuation are configurable;
+the default is 123456789. Badges replace inactive tab icons at full contrast; the
+active tab keeps its index but has no badge. Selection keys
 and Escape capture matching releases; other keys cancel and pass through. Mouse
 buttons, foreground changes and timeout cancel the leader. Fresh installs enable
 the leader; existing settings without its toggle leave it disabled.

@@ -33,7 +33,7 @@ let mutable preferences = {
     lightPalette=Theme.lightPalette;darkPalette=Theme.darkPalette
     lightCustomPalette=Theme.lightPalette;darkCustomPalette=Theme.darkPalette
     mode=DarkTheme;useCustomColors=true;lightPreset="";darkPreset="";presetEdits=Map.empty }
-let settingValues = Collections.Generic.Dictionary<string,obj>(dict ["appTabColors",box(Map.empty<string,string>);"tabColorMode",box "Off";"tabColorStyle",box "Stripe";"numberHotKeyModifier",box "Ctrl";"numberShortcutAppMode",box "AllExcept";"numberShortcutPaths",box(Set2<string>())])
+let settingValues = Collections.Generic.Dictionary<string,obj>(dict ["appTabColors",box(Map.empty<string,string>);"tabColorMode",box "Off";"tabColorStyle",box "Stripe";"numberLeaderKeys",box "123456789";"numberHotKeyModifier",box "Ctrl";"disabledNumberShortcutPaths",box(Set2<string>())])
 let settings = { new ISettings with
     member _.appearance = preferences
     member _.updateAppearance update = preferences <- update preferences; ThemeService.notifyChanged()
@@ -301,8 +301,59 @@ let main() =
         Application.DoEvents()
         let next = view.control.Controls.Find("next-tab",true).[0] :?> SettingsShortcutInput
         let previous = view.control.Controls.Find("previous-tab",true).[0] :?> SettingsShortcutInput
+        let leaderToggle = view.control.Controls.Find("enable-number-leader",true).[0] :?> SettingsToggle
+        let leaderKeys = view.control.Controls.Find("leader-keys",true).[0] :?> SettingsTextInput
+        assertTrue (leaderKeys.Width=Dpi.scale 140) "Selection-key input does not align with 140px dropdowns"
+        let keysText = leaderKeys.Controls.[0] :?> TextBox
+        leaderToggle.Checked <- true
+        keysText.Font <- SettingsUi.bodyFont()
+        keysText.Height <- keysText.PreferredHeight
+        assertTrue (abs(keysText.Top-(leaderKeys.ClientSize.Height-keysText.Height)/2)<=1 && keysText.TextAlign=HorizontalAlignment.Left) "Selection keys are not vertically centered and left aligned"
+        use keysBitmap = new Bitmap(leaderKeys.Width,leaderKeys.Height)
+        leaderKeys.DrawToBitmap(keysBitmap,Rectangle(Point.Empty,keysBitmap.Size))
+        keysBitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","selection-keys-"+name+".png"))
+        for index,(keys,_) in List.indexed SettingsCatalog.leaderKeyPresets do
+            let preset = view.control.Controls.Find(sprintf "leader-keys-preset-%d" index,true).[0] :?> Button
+            assertTrue (preset.Height=Dpi.scale 24 && (preset :?> SettingsActionButton).Kind=SettingsButtonKind.Subtle) "Selection preset is not a compact secondary button"
+            preset.PerformClick()
+            assertTrue (keysText.Text=keys && settings.getValue("numberLeaderKeys")=box keys) "Selection-key preset did not fill and save immediately"
+        assertTrue (leaderKeys.Parent.Height<=Dpi.scale 100) "Selection-key preset row has excessive blank space"
+        use presetBitmap = new Bitmap(leaderKeys.Parent.Width,leaderKeys.Parent.Height)
+        leaderKeys.Parent.DrawToBitmap(presetBitmap,Rectangle(Point.Empty,presetBitmap.Size))
+        presetBitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","selection-key-presets-"+name+".png"))
+        keysText.Text <- "asdfghjkl;"
+        assertTrue (settings.getValue("numberLeaderKeys")=box "ASDFGHJKL;") "Valid selection keys require Enter or editor blur to save"
+        key keysText Keys.Enter
+        assertTrue (settings.getValue("numberLeaderKeys")=box "ASDFGHJKL;" && keysText.Text="ASDFGHJKL;") "Custom selection keys were not saved in order"
+        keysText.Text <- "AA"
+        assertTrue (keysText.AccessibleDescription=tr Strings.Settings.invalidLeaderKeys && settings.getValue("numberLeaderKeys")=box "ASDFGHJKL;") "Repeated selection keys were accepted or not explained"
+        key keysText Keys.Escape
+        keysText.Text <- "AA"
+        keysText.Focus() |> ignore
+        key keysText Keys.Enter
+        Application.DoEvents()
+        if mode=DarkTheme then
+            let validation = Application.OpenForms |> Seq.cast<Form> |> Seq.find(fun popup -> popup.GetType().Name="SettingsHelpPopup" && popup.Visible)
+            use validationBitmap = new Bitmap(validation.Width,validation.Height)
+            validation.DrawToBitmap(validationBitmap,Rectangle(Point.Empty,validationBitmap.Size))
+            assertTrue (validationBitmap.GetPixel(Dpi.scale 16,Dpi.scale 12).ToArgb()=(SettingsColors.current()).surface.ToArgb()) "Selection-key validation ignores the dark theme"
+            validationBitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","selection-keys-validation-dark.png"))
+        key keysText Keys.Escape
+        keysText.Text <- "qwerty"
+        assertTrue (settings.getValue("numberLeaderKeys")=box "QWERTY") "Replacing selection keys was not saved immediately"
+        keysText.Text <- "qwertyy"
+        assertTrue (settings.getValue("numberLeaderKeys")=box "QWERTY") "An invalid edit replaced the last valid saved selection keys"
+        key keysText Keys.Escape
+        leaderToggle.Checked <- false
+        assertTrue ((leaderKeys.Parent :?> SettingsRow).Collapsed) "Selection keys remain visible while the leader is disabled"
         let numeric = view.control.Controls.Find("switch-tabs-by-number",true).[0] :?> SettingsToggle
+        let rec hasMenuHint (control:Control) =
+            match control with
+            | :? SettingsHelpButton as button -> button.AccessibleDescription=tr Strings.Settings.numberShortcutMenuHint
+            | _ -> control.Controls |> Seq.cast<Control> |> Seq.exists hasMenuHint
+        assertTrue (hasMenuHint numeric.Parent) "Number shortcut row lacks its tab menu help icon"
         let numericChoice = view.control.Controls.Find("number-shortcut",true).[0] :?> SettingsCombo
+        assertTrue (view.control.Controls.Find("number-shortcut-apps",true).Length=0 && SettingsCatalog.all |> List.forall(fun item -> item.id<>"number-shortcut-apps")) "App shortcut mode remains on the settings page or in search"
         let numericRow = numericChoice.Parent :?> SettingsRow
         numeric.Checked <- false
         assertTrue numericRow.Collapsed "Disabled numeric shortcuts must hide modifier selection"
@@ -310,9 +361,14 @@ let main() =
         assertTrue (not numericRow.Collapsed) "Enabled numeric shortcuts must show modifier selection"
         numericChoice.SelectedIndex <- 1
         assertTrue (settings.getValue("numberHotKeyModifier") :?> string = "Alt") "Alt selection was not saved"
-        numericChoice.SelectedIndex <- 2
-        assertTrue (settings.getValue("numberHotKeyModifier") :?> string = "Both") "Both selection was not saved"
+        let numericPlugin = NumericTabHotKeyPlugin()
+        let target ctrl alt = numericPlugin.targetIndex(WindowMessages.WM_KEYDOWN,0x31,ctrl,altPressed=alt)
+        assertTrue (target false true=Some 0 && target true false=None && target true true=None) "Alt mode captures another modifier combination"
         numericChoice.SelectedIndex <- 0
+        assertTrue (target true false=Some 0 && target false true=None && target true true=None) "Ctrl mode captures another modifier combination"
+        match (SettingsCatalog.find "number-shortcut").binding with
+        | Choice(_,values,_) -> assertTrue (values=["Ctrl";"Alt"]) "Modifier picker offers more than Ctrl and Alt"
+        | _ -> failwith "Number modifier is not a choice"
         next.StartRecording()
         assertTrue (command next Keys.A && next.IsRecording && next.Shortcut=3623) "Plain key is refused while recording"
         command next Keys.Escape |> ignore
@@ -605,6 +661,7 @@ let main() =
             Threading.Thread.Sleep(20)
         let status = view.control.Controls |> Seq.cast<Control> |> Seq.choose(function :? Label as l -> Some l.Text | _ -> None) |> String.concat " | "
         assertTrue (list.Roots.Count>=2) ("The App rules page did not list its apps: "+status)
+        assertTrue (list.Roots |> Seq.forall(fun item -> item.Checks.Length=3)) "App rules still have a number shortcut column"
         let all = list.Roots.[0]
         let apps() = list.Roots |> Seq.skip 1 |> List.ofSeq
         let listed path = apps() |> List.tryFind(fun item -> String.Equals(item.Tag :?> string,path,StringComparison.OrdinalIgnoreCase))

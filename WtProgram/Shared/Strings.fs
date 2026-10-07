@@ -157,8 +157,11 @@ module Strings =
         let numberShortcut = { caption={ en="Modifier key for 1–9"; zh="数字键搭配的修饰键"; ja="1～9 と組み合わせるキー" }
                                description=none
                                keywords={ en="number shortcut modifier"; zh="数字 快捷键 修饰键"; ja="番号 ショートカット 修飾キー" } }
-        let enableNumberLeader = { caption={ en="Use a leader key for tab numbers"; zh="使用引导键切换标签"; ja="リーダーキーでタブ番号を選ぶ" }; description={ en="Press the leader, then 1–9 within three seconds. Escape cancels."; zh="按引导键后，三秒内按 1–9。Esc 取消。"; ja="リーダーキーの後、3 秒以内に 1～9 を押します。Esc で解除。" }; keywords=none }
-        let numberLeader = { caption={ en="Tab number leader"; zh="数字标签引导键"; ja="タブ番号のリーダーキー" }; description=none; keywords=none }
+        let enableNumberLeader = { caption={ en="Use a leader key to select tabs"; zh="使用引导键切换标签"; ja="リーダーキーでタブを選ぶ" }; description={ en="Press the leader, then a selection key within three seconds. Escape cancels."; zh="按引导键后，三秒内按选择键。Esc 取消。"; ja="リーダーキーの後、3 秒以内に選択キーを押します。Esc で解除。" }; keywords=none }
+        let leaderKeys = { caption={en="Selection keys";zh="选择键";ja="選択キー"}; description={en="Use unique letters or digits, in tab order.";zh="按标签顺序，使用不重复的字母或数字。";ja="タブ順に、重複しない英字または数字を指定します。"}; keywords={en="leader keys letters home row";zh="引导键 字母 主键区";ja="リーダーキー 英字 ホームポジション"} }
+        let leaderKeyPresets = [| {en="123456789";zh="123456789";ja="123456789"}; {en="QWERTYUIOP";zh="QWERTYUIOP";ja="QWERTYUIOP"}; {en="ASDFGHJKL;";zh="ASDFGHJKL;";ja="ASDFGHJKL;"} |]
+        let invalidLeaderKeys = {en="Use at least one unique letter, digit or unshifted punctuation key.";zh="请使用至少一个不重复的字母、数字或无需 Shift 的标点键。";ja="重複しない英字、数字、Shift 不要の記号を 1 つ以上指定してください。"}
+        let numberLeader = { caption={ en="Tab selection leader"; zh="标签选择引导键"; ja="タブ選択のリーダーキー" }; description=none; keywords=none }
         let tabColors = { en="Tab color"; zh="标签着色"; ja="タブの色分け" }
         let customTabColor = { en="Custom…"; zh="自定义…"; ja="カスタム…" }
         let clearTabColor = { en="Clear color"; zh="清除颜色"; ja="色を解除" }
@@ -188,13 +191,10 @@ module Strings =
                               keywords={ en="stripe fill tint color coding"; zh="色条 填充 着色"; ja="ライン 塗りつぶし 色分け" } }
         let stripe = { en="Stripe"; zh="色条"; ja="色のライン" }
         let fill = { en="Fill"; zh="填充"; ja="塗りつぶし" }
-        let numberShortcutApps = { caption={ en="Apps using number shortcuts"; zh="使用数字快捷键的应用"; ja="番号ショートカットを使うアプリ" }; description=none; keywords=none }
-        let allExcept = { en="All except listed apps"; zh="除列表外的所有应用"; ja="一覧以外のすべてのアプリ" }
-        let onlyListed = { en="Only listed apps"; zh="仅列表中的应用"; ja="一覧のアプリのみ" }
+        let numberShortcutMenuHint = { en="Enable or disable it for one app from the tab menu."; zh="可在标签右键菜单中为单个应用启用或禁用数字快捷键。"; ja="タブメニューでアプリごとに番号ショートカットを有効・無効にできます。" }
         let numberShortcutFor name = { en=sprintf "Use number shortcuts in %s" name; zh=sprintf "在 %s 中使用数字快捷键" name; ja=sprintf "%s で番号ショートカットを使う" name }
         let numberShortcutCtrl = { en="Ctrl + 1–9"; zh="Ctrl + 1–9"; ja="Ctrl + 1～9" }
         let numberShortcutAlt = { en="Alt + 1–9"; zh="Alt + 1–9"; ja="Alt + 1～9" }
-        let numberShortcutBoth = { en="Ctrl or Alt + 1–9"; zh="Ctrl 或 Alt + 1–9"; ja="Ctrl または Alt + 1～9" }
         let activateOnHover = { caption={ en="Switch tabs on hover"; zh="悬停切换标签"; ja="ホバーでタブを切り替え" }
                                 description={ en="Rest the pointer on a tab instead of clicking."; zh="鼠标停在标签上即可，无需点击。"; ja="クリックしなくても、タブにポインターを置くだけで済みます。" }
                                 keywords={ en="mouse"; zh="悬浮"; ja="マウスオーバー" } }

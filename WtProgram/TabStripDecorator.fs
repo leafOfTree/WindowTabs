@@ -438,6 +438,8 @@ type TabStripDecorator(group:WindowGroup) as this =
             callbackRef.Value.iter(fun (pending:IDisposable) -> pending.Dispose())
             callbackRef := None)
         let contextMenuVisibleCell = propCell("contextMenuVisible", false)
+        let numberBadgeKeysCell = propCell("numberBadgeKeys", SettingsCatalog.textDefault "numberLeaderKeys")
+        Cell.listen(fun() -> this.ts.numberBadgeKeys <- numberBadgeKeysCell.value)
         let numberBadgesCell = propCell("numberBadges", false)
         Cell.listen(fun() -> this.ts.numberBadges <- numberBadgesCell.value)
         let renamingTabCell = propCell("renamingTab", false)

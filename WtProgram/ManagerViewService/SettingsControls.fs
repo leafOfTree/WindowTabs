@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Drawing
 open System.Windows.Forms
@@ -154,11 +154,12 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
 /// Hover help for any control, the way the (i) button shows it: the system tooltip in a light
 /// theme, a themed popup in a dark one (the system tooltip stays light). The popup closes once
 /// the pointer has left both it and the control, or the window loses focus.
-type SettingsHover(target:Control, text:string) =
+type SettingsHover(target:Control, text:string, ?enabled:bool) =
     /// The popup on screen, so a new one replaces it instead of stacking up beside it.
     static let mutable shown : Form option = None
     let tip = new ToolTip(AutoPopDelay=30000,InitialDelay=350,ReshowDelay=100,ShowAlways=true)
     let watcher = new Timer(Interval=200)
+    let mutable offered = defaultArg enabled true
     let mutable popup : SettingsHelpPopup option = None
     /// Opened on purpose (the (i) button's click), so it stays while the target keeps focus.
     /// Opened by hovering, it goes with the pointer, even from a button that a click focused.
@@ -168,7 +169,7 @@ type SettingsHover(target:Control, text:string) =
         pinned <- false
         tip.Hide(target)
         popup |> Option.iter(fun window -> window.Hide())
-    let show pin =
+    let showCore pin =
         pinned <- pin
         if ThemeService.currentIsDark() then
             tip.SetToolTip(target,"")
@@ -191,8 +192,10 @@ type SettingsHover(target:Control, text:string) =
             if not window.Visible then window.Show(target.FindForm())
             watcher.Start()
         else tip.Show(text,target,0,target.Height+Dpi.scale 6,30000)
+    let show pin = if offered then showCore pin
+    let updateTip() = tip.SetToolTip(target,if offered && not (ThemeService.currentIsDark()) then text else "")
     do
-        tip.SetToolTip(target,text)
+        updateTip()
         watcher.Tick.Add(fun _ ->
             popup |> Option.iter(fun window ->
                 let pointer = Cursor.Position
@@ -206,11 +209,18 @@ type SettingsHover(target:Control, text:string) =
         target.MouseLeave.Add(fun _ -> if not pinned then tip.Hide(target))
         target.KeyDown.Add(fun e -> if e.KeyCode=Keys.Escape then hide(); e.SuppressKeyPress <- true)
         target.VisibleChanged.Add(fun _ -> if not target.Visible then hide())
-        ThemeBinding.watch target hide
+        ThemeBinding.watch target (fun() -> hide(); updateTip())
         target.Disposed.Add(fun _ ->
             watcher.Dispose()
             tip.Dispose()
             popup |> Option.iter(fun window -> window.Dispose()))
+    member _.Enabled
+        with get() = offered
+        and set value =
+            if offered<>value then
+                offered <- value
+                if not value then hide()
+                updateTip()
     member _.Show() = show true
 
 /// Where a link goes, shown by a mark after its text: an arrow for the web, a folder for a file

@@ -134,10 +134,12 @@ let main () =
         transparent=true; appearance=appearance; hover=None; captured=None }
     for appearance in [Theme.light;Theme.dark] do
         for icons in [false;true] do
-            let badges = { ts with appearance=appearance;onlyIcons=icons;tabs=Map2(List2([1,{info "One" with numberBadge=Some 1};2,{info "Ten" with numberBadge=Some 10}])) }
+            let badges = { ts with appearance=appearance;onlyIcons=icons;tabs=Map2(List2([1,{info "One" with numberBadge=Some "1"};2,{info "Ten" with numberBadge=Some "A"}])) }
             let drawn = badges.sprite.children.list |> List.collect(fun (_,tab) -> tab.children.list) |> List.choose(fun (_,child) -> match child with :? NumberBadgeSprite as badge -> Some badge | _ -> None)
-            check (drawn.Length=1 && drawn.Head.number=1) "Badges missing or shown beyond nine"
+            check (drawn.Length=1 && drawn.Head.label="A") "Active tab hint was shown or inactive letter hint was missing"
             check (TextContrast.ratio (TextContrast.readable drawn.Head.foreground drawn.Head.background) drawn.Head.background >= 4.5) "Badge contrast too low"
+            check (drawn.Head.size.width>=TabMetrics.iconSide badges.appearance.tabHeight) "Selection hint is smaller than the app icon"
+            check (TextContrast.ratio drawn.Head.foreground drawn.Head.background=21.0) "Selection hints are not at full contrast"
             use bitmap = badges.render.bitmap
             check (bitmap.Width>0) "Badge render failed"
             bitmap.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "badges-%d-%b.png" appearance.tabNormalBgColor.R icons),ImageFormat.Png)

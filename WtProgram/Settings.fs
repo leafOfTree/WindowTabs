@@ -122,8 +122,8 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         // Development builds called the by-window mode "Rainbow".
                         tabColorMode = settingsJson.getString("tabColorMode").def("Off") |> (fun mode -> if mode="Rainbow" then "ByWindow" else mode) |> SettingsCatalog.normalizeChoice "tabColorMode"
                         tabColorStyle = settingsJson.getString("tabColorStyle").def("Fill") |> SettingsCatalog.normalizeChoice "tabColorStyle"
-                        numberShortcutPaths = Set2(settingsJson.getStringArray("numberShortcutPaths").def(List2()))
-                        numberShortcutAppMode = settingsJson.getString("numberShortcutAppMode").def("AllExcept") |> SettingsCatalog.normalizeChoice "numberShortcutAppMode"
+                        disabledNumberShortcutPaths = Set2(settingsJson.getStringArray("disabledNumberShortcutPaths").def(List2()))
+                        numberLeaderKeys = settingsJson.getString("numberLeaderKeys").def(SettingsCatalog.textDefault "numberLeaderKeys") |> NumberLeaderKeys.normalize
                         numberHotKeyModifier = settingsJson.getString("numberHotKeyModifier").def("Ctrl") |> SettingsCatalog.normalizeChoice "numberHotKeyModifier"
                         enableHoverActivate = settingsJson.getBool("enableHoverActivate").def(SettingsCatalog.toggleDefault "enableHoverActivate" hasExistingSettings)
                         // Older versions stored two toggles: minimalMode (every window) and autoHide (maximized only).
@@ -204,8 +204,8 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setObject("appTabColors",appColors)
             settingsJson.setString("tabColorMode",settings.tabColorMode)
             settingsJson.setString("tabColorStyle",settings.tabColorStyle)
-            settingsJson.setStringArray("numberShortcutPaths", settings.numberShortcutPaths.items)
-            settingsJson.setString("numberShortcutAppMode", settings.numberShortcutAppMode)
+            settingsJson.setStringArray("disabledNumberShortcutPaths", settings.disabledNumberShortcutPaths.items)
+            settingsJson.setString("numberLeaderKeys",settings.numberLeaderKeys)
             settingsJson.setString("numberHotKeyModifier", settings.numberHotKeyModifier)
             settingsJson.setBool("enableHoverActivate", settings.enableHoverActivate)
             settingsJson.setString("autoHideMode", settings.autoHideMode)
@@ -257,7 +257,8 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
         // Compatibility adapter for older callers; new appearance code uses the typed API.
         member x.setValue((key,value)) =
             let api = x :> ISettings
-            let value = if key="alignment" || key="language" || key="autoHideMode" || key="switcherStyle" || key="numberHotKeyModifier" || key="numberShortcutAppMode" || key="tabColorStyle" || key="tabColorMode" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
+            let value = if key="numberLeaderKeys" then box(NumberLeaderKeys.normalize (unbox value)) else value
+            let value = if key="alignment" || key="language" || key="autoHideMode" || key="switcherStyle" || key="numberHotKeyModifier" || key="tabColorStyle" || key="tabColorMode" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
             match key with
             | "tabAppearance" ->
                 let appearance = value :?> TabAppearanceInfo

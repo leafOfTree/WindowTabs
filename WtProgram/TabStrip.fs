@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 open System
 open System.Collections
 open System.Drawing
@@ -38,6 +38,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let transparentCell = Cell.create(true)
     let showInsideCell = Bemo.Cell<bool>(Cell, false, (=))
     let isInAltTabCell = Cell.create(false)
+    let numberBadgeKeysCell = Bemo.Cell<string>(Cell, SettingsCatalog.textDefault "numberLeaderKeys", (=))
     let numberBadgesCell = Bemo.Cell<bool>(Cell, false, (=))
     let iconOnlyCell = Cell.create(false)
     let alignmentMap = 
@@ -104,6 +105,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member _.setTabTint(tab,color) =
         if tabTint.value.tryFind(tab) <> color then tabTint.value <- match color with Some c -> tabTint.value.add tab c | None -> tabTint.value.remove tab
     member _.colorStyle with get() = colorStyleCell.value and set value = colorStyleCell.value <- value
+    member _.numberBadgeKeys with get() = numberBadgeKeysCell.value and set value = numberBadgeKeysCell.value <- value
     member _.numberBadges with get() = numberBadgesCell.value and set value = numberBadgesCell.value <- value
 
     member private this.inAltSwitch = isInAltTabCell.value
@@ -126,7 +128,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 let tabInfo = {
                     tint = tabTint.value.tryFind(tab)
                     colorStyle = colorStyleCell.value
-                    numberBadge = if numberBadgesCell.value then lorderCell.value.list |> List.tryFindIndex ((=) tab) |> Option.filter(fun i -> i<9) |> Option.map ((+) 1) else None
+                    numberBadge = if numberBadgesCell.value then lorderCell.value.list |> List.tryFindIndex ((=) tab) |> Option.filter(fun i -> i<numberBadgeKeysCell.value.Length) |> Option.map(fun i -> string numberBadgeKeysCell.value.[i]) else None
                     bgColor = tabBgColor.value.tryFind(tab)
                     TabDisplayInfo.text = ti.text
                     icon = ti.iconSmall

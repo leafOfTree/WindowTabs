@@ -12,12 +12,11 @@ type NumberLeaderState() =
         match armed with
         | Some(hwnd,deadline) when hwnd=foreground && now<deadline -> true
         | _ -> armed <- None; false
-    member this.key foreground now key count =
+    member this.key foreground now key count keys =
         if not (this.validate foreground now) then false,None
-        elif (key>=0x31 && key<=0x39) || (key>=0x61 && key<=0x69) then
+        elif (NumberLeaderKeys.index keys key).IsSome then
             armed <- None
-            let index = key-(if key>=0x61 then 0x61 else 0x31)
-            true,(if index<count then Some index else None)
+            true,(NumberLeaderKeys.index keys key |> Option.filter(fun index -> index<count))
         elif key=0x1B then armed <- None; true,None
         elif List.contains key [0x10;0x11;0x12;0xA0;0xA1;0xA2;0xA3;0xA4;0xA5] then false,None
         else armed <- None; false,None
@@ -48,6 +47,7 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
     let owned = new LifetimeScope(ignore)
     let mutable leaderCode = 1216
     let mutable leaderEnabled = false
+    let mutable leaderKeys = SettingsCatalog.textDefault "numberLeaderKeys"
     let mutable mouseHook = IntPtr.Zero
     let mutable cachedPath = (IntPtr.Zero, "")
     let pathFor hwnd =
@@ -79,7 +79,10 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
                 let info = group.cast<GroupInfo>()
                 leaderGroup <- Some info
                 leader.arm (WinUserApi.GetForegroundWindow()) DateTime.UtcNow
-                info.invokeGroup(fun() -> info.group.bb.write("numberBadges",true))
+                let keys = leaderKeys
+                info.invokeGroup(fun() ->
+                    info.group.bb.write("numberBadgeKeys",keys)
+                    info.group.bb.write("numberBadges",true))
                 timer.Start())
 
     member this.llHook nCode (wParam:IntPtr) lParam = 
@@ -118,7 +121,7 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
             let chordMatches = data.vkCode=(leaderCode &&& 0xFF) && controlPressed=((leaderCode &&& 0x200)<>0) && altPressed=((leaderCode &&& 0x400)<>0) && shiftPressed=((leaderCode &&& 0x100)<>0)
             let leaderConsumed,leaderTarget =
                 if down && not chordMatches then
-                    leader.key foregroundHwnd DateTime.UtcNow data.vkCode (foreground |> Option.map(fun g -> g.windows.length) |> Option.defaultValue 0)
+                    leader.key foregroundHwnd DateTime.UtcNow data.vkCode (foreground |> Option.map(fun g -> g.windows.length) |> Option.defaultValue 0) leaderKeys
                 else false,None
             if wasArmed && not leader.active then this.cancelLeader()
             let capturedLeader,_ = leaderCapture.handle(int key,data.vkCode,if leaderConsumed then Some 0 else None)
@@ -141,6 +144,8 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
         member x.init() =
             leaderCode <- Services.program.getHotKey "numberLeader"
             leaderEnabled <- Services.settings.getValue("enableNumberLeader") :?> bool
+            leaderKeys <- Services.settings.getValue("numberLeaderKeys") :?> string
+            owned.Own(Services.settings.notifyValue "numberLeaderKeys" (fun value -> leaderKeys <- unbox value; this.cancelLeader())) |> ignore
             owned.Own(Services.settings.notifyValue "hotKeys" (fun _ -> leaderCode <- Services.program.getHotKey "numberLeader"; this.cancelLeader())) |> ignore
             this.registerMouseLLHook()
             this.registerKeyboardLLHook()

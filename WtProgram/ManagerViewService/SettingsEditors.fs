@@ -8,6 +8,8 @@ open System.Windows.Forms
 [<RequireQualifiedAccess>]
 type SettingsButtonKind =
     | Standard
+    /// A compact secondary action, outlined against its parent rather than filled like an editor.
+    | Subtle
     /// The dialog's main action: filled with the accent colour.
     | Primary
     /// A destructive action: red text, filled red while pointed at.
@@ -49,7 +51,7 @@ type SettingsActionButton() as this =
         let p = SettingsColors.current()
         e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
         e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
-        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 8))
+        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale (if kind=SettingsButtonKind.Subtle then 3 else 8)))
         let highContrast = SystemInformation.HighContrast
         let light = not highContrast && not (ThemeService.currentIsDark())
         let hot = hovering && this.Enabled
@@ -74,6 +76,9 @@ type SettingsActionButton() as this =
             match kind with
             | _ when not this.Enabled -> let fill,border = neutral() in fill,border,p.disabledText
             | _ when pressed && highContrast -> SystemColors.Highlight,SystemColors.Highlight,SystemColors.HighlightText
+            | SettingsButtonKind.Subtle ->
+                let background = if isNull this.Parent then p.background else this.Parent.BackColor
+                (if pressed then p.selection elif hot then p.hover else background),p.border,(if hot || this.Focused then p.text else p.muted)
             | SettingsButtonKind.Primary ->
                 let accent = if highContrast then SystemColors.Highlight else hoverShade p.accent
                 accent,accent,(if highContrast then SystemColors.HighlightText else Color.White)
@@ -132,6 +137,9 @@ type SettingsTextInput(editor:Control) as this =
         | _ -> ()
         editor.Dock <- DockStyle.None
         this.Controls.Add(editor)
+        // Native text boxes can change their height when their font or HWND is realized.
+        editor.SizeChanged.Add(fun _ -> this.PerformLayout())
+        editor.HandleCreated.Add(fun _ -> this.PerformLayout())
         this.Layout.Add(fun _ ->
             editor.SetBounds(Dpi.scale 12,max 0 ((this.Height-editor.Height)/2),max 1 (this.Width-Dpi.scale 24),editor.Height))
 

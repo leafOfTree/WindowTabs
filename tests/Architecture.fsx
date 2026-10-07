@@ -327,17 +327,21 @@ let main() =
         check (api.getValue("tabColorMode")=box "ByWindow") "The development name for by-window colours was not carried over"
         api.root <- current
         let paths = Set2(List2([@"C:\Apps\Editor.exe"]))
-        for mode in ["AllExcept";"OnlyListed"] do
-            check (NumberShortcutRules.allows mode paths @"c:\apps\EDITOR.exe" = (mode="OnlyListed")) "Listed application rule must ignore path case"
-            check (NumberShortcutRules.allows mode paths @"C:\Other.exe" = (mode="AllExcept")) "Unlisted application rule inverted"
-        api.setValue("numberShortcutAppMode",box "OnlyListed")
-        api.setValue("numberShortcutPaths",box paths)
+        check (not (NumberShortcutRules.allows paths @"c:\apps\EDITOR.exe")) "Disabled application rule must ignore path case"
+        check (NumberShortcutRules.allows paths @"C:\Other.exe") "Unlisted applications must remain enabled"
+        api.setValue("disabledNumberShortcutPaths",box(Set2<string>()))
+        check (NumberShortcutRules.enabled @"C:\Apps\Editor.exe") "Number shortcuts must be enabled by default"
+        NumberShortcutRules.setEnabled @"C:\Apps\Editor.exe" false
+        check (not (NumberShortcutRules.enabled @"c:\apps\EDITOR.exe")) "Menu toggle did not disable the application"
+        NumberShortcutRules.setEnabled @"c:\apps\EDITOR.exe" true
+        check ((api.getValue("disabledNumberShortcutPaths") :?> Set2<string>).items.list.IsEmpty) "Re-enabling with different path case retained the disabled rule"
+        NumberShortcutRules.setEnabled @"C:\Apps\Editor.exe" false
         let reset = SettingsCatalog.resetRoot api.root false false
-        check (string reset.["numberShortcutAppMode"]="OnlyListed" && reset.["numberShortcutPaths"].HasValues) "Reset lost number shortcut rules"
+        check (reset.["disabledNumberShortcutPaths"].HasValues) "Reset lost disabled number shortcut rules"
         api.root <- reset
-        check (NumberShortcutRules.enabled @"C:\Apps\Editor.exe") "Number shortcut rules failed to round trip"
-        api.setValue("numberShortcutAppMode",box "AllExcept")
-        api.setValue("numberShortcutPaths",box(Set2<string>()))
+        check (not (NumberShortcutRules.enabled @"C:\Apps\Editor.exe")) "Disabled number shortcut rules failed to round trip"
+        check (not ((SettingsCatalog.resetRoot api.root true false).ContainsKey("disabledNumberShortcutPaths"))) "Clearing app rules retained number shortcut exclusions"
+        api.setValue("disabledNumberShortcutPaths",box(Set2<string>()))
         let capture = NumericShortcutCapture()
         check (not (NumericShortcutTarget.available [IntPtr(1)] (IntPtr(1)) 0)) "Current/only tab must pass through"
         check (NumericShortcutTarget.available [IntPtr(1);IntPtr(2)] (IntPtr(1)) 1) "Other tab must remain available"
@@ -355,8 +359,8 @@ let main() =
         api.setValue("enableCtrlNumberHotKey",box true)
         api.setValue("numberHotKeyModifier",box "Alt")
         check (altTarget WindowMessages.WM_SYSKEYDOWN false true=Some 0 && target WindowMessages.WM_KEYDOWN 0x31 true=None) "Alt mode did not replace Ctrl"
-        api.setValue("numberHotKeyModifier",box "Both")
-        check (altTarget WindowMessages.WM_SYSKEYDOWN false true=Some 0 && target WindowMessages.WM_KEYDOWN 0x31 true=Some 0) "Both mode must accept either modifier"
+        api.setValue("numberHotKeyModifier",box "Ctrl")
+        check (altTarget WindowMessages.WM_SYSKEYDOWN false true=None && target WindowMessages.WM_KEYDOWN 0x31 true=Some 0) "Ctrl mode did not replace Alt"
         check (altTarget WindowMessages.WM_SYSKEYDOWN true true=None && altTarget WindowMessages.WM_SYSKEYUP false true=None) "Numeric shortcut accepted Ctrl+Alt or Alt key-up"
         api.setValue("numberHotKeyModifier",box "invalid")
         check (api.getValue("numberHotKeyModifier") :?> string = "Ctrl") "Invalid numeric modifier must fall back to Ctrl"

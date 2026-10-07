@@ -25,9 +25,9 @@ type SettingsRec = {
     appTabColors: Map<string,string>
     tabColorMode: string
     tabColorStyle: string
+    numberLeaderKeys: string
     numberHotKeyModifier: string
-    numberShortcutAppMode: string
-    numberShortcutPaths: Set2<string>
+    disabledNumberShortcutPaths: Set2<string>
     combineIconsInTaskbar: bool
     enableHoverActivate: bool
     /// "Never", "Maximized" or "Always".

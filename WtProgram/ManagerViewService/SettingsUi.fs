@@ -258,6 +258,19 @@ module SettingsUi =
 
     let settingRow table id editor = settingRowControl table id editor |> ignore
 
+    /// Clickable suggestions below a setting's description, keeping its editor aligned with other rows.
+    let settingRowWithActions table id editor (actions:Control list) =
+        let row = settingRowControl table id editor
+        let labels = row.GetControlFromPosition(0,0) :?> TableLayoutPanel
+        let height = actions |> List.fold(fun height action -> max height (action.Height+action.Margin.Vertical)) 0
+        let buttons = new FlowLayoutPanel(Height=height,Dock=DockStyle.Fill,WrapContents=false,
+                                         Margin=Padding(0,Dpi.scale 4,0,0))
+        for action in actions do buttons.Controls.Add(action)
+        let index = labels.RowCount
+        labels.RowCount <- index+1
+        labels.RowStyles.Add(RowStyle(SizeType.Absolute,float32(height+buttons.Margin.Vertical))) |> ignore
+        labels.Controls.Add(buttons,0,index)
+        row
     /// Keep dependent settings inset while their editors stay aligned on the right.
     let indentDependentRow (row:SettingsRow) =
         let padding = row.Padding
