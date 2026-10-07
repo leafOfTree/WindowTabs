@@ -174,6 +174,10 @@ Pull requests trigger **build** and **hosted desktop E2E** checks. Merge only wh
 both pass on the **latest PR commit**. Build checks include Release compilation,
 regression tests with at least 50% line and branch coverage, and Release smoke tests.
 
+This project uses AI-assisted development. AI-assisted contributions are welcome.
+Please make sure you understand the changes, can explain what they do and why,
+and have tested them.
+
 Maintainers: [publish a release from a version tag](docs/releasing.md).
 
 ## Credits and license
