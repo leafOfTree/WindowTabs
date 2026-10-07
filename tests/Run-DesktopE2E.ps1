@@ -25,9 +25,11 @@ if (-not $BuildOnly -and (Get-Process WindowTabs -ErrorAction SilentlyContinue))
 $stage = Join-Path $PSScriptRoot ('Debug/desktop-e2e-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 if ($env:GITHUB_OUTPUT) { Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "stage=$stage" }
-dotnet build (Join-Path $repo 'WindowTabs.sln') -c Release -v:minimal
+# Avoid replacing the developer's running Release executable during a compile-only check.
+$taskE2EBuild = Join-Path $stage 'build'
+dotnet build (Join-Path $repo 'WindowTabs.sln') -c Release "-p:OutDir=$taskE2EBuild/" -v:minimal
 if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
-Copy-Item -LiteralPath (Join-Path $repo 'WtProgram/bin/Release/WindowTabs.exe') -Destination $stage
+Copy-Item -LiteralPath (Join-Path $taskE2EBuild 'WindowTabs.exe') -Destination $stage
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319/csc.exe'
 $hostExe = Join-Path $stage 'DesktopE2E.exe'
 & $compiler /nologo /target:exe /platform:x86 "/out:$hostExe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll "/win32manifest:$repo/WtProgram/app.manifest" (Join-Path $PSScriptRoot 'DesktopE2E.cs')

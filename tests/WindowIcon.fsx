@@ -181,7 +181,7 @@ let main () =
         let handle = source.GetHicon()
         try
             use icon = Icon.FromHandle(handle)
-            let sprite : IconSprite = { icon=icon; size=Sz(20,20) }
+            let sprite : IconSprite = { icon=icon; size=Sz(20,20); opacity=1.0f }
             use rendered = (sprite :> ISprite).image.bitmap
             let pixel = rendered.GetPixel(17,17)
             check (pixel.A > 0uy && pixel.R > 200uy) "Large icon was cropped instead of scaled"
