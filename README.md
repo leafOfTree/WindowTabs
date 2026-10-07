@@ -8,7 +8,11 @@ Browser-style tabs for every window on your Windows desktop.
 [![Build](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml/badge.svg)](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml)
 
 <p>
-<img alt="screenshot" src="https://raw.githubusercontent.com/leafOfTree/leafOfTree.github.io/master/WindowTabs-example.png" width="560" style="border-radius: 8px" />
+<img alt="File Explorer windows grouped with WindowTabs" src="docs/images/windowtabs-example.png" width="800" />
+</p>
+
+<p>
+<img alt="WindowTabs appearance settings and tab preview in dark mode" src="docs/images/settings-appearance.png" width="800" />
 </p>
 
 Drag one window onto another and they become tabs of a single window: they move, resize,
@@ -63,8 +67,8 @@ Requires Windows 10 or 11 with .NET Framework 4.8, which is built in from Window
    and put it anywhere.
 2. Run it. WindowTabs lives in the system tray.
 
-Open **Settings** from the tray icon or by right-clicking any tab. Turn on *Start with Windows*
-under General to have it ready after you sign in.
+Open **Settings** from the tray icon or by right-clicking any tab. *Start with Windows*
+is enabled by default for new installations; change it under General if needed.
 
 ## Default shortcuts
 
@@ -73,8 +77,8 @@ under General to have it ready after you sign in.
 | Next tab | Ctrl + Alt + → |
 | Previous tab | Ctrl + Alt + ← |
 | Go to tab 1–9 | Ctrl + 1–9 (or choose Alt + 1–9) |
-| Start tab selection | Alt + S, then a selection key within three seconds |
-| Search tabs | Alt + Space |
+| Start tab selection | Off by default; enable Alt + S, then press a selection key |
+| Search tabs | Ctrl + Alt + T |
 | Open new tab | Ctrl + Alt + N |
 | Switch tabs with the mouse | Shift + scroll over a grouped window, or scroll over the tabs |
 
