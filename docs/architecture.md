@@ -239,8 +239,9 @@ and Escape capture matching releases; other keys cancel and pass through. Mouse
 buttons, foreground changes and timeout cancel the leader. Fresh installs enable
 the leader; existing settings without its toggle leave it disabled.
 
-The palette has 16 colours: eight main ones, then eight more that by-window colours use
-only once the main ones are taken in the group and by-app colours hash over all sixteen.
+The palette has 16 colours: seven main colours, eight extra colours, then grey.
+By-window allocation and the menu use this order; stored indices stay unchanged.
+By-app colours retain their stable hash over all sixteen.
 WindowTabColors is owned by the main STA. By-window indices and per-window overrides
 stay with the HWND across group transfers and are removed when it is destroyed.
 App colours keep their path, match it ignoring case and survive settings reset with

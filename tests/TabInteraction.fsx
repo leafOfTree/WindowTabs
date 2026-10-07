@@ -24,8 +24,11 @@ let main() =
         use settings = new Settings(true,saveDelay=0)
         let api = settings :> ISettings
         check (Theme.leastUsedColor [0;1;2;0;3]=4) "By-window allocation did not balance colours"
-        check (Theme.leastUsedColor [0..7]=8) "The ninth window did not move on to the second eight colours"
-        check (Theme.leastUsedColor [0..15]=0) "The seventeenth window did not start the palette again"
+        check (Theme.tabColorOrder.Head=1 && List.last Theme.tabColorOrder=0 && (Theme.tabColorOrder |> List.sort)=[0..15]) "Colour menu must start with blue, end with grey and retain every stored index"
+        check (Theme.leastUsedColor []=1) "The first window must use blue rather than grey"
+        check (Theme.leastUsedColor [1..7]=8) "The eighth window did not move on to the extra colours"
+        check (Theme.leastUsedColor [1..15]=0) "Grey must only be used after every coloured choice"
+        check (Theme.leastUsedColor [0..15]=1) "The seventeenth window did not start the palette again"
         check ([for c in 'a'..'z' -> Theme.appColorIndex (string c + ".exe")] |> List.forall(fun index -> index>=0 && index<Theme.tabPaletteSize)) "App colour fell outside the palette"
         check (([for c in 'a'..'z' -> Theme.appColorIndex (string c + ".exe")] |> List.distinct).Length>8) "App colours did not use the second eight"
         check (Theme.appColorIndex "Editor.exe"=Theme.appColorIndex "EDITOR.EXE") "App colour hash changed with case"

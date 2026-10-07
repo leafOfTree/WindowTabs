@@ -1,4 +1,4 @@
-﻿namespace Bemo
+namespace Bemo
 
 open System
 open System.Drawing
@@ -27,14 +27,15 @@ module Theme =
                     tabBorderColor=Color.FromRGB(0x747474)
                     tabFlashBgColor=Color.FromRGB(0x772222) }
 
-    /// Eight main colours, then eight more used once those are taken, each further from the
-    /// colours before it than the ones after: orange, lavender, olive, rose, lime, navy, teal, coral.
+    /// Stable stored indices; menu and allocation priority live in tabColorOrder.
     let tabPalette dark =
         (if dark then [|0x9AA0A6;0x8AB4F8;0xF28B82;0xFDD663;0x81C995;0xFF8BCB;0xC58AF9;0x78D9EC
                         0xFCAD70;0xD1C4E9;0xDCE775;0xF8BBD0;0xC5E1A5;0x7986CB;0x80CBC4;0xFFAB91|]
          else [|0x70757A;0x1A73E8;0xD93025;0xE8A200;0x188038;0xD01884;0x8430CE;0x008B9A
                 0xE8710A;0x7E57C2;0x827717;0xC2185B;0x7CB342;0x1A237E;0x00796B;0xE64A19|]) |> Array.map Color.FromRGB
     let tabPaletteSize = 16
+    /// Display and allocation order; stored indices keep their original colour meanings.
+    let tabColorOrder = [1..tabPaletteSize-1] @ [0]
     /// Whether a bar takes the lighter tints. Decided by the bar rather than the theme: a
     /// custom palette can put a dark bar in the light theme. 0.179 is where black and white
     /// text are equally readable.
@@ -65,8 +66,8 @@ module Theme =
     let leastUsedColor indices =
         let counts = Array.zeroCreate tabPaletteSize
         for index in indices do if index>=0 && index<tabPaletteSize then counts.[index] <- counts.[index]+1
-        // Ties go to the earlier colour, so the main eight come first.
-        [0..tabPaletteSize-1] |> List.minBy(fun index -> counts.[index],index)
+        // Exhaust the coloured choices before grey, then repeat in the same order.
+        tabColorOrder |> List.mapi(fun rank index -> rank,index) |> List.minBy(fun (rank,index) -> counts.[index],rank) |> snd
     let blend amount (tint:Color) (background:Color) =
         let channel a b = int(Math.Round(float b + (float a-float b)*amount))
         Color.FromArgb(255,channel tint.R background.R,channel tint.G background.G,channel tint.B background.B)
