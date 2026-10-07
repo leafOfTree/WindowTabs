@@ -45,12 +45,15 @@ try {
     dotnet build WtProgram\WtProgram.fsproj -c Debug "-p:OutDir=$output" -v:minimal -nologo
     if ($LASTEXITCODE -ne 0) { throw 'Regression build failed.' }
     $names = $Suites
+    # Every host uses the same packages; restore once before compiling the separate suites.
+    dotnet restore tests\TestHost.fsproj "-p:TestName=$($names[0])" -v:quiet -nologo
+    if ($LASTEXITCODE -ne 0) { throw 'Test host restore failed.' }
     if ('PrintWindowProbe' -in $names -or 'GroupOperations' -in $names) {
-        dotnet build tests\TestHost.fsproj '-p:TestName=PrintWindowHelper' -v:quiet -nologo -clp:NoSummary
+        dotnet build tests\TestHost.fsproj --no-restore '-p:TestName=PrintWindowHelper' -v:quiet -nologo -clp:NoSummary
         if ($LASTEXITCODE -ne 0) { throw 'PrintWindow helper compilation failed.' }
     }
     foreach ($name in $names) {
-        dotnet build tests\TestHost.fsproj "-p:TestName=$name" -v:quiet -nologo -clp:NoSummary
+        dotnet build tests\TestHost.fsproj --no-restore "-p:TestName=$name" -v:quiet -nologo -clp:NoSummary
         if ($LASTEXITCODE -ne 0) { throw "$name compilation failed." }
     }
     # TestInit.run supplies the real WinForms message loop required by popup menus.

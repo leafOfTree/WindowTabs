@@ -16,6 +16,13 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.fsproj', '**/*.csproj', 'dotnet-tools.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
       # The SDK-style projects target .NET Framework 4.8 and restore their NuGet
       # packages; the Release configuration static-links them into a single exe.
       - name: Build Release
@@ -32,7 +39,7 @@ jobs:
       # Real input runs separately on an unlocked interactive desktop.
       - name: Compile desktop E2E harness
         shell: powershell
-        run: ./tests/Run-DesktopE2E.ps1 -BuildOnly
+        run: ./tests/Run-DesktopE2E.ps1 -BuildOnly -ReleaseExecutable ./WtProgram/bin/Release/WindowTabs.exe
 
       - name: Upload regression diagnostics
         if: always()

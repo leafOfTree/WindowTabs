@@ -69,6 +69,15 @@ logs are named separately from the normal smoke logs.
 It does **not** run the application's entry point or verify grouping, tray menus,
 dragging, shortcuts or user settings. Those need a separate end-to-end harness.
 
+## CI execution time
+
+CI caches downloaded NuGet packages, restores the shared test-host dependencies
+once, and reuses the current job's Release exe when compiling the desktop driver.
+Interactive desktop E2E still builds its own isolated Release copy. Native suites
+remain serial, with every suite and the 50% line/branch coverage floors retained.
+The first cache miss still downloads dependencies; compare warm runs when measuring
+the improvement.
+
 ## Remaining coverage plan
 
 The separate [desktop E2E suite](desktop-e2e.md) exercises the actual Release
