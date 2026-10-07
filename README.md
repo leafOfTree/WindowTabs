@@ -1,173 +1,191 @@
-<img src="https://raw.githubusercontent.com/leafOfTree/leafOfTree.github.io/master/windowtabs.png" width="60" height="60" alt="icon" align="left"/>
+<img src="https://raw.githubusercontent.com/leafOfTree/leafOfTree.github.io/master/windowtabs.png" width="60" height="60" alt="WindowTabs icon" align="left"/>
 
 # WindowTabs
 
-Browser-style tabs for every window on your Windows desktop.
+Browser-style tabs for your Windows desktop. Group separate windows into one tabbed
+window, even when they belong to different apps.
 
 [![Downloads](https://img.shields.io/github/downloads/leafoftree/windowtabs/total)](https://github.com/leafOfTree/WindowTabs/releases)
 [![Build](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml/badge.svg)](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml)
 
-<p>
-<img alt="File Explorer windows grouped with WindowTabs" src="docs/images/windowtabs-example.png" width="800" />
-</p>
+[Download](https://github.com/leafOfTree/WindowTabs/releases/latest) ·
+[Getting started](#install-and-get-started) · [Shortcuts](#keyboard-and-mouse) ·
+[What's changed](CHANGELOG.md)
 
-<p>
-<img alt="WindowTabs appearance settings and tab preview in dark mode" src="docs/images/settings-appearance.png" width="800" />
-</p>
+**Light tabs**
 
-Drag one window onto another and they become tabs of a single window: they move, resize,
-minimize and restore together, and you switch between them the way you switch browser tabs.
-It works with any app, from File Explorer and terminals to editors and Office.
+<img src="docs/images/windowtabs-light.png" width="900" alt="Light WindowTabs tabs grouping four File Explorer windows for public folders" />
 
-## Features
+**Dark tabs**
 
-**Tabs for any app**
+<img src="docs/images/windowtabs-dark.png" width="900" alt="Dark WindowTabs tabs grouping the same four File Explorer windows" />
 
-- Group windows by dragging a tab onto another window's tabs; drag it away to split it off.
-- Auto-group new windows of the apps you choose, or keep tabs off for apps that should stay alone.
-- Rename a tab, show icons only, open a new tab of the same app, close others or close all.
-- When the active tab closes, the next one is selected like in a browser.
+WindowTabs themes apply to the tab bar and Settings; your apps keep their own theme.
+These screenshots and instructions describe the upcoming modernization release.
+See [the changelog](CHANGELOG.md) for changes since v2025.06.30.
 
-**Looks at home on Windows 10 and 11**
+## Install and get started
 
-- Light, dark or follow-Windows theme, with nine colour presets or your own colours.
-- Joined, folder or floating tab styles; adjustable height, width, spacing and margins.
-- Tabs on the left, centre or right of the title bar, kept clear of the caption buttons.
-- Auto-hide to a thin strip on maximized windows (or always), shown again on hover or briefly after switching.
-- Crowded groups fall back to icon-only tabs with a minimum width; flashing windows show up on their tab.
-- Colour tabs by window or app, as fills or stripes; choose a colour from the tab menu and optionally remember it for that app.
-- Sixteen tab colours follow the light or dark theme; custom colours are supported too.
-- Sharp at any scaling: per-monitor DPI aware.
+You need **Windows 10 or 11** and **.NET Framework 4.8**. There is no installer;
+the release download is a single `WindowTabs.exe`. You do not need Visual Studio or
+the .NET SDK to use it.
 
-**Fast to drive from the keyboard and mouse**
+1. Open [Releases](https://github.com/leafOfTree/WindowTabs/releases/latest) and download
+   **WindowTabs.exe** from **Assets**.
+2. Put it in a folder you plan to keep, such as `C:\Tools\WindowTabs`, then run it.
+   WindowTabs stays in the system tray; check the tray's hidden icons if needed.
+3. Open two separate File Explorer windows (**Ctrl + N** opens another window).
+   WindowTabs adds a tab bar to eligible desktop windows.
+4. **Drag one WindowTabs tab onto the other window's tab bar** to group them.
+   Click a tab to switch. The grouped windows move, resize, minimize and restore together.
+5. **Drag a tab away from the group** to separate that window again.
 
-- Switch tabs with Ctrl + 1–9 (or choose Alt + 1–9), with Shift + scroll, or by hovering.
-- Press a leader key, then a selection key to jump to a tab. Selection keys are customizable, with one-click number and keyboard-row presets.
-- Disable direct number shortcuts for individual apps from the tab menu.
-- Search all tabs by title or app name and jump straight to one.
-- An optional Alt+Tab replacement, as a row of large icons or a list with full titles, that can show each group as one item.
+You can also group windows from different apps. WindowTabs groups desktop windows;
+tabs built into File Explorer or a browser remain inside their own window.
 
-**Workspaces**
+Right-click a tab or the tray icon and choose **Settings**. On a fresh installation,
+**Start with Windows** is enabled under **General**, so the app is ready after sign-in.
+To stop WindowTabs, choose **Exit** from its tray menu; your application windows stay open.
 
-- Save the current window groups and positions, then restore them later in one click.
-- Open windows are matched by title: exact, starts with, ends with, contains or a regular expression.
+## Make it yours
 
-**Easy to set up and to support**
+Start with the tab's right-click menu for changes to a window or app:
 
-- A searchable Settings window in English, 中文 and 日本語.
-- Taskbar icons can be combined per group.
-- Portable mode, settings export/import and reset to defaults.
-- A crash log and a privacy-safe troubleshooting report to attach to issues.
+- **Rename tab**, choose a **Tab color**, or **Show icons only**.
+- Turn off **Enable tabs for …** for an app that should keep its own windows.
+- Enable **auto-grouping** for an app to put its new windows together automatically.
+- Turn off **number shortcuts** for an app whose own Ctrl + number keys you use.
+- Choose tab alignment or auto-hide behavior for the group.
 
-## Get started
+Use Settings for the overall look and behavior. Its search box takes you directly
+to a setting, and the language picker supports English, 中文 and 日本語.
 
-Requires Windows 10 or 11 with .NET Framework 4.8, which is built in from Windows 10 version 1903.
-
-1. Download `WindowTabs.exe` from [Releases](https://github.com/leafOfTree/WindowTabs/releases)
-   and put it anywhere.
-2. Run it. WindowTabs lives in the system tray.
-
-Open **Settings** from the tray icon or by right-clicking any tab. *Start with Windows*
-is enabled by default for new installations; change it under General if needed.
-
-## Default shortcuts
-
-| Action | Shortcut |
+| Page | What you can change |
 | --- | --- |
-| Next tab | Ctrl + Alt + → |
-| Previous tab | Ctrl + Alt + ← |
-| Go to tab 1–9 | Ctrl + 1–9 (or choose Alt + 1–9) |
-| Start tab selection | Off by default; enable Alt + S, then press a selection key |
-| Search tabs | Ctrl + Alt + T |
-| Open new tab | Ctrl + Alt + N |
-| Switch tabs with the mouse | Shift + scroll over a grouped window, or scroll over the tabs |
+| General | Startup, alignment, auto-hide, taskbar grouping and the optional Alt+Tab switcher |
+| Appearance | Light/dark/system theme, tab style, colors, sizes and spacing |
+| Shortcuts | Keyboard combinations, leader selection and mouse switching |
+| App rules | Which apps get tabs and automatic grouping |
+| Workspaces | Saved groups and window positions |
+| Support | Settings backup, reset, release links, crash log and troubleshooting report |
 
-Every shortcut can be changed or turned off under Settings › Shortcuts.
+<img src="docs/images/settings-appearance.png" width="800" alt="WindowTabs Appearance settings with theme choices, a tab preview and color controls" />
 
-Leader selection defaults to `123456789`; choose `QWERTYUIOP` or `ASDFGHJKL;`, or enter
-your own unique letters, digits or supported punctuation. Hints appear on inactive tabs,
-in tab order; the active tab keeps its position without showing a hint. Escape cancels.
-Valid edits save automatically.
+**Tabs hide when maximized by default.** Move the pointer to the top edge to reveal
+them; they also appear briefly after switching. Change **General → Auto-hide tabs**
+to **Never** if you prefer to keep them visible.
 
-## Settings and portable mode
+Appearance includes **Joined**, **Folder** and **Floating** styles, color presets
+and custom palettes. You can also assign colors automatically by window or app,
+using a full tab fill or a thin stripe. Automatic colors, leader selection, hover
+switching and the Alt+Tab replacement are off by default.
 
-Settings are saved in `%AppData%\WindowTabs\WindowTabsSettings.json`. To run portably, put a
-`WindowTabsSettings.json` next to `WindowTabs.exe` and WindowTabs uses that file instead.
-Settings › Support › Settings file shows which file is in use and can export, import or reset it.
+## Keyboard and mouse
 
-Settings from older versions (`WindowTabsSettings.txt`) are read when no `.json` file exists yet
-and are left untouched.
+These are defaults for a new installation. Existing custom shortcuts are retained.
+
+| Action | Default |
+| --- | --- |
+| Next tab in the current group | Ctrl + Alt + → |
+| Previous tab in the current group | Ctrl + Alt + ← |
+| Search tabs by title or app | Ctrl + Alt + T |
+| Open another window of the current tab's app | Ctrl + Alt + N |
+| Select tab 1–9 in the current group | Ctrl + 1–9 |
+| Switch tabs with the mouse | Scroll over the tab bar, or Shift + scroll over a grouped window |
+| Leader selection | Off; when enabled, Alt + S followed by a selection key |
+
+Change or clear keyboard shortcuts in **Settings → Shortcuts**. Direct number
+shortcuts can use **Ctrl** or **Alt**; disable them for individual apps from the
+tab menu if they conflict with that app.
+
+For leader selection, enable **Use a leader key to select tabs**. Press **Alt + S**
+and then the key shown on the tab you want. Choose `123456789`, `QWERTYUIOP`,
+`ASDFGHJKL;`, or enter your own key sequence. Keys follow tab order; the active tab
+keeps its position but has no badge. **Esc** cancels selection.
+
+The optional Alt+Tab switcher offers icon and list views, and can show each group
+as one item. Enable it under **General** if you want to replace Windows' switcher.
+
+## Save a workspace
+
+In **Settings → Workspaces**, save your current groups and positions. To restore
+one later, open the apps you need first, select the saved workspace and choose
+**Restore**. WindowTabs regroups matching open windows; it does not relaunch apps
+or reopen their documents.
+
+Title matching supports exact text, starts with, ends with, contains and regular
+expressions, so a workspace can match windows whose titles change.
+
+## Settings, portable use and updates
+
+Changes save automatically. Settings normally live in
+`%AppData%\WindowTabs\WindowTabsSettings.json`. **Support → Settings file** shows
+the location in use and provides export, import and reset.
+
+To use portable mode, export your settings as `WindowTabsSettings.json` beside
+`WindowTabs.exe`, then restart. WindowTabs uses that file instead of the AppData
+copy. Keep both files together when moving the app.
+
+To update, download the new exe, **exit WindowTabs from the tray**, replace the old
+exe and run it again. Keep your settings file. Older `WindowTabsSettings.txt`
+settings are read when no JSON file exists and the original file is left untouched.
+Click the version number in Settings to **Check Releases**; updates are installed
+manually.
 
 ## Troubleshooting
 
-- If something goes wrong, WindowTabs writes `WindowTabsCrash.log` next to `WindowTabs.exe`, or to
-  `%AppData%\WindowTabs` when that folder is read-only. A tray notification tells you when it
-  kept running after an error.
-- Settings › Support opens the crash log and copies a troubleshooting report. The report contains
-  no window titles, file paths or other personal information, so it is safe to paste into an
-  [issue](https://github.com/leafOfTree/WindowTabs/issues).
+- **No tabs on a window?** Check **App rules** to make sure tabs are enabled for
+  its app. Dialogs, tool windows and some special windows are excluded.
+- **Tabs disappeared after maximizing?** Reveal them at the top edge, or choose
+  **General → Auto-hide tabs → Never**.
+- **A shortcut conflicts with another app?** Change or clear it under
+  **Shortcuts**. For Ctrl/Alt + number conflicts, use the tab menu's per-app option.
+- **Something crashed?** Open **Settings → Support → Crash log**. Logs are written
+  beside the exe, or to `%AppData%\WindowTabs` if that folder is read-only.
 
-## Build from source
+For help, [open an issue](https://github.com/leafOfTree/WindowTabs/issues) with steps
+to reproduce the problem. Support can copy a troubleshooting report without window
+titles, file paths or other personal information. Review screenshots and crash logs
+for private content before sharing them.
 
-You need the [.NET SDK](https://dotnet.microsoft.com/download) (tested with 10.0), or Visual Studio
-2022/2026 with the *.NET desktop development* workload.
+## Build and contribute
+
+WindowTabs is an F# WinForms app on .NET Framework 4.8. Building requires the
+[.NET SDK](https://dotnet.microsoft.com/download) (tested with 10.0), or Visual Studio
+2022/2026 with the **.NET desktop development** workload.
 
 ```powershell
 git clone https://github.com/leafOfTree/WindowTabs
 cd WindowTabs
-dotnet build WindowTabs.sln -c Release    # single exe: WtProgram\bin\Release\WindowTabs.exe
-dotnet build WindowTabs.sln               # debug build: WtProgram\bin\Debug\WindowTabs.exe
+dotnet build WindowTabs.sln -c Release
 ```
 
-Run the regression suites (they open real windows, so use an interactive desktop):
+The standalone exe is `WtProgram\bin\Release\WindowTabs.exe`. Exit a running copy
+before rebuilding its output. To run the regression suites on an interactive Windows
+desktop:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-Tests.ps1
 ```
 
-Exit a running WindowTabs from the tray before building, since it locks the output file.
+Before changing code, read [AGENTS.md](AGENTS.md), [architecture](docs/architecture.md),
+[testing](docs/testing.md), [settings](docs/settings-architecture.md) and
+[performance](docs/performance.md). Run native UI suites serially. Desktop E2E takes
+over real input; see [the desktop E2E guide](docs/desktop-e2e.md) before running it.
 
-## Publishing a release
+Pull requests trigger **build** and **hosted desktop E2E** checks. Merge only when
+both pass on the **latest PR commit**. Build checks include Release compilation,
+regression suites with 50% line/branch coverage floors, and Release smoke tests.
+The modernization PR should describe the full runtime, UI, interop, tooling, test
+and documentation scope, rather than only the most recent UI changes.
 
-After merging a PR whose checks passed, tag the merged commit and push the tag:
+Maintainers: [publish a release from a version tag](docs/releasing.md).
 
-```powershell
-git switch master
-git pull --ff-only
-git tag v2026.10.07
-git push origin v2026.10.07
-```
+## Credits and license
 
-Use the desired release version in place of the example. A `vMAJOR.MINOR.PATCH` tag
-(optionally with a suffix such as `-beta.1`) automatically triggers the release workflow.
-It builds the standalone exe, runs regression and Release smoke tests, and creates a
-GitHub Release draft with the exe and generated notes only after the checks pass.
-The tag version also appears in the app's Settings window and diagnostic reports.
-Review and publish the draft on GitHub; tags with a suffix produce prerelease drafts.
-
-## Contributing
-
-Issues and pull requests are welcome; [open issues](https://github.com/leafOfTree/WindowTabs/issues?q=is%3Aissue%20state%3Aopen)
-are a good place to start. Before changing code, read:
-
-- [AGENTS.md](AGENTS.md): layout, build and the project's rules on threads, text, settings, DPI and theme.
-- [docs/architecture.md](docs/architecture.md), [docs/testing.md](docs/testing.md),
-  [docs/settings-architecture.md](docs/settings-architecture.md) and [docs/performance.md](docs/performance.md).
-
-Pull requests automatically run the build workflow (Release build, regression tests with
-50% line / 50% branch coverage floors, and Release smoke checks) and hosted Quick desktop
-E2E. Merge only after both workflows pass for the latest PR commit.
-
-WindowTabs is written in F# with WinForms on .NET Framework 4.8. User-visible text is
-translated into English, Chinese and Japanese.
-
-## Credits
-
-WindowTabs was created by Maurice Flanagan in 2009 and later open-sourced
-([mauricef/WindowTabs](https://github.com/mauricef/WindowTabs)). This project continues from the
-forks by [redgis](https://github.com/redgis/WindowTabs) and
+Created by Maurice Flanagan in 2009 and later open-sourced as
+[mauricef/WindowTabs](https://github.com/mauricef/WindowTabs). This project continues
+the work of [redgis](https://github.com/redgis/WindowTabs) and
 [payaneco](https://github.com/payaneco/WindowTabs).
 
-## License
-
-[MIT](LICENSE)
+[MIT license](LICENSE).
