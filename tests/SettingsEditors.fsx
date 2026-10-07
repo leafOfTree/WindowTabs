@@ -301,6 +301,7 @@ let main() =
         Application.DoEvents()
         let next = view.control.Controls.Find("next-tab",true).[0] :?> SettingsShortcutInput
         let previous = view.control.Controls.Find("previous-tab",true).[0] :?> SettingsShortcutInput
+        assertTrue (tr Strings.Settings.numberShortcutCtrl="Ctrl" && tr Strings.Settings.numberShortcutAlt="Alt") "Modifier choices repeat the number shortcut instead of naming only the modifier"
         let leaderToggle = view.control.Controls.Find("enable-number-leader",true).[0] :?> SettingsToggle
         let leaderKeys = view.control.Controls.Find("leader-keys",true).[0] :?> SettingsTextInput
         assertTrue (leaderKeys.Width=Dpi.scale 140) "Selection-key input does not align with 140px dropdowns"

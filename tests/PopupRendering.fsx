@@ -117,6 +117,9 @@ let main() =
                 popupPaint.AssignHandle(popup.Handle)
                 popup.Show(owner,Point.Empty)
                 check (popupPaint.Paints>0) "Dropdown returned from Show without painting"
+                if not SystemInformation.HighContrast && SystemInformation.IsDropShadowEnabled && not SystemInformation.TerminalServerSession then
+                    check ((WinUserApi.GetClassLong(popup.Handle,-26).ToInt64() &&& int64 ClassStyles.CS_DROPSHADOW)<>0L)
+                          "Dropdown HWND has no native shadow to separate overlapping controls"
                 check (composited popup) "Dropdown children are not composited together"
                 assertTheme()
                 popup.Refresh()

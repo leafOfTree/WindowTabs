@@ -909,7 +909,7 @@ type SettingsChoicePopup() as this =
         this.AutoClose <- true
         this.AutoSize <- false
         this.Padding <- Padding(Dpi.scale 6)
-        this.DropShadowEnabled <- false
+        this.DropShadowEnabled <- not SystemInformation.HighContrast
     override this.OnOpened(e) =
         // Finish the first themed paint before returning to other UI work.
         this.Refresh()
