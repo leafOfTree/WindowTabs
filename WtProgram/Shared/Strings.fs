@@ -22,6 +22,7 @@ module Strings =
         let never = { en="Never"; zh="从不"; ja="しない" }
         let whenMaximized = { en="When maximized"; zh="最大化时"; ja="最大化時" }
         let always = { en="Always"; zh="始终"; ja="常に" }
+        let selectedChoice (name:LocalizedText) = { en=name.en+"  ✓"; zh=name.zh+"  ✓"; ja=name.ja+"  ✓" }
         let operationFailed = { en="Operation failed"; zh="操作失败"; ja="操作に失敗しました" }
 
     module Messages =

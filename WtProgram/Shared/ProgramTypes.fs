@@ -97,7 +97,7 @@ type IProgram =
     abstract member getWindowNameOverride : IntPtr -> Option<string>
     abstract member getTabColorOverride : IntPtr -> TabColorChoice option
     abstract member setTabColorOverride : (IntPtr * TabColorChoice option) -> unit
-    abstract member getTabColor : IntPtr -> TabColorChoice option
+    abstract member getTabColor : IntPtr * IntPtr list -> TabColorChoice option
     abstract member appWindows : List2<IntPtr>
     abstract member getAutoGroupingEnabled : string -> bool
     abstract member setAutoGroupingEnabled : string -> bool -> unit

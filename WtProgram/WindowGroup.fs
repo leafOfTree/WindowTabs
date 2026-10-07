@@ -418,8 +418,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     /// Asks the main thread, so only for a new tab or a changed colour; titles change far more often.
     member private this.fetchTabColor hwnd =
+        let order = this.lorder.list
+        let peers = if List.contains hwnd order then order else order @ [hwnd]
         tabColors <-
-            match Services.program.getTabColor hwnd with
+            match Services.program.getTabColor(hwnd,peers) with
             | Some color -> tabColors.Add(hwnd,color)
             | None -> tabColors.Remove hwnd
 
@@ -697,6 +699,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
 
             this.ts.addTab(Tab(hwnd))
+            this.refreshTabColors()
             // Only a window that opens in the foreground has an opener. Windows found at
             // startup or dropped in the background then close like any other tab.
             let foreground = this.os.foreground.hwnd
