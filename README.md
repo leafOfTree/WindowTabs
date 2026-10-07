@@ -151,7 +151,7 @@ are a good place to start. Before changing code, read:
   [docs/settings-architecture.md](docs/settings-architecture.md) and [docs/performance.md](docs/performance.md).
 
 Pull requests automatically run the build workflow (Release build, regression tests with
-45% line / 40% branch coverage floors, and Release smoke checks) and hosted Quick desktop
+50% line / 50% branch coverage floors, and Release smoke checks) and hosted Quick desktop
 E2E. Merge only after both workflows pass for the latest PR commit.
 
 WindowTabs is written in F# with WinForms on .NET Framework 4.8. User-visible text is

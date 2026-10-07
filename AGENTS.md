@@ -22,7 +22,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
 - Desktop E2E (`tests/Run-DesktopE2E.ps1`) drives real input and takes over the
   desktop; only run it when asked. See [docs/desktop-e2e.md](docs/desktop-e2e.md).
 - CI (`.github/workflows/build.yml`) builds Release, runs the suites with coverage
-  floors (45% lines / 40% branches) and the Release smoke test.
+  floors (50% lines / 50% branches) and the Release smoke test.
 
 ## Layout
 

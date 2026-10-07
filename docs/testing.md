@@ -33,12 +33,13 @@ Suites continue after a failure so the final run reports all observed failures.
 Coverage is collected after each process exits to avoid losing later process data.
 Optional `-MinimumLineCoverage` and `-MinimumBranchCoverage` percentages enforce
 explicit gates; they require `-Coverage`. Empty coverage always fails. Thresholds
-default to zero locally. Build CI explicitly requires 45% lines and 40% branches;
+default to zero locally. Build and release CI require 50% lines and 50% branches;
 this is not yet a changed-lines gate or an automatic comparison against the base
 branch. The first complete local measurement on 2026-09-29 was 48.6% lines
 (4351/8943) and 42.8% branches (1436/3349), with all seven suites passing on their
 first attempt. The original native teardown failure was diagnosed and corrected
-on 2026-09-30; see below. Confirm CI stability before tightening these initial floors.
+on 2026-09-30; see below. The floors were raised to 50% each on 2026-10-07 after
+a complete local run reached 69.9% lines and 59.1% branches.
 
 `-Suites` selects one or more suites (by default every suite in its list). `-Repeat` builds once
 and runs fresh test processes for each round. `-NoRetry` remains accepted for old
