@@ -59,6 +59,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
   deterministically. Lists do not own item icons (`ImgHelper.disposeItems`).
   Dispose transient menus/popups on the next UI turn, not inside their own close event.
 
+## Pull requests and releases
+
+- Opening or updating a PR triggers `build` and `Desktop E2E Hosted` automatically.
+  When a merge is requested, wait for both workflows and every other PR check to
+  succeed for the latest head commit before merging. Pending, skipped, cancelled
+  or failed checks do not satisfy this requirement. New commits require new checks;
+  local results alone are insufficient.
+- After an approved release, push a `vMAJOR.MINOR.PATCH` tag on the merged commit.
+  `release.yml` uses the tag as the app version, builds and tests, then creates a
+  Release draft with the standalone exe. Publishing the draft remains a separate
+  action; a suffix such as `-beta.1` marks it as a prerelease.
+
 ## Style
 
 - Match the surrounding F#: short `///` comments that say why, not what; no banner

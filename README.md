@@ -27,15 +27,19 @@ It works with any app, from File Explorer and terminals to editors and Office.
 **Looks at home on Windows 10 and 11**
 
 - Light, dark or follow-Windows theme, with nine colour presets or your own colours.
-- Joined, folder or pill tab styles; adjustable height, width, spacing and margins.
+- Joined, folder or floating tab styles; adjustable height, width, spacing and margins.
 - Tabs on the left, centre or right of the title bar, kept clear of the caption buttons.
 - Auto-hide to a thin strip on maximized windows (or always), shown again on hover or briefly after switching.
 - Crowded groups fall back to icon-only tabs with a minimum width; flashing windows show up on their tab.
+- Colour tabs by window or app, as fills or stripes; choose a colour from the tab menu and optionally remember it for that app.
+- Sixteen tab colours follow the light or dark theme; custom colours are supported too.
 - Sharp at any scaling: per-monitor DPI aware.
 
 **Fast to drive from the keyboard and mouse**
 
-- Switch tabs with shortcuts, by number (Ctrl or Alt + 1–9), with Shift + scroll, or by hovering.
+- Switch tabs with Ctrl + 1–9 (or choose Alt + 1–9), with Shift + scroll, or by hovering.
+- Press a leader key, then a selection key to jump to a tab. Selection keys are customizable, with one-click number and keyboard-row presets.
+- Disable direct number shortcuts for individual apps from the tab menu.
 - Search all tabs by title or app name and jump straight to one.
 - An optional Alt+Tab replacement, as a row of large icons or a list with full titles, that can show each group as one item.
 
@@ -68,12 +72,18 @@ under General to have it ready after you sign in.
 | --- | --- |
 | Next tab | Ctrl + Alt + → |
 | Previous tab | Ctrl + Alt + ← |
-| Go to tab 1–9 | Ctrl + 1–9 (or Alt, or both) |
+| Go to tab 1–9 | Ctrl + 1–9 (or choose Alt + 1–9) |
+| Start tab selection | Alt + S, then a selection key within three seconds |
 | Search tabs | Alt + Space |
 | Open new tab | Ctrl + Alt + N |
 | Switch tabs with the mouse | Shift + scroll over a grouped window, or scroll over the tabs |
 
 Every shortcut can be changed or turned off under Settings › Shortcuts.
+
+Leader selection defaults to `123456789`; choose `QWERTYUIOP` or `ASDFGHJKL;`, or enter
+your own unique letters, digits or supported punctuation. Hints appear on inactive tabs,
+in tab order; the active tab keeps its position without showing a hint. Escape cancels.
+Valid edits save automatically.
 
 ## Settings and portable mode
 
@@ -112,8 +122,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-Tests.ps1
 ```
 
 Exit a running WindowTabs from the tray before building, since it locks the output file.
-Pushing a `v*` tag such as `v2026.10.06` makes the release workflow build, test and draft a
-GitHub release.
+
+## Publishing a release
+
+After merging a PR whose checks passed, tag the merged commit and push the tag:
+
+```powershell
+git switch master
+git pull --ff-only
+git tag v2026.10.07
+git push origin v2026.10.07
+```
+
+Use the desired release version in place of the example. A `vMAJOR.MINOR.PATCH` tag
+(optionally with a suffix such as `-beta.1`) automatically triggers the release workflow.
+It builds the standalone exe, runs regression and Release smoke tests, and creates a
+GitHub Release draft with the exe and generated notes only after the checks pass.
+The tag version also appears in the app's Settings window and diagnostic reports.
+Review and publish the draft on GitHub; tags with a suffix produce prerelease drafts.
 
 ## Contributing
 
@@ -123,6 +149,10 @@ are a good place to start. Before changing code, read:
 - [AGENTS.md](AGENTS.md): layout, build and the project's rules on threads, text, settings, DPI and theme.
 - [docs/architecture.md](docs/architecture.md), [docs/testing.md](docs/testing.md),
   [docs/settings-architecture.md](docs/settings-architecture.md) and [docs/performance.md](docs/performance.md).
+
+Pull requests automatically run the build workflow (Release build, regression tests with
+45% line / 40% branch coverage floors, and Release smoke checks) and hosted Quick desktop
+E2E. Merge only after both workflows pass for the latest PR commit.
 
 WindowTabs is written in F# with WinForms on .NET Framework 4.8. User-visible text is
 translated into English, Chinese and Japanese.
