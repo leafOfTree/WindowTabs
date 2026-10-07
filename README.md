@@ -35,7 +35,7 @@ For **Windows 10 and 11**. Download and run `WindowTabs.exe`—no installation n
 2. Save it in a folder you want to keep, then double-click it.
    Its icon appears in the system tray, sometimes under hidden icons.
 3. For windows from the **same app**, right-click a tab and enable **auto-grouping**.
-   Try opening two File Explorer windows with **Ctrl + N**.
+   Try it with two separate File Explorer windows.
 4. For windows from **different apps**, **drag a tab onto another window's tab bar**
    to group them. Click a tab to switch; grouped windows move and resize together.
 5. **Drag a tab away from the group** to separate that window again.
@@ -79,7 +79,7 @@ switching and the Alt+Tab replacement are off by default.
 
 ## Keyboard and mouse
 
-Default shortcuts:
+WindowTabs default shortcuts (your saved settings may differ):
 
 | Action | Default |
 | --- | --- |
@@ -95,8 +95,9 @@ Change or clear keyboard shortcuts in **Settings → Shortcuts**. Direct number
 shortcuts can use **Ctrl** or **Alt**; disable them for individual apps from the
 tab menu if they conflict with that app.
 
-For leader selection, enable **Use a leader key to select tabs**. Press **Alt + S**
-and then the key shown on the tab you want. Choose `123456789`, `QWERTYUIOP`,
+For leader selection, enable **Use a leader key to select tabs**. Press your
+configured leader shortcut (default **Alt + S**), then the key shown on the tab
+you want. Choose `123456789`, `QWERTYUIOP`,
 `ASDFGHJKL;`, or enter your own key sequence. Keys follow tab order; the active tab
 keeps its position but has no badge. **Esc** cancels selection.
 
