@@ -5,7 +5,7 @@ open System.Reflection
 open System.Runtime.InteropServices
 
 // Version and product attributes are generated from WtProgram.fsproj. The release
-// workflow sets the version from the git tag (v2025.06.30 -> -p:Version=2025.06.30);
+// workflow sets the version from the git tag (v2026.10.07 -> -p:Version=2026.10.07);
 // Program and the crash logger read the informational version back at runtime.
 
 [<assembly: ComVisible(false)>]
@@ -13,7 +13,7 @@ open System.Runtime.InteropServices
 do ()
 
 // Keep diagnostics and settings migration version comparisons non-empty.
-let private fallbackVersion = "2025.06.30"
+let private fallbackVersion = "2026.10.07"
 
 let informationalVersion =
     try

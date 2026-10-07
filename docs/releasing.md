@@ -5,9 +5,9 @@ its latest commit. For a broad modernization PR, describe the full scope: settin
 and localization, tab rendering and DPI, input, workspaces, runtime ownership,
 native resources, build tooling, tests and documentation.
 
-Update [CHANGELOG.md](../CHANGELOG.md): turn Unreleased into the chosen version and
-release date, keeping the user-facing changes. Remove the upcoming-release note
-from [README.md](../README.md) when those changes are published.
+Record the chosen version and release date in [CHANGELOG.md](../CHANGELOG.md),
+keeping the user-facing changes. Check that [README.md](../README.md) describes
+the version being released.
 
 Tag the merged commit and push the tag, substituting the intended version below:
 

@@ -12,40 +12,30 @@ window, even when they belong to different apps.
 [Getting started](#install-and-get-started) · [Shortcuts](#keyboard-and-mouse) ·
 [What's changed](CHANGELOG.md)
 
-**Light tabs**
-
-<img src="docs/images/windowtabs-light.png" width="900" alt="Light WindowTabs tabs grouping four File Explorer windows for public folders" />
-
-**Dark tabs**
-
-<img src="docs/images/windowtabs-dark.png" width="900" alt="Dark WindowTabs tabs grouping the same four File Explorer windows" />
+| Light tabs | Dark tabs |
+| --- | --- |
+| ![Light WindowTabs tabs grouping three File Explorer windows for empty public folders](docs/images/light.png) | ![Dark WindowTabs tabs grouping three File Explorer windows for empty public folders](docs/images/dark.png) |
 
 WindowTabs themes apply to the tab bar and Settings; your apps keep their own theme.
-These screenshots and instructions describe the upcoming modernization release.
-See [the changelog](CHANGELOG.md) for changes since v2025.06.30.
+See [the changelog](CHANGELOG.md) for what's new in v2026.10.07.
 
 ## Install and get started
 
-You need **Windows 10 or 11** and **.NET Framework 4.8**. There is no installer;
-the release download is a single `WindowTabs.exe`. You do not need Visual Studio or
-the .NET SDK to use it.
+For **Windows 10 and 11**. Download and run `WindowTabs.exe`—no installation needed.
 
-1. Open [Releases](https://github.com/leafOfTree/WindowTabs/releases/latest) and download
-   **WindowTabs.exe** from **Assets**.
-2. Put it in a folder you plan to keep, such as `C:\Tools\WindowTabs`, then run it.
-   WindowTabs stays in the system tray; check the tray's hidden icons if needed.
-3. Open two separate File Explorer windows (**Ctrl + N** opens another window).
-   WindowTabs adds a tab bar to eligible desktop windows.
-4. **Drag one WindowTabs tab onto the other window's tab bar** to group them.
-   Click a tab to switch. The grouped windows move, resize, minimize and restore together.
+1. Download **WindowTabs.exe** under **Assets** on the
+   [Releases page](https://github.com/leafOfTree/WindowTabs/releases/latest).
+2. Save it in a folder you want to keep, then double-click it.
+   Its icon appears in the system tray, sometimes under hidden icons.
+3. For windows from the **same app**, right-click a tab and enable **auto-grouping**.
+   Try opening two File Explorer windows with **Ctrl + N**.
+4. For windows from **different apps**, **drag a tab onto another window's tab bar**
+   to group them. Click a tab to switch; grouped windows move and resize together.
 5. **Drag a tab away from the group** to separate that window again.
 
-You can also group windows from different apps. WindowTabs groups desktop windows;
-tabs built into File Explorer or a browser remain inside their own window.
-
-Right-click a tab or the tray icon and choose **Settings**. On a fresh installation,
-**Start with Windows** is enabled under **General**, so the app is ready after sign-in.
-To stop WindowTabs, choose **Exit** from its tray menu; your application windows stay open.
+Right-click a tab or the tray icon to open **Settings**. **Start with Windows** is
+on by default; change it under **General**. Choose **Exit** from the tray menu to
+stop WindowTabs and keep your windows open.
 
 ## Make it yours
 
@@ -69,7 +59,7 @@ to a setting, and the language picker supports English, 中文 and 日本語.
 | Workspaces | Saved groups and window positions |
 | Support | Settings backup, reset, release links, crash log and troubleshooting report |
 
-<img src="docs/images/settings-appearance.png" width="800" alt="WindowTabs Appearance settings with theme choices, a tab preview and color controls" />
+<a href="docs/images/settings.png"><img src="docs/images/settings.png" width="600" alt="WindowTabs Appearance settings with theme choices, a tab preview and color controls" /></a>
 
 **Tabs hide when maximized by default.** Move the pointer to the top edge to reveal
 them; they also appear briefly after switching. Change **General → Auto-hide tabs**
@@ -82,7 +72,7 @@ switching and the Alt+Tab replacement are off by default.
 
 ## Keyboard and mouse
 
-These are defaults for a new installation. Existing custom shortcuts are retained.
+Default shortcuts:
 
 | Action | Default |
 | --- | --- |
@@ -126,11 +116,9 @@ To use portable mode, export your settings as `WindowTabsSettings.json` beside
 `WindowTabs.exe`, then restart. WindowTabs uses that file instead of the AppData
 copy. Keep both files together when moving the app.
 
-To update, download the new exe, **exit WindowTabs from the tray**, replace the old
-exe and run it again. Keep your settings file. Older `WindowTabsSettings.txt`
-settings are read when no JSON file exists and the original file is left untouched.
-Click the version number in Settings to **Check Releases**; updates are installed
-manually.
+To upgrade, **exit WindowTabs from the tray**, replace the old `WindowTabs.exe`
+with the new one, then run it. Your settings are kept.
+Click the version number in Settings to **Check Releases**.
 
 ## Troubleshooting
 
