@@ -85,7 +85,10 @@ type Program(lifetime:LifetimeScope) as this =
         ]))
         
     let hotKeyManager = lifetime.Own(new HotKeyManager())
-    let refreshQueue = lifetime.Own(new WindowRefreshQueue(30, this.updateChangedWindows, this.updateAppWindows))
+    // Native events can pump during startup, before the filter is registered in run.
+    // The initial full refresh processes those windows once the services are ready.
+    let refreshQueue = lifetime.Own(new WindowRefreshQueue(30, this.updateChangedWindows, this.updateAppWindows,
+                                            isReady=(fun () -> Services.has<IFilterService>() && Services.has<IProgram>())))
 
     do
         Desktop(this :> IDesktopNotification, Services.settings, invoker :> IDispatcher).ignore

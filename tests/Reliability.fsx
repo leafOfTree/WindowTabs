@@ -35,6 +35,12 @@ let main() =
     (scope :> IDisposable).Dispose()
     (scope :> IDisposable).Dispose()
     check (Seq.toList events=[3;2;1] && errors.Count=1) "Cleanup did not complete once in reverse order"
+    let keyboardHook = OS().registerKeyboardLLHook(fun _ -> None)
+    keyboardHook.Dispose()
+    keyboardHook.Dispose()
+    let helperWindow = OS().createWindow (fun message -> message.def()) 0 0
+    (helperWindow :?> IDisposable).Dispose()
+    (helperWindow :?> IDisposable).Dispose()
     let name = "WindowTabs-Test-"+Guid.NewGuid().ToString("N")
     use instance = new SingleInstance(name)
     check (instance.TryAcquire()) "First singleton lock failed"

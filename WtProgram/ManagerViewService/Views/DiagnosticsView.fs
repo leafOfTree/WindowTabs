@@ -198,7 +198,6 @@ type DiagnosticsView() =
         owner <- panel
         panel.HandleCreated.Add(fun _ -> guarded refresh)
         tools |> ignore
-        panel.Disposed.Add(fun _ -> text.Font.Dispose())
     interface ISettingsView with
         member _.key = DiagnosticsSettings
         member _.title = tr Strings.Pages.diagnostics

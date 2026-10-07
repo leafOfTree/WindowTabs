@@ -121,14 +121,16 @@ type OS()=
             IntPtr.Zero
             )
 
+        let mutable disposed = 0
         { 
             new IWindow with
                 member this.hwnd = hwnd
             interface IDisposable with
                 member this.Dispose() =
-                    WinUserApi.DestroyWindow(hwnd).ignore
-                    WinUserApi.UnregisterClass(className, hModule).ignore
-                    delHandle.Free()
+                    if Threading.Interlocked.Exchange(&disposed,1)=0 then
+                        WinUserApi.DestroyWindow(hwnd).ignore
+                        WinUserApi.UnregisterClass(className, hModule).ignore
+                        delHandle.Free()
         }
 
 
@@ -161,9 +163,12 @@ type OS()=
             del, 
             WinBaseApi.GetModuleHandle(IntPtr.Zero),
             0)
+        let mutable disposed = 0
         let dispose() =
-            WinUserApi.UnhookWindowsHookEx(hookId).ignore
-            handle.Free()
+            // Both plugin shutdown and the scope can release the same hook.
+            if Threading.Interlocked.Exchange(&disposed,1)=0 then
+                WinUserApi.UnhookWindowsHookEx(hookId).ignore
+                handle.Free()
         { 
             new Object() with
                 override this.Finalize() = 
@@ -224,13 +229,15 @@ type OS()=
         let del = WINEVENTPROC(proc)
         let delHandle = GCHandle.Alloc(del)
         let hhook = WinUserApi.SetWinEventHook(int(min), int(max), IntPtr.Zero, del, pid, tid, 0)
+        let mutable disposed = 0
         { 
             new IDisposable with
             member this.Dispose() =
-                try
-                    WinUserApi.UnhookWinEvent(hhook).ignore
-                    delHandle.Free()
-                with _ -> ()
+                if Threading.Interlocked.Exchange(&disposed,1)=0 then
+                    try
+                        WinUserApi.UnhookWinEvent(hhook).ignore
+                        delHandle.Free()
+                    with _ -> ()
         }
 
     member this.dosDevices = 

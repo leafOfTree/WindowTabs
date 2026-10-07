@@ -70,9 +70,10 @@ module TemporaryState =
         finally leave()
 
 /// A full reconciliation supersedes dirty HWNDs; ordinary events only touch affected windows.
-type WindowRefreshQueue(interval:int, reconcile:IntPtr array -> unit, reconcileAll:unit -> unit) =
+type WindowRefreshQueue(interval:int, reconcile:IntPtr array -> unit, reconcileAll:unit -> unit, ?isReady:unit -> bool) =
     let dirty = HashSet<IntPtr>()
     let mutable full = false
+    let ready = defaultArg isReady (fun () -> true)
     let queue = new CoalescedAction(interval,fun () ->
         let all = full
         let changed = dirty |> Seq.toArray
@@ -81,8 +82,8 @@ type WindowRefreshQueue(interval:int, reconcile:IntPtr array -> unit, reconcileA
         if all then reconcileAll() else reconcile changed)
     member _.RequestWindow hwnd =
         if hwnd<>IntPtr.Zero then dirty.Add(hwnd) |> ignore
-        queue.Request()
-    member _.RequestAll() = full <- true; queue.Request()
+        if ready() then queue.Request()
+    member _.RequestAll() = full <- true; if ready() then queue.Request()
     member _.Cancel() = queue.Cancel(); dirty.Clear(); full <- false
     interface IDisposable with
         member _.Dispose() = dirty.Clear(); (queue :> IDisposable).Dispose()

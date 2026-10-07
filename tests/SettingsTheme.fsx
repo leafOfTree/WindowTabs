@@ -267,6 +267,12 @@ let main() =
             member _.groupExited = Event<IGroup>().Publish
             member _.groupRemoved = Event<IGroup>().Publish
             member _.foregroundGroup = None })
+        // Closing a diagnostics page must not dispose the process-wide cached font.
+        for _ in 1..3 do
+            let disposableSupport = DiagnosticsView() :> ISettingsView
+            disposableSupport.control.Dispose()
+            let sharedFont = SettingsUi.font "Consolas" 10.5f FontStyle.Regular
+            check (sharedFont.GetHeight()>0.0f) "Closing diagnostics disposed its shared font"
         let support = DiagnosticsView() :> ISettingsView
         let beforeOpen = File.ReadAllText(settings.path)
         let frame = DesktopManagerForm(views=[

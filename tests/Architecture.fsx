@@ -98,6 +98,19 @@ let main() =
     windowQueue.RequestAll()
     pumpUntil "Full scan fallback did not run" (fun () -> fullScans=1)
     check (windows.Length=0) "Full scan also redundantly reconciled dirty windows"
+    let mutable ready = false
+    let mutable startupScans = 0
+    let mutable startupWindows = [||]
+    use startupQueue = new WindowRefreshQueue(30,(fun changed -> startupWindows <- changed),(fun () -> startupScans <- startupScans+1),
+                                             isReady=(fun () -> ready))
+    startupQueue.RequestWindow(IntPtr(45))
+    startupQueue.RequestAll()
+    pump 80
+    check (startupScans=0 && startupWindows.Length=0) "Native startup events accessed services before registration"
+    ready <- true
+    startupQueue.RequestAll()
+    pumpUntil "Initial refresh lost windows deferred during startup" (fun () -> startupScans=1)
+    check (startupWindows.Length=0) "Startup performed a redundant dirty-window refresh"
 
     let originalDirectory = Environment.CurrentDirectory
     // Settings from an older version, in WindowTabsSettings.txt, are read until the .json file
