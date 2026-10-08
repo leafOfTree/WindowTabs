@@ -1963,6 +1963,8 @@ namespace Bemo
         public const int SPI_GETSCREENREADER = 0x0046;
         public const int SPI_SETSCREENREADER = 0x0047;
         public const int SPI_GETANIMATION = 0x0048;
+        /// <summary>Whether Windows animates its own controls: Settings, Accessibility, Animation effects.</summary>
+        public const int SPI_GETCLIENTAREAANIMATION = 0x1042;
         public const int SPI_SETANIMATION = 0x0049;
         public const int SPI_GETFONTSMOOTHING = 0x004A;
         public const int SPI_SETFONTSMOOTHING = 0x004B;

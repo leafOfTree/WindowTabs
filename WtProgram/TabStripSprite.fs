@@ -26,6 +26,42 @@ module TabDimming =
             output
         with _ -> output.Dispose(); reraise()
 
+/// Auto-hidden tabs expand from their collapsed bar and collapse back to it over a few frames.
+module TabReveal =
+    /// A whole expand or collapse; one reversed part way takes its share of this.
+    let duration = 150.0
+    /// Native hosts that count frames turn it off; None follows Windows' animation effects.
+    let mutable forced : bool option = None
+    let enabled() =
+        match forced with
+        | Some value -> value
+        | None ->
+            let mutable animate = true
+            WinUserApi.SystemParametersInfo(SystemParametersInfoParameters.SPI_GETCLIENTAREAANIMATION,0,&animate,0) |> ignore
+            animate
+    /// Fast at first, settling at the end, the way Windows moves its own panes.
+    let ease (t:float) = 1.0-(1.0-t)*(1.0-t)*(1.0-t)
+    /// A frame part way from the collapsed bar (0) to the full strip (1): the strip uncovered from
+    /// the window edge outwards, fading in over the bar, solid by half way. Rows keep their place
+    /// in the full strip, so the offset maps the pointer as it does for the collapsed bar.
+    let frame (full:Bitmap) (collapsed:Bitmap) (reveal:float) (direction:TabDirection) =
+        let fullHeight,barHeight = full.Height,collapsed.Height
+        let height = barHeight+int(Math.Round(float(fullHeight-barHeight)*reveal)) |> max barHeight |> min fullHeight
+        let offset = if direction=TabUp then fullHeight-height else 0
+        let image = Img(Sz(full.Width,height))
+        try
+            use g = Graphics.FromImage(image.bitmap)
+            let appear = min 1.0 (reveal*2.0)
+            let draw (source:Bitmap) (target:Rectangle) sourceY (opacity:float) =
+                if opacity>0.0 then
+                    use attributes = new ImageAttributes()
+                    attributes.SetColorMatrix(ColorMatrix(Matrix33=float32 opacity))
+                    g.DrawImage(source,target,0,sourceY,target.Width,target.Height,GraphicsUnit.Pixel,attributes)
+            draw collapsed (Rectangle(0,(if direction=TabUp then height-barHeight else 0),collapsed.Width,barHeight)) 0 (1.0-appear)
+            draw full (Rectangle(0,0,full.Width,height)) offset appear
+            image,offset
+        with _ -> image.bitmap.Dispose(); reraise()
+
 /// Tab contents keep their full size until the tab is too short for them, then shrink together,
 /// so a low tab still shows its icon, close button and text whole.
 module TabMetrics =

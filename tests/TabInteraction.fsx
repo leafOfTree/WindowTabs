@@ -30,6 +30,8 @@ let check condition message = if not condition then failwith message
 let frameProperty = typeof<TabStrip>.GetProperty("renderCount",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public)
 let frames strip = frameProperty.GetValue(strip) :?> int64
 let main() =
+    // Frame counts below assume a change paints once; the auto-hide animation is tested on its own.
+    TabReveal.forced <- Some false
     let original = Environment.CurrentDirectory
     let originalDpi = Dpi.value()
     let isolated = Path.Combine(__SOURCE_DIRECTORY__,"Debug","interaction-test-"+Guid.NewGuid().ToString("N"))
@@ -49,6 +51,22 @@ let main() =
                 let actual = softened.GetPixel(x,0)
                 check (abs(int expected.R-int actual.R)<=1 && abs(int expected.G-int actual.G)<=1 && abs(int expected.B-int actual.B)<=1)
                       "Icon and text pixels did not receive the same whole-strip dimming"
+        // A frame part way keeps each row where it sits in the full strip, from the window edge out.
+        do
+            use full = new Bitmap(8,10)
+            use bar = new Bitmap(8,2)
+            using (Graphics.FromImage(full)) (fun g -> g.Clear(Color.Red))
+            using (Graphics.FromImage(bar)) (fun g -> g.Clear(Color.Blue))
+            for direction in [TabUp;TabDown] do
+                for reveal,height,color in [0.0,2,Color.Blue;0.5,6,Color.Red;1.0,10,Color.Red] do
+                    let image,offset = TabReveal.frame full bar reveal direction
+                    try
+                        let edge = if direction=TabUp then image.height-1 else 0
+                        check (image.height=height && offset=(if direction=TabUp then 10-height else 0))
+                              (sprintf "Auto-hide frame at %.1f is %d tall at %d" reveal image.height offset)
+                        check (image.bitmap.GetPixel(4,edge).ToArgb()=color.ToArgb()) "Auto-hide frame does not blend from the bar to the strip"
+                    finally image.bitmap.Dispose()
+            check (TabReveal.ease 0.0=0.0 && TabReveal.ease 1.0=1.0 && TabReveal.ease 0.5>0.5) "Auto-hide animation does not ease out"
         let savedAppearance = api.appearance
         for mode,name in [LightTheme,"light";DarkTheme,"dark"] do
             api.updateAppearance(fun value -> {value with mode=mode})
@@ -423,6 +441,38 @@ let main() =
                 strip.setPlacement(placement next larger false)
                 check (frames strip=count && strip.bounds.location.y=next.y+larger.height-Dpi.scale 4) "Collapsed strip lost its movement offset"
                 check (not shadow.isVisible) "Collapsed strip showed a shadow"
+                // Expanding and collapsing run over a few frames that only move outwards or inwards,
+                // and turning back part way starts from where the strip is, not from either end.
+                TabReveal.forced <- Some true
+                let watch (until:unit -> bool) =
+                    let heights = ResizeArray([strip.bounds.size.height])
+                    let clock = Diagnostics.Stopwatch.StartNew()
+                    while not (until()) && clock.ElapsedMilliseconds<1000L do
+                        Application.DoEvents()
+                        Threading.Thread.Sleep(2)
+                        heights.Add(strip.bounds.size.height)
+                    List.ofSeq heights
+                let collapsedHeight = strip.bounds.size.height
+                let beforeExpand = frames strip
+                strip.isShrunk <- false
+                let growing = watch (fun () -> strip.bounds.size.height=larger.height && shadow.isVisible)
+                check (strip.bounds.size.height=larger.height && shadow.isVisible) "Expanded tabs did not end at full height with their shadow"
+                check (frames strip-beforeExpand>=3L && growing |> List.exists(fun h -> h>collapsedHeight && h<larger.height))
+                      "Expanding auto-hidden tabs jumped instead of animating"
+                check (growing |> List.pairwise |> List.forall(fun (a,b) -> b>=a)) "Expanding tabs shrank on the way"
+                check (strip.bounds.location.y=next.y) "Expanded tabs are not back at the strip's own position"
+                strip.isShrunk <- true
+                let shrinking = watch (fun () -> strip.bounds.size.height<larger.height)
+                let partWay = List.last shrinking
+                check (partWay>collapsedHeight && strip.bounds.location.y=next.y+larger.height-partWay)
+                      "Collapsing jumped to the bar, or moved away from the window edge"
+                strip.isShrunk <- false
+                let back = watch (fun () -> strip.bounds.size.height=larger.height)
+                check (List.min back>=partWay && strip.bounds.size.height=larger.height) "Turning back part way restarted from the bar"
+                strip.isShrunk <- true
+                watch (fun () -> strip.bounds.size.height=collapsedHeight) |> ignore
+                check (strip.bounds.size.height=collapsedHeight && not shadow.isVisible) "Collapsing did not end at the bar without a shadow"
+                TabReveal.forced <- Some false
                 strip.isShrunk <- false
                 strip.visible <- false
                 let count = frames strip
