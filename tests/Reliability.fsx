@@ -290,8 +290,8 @@ let main() =
     let found query = SettingsCatalog.all |> List.filter (SettingsCatalog.matches query) |> List.map(fun item -> item.id)
     for query in ["autostart";"自启动";"スタートアップ";"runAtStartup"] do
         check (List.contains "launch-at-sign-in" (found query)) ("Search keyword missed: "+query)
-    // Dimming became opaque, but people still look for it under its old transparency wording.
-    for query in ["transparent";"opacity";"透明";"半透明"] do
+    // Keywords are synonyms of the setting's own name.
+    for query in ["fade";"变暗";"暗く"] do
         check (List.contains "dim-inactive-groups" (found query)) ("Search keyword missed: "+query)
 
     let queue = ConcurrentQueue<unit -> unit>()

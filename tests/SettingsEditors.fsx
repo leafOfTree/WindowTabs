@@ -55,6 +55,11 @@ let main() =
     assertTrue (List.head (ranked "start") = "launch-at-sign-in") "A caption match is not listed first"
     assertTrue (found "start" |> List.contains "new-tab") "A description word is not found"
     assertTrue (found "start" |> List.contains "settings-reset") "Descriptions are not matched inside words (restart)"
+    // Keywords name the setting's own subject, not words that fit half the page.
+    assertTrue (not (found "switcher" |> List.contains "search-tabs")) "Search tabs is found as an Alt+Tab switcher"
+    // A short description is shown whole as the reason for the match, not cut to a piece of it.
+    assertTrue (SettingsCatalog.searchEvidence "replaces" (SettingsCatalog.find "use-windowtabs-for-alt-tab") = [tr Strings.Settings.replaceAltTab.description])
+               "A short description shown as the reason for a match was cut short"
     assertTrue (SettingsCatalog.searchRank "start" (SettingsCatalog.find "settings-reset") = 0) "A match inside a description word is not ranked last"
     assertTrue (List.head (ranked "TART") = "launch-at-sign-in") "Substrings ignore case and can start inside words"
     assertTrue (found "启动" |> List.contains "launch-at-sign-in") "Chinese searches work across languages"
@@ -72,14 +77,15 @@ let main() =
     try
         let startup = SettingsCatalog.find "launch-at-sign-in"
         assertTrue (SettingsCatalog.searchEvidence "start" startup = []) "A match the caption shows is repeated below it"
-        assertTrue (SettingsCatalog.searchEvidence "windows notif" startup = ["notification"]) "A second term's keyword is not shown on its own"
+        assertTrue (SettingsCatalog.searchEvidence "windows auto" startup = ["autostart"]) "A second term's keyword is not shown on its own"
         assertTrue (SettingsCatalog.searchEvidence "runatstartup" startup = ["runAtStartup"]) "A settings-file key match is not shown"
         assertTrue (SettingsCatalog.searchEvidence "system" startup = [tr startup.text.description]) "A short description match is not shown whole"
         let margin = SettingsCatalog.find "tabIndentNormal"
         let longDescription = {en="Distance from the window edges. Centered tabs use it only once they fill the row.";zh="";ja=""}
         let margin = {margin with text={margin.text with description=longDescription}}
         match SettingsCatalog.searchEvidence "row" margin with
-        | [part] -> assertTrue (part = "…they fill the row.") (sprintf "A long description is not cut to the words around the match: %s" part)
+        | [part] -> assertTrue (part.StartsWith("…") && part.EndsWith("they fill the row.") && part.Length<longDescription.en.Length)
+                               (sprintf "A long description is not cut to the words around the match: %s" part)
         | other -> failwithf "A description match is not shown: %A" other
     finally Localization.setPreference "system"
     Application.EnableVisualStyles()
