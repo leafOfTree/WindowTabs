@@ -62,11 +62,11 @@ type ThemeMenuRenderer(p:SettingsPalette) =
         use pen = new Pen(color)
         let y = (e.Item.Height-1)/2
         e.Graphics.DrawLine(pen,Dpi.scale 8,y,e.Item.Width-Dpi.scale 8,y)
+    /// The same font glyph as the trailing mark on a selected tab colour, so both checks match.
     override _.OnRenderItemCheck(e) =
         if isNull e.Item.Image then
-            let r = e.ImageRectangle
-            use pen = new Pen(textColor e.Item,float32(Dpi.scale 2))
-            e.Graphics.DrawLines(pen,[|Point(r.Left+r.Width/5,r.Top+r.Height/2);Point(r.Left+r.Width*2/5,r.Top+r.Height*3/4);Point(r.Right-r.Width/6,r.Top+r.Height/4)|])
+            TextRenderer.DrawText(e.Graphics,"✓",e.Item.Font,e.ImageRectangle,textColor e.Item,
+                                  TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPadding ||| TextFormatFlags.NoClipping)
 
 /// Own image copies until the menu loop has finished closing, then dispatch the command.
 type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit) as this =

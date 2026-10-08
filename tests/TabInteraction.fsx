@@ -79,6 +79,26 @@ let main() =
             menu.DrawToBitmap(snapshot,Rectangle(Point.Empty,snapshot.Size))
             snapshot.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","tab-menu-"+name+".png"))
             check (snapshot.GetPixel(menu.Width/2,2).ToArgb()=palette.surface.ToArgb()) "Rendered tab menu background ignored the theme"
+            /// Bounds of the first glyph in the area: ink columns up to the first blank gap.
+            let inkSize (bitmap:Bitmap) (area:Rectangle) =
+                let inked x y = bitmap.GetPixel(x,y).ToArgb()<>palette.surface.ToArgb()
+                let columns = [area.Left..area.Right-1] |> List.filter(fun x -> [area.Top..area.Bottom-1] |> List.exists(inked x))
+                match columns with
+                | [] -> Size.Empty
+                | first::_ ->
+                    let last = columns |> List.fold(fun last x -> if x-last<=Dpi.scale 3 then x else last) first
+                    let rows = [area.Top..area.Bottom-1] |> List.filter(fun y -> [first..last] |> List.exists(fun x -> inked x y))
+                    Size(last-first+1,List.max rows-List.min rows+1)
+            let checkedRow = menu.Items.[1].Bounds
+            // Start past the menu's own border, which also runs down the left edge.
+            let gutterCheck = inkSize snapshot (Rectangle(checkedRow.X+Dpi.scale 3,checkedRow.Y,checkedRow.Width-Dpi.scale 3,checkedRow.Height))
+            use glyph = new Bitmap(checkedRow.Height*2,checkedRow.Height*2)
+            using (Graphics.FromImage(glyph)) (fun g ->
+                g.Clear(palette.surface)
+                TextRenderer.DrawText(g,"✓",menu.Font,Rectangle(Point.Empty,glyph.Size),palette.text,TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPadding))
+            let textCheck = inkSize glyph (Rectangle(Point.Empty,glyph.Size))
+            check (not gutterCheck.IsEmpty && abs(gutterCheck.Width-textCheck.Width)<=1 && abs(gutterCheck.Height-textCheck.Height)<=1)
+                  (sprintf "Menu check %A does not match the selected-colour check %A" gutterCheck textCheck)
             nested.ShowDropDown()
             Application.DoEvents()
             check (not(nested.DropDown.Region.IsVisible(Point(0,0)))) "Submenu has square corners"
