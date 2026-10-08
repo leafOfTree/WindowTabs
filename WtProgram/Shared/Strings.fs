@@ -292,6 +292,9 @@ module Strings =
         /// Samples of the tab text as chosen and as shown, side by side.
         let textBefore = { en="Before"; zh="调整前"; ja="調整前" }
         let textAfter = { en="After"; zh="调整后"; ja="調整後" }
+        let colorsByCoding = { en="Set automatically while Tab color coding is By window or By app with Fill."
+                               zh="标签着色为“按窗口”或“按应用”且选择“填充”时，这里自动配置。"
+                               ja="タブの色分けが「ウィンドウ別」または「アプリ別」で「塗りつぶし」のときは、ここは自動で設定されます。" }
         let textAdjusted = { en="Text color is adjusted on some tabs to stay readable."; zh="部分标签上的文字颜色已调整，以保持清晰。"; ja="一部のタブでは、読みやすさのため文字の色を調整しています。" }
         /// A colour preset whose colours the user has changed.
         let editedPreset name = { en=sprintf "%s*" name; zh=sprintf "%s*" name; ja=sprintf "%s*" name }

@@ -136,6 +136,10 @@ type AppearanceView(?settings:ISettings) =
         let low,high = SettingsCatalog.range key
         key,get,set,new SettingsNumberInput(Minimum=decimal low,Maximum=decimal high,Font=SettingsUi.bodyFont()))
     /// Says when the text colour is shown darker or lighter than chosen, so it stays readable.
+    /// Under the Tab colors heading while color coding fills the tabs: the section stays, so a
+    /// search that lands here still finds its settings, and says why they are not offered.
+    let codingNote = new Label(Name="colors-by-coding",AutoSize=true,Tag="muted",UseMnemonic=false,Visible=false,
+                               Text=tr Strings.Appearance.colorsByCoding,Margin=Padding(0,0,0,Dpi.scale 4))
     let contrastNote = new Label(Name="contrast-note",AutoSize=true,Tag="muted",UseMnemonic=false,Visible=false,Margin=Padding(0,Dpi.scale 8,0,0))
     let contrastComparison = new ContrastComparison(Name="contrast-comparison",Visible=false)
     let isFilled() = settings.getValue("tabColorMode") :?> string <> "Off" && settings.getValue("tabColorStyle") :?> string = "Fill"
@@ -160,12 +164,16 @@ type AppearanceView(?settings:ISettings) =
             contrastNote.Visible <- adjusted
             contrastNote.Text <- if adjusted then tr Strings.Appearance.textAdjusted else ""
     /// Filled by automatic color coding, every tab takes its own color and the text that reads on
-    /// it: the color rows then change nothing and only invite confusion, so they are collapsed.
-    /// With coding off or a stripe, tabs leave their colors to these rows.
+    /// it: the color rows and presets then change nothing and only invite confusion, so they are
+    /// put away under the heading, which says why. With coding off or a stripe, tabs leave their
+    /// colors to these rows.
     let mutable colorRows : SettingsRow list = []
+    let mutable colorsSection : Control list = []
     let updateFilled() =
         let filled = isFilled()
         for row in colorRows do row.Collapsed <- filled
+        for part in colorsSection do part.Visible <- not filled
+        codingNote.Visible <- filled
         updateContrastNote (activePalette settings.appearance)
     let refresh() =
         refreshing <- true
@@ -299,11 +307,14 @@ type AppearanceView(?settings:ISettings) =
             if not refreshing && preset.SelectedIndex>=0 then
                 let index = preset.SelectedIndex
                 if index<ThemePresets.names.Length then choosePreset index else chooseCustom())
+        codingNote.MaximumSize <- Size(Dpi.scale 700,0)
+        SettingsUi.add table codingNote
         let colorsCard = new SettingsCard()
         SettingsUi.add table colorsCard
         colorRows <-
             [ for key,read,write,editor in colors do
                 yield SettingsUi.settingRowControl colorsCard key editor.control ]
+        colorsSection <- [resetColorsButton;preset;colorsCard]
         contrastNote.MaximumSize <- Size(Dpi.scale 700,0)
         SettingsUi.add table contrastNote
         SettingsUi.add table contrastComparison

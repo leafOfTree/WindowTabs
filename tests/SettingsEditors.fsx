@@ -159,6 +159,9 @@ let main() =
         (comboNamed "tab-color-mode").SelectedIndex <- 1
         Application.DoEvents()
         assertTrue (backgroundRows |> List.forall(fun row -> row.Collapsed)) "Background rows stay shown while automatic colours fill every tab"
+        let codingNote = view.control.Controls.Find("colors-by-coding",true).[0]
+        assertTrue (preset.Parent.Visible && not preset.Visible && not (backgroundRows.Head.Parent.Visible)) "Tab colours lost its heading, or kept its presets and colours, while automatic colours fill every tab"
+        assertTrue (codingNote.Visible && codingNote.Text=tr Strings.Appearance.colorsByCoding) "Tab colours does not say why its colours are not offered"
         assertTrue (not note.Visible) "Filled tabs, white by design, still explain an adjustment"
         assertTrue (comparison.Samples.IsEmpty && not comparison.Visible) "Filled tabs list a sample for every adjusted colour"
         use page = new Bitmap(view.control.Width,view.control.Height)
@@ -167,6 +170,7 @@ let main() =
         (comboNamed "tab-color-mode").SelectedIndex <- 0
         Application.DoEvents()
         assertTrue (backgroundRows |> List.forall(fun row -> not row.Collapsed)) "Background rows stay hidden with colour coding off"
+        assertTrue (preset.Visible && backgroundRows.Head.Parent.Visible && not codingNote.Visible) "Tab colours stays put away with colour coding off"
         assertTrue (note.Text=tr Strings.Appearance.textAdjusted && not comparison.Samples.IsEmpty) "Colour coding off no longer explains adjusted text"
         settings.updateAppearance(fun s -> {s with lightPalette=fst savedPalettes;darkPalette=snd savedPalettes})
         (comboNamed "tab-color-style").SelectedIndex <- 1
