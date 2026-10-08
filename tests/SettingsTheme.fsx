@@ -870,9 +870,18 @@ Group #2: No valid windows in this group.";
                                                   useCustomColors=true;geometry=Theme.defaultGeometry})
             Application.DoEvents()
             check (not colors.Offered && not layout.Offered) "Reset buttons are offered with nothing to reset"
+            // Nothing to reset: nothing drawn, no Tab stop, but its place kept beside the heading.
+            for button in [colors;layout] do
+                use image = new Bitmap(button.Width,button.Height)
+                button.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                let back = image.GetPixel(0,0).ToArgb()
+                check ([for y in 0..image.Height-1 do for x in 0..image.Width-1 -> image.GetPixel(x,y).ToArgb()] |> List.forall((=) back))
+                      "A reset button with nothing to reset is still drawn"
+                check (button.Visible && button.Width>0 && not button.TabStop) "A reset button with nothing to reset left its place or stayed in the Tab order"
             api.updateAppearance(fun s -> {s with lightPalette={s.lightPalette with tabActiveBgColor=Color.Red};geometry={s.geometry with height=30}})
             Application.DoEvents()
             check (colors.Offered && layout.Offered) "Reset buttons are not offered after an edit"
+            check (colors.TabStop && layout.TabStop) "Reset buttons are left out of the Tab order after an edit"
             colors.PerformClick()
             layout.PerformClick()
             Application.DoEvents()
