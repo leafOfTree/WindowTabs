@@ -42,6 +42,17 @@ let main() =
     try
         use settings = new Settings(true, saveDelay=0)
         let api = settings :> ISettings
+        for appearance in [Theme.light;Theme.dark] do
+            let softened = Theme.dimColor appearance.tabNormalBgColor appearance.tabNormalBgColor
+            let before = TextContrast.luminance appearance.tabNormalBgColor
+            let after = TextContrast.luminance softened
+            check (if Theme.darkBar appearance.tabNormalBgColor then after<before else after>before)
+                  "Inactive group backgrounds faded in the wrong direction for their theme"
+            check (softened.A=255uy) "Inactive group background became transparent"
+            for color in Theme.tabPalette (Theme.darkBar appearance.tabNormalBgColor) do
+                let faded = Theme.dimColor appearance.tabNormalBgColor color
+                if not(Theme.darkBar appearance.tabNormalBgColor) then
+                    check (TextContrast.luminance faded>=TextContrast.luminance color) "Light-theme tab colours became darker when dimmed"
         let presetNames = ThemePresets.names |> Array.map(fun name -> name.en)
         check (presetNames=[|"Default";"Blue";"Teal";"Green";"Sand";"Amber";"Rose";"Purple";"Slate"|])
               "Theme presets do not use colour names in the shared colour order"

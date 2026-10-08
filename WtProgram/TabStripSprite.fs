@@ -5,6 +5,27 @@ open System.Drawing.Drawing2D
 open System.Drawing.Imaging
 open System.Windows.Forms
 
+module TabDimming =
+    /// Blend the finished surface so icons and glyphs soften equally; preserve edge alpha.
+    let render bar (source:Bitmap) =
+        let output = new Bitmap(source.Width,source.Height,PixelFormat.Format32bppArgb)
+        try
+            use graphics = Graphics.FromImage(output)
+            use attributes = new ImageAttributes()
+            let offset = Theme.dimColor bar Color.Black
+            let matrix = new ColorMatrix()
+            matrix.Matrix00 <- float32 Theme.dimAmount
+            matrix.Matrix11 <- float32 Theme.dimAmount
+            matrix.Matrix22 <- float32 Theme.dimAmount
+            matrix.Matrix40 <- float32 offset.R/255.0f
+            matrix.Matrix41 <- float32 offset.G/255.0f
+            matrix.Matrix42 <- float32 offset.B/255.0f
+            attributes.SetColorMatrix(matrix)
+            graphics.CompositingMode <- CompositingMode.SourceCopy
+            graphics.DrawImage(source,Rectangle(0,0,source.Width,source.Height),0,0,source.Width,source.Height,GraphicsUnit.Pixel,attributes)
+            output
+        with _ -> output.Dispose(); reraise()
+
 /// Tab contents keep their full size until the tab is too short for them, then shrink together,
 /// so a low tab still shows its icon, close button and text whole.
 module TabMetrics =

@@ -74,6 +74,12 @@ module Theme =
         let channel a b = int(Math.Round(float b + (float a-float b)*amount))
         Color.FromArgb(255,channel tint.R background.R,channel tint.G background.G,channel tint.B background.B)
     let tabTint highContrast tint = if highContrast then None else tint
+    /// How much of each colour an inactive group keeps; the rest comes from its background.
+    let dimAmount = 0.4
+    /// Soften inactive groups without letting the window underneath show through.
+    let dimColor bar color =
+        let background = if darkBar bar then Color.FromArgb(32,32,32) else Color.White
+        blend dimAmount color background
     /// The separator is not chosen on its own: it follows the text and inactive tab colours, a
     /// quarter of the way from the inactive tab towards the text, as the presets draw it. Back on
     /// its preset's text and inactive colours, a palette takes the preset's own separator again.

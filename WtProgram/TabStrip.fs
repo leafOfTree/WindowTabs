@@ -26,7 +26,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let foregroundCell = Cell.create(None:Tab option)
     let prevForegroundCell = Cell.create(None)
     let sizeCell = Bemo.Cell<Sz>(Cell, Sz.empty, (=))
-    let alphaCell = Cell.create(byte(0xFF))
+    let dimmedCell = Cell.create(false)
     // Position is presentation state, not an input to pixel rendering.
     let mutable location = Pt.empty
     let mutable renderedFrames = 0L
@@ -269,10 +269,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             try
                 renderedOffset <- if this.isShrunk then this.ts.collapsedOffset else 0
                 renderedFrames <- renderedFrames+1L
-                this.window.update(image, this.location.add(Pt(0,renderedOffset)), this.alpha)
+                this.window.update(image, this.location.add(Pt(0,renderedOffset)), 255uy)
                 shadowWindow |> Option.iter (fun shadow ->
                     if this.isShrunk || this.isEmpty then shadow.hide()
-                    else shadow.update(image, this.alpha, this.direction))
+                    else shadow.update(image, 255uy, this.direction))
             finally
                 image.bitmap.Dispose()
         else
@@ -281,7 +281,11 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     
     member private this.render : Img = 
         try
-            if this.isShrunk then this.ts.renderCollapsed else this.ts.render
+            let image = if this.isShrunk then this.ts.renderCollapsed else this.ts.render
+            if dimmedCell.value && not SystemInformation.HighContrast then
+                try Img(TabDimming.render this.appearance.tabNormalBgColor image.bitmap)
+                finally image.bitmap.Dispose()
+            else image
         with ex -> 
             Img(Sz(1,1))
 
@@ -457,9 +461,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         if moved && this.visible && renderedFrames>0L && renderedFrames=previousRender then
             this.move()
      
-    member this.alpha
-        with get() = alphaCell.value
-        and set(value) = alphaCell.set(value)
+    member this.dimmed
+        with get() = dimmedCell.value
+        and set(value) = dimmedCell.set(value)
 
     member this.visible 
         with get() = visibleCell.value

@@ -114,9 +114,9 @@ module Strings =
         let enableTabsByDefault = { caption={ en="Use tabs for new apps"; zh="新应用自动启用标签"; ja="新しいアプリでタブを使う" }
                                     description={ en="Apps you haven't set in the list."; zh="适用于列表中还没设置过的应用。"; ja="一覧でまだ設定していないアプリに適用されます。" }
                                     keywords={ en="enable tabs by default new"; zh="默认启用标签 新应用"; ja="既定でタブを有効にする 新しいアプリ" } }
-        let dimInactiveGroups = { caption={ en="Dim tabs in inactive groups"; zh="淡化非活动分组的标签"; ja="非アクティブなグループのタブを半透明にする" }
+        let dimInactiveGroups = { caption={ en="Dim tabs in inactive groups"; zh="淡化非活动分组的标签"; ja="非アクティブなグループのタブの色を薄くする" }
                                   description={ en="Make the active group easier to spot."; zh="让当前活动的分组更容易辨认。"; ja="アクティブなグループを見分けやすくします。" }
-                                  keywords={ en="fade transparent opacity"; zh="透明 变暗"; ja="暗く" } }
+                                  keywords={ en="fade muted transparent opacity"; zh="淡化 变浅 透明 变暗"; ja="薄く 半透明 暗く" } }
         let autoHide = { caption={ en="Auto-hide tabs"; zh="自动隐藏标签"; ja="タブを自動的に隠す" }
                          description={ en="Show a thin strip until hover."; zh="只显示细栏，悬停展开。"; ja="細いバーだけ表示し、ホバーで展開します。" }
                          keywords={ en="maximized snapped snap half fullscreen full screen minimal mode compact bar never always"; zh="最大化 贴靠 半屏 分屏 全屏 极简模式 紧凑 精简 从不 始终"; ja="最大化 スナップ 半分 全画面 ミニマルモード コンパクト 常に" } }

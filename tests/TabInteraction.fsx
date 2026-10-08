@@ -38,6 +38,17 @@ let main() =
     try
         use settings = new Settings(true,saveDelay=0)
         let api = settings :> ISettings
+        for bar in [Theme.light.tabNormalBgColor;Theme.dark.tabNormalBgColor] do
+            use source = new Bitmap(4,1)
+            for x,color in [0,Color.Red;1,Color.White;2,Color.FromArgb(128,20,40,60);3,Color.Transparent] do source.SetPixel(x,0,color)
+            use softened = TabDimming.render bar source
+            for x in 0..3 do
+                check (softened.GetPixel(x,0).A=source.GetPixel(x,0).A) "Whole-strip dimming changed opacity or rounded-edge transparency"
+            for x in 0..1 do
+                let expected = Theme.dimColor bar (source.GetPixel(x,0))
+                let actual = softened.GetPixel(x,0)
+                check (abs(int expected.R-int actual.R)<=1 && abs(int expected.G-int actual.G)<=1 && abs(int expected.B-int actual.B)<=1)
+                      "Icon and text pixels did not receive the same whole-strip dimming"
         let savedAppearance = api.appearance
         for mode,name in [LightTheme,"light";DarkTheme,"dark"] do
             api.updateAppearance(fun value -> {value with mode=mode})
@@ -290,6 +301,25 @@ let main() =
                 let start = Pt(-20000,-20000)
                 strip.setPlacement(placement start size false)
                 strip.visible <- true
+                let originalFill = (snd strip.tabSprites.head).fillColor
+                let renderProperty = typeof<TabStrip>.GetProperty("render",BindingFlags.Instance ||| BindingFlags.NonPublic)
+                let pixels() =
+                    let image = renderProperty.GetValue(strip) :?> Img
+                    try [| for y in 0..image.height-1 do for x in 0..image.width-1 do yield image.bitmap.GetPixel(x,y) |]
+                    finally image.bitmap.Dispose()
+                let bright = pixels()
+                let brightFrames = frames strip
+                strip.dimmed <- true
+                let dimmedSprite = snd strip.tabSprites.head
+                check (frames strip>brightFrames) "Dimming an inactive group did not repaint it"
+                if not SystemInformation.HighContrast then
+                    let dim = pixels()
+                    check (dim.Length=bright.Length && Array.forall2(fun (a:Color) (b:Color) -> a.A=b.A) dim bright) "Inactive group became transparent"
+                    check (Array.exists2(fun (a:Color) (b:Color) -> a.ToArgb()<>b.ToArgb()) dim bright) "Inactive group was not dimmed"
+                check (dimmedSprite.fillColor.A=255uy) "Inactive group became transparent"
+                check (dimmedSprite.fillColor=originalFill) "Group dimming was applied twice instead of to the finished surface"
+                strip.dimmed <- false
+                check ((snd strip.tabSprites.head).fillColor=originalFill) "Reactivating a group did not restore its colours"
                 let selectionFrames = frames strip
                 let order = strip.zorder
                 strip.setTabBgColor(order.head,None)
