@@ -170,6 +170,18 @@ let main() =
             assertTrue popup.Visible "Popup opened"
             let picker = (popup.Items.[0] :?> ToolStripControlHost).Control :?> SettingsColorPicker
             let other = if mode=DarkTheme then preferences.lightPalette else preferences.darkPalette
+            let swatches = picker.Controls |> Seq.cast<Control> |> Seq.choose(function :? Button as button -> Some button | _ -> None) |> Seq.toArray
+            assertTrue (swatches.Length=8) "Picker is missing common colour shortcuts"
+            let hue = Rectangle(Dpi.scale 6,0,picker.Width-Dpi.scale 12,1)
+            assertTrue (swatches.[0].Left=hue.Left && swatches.[7].Right=hue.Right) "Common colours are not aligned with the hue bar"
+            assertTrue (swatches |> Array.forall(fun button -> button.FlatAppearance.BorderColor=(SettingsColors.current()).muted)) "Common colour rims kept another theme's colour"
+            for index,expected in [0,Color.Black;1,Color.White] do
+                swatches.[index].Focus() |> ignore
+                swatches.[index].PerformClick()
+                Application.DoEvents()
+                assertTrue (not swatches.[index].Focused) "A common colour kept the keys away from the picker"
+                let edited = if mode=DarkTheme then preferences.darkPalette else preferences.lightPalette
+                assertTrue (picker.Color.ToArgb()=expected.ToArgb() && edited.tabTextColor.ToArgb()=expected.ToArgb()) "Common colour did not commit immediately"
             picker.Color <- Color.Blue
             key picker Keys.Down
             Application.DoEvents()
