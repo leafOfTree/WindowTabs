@@ -17,7 +17,7 @@ module Theme =
         tabActiveBgColor=Color.White
         tabBorderColor=Color.FromRGB(0xA8A8A8)
         tabFlashBgColor=Color.FromRGB(0xFFBBBB)
-        tabHeightOffset=1; tabIndentFlipped=80; tabIndentNormal=3 }
+        tabHeightOffset=1; tabIndentFlipped=3+TabGeometry.captionButtonsReserve; tabIndentNormal=3 }
 
     let dark = { light with
                     tabTextColor=Color.FromRGB(0xF3F3F3)

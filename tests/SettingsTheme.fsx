@@ -152,6 +152,16 @@ let main() =
         let maximized = placement (TabPalette.compose (TabGeometry.fromAppearance geometry) (TabPalette.fromAppearance geometry)) 0
         check (maximized.shouldShowInside && maximized.bounds.x=100+11 && maximized.bounds.height=37) "Inside placement ignores the shared side margin"
         check (maximized.bounds.right=100+900-11-TabGeometry.captionButtonsReserve) "Inside placement does not clear the caption buttons"
+        let originalDpi = Dpi.value()
+        try
+            for dpi in [96;120;144;192] do
+                Dpi.set dpi
+                let appearance = (TabPalette.compose (TabGeometry.fromAppearance geometry) (TabPalette.fromAppearance geometry)).scaled
+                let inside = placement appearance 0
+                check (inside.bounds.right <= inside.windowBounds.right-Dpi.scale (3*46)) "Tabs cover the minimize button at this DPI"
+                let outside = placement appearance 200
+                check (outside.bounds.right=outside.windowBounds.right-appearance.tabIndentNormal) "Caption button reserve reduced tabs above the window"
+        finally Dpi.set originalDpi
         let legacyJson = JObject.Parse("""{"tabAppearance":{"tabActiveBgColor":"123456","tabHeight":31},"unrelated":"keep"}""")
         api.root <- legacyJson
         check settings.settings.appearance.useCustomColors "Legacy custom colours lost"
