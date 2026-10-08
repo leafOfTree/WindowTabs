@@ -77,6 +77,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let mutable revealTarget = 1.0
     let revealClock = Diagnostics.Stopwatch()
     let revealTimer = new Timer(Interval=15)
+    /// Waits out a press that handed the capture to the drag check, see WM_MOUSELEAVE.
+    let captureWatch = new Timer(Interval=30)
+    let mutable pointerSource : unit -> Point = fun () -> Cursor.Position
     /// The full strip and the collapsed bar while an expand or collapse runs, so a frame only
     /// blends them; dropped whenever what they show changes.
     let mutable revealImages : (Img*Img) option = None
@@ -113,6 +116,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         showInsideExport.init()
 
         revealTimer.Tick.Add(fun _ -> this.stepReveal())
+        captureWatch.Tick.Add(fun _ ->
+            if WinUserApi.GetCapture()=IntPtr.Zero then
+                captureWatch.Stop()
+                this.refreshHover())
 
         Cell.listen <| fun() ->
             this.update()
@@ -263,7 +270,12 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         | WindowMessages.WM_MBUTTONDOWN -> mouseDown MouseMiddle
         | WindowMessages.WM_MBUTTONUP -> mouseUp MouseMiddle
         | WindowMessages.WM_MOUSELEAVE ->
-            this.processMouse(MouseLeave)
+            // Pressing a tab hands the capture to the drag check, and Windows reports that as the
+            // pointer leaving while it is still on the tab: auto-hide then began to collapse the
+            // strip under the held button. Hover holds until the button is let go, then follows
+            // where the pointer really is.
+            if WinUserApi.GetCapture()<>IntPtr.Zero && this.pointerInside then captureWatch.Start()
+            else this.processMouse(MouseLeave)
             msg.def()
         | _ ->
             msg.def()
@@ -431,10 +443,18 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     /// its leaving, as a move would.
     member this.refreshHover() =
         if this.visible && this.window.isVisible then
-            let cursor = Cursor.Position
+            let cursor = pointerSource()
             let bounds = this.window.bounds
             if bounds.containsPoint(Pt(cursor.X,cursor.Y)) then
                 this.processMouse(MouseMove(Pt(cursor.X-bounds.x,cursor.Y-bounds.y).add(Pt(0,renderedOffset))))
+            else this.processMouse(MouseLeave)
+
+    /// Where the pointer is on screen; native hosts supply one instead of moving the real cursor.
+    member internal _.pointer with get() = pointerSource and set(value) = pointerSource <- value
+
+    member private this.pointerInside =
+        let cursor = pointerSource()
+        this.window.bounds.containsPoint(Pt(cursor.X,cursor.Y))
 
     /// No room above the window on its monitor, so the tabs sit inside it over the title bar:
     /// true when the window is maximized, snapped to the top, or moved against the top edge.
@@ -561,6 +581,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.destroy() = 
         destroyingEvent.Trigger()
         revealTimer.Dispose()
+        captureWatch.Dispose()
         dropRevealImages()
         normalFont.Dispose()
         renamedFont.Dispose()

@@ -458,18 +458,45 @@ let main() =
                 check (not strip.isMouseOver.value) "Mouse leave retained hover"
                 // A menu over the strip ends hover without a move. When it goes with the pointer still
                 // over the strip, hover returns without waiting for a move, so auto-hide keeps it open.
+                // A pointer given to the strip, so moving the real mouse cannot disturb the checks.
+                let pointerProperty = typeof<TabStrip>.GetProperty("pointer",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public)
+                let pointAt (point:Point) = pointerProperty.SetValue(strip,box(fun () -> point))
+                pointAt (Point(-30000,-30000))
                 strip.refreshHover()
                 check (not strip.isMouseOver.value) "Hover returned with the pointer elsewhere"
-                let underPointer = Pt(Cursor.Position.X-Dpi.scale 60,Cursor.Position.Y-Dpi.scale 14)
+                let underPointer = Pt(-19000,-19000)
                 strip.setPlacement(placement underPointer size false)
+                pointAt (Point(underPointer.x+Dpi.scale 60,underPointer.y+Dpi.scale 14))
                 Application.DoEvents()
                 send WindowMessages.WM_MOUSELEAVE Pt.empty
                 strip.refreshHover()
                 let restored = strip.isMouseOver.value
+                // Pressing a tab hands the capture to the drag check, which Windows reports as a
+                // leave: hover holds while the button is down, then follows the pointer.
+                use grab = new Form(ShowInTaskbar=false,FormBorderStyle=FormBorderStyle.None,StartPosition=FormStartPosition.Manual,
+                                    Location=Point(-20000,-20000),Size=Size(1,1))
+                WinUserApi.ShowWindow(grab.Handle,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
+                let settle () =
+                    let clock = Diagnostics.Stopwatch.StartNew()
+                    while clock.ElapsedMilliseconds<150L do
+                        Application.DoEvents()
+                        Threading.Thread.Sleep(5)
+                Application.DoEvents()
+                send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 60,Dpi.scale 14))
+                WinUserApi.SetCapture(grab.Handle) |> ignore
                 send WindowMessages.WM_MOUSELEAVE Pt.empty
+                let heldDuringPress = strip.isMouseOver.value
                 strip.setPlacement(placement start size false)
+                pointAt (Point(-30000,-30000))
+                WinUserApi.ReleaseCapture() |> ignore
+                settle()
+                let droppedAway = not strip.isMouseOver.value
+                send WindowMessages.WM_MOUSELEAVE Pt.empty
                 Application.DoEvents()
                 check restored "The pointer still over the strip after its menu closed did not hover it again"
+                check heldDuringPress "Pressing a tab dropped hover while the pointer stayed on it, so auto-hide began to collapse"
+                check droppedAway "Hover stayed after a press ended with the pointer away from the strip"
+                pointerProperty.SetValue(strip,box(fun () -> Cursor.Position))
                 let count = frames strip
                 send WindowMessages.WM_MOUSELEAVE Pt.empty
                 check (frames strip=count) "Repeated mouse leave repainted"
