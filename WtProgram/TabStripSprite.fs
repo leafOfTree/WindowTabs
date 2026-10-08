@@ -375,8 +375,11 @@ type TabSprite<'id> = {
 
     /// A raised tab hardly lighter or darker than the bar (high contrast, or a palette that makes
     /// them alike) would vanish into it, so it is outlined.
+    /// A raised tab the bar's own colour, as in high contrast, is outlined so it still shows. One
+    /// only as light or dark as the bar, a deep tab colour on a dark bar, stands out by its colour.
     member private this.needsOutline =
-        TextContrast.ratio this.fillColor this.appearance.tabNormalBgColor < 1.25
+        TextContrast.ratio this.fillColor this.appearance.tabNormalBgColor < 1.25 &&
+        Theme.OkLab.distance this.fillColor this.appearance.tabNormalBgColor < 0.1
 
     // The inset exists because GDI+ puts pixel centres on integer coordinates
     // once antialiasing is on, so column k spans k-0.5 to k+0.5, and a fill run

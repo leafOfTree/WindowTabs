@@ -332,6 +332,10 @@ let main () =
         // An active colour like the bar's (high contrast) is outlined so the tab still shows.
         let alike = { pill with appearance={ pill.appearance with tabActiveBgColor=normal; tabBorderColor=Color.Black } }
         check ((pixel alike (140+TabMetrics.scaled 26 2) 14).R < 100uy) "An active pill the colour of the bar is not outlined"
+        // One as dark as the bar but plainly another colour, a deep purple on the dark bar, is not.
+        let deep = { alike with appearance={ alike.appearance with tabNormalBgColor=Theme.dark.tabNormalBgColor; tabActiveBgColor=Color.FromRGB(0x690CA5) } }
+        check (TextContrast.ratio (Color.FromRGB(0x690CA5)) Theme.dark.tabNormalBgColor<1.25) "The deep purple no longer matches the dark bar in brightness"
+        check ((pixel deep (140+TabMetrics.scaled 26 2) 14).B > 100uy) "A raised tab set apart from the bar by its colour has an outline"
         // A sheet of every style over a light and a dark title bar, for looking at: the middle tab
         // active in light, dark and high contrast, then the first tab active in light.
         let highContrast = { Theme.light with tabActiveBgColor=SystemColors.Window; tabNormalBgColor=SystemColors.Window
