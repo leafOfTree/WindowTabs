@@ -38,6 +38,67 @@ let main() =
     try
         use settings = new Settings(true,saveDelay=0)
         let api = settings :> ISettings
+        let savedAppearance = api.appearance
+        for mode,name in [LightTheme,"light";DarkTheme,"dark"] do
+            api.updateAppearance(fun value -> {value with mode=mode})
+            let palette = SettingsColors.current()
+            let mutable selected = 0
+            let mutable closed = false
+            use dot = MenuImages.colorDot 16 Color.CornflowerBlue
+            let command flags image text = CmiRegular({text=text;image=image;flags=List2(flags);click=fun () -> selected <- selected+1})
+            let entries = List2([command [] None "Open new tab\tCtrl+Alt+N";
+                                 command [MenuFlags.MF_CHECKED] None "Checked";
+                                 CmiSeparator;
+                                 CmiPopUp({text="Tab color";image=None;items=List2([command [MenuFlags.MF_CHECKED] (Some(Img(dot))) "Blue";command [MenuFlags.MF_DISABLED] None "Disabled"])})])
+            use menu = new ThemedContextMenu(entries,fun () -> closed <- true)
+            let first = menu.Items.[0] :?> ToolStripMenuItem
+            let nested = menu.Items.[3] :?> ToolStripMenuItem
+            let colour = nested.DropDownItems.[0] :?> ToolStripMenuItem
+            check (menu.Font.Size>SystemFonts.MenuFont.Size*float32(Dpi.value())/float32(Dpi.system()) && nested.DropDown.Font=menu.Font) "Menu font was not enlarged consistently"
+            check (menu.BackColor=palette.surface && nested.DropDown.BackColor=palette.surface) "Tab menu or submenu did not follow the application theme"
+            check (first.ShortcutKeyDisplayString="Ctrl+Alt+N" && first.Text="Open new tab") "Themed menu lost its shortcut column"
+            check (colour.Checked && not nested.DropDownItems.[1].Enabled) "Themed submenu lost checked or disabled state"
+            check (not(Object.ReferenceEquals(colour.Image,dot))) "Themed menu retained a caller-owned image"
+            check (not menu.ShowCheckMargin && menu.ShowImageMargin && not ((nested.DropDown :?> ToolStripDropDownMenu).ShowCheckMargin)) "Tab menus reserved an empty second icon column"
+            dot.Dispose()
+            menu.Show(Point(40,40))
+            Application.DoEvents()
+            check (not(menu.Region.IsVisible(Point(0,0))) && menu.Region.IsVisible(Point(menu.Width/2,2))) "Main menu has square corners or clips its top edge"
+            use snapshot = new Bitmap(menu.Width,menu.Height)
+            menu.DrawToBitmap(snapshot,Rectangle(Point.Empty,snapshot.Size))
+            snapshot.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","tab-menu-"+name+".png"))
+            check (snapshot.GetPixel(menu.Width/2,2).ToArgb()=palette.surface.ToArgb()) "Rendered tab menu background ignored the theme"
+            nested.ShowDropDown()
+            Application.DoEvents()
+            check (not(nested.DropDown.Region.IsVisible(Point(0,0)))) "Submenu has square corners"
+            use childSnapshot = new Bitmap(nested.DropDown.Width,nested.DropDown.Height)
+            nested.DropDown.DrawToBitmap(childSnapshot,Rectangle(Point.Empty,childSnapshot.Size))
+            childSnapshot.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","tab-submenu-"+name+".png"))
+            check (childSnapshot.GetPixel(childSnapshot.Width/2,2).ToArgb()=palette.surface.ToArgb()) "Rendered submenu background ignored the theme"
+            menu.dismissOutside(nested.DropDown.PointToScreen(Point(10,10)))
+            check (menu.Visible && nested.DropDown.Visible && not closed) "Clicking inside a submenu dismissed the menu"
+            nested.HideDropDown()
+            first.PerformClick()
+            menu.Close()
+            check (closed && selected=0 && not menu.IsDisposed) "Menu command or disposal ran inside the close event"
+            let deadline = DateTime.UtcNow.AddSeconds(2.0)
+            while not menu.IsDisposed && DateTime.UtcNow<deadline do
+                Application.DoEvents()
+                Threading.Thread.Sleep(5)
+            check (menu.IsDisposed && selected=1) "Themed menu did not retire and dispatch its command once"
+            use dismissed = new ThemedContextMenu(List2([command [] None "Cancel test"]),ignore)
+            dismissed.Show(Point(40,40))
+            Application.DoEvents()
+            dismissed.dismissOutside(dismissed.PointToScreen(Point(10,10)))
+            check dismissed.Visible "Clicking inside the main menu dismissed it"
+            dismissed.dismissOutside(Point(dismissed.Right+100,dismissed.Bottom+100))
+            check (not dismissed.Visible && selected=1) "Outside click failed to dismiss the menu or ran a command"
+            let deadline = DateTime.UtcNow.AddSeconds(2.0)
+            while not dismissed.IsDisposed && DateTime.UtcNow<deadline do
+                Application.DoEvents()
+                Threading.Thread.Sleep(5)
+            check dismissed.IsDisposed "Outside-click dismissal leaked the menu"
+        api.updateAppearance(fun _ -> savedAppearance)
         let iconSprite opacity = {IconSprite.icon=SystemIcons.Application;size=Sz(16,16);opacity=opacity} :> ISprite
         use bright = (iconSprite 1.0f).image.bitmap
         use dim = (iconSprite 0.68f).image.bitmap

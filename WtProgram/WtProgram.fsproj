@@ -70,6 +70,8 @@
     <Compile Include="Shared\Theme.fs" />
     <Compile Include="Shared\ThemePresets.fs" />
     <Compile Include="Shared\ThemeService.fs" />
+    <Compile Include="Shared\SettingsColors.fs" />
+    <Compile Include="Shared\ThemedMenu.fs" />
     <Compile Include="Shared\AnimationWindow.fs" />
     <Compile Include="Shared\Forms.fs" />
     <Compile Include="Shared\Json.fs" />

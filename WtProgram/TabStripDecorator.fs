@@ -14,6 +14,7 @@ type TabStripDecorator(group:WindowGroup) as this =
     let dropTarget = Cell.create(None)
     let mouseEvent = Event<_>()
     let _ts = TabStrip(this :> ITabStripMonitor)
+    let mutable contextMenu : ThemedContextMenu option = None
 
     do this.init()
 
@@ -43,10 +44,18 @@ type TabStripDecorator(group:WindowGroup) as this =
                 let ptScreen = os.windowFromHwnd(group.hwnd).ptToScreen(pt)
                 group.bb.write("contextMenuVisible", true)
                 let images = ResizeArray<Img>()
-                try Win32Menu.show group.hwnd ptScreen (this.contextMenu(hwnd,images))
+                try
+                    try
+                        contextMenu |> Option.iter(fun menu -> menu.Dispose())
+                        let menu = new ThemedContextMenu(this.contextMenu(hwnd,images),fun () -> group.bb.write("contextMenuVisible", false))
+                        contextMenu <- Some menu
+                        menu.Show(ptScreen.x,ptScreen.y)
+                    with _ ->
+                        contextMenu |> Option.iter(fun menu -> menu.Dispose())
+                        group.bb.write("contextMenuVisible", false)
+                        reraise()
                 finally
                     for image in images do image.bitmap.Dispose()
-                    group.bb.write("contextMenuVisible", false)
             | MouseDown, _ ->
                 capturedHwnd := Some(hwnd)
             | MouseUp, MouseMiddle -> 
@@ -65,6 +74,8 @@ type TabStripDecorator(group:WindowGroup) as this =
             group.invokeAsync(fun () -> if not disposed then this.ts.setDefaultAlignment(alignment)))
 
         group.exited.Add <| fun() ->
+            contextMenu |> Option.iter(fun menu -> menu.Dispose())
+            contextMenu <- None
             disposed <- true
             alignmentSubscription.Dispose()
             geometrySubscription.Dispose()
