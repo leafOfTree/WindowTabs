@@ -54,8 +54,8 @@ let main() =
                 if not dark then
                     check (TextContrast.luminance faded>=TextContrast.luminance color) "Light-theme tab colours became darker when dimmed"
                 else
-                    let distance (c:Color) = abs(TextContrast.luminance c-TextContrast.luminance bar)
-                    check (distance faded<=distance color) "Dark-theme tab colours moved away from the bar when dimmed"
+                    // Measured as seen: a blend in sRGB can step a deep colour's luminance a hair past the bar's.
+                    check (Theme.OkLab.distance faded bar<=Theme.OkLab.distance color bar) "Dark-theme tab colours moved away from the bar when dimmed"
             // Filled tabs behind the active one, in an active and in a dimmed group: on a dark bar
             // these sank towards black, until neighbouring colours read as the same near-black.
             use font = new Font("Segoe UI",9.0f)
@@ -76,6 +76,21 @@ let main() =
             let normal,dimmed = spread fills,spread (fills |> List.map(Theme.dimColor bar))
             check (normal>=30.0 && dimmed>=12.0)
                   (sprintf "Filled tabs in a %s theme are hard to tell apart: neighbours differ by %.0f, or %.0f in a dimmed group" (if dark then "dark" else "light") normal dimmed)
+        // Every tab colour takes white text as active, hovered and inactive tab, in either theme,
+        // and any two stay apart, the quieter shades behind the active tab too.
+        let palette = Theme.tabPalette false
+        check (Theme.tabPalette true=palette) "The themes use different tab palettes"
+        for color in palette do
+            for shade in [color;Theme.tabShade 0.06 0.75 color;Theme.tabShade 0.12 0.6 color] do
+                check (TextContrast.ratio Color.White shade>=TextContrast.minimum)
+                      (sprintf "White text is hard to read on tab colour %A" shade)
+        let closest (colors:Color[]) =
+            [for i in 0..colors.Length-1 do for j in i+1..colors.Length-1 -> Theme.OkLab.distance colors.[i] colors.[j]] |> List.min
+        check (closest palette>=0.08) (sprintf "Two tab colours are hard to tell apart (%.3f)" (closest palette))
+        let inactive = palette |> Array.map(Theme.tabShade 0.12 0.6)
+        check (closest inactive>=0.05) (sprintf "Two inactive tab colours are hard to tell apart (%.3f)" (closest inactive))
+        // Nor may one sink into the dark bar behind it.
+        check (inactive |> Array.forall(fun shade -> Theme.OkLab.distance shade Theme.dark.tabNormalBgColor>=0.02)) "An inactive tab colour disappears into the dark bar"
         let presetNames = ThemePresets.names |> Array.map(fun name -> name.en)
         check (presetNames=[|"Default";"Blue";"Teal";"Green";"Sand";"Amber";"Rose";"Purple";"Slate"|])
               "Theme presets do not use colour names in the shared colour order"
@@ -848,12 +863,13 @@ Group #2: No valid windows in this group.";
             style.SelectedIndex <- 0
             Application.DoEvents()
             check (api.getValue("tabColorMode")=box "ByWindow" && api.getValue("tabColorStyle")=box "Fill") "Color coding choices are not bound to their settings"
-            check (backgrounds |> List.forall off && on "tabTextColor")
-                  "Tab backgrounds a fill replaces are still shown, or the text color is not"
+            // The text is chosen for each colour too, so its row goes with the backgrounds.
+            check (backgrounds |> List.forall off && off "tabTextColor")
+                  "Tab colours a fill decides are still shown"
             snapshot "settings-appearance-filled"
             style.SelectedIndex <- 1
             Application.DoEvents()
-            check (backgrounds |> List.forall on) "A stripe left the tab backgrounds turned off"
+            check (backgrounds |> List.forall on && on "tabTextColor") "A stripe left the tab colours turned off"
             style.SelectedIndex <- 0
             mode.SelectedIndex <- 0
             Application.DoEvents()

@@ -314,8 +314,8 @@ let main() =
         check (Theme.parseTabColor "#notrgb"=None && Theme.parseTabColor "#001122"=Some(CustomColor(System.Drawing.Color.FromArgb(0,17,34)))) "Colour validation accepted malformed input"
         check (Theme.parseTabColor "palette:3"=Some(PaletteColor 3) && Theme.parseTabColor "palette:15"=Some(PaletteColor 15) && Theme.parseTabColor "palette:16"=None && Theme.parseTabColor "palette:-1"=None) "Palette colour validation failed"
         check (Theme.formatTabColor (PaletteColor 3)="palette:3" && Theme.formatTabColor (CustomColor(System.Drawing.Color.FromArgb(0,17,34)))="#001122") "Tab colours did not format for saving"
-        // A palette colour follows the theme; a custom one stays as chosen.
-        check (Theme.tabColor true (PaletteColor 1)<>Theme.tabColor false (PaletteColor 1)) "Palette colour did not follow the theme"
+        // Palette colours are made for white text in either theme; a custom one stays as chosen.
+        check (Theme.tabColor true (PaletteColor 1)=Theme.tabColor false (PaletteColor 1)) "A palette colour changed with the theme"
         check (Theme.tabColor true (CustomColor System.Drawing.Color.Red)=System.Drawing.Color.Red) "Custom colour changed with the theme"
         check (SettingsCatalog.appRulePathKeys |> List.forall(fun key -> api.getValue(key) :? Set2<string>)) "App rule path keys must all be path sets"
         check ([true;false] |> List.forall(fun dark -> (Theme.tabPalette dark).Length=Theme.tabPaletteSize)) "Light and dark palettes differ in size"

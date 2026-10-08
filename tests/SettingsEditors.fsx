@@ -148,7 +148,7 @@ let main() =
         // Filled by automatic colours, tabs ignore the background rows: hide them, and judge
         // readability on the automatic colours, which give way to the text.
         let comboNamed name = view.control.Controls.Find(name,true).[0] :?> SettingsCombo
-        let backgroundRows = ["tabActiveBgColor";"tabHighlightBgColor";"tabNormalBgColor"] |> List.map(fun id -> view.control.Controls.Find(id,true).[0].Parent :?> SettingsRow)
+        let backgroundRows = ["tabTextColor";"tabActiveBgColor";"tabHighlightBgColor";"tabNormalBgColor"] |> List.map(fun id -> view.control.Controls.Find(id,true).[0].Parent :?> SettingsRow)
         let note = view.control.Controls.Find("contrast-note",true).[0]
         let comparison = view.control.Controls.Find("contrast-comparison",true).[0] :?> ContrastComparison
         let savedPalettes = preferences.lightPalette,preferences.darkPalette
@@ -159,7 +159,7 @@ let main() =
         (comboNamed "tab-color-mode").SelectedIndex <- 1
         Application.DoEvents()
         assertTrue (backgroundRows |> List.forall(fun row -> row.Collapsed)) "Background rows stay shown while automatic colours fill every tab"
-        assertTrue (note.Visible && note.Text=tr Strings.Appearance.colorsAdjusted) "Filled tabs report text adjustment instead of adjusted colours"
+        assertTrue (not note.Visible) "Filled tabs, white by design, still explain an adjustment"
         assertTrue (comparison.Samples.IsEmpty && not comparison.Visible) "Filled tabs list a sample for every adjusted colour"
         use page = new Bitmap(view.control.Width,view.control.Height)
         view.control.DrawToBitmap(page,Rectangle(Point.Empty,page.Size))

@@ -248,11 +248,13 @@ type TabSprite<'id> = {
     /// The tab's own colour: its whole slot in the joined style, its raised shape otherwise.
     member this.tint = Theme.tabTint SystemInformation.HighContrast this.displayInfo.tint
 
-    /// Where the shades of a filled tab head: away from the text, to white behind dark text and
-    /// to black behind light text.
-    member private this.shadeToward =
-        let text = this.appearance.tabTextColor
-        if TextContrast.ratio text Color.White >= TextContrast.ratio text Color.Black then Color.White else Color.Black
+    /// A filled tab's text, chosen for its colour and kept in every state: white on the palette,
+    /// which is made for it, and dark only on a colour picked by hand that is too light for white.
+    /// The text colour setting is left out: no one colour reads on all of them, and one that
+    /// applied to some tabs only looked like a mistake.
+    member private this.fillText (tint:Color) =
+        let dark = Theme.light.tabTextColor
+        if TextContrast.ratio Color.White tint >= TextContrast.ratio dark tint then Color.White else dark
 
     member this.fillColor =
         match this.displayInfo.bgColor with
@@ -263,29 +265,22 @@ type TabSprite<'id> = {
             let highlight = this.appearance.tabHighlightBgColor
             let hovered = this.hover.IsSome || this.captured.IsSome
             let basis = if this.isTop then active elif hovered then highlight else inactive
-            // A fill colours the whole tab: the active one in its colour, the others in a shade
-            // of it further from the text. Mixed with the grey bar instead, a row of tabs turned
-            // muddy. The colour gives way to the text rather than the other way round: text picked
-            // for each shade flipped between black and white as tabs were switched.
+            // A fill colours the whole tab in its colour as chosen, the tabs behind in darker shades
+            // of it with less colour. The text gives way to the colour rather than the other way
+            // round: colours pushed lighter or darker for one text colour came out uneven and muddy.
             // A stripe leaves the tab as it was.
             match this.tint with
             | Some tint when this.displayInfo.colorStyle="Fill" ->
-                let text = this.appearance.tabTextColor
-                let tint = TextContrast.readableBackground text tint
-                let toward = this.shadeToward
-                // Taken further towards white than towards black: light text has already made the
-                // colour dark, and a shade much darker is near black and no longer reads as it.
-                let inactive,hover = if toward=Color.White then 0.3,0.6 else 0.58,0.8
                 if this.isTop then tint
-                elif hovered then Theme.blend hover tint toward
-                else Theme.blend inactive tint toward
+                elif hovered then Theme.tabShade 0.06 0.75 tint
+                else Theme.tabShade 0.12 0.6 tint
             | _ -> basis
 
     /// The text and close button colour for this tab's own background: the chosen colour,
     /// or a darker or lighter shade of it where that would be hard to read. On the bar of a
     /// folder or pill strip it is taken part way towards the bar, as a browser greys out the
-    /// titles of the tabs behind, but never below readable contrast. Filled tabs fade theirs
-    /// the same way with their shade: half way behind, a quarter when hovered.
+    /// titles of the tabs behind, but never below readable contrast. Filled tabs grey theirs
+    /// behind the active tab, and only there.
     member this.textColor =
         let chosen = this.appearance.tabTextColor
         let filled = this.displayInfo.colorStyle="Fill" && this.tint.IsSome && this.displayInfo.bgColor.IsNone
@@ -295,9 +290,14 @@ type TabSprite<'id> = {
             Color.FromArgb(255,mix chosen.R bar.R,mix chosen.G bar.G,mix chosen.B bar.B)
         let chosen =
             if filled then
-                if this.isTop then chosen
-                elif this.hover.IsSome || this.captured.IsSome then fade 0.25
-                else fade 0.5
+                // Behind the active tab the text greys a little towards its shade, which is dark
+                // enough to keep it readable; pointing at the tab brings it back to full strength.
+                let own = this.fillText this.tint.Value
+                if this.isTop || this.hover.IsSome || this.captured.IsSome then own
+                else
+                    let bar = this.fillColor
+                    let mix (a:byte) (b:byte) = int(Math.Round(float a+(float b-float a)*0.3))
+                    Color.FromArgb(255,mix own.R bar.R,mix own.G bar.G,mix own.B bar.B)
             elif this.style = JoinedTabs || this.isRaised then chosen
             else fade 0.3
         TextContrast.readable chosen this.fillColor
@@ -498,18 +498,6 @@ type TabSprite<'id> = {
                 let y = if this.direction=TabUp then this.size.height-thickness else 0
                 use stripe = new SolidBrush(if this.isTop then tint else Theme.blend 0.60 tint this.fillColor)
                 g.FillRectangle(stripe,0,y,this.size.width,thickness)
-                g.Restore(state)
-            // Light text took the active tab's colour darker, close to the tabs behind it. An edge in
-            // the colour as chosen, where a stripe would run, marks it out without touching the
-            // contrast of its text.
-            | Some tint when this.displayInfo.colorStyle="Fill" && this.displayInfo.bgColor.IsNone && this.isTop &&
-                             this.shadeToward=Color.Black && this.fillColor.ToArgb()<>tint.ToArgb() ->
-                let state = g.Save()
-                g.SetClip(path)
-                let thickness = min this.size.height (Dpi.scale 3)
-                let y = if this.direction=TabUp then this.size.height-thickness else 0
-                use accent = new SolidBrush(tint)
-                g.FillRectangle(accent,0,y,this.size.width,thickness)
                 g.Restore(state)
             | _ -> ()
             if this.showLeftSeparator then

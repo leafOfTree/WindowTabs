@@ -151,38 +151,31 @@ let main () =
                 let active,inactive = tabs |> List.find(fun t -> t.isTop),tabs |> List.find(fun t -> not t.isTop)
                 check (not inactive.isRaised) "Tint raised an inactive tab"
                 if colorStyle="Fill" then
-                    // The active tab in its color, the others a shade of it further from the text, never the bar's grey.
+                    // The active tab in its colour exactly as chosen, the others darker shades of it
+                    // with less colour. Colours pushed lighter or darker for the text came out muddy.
                     let text = appearance.tabTextColor
-                    let tint = TextContrast.readableBackground text Color.Blue
-                    let toward = if TextContrast.ratio text Color.White >= TextContrast.ratio text Color.Black then Color.White else Color.Black
                     let hovered = {inactive with hover=Some TabBackground}
-                    let inactiveShare,hoverShare = if toward=Color.White then 0.3,0.6 else 0.58,0.8
-                    check (active.fillColor=tint && TextContrast.ratio text tint>=TextContrast.minimum) "A fill did not color the active tab in a shade its text reads on"
-                    check (inactive.fillColor=Theme.blend inactiveShare tint toward) "An inactive filled tab is not a shade of its color"
-                    check (hovered.fillColor=Theme.blend hoverShare tint toward) "Hovering a filled tab gives no feedback"
-                    // Text that flipped between black and white as tabs were switched. It fades behind
-                    // instead, towards its own tab's shade, and stays readable.
+                    check (active.fillColor=Color.Blue) "A fill changed the colour of the active tab"
+                    check (inactive.fillColor=Theme.tabShade 0.12 0.6 Color.Blue) "An inactive filled tab is not a darker, quieter shade of its colour"
+                    check (hovered.fillColor=Theme.tabShade 0.06 0.75 Color.Blue) "Hovering a filled tab gives no feedback"
+                    check (TextContrast.luminance inactive.fillColor<TextContrast.luminance hovered.fillColor &&
+                           TextContrast.luminance hovered.fillColor<TextContrast.luminance active.fillColor) "The active filled tab is not the brightest"
+                    // The text gives way instead, chosen for the colour whatever the text setting says:
+                    // white where it reads better, as on every palette colour, otherwise dark.
+                    let own = if TextContrast.ratio Color.White Color.Blue>=TextContrast.ratio Theme.light.tabTextColor Color.Blue then Color.White else Theme.light.tabTextColor
+                    check (active.textColor=TextContrast.readable own Color.Blue && hovered.textColor=active.textColor)
+                          "The active or hovered filled tab does not take the text that reads on its colour"
+                    // Tabs behind grey theirs a little, still readable; light or dark never flips.
                     let darker (tab:TabSprite<int>) = TextContrast.luminance tab.textColor < TextContrast.luminance tab.fillColor
-                    check (active.textColor=text) "The active filled tab does not use the text color as chosen"
-                    check ([active;inactive;hovered] |> List.forall(fun tab -> darker tab=darker active)) "Filled tabs flipped their text between dark and light"
-                    let contrast (tab:TabSprite<int>) = TextContrast.ratio tab.textColor tab.fillColor
-                    check (contrast inactive<contrast hovered && contrast hovered<contrast active) "Text behind the active filled tab does not fade"
-                    check (contrast inactive>=TextContrast.minimum-0.01) "Faded text fell below readable contrast"
-                    // Light text darkens a light colour on the active tab towards the tabs behind it; an
-                    // edge in the colour as chosen still marks it out. Untouched colours need none.
-                    let pastel = Color.FromRGB(0x8AB4F8)
-                    let lit = { tinted with tabs=Map2(List2([1,{info "One" with tint=Some pastel;colorStyle="Fill"};2,{info "Two" with tint=Some pastel;colorStyle="Fill"}])) }
-                    let litTabs = lit.sprite.children.list |> List.choose(fun (_,child) -> match child with :? TabSprite<int> as tab -> Some tab | _ -> None)
-                    /// An edge in the chosen colour on a tab filled with another one.
-                    let edged (tab:TabSprite<int>) =
-                        let image = lit.renderTab tab.id
-                        try tab.fillColor.ToArgb()<>pastel.ToArgb() &&
-                            [image.height-3..image.height-1] |> List.exists(fun y -> image.bitmap.GetPixel(image.width/2,y).ToArgb()=pastel.ToArgb())
-                        finally image.bitmap.Dispose()
-                    let litActive,litInactive = litTabs |> List.find(fun t -> t.isTop),litTabs |> List.find(fun t -> not t.isTop)
-                    let darkened = toward=Color.Black && litActive.fillColor.ToArgb()<>pastel.ToArgb()
-                    check (edged litActive=darkened && not(edged litInactive))
-                          "A darkened active filled tab has no edge in its chosen colour, or another tab has one"
+                    check (inactive.textColor<>active.textColor && darker inactive=darker active &&
+                           TextContrast.ratio inactive.textColor inactive.fillColor>=TextContrast.minimum)
+                          "Text behind the active filled tab does not grey, flipped, or became hard to read"
+                    // Grey text reads on neither a light nor a deep colour: the colour stays, the text goes.
+                    let greyAppearance = {appearance with tabStyle=style; tabTextColor=Color.FromRGB(0x929292)}
+                    let grey = { tinted with appearance=greyAppearance; tabs=Map2(List2([1,{info "One" with tint=Some Color.Orange;colorStyle="Fill"};2,{info "Two" with tint=Some Color.Orange;colorStyle="Fill"}])) }
+                    let greyActive = grey.sprite.children.list |> List.pick(fun (_,child) -> match child with :? TabSprite<int> as tab when tab.isTop -> Some tab | _ -> None)
+                    check (greyActive.fillColor=Color.Orange && TextContrast.ratio greyActive.textColor Color.Orange>=TextContrast.minimum)
+                          "Unreadable text changed the tab's colour instead of its own"
                 else
                     check (active.fillColor<>inactive.fillColor) "Tint hid the active tab"
                     check (inactive.fillColor=appearance.tabNormalBgColor) "A stripe mixed its color into the tab"

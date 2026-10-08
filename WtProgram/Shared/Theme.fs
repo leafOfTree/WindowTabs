@@ -28,11 +28,13 @@ module Theme =
                     tabFlashBgColor=Color.FromRGB(0x772222) }
 
     /// Stored indices keep their colour meanings when display or allocation order changes.
-    let tabPalette dark =
-        (if dark then [|0x9AA0A6;0x8AB4F8;0xF28B82;0xFDD663;0x81C995;0xFF8BCB;0xC58AF9;0x78D9EC
-                        0xFCAD70;0xD1C4E9;0xDCE775;0xF8BBD0;0xC5E1A5;0x7986CB;0x80CBC4;0xFFAB91|]
-         else [|0x70757A;0x1A73E8;0xD93025;0xE8A200;0x188038;0xD01884;0x8430CE;0x008B9A
-                0xE8710A;0x7E57C2;0x827717;0xC2185B;0x7CB342;0x1A237E;0x00796B;0xE64A19|]) |> Array.map Color.FromRGB
+    /// One set for both themes, every colour dark enough for white text, so a row of tabs reads
+    /// the same everywhere. Each keeps the hue its name says; colours near in hue sit at different
+    /// depths (blue and navy, pink and rose, red and coral), so any two remain easy to tell apart.
+    let private palette =
+        [|0x5B6167;0x0065DA;0xCF1637;0x836901;0x017031;0xBD197E;0x690CA5;0x08798D
+          0xB35F04;0x6F4DDE;0x5A5503;0xA40044;0x538003;0x0B16A2;0x035E5A;0xAC3802|] |> Array.map Color.FromRGB
+    let tabPalette (_dark:bool) = Array.copy palette
     let tabPaletteSize = 16
     /// Keep related colours together in the menu.
     let tabColorOrder = [1;7;14;4;3;8;2;5;11;6;9;10;12;13;15;0]
@@ -74,6 +76,38 @@ module Theme =
         let channel a b = int(Math.Round(float b + (float a-float b)*amount))
         Color.FromArgb(255,channel tint.R background.R,channel tint.G background.G,channel tint.B background.B)
     let tabTint highContrast tint = if highContrast then None else tint
+    /// OKLab, where equal steps look equal: shades taken in it keep their hue and stay apart.
+    module OkLab =
+        let private linear (c:byte) = let v = float c/255.0 in if v<=0.04045 then v/12.92 else ((v+0.055)/1.055)**2.4
+        let private encoded (v:float) = let v = max 0.0 (min 1.0 v) in if v<=0.0031308 then 12.92*v else 1.055*(v**(1.0/2.4))-0.055
+        let private cbrt (v:float) = if v<0.0 then -((-v)**(1.0/3.0)) else v**(1.0/3.0)
+        let ofColor (c:Color) =
+            let r,g,b = linear c.R,linear c.G,linear c.B
+            let l = cbrt(0.4122214708*r+0.5363325363*g+0.0514459929*b)
+            let m = cbrt(0.2119034982*r+0.6806995451*g+0.1073969566*b)
+            let s = cbrt(0.0883024619*r+0.2817188376*g+0.6299787005*b)
+            0.2104542553*l+0.7936177850*m-0.0040720468*s,1.9779984951*l-2.4285922050*m+0.4505937099*s,0.0259040371*l+0.7827717662*m-0.8086757660*s
+        let private linearOf (L:float,a:float,b:float) =
+            let l = (L+0.3963377774*a+0.2158037573*b)**3.0
+            let m = (L-0.1055613458*a-0.0638541728*b)**3.0
+            let s = (L-0.0894841775*a-1.2914855480*b)**3.0
+            4.0767416621*l-3.3077115913*m+0.2309699292*s,-1.2684380046*l+2.6097574011*m-0.3413193965*s,-0.0041960863*l-0.7034186147*m+1.7076147010*s
+        /// Lightness, chroma and hue; chroma is given up where sRGB cannot show it.
+        let ofLch (L:float) (chroma:float) (hue:float) =
+            let rec fit chroma =
+                let r,g,b = linearOf(L,chroma*cos hue,chroma*sin hue)
+                if (r<0.0 || g<0.0 || b<0.0 || r>1.0 || g>1.0 || b>1.0) && chroma>0.002 then fit (chroma-0.002) else r,g,b
+            let r,g,b = fit chroma
+            let channel v = int(Math.Round(encoded v*255.0))
+            Color.FromArgb(255,channel r,channel g,channel b)
+        let distance (x:Color) (y:Color) =
+            let (l1,a1,b1),(l2,a2,b2) = ofColor x,ofColor y
+            sqrt((l1-l2)*(l1-l2)+(a1-a2)*(a1-a2)+(b1-b2)*(b1-b2))
+    /// A tab behind the active one in its colour: a little darker and with less colour, so the
+    /// active tab is the brightest and the rest keep their hue and stay apart.
+    let tabShade (darker:float) (colourKept:float) (tint:Color) =
+        let L,a,b = OkLab.ofColor tint
+        OkLab.ofLch (L-darker) (sqrt(a*a+b*b)*colourKept) (atan2 b a)
     /// How much of each colour an inactive group keeps; the rest comes from its background.
     let dimAmount = 0.4
     /// Soften inactive groups without letting the window underneath show through: towards white

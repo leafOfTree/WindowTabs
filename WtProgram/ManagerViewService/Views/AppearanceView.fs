@@ -142,16 +142,10 @@ type AppearanceView(?settings:ISettings) =
     let updateContrastNote (palette:TabPalette) =
         let text = palette.tabTextColor
         if isFilled() then
-            // Filled tabs keep the text and take their automatic colour lighter or darker instead,
-            // as TabStripSprite.fillColor does. Most colours may change, so a sentence says so
-            // rather than a sample of each.
-            let tints = Theme.tabPalette (Theme.darkBar palette.tabNormalBgColor)
-            let adjusted = Theme.tabAllocationOrder |> List.exists(fun index ->
-                let tint = tints.[index]
-                (TextContrast.readableBackground text tint).ToArgb()<>tint.ToArgb())
+            // Filled tabs take white text by design, on colours made for it: nothing to explain.
             contrastComparison.Samples <- []
-            contrastNote.Visible <- adjusted
-            contrastNote.Text <- if adjusted then tr Strings.Appearance.colorsAdjusted else ""
+            contrastNote.Visible <- false
+            contrastNote.Text <- ""
         else
             // A flashing tab is rare and brief, so it is adjusted quietly and left out here.
             let samples =
@@ -165,13 +159,13 @@ type AppearanceView(?settings:ISettings) =
             contrastComparison.Samples <- samples
             contrastNote.Visible <- adjusted
             contrastNote.Text <- if adjusted then tr Strings.Appearance.textAdjusted else ""
-    /// Filled by automatic color coding, every tab takes its own color: the background rows then
-    /// change nothing and only invite confusion, so they are collapsed. With coding off, tabs
-    /// colored from their menu leave the rest to these rows.
-    let mutable backgroundRows : SettingsRow list = []
+    /// Filled by automatic color coding, every tab takes its own color and the text that reads on
+    /// it: the color rows then change nothing and only invite confusion, so they are collapsed.
+    /// With coding off or a stripe, tabs leave their colors to these rows.
+    let mutable colorRows : SettingsRow list = []
     let updateFilled() =
         let filled = isFilled()
-        for row in backgroundRows do row.Collapsed <- filled
+        for row in colorRows do row.Collapsed <- filled
         updateContrastNote (activePalette settings.appearance)
     let refresh() =
         refreshing <- true
@@ -307,10 +301,9 @@ type AppearanceView(?settings:ISettings) =
                 if index<ThemePresets.names.Length then choosePreset index else chooseCustom())
         let colorsCard = new SettingsCard()
         SettingsUi.add table colorsCard
-        backgroundRows <-
+        colorRows <-
             [ for key,read,write,editor in colors do
-                let row = SettingsUi.settingRowControl colorsCard key editor.control
-                if key<>"tabTextColor" then yield row ]
+                yield SettingsUi.settingRowControl colorsCard key editor.control ]
         contrastNote.MaximumSize <- Size(Dpi.scale 700,0)
         SettingsUi.add table contrastNote
         SettingsUi.add table contrastComparison
