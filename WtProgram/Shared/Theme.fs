@@ -76,9 +76,11 @@ module Theme =
     let tabTint highContrast tint = if highContrast then None else tint
     /// How much of each colour an inactive group keeps; the rest comes from its background.
     let dimAmount = 0.4
-    /// Soften inactive groups without letting the window underneath show through.
+    /// Soften inactive groups without letting the window underneath show through: towards white
+    /// on a light bar, and on a dark one towards the bar itself, so dark tabs grey out instead of
+    /// sinking to black, where their colours could no longer be told apart.
     let dimColor bar color =
-        let background = if darkBar bar then Color.FromArgb(32,32,32) else Color.White
+        let background = if darkBar bar then bar else Color.White
         blend dimAmount color background
     /// The separator is not chosen on its own: it follows the text and inactive tab colours, a
     /// quarter of the way from the inactive tab towards the text, as the presets draw it. Back on

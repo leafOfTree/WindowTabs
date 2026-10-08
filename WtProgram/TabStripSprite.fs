@@ -212,6 +212,12 @@ type TabSprite<'id> = {
     /// The tab's own colour: its whole slot in the joined style, its raised shape otherwise.
     member this.tint = Theme.tabTint SystemInformation.HighContrast this.displayInfo.tint
 
+    /// Where the shades of a filled tab head: away from the text, to white behind dark text and
+    /// to black behind light text.
+    member private this.shadeToward =
+        let text = this.appearance.tabTextColor
+        if TextContrast.ratio text Color.White >= TextContrast.ratio text Color.Black then Color.White else Color.Black
+
     member this.fillColor =
         match this.displayInfo.bgColor with
         | Some(color) -> color
@@ -230,10 +236,10 @@ type TabSprite<'id> = {
             | Some tint when this.displayInfo.colorStyle="Fill" ->
                 let text = this.appearance.tabTextColor
                 let tint = TextContrast.readableBackground text tint
-                let toward = if TextContrast.ratio text Color.White >= TextContrast.ratio text Color.Black then Color.White else Color.Black
-                // Taken further towards white than towards black: a colour this dark is near black
-                // and no longer reads as that colour.
-                let inactive,hover = if toward=Color.White then 0.3,0.6 else 0.45,0.7
+                let toward = this.shadeToward
+                // Taken further towards white than towards black: light text has already made the
+                // colour dark, and a shade much darker is near black and no longer reads as it.
+                let inactive,hover = if toward=Color.White then 0.3,0.6 else 0.58,0.8
                 if this.isTop then tint
                 elif hovered then Theme.blend hover tint toward
                 else Theme.blend inactive tint toward
@@ -456,6 +462,18 @@ type TabSprite<'id> = {
                 let y = if this.direction=TabUp then this.size.height-thickness else 0
                 use stripe = new SolidBrush(if this.isTop then tint else Theme.blend 0.60 tint this.fillColor)
                 g.FillRectangle(stripe,0,y,this.size.width,thickness)
+                g.Restore(state)
+            // Light text took the active tab's colour darker, close to the tabs behind it. An edge in
+            // the colour as chosen, where a stripe would run, marks it out without touching the
+            // contrast of its text.
+            | Some tint when this.displayInfo.colorStyle="Fill" && this.displayInfo.bgColor.IsNone && this.isTop &&
+                             this.shadeToward=Color.Black && this.fillColor.ToArgb()<>tint.ToArgb() ->
+                let state = g.Save()
+                g.SetClip(path)
+                let thickness = min this.size.height (Dpi.scale 3)
+                let y = if this.direction=TabUp then this.size.height-thickness else 0
+                use accent = new SolidBrush(tint)
+                g.FillRectangle(accent,0,y,this.size.width,thickness)
                 g.Restore(state)
             | _ -> ()
             if this.showLeftSeparator then

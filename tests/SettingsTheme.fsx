@@ -43,16 +43,39 @@ let main() =
         use settings = new Settings(true, saveDelay=0)
         let api = settings :> ISettings
         for appearance in [Theme.light;Theme.dark] do
-            let softened = Theme.dimColor appearance.tabNormalBgColor appearance.tabNormalBgColor
-            let before = TextContrast.luminance appearance.tabNormalBgColor
-            let after = TextContrast.luminance softened
-            check (if Theme.darkBar appearance.tabNormalBgColor then after<before else after>before)
-                  "Inactive group backgrounds faded in the wrong direction for their theme"
+            let bar = appearance.tabNormalBgColor
+            let dark = Theme.darkBar bar
+            let softened = Theme.dimColor bar bar
+            check (if dark then softened.ToArgb()=bar.ToArgb() else TextContrast.luminance softened>TextContrast.luminance bar)
+                  "Inactive group bars faded towards the wrong colour for their theme"
             check (softened.A=255uy) "Inactive group background became transparent"
-            for color in Theme.tabPalette (Theme.darkBar appearance.tabNormalBgColor) do
-                let faded = Theme.dimColor appearance.tabNormalBgColor color
-                if not(Theme.darkBar appearance.tabNormalBgColor) then
+            for color in Theme.tabPalette dark do
+                let faded = Theme.dimColor bar color
+                if not dark then
                     check (TextContrast.luminance faded>=TextContrast.luminance color) "Light-theme tab colours became darker when dimmed"
+                else
+                    let distance (c:Color) = abs(TextContrast.luminance c-TextContrast.luminance bar)
+                    check (distance faded<=distance color) "Dark-theme tab colours moved away from the bar when dimmed"
+            // Filled tabs behind the active one, in an active and in a dimmed group: on a dark bar
+            // these sank towards black, until neighbouring colours read as the same near-black.
+            use font = new Font("Segoe UI",9.0f)
+            let palette = Theme.tabPalette dark
+            let count = 6
+            let info index : TabDisplayInfo =
+                { tint=Some palette.[Theme.tabAllocationOrder.[index]]; colorStyle="Fill"; numberBadge=None; bgColor=None
+                  text="Tab"; icon=SystemIcons.Application; textFont=font; textBrush=SystemBrushes.MenuText }
+            let ids = [0..count-1]
+            let strip : TabStripSprite<int> = {
+                tabs=Map2(List2(ids |> List.map(fun i -> i,info i))); lorder=List2(ids); zorder=List2(ids); size=Sz(900,27)
+                slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; transparent=true; held=None; centerShift=0.0
+                appearance=appearance; hover=None; captured=None }
+            let fills = strip.tabSprites.list |> List.filter(fun (_,sprite) -> not sprite.isTop) |> List.map(fun (_,sprite) -> sprite.fillColor)
+            let spread (colors:Color list) =
+                colors |> List.pairwise |> List.map(fun (a:Color,b:Color) ->
+                    sqrt(float((int a.R-int b.R)*(int a.R-int b.R)+(int a.G-int b.G)*(int a.G-int b.G)+(int a.B-int b.B)*(int a.B-int b.B)))) |> List.min
+            let normal,dimmed = spread fills,spread (fills |> List.map(Theme.dimColor bar))
+            check (normal>=30.0 && dimmed>=12.0)
+                  (sprintf "Filled tabs in a %s theme are hard to tell apart: neighbours differ by %.0f, or %.0f in a dimmed group" (if dark then "dark" else "light") normal dimmed)
         let presetNames = ThemePresets.names |> Array.map(fun name -> name.en)
         check (presetNames=[|"Default";"Blue";"Teal";"Green";"Sand";"Amber";"Rose";"Purple";"Slate"|])
               "Theme presets do not use colour names in the shared colour order"

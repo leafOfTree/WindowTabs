@@ -156,7 +156,7 @@ let main () =
                     let tint = TextContrast.readableBackground text Color.Blue
                     let toward = if TextContrast.ratio text Color.White >= TextContrast.ratio text Color.Black then Color.White else Color.Black
                     let hovered = {inactive with hover=Some TabBackground}
-                    let inactiveShare,hoverShare = if toward=Color.White then 0.3,0.6 else 0.45,0.7
+                    let inactiveShare,hoverShare = if toward=Color.White then 0.3,0.6 else 0.58,0.8
                     check (active.fillColor=tint && TextContrast.ratio text tint>=TextContrast.minimum) "A fill did not color the active tab in a shade its text reads on"
                     check (inactive.fillColor=Theme.blend inactiveShare tint toward) "An inactive filled tab is not a shade of its color"
                     check (hovered.fillColor=Theme.blend hoverShare tint toward) "Hovering a filled tab gives no feedback"
@@ -168,6 +168,21 @@ let main () =
                     let contrast (tab:TabSprite<int>) = TextContrast.ratio tab.textColor tab.fillColor
                     check (contrast inactive<contrast hovered && contrast hovered<contrast active) "Text behind the active filled tab does not fade"
                     check (contrast inactive>=TextContrast.minimum-0.01) "Faded text fell below readable contrast"
+                    // Light text darkens a light colour on the active tab towards the tabs behind it; an
+                    // edge in the colour as chosen still marks it out. Untouched colours need none.
+                    let pastel = Color.FromRGB(0x8AB4F8)
+                    let lit = { tinted with tabs=Map2(List2([1,{info "One" with tint=Some pastel;colorStyle="Fill"};2,{info "Two" with tint=Some pastel;colorStyle="Fill"}])) }
+                    let litTabs = lit.sprite.children.list |> List.choose(fun (_,child) -> match child with :? TabSprite<int> as tab -> Some tab | _ -> None)
+                    /// An edge in the chosen colour on a tab filled with another one.
+                    let edged (tab:TabSprite<int>) =
+                        let image = lit.renderTab tab.id
+                        try tab.fillColor.ToArgb()<>pastel.ToArgb() &&
+                            [image.height-3..image.height-1] |> List.exists(fun y -> image.bitmap.GetPixel(image.width/2,y).ToArgb()=pastel.ToArgb())
+                        finally image.bitmap.Dispose()
+                    let litActive,litInactive = litTabs |> List.find(fun t -> t.isTop),litTabs |> List.find(fun t -> not t.isTop)
+                    let darkened = toward=Color.Black && litActive.fillColor.ToArgb()<>pastel.ToArgb()
+                    check (edged litActive=darkened && not(edged litInactive))
+                          "A darkened active filled tab has no edge in its chosen colour, or another tab has one"
                 else
                     check (active.fillColor<>inactive.fillColor) "Tint hid the active tab"
                     check (inactive.fillColor=appearance.tabNormalBgColor) "A stripe mixed its color into the tab"
