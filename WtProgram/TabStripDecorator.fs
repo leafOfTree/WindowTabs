@@ -47,9 +47,14 @@ type TabStripDecorator(group:WindowGroup) as this =
                 try
                     try
                         contextMenu |> Option.iter(fun menu -> menu.Dispose())
-                        let menu = new ThemedContextMenu(this.contextMenu(hwnd,images),fun () -> group.bb.write("contextMenuVisible", false))
+                        // Back over the tabs when the menu goes, the pointer has not moved, so the strip
+                        // looks again before auto-hide decides; it collapsed under the pointer otherwise.
+                        let menuClosed () =
+                            this.ts.refreshHover()
+                            group.bb.write("contextMenuVisible", false)
+                        let menu = new ThemedContextMenu(this.contextMenu(hwnd,images),menuClosed,group.windows.contains)
                         contextMenu <- Some menu
-                        menu.Show(ptScreen.x,ptScreen.y)
+                        menu.Show(this.ts.hwnd,ptScreen.x,ptScreen.y)
                     with _ ->
                         contextMenu |> Option.iter(fun menu -> menu.Dispose())
                         group.bb.write("contextMenuVisible", false)

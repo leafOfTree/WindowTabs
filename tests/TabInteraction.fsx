@@ -147,6 +147,48 @@ let main() =
                 Application.DoEvents()
                 Threading.Thread.Sleep(5)
             check dismissed.IsDisposed "Outside-click dismissal leaked the menu"
+            // The click that opens a tab's menu also brings its window forward, and that can land
+            // after the menu opened: the menu stays for its own windows, and goes for any other.
+            for owned in [true;false] do
+                use menu = new ThemedContextMenu(List2([command [] None "Focus test"]),ignore,fun _ -> owned)
+                menu.Show(Point(40,40))
+                Application.DoEvents()
+                menu.Close(ToolStripDropDownCloseReason.AppFocusChange)
+                Application.DoEvents()
+                check (menu.Visible=owned) (if owned then "The tab's own window coming forward closed its menu" else "Another app taking the focus left the menu open")
+                menu.Close(ToolStripDropDownCloseReason.AppClicked)
+                Application.DoEvents()
+                check (not menu.Visible) "A click outside no longer closes a menu kept through its window's activation"
+            // WinForms may own a menu by a window behind the current one; showing the menu must
+            // not raise that window over the current one and its tabs.
+            do
+                let form() = new Form(ShowInTaskbar=false,FormBorderStyle=FormBorderStyle.None,StartPosition=FormStartPosition.Manual,
+                                      Location=Point(-20000,-20000),Size=Size(120,120))
+                use lower = form()
+                use upper = form()
+                // Shown without activation, like the windows a tab strip's thread sees: none of them
+                // is its own active window, which is what left WinForms with a stale owner.
+                for window in [lower;upper] do WinUserApi.ShowWindow(window.Handle,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
+                let flags = SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOACTIVATE
+                WinUserApi.SetWindowPos(lower.Handle,upper.Handle,0,0,0,0,flags) |> ignore
+                let above (a:IntPtr) (b:IntPtr) =
+                    let rec walk (h:IntPtr) = h<>IntPtr.Zero && (h=b || walk (WinUserApi.GetWindow(h,GetWindowConstants.GW_HWNDNEXT)))
+                    walk (WinUserApi.GetWindow(a,GetWindowConstants.GW_HWNDNEXT))
+                check (above upper.Handle lower.Handle) "Owner test windows are not stacked as set up"
+                // The first menu on a thread records the window active then; later ones reused it.
+                use first = new ThemedContextMenu(List2([command [] None "First"]),ignore)
+                first.Show(lower.Handle,40,40)
+                Application.DoEvents()
+                first.Close()
+                Application.DoEvents()
+                WinUserApi.SetWindowPos(lower.Handle,upper.Handle,0,0,0,0,flags) |> ignore
+                use menu = new ThemedContextMenu(List2([command [] None "Owner test"]),ignore)
+                menu.Show(upper.Handle,40,40)
+                Application.DoEvents()
+                check (WinUserApi.GetWindow(menu.Handle,GetWindowConstants.GW_OWNER)=upper.Handle) "A tab menu is not owned by the strip it opened from"
+                check (above upper.Handle lower.Handle) "Showing a tab menu raised another tab's window over the current window and its tabs"
+                menu.Close()
+                Application.DoEvents()
         api.updateAppearance(fun _ -> savedAppearance)
         let iconSprite opacity = {IconSprite.icon=SystemIcons.Application;size=Sz(16,16);opacity=opacity} :> ISprite
         use bright = (iconSprite 1.0f).image.bitmap
@@ -414,6 +456,20 @@ let main() =
                 check (closes.Count=1) "Releasing outside the close button closed a tab"
                 send WindowMessages.WM_MOUSELEAVE Pt.empty
                 check (not strip.isMouseOver.value) "Mouse leave retained hover"
+                // A menu over the strip ends hover without a move. When it goes with the pointer still
+                // over the strip, hover returns without waiting for a move, so auto-hide keeps it open.
+                strip.refreshHover()
+                check (not strip.isMouseOver.value) "Hover returned with the pointer elsewhere"
+                let underPointer = Pt(Cursor.Position.X-Dpi.scale 60,Cursor.Position.Y-Dpi.scale 14)
+                strip.setPlacement(placement underPointer size false)
+                Application.DoEvents()
+                send WindowMessages.WM_MOUSELEAVE Pt.empty
+                strip.refreshHover()
+                let restored = strip.isMouseOver.value
+                send WindowMessages.WM_MOUSELEAVE Pt.empty
+                strip.setPlacement(placement start size false)
+                Application.DoEvents()
+                check restored "The pointer still over the strip after its menu closed did not hover it again"
                 let count = frames strip
                 send WindowMessages.WM_MOUSELEAVE Pt.empty
                 check (frames strip=count) "Repeated mouse leave repainted"

@@ -426,6 +426,16 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member this.isMouseOver = isMouseOverExport :> ICellOutput<_>
 
+    /// A popup over the strip, such as its menu, takes the pointer without a move, so hover
+    /// ends. When it goes, the pointer may still be over a tab: hover there again and track
+    /// its leaving, as a move would.
+    member this.refreshHover() =
+        if this.visible && this.window.isVisible then
+            let cursor = Cursor.Position
+            let bounds = this.window.bounds
+            if bounds.containsPoint(Pt(cursor.X,cursor.Y)) then
+                this.processMouse(MouseMove(Pt(cursor.X-bounds.x,cursor.Y-bounds.y).add(Pt(0,renderedOffset))))
+
     /// No room above the window on its monitor, so the tabs sit inside it over the title bar:
     /// true when the window is maximized, snapped to the top, or moved against the top edge.
     member this.isShownInside = showInsideExport :> ICellOutput<bool>

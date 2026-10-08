@@ -69,13 +69,16 @@ type ThemeMenuRenderer(p:SettingsPalette) =
                                   TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPadding ||| TextFormatFlags.NoClipping)
 
 /// Own image copies until the menu loop has finished closing, then dispatch the command.
-type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit) as this =
+/// ownsForeground: windows whose activation must not close the menu, such as the tab's own
+/// window that the click which opened it is still bringing forward.
+type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsForeground:IntPtr -> bool) as this =
     inherit ContextMenuStrip()
     let palette = SettingsColors.current()
     let renderer = new ThemeMenuRenderer(palette)
     let images = ResizeArray<Bitmap>()
     let font = new Font(SystemFonts.MenuFont.FontFamily, (SystemFonts.MenuFont.Size+1.0f) * float32(Dpi.value()) / float32(Dpi.system()))
     let mutable action = None
+    let mutable restoreOwner : obj option = None
     let timer = new Timer(Interval=1)
     let mutable mouseHook = IntPtr.Zero
     let stopMouseHook() =
@@ -148,9 +151,41 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit) as this
             if mouseHook=IntPtr.Zero then
                 this.Close()
                 raise (ComponentModel.Win32Exception()))
-        this.Closed.Add(fun _ -> stopMouseHook(); closed(); timer.Start())
+        // A click on a tab activates its window, which can finish just after the menu opened and
+        // closed it at once as another app taking the focus. Clicks elsewhere still close it
+        // through the mouse hook, and any other window taking the focus does too.
+        this.Closing.Add(fun e ->
+            if e.CloseReason=ToolStripDropDownCloseReason.AppFocusChange then
+                ownsForeground |> Option.iter(fun owns -> if owns (WinUserApi.GetForegroundWindow()) then e.Cancel <- true))
+        // Put back what WinForms had, so no later menu inherits a strip that may be gone.
+        this.Closed.Add(fun _ ->
+            stopMouseHook()
+            restoreOwner |> Option.iter(fun previous ->
+                ThemedContextMenu.menuFilter() |> Option.iter(fun (instance,property:Reflection.PropertyInfo) -> property.SetValue(instance,previous)))
+            restoreOwner <- None
+            closed()
+            timer.Start())
         try add this.Items items.list
         with _ -> this.Dispose(); reraise()
+    /// WinForms owns a menu by the window it last saw active on this thread, and a tab strip's
+    /// thread never has one: the owner stayed whatever was active when the first menu opened,
+    /// often another tab's window behind the current one. Showing the menu raised that window
+    /// over the current one and covered its tabs. Owned by the strip, the menu raises nothing
+    /// but the strip and the window it belongs to.
+    member this.Show(owner:IntPtr, x:int, y:int) =
+        let filter = ThemedContextMenu.menuFilter()
+        filter |> Option.iter(fun (instance,property:Reflection.PropertyInfo) ->
+            restoreOwner <- Some(property.GetValue(instance))
+            property.SetValue(instance,HandleRef(null,owner)))
+        this.Show(x,y)
+    /// WinForms' per-thread menu state and the window it owns menus by; None if it ever changes.
+    static member private menuFilter() =
+        try
+            let filter = typeof<ToolStripManager>.GetNestedType("ModalMenuFilter",Reflection.BindingFlags.NonPublic)
+            let instance = filter.GetProperty("Instance",Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Static).GetValue(null)
+            let property = filter.GetProperty("ActiveHwndInternal",Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Instance)
+            if isNull instance || isNull property then None else Some(instance,property)
+        with _ -> None
     /// Include every visible submenu; an outside click still reaches its original target.
     member _.dismissOutside(point:Point) =
         let rec contains (menu:ToolStripDropDown) =
