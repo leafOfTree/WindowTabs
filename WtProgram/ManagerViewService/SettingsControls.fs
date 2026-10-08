@@ -160,6 +160,7 @@ type SettingsHover(target:Control, text:string, ?enabled:bool) =
     let tip = new ToolTip(AutoPopDelay=30000,InitialDelay=350,ReshowDelay=100,ShowAlways=true)
     let watcher = new Timer(Interval=200)
     let mutable offered = defaultArg enabled true
+    let mutable quiet = false
     let mutable popup : SettingsHelpPopup option = None
     /// Opened on purpose (the (i) button's click), so it stays while the target keeps focus.
     /// Opened by hovering, it goes with the pointer, even from a button that a click focused.
@@ -192,7 +193,7 @@ type SettingsHover(target:Control, text:string, ?enabled:bool) =
             if not window.Visible then window.Show(target.FindForm())
             watcher.Start()
         else tip.Show(text,target,0,target.Height+Dpi.scale 6,30000)
-    let show pin = if offered then showCore pin
+    let show pin = if offered && not quiet then showCore pin
     let updateTip() = tip.SetToolTip(target,if offered && not (ThemeService.currentIsDark()) then text else "")
     do
         updateTip()
@@ -206,6 +207,7 @@ type SettingsHover(target:Control, text:string, ?enabled:bool) =
                     window.Hide()
                     watcher.Stop()))
         target.MouseEnter.Add(fun _ -> show false)
+        tip.Popup.Add(fun e -> if quiet then e.Cancel <- true)
         target.MouseLeave.Add(fun _ -> if not pinned then tip.Hide(target))
         target.KeyDown.Add(fun e -> if e.KeyCode=Keys.Escape then hide(); e.SuppressKeyPress <- true)
         target.VisibleChanged.Add(fun _ -> if not target.Visible then hide())
@@ -222,6 +224,17 @@ type SettingsHover(target:Control, text:string, ?enabled:bool) =
                 if not value then hide()
                 updateTip()
     member _.Show() = show true
+    /// Says nothing for a while without setting the tooltip's text again, which laid out the
+    /// whole settings page each time.
+    member _.Quiet
+        with get() = quiet
+        and set value =
+            quiet <- value
+            // Only what is showing: hiding an idle native tip laid the page out too.
+            if value then
+                popup |> Option.iter(fun window -> if window.Visible then window.Hide())
+                if target.IsHandleCreated && target.Visible && target.ClientRectangle.Contains(target.PointToClient(Control.MousePosition)) then
+                    tip.Hide(target)
 
 /// Where a link goes, shown by a mark after its text: an arrow for the web, a folder for a file
 /// on this PC.
@@ -434,7 +447,7 @@ type SettingsResetButton(text:string) as this =
         and set value =
             if offered<>value then
                 offered <- value
-                hover.Enabled <- value
+                hover.Quiet <- not value
                 this.TabStop <- value
                 this.Invalidate()
     override this.OnClick(e) = if offered then base.OnClick(e)
