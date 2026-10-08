@@ -88,6 +88,8 @@ let main() =
             [for i in 0..colors.Length-1 do for j in i+1..colors.Length-1 -> Theme.OkLab.distance colors.[i] colors.[j]] |> List.min
         check (closest palette>=0.08) (sprintf "Two tab colours are hard to tell apart (%.3f)" (closest palette))
         let inactive = palette |> Array.map(Theme.tabShade 0.12 0.6)
+        // One grey for the text of every tab behind, readable on all their shades.
+        check (inactive |> Array.forall(fun shade -> TextContrast.ratio Theme.inactiveFillText shade>=TextContrast.minimum)) "The inactive tab text grey is hard to read on a tab colour"
         check (closest inactive>=0.05) (sprintf "Two inactive tab colours are hard to tell apart (%.3f)" (closest inactive))
         // Nor may one sink into the dark bar behind it.
         check (inactive |> Array.forall(fun shade -> Theme.OkLab.distance shade Theme.dark.tabNormalBgColor>=0.02)) "An inactive tab colour disappears into the dark bar"

@@ -103,6 +103,9 @@ module Theme =
         let distance (x:Color) (y:Color) =
             let (l1,a1,b1),(l2,a2,b2) = ofColor x,ofColor y
             sqrt((l1-l2)*(l1-l2)+(a1-a2)*(a1-a2)+(b1-b2)*(b1-b2))
+    /// The text of every filled tab behind the active one: the darkest neutral grey that reads at
+    /// 4.5:1 on all their shades, the inactive orange the closest.
+    let inactiveFillText = Color.FromRGB(0xC8C8C8)
     /// A tab behind the active one in its colour: a little darker and with less colour, so the
     /// active tab is the brightest and the rest keep their hue and stay apart.
     let tabShade (darker:float) (colourKept:float) (tint:Color) =

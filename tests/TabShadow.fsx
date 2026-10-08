@@ -167,7 +167,7 @@ let main () =
                           "The active or hovered filled tab does not take the text that reads on its colour"
                     // Tabs behind grey theirs a little, still readable; light or dark never flips.
                     let darker (tab:TabSprite<int>) = TextContrast.luminance tab.textColor < TextContrast.luminance tab.fillColor
-                    check (inactive.textColor<>active.textColor && darker inactive=darker active &&
+                    check ((own<>Color.White || inactive.textColor=Theme.inactiveFillText) && inactive.textColor<>active.textColor && darker inactive=darker active &&
                            TextContrast.ratio inactive.textColor inactive.fillColor>=TextContrast.minimum)
                           "Text behind the active filled tab does not grey, flipped, or became hard to read"
                     // Grey text reads on neither a light nor a deep colour: the colour stays, the text goes.

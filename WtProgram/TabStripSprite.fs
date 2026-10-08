@@ -290,10 +290,12 @@ type TabSprite<'id> = {
             Color.FromArgb(255,mix chosen.R bar.R,mix chosen.G bar.G,mix chosen.B bar.B)
         let chosen =
             if filled then
-                // Behind the active tab the text greys a little towards its shade, which is dark
-                // enough to keep it readable; pointing at the tab brings it back to full strength.
+                // Behind the active tab the text is one grey on every colour, the darkest that
+                // still reads on all the shades behind; pointing at the tab brings back white.
+                // Dark text on a colour picked by hand fades part way towards it instead.
                 let own = this.fillText this.tint.Value
                 if this.isTop || this.hover.IsSome || this.captured.IsSome then own
+                elif own=Color.White then Theme.inactiveFillText
                 else
                     let bar = this.fillColor
                     let mix (a:byte) (b:byte) = int(Math.Round(float a+(float b-float a)*0.3))
