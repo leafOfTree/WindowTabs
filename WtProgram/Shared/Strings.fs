@@ -292,6 +292,7 @@ module Strings =
         /// Samples of the tab text as chosen and as shown, side by side.
         let textBefore = { en="Before"; zh="调整前"; ja="調整前" }
         let textAfter = { en="After"; zh="调整后"; ja="調整後" }
+        let colorsAdjusted = { en="Some tab colors are made darker or lighter so the text stays readable."; zh="部分标签颜色已调深或调浅，以保持文字清晰。"; ja="文字を読みやすく保つため、一部のタブの色を濃くまたは薄く調整しています。" }
         let textAdjusted = { en="Text color is adjusted on some tabs to stay readable."; zh="部分标签上的文字颜色已调整，以保持清晰。"; ja="一部のタブでは、読みやすさのため文字の色を調整しています。" }
         /// A colour preset whose colours the user has changed.
         let editedPreset name = { en=sprintf "%s*" name; zh=sprintf "%s*" name; ja=sprintf "%s*" name }

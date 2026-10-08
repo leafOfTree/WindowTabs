@@ -136,29 +136,43 @@ type AppearanceView(?settings:ISettings) =
         let low,high = SettingsCatalog.range key
         key,get,set,new SettingsNumberInput(Minimum=decimal low,Maximum=decimal high,Font=SettingsUi.bodyFont()))
     /// Says when the text colour is shown darker or lighter than chosen, so it stays readable.
-    let contrastNote = new Label(AutoSize=true,Tag="muted",UseMnemonic=false,Visible=false,Margin=Padding(0,Dpi.scale 8,0,0))
+    let contrastNote = new Label(Name="contrast-note",AutoSize=true,Tag="muted",UseMnemonic=false,Visible=false,Margin=Padding(0,Dpi.scale 8,0,0))
     let contrastComparison = new ContrastComparison(Name="contrast-comparison",Visible=false)
+    let isFilled() = settings.getValue("tabColorMode") :?> string <> "Off" && settings.getValue("tabColorStyle") :?> string = "Fill"
     let updateContrastNote (palette:TabPalette) =
         let text = palette.tabTextColor
-        // A flashing tab is rare and brief, so it is adjusted quietly and left out here.
-        let samples =
-            [ Strings.Settings.tabActiveBgColor,palette.tabActiveBgColor
-              Strings.Settings.tabHighlightBgColor,palette.tabHighlightBgColor
-              Strings.Settings.tabNormalBgColor,palette.tabNormalBgColor ]
-            |> List.map(fun (name,background) ->
-                tr name.caption,background,text,TextContrast.readable text background)
-            |> List.filter(fun (_,_,before,after) -> after <> before)
-        let adjusted = not samples.IsEmpty
-        contrastComparison.Samples <- samples
-        contrastNote.Visible <- adjusted
-        contrastNote.Text <- if adjusted then tr Strings.Appearance.textAdjusted else ""
+        if isFilled() then
+            // Filled tabs keep the text and take their automatic colour lighter or darker instead,
+            // as TabStripSprite.fillColor does. Most colours may change, so a sentence says so
+            // rather than a sample of each.
+            let tints = Theme.tabPalette (Theme.darkBar palette.tabNormalBgColor)
+            let adjusted = Theme.tabAllocationOrder |> List.exists(fun index ->
+                let tint = tints.[index]
+                (TextContrast.readableBackground text tint).ToArgb()<>tint.ToArgb())
+            contrastComparison.Samples <- []
+            contrastNote.Visible <- adjusted
+            contrastNote.Text <- if adjusted then tr Strings.Appearance.colorsAdjusted else ""
+        else
+            // A flashing tab is rare and brief, so it is adjusted quietly and left out here.
+            let samples =
+                [ Strings.Settings.tabActiveBgColor,palette.tabActiveBgColor
+                  Strings.Settings.tabHighlightBgColor,palette.tabHighlightBgColor
+                  Strings.Settings.tabNormalBgColor,palette.tabNormalBgColor ]
+                |> List.map(fun (name,background) ->
+                    tr name.caption,background,text,TextContrast.readable text background)
+                |> List.filter(fun (_,_,before,after) -> after <> before)
+            let adjusted = not samples.IsEmpty
+            contrastComparison.Samples <- samples
+            contrastNote.Visible <- adjusted
+            contrastNote.Text <- if adjusted then tr Strings.Appearance.textAdjusted else ""
     /// Filled by automatic color coding, every tab takes its own color: the background rows then
-    /// change nothing, so their editors are disabled. Not hidden and no note, so the page does not
-    /// jump. With coding off, tabs colored from their menu leave the rest to these rows.
+    /// change nothing and only invite confusion, so they are collapsed. With coding off, tabs
+    /// colored from their menu leave the rest to these rows.
+    let mutable backgroundRows : SettingsRow list = []
     let updateFilled() =
-        let filled = settings.getValue("tabColorMode") :?> string <> "Off" && settings.getValue("tabColorStyle") :?> string = "Fill"
-        for key,_,_,editor in colors do
-            if key<>"tabTextColor" then editor.control.Enabled <- not filled
+        let filled = isFilled()
+        for row in backgroundRows do row.Collapsed <- filled
+        updateContrastNote (activePalette settings.appearance)
     let refresh() =
         refreshing <- true
         try
@@ -293,8 +307,10 @@ type AppearanceView(?settings:ISettings) =
                 if index<ThemePresets.names.Length then choosePreset index else chooseCustom())
         let colorsCard = new SettingsCard()
         SettingsUi.add table colorsCard
-        for key,read,write,editor in colors do
-            SettingsUi.settingRow colorsCard key editor.control
+        backgroundRows <-
+            [ for key,read,write,editor in colors do
+                let row = SettingsUi.settingRowControl colorsCard key editor.control
+                if key<>"tabTextColor" then yield row ]
         contrastNote.MaximumSize <- Size(Dpi.scale 700,0)
         SettingsUi.add table contrastNote
         SettingsUi.add table contrastComparison

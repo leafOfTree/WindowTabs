@@ -814,8 +814,10 @@ Group #2: No valid windows in this group.";
             let combo name = controls appearance.control |> Seq.pick(function :? SettingsCombo as c when c.Name=name -> Some c | _ -> None)
             let mode,style = combo "tab-color-mode",combo "tab-color-style"
             let editor key = controls appearance.control |> Seq.find(fun c -> c.Name=key)
-            let off key = not (editor key).Enabled
-            let on key = (editor key).Enabled
+            // Rows a fill replaces are hidden rather than greyed out, so they do not look like they apply.
+            let shown key = (editor key).Enabled && not ((editor key).Parent :?> SettingsRow).Collapsed
+            let off key = not (shown key)
+            let on key = shown key
             let backgrounds = ["tabActiveBgColor";"tabHighlightBgColor";"tabNormalBgColor"]
             let modeBefore,styleBefore = mode.SelectedIndex,style.SelectedIndex
             check (api.getValue("tabColorStyle")=box "Fill" || styleBefore>=0) "Tab color style has no value"
@@ -824,9 +826,7 @@ Group #2: No valid windows in this group.";
             Application.DoEvents()
             check (api.getValue("tabColorMode")=box "ByWindow" && api.getValue("tabColorStyle")=box "Fill") "Color coding choices are not bound to their settings"
             check (backgrounds |> List.forall off && on "tabTextColor")
-                  "Tab backgrounds a fill replaces are still offered, or the text color is not"
-            check (not (controls appearance.control |> Seq.exists(fun c -> c :? Label && c.Visible && c.Text.Contains("only the text color"))))
-                  "A note about filled tabs still shifts the page"
+                  "Tab backgrounds a fill replaces are still shown, or the text color is not"
             snapshot "settings-appearance-filled"
             style.SelectedIndex <- 1
             Application.DoEvents()

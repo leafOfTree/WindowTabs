@@ -145,6 +145,32 @@ let main() =
         let all = view.control.Controls.Find("tabTextColor",true)
         let preset = view.control.Controls.Find("palette-preset",true).[0] :?> SettingsCombo
         assertTrue (preset.Width=Dpi.scale 140) "Preset does not align with the 140px choices"
+        // Filled by automatic colours, tabs ignore the background rows: hide them, and judge
+        // readability on the automatic colours, which give way to the text.
+        let comboNamed name = view.control.Controls.Find(name,true).[0] :?> SettingsCombo
+        let backgroundRows = ["tabActiveBgColor";"tabHighlightBgColor";"tabNormalBgColor"] |> List.map(fun id -> view.control.Controls.Find(id,true).[0].Parent :?> SettingsRow)
+        let note = view.control.Controls.Find("contrast-note",true).[0]
+        let comparison = view.control.Controls.Find("contrast-comparison",true).[0] :?> ContrastComparison
+        let savedPalettes = preferences.lightPalette,preferences.darkPalette
+        settings.updateAppearance(fun s -> {s with lightPalette={s.lightPalette with tabTextColor=Color.FromRGB(0x929292)}
+                                                   darkPalette={s.darkPalette with tabTextColor=Color.FromRGB(0x929292)}})
+        Application.DoEvents()
+        (comboNamed "tab-color-style").SelectedIndex <- 0
+        (comboNamed "tab-color-mode").SelectedIndex <- 1
+        Application.DoEvents()
+        assertTrue (backgroundRows |> List.forall(fun row -> row.Collapsed)) "Background rows stay shown while automatic colours fill every tab"
+        assertTrue (note.Visible && note.Text=tr Strings.Appearance.colorsAdjusted) "Filled tabs report text adjustment instead of adjusted colours"
+        assertTrue (comparison.Samples.IsEmpty && not comparison.Visible) "Filled tabs list a sample for every adjusted colour"
+        use page = new Bitmap(view.control.Width,view.control.Height)
+        view.control.DrawToBitmap(page,Rectangle(Point.Empty,page.Size))
+        page.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","appearance-filled-"+name+".png"))
+        (comboNamed "tab-color-mode").SelectedIndex <- 0
+        Application.DoEvents()
+        assertTrue (backgroundRows |> List.forall(fun row -> not row.Collapsed)) "Background rows stay hidden with colour coding off"
+        assertTrue (note.Text=tr Strings.Appearance.textAdjusted && not comparison.Samples.IsEmpty) "Colour coding off no longer explains adjusted text"
+        settings.updateAppearance(fun s -> {s with lightPalette=fst savedPalettes;darkPalette=snd savedPalettes})
+        (comboNamed "tab-color-style").SelectedIndex <- 1
+        Application.DoEvents()
         let menu = preset.CreateDropDown().Value
         menu.Show(form,Point(20,20))
         use menuBitmap = new Bitmap(menu.Width,menu.Height)
