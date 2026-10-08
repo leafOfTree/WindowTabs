@@ -320,7 +320,7 @@ type TabSprite<'id> = {
         max 1 (min (TabMetrics.scaled this.appearance.tabHeight cap) (height * 30 / 100))
 
     /// The rounding of a folder tab's top corners.
-    member this.folderRadius = this.raisedRadius this.contentHeight 7
+    member this.folderRadius = max 1 (min (TabMetrics.scaled this.appearance.tabHeight 10) (this.contentHeight * 40 / 100))
 
     /// The feet that run a folder tab into the bar are rounded half as much as its top, so they
     /// read as a slight flare rather than a second set of corners.

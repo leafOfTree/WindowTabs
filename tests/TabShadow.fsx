@@ -311,6 +311,8 @@ let main () =
         let folder = strip FolderTabs
         let middle = folder.tabSprites.list |> List.pick(fun (_,tab) -> if tab.id=2 then Some tab else None)
         let radius,foot = middle.folderRadius,middle.footRadius
+        // Rounded about two fifths of its height: at six pixels a folder tab's corners read as square.
+        check (radius>=middle.size.height*35/100) (sprintf "A folder tab's corners are too square (%d px on a %d px tab)" radius middle.size.height)
         check (same (pixel folder 210 2) normal) "The bar does not show above the active folder tab"
         check (same (pixel folder 145 20) active) "The active folder tab is not filled with the active colour"
         // A small foot's pixels are all partly antialiased; its corner just must not be bare bar.
