@@ -17,20 +17,24 @@ module Shell =
 
     /// The file system folder an Explorer window shows; None for any other window, and for
     /// views such as This PC or the Recycle Bin. Each window is matched by its handle first,
-    /// so a view without a folder elsewhere cannot fail the search.
+    /// so a view without a folder elsewhere cannot fail the search. A window holding several
+    /// Explorer tabs answers with the tab on show.
     let getShellFolder (hwnd:IntPtr) =
-        let folderOf (windows:obj) index =
+        let windowAt (windows:obj) index =
             try
                 match invoke windows "Item" [|box index|] with
                 | null -> None
-                | window when Convert.ToInt64(get window "HWND")=hwnd.ToInt64() ->
-                    match get (get window "Document") "Folder" with
-                    | null -> None
-                    | folder ->
-                        let self = get folder "Self"
-                        if unbox<bool>(get self "IsFileSystem") then Some { path=string(get self "Path"); title=string(get folder "Title") }
-                        else None
+                | window when Convert.ToInt64(get window "HWND")=hwnd.ToInt64() -> Some window
                 | _ -> None
+            with _ -> None
+        let folderOf window =
+            try
+                match get (get window "Document") "Folder" with
+                | null -> None
+                | folder ->
+                    let self = get folder "Self"
+                    if unbox<bool>(get self "IsFileSystem") then Some { path=string(get self "Path"); title=string(get folder "Title") }
+                    else None
             with _ -> None
         if hwnd=IntPtr.Zero then None
         else
@@ -40,7 +44,14 @@ module Shell =
                 | shellType ->
                     let windows = invoke (Activator.CreateInstance(shellType)) "Windows" [||]
                     let count = Convert.ToInt32(get windows "Count")
-                    List.init count id |> List.tryPick (folderOf windows)
+                    match List.init count id |> List.choose (windowAt windows) with
+                    | [] -> None
+                    | [single] -> folderOf single
+                    | tabs ->
+                        let active = ExplorerTabs.ActiveTab(hwnd)
+                        tabs |> List.tryFind(fun tab -> active<>IntPtr.Zero && ExplorerTabs.TabOf(tab)=active)
+                        |> Option.orElse (List.tryHead tabs)
+                        |> Option.bind folderOf
             with _ -> None
 
 /// What dropping files on an Explorer tab does, decided as Explorer decides: a move within one

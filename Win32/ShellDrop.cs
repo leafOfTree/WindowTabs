@@ -100,6 +100,9 @@ namespace Bemo
     {
         private const uint FOF_ALLOWUNDO = 0x40, FOFX_ADDUNDORECORD = 0x20000000;
 
+        [DllImport("shell32.dll")]
+        private static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
+
         [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
         private static extern void SHCreateItemFromParsingName(string path, IntPtr bindContext, [In] ref Guid riid, out IShellItem item);
 
@@ -129,6 +132,13 @@ namespace Bemo
             }
             catch (COMException) { return false; }
             catch (ArgumentException) { return false; }
+            finally
+            {
+                // Explorer learns of shell operations only from their change notices, which wait
+                // in this thread's queue; flushed now, before the thread ends, or open windows
+                // never show the files arrive or leave.
+                SHChangeNotify(0, 0x1000, IntPtr.Zero, IntPtr.Zero);
+            }
         }
 
         // A copy can take minutes; its own STA thread keeps the tabs responsive meanwhile.
@@ -138,6 +148,53 @@ namespace Bemo
             thread.SetApartmentState(ApartmentState.STA);
             thread.Start();
             return thread;
+        }
+    }
+}
+
+namespace Bemo
+{
+    // Explorer on Windows 11 keeps several folders in one window, one per tab; only the tab on
+    // show is where a drop on that window should go.
+    public static class ExplorerTabs
+    {
+        [ComImport, Guid("6d5140c1-7436-11ce-8034-00aa006009fa"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IOleServiceProvider
+        {
+            [PreserveSig] int QueryService([In] ref Guid service, [In] ref Guid riid, [MarshalAs(UnmanagedType.IUnknown)] out object found);
+        }
+
+        // Only IOleWindow::GetWindow, the first method, is called.
+        [ComImport, Guid("000214E2-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IShellBrowser
+        {
+            [PreserveSig] int GetWindow(out IntPtr hwnd);
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string className, string title);
+
+        // The tab on show is the first of the window's tab children.
+        public static IntPtr ActiveTab(IntPtr explorer)
+        {
+            return FindWindowEx(explorer, IntPtr.Zero, "ShellTabWindowClass", null);
+        }
+
+        // The tab window behind one of Shell.Application's windows; zero when it cannot tell.
+        public static IntPtr TabOf(object browser)
+        {
+            try
+            {
+                var provider = browser as IOleServiceProvider;
+                if (provider == null) return IntPtr.Zero;
+                var service = new Guid("4C96BE40-915C-11CF-99D3-00AA004AE837");
+                var riid = typeof(IShellBrowser).GUID;
+                if (provider.QueryService(ref service, ref riid, out var found) != 0) return IntPtr.Zero;
+                var shellBrowser = found as IShellBrowser;
+                return shellBrowser != null && shellBrowser.GetWindow(out var hwnd) == 0 ? hwnd : IntPtr.Zero;
+            }
+            catch (COMException) { return IntPtr.Zero; }
+            catch (InvalidCastException) { return IntPtr.Zero; }
         }
     }
 }
