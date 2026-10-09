@@ -20,6 +20,9 @@ type GeneralView() =
         let updateShowOnSwitch() = showOnSwitch.Collapsed <- autoHide.SelectedIndex = 0
         updateShowOnSwitch()
         autoHide.SelectedIndexChanged.Add(fun _ -> updateShowOnSwitch())
+        let taskbar = SettingsUi.sectionCard table (tr Strings.General.taskbar)
+        SettingsBindings.toggleRow taskbar "combine-taskbar-icons"
+        // Last: its options unfold below it once it is on.
         let switcher = SettingsUi.sectionCard table (tr Strings.General.windowSwitcher)
         let enabled = SettingsBindings.settingToggle "replaceAltTab"
         let grouped = SettingsBindings.settingToggle "groupWindowsInSwitcher"
@@ -33,9 +36,6 @@ type GeneralView() =
         let update() = for row in dependents do row.Collapsed <- not enabled.Checked
         update()
         enabled.CheckedChanged.Add(fun _ -> update())
-        // Last: few people change it.
-        let taskbar = SettingsUi.sectionCard table (tr Strings.General.taskbar)
-        SettingsBindings.toggleRow taskbar "combine-taskbar-icons"
     interface ISettingsView with
         member _.key = GeneralSettings
         member _.title = tr Strings.Pages.general
