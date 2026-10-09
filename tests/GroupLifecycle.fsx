@@ -60,6 +60,7 @@ let main() =
         let desktopApi = desktop :> IDesktop
         let source = desktopApi.createGroup(false) :?> GroupInfo
         let target = desktopApi.createGroup(false) :?> GroupInfo
+        let combined = desktopApi.createGroup(true) :?> GroupInfo
         let onGroup (info:GroupInfo) action =
             let mutable result = None
             info.invokeGroup(fun () ->
@@ -107,13 +108,66 @@ let main() =
             onGroup source (fun group -> group.removeWindow(c))
             check (nativeOrder source = [a]) "Repeated removal damaged remaining tabs"
 
-            for info in [source;target] do
+            for info in [source;target;combined] do
                 for hwnd in publicOrder info do (info :> IGroup).removeWindow hwnd
                 pumpUntil "Group did not empty" (fun () -> nativeOrder info = [] && publicOrder info = [])
             check (WinUserApi.IsWindow a && WinUserApi.IsWindow b) "Ungrouping closed application windows"
-            printfn "PASS: real HWND grouping, duplicate add, reorder, cross-STA transfer, destroyed-window removal and ungrouping."
+
+            // A new window is the group's foreground before it joins; its tab info
+            // reaches the combined taskbar button before its tab reaches the strip.
+            use joining = new Form(Text="Joining", ShowInTaskbar=false, StartPosition=FormStartPosition.Manual,
+                                   Location=Drawing.Point(-20000,-20000), Size=Drawing.Size(640,480))
+            let d = joining.Handle
+            for hwnd in [a;b] do (combined :> IGroup).addWindow(hwnd,false)
+            pumpUntil "Combined group did not acquire two windows" (fun () -> nativeOrder combined = [a;b])
+            // The window standing in for the group on the taskbar is an Alt+Tab window the switcher must skip.
+            let proxies() = OS().windowsInZorder.where(fun w -> TaskbarProxies.contains w.hwnd).map(fun w -> w.hwnd).list
+            let proxy = proxies() |> List.filter(fun hwnd -> OS().windowFromHwnd(hwnd).isAltTabWindow)
+            check (proxy.Length=1) "Combined group's taskbar window is not known as a taskbar proxy"
+            onGroup combined (fun group ->
+                group.foreground <- d
+                group.addWindow(d,false))
+            check (nativeOrder combined = [a;b;d]) "Combined taskbar button failed a foreground window joining its group"
+            onGroup combined (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
+            pumpUntil "Taskbar proxies outlived their combined taskbar button" (fun () -> not(TaskbarProxies.contains proxy.Head))
+
+            // The setting rebuilds open groups that follow it, keeping what their tab menu chose.
+            api.setValue("combineIconsInTaskbar", box false)
+            let groupsOf hwnd = desktopApi.groups.list |> List.filter(fun g -> g.windows.contains((=)hwnd)) |> List.map(fun g -> g :?> GroupInfo)
+            let soleGroup hwnd combinedIcons =
+                match groupsOf hwnd with
+                | [g] when g.isSuperBarEnabled=combinedIcons && not g.isRetiring -> Some g
+                | _ -> None
+            let following = desktopApi.createGroup(false) :?> GroupInfo
+            let chosen = desktopApi.createGroup(false) :?> GroupInfo
+            (following :> IGroup).addWindow(a,false)
+            (chosen :> IGroup).addWindow(b,false)
+            pumpUntil "Groups did not acquire their windows" (fun () -> nativeOrder following = [a] && nativeOrder chosen = [b])
+            let choices = { iconOnly=true; alignments=[TabUp,TabRight]; autoHideMode=Some "Always" }
+            onGroup following (fun group -> group.applyMenuChoices choices)
+            desktopApi.restartGroup(chosen.hwnd, true)
+            pumpUntil "Tab menu did not combine its group's taskbar icons" (fun () -> (soleGroup b true).IsSome)
+            let chosenNow = (soleGroup b true).Value
+            api.setValue("combineIconsInTaskbar", box true)
+            pumpUntil "Setting did not combine an open group's taskbar icons" (fun () -> (soleGroup a true).IsSome)
+            let rebuilt = (soleGroup a true).Value
+            check (nativeOrder rebuilt = [a]) "Rebuilt group lost its window"
+            check (onGroup rebuilt (fun group -> group.menuChoices) = choices) "Rebuilt group lost its tab menu choices"
+            api.setValue("combineIconsInTaskbar", box false)
+            pumpUntil "Setting did not separate an open group's taskbar icons" (fun () -> (soleGroup a false).IsSome)
+            check (soleGroup b true = Some chosenNow) "Setting overrode a group's taskbar choice from its tab menu"
+            // Turned back before the rebuild runs, the group stays as it is.
+            let separate = (soleGroup a false).Value
+            api.setValue("combineIconsInTaskbar", box true)
+            api.setValue("combineIconsInTaskbar", box false)
+            pumpUntil "Group stayed retiring after the setting was turned back" (fun () -> not separate.isRetiring)
+            check (soleGroup a false = Some separate) "Setting turned back still rebuilt the group"
+            for info in [separate;chosenNow] do
+                onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
+            printfn "PASS: real HWND grouping, duplicate add, reorder, cross-STA transfer, destroyed-window removal, ungrouping and taskbar icon rebuilds."
         finally
-            for info in [source;target] do
+            let rest = desktopApi.groups.list |> List.map(fun g -> g :?> GroupInfo)
+            for info in List.distinct([source;target;combined] @ rest) do
                 if not info.isExited then
                     onGroup info (fun group ->
                         for hwnd in group.windows.items.list do group.removeWindow hwnd)

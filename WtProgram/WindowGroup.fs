@@ -100,6 +100,12 @@ module TabOrder =
             | 0 -> compare.Compare(title a,title b)
             | order -> order)
 
+/// What a group's tab menu chose for that group alone, carried over when the group is rebuilt.
+type GroupMenuChoices = {
+    iconOnly: bool
+    alignments: (TabDirection * Bemo.TabAlignment) list
+    autoHideMode: string option }
+
 type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:TabAppearanceInfo) as this =
     let Cell = CellScope(true)
     let _bb = Blackboard()
@@ -468,6 +474,16 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.isIconOnly 
         with get() = this.ts.isIconOnly
         and set(value) = this.ts.isIconOnly <- value
+
+    member this.menuChoices = {
+        iconOnly = this.isIconOnly
+        alignments = this.ts.alignmentChoices
+        autoHideMode = Option.ofObj(this.bb.read<string>("autoHideMode", null)) }
+
+    member this.applyMenuChoices(choices:GroupMenuChoices) =
+        this.isIconOnly <- choices.iconOnly
+        choices.alignments |> List.iter this.ts.setAlignment
+        choices.autoHideMode |> Option.iter(fun mode -> this.bb.write("autoHideMode", mode))
 
     member this.hwnd = this.ts.hwnd
 

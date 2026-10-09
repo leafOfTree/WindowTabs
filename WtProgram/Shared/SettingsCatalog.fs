@@ -30,10 +30,10 @@ module SettingsCatalog =
         // "Maximized" also covers windows whose tabs sit inside them (top snaps); the stored value keeps its original name.
         { id="auto-hide-tabs"; page=GeneralSettings; text=Strings.Settings.autoHide; binding=Choice("autoHideMode",["Never";"Maximized";"Always"],"Maximized") }
         { id="show-tabs-on-switch"; page=GeneralSettings; text=Strings.Settings.showTabsOnSwitch; binding=Toggle("showTabsOnSwitch",true,true) }
+        { id="combine-taskbar-icons"; page=GeneralSettings; text=Strings.Settings.combineTaskbarIcons; binding=Toggle("combineIconsInTaskbar",false,true) }
         { id="use-windowtabs-for-alt-tab"; page=GeneralSettings; text=Strings.Settings.replaceAltTab; binding=Toggle("replaceAltTab",false,false) }
         { id="group-windows-in-the-switcher"; page=GeneralSettings; text=Strings.Settings.groupWindowsInSwitcher; binding=Toggle("groupWindowsInSwitcher",false,false) }
         { id="switcher-style"; page=GeneralSettings; text=Strings.Settings.switcherStyle; binding=Choice("switcherStyle",["Icons";"List"],"Icons") }
-        { id="combine-taskbar-icons"; page=GeneralSettings; text=Strings.Settings.combineTaskbarIcons; binding=Toggle("combineIconsInTaskbar",false,true) }
         { id="next-tab"; page=HotKeySettings; text=Strings.Settings.nextTab; binding=Shortcut("nextTab",3623) }
         { id="previous-tab"; page=HotKeySettings; text=Strings.Settings.previousTab; binding=Shortcut("prevTab",3621) }
         { id="search-tabs"; page=HotKeySettings; text=Strings.Settings.searchTabs; binding=Shortcut("searchTabs",1620) }

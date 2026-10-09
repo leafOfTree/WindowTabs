@@ -99,6 +99,36 @@ let main() =
     for _ in 1..200 do send()
     let gdi1,_,_,_ = RuntimeDiagnostics.resourceCounts()
     check (gdi1-gdi0<=2) "Preview requests retain GDI resources without a forced collection"
-    printfn "PASS: preview ownership on success/failure, crop identity, composition and 400 native bitmap publications without forced GC."
+
+    // A tall window fills the taskbar's thumbnail box centred, not at its left with the rest empty.
+    let tall = Img(Sz(64,128))
+    do
+        use g = tall.graphics
+        g.Clear(Color.Red)
+    use centred = (TaskbarPreview.centre (Sz(250,135)) tall).bitmap
+    tall.bitmap.Dispose()
+    check (centred.Width=250 && centred.Height=135) "Thumbnail does not fill the taskbar's box"
+    check (centred.GetPixel(125,67).A=255uy && centred.GetPixel(5,67).A=0uy && centred.GetPixel(244,67).A=0uy) "Tall thumbnail is not centred in the taskbar's box"
+
+    // A group's taskbar icon carries the badge at the bottom right and leaves the rest of the app's icon.
+    use solid = new Bitmap(32,32)
+    do
+        use g = Graphics.FromImage(solid)
+        g.Clear(Color.FromArgb(255,200,0,0))
+    let appHandle = solid.GetHicon()
+    use app = Icon.FromHandle(appHandle)
+    let badged = new TaskbarBadgedIcon(app)
+    let pixels = badged.icon.ToBitmap()
+    let isAppColour (c:Color) = c.A=255uy && c.R>190uy && c.G<10uy && c.B<10uy
+    try
+        check (pixels.Width=32 && pixels.Height=32) (sprintf "Badged taskbar icon is %dx%d" pixels.Width pixels.Height)
+        check (isAppColour(pixels.GetPixel(4,4)) && isAppColour(pixels.GetPixel(28,4)) && isAppColour(pixels.GetPixel(4,28))) "Badge covered more than the bottom right of the app's icon"
+        check (not(isAppColour(pixels.GetPixel(24,24)))) "Taskbar icon has no badge at the bottom right"
+    finally pixels.Dispose()
+    let handle = badged.icon.Handle
+    (badged :> IDisposable).Dispose()
+    check (not(WinUserApi.DestroyIcon(handle))) "Badged taskbar icon kept its native handle"
+    WinUserApi.DestroyIcon(appHandle) |> ignore
+    printfn "PASS: preview ownership on success/failure, crop identity, composition, 400 native bitmap publications without forced GC, centred thumbnails and the badged taskbar icon."
 
 TestInit.run main

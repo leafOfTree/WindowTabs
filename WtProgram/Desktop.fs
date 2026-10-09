@@ -39,6 +39,11 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
                 windowsCell.map <| fun l -> l.where((<>) hwnd)
 
     member this.invokeGroup = invoker.asyncInvoke
+    member this.isSuperBarEnabled = enableSuperBar
+    /// The group's tab menu chose whether to combine its taskbar icons, so the setting leaves it alone. Main thread only.
+    member val isTaskbarChosen = false with get, set
+    /// Its windows are moving to a group that replaces it. Main thread only.
+    member val isRetiring = false with get, set
     member this.isExited = System.Threading.Volatile.Read(&_isExited)=1
     member this.exited = _group.exited
     member this.removed = _group.removed
@@ -85,12 +90,13 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
     do 
         Services.register(_dd)
         Services.register(DispatchedDesktop(this :> IDesktop, dispatcher) :> IDesktop)
+        settings.notifyValue "combineIconsInTaskbar" (fun value -> this.combineTaskbarIcons(unbox value)) |> ignore
 
     member private this.groups : List2<GroupInfo> = groupCell.value.items
     member _.retainedGroupCount = groupCell.value.count
     member private this.isEmpty = this.groups.all(fun g -> g.isExited)
     member private this.isDragging = isDraggingCell.value
-    member private this.createGroup(enableSuperBar) =
+    member private this.createGroupInfo(enableSuperBar) =
         let group = GroupInfo(enableSuperBar, settings, dispatcher)
         groupCell.map(fun g -> g.add(group))
         group.invokeGroup <| fun() -> 
@@ -100,7 +106,9 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
                 exitedEvent.Trigger ig)
             group.removed.Add <| fun _ -> dispatcher.Post(fun () -> removedEvent.Trigger ig)
             TabStripDecorator(group.group).ignore
-        group.cast<IGroup>() 
+        group
+
+    member private this.createGroup(enableSuperBar) = this.createGroupInfo(enableSuperBar).cast<IGroup>()
 
     member private this.windowOffset = 
         let tabAppearance = Services.program.tabAppearanceInfo.scaled
@@ -109,17 +117,35 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
     member this.findGroupContainingHwnd hwnd : IGroup option =  
         this.cast<IDesktop>().groups.tryFind(fun g -> g.windows.contains((=)hwnd))
 
-    member this.restartGroup(groupHwnd, enableSuperBar) =
-        let group = this.groups.tryFind(fun g -> g.hwnd = groupHwnd)
-        group.iter <| fun g ->
-            let group = g.cast<IGroup>()
-            
-            TemporaryState.run Services.program.suspendTabMonitoring Services.program.resumeTabMonitoring (fun () ->
+    /// The taskbar button is fixed when a group starts, so a new group takes over its windows
+    /// and the choices its tab menu made. The wanted state is read when the rebuild runs, as the
+    /// setting may have been turned back meanwhile.
+    member private this.rebuildGroup(old:GroupInfo, wanted:unit -> bool, isTaskbarChosen) =
+        old.isRetiring <- true
+        old.invokeGroup <| fun() ->
+            let choices = old.group.menuChoices
+            dispatcher.Post <| fun() ->
+                let group = old.cast<IGroup>()
+                let enableSuperBar = wanted()
+                if old.isExited || group.windows.isEmpty || enableSuperBar = old.isSuperBarEnabled then old.isRetiring <- false
+                else
+                    TemporaryState.run Services.program.suspendTabMonitoring Services.program.resumeTabMonitoring (fun () ->
+                        let newGroup = this.createGroupInfo(enableSuperBar)
+                        newGroup.isTaskbarChosen <- isTaskbarChosen
+                        newGroup.invokeGroup(fun() -> newGroup.group.applyMenuChoices choices)
+                        group.windows.iter <| fun hwnd ->
+                            group.removeWindow(hwnd)
+                            (newGroup :> IGroup).addWindow(hwnd, false))
 
-                let newGroup = Services.desktop.createGroup(enableSuperBar)
-                group.windows.iter <| fun hwnd ->
-                    group.removeWindow(hwnd)
-                    newGroup.addWindow(hwnd, false))
+    member this.restartGroup(groupHwnd, enableSuperBar) =
+        this.groups.tryFind(fun g -> g.hwnd = groupHwnd && not g.isRetiring && g.isSuperBarEnabled <> enableSuperBar)
+        |> Option.iter(fun g -> this.rebuildGroup(g, (fun () -> enableSuperBar), true))
+
+    /// Groups follow the setting unless their tab menu chose for them.
+    member private this.combineTaskbarIcons(enabled) =
+        let wanted() = settings.getValue("combineIconsInTaskbar").cast<bool>()
+        let groups = this.groups.where(fun g -> not g.isExited && not g.isRetiring && not g.isTaskbarChosen && g.isSuperBarEnabled <> enabled)
+        groups.iter(fun g -> this.rebuildGroup(g, wanted, false))
 
 
 

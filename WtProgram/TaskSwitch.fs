@@ -577,9 +577,11 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop) as this=
     
     member this.windows =
         let windowsInZorder = os.windowsInZorder.where(fun w -> 
-            // WindowTabs' own windows, such as Settings, are listed like any other. The switcher
-            // is not shown yet when this runs, so it does not list itself.
+            // WindowTabs' own windows, such as Settings, are listed like any other, but not the
+            // hidden ones that stand in for groups on the taskbar. The switcher is not shown yet
+            // when this runs, so it does not list itself.
             w.isAltTabWindow
+            && not(TaskbarProxies.contains w.hwnd)
             && not(String.IsNullOrEmpty w.text)
             && w.text <> "Microsoft Text Input Application"
             && w.className <> "Windows.UI.Core.CoreWindow"

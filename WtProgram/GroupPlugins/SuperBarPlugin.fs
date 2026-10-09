@@ -35,6 +35,53 @@ module TaskbarPreview =
             result.bitmap.Dispose()
             reraise()
 
+    /// The taskbar lays out a preview at the largest thumbnail size it asks for, before the
+    /// thumbnail arrives, and keeps that slot. Filling the slot with the image centred leaves
+    /// the space around a tall window even on both sides instead of all at its right.
+    let centre (box:Sz) (image:Img) =
+        use fitted = image.resize(box).bitmap
+        let result = Img(box)
+        try
+            use graphics = result.graphics
+            graphics.Clear(Color.Transparent)
+            graphics.DrawImage(fitted,(box.width-fitted.Width)/2,(box.height-fitted.Height)/2,fitted.Width,fitted.Height)
+            result
+        with _ ->
+            result.bitmap.Dispose()
+            reraise()
+
+/// The hidden windows that stand in for groups on the taskbar; window lists leave them out.
+module TaskbarProxies =
+    let private windows = Collections.Concurrent.ConcurrentDictionary<IntPtr,unit>()
+    let add hwnd = windows.TryAdd(hwnd,()) |> ignore
+    let remove hwnd = windows.TryRemove(hwnd) |> ignore
+    let contains hwnd = windows.ContainsKey(hwnd)
+
+/// A group's taskbar icon: the app's icon with the WindowTabs badge at the bottom right, as in
+/// the window switcher. Windows 11 draws an overlay icon at the top right instead.
+type TaskbarBadgedIcon(icon:Icon) =
+    let size = max 32 icon.Width
+    let handle =
+        use canvas = new Bitmap(size,size,PixelFormat.Format32bppArgb)
+        do
+            use g = Graphics.FromImage(canvas)
+            g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
+            use app = icon.ToBitmap()
+            g.DrawImage(app,Rectangle(0,0,size,size))
+            use badgeIcon = Services.openIcon("Bemo.ico")
+            use badge = badgeIcon.ToBitmap()
+            // As large as the overlay icon it replaces: 16 pixels on a 24 pixel taskbar icon.
+            let side = size*2/3
+            g.DrawImage(badge,Rectangle(size-side,size-side,side,side))
+        canvas.GetHicon()
+    let badged = Icon.FromHandle(handle)
+    member _.source = icon
+    member _.icon = badged
+    interface IDisposable with
+        member _.Dispose() =
+            badged.Dispose()
+            WinUserApi.DestroyIcon(handle) |> ignore
+
 type TbButton = {
     icon : Icon
     text : string
@@ -65,9 +112,8 @@ type DwmWindow = {
 type TaskBarButton(info) as this =
     let Cell = CellScope()
     let _os = OS()
-    let invoker = new Invoker()
-    let mutable overlayInitialized = false
     let taskbar = _os.getTaskbar().Value
+    let mutable badgedIcon : TaskbarBadgedIcon option = None
     let infoCell = Cell.create(None)
     let tabWindowsCell = Cell.create(Map2())
     let windowsToDispose = Cell.create(Set2())
@@ -96,7 +142,7 @@ type TaskBarButton(info) as this =
                 //reason unless we set appwindow style in addition to noactivate
                 WindowsExtendedStyles.WS_EX_APPWINDOW
             activate = fun() -> config().activate()
-            icon = fun() -> config().icon
+            icon = fun() -> match badgedIcon with Some(badged) -> badged.icon | None -> config().icon
             handler = fun msg ->
                 match msg.msg with
                 | WindowMessages.WM_SYSCOMMAND ->
@@ -154,8 +200,12 @@ type TaskBarButton(info) as this =
         infoCell.set(Some(info))
 
         // Notify the shell before the group releases its previous icon copies.
-        if prevInfo |> Option.exists(fun previous -> obj.ReferenceEquals(previous.icon,info.icon)) |> not then
-            this.window.setIcons(info.icon)
+        if badgedIcon |> Option.exists(fun badged -> obj.ReferenceEquals(badged.source,info.icon)) |> not then
+            let previous = badgedIcon
+            let badged = new TaskbarBadgedIcon(info.icon)
+            badgedIcon <- Some badged
+            this.window.setIcons(badged.icon)
+            previous |> Option.iter(fun icon -> (icon :> IDisposable).Dispose())
 
         this.window.move(info.bounds)
         this.window.setText(info.text)
@@ -186,12 +236,9 @@ type TaskBarButton(info) as this =
         let tabOrder = tabOrder info
         if tabOrder.list <> prevTabOrder.list then
             tabOrder.iter <| fun tabWindow ->  setTabOrder(tabWindow.window.hwnd, IntPtr.Zero)
-
-        invoker.asyncInvoke <| fun() ->
-            use icon = Services.openIcon("Bemo.ico")
-            taskbar.SetOverlayIcon(this.window.hwnd, icon.Handle, "WindowTabs")
        
-    member this.tabWindow key = tabWindowsCell.value.find(key).window
+    /// A group can announce a window before its tab joins the strip, so the tab may have no preview window yet.
+    member this.tryTabWindow key = tabWindowsCell.value.tryFind(key) |> Option.map(fun tab -> tab.window)
 
     member this.createDwmWindow (dwmWindow:DwmWindow) : Window =
         let wndProc m =
@@ -203,9 +250,13 @@ type TaskBarButton(info) as this =
                     0
                 else m.def()
             | WindowMessages.WM_GETICON -> int(dwmWindow.icon().Handle)
+            | WindowMessages.WM_NCDESTROY ->
+                TaskbarProxies.remove hwnd
+                dwmWindow.handler(m)
             | _ -> dwmWindow.handler(m)
 
         let window = this.os.createWindow wndProc dwmWindow.style dwmWindow.exStyle 
+        TaskbarProxies.add window.hwnd
         windowsToDispose.map(fun s -> s.add(window:?>IDisposable))
         this.os.windowFromHwnd(window.hwnd)
 
@@ -216,6 +267,8 @@ type TaskBarButton(info) as this =
                 tabWindow.Dispose()
             tabWindowsCell.set(Map2())
             windowsToDispose.value.items.iter <| fun d -> d.Dispose()
+            badgedIcon |> Option.iter(fun icon -> (icon :> IDisposable).Dispose())
+            badgedIcon <- None
 
 and TaskbarTab(parent:TaskBarButton, config,size) =
     let os = OS()
@@ -236,7 +289,7 @@ and TaskbarTab(parent:TaskBarButton, config,size) =
                 | WindowMessages.WM_DWMSENDICONICTHUMBNAIL ->
                     let msgWindow = os.windowFromHwnd(msg.hwnd)
                     TaskbarPreview.send (fun () -> config().preview(true))
-                        (fun img -> img.resize(msg.lParam.size)) msgWindow.dwmSetIconicThumbnail
+                        (TaskbarPreview.centre msg.lParam.size) msgWindow.dwmSetIconicThumbnail
                     msg.def()
                 | WindowMessages.WM_DWMSENDICONICLIVEPREVIEWBITMAP ->
                     let msgWindow = os.windowFromHwnd(msg.hwnd)
@@ -261,6 +314,7 @@ type SuperBarPlugin() as this =
     let _taskbar = _os.getTaskbar().Value
 
     let mutable taskbarButton = null
+    let flashingTabs = Collections.Generic.HashSet<string>()
 
     member this.os = _os
     
@@ -296,7 +350,7 @@ type SuperBarPlugin() as this =
                 let tbButtonInfo = {
                     text = this.ts.tabInfo(topTab).text
                     bounds = previewBounds
-                    icon = this.ts.tabInfo(topTab).iconSmall
+                    icon = this.ts.tabInfo(topTab).iconBig
                     activate = fun() -> this.invokeAsync <| fun() ->
                         this.tabActivate(Tab(this.zorder.head), true)
                     toggleMinimizeRestore = fun() -> 
@@ -345,11 +399,11 @@ type SuperBarPlugin() as this =
                         button
                         
 
-                match this.foregroundTab with
-                | Some(tab) ->
+                match this.foregroundTab |> Option.bind(fun tab -> button.tryTabWindow(tab.GetHashCode().ToString())) with
+                | Some(tabWindow) ->
                     this.taskbar.ActivateTab(button.window.hwnd)
-                    this.taskbar.SetTabActive(button.tabWindow(tab.GetHashCode().ToString()).hwnd, button.window.hwnd, 0)
-                | _ -> ()
+                    this.taskbar.SetTabActive(tabWindow.hwnd, button.window.hwnd, 0)
+                | None -> ()
 
     member this.onForegroundChanged() =
         this.updateTaskbar()
@@ -361,13 +415,18 @@ type SuperBarPlugin() as this =
         this.updateTaskbar()
         this.showInTaskbar(hwnd, true)
             
+    /// A tab stops flashing when its window redraws, which it also does when printed for a
+    /// preview. Invalidating then would make the taskbar print it again, over and over.
     member this.onFlash(hwnd, flash) =
         if taskbarButton <> null then
-            let tabHwnd = taskbarButton.tabWindow(hwnd.GetHashCode().ToString()).hwnd
-            let flags, count = if flash then (FlashWindowExFlags.FLASHW_TRAY, 1) else (FlashWindowExFlags.FLASHW_STOP, 0)
-            Win32Helper.FlashWindow(tabHwnd, flags, 0).ignore
-            Win32Helper.FlashWindow(taskbarButton.window.hwnd, flags, 0).ignore
-            taskbarButton.invalidate()
+            let key = hwnd.GetHashCode().ToString()
+            taskbarButton.tryTabWindow(key) |> Option.iter(fun tabWindow ->
+                if flash || flashingTabs.Contains key then
+                    if flash then flashingTabs.Add key |> ignore else flashingTabs.Remove key |> ignore
+                    let flags = if flash then FlashWindowExFlags.FLASHW_TRAY else FlashWindowExFlags.FLASHW_STOP
+                    Win32Helper.FlashWindow(tabWindow.hwnd, flags, 0).ignore
+                    Win32Helper.FlashWindow(taskbarButton.window.hwnd, flags, 0).ignore
+                    taskbarButton.invalidate())
 
     member this.onBoundsChanged() =
         if taskbarButton <> null then taskbarButton.invalidate()
