@@ -77,18 +77,42 @@ Still stuck? [Open an issue](https://github.com/leafOfTree/WindowTabs/issues) an
 the troubleshooting report from **Settings → Support**. It leaves out window titles
 and paths.
 
-## Contributing
+## Development
 
-F# WinForms on .NET Framework 4.8. Build with the
-[.NET SDK](https://dotnet.microsoft.com/download) or Visual Studio 2022+:
+### Build and run
+
+WindowTabs is an F# WinForms app on .NET Framework 4.8, with a small C# project for
+Win32 interop. It builds on Windows with the
+[.NET SDK](https://dotnet.microsoft.com/download) (tested with 10.0) or Visual Studio
+2022+ with the **.NET desktop development** workload.
 
 ```powershell
-dotnet build WindowTabs.sln -c Release
+git clone https://github.com/leafOfTree/WindowTabs
+cd WindowTabs
+dotnet build WindowTabs.sln                 # Debug: WtProgram\bin\Debug\WindowTabs.exe
+dotnet build WindowTabs.sln -c Release      # single exe, as shipped
 ```
 
-See [AGENTS.md](AGENTS.md), [architecture](docs/architecture.md) and
-[testing](docs/testing.md). AI-assisted contributions are welcome. Make sure you
-understand and have tested your changes.
+Exit WindowTabs from the tray before rebuilding; a running exe locks the output.
+
+You can also open `WindowTabs.sln` in Visual Studio and start `WtProgram`.
+
+AI-assisted contributions are welcome. Make sure you
+understand and have tested your changes. See [AGENTS.md](AGENTS.md), [architecture](docs/architecture.md) and
+[testing](docs/testing.md). 
+
+### Things to know before changing code
+
+- **Threads:** each tab group runs on its own UI thread, and the main thread owns
+  settings and window discovery. Calls between them go through the adapters in
+  `Shared/Services.fs`. Read [architecture](docs/architecture.md) before touching this.
+- **UI text:** every visible string lives in `Shared/Strings.fs` with English, Chinese
+  and Japanese. Machine translation is fine for a first draft; native speakers can refine it.
+- **Settings:** names, defaults and ranges are declared once in
+  `Shared/SettingsCatalog.fs`; the Settings window, search and reset all read from it.
+- **DPI and themes:** use logical pixels and scale with `Dpi.scale`; check your UI in
+  light, dark and high-contrast modes.
+
 
 ## Credits and license
 
