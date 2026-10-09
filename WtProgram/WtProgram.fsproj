@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -82,6 +82,7 @@
     <Compile Include="DragDropController.fs" />
     <Compile Include="TabStripSprite.fs" />
     <Compile Include="TabShadow.fs" />
+    <Compile Include="TabTitleTip.fs" />
     <Compile Include="TabStrip.fs" />
     <Compile Include="AppearanceJson.fs" />
     <Compile Include="SettingsFileStore.fs" />

@@ -461,6 +461,40 @@ let main() =
                 let count = frames strip
                 send WindowMessages.WM_MOUSELEAVE Pt.empty
                 check (frames strip=count) "Repeated mouse leave repainted"
+                // A title cut short shows in full once the pointer rests on its tab; a whole title
+                // does not, and a click puts the tip away until the pointer moves to another tab.
+                do
+                    let titled (id:int) text = strip.setTabInfo(Tab(IntPtr(id)),{ strip.tabInfo(Tab(IntPtr(id))) with text=text })
+                    titled 101 (String.replicate 8 "Quarterly report draft ")
+                    titled 102 "Notes"
+                    titled 103 (String.replicate 8 "Meeting notes and actions ")
+                    // Off screen the real pointer is elsewhere, so pumping messages would deliver the
+                    // leave TrackMouseEvent reports; the rest is stepped by hand instead.
+                    let flags = BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public
+                    let shown () = typeof<TabStrip>.GetProperty("titleTipShown",flags).GetValue(strip) :?> bool
+                    let waiting () = (typeof<TabStrip>.GetField("titleTimer",flags).GetValue(strip) :?> Timer).Enabled
+                    let rest () = typeof<TabStrip>.GetMethod("showTitle",flags).Invoke(strip,[||]) |> ignore
+                    hover 60
+                    check (waiting() && not (shown())) "A cut-short title did not wait for the pointer to rest"
+                    rest()
+                    check (shown()) "A cut-short title did not show in full after a rest"
+                    hover 460
+                    check (shown()) "Moving between cut-short titles did not show the next one at once"
+                    hover 260
+                    rest()
+                    check (not (shown())) "A title that fits showed a tip"
+                    hover 60
+                    check (waiting()) "Returning to a cut-short title did not wait to show it again"
+                    rest()
+                    send WindowMessages.WM_LBUTTONDOWN (Pt(Dpi.scale 60,Dpi.scale 14))
+                    send WindowMessages.WM_LBUTTONUP (Pt(Dpi.scale 60,Dpi.scale 14))
+                    hover 61
+                    check (not (shown()) && not (waiting())) "The tip came back after a click on its tab"
+                    hover 460
+                    rest()
+                    send WindowMessages.WM_MOUSELEAVE Pt.empty
+                    check (not (shown()) && not (waiting())) "The tip stayed after the pointer left the strip"
+                    for id in [101;102;103] do titled id ""
 
                 let os = OS()
                 let shadow = os.windowsInZorder.list |> List.find(fun window -> window.parent.hwnd=strip.hwnd)

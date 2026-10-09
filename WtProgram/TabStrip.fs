@@ -80,6 +80,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     /// Waits out a press that handed the capture to the drag check, see WM_MOUSELEAVE.
     let captureWatch = new Timer(Interval=30)
     let mutable pointerSource : unit -> Point = fun () -> Cursor.Position
+    /// A cut-short title shows in full once the pointer rests on its tab, see pointTitle.
+    let titleTimer = new Timer(Interval=500)
+    let mutable titleTab : Tab option = None
+    let mutable titleTip : TabTitleTip option = None
     /// The full strip and the collapsed bar while an expand or collapse runs, so a frame only
     /// blends them; dropped whenever what they show changes.
     let mutable revealImages : (Img*Img) option = None
@@ -116,6 +120,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         showInsideExport.init()
 
         revealTimer.Tick.Add(fun _ -> this.stepReveal())
+        titleTimer.Tick.Add(fun _ -> titleTimer.Stop(); this.showTitle())
         captureWatch.Tick.Add(fun _ ->
             if WinUserApi.GetCapture()=IntPtr.Zero then
                 captureWatch.Stop()
@@ -201,11 +206,13 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                     this.window.trackMouseLeave()
                 let hit = this.hit
                 hoverCell.set(hit)
+                this.pointTitle(hit |> Option.map fst)
                 let enableHoverActivate = Services.settings.getValue("enableHoverActivate").cast<bool>()
                 if enableHoverActivate then
                     hit.iter <| fun(hitTab, hitPart) -> monitor.tabActivate(hitTab)
             | MouseClick(pt, btn, action) ->
                 this.setPt(Some(pt))
+                this.hideTitle()
                 this.hit.iter <| fun(hitTab, hitPart) ->
                     match action with
                     | MouseDown ->
@@ -223,10 +230,45 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                     this.onMouse(action, pt, btn, (hitTab, hitPart))
                 hoverCell.set(this.hit)
             | MouseLeave ->
+                titleTab <- None
+                this.hideTitle()
                 this.setPt(None)
                 capturedCell.set(None)
                 hoverCell.set(None)
                 heldLayoutCell.set(None))
+
+    member private this.hideTitle() =
+        titleTimer.Stop()
+        titleTip |> Option.iter(fun tip -> tip.hide())
+
+    /// From tab to tab, a title already showing moves straight to the next cut one; otherwise
+    /// it waits for the pointer to rest. A click puts it away until the pointer moves on.
+    member private this.pointTitle(tab:Tab option) =
+        if tab<>titleTab then
+            titleTab <- tab
+            let showing = titleTip |> Option.exists(fun tip -> tip.Visible)
+            this.hideTitle()
+            if tab.IsSome then
+                if showing then this.showTitle() else titleTimer.Start()
+
+    member private this.showTitle() =
+        titleTab |> Option.iter(fun tab ->
+            let sprites : List2<Pt*TabSprite<Tab>> = this.tabSprites
+            match sprites.list |> List.tryFind(fun (_,sprite) -> sprite.id=tab) with
+            | Some(_,sprite) when this.visible && not this.isShrunk && sprite.titleCut ->
+                let tip =
+                    match titleTip with
+                    | Some tip -> tip
+                    | None ->
+                        let tip = new TabTitleTip()
+                        titleTip <- Some tip
+                        tip
+                let strip : Rect = this.bounds
+                tip.show(sprite.displayInfo.text,sprite.displayInfo.textFont,
+                         Rectangle(strip.x,strip.y,strip.size.width,strip.size.height),pointerSource().X)
+            | _ -> ())
+
+    member internal _.titleTipShown = titleTip |> Option.exists(fun tip -> tip.Visible)
 
     member private this.wndProc(msg:Win32Message) =
         // Where the frame on screen sits in the full strip: collapsed, expanded or part way.
@@ -290,6 +332,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member internal _.renderCount = renderedFrames
     
     member private this.update() =
+        if not this.visible then this.hideTitle()
         let target = if this.isShrunk then 0.0 else 1.0
         dropRevealImages()
         if this.visible then
@@ -585,6 +628,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         destroyingEvent.Trigger()
         revealTimer.Dispose()
         captureWatch.Dispose()
+        titleTimer.Dispose()
+        titleTip |> Option.iter(fun tip -> tip.Dispose())
+        titleTip <- None
         dropRevealImages()
         normalFont.Dispose()
         renamedFont.Dispose()
