@@ -119,15 +119,6 @@ module RuntimeDiagnostics =
     let errorLogged = errorLoggedEvent.Publish
     let notifyErrorLogged() = errorLoggedEvent.Trigger()
 
-    /// The newest WindowTabsCrash.log, beside the exe or in AppData, where the crash handler writes it.
-    let crashLogPath() =
-        [AppDomain.CurrentDomain.BaseDirectory
-         IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"WindowTabs")]
-        |> List.map(fun folder -> IO.Path.Combine(folder,"WindowTabsCrash.log"))
-        |> List.filter IO.File.Exists
-        |> List.sortByDescending IO.File.GetLastWriteTime
-        |> List.tryHead
-
     /// WindowTabsCrash.log: entries newest first, each starting with a line of dashes, then
     /// Time, Source, Version and OS, then the exception as .NET prints it.
     module CrashLog =
@@ -185,6 +176,18 @@ module RuntimeDiagnostics =
                                           |> Option.map(fun line -> line.Split([|" ---> "|],StringSplitOptions.None) |> Array.map typeOf |> String.concat " ---> ")
                                           |> Option.defaultValue ""),
                     JProperty("stack",JArray(stack |> Array.map box)))
+
+    /// The newest WindowTabsCrash.log with a crash in it, beside the exe or in AppData, where the
+    /// crash handler writes it. A log left empty is none: Support would offer a blank file.
+    let crashLogPath() =
+        [AppDomain.CurrentDomain.BaseDirectory
+         IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"WindowTabs")]
+        |> List.map(fun folder -> IO.Path.Combine(folder,"WindowTabsCrash.log"))
+        |> List.filter(fun path ->
+            try IO.File.Exists(path) && not (CrashLog.entries (IO.File.ReadAllText(path))).IsEmpty
+            with _ -> false)
+        |> List.sortByDescending IO.File.GetLastWriteTime
+        |> List.tryHead
 
     /// The latest crashes, newest first, as far as they are safe to share; see CrashLog.summary.
     let private recentCrashes() =
