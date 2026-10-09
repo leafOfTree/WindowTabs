@@ -117,6 +117,21 @@ let main() =
             let textCheck = inkSize glyph (Rectangle(Point.Empty,glyph.Size))
             check (not gutterCheck.IsEmpty && abs(gutterCheck.Width-textCheck.Width)<=1 && abs(gutterCheck.Height-textCheck.Height)<=1)
                   (sprintf "Menu check %A does not match the selected-colour check %A" gutterCheck textCheck)
+            // Pointing at an item with a submenu opens it after a short pause of our own, not the
+            // Windows menu delay through WinForms' timer, which a menu of an app behind could lose.
+            // The pointer entering an item, as WinForms reports it: HandleMouseEnter raises MouseEnter.
+            let enter = typeof<ToolStripItem>.GetMethod("HandleMouseEnter",BindingFlags.Instance ||| BindingFlags.NonPublic)
+            let centre (item:ToolStripItem) = item.Owner.RectangleToScreen(item.Bounds) |> fun r -> Point(r.X+r.Width/2,r.Y+r.Height/2)
+            enter.Invoke(nested,[|box EventArgs.Empty|]) |> ignore
+            menu.openHovered(Point(-30000,-30000))
+            check (not nested.DropDown.Visible) "A submenu opened with the pointer no longer on its item"
+            menu.openHovered(centre nested)
+            Application.DoEvents()
+            check nested.DropDown.Visible "Pointing at an item with a submenu did not open it"
+            enter.Invoke(first,[|box EventArgs.Empty|]) |> ignore
+            menu.openHovered(centre first)
+            Application.DoEvents()
+            check (not nested.DropDown.Visible) "Pointing at another item left a neighbour's submenu open"
             nested.ShowDropDown()
             Application.DoEvents()
             check (not(nested.DropDown.Region.IsVisible(Point(0,0)))) "Submenu has square corners"

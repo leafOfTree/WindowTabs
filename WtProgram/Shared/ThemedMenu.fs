@@ -80,6 +80,12 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
     let mutable action = None
     let mutable restoreOwner : obj option = None
     let timer = new Timer(Interval=1)
+    // Submenus open on hover after the Windows menu delay (400 ms here) through a timer that
+    // only fires while WinForms still counts the item selected, which a menu of an app not in
+    // front could lose: a submenu came late or not at all. Opened here, after a short pause so
+    // passing over an item does not flash its submenu.
+    let hoverOpen = new Timer(Interval=120)
+    let mutable hovered : ToolStripMenuItem option = None
     let mutable mouseHook = IntPtr.Zero
     let stopMouseHook() =
         if mouseHook<>IntPtr.Zero then
@@ -135,10 +141,14 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
                     images.Add(copy)
                     entry.Image <- copy)
                 click |> Option.iter(fun run -> entry.Click.Add(fun _ -> action <- Some run))
+                entry.MouseEnter.Add(fun _ -> hovered <- Some entry; hoverOpen.Stop(); hoverOpen.Start())
                 if not children.IsEmpty then
                     configure entry.DropDown
                     add entry.DropDownItems children
     do
+        hoverOpen.Tick.Add(fun _ ->
+            hoverOpen.Stop()
+            this.openHovered(Control.MousePosition))
         configure this
         this.ImageScalingSize <- Size(Dpi.scale 16,Dpi.scale 16)
         timer.Tick.Add(fun _ ->
@@ -159,6 +169,7 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
                 ownsForeground |> Option.iter(fun owns -> if owns (WinUserApi.GetForegroundWindow()) then e.Cancel <- true))
         // Put back what WinForms had, so no later menu inherits a strip that may be gone.
         this.Closed.Add(fun _ ->
+            hoverOpen.Stop()
             stopMouseHook()
             restoreOwner |> Option.iter(fun previous ->
                 ThemedContextMenu.menuFilter() |> Option.iter(fun (instance,property:Reflection.PropertyInfo) -> property.SetValue(instance,previous)))
@@ -186,6 +197,17 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
             let property = filter.GetProperty("ActiveHwndInternal",Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Instance)
             if isNull instance || isNull property then None else Some(instance,property)
         with _ -> None
+    /// The item last pointed at opens its submenu, closing any a neighbour has open, if the pointer
+    /// is still on it; native hosts pass the pointer rather than moving the real one.
+    member _.openHovered(pointer:Point) =
+        hovered |> Option.iter(fun item ->
+            let owner = item.Owner
+            if not (isNull owner) && owner.Visible && owner.RectangleToScreen(item.Bounds).Contains(pointer) then
+                for other in owner.Items |> Seq.cast<ToolStripItem> do
+                    match other with
+                    | :? ToolStripMenuItem as sibling when not (obj.ReferenceEquals(sibling,item)) && sibling.DropDown.Visible -> sibling.HideDropDown()
+                    | _ -> ()
+                if item.HasDropDownItems && not item.DropDown.Visible then item.ShowDropDown())
     /// Include every visible submenu; an outside click still reaches its original target.
     member _.dismissOutside(point:Point) =
         let rec contains (menu:ToolStripDropDown) =
@@ -199,7 +221,9 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
             this.Close(ToolStripDropDownCloseReason.AppClicked)
     override _.Dispose(disposing) =
         stopMouseHook()
-        if disposing then timer.Stop()
+        if disposing then
+            timer.Stop()
+            hoverOpen.Dispose()
         base.Dispose(disposing)
         if disposing then
             timer.Dispose()
