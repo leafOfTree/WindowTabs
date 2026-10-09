@@ -106,6 +106,25 @@ namespace Bemo
         [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
         private static extern void SHCreateItemFromParsingName(string path, IntPtr bindContext, [In] ref Guid riid, out IShellItem item);
 
+        [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
+        [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
+        [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+
+        // The progress dialog takes the foreground and, closing, can leave it to no window or to
+        // another app's hidden one, so keys after a drop went nowhere. The folder's window gets it
+        // back then; a window the user has moved on to keeps it.
+        private static void ReturnFocus(IntPtr owner)
+        {
+            if (owner == IntPtr.Zero) return;
+            var foreground = GetForegroundWindow();
+            if (foreground == owner) return;
+            uint process;
+            GetWindowThreadProcessId(foreground, out process);
+            var ours = foreground != IntPtr.Zero && process == (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
+            if (foreground == IntPtr.Zero || ours || !IsWindowVisible(foreground)) SetForegroundWindow(owner);
+        }
+
         private static IShellItem Item(string path)
         {
             var riid = typeof(IShellItem).GUID;
@@ -146,6 +165,7 @@ namespace Bemo
                     if (!string.IsNullOrEmpty(parent)) folders.Add(parent);
                 }
                 foreach (var changed in folders) SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW | SHCNF_FLUSH, changed, IntPtr.Zero);
+                ReturnFocus(owner);
             }
         }
 
