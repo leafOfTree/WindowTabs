@@ -4,15 +4,27 @@ open System
 module NumberLeaderRequest =
     let toggle = Event<unit>()
 
+/// An app's own choice from the tab menu wins over the global switch, either way.
 module NumberShortcutRules =
-    let allows (disabledPaths:Set2<string>) path =
-        disabledPaths.items.list |> List.exists(fun item -> String.Equals(item,path,StringComparison.OrdinalIgnoreCase)) |> not
+    let private has (paths:Set2<string>) path =
+        paths.items.list |> List.exists(fun item -> String.Equals(item,path,StringComparison.OrdinalIgnoreCase))
+    let private without (paths:Set2<string>) path =
+        Set2(paths.items.where(fun item -> not (String.Equals(item,path,StringComparison.OrdinalIgnoreCase))))
+    let allows byDefault (enabledPaths:Set2<string>) (disabledPaths:Set2<string>) path =
+        if has enabledPaths path then true
+        elif has disabledPaths path then false
+        else byDefault
+    let private paths key = Services.settings.getValue(key) :?> Set2<string>
+    let private byDefault() = Services.settings.getValue("enableCtrlNumberHotKey") :?> bool
     let enabled path =
-        allows (Services.settings.getValue("disabledNumberShortcutPaths") :?> Set2<string>) path
+        allows (byDefault()) (paths "enabledNumberShortcutPaths") (paths "disabledNumberShortcutPaths") path
+    /// A choice that matches the global switch is no exception, so the app follows it again.
     let setEnabled path enabled =
-        let paths = Services.settings.getValue("disabledNumberShortcutPaths") :?> Set2<string>
-        let remaining = Set2(paths.items.where(fun item -> not (String.Equals(item,path,StringComparison.OrdinalIgnoreCase))))
-        Services.settings.setValue("disabledNumberShortcutPaths",box(if enabled then remaining else remaining.add path))
+        let enabledPaths = without (paths "enabledNumberShortcutPaths") path
+        let disabledPaths = without (paths "disabledNumberShortcutPaths") path
+        let fallback = byDefault()
+        Services.settings.setValue("enabledNumberShortcutPaths",box(if enabled && not fallback then enabledPaths.add path else enabledPaths))
+        Services.settings.setValue("disabledNumberShortcutPaths",box(if not enabled && fallback then disabledPaths.add path else disabledPaths))
 
 /// Labels and virtual keys share one order so the hints always select the tab they label.
 module NumberLeaderKeys =

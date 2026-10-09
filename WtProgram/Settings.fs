@@ -125,6 +125,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         tabColorMode = settingsJson.getString("tabColorMode").def(SettingsCatalog.choiceDefault "tabColorMode") |> (fun mode -> if mode="Rainbow" then "ByWindow" else mode) |> SettingsCatalog.normalizeChoice "tabColorMode"
                         tabColorStyle = settingsJson.getString("tabColorStyle").def(SettingsCatalog.choiceDefault "tabColorStyle") |> SettingsCatalog.normalizeChoice "tabColorStyle"
                         disabledNumberShortcutPaths = Set2(settingsJson.getStringArray("disabledNumberShortcutPaths").def(List2()))
+                        enabledNumberShortcutPaths = Set2(settingsJson.getStringArray("enabledNumberShortcutPaths").def(List2()))
                         numberLeaderKeys = settingsJson.getString("numberLeaderKeys").def(SettingsCatalog.textDefault "numberLeaderKeys") |> NumberLeaderKeys.normalize
                         numberHotKeyModifier = settingsJson.getString("numberHotKeyModifier").def(SettingsCatalog.choiceDefault "numberHotKeyModifier") |> SettingsCatalog.normalizeChoice "numberHotKeyModifier"
                         enableHoverActivate = settingsJson.getBool("enableHoverActivate").def(SettingsCatalog.toggleDefault "enableHoverActivate" hasExistingSettings)
@@ -210,6 +211,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setString("tabColorMode",settings.tabColorMode)
             settingsJson.setString("tabColorStyle",settings.tabColorStyle)
             settingsJson.setStringArray("disabledNumberShortcutPaths", settings.disabledNumberShortcutPaths.items)
+            settingsJson.setStringArray("enabledNumberShortcutPaths", settings.enabledNumberShortcutPaths.items)
             settingsJson.setString("numberLeaderKeys",settings.numberLeaderKeys)
             settingsJson.setString("numberHotKeyModifier", settings.numberHotKeyModifier)
             settingsJson.setBool("enableHoverActivate", settings.enableHoverActivate)

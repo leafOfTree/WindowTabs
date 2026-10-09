@@ -33,7 +33,7 @@ let mutable preferences = {
     lightPalette=Theme.lightPalette;darkPalette=Theme.darkPalette
     lightCustomPalette=Theme.lightPalette;darkCustomPalette=Theme.darkPalette
     mode=DarkTheme;useCustomColors=true;lightPreset="";darkPreset="";presetEdits=Map.empty }
-let settingValues = Collections.Generic.Dictionary<string,obj>(dict ["appTabColors",box(Map.empty<string,string>);"tabColorMode",box "Off";"tabColorStyle",box "Stripe";"numberLeaderKeys",box "123456789";"numberHotKeyModifier",box "Ctrl";"disabledNumberShortcutPaths",box(Set2<string>())])
+let settingValues = Collections.Generic.Dictionary<string,obj>(dict ["appTabColors",box(Map.empty<string,string>);"tabColorMode",box "Off";"tabColorStyle",box "Stripe";"numberLeaderKeys",box "123456789";"numberHotKeyModifier",box "Ctrl";"disabledNumberShortcutPaths",box(Set2<string>());"enabledNumberShortcutPaths",box(Set2<string>())])
 let settings = { new ISettings with
     member _.appearance = preferences
     member _.updateAppearance update = preferences <- update preferences; ThemeService.notifyChanged()
@@ -362,6 +362,12 @@ let main() =
         assertTrue numericRow.Collapsed "Disabled numeric shortcuts must hide modifier selection"
         numeric.Checked <- true
         assertTrue (not numericRow.Collapsed) "Enabled numeric shortcuts must show modifier selection"
+        // An app enabled from the tab menu still uses the modifier while the switch is off.
+        settingValues.["enabledNumberShortcutPaths"] <- box(Set2(List2([@"C:\Apps\Editor.exe"])))
+        numeric.Checked <- false
+        assertTrue (not numericRow.Collapsed) "The modifier was hidden while an app still switches tabs by number"
+        settingValues.["enabledNumberShortcutPaths"] <- box(Set2<string>())
+        numeric.Checked <- true
         numericChoice.SelectedIndex <- 1
         assertTrue (settings.getValue("numberHotKeyModifier") :?> string = "Alt") "Alt selection was not saved"
         let numericPlugin = NumericTabHotKeyPlugin()

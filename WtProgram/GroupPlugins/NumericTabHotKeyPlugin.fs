@@ -41,8 +41,7 @@ type NumericTabHotKeyPlugin() as this =
             match modifier with
             | "Alt" -> altPressed && not controlPressed
             | _ -> controlPressed && not altPressed
-        if (msg = WindowMessages.WM_KEYDOWN || msg = WindowMessages.WM_SYSKEYDOWN) && matches &&
-           Services.settings.getValue("enableCtrlNumberHotKey").cast<bool>() then
+        if (msg = WindowMessages.WM_KEYDOWN || msg = WindowMessages.WM_SYSKEYDOWN) && matches then
             this.vkToTabIndex(vkCode)
         else None
 

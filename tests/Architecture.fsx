@@ -285,7 +285,9 @@ let main() =
         check (not(TabNavigation.leftJustBefore left b (Some c) 1300L)) "A tab hidden after a later selection was treated as closed"
         check (not(TabNavigation.leftJustBefore left c (Some a) 1300L)) "Another tab's hide was treated as the left tab closing"
         check (not(TabNavigation.leftJustBefore None b (Some a) 1300L)) "A hide with no recent switch was treated as a close"
-        let target msg key ctrl = onGroup(fun _ -> numeric.targetIndex(msg,key,ctrl))
+        // As the input hook decides: the key must match and the app's rule allow it.
+        let allowed() = NumberShortcutRules.enabled @"C:\Apps\Unlisted.exe"
+        let target msg key ctrl = onGroup(fun _ -> numeric.targetIndex(msg,key,ctrl) |> Option.filter(fun _ -> allowed()))
         check (target WindowMessages.WM_KEYDOWN 0x31 true=None) "Disabled numeric shortcut still activates"
         api.setValue("enableCtrlNumberHotKey",box true)
         check (target WindowMessages.WM_KEYDOWN 0x31 true=Some 0 && target WindowMessages.WM_KEYDOWN 0x39 true=Some 8)
@@ -303,7 +305,7 @@ let main() =
                target WindowMessages.WM_KEYDOWN 0x30 true=None) "Numeric shortcut accepted key-up, missing Ctrl or an invalid digit"
         api.setValue("enableCtrlNumberHotKey",box false)
         check (target WindowMessages.WM_KEYDOWN 0x31 true=None) "Numeric shortcuts retained their enabled state"
-        let altTarget msg ctrl alt = onGroup(fun _ -> numeric.targetIndex(msg,0x31,ctrl,altPressed=alt))
+        let altTarget msg ctrl alt = onGroup(fun _ -> numeric.targetIndex(msg,0x31,ctrl,altPressed=alt) |> Option.filter(fun _ -> allowed()))
         api.setValue("appTabColors",box(Map.ofList [@"C:\Apps\Editor.exe","#1234AB"]))
         let kept = SettingsCatalog.resetRoot api.root false false
         api.root <- kept
@@ -340,9 +342,24 @@ let main() =
         check (api.getValue("tabColorMode")=box "ByWindow") "The development name for by-window colours was not carried over"
         api.root <- current
         let paths = Set2(List2([@"C:\Apps\Editor.exe"]))
-        check (not (NumberShortcutRules.allows paths @"c:\apps\EDITOR.exe")) "Disabled application rule must ignore path case"
-        check (NumberShortcutRules.allows paths @"C:\Other.exe") "Unlisted applications must remain enabled"
+        let none = Set2<string>()
+        check (not (NumberShortcutRules.allows true none paths @"c:\apps\EDITOR.exe")) "Disabled application rule must ignore path case"
+        check (NumberShortcutRules.allows true none paths @"C:\Other.exe") "Unlisted applications must follow the global switch"
+        // Switched off globally, an app enabled from the tab menu still switches by number.
+        check (NumberShortcutRules.allows false paths none @"c:\apps\EDITOR.exe" && not (NumberShortcutRules.allows false paths none @"C:\Other.exe"))
+              "An app enabled from the tab menu did not override the global switch"
         api.setValue("disabledNumberShortcutPaths",box(Set2<string>()))
+        api.setValue("enableCtrlNumberHotKey",box false)
+        NumberShortcutRules.setEnabled @"C:\Apps\Editor.exe" true
+        check (NumberShortcutRules.enabled @"c:\apps\EDITOR.exe" && not (NumberShortcutRules.enabled @"C:\Other.exe"))
+              "Enabling one app from the tab menu had no effect while the global switch is off"
+        let kept = SettingsCatalog.resetRoot api.root false false
+        check (kept.["enabledNumberShortcutPaths"].HasValues) "Reset lost apps enabled for number shortcuts"
+        check (not ((SettingsCatalog.resetRoot api.root true false).ContainsKey("enabledNumberShortcutPaths"))) "Clearing app rules kept apps enabled for number shortcuts"
+        NumberShortcutRules.setEnabled @"C:\Apps\Editor.exe" false
+        check ((api.getValue("enabledNumberShortcutPaths") :?> Set2<string>).items.list.IsEmpty && (api.getValue("disabledNumberShortcutPaths") :?> Set2<string>).items.list.IsEmpty)
+              "Turning an app back to the global choice kept an exception"
+        api.setValue("enableCtrlNumberHotKey",box true)
         check (NumberShortcutRules.enabled @"C:\Apps\Editor.exe") "Number shortcuts must be enabled by default"
         NumberShortcutRules.setEnabled @"C:\Apps\Editor.exe" false
         check (not (NumberShortcutRules.enabled @"c:\apps\EDITOR.exe")) "Menu toggle did not disable the application"

@@ -86,7 +86,7 @@ module SettingsCatalog =
     /// Settings that are the user's own records rather than preferences: a reset keeps them
     /// unless asked to clear them.
     let appRulePathKeys = ["includedPaths";"excludedPaths";"autoGroupingPaths"]
-    let appRuleKeys = appRulePathKeys @ ["disabledNumberShortcutPaths";"appTabColors"]
+    let appRuleKeys = appRulePathKeys @ ["disabledNumberShortcutPaths";"enabledNumberShortcutPaths";"appTabColors"]
     let workspaceKeys = ["workspaces";"workspaceSchemaVersion";"workspaceRecovery"]
     /// The settings a reset leaves: fresh-install toggles, the version (so the next start does
     /// not take the reset for an upgrade) and, unless cleared, app rules and saved workspaces.
