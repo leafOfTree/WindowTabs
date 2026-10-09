@@ -383,6 +383,39 @@ let main() =
         do
             use plain = new Form(ShowInTaskbar=false)
             check (Shell.getShellFolder IntPtr.Zero=None && Shell.getShellFolder plain.Handle=None) "A window without an Explorer folder was taken as a drop folder"
+        // Dropping decides as Explorer does, and leaves files already in the folder alone.
+        do
+            let any = DragDropEffects.Copy ||| DragDropEffects.Move ||| DragDropEffects.Link
+            let effect allowed ctrl shift files folder = DropRules.effect allowed ctrl shift files folder
+            check (effect any false false [@"C:\Work\a.txt"] @"C:\Archive"=DragDropEffects.Move) "A drop within one drive did not move"
+            check (effect any false false [@"D:\Work\a.txt"] @"C:\Archive"=DragDropEffects.Copy) "A drop from another drive did not copy"
+            check (effect any false false [@"\\server\share\a.txt"] @"\\SERVER\Share\Docs"=DragDropEffects.Move) "A drop within one network share did not move"
+            check (effect any true false [@"C:\Work\a.txt"] @"C:\Archive"=DragDropEffects.Copy) "Ctrl did not copy"
+            check (effect any false true [@"D:\Work\a.txt"] @"C:\Archive"=DragDropEffects.Move) "Shift did not move"
+            check (effect any true true [@"C:\Work\a.txt"] @"C:\Archive"=DragDropEffects.None) "Ctrl+Shift, a link, was taken as a move or copy"
+            check (effect any false false [@"C:\Work\a.txt"] @"c:\work\"=DragDropEffects.None) "Files dropped back on their own folder's tab were moved"
+            check (effect any false false [] @"C:\Archive"=DragDropEffects.None && effect any false false [@"D:\"] @"C:\Archive"=DragDropEffects.None)
+                  "A drag without files, or of a whole drive, was accepted"
+            check (effect DragDropEffects.Copy false false [@"C:\Work\a.txt"] @"C:\Archive"=DragDropEffects.Copy &&
+                   effect DragDropEffects.Copy false true [@"C:\Work\a.txt"] @"C:\Archive"=DragDropEffects.None)
+                  "A source that allows only copying was moved from, or a key it cannot honour was ignored"
+        // Several files go in one shell operation: copied ones stay behind, moved ones do not.
+        do
+            let root = Path.Combine(Path.GetTempPath(),"wt-drop-"+Guid.NewGuid().ToString("N"))
+            let source,target = Path.Combine(root,"source"),Path.Combine(root,"target")
+            Directory.CreateDirectory(source) |> ignore
+            Directory.CreateDirectory(target) |> ignore
+            try
+                let files = [| for name in ["a.txt";"b.txt"] -> Path.Combine(source,name) |]
+                for file in files do File.WriteAllText(file,file)
+                let copied = FileOperation.Run(files,target,false,IntPtr.Zero)
+                check (copied && files |> Array.forall(fun file -> File.Exists(file) && File.Exists(Path.Combine(target,Path.GetFileName(file)))))
+                      "Dropped files were not all copied, or the originals went"
+                let moving = Path.Combine(source,"c.txt")
+                File.WriteAllText(moving,"c")
+                let moved = FileOperation.Run([|moving|],target,true,IntPtr.Zero)
+                check (moved && not (File.Exists(moving)) && File.Exists(Path.Combine(target,"c.txt"))) "A dropped file was not moved"
+            finally Directory.Delete(root,true)
         let mask = AltMenuMask.inputs()
         check (mask.Length=2 && mask.[0].mkhi.ki.wVk=0xE8s && mask.[1].mkhi.ki.dwFlags=SendInputConstants.KEYEVENTF_KEYUP && mask.[0].mkhi.ki.dwExtraInfo=IntPtr(AltMenuMask.marker)) "Alt menu mask must pair and mark injected events"
         check (capture.handle(WindowMessages.WM_KEYDOWN,0x31,Some 0)=(true,Some 0)) "Matched digit must be swallowed and activated"
