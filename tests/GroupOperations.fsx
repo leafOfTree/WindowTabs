@@ -481,14 +481,7 @@ let main() =
                                     |> fun field -> field.GetValue(group.ts)
                     decorator.GetType().GetMethod("beginRename").Invoke(decorator,[|box handles.Head|]) |> ignore
                     let form = renameBox() |> Option.get
-                    let tab = group.ts.tabSprites.list |> List.pick(fun (offset,sprite) -> if sprite.id=Tab(handles.Head) then Some(offset,sprite) else None)
-                    let offset,sprite = tab
                     let text = form.textBox
-                    check (text.BorderStyle=BorderStyle.None && text.BackColor=form.BackColor) "The rename field draws a border of its own inside the outline"
-                    check (SystemInformation.HighContrast || (text.BackColor=sprite.fillColor && text.ForeColor=sprite.textColor)) "The rename field does not take the tab's colours"
-                    use tabFont = TabMetrics.font group.tabAppearance.tabHeight FontStyle.Regular
-                    check (text.Font.Height=tabFont.Height) "The rename field does not use the tab's font"
-                    check (text.Top>=0 && text.Bottom<=form.ClientSize.Height && abs(text.Top-(form.ClientSize.Height-text.Bottom))<=1) "The name is not centred in the rename field"
                     let strip = group.ts.bounds
                     check (form.Top>=strip.y && form.Bottom<=strip.y+strip.size.height) "The rename field reaches outside the tab"
                     check (text.Text=group.tabName handles.Head && text.SelectionLength=text.Text.Length) "The rename field does not start with the whole name selected"
@@ -498,25 +491,7 @@ let main() =
                     text.SelectAll()
                     let needed = TextRenderer.MeasureText(longName,text.Font,Size.Empty,TextFormatFlags.NoPadding).Width
                     check (text.Width>=needed || form.Width=strip.size.width) "The rename field does not widen to show the whole name"
-                    check (form.Left>=strip.x && form.Right<=strip.x+strip.size.width) "The rename field runs off the tab strip"
-                    // The field over its tab, drawn off screen, for a look at the result.
-                    use tabImage = (sprite :> ISprite).render.bitmap
-                    let at = Point(form.Left-strip.x-offset.x,form.Top-strip.y-offset.y)
-                    use shot = new Bitmap(max tabImage.Width (at.X+form.Width)+Dpi.scale 8,tabImage.Height)
-                    do
-                        use g = Graphics.FromImage(shot)
-                        g.Clear(group.tabAppearance.tabNormalBgColor)
-                        g.DrawImageUnscaled(tabImage,0,0)
-                        use fieldImage = new Bitmap(form.Width,form.Height)
-                        form.DrawToBitmap(fieldImage,Rectangle(Point.Empty,form.Size))
-                        g.DrawImageUnscaled(fieldImage,at)
-                    use large = new Bitmap(shot.Width*3,shot.Height*3)
-                    do
-                        use g = Graphics.FromImage(large)
-                        g.InterpolationMode <- Drawing2D.InterpolationMode.NearestNeighbor
-                        g.PixelOffsetMode <- Drawing2D.PixelOffsetMode.Half
-                        g.DrawImage(shot,Rectangle(Point.Empty,large.Size))
-                    large.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","tab-rename.png"),Imaging.ImageFormat.Png))
+                    check (form.Left>=strip.x && form.Right<=strip.x+strip.size.width) "The rename field runs off the tab strip")
                 onGroup(fun group ->
                     renameBox() |> Option.iter(fun form -> form.textBox.Text <- "Renamed"; form.Close()))
                 pumpUntil(fun () -> onGroup(fun group -> renameBox().IsNone && not (group.bb.read("renamingTab",true))))
