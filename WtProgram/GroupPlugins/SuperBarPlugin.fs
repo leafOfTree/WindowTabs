@@ -191,7 +191,8 @@ type TaskBarButton(info) as this =
             use icon = Services.openIcon("Bemo.ico")
             taskbar.SetOverlayIcon(this.window.hwnd, icon.Handle, "WindowTabs")
        
-    member this.tabWindow key = tabWindowsCell.value.find(key).window
+    /// A group can announce a window before its tab joins the strip, so the tab may have no preview window yet.
+    member this.tryTabWindow key = tabWindowsCell.value.tryFind(key) |> Option.map(fun tab -> tab.window)
 
     member this.createDwmWindow (dwmWindow:DwmWindow) : Window =
         let wndProc m =
@@ -345,11 +346,11 @@ type SuperBarPlugin() as this =
                         button
                         
 
-                match this.foregroundTab with
-                | Some(tab) ->
+                match this.foregroundTab |> Option.bind(fun tab -> button.tryTabWindow(tab.GetHashCode().ToString())) with
+                | Some(tabWindow) ->
                     this.taskbar.ActivateTab(button.window.hwnd)
-                    this.taskbar.SetTabActive(button.tabWindow(tab.GetHashCode().ToString()).hwnd, button.window.hwnd, 0)
-                | _ -> ()
+                    this.taskbar.SetTabActive(tabWindow.hwnd, button.window.hwnd, 0)
+                | None -> ()
 
     member this.onForegroundChanged() =
         this.updateTaskbar()
@@ -363,11 +364,11 @@ type SuperBarPlugin() as this =
             
     member this.onFlash(hwnd, flash) =
         if taskbarButton <> null then
-            let tabHwnd = taskbarButton.tabWindow(hwnd.GetHashCode().ToString()).hwnd
-            let flags, count = if flash then (FlashWindowExFlags.FLASHW_TRAY, 1) else (FlashWindowExFlags.FLASHW_STOP, 0)
-            Win32Helper.FlashWindow(tabHwnd, flags, 0).ignore
-            Win32Helper.FlashWindow(taskbarButton.window.hwnd, flags, 0).ignore
-            taskbarButton.invalidate()
+            taskbarButton.tryTabWindow(hwnd.GetHashCode().ToString()) |> Option.iter(fun tabWindow ->
+                let flags, count = if flash then (FlashWindowExFlags.FLASHW_TRAY, 1) else (FlashWindowExFlags.FLASHW_STOP, 0)
+                Win32Helper.FlashWindow(tabWindow.hwnd, flags, 0).ignore
+                Win32Helper.FlashWindow(taskbarButton.window.hwnd, flags, 0).ignore
+                taskbarButton.invalidate())
 
     member this.onBoundsChanged() =
         if taskbarButton <> null then taskbarButton.invalidate()

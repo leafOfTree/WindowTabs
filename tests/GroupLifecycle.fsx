@@ -60,6 +60,7 @@ let main() =
         let desktopApi = desktop :> IDesktop
         let source = desktopApi.createGroup(false) :?> GroupInfo
         let target = desktopApi.createGroup(false) :?> GroupInfo
+        let combined = desktopApi.createGroup(true) :?> GroupInfo
         let onGroup (info:GroupInfo) action =
             let mutable result = None
             info.invokeGroup(fun () ->
@@ -107,13 +108,26 @@ let main() =
             onGroup source (fun group -> group.removeWindow(c))
             check (nativeOrder source = [a]) "Repeated removal damaged remaining tabs"
 
-            for info in [source;target] do
+            for info in [source;target;combined] do
                 for hwnd in publicOrder info do (info :> IGroup).removeWindow hwnd
                 pumpUntil "Group did not empty" (fun () -> nativeOrder info = [] && publicOrder info = [])
             check (WinUserApi.IsWindow a && WinUserApi.IsWindow b) "Ungrouping closed application windows"
+
+            // A new window is the group's foreground before it joins; its tab info
+            // reaches the combined taskbar button before its tab reaches the strip.
+            use joining = new Form(Text="Joining", ShowInTaskbar=false, StartPosition=FormStartPosition.Manual,
+                                   Location=Drawing.Point(-20000,-20000), Size=Drawing.Size(640,480))
+            let d = joining.Handle
+            for hwnd in [a;b] do (combined :> IGroup).addWindow(hwnd,false)
+            pumpUntil "Combined group did not acquire two windows" (fun () -> nativeOrder combined = [a;b])
+            onGroup combined (fun group ->
+                group.foreground <- d
+                group.addWindow(d,false))
+            check (nativeOrder combined = [a;b;d]) "Combined taskbar button failed a foreground window joining its group"
+            onGroup combined (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
             printfn "PASS: real HWND grouping, duplicate add, reorder, cross-STA transfer, destroyed-window removal and ungrouping."
         finally
-            for info in [source;target] do
+            for info in [source;target;combined] do
                 if not info.isExited then
                     onGroup info (fun group ->
                         for hwnd in group.windows.items.list do group.removeWindow hwnd)
