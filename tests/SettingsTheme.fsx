@@ -387,6 +387,24 @@ let main() =
             for tool in tools @ [List.last tools] do enter tool
             let popups = Application.OpenForms |> Seq.cast<Form> |> Seq.filter(fun f -> f.GetType().Name="SettingsHelpPopup" && f.Visible) |> Seq.length
             check (popups=1) (sprintf "Hover popups stacked up: %d visible" popups)
+            // The light theme shows the same popup, not the system tooltip, which has no arrow.
+            api.setValue("tabThemeMode",box "light")
+            Application.DoEvents()
+            enter (List.head tools)
+            let popup = Application.OpenForms |> Seq.cast<Form> |> Seq.tryFind(fun f -> f.GetType().Name="SettingsHelpPopup" && f.Visible)
+            check popup.IsSome "The light theme shows no hover popup"
+            // Below a target, or above one near the screen's bottom, the arrow reaches out at its middle.
+            let area = Rectangle(0,0,1600,900)
+            for target in [Rectangle(400,100,24,24);Rectangle(400,870,24,24)] do
+                popup.Value.GetType().GetMethod("place",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.Public ||| Reflection.BindingFlags.NonPublic).Invoke(popup.Value,[|box target;box area|]) |> ignore
+                let below = popup.Value.Top>=target.Bottom
+                check (below = (target.Top<450)) (sprintf "The hover popup for %A is on the wrong side" target)
+                let middle = target.Left+target.Width/2-popup.Value.Left
+                let edge = if below then 1 else popup.Value.Height-2
+                check (popup.Value.Region.IsVisible(Point(middle,edge))) (sprintf "The hover popup for %A has no arrow at it" target)
+                check (not (popup.Value.Region.IsVisible(Point(middle+Dpi.scale 20,edge)))) (sprintf "The hover popup's arrow misses %A" target)
+            api.setValue("tabThemeMode",box "dark")
+            Application.DoEvents()
             for f in Application.OpenForms |> Seq.cast<Form> |> Seq.filter(fun f -> f.GetType().Name="SettingsHelpPopup") |> Seq.toList do f.Hide()
             (controls form |> Seq.find(fun c -> c :? Button && c.Text=tr Strings.Pages.general) :?> Button).PerformClick()
             Application.DoEvents()

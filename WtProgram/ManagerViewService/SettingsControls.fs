@@ -124,6 +124,30 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
         let oneLine = TextRenderer.MeasureText(message,font,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPrefix).Width
         min (Dpi.scale 470) (oneLine+Dpi.scale 32)
     let wrapped = String.Join("\n",SettingsTextWrap.lines message font (width-Dpi.scale 32))
+    let arrow() = Dpi.scale 7
+    let radius() = float32(Dpi.scale 10)
+    /// Where the arrow meets the target, across the popup, and whether the popup sits below the
+    /// target (the arrow on its top edge) or above it.
+    let mutable tip = 0
+    let mutable below = true
+    /// The bubble and its arrow as one outline, so the border runs round both.
+    let outline (inset:float32) =
+        let a = float32(arrow())
+        let r = radius()
+        let d = r*2.0f
+        let top = (if below then a else 0.0f)+inset
+        let rect = RectangleF(inset,top,float32 this.Width-1.0f-inset*2.0f,float32 this.Height-1.0f-a-inset*2.0f)
+        // The arrow stays on the straight part of its edge, clear of the rounded corners.
+        let x = max (rect.Left+r+a) (min (rect.Right-r-a) (float32 tip))
+        let path = new Drawing2D.GraphicsPath()
+        path.AddArc(rect.Left,rect.Top,d,d,180.0f,90.0f)
+        if below then path.AddLines([|PointF(x-a,rect.Top);PointF(x,rect.Top-a);PointF(x+a,rect.Top)|])
+        path.AddArc(rect.Right-d,rect.Top,d,d,270.0f,90.0f)
+        path.AddArc(rect.Right-d,rect.Bottom-d,d,d,0.0f,90.0f)
+        if not below then path.AddLines([|PointF(x+a,rect.Bottom);PointF(x,rect.Bottom+a);PointF(x-a,rect.Bottom)|])
+        path.AddArc(rect.Left,rect.Bottom-d,d,d,90.0f,90.0f)
+        path.CloseFigure()
+        path
     do
         // Form's base constructor reads CreateParams before F# initialization finishes.
         this.HandleCreated.Add(fun _ ->
@@ -136,28 +160,41 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
         this.Font <- font
         this.DoubleBuffered <- true
         let textSize = TextRenderer.MeasureText(wrapped,font,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPrefix)
-        this.ClientSize <- Size(width,textSize.Height+Dpi.scale 32)
-        use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (float32(Dpi.scale 10))
-        this.Region <- new Region(shape)
+        this.ClientSize <- Size(width,textSize.Height+Dpi.scale 32+arrow())
     override _.ShowWithoutActivation = true
+    /// Below the target where it fits on the screen, else above it. The arrow points at the
+    /// target's middle, or for a wide one near its start, where its text begins.
+    member this.place (target:Rectangle) (bounds:Rectangle) =
+        let gap = Dpi.scale 2
+        let aim = min (target.Left+target.Width/2) (target.Left+Dpi.scale 24)
+        let x = max bounds.Left (min (aim-Dpi.scale 24) (bounds.Right-this.Width-Dpi.scale 8))
+        below <- target.Bottom+gap+this.Height<=bounds.Bottom
+        let y = if below then target.Bottom+gap else target.Top-gap-this.Height
+        this.Location <- Point(x,max bounds.Top y)
+        tip <- aim-x
+        use shape = outline 0.0f
+        let old = this.Region
+        this.Region <- new Region(shape)
+        if not (isNull old) then old.Dispose()
+        this.Invalidate()
     override this.OnPaintBackground(e) = e.Graphics.Clear((SettingsColors.current()).surface)
     override this.OnPaint(e) =
         let p = SettingsColors.current()
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-        use shape = SettingsShapes.rounded (RectangleF(1.0f,1.0f,float32(this.Width-3),float32(this.Height-3))) (float32(Dpi.scale 10))
+        use shape = outline 1.0f
         use border = new Pen(p.border)
         e.Graphics.DrawPath(border,shape)
+        let top = Dpi.scale 16+(if below then arrow() else 0)
         TextRenderer.DrawText(e.Graphics,wrapped,this.Font,
-            Rectangle(Dpi.scale 16,Dpi.scale 16,this.Width-Dpi.scale 32,this.Height-Dpi.scale 32),
+            Rectangle(Dpi.scale 16,top,this.Width-Dpi.scale 32,this.Height-Dpi.scale 32-arrow()),
             p.text,TextFormatFlags.NoPrefix)
 
-/// Hover help for any control, the way the (i) button shows it: the system tooltip in a light
-/// theme, a themed popup in a dark one (the system tooltip stays light). The popup closes once
-/// the pointer has left both it and the control, or the window loses focus.
+/// Hover help for any control, the way the (i) button shows it: a themed popup whose arrow
+/// points at the control, in either theme. It closes once the pointer has left both it and the
+/// control, or the window loses focus.
 type SettingsHover(target:Control, text:string, ?enabled:bool) =
     /// The popup on screen, so a new one replaces it instead of stacking up beside it.
     static let mutable shown : Form option = None
-    let tip = new ToolTip(AutoPopDelay=30000,InitialDelay=350,ReshowDelay=100,ShowAlways=true)
     let watcher = new Timer(Interval=200)
     let mutable offered = defaultArg enabled true
     let mutable quiet = false
@@ -168,35 +205,25 @@ type SettingsHover(target:Control, text:string, ?enabled:bool) =
     let hide() =
         watcher.Stop()
         pinned <- false
-        tip.Hide(target)
         popup |> Option.iter(fun window -> window.Hide())
     let showCore pin =
         pinned <- pin
-        if ThemeService.currentIsDark() then
-            tip.SetToolTip(target,"")
-            let window =
-                match popup with
-                | Some window -> window
-                | None ->
-                    let window = new SettingsHelpPopup(text,target.Font)
-                    popup <- Some window
-                    window
-            let origin = target.PointToScreen(Point(0,target.Height+Dpi.scale 6))
-            let bounds = Screen.FromControl(target).WorkingArea
-            let x = min origin.X (bounds.Right-window.Width-Dpi.scale 8)
-            let y = if origin.Y+window.Height<=bounds.Bottom then origin.Y else origin.Y-window.Height-target.Height-Dpi.scale 12
-            window.Location <- Point(max bounds.Left x,max bounds.Top y)
-            shown |> Option.iter(fun other -> if not (obj.ReferenceEquals(other,window)) && not other.IsDisposed then other.Hide())
-            shown <- Some(window :> Form)
-            // The pointer can come back before the watcher has closed it: Show throws on a
-            // form that is already visible, so an open popup is only moved.
-            if not window.Visible then window.Show(target.FindForm())
-            watcher.Start()
-        else tip.Show(text,target,0,target.Height+Dpi.scale 6,30000)
+        let window =
+            match popup with
+            | Some window -> window
+            | None ->
+                let window = new SettingsHelpPopup(text,target.Font)
+                popup <- Some window
+                window
+        window.place (target.RectangleToScreen(target.ClientRectangle)) (Screen.FromControl(target).WorkingArea)
+        shown |> Option.iter(fun other -> if not (obj.ReferenceEquals(other,window)) && not other.IsDisposed then other.Hide())
+        shown <- Some(window :> Form)
+        // The pointer can come back before the watcher has closed it: Show throws on a
+        // form that is already visible, so an open popup is only moved.
+        if not window.Visible then window.Show(target.FindForm())
+        watcher.Start()
     let show pin = if offered && not quiet then showCore pin
-    let updateTip() = tip.SetToolTip(target,if offered && not (ThemeService.currentIsDark()) then text else "")
     do
-        updateTip()
         watcher.Tick.Add(fun _ ->
             popup |> Option.iter(fun window ->
                 let pointer = Cursor.Position
@@ -207,14 +234,11 @@ type SettingsHover(target:Control, text:string, ?enabled:bool) =
                     window.Hide()
                     watcher.Stop()))
         target.MouseEnter.Add(fun _ -> show false)
-        tip.Popup.Add(fun e -> if quiet then e.Cancel <- true)
-        target.MouseLeave.Add(fun _ -> if not pinned then tip.Hide(target))
         target.KeyDown.Add(fun e -> if e.KeyCode=Keys.Escape then hide(); e.SuppressKeyPress <- true)
         target.VisibleChanged.Add(fun _ -> if not target.Visible then hide())
-        ThemeBinding.watch target (fun() -> hide(); updateTip())
+        ThemeBinding.watch target hide
         target.Disposed.Add(fun _ ->
             watcher.Dispose()
-            tip.Dispose()
             popup |> Option.iter(fun window -> window.Dispose()))
     member _.Enabled
         with get() = offered
@@ -222,19 +246,13 @@ type SettingsHover(target:Control, text:string, ?enabled:bool) =
             if offered<>value then
                 offered <- value
                 if not value then hide()
-                updateTip()
     member _.Show() = show true
-    /// Says nothing for a while without setting the tooltip's text again, which laid out the
-    /// whole settings page each time.
+    /// Says nothing for a while, as a reset button does with nothing to reset.
     member _.Quiet
         with get() = quiet
         and set value =
             quiet <- value
-            // Only what is showing: hiding an idle native tip laid the page out too.
-            if value then
-                popup |> Option.iter(fun window -> if window.Visible then window.Hide())
-                if target.IsHandleCreated && target.Visible && target.ClientRectangle.Contains(target.PointToClient(Control.MousePosition)) then
-                    tip.Hide(target)
+            if value then popup |> Option.iter(fun window -> if window.Visible then window.Hide())
 
 /// Where a link goes, shown by a mark after its text: an arrow for the web, a folder for a file
 /// on this PC.
