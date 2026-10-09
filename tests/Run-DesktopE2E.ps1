@@ -20,7 +20,6 @@ if ($DurationMinutes -gt 0 -and $TimeoutSeconds -lt ($DurationMinutes * 60 + 60)
 }
 $configuration = [pscustomobject]@{ Profile=$Profile; Switches=$Switches; Cycles=$Cycles; DurationMinutes=$DurationMinutes; TimeoutSeconds=$TimeoutSeconds }
 if ($Describe) { return $configuration }
-if ($ReleaseExecutable -and -not $BuildOnly) { throw 'ReleaseExecutable is only supported for compile-only checks; interactive tests build their own Release copy.' }
 Write-Host "Desktop E2E profile: $($configuration | ConvertTo-Json -Compress)"
 if (-not $BuildOnly -and -not $Interactive) { throw 'This test owns foreground/mouse/keyboard input. Use -Interactive on an unlocked, idle desktop, or -BuildOnly.' }
 if (-not $BuildOnly -and (Get-Process WindowTabs -ErrorAction SilentlyContinue)) { throw 'Exit existing WindowTabs instances before running desktop E2E.' }
@@ -28,7 +27,7 @@ $stage = Join-Path $PSScriptRoot ('Debug/desktop-e2e-' + [guid]::NewGuid().ToStr
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 if ($env:GITHUB_OUTPUT) { Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "stage=$stage" }
 if ($ReleaseExecutable) {
-    # CI already built this commit's Release executable; only the driver needs compiling.
+    # CI already built the executable it ships; test that file, not a fresh build.
     $taskE2EExecutable = (Resolve-Path -LiteralPath $ReleaseExecutable -ErrorAction Stop).Path
 } else {
     # Avoid replacing the developer's running Release executable during a compile-only check.

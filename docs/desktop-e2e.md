@@ -143,9 +143,13 @@ snapshot regressions also run in the regular Architecture suite.
 `.github/workflows/desktop-e2e-hosted.yml` provides **Desktop E2E Hosted**
 on GitHub's `windows-2022` virtual machine, without a local runner. Every pull
 request runs Quick as the stable **Desktop E2E (Quick)** check. No path filters
-skip this check. Manual dispatch offers Quick or Full once the workflow is
-available on the default branch. It builds the actual Release binary and uses
-real input, retaining diagnostics for 14 days even on failure. Quick verifies
+skip this check. Soak runs every day at 18:00 UTC on the default branch, which
+also catches changes in the hosted Windows image, and manual dispatch offers
+Quick, Full or Soak. These runs build their own Release binary. The release
+workflow calls the same workflow with Full and `executable-artifact`, so it tests
+the very `WindowTabs.exe` the draft will carry; the draft is created only after
+the regression suites, the smoke test, the version check and that run all pass.
+Every run uses real input and keeps its diagnostics for 14 days, even on failure. Quick verifies
 one startup/exit cycle and 120 individual switches; Full adds a second cycle
 to verify restart with surviving foreign windows and 1,320 individual switches.
 These triggers take effect when this configuration is published; branch

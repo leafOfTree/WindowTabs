@@ -70,8 +70,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
   or failed checks do not satisfy this requirement. New commits require new checks;
   local results alone are insufficient.
 - After an approved release, push a `vMAJOR.MINOR.PATCH` tag on the merged commit.
-  `release.yml` uses the tag as the app version, builds and tests, then creates a
-  Release draft with the standalone exe. Publishing the draft remains a separate
+  `release.yml` uses the tag as the app version, builds, checks the exe carries that
+  version, runs the suites, the smoke test and a Full desktop E2E on that exe, then
+  creates a Release draft with it. Publishing the draft remains a separate
   action; a suffix such as `-beta.1` marks it as a prerelease.
 
 ## Style

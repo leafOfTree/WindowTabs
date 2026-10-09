@@ -7,10 +7,10 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
+  build:
     runs-on: windows-latest
 
     steps:
@@ -23,7 +23,6 @@ jobs:
           $tag = '${{ github.ref_name }}'
           if ($tag -notmatch '^v(\d+\.\d+\.\d+)(-[0-9A-Za-z.-]+)?$') { throw "Tag $tag is not vMAJOR.MINOR.PATCH, e.g. v2025.10.01" }
           "number=$($tag.Substring(1))" >> $env:GITHUB_OUTPUT
-          "prerelease=$([bool]$Matches[2])".ToLower() >> $env:GITHUB_OUTPUT
 
       - name: Cache NuGet packages
         uses: actions/cache@v5
@@ -35,6 +34,16 @@ jobs:
       - name: Build Release
         run: dotnet build WindowTabs.sln -c Release -p:Version=${{ steps.version.outputs.number }}
 
+      # The settings window, crash reports and settings migration all read this version.
+      - name: Check the executable carries the tag's version
+        shell: pwsh
+        env:
+          EXPECTED: ${{ steps.version.outputs.number }}
+        run: |
+          $actual = (Get-Item WtProgram/bin/Release/WindowTabs.exe).VersionInfo.ProductVersion
+          if ($actual -ne $env:EXPECTED) { throw "WindowTabs.exe is version $actual, expected $env:EXPECTED" }
+          "WindowTabs.exe is version $actual"
+
       - name: Run regression tests serially
         shell: powershell
         run: ./tests/Run-Tests.ps1 -Coverage -MinimumLineCoverage 50 -MinimumBranchCoverage 50
@@ -43,14 +52,12 @@ jobs:
         shell: powershell
         run: ./tests/Run-ReleaseSmoke.ps1
 
-      - name: Draft GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: pwsh
-        run: |
-          $flags = @('--draft', '--generate-notes', '--title', '${{ github.ref_name }}')
-          if ('${{ steps.version.outputs.prerelease }}' -eq 'true') { $flags += '--prerelease' }
-          gh release create '${{ github.ref_name }}' WtProgram/bin/Release/WindowTabs.exe @flags
+      - name: Upload WindowTabs.exe
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-executable
+          path: WtProgram/bin/Release/WindowTabs.exe
+          if-no-files-found: error
 
       - name: Upload regression diagnostics
         if: failure()
@@ -63,3 +70,32 @@ jobs:
             tests/coverage/*/coverage.xml
             tests/coverage/*/report/**
           if-no-files-found: ignore
+
+  # Real input against the very file the draft will carry.
+  desktop-e2e:
+    needs: build
+    uses: ./.github/workflows/desktop-e2e-hosted.yml
+    with:
+      profile: Full
+      executable-artifact: release-executable
+
+  draft:
+    needs: [build, desktop-e2e]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: release-executable
+
+      - name: Draft GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        shell: pwsh
+        run: |
+          $flags = @('--draft', '--generate-notes', '--title', $env:TAG, '--repo', '${{ github.repository }}')
+          if ($env:TAG -match '^v\d+\.\d+\.\d+-') { $flags += '--prerelease' }
+          gh release create $env:TAG WindowTabs.exe @flags
