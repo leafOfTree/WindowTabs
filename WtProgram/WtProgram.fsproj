@@ -31,7 +31,7 @@
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <Tailcalls>true</Tailcalls>
     <!-- Release is a single self-contained WindowTabs.exe. -->
-    <OtherFlags>$(OtherFlags) --standalone --staticlink:Win32 --staticlink:Newtonsoft.Json --staticlink:Interop.SHDocVw --staticlink:Interop.Shell32</OtherFlags>
+    <OtherFlags>$(OtherFlags) --standalone --staticlink:Win32 --staticlink:Newtonsoft.Json</OtherFlags>
     <!-- FS2011: framework internals (SMDiagnostics, System.ServiceModel.Internals) reached through
          System.Runtime.Serialization are not in the reference assemblies; they stay in the GAC, not the exe. -->
     <NoWarn>$(NoWarn);2009;2011</NoWarn>
@@ -136,8 +136,6 @@
          13.0.1 already has the deep-nesting security fix. -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
     <Reference Include="System.Windows.Forms" />
-    <Reference Include="Interop.SHDocVw" HintPath="..\Interop.SHDocVw.dll" />
-    <Reference Include="Interop.Shell32" HintPath="..\Interop.Shell32.dll" />
     <ProjectReference Include="..\Win32\Win32.csproj" />
   </ItemGroup>
 

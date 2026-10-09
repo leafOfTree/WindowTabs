@@ -376,6 +376,13 @@ let main() =
         check (not (NumericShortcutTarget.available [IntPtr(1)] (IntPtr(1)) 0)) "Current/only tab must pass through"
         check (NumericShortcutTarget.available [IntPtr(1);IntPtr(2)] (IntPtr(1)) 1) "Other tab must remain available"
         check (not (NumericShortcutTarget.available [IntPtr(1)] IntPtr.Zero 1)) "Missing tab must pass through"
+        // Dropping on tabs reaches Explorer late bound: no interop assembly ships, and a window
+        // that is not an Explorer folder is simply no target.
+        check (typeof<OleDropTarget>.Assembly.GetReferencedAssemblies() |> Array.forall(fun name -> not (name.Name.StartsWith("Interop."))))
+              "The app still references an interop assembly"
+        do
+            use plain = new Form(ShowInTaskbar=false)
+            check (Shell.getShellFolder IntPtr.Zero=None && Shell.getShellFolder plain.Handle=None) "A window without an Explorer folder was taken as a drop folder"
         let mask = AltMenuMask.inputs()
         check (mask.Length=2 && mask.[0].mkhi.ki.wVk=0xE8s && mask.[1].mkhi.ki.dwFlags=SendInputConstants.KEYEVENTF_KEYUP && mask.[0].mkhi.ki.dwExtraInfo=IntPtr(AltMenuMask.marker)) "Alt menu mask must pair and mark injected events"
         check (capture.handle(WindowMessages.WM_KEYDOWN,0x31,Some 0)=(true,Some 0)) "Matched digit must be swallowed and activated"

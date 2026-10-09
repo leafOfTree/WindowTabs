@@ -21,6 +21,9 @@ type OleDropTarget(ts:TabStrip) as this=
     let window = os.windowFromHwnd(ts.hwnd)
     let rButtonDown = Cell.create(false)
     let lastTabHwndCell = Cell.create(None)
+    /// Looked up once per hovered tab: DragOver repeats while the pointer moves, and each
+    /// lookup asks every Explorer window across processes.
+    let mutable hoveredFolder : Shell.ShellFolder option = None
 
     let initialized = Ole2Api.OleInitialize(IntPtr.Zero)>=0
     let registered = initialized && Ole2Api.RegisterDragDrop(window.hwnd, this)>=0
@@ -37,6 +40,7 @@ type OleDropTarget(ts:TabStrip) as this=
     member this.dragEnd() =
         rButtonDown.value <- false
         lastTabHwndCell.set(None)
+        hoveredFolder <- None
 
     interface IOleDropTarget with
         member x.OleDragEnter(pDataObj, grfKeyState, pt, pdwEffect) =
@@ -50,25 +54,20 @@ type OleDropTarget(ts:TabStrip) as this=
             let pt = window.ptToClient(Pt(pt.x, pt.y))
 
             let tabHwnd = ts.tryHit(pt).map(fun(Tab(hwnd),part) -> hwnd)
-            let effect = tabHwnd.map <| fun hwnd ->
-                let shellFolder = Shell.getShellFolder hwnd
-                if shellFolder.IsSome then 
-                    if grfKeyState.hasFlag(MouseMessageKeyStateMask.MK_CONTROL) then
-                        int(DragDropEffects.Copy)
-                    else
-                        int(DragDropEffects.Move)
-                else 
-                    int(DragDropEffects.None)
-            let effect = effect.def(int(DragDropEffects.None))
             if lastTabHwndCell.value <> tabHwnd then
-                lastTabHwndCell.set(tabHwnd)
+                hoveredFolder <- tabHwnd |> Option.bind Shell.getShellFolder
                 tabHwnd.iter <| fun hwnd ->
                     let window = os.windowFromHwnd(hwnd)
                     //setForegroundWindow will fail sometimes if a key is pressed during DragOver
                     //like CTRL. we will be unable to call setForeground until a new DragEnter is generated
                     window.setForegroundOrRestore(false)
                     window.bringToTop()
-            pdwEffect <- effect
+                lastTabHwndCell.set(tabHwnd)
+            pdwEffect <-
+                match hoveredFolder with
+                | Some _ when grfKeyState.hasFlag(MouseMessageKeyStateMask.MK_CONTROL) -> int(DragDropEffects.Copy)
+                | Some _ -> int(DragDropEffects.Move)
+                | None -> int(DragDropEffects.None)
             0
 
         member x.OleDragLeave() = 
@@ -76,18 +75,17 @@ type OleDropTarget(ts:TabStrip) as this=
             0
 
         member x.OleDrop(pDataObj, grfKeyState, pt, pdwEffect) = 
-            let initialEffect = pdwEffect
             let ptScreen = Pt(pt.x, pt.y)
             let pt = window.ptToClient(ptScreen)
             ts.tryHit(pt).iter <| fun(Tab(hwnd),part) ->
-                let shellFolder = Shell.getShellFolder hwnd
-                Shell.getShellFolder(hwnd).iter <| fun shellFolder ->
+                let folder = if lastTabHwndCell.value=Some hwnd then hoveredFolder else Shell.getShellFolder hwnd
+                folder.iter <| fun shellFolder ->
                     let files = List2(OleHelper.QueryFiles(pDataObj))
                     let shellOp op = fun() ->
                         files.iter <| fun file ->
                             op(file)
-                    let copy = shellOp <| fun file -> shellFolder.CopyHere(file, null)
-                    let move = shellOp <| fun file -> shellFolder.MoveHere(file, null)
+                    let copy = shellOp <| fun file -> shellFolder.CopyHere(file)
+                    let move = shellOp <| fun file -> shellFolder.MoveHere(file)
                     if rButtonDown.value then
                         Win32Menu.show window.hwnd ptScreen (List2([
                             CmiRegular({
@@ -114,5 +112,8 @@ type OleDropTarget(ts:TabStrip) as this=
                         copy()
                     else
                         move()
+            // The shell has done the work. Any other effect would let the source act on it
+            // again; after a move it could delete what a skipped name conflict left behind.
+            pdwEffect <- int(DragDropEffects.None)
             this.dragEnd()
             0
