@@ -20,22 +20,32 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
     let status = new Label(AutoSize=false,AutoEllipsis=true,TextAlign=ContentAlignment.MiddleRight,Tag="muted",UseMnemonic=false)
     let actionRow = new FlowLayoutPanel(AutoSize=true,WrapContents=false,FlowDirection=FlowDirection.LeftToRight)
     let card = new Panel(Tag="surface")
+    /// Web links start the row; files on this PC, such as the crash log, stand apart at its right end.
     let linkRow =
         links |> Option.filter(List.isEmpty >> not) |> Option.map(fun links ->
-            let row = new FlowLayoutPanel(AutoSize=true,WrapContents=true)
+            let group () = new FlowLayoutPanel(AutoSize=false,WrapContents=true,Margin=Padding.Empty,Padding=Padding.Empty)
+            let web,files = group(),group()
             for text,url in links do
                 // A file on this PC opens in Explorer, and is marked with a folder, not an arrow.
                 let kind = if url.StartsWith("http",StringComparison.OrdinalIgnoreCase) then WebLink else FileLink
-                // The left margin matches the inset a Label gives its text, so links line up with the headings.
-                let link = new SettingsLink(text,kind,Margin=Padding(Dpi.scale 3,Dpi.scale 3,Dpi.scale 15,Dpi.scale 3))
+                // Web links keep the inset a Label gives its text, lining up with the headings; files
+                // end flush with the page's right edge.
+                let margin = if kind=WebLink then Padding(Dpi.scale 3,Dpi.scale 3,Dpi.scale 15,Dpi.scale 3)
+                             else Padding(Dpi.scale 15,Dpi.scale 3,0,Dpi.scale 3)
+                let link = new SettingsLink(text,kind,Margin=margin)
                 link.Click.Add(fun _ ->
                     try
                         if IO.File.Exists(url) then Diagnostics.Process.Start("explorer.exe",sprintf "/select,\"%s\"" url) |> ignore
                         else Diagnostics.Process.Start(url) |> ignore
                     with _ -> ())
                 SettingsHover(link,url) |> ignore
-                row.Controls.Add(link)
-            row)
+                (if kind=WebLink then web else files).Controls.Add(link)
+            let row = new Panel(Margin=Padding.Empty)
+            row.Controls.AddRange([|web :> Control;files|])
+            row,web,files)
+    let allLinks() =
+        linkRow |> Option.toList |> List.collect(fun (_,web,files) ->
+            [web;files] |> List.collect(fun group -> group.Controls |> Seq.cast<SettingsLink> |> List.ofSeq))
     do
         this.Dock <- DockStyle.Fill
         this.DoubleBuffered <- true
@@ -58,22 +68,20 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
         card.Resize.Add(fun _ -> card.Invalidate())
         this.Controls.AddRange([|heading :> Control;detail;actionRow;status;card|])
         helpButton |> Option.iter(fun button -> this.Controls.Add(button))
-        linkRow |> Option.iter(fun row -> this.Controls.Add(row))
+        linkRow |> Option.iter(fun (row,_,_) -> this.Controls.Add(row))
         extra |> Option.iter(fun control -> this.Controls.Add(control))
         footer |> Option.iter(fun control -> this.Controls.Add(control))
         // The link row is measured in OnLayout. The extra and footer blocks size themselves: rows only settle
         // once they have their real width, which can be after the pass that placed it, so a size
         // change lays the page out again afterwards rather than inside that pass.
-        linkRow |> Option.iter(fun row -> row.AutoSize <- false)
         Option.toList extra @ Option.toList footer |> List.iter(fun control ->
             control.SizeChanged.Add(fun _ ->
                 if this.IsHandleCreated && not relayoutPending then
                     relayoutPending <- true
                     this.BeginInvoke(Action(fun () -> relayoutPending <- false; this.PerformLayout())) |> ignore))
         ThemeBinding.watch this (fun () ->
-            linkRow |> Option.iter(fun row ->
-                let p = SettingsColors.current()
-                for link in row.Controls |> Seq.cast<SettingsLink> do link.LinkColor <- p.accent)
+            let p = SettingsColors.current()
+            for link in allLinks() do link.LinkColor <- p.accent
             list.Invalidate()
             card.Invalidate())
     /// Short note above the list (scan progress, counts, errors).
@@ -99,9 +107,18 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
                 elif detail.Visible then detail.Bottom+Dpi.scale 16
                 else heading.Bottom+Dpi.scale 16
             match linkRow with
-            | Some row ->
-                let size = row.GetPreferredSize(Size(width,0))
-                row.Bounds <- Rectangle(left,y,min width size.Width,size.Height)
+            | Some(row,web,files) ->
+                // Side by side when they fit; otherwise the files take the next line, still at the right.
+                let filesSize = if files.Controls.Count=0 then Size.Empty else files.GetPreferredSize(Size.Empty)
+                let gap = Dpi.scale 16
+                let webSize = web.GetPreferredSize(Size(width,0))
+                let oneLine = web.GetPreferredSize(Size.Empty)
+                let besideWeb = oneLine.Width+gap+filesSize.Width <= width
+                web.Bounds <- Rectangle(0,0,min width (if besideWeb then oneLine.Width else webSize.Width),if besideWeb then oneLine.Height else webSize.Height)
+                let filesTop = if besideWeb || web.Controls.Count=0 then 0 else web.Bottom
+                files.Bounds <- Rectangle(width-filesSize.Width,filesTop,filesSize.Width,filesSize.Height)
+                files.Visible <- files.Controls.Count>0
+                row.Bounds <- Rectangle(left,y,width,max web.Bottom (if files.Visible then files.Bottom else 0))
                 y <- row.Bottom+Dpi.scale 14
             | None -> ()
             match extra with
@@ -118,9 +135,10 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
             let top =
                 if noActions then
                     match linkRow with
-                    | Some row ->
-                        let x = row.Right+Dpi.scale 16
-                        status.Bounds <- Rectangle(x,row.Top,max 0 (left+width-x),row.Height)
+                    | Some(row,web,files) ->
+                        let x = row.Left+web.Right+Dpi.scale 16
+                        let right = if files.Visible then row.Left+files.Left-Dpi.scale 16 else left+width
+                        status.Bounds <- Rectangle(x,row.Top,max 0 (right-x),web.Height)
                         y
                     | None ->
                         status.Bounds <- Rectangle(left,y,width,Dpi.scale 24)
