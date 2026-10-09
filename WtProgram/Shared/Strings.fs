@@ -128,7 +128,7 @@ module Strings =
                              description=none
                              keywords={ en="alignment position"; zh="对齐 位置"; ja="配置 位置" } }
         let combineTaskbarIcons = { caption={ en="Combine taskbar icons per group"; zh="合并每个分组的任务栏图标"; ja="グループのタスクバーアイコンをまとめる" }
-                                    description={ en="Applies to new groups."; zh="对新分组生效。"; ja="新しいグループに適用されます。" }
+                                    description=none
                                     keywords={ en="merge"; zh="合并"; ja="結合" } }
         let replaceAltTab = { caption={ en="Use WindowTabs for Alt+Tab"; zh="使用 WindowTabs 窗口切换器"; ja="Alt+Tab に WindowTabs を使う" }
                               description={ en="Replaces the Windows switcher."; zh="替换 Windows 自带的窗口切换器。"; ja="Windows 標準のウィンドウ切り替えを置き換えます。" }

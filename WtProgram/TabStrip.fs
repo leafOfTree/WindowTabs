@@ -462,6 +462,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member this.getAlignment direction = alignment.value.find(direction)
 
+    /// The alignments chosen for this strip alone, which the default no longer changes.
+    member this.alignmentChoices = alignmentOverrides |> Set.toList |> List.map(fun direction -> direction, alignment.value.find direction)
+
     member this.setAlignment((direction, newAlignment)) =
         alignmentOverrides <- alignmentOverrides.Add(direction)
         alignment.map(fun m -> m.add direction newAlignment)
