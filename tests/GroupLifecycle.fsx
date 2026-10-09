@@ -120,11 +120,16 @@ let main() =
             let d = joining.Handle
             for hwnd in [a;b] do (combined :> IGroup).addWindow(hwnd,false)
             pumpUntil "Combined group did not acquire two windows" (fun () -> nativeOrder combined = [a;b])
+            // The window standing in for the group on the taskbar is an Alt+Tab window the switcher must skip.
+            let proxies() = OS().windowsInZorder.where(fun w -> TaskbarProxies.contains w.hwnd).map(fun w -> w.hwnd).list
+            let proxy = proxies() |> List.filter(fun hwnd -> OS().windowFromHwnd(hwnd).isAltTabWindow)
+            check (proxy.Length=1) "Combined group's taskbar window is not known as a taskbar proxy"
             onGroup combined (fun group ->
                 group.foreground <- d
                 group.addWindow(d,false))
             check (nativeOrder combined = [a;b;d]) "Combined taskbar button failed a foreground window joining its group"
             onGroup combined (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
+            pumpUntil "Taskbar proxies outlived their combined taskbar button" (fun () -> not(TaskbarProxies.contains proxy.Head))
 
             // The setting rebuilds open groups that follow it, keeping what their tab menu chose.
             api.setValue("combineIconsInTaskbar", box false)
