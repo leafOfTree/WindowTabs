@@ -520,6 +520,27 @@ let main() =
                     not(obj.ReferenceEquals(group.ts.tabInfo(Tab(foreignHwnd)).iconSmall,SystemIcons.Application))))
                 check (List.contains (closeAllOf handles.Head) (menuTexts handles.Head)) "A mixed group does not offer closing one program's windows"
                 check (List.contains (closeAllOf foreignHwnd) (menuTexts foreignHwnd)) "The foreign tab's menu does not name its own program"
+                // Sorting puts each program's tabs together in title order, and is then greyed out.
+                do
+                    let sortItem() = menu handles.Head |> List.find(fun item -> item.text=Localization.tr Strings.TabMenu.sortTabs)
+                    let greyed() = (sortItem()).flags.list |> List.contains MenuFlags.MF_GRAYED
+                    let compare = StringComparer.CurrentCultureIgnoreCase
+                    let app hwnd = OS().windowFromHwnd(hwnd).pid.exeName
+                    // The foreign tab at the end its program does not sort to.
+                    let before = onGroup(fun group ->
+                        let index = if compare.Compare(app foreignHwnd,app handles.Head)>0 then 0 else group.lorder.list.Length-1
+                        group.ts.moveTab(Tab(foreignHwnd),index)
+                        group.lorder.list)
+                    check (not (greyed())) "Sorting is greyed out on a mixed group out of order"
+                    let item = sortItem()
+                    onGroup(fun _ -> item.click())
+                    let after = onGroup(fun group -> group.lorder.list |> List.map(fun hwnd -> hwnd,app hwnd,group.tabName hwnd))
+                    let inOrder (_,app,title) (_,nextApp,nextTitle) =
+                        match compare.Compare(app,nextApp) with 0 -> compare.Compare(title,nextTitle)<=0 | order -> order<0
+                    check (after |> List.pairwise |> List.forall(fun (a,b) -> inOrder a b)) (sprintf "Tabs are not by app, then title: %A" after)
+                    check (List.sort (after |> List.map(fun (hwnd,_,_) -> hwnd)) = List.sort before) "Sorting lost or added tabs"
+                    check (after |> List.map(fun (hwnd,_,_) -> hwnd) <> before) "Sorting left a foreign tab out of place"
+                    check (greyed()) "Sorting stays offered on tabs already in order"
                 let iconRequests() = output.ToArray() |> Array.filter((=) "ICON_REQUEST") |> Array.length
                 WinUserApi.SendMessage(foreignHwnd,0x804C,IntPtr(80),IntPtr.Zero) |> ignore
                 let before = iconRequests()

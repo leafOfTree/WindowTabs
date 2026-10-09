@@ -54,6 +54,7 @@ module Strings =
         let newTab = { en="Open new tab"; zh="新建标签"; ja="新しいタブを開く" }
         let renameTab = { en="Rename tab"; zh="重命名标签"; ja="タブ名を変更" }
         let restoreTabName = { en="Restore tab name"; zh="恢复标签名称"; ja="タブ名を元に戻す" }
+        let sortTabs = { en="Sort tabs by app then title"; zh="按应用和标题排序标签"; ja="アプリとタイトルの順にタブを並べ替え" }
         let enableTabsFor exe = { en=sprintf "Enable tabs for %s" exe; zh=sprintf "为 %s 启用标签" exe; ja=sprintf "%s のタブを有効にする" exe }
         let autoGroupWindowsOf exe = { en=sprintf "Enable auto-grouping for %s" exe; zh=sprintf "为 %s 启用自动分组" exe; ja=sprintf "%s の自動グループ化を有効にする" exe }
         let close = { en="Close"; zh="关闭"; ja="閉じる" }

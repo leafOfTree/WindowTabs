@@ -209,6 +209,18 @@ type TabStripDecorator(group:WindowGroup) as this =
     member private this.onCloseAllWindows() =
         group.windows.items.iter this.onCloseWindow
 
+    member private this.sortedTabs() =
+        // Each program name once per tab, not once per comparison.
+        group.lorder.list
+        |> List.map(fun hwnd -> hwnd,os.windowFromHwnd(hwnd).pid.exeName,group.tabName hwnd)
+        |> TabOrder.byAppThenTitle (fun (_,app,_) -> app) (fun (_,_,title) -> title)
+        |> List.map(fun (hwnd,_,_) -> hwnd)
+
+    /// One move per tab out of place, each announced as a dragged tab's is.
+    member private this.sortTabs() =
+        this.sortedTabs() |> List.iteri(fun index hwnd ->
+            if group.lorder.list.[index]<>hwnd then this.ts.moveTab(Tab(hwnd),index))
+
     member private this.contextMenu(hwnd,images:ResizeArray<Img>) =
         let checkedFlag(isChecked) = if isChecked then List2([MenuFlags.MF_CHECKED]) else List2()
         let grayed(isGrayed) = if isGrayed then List2([MenuFlags.MF_GRAYED]) else List2()
@@ -270,6 +282,14 @@ type TabStripDecorator(group:WindowGroup) as this =
                 flags = List2()
                 image = None
                 click = fun() -> Services.program.newTab hwnd
+            })
+
+        let sortTabsItem =
+            CmiRegular({
+                text = tr Strings.TabMenu.sortTabs
+                image = None
+                click = fun() -> this.sortTabs()
+                flags = grayed(this.sortedTabs() = group.lorder.list)
             })
 
         let combineIconsInTaskbar =
@@ -406,6 +426,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(iconOnlyItem)
             Some(alignmentItem)
             Some(autoHideItem)
+            Some(sortTabsItem)
             Some(combineIconsInTaskbar)
             Some(CmiSeparator)
             Some(closeTabItem)
