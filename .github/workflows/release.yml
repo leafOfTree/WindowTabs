@@ -59,7 +59,6 @@ jobs:
           name: regression-diagnostics
           path: |
             tests/Debug/*.log
-            tests/Debug/*.png
             tests/Debug/test-results.jsonl
             tests/coverage/*/coverage.xml
             tests/coverage/*/report/**
