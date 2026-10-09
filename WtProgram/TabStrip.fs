@@ -255,7 +255,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         titleTab |> Option.iter(fun tab ->
             let sprites : List2<Pt*TabSprite<Tab>> = this.tabSprites
             match sprites.list |> List.tryFind(fun (_,sprite) -> sprite.id=tab) with
-            | Some(_,sprite) when this.visible && not this.isShrunk && sprite.titleCut ->
+            | Some(_,sprite) when this.visible && not this.isShrunk && not (OpenMenus.any()) && sprite.titleCut ->
                 let tip =
                     match titleTip with
                     | Some tip -> tip

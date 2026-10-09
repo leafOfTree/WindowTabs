@@ -80,6 +80,7 @@ let main() =
             dot.Dispose()
             menu.Show(Point(40,40))
             Application.DoEvents()
+            check (OpenMenus.any()) "An open menu was not counted, so a title tip could cover it"
             // Pointing at an item with a submenu opens it after a short pause of our own, not the
             // Windows menu delay through WinForms' timer, which a menu of an app behind could lose.
             // The pointer entering an item, as WinForms reports it: HandleMouseEnter raises MouseEnter.
@@ -111,6 +112,7 @@ let main() =
             first.PerformClick()
             menu.Close()
             check (closed && selected=0 && not menu.IsDisposed) "Menu command or disposal ran inside the close event"
+            check (not (OpenMenus.any())) "A closed menu still kept title tips away"
             let deadline = DateTime.UtcNow.AddSeconds(2.0)
             while not menu.IsDisposed && DateTime.UtcNow<deadline do
                 Application.DoEvents()
@@ -483,6 +485,14 @@ let main() =
                     hover 260
                     rest()
                     check (not (shown())) "A title that fits showed a tip"
+                    // A menu open over the strip, such as a right-drag's, is not covered by a tip.
+                    hover 60
+                    OpenMenus.change 1
+                    rest()
+                    let underMenu = shown()
+                    OpenMenus.change -1
+                    check (not underMenu) "A title tip covered an open menu"
+                    hover 260
                     hover 60
                     check (waiting()) "Returning to a cut-short title did not wait to show it again"
                     rest()
