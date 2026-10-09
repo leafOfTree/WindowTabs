@@ -132,6 +132,14 @@ let main() =
             menu.openHovered(centre first)
             Application.DoEvents()
             check (not nested.DropDown.Visible) "Pointing at another item left a neighbour's submenu open"
+            // Pointing around must not give plain items a submenu of their own: a click on one then
+            // opened that empty submenu instead of running its command.
+            let dropDownField = typeof<ToolStripDropDownItem>.GetField("dropDown",BindingFlags.Instance ||| BindingFlags.NonPublic)
+            check (menu.Items |> Seq.cast<ToolStripItem> |> Seq.forall(fun item ->
+                       match item with
+                       | :? ToolStripMenuItem as entry when not entry.HasDropDownItems -> isNull (dropDownField.GetValue(entry))
+                       | _ -> true))
+                  "Pointing at menu items gave a plain item an empty submenu"
             nested.ShowDropDown()
             Application.DoEvents()
             check (not(nested.DropDown.Region.IsVisible(Point(0,0)))) "Submenu has square corners"
@@ -174,6 +182,26 @@ let main() =
                 menu.Close(ToolStripDropDownCloseReason.AppClicked)
                 Application.DoEvents()
                 check (not menu.Visible) "A click outside no longer closes a menu kept through its window's activation"
+            // A click on a submenu item closes the whole menu and runs its command at once, though
+            // WinForms closes the menu as a focus change before the item's Click records the command.
+            do
+                let mutable ran = false
+                let item = CmiRegular({text="Blue";image=None;flags=List2();click=fun () -> ran <- true})
+                use menu = new ThemedContextMenu(List2([CmiPopUp({text="Tab color";image=None;items=List2([item])})]),ignore,fun _ -> true)
+                menu.Show(Point(40,40))
+                Application.DoEvents()
+                let parent = menu.Items.[0] :?> ToolStripMenuItem
+                parent.ShowDropDown()
+                Application.DoEvents()
+                let clicked = typeof<ToolStrip>.GetMethod("OnItemClicked",BindingFlags.Instance ||| BindingFlags.NonPublic)
+                clicked.Invoke(parent.DropDown,[|box (ToolStripItemClickedEventArgs(parent.DropDownItems.[0]))|]) |> ignore
+                if menu.Visible then menu.Close(ToolStripDropDownCloseReason.AppFocusChange)
+                parent.DropDownItems.[0].PerformClick()
+                let deadline = DateTime.UtcNow.AddSeconds(1.0)
+                while not ran && DateTime.UtcNow<deadline do
+                    Application.DoEvents()
+                    Threading.Thread.Sleep(5)
+                check (not menu.Visible && ran) "A click on a submenu item left the menu open and its command waiting"
             // WinForms may own a menu by a window behind the current one; showing the menu must
             // not raise that window over the current one and its tabs.
             do

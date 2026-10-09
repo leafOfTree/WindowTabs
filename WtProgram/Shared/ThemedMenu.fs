@@ -78,6 +78,9 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
     let images = ResizeArray<Bitmap>()
     let font = new Font(SystemFonts.MenuFont.FontFamily, (SystemFonts.MenuFont.Size+1.0f) * float32(Dpi.value()) / float32(Dpi.system()))
     let mutable action = None
+    /// An item was clicked in this menu or a submenu. WinForms says so before closing the menu,
+    /// and only afterwards raises the item's Click that records its command.
+    let mutable chosen = false
     let mutable restoreOwner : obj option = None
     let timer = new Timer(Interval=1)
     // Submenus open on hover after the Windows menu delay (400 ms here) through a timer that
@@ -100,6 +103,10 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
                 this.BeginInvoke(Action(fun () -> this.dismissOutside(point))) |> ignore
         WinUserApi.CallNextHookEx(IntPtr.Zero,code,message,data))
     let configure (menu:ToolStripDropDown) =
+        menu.ItemClicked.Add(fun e ->
+            match e.ClickedItem with
+            | :? ToolStripMenuItem as item when item.HasDropDownItems -> ()
+            | _ -> chosen <- true)
         menu.Renderer <- renderer
         menu.BackColor <- palette.surface
         menu.ForeColor <- palette.text
@@ -164,8 +171,10 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
         // A click on a tab activates its window, which can finish just after the menu opened and
         // closed it at once as another app taking the focus. Clicks elsewhere still close it
         // through the mouse hook, and any other window taking the focus does too.
+        // Not once an item is chosen: a click in a submenu closes the menu as a focus change before
+        // the item's Click runs, and kept open, the menu held back the command until the next click.
         this.Closing.Add(fun e ->
-            if e.CloseReason=ToolStripDropDownCloseReason.AppFocusChange then
+            if e.CloseReason=ToolStripDropDownCloseReason.AppFocusChange && not chosen then
                 ownsForeground |> Option.iter(fun owns -> if owns (WinUserApi.GetForegroundWindow()) then e.Cancel <- true))
         // Put back what WinForms had, so no later menu inherits a strip that may be gone.
         this.Closed.Add(fun _ ->
@@ -205,7 +214,9 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
             if not (isNull owner) && owner.Visible && owner.RectangleToScreen(item.Bounds).Contains(pointer) then
                 for other in owner.Items |> Seq.cast<ToolStripItem> do
                     match other with
-                    | :? ToolStripMenuItem as sibling when not (obj.ReferenceEquals(sibling,item)) && sibling.DropDown.Visible -> sibling.HideDropDown()
+                    // HasDropDownItems first: reading DropDown gives a plain item an empty submenu,
+                    // and a click on it then opened that instead of running its command.
+                    | :? ToolStripMenuItem as sibling when not (obj.ReferenceEquals(sibling,item)) && sibling.HasDropDownItems && sibling.DropDown.Visible -> sibling.HideDropDown()
                     | _ -> ()
                 if item.HasDropDownItems && not item.DropDown.Visible then item.ShowDropDown())
     /// Include every visible submenu; an outside click still reaches its original target.
