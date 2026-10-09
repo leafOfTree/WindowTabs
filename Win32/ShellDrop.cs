@@ -100,8 +100,8 @@ namespace Bemo
     {
         private const uint FOF_ALLOWUNDO = 0x40, FOFX_ADDUNDORECORD = 0x20000000;
 
-        [DllImport("shell32.dll")]
-        private static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        private static extern void SHChangeNotify(int eventId, uint flags, string item1, IntPtr item2);
 
         [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
         private static extern void SHCreateItemFromParsingName(string path, IntPtr bindContext, [In] ref Guid riid, out IShellItem item);
@@ -134,10 +134,18 @@ namespace Bemo
             catch (ArgumentException) { return false; }
             finally
             {
-                // Explorer learns of shell operations only from their change notices, which wait
-                // in this thread's queue; flushed now, before the thread ends, or open windows
-                // never show the files arrive or leave.
-                SHChangeNotify(0, 0x1000, IntPtr.Zero, IntPtr.Zero);
+                // Open Explorer windows ignore the file system's own events for a shell operation
+                // and wait for its change notices, which did not reach them from this thread. Each
+                // folder touched is told to refresh, delivered before this returns.
+                const int SHCNE_UPDATEDIR = 0x1000;
+                const uint SHCNF_PATHW = 0x5, SHCNF_FLUSH = 0x1000;
+                var folders = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase) { folder };
+                foreach (var file in files)
+                {
+                    var parent = System.IO.Path.GetDirectoryName(file);
+                    if (!string.IsNullOrEmpty(parent)) folders.Add(parent);
+                }
+                foreach (var changed in folders) SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW | SHCNF_FLUSH, changed, IntPtr.Zero);
             }
         }
 
