@@ -36,6 +36,8 @@ type OleDropTarget(ts:TabStrip) as this=
     /// A tab's window comes forward once the pointer rests on it, so sweeping a drag across
     /// the strip does not flash every window it passes.
     let activateTimer = new Timer(Interval=300)
+    /// The right-drag menu, themed like the tab menu; replaced, not disposed, from its own events.
+    let mutable dropMenu : ThemedContextMenu option = None
 
     let image() =
         if helper.IsNone then helper <- Option.ofObj(DropImages.CreateHelper())
@@ -85,6 +87,8 @@ type OleDropTarget(ts:TabStrip) as this=
             if not disposed then
                 disposed <- true
                 activateTimer.Dispose()
+                dropMenu |> Option.iter(fun menu -> menu.Dispose())
+                dropMenu <- None
                 helper |> Option.iter(fun helper -> Marshal.ReleaseComObject(helper) |> ignore)
                 helper <- None
                 if registered then OleDropLifetime.RevokeDragDrop(window.hwnd) |> ignore
@@ -131,11 +135,12 @@ type OleDropTarget(ts:TabStrip) as this=
         member x.OleDrop(pDataObj, grfKeyState, pt, pdwEffect) =
             let allowed = enum<DragDropEffects> pdwEffect
             let ptScreen = Pt(pt.x, pt.y)
+            // Read before effectAt, which records the keys of this call: the right button is up by now.
+            let menuFor = rButtonDown
             let effect = effectAt grfKeyState pt pdwEffect
             imaging |> Option.iter(fun helper ->
                 let mutable point = pt
                 helper.Drop(pDataObj,&point,effect))
-            let menuFor = rButtonDown
             ts.tryHit(window.ptToClient(ptScreen)).iter <| fun(Tab(hwnd),part) ->
                 let folder = if hoveredTab=Some hwnd then hoveredFolder else Shell.getShellFolder hwnd
                 folder.iter <| fun folder ->
@@ -145,12 +150,16 @@ type OleDropTarget(ts:TabStrip) as this=
                         // The menu offers what the source allows, once there is something to do.
                         if DropRules.effect allowed false false files folder.path<>DragDropEffects.None then
                             let item text click = CmiRegular({ text=text; image=None; flags=List2(); click=click })
-                            Win32Menu.show window.hwnd ptScreen (List2([
-                                if allowed.HasFlag(DragDropEffects.Copy) then item (tr Strings.DropMenu.copy) (fun () -> run false)
-                                if allowed.HasFlag(DragDropEffects.Move) then item (tr Strings.DropMenu.move) (fun () -> run true)
-                                CmiSeparator
-                                item (tr Strings.Common.cancel) ignore
-                            ]))
+                            let items = List2([
+                                            if allowed.HasFlag(DragDropEffects.Copy) then item (tr Strings.DropMenu.copy) (fun () -> run false)
+                                            if allowed.HasFlag(DragDropEffects.Move) then item (tr Strings.DropMenu.move) (fun () -> run true)
+                                            CmiSeparator
+                                            item (tr Strings.Common.cancel) ignore ])
+                            dropMenu |> Option.iter(fun menu -> menu.Dispose())
+                            // Open over the folder's window, which the drag has brought forward.
+                            let menu = new ThemedContextMenu(items,ignore,(fun foreground -> foreground=hwnd))
+                            dropMenu <- Some menu
+                            menu.Show(window.hwnd,ptScreen.x,ptScreen.y)
                     else
                         match enum<DragDropEffects> effect with
                         | DragDropEffects.Move -> run true
