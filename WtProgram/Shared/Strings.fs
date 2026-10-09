@@ -194,7 +194,7 @@ module Strings =
         let stripe = { en="Stripe"; zh="色条"; ja="色のライン" }
         let fill = { en="Fill"; zh="填充"; ja="塗りつぶし" }
         let numberShortcutMenuHint = { en="Enable or disable it for one app from the tab menu."; zh="可在标签右键菜单中为单个应用启用或禁用数字快捷键。"; ja="タブメニューでアプリごとに番号ショートカットを有効・無効にできます。" }
-        let numberShortcutFor name = { en=sprintf "Use number shortcuts in %s" name; zh=sprintf "在 %s 中使用数字快捷键" name; ja=sprintf "%s で番号ショートカットを使う" name }
+        let numberShortcutFor name = { en=sprintf "Switch tabs by number in %s" name; zh=sprintf "在 %s 中按数字切换标签" name; ja=sprintf "%s のタブを番号で切り替え" name }
         let numberShortcutCtrl = { en="Ctrl"; zh="Ctrl"; ja="Ctrl" }
         let numberShortcutAlt = { en="Alt"; zh="Alt"; ja="Alt" }
         let activateOnHover = { caption={ en="Switch tabs on hover"; zh="悬停切换标签"; ja="ホバーでタブを切り替え" }
