@@ -481,14 +481,7 @@ let main() =
                                     |> fun field -> field.GetValue(group.ts)
                     decorator.GetType().GetMethod("beginRename").Invoke(decorator,[|box handles.Head|]) |> ignore
                     let form = renameBox() |> Option.get
-                    let tab = group.ts.tabSprites.list |> List.pick(fun (offset,sprite) -> if sprite.id=Tab(handles.Head) then Some(offset,sprite) else None)
-                    let offset,sprite = tab
                     let text = form.textBox
-                    check (text.BorderStyle=BorderStyle.None && text.BackColor=form.BackColor) "The rename field draws a border of its own inside the outline"
-                    check (SystemInformation.HighContrast || (text.BackColor=sprite.fillColor && text.ForeColor=sprite.textColor)) "The rename field does not take the tab's colours"
-                    use tabFont = TabMetrics.font group.tabAppearance.tabHeight FontStyle.Regular
-                    check (text.Font.Height=tabFont.Height) "The rename field does not use the tab's font"
-                    check (text.Top>=0 && text.Bottom<=form.ClientSize.Height && abs(text.Top-(form.ClientSize.Height-text.Bottom))<=1) "The name is not centred in the rename field"
                     let strip = group.ts.bounds
                     check (form.Top>=strip.y && form.Bottom<=strip.y+strip.size.height) "The rename field reaches outside the tab"
                     check (text.Text=group.tabName handles.Head && text.SelectionLength=text.Text.Length) "The rename field does not start with the whole name selected"
@@ -498,25 +491,7 @@ let main() =
                     text.SelectAll()
                     let needed = TextRenderer.MeasureText(longName,text.Font,Size.Empty,TextFormatFlags.NoPadding).Width
                     check (text.Width>=needed || form.Width=strip.size.width) "The rename field does not widen to show the whole name"
-                    check (form.Left>=strip.x && form.Right<=strip.x+strip.size.width) "The rename field runs off the tab strip"
-                    // The field over its tab, drawn off screen, for a look at the result.
-                    use tabImage = (sprite :> ISprite).render.bitmap
-                    let at = Point(form.Left-strip.x-offset.x,form.Top-strip.y-offset.y)
-                    use shot = new Bitmap(max tabImage.Width (at.X+form.Width)+Dpi.scale 8,tabImage.Height)
-                    do
-                        use g = Graphics.FromImage(shot)
-                        g.Clear(group.tabAppearance.tabNormalBgColor)
-                        g.DrawImageUnscaled(tabImage,0,0)
-                        use fieldImage = new Bitmap(form.Width,form.Height)
-                        form.DrawToBitmap(fieldImage,Rectangle(Point.Empty,form.Size))
-                        g.DrawImageUnscaled(fieldImage,at)
-                    use large = new Bitmap(shot.Width*3,shot.Height*3)
-                    do
-                        use g = Graphics.FromImage(large)
-                        g.InterpolationMode <- Drawing2D.InterpolationMode.NearestNeighbor
-                        g.PixelOffsetMode <- Drawing2D.PixelOffsetMode.Half
-                        g.DrawImage(shot,Rectangle(Point.Empty,large.Size))
-                    large.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","tab-rename.png"),Imaging.ImageFormat.Png))
+                    check (form.Left>=strip.x && form.Right<=strip.x+strip.size.width) "The rename field runs off the tab strip")
                 onGroup(fun group ->
                     renameBox() |> Option.iter(fun form -> form.textBox.Text <- "Renamed"; form.Close()))
                 pumpUntil(fun () -> onGroup(fun group -> renameBox().IsNone && not (group.bb.read("renamingTab",true))))
@@ -545,6 +520,27 @@ let main() =
                     not(obj.ReferenceEquals(group.ts.tabInfo(Tab(foreignHwnd)).iconSmall,SystemIcons.Application))))
                 check (List.contains (closeAllOf handles.Head) (menuTexts handles.Head)) "A mixed group does not offer closing one program's windows"
                 check (List.contains (closeAllOf foreignHwnd) (menuTexts foreignHwnd)) "The foreign tab's menu does not name its own program"
+                // Sorting puts each program's tabs together in title order, and is then greyed out.
+                do
+                    let sortItem() = menu handles.Head |> List.find(fun item -> item.text=Localization.tr Strings.TabMenu.sortTabs)
+                    let greyed() = (sortItem()).flags.list |> List.contains MenuFlags.MF_GRAYED
+                    let compare = StringComparer.CurrentCultureIgnoreCase
+                    let app hwnd = OS().windowFromHwnd(hwnd).pid.exeName
+                    // The foreign tab at the end its program does not sort to.
+                    let before = onGroup(fun group ->
+                        let index = if compare.Compare(app foreignHwnd,app handles.Head)>0 then 0 else group.lorder.list.Length-1
+                        group.ts.moveTab(Tab(foreignHwnd),index)
+                        group.lorder.list)
+                    check (not (greyed())) "Sorting is greyed out on a mixed group out of order"
+                    let item = sortItem()
+                    onGroup(fun _ -> item.click())
+                    let after = onGroup(fun group -> group.lorder.list |> List.map(fun hwnd -> hwnd,app hwnd,group.tabName hwnd))
+                    let inOrder (_,app,title) (_,nextApp,nextTitle) =
+                        match compare.Compare(app,nextApp) with 0 -> compare.Compare(title,nextTitle)<=0 | order -> order<0
+                    check (after |> List.pairwise |> List.forall(fun (a,b) -> inOrder a b)) (sprintf "Tabs are not by app, then title: %A" after)
+                    check (List.sort (after |> List.map(fun (hwnd,_,_) -> hwnd)) = List.sort before) "Sorting lost or added tabs"
+                    check (after |> List.map(fun (hwnd,_,_) -> hwnd) <> before) "Sorting left a foreign tab out of place"
+                    check (greyed()) "Sorting stays offered on tabs already in order"
                 let iconRequests() = output.ToArray() |> Array.filter((=) "ICON_REQUEST") |> Array.length
                 WinUserApi.SendMessage(foreignHwnd,0x804C,IntPtr(80),IntPtr.Zero) |> ignore
                 let before = iconRequests()

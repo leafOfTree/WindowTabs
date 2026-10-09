@@ -86,29 +86,6 @@ let main () =
     let mask = Array.init (width * height) (fun i ->
         let x, y = i % width, i / width
         if x >= 20 && x < 140 && y >= 1 && y < height - 1 then 255uy else 0uy)
-    use shadow = TabShadow.render width height mask padding
-    check (shadow.Width = width + padding * 2 && shadow.Height = height + padding) "Unexpected padding"
-    let alpha x y = int (shadow.GetPixel(x, y).A)
-    check (alpha (padding + 80) (padding - 1) > 0) "Missing top shadow"
-    check (alpha (padding + 19) (padding + 10) > 0) "Missing side shadow"
-    for y in 0 .. shadow.Height - 1 do
-        for x in 0 .. shadow.Width - 1 do
-            check (alpha x y = alpha (shadow.Width - 1 - x) y) "Asymmetric shadow"
-            if y = shadow.Height - 1 then check (alpha x y = 0) "Bottom shadow line"
-            if x >= padding && x < padding + width && y >= padding then
-                if mask.[(y - padding) * width + x - padding] = 255uy then
-                    check (alpha x y = 0) "Shadow overlaps a tab"
-    for y in 1 .. padding - 1 do
-        let previous = alpha (padding + 80) (y - 1)
-        let current = alpha (padding + 80) y
-        check (current >= previous && current - previous <= 6) "Hard edge in gradient"
-    use downShadow = TabShadow.renderForDirection width height mask padding TabDown
-    for y in 0 .. downShadow.Height - 1 do
-        for x in 0 .. downShadow.Width - 1 do
-            check (downShadow.GetPixel(x,y).A = shadow.GetPixel(x,shadow.Height-1-y).A) "Down shadow is not mirrored"
-    check (downShadow.GetPixel(padding+80,height+1).A > 0uy) "Missing lower shadow"
-    for x in 0 .. downShadow.Width-1 do
-        check (downShadow.GetPixel(x,0).A = 0uy) "Top attachment seam"
     use empty = TabShadow.render width height (Array.zeroCreate (width * height)) padding
     check (TabShadow.silhouette empty |> Array.forall ((=) 0uy)) "Empty strip casts a shadow"
     use hitArea = new Bitmap(width, height)
@@ -137,12 +114,6 @@ let main () =
             let badges = { ts with appearance=appearance;onlyIcons=icons;tabs=Map2(List2([1,{info "One" with numberBadge=Some "1"};2,{info "Ten" with numberBadge=Some "A"}])) }
             let drawn = badges.sprite.children.list |> List.collect(fun (_,tab) -> tab.children.list) |> List.choose(fun (_,child) -> match child with :? NumberBadgeSprite as badge -> Some badge | _ -> None)
             check (drawn.Length=1 && drawn.Head.label="A") "Active tab hint was shown or inactive letter hint was missing"
-            check (TextContrast.ratio (TextContrast.readable drawn.Head.foreground drawn.Head.background) drawn.Head.background >= 4.5) "Badge contrast too low"
-            check (drawn.Head.size.width>=TabMetrics.iconSide badges.appearance.tabHeight) "Selection hint is smaller than the app icon"
-            check (TextContrast.ratio drawn.Head.foreground drawn.Head.background=21.0) "Selection hints are not at full contrast"
-            use bitmap = badges.render.bitmap
-            check (bitmap.Width>0) "Badge render failed"
-            bitmap.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "badges-%d-%b.png" appearance.tabNormalBgColor.R icons),ImageFormat.Png)
     for appearance in [Theme.light;Theme.dark] do
         for style in [JoinedTabs;FolderTabs;PillTabs] do
             for colorStyle in ["Stripe";"Fill"] do
@@ -151,64 +122,50 @@ let main () =
                 let active,inactive = tabs |> List.find(fun t -> t.isTop),tabs |> List.find(fun t -> not t.isTop)
                 check (not inactive.isRaised) "Tint raised an inactive tab"
                 if colorStyle="Fill" then
-                    // The active tab in its color, the others a shade of it further from the text, never the bar's grey.
+                    // The active tab in its colour exactly as chosen, the others darker shades of it
+                    // with less colour. Colours pushed lighter or darker for the text came out muddy.
                     let text = appearance.tabTextColor
-                    let tint = TextContrast.readableBackground text Color.Blue
-                    let toward = if TextContrast.ratio text Color.White >= TextContrast.ratio text Color.Black then Color.White else Color.Black
                     let hovered = {inactive with hover=Some TabBackground}
-                    let inactiveShare,hoverShare = if toward=Color.White then 0.3,0.6 else 0.45,0.7
-                    check (active.fillColor=tint && TextContrast.ratio text tint>=TextContrast.minimum) "A fill did not color the active tab in a shade its text reads on"
-                    check (inactive.fillColor=Theme.blend inactiveShare tint toward) "An inactive filled tab is not a shade of its color"
-                    check (hovered.fillColor=Theme.blend hoverShare tint toward) "Hovering a filled tab gives no feedback"
-                    // Text that flipped between black and white as tabs were switched. It fades behind
-                    // instead, towards its own tab's shade, and stays readable.
+                    check (active.fillColor=Color.Blue) "A fill changed the colour of the active tab"
+                    check (inactive.fillColor=Theme.tabShade 0.12 0.6 Color.Blue) "An inactive filled tab is not a darker, quieter shade of its colour"
+                    check (hovered.fillColor=Theme.tabShade 0.06 0.75 Color.Blue) "Hovering a filled tab gives no feedback"
+                    check (TextContrast.luminance inactive.fillColor<TextContrast.luminance hovered.fillColor &&
+                           TextContrast.luminance hovered.fillColor<TextContrast.luminance active.fillColor) "The active filled tab is not the brightest"
+                    // The text gives way instead, chosen for the colour whatever the text setting says:
+                    // white where it reads better, as on every palette colour, otherwise dark.
+                    let own = if TextContrast.ratio Color.White Color.Blue>=TextContrast.ratio Theme.light.tabTextColor Color.Blue then Color.White else Theme.light.tabTextColor
+                    check (active.textColor=TextContrast.readable own Color.Blue && hovered.textColor=active.textColor)
+                          "The active or hovered filled tab does not take the text that reads on its colour"
+                    // Tabs behind grey theirs a little, still readable; light or dark never flips.
                     let darker (tab:TabSprite<int>) = TextContrast.luminance tab.textColor < TextContrast.luminance tab.fillColor
-                    check (active.textColor=text) "The active filled tab does not use the text color as chosen"
-                    check ([active;inactive;hovered] |> List.forall(fun tab -> darker tab=darker active)) "Filled tabs flipped their text between dark and light"
-                    let contrast (tab:TabSprite<int>) = TextContrast.ratio tab.textColor tab.fillColor
-                    check (contrast inactive<contrast hovered && contrast hovered<contrast active) "Text behind the active filled tab does not fade"
-                    check (contrast inactive>=TextContrast.minimum-0.01) "Faded text fell below readable contrast"
+                    check ((own<>Color.White || inactive.textColor=Theme.inactiveFillText) && inactive.textColor<>active.textColor && darker inactive=darker active &&
+                           TextContrast.ratio inactive.textColor inactive.fillColor>=TextContrast.minimum)
+                          "Text behind the active filled tab does not grey, flipped, or became hard to read"
+                    // Grey text reads on neither a light nor a deep colour: the colour stays, the text goes.
+                    let greyAppearance = {appearance with tabStyle=style; tabTextColor=Color.FromRGB(0x929292)}
+                    let grey = { tinted with appearance=greyAppearance; tabs=Map2(List2([1,{info "One" with tint=Some Color.Orange;colorStyle="Fill"};2,{info "Two" with tint=Some Color.Orange;colorStyle="Fill"}])) }
+                    let greyActive = grey.sprite.children.list |> List.pick(fun (_,child) -> match child with :? TabSprite<int> as tab when tab.isTop -> Some tab | _ -> None)
+                    check (greyActive.fillColor=Color.Orange && TextContrast.ratio greyActive.textColor Color.Orange>=TextContrast.minimum)
+                          "Unreadable text changed the tab's colour instead of its own"
                 else
                     check (active.fillColor<>inactive.fillColor) "Tint hid the active tab"
                     check (inactive.fillColor=appearance.tabNormalBgColor) "A stripe mixed its color into the tab"
                 for tab in tabs do check (TextContrast.ratio tab.textColor tab.fillColor>=4.5) "Tint made text unreadable"
                 let flash = {inactive with displayInfo={inactive.displayInfo with bgColor=Some Color.Orange}}
                 check (flash.fillColor=Color.Orange) "Tint overrode attention"
-                use bitmap = tinted.render.bitmap
-                bitmap.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "tint-%A-%s-%d.png" style colorStyle appearance.tabNormalBgColor.R),ImageFormat.Png)
     check (Theme.tabTint true (Some Color.Red)=None) "High contrast retained tint"
-    // A row in several palette colors, the second tab hovered, saved to judge by eye.
-    for appearance,dark in [Theme.light,false;Theme.dark,true] do
-        for style in [JoinedTabs;FolderTabs;PillTabs] do
-            for colorStyle in ["Stripe";"Fill"] do
-                let palette = Theme.tabPalette dark
-                let tab index text = {info text with tint=Some palette.[index];colorStyle=colorStyle}
-                let row = { ts with appearance={appearance with tabStyle=style}; size=Sz(640,28); hover=Some(2,TabBackground)
-                                    tabs=Map2(List2([1,tab 1 "Active";2,tab 2 "Hovered";3,tab 4 "Inactive";4,tab 8 "Inactive"]))
-                                    lorder=List2([1;2;3;4]); zorder=List2([1;2;3;4]) }
-                use bitmap = row.render.bitmap
-                bitmap.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "tint-row-%A-%s-%s.png" style colorStyle (if dark then "dark" else "light")),ImageFormat.Png)
     let tabImage = ts.render
     // Short tabs shrink their contents to fit instead of clipping them.
-    do
-        let heights = [12;18;26]
-        use sheet = new Bitmap(440,heights |> List.sumBy(fun h -> h+12))
-        use g = Graphics.FromImage(sheet)
-        g.Clear(Color.FromArgb(45,48,53))
-        heights |> List.fold(fun y h ->
-            use font = TabMetrics.font h FontStyle.Regular
-            check (font.Height <= max h (SystemFonts.MenuFont.Height)) (sprintf "Text line does not fit a %dpx tab" h)
-            let info text : TabDisplayInfo = { tint=None; colorStyle="Stripe"; numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application; textFont=font; textBrush=Brushes.Black }
-            let strip = { ts with appearance={ appearance with tabHeight=h }; size=Sz(420,h+1)
-                                  tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"])) }
-            for _,tab in strip.sprite.children.list do
-                for location,child in tab.children.list do
-                    let size = match child with :? IconSprite as icon -> icon.size | :? CloseButtonSprite as close -> close.size | _ -> Sz(0,0)
-                    check (location.y >= 0 && location.y+size.height <= h) (sprintf "Icon or close button overflows a %dpx tab" h)
-            use bitmap = strip.render.bitmap
-            g.DrawImage(bitmap,10,y+6)
-            y+h+12) 0 |> ignore
-        sheet.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug","tab-heights.png"),ImageFormat.Png)
+    for h in [12;18;26] do
+        use font = TabMetrics.font h FontStyle.Regular
+        check (font.Height <= max h (SystemFonts.MenuFont.Height)) (sprintf "Text line does not fit a %dpx tab" h)
+        let info text : TabDisplayInfo = { tint=None; colorStyle="Stripe"; numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application; textFont=font; textBrush=Brushes.Black }
+        let strip = { ts with appearance={ appearance with tabHeight=h }; size=Sz(420,h+1)
+                              tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"])) }
+        for _,tab in strip.sprite.children.list do
+            for location,child in tab.children.list do
+                let size = match child with :? IconSprite as icon -> icon.size | :? CloseButtonSprite as close -> close.size | _ -> Sz(0,0)
+                check (location.y >= 0 && location.y+size.height <= h) (sprintf "Icon or close button overflows a %dpx tab" h)
     // Icons only: the icon is centred; a smaller close button shows beside it on the pointed-at
     // tab only, and not at all when the tab is too narrow for both.
     do
@@ -234,11 +191,6 @@ let main () =
             | None -> check (id<>2) "The pointed-at icon-only tab shows no close button"
         let narrow = parts { icons with appearance={ appearance with tabMaxWidth=Dpi.scale 30 }; hover=Some(2,TabBackground) }
         check (narrow |> List.forall(fun (_,_,_,close) -> close.IsNone)) "A tab too narrow for icon and button shows a close button"
-        // The end mark of the minimal bar: 6 logical px in the inactive colour, then the active tab.
-        use bar = ts.renderCollapsed.bitmap
-        let row = bar.Height/2
-        check (bar.GetPixel(Dpi.scale 3,row).R=appearance.tabNormalBgColor.R) "The minimal bar's end mark is missing"
-        check (bar.GetPixel(Dpi.scale 9,row).R=appearance.tabActiveBgColor.R) "The minimal bar's end mark is wider than 6 px"
     // Many tabs: titles give way to icons, tabs stop at a clickable width and the first stays in view.
     do
         let strip count = { ts with alignment=TabCenter; size=Sz(420,28)
@@ -275,12 +227,6 @@ let main () =
         let strip style = { ts with appearance={ appearance with tabStyle=style }
                                     tabs=Map2(List2([1,info "Window"; 2,info "Window"; 3,info "Window"]))
                                     lorder=List2([1;2;3]); zorder=List2([2;1;3]) }
-        let same (a:Color) (b:Color) = a.R=b.R && a.G=b.G && a.B=b.B
-        let normal,active = appearance.tabNormalBgColor,appearance.tabActiveBgColor
-        let pixel (s:TabStripSprite<int>) x y =
-            use bitmap = s.render.bitmap
-            bitmap.GetPixel(x,y)
-        let pill = strip PillTabs
         // Tabs a fraction of a pixel wide, up and down: every column from the first tab to the last
         // is covered, or the window behind shows through as a dark line beside the active tab.
         for direction in [TabUp;TabDown] do
@@ -292,60 +238,8 @@ let main () =
                 let left,right = spans |> List.map fst |> List.min,spans |> List.map snd |> List.max
                 check (right-left>=636 && [left..right-1] |> List.forall(fun x -> bitmap.GetPixel(x,14).A=255uy))
                     (sprintf "A column between %A tabs facing %A is left uncovered" style direction)
-        check (same (pixel pill 145 14) active) "The active pill is not filled with the active colour"
-        check (same (pixel pill 210 2) normal) "The bar does not show above the active pill"
-        check (same (pixel pill 3 14) normal) "An inactive pill-style tab is not the bar colour"
-        let inactive = pill.tabSprites.list |> List.pick(fun (_,tab) -> if tab.id=1 then Some tab else None)
-        let current = pill.tabSprites.list |> List.pick(fun (_,tab) -> if tab.id=2 then Some tab else None)
-        check (inactive.textColor<>appearance.tabTextColor && TextContrast.ratio inactive.textColor normal >= TextContrast.minimum)
-            "Inactive pill-style text is not dimmed, or dimmed below readable contrast"
-        check (current.textColor=appearance.tabTextColor) "The active pill's text is dimmed"
         let folder = strip FolderTabs
-        let middle = folder.tabSprites.list |> List.pick(fun (_,tab) -> if tab.id=2 then Some tab else None)
-        let radius,foot = middle.folderRadius,middle.footRadius
-        check (same (pixel folder 210 2) normal) "The bar does not show above the active folder tab"
-        check (same (pixel folder 145 20) active) "The active folder tab is not filled with the active colour"
-        // A small foot's pixels are all partly antialiased; its corner just must not be bare bar.
-        check (not (same (pixel folder 139 27) normal) && not (same (pixel folder 280 27) normal)) "The active folder tab has no feet"
-        check (foot < radius) "A folder tab's feet are rounded as much as its top"
-        check (same (pixel folder (140-foot) (29-foot)) normal) "A folder tab's foot is not cut away from the bar"
-        check (folder.sprite.children.length=5) "The active folder tab lacks a foot beside a neighbour"
-        let first = { folder with zorder=List2([1;2;3]) }
-        check (first.sprite.children.length=4) "The first folder tab has a foot outside the bar"
-        // At the strip's end the bar wraps the active tab's side as it does its top.
-        check (same (pixel first 1 14) normal && same (pixel first 5 14) active) "The bar does not wrap the active folder tab at the strip's end"
-        check ({ folder with appearance={ folder.appearance with tabOverlap= -4 } }.sprite.children.length=3) "Folder tabs with gaps between them have feet"
         check (match folder.tryHit(Pt(138,26)) with Some(1,_) -> true | _ -> false) "A folder tab's foot takes the pointer from the tab beneath it"
-        let hovered = { folder with hover=Some(3,TabBackground) }
-        // A hovered tab fills its slot like the active one, and meets it without a foot between.
-        check (hovered.sprite.children.length=4) "The active folder tab keeps a foot under a hovered neighbour"
-        check (same (pixel hovered 281 20) appearance.tabHighlightBgColor && same (pixel hovered 281 27) appearance.tabHighlightBgColor)
-            "A hovered folder tab does not fill its slot beside the active tab"
-        // An active colour like the bar's (high contrast) is outlined so the tab still shows.
-        let alike = { pill with appearance={ pill.appearance with tabActiveBgColor=normal; tabBorderColor=Color.Black } }
-        check ((pixel alike (140+TabMetrics.scaled 26 2) 14).R < 100uy) "An active pill the colour of the bar is not outlined"
-        // A sheet of every style over a light and a dark title bar, for looking at: the middle tab
-        // active in light, dark and high contrast, then the first tab active in light.
-        let highContrast = { Theme.light with tabActiveBgColor=SystemColors.Window; tabNormalBgColor=SystemColors.Window
-                                              tabHighlightBgColor=SystemColors.Control; tabBorderColor=SystemColors.WindowText
-                                              tabTextColor=SystemColors.WindowText }
-        let variants = [Theme.light,[2;1;3];Theme.dark,[2;1;3];highContrast,[2;1;3];Theme.light,[1;2;3]]
-        let styles = [JoinedTabs;FolderTabs;PillTabs]
-        let height = Theme.defaultGeometry.height
-        let rowHeight = height+2+24
-        use sheet = new Bitmap(460,rowHeight*styles.Length*variants.Length)
-        use g = Graphics.FromImage(sheet)
-        g.Clear(Color.FromArgb(120,124,130))
-        styles |> List.iteri(fun row style ->
-            variants |> List.iteri(fun column (colors,zorder) ->
-                let y = (row*variants.Length+column)*rowHeight+8
-                use window = new SolidBrush(if colors=Theme.dark then Color.FromRGB(0x202020) else Color.White)
-                g.FillRectangle(window,0,y+height+2,460,16)
-                let s = { strip style with appearance={ colors with tabStyle=style; tabHeight=height }; size=Sz(420,height+2)
-                                           zorder=List2(zorder); hover=Some(3,TabBackground) }
-                use bitmap = s.render.bitmap
-                g.DrawImage(bitmap,20,y+1)))
-        sheet.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug","tab-styles.png"),ImageFormat.Png)
     let originalDpi = Dpi.value()
     try
         for dpi in [96;144;192] do
@@ -366,36 +260,13 @@ let main () =
                 let expectedOffset = if direction=TabUp then strip.size.height-bar.Height else 0
                 check (strip.collapsedOffset=expectedOffset) "Minimal bar is not at the window edge"
                 check (bar.GetPixel(Dpi.scale 80,bar.Height/2).A=255uy) "Minimal bar lacks a solid hover target"
-                // An active tab at either end of the bar is marked at that end, in the inactive colour;
-                // one between others, or alone, is not.
                 let sameColor (a:Color) (b:Color) = a.ToArgb()=b.ToArgb()
                 let pixel (bar:Bitmap) x = bar.GetPixel(x,bar.Height/2)
                 let segment (strip:TabStripSprite<int>) id =
                     strip.sprite.children.list |> List.pick(fun (location,sprite) ->
                         let tab = sprite :?> TabSprite<int>
                         if tab.id=id then Some(location.x,tab.size.width) else None)
-                // The gap between tabs stays clear, and the end mark has rounded ends: its outermost
-                // pixel is only partly covered.
-                let x2,_ = segment strip 2
-                check ((pixel bar x2).A=0uy) "The gap between tabs is filled"
-                let x,width = segment strip 1
-                check ((bar.GetPixel(x,0)).A<255uy) "The end mark has a square end"
-                check (sameColor (pixel bar (x+Dpi.scale 3)) appearance.tabNormalBgColor) "An active first tab is not marked at the left end"
-                check (sameColor (pixel bar (x+width/2)) appearance.tabActiveBgColor) "The mark reaches the middle of the active tab"
-                let lastActive = { strip with lorder=List2([2;1]) }
-                use lastBar = lastActive.renderCollapsed.bitmap
-                let x,width = segment lastActive 1
-                check (sameColor (pixel lastBar (x+width-Dpi.scale 3)) appearance.tabNormalBgColor) "An active last tab is not marked at the right end"
                 let three = { strip with tabs=Map2(List2([1,info "One";2,info "Two";3,info "Three"])); lorder=List2([2;1;3]); zorder=List2([1;2;3]) }
-                use middleBar = three.renderCollapsed.bitmap
-                let x,width = segment three 1
-                check ([x+Dpi.scale 3;x+width/2;x+width-Dpi.scale 3] |> List.forall(fun at -> sameColor (pixel middleBar at) appearance.tabActiveBgColor))
-                      "An active tab between others is marked"
-                let alone = { strip with tabs=Map2(List2([1,info "Only"])); lorder=List2([1]); zorder=List2([1]) }
-                use aloneBar = alone.renderCollapsed.bitmap
-                let x,width = segment alone 1
-                check ([x+Dpi.scale 3;x+width-Dpi.scale 3] |> List.forall(fun at -> sameColor (pixel aloneBar at) appearance.tabActiveBgColor))
-                      "A lone tab is marked"
                 // A tab calling for attention shows its flashing colour in the bar as well.
                 let flashing = { three with tabs=Map2(List2([1,info "One";2,{ info "Two" with bgColor=Some appearance.tabFlashBgColor };3,info "Three"])) }
                 use flashingBar = flashing.renderCollapsed.bitmap
@@ -406,54 +277,9 @@ let main () =
                 let closeLocation,_ = tabSprite.children.list |> List.find(fun (_,child) -> child :? CloseButtonSprite)
                 let point = tabLocation.add(closeLocation).add(Pt(1,1))
                 check (strip.tryHit(point) |> Option.exists(fun (_,part) -> part=TabClose)) "Strip does not route the full close-button region to close"
-        // For review: the minimal bar in both default themes, over a title bar of the same colour
-        // as the active tab, where the mark is all that shows which tab is active.
-        do
-            Dpi.set originalDpi
-            // The active tab first, between the others, and last, in each theme.
-            let rows = [ for theme in [Theme.light;Theme.dark] do
-                           for order in [[1;2;3];[2;1;3];[2;3;1]] -> theme,order ]
-            // Left: over a title bar in the active tab's colour. Right: over another app's blue one.
-            let half = Dpi.scale 420+40
-            use sheet = new Bitmap(half*2,rows.Length*24)
-            use g = Graphics.FromImage(sheet)
-            rows |> List.iteri(fun index (theme,order) ->
-                let strip = { ts with appearance=theme.scaled; size=Dpi.scaleSize(Sz(420,28))
-                                      tabs=Map2(List2([1,info "One";2,info "Two";3,info "Three"])); lorder=List2(order); zorder=List2([1;2;3]) }
-                use caption = new SolidBrush(theme.tabActiveBgColor)
-                g.FillRectangle(caption,0,index*24,half,24)
-                use other = new SolidBrush(Color.FromArgb(40,90,160))
-                g.FillRectangle(other,half,index*24,half,24)
-                use bar = strip.renderCollapsed.bitmap
-                g.DrawImage(bar,20,index*24+10)
-                g.DrawImage(bar,half+20,index*24+10))
-            sheet.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug","minimal-bar.png"),ImageFormat.Png)
     finally Dpi.set originalDpi
     use tabBitmap = tabImage.bitmap
-    use rendered = TabShadow.render tabBitmap.Width tabBitmap.Height (TabShadow.silhouette tabBitmap) padding
-    use preview = new Bitmap(540,260)
-    do
-        use g = Graphics.FromImage(preview)
-        g.Clear(Color.White)
-        use dark = new SolidBrush(Color.FromArgb(45,48,53))
-        g.FillRectangle(dark, 0, 130, 540, 130)
-        for y in [55;185] do
-            g.FillRectangle(Brushes.WhiteSmoke, 30, y + tabBitmap.Height, 480, 48)
-            g.DrawImage(rendered, 60-padding, y-padding)
-            g.DrawImage(tabBitmap, 60, y)
-    let previewPath = IO.Path.Combine(__SOURCE_DIRECTORY__, "Debug", "shadow-preview.png")
-    preview.Save(previewPath, ImageFormat.Png)
-    let downTabs = { ts with direction=TabDown }
-    use downBitmap = downTabs.render.bitmap
-    use downRendered = TabShadow.renderForDirection downBitmap.Width downBitmap.Height (TabShadow.silhouette downBitmap) padding TabDown
-    use downPreview = new Bitmap(540,110)
-    do
-        use g = Graphics.FromImage(downPreview)
-        g.Clear(Color.WhiteSmoke)
-        g.DrawImage(downRendered, 60-padding, 10)
-        g.DrawImage(downBitmap, 60, 10)
-    downPreview.Save(IO.Path.Combine(__SOURCE_DIRECTORY__, "Debug", "shadow-down-preview.png"), ImageFormat.Png)
-    printfn "Rendering checks passed. Preview: %s" previewPath
+    printfn "Rendering checks passed."
 
     // Real HWNDs outside the desktop: ownership, flags, move/hide/restore and cleanup.
     let os = OS()

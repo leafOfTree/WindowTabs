@@ -2,26 +2,41 @@ name: Desktop E2E Hosted
 
 on:
   pull_request:
+  # Daily Soak on master: also catches changes in the hosted Windows image.
+  schedule:
+    - cron: '0 18 * * *'
   workflow_dispatch:
     inputs:
       profile:
-        description: 'Test depth: Quick or Full with exit/restart'
+        description: 'Test depth: Quick, Full with exit/restart, or 30-minute Soak'
         type: choice
-        options: [Quick, Full]
+        options: [Quick, Full, Soak]
         default: Quick
+  # The release workflow tests the executable it is about to ship.
+  workflow_call:
+    inputs:
+      profile:
+        type: string
+        default: Full
+      executable-artifact:
+        description: 'Artifact holding WindowTabs.exe to test instead of building one'
+        type: string
+        default: ''
 
 permissions:
   contents: read
 
 concurrency:
-  group: desktop-e2e-hosted-${{ github.ref }}
+  group: desktop-e2e-hosted-${{ github.ref }}-${{ inputs.profile || github.event_name }}
   cancel-in-progress: false
 
 jobs:
   desktop:
-    name: Desktop E2E (${{ inputs.profile || 'Quick' }})
+    name: Desktop E2E (${{ inputs.profile || (github.event_name == 'schedule' && 'Soak') || 'Quick' }})
     runs-on: windows-2022
-    timeout-minutes: 15
+    timeout-minutes: ${{ (inputs.profile == 'Soak' || github.event_name == 'schedule') && 50 || 15 }}
+    env:
+      E2E_PROFILE: ${{ inputs.profile || (github.event_name == 'schedule' && 'Soak') || 'Quick' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -37,13 +52,25 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.fsproj', '**/*.csproj', 'dotnet-tools.json') }}
           restore-keys: nuget-${{ runner.os }}-
 
+      - name: Download the executable under test
+        if: inputs.executable-artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.executable-artifact }}
+          path: e2e-executable
+
       # Precondition failures remain failures: never skip an unusable desktop.
       - name: Run on the hosted desktop
         id: e2e
         shell: powershell
         env:
-          E2E_PROFILE: ${{ inputs.profile || 'Quick' }}
-        run: ./tests/Run-DesktopE2E.ps1 -Interactive -Profile $env:E2E_PROFILE
+          E2E_EXECUTABLE: ${{ inputs.executable-artifact && 'e2e-executable/WindowTabs.exe' || '' }}
+        run: |
+          if ($env:E2E_EXECUTABLE) {
+              ./tests/Run-DesktopE2E.ps1 -Interactive -Profile $env:E2E_PROFILE -ReleaseExecutable $env:E2E_EXECUTABLE
+          } else {
+              ./tests/Run-DesktopE2E.ps1 -Interactive -Profile $env:E2E_PROFILE
+          }
 
       - name: Clean up this test's processes
         if: always() && steps.e2e.outputs.stage != ''
@@ -56,7 +83,7 @@ jobs:
         if: always() && steps.e2e.outputs.stage != ''
         uses: actions/upload-artifact@v6
         with:
-          name: desktop-e2e-hosted-${{ inputs.profile || 'Quick' }}-${{ github.run_id }}
+          name: desktop-e2e-hosted-${{ env.E2E_PROFILE }}-${{ github.run_id }}
           retention-days: 14
           path: |
             ${{ steps.e2e.outputs.stage }}/manifest.json

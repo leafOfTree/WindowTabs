@@ -28,6 +28,7 @@ type SettingsRec = {
     numberLeaderKeys: string
     numberHotKeyModifier: string
     disabledNumberShortcutPaths: Set2<string>
+    enabledNumberShortcutPaths: Set2<string>
     combineIconsInTaskbar: bool
     enableHoverActivate: bool
     /// "Never", "Maximized" or "Always".

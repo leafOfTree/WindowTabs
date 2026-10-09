@@ -18,10 +18,7 @@ type HideTabsOnInactiveGroupPlugin() =
         Services.settings.getValue("hideInactiveTabs").cast<bool>()
 
     member private this.onShowCompactChanged() =
-        if this.shouldShowCompact then
-            this.tabStrip.alpha <- byte(0x60)
-        else
-            this.tabStrip.alpha <- byte(0xFF)
+        this.tabStrip.dimmed <- this.shouldShowCompact
 
     interface IDragDropNotification with
         member this.dragBegin() = this.group.invokeAsync <| fun() ->

@@ -266,3 +266,13 @@ so a custom palette with a dark bar in the light theme still gets readable tints
 NativeContextMenu owns copied HBITMAPs until after its menu is destroyed; callers
 retain and dispose their source images. An item image replaces the check mark, so a
 checked item gets a copy with a mark drawn on it. Custom colours use the system ColorDialog.
+Tab right-click menus use ThemedContextMenu with the shared SettingsColors palette,
+including submenus, check marks and shortcut text. Each menu owns copies of its
+images. Closing releases the auto-hide hold immediately; disposal and the selected
+command run on the next UI timer turn, after WinForms finishes closing the menu.
+The group's exit also disposes its last menu. NativeContextMenu remains in use for
+the drag-and-drop action menu.
+While a themed menu is open, its group STA owns a low-level mouse hook so clicks
+in other processes dismiss it too. The hook posts dismissal to the menu thread,
+always passes input through, and is removed on close or disposal. Hit testing
+includes visible submenus and their rounded regions.

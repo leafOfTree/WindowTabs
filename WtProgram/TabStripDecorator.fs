@@ -14,6 +14,7 @@ type TabStripDecorator(group:WindowGroup) as this =
     let dropTarget = Cell.create(None)
     let mouseEvent = Event<_>()
     let _ts = TabStrip(this :> ITabStripMonitor)
+    let mutable contextMenu : ThemedContextMenu option = None
 
     do this.init()
 
@@ -43,10 +44,23 @@ type TabStripDecorator(group:WindowGroup) as this =
                 let ptScreen = os.windowFromHwnd(group.hwnd).ptToScreen(pt)
                 group.bb.write("contextMenuVisible", true)
                 let images = ResizeArray<Img>()
-                try Win32Menu.show group.hwnd ptScreen (this.contextMenu(hwnd,images))
+                try
+                    try
+                        contextMenu |> Option.iter(fun menu -> menu.Dispose())
+                        // Back over the tabs when the menu goes, the pointer has not moved, so the strip
+                        // looks again before auto-hide decides; it collapsed under the pointer otherwise.
+                        let menuClosed () =
+                            this.ts.refreshHover()
+                            group.bb.write("contextMenuVisible", false)
+                        let menu = new ThemedContextMenu(this.contextMenu(hwnd,images),menuClosed,group.windows.contains)
+                        contextMenu <- Some menu
+                        menu.Show(this.ts.hwnd,ptScreen.x,ptScreen.y)
+                    with _ ->
+                        contextMenu |> Option.iter(fun menu -> menu.Dispose())
+                        group.bb.write("contextMenuVisible", false)
+                        reraise()
                 finally
                     for image in images do image.bitmap.Dispose()
-                    group.bb.write("contextMenuVisible", false)
             | MouseDown, _ ->
                 capturedHwnd := Some(hwnd)
             | MouseUp, MouseMiddle -> 
@@ -65,6 +79,8 @@ type TabStripDecorator(group:WindowGroup) as this =
             group.invokeAsync(fun () -> if not disposed then this.ts.setDefaultAlignment(alignment)))
 
         group.exited.Add <| fun() ->
+            contextMenu |> Option.iter(fun menu -> menu.Dispose())
+            contextMenu <- None
             disposed <- true
             alignmentSubscription.Dispose()
             geometrySubscription.Dispose()
@@ -193,6 +209,18 @@ type TabStripDecorator(group:WindowGroup) as this =
     member private this.onCloseAllWindows() =
         group.windows.items.iter this.onCloseWindow
 
+    member private this.sortedTabs() =
+        // Each program name once per tab, not once per comparison.
+        group.lorder.list
+        |> List.map(fun hwnd -> hwnd,os.windowFromHwnd(hwnd).pid.exeName,group.tabName hwnd)
+        |> TabOrder.byAppThenTitle (fun (_,app,_) -> app) (fun (_,_,title) -> title)
+        |> List.map(fun (hwnd,_,_) -> hwnd)
+
+    /// One move per tab out of place, each announced as a dragged tab's is.
+    member private this.sortTabs() =
+        this.sortedTabs() |> List.iteri(fun index hwnd ->
+            if group.lorder.list.[index]<>hwnd then this.ts.moveTab(Tab(hwnd),index))
+
     member private this.contextMenu(hwnd,images:ResizeArray<Img>) =
         let checkedFlag(isChecked) = if isChecked then List2([MenuFlags.MF_CHECKED]) else List2()
         let grayed(isGrayed) = if isGrayed then List2([MenuFlags.MF_GRAYED]) else List2()
@@ -254,6 +282,14 @@ type TabStripDecorator(group:WindowGroup) as this =
                 flags = List2()
                 image = None
                 click = fun() -> Services.program.newTab hwnd
+            })
+
+        let sortTabsItem =
+            CmiRegular({
+                text = tr Strings.TabMenu.sortTabs
+                image = None
+                click = fun() -> this.sortTabs()
+                flags = grayed(this.sortedTabs() = group.lorder.list)
             })
 
         let combineIconsInTaskbar =
@@ -390,6 +426,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(iconOnlyItem)
             Some(alignmentItem)
             Some(autoHideItem)
+            Some(sortTabsItem)
             Some(combineIconsInTaskbar)
             Some(CmiSeparator)
             Some(closeTabItem)

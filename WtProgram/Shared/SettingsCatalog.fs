@@ -86,7 +86,7 @@ module SettingsCatalog =
     /// Settings that are the user's own records rather than preferences: a reset keeps them
     /// unless asked to clear them.
     let appRulePathKeys = ["includedPaths";"excludedPaths";"autoGroupingPaths"]
-    let appRuleKeys = appRulePathKeys @ ["disabledNumberShortcutPaths";"appTabColors"]
+    let appRuleKeys = appRulePathKeys @ ["disabledNumberShortcutPaths";"enabledNumberShortcutPaths";"appTabColors"]
     let workspaceKeys = ["workspaces";"workspaceSchemaVersion";"workspaceRecovery"]
     /// The settings a reset leaves: fresh-install toggles, the version (so the next start does
     /// not take the reset for an upgrade) and, unless cleared, app rules and saved workspaces.
@@ -153,12 +153,14 @@ module SettingsCatalog =
         if all |> Array.forall(fun term -> captions |> List.exists (contains term)) then 2
         elif all |> Array.forall(fun term -> texts |> List.exists (contains term)) then 1
         else 0
-    /// A short part of a description around its first match of the term, ellipses marking cuts.
+    /// A description around its first match of the term, whole when short, ellipses marking cuts.
     let private snippet (term:string) (text:string) =
         match matchRanges term text |> Array.tryHead with
         | None -> None
+        // Most descriptions are a short sentence: shown whole, they read better than a piece.
+        | Some _ when text.Length<=72 -> Some text
         | Some(index,length) ->
-            let before,after = 16,36
+            let before,after = 24,44
             // Up to before characters ahead of the match, from the start of a word.
             let start = if index<=before then 0 else (match text.IndexOf(' ',index-before,before) with -1 -> index-before | space -> space+1)
             let stop = min text.Length (index+length+after)

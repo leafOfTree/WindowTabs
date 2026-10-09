@@ -5,6 +5,63 @@ open System.Drawing.Drawing2D
 open System.Drawing.Imaging
 open System.Windows.Forms
 
+module TabDimming =
+    /// Blend the finished surface so icons and glyphs soften equally; preserve edge alpha.
+    let render bar (source:Bitmap) =
+        let output = new Bitmap(source.Width,source.Height,PixelFormat.Format32bppArgb)
+        try
+            use graphics = Graphics.FromImage(output)
+            use attributes = new ImageAttributes()
+            let offset = Theme.dimColor bar Color.Black
+            let matrix = new ColorMatrix()
+            matrix.Matrix00 <- float32 Theme.dimAmount
+            matrix.Matrix11 <- float32 Theme.dimAmount
+            matrix.Matrix22 <- float32 Theme.dimAmount
+            matrix.Matrix40 <- float32 offset.R/255.0f
+            matrix.Matrix41 <- float32 offset.G/255.0f
+            matrix.Matrix42 <- float32 offset.B/255.0f
+            attributes.SetColorMatrix(matrix)
+            graphics.CompositingMode <- CompositingMode.SourceCopy
+            graphics.DrawImage(source,Rectangle(0,0,source.Width,source.Height),0,0,source.Width,source.Height,GraphicsUnit.Pixel,attributes)
+            output
+        with _ -> output.Dispose(); reraise()
+
+/// Auto-hidden tabs expand from their collapsed bar and collapse back to it over a few frames.
+module TabReveal =
+    /// A whole expand or collapse; one reversed part way takes its share of this.
+    let duration = 150.0
+    /// Native hosts that count frames turn it off; None follows Windows' animation effects.
+    let mutable forced : bool option = None
+    let enabled() =
+        match forced with
+        | Some value -> value
+        | None ->
+            let mutable animate = true
+            WinUserApi.SystemParametersInfo(SystemParametersInfoParameters.SPI_GETCLIENTAREAANIMATION,0,&animate,0) |> ignore
+            animate
+    /// Fast at first, settling at the end, the way Windows moves its own panes.
+    let ease (t:float) = 1.0-(1.0-t)*(1.0-t)*(1.0-t)
+    /// A frame part way from the collapsed bar (0) to the full strip (1): the strip uncovered from
+    /// the window edge outwards, fading in over the bar, solid by half way. Rows keep their place
+    /// in the full strip, so the offset maps the pointer as it does for the collapsed bar.
+    let frame (full:Bitmap) (collapsed:Bitmap) (reveal:float) (direction:TabDirection) =
+        let fullHeight,barHeight = full.Height,collapsed.Height
+        let height = barHeight+int(Math.Round(float(fullHeight-barHeight)*reveal)) |> max barHeight |> min fullHeight
+        let offset = if direction=TabUp then fullHeight-height else 0
+        let image = Img(Sz(full.Width,height))
+        try
+            use g = Graphics.FromImage(image.bitmap)
+            let appear = min 1.0 (reveal*2.0)
+            let draw (source:Bitmap) (target:Rectangle) sourceY (opacity:float) =
+                if opacity>0.0 then
+                    use attributes = new ImageAttributes()
+                    attributes.SetColorMatrix(ColorMatrix(Matrix33=float32 opacity))
+                    g.DrawImage(source,target,0,sourceY,target.Width,target.Height,GraphicsUnit.Pixel,attributes)
+            draw collapsed (Rectangle(0,(if direction=TabUp then height-barHeight else 0),collapsed.Width,barHeight)) 0 (1.0-appear)
+            draw full (Rectangle(0,0,full.Width,height)) offset appear
+            image,offset
+        with _ -> image.bitmap.Dispose(); reraise()
+
 /// Tab contents keep their full size until the tab is too short for them, then shrink together,
 /// so a low tab still shows its icon, close button and text whole.
 module TabMetrics =
@@ -191,6 +248,14 @@ type TabSprite<'id> = {
     /// The tab's own colour: its whole slot in the joined style, its raised shape otherwise.
     member this.tint = Theme.tabTint SystemInformation.HighContrast this.displayInfo.tint
 
+    /// A filled tab's text, chosen for its colour and kept in every state: white on the palette,
+    /// which is made for it, and dark only on a colour picked by hand that is too light for white.
+    /// The text colour setting is left out: no one colour reads on all of them, and one that
+    /// applied to some tabs only looked like a mistake.
+    member private this.fillText (tint:Color) =
+        let dark = Theme.light.tabTextColor
+        if TextContrast.ratio Color.White tint >= TextContrast.ratio dark tint then Color.White else dark
+
     member this.fillColor =
         match this.displayInfo.bgColor with
         | Some(color) -> color
@@ -200,29 +265,22 @@ type TabSprite<'id> = {
             let highlight = this.appearance.tabHighlightBgColor
             let hovered = this.hover.IsSome || this.captured.IsSome
             let basis = if this.isTop then active elif hovered then highlight else inactive
-            // A fill colours the whole tab: the active one in its colour, the others in a shade
-            // of it further from the text. Mixed with the grey bar instead, a row of tabs turned
-            // muddy. The colour gives way to the text rather than the other way round: text picked
-            // for each shade flipped between black and white as tabs were switched.
+            // A fill colours the whole tab in its colour as chosen, the tabs behind in darker shades
+            // of it with less colour. The text gives way to the colour rather than the other way
+            // round: colours pushed lighter or darker for one text colour came out uneven and muddy.
             // A stripe leaves the tab as it was.
             match this.tint with
             | Some tint when this.displayInfo.colorStyle="Fill" ->
-                let text = this.appearance.tabTextColor
-                let tint = TextContrast.readableBackground text tint
-                let toward = if TextContrast.ratio text Color.White >= TextContrast.ratio text Color.Black then Color.White else Color.Black
-                // Taken further towards white than towards black: a colour this dark is near black
-                // and no longer reads as that colour.
-                let inactive,hover = if toward=Color.White then 0.3,0.6 else 0.45,0.7
                 if this.isTop then tint
-                elif hovered then Theme.blend hover tint toward
-                else Theme.blend inactive tint toward
+                elif hovered then Theme.tabShade 0.06 0.75 tint
+                else Theme.tabShade 0.12 0.6 tint
             | _ -> basis
 
     /// The text and close button colour for this tab's own background: the chosen colour,
     /// or a darker or lighter shade of it where that would be hard to read. On the bar of a
     /// folder or pill strip it is taken part way towards the bar, as a browser greys out the
-    /// titles of the tabs behind, but never below readable contrast. Filled tabs fade theirs
-    /// the same way with their shade: half way behind, a quarter when hovered.
+    /// titles of the tabs behind, but never below readable contrast. Filled tabs grey theirs
+    /// behind the active tab, and only there.
     member this.textColor =
         let chosen = this.appearance.tabTextColor
         let filled = this.displayInfo.colorStyle="Fill" && this.tint.IsSome && this.displayInfo.bgColor.IsNone
@@ -232,9 +290,16 @@ type TabSprite<'id> = {
             Color.FromArgb(255,mix chosen.R bar.R,mix chosen.G bar.G,mix chosen.B bar.B)
         let chosen =
             if filled then
-                if this.isTop then chosen
-                elif this.hover.IsSome || this.captured.IsSome then fade 0.25
-                else fade 0.5
+                // Behind the active tab the text is one grey on every colour, the darkest that
+                // still reads on all the shades behind; pointing at the tab brings back white.
+                // Dark text on a colour picked by hand fades part way towards it instead.
+                let own = this.fillText this.tint.Value
+                if this.isTop || this.hover.IsSome || this.captured.IsSome then own
+                elif own=Color.White then Theme.inactiveFillText
+                else
+                    let bar = this.fillColor
+                    let mix (a:byte) (b:byte) = int(Math.Round(float a+(float b-float a)*0.3))
+                    Color.FromArgb(255,mix own.R bar.R,mix own.G bar.G,mix own.B bar.B)
             elif this.style = JoinedTabs || this.isRaised then chosen
             else fade 0.3
         TextContrast.readable chosen this.fillColor
@@ -255,7 +320,7 @@ type TabSprite<'id> = {
         max 1 (min (TabMetrics.scaled this.appearance.tabHeight cap) (height * 30 / 100))
 
     /// The rounding of a folder tab's top corners.
-    member this.folderRadius = this.raisedRadius this.contentHeight 7
+    member this.folderRadius = max 1 (min (TabMetrics.scaled this.appearance.tabHeight 10) (this.contentHeight * 40 / 100))
 
     /// The feet that run a folder tab into the bar are rounded half as much as its top, so they
     /// read as a slight flare rather than a second set of corners.
@@ -310,8 +375,11 @@ type TabSprite<'id> = {
 
     /// A raised tab hardly lighter or darker than the bar (high contrast, or a palette that makes
     /// them alike) would vanish into it, so it is outlined.
+    /// A raised tab the bar's own colour, as in high contrast, is outlined so it still shows. One
+    /// only as light or dark as the bar, a deep tab colour on a dark bar, stands out by its colour.
     member private this.needsOutline =
-        TextContrast.ratio this.fillColor this.appearance.tabNormalBgColor < 1.25
+        TextContrast.ratio this.fillColor this.appearance.tabNormalBgColor < 1.25 &&
+        Theme.OkLab.distance this.fillColor this.appearance.tabNormalBgColor < 0.1
 
     // The inset exists because GDI+ puts pixel centres on integer coordinates
     // once antialiasing is on, so column k spans k-0.5 to k+0.5, and a fill run

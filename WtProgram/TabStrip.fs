@@ -26,7 +26,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let foregroundCell = Cell.create(None:Tab option)
     let prevForegroundCell = Cell.create(None)
     let sizeCell = Bemo.Cell<Sz>(Cell, Sz.empty, (=))
-    let alphaCell = Cell.create(byte(0xFF))
+    let dimmedCell = Cell.create(false)
     // Position is presentation state, not an input to pixel rendering.
     let mutable location = Pt.empty
     let mutable renderedFrames = 0L
@@ -70,6 +70,22 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let shadowRefreshMessage = 0x8000 + 67
     let hwndRef = ref IntPtr.Zero
     let isShrunkCell = Bemo.Cell<bool>(Cell, false, (=))
+    // How much of the strip shows, from the collapsed bar (0) to all of it (1), and where an
+    // expand or collapse in progress is heading. Presentation state, like the location.
+    let mutable reveal = 1.0
+    let mutable revealFrom = 1.0
+    let mutable revealTarget = 1.0
+    let revealClock = Diagnostics.Stopwatch()
+    let revealTimer = new Timer(Interval=15)
+    /// Waits out a press that handed the capture to the drag check, see WM_MOUSELEAVE.
+    let captureWatch = new Timer(Interval=30)
+    let mutable pointerSource : unit -> Point = fun () -> Cursor.Position
+    /// The full strip and the collapsed bar while an expand or collapse runs, so a frame only
+    /// blends them; dropped whenever what they show changes.
+    let mutable revealImages : (Img*Img) option = None
+    let dropRevealImages() =
+        revealImages |> Option.iter(fun (full,collapsed) -> full.bitmap.Dispose(); collapsed.bitmap.Dispose())
+        revealImages <- None
     let destroyingEvent = Event<unit>()
     let makeFont = TabMetrics.font
     let mutable fontKey = Dpi.value(),0
@@ -98,6 +114,12 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         
         isMouseOverExport.init()
         showInsideExport.init()
+
+        revealTimer.Tick.Add(fun _ -> this.stepReveal())
+        captureWatch.Tick.Add(fun _ ->
+            if WinUserApi.GetCapture()=IntPtr.Zero then
+                captureWatch.Stop()
+                this.refreshHover())
 
         Cell.listen <| fun() ->
             this.update()
@@ -207,9 +229,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 heldLayoutCell.set(None))
 
     member private this.wndProc(msg:Win32Message) =
-        let mousePt() =
-            let pt = msg.lParam.location
-            if this.isShrunk then pt.add(Pt(0,this.ts.collapsedOffset)) else pt
+        // Where the frame on screen sits in the full strip: collapsed, expanded or part way.
+        let mousePt() = msg.lParam.location.add(Pt(0,renderedOffset))
         let mouseDown btn =
             this.processMouse(MouseClick(mousePt(), btn, MouseDown))
             msg.def()
@@ -249,7 +270,12 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         | WindowMessages.WM_MBUTTONDOWN -> mouseDown MouseMiddle
         | WindowMessages.WM_MBUTTONUP -> mouseUp MouseMiddle
         | WindowMessages.WM_MOUSELEAVE ->
-            this.processMouse(MouseLeave)
+            // Pressing a tab hands the capture to the drag check, and Windows reports that as the
+            // pointer leaving while it is still on the tab: auto-hide then began to collapse the
+            // strip under the held button. Hover holds until the button is let go, then follows
+            // where the pointer really is.
+            if WinUserApi.GetCapture()<>IntPtr.Zero && this.pointerInside then captureWatch.Start()
+            else this.processMouse(MouseLeave)
             msg.def()
         | _ ->
             msg.def()
@@ -263,29 +289,74 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     // hover and movement do not regenerate pixels; not a user-facing setting.
     member internal _.renderCount = renderedFrames
     
-    member private this.update() = 
-        if this.visible then 
-            let image = this.render
-            try
-                renderedOffset <- if this.isShrunk then this.ts.collapsedOffset else 0
-                renderedFrames <- renderedFrames+1L
-                this.window.update(image, this.location.add(Pt(0,renderedOffset)), this.alpha)
-                shadowWindow |> Option.iter (fun shadow ->
-                    if this.isShrunk || this.isEmpty then shadow.hide()
-                    else shadow.update(image, this.alpha, this.direction))
-            finally
-                image.bitmap.Dispose()
+    member private this.update() =
+        let target = if this.isShrunk then 0.0 else 1.0
+        dropRevealImages()
+        if this.visible then
+            if target<>revealTarget then
+                revealTarget <- target
+                // The first frame and an empty strip have nothing to move from.
+                if renderedFrames>0L && not this.isEmpty && TabReveal.enabled() then
+                    revealFrom <- reveal
+                    revealClock.Restart()
+                    revealTimer.Start()
+                else
+                    reveal <- target
+                    revealTimer.Stop()
+            this.paint()
         else
+            revealTimer.Stop()
+            revealTarget <- target
+            reveal <- target
             shadowWindow |> Option.iter (fun shadow -> shadow.hide())
             this.window.hide()
-    
-    member private this.render : Img = 
+
+    member private this.stepReveal() =
+        let span = TabReveal.duration*abs(revealTarget-revealFrom)
+        let t = if span<=0.0 then 1.0 else min 1.0 (revealClock.Elapsed.TotalMilliseconds/span)
+        reveal <- revealFrom+(revealTarget-revealFrom)*TabReveal.ease t
+        if t>=1.0 then
+            reveal <- revealTarget
+            revealTimer.Stop()
+            dropRevealImages()
+        if this.visible then this.paint()
+
+    member private this.paint() =
+        let image,offset =
+            if reveal>=1.0 then this.renderAt false,0
+            elif reveal<=0.0 then this.renderAt true,this.ts.collapsedOffset
+            else
+                let full,collapsed =
+                    match revealImages with
+                    | Some images -> images
+                    | None ->
+                        let images = this.renderAt false,this.renderAt true
+                        revealImages <- Some images
+                        images
+                TabReveal.frame full.bitmap collapsed.bitmap reveal this.direction
         try
-            if this.isShrunk then this.ts.renderCollapsed else this.ts.render
-        with ex -> 
+            renderedOffset <- offset
+            renderedFrames <- renderedFrames+1L
+            this.window.update(image, this.location.add(Pt(0,renderedOffset)), 255uy)
+            shadowWindow |> Option.iter (fun shadow ->
+                if reveal<1.0 || this.isEmpty then shadow.hide()
+                else shadow.update(image, 255uy, this.direction))
+        finally
+            image.bitmap.Dispose()
+
+    member private this.render : Img = this.renderAt this.isShrunk
+
+    member private this.renderAt collapsed : Img =
+        try
+            let image = if collapsed then this.ts.renderCollapsed else this.ts.render
+            if dimmedCell.value && not SystemInformation.HighContrast then
+                try Img(TabDimming.render this.appearance.tabNormalBgColor image.bitmap)
+                finally image.bitmap.Dispose()
+            else image
+        with ex ->
             Img(Sz(1,1))
 
-    
+
     member private this.withUpdate f =
         Cell.beginUpdate()
         try f()
@@ -366,6 +437,24 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         and set(newValue) = isShrunkCell.set(newValue)
 
     member this.isMouseOver = isMouseOverExport :> ICellOutput<_>
+
+    /// A popup over the strip, such as its menu, takes the pointer without a move, so hover
+    /// ends. When it goes, the pointer may still be over a tab: hover there again and track
+    /// its leaving, as a move would.
+    member this.refreshHover() =
+        if this.visible && this.window.isVisible then
+            let cursor = pointerSource()
+            let bounds = this.window.bounds
+            if bounds.containsPoint(Pt(cursor.X,cursor.Y)) then
+                this.processMouse(MouseMove(Pt(cursor.X-bounds.x,cursor.Y-bounds.y).add(Pt(0,renderedOffset))))
+            else this.processMouse(MouseLeave)
+
+    /// Where the pointer is on screen; native hosts supply one instead of moving the real cursor.
+    member internal _.pointer with get() = pointerSource and set(value) = pointerSource <- value
+
+    member private this.pointerInside =
+        let cursor = pointerSource()
+        this.window.bounds.containsPoint(Pt(cursor.X,cursor.Y))
 
     /// No room above the window on its monitor, so the tabs sit inside it over the title bar:
     /// true when the window is maximized, snapped to the top, or moved against the top edge.
@@ -457,9 +546,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         if moved && this.visible && renderedFrames>0L && renderedFrames=previousRender then
             this.move()
      
-    member this.alpha
-        with get() = alphaCell.value
-        and set(value) = alphaCell.set(value)
+    member this.dimmed
+        with get() = dimmedCell.value
+        and set(value) = dimmedCell.set(value)
 
     member this.visible 
         with get() = visibleCell.value
@@ -491,6 +580,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member _.destroying = destroyingEvent.Publish
     member this.destroy() = 
         destroyingEvent.Trigger()
+        revealTimer.Dispose()
+        captureWatch.Dispose()
+        dropRevealImages()
         normalFont.Dispose()
         renamedFont.Dispose()
         shadowWindow |> Option.iter (fun shadow -> (shadow :> IDisposable).Dispose())
@@ -500,4 +592,4 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         this.window.destroy()
             
     member this.tryHit(pt:Pt) : Option<_> =
-        this.ts.tryHit(if this.isShrunk then pt.add(Pt(0,this.ts.collapsedOffset)) else pt)
+        this.ts.tryHit(pt.add(Pt(0,renderedOffset)))

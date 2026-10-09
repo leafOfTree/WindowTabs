@@ -91,6 +91,15 @@ module TabNavigation =
         |> Option.bind(fun hwnd -> order |> List.tryFindIndex ((=) hwnd))
         |> Option.map(fun index -> (index + (if next then 1 else order.Length-1)) % order.Length)
 
+module TabOrder =
+    /// Each program's tabs side by side, in title order; tabs that tie keep their places.
+    let byAppThenTitle (app:'a -> string) (title:'a -> string) (tabs:'a list) =
+        let compare = StringComparer.CurrentCultureIgnoreCase
+        tabs |> List.sortWith(fun a b ->
+            match compare.Compare(app a,app b) with
+            | 0 -> compare.Compare(title a,title b)
+            | order -> order)
+
 type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:TabAppearanceInfo) as this =
     let Cell = CellScope(true)
     let _bb = Blackboard()

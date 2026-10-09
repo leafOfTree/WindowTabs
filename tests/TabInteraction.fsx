@@ -30,6 +30,8 @@ let check condition message = if not condition then failwith message
 let frameProperty = typeof<TabStrip>.GetProperty("renderCount",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public)
 let frames strip = frameProperty.GetValue(strip) :?> int64
 let main() =
+    // Frame counts below assume a change paints once; the auto-hide animation is tested on its own.
+    TabReveal.forced <- Some false
     let original = Environment.CurrentDirectory
     let originalDpi = Dpi.value()
     let isolated = Path.Combine(__SOURCE_DIRECTORY__,"Debug","interaction-test-"+Guid.NewGuid().ToString("N"))
@@ -38,12 +40,157 @@ let main() =
     try
         use settings = new Settings(true,saveDelay=0)
         let api = settings :> ISettings
-        let iconSprite opacity = {IconSprite.icon=SystemIcons.Application;size=Sz(16,16);opacity=opacity} :> ISprite
-        use bright = (iconSprite 1.0f).image.bitmap
-        use dim = (iconSprite 0.68f).image.bitmap
-        let alpha (bitmap:Bitmap) = seq {for y in 0..15 do for x in 0..15 do yield int(bitmap.GetPixel(x,y).A)} |> Seq.sum
-        check (alpha dim>0 && float(alpha dim)/float(alpha bright)>0.60 && float(alpha dim)/float(alpha bright)<0.75)
-              "Inactive tab icons do not dim while remaining visible"
+        for bar in [Theme.light.tabNormalBgColor;Theme.dark.tabNormalBgColor] do
+            use source = new Bitmap(4,1)
+            for x,color in [0,Color.Red;1,Color.White;2,Color.FromArgb(128,20,40,60);3,Color.Transparent] do source.SetPixel(x,0,color)
+            use softened = TabDimming.render bar source
+            for x in 0..3 do
+                check (softened.GetPixel(x,0).A=source.GetPixel(x,0).A) "Whole-strip dimming changed opacity or rounded-edge transparency"
+        // A frame part way keeps each row where it sits in the full strip, from the window edge out.
+        do
+            use full = new Bitmap(8,10)
+            use bar = new Bitmap(8,2)
+            using (Graphics.FromImage(full)) (fun g -> g.Clear(Color.Red))
+            using (Graphics.FromImage(bar)) (fun g -> g.Clear(Color.Blue))
+            for direction in [TabUp;TabDown] do
+                for reveal,height in [0.0,2;0.5,6;1.0,10] do
+                    let image,offset = TabReveal.frame full bar reveal direction
+                    try
+                        check (image.height=height && offset=(if direction=TabUp then 10-height else 0))
+                              (sprintf "Auto-hide frame at %.1f is %d tall at %d" reveal image.height offset)
+                    finally image.bitmap.Dispose()
+        let savedAppearance = api.appearance
+        for mode,name in [LightTheme,"light";DarkTheme,"dark"] do
+            api.updateAppearance(fun value -> {value with mode=mode})
+            let mutable selected = 0
+            let mutable closed = false
+            use dot = MenuImages.colorDot 16 Color.CornflowerBlue
+            let command flags image text = CmiRegular({text=text;image=image;flags=List2(flags);click=fun () -> selected <- selected+1})
+            let entries = List2([command [] None "Open new tab\tCtrl+Alt+N";
+                                 command [MenuFlags.MF_CHECKED] None "Checked";
+                                 CmiSeparator;
+                                 CmiPopUp({text="Tab color";image=None;items=List2([command [MenuFlags.MF_CHECKED] (Some(Img(dot))) "Blue";command [MenuFlags.MF_DISABLED] None "Disabled"])})])
+            use menu = new ThemedContextMenu(entries,fun () -> closed <- true)
+            let first = menu.Items.[0] :?> ToolStripMenuItem
+            let nested = menu.Items.[3] :?> ToolStripMenuItem
+            let colour = nested.DropDownItems.[0] :?> ToolStripMenuItem
+            check (first.ShortcutKeyDisplayString="Ctrl+Alt+N" && first.Text="Open new tab") "Themed menu lost its shortcut column"
+            check (colour.Checked && not nested.DropDownItems.[1].Enabled) "Themed submenu lost checked or disabled state"
+            check (not(Object.ReferenceEquals(colour.Image,dot))) "Themed menu retained a caller-owned image"
+            dot.Dispose()
+            menu.Show(Point(40,40))
+            Application.DoEvents()
+            // Pointing at an item with a submenu opens it after a short pause of our own, not the
+            // Windows menu delay through WinForms' timer, which a menu of an app behind could lose.
+            // The pointer entering an item, as WinForms reports it: HandleMouseEnter raises MouseEnter.
+            let enter = typeof<ToolStripItem>.GetMethod("HandleMouseEnter",BindingFlags.Instance ||| BindingFlags.NonPublic)
+            let centre (item:ToolStripItem) = item.Owner.RectangleToScreen(item.Bounds) |> fun r -> Point(r.X+r.Width/2,r.Y+r.Height/2)
+            enter.Invoke(nested,[|box EventArgs.Empty|]) |> ignore
+            menu.openHovered(Point(-30000,-30000))
+            check (not nested.DropDown.Visible) "A submenu opened with the pointer no longer on its item"
+            menu.openHovered(centre nested)
+            Application.DoEvents()
+            check nested.DropDown.Visible "Pointing at an item with a submenu did not open it"
+            enter.Invoke(first,[|box EventArgs.Empty|]) |> ignore
+            menu.openHovered(centre first)
+            Application.DoEvents()
+            check (not nested.DropDown.Visible) "Pointing at another item left a neighbour's submenu open"
+            // Pointing around must not give plain items a submenu of their own: a click on one then
+            // opened that empty submenu instead of running its command.
+            let dropDownField = typeof<ToolStripDropDownItem>.GetField("dropDown",BindingFlags.Instance ||| BindingFlags.NonPublic)
+            check (menu.Items |> Seq.cast<ToolStripItem> |> Seq.forall(fun item ->
+                       match item with
+                       | :? ToolStripMenuItem as entry when not entry.HasDropDownItems -> isNull (dropDownField.GetValue(entry))
+                       | _ -> true))
+                  "Pointing at menu items gave a plain item an empty submenu"
+            nested.ShowDropDown()
+            Application.DoEvents()
+            menu.dismissOutside(nested.DropDown.PointToScreen(Point(10,10)))
+            check (menu.Visible && nested.DropDown.Visible && not closed) "Clicking inside a submenu dismissed the menu"
+            nested.HideDropDown()
+            first.PerformClick()
+            menu.Close()
+            check (closed && selected=0 && not menu.IsDisposed) "Menu command or disposal ran inside the close event"
+            let deadline = DateTime.UtcNow.AddSeconds(2.0)
+            while not menu.IsDisposed && DateTime.UtcNow<deadline do
+                Application.DoEvents()
+                Threading.Thread.Sleep(5)
+            check (menu.IsDisposed && selected=1) "Themed menu did not retire and dispatch its command once"
+            use dismissed = new ThemedContextMenu(List2([command [] None "Cancel test"]),ignore)
+            dismissed.Show(Point(40,40))
+            Application.DoEvents()
+            dismissed.dismissOutside(dismissed.PointToScreen(Point(10,10)))
+            check dismissed.Visible "Clicking inside the main menu dismissed it"
+            dismissed.dismissOutside(Point(dismissed.Right+100,dismissed.Bottom+100))
+            check (not dismissed.Visible && selected=1) "Outside click failed to dismiss the menu or ran a command"
+            let deadline = DateTime.UtcNow.AddSeconds(2.0)
+            while not dismissed.IsDisposed && DateTime.UtcNow<deadline do
+                Application.DoEvents()
+                Threading.Thread.Sleep(5)
+            check dismissed.IsDisposed "Outside-click dismissal leaked the menu"
+            // The click that opens a tab's menu also brings its window forward, and that can land
+            // after the menu opened: the menu stays for its own windows, and goes for any other.
+            for owned in [true;false] do
+                use menu = new ThemedContextMenu(List2([command [] None "Focus test"]),ignore,fun _ -> owned)
+                menu.Show(Point(40,40))
+                Application.DoEvents()
+                menu.Close(ToolStripDropDownCloseReason.AppFocusChange)
+                Application.DoEvents()
+                check (menu.Visible=owned) (if owned then "The tab's own window coming forward closed its menu" else "Another app taking the focus left the menu open")
+                menu.Close(ToolStripDropDownCloseReason.AppClicked)
+                Application.DoEvents()
+                check (not menu.Visible) "A click outside no longer closes a menu kept through its window's activation"
+            // A click on a submenu item closes the whole menu and runs its command at once, though
+            // WinForms closes the menu as a focus change before the item's Click records the command.
+            do
+                let mutable ran = false
+                let item = CmiRegular({text="Blue";image=None;flags=List2();click=fun () -> ran <- true})
+                use menu = new ThemedContextMenu(List2([CmiPopUp({text="Tab color";image=None;items=List2([item])})]),ignore,fun _ -> true)
+                menu.Show(Point(40,40))
+                Application.DoEvents()
+                let parent = menu.Items.[0] :?> ToolStripMenuItem
+                parent.ShowDropDown()
+                Application.DoEvents()
+                let clicked = typeof<ToolStrip>.GetMethod("OnItemClicked",BindingFlags.Instance ||| BindingFlags.NonPublic)
+                clicked.Invoke(parent.DropDown,[|box (ToolStripItemClickedEventArgs(parent.DropDownItems.[0]))|]) |> ignore
+                if menu.Visible then menu.Close(ToolStripDropDownCloseReason.AppFocusChange)
+                parent.DropDownItems.[0].PerformClick()
+                let deadline = DateTime.UtcNow.AddSeconds(1.0)
+                while not ran && DateTime.UtcNow<deadline do
+                    Application.DoEvents()
+                    Threading.Thread.Sleep(5)
+                check (not menu.Visible && ran) "A click on a submenu item left the menu open and its command waiting"
+            // WinForms may own a menu by a window behind the current one; showing the menu must
+            // not raise that window over the current one and its tabs.
+            do
+                let form() = new Form(ShowInTaskbar=false,FormBorderStyle=FormBorderStyle.None,StartPosition=FormStartPosition.Manual,
+                                      Location=Point(-20000,-20000),Size=Size(120,120))
+                use lower = form()
+                use upper = form()
+                // Shown without activation, like the windows a tab strip's thread sees: none of them
+                // is its own active window, which is what left WinForms with a stale owner.
+                for window in [lower;upper] do WinUserApi.ShowWindow(window.Handle,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
+                let flags = SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOACTIVATE
+                WinUserApi.SetWindowPos(lower.Handle,upper.Handle,0,0,0,0,flags) |> ignore
+                let above (a:IntPtr) (b:IntPtr) =
+                    let rec walk (h:IntPtr) = h<>IntPtr.Zero && (h=b || walk (WinUserApi.GetWindow(h,GetWindowConstants.GW_HWNDNEXT)))
+                    walk (WinUserApi.GetWindow(a,GetWindowConstants.GW_HWNDNEXT))
+                check (above upper.Handle lower.Handle) "Owner test windows are not stacked as set up"
+                // The first menu on a thread records the window active then; later ones reused it.
+                use first = new ThemedContextMenu(List2([command [] None "First"]),ignore)
+                first.Show(lower.Handle,40,40)
+                Application.DoEvents()
+                first.Close()
+                Application.DoEvents()
+                WinUserApi.SetWindowPos(lower.Handle,upper.Handle,0,0,0,0,flags) |> ignore
+                use menu = new ThemedContextMenu(List2([command [] None "Owner test"]),ignore)
+                menu.Show(upper.Handle,40,40)
+                Application.DoEvents()
+                check (WinUserApi.GetWindow(menu.Handle,GetWindowConstants.GW_OWNER)=upper.Handle) "A tab menu is not owned by the strip it opened from"
+                check (above upper.Handle lower.Handle) "Showing a tab menu raised another tab's window over the current window and its tabs"
+                menu.Close()
+                Application.DoEvents()
+        api.updateAppearance(fun _ -> savedAppearance)
         check (SettingsCatalog.shortcutDefault "numberLeader"=0x0453) "Tab selection must default to Alt+S"
         check (Theme.leastUsedColor [0;1;2;0;3]=8) "By-window allocation did not balance colours"
         check (Theme.tabColorOrder.Head=1 && List.last Theme.tabColorOrder=0 && (Theme.tabColorOrder |> List.sort)=[0..15]) "Colour menu must start with blue, end with grey and retain every stored index"
@@ -60,13 +207,6 @@ let main() =
         check ([for c in 'a'..'z' -> Theme.appColorIndex (string c + ".exe")] |> List.forall(fun index -> index>=0 && index<Theme.tabPaletteSize)) "App colour fell outside the palette"
         check (([for c in 'a'..'z' -> Theme.appColorIndex (string c + ".exe")] |> List.distinct).Length>8) "App colours did not use the second eight"
         check (Theme.appColorIndex "Editor.exe"=Theme.appColorIndex "EDITOR.EXE") "App colour hash changed with case"
-        for side in [16;24;32] do
-            for dark in [false;true] do
-                for color in Theme.tabPalette dark do
-                    use dot = MenuImages.colorDot side color
-                    check (dot.GetPixel(side/2,side/2).ToArgb()=color.ToArgb()) "Menu dot changed the tab colour"
-                    for x,y in [0,0;side-1,0;0,side-1;side-1,side-1] do
-                        check (dot.GetPixel(x,y).A=0uy) "Menu colour dot has a square background or border"
         check ((Strings.Common.selectedChoice Strings.Settings.tabColorNames.[1]).en="Blue  ✓") "Selected colour is not marked after its name"
         let colors = WindowTabColors()
         let a,b,c = IntPtr(1),IntPtr(2),IntPtr(3)
@@ -128,33 +268,6 @@ let main() =
             check (menu.handle<>IntPtr.Zero) "Native colour menu was not created"
         let after,_,_,_ = RuntimeDiagnostics.resourceCounts()
         check (after-before<5) "Native colour menus leaked GDI bitmaps"
-        // Inspect the actual HBITMAP: native alpha blending needs RGB no greater than alpha.
-        for color in Theme.tabPalette true do
-            use dot = MenuImages.colorDot 16 color
-            use menu = new NativeContextMenu(List2([CmiRegular({text="Colour";image=Some(Img(dot));flags=List2();click=ignore})]))
-            let itemInfo = MENUITEMINFO(fMask=0x8)
-            check (WinUserApi.GetMenuItemInfo(menu.handle,0,true,itemInfo)<>0) "Cannot inspect native colour bitmap"
-            let mutable info = Unchecked.defaultof<NativeBitmap>
-            check (NativeBitmapApi.GetObject(itemInfo.hbmpUnchecked,Marshal.SizeOf(typeof<NativeBitmap>),&info)>0 && info.depth=32us && info.bits<>IntPtr.Zero)
-                  "Menu did not create a readable alpha bitmap"
-            let pixels = Array.zeroCreate<byte> (info.stride*info.height)
-            Marshal.Copy(info.bits,pixels,0,pixels.Length)
-            let mutable edgePixels = 0
-            for y in 0..info.height-1 do
-                for x in 0..info.width-1 do
-                    let offset = y*info.stride+x*4
-                    let alpha = pixels.[offset+3]
-                    if alpha>0uy && alpha<255uy then edgePixels <- edgePixels+1
-                    check ([0..2] |> List.forall(fun channel -> pixels.[offset+channel]<=alpha))
-                          "Native menu colour bitmap has a bright fringe from unpremultiplied alpha"
-            check (edgePixels>0) "Colour dot lost its smooth transparent edge"
-        // A swatch replaces the check mark, so the checked one must look different.
-        for colour in [Color.Red;Color.Yellow;Color.Black;Color.White] do
-            ink.Clear(colour)
-            use marked = MenuImages.checkedCopy swatch
-            let changed = seq { for x in 0..15 do for y in 0..15 do if marked.GetPixel(x,y).ToArgb()<>colour.ToArgb() then yield () } |> Seq.length
-            check (changed>8) (sprintf "Checked %A swatch has no visible mark" colour)
-            check (swatch.GetPixel(8,8).ToArgb()=colour.ToArgb()) "Marking a checked swatch changed the caller's image"
         let checkedItem = CmiRegular({text="Colour";image=Some(Img(swatch));flags=List2([MenuFlags.MF_CHECKED]);click=ignore})
         let before,_,_,_ = RuntimeDiagnostics.resourceCounts()
         for _ in 1..100 do
@@ -229,6 +342,25 @@ let main() =
                 let start = Pt(-20000,-20000)
                 strip.setPlacement(placement start size false)
                 strip.visible <- true
+                let originalFill = (snd strip.tabSprites.head).fillColor
+                let renderProperty = typeof<TabStrip>.GetProperty("render",BindingFlags.Instance ||| BindingFlags.NonPublic)
+                let pixels() =
+                    let image = renderProperty.GetValue(strip) :?> Img
+                    try [| for y in 0..image.height-1 do for x in 0..image.width-1 do yield image.bitmap.GetPixel(x,y) |]
+                    finally image.bitmap.Dispose()
+                let bright = pixels()
+                let brightFrames = frames strip
+                strip.dimmed <- true
+                let dimmedSprite = snd strip.tabSprites.head
+                check (frames strip>brightFrames) "Dimming an inactive group did not repaint it"
+                if not SystemInformation.HighContrast then
+                    let dim = pixels()
+                    check (dim.Length=bright.Length && Array.forall2(fun (a:Color) (b:Color) -> a.A=b.A) dim bright) "Inactive group became transparent"
+                    check (Array.exists2(fun (a:Color) (b:Color) -> a.ToArgb()<>b.ToArgb()) dim bright) "Inactive group was not dimmed"
+                check (dimmedSprite.fillColor.A=255uy) "Inactive group became transparent"
+                check (dimmedSprite.fillColor=originalFill) "Group dimming was applied twice instead of to the finished surface"
+                strip.dimmed <- false
+                check ((snd strip.tabSprites.head).fillColor=originalFill) "Reactivating a group did not restore its colours"
                 let selectionFrames = frames strip
                 let order = strip.zorder
                 strip.setTabBgColor(order.head,None)
@@ -285,6 +417,47 @@ let main() =
                 check (closes.Count=1) "Releasing outside the close button closed a tab"
                 send WindowMessages.WM_MOUSELEAVE Pt.empty
                 check (not strip.isMouseOver.value) "Mouse leave retained hover"
+                // A menu over the strip ends hover without a move. When it goes with the pointer still
+                // over the strip, hover returns without waiting for a move, so auto-hide keeps it open.
+                // A pointer given to the strip, so moving the real mouse cannot disturb the checks.
+                let pointerProperty = typeof<TabStrip>.GetProperty("pointer",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public)
+                let pointAt (point:Point) = pointerProperty.SetValue(strip,box(fun () -> point))
+                pointAt (Point(-30000,-30000))
+                strip.refreshHover()
+                check (not strip.isMouseOver.value) "Hover returned with the pointer elsewhere"
+                let underPointer = Pt(-19000,-19000)
+                strip.setPlacement(placement underPointer size false)
+                pointAt (Point(underPointer.x+Dpi.scale 60,underPointer.y+Dpi.scale 14))
+                Application.DoEvents()
+                send WindowMessages.WM_MOUSELEAVE Pt.empty
+                strip.refreshHover()
+                let restored = strip.isMouseOver.value
+                // Pressing a tab hands the capture to the drag check, which Windows reports as a
+                // leave: hover holds while the button is down, then follows the pointer.
+                use grab = new Form(ShowInTaskbar=false,FormBorderStyle=FormBorderStyle.None,StartPosition=FormStartPosition.Manual,
+                                    Location=Point(-20000,-20000),Size=Size(1,1))
+                WinUserApi.ShowWindow(grab.Handle,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
+                let settle () =
+                    let clock = Diagnostics.Stopwatch.StartNew()
+                    while clock.ElapsedMilliseconds<150L do
+                        Application.DoEvents()
+                        Threading.Thread.Sleep(5)
+                Application.DoEvents()
+                send WindowMessages.WM_MOUSEMOVE (Pt(Dpi.scale 60,Dpi.scale 14))
+                WinUserApi.SetCapture(grab.Handle) |> ignore
+                send WindowMessages.WM_MOUSELEAVE Pt.empty
+                let heldDuringPress = strip.isMouseOver.value
+                strip.setPlacement(placement start size false)
+                pointAt (Point(-30000,-30000))
+                WinUserApi.ReleaseCapture() |> ignore
+                settle()
+                let droppedAway = not strip.isMouseOver.value
+                send WindowMessages.WM_MOUSELEAVE Pt.empty
+                Application.DoEvents()
+                check restored "The pointer still over the strip after its menu closed did not hover it again"
+                check heldDuringPress "Pressing a tab dropped hover while the pointer stayed on it, so auto-hide began to collapse"
+                check droppedAway "Hover stayed after a press ended with the pointer away from the strip"
+                pointerProperty.SetValue(strip,box(fun () -> Cursor.Position))
                 let count = frames strip
                 send WindowMessages.WM_MOUSELEAVE Pt.empty
                 check (frames strip=count) "Repeated mouse leave repainted"
@@ -312,6 +485,38 @@ let main() =
                 strip.setPlacement(placement next larger false)
                 check (frames strip=count && strip.bounds.location.y=next.y+larger.height-Dpi.scale 4) "Collapsed strip lost its movement offset"
                 check (not shadow.isVisible) "Collapsed strip showed a shadow"
+                // Expanding and collapsing run over a few frames that only move outwards or inwards,
+                // and turning back part way starts from where the strip is, not from either end.
+                TabReveal.forced <- Some true
+                let watch (until:unit -> bool) =
+                    let heights = ResizeArray([strip.bounds.size.height])
+                    let clock = Diagnostics.Stopwatch.StartNew()
+                    while not (until()) && clock.ElapsedMilliseconds<1000L do
+                        Application.DoEvents()
+                        Threading.Thread.Sleep(2)
+                        heights.Add(strip.bounds.size.height)
+                    List.ofSeq heights
+                let collapsedHeight = strip.bounds.size.height
+                let beforeExpand = frames strip
+                strip.isShrunk <- false
+                let growing = watch (fun () -> strip.bounds.size.height=larger.height && shadow.isVisible)
+                check (strip.bounds.size.height=larger.height && shadow.isVisible) "Expanded tabs did not end at full height with their shadow"
+                check (frames strip-beforeExpand>=3L && growing |> List.exists(fun h -> h>collapsedHeight && h<larger.height))
+                      "Expanding auto-hidden tabs jumped instead of animating"
+                check (growing |> List.pairwise |> List.forall(fun (a,b) -> b>=a)) "Expanding tabs shrank on the way"
+                check (strip.bounds.location.y=next.y) "Expanded tabs are not back at the strip's own position"
+                strip.isShrunk <- true
+                let shrinking = watch (fun () -> strip.bounds.size.height<larger.height)
+                let partWay = List.last shrinking
+                check (partWay>collapsedHeight && strip.bounds.location.y=next.y+larger.height-partWay)
+                      "Collapsing jumped to the bar, or moved away from the window edge"
+                strip.isShrunk <- false
+                let back = watch (fun () -> strip.bounds.size.height=larger.height)
+                check (List.min back>=partWay && strip.bounds.size.height=larger.height) "Turning back part way restarted from the bar"
+                strip.isShrunk <- true
+                watch (fun () -> strip.bounds.size.height=collapsedHeight) |> ignore
+                check (strip.bounds.size.height=collapsedHeight && not shadow.isVisible) "Collapsing did not end at the bar without a shadow"
+                TabReveal.forced <- Some false
                 strip.isShrunk <- false
                 strip.visible <- false
                 let count = frames strip

@@ -10,8 +10,8 @@ type TabGeometry = {
 
 module TabGeometry =
     /// Tabs drawn inside the window sit over its title bar; this extra margin keeps
-    /// them clear of the caption buttons. One side margin setting covers both cases.
-    let captionButtonsReserve = 77
+    /// them clear of three 46px caption buttons plus a small gap before minimize.
+    let captionButtonsReserve = 144
     let fromAppearance (appearance:TabAppearanceInfo) = {
         style=appearance.tabStyle
         height=appearance.tabHeight; maxWidth=appearance.tabMaxWidth

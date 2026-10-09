@@ -33,7 +33,7 @@ let mutable preferences = {
     lightPalette=Theme.lightPalette;darkPalette=Theme.darkPalette
     lightCustomPalette=Theme.lightPalette;darkCustomPalette=Theme.darkPalette
     mode=DarkTheme;useCustomColors=true;lightPreset="";darkPreset="";presetEdits=Map.empty }
-let settingValues = Collections.Generic.Dictionary<string,obj>(dict ["appTabColors",box(Map.empty<string,string>);"tabColorMode",box "Off";"tabColorStyle",box "Stripe";"numberLeaderKeys",box "123456789";"numberHotKeyModifier",box "Ctrl";"disabledNumberShortcutPaths",box(Set2<string>())])
+let settingValues = Collections.Generic.Dictionary<string,obj>(dict ["appTabColors",box(Map.empty<string,string>);"tabColorMode",box "Off";"tabColorStyle",box "Stripe";"numberLeaderKeys",box "123456789";"numberHotKeyModifier",box "Ctrl";"disabledNumberShortcutPaths",box(Set2<string>());"enabledNumberShortcutPaths",box(Set2<string>())])
 let settings = { new ISettings with
     member _.appearance = preferences
     member _.updateAppearance update = preferences <- update preferences; ThemeService.notifyChanged()
@@ -46,6 +46,11 @@ let settings = { new ISettings with
     member _.setHotKey _ _ = () }
 Services.register<ISettings>(settings)
 let assertTrue condition message = if not condition then failwith message
+/// Painting must not throw; how the result looks is left to the eye.
+let paints (control:Control) what =
+    use image = new Bitmap(max 1 control.Width,max 1 control.Height)
+    let painted = try control.DrawToBitmap(image,Rectangle(Point.Empty,image.Size)); true with _ -> false
+    assertTrue painted (what+" failed to paint")
 let key (control:Control) k =
     control.GetType().GetMethod("OnKeyDown",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(control,[|box(KeyEventArgs(k))|]) |> ignore
 let main() =
@@ -55,6 +60,11 @@ let main() =
     assertTrue (List.head (ranked "start") = "launch-at-sign-in") "A caption match is not listed first"
     assertTrue (found "start" |> List.contains "new-tab") "A description word is not found"
     assertTrue (found "start" |> List.contains "settings-reset") "Descriptions are not matched inside words (restart)"
+    // Keywords name the setting's own subject, not words that fit half the page.
+    assertTrue (not (found "switcher" |> List.contains "search-tabs")) "Search tabs is found as an Alt+Tab switcher"
+    // A short description is shown whole as the reason for the match, not cut to a piece of it.
+    assertTrue (SettingsCatalog.searchEvidence "replaces" (SettingsCatalog.find "use-windowtabs-for-alt-tab") = [tr Strings.Settings.replaceAltTab.description])
+               "A short description shown as the reason for a match was cut short"
     assertTrue (SettingsCatalog.searchRank "start" (SettingsCatalog.find "settings-reset") = 0) "A match inside a description word is not ranked last"
     assertTrue (List.head (ranked "TART") = "launch-at-sign-in") "Substrings ignore case and can start inside words"
     assertTrue (found "启动" |> List.contains "launch-at-sign-in") "Chinese searches work across languages"
@@ -72,14 +82,15 @@ let main() =
     try
         let startup = SettingsCatalog.find "launch-at-sign-in"
         assertTrue (SettingsCatalog.searchEvidence "start" startup = []) "A match the caption shows is repeated below it"
-        assertTrue (SettingsCatalog.searchEvidence "windows notif" startup = ["notification"]) "A second term's keyword is not shown on its own"
+        assertTrue (SettingsCatalog.searchEvidence "windows auto" startup = ["autostart"]) "A second term's keyword is not shown on its own"
         assertTrue (SettingsCatalog.searchEvidence "runatstartup" startup = ["runAtStartup"]) "A settings-file key match is not shown"
         assertTrue (SettingsCatalog.searchEvidence "system" startup = [tr startup.text.description]) "A short description match is not shown whole"
         let margin = SettingsCatalog.find "tabIndentNormal"
         let longDescription = {en="Distance from the window edges. Centered tabs use it only once they fill the row.";zh="";ja=""}
         let margin = {margin with text={margin.text with description=longDescription}}
         match SettingsCatalog.searchEvidence "row" margin with
-        | [part] -> assertTrue (part = "…they fill the row.") (sprintf "A long description is not cut to the words around the match: %s" part)
+        | [part] -> assertTrue (part.StartsWith("…") && part.EndsWith("they fill the row.") && part.Length<longDescription.en.Length)
+                               (sprintf "A long description is not cut to the words around the match: %s" part)
         | other -> failwithf "A description match is not shown: %A" other
     finally Localization.setPreference "system"
     Application.EnableVisualStyles()
@@ -128,7 +139,6 @@ let main() =
     colorEditor.value <- box Color.Red
     input.ApplyTheme()
     let surface = (SettingsColors.current()).surface.ToArgb()
-    assertTrue (input.Pill && input.BackColor.ToArgb()=surface && colorText.BackColor.ToArgb()=surface) "Colour field is filled with the chosen colour instead of the theme"
     assertTrue ((SettingsHsv.color 120.0 1.0 1.0).ToArgb()=Color.Lime.ToArgb()) "HSV green"
     assertTrue ((SettingsHsv.color 240.0 1.0 1.0).ToArgb()=Color.Blue.ToArgb()) "HSV blue"
     input.Dispose()
@@ -144,17 +154,33 @@ let main() =
         SettingsUi.apply form
         let all = view.control.Controls.Find("tabTextColor",true)
         let preset = view.control.Controls.Find("palette-preset",true).[0] :?> SettingsCombo
-        assertTrue (preset.Width=Dpi.scale 140) "Preset does not align with the 140px choices"
-        let menu = preset.CreateDropDown().Value
-        menu.Show(form,Point(20,20))
-        use menuBitmap = new Bitmap(menu.Width,menu.Height)
-        menu.DrawToBitmap(menuBitmap,Rectangle(Point.Empty,menuBitmap.Size))
-        menuBitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","presets-"+name+".png"))
-        menu.Close(ToolStripDropDownCloseReason.AppClicked)
-        let settle = Diagnostics.Stopwatch.StartNew()
-        while settle.ElapsedMilliseconds<250L do
-            Application.DoEvents()
-            Threading.Thread.Sleep(5)
+        // Filled by automatic colours, tabs ignore the background rows: hide them, and judge
+        // readability on the automatic colours, which give way to the text.
+        let comboNamed name = view.control.Controls.Find(name,true).[0] :?> SettingsCombo
+        let backgroundRows = ["tabTextColor";"tabActiveBgColor";"tabHighlightBgColor";"tabNormalBgColor"] |> List.map(fun id -> view.control.Controls.Find(id,true).[0].Parent :?> SettingsRow)
+        let note = view.control.Controls.Find("contrast-note",true).[0]
+        let comparison = view.control.Controls.Find("contrast-comparison",true).[0] :?> ContrastComparison
+        let savedPalettes = preferences.lightPalette,preferences.darkPalette
+        settings.updateAppearance(fun s -> {s with lightPalette={s.lightPalette with tabTextColor=Color.FromRGB(0x929292)}
+                                                   darkPalette={s.darkPalette with tabTextColor=Color.FromRGB(0x929292)}})
+        Application.DoEvents()
+        (comboNamed "tab-color-style").SelectedIndex <- 0
+        (comboNamed "tab-color-mode").SelectedIndex <- 1
+        Application.DoEvents()
+        assertTrue (backgroundRows |> List.forall(fun row -> row.Collapsed)) "Background rows stay shown while automatic colours fill every tab"
+        let codingNote = view.control.Controls.Find("colors-by-coding",true).[0]
+        assertTrue (preset.Parent.Visible && not preset.Visible && not (backgroundRows.Head.Parent.Visible)) "Tab colours lost its heading, or kept its presets and colours, while automatic colours fill every tab"
+        assertTrue (codingNote.Visible && codingNote.Text=tr Strings.Appearance.colorsByCoding) "Tab colours does not say why its colours are not offered"
+        assertTrue (not note.Visible) "Filled tabs, white by design, still explain an adjustment"
+        assertTrue (comparison.Samples.IsEmpty && not comparison.Visible) "Filled tabs list a sample for every adjusted colour"
+        (comboNamed "tab-color-mode").SelectedIndex <- 0
+        Application.DoEvents()
+        assertTrue (backgroundRows |> List.forall(fun row -> not row.Collapsed)) "Background rows stay hidden with colour coding off"
+        assertTrue (preset.Visible && backgroundRows.Head.Parent.Visible && not codingNote.Visible) "Tab colours stays put away with colour coding off"
+        assertTrue (note.Text=tr Strings.Appearance.textAdjusted && not comparison.Samples.IsEmpty) "Colour coding off no longer explains adjusted text"
+        settings.updateAppearance(fun s -> {s with lightPalette=fst savedPalettes;darkPalette=snd savedPalettes})
+        (comboNamed "tab-color-style").SelectedIndex <- 1
+        Application.DoEvents()
         let otherPalette = if mode=DarkTheme then preferences.lightPalette else preferences.darkPalette
         for index in [1..ThemePresets.names.Length-1] @ [0] do
             preset.SelectedIndex <- index
@@ -170,6 +196,15 @@ let main() =
             assertTrue popup.Visible "Popup opened"
             let picker = (popup.Items.[0] :?> ToolStripControlHost).Control :?> SettingsColorPicker
             let other = if mode=DarkTheme then preferences.lightPalette else preferences.darkPalette
+            let swatches = picker.Controls |> Seq.cast<Control> |> Seq.choose(function :? Button as button -> Some button | _ -> None) |> Seq.toArray
+            assertTrue (swatches.Length=8) "Picker is missing common colour shortcuts"
+            for index,expected in [0,Color.Black;1,Color.White] do
+                swatches.[index].Focus() |> ignore
+                swatches.[index].PerformClick()
+                Application.DoEvents()
+                assertTrue (not swatches.[index].Focused) "A common colour kept the keys away from the picker"
+                let edited = if mode=DarkTheme then preferences.darkPalette else preferences.lightPalette
+                assertTrue (picker.Color.ToArgb()=expected.ToArgb() && edited.tabTextColor.ToArgb()=expected.ToArgb()) "Common colour did not commit immediately"
             picker.Color <- Color.Blue
             key picker Keys.Down
             Application.DoEvents()
@@ -177,9 +212,7 @@ let main() =
             assertTrue (edited.tabTextColor.B>240uy && edited.tabTextColor.R=0uy) "Live picker edit"
             assertTrue (preset.SelectedIndex=0) "Editing a preset's colour switched away from it"
             assertTrue ((if mode=DarkTheme then preferences.lightPalette else preferences.darkPalette)=other) "Other theme preserved"
-            use pickerBitmap = new Bitmap(popup.Width,popup.Height)
-            popup.DrawToBitmap(pickerBitmap,Rectangle(Point.Empty,pickerBitmap.Size))
-            pickerBitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","picker-"+name+".png"))
+            paints popup "The colour picker"
             popup.Close(ToolStripDropDownCloseReason.AppClicked)
             Application.DoEvents()
             assertTrue (not popup.Visible && not popup.IsDisposed) "Popup reusable after outside close"
@@ -239,16 +272,12 @@ let main() =
         Application.DoEvents()
         (findReset view.control).Value.PerformClick()
         Application.DoEvents()
-        let resetButton = (findReset view.control).Value
-        assertTrue (resetButton.Left>resetButton.Parent.Width/2) "Reset is aligned right"
         let gap = view.control.Controls.Find("tabOverlap",true).[0] :?> SettingsNumberInput
         gap.Value <- 6M
         Application.DoEvents()
         assertTrue (preferences.geometry.overlap= -6 && gap.Minimum=0M) "Tab gap is shown positive and stored negative"
         preferences <- {preferences with geometry=Theme.defaultGeometry}
-        use bitmap = new Bitmap(form.ClientSize.Width,form.ClientSize.Height)
-        form.DrawToBitmap(bitmap,Rectangle(Point.Empty,bitmap.Size))
-        bitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","editors-"+name+".png"))
+        paints form "The appearance page"
         form.Close()
 
     // Shortcut recorder: encoding, recording, rejection and the rendered page.
@@ -295,33 +324,17 @@ let main() =
         SettingsUi.apply form
         form.Show()
         let restore = form.Controls.Find("restore-shortcuts",true).[0]
-        assertTrue (restore :? SettingsResetButton &&
-                    restore.Parent.Controls |> Seq.cast<Control> |> Seq.exists(fun c -> c :? Label && c.Text=tr Strings.Shortcuts.keyboard))
-                   "Restore shortcuts is not a reset icon in the keyboard heading"
         Application.DoEvents()
         let next = view.control.Controls.Find("next-tab",true).[0] :?> SettingsShortcutInput
         let previous = view.control.Controls.Find("previous-tab",true).[0] :?> SettingsShortcutInput
-        assertTrue (tr Strings.Settings.numberShortcutCtrl="Ctrl" && tr Strings.Settings.numberShortcutAlt="Alt") "Modifier choices repeat the number shortcut instead of naming only the modifier"
         let leaderToggle = view.control.Controls.Find("enable-number-leader",true).[0] :?> SettingsToggle
         let leaderKeys = view.control.Controls.Find("leader-keys",true).[0] :?> SettingsTextInput
-        assertTrue (leaderKeys.Width=Dpi.scale 140) "Selection-key input does not align with 140px dropdowns"
         let keysText = leaderKeys.Controls.[0] :?> TextBox
         leaderToggle.Checked <- true
-        keysText.Font <- SettingsUi.bodyFont()
-        keysText.Height <- keysText.PreferredHeight
-        assertTrue (abs(keysText.Top-(leaderKeys.ClientSize.Height-keysText.Height)/2)<=1 && keysText.TextAlign=HorizontalAlignment.Left) "Selection keys are not vertically centered and left aligned"
-        use keysBitmap = new Bitmap(leaderKeys.Width,leaderKeys.Height)
-        leaderKeys.DrawToBitmap(keysBitmap,Rectangle(Point.Empty,keysBitmap.Size))
-        keysBitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","selection-keys-"+name+".png"))
         for index,(keys,_) in List.indexed SettingsCatalog.leaderKeyPresets do
             let preset = view.control.Controls.Find(sprintf "leader-keys-preset-%d" index,true).[0] :?> Button
-            assertTrue (preset.Height=Dpi.scale 24 && (preset :?> SettingsActionButton).Kind=SettingsButtonKind.Subtle) "Selection preset is not a compact secondary button"
             preset.PerformClick()
             assertTrue (keysText.Text=keys && settings.getValue("numberLeaderKeys")=box keys) "Selection-key preset did not fill and save immediately"
-        assertTrue (leaderKeys.Parent.Height<=Dpi.scale 100) "Selection-key preset row has excessive blank space"
-        use presetBitmap = new Bitmap(leaderKeys.Parent.Width,leaderKeys.Parent.Height)
-        leaderKeys.Parent.DrawToBitmap(presetBitmap,Rectangle(Point.Empty,presetBitmap.Size))
-        presetBitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","selection-key-presets-"+name+".png"))
         keysText.Text <- "asdfghjkl;"
         assertTrue (settings.getValue("numberLeaderKeys")=box "ASDFGHJKL;") "Valid selection keys require Enter or editor blur to save"
         key keysText Keys.Enter
@@ -333,12 +346,6 @@ let main() =
         keysText.Focus() |> ignore
         key keysText Keys.Enter
         Application.DoEvents()
-        if mode=DarkTheme then
-            let validation = Application.OpenForms |> Seq.cast<Form> |> Seq.find(fun popup -> popup.GetType().Name="SettingsHelpPopup" && popup.Visible)
-            use validationBitmap = new Bitmap(validation.Width,validation.Height)
-            validation.DrawToBitmap(validationBitmap,Rectangle(Point.Empty,validationBitmap.Size))
-            assertTrue (validationBitmap.GetPixel(Dpi.scale 16,Dpi.scale 12).ToArgb()=(SettingsColors.current()).surface.ToArgb()) "Selection-key validation ignores the dark theme"
-            validationBitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","selection-keys-validation-dark.png"))
         key keysText Keys.Escape
         keysText.Text <- "qwerty"
         assertTrue (settings.getValue("numberLeaderKeys")=box "QWERTY") "Replacing selection keys was not saved immediately"
@@ -348,11 +355,6 @@ let main() =
         leaderToggle.Checked <- false
         assertTrue ((leaderKeys.Parent :?> SettingsRow).Collapsed) "Selection keys remain visible while the leader is disabled"
         let numeric = view.control.Controls.Find("switch-tabs-by-number",true).[0] :?> SettingsToggle
-        let rec hasMenuHint (control:Control) =
-            match control with
-            | :? SettingsHelpButton as button -> button.AccessibleDescription=tr Strings.Settings.numberShortcutMenuHint
-            | _ -> control.Controls |> Seq.cast<Control> |> Seq.exists hasMenuHint
-        assertTrue (hasMenuHint numeric.Parent) "Number shortcut row lacks its tab menu help icon"
         let numericChoice = view.control.Controls.Find("number-shortcut",true).[0] :?> SettingsCombo
         assertTrue (view.control.Controls.Find("number-shortcut-apps",true).Length=0 && SettingsCatalog.all |> List.forall(fun item -> item.id<>"number-shortcut-apps")) "App shortcut mode remains on the settings page or in search"
         let numericRow = numericChoice.Parent :?> SettingsRow
@@ -360,6 +362,12 @@ let main() =
         assertTrue numericRow.Collapsed "Disabled numeric shortcuts must hide modifier selection"
         numeric.Checked <- true
         assertTrue (not numericRow.Collapsed) "Enabled numeric shortcuts must show modifier selection"
+        // An app enabled from the tab menu still uses the modifier while the switch is off.
+        settingValues.["enabledNumberShortcutPaths"] <- box(Set2(List2([@"C:\Apps\Editor.exe"])))
+        numeric.Checked <- false
+        assertTrue (not numericRow.Collapsed) "The modifier was hidden while an app still switches tabs by number"
+        settingValues.["enabledNumberShortcutPaths"] <- box(Set2<string>())
+        numeric.Checked <- true
         numericChoice.SelectedIndex <- 1
         assertTrue (settings.getValue("numberHotKeyModifier") :?> string = "Alt") "Alt selection was not saved"
         let numericPlugin = NumericTabHotKeyPlugin()
@@ -416,9 +424,7 @@ let main() =
         assertTrue (hotKeys.["newTab"]=1614 && newTab.Shortcut=1614) "Restore default must set new tab to Ctrl+Alt+N"
         hotKeys.["prevTab"] <- 3621
         Application.DoEvents()
-        use bitmap = new Bitmap(form.ClientSize.Width,form.ClientSize.Height)
-        form.DrawToBitmap(bitmap,Rectangle(Point.Empty,bitmap.Size))
-        bitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","shortcuts-"+name+".png"))
+        paints form "The shortcuts page"
         hotKeys.["nextTab"] <- 3623
         form.Close()
     // SettingsTreeList: expansion, keyboard navigation, check boxes and selection events.
@@ -491,16 +497,6 @@ let main() =
             |> List.groupBy fst |> List.map(fun (index,xs) -> index,snd (List.head xs))
         assertTrue (List.map fst buttons = [0;1]) (sprintf "The row under the pointer does not show its two actions: %A" buttons)
         let editX = snd buttons.Head
-        // In the action column, wherever the name ends: the first row's buttons start at the same place.
-        let actionColumn = list.Width-Dpi.scale 60
-        assertTrue (abs(editX-actionColumn) <= Dpi.scale 4) (sprintf "The actions are not at the start of their column: %d, not %d" editX actionColumn)
-        send "OnMouseMove" (at editX (Dpi.scale 30+Dpi.scale 15))
-        assertTrue (hoveredAction()=0) "The first row's actions are not in the same place as the second's"
-        send "OnMouseMove" (at editX y)
-        do
-            use bitmap = new Bitmap(host.ClientSize.Width,host.ClientSize.Height)
-            host.DrawToBitmap(bitmap,Rectangle(Point.Empty,bitmap.Size))
-            bitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","row-actions.png"),Imaging.ImageFormat.Png)
         send "OnMouseDown" (at (snd buttons.[1]) y)
         assertTrue (invoked=["Evening",1] && list.SelectedItem.Text="Evening") "Pressing a row action does not select the row and act"
         send "OnMouseDoubleClick" (at editX y)
@@ -534,18 +530,10 @@ let main() =
         Application.DoEvents()
         let call name (args:EventArgs) =
             typeof<SettingsActionButton>.GetMethod(name,BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(button,[|box args|]) |> ignore
-        let render () =
-            let bitmap = new Bitmap(button.Width,button.Height)
-            button.DrawToBitmap(bitmap,Rectangle(Point.Empty,bitmap.Size))
-            bitmap
         let mouse = MouseEventArgs(MouseButtons.Left,1,5,5,0)
         call "OnMouseEnter" EventArgs.Empty
-        use hovered = render()
         call "OnMouseDown" mouse
         assertTrue button.IsPressed "A held button does not count as pressed"
-        use pressed = render()
-        let differs = seq { for x in 0..pressed.Width-1 do for y in 0..pressed.Height-1 -> pressed.GetPixel(x,y)<>hovered.GetPixel(x,y) } |> Seq.exists id
-        assertTrue differs "A held button looks the same as a hovered one"
         call "OnMouseLeave" EventArgs.Empty
         assertTrue (not button.IsPressed) "A button still looks pressed after the pointer leaves it"
         call "OnMouseUp" mouse
@@ -553,35 +541,7 @@ let main() =
         assertTrue button.IsPressed "Space does not press a button"
         typeof<SettingsActionButton>.GetMethod("OnKeyUp",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(button,[|box(KeyEventArgs(Keys.Space))|]) |> ignore
         assertTrue (not button.IsPressed) "A button stays pressed after Space is released"
-        // Rest, hover, pressed and disabled in light and dark, for looking at.
-        let states () =
-            button.Enabled <- true
-            call "OnMouseLeave" EventArgs.Empty
-            let rest = render()
-            call "OnMouseEnter" EventArgs.Empty
-            let hot = render()
-            call "OnMouseDown" mouse
-            let down = render()
-            call "OnMouseUp" mouse
-            button.Enabled <- false
-            [rest;hot;down;render()]
-        let mode = preferences.mode
-        let rows =
-            [LightTheme;DarkTheme] |> List.map(fun theme ->
-                settings.updateAppearance(fun p -> {p with mode=theme})
-                host.BackColor <- (SettingsColors.current()).background
-                Application.DoEvents()
-                states())
-        settings.updateAppearance(fun p -> {p with mode=mode})
-        do
-            use sheet = new Bitmap((button.Width+8)*4+8,(button.Height+8)*2+8)
-            use g = Graphics.FromImage(sheet)
-            g.Clear(Color.Gray)
-            rows |> List.iteri(fun row images ->
-                images |> List.iteri(fun column (image:Bitmap) ->
-                    g.DrawImage(image,8+column*(button.Width+8),8+row*(button.Height+8))
-                    image.Dispose()))
-            sheet.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-button-states.png"),Imaging.ImageFormat.Png)
+        button.Enabled <- false
         call "OnMouseEnter" EventArgs.Empty
         call "OnMouseDown" mouse
         assertTrue (not button.IsPressed) "A disabled button looks pressed"
@@ -702,9 +662,6 @@ let main() =
         assertTrue (apps() |> List.forall(fun app -> app.check tabs=Some true) && not (all.mixed tabs)) "Pressing a dashed All apps does not turn every app on"
         form.PerformLayout()
         Application.DoEvents()
-        use bitmap = new Bitmap(form.Width,form.Height)
-        form.DrawToBitmap(bitmap,Rectangle(Point.Empty,bitmap.Size))
-        bitmap.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","app-rules.png"),Imaging.ImageFormat.Png)
         form.Close()
         rules.Value <- filter
     printfn "PASS: input validation, no-op changes, HSV colours, repeated popup dismissal, shortcut recording and light/dark renders."

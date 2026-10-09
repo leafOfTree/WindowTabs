@@ -15,7 +15,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
 - `Run-Tests.ps1` builds a separate Debug copy into `tests/Debug`, compiles each
   `tests/<Suite>.fsx` into its own STA exe through `tests/TestHost.fsproj` and runs them
   serially. Native UI suites need an interactive desktop and must not run in parallel
-  with another UI test run. Logs and rendered PNGs are written to `tests/Debug`.
+  with another UI test run. Logs are written to `tests/Debug`.
 - A running `WindowTabs.exe` locks the output; exit it from the tray before building.
 - New suites must be added to the `$Suites` default in `tests/Run-Tests.ps1`, start
   with `TestInit.run main`, and reference the app as `#r "Debug/WindowTabs.exe"`.
@@ -70,8 +70,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
   or failed checks do not satisfy this requirement. New commits require new checks;
   local results alone are insufficient.
 - After an approved release, push a `vMAJOR.MINOR.PATCH` tag on the merged commit.
-  `release.yml` uses the tag as the app version, builds and tests, then creates a
-  Release draft with the standalone exe. Publishing the draft remains a separate
+  `release.yml` uses the tag as the app version, builds, checks the exe carries that
+  version, runs the suites, the smoke test and a Full desktop E2E on that exe, then
+  creates a Release draft with it. Publishing the draft remains a separate
   action; a suffix such as `-beta.1` marks it as a prerelease.
 
 ## Style
