@@ -46,6 +46,10 @@ with an app, turn it off for that app from the tab's right-click menu.
 **Optional, off by default:** switch on hover, a leader key to pick tabs by letter
 (Alt + S, then the key on the tab), automatic tab colors, and an Alt+Tab replacement.
 
+Drag files onto a tab and pause to bring that window forward. On a **File Explorer**
+tab, let go to drop them into its folder as Explorer would: Ctrl copies, Shift moves,
+right-drag asks, and **Ctrl + Z** in Explorer undoes it.
+
 ## Features
 
 - **Appearance:** light, dark or follow Windows; Joined, Folder or Floating tabs;
@@ -72,6 +76,8 @@ To update, exit WindowTabs from the tray and replace the exe. Settings are kept.
   (your old settings are backed up first).
 - **Run as administrator?** Not needed and not recommended. Windows blocks some
   input between admin and normal windows.
+- **Dropping files on a tab does nothing?** Windows blocks dragging from an app into
+  one running as administrator.
 
 Still stuck? [Open an issue](https://github.com/leafOfTree/WindowTabs/issues) and paste
 the troubleshooting report from **Settings → Support**. It leaves out window titles

@@ -466,6 +466,15 @@ type TabSprite<'id> = {
         let width = max 1 width
         Sz(width, this.contentHeight)
 
+    /// Whether the title shows only in part: cut by the ellipsis, or not drawn beside the icon.
+    member this.titleCut =
+        if this.onlyIcon then this.displayInfo.text<>""
+        else
+            use image = new Bitmap(1,1)
+            use g = Graphics.FromImage(image)
+            use format = new StringFormat(FormatFlags=StringFormatFlags.NoWrap)
+            g.MeasureString(this.displayInfo.text,this.displayInfo.textFont,PointF.Empty,format).Width > float32 this.textSize.width
+
     member this.tabTextBrush =
         new SolidBrush(this.textColor)
 

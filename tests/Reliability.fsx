@@ -261,6 +261,9 @@ let main() =
               (sprintf "Crash log is not newest first: %A" times)
         let short = RuntimeDiagnostics.CrashLog.prepend (entry "2026-01-03 09:00:00" "System.NullReferenceException") (IO.File.ReadAllText(crashLog)) 800
         check (short.Contains("2026-01-03") && not (short.Contains("2026-01-01"))) "Crash log limit did not drop the oldest entries"
+        // A log left empty offers nothing to open.
+        IO.File.WriteAllText(crashLog,"")
+        check (RuntimeDiagnostics.crashLogPath()<>Some crashLog) "An empty crash log was offered to open"
     finally
         match existingLog with
         | Some text -> IO.File.WriteAllText(crashLog,text)

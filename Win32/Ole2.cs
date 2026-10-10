@@ -171,6 +171,21 @@ namespace Bemo
     }
     public static class OleHelper
     {
+        public static List<string> FilesInDrop(IntPtr hdrop)
+        {
+            uint count = ShellApi.DragQueryFile(hdrop, -1, IntPtr.Zero, 0);
+            var files = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                // Sized to each path, so long paths are not cut short.
+                var size = (int)ShellApi.DragQueryFile(hdrop, i, IntPtr.Zero, 0) + 1;
+                var sb = new StringBuilder(size);
+                ShellApi.DragQueryFile(hdrop, i, sb, size);
+                files.Add(sb.ToString());
+            }
+            return files;
+        }
+
         public static IEnumerable<string> QueryFiles(IDataObject dataObject)
         {
             STGMEDIUM td = new STGMEDIUM();
@@ -182,17 +197,18 @@ namespace Bemo
             fr.lindex = -1;
             fr.tymed = TYMED.TYMED_HGLOBAL;
             dataObject.GetData(ref fr, out td);
-            var hdrop = td.unionmember;
-            uint count = ShellApi.DragQueryFile(hdrop, -1, IntPtr.Zero, 0);
-            var files = new List<string>();
-            for (int i = 0; i < count; i++)
+            try
             {
-                var size = 512;
-                var sb = new StringBuilder(size);
-                ShellApi.DragQueryFile(hdrop, i, sb, size);
-                files.Add(sb.ToString());
+                return FilesInDrop(td.unionmember);
             }
-            return files;
+            finally
+            {
+                // The data object handed this medium over; it is ours to free.
+                ReleaseStgMedium(ref td);
+            }
         }
+
+        [DllImport("ole32.dll")]
+        private static extern void ReleaseStgMedium(ref STGMEDIUM medium);
     }
 }

@@ -71,6 +71,12 @@ type ThemeMenuRenderer(p:SettingsPalette) =
 /// Own image copies until the menu loop has finished closing, then dispatch the command.
 /// ownsForeground: windows whose activation must not close the menu, such as the tab's own
 /// window that the click which opened it is still bringing forward.
+/// Whether any themed menu is open, on any thread, so a tab's title tip does not cover it.
+module OpenMenus =
+    let private count = ref 0
+    let change delta = lock count (fun () -> count.Value <- count.Value+delta)
+    let any () = lock count (fun () -> count.Value>0)
+
 type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsForeground:IntPtr -> bool) as this =
     inherit ContextMenuStrip()
     let palette = SettingsColors.current()
@@ -82,6 +88,7 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
     /// and only afterwards raises the item's Click that records its command.
     let mutable chosen = false
     let mutable restoreOwner : obj option = None
+    let mutable counted = false
     let timer = new Timer(Interval=1)
     // Submenus open on hover after the Windows menu delay (400 ms here) through a timer that
     // only fires while WinForms still counts the item selected, which a menu of an app not in
@@ -164,6 +171,9 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
             this.Dispose()
             run |> Option.iter(fun invoke -> invoke()))
         this.Opened.Add(fun _ ->
+            if not counted then
+                counted <- true
+                OpenMenus.change 1
             mouseHook <- WinUserApi.SetWindowsHookEx(WindowHookTypes.WH_MOUSE_LL,mouseProc,IntPtr.Zero,0)
             if mouseHook=IntPtr.Zero then
                 this.Close()
@@ -178,6 +188,9 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
                 ownsForeground |> Option.iter(fun owns -> if owns (WinUserApi.GetForegroundWindow()) then e.Cancel <- true))
         // Put back what WinForms had, so no later menu inherits a strip that may be gone.
         this.Closed.Add(fun _ ->
+            if counted then
+                counted <- false
+                OpenMenus.change -1
             hoverOpen.Stop()
             stopMouseHook()
             restoreOwner |> Option.iter(fun previous ->
@@ -236,6 +249,10 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
             timer.Stop()
             hoverOpen.Dispose()
         base.Dispose(disposing)
+        // A menu gone without its Closed must not keep every title tip away.
+        if counted then
+            counted <- false
+            OpenMenus.change -1
         if disposing then
             timer.Dispose()
             for image in images do image.Dispose()

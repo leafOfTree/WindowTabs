@@ -352,9 +352,10 @@ namespace Bemo
         public static extern bool Shel_NotifyIcon(int dwMesage, ref NOTIFYICONDATA lpData);
         [DllImport("shell32.dll", CharSet = CharSet.Auto)]
         public static extern void DragAcceptFiles(IntPtr hwnd, bool accept);
-        [DllImport("shell32.dll")]
+        // The Unicode entry point: the ANSI one turns names outside the code page into question marks.
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, EntryPoint = "DragQueryFileW")]
         public static extern uint DragQueryFile(IntPtr hDrop, int iFile, IntPtr lpszFile, int cch);
-        [DllImport("shell32.dll")]
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, EntryPoint = "DragQueryFileW")]
         public static extern uint DragQueryFile(IntPtr hDrop, int iFile, [Out] StringBuilder lpszFile, int cch);
         [DllImport("shell32.dll")]
         public static extern int SHGetPropertyStoreForWindow(
