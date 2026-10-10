@@ -76,8 +76,11 @@ dragging, shortcuts or user settings. Those need a separate end-to-end harness.
 CI runs Release build/smoke checks and three groups of Debug regression tests in
 parallel on separate runners. The final build check requires Release and every
 regression group to succeed. A failing group does not cancel the other groups.
-Each group uploads its own diagnostics. Each job caches downloaded NuGet packages;
-each regression group restores the shared test-host
+Each group uploads its own diagnostics. Groups are balanced by observed execution
+and compilation time rather than suite
+count: Architecture/WindowIcon, GroupOperations/SettingsEditors, and the remaining
+nine suites.
+Each job caches downloaded NuGet packages; each regression group restores the shared test-host
 dependencies once, and the Release job reuses its exe when compiling the desktop driver.
 Interactive desktop E2E still builds its own isolated Release copy. Native suites
 remain serial within each runner, with all 13 suites retained across the groups.

@@ -74,12 +74,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - group: architecture
+            suites: 'Architecture,WindowIcon'
           - group: operations
-            suites: 'GroupOperations,SettingsEditors,DpiLayout,WindowIcon'
-          - group: interaction
-            suites: 'Architecture,TabInteraction,GroupLifecycle,TaskbarPreview'
-          - group: rendering
-            suites: 'Reliability,TabShadow,SettingsTheme,PopupRendering,PrintWindowProbe'
+            suites: 'GroupOperations,SettingsEditors'
+          - group: ui
+            suites: 'Reliability,DpiLayout,SettingsTheme,TabShadow,GroupLifecycle,PopupRendering,TabInteraction,TaskbarPreview,PrintWindowProbe'
 
     steps:
       - uses: actions/checkout@v6
