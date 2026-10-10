@@ -10,6 +10,19 @@ open Bemo
 open Newtonsoft.Json.Linq
 
 let check condition message = if not condition then failwith message
+
+module CloakProbe =
+    [<System.Runtime.InteropServices.DllImport("dwmapi.dll")>]
+    extern int DwmSetWindowAttribute(nativeint hwnd, int attribute, int& value, int size)
+    [<System.Runtime.InteropServices.DllImport("user32.dll")>]
+    extern nativeint SendMessage(nativeint hwnd, int msg, nativeint wParam, nativeint lParam)
+
+/// Runs a check while handling a message sent from another thread, an input-synchronous call.
+type SyncCallWindow(onMessage:unit -> unit) =
+    inherit System.Windows.Forms.NativeWindow()
+    override this.WndProc(m:System.Windows.Forms.Message byref) =
+        if m.Msg = 0x8001 then onMessage() else base.WndProc(&m)
+
 let main() =
     // A system theme change deadlocked when SystemEvents ran on the main thread while a tab
     // group thread waited on it for the appearance.
@@ -348,6 +361,30 @@ let main() =
                 check (logical.scaled.tabHeight=Dpi.scaleAt dpi logical.tabHeight) "DPI geometry accumulated scaling"
         check (logical.scaled.tabHeight=logical.tabHeight) "DPI round trip changed logical dimensions"
     finally Dpi.set originalDpi
-    printfn "PASS: startup ownership, singleton, transactional shortcuts, workspace recovery and regex timeout, private diagnostics, single-flight cancellation and DPI geometry."
+    // The Alt+Tab switcher builds its list inside a low-level keyboard hook, an input-synchronous
+    // call in which COM cannot reach another process. Asking there whether a cloaked window is on
+    // this desktop failed, so a UWP app closed to the background (Realtek Audio Console) was listed.
+    do
+        use cloaked = new System.Windows.Forms.Form(ShowInTaskbar=false, Text="Cloaked probe",
+                                                     StartPosition=System.Windows.Forms.FormStartPosition.Manual,
+                                                     Location=System.Drawing.Point(-20000,-20000))
+        cloaked.Show()
+        let mutable cloak = 1
+        CloakProbe.DwmSetWindowAttribute(cloaked.Handle, 13, &cloak, 4) |> ignore
+        let target = cloaked.Handle
+        check (WindowCloaking.IsHiddenOnCurrentDesktop target) "A cloaked window on this desktop is not hidden"
+        let insideCall = ref None
+        let probe = SyncCallWindow(fun () -> insideCall.Value <- Some(WindowCloaking.IsHiddenOnCurrentDesktop target))
+        probe.CreateHandle(System.Windows.Forms.CreateParams())
+        try
+            let handle = probe.Handle
+            let sender = Thread(fun () -> CloakProbe.SendMessage(handle, 0x8001, 0n, 0n) |> ignore)
+            sender.Start()
+            while sender.IsAlive do
+                System.Windows.Forms.Application.DoEvents()
+                Thread.Sleep(5)
+        finally probe.DestroyHandle()
+        check (insideCall.Value = Some true) (sprintf "A cloaked window counted as shown inside an input-synchronous call: %A" insideCall.Value)
+    printfn "PASS: startup ownership, singleton, transactional shortcuts, workspace recovery and regex timeout, private diagnostics, single-flight cancellation, DPI geometry and cloaked windows inside an input-synchronous call."
 
 TestInit.run main

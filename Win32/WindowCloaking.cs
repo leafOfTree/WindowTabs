@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace Bemo
 {
@@ -25,6 +26,14 @@ namespace Bemo
         private class VirtualDesktopManager { }
 
         [ThreadStatic] private static IVirtualDesktopManager desktops;
+
+        private const int RPC_E_CANTCALLOUT_ININPUTSYNCCALL = unchecked((int)0x8001010D);
+
+        private static int OnCurrentDesktop(IntPtr hwnd, out int onCurrent)
+        {
+            if (desktops == null) desktops = (IVirtualDesktopManager)new VirtualDesktopManager();
+            return desktops.IsWindowOnCurrentVirtualDesktop(hwnd, out onCurrent);
+        }
 
         private delegate bool EnumChildProc(IntPtr hwnd, IntPtr lParam);
         [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, EnumChildProc callback, IntPtr lParam);
@@ -75,12 +84,20 @@ namespace Bemo
             if (!IsCloaked(hwnd) && !IsEmptyAppFrame(hwnd)) return false;
             try
             {
-                if (desktops == null) desktops = (IVirtualDesktopManager)new VirtualDesktopManager();
                 int onCurrent;
-                return desktops.IsWindowOnCurrentVirtualDesktop(hwnd, out onCurrent) == 0 && onCurrent != 0;
+                int hr = OnCurrentDesktop(hwnd, out onCurrent);
+                // The Alt+Tab switcher builds its list inside a low-level keyboard hook, where this
+                // thread cannot call out to another process; a thread pool thread asks instead.
+                if (hr == RPC_E_CANTCALLOUT_ININPUTSYNCCALL)
+                {
+                    var asked = Task.Run(() => { int on; int result = OnCurrentDesktop(hwnd, out on); return result == 0 && on != 0; });
+                    return asked.Wait(250) && asked.Result;
+                }
+                return hr == 0 && onCurrent != 0;
             }
             catch (COMException) { return false; }
             catch (InvalidCastException) { return false; }
+            catch (AggregateException) { return false; }
         }
     }
 }
