@@ -99,7 +99,7 @@ let main() =
             check (api.hotKey("newTab").def(SettingsCatalog.shortcutDefault "newTab")=0x064E) "New tab must retain Ctrl+Alt+N by default"
             check (api.getValue("showTabsOnSwitch")=box true) "Switching must show auto-hidden tabs by default"
             check (api.hotKey("searchTabs").def(SettingsCatalog.shortcutDefault "searchTabs")=0x0654) "Search must use Ctrl+Alt+T rather than common launcher shortcuts"
-            for key in ["enableCtrlNumberHotKey";"enableShiftScroll"] do
+            for key in ["enableCtrlNumberHotKey";"enableShiftScroll";"enableCtrlScroll"] do
                 check (api.getValue(key)=box true) (sprintf "%s lost its existing default" key)
         checkMinimalDefaults()
         check (api.getValue("runAtStartup")=box true) "Fresh installs lost their existing startup default"

@@ -110,7 +110,7 @@
     <Compile Include="ManagerViewService\SettingsListPage.fs" />
     <Compile Include="ManagerViewService\Views\GeneralView.fs" />
     <Compile Include="ManagerViewService\Views\AppearanceView.fs" />
-    <Compile Include="ManagerViewService\Views\BehaviorView.fs" />
+    <Compile Include="ManagerViewService\Views\HotKeyView.fs" />
     <Compile Include="ManagerViewService\Views\DiagnosticsView.fs" />
     <Compile Include="ManagerViewService\Views\ProgramView.fs" />
     <Compile Include="ManagerViewService\Views\WorkspaceView.fs" />

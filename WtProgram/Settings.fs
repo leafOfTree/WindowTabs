@@ -142,6 +142,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                             if settingsJson.getBool("minimalMode").def(false) then false
                             else SettingsCatalog.toggleDefault "showTabsOnSwitch" hasExistingSettings)
                         enableShiftScroll = settingsJson.getBool("enableShiftScroll").def(SettingsCatalog.toggleDefault "enableShiftScroll" hasExistingSettings)
+                        enableCtrlScroll = settingsJson.getBool("enableCtrlScroll").def(SettingsCatalog.toggleDefault "enableCtrlScroll" hasExistingSettings)
                         version = settingsJson.getString("version").def(String.Empty)
                         alignment = settingsJson.getString("alignment").def(SettingsCatalog.choiceDefault "alignment") |> SettingsCatalog.normalizeChoice "alignment"
                         switcherStyle = settingsJson.getString("switcherStyle").def(SettingsCatalog.choiceDefault "switcherStyle") |> SettingsCatalog.normalizeChoice "switcherStyle"
@@ -223,6 +224,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.Remove("licenseKey") |> ignore
             settingsJson.Remove("ticket") |> ignore
             settingsJson.setBool("enableShiftScroll", settings.enableShiftScroll)
+            settingsJson.setBool("enableCtrlScroll", settings.enableCtrlScroll)
             settingsJson.setStringArray("includedPaths", settings.includedPaths.items)
             settingsJson.setStringArray("excludedPaths", settings.excludedPaths.items)
             settingsJson.setStringArray("autoGroupingPaths", settings.autoGroupingPaths.items)

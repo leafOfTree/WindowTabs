@@ -39,12 +39,13 @@ module SettingsCatalog =
         { id="search-tabs"; page=HotKeySettings; text=Strings.Settings.searchTabs; binding=Shortcut("searchTabs",1620) }
         { id="new-tab"; page=HotKeySettings; text=Strings.Settings.newTab; binding=Shortcut("newTab",1614) }
         { id="switch-tabs-by-number"; page=HotKeySettings; text=Strings.Settings.switchTabsByNumber; binding=Toggle("enableCtrlNumberHotKey",true,true) }
-        { id="enable-number-leader"; page=HotKeySettings; text=Strings.Settings.enableNumberLeader; binding=Toggle("enableNumberLeader",false,false) }
-        { id="number-leader"; page=HotKeySettings; text=Strings.Settings.numberLeader; binding=Shortcut("numberLeader",1107) }
-        { id="leader-keys"; page=HotKeySettings; text=Strings.Settings.leaderKeys; binding=Text("numberLeaderKeys","123456789") }
         { id="number-shortcut"; page=HotKeySettings; text=Strings.Settings.numberShortcut; binding=Choice("numberHotKeyModifier",["Ctrl";"Alt"],"Ctrl") }
+        { id="enable-number-leader"; page=HotKeySettings; text=Strings.Settings.enableNumberLeader; binding=Toggle("enableNumberLeader",false,false) }
+        { id="number-leader"; page=HotKeySettings; text=Strings.Settings.numberLeader; binding=Shortcut("numberLeader",1094) }
+        { id="leader-keys"; page=HotKeySettings; text=Strings.Settings.leaderKeys; binding=Text("numberLeaderKeys","123456789") }
         { id="activate-on-hover"; page=HotKeySettings; text=Strings.Settings.activateOnHover; binding=Toggle("enableHoverActivate",false,false) }
         { id="shift-scroll"; page=HotKeySettings; text=Strings.Settings.shiftScroll; binding=Toggle("enableShiftScroll",true,true) }
+        { id="ctrl-scroll"; page=HotKeySettings; text=Strings.Settings.ctrlScroll; binding=Toggle("enableCtrlScroll",true,true) }
         { id="tabTextColor"; page=AppearanceSettings; text=Strings.Settings.tabTextColor; binding=Colour }
         { id="tabNormalBgColor"; page=AppearanceSettings; text=Strings.Settings.tabNormalBgColor; binding=Colour }
         { id="tabActiveBgColor"; page=AppearanceSettings; text=Strings.Settings.tabActiveBgColor; binding=Colour }

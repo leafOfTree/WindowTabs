@@ -143,10 +143,10 @@ module Strings =
                                        description={ en="Each group appears as one item."; zh="每个分组只显示一项。"; ja="各グループを 1 項目として表示します。" }
                                        keywords={ en="switcher"; zh="切换器"; ja="切り替え" } }
         let nextTab = { caption={ en="Switch to next tab"; zh="切换到下一个标签"; ja="次のタブに切り替え" }
-                        description={ en="Within the current group."; zh="在当前分组内切换。"; ja="現在のグループ内で切り替えます。" }
+                        description=none
                         keywords=hotkeyWords }
         let previousTab = { caption={ en="Switch to previous tab"; zh="切换到上一个标签"; ja="前のタブに切り替え" }
-                            description={ en="Within the current group."; zh="在当前分组内切换。"; ja="現在のグループ内で切り替えます。" }
+                            description=none
                             keywords=hotkeyWords }
         let searchTabs = { caption={ en="Search tabs"; zh="搜索标签"; ja="タブを検索" }
                            description={ en="By title or app name, current group first."; zh="按标题或应用名查找，优先当前分组。"; ja="タイトルやアプリ名で探します。現在のグループを優先。" }
@@ -162,7 +162,7 @@ module Strings =
         let numberShortcut = { caption={ en="Modifier key for 1–9"; zh="数字键搭配的修饰键"; ja="1～9 と組み合わせるキー" }
                                description=none
                                keywords={ en="number"; zh="数字"; ja="番号" } }
-        let enableNumberLeader = { caption={ en="Use a leader key to select tabs"; zh="使用引导键切换标签"; ja="リーダーキーでタブを選ぶ" }; description={ en="Press the leader, then a selection key. Escape cancels."; zh="先按引导键，再按选择键。Esc 取消。"; ja="リーダーキーの後、選択キーを押します。Esc で解除。" }; keywords=none }
+        let enableNumberLeader = { caption={ en="Use a leader key to select tabs"; zh="使用引导键切换标签"; ja="リーダーキーでタブを選ぶ" }; description={ en="Press the leader, then a selection key. Esc cancels."; zh="先按引导键，再按选择键。Esc 取消。"; ja="リーダーキーの後、選択キーを押します。Esc で解除。" }; keywords=none }
         let leaderKeys = { caption={en="Selection keys";zh="选择键";ja="選択キー"}; description={en="Use unique letters or digits, in tab order.";zh="按标签顺序，使用不重复的字母或数字。";ja="タブ順に、重複しない英字または数字を指定します。"}; keywords={en="leader keys letters home row";zh="引导键 字母 主键区";ja="リーダーキー 英字 ホームポジション"} }
         let leaderKeyPresets = [| {en="123456789";zh="123456789";ja="123456789"}; {en="QWERTYUIOP";zh="QWERTYUIOP";ja="QWERTYUIOP"}; {en="ASDFGHJKL;";zh="ASDFGHJKL;";ja="ASDFGHJKL;"} |]
         let invalidLeaderKeys = {en="Use at least one unique letter, digit or unshifted punctuation key.";zh="请使用至少一个不重复的字母、数字或无需 Shift 的标点键。";ja="重複しない英字、数字、Shift 不要の記号を 1 つ以上指定してください。"}
@@ -204,10 +204,15 @@ module Strings =
                                 description={ en="Rest the pointer on a tab instead of clicking."; zh="鼠标停在标签上即可，无需点击。"; ja="クリックしなくても、タブにポインターを置くだけで済みます。" }
                                 keywords={ en="mouse over"; zh="悬停"; ja="マウスオーバー" } }
         let shiftScroll = { caption={ en="Switch tabs with Shift + scroll"; zh="用 Shift + 滚轮切换标签"; ja="Shift + スクロールでタブを切り替え" }
-                            description={ en="Works anywhere over a grouped window. Over the tab strip, Shift isn't needed."
-                                          zh="在分组窗口的任意位置均可使用；在标签条上滚动时无需按 Shift。"
+                            description={ en="Works anywhere over a grouped window. Over the tab bar, Shift isn't needed."
+                                          zh="在分组窗口的任意位置均可使用；在标签栏上滚动时无需按 Shift。"
                                           ja="グループ化されたウィンドウ上ならどこでも使えます。タブバー上では Shift は不要です。" }
                             keywords={ en="wheel"; zh="滚轮"; ja="ホイール" } }
+        let ctrlScroll = { caption={ en="Move tabs with Ctrl + scroll"; zh="用 Ctrl + 滚轮移动标签"; ja="Ctrl + スクロールでタブを移動" }
+                           description={ en="Over the tab bar, moves the current tab left or right."
+                                         zh="在标签栏上滚动，将当前标签向左或向右移动。"
+                                         ja="タブバー上で、現在のタブを左右に移動します。" }
+                           keywords={ en="wheel reorder"; zh="滚轮 排序"; ja="ホイール 並べ替え" } }
         let tabTextColor = { caption={ en="Text and close button"; zh="文字与关闭按钮"; ja="文字と閉じるボタン" }; description=none; keywords=colorWords }
         let tabNormalBgColor = { caption={ en="Inactive tab"; zh="非活动标签"; ja="非アクティブなタブ" }; description=none; keywords=colorWords }
         let tabActiveBgColor = { caption={ en="Active tab"; zh="活动标签"; ja="アクティブなタブ" }; description=none; keywords=colorWords }
