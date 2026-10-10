@@ -3,8 +3,10 @@
 ## Local commands
 
 Use Windows with .NET SDK 10 and .NET Framework 4.8. Native UI tests run
-serially and require a desktop session. They must not share focus with another
-UI test run.
+serially and require a desktop session. They run on a hidden desktop of their own,
+because WinForms keeps dropdowns and tooltips on a screen even when the suite places
+their owner off-screen; `-VisibleDesktop` runs them on the current desktop instead.
+They must not share focus with another UI test run.
 The regression runner takes a session-wide mutex before building or running;
 another regression run, including from another checkout, fails explicitly.
 

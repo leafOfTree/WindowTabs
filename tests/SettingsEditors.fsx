@@ -18,7 +18,7 @@ module Native =
     extern uint32 GetCurrentThreadId()
     [<System.Runtime.InteropServices.DllImport("user32.dll")>]
     extern bool EnumThreadWindows(uint32 threadId, WindowCallback callback, IntPtr data)
-let visiblePopup() =
+let tryVisiblePopup() =
     let mutable result = None
     let callback = WindowCallback(fun hwnd _ ->
         match Control.FromHandle(hwnd) with
@@ -26,7 +26,18 @@ let visiblePopup() =
         | _ -> ()
         true)
     Native.EnumThreadWindows(Native.GetCurrentThreadId(),callback,IntPtr.Zero) |> ignore
-    result.Value
+    result
+/// A popup can need more than one pass of the message loop before it shows.
+let visiblePopup what =
+    let clock = Diagnostics.Stopwatch.StartNew()
+    let mutable result = tryVisiblePopup()
+    while result.IsNone && clock.ElapsedMilliseconds<2000L do
+        Application.DoEvents()
+        Threading.Thread.Sleep(5)
+        result <- tryVisiblePopup()
+    match result with
+    | Some popup -> popup
+    | None -> failwith (what+" did not open")
 
 let mutable preferences = {
     geometry=Theme.defaultGeometry;legacyPalette=Theme.lightPalette
@@ -192,8 +203,7 @@ let main() =
         for _ in 1..3 do
             swatch.PerformClick()
             Application.DoEvents()
-            let popup = visiblePopup()
-            assertTrue popup.Visible "Popup opened"
+            let popup = visiblePopup "Colour popup"
             let picker = (popup.Items.[0] :?> ToolStripControlHost).Control :?> SettingsColorPicker
             let other = if mode=DarkTheme then preferences.lightPalette else preferences.darkPalette
             let swatches = picker.Controls |> Seq.cast<Control> |> Seq.choose(function :? Button as button -> Some button | _ -> None) |> Seq.toArray
