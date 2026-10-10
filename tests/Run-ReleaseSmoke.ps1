@@ -1,10 +1,11 @@
-param([int]$TimeoutSeconds = 60)
+param([int]$TimeoutSeconds = 60, [string]$ReleaseExecutable)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $release = Join-Path $repo 'WtProgram/bin/Release'
 $stage = Join-Path $PSScriptRoot ('Debug/release-smoke-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $release 'WindowTabs.exe') -Destination $stage
+$source = if ($ReleaseExecutable) { (Resolve-Path -LiteralPath $ReleaseExecutable).Path } else { Join-Path $release 'WindowTabs.exe' }
+Copy-Item -LiteralPath $source -Destination $stage
 # Framework compiler gives us a standalone STA host without NuGet dependencies.
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319/csc.exe'
 $hostExe = Join-Path $stage 'ReleaseSmoke.exe'

@@ -9,7 +9,7 @@ between them with a click or a shortcut.
 [![Build](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml/badge.svg)](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml)
 
 > [!IMPORTANT]
-> **v2026.10.10 preview**: improved file drops, themed tab and tray menus, taskbar
+> **v2026.10.10-beta.1 preview**: improved file drops, themed tab and tray menus, taskbar
 > previews and tab switching. [What's changed →](CHANGELOG.md)
 
 ![Light tabs grouping three File Explorer windows](docs/images/light.png)

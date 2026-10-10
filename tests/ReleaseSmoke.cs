@@ -23,6 +23,12 @@ internal static class ReleaseSmoke
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
             var assembly = Assembly.LoadFrom(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WindowTabs.exe"));
             Console.WriteLine("Release smoke: assembly loaded");
+            var version=(AssemblyInformationalVersionAttribute)Attribute.GetCustomAttribute(assembly,typeof(AssemblyInformationalVersionAttribute));
+            if(version==null || string.IsNullOrWhiteSpace(version.InformationalVersion))
+                throw new Exception("Packaged application has no informational version");
+            var appVersion=(string)assembly.GetType("Bemo.AssemblyInfo",true).GetProperty("informationalVersion").GetValue(null,null);
+            if(appVersion!=version.InformationalVersion)
+                throw new Exception("Application version differs from packaged informational version");
             // The exe ships without a .config file; Bootstrap supplies its WinForms DPI option first.
             assembly.GetType("Bemo.Dpi", true).GetMethod("enableWinFormsRescaling").Invoke(null, null);
             // Match Bootstrap before creating controls; SystemEvents must not

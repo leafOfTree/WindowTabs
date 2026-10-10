@@ -39,13 +39,10 @@ jobs:
 
       # The settings window, crash reports and settings migration all read this version.
       - name: Check the executable carries the tag's version
-        shell: pwsh
+        shell: powershell
         env:
           EXPECTED: ${{ steps.version.outputs.number }}
-        run: |
-          $actual = (Get-Item WtProgram/bin/Release/WindowTabs.exe).VersionInfo.ProductVersion
-          if ($actual -ne $env:EXPECTED) { throw "WindowTabs.exe is version $actual, expected $env:EXPECTED" }
-          "WindowTabs.exe is version $actual"
+        run: ./tests/Check-ReleaseVersion.ps1 -Executable WtProgram/bin/Release/WindowTabs.exe -ExpectedVersion $env:EXPECTED
 
       - name: Smoke test isolated Release assembly
         shell: powershell
