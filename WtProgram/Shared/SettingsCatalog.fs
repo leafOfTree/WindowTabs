@@ -40,7 +40,7 @@ module SettingsCatalog =
         { id="new-tab"; page=HotKeySettings; text=Strings.Settings.newTab; binding=Shortcut("newTab",1614) }
         { id="switch-tabs-by-number"; page=HotKeySettings; text=Strings.Settings.switchTabsByNumber; binding=Toggle("enableCtrlNumberHotKey",true,true) }
         { id="enable-number-leader"; page=HotKeySettings; text=Strings.Settings.enableNumberLeader; binding=Toggle("enableNumberLeader",false,false) }
-        { id="number-leader"; page=HotKeySettings; text=Strings.Settings.numberLeader; binding=Shortcut("numberLeader",1107) }
+        { id="number-leader"; page=HotKeySettings; text=Strings.Settings.numberLeader; binding=Shortcut("numberLeader",1094) }
         { id="leader-keys"; page=HotKeySettings; text=Strings.Settings.leaderKeys; binding=Text("numberLeaderKeys","123456789") }
         { id="number-shortcut"; page=HotKeySettings; text=Strings.Settings.numberShortcut; binding=Choice("numberHotKeyModifier",["Ctrl";"Alt"],"Ctrl") }
         { id="activate-on-hover"; page=HotKeySettings; text=Strings.Settings.activateOnHover; binding=Toggle("enableHoverActivate",false,false) }
