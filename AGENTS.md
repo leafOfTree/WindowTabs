@@ -14,8 +14,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
 
 - `Run-Tests.ps1` builds a separate Debug copy into `tests/Debug`, compiles each
   `tests/<Suite>.fsx` into its own STA exe through `tests/TestHost.fsproj` and runs them
-  serially. Native UI suites need an interactive desktop and must not run in parallel
-  with another UI test run. Logs are written to `tests/Debug`.
+  serially on a hidden desktop (`-VisibleDesktop` to watch them). Native UI suites need
+  a desktop session and must not run in parallel with another UI test run. Logs are
+  written to `tests/Debug`.
 - A running `WindowTabs.exe` locks the output; exit it from the tray before building.
 - New suites must be added to the `$Suites` default in `tests/Run-Tests.ps1`, start
   with `TestInit.run main`, and reference the app as `#r "Debug/WindowTabs.exe"`.

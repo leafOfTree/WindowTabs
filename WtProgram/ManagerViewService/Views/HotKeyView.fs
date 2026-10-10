@@ -42,6 +42,21 @@ type HotKeyView() =
             let update() = for row in rows do row.Collapsed <- not toggle.Checked
             update()
             toggle.CheckedChanged.Add(fun _ -> update())
+        let numericEnabled = SettingsBindings.settingToggle "enableCtrlNumberHotKey"
+        SettingsUi.settingRow keyboard "switch-tabs-by-number" numericEnabled
+        let numericChoice = SettingsBindings.choiceRow keyboard "number-shortcut"
+                                [|tr Strings.Settings.numberShortcutCtrl;tr Strings.Settings.numberShortcutAlt|]
+        // Switched off, an app enabled from the tab menu still uses the modifier, so it stays.
+        let numericRow = numericChoice.Parent :?> SettingsRow
+        SettingsUi.indentDependentRow numericRow
+        let updateNumeric() =
+            let appsEnabled = (Services.settings.getValue("enabledNumberShortcutPaths") :?> Set2<string>).items.list.IsEmpty |> not
+            numericRow.Collapsed <- not numericEnabled.Checked && not appsEnabled
+        updateNumeric()
+        numericEnabled.CheckedChanged.Add(fun _ -> updateNumeric())
+        let appsSubscription = Services.settings.notifyValue "enabledNumberShortcutPaths" (fun _ ->
+            if not numericRow.IsDisposed then updateNumeric())
+        numericRow.Disposed.Add(fun _ -> appsSubscription.Dispose())
         let leaderEnabled = SettingsBindings.settingToggle "enableNumberLeader"
         SettingsUi.settingRow keyboard "enable-number-leader" leaderEnabled
         let leaderEditor = editors |> List.find(fun (key,_) -> key="numberLeader") |> snd
@@ -91,21 +106,6 @@ type HotKeyView() =
             button :> Control)
         SettingsUi.settingRowWithActions keyboard "leader-keys" keysEditor presets |> ignore
         dependOn leaderEnabled [leaderEditor.Parent :?> SettingsRow;keysEditor.Parent :?> SettingsRow]
-        let numericEnabled = SettingsBindings.settingToggle "enableCtrlNumberHotKey"
-        SettingsUi.settingRow keyboard "switch-tabs-by-number" numericEnabled
-        let numericChoice = SettingsBindings.choiceRow keyboard "number-shortcut"
-                                [|tr Strings.Settings.numberShortcutCtrl;tr Strings.Settings.numberShortcutAlt|]
-        // Switched off, an app enabled from the tab menu still uses the modifier, so it stays.
-        let numericRow = numericChoice.Parent :?> SettingsRow
-        SettingsUi.indentDependentRow numericRow
-        let updateNumeric() =
-            let appsEnabled = (Services.settings.getValue("enabledNumberShortcutPaths") :?> Set2<string>).items.list.IsEmpty |> not
-            numericRow.Collapsed <- not numericEnabled.Checked && not appsEnabled
-        updateNumeric()
-        numericEnabled.CheckedChanged.Add(fun _ -> updateNumeric())
-        let appsSubscription = Services.settings.notifyValue "enabledNumberShortcutPaths" (fun _ ->
-            if not numericRow.IsDisposed then updateNumeric())
-        numericRow.Disposed.Add(fun _ -> appsSubscription.Dispose())
         // Offered only while a shortcut differs from its default; otherwise it would do nothing.
         let updateRestore() =
             restore.Offered <- editors |> List.exists(fun (key,editor) -> editor.Shortcut<>SettingsCatalog.shortcutDefault key)
@@ -115,6 +115,7 @@ type HotKeyView() =
         let pointer = SettingsUi.sectionCard table (tr Strings.Shortcuts.mouse)
         SettingsBindings.toggleRow pointer "activate-on-hover"
         SettingsBindings.toggleRow pointer "shift-scroll"
+        SettingsBindings.toggleRow pointer "ctrl-scroll"
     interface ISettingsView with
         member _.key = SettingsViewType.HotKeySettings
         member _.title = tr Strings.Pages.shortcuts

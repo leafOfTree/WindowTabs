@@ -19,7 +19,7 @@ uses the standard joined style. Switching briefly expands auto-hidden tabs, and
 Ctrl+Alt+N opens a new tab. The Alt+Tab replacement, taskbar icon combining, leader
 selection, hover activation and automatic coloring are opt-in. Search defaults to
 Ctrl+Alt+T to leave common launcher shortcuts available. The configured leader
-remains Alt+S when enabled.
+is Alt+F when enabled.
 
 Stored preferences take priority. Missing optional settings and a full reset use the
 minimal defaults from `SettingsCatalog`; explicit legacy auto-hide settings retain

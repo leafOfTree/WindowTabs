@@ -193,7 +193,7 @@ let main() =
                 menu.Close()
                 Application.DoEvents()
         api.updateAppearance(fun _ -> savedAppearance)
-        check (SettingsCatalog.shortcutDefault "numberLeader"=0x0453) "Tab selection must default to Alt+S"
+        check (SettingsCatalog.shortcutDefault "numberLeader"=0x0446) "Tab selection must default to Alt+F"
         check (Theme.leastUsedColor [0;1;2;0;3]=8) "By-window allocation did not balance colours"
         check (Theme.tabColorOrder.Head=1 && List.last Theme.tabColorOrder=0 && (Theme.tabColorOrder |> List.sort)=[0..15]) "Colour menu must start with blue, end with grey and retain every stored index"
         check ((Theme.tabAllocationOrder |> List.sort)=[0..15] && List.last Theme.tabAllocationOrder=0) "Automatic allocation lost a colour or used grey early"

@@ -38,13 +38,14 @@ the top edge to show them, or set **Auto-hide tabs** to **Never**.
 | Search tabs | Ctrl + Alt + T |
 | New window of the current app | Ctrl + Alt + N |
 | Switch tabs with the mouse | Scroll over the tab bar, or Shift + scroll over the window |
+| Move the current tab | Ctrl + scroll over the tab bar |
 | Close a tab | Middle-click |
 
 Change any shortcut under **Settings → Shortcuts**. If Ctrl/Alt + number conflicts
 with an app, turn it off for that app from the tab's right-click menu.
 
 **Optional, off by default:** switch on hover, a leader key to pick tabs by letter
-(Alt + S, then the key on the tab), automatic tab colors, and an Alt+Tab replacement.
+(Alt + F, then the key on the tab), automatic tab colors, and an Alt+Tab replacement.
 
 Drag files onto a tab and pause to bring that window forward. On a **File Explorer**
 tab, let go to drop them into its folder as Explorer would: Ctrl copies, Shift moves,

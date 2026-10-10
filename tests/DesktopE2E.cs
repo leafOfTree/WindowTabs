@@ -36,9 +36,8 @@ static class DesktopE2E
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd, StringBuilder text, int size);
     [DllImport("user32.dll")] static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wparam, IntPtr lparam);
     [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr hwnd, uint message, IntPtr wparam, IntPtr lparam);
-    [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr menu);
-    [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetMenuString(IntPtr menu, uint item, StringBuilder text, int size, uint flags);
-    [DllImport("user32.dll")] static extern bool GetMenuItemRect(IntPtr window, IntPtr menu, uint item, out Rect rect);
+    [DllImport("oleacc.dll")] static extern int AccessibleObjectFromWindow(IntPtr window, uint objectId, ref Guid iid, [MarshalAs(UnmanagedType.IDispatch)] out object accessible);
+    [DllImport("oleacc.dll")] static extern int AccessibleChildren(Accessibility.IAccessible container, int start, int count, [Out] object[] children, out int obtained);
     [DllImport("user32.dll", SetLastError=true)] static extern uint SendInput(uint count, Input[] inputs, int size);
     [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr hwnd);
     [DllImport("user32.dll")] static extern uint GetGuiResources(IntPtr process, uint kind);
@@ -225,6 +224,32 @@ static class DesktopE2E
         CheckGrowth(before,after);
         return before;
     }
+    // A menu item's bounds on screen from the window's MSAA tree, or null when it has none by that name.
+    static Rect? MenuItemRect(IntPtr window, string name)
+    {
+        var iid=new Guid("618736E0-3C3D-11CF-810C-00AA00389B71"); // IAccessible
+        object found;
+        if(AccessibleObjectFromWindow(window,0xFFFFFFFC,ref iid,out found)!=0) return null; // OBJID_CLIENT
+        var menu=found as Accessibility.IAccessible;
+        if(menu==null) return null;
+        int count; try { count=menu.accChildCount; } catch(COMException) { return null; }
+        var children=new object[count]; int obtained;
+        if(count==0 || AccessibleChildren(menu,0,count,children,out obtained)!=0) return null;
+        foreach(var child in children.Take(obtained))
+        {
+            var entry=child as Accessibility.IAccessible;
+            if(entry==null) continue;
+            try
+            {
+                var text=entry.get_accName(0);
+                if(text==null || text.Replace("&","")!=name) continue;
+                int left,top,width,height; entry.accLocation(out left,out top,out width,out height,0);
+                return new Rect{ Left=left, Top=top, Right=left+width, Bottom=top+height };
+            }
+            catch(COMException) { }
+        }
+        return null;
+    }
     static async Task ExitNormally()
     {
         // Exercise the shipped NotifyIcon context-menu Exit handler. This bypasses
@@ -232,19 +257,19 @@ static class DesktopE2E
         Check(AllowSetForegroundWindow(app.Id),"Cannot grant the tray-menu foreground permission");
         var candidates=Windows(app.Id).Where(h=>!IsWindowVisible(h) && Class(h).StartsWith("WindowsForms10.")).ToList();
         foreach(var h in candidates) PostMessage(h,0x800,IntPtr.Zero,new IntPtr(0x205));
-        await Until("Tray context menu did not open",()=>Windows(app.Id).Any(h=>Class(h)=="#32768" && IsWindowVisible(h)));
+        // The menu is a WinForms strip in the app's theme, not a system menu: its items are
+        // found by name through MSAA, which reaches across processes.
+        var popup=IntPtr.Zero; var item=new Rect();
+        await Until("Tray context menu did not open",()=>{
+            foreach(var h in Windows(app.Id).Where(IsWindowVisible))
+            {
+                var found=MenuItemRect(h,"Exit WindowTabs");
+                if(found.HasValue) { popup=h; item=found.Value; return true; }
+            }
+            return false;
+        });
         await Until("Tray menu did not acquire keyboard focus",()=>Windows(app.Id).Contains(GetForegroundWindow()));
-        var popup=Windows(app.Id).Single(h=>Class(h)=="#32768" && IsWindowVisible(h));
-        var menu=SendMessage(popup,0x1E1,IntPtr.Zero,IntPtr.Zero); // MN_GETHMENU
-        int exitIndex=-1;
-        for(int i=0;i<GetMenuItemCount(menu);i++)
-        {
-            var label=new StringBuilder(256); GetMenuString(menu,(uint)i,label,label.Capacity,0x400);
-            Log("Tray item "+i+": "+label);
-            if(label.ToString().Replace("&","")=="Exit WindowTabs") exitIndex=i;
-        }
-        Check(exitIndex>=0,"Tray menu contains no Exit command");
-        Rect item; Check(GetMenuItemRect(IntPtr.Zero,menu,(uint)exitIndex,out item),"Cannot locate Exit menu item");
+        Log("Tray Exit item at "+item.Left+","+item.Top+" "+(item.Right-item.Left)+"x"+(item.Bottom-item.Top));
         var point=new Point((item.Left+item.Right)/2,(item.Top+item.Bottom)/2);
         Check(WindowFromPoint(point)==popup,"Exit menu is occluded");
         Move(point); Inject(MouseInput(2)); await Task.Delay(30); Inject(MouseInput(4));
