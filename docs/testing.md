@@ -85,8 +85,10 @@ Push and pull request builds run without
 coverage instrumentation. The Monthly coverage workflow measures the full suite
 on the default branch at 08:00 China Standard Time on the first day of each month,
 enforces 50% line/branch coverage floors, and retains its reports for 90 days.
-It can also be triggered manually. Release CI runs the full suite without coverage
-instrumentation.
+It can also be triggered manually. Release CI uses the same three regression groups
+without coverage instrumentation. Its Full desktop E2E starts after the Release
+build and smoke checks, in parallel with any remaining regression groups. Creating
+the release draft requires the build, every regression group and Full E2E to pass.
 The first cache miss still downloads dependencies; compare warm runs when measuring
 the improvement.
 
