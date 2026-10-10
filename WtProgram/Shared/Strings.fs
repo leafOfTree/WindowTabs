@@ -67,7 +67,7 @@ module Strings =
     module DropMenu =
         let copy = { en="Copy"; zh="复制"; ja="コピー" }
         let move = { en="Move"; zh="移动"; ja="移動" }
-        /// Under the drag image; the shell puts the folder's name in place of %1.
+        /// Under the strip while files are dragged over an Explorer tab; %1 is the folder's name.
         let moveTo = { en="Move to %1"; zh="移动到 %1"; ja="%1 へ移動" }
         let copyTo = { en="Copy to %1"; zh="复制到 %1"; ja="%1 へコピー" }
 

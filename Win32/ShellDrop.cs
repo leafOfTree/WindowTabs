@@ -4,66 +4,6 @@ using System.Threading;
 
 namespace Bemo
 {
-    // Shows the source's drag image over a drop target, as Explorer does.
-    [ComImport, Guid("4657278B-411B-11D2-839A-00C04FD918D0"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface IDropTargetHelper
-    {
-        void DragEnter(IntPtr hwndTarget, IDataObject dataObject, ref POINTL pt, int effect);
-        void DragLeave();
-        void DragOver(ref POINTL pt, int effect);
-        void Drop(IDataObject dataObject, ref POINTL pt, int effect);
-        void Show([MarshalAs(UnmanagedType.Bool)] bool show);
-    }
-
-    public static class DropImages
-    {
-        public const int Invalid = -1, None = 0, Copy = 1, Move = 2;
-
-        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-        private struct DROPDESCRIPTION
-        {
-            public int type;
-            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string message;
-            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string insert;
-        }
-
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        private static extern uint RegisterClipboardFormat(string format);
-
-        // Null where the shell offers no helper; drops then work without the image.
-        public static IDropTargetHelper CreateHelper()
-        {
-            try
-            {
-                var type = Type.GetTypeFromCLSID(new Guid("4657278A-411B-11D2-839A-00C04FD918D0"));
-                return type == null ? null : (IDropTargetHelper)Activator.CreateInstance(type);
-            }
-            catch (COMException) { return null; }
-            catch (InvalidCastException) { return null; }
-        }
-
-        // The line under the drag image, such as "Move to Downloads"; %1 stands for insert.
-        // Invalid hands the line back to the source.
-        public static void Describe(IDataObject data, int type, string message, string insert)
-        {
-            var format = new FORMATETC
-            {
-                cfFormat = (CLIPFORMAT)unchecked((short)RegisterClipboardFormat("DropDescription")),
-                ptd = IntPtr.Zero,
-                dwAspect = DVASPECT.DVASPECT_CONTENT,
-                lindex = -1,
-                tymed = TYMED.TYMED_HGLOBAL
-            };
-            var description = new DROPDESCRIPTION { type = type, message = message ?? "", insert = insert ?? "" };
-            var memory = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(DROPDESCRIPTION)));
-            Marshal.StructureToPtr(description, memory, false);
-            var medium = new STGMEDIUM { tymed = TYMED.TYMED_HGLOBAL, unionmember = memory, pUnkForRelease = null };
-            try { data.SetData(ref format, ref medium, true); }
-            catch (COMException) { Marshal.FreeHGlobal(memory); }
-            catch (NotImplementedException) { Marshal.FreeHGlobal(memory); }
-        }
-    }
-
     [ComImport, Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     public interface IShellItem
     {

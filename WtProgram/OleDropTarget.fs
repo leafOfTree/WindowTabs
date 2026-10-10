@@ -11,8 +11,7 @@ module OleDropLifetime =
     extern void OleUninitialize()
 
 /// Files dragged onto a tab: resting on a tab brings its window forward, and letting go on an
-/// Explorer tab moves or copies them into that folder, with the drag image and a line saying
-/// which, as over Explorer itself.
+/// Explorer tab moves or copies them into that folder, which a line under the strip says.
 type OleDropTarget(ts:TabStrip) as this=
     let os = OS()
     let window = os.windowFromHwnd(ts.hwnd)
@@ -29,30 +28,36 @@ type OleDropTarget(ts:TabStrip) as this=
     /// Looked up once per hovered tab: DragOver repeats while the pointer moves, and each
     /// lookup asks every Explorer window across processes.
     let mutable hoveredFolder : Shell.ShellFolder option = None
-    let mutable described = (DropImages.Invalid,"")
-    let mutable helper : IDropTargetHelper option = None
-    /// The helper once it has been told of this drag; only then does it hear the rest.
-    let mutable imaging : IDropTargetHelper option = None
+    /// The source's drag image covered the tabs being aimed at, so a line under the strip says
+    /// what letting go does, in the app's theme.
+    let mutable label : TabTitleTip option = None
+    let mutable labelled = ""
     /// A tab's window comes forward once the pointer rests on it, so sweeping a drag across
     /// the strip does not flash every window it passes.
     let activateTimer = new Timer(Interval=300)
     /// The right-drag menu, themed like the tab menu; replaced, not disposed, from its own events.
     let mutable dropMenu : ThemedContextMenu option = None
 
-    let image() =
-        if helper.IsNone then helper <- Option.ofObj(DropImages.CreateHelper())
-        helper
-
-    let describe (effect:DragDropEffects) =
-        let wanted =
+    let describe (effect:DragDropEffects) (pointerX:int) =
+        let text =
             match effect,hoveredFolder with
-            | DragDropEffects.Move,Some folder -> DropImages.Move,tr Strings.DropMenu.moveTo,folder.title
-            | DragDropEffects.Copy,Some folder -> DropImages.Copy,tr Strings.DropMenu.copyTo,folder.title
-            | _ -> DropImages.Invalid,"",""
-        let kind,message,insert = wanted
-        if (kind,insert)<>described then
-            described <- (kind,insert)
-            data |> Option.iter(fun data -> DropImages.Describe(data,kind,message,insert))
+            | DragDropEffects.Move,Some folder -> (tr Strings.DropMenu.moveTo).Replace("%1",folder.title)
+            | DragDropEffects.Copy,Some folder -> (tr Strings.DropMenu.copyTo).Replace("%1",folder.title)
+            | _ -> ""
+        if text<>labelled then
+            labelled <- text
+            if text="" then label |> Option.iter(fun tip -> tip.hide())
+            else
+                let tip =
+                    match label with
+                    | Some tip -> tip
+                    | None ->
+                        let tip = new TabTitleTip()
+                        label <- Some tip
+                        tip
+                let strip : Rect = ts.bounds
+                use font = System.Drawing.SystemFonts.MessageBoxFont
+                tip.show(text,font,System.Drawing.Rectangle(strip.x,strip.y,strip.size.width,strip.size.height),pointerX)
 
     let effectAt (keys:int) (pt:POINTL) (allowed:int) =
         // Captured here: by OleDrop the right button is already up.
@@ -69,7 +74,7 @@ type OleDropTarget(ts:TabStrip) as this=
                 DropRules.effect (enum<DragDropEffects> allowed) (keys.hasFlag(MouseMessageKeyStateMask.MK_CONTROL))
                                  (keys.hasFlag(MouseMessageKeyStateMask.MK_SHIFT)) files folder.path
             | None -> DragDropEffects.None
-        describe effect
+        describe effect pt.x
         int effect
 
     do
@@ -89,15 +94,14 @@ type OleDropTarget(ts:TabStrip) as this=
                 activateTimer.Dispose()
                 dropMenu |> Option.iter(fun menu -> menu.Dispose())
                 dropMenu <- None
-                helper |> Option.iter(fun helper -> Marshal.ReleaseComObject(helper) |> ignore)
-                helper <- None
+                label |> Option.iter(fun tip -> tip.Dispose())
+                label <- None
                 if registered then OleDropLifetime.RevokeDragDrop(window.hwnd) |> ignore
                 if initialized then OleDropLifetime.OleUninitialize()
 
     member this.dragEnd() =
         activateTimer.Stop()
-        imaging <- None
-        describe DragDropEffects.None
+        describe DragDropEffects.None 0
         rButtonDown <- false
         hoveredTab <- None
         hoveredFolder <- None
@@ -108,27 +112,15 @@ type OleDropTarget(ts:TabStrip) as this=
         member x.OleDragEnter(pDataObj, grfKeyState, pt, pdwEffect) =
             data <- match pDataObj with :? Bemo.IDataObject as data -> Some data | _ -> None
             files <- data |> Option.map(fun data -> try List.ofSeq(OleHelper.QueryFiles(data)) with _ -> []) |> Option.defaultValue []
-            described <- (DropImages.Invalid,"")
             let effect = effectAt grfKeyState pt pdwEffect
             pdwEffect <- effect
-            match image(),data with
-            | Some helper,Some data ->
-                let mutable point = pt
-                helper.DragEnter(ts.hwnd,data,&point,effect)
-                imaging <- Some helper
-            | _ -> ()
             0
 
         member x.OleDragOver(grfKeyState, pt, pdwEffect) =
-            let effect = effectAt grfKeyState pt pdwEffect
-            pdwEffect <- effect
-            imaging |> Option.iter(fun helper ->
-                let mutable point = pt
-                helper.DragOver(&point,effect))
+            pdwEffect <- effectAt grfKeyState pt pdwEffect
             0
 
         member x.OleDragLeave() =
-            imaging |> Option.iter(fun helper -> helper.DragLeave())
             this.dragEnd()
             0
 
@@ -138,9 +130,6 @@ type OleDropTarget(ts:TabStrip) as this=
             // Read before effectAt, which records the keys of this call: the right button is up by now.
             let menuFor = rButtonDown
             let effect = effectAt grfKeyState pt pdwEffect
-            imaging |> Option.iter(fun helper ->
-                let mutable point = pt
-                helper.Drop(pDataObj,&point,effect))
             ts.tryHit(window.ptToClient(ptScreen)).iter <| fun(Tab(hwnd),part) ->
                 let folder = if hoveredTab=Some hwnd then hoveredFolder else Shell.getShellFolder hwnd
                 folder.iter <| fun folder ->

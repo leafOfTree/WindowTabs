@@ -171,6 +171,21 @@ namespace Bemo
     }
     public static class OleHelper
     {
+        public static List<string> FilesInDrop(IntPtr hdrop)
+        {
+            uint count = ShellApi.DragQueryFile(hdrop, -1, IntPtr.Zero, 0);
+            var files = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                // Sized to each path, so long paths are not cut short.
+                var size = (int)ShellApi.DragQueryFile(hdrop, i, IntPtr.Zero, 0) + 1;
+                var sb = new StringBuilder(size);
+                ShellApi.DragQueryFile(hdrop, i, sb, size);
+                files.Add(sb.ToString());
+            }
+            return files;
+        }
+
         public static IEnumerable<string> QueryFiles(IDataObject dataObject)
         {
             STGMEDIUM td = new STGMEDIUM();
@@ -184,18 +199,7 @@ namespace Bemo
             dataObject.GetData(ref fr, out td);
             try
             {
-                var hdrop = td.unionmember;
-                uint count = ShellApi.DragQueryFile(hdrop, -1, IntPtr.Zero, 0);
-                var files = new List<string>();
-                for (int i = 0; i < count; i++)
-                {
-                    // Sized to each path, so long paths are not cut short.
-                    var size = (int)ShellApi.DragQueryFile(hdrop, i, IntPtr.Zero, 0) + 1;
-                    var sb = new StringBuilder(size);
-                    ShellApi.DragQueryFile(hdrop, i, sb, size);
-                    files.Add(sb.ToString());
-                }
-                return files;
+                return FilesInDrop(td.unionmember);
             }
             finally
             {

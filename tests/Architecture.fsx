@@ -415,6 +415,21 @@ let main() =
                 File.WriteAllText(moving,"c")
                 let moved = FileOperation.Run([|moving|],target,true,IntPtr.Zero)
                 check (moved && not (File.Exists(moving)) && File.Exists(Path.Combine(target,"c.txt"))) "A dropped file was not moved"
+                // A drop's paths were read through DragQueryFileA, which turned 小麦 into ??, so the
+                // file was not found and nothing moved.
+                let chinese = Path.Combine(source,"小麦-0.1.24-x64-setup.exe")
+                File.WriteAllText(chinese,"setup")
+                let path = Text.Encoding.Unicode.GetBytes(chinese + "\u0000\u0000")
+                let drop = Runtime.InteropServices.Marshal.AllocHGlobal(20 + path.Length)
+                try
+                    // DROPFILES: the paths' offset, a point, fNC, and fWide for UTF-16 paths.
+                    for offset,value in [0,20; 4,0; 8,0; 12,0; 16,1] do Runtime.InteropServices.Marshal.WriteInt32(drop,offset,value)
+                    Runtime.InteropServices.Marshal.Copy(path,0,drop+nativeint 20,path.Length)
+                    let read = OleHelper.FilesInDrop(drop) |> List.ofSeq
+                    check (read=[chinese]) (sprintf "A dropped file's name outside the code page was not read whole: %A" read)
+                finally Runtime.InteropServices.Marshal.FreeHGlobal(drop)
+                check (FileOperation.Run([|chinese|],target,true,IntPtr.Zero) && File.Exists(Path.Combine(target,Path.GetFileName(chinese))))
+                      "A dropped file named outside the code page was not moved"
             finally Directory.Delete(root,true)
         let mask = AltMenuMask.inputs()
         check (mask.Length=2 && mask.[0].mkhi.ki.wVk=0xE8s && mask.[1].mkhi.ki.dwFlags=SendInputConstants.KEYEVENTF_KEYUP && mask.[0].mkhi.ki.dwExtraInfo=IntPtr(AltMenuMask.marker)) "Alt menu mask must pair and mark injected events"
