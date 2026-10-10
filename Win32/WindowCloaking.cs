@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace Bemo
 {
@@ -25,6 +26,35 @@ namespace Bemo
 
         [ThreadStatic] private static IVirtualDesktopManager desktops;
 
+        private delegate bool EnumChildProc(IntPtr hwnd, IntPtr lParam);
+        [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, EnumChildProc callback, IntPtr lParam);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hwnd, StringBuilder name, int size);
+        [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hwnd);
+
+        private static string ClassName(IntPtr hwnd)
+        {
+            var name = new StringBuilder(256);
+            GetClassName(hwnd, name, name.Capacity);
+            return name.ToString();
+        }
+
+        /// <summary>
+        /// A UWP frame shows its app in a CoreWindow child. A frame left behind by an app closed to
+        /// the background no longer holds it, although it is not minimized; a minimized frame lets
+        /// go of it too, so minimized frames do not count.
+        /// </summary>
+        public static bool IsEmptyAppFrame(IntPtr hwnd)
+        {
+            if (ClassName(hwnd) != "ApplicationFrameWindow" || IsIconic(hwnd)) return false;
+            bool holdsApp = false;
+            EnumChildWindows(hwnd, (child, _) =>
+            {
+                if (ClassName(child) == "Windows.UI.Core.CoreWindow") { holdsApp = true; return false; }
+                return true;
+            }, IntPtr.Zero);
+            return !holdsApp;
+        }
+
         public static bool IsCloaked(IntPtr hwnd)
         {
             try
@@ -36,12 +66,13 @@ namespace Bemo
         }
 
         /// <summary>
-        /// True when the window is cloaked although it is on the current virtual desktop, i.e. the
-        /// app has hidden it. False when that cannot be determined, so no window is dropped by mistake.
+        /// True when the window is cloaked, or an empty UWP frame, although it is on the current
+        /// virtual desktop, i.e. the app has hidden it. False when that cannot be determined, so no
+        /// window is dropped by mistake.
         /// </summary>
         public static bool IsHiddenOnCurrentDesktop(IntPtr hwnd)
         {
-            if (!IsCloaked(hwnd)) return false;
+            if (!IsCloaked(hwnd) && !IsEmptyAppFrame(hwnd)) return false;
             try
             {
                 if (desktops == null) desktops = (IVirtualDesktopManager)new VirtualDesktopManager();

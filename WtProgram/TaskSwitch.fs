@@ -124,18 +124,46 @@ type ITaskSwitchListControl =
     /// A window was clicked: switch to it now.
     abstract member clicked : IEvent<int>
 
+module private TaskWindowIcons =
+    /// A window's app icon at the given size: the shell's icon for its program, which comes in
+    /// large sizes, or the window's own when the program has no icon of its own.
+    let large (window:Window) (size:int) : Bitmap option =
+        let fromShell() =
+            try
+                if window.className="ApplicationFrameWindow" then AppIcons.GetAppIcon(AppIcons.GetHostedAppId(window.hwnd),size)
+                else
+                    let path = window.pid.processPath
+                    if AppIcons.HasOwnIcon(path) then AppIcons.GetFileIcon(path,size) else null
+            with _ -> null
+        let fromWindow() =
+            match ImgHelper.windowIcon window with
+            | Some icon ->
+                let bitmap = new Bitmap(icon)
+                icon.Dispose()
+                Some bitmap
+            | None -> None
+        match fromShell() with
+        | null -> fromWindow()
+        | icon -> Some icon
+
 module private TaskWindowItems =
     let create (TaskWindowItem(hwnd,isGroup)) =
         let window = OS().windowFromHwnd(hwnd)
-        match ImgHelper.windowIcon window with
+        // Fetched at the size the list draws it in screen pixels; scaled up from 32 it blurs.
+        let size = Dpi.scale 32
+        match TaskWindowIcons.large window size with
         | Some icon ->
-            let image = Img(new Bitmap(icon)).resize(Sz(32,32))
-            icon.Dispose()
+            let image =
+                if icon.Width = size && icon.Height = size then Img(icon)
+                else
+                    let resized = Img(icon).resize(Sz(size,size))
+                    icon.Dispose()
+                    resized
             if isGroup then
                 use badgeIcon = Services.openIcon("Bemo.ico")
-                let badge = Img(badgeIcon.ToBitmap()).resize(Sz(16,16)).bitmap
-                let g = image.graphics
-                g.DrawImage(badge, Point(16,16))
+                use badge = Img(badgeIcon.ToBitmap()).resize(Sz(size/2,size/2)).bitmap
+                use g = image.graphics
+                g.DrawImage(badge, Point(size-badge.Width,size-badge.Height))
             TreeListItem(window.text,Icon=image.bitmap)
         | None -> TreeListItem(window.text,Glyph=WindowGlyph)
 
@@ -300,28 +328,6 @@ type TaskSwitchForm(control:ITaskSwitchListControl) =
         member this.deactivated = form.Deactivate |> Event.map ignore
         member this.hovered = control.hovered
         member this.clicked = control.clicked
-
-module private TaskWindowIcons =
-    /// A window's app icon at the given size: the shell's icon for its program, which comes in
-    /// large sizes, or the window's own when the program has no icon of its own.
-    let large (window:Window) (size:int) : Bitmap option =
-        let fromShell() =
-            try
-                if window.className="ApplicationFrameWindow" then AppIcons.GetAppIcon(AppIcons.GetHostedAppId(window.hwnd),size)
-                else
-                    let path = window.pid.processPath
-                    if AppIcons.HasOwnIcon(path) then AppIcons.GetFileIcon(path,size) else null
-            with _ -> null
-        let fromWindow() =
-            match ImgHelper.windowIcon window with
-            | Some icon ->
-                let bitmap = new Bitmap(icon)
-                icon.Dispose()
-                Some bitmap
-            | None -> None
-        match fromShell() with
-        | null -> fromWindow()
-        | icon -> Some icon
 
 /// The horizontal switcher: large app icons in a row, wrapping onto more rows when there are
 /// many, with the chosen window's title beneath them. The panel matches the vertical list:
