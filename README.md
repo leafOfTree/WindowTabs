@@ -38,6 +38,7 @@ the top edge to show them, or set **Auto-hide tabs** to **Never**.
 | Search tabs | Ctrl + Alt + T |
 | New window of the current app | Ctrl + Alt + N |
 | Switch tabs with the mouse | Scroll over the tab bar, or Shift + scroll over the window |
+| Move the current tab | Ctrl + scroll over the tab bar |
 | Close a tab | Middle-click |
 
 Change any shortcut under **Settings → Shortcuts**. If Ctrl/Alt + number conflicts

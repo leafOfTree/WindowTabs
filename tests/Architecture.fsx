@@ -230,6 +230,10 @@ let main() =
         check (navigate [a;c] c (Some b) false=Some 0) "Closed tab influenced navigation"
         check (navigate [a;c] IntPtr.Zero (Some c) true=Some 0) "Background group lost its last top tab"
         check (navigate [] a (Some a) true=None && navigate [a] IntPtr.Zero None false=None) "Empty/unknown tab navigation fabricated a target"
+        // Ctrl + scroll carries the focused tab one place, from its last top tab in a background group.
+        check (TabNavigation.moveTarget [a;b;c] b (Some a) true=Some(b,2) && TabNavigation.moveTarget [a;b;c] b (Some a) false=Some(b,0)) "Ctrl + scroll did not move the focused tab one place"
+        check (TabNavigation.moveTarget [a;b;c] IntPtr.Zero (Some c) false=Some(c,1)) "Ctrl + scroll lost a background group's top tab"
+        check (TabNavigation.moveTarget [a;b;c] c None true=None && TabNavigation.moveTarget [a;b;c] a None false=None) "Ctrl + scroll wrapped a tab past the end"
         check (TabNavigation.neighbour [a;b;c] b=Some c) "Closing the active middle tab did not select its right neighbor"
         check (TabNavigation.neighbour [a;b;c] c=Some b) "Closing the last tab did not select its left neighbor"
         check (TabNavigation.closeTarget [a;b;c] (fun hwnd -> hwnd<>b) b a (Some a) None false=None) "Closing a background tab changed selection"

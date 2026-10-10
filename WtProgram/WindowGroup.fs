@@ -91,6 +91,13 @@ module TabNavigation =
         |> Option.bind(fun hwnd -> order |> List.tryFindIndex ((=) hwnd))
         |> Option.map(fun index -> (index + (if next then 1 else order.Length-1)) % order.Length)
 
+    /// Where Ctrl + scroll carries the current tab: one place along, never past either end.
+    let moveTarget (order:IntPtr list) foreground previousTop right =
+        let current = if List.contains foreground order then Some foreground else previousTop
+        current
+        |> Option.bind(fun hwnd -> order |> List.tryFindIndex ((=) hwnd) |> Option.map(fun index -> hwnd,index + (if right then 1 else -1)))
+        |> Option.filter(fun (_,index) -> index>=0 && index<order.Length)
+
 module TabOrder =
     /// Each program's tabs side by side, in title order; tabs that tie keep their places.
     let byAppThenTitle (app:'a -> string) (title:'a -> string) (tabs:'a list) =
