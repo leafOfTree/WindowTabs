@@ -82,6 +82,20 @@ let main() =
         let rec labels (control:Control) = seq { if control :? Label then yield control
                                                  for child in control.Controls do yield! labels child }
         Application.DoEvents()
+        let checkVersionFooter (window:Form) =
+            let version = window.Controls.Find("version-link",true).[0] :?> Label
+            let language = window.Controls.Find("language",true).[0]
+            let previousText = version.Text
+            try
+                version.Text <- "v2026.10.10-beta.1"
+                window.PerformLayout()
+                let measured = TextRenderer.MeasureText(version.Text,version.Font)
+                check (measured.Width<=version.ClientSize.Width && measured.Height<=version.ClientSize.Height)
+                      (sprintf "Preview version clipped: text %A, available %A" measured version.ClientSize)
+                check (not (version.RectangleToScreen(version.ClientRectangle).IntersectsWith(language.RectangleToScreen(language.ClientRectangle))))
+                      "Language picker overlaps the version link"
+            finally version.Text <- previousText
+        checkVersionFooter settingsForm
         let target = start*2
         let bounds = settingsForm.Bounds
         let memory = Marshal.AllocHGlobal(16)
@@ -91,6 +105,7 @@ let main() =
         finally Marshal.FreeHGlobal(memory)
         Application.DoEvents()
         check (Dpi.value()=target) "Settings window did not process the DPI change"
+        checkVersionFooter settingsForm
         frame.showView(AppearanceSettings)
         Application.DoEvents()
         let expected = 10.5f*float32 target/float32(Dpi.system())
