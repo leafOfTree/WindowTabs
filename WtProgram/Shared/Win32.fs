@@ -437,13 +437,21 @@ and
 
     member this.isTopMost = this.hasStyleEx WindowsExtendedStyles.WS_EX_TOPMOST
 
+    /// A window of an elevated program, such as the frame another tab tool keeps over each window,
+    /// refuses to be the reference, so this goes below the nearest window above it that accepts.
     member this.insertAfter(prev:Window) =
-        WinUserApi.SetWindowPos(hwnd,
-            prev.hwnd, 0, 0, 0, 0,
-            SetWindowPosFlags.SWP_NOOWNERZORDER |||
-            SetWindowPosFlags.SWP_NOMOVE |||
-            SetWindowPosFlags.SWP_NOSIZE |||
-            SetWindowPosFlags.SWP_NOACTIVATE) |> ignore
+        let rec place (after:IntPtr) =
+            let placed =
+                WinUserApi.SetWindowPos(hwnd,
+                    after, 0, 0, 0, 0,
+                    SetWindowPosFlags.SWP_NOOWNERZORDER |||
+                    SetWindowPosFlags.SWP_NOMOVE |||
+                    SetWindowPosFlags.SWP_NOSIZE |||
+                    SetWindowPosFlags.SWP_NOACTIVATE)
+            if not placed && after <> IntPtr.Zero then
+                let above = WinUserApi.GetWindow(after, GetWindowConstants.GW_HWNDPREV)
+                if above <> hwnd then place above
+        place prev.hwnd
 
     member this.parent = os.windowFromHwnd(WinUserApi.GetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT))
 
