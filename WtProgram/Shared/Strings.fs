@@ -143,10 +143,10 @@ module Strings =
                                        description={ en="Each group appears as one item."; zh="每个分组只显示一项。"; ja="各グループを 1 項目として表示します。" }
                                        keywords={ en="switcher"; zh="切换器"; ja="切り替え" } }
         let nextTab = { caption={ en="Switch to next tab"; zh="切换到下一个标签"; ja="次のタブに切り替え" }
-                        description={ en="Within the current group."; zh="在当前分组内切换。"; ja="現在のグループ内で切り替えます。" }
+                        description=none
                         keywords=hotkeyWords }
         let previousTab = { caption={ en="Switch to previous tab"; zh="切换到上一个标签"; ja="前のタブに切り替え" }
-                            description={ en="Within the current group."; zh="在当前分组内切换。"; ja="現在のグループ内で切り替えます。" }
+                            description=none
                             keywords=hotkeyWords }
         let searchTabs = { caption={ en="Search tabs"; zh="搜索标签"; ja="タブを検索" }
                            description={ en="By title or app name, current group first."; zh="按标题或应用名查找，优先当前分组。"; ja="タイトルやアプリ名で探します。現在のグループを優先。" }
