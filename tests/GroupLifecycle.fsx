@@ -153,6 +153,13 @@ let main() =
                     pumpUntil "Preview order was not sent again" (fun () -> not button.isResendingTabOrder)
                     button.update(info ["a";"b";"c"])
                     check (not button.isResendingTabOrder) "An unchanged order is sent again"
+                    // A preview that leaves frees its window, class and procedure then, not with the group.
+                    let leaving = (button.tryTabWindow "c").Value.hwnd
+                    for _ in 1..20 do
+                        button.update(info ["a";"b"])
+                        button.update(info ["a";"b";"c"])
+                    check (button.windowCount = 4) (sprintf "Previews that left kept %d windows" (button.windowCount-4))
+                    check (not(WinUserApi.IsWindow leaving) && not(TaskbarProxies.contains leaving)) "A preview that left kept its window"
                 finally (button :> IDisposable).Dispose()
 
             // The setting rebuilds open groups that follow it, keeping what their tab menu chose.

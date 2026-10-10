@@ -203,7 +203,8 @@ type TaskBarButton(info) as this =
     let mutable badgedIcon : TaskbarBadgedIcon option = None
     let infoCell = Cell.create(None)
     let tabWindowsCell = Cell.create(Map2())
-    let windowsToDispose = Cell.create(Set2())
+    /// Each window has a class and a pinned procedure of its own, freed with it.
+    let windows = Collections.Generic.Dictionary<IntPtr,IDisposable>()
     let appId = Guid.NewGuid().ToString()
     let addTab hwnd =
         taskbar.AddTab(hwnd)
@@ -267,6 +268,9 @@ type TaskBarButton(info) as this =
     do 
         this.update info
 
+    /// How a tab's preview is found from its window.
+    static member key (hwnd:IntPtr) = hwnd.ToString()
+
     member this.os = _os
 
     member this.window : Window = _window.Force()
@@ -304,10 +308,13 @@ type TaskBarButton(info) as this =
             this.window.setIcons(badged.icon)
             previous |> Option.iter(fun icon -> (icon :> IDisposable).Dispose())
 
-        this.window.move(info.bounds)
-        this.window.setText(info.text)
+        // Each change is a notice to Explorer; updates come with every title and focus change.
+        let unchanged (read:TbButton -> 'a) = prevInfo |> Option.exists(fun previous -> read previous = read info)
+        if not(unchanged(fun i -> i.bounds)) then this.window.move(info.bounds)
+        if not(unchanged(fun i -> i.text)) then this.window.setText(info.text)
         
         info.tabs.iter <| fun (tab, tabConfig) ->
+            let isNew = not(tabWindowsCell.value.contains tab)
             let tabWindow = findOrCreate tabWindowsCell tab <| fun() ->
                 let config() = infoCell.value.Value.tabs.find(fst >> (=) tab) |> snd
                 let tabWindow = TaskbarTab(this, config, fun() -> this.window.size)
@@ -318,11 +325,10 @@ type TaskBarButton(info) as this =
                 registerTab(tabWindow.window.hwnd)
                 tabWindow
 
-            tabWindow.window.move(info.bounds)
-            tabWindow.window.setText(tabConfig.text)
-            let previousIcon = prevInfo |> Option.bind(fun previous ->
-                previous.tabs.tryFind(fst >> (=) tab) |> Option.map(fun (_,config) -> config.icon))
-            if previousIcon |> Option.exists(fun icon -> obj.ReferenceEquals(icon,tabConfig.icon)) |> not then
+            let previous = prevInfo |> Option.bind(fun previous -> previous.tabs.tryFind(fst >> (=) tab)) |> Option.map snd
+            if isNew || not(unchanged(fun i -> i.bounds)) then tabWindow.window.move(info.bounds)
+            if isNew || previous |> Option.forall(fun config -> config.text<>tabConfig.text) then tabWindow.window.setText(tabConfig.text)
+            if isNew || previous |> Option.forall(fun config -> not(obj.ReferenceEquals(config.icon,tabConfig.icon))) then
                 tabWindow.window.setIcons(tabConfig.icon)
             
         let prevTabOrder = 
@@ -363,17 +369,29 @@ type TaskBarButton(info) as this =
 
         let window = this.os.createWindow wndProc dwmWindow.style dwmWindow.exStyle 
         TaskbarProxies.add window.hwnd
-        windowsToDispose.map(fun s -> s.add(window:?>IDisposable))
+        windows.[window.hwnd] <- window :?> IDisposable
         this.os.windowFromHwnd(window.hwnd)
+
+    /// A tab's preview leaves with its tab, not with the whole group.
+    member this.releaseWindow(hwnd:IntPtr) =
+        match windows.TryGetValue hwnd with
+        | true,window ->
+            windows.Remove hwnd |> ignore
+            window.Dispose()
+        | _ -> ()
+
+    /// The windows this button holds: its own and one per tab.
+    member this.windowCount = windows.Count
 
     interface IDisposable with
         member this.Dispose() =
             resendTabOrder.Dispose()
-            this.window.destroy()
+            // Previews are unregistered while the window they belong to still exists.
             tabWindowsCell.value.items.iter <| fun (tab, tabWindow) ->
                 tabWindow.Dispose()
             tabWindowsCell.set(Map2())
-            windowsToDispose.value.items.iter <| fun d -> d.Dispose()
+            for window in List.ofSeq windows.Values do window.Dispose()
+            windows.Clear()
             badgedIcon |> Option.iter(fun icon -> (icon :> IDisposable).Dispose())
             badgedIcon <- None
 
@@ -414,7 +432,7 @@ and TaskbarTab(parent:TaskBarButton, config,size) =
     member this.invalidate() = this.window.dwmInvalidateIconicBitmaps()
     member this.Dispose() =
         parent.unregisterTab(_window.hwnd)
-        _window.destroy() 
+        parent.releaseWindow(_window.hwnd)
 
 type SuperBarPlugin() as this =
     let _os = OS()
@@ -422,6 +440,8 @@ type SuperBarPlugin() as this =
     let _taskbar = _os.getTaskbar().Value
 
     let mutable taskbarButton = null
+    /// The preview last shown as active, None while the group is not in front.
+    let mutable activePreview : IntPtr option = None
     let flashingTabs = Collections.Generic.HashSet<string>()
     let captures = new TabCaptures()
     /// A tab that comes to the front is captured once it has painted, for when it is hidden again.
@@ -477,7 +497,8 @@ type SuperBarPlugin() as this =
                         else
                             window.minimize()
                     tabs = this.ts.lorder.map <| fun tab ->
-                        tab.GetHashCode().ToString(), {
+                        let (Tab(hwnd)) = tab
+                        TaskBarButton.key hwnd, {
                             close = fun() -> 
                                 let (Tab(hwnd)) = tab
                                 this.os.windowFromHwnd(hwnd).close()
@@ -510,6 +531,7 @@ type SuperBarPlugin() as this =
                 let button = 
                     match taskbarButton with
                     | null -> 
+                        activePreview <- None
                         let button = new TaskBarButton(tbButtonInfo)
                         taskbarButton <- button
                         button
@@ -518,11 +540,13 @@ type SuperBarPlugin() as this =
                         button
                         
 
-                match this.foregroundTab |> Option.bind(fun tab -> button.tryTabWindow(tab.GetHashCode().ToString())) with
-                | Some(tabWindow) ->
-                    this.taskbar.ActivateTab(button.window.hwnd)
-                    this.taskbar.SetTabActive(tabWindow.hwnd, button.window.hwnd, 0)
-                | None -> ()
+                // Only when it changes: the group's titles change far more often than its front tab.
+                let active = this.foregroundTab |> Option.bind(fun (Tab(hwnd)) -> button.tryTabWindow(TaskBarButton.key hwnd)) |> Option.map(fun w -> w.hwnd)
+                if active <> activePreview then
+                    activePreview <- active
+                    active |> Option.iter(fun preview ->
+                        this.taskbar.ActivateTab(button.window.hwnd)
+                        this.taskbar.SetTabActive(preview, button.window.hwnd, 0))
 
     member this.onForegroundChanged() =
         this.updateTaskbar()
@@ -532,6 +556,7 @@ type SuperBarPlugin() as this =
 
     member this.onRemoved(hwnd) =
         captures.forget hwnd
+        flashingTabs.Remove(TaskBarButton.key hwnd) |> ignore
         this.updateTaskbar()
         this.showInTaskbar(hwnd, true)
 
@@ -547,9 +572,9 @@ type SuperBarPlugin() as this =
             
     /// A tab stops flashing when its window redraws, which it also does when printed for a
     /// preview. Invalidating then would make the taskbar print it again, over and over.
-    member this.onFlash(hwnd, flash) =
+    member this.onFlash(Tab(hwnd), flash) =
         if taskbarButton <> null then
-            let key = hwnd.GetHashCode().ToString()
+            let key = TaskBarButton.key hwnd
             taskbarButton.tryTabWindow(key) |> Option.iter(fun tabWindow ->
                 if flash || flashingTabs.Contains key then
                     if flash then flashingTabs.Add key |> ignore else flashingTabs.Remove key |> ignore
