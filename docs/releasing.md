@@ -12,7 +12,7 @@ the version being released.
 Tag the merged commit and push the tag, substituting the intended version below:
 
 ```powershell
-git switch master
+git switch main
 git pull --ff-only
 git tag v2026.10.07
 git push origin v2026.10.07
