@@ -22,7 +22,7 @@ A `vMAJOR.MINOR.PATCH` tag, optionally with a suffix such as `-beta.1`, triggers
 [the release workflow](../.github/workflows/release.yml). It:
 
 1. Builds the standalone Release exe, embedding the tag version.
-2. Runs regression tests with 50% line and branch coverage floors.
+2. Runs the full regression suite without coverage instrumentation.
 3. Runs the isolated Release smoke test.
 4. Creates a **draft** GitHub Release with `WindowTabs.exe` and generated notes
    only after all preceding checks pass. A suffixed tag creates a prerelease draft.

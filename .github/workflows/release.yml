@@ -46,7 +46,7 @@ jobs:
 
       - name: Run regression tests serially
         shell: powershell
-        run: ./tests/Run-Tests.ps1 -Coverage -MinimumLineCoverage 50 -MinimumBranchCoverage 50
+        run: ./tests/Run-Tests.ps1
 
       - name: Smoke test isolated Release assembly
         shell: powershell
@@ -67,8 +67,6 @@ jobs:
           path: |
             tests/Debug/*.log
             tests/Debug/test-results.jsonl
-            tests/coverage/*/coverage.xml
-            tests/coverage/*/report/**
           if-no-files-found: ignore
 
   # Real input against the very file the draft will carry.

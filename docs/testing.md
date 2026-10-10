@@ -35,7 +35,7 @@ Suites continue after a failure so the final run reports all observed failures.
 Coverage is collected after each process exits to avoid losing later process data.
 Optional `-MinimumLineCoverage` and `-MinimumBranchCoverage` percentages enforce
 explicit gates; they require `-Coverage`. Empty coverage always fails. Thresholds
-default to zero locally. Monthly coverage and release CI require 50% lines and 50% branches;
+default to zero locally. Monthly coverage requires 50% lines and 50% branches;
 this is not yet a changed-lines gate or an automatic comparison against the base
 branch. The first complete local measurement on 2026-09-29 was 48.6% lines
 (4351/8943) and 42.8% branches (1436/3349), with all seven suites passing on their
@@ -82,7 +82,8 @@ remain serial, with every suite retained. Push and pull request builds run witho
 coverage instrumentation. The Monthly coverage workflow measures the full suite
 on the default branch at 08:00 China Standard Time on the first day of each month,
 enforces 50% line/branch coverage floors, and retains its reports for 90 days.
-It can also be triggered manually. Release CI retains the same coverage floors.
+It can also be triggered manually. Release CI runs the full suite without coverage
+instrumentation.
 The first cache miss still downloads dependencies; compare warm runs when measuring
 the improvement.
 
