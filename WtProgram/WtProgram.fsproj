@@ -8,7 +8,7 @@
     <ApplicationIcon>Resources\Bemo.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- The release workflow overrides this from the tag: dotnet build -c Release -p:Version=2026.10.10 -->
-    <Version>2026.10.10</Version>
+    <Version>2026.10.10-beta.1</Version>
     <!-- Shown to users (tray, settings, crash log), so no "+commit" suffix. -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <AssemblyTitle>WindowTabs</AssemblyTitle>

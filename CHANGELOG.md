@@ -1,6 +1,6 @@
 # Changelog
 
-## v2026.10.10 — 2026-10-10 (preview)
+## v2026.10.10-beta.1 — 2026-10-10 (preview)
 
 Changes since v2026.10.07. This remains a preview release.
 
