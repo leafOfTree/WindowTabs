@@ -128,7 +128,73 @@ let main() =
     let handle = badged.icon.Handle
     (badged :> IDisposable).Dispose()
     check (not(WinUserApi.DestroyIcon(handle))) "Badged taskbar icon kept its native handle"
+    // A 256 pixel app icon made a badged icon the Windows Alt+Tab drew across a group's whole tile.
+    do
+        use huge = new Bitmap(256,256)
+        let hugeHandle = huge.GetHicon()
+        use hugeIcon = Icon.FromHandle(hugeHandle)
+        let capped = new TaskbarBadgedIcon(hugeIcon)
+        let width = capped.icon.Width
+        (capped :> IDisposable).Dispose()
+        WinUserApi.DestroyIcon(hugeHandle) |> ignore
+        check (width = 64) (sprintf "A 256 pixel app icon made a %d pixel taskbar icon" width)
     WinUserApi.DestroyIcon(appHandle) |> ignore
-    printfn "PASS: preview ownership on success/failure, crop identity, composition, 400 native bitmap publications without forced GC, centred thumbnails and the badged taskbar icon."
+    // A hidden Chromium tab prints blank: its last capture from the front stands in for it,
+    // and it is not printed again until it has been in front.
+    let solidImage (size:Sz) (color:Color) =
+        let image = Img(size)
+        do
+            use g = image.graphics
+            g.Clear(color)
+        image
+    let drawn (size:Sz) =
+        let image = solidImage size Color.White
+        do
+            use g = image.graphics
+            use brush = new SolidBrush(Color.SeaGreen)
+            g.FillRectangle(brush, size.width/4, size.height/4, size.width/2, size.height/2)
+        image
+    do
+        use blankImage = (solidImage (Sz(64,48)) Color.Black).bitmap
+        use drawnImage = (drawn (Sz(64,48))).bitmap
+        check (TabCaptures.isBlank blankImage && not(TabCaptures.isBlank drawnImage)) "Blank captures are not told from drawn ones"
+    let captures = new TabCaptures()
+    let hwnd = IntPtr(0x1234)
+    let size = Size(1600,1000)
+    let mutable printed = 0
+    let print (image:unit -> Img) = fun () -> printed <- printed + 1; image()
+    // In front, the live capture is shown and kept, smaller than the window.
+    let front = drawn (Sz(1600,1000))
+    let shown = captures.preview hwnd size false true (print (fun () -> front))
+    check (obj.ReferenceEquals(shown.bitmap, front.bitmap) && captures.count = 1) "A capture from the front was not shown and kept"
+    shown.bitmap.Dispose()
+    // Hidden and printing black, the kept capture comes back at the window's size.
+    let black = solidImage (Sz(1600,1000)) Color.Black
+    let standIn = captures.preview hwnd size false false (print (fun () -> black))
+    check (disposed black.bitmap) "A blank capture was kept instead of released"
+    check (standIn.bitmap.Width = 1600 && standIn.bitmap.GetPixel(800,500).ToArgb() = Color.SeaGreen.ToArgb()) "A blank hidden tab did not show its last capture"
+    standIn.bitmap.Dispose()
+    // Known to print blank, it is not printed again while hidden.
+    let before = printed
+    let again = captures.preview hwnd size false false (print (fun () -> failwith "printed a tab known to print blank"))
+    check (printed = before && again.bitmap.Width = 1600) "A tab known to print blank was printed again"
+    again.bitmap.Dispose()
+    // Minimized, the last capture stands in for the placeholder.
+    let placeholder = drawn (Sz(400,250))
+    let minimized = captures.preview hwnd (Size(400,250)) true false (fun () -> placeholder)
+    check (disposed placeholder.bitmap && minimized.bitmap.GetPixel(200,125).ToArgb() = Color.SeaGreen.ToArgb()) "A minimized tab did not show its last capture"
+    minimized.bitmap.Dispose()
+    // Back in front, it is printed again; a window that left takes its capture with it.
+    captures.shown hwnd
+    let printedAgain = captures.preview hwnd size false false (print (fun () -> drawn (Sz(1600,1000))))
+    check (printed = before + 1) "A tab that was in front again was not printed"
+    printedAgain.bitmap.Dispose()
+    captures.forget hwnd
+    let unknown = solidImage (Sz(64,48)) Color.Black
+    let withoutCapture = captures.preview hwnd (Size(64,48)) false false (fun () -> unknown)
+    check (obj.ReferenceEquals(withoutCapture.bitmap, unknown.bitmap) && captures.count = 0) "A forgotten tab kept its capture"
+    withoutCapture.bitmap.Dispose()
+    (captures :> IDisposable).Dispose()
+    printfn "PASS: preview ownership on success/failure, crop identity, composition, 400 native bitmap publications without forced GC, centred thumbnails, the badged taskbar icon and stand-in captures for hidden tabs."
 
 TestInit.run main

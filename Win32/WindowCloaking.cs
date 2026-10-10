@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace Bemo
 {
@@ -25,6 +28,46 @@ namespace Bemo
 
         [ThreadStatic] private static IVirtualDesktopManager desktops;
 
+        private const int RPC_E_CANTCALLOUT_ININPUTSYNCCALL = unchecked((int)0x8001010D);
+
+        /// <summary>The last answer for each window asked about, for when asking is not possible.</summary>
+        private static readonly ConcurrentDictionary<IntPtr, bool> lastAnswer = new ConcurrentDictionary<IntPtr, bool>();
+
+        private static int OnCurrentDesktop(IntPtr hwnd, out int onCurrent)
+        {
+            if (desktops == null) desktops = (IVirtualDesktopManager)new VirtualDesktopManager();
+            return desktops.IsWindowOnCurrentVirtualDesktop(hwnd, out onCurrent);
+        }
+
+        private delegate bool EnumChildProc(IntPtr hwnd, IntPtr lParam);
+        [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, EnumChildProc callback, IntPtr lParam);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hwnd, StringBuilder name, int size);
+        [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hwnd);
+
+        private static string ClassName(IntPtr hwnd)
+        {
+            var name = new StringBuilder(256);
+            GetClassName(hwnd, name, name.Capacity);
+            return name.ToString();
+        }
+
+        /// <summary>
+        /// A UWP frame shows its app in a CoreWindow child. A frame left behind by an app closed to
+        /// the background no longer holds it, although it is not minimized; a minimized frame lets
+        /// go of it too, so minimized frames do not count.
+        /// </summary>
+        public static bool IsEmptyAppFrame(IntPtr hwnd)
+        {
+            if (ClassName(hwnd) != "ApplicationFrameWindow" || IsIconic(hwnd)) return false;
+            bool holdsApp = false;
+            EnumChildWindows(hwnd, (child, _) =>
+            {
+                if (ClassName(child) == "Windows.UI.Core.CoreWindow") { holdsApp = true; return false; }
+                return true;
+            }, IntPtr.Zero);
+            return !holdsApp;
+        }
+
         public static bool IsCloaked(IntPtr hwnd)
         {
             try
@@ -36,17 +79,37 @@ namespace Bemo
         }
 
         /// <summary>
-        /// True when the window is cloaked although it is on the current virtual desktop, i.e. the
-        /// app has hidden it. False when that cannot be determined, so no window is dropped by mistake.
+        /// True when the window is cloaked, or an empty UWP frame, although it is on the current
+        /// virtual desktop, i.e. the app has hidden it. False when that cannot be determined, so no
+        /// window is dropped by mistake.
         /// </summary>
         public static bool IsHiddenOnCurrentDesktop(IntPtr hwnd)
         {
-            if (!IsCloaked(hwnd)) return false;
+            if (!IsCloaked(hwnd) && !IsEmptyAppFrame(hwnd)) return false;
             try
             {
-                if (desktops == null) desktops = (IVirtualDesktopManager)new VirtualDesktopManager();
                 int onCurrent;
-                return desktops.IsWindowOnCurrentVirtualDesktop(hwnd, out onCurrent) == 0 && onCurrent != 0;
+                int hr = OnCurrentDesktop(hwnd, out onCurrent);
+                // The Alt+Tab switcher builds its list inside a low-level keyboard hook, where this
+                // thread can neither call out to another process nor wait long. The answer from the
+                // last time the window was checked stands, and a pool thread asks again for next time.
+                if (hr == RPC_E_CANTCALLOUT_ININPUTSYNCCALL)
+                {
+                    Task.Run(() =>
+                    {
+                        try
+                        {
+                            int on;
+                            if (OnCurrentDesktop(hwnd, out on) == 0) lastAnswer[hwnd] = on != 0;
+                        }
+                        catch (COMException) { }
+                        catch (InvalidCastException) { }
+                    });
+                    bool known;
+                    return lastAnswer.TryGetValue(hwnd, out known) && known;
+                }
+                if (hr == 0) lastAnswer[hwnd] = onCurrent != 0;
+                return hr == 0 && onCurrent != 0;
             }
             catch (COMException) { return false; }
             catch (InvalidCastException) { return false; }

@@ -120,6 +120,9 @@ let main() =
             let d = joining.Handle
             for hwnd in [a;b] do (combined :> IGroup).addWindow(hwnd,false)
             pumpUntil "Combined group did not acquire two windows" (fun () -> nativeOrder combined = [a;b])
+            // Off screen, the group saves no placement; its previews still need the window's area.
+            let area,top = onGroup combined (fun group -> group.previewArea, group.topWindow)
+            check (not area.size.isEmptyArea && area = OS().windowFromHwnd(top).bounds) (sprintf "A group never on screen has no preview area: %A" area)
             // The window standing in for the group on the taskbar is an Alt+Tab window the switcher must skip.
             let proxies() = OS().windowsInZorder.where(fun w -> TaskbarProxies.contains w.hwnd).map(fun w -> w.hwnd).list
             let proxy = proxies() |> List.filter(fun hwnd -> OS().windowFromHwnd(hwnd).isAltTabWindow)
