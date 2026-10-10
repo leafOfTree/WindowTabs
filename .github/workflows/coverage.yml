@@ -1,0 +1,44 @@
+name: Monthly coverage
+
+on:
+  # First day of each month at 08:00 China Standard Time.
+  schedule:
+    - cron: '0 0 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.fsproj', '**/*.csproj', 'dotnet-tools.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Measure full regression coverage
+        shell: powershell
+        run: ./tests/Run-Tests.ps1 -Coverage -MinimumLineCoverage 50 -MinimumBranchCoverage 50
+
+      - name: Upload coverage and regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: monthly-coverage
+          retention-days: 90
+          path: |
+            tests/Debug/*.log
+            tests/Debug/test-results.jsonl
+            tests/coverage/*/coverage.xml
+            tests/coverage/*/report/**
+          if-no-files-found: ignore

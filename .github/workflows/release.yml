@@ -15,6 +15,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
 
       - name: Read version from tag
         id: version
@@ -44,10 +47,6 @@ jobs:
           if ($actual -ne $env:EXPECTED) { throw "WindowTabs.exe is version $actual, expected $env:EXPECTED" }
           "WindowTabs.exe is version $actual"
 
-      - name: Run regression tests serially
-        shell: powershell
-        run: ./tests/Run-Tests.ps1 -Coverage -MinimumLineCoverage 50 -MinimumBranchCoverage 50
-
       - name: Smoke test isolated Release assembly
         shell: powershell
         run: ./tests/Run-ReleaseSmoke.ps1
@@ -59,16 +58,57 @@ jobs:
           path: WtProgram/bin/Release/WindowTabs.exe
           if-no-files-found: error
 
-      - name: Upload regression diagnostics
-        if: failure()
+      - name: Upload Release diagnostics
+        if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: regression-diagnostics
+          name: release-diagnostics
+          path: |
+            tests/Debug/*.log
+          if-no-files-found: ignore
+
+  regressions:
+    name: regressions (${{ matrix.group }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: architecture
+            suites: 'Architecture,WindowIcon'
+          - group: operations
+            suites: 'GroupOperations,SettingsEditors'
+          - group: ui
+            suites: 'Reliability,DpiLayout,SettingsTheme,TabShadow,GroupLifecycle,PopupRendering,TabInteraction,TaskbarPreview,PrintWindowProbe'
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.fsproj', '**/*.csproj', 'dotnet-tools.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # Each group owns a separate runner; native suites stay serial within it.
+      - name: Run regression tests serially
+        shell: powershell
+        env:
+          REGRESSION_SUITES: ${{ matrix.suites }}
+        run: ./tests/Run-Tests.ps1 -Suites ($env:REGRESSION_SUITES -split ',')
+
+      - name: Upload regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: regression-diagnostics-${{ matrix.group }}
           path: |
             tests/Debug/*.log
             tests/Debug/test-results.jsonl
-            tests/coverage/*/coverage.xml
-            tests/coverage/*/report/**
           if-no-files-found: ignore
 
   # Real input against the very file the draft will carry.
@@ -80,7 +120,7 @@ jobs:
       executable-artifact: release-executable
 
   draft:
-    needs: [build, desktop-e2e]
+    needs: [build, regressions, desktop-e2e]
     runs-on: ubuntu-latest
     permissions:
       contents: write

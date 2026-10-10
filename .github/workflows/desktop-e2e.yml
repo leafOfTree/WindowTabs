@@ -56,5 +56,7 @@ jobs:
             ${{ steps.e2e.outputs.stage }}/stderr.log
             ${{ steps.e2e.outputs.stage }}/failure.txt
             ${{ steps.e2e.outputs.stage }}/windows.json
+            ${{ steps.e2e.outputs.stage }}/actions.jsonl
+            ${{ steps.e2e.outputs.stage }}/random-plan.jsonl
             ${{ steps.e2e.outputs.stage }}/WindowTabsCrash.log
           if-no-files-found: warn

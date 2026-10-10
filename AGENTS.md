@@ -22,8 +22,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
   with `TestInit.run main`, and reference the app as `#r "Debug/WindowTabs.exe"`.
 - Desktop E2E (`tests/Run-DesktopE2E.ps1`) drives real input and takes over the
   desktop; only run it when asked. See [docs/desktop-e2e.md](docs/desktop-e2e.md).
-- CI (`.github/workflows/build.yml`) builds Release, runs the suites with coverage
-  floors (50% lines / 50% branches) and the Release smoke test.
+- CI (`.github/workflows/build.yml`) runs Release checks and three regression
+  groups in parallel on separate runners; suites stay serial within each runner.
+  Monthly coverage (`.github/workflows/coverage.yml`) enforces
+  coverage floors (50% lines / 50% branches); release CI runs without coverage.
 
 ## Layout
 
