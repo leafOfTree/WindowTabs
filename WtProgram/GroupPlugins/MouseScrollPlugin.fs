@@ -20,7 +20,8 @@ type MouseScrollPlugin() as this =
             let wheelDelta = data.hiword
             let next = wheelDelta < int16(0)
             let enableShiftScroll = this.settings.getValue("enableShiftScroll") :?> bool
-            if Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_CONTROL) then
+            let enableCtrlScroll = this.settings.getValue("enableCtrlScroll") :?> bool
+            if enableCtrlScroll && Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_CONTROL) then
                 if this.wtGroup.isPointInTs(pt) then this.moveCurrentTab(next)
             elif enableShiftScroll && Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_SHIFT) then
                 if this.wtGroup.isPointInGroup(pt) then this.wtGroup.switchWindow(next, true)
