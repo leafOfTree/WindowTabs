@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -28,6 +29,9 @@ namespace Bemo
         [ThreadStatic] private static IVirtualDesktopManager desktops;
 
         private const int RPC_E_CANTCALLOUT_ININPUTSYNCCALL = unchecked((int)0x8001010D);
+
+        /// <summary>The last answer for each window asked about, for when asking is not possible.</summary>
+        private static readonly ConcurrentDictionary<IntPtr, bool> lastAnswer = new ConcurrentDictionary<IntPtr, bool>();
 
         private static int OnCurrentDesktop(IntPtr hwnd, out int onCurrent)
         {
@@ -87,17 +91,28 @@ namespace Bemo
                 int onCurrent;
                 int hr = OnCurrentDesktop(hwnd, out onCurrent);
                 // The Alt+Tab switcher builds its list inside a low-level keyboard hook, where this
-                // thread cannot call out to another process; a thread pool thread asks instead.
+                // thread can neither call out to another process nor wait long. The answer from the
+                // last time the window was checked stands, and a pool thread asks again for next time.
                 if (hr == RPC_E_CANTCALLOUT_ININPUTSYNCCALL)
                 {
-                    var asked = Task.Run(() => { int on; int result = OnCurrentDesktop(hwnd, out on); return result == 0 && on != 0; });
-                    return asked.Wait(250) && asked.Result;
+                    Task.Run(() =>
+                    {
+                        try
+                        {
+                            int on;
+                            if (OnCurrentDesktop(hwnd, out on) == 0) lastAnswer[hwnd] = on != 0;
+                        }
+                        catch (COMException) { }
+                        catch (InvalidCastException) { }
+                    });
+                    bool known;
+                    return lastAnswer.TryGetValue(hwnd, out known) && known;
                 }
+                if (hr == 0) lastAnswer[hwnd] = onCurrent != 0;
                 return hr == 0 && onCurrent != 0;
             }
             catch (COMException) { return false; }
             catch (InvalidCastException) { return false; }
-            catch (AggregateException) { return false; }
         }
     }
 }

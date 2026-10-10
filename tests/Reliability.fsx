@@ -364,6 +364,7 @@ let main() =
     // The Alt+Tab switcher builds its list inside a low-level keyboard hook, an input-synchronous
     // call in which COM cannot reach another process. Asking there whether a cloaked window is on
     // this desktop failed, so a UWP app closed to the background (Realtek Audio Console) was listed.
+    // The answer from the window's last check outside the hook now stands.
     do
         use cloaked = new System.Windows.Forms.Form(ShowInTaskbar=false, Text="Cloaked probe",
                                                      StartPosition=System.Windows.Forms.FormStartPosition.Manual,
