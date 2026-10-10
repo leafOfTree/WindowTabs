@@ -2,7 +2,7 @@ name: Desktop E2E Hosted
 
 on:
   pull_request:
-  # Daily Soak on master: also catches changes in the hosted Windows image.
+  # Daily Soak on the default branch: also catches changes in the hosted Windows image.
   schedule:
     - cron: '0 18 * * *'
   workflow_dispatch:
