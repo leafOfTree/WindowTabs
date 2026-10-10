@@ -39,7 +39,7 @@ if ($ReleaseExecutable) {
 Copy-Item -LiteralPath $taskE2EExecutable -Destination $stage
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319/csc.exe'
 $hostExe = Join-Path $stage 'DesktopE2E.exe'
-& $compiler /nologo /target:exe /platform:x86 "/out:$hostExe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll "/win32manifest:$repo/WtProgram/app.manifest" (Join-Path $PSScriptRoot 'DesktopE2E.cs')
+& $compiler /nologo /target:exe /platform:x86 "/out:$hostExe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll /r:Accessibility.dll "/win32manifest:$repo/WtProgram/app.manifest" (Join-Path $PSScriptRoot 'DesktopE2E.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Desktop E2E compilation failed.' }
 @{ appSha256=(Get-FileHash -LiteralPath (Join-Path $stage 'WindowTabs.exe')).Hash; profile=$Profile; switches=$Switches; cycles=$Cycles; durationMinutes=$DurationMinutes; createdUtc=[DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'manifest.json')
 Write-Host "Desktop E2E artifacts: $stage"
