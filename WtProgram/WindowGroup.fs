@@ -91,6 +91,32 @@ module TabNavigation =
         |> Option.bind(fun hwnd -> order |> List.tryFindIndex ((=) hwnd))
         |> Option.map(fun index -> (index + (if next then 1 else order.Length-1)) % order.Length)
 
+    /// The tab a number of steps along from the current one, wrapping as switching does.
+    let stepTarget (order:IntPtr list) current previousTop steps next =
+        let current = if List.contains current order then Some current else previousTop
+        current
+        |> Option.bind(fun hwnd -> order |> List.tryFindIndex ((=) hwnd))
+        |> Option.map(fun index ->
+            let count = order.Length
+            order.[((index + (if next then steps else -steps)) % count + count) % count])
+
+    /// A wheel notch is 120. High-resolution wheels and touchpads send one in parts, so only
+    /// whole notches count and the rest waits for the next part; turning back or pausing
+    /// starts afresh. Returns the whole notches, negative towards the user, and the rest.
+    let wheelNotches rest delta fresh =
+        let rest = if fresh || (rest<>0 && sign rest<>sign delta) then 0 else rest
+        let total = rest + delta
+        total / 120, total % 120
+
+    /// Notches still to be stepped through, negative towards the user. Each notch counts;
+    /// turning the other way drops the steps still waiting and goes that way instead.
+    let addSteps pending notches =
+        if pending<>0 && sign pending<>sign notches then notches else pending+notches
+
+    /// Each tab a step passes stays in front this long, a couple of frames, so it is drawn and
+    /// the tabs are seen to move through it instead of jumping.
+    let scrollStepInterval = 40
+
     /// Where Ctrl + scroll carries the current tab: one place along, never past either end.
     let moveTarget (order:IntPtr list) foreground previousTop right =
         let current = if List.contains foreground order then Some foreground else previousTop

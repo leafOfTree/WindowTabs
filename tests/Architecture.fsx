@@ -234,6 +234,17 @@ let main() =
         check (TabNavigation.moveTarget [a;b;c] b (Some a) true=Some(b,2) && TabNavigation.moveTarget [a;b;c] b (Some a) false=Some(b,0)) "Ctrl + scroll did not move the focused tab one place"
         check (TabNavigation.moveTarget [a;b;c] IntPtr.Zero (Some c) false=Some(c,1)) "Ctrl + scroll lost a background group's top tab"
         check (TabNavigation.moveTarget [a;b;c] c None true=None && TabNavigation.moveTarget [a;b;c] a None false=None) "Ctrl + scroll wrapped a tab past the end"
+        // A notch sent in parts by a high-resolution wheel is one tab, not one per part.
+        let notches parts =
+            parts |> List.fold(fun (total,rest) delta -> let n,r = TabNavigation.wheelNotches rest delta false in total+n,r) (0,0) |> fst
+        check (notches [-30;-30;-30;-30]= -1 && notches [-120;-120]= -2 && notches [40;40;40;40;40;40]=2) "A notch in parts switched more or fewer than one tab"
+        check (fst (TabNavigation.wheelNotches -90 60 false)=0 && snd (TabNavigation.wheelNotches -90 60 false)=60) "Turning back kept the other way's part notch"
+        check (TabNavigation.wheelNotches -90 -60 true=(-0,-60)) "A pause did not start the notch afresh"
+        // Notches step on from where scrolling got to, wrapping like switching.
+        check (TabNavigation.stepTarget [a;b;c] a None 1 true=Some b && TabNavigation.stepTarget [a;b;c] a None 4 true=Some b
+               && TabNavigation.stepTarget [a;b;c] a None 1 false=Some c && TabNavigation.stepTarget [a;b;c] IntPtr.Zero (Some c) 2 true=Some b) "Scrolling stepped to the wrong tab"
+        // Every notch of a quick turn is a step; turning back drops the steps still waiting.
+        check (TabNavigation.addSteps -2 -3 = -5 && TabNavigation.addSteps 0 2 = 2 && TabNavigation.addSteps -4 1 = 1) "Scrolling lost notches of a quick turn, or kept them after turning back"
         check (TabNavigation.neighbour [a;b;c] b=Some c) "Closing the active middle tab did not select its right neighbor"
         check (TabNavigation.neighbour [a;b;c] c=Some b) "Closing the last tab did not select its left neighbor"
         check (TabNavigation.closeTarget [a;b;c] (fun hwnd -> hwnd<>b) b a (Some a) None false=None) "Closing a background tab changed selection"
