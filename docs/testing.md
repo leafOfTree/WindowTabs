@@ -73,8 +73,10 @@ dragging, shortcuts or user settings. Those need a separate end-to-end harness.
 
 ## CI execution time
 
-CI caches downloaded NuGet packages, restores the shared test-host dependencies
-once, and reuses the current job's Release exe when compiling the desktop driver.
+CI runs Release build/smoke checks and Debug regression coverage in parallel on
+separate runners. The final build check requires both jobs to succeed. Each job
+caches downloaded NuGet packages; the regression job restores the shared test-host
+dependencies once, and the Release job reuses its exe when compiling the desktop driver.
 Interactive desktop E2E still builds its own isolated Release copy. Native suites
 remain serial, with every suite and the 50% line/branch coverage floors retained.
 The first cache miss still downloads dependencies; compare warm runs when measuring

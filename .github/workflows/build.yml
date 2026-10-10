@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  release:
     runs-on: windows-latest
 
     steps:
@@ -28,10 +28,6 @@ jobs:
       - name: Build Release
         run: dotnet build WindowTabs.sln -c Release
 
-      - name: Run regression tests serially
-        shell: powershell
-        run: ./tests/Run-Tests.ps1 -Coverage -MinimumLineCoverage 50 -MinimumBranchCoverage 50
-
       - name: Smoke test isolated Release assembly
         shell: powershell
         run: ./tests/Run-ReleaseSmoke.ps1
@@ -40,6 +36,44 @@ jobs:
       - name: Compile desktop E2E harness
         shell: powershell
         run: ./tests/Run-DesktopE2E.ps1 -BuildOnly -ReleaseExecutable ./WtProgram/bin/Release/WindowTabs.exe
+
+      - name: Upload Release diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-diagnostics
+          path: |
+            tests/Debug/*.log
+          if-no-files-found: ignore
+
+      - name: Upload WindowTabs.exe
+        uses: actions/upload-artifact@v6
+        with:
+          name: WindowTabs
+          path: |
+            WtProgram/bin/Release/WindowTabs.exe
+          if-no-files-found: error
+
+  regressions:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.fsproj', '**/*.csproj', 'dotnet-tools.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # Native suites share one desktop and stay serial within this runner.
+      - name: Run regression tests serially
+        shell: powershell
+        run: ./tests/Run-Tests.ps1 -Coverage -MinimumLineCoverage 50 -MinimumBranchCoverage 50
 
       - name: Upload regression diagnostics
         if: always()
@@ -53,10 +87,16 @@ jobs:
             tests/coverage/*/report/**
           if-no-files-found: ignore
 
-      - name: Upload WindowTabs.exe
-        uses: actions/upload-artifact@v6
-        with:
-          name: WindowTabs
-          path: |
-            WtProgram/bin/Release/WindowTabs.exe
-          if-no-files-found: error
+  # Keep the existing required check and fail it if either parallel job did not pass.
+  build:
+    needs: [release, regressions]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check parallel job results
+        env:
+          RELEASE_RESULT: ${{ needs.release.result }}
+          REGRESSIONS_RESULT: ${{ needs.regressions.result }}
+        run: |
+          test "$RELEASE_RESULT" = success && test "$REGRESSIONS_RESULT" = success
