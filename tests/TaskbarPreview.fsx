@@ -128,6 +128,16 @@ let main() =
     let handle = badged.icon.Handle
     (badged :> IDisposable).Dispose()
     check (not(WinUserApi.DestroyIcon(handle))) "Badged taskbar icon kept its native handle"
+    // A 256 pixel app icon made a badged icon the Windows Alt+Tab drew across a group's whole tile.
+    do
+        use huge = new Bitmap(256,256)
+        let hugeHandle = huge.GetHicon()
+        use hugeIcon = Icon.FromHandle(hugeHandle)
+        let capped = new TaskbarBadgedIcon(hugeIcon)
+        let width = capped.icon.Width
+        (capped :> IDisposable).Dispose()
+        WinUserApi.DestroyIcon(hugeHandle) |> ignore
+        check (width = 64) (sprintf "A 256 pixel app icon made a %d pixel taskbar icon" width)
     WinUserApi.DestroyIcon(appHandle) |> ignore
     // A hidden Chromium tab prints blank: its last capture from the front stands in for it,
     // and it is not printed again until it has been in front.

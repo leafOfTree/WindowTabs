@@ -60,7 +60,8 @@ module TaskbarProxies =
 /// A group's taskbar icon: the app's icon with the WindowTabs badge at the bottom right, as in
 /// the window switcher. Windows 11 draws an overlay icon at the top right instead.
 type TaskbarBadgedIcon(icon:Icon) =
-    let size = max 32 icon.Width
+    // Some apps give a 256 pixel icon, which the Windows Alt+Tab drew across a group's whole tile.
+    let size = min 64 (max 32 icon.Width)
     let handle =
         use canvas = new Bitmap(size,size,PixelFormat.Format32bppArgb)
         do
