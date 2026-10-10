@@ -209,8 +209,18 @@ type TaskBarButton(info) as this =
         taskbar.AddTab(hwnd)
     let registerTab(hwndTab) = 
         taskbar.RegisterTab(hwndTab, this.window.hwnd)
-    let setTabOrder(hwnd, hwndInsertBefore) = 
-        taskbar.SetTabOrder(hwnd, hwndInsertBefore)
+    /// Each preview goes to the end in turn, which leaves them in the strip's order.
+    let sendTabOrder() =
+        infoCell.value |> Option.iter(fun info ->
+            info.tabs.map(fst).choose(tabWindowsCell.value.tryFind).iter <| fun (tabWindow:TaskbarTab) ->
+                taskbar.SetTabOrder(tabWindow.window.hwnd, IntPtr.Zero))
+    /// A new window can leave its group and join again within moments (Neovide and Alacritty
+    /// change their title as they start). Explorer can take the new preview's registration after
+    /// the order that places it, and then shows it first, so the order is sent again once settled.
+    let resendTabOrder = new System.Windows.Forms.Timer(Interval=500)
+    do resendTabOrder.Tick.Add(fun _ ->
+        resendTabOrder.Stop()
+        sendTabOrder())
     let _window = lazy(
         let config() : TbButton = infoCell.value.Value
         
@@ -322,8 +332,17 @@ type TaskBarButton(info) as this =
 
         let tabOrder = tabOrder info
         if tabOrder.list <> prevTabOrder.list then
-            tabOrder.iter <| fun tabWindow ->  setTabOrder(tabWindow.window.hwnd, IntPtr.Zero)
+            sendTabOrder()
+            resendTabOrder.Stop()
+            resendTabOrder.Start()
        
+    /// The order was just changed and is to be sent again.
+    member this.isResendingTabOrder = resendTabOrder.Enabled
+
+    /// Explorer keeps a destroyed preview in the group's list unless it is told the tab closed.
+    member this.unregisterTab(hwnd:IntPtr) =
+        taskbar.UnregisterTab(hwnd)
+
     /// A group can announce a window before its tab joins the strip, so the tab may have no preview window yet.
     member this.tryTabWindow key = tabWindowsCell.value.tryFind(key) |> Option.map(fun tab -> tab.window)
 
@@ -349,6 +368,7 @@ type TaskBarButton(info) as this =
 
     interface IDisposable with
         member this.Dispose() =
+            resendTabOrder.Dispose()
             this.window.destroy()
             tabWindowsCell.value.items.iter <| fun (tab, tabWindow) ->
                 tabWindow.Dispose()
@@ -393,6 +413,7 @@ and TaskbarTab(parent:TaskBarButton, config,size) =
     member this.window : Window = _window
     member this.invalidate() = this.window.dwmInvalidateIconicBitmaps()
     member this.Dispose() =
+        parent.unregisterTab(_window.hwnd)
         _window.destroy() 
 
 type SuperBarPlugin() as this =

@@ -134,6 +134,27 @@ let main() =
             onGroup combined (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
             pumpUntil "Taskbar proxies outlived their combined taskbar button" (fun () -> not(TaskbarProxies.contains proxy.Head))
 
+            // Neovide and Alacritty windows join, leave and join again as they start. Explorer can
+            // register the returning preview after the order that places it and show it first, so a
+            // changed order is sent again once settled.
+            do
+                let tab text : string * TbButtonTab =
+                    text, { icon=Drawing.SystemIcons.Application; text=text; activate=ignore; close=ignore; preview=fun _ -> None }
+                let info texts : TbButton =
+                    { icon=Drawing.SystemIcons.Application; text="Order"; bounds=Rect(Pt(-20000,-20000),Sz(320,200))
+                      activate=ignore; toggleMinimizeRestore=ignore; close=ignore; tabs=List2(texts |> List.map tab) }
+                let button = new TaskBarButton(info ["a";"b"])
+                try
+                    pumpUntil "First preview order was not sent again" (fun () -> not button.isResendingTabOrder)
+                    button.update(info ["a";"b";"c"])
+                    button.update(info ["a";"b"])
+                    button.update(info ["a";"b";"c"])
+                    check button.isResendingTabOrder "A preview that rejoined is not ordered again"
+                    pumpUntil "Preview order was not sent again" (fun () -> not button.isResendingTabOrder)
+                    button.update(info ["a";"b";"c"])
+                    check (not button.isResendingTabOrder) "An unchanged order is sent again"
+                finally (button :> IDisposable).Dispose()
+
             // The setting rebuilds open groups that follow it, keeping what their tab menu chose.
             api.setValue("combineIconsInTaskbar", box false)
             let groupsOf hwnd = desktopApi.groups.list |> List.filter(fun g -> g.windows.contains((=)hwnd)) |> List.map(fun g -> g :?> GroupInfo)
