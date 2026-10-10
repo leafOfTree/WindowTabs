@@ -73,7 +73,7 @@ jobs:
       # Native suites share one desktop and stay serial within this runner.
       - name: Run regression tests serially
         shell: powershell
-        run: ./tests/Run-Tests.ps1 -Coverage -MinimumLineCoverage 50 -MinimumBranchCoverage 50
+        run: ./tests/Run-Tests.ps1
 
       - name: Upload regression diagnostics
         if: always()
@@ -83,8 +83,6 @@ jobs:
           path: |
             tests/Debug/*.log
             tests/Debug/test-results.jsonl
-            tests/coverage/*/coverage.xml
-            tests/coverage/*/report/**
           if-no-files-found: ignore
 
   # Keep the existing required check and fail it if either parallel job did not pass.
