@@ -173,7 +173,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         version.Click.Add(fun _ ->
             try Diagnostics.Process.Start(releasesUrl) |> ignore
             with _ -> ())
-        SettingsHover(version,sprintf "%s\n%s" version.Text (tr Strings.Diagnostics.releasesHint)) |> ignore
+        SettingsHover(version,tr Strings.Diagnostics.releasesHint) |> ignore
         // Leave the full sidebar width for versions with a preview suffix.
         languageChoice.Dock <- DockStyle.Right
         let brandRow = new Panel(Dock=DockStyle.Top,Height=Dpi.scale 28)
