@@ -55,7 +55,18 @@ jobs:
           if-no-files-found: error
 
   regressions:
+    name: regressions (${{ matrix.group }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: operations
+            suites: 'GroupOperations,SettingsEditors,DpiLayout,WindowIcon'
+          - group: interaction
+            suites: 'Architecture,TabInteraction,GroupLifecycle,TaskbarPreview'
+          - group: rendering
+            suites: 'Reliability,TabShadow,SettingsTheme,PopupRendering,PrintWindowProbe'
 
     steps:
       - uses: actions/checkout@v6
@@ -73,19 +84,21 @@ jobs:
       # Native suites share one desktop and stay serial within this runner.
       - name: Run regression tests serially
         shell: powershell
-        run: ./tests/Run-Tests.ps1
+        env:
+          REGRESSION_SUITES: ${{ matrix.suites }}
+        run: ./tests/Run-Tests.ps1 -Suites ($env:REGRESSION_SUITES -split ',')
 
       - name: Upload regression diagnostics
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: regression-diagnostics
+          name: regression-diagnostics-${{ matrix.group }}
           path: |
             tests/Debug/*.log
             tests/Debug/test-results.jsonl
           if-no-files-found: ignore
 
-  # Keep the existing required check and fail it if either parallel job did not pass.
+  # Preserve the required check and require Release plus every regression group to pass.
   build:
     needs: [release, regressions]
     if: always()

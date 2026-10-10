@@ -73,12 +73,15 @@ dragging, shortcuts or user settings. Those need a separate end-to-end harness.
 
 ## CI execution time
 
-CI runs Release build/smoke checks and Debug regression tests in parallel on
-separate runners. The final build check requires both jobs to succeed. Each job
-caches downloaded NuGet packages; the regression job restores the shared test-host
+CI runs Release build/smoke checks and three groups of Debug regression tests in
+parallel on separate runners. The final build check requires Release and every
+regression group to succeed. A failing group does not cancel the other groups.
+Each group uploads its own diagnostics. Each job caches downloaded NuGet packages;
+each regression group restores the shared test-host
 dependencies once, and the Release job reuses its exe when compiling the desktop driver.
 Interactive desktop E2E still builds its own isolated Release copy. Native suites
-remain serial, with every suite retained. Push and pull request builds run without
+remain serial within each runner, with all 13 suites retained across the groups.
+Push and pull request builds run without
 coverage instrumentation. The Monthly coverage workflow measures the full suite
 on the default branch at 08:00 China Standard Time on the first day of each month,
 enforces 50% line/branch coverage floors, and retains its reports for 90 days.
