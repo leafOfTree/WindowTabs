@@ -405,7 +405,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             preview = fun() ->
                 try
                     if window.isMinimized then
-                        let size = this.placementBounds.size
+                        let size = this.previewArea.size
                         let _,icon = iconCache.get(hwnd)
                         let iconSize = icon.Size.Sz
                         let img = Img(size)
@@ -492,6 +492,16 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.windowCount = this.windows.count
 
     member this.placementBounds : Rect = placement.value.map(fun(bounds,_,_) -> bounds).def(Rect())
+
+    /// Where the group's windows are, for previews: nothing is saved for a group that has not
+    /// been on screen since WindowTabs started, minimized from the start, say.
+    member this.previewArea : Rect =
+        let saved = this.placementBounds
+        match zorderCell.value.tryHead with
+        | Some top when saved.size.isEmptyArea ->
+            let window = this.os.windowFromHwnd(top)
+            if window.isMinimized then window.placement.rcNormalPosition else window.bounds
+        | _ -> saved
 
     member private this.isTop(hwnd) = zorderCell.value.where(isMinimized >> not).tryHead = Some(hwnd)
 

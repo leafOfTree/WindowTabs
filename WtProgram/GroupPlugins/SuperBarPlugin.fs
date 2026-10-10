@@ -7,6 +7,9 @@ open System.Windows.Forms
 
 /// Preview producers transfer ownership of their bitmap to this request.
 module TaskbarPreview =
+    /// The largest thumbnail the taskbar last asked for.
+    let mutable thumbnailBox : Sz option = None
+
     let relativeLocation (previewBounds:Rect) (windowBounds:Rect) =
         windowBounds.location.sub(previewBounds.location).Point
 
@@ -200,6 +203,11 @@ type TaskBarButton(info) as this =
     let _os = OS()
     let taskbar = _os.getTaskbar().Value
     let mutable badgedIcon : TaskbarBadgedIcon option = None
+    /// The taskbar lays out a preview from the thumbnails it holds, else at the largest size it
+    /// would accept, too wide for a tall window; and it drops them when a preview closes. So
+    /// each tab's thumbnail is handed over before the next preview: soon after tabs or their
+    /// size change, and a second after the taskbar last asked for one.
+    let publishTimer = new System.Windows.Forms.Timer()
     let infoCell = Cell.create(None)
     let tabWindowsCell = Cell.create(Map2())
     let windowsToDispose = Cell.create(Set2())
@@ -254,6 +262,9 @@ type TaskBarButton(info) as this =
         window)
 
     do 
+        publishTimer.Tick.Add(fun _ ->
+            publishTimer.Stop()
+            this.publishThumbnails())
         this.update info
 
     member this.os = _os
@@ -263,6 +274,16 @@ type TaskBarButton(info) as this =
     member this.invalidate() =
         tabWindowsCell.value.values.iter <| fun (tab:TaskbarTab) ->
             tab.invalidate()
+        this.schedulePublish 300
+
+    member this.schedulePublish (delay:int) =
+        publishTimer.Stop()
+        publishTimer.Interval <- delay
+        publishTimer.Start()
+
+    member private this.publishThumbnails() =
+        let box = TaskbarPreview.thumbnailBox |> Option.defaultWith(fun () -> Dpi.scaleSize(Sz(200,108)))
+        tabWindowsCell.value.values.iter <| fun (tab:TaskbarTab) -> tab.publishThumbnail box
 
     member this.update info =
         let findOrCreate (map:Cell<Map2<_,_>>) key create =
@@ -284,6 +305,7 @@ type TaskBarButton(info) as this =
 
         let prevInfo = infoCell.value
         infoCell.set(Some(info))
+        let mutable tabAdded = false
 
         // Notify the shell before the group releases its previous icon copies.
         if badgedIcon |> Option.exists(fun badged -> obj.ReferenceEquals(badged.source,info.icon)) |> not then
@@ -305,6 +327,7 @@ type TaskBarButton(info) as this =
                 tabWindow.window.setAppId(appId)
                 
                 registerTab(tabWindow.window.hwnd)
+                tabAdded <- true
                 tabWindow
 
             tabWindow.window.move(info.bounds)
@@ -322,6 +345,9 @@ type TaskBarButton(info) as this =
         let tabOrder = tabOrder info
         if tabOrder.list <> prevTabOrder.list then
             tabOrder.iter <| fun tabWindow ->  setTabOrder(tabWindow.window.hwnd, IntPtr.Zero)
+
+        if tabAdded || prevInfo |> Option.forall(fun previous -> previous.bounds.size <> info.bounds.size) then
+            this.schedulePublish 300
        
     /// A group can announce a window before its tab joins the strip, so the tab may have no preview window yet.
     member this.tryTabWindow key = tabWindowsCell.value.tryFind(key) |> Option.map(fun tab -> tab.window)
@@ -348,6 +374,7 @@ type TaskBarButton(info) as this =
 
     interface IDisposable with
         member this.Dispose() =
+            publishTimer.Dispose()
             this.window.destroy()
             tabWindowsCell.value.items.iter <| fun (tab, tabWindow) ->
                 tabWindow.Dispose()
@@ -374,8 +401,10 @@ and TaskbarTab(parent:TaskBarButton, config,size) =
                         msg.def()
                 | WindowMessages.WM_DWMSENDICONICTHUMBNAIL ->
                     let msgWindow = os.windowFromHwnd(msg.hwnd)
+                    TaskbarPreview.thumbnailBox <- Some msg.lParam.size
                     TaskbarPreview.send (fun () -> config().preview(true))
                         (TaskbarPreview.centre msg.lParam.size) msgWindow.dwmSetIconicThumbnail
+                    parent.schedulePublish 1000
                     msg.def()
                 | WindowMessages.WM_DWMSENDICONICLIVEPREVIEWBITMAP ->
                     let msgWindow = os.windowFromHwnd(msg.hwnd)
@@ -391,6 +420,9 @@ and TaskbarTab(parent:TaskBarButton, config,size) =
     
     member this.window : Window = _window
     member this.invalidate() = this.window.dwmInvalidateIconicBitmaps()
+    /// Fitted to the box, not centred in it: the slot then takes the thumbnail's own shape.
+    member this.publishThumbnail(box:Sz) =
+        TaskbarPreview.send (fun () -> config().preview(true)) (fun img -> img.resize(box)) this.window.dwmSetIconicThumbnail
     member this.Dispose() =
         _window.destroy() 
 
@@ -433,7 +465,11 @@ type SuperBarPlugin() as this =
                     (button :> IDisposable).Dispose()
                     taskbarButton <- null
             elif this.zorder.isEmpty.not then
-                let previewBounds = this.ts.bounds.union(this.wtGroup.placementBounds)
+                // A hidden strip has no bounds; the preview is then the window alone.
+                let stripShown = this.ts.visible && not(this.ts.bounds.size.isEmptyArea)
+                let previewBounds =
+                    if stripShown then this.ts.bounds.union(this.wtGroup.previewArea)
+                    else this.wtGroup.previewArea
                 let top = this.zorder.head
                 let topTab = Tab(top)
                 let tbButtonInfo = {
@@ -465,7 +501,7 @@ type SuperBarPlugin() as this =
                                         (fun () ->
                                             let window = this.os.windowFromHwnd(hwnd)
                                             captures.preview hwnd window.bounds.size.Size window.isMinimized (this.zorder.tryHead = Some hwnd) (fun () -> this.ts.tabInfo(tab).preview()))
-                                        (fun () -> this.ts.renderTs(Some(tab))))
+                                        (fun () -> if stripShown then this.ts.renderTs(Some(tab)) else Img(Sz(1,1))))
                                 with _ -> None
                             activate = fun() -> this.invokeAsync <| fun() ->
                                 this.tabActivate(tab, false)
