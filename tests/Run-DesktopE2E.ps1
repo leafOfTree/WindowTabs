@@ -1,6 +1,8 @@
 param([switch]$Interactive, [switch]$BuildOnly, [switch]$Describe,
       [string]$ReleaseExecutable,
       [ValidateSet('Quick','Full','Soak')][string]$Profile = 'Full',
+      [int]$Seed = 0,
+      [ValidateRange(0, 10000)][int]$RandomBatchesPerCycle = 0,
       [ValidateRange(30, 10000)][int]$Switches = 300,
       [ValidateRange(1, 10)][int]$Cycles = 2,
       [ValidateRange(0, 60)][int]$DurationMinutes = 0,
@@ -15,10 +17,17 @@ $defaults = switch ($Profile) {
 foreach ($key in $defaults.Keys) {
     if (-not $PSBoundParameters.ContainsKey($key)) { Set-Variable -Name $key -Value $defaults[$key] }
 }
+if ($RandomBatchesPerCycle -gt 0) {
+    if ($Profile -ne 'Soak') { throw 'RandomBatchesPerCycle requires the Soak profile.' }
+    if ($PSBoundParameters.ContainsKey('DurationMinutes') -and $DurationMinutes -ne 0) { throw 'Use DurationMinutes 0 for a fixed-batch replay.' }
+    $DurationMinutes = 0
+}
 if ($DurationMinutes -gt 0 -and $TimeoutSeconds -lt ($DurationMinutes * 60 + 60)) {
     throw 'TimeoutSeconds must allow the requested duration plus at least 60 seconds for setup and teardown.'
 }
-$configuration = [pscustomobject]@{ Profile=$Profile; Switches=$Switches; Cycles=$Cycles; DurationMinutes=$DurationMinutes; TimeoutSeconds=$TimeoutSeconds }
+$randomize = $Profile -eq 'Soak'
+if ($randomize -and -not $PSBoundParameters.ContainsKey('Seed')) { $Seed = Get-Random -Minimum 1 -Maximum ([int]::MaxValue) }
+$configuration = [pscustomobject]@{ Profile=$Profile; Switches=$Switches; Cycles=$Cycles; DurationMinutes=$DurationMinutes; TimeoutSeconds=$TimeoutSeconds; Randomize=$randomize; Seed=$Seed; RandomBatchesPerCycle=$RandomBatchesPerCycle }
 if ($Describe) { return $configuration }
 Write-Host "Desktop E2E profile: $($configuration | ConvertTo-Json -Compress)"
 if (-not $BuildOnly -and -not $Interactive) { throw 'This test owns foreground/mouse/keyboard input. Use -Interactive on an unlocked, idle desktop, or -BuildOnly.' }
@@ -41,10 +50,12 @@ $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework/v4.0.30319/csc.exe'
 $hostExe = Join-Path $stage 'DesktopE2E.exe'
 & $compiler /nologo /target:exe /platform:x86 "/out:$hostExe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll /r:Accessibility.dll "/win32manifest:$repo/WtProgram/app.manifest" (Join-Path $PSScriptRoot 'DesktopE2E.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Desktop E2E compilation failed.' }
-@{ appSha256=(Get-FileHash -LiteralPath (Join-Path $stage 'WindowTabs.exe')).Hash; profile=$Profile; switches=$Switches; cycles=$Cycles; durationMinutes=$DurationMinutes; createdUtc=[DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'manifest.json')
+& $hostExe --check-random-plan
+if ($LASTEXITCODE -ne 0) { throw 'Random action planner checks failed.' }
+@{ appSha256=(Get-FileHash -LiteralPath (Join-Path $stage 'WindowTabs.exe')).Hash; profile=$Profile; switches=$Switches; cycles=$Cycles; durationMinutes=$DurationMinutes; randomize=$randomize; seed=$Seed; randomBatchesPerCycle=$RandomBatchesPerCycle; randomPlanVersion=1; createdUtc=[DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'manifest.json')
 Write-Host "Desktop E2E artifacts: $stage"
 if ($BuildOnly) { return }
-$process = Start-Process -FilePath $hostExe -ArgumentList @('--run', "$Switches", "$Cycles", "$DurationMinutes") -WorkingDirectory $stage -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $stage 'stdout.log') -RedirectStandardError (Join-Path $stage 'stderr.log')
+$process = Start-Process -FilePath $hostExe -ArgumentList @('--run', "$Switches", "$Cycles", "$DurationMinutes", "$Seed", "$randomize", "$RandomBatchesPerCycle") -WorkingDirectory $stage -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $stage 'stdout.log') -RedirectStandardError (Join-Path $stage 'stderr.log')
 $handle = $process.Handle
 $shown = @{ 'stdout.log'=0; 'stderr.log'=0 }
 function Write-NewLogs {
@@ -69,6 +80,9 @@ Write-NewLogs
 if ($process.ExitCode -ne 0) { throw "Desktop E2E failed ($($process.ExitCode)); see $stage" }
 $report = Get-Content -LiteralPath (Join-Path $stage 'result.json') -Raw | ConvertFrom-Json
 if ($report.status -ne 'passed' -or $report.completedCycles -ne $Cycles) { throw 'Desktop E2E exited without completing every cycle.' }
+if ($randomize -and ($report.seed -ne $Seed -or -not $report.randomize -or $report.randomActionCount -lt (30 * $Cycles * [Math]::Max(1, $RandomBatchesPerCycle)))) {
+    throw 'Desktop E2E exited without completing its seeded random actions.'
+}
 if ($report.verifiedSwitches -lt (($Switches + 60) * $Cycles) -or $report.switchingSeconds -lt ($DurationMinutes * 60)) {
     throw 'Desktop E2E exited without completing its switching count or minimum duration.'
 }

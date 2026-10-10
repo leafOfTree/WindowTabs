@@ -58,7 +58,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-DesktopE2E.ps1 -In
 | --- | --- | --- |
 | Quick | One startup/exit cycle; 60 main + 30 maximized + 30 post-close checked switches | 3 minutes |
 | Full (default) | Two cycles with restart; 600 + 30 + 30 checked switches per cycle | 10 minutes |
-| Soak | Two cycles; at least 30 minutes of continuous switching across them, then normal exit/restart checks | 40 minutes |
+| Soak | Two cycles; at least 30 minutes of switching and seeded random operations across them, then normal exit/restart checks | 40 minutes |
 
 Soak keeps each application instance alive for at least 15 minutes of switching;
 it does not merely repeat many short process lifetimes. It retains the first
@@ -67,6 +67,34 @@ escape the budget by resetting the baseline. `-Switches`, `-Cycles`,
 `-DurationMinutes` and `-TimeoutSeconds` can explicitly override profile values.
 These timeouts are upper bounds, not expected runtimes. Live progress is streamed
 to the console and GitHub log while the driver runs.
+
+Soak adds 30 random actions after each fixed switching batch. Actions include
+random tab clicks/numeric shortcuts, next/previous shortcuts, bursts of numeric
+shortcuts, maximize/switch/restore, minimize/restore, and closing a random helper
+then discovering and dragging a replacement into the surviving group. Each action
+checks foreground/strip ownership, fixture membership and group count; batches
+also read all tabs to check for missing or duplicate entries. Resource growth is
+checked against the same initial baseline throughout each application lifetime.
+Quick and Full retain their fixed workloads.
+
+Each Soak run chooses a seed unless `-Seed` is supplied. `manifest.json` records
+the seed and planner version, `random-plan.jsonl` records every planned action
+before execution, and `actions.jsonl` retains all input and verification actions.
+Logical tab indexes, rather than HWND values, drive the random plan. Each cycle
+uses the seed plus its zero-based cycle number. The random sequence is repeatable
+with the same driver version, seed and workload; desktop timing is not guaranteed
+to repeat. Time-based runs can complete different batch counts, so replay a fixed
+number of batches to reach an observed failure prefix:
+
+```powershell
+# Reuse the failed run's seed, binary and switching count. One batch has 30 random actions.
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-DesktopE2E.ps1 -Interactive -Profile Soak -Seed 12345 -RandomBatchesPerCycle 1 -Switches 600 -Cycles 1 -ReleaseExecutable C:\path\WindowTabs.exe
+```
+
+`-RandomBatchesPerCycle` disables the minimum-duration requirement for replay.
+Compilation also runs input-free checks of planner bounds, all eight action kinds
+and deterministic replay across five seeds. Automatic failure-sequence shrinking
+and arbitrary cross-group reorder operations are not implemented.
 
 The runner builds Release and copies only the shipped EXE into a
 unique `tests/Debug/desktop-e2e-<id>` directory. A separately compiled x86 WinForms

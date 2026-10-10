@@ -12,6 +12,14 @@ on:
         type: choice
         options: [Quick, Full, Soak]
         default: Quick
+      seed:
+        description: 'Soak random seed; leave empty to generate one'
+        type: string
+        default: ''
+      random-batches-per-cycle:
+        description: 'Soak replay batches per cycle; 0 uses the normal duration'
+        type: string
+        default: '0'
   # The release workflow tests the executable it is about to ship.
   workflow_call:
     inputs:
@@ -65,12 +73,15 @@ jobs:
         shell: powershell
         env:
           E2E_EXECUTABLE: ${{ inputs.executable-artifact && 'e2e-executable/WindowTabs.exe' || '' }}
+          E2E_SEED: ${{ inputs.seed || '' }}
+          E2E_RANDOM_BATCHES: ${{ inputs.random-batches-per-cycle || '0' }}
         run: |
+          $options = @{ Interactive=$true; Profile=$env:E2E_PROFILE; RandomBatchesPerCycle=[int]$env:E2E_RANDOM_BATCHES }
+          if ($env:E2E_SEED -ne '') { $options.Seed = [int]$env:E2E_SEED }
           if ($env:E2E_EXECUTABLE) {
-              ./tests/Run-DesktopE2E.ps1 -Interactive -Profile $env:E2E_PROFILE -ReleaseExecutable $env:E2E_EXECUTABLE
-          } else {
-              ./tests/Run-DesktopE2E.ps1 -Interactive -Profile $env:E2E_PROFILE
+              $options.ReleaseExecutable = $env:E2E_EXECUTABLE
           }
+          ./tests/Run-DesktopE2E.ps1 @options
 
       - name: Clean up this test's processes
         if: always() && steps.e2e.outputs.stage != ''
@@ -92,5 +103,7 @@ jobs:
             ${{ steps.e2e.outputs.stage }}/stderr.log
             ${{ steps.e2e.outputs.stage }}/failure.txt
             ${{ steps.e2e.outputs.stage }}/windows.json
+            ${{ steps.e2e.outputs.stage }}/actions.jsonl
+            ${{ steps.e2e.outputs.stage }}/random-plan.jsonl
             ${{ steps.e2e.outputs.stage }}/WindowTabsCrash.log
           if-no-files-found: warn

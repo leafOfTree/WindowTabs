@@ -60,11 +60,43 @@ static class DesktopE2E
     static int clickOrdinal;
     static Point savedCursor;
     static bool inputOwned;
+    static bool randomize;
+    static int seed, randomActionCount, randomBatchesPerCycle;
+    sealed class RandomAction
+    {
+        public int Kind, Target, Burst;
+        public int[] Digits;
+    }
+    static RandomAction Plan(Random random)
+    {
+        var action=new RandomAction { Kind=random.Next(8),Target=random.Next(3),Burst=random.Next(2,13) };
+        action.Digits=Enumerable.Range(0,action.Burst).Select(i=>random.Next(3)).ToArray();
+        return action;
+    }
+    static void CheckRandomPlan()
+    {
+        foreach(int testSeed in new[]{0,1,-1,int.MinValue,int.MaxValue})
+        {
+            var first=new Random(testSeed); var replay=new Random(testSeed);
+            var kinds=new HashSet<int>();
+            for(int i=0;i<1000;i++)
+            {
+                var a=Plan(first); var b=Plan(replay); kinds.Add(a.Kind);
+                Check(Json.Serialize(a)==Json.Serialize(b),"Seed replay changed the random plan");
+                Check(a.Kind>=0 && a.Kind<8 && a.Target>=0 && a.Target<3 && a.Burst>=2 && a.Burst<=12 &&
+                    a.Digits.Length==a.Burst && a.Digits.All(n=>n>=0 && n<3),"Random plan contains an invalid action");
+            }
+            Check(kinds.Count==8,"Random plan did not exercise every action kind");
+        }
+        Log("PASS: random planner bounds, action coverage and deterministic seed replay");
+    }
     static void Check(bool ok, string text) { if (!ok) throw new Exception(phase + " / " + step + ": " + text); }
     static void Log(string text) { Console.WriteLine(DateTime.UtcNow.ToString("o") + " " + text); }
     static void Remember(string action, object details)
     {
-        RecentActions.Enqueue(new { utc=DateTime.UtcNow.ToString("o"),phase,step,action,details,foreground=GetForegroundWindow().ToInt64() });
+        var record=new { utc=DateTime.UtcNow.ToString("o"),phase,step,action,details,foreground=GetForegroundWindow().ToInt64() };
+        RecentActions.Enqueue(record);
+        if(randomize) File.AppendAllText(Path.Combine(Root,"actions.jsonl"),Json.Serialize(record)+Environment.NewLine);
         while(RecentActions.Count>40) RecentActions.Dequeue();
     }
     static bool HasCrash() { var path=Path.Combine(Root,"WindowTabsCrash.log"); return File.Exists(path) && new FileInfo(path).Length>0; }
@@ -224,6 +256,78 @@ static class DesktopE2E
         CheckGrowth(before,after);
         return before;
     }
+    static Form NewHelper(Point position)
+    {
+        var helper=new Form { Text="WindowTabs E2E fixture",StartPosition=FormStartPosition.Manual,
+            Location=position,Size=new Size(560,150),BackColor=Color.LightBlue };
+        helper.Menu=new MainMenu(new[]{new MenuItem("&File",new[]{new MenuItem("&Test")})});
+        Forms.Add(helper); helper.Show(); ShowWindow(helper.Handle,4);
+        return helper;
+    }
+    static async Task RandomMany(IntPtr strip, List<IntPtr> order, Random random)
+    {
+        var area=Screen.PrimaryScreen.WorkingArea;
+        for(int i=0;i<30;i++)
+        {
+            var action=Plan(random);
+            step="random action "+(++randomActionCount)+" kind "+action.Kind;
+            // Record logical targets before input; HWNDs are diagnostic, not replay identifiers.
+            File.AppendAllText(Path.Combine(Root,"random-plan.jsonl"),Json.Serialize(new { seed,phase,index=randomActionCount,action })+Environment.NewLine);
+            Check(order.Count==3 && new HashSet<IntPtr>(order).SetEquals(Helpers()),"Random model lost a fixture window");
+            int current=order.IndexOf(GetForegroundWindow());
+            Check(current>=0,"Foreground left the fixture before a random action");
+            int selected=action.Target;
+            switch(action.Kind)
+            {
+                case 0: await Click(strip,selected,3); await Activated(order[selected],strip); totalSwitches++; break;
+                case 1: Chord(0x12,0x31+selected); await Activated(order[selected],strip); totalSwitches++; break;
+                case 2:
+                    Chord(0x11,0x12,0x7A); await Activated(order[(current+1)%3],strip); totalSwitches++; break;
+                case 3:
+                    Chord(0x11,0x12,0x7B); await Activated(order[(current+2)%3],strip); totalSwitches++; break;
+                case 4:
+                    foreach(int digit in action.Digits) { Chord(0x12,0x31+digit); await Task.Delay(15); }
+                    await Activated(order[action.Digits.Last()],strip); totalSwitches++; break;
+                case 5:
+                    Remember("random maximize",new { target=current });
+                    Forms.Single(f=>!f.IsDisposed && f.Handle==order[current]).WindowState=FormWindowState.Maximized;
+                    await Until("Random maximize did not place the strip inside the window",()=>Bounds(strip).Top<=area.Top+5);
+                    Chord(0x12,0x31+selected); await Activated(order[selected],strip); totalSwitches++;
+                    Forms.Single(f=>!f.IsDisposed && f.Handle==order[selected]).WindowState=FormWindowState.Normal;
+                    await Until("Random restore did not restore all fixture windows",()=>Forms.Where(f=>!f.IsDisposed).All(f=>f.WindowState==FormWindowState.Normal) && Bounds(strip).Top>area.Top+5);
+                    await Activated(order[selected],strip); break;
+                case 6:
+                    Remember("random minimize and restore",new { target=current });
+                    var active=Forms.Single(f=>!f.IsDisposed && f.Handle==order[current]);
+                    active.WindowState=FormWindowState.Minimized;
+                    await Until("Random minimize did not minimize every fixture window",()=>Forms.Where(f=>!f.IsDisposed).All(f=>f.WindowState==FormWindowState.Minimized));
+                    ShowWindow(active.Handle,9);
+                    await Until("Random restore did not restore every fixture window",()=>Forms.Where(f=>!f.IsDisposed).All(f=>f.WindowState==FormWindowState.Normal));
+                    await Activated(active.Handle,strip); break;
+                default:
+                    Remember("random close and regroup",new { target=selected });
+                    IntPtr closing=order[selected];
+                    Forms.Single(f=>!f.IsDisposed && f.Handle==closing).Close(); order.Remove(closing);
+                    Forms.RemoveAll(f=>f.IsDisposed);
+                    await Until("Random close left stale strip ownership",()=>!IsWindow(closing) && order.Contains(GetWindow(strip,4)));
+                    await ReadOrder(strip,2,order);
+                    var replacement=NewHelper(new Point(area.Left+60,area.Top+530));
+                    var expected=order.Concat(new[]{replacement.Handle}).ToArray();
+                    await Until("Replacement helper was not discovered",()=>Strips().Count==2,15000);
+                    var source=Strips().Single(h=>GetWindow(h,4)==replacement.Handle);
+                    await Drag(source,strip,2);
+                    await Until("Random regroup did not merge the replacement",()=>Strips().Count==1);
+                    var updated=await ReadOrder(strip,3,expected); order.Clear(); order.AddRange(updated);
+                    break;
+            }
+            Check(order.Contains(GetForegroundWindow()),"Random action left foreground outside the fixture model");
+            await Activated(GetForegroundWindow(),strip);
+            Check(Strips().Count==1 && order.All(IsWindow) && new HashSet<IntPtr>(order).SetEquals(Helpers()),"Random action left missing, stale or extra groups");
+            Check(!HasCrash(),"Application logged an exception during a random action");
+            if(i%10==9) { ResourceSamples.Add(new { phase,randomActions=randomActionCount,resources=Resources() }); Log("Verified random actions: "+randomActionCount+" seed="+seed); }
+        }
+        await ReadOrder(strip,3,order);
+    }
     // A menu item's bounds on screen from the window's MSAA tree, or null when it has none by that name.
     static Rect? MenuItemRect(IntPtr window, string name)
     {
@@ -359,17 +463,21 @@ static class DesktopE2E
             phase="cycle "+(cycle+1)+" frequent switching";
             var switching=Stopwatch.StartNew();
             int[] switchingBaseline=null;
+            var random=new Random(unchecked(seed+cycle));
+            int batches=0;
             // Keep one application/group alive for the requested duration in
             // each cycle, then exercise normal exit and restart as usual.
             do
             {
                 var baseline=await SwitchMany(target,order,switches);
                 if(switchingBaseline==null) switchingBaseline=baseline;
+                if(randomize) await RandomMany(target,order,random);
                 // A slow leak must not disappear by resetting the baseline on
                 // every chunk in a prolonged run.
                 CheckGrowth(switchingBaseline,Resources());
+                batches++;
             }
-            while(switching.Elapsed.TotalSeconds < durationMinutes*60.0/cycles);
+            while(randomBatchesPerCycle>0 ? batches<randomBatchesPerCycle : switching.Elapsed.TotalSeconds < durationMinutes*60.0/cycles);
             switchingSeconds+=switching.Elapsed.TotalSeconds;
             phase="cycle "+(cycle+1)+" maximized switching";
             Forms.Single(f=>!f.IsDisposed && f.Handle==GetForegroundWindow()).WindowState=FormWindowState.Maximized;
@@ -396,7 +504,9 @@ static class DesktopE2E
     }
     [STAThread] static int Main(string[] args)
     {
-        if((args.Length!=3 && args.Length!=4) || args[0]!="--run") { Console.Error.WriteLine("Use Run-DesktopE2E.ps1 -Interactive"); return 2; }
+        if(args.Length==1 && args[0]=="--check-random-plan") { CheckRandomPlan(); return 0; }
+        if((args.Length!=3 && args.Length!=4 && args.Length!=7) || args[0]!="--run") { Console.Error.WriteLine("Use Run-DesktopE2E.ps1 -Interactive"); return 2; }
+        if(args.Length==7) { seed=int.Parse(args[4]); randomize=bool.Parse(args[5]); randomBatchesPerCycle=int.Parse(args[6]); }
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
         Application.EnableVisualStyles();
         int code=1;
@@ -405,14 +515,14 @@ static class DesktopE2E
         {
             start.Tick+=async (s,e)=> {
                 start.Stop();
-                try { await Run(int.Parse(args[1]),int.Parse(args[2]),args.Length==4?int.Parse(args[3]):0); code=0; }
+                try { await Run(int.Parse(args[1]),int.Parse(args[2]),args.Length>=4?int.Parse(args[3]):0); code=0; }
                 catch(Exception error) { Console.Error.WriteLine(error); File.WriteAllText(Path.Combine(Root,"failure.txt"),error.ToString()); Diagnose(); }
                 finally
                 {
                     if(inputOwned) { Inject(MouseInput(4),KeyInput(0x11,true),KeyInput(0x12,true)); Move(savedCursor); }
                     if(app!=null) { if(!app.HasExited) app.Kill(); app.WaitForExit(); app.Dispose(); }
                     foreach(var f in Forms) f.Dispose();
-                    File.WriteAllText(Path.Combine(Root,"result.json"),Json.Serialize(new { status=code==0?"passed":"failed",phase,step,completedCycles=completed,verifiedSwitches=totalSwitches,switchingSeconds,measurements=Measurements,resourceSamples=ResourceSamples,recentActions=RecentActions.ToArray() }));
+                    File.WriteAllText(Path.Combine(Root,"result.json"),Json.Serialize(new { status=code==0?"passed":"failed",phase,step,seed,randomize,randomActionCount,completedCycles=completed,verifiedSwitches=totalSwitches,switchingSeconds,measurements=Measurements,resourceSamples=ResourceSamples,recentActions=RecentActions.ToArray() }));
                     context.ExitThread();
                 }
             };
