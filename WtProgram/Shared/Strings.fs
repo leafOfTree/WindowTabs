@@ -55,16 +55,18 @@ module Strings =
         let top = { en="Top"; zh="顶部"; ja="上部" }
         let showTabTitles = { en="Show tab titles"; zh="显示标签标题"; ja="タブのタイトルを表示" }
         let showIconsOnly = { en="Show icons only"; zh="仅显示图标"; ja="アイコンのみ表示" }
-        let newTab = { en="Open new tab"; zh="新建标签"; ja="新しいタブを開く" }
-        let renameTab = { en="Rename tab"; zh="重命名标签"; ja="タブ名を変更" }
-        let restoreTabName = { en="Restore tab name"; zh="恢复标签名称"; ja="タブ名を元に戻す" }
-        let sortTabs = { en="Sort tabs by app then title"; zh="按应用和标题排序标签"; ja="アプリとタイトルの順にタブを並べ替え" }
-        let enableTabsFor exe = { en=sprintf "Enable tabs for %s" exe; zh=sprintf "为 %s 启用标签" exe; ja=sprintf "%s のタブを有効にする" exe }
-        let autoGroupWindowsOf exe = { en=sprintf "Enable auto-grouping for %s" exe; zh=sprintf "为 %s 启用自动分组" exe; ja=sprintf "%s の自動グループ化を有効にする" exe }
+        let newTab = { en="New tab"; zh="新建标签"; ja="新しいタブ" }
+        let renameTab = { en="Rename"; zh="重命名"; ja="名前を変更" }
+        let restoreTabName = { en="Reset name"; zh="重置名称"; ja="名前をリセット" }
+        let sortTabs = { en="Sort by app and title"; zh="按应用和标题排序"; ja="アプリとタイトル順に並べ替え" }
+        let combineTaskbarIcons = { en="Combine taskbar icons"; zh="合并任务栏图标"; ja="タスクバーアイコンをまとめる" }
+        let numberShortcut = { en="Switch by number"; zh="数字键切换"; ja="番号で切り替え" }
+        let enableTabs = { en="Enable tabs"; zh="启用标签"; ja="タブを有効にする" }
+        let autoGroupWindows = { en="Auto-group windows"; zh="自动分组"; ja="ウィンドウを自動グループ化" }
         let close = { en="Close"; zh="关闭"; ja="閉じる" }
         let closeOthers = { en="Close others"; zh="关闭其他"; ja="他を閉じる" }
         let closeAllOf exe = { en=sprintf "Close all '%s' windows" exe; zh=sprintf "关闭所有“%s”窗口" exe; ja=sprintf "「%s」のウィンドウをすべて閉じる" exe }
-        let closeAll = { en="Close all"; zh="全部关闭"; ja="すべて閉じる" }
+        let closeAll = { en="Close all"; zh="关闭全部"; ja="すべて閉じる" }
         let settings = { en="Settings..."; zh="设置..."; ja="設定..." }
 
     /// Menu shown when a tab is dropped with the right mouse button.
@@ -162,7 +164,7 @@ module Strings =
         let searchTabs = { caption={ en="Search tabs"; zh="搜索标签"; ja="タブを検索" }
                            description={ en="By title or app name, current group first."; zh="按标题或应用名查找，优先当前分组。"; ja="タイトルやアプリ名で探します。現在のグループを優先。" }
                            keywords={ en="find"; zh="查找"; ja="検索" } }
-        let newTab = { caption={ en="Open new tab"; zh="新建标签"; ja="新しいタブを開く" }
+        let newTab = { caption={ en="New tab"; zh="新建标签"; ja="新しいタブ" }
                        description={ en="Starts the current tab's app again."
                                      zh="再次启动当前标签的应用。"
                                      ja="現在のタブのアプリをもう一度起動します。" }
@@ -178,10 +180,10 @@ module Strings =
         let leaderKeyPresets = [| {en="123456789";zh="123456789";ja="123456789"}; {en="QWERTYUIOP";zh="QWERTYUIOP";ja="QWERTYUIOP"}; {en="ASDFGHJKL;";zh="ASDFGHJKL;";ja="ASDFGHJKL;"} |]
         let invalidLeaderKeys = {en="Use at least one unique letter, digit or unshifted punctuation key.";zh="请使用至少一个不重复的字母、数字或无需 Shift 的标点键。";ja="重複しない英字、数字、Shift 不要の記号を 1 つ以上指定してください。"}
         let numberLeader = { caption={ en="Tab selection leader"; zh="标签选择引导键"; ja="タブ選択のリーダーキー" }; description=none; keywords=none }
-        let tabColors = { en="Tab color"; zh="标签着色"; ja="タブの色分け" }
+        let tabColors = { en="Color"; zh="颜色"; ja="色" }
         let customTabColor = { en="Custom…"; zh="自定义…"; ja="カスタム…" }
         let clearTabColor = { en="Clear color"; zh="清除颜色"; ja="色を解除" }
-        let rememberTabColor name = { en=sprintf "Remember color for %s" name; zh=sprintf "记住 %s 的颜色" name; ja=sprintf "%s の色を記憶" name }
+        let rememberTabColor = { en="Remember color"; zh="记住颜色"; ja="色を記憶" }
         let tabColorNames = [|
             { en="Grey";zh="灰色";ja="グレー" }; { en="Blue";zh="蓝色";ja="青" }
             { en="Red";zh="红色";ja="赤" }; { en="Yellow";zh="黄色";ja="黄" }

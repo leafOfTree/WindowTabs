@@ -737,6 +737,53 @@ let main() =
                         send WindowMessages.WM_MOUSELEAVE Pt.empty
                         TabReveal.forced <- Some false
                 strip.dock <- TabDockTop
+                // Real popup HWNDs cover the strip; coordinate polling must respect their hit test.
+                TabReveal.forced <- Some false
+                strip.dock <- TabDockLeft
+                strip.isShrunk <- false
+                strip.setPlacement(placement (Pt(40,40)) (Dpi.scaleSize(Sz(220,300))) true)
+                let item = CmiRegular({text="Command";image=None;flags=List2();click=ignore})
+                let popup = CmiPopUp({text="Options";image=None;items=List2([item])})
+                use overlay = new ThemedContextMenu(List2([item;popup]),ignore)
+                overlay.Show(strip.hwnd,60,60)
+                Application.DoEvents()
+                let pointOn (entry:ToolStripItem) =
+                    let rect = entry.Owner.RectangleToScreen(entry.Bounds)
+                    Point(rect.X+rect.Width/2,rect.Y+rect.Height/2)
+                let setPointer point = pointerProperty.SetValue(strip,box(fun () -> point))
+                let point = pointOn overlay.Items.[0]
+                setPointer point
+                check (WinUserApi.WindowFromPoint(Pt(point.X,point.Y).POINT)=overlay.Handle) "Popup test pointer did not hit the real menu"
+                api.setValue("enableHoverActivate",box true)
+                let beforePopup = activations.Count
+                send WindowMessages.WM_MOUSELEAVE Pt.empty
+                strip.refreshHover()
+                check (not strip.isMouseOver.value && activations.Count=beforePopup) "Polling through a menu highlighted or activated underlying tabs"
+                let parent = overlay.Items.[1] :?> ToolStripMenuItem
+                parent.ShowDropDown()
+                Application.DoEvents()
+                let submenuPoint = pointOn parent.DropDownItems.[0]
+                setPointer submenuPoint
+                strip.refreshHover()
+                check (not strip.isMouseOver.value && activations.Count=beforePopup) "A submenu allowed underlying tab hover"
+                parent.HideDropDown()
+                overlay.Close()
+                Application.DoEvents()
+                api.setValue("enableHoverActivate",box false)
+                setPointer point
+                strip.refreshHover()
+                check strip.isMouseOver.value "Closing a covering menu did not restore tab hover"
+                use cover = new Form(ShowInTaskbar=false,FormBorderStyle=FormBorderStyle.None,
+                                     StartPosition=FormStartPosition.Manual,Location=Point(80,80),Size=Size(120,100),TopMost=true)
+                WinUserApi.ShowWindow(cover.Handle,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
+                Application.DoEvents()
+                setPointer (Point(100,100))
+                strip.refreshHover()
+                check (not strip.isMouseOver.value) "A covering application window allowed tab hover"
+                cover.Hide()
+                strip.refreshHover()
+                check strip.isMouseOver.value "Removing a covering application window did not restore tab hover"
+                pointerProperty.SetValue(strip,box(fun () -> Cursor.Position))
             finally strip.destroy()
         printfn "PASS: unchanged hover/moves skip rendering; cross-tab hover, clicks, capture, close, resize, direction, collapse and shadow recovery."
     finally

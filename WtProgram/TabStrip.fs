@@ -652,8 +652,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.refreshHover(?trackLeave:bool) =
         if this.visible && this.window.isVisible then
             let cursor = pointerSource()
-            let bounds = this.pointerBounds
-            if bounds.containsPoint(Pt(cursor.X,cursor.Y)) then
+            let point = Pt(cursor.X,cursor.Y)
+            if this.pointerBounds.containsPoint(point) && this.pointerUncovered(point) then
                 this.processMouse(MouseMove(Pt(cursor.X-location.x,cursor.Y-location.y)),?trackLeave=trackLeave)
             else this.processMouse(MouseLeave)
 
@@ -667,9 +667,22 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             else Rect(location,Sz(this.size.width+tolerance,this.size.height))
         else this.window.bounds
 
+    /// Coordinate polling must respect popups covering the strip, while retaining the
+    /// tolerance beyond its edge and the full target bounds during expansion.
+    member private this.pointerUncovered(point:Pt) =
+        let hit = WinUserApi.WindowFromPoint(point.POINT)
+        if hit=IntPtr.Zero || hit=this.hwnd then true
+        elif this.window.bounds.containsPoint(point) then false
+        else
+            let root = WinUserApi.GetAncestor(hit,GetAncestorConstants.GA_ROOT)
+            let rec above hwnd =
+                hwnd<>IntPtr.Zero && (hwnd=root || above (WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_HWNDPREV)))
+            not (above (WinUserApi.GetWindow(this.hwnd,GetWindowConstants.GW_HWNDPREV)))
+
     member private this.pointerInside =
         let cursor = pointerSource()
-        this.pointerBounds.containsPoint(Pt(cursor.X,cursor.Y))
+        let point = Pt(cursor.X,cursor.Y)
+        this.pointerBounds.containsPoint(point) && this.pointerUncovered(point)
 
     /// No room above the window on its monitor, so the tabs sit inside it over the title bar:
     /// true when the window is maximized, snapped to the top, or moved against the top edge.

@@ -351,7 +351,22 @@ let main() =
         let width = controls appearance.control |> Seq.pick(function :? SettingsNumberInput as c when c.Name="tabColumnWidth" -> Some c | _ -> None)
         check (width.Width=Dpi.scale 144 && position.Width=width.Width) "Number and short-choice editors do not share their default width"
         check (position.ItemText(0)=tr Strings.TabMenu.top) "Tab position still labels the top strip as horizontal"
+        let alignment = controls general.control |> Seq.pick(function :? SettingsCombo as c when c.Name="tab-alignment" -> Some c | _ -> None)
+        let savedAlignment = api.getValue("alignment")
+        let alignmentIndex = alignment.SelectedIndex
+        for index in [1;2;0] do
+            position.SelectedIndex <- index
+            let first,last = if index=0 then Strings.Common.left,Strings.Common.right else Strings.Common.top,Strings.Common.bottom
+            check (alignment.ItemText(0)=tr first && alignment.ItemText(1)=tr Strings.Common.center && alignment.ItemText(2)=tr last)
+                  "Alignment labels did not follow the live tab position"
+            check (alignment.SelectedIndex=alignmentIndex && api.getValue("alignment")=savedAlignment)
+                  "Relabeling alignment changed the saved alignment or selection"
         position.SelectedIndex <- 1
+        let reopened = GeneralView() :> ISettingsView
+        let reopenedAlignment = controls reopened.control |> Seq.pick(function :? SettingsCombo as c when c.Name="tab-alignment" -> Some c | _ -> None)
+        check (reopenedAlignment.ItemText(0)=tr Strings.Common.top && reopenedAlignment.ItemText(2)=tr Strings.Common.bottom)
+              "Opening settings with vertical tabs used horizontal alignment labels"
+        reopened.control.Dispose()
         width.Value <- 280M
         check (api.getValue("tabPosition") :?> string="Left" && api.getValue("tabColumnWidth") :?> int=280)
               "Default tab layout controls did not update saved preferences"

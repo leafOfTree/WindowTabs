@@ -317,7 +317,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         let combineIconsInTaskbar =
             CmiRegular({
-                text = tr Strings.Settings.combineTaskbarIcons.caption
+                text = tr Strings.TabMenu.combineTaskbarIcons
                 image = None
                 click = fun() -> Services.desktop.restartGroup(group.hwnd, group.isSuperBarEnabled.not)
                 flags = checkedFlag(group.isSuperBarEnabled)
@@ -363,7 +363,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 use dialog = new ColorDialog(FullOpen=true,Color=initial)
                 let owner = {new IWin32Window with member _.Handle=group.hwnd}
                 if dialog.ShowDialog(owner)=DialogResult.OK then choose (CustomColor dialog.Color)})
-            CmiRegular({text=tr (Strings.Settings.rememberTabColor exeName);image=None
+            CmiRegular({text=tr Strings.Settings.rememberTabColor;image=None
                         flags=checkedFlag remembered |> fun flags -> if not remembered && currentColor.IsNone then flags.append(MenuFlags.MF_GRAYED) else flags
                         click=fun() -> saveAppColor (if remembered then None else currentColor)})
             CmiRegular({text=tr Strings.Settings.clearTabColor;image=None;flags=List2();click=fun() ->
@@ -380,19 +380,19 @@ type TabStripDecorator(group:WindowGroup) as this =
         let isTabbingEnabled = Services.filter.getIsTabbingEnabledForProcess processPath
         let enableTabsItem =
             CmiRegular({
-                text = tr (Strings.TabMenu.enableTabsFor exeName)
+                text = tr Strings.TabMenu.enableTabs
                 image = None
                 click = fun() -> Services.filter.setIsTabbingEnabledForProcess processPath isTabbingEnabled.not
                 flags = checkedFlag(isTabbingEnabled)
             })
 
         let numberEnabled = NumberShortcutRules.enabled processPath
-        let numberItem = CmiRegular({ text=tr (Strings.Settings.numberShortcutFor exeName); image=None; flags=checkedFlag numberEnabled
+        let numberItem = CmiRegular({ text=tr Strings.TabMenu.numberShortcut; image=None; flags=checkedFlag numberEnabled
                                       click=fun() -> NumberShortcutRules.setEnabled processPath (not numberEnabled) })
         let isGrouped = Services.program.getAutoGroupingEnabled processPath
         let groupTabsItem =
             CmiRegular({
-                text = tr (Strings.TabMenu.autoGroupWindowsOf exeName)
+                text = tr Strings.TabMenu.autoGroupWindows
                 image = None
                 click = fun() -> Services.program.setAutoGroupingEnabled processPath isGrouped.not
                 flags = checkedFlag(isGrouped)
@@ -443,13 +443,14 @@ type TabStripDecorator(group:WindowGroup) as this =
         List2([
             Some(newTabItem)
             Some(renameTabItem)
-            Some(colorMenu)
             (if group.isRenamed(hwnd) then Some(restoreTabNameItem) else None)
+            Some(colorMenu)
             Some(CmiSeparator)
-            Some(iconOnlyItem)
             Some(positionItem)
             Some(alignmentItem)
             Some(autoHideItem)
+            Some(iconOnlyItem)
+            Some(CmiSeparator)
             Some(sortTabsItem)
             Some(combineIconsInTaskbar)
             Some(CmiSeparator)
