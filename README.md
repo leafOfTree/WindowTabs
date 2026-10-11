@@ -24,7 +24,7 @@ It runs in the system tray.
 
 - **Group windows:** drag a tab onto another window's tab bar. Drag it away to ungroup.
 - **Group an app automatically:** right-click its tab → **Enable auto-grouping**.
-- **Settings:** left-click the tray icon.
+- **Settings:** right-click a tab or the tray icon.
 
 Grouped windows move and resize together. Tabs hide on maximized windows; point at
 the top edge to show them, or set **Auto-hide tabs** to **Never**.
