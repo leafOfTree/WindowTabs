@@ -89,20 +89,35 @@ and paths.
 ### Build and run
 
 WindowTabs is an F# WinForms app on .NET Framework 4.8, with a small C# project for
-Win32 interop. It builds on Windows with the
-[.NET SDK](https://dotnet.microsoft.com/download) (tested with 10.0) or Visual Studio
-2022+ with the **.NET desktop development** workload.
+Win32 interop. To build on Windows 10 or 11:
 
-```powershell
+**1. Install the tools**
+
+- [.NET 10.0 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0): choose the Windows SDK installer (usually **x64**).
+- [.NET Framework 4.8 Developer Pack](https://dotnet.microsoft.com/en-us/download/dotnet-framework/net48): the runtime alone is not enough to build.
+
+**2. Download, build and run**
+
+Open a new **PowerShell** window in the folder where you want to keep the source:
+
+```bash
 git clone https://github.com/leafOfTree/WindowTabs
 cd WindowTabs
 dotnet build WindowTabs.sln                 # Debug: WtProgram\bin\Debug\WindowTabs.exe
-dotnet build WindowTabs.sln -c Release      # single exe, as shipped
+dotnet build WindowTabs.sln -c Release      # Release: WtProgram\bin\Release\WindowTabs.exe (single exe)
 ```
 
-Exit WindowTabs from the tray before rebuilding; a running exe locks the output.
+The first build downloads NuGet dependencies and needs internet access. Run the
+generated exe to start WindowTabs in the system tray; exit it before rebuilding,
+as the running exe locks the output. If `dotnet` is not found, reopen PowerShell
+after installation.
 
-You can also open `WindowTabs.sln` in Visual Studio and start `WtProgram`.
+**Alternatively, use Visual Studio**
+
+Install [Visual Studio 2026](https://visualstudio.microsoft.com/downloads/), select
+the **.NET desktop development** workload, and keep its default recommended
+components. Open `WindowTabs.sln`, set `WtProgram` as the startup project, and press
+**F5**.
 
 AI-assisted contributions are welcome. Make sure you
 understand and have tested your changes. See [AGENTS.md](AGENTS.md), [architecture](docs/architecture.md) and
