@@ -83,12 +83,14 @@ let main() =
             let command flags image text = CmiRegular({text=text;image=image;flags=List2(flags);click=fun () -> selected <- selected+1})
             let entries = List2([command [] None "Open new tab\tCtrl+Alt+N";
                                  command [MenuFlags.MF_CHECKED] None "Checked";
-                                 CmiSeparator;
+                                 CmiSection(tr Strings.TabMenu.currentGroup);
                                  CmiPopUp({text="Tab color";image=None;items=List2([command [MenuFlags.MF_CHECKED] (Some(Img(dot))) "Blue";command [MenuFlags.MF_DISABLED] None "Disabled"])})])
             use menu = new ThemedContextMenu(entries,fun () -> closed <- true)
             let first = menu.Items.[0] :?> ToolStripMenuItem
             let nested = menu.Items.[3] :?> ToolStripMenuItem
             let colour = nested.DropDownItems.[0] :?> ToolStripMenuItem
+            let section = menu.Items.[2] :?> ToolStripSeparator
+            check (section.Text=tr Strings.TabMenu.currentGroup && not section.CanSelect) "Menu scope heading is missing or selectable"
             check (first.ShortcutKeyDisplayString="Ctrl+Alt+N" && first.Text="Open new tab") "Themed menu lost its shortcut column"
             check (colour.Checked && not nested.DropDownItems.[1].Enabled) "Themed submenu lost checked or disabled state"
             check (not(Object.ReferenceEquals(colour.Image,dot))) "Themed menu retained a caller-owned image"
@@ -96,6 +98,10 @@ let main() =
             menu.Show(Point(40,40))
             Application.DoEvents()
             check (OpenMenus.any()) "An open menu was not counted, so a title tip could cover it"
+            check (section.Height>=section.Font.Height+Dpi.scale 8) "Menu scope heading clips its text"
+            use screenshot = new Bitmap(menu.Width,menu.Height)
+            menu.DrawToBitmap(screenshot,Rectangle(Point.Empty,menu.Size))
+            screenshot.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "menu-scope-%s.png" name),Imaging.ImageFormat.Png)
             // Pointing at an item with a submenu opens it after a short pause of our own, not the
             // Windows menu delay through WinForms' timer, which a menu of an app behind could lose.
             // The pointer entering an item, as WinForms reports it: HandleMouseEnter raises MouseEnter.

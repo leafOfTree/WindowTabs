@@ -51,6 +51,8 @@ module Strings =
 
     /// Tab context menu.
     module TabMenu =
+        let currentGroup = { en="Current group"; zh="当前分组"; ja="現在のグループ" }
+        let currentApp = { en="Current app"; zh="当前应用"; ja="現在のアプリ" }
         let position = { en="Tab position"; zh="标签位置"; ja="タブの位置" }
         let top = { en="Top"; zh="顶部"; ja="上部" }
         let showTabTitles = { en="Show tab titles"; zh="显示标签标题"; ja="タブのタイトルを表示" }
@@ -183,7 +185,7 @@ module Strings =
         let tabColors = { en="Color"; zh="颜色"; ja="色" }
         let customTabColor = { en="Custom…"; zh="自定义…"; ja="カスタム…" }
         let clearTabColor = { en="Clear color"; zh="清除颜色"; ja="色を解除" }
-        let rememberTabColor = { en="Remember color"; zh="记住颜色"; ja="色を記憶" }
+        let rememberTabColor = { en="Remember color for current app"; zh="为当前应用记住颜色"; ja="現在のアプリの色を記憶" }
         let tabColorNames = [|
             { en="Grey";zh="灰色";ja="グレー" }; { en="Blue";zh="蓝色";ja="青" }
             { en="Red";zh="红色";ja="赤" }; { en="Yellow";zh="黄色";ja="黄" }

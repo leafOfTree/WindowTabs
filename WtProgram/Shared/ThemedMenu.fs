@@ -61,7 +61,18 @@ type ThemeMenuRenderer(p:SettingsPalette) =
                 Color.FromArgb(blend p.border.R p.muted.R,blend p.border.G p.muted.G,blend p.border.B p.muted.B)
         use pen = new Pen(color)
         let y = (e.Item.Height-1)/2
-        e.Graphics.DrawLine(pen,Dpi.scale 8,y,e.Item.Width-Dpi.scale 8,y)
+        let inset = Dpi.scale 8
+        if String.IsNullOrEmpty(e.Item.Text) then
+            e.Graphics.DrawLine(pen,inset,y,e.Item.Width-inset,y)
+        else
+            let flags = TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPadding ||| TextFormatFlags.NoPrefix
+            let width = TextRenderer.MeasureText(e.Graphics,e.Item.Text,e.Item.Font,Size.Empty,flags).Width
+            let left = (e.Item.Width-width)/2
+            let right = left+width
+            if left-inset>inset then e.Graphics.DrawLine(pen,inset,y,left-inset,y)
+            if right+inset<e.Item.Width-inset then e.Graphics.DrawLine(pen,right+inset,y,e.Item.Width-inset,y)
+            TextRenderer.DrawText(e.Graphics,e.Item.Text,e.Item.Font,Rectangle(Point.Empty,e.Item.Size),
+                                  (if SystemInformation.HighContrast then p.text else p.muted),flags)
     /// The same font glyph as the trailing mark on a selected tab colour, so both checks match.
     override _.OnRenderItemCheck(e) =
         if isNull e.Item.Image then
@@ -83,6 +94,7 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
     let renderer = new ThemeMenuRenderer(palette)
     let images = ResizeArray<Bitmap>()
     let font = new Font(SystemFonts.MenuFont.FontFamily, (SystemFonts.MenuFont.Size+1.0f) * float32(Dpi.value()) / float32(Dpi.system()))
+    let sectionFont = new Font(font.FontFamily,max 8.0f (font.Size-1.0f),font.Style)
     let mutable action = None
     /// An item was clicked in this menu or a submenu. WinForms says so before closing the menu,
     /// and only afterwards raises the item's Click that records its command.
@@ -137,12 +149,15 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
             match item with
             | CmiSeparator ->
                 target.Add(new ToolStripSeparator(AutoSize=false,Height=2*Dpi.scale 4+1,Margin=Padding.Empty)) |> ignore
+            | CmiSection text ->
+                target.Add(new ToolStripSeparator(Text=text,AccessibleName=text,Font=sectionFont,AutoSize=false,
+                                                   Height=sectionFont.Height+Dpi.scale 8,Margin=Padding.Empty)) |> ignore
             | _ ->
                 let text,image,flags,children,click =
                     match item with
                     | CmiRegular value -> value.text,value.image,value.flags.list,[],Some value.click
                     | CmiPopUp value -> value.text,value.image,[],value.items.list,None
-                    | CmiSeparator -> failwith "Unexpected separator"
+                    | CmiSeparator | CmiSection _ -> failwith "Unexpected separator"
                 let parts = text.Split([|'\t'|],2)
                 let entry = new ToolStripMenuItem(parts.[0])
                 target.Add(entry) |> ignore
@@ -257,4 +272,5 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
             timer.Dispose()
             for image in images do image.Dispose()
             images.Clear()
+            sectionFont.Dispose()
             font.Dispose()
