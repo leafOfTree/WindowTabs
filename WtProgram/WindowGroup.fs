@@ -553,9 +553,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         autoHideMode = Option.ofObj(this.bb.read<string>("autoHideMode", null)) }
 
     member this.applyMenuChoices(choices:GroupMenuChoices) =
-        this.isIconOnly <- choices.iconOnly
         this.ts.dock <- choices.dock
         this.ts.columnWidth <- choices.columnWidth
+        this.isIconOnly <- choices.iconOnly
         choices.alignments |> List.iter this.ts.setAlignment
         choices.autoHideMode |> Option.iter(fun mode -> this.bb.write("autoHideMode", mode))
 

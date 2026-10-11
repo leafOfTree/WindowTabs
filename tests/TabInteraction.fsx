@@ -668,7 +668,16 @@ let main() =
                         check (strip.columnWidth=snd SettingsCatalog.columnWidthRange) "Column width exceeded its maximum"
                         strip.columnWidth <- 1
                         check (strip.columnWidth=fst SettingsCatalog.columnWidthRange) "Column width fell below its minimum"
+                        check strip.isIconOnly "Minimum column width did not show an icon rail"
+                        strip.setPlacement(placement start (Sz(Dpi.scale 48,columnSize.height)) inside)
+                        let iconEdge = if growsRight then Dpi.scale 48-1 else 1
+                        let outward = if growsRight then Dpi.scale 32 else -Dpi.scale 32
+                        send WindowMessages.WM_LBUTTONDOWN (Pt(iconEdge,Dpi.scale 20))
+                        send WindowMessages.WM_MOUSEMOVE (Pt(iconEdge+outward,Dpi.scale 20))
+                        send WindowMessages.WM_LBUTTONUP (Pt(iconEdge+outward,Dpi.scale 20))
+                        check (strip.columnWidth=80 && not strip.isIconOnly) "Icon rail could not be expanded by dragging its edge"
                         strip.columnWidth <- 220
+                        strip.setPlacement(placement start columnSize inside)
                         strip.scrollColumnTo 0
                         let dragged = strip.lorder.head
                         strip.slide <- Some(dragged,0)

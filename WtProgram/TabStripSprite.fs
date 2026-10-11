@@ -222,6 +222,7 @@ type TabSprite<'id> = {
     displayInfo: TabDisplayInfo
     size: Sz
     onlyIcon: bool
+    dock: TabDock
     direction: TabDirection
     hover: TabPart option
     captured: TabPart option
@@ -267,6 +268,14 @@ type TabSprite<'id> = {
 
     /// The tab's own colour: its whole slot in the joined style, its raised shape otherwise.
     member this.tint = Theme.tabTint SystemInformation.HighContrast this.displayInfo.tint
+
+    /// Quiet marks retain each tab's colour without competing with the selected tab.
+    member this.stripeColor =
+        match this.tint with
+        | Some tint when this.displayInfo.colorStyle="Stripe" && this.displayInfo.bgColor.IsNone ->
+            let strength = if this.isTop then 1.0 elif this.hover.IsSome || this.captured.IsSome then 0.85 else 0.30
+            Some(Theme.blend strength tint this.fillColor)
+        | _ -> None
 
     /// A filled tab's text, chosen for its colour and kept in every state: white on the palette,
     /// which is made for it, and dark only on a colour picked by hand that is too light for white.
@@ -521,14 +530,27 @@ type TabSprite<'id> = {
             // sitting on the title bar rather than one tab among several.
             // Exterior shadows are rendered by TabShadowWindow, outside the
             // strip bounds so the tabs remain flush with the original window.
-            match this.tint with
-            | Some tint when this.displayInfo.colorStyle="Stripe" && this.displayInfo.bgColor.IsNone ->
+            match this.stripeColor with
+            | Some color ->
                 let state = g.Save()
                 g.SetClip(path)
-                let thickness = min this.size.height (Dpi.scale 3)
-                let y = if this.direction=TabUp then this.size.height-thickness else 0
-                use stripe = new SolidBrush(if this.isTop then tint else Theme.blend 0.60 tint this.fillColor)
-                g.FillRectangle(stripe,0,y,this.size.width,thickness)
+                use stripe = new SolidBrush(color)
+                match this.dock with
+                | TabDockLeft | TabDockRight ->
+                    let thickness = min this.size.width (Dpi.scale 3)
+                    let inset = Dpi.scale 2
+                    let x = if this.dock=TabDockLeft then inset else this.size.width-inset-thickness
+                    let length = max thickness (min (Dpi.scale 20) (this.size.height-Dpi.scale 12))
+                    let y = (this.size.height-length)/2
+                    use mark = new GraphicsPath()
+                    mark.AddArc(x,y,thickness,thickness,180.0f,180.0f)
+                    mark.AddArc(x,y+length-thickness,thickness,thickness,0.0f,180.0f)
+                    mark.CloseFigure()
+                    g.FillPath(stripe,mark)
+                | TabDockTop | TabDockBottom ->
+                    let thickness = min this.size.height (Dpi.scale 3)
+                    let y = if this.direction=TabUp then this.size.height-thickness else 0
+                    g.FillRectangle(stripe,0,y,this.size.width,thickness)
                 g.Restore(state)
             | _ -> ()
             if this.showLeftSeparator then
@@ -664,6 +686,7 @@ type TabStripSprite<'id> when 'id : equality = {
             appearance = if this.isVertical then { this.appearance with tabStyle=PillTabs; tabHeight=this.rowHeight } else this.appearance
             size = this.tabSizeOf tab
             onlyIcon = this.isCompact
+            dock = this.dock
             direction = this.direction
             showLeftSeparator =
                 // Never before the first tab, and never where either side is
@@ -909,7 +932,8 @@ type TabStripSprite<'id> when 'id : equality = {
             use graphics = image.graphics
             graphics.Clear(this.appearance.tabNormalBgColor)
             for location,tab in this.tabSprites.list do
-                use brush = new SolidBrush(tab.fillColor)
+                let color = tab.stripeColor |> Option.defaultValue tab.fillColor
+                use brush = new SolidBrush(color)
                 graphics.FillRectangle(brush,Rectangle(0,location.y,image.size.width,tab.size.height))
             image
         else this.renderHorizontalCollapsed
@@ -943,13 +967,13 @@ type TabStripSprite<'id> when 'id : equality = {
             let width = tab.size.width-leftInset-rightInset
             if width>0 then
                 fillSegment fill (location.x+leftInset) width first last
-                match tab.tint with
-                | Some tint when tab.displayInfo.colorStyle="Stripe" && tab.displayInfo.bgColor.IsNone ->
+                match tab.stripeColor with
+                | Some stripeColor ->
                     let state = graphics.Save()
                     let thickness = min this.collapsedHeight (Dpi.scale 3)
                     let y = if this.direction=TabUp then this.collapsedHeight-thickness else 0
                     graphics.SetClip(Rectangle(location.x+leftInset,y,width,thickness))
-                    use stripe = new SolidBrush(if tab.isTop then tint else Theme.blend 0.60 tint color)
+                    use stripe = new SolidBrush(stripeColor)
                     fillSegment stripe (location.x+leftInset) width first last
                     graphics.Restore(state)
                 | _ -> ()

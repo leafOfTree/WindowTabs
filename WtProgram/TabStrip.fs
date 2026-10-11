@@ -542,10 +542,12 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.tabSprites = this.ts.tabSprites
             
     member this.isIconOnly 
-        with get() = iconOnlyCell.value
+        with get() = iconOnlyCell.value || (this.isVertical && columnWidthValue=fst SettingsCatalog.columnWidthRange)
         and set(value) =
             iconOnlyCell.set(value)
-            if this.isVertical then dockChangedEvent.Trigger()
+            if this.isVertical then
+                if not value && columnWidthValue=fst SettingsCatalog.columnWidthRange then this.columnWidth <- SettingsCatalog.columnWidthDefault
+                else dockChangedEvent.Trigger()
 
     member this.dock
         with get() = dockCell.value
@@ -566,13 +568,15 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         with get() = columnWidthValue
         and set(value) =
             let next = between SettingsCatalog.columnWidthRange value
-            if next<>columnWidthValue then
+            let wasIconOnly = iconOnlyCell.value
+            if this.isVertical then iconOnlyCell.set(false)
+            if next<>columnWidthValue || (this.isVertical && wasIconOnly) then
                 columnWidthValue <- next
                 dockChangedEvent.Trigger()
                 layoutChangedEvent.Trigger(true)
 
     member private this.isColumnResizeEdge(pt:Pt) =
-        if not this.isVertical || this.isIconOnly || this.isShrunk then false
+        if not this.isVertical || this.isShrunk then false
         else
             let growsRight = (this.dock=TabDockRight) <> this.showInside
             if growsRight then pt.x>=this.size.width-Dpi.scale 4 else pt.x<Dpi.scale 4
@@ -581,7 +585,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         if not this.isVertical || this.isShrunk then false
         elif this.isColumnResizeEdge(pt) then
             this.hideTitle()
-            columnResize <- Some(this.window.ptToScreen(pt).x,columnWidthValue,(this.dock=TabDockRight) <> this.showInside)
+            columnResize <- Some(this.window.ptToScreen(pt).x,(if this.isIconOnly then fst SettingsCatalog.columnWidthRange else columnWidthValue),(this.dock=TabDockRight) <> this.showInside)
             this.window.setCapture()
             true
         elif this.ts.scrollThumb.IsSome && this.ts.scrollTrack.containsPoint(pt) then

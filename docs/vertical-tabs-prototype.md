@@ -14,22 +14,27 @@ each group's position, logical width and alignment; restoring it reapplies those
 choices even if the global defaults have changed. Without a workspace restore,
 groups without remembered window choices use the saved global defaults.
 **Show icons only** makes the column a narrow icon rail.
-Under **General**, **Tab position (preview)** and **Vertical column
-width** are saved across restarts and apply immediately to all existing groups,
+**Tab position (preview)** under **General** and **Vertical column width** under
+**Appearance → Tab layout** are saved across restarts and apply immediately to all existing groups,
 including groups with individual choices, as well as newly created groups. Changing
 one setting preserves the other layout values and updates remembered window choices.
 Per-group menu choices and edge resizing can override them again without changing
-the global settings.
+the global settings. The appearance preview follows the global position and width.
+All layout controls remain visible because individual groups can use a different
+position from the global setting. Operation hints live behind the information icon beside each caption.
 
 The expanded column starts at 220 logical pixels wide, or 48 in icon mode. Drag
-the exposed column edge to resize it between 120 and 420 logical pixels. The width
+the exposed column edge to resize it between 48 and 420 logical pixels. At 48, it shows only icons; drag its edge outward to expand it again. The width
 survives an in-session group rebuild. Rows have a
 minimum height of 32 logical pixels and keep their titles horizontal. The column
 uses only the height needed by its rows, capped at the available window height.
 Its **Align tabs** menu offers **Top**, **Center** and **Bottom**; the global
 alignment maps left/right to top/bottom for vertical columns. It grows and shrinks
 when tabs join or leave. They use the
-existing themed tab renderer with the pill shape. Activation, close buttons,
+existing themed tab renderer with the pill shape. Stripe color coding uses short, rounded marks centered vertically near
+the outside edge of each row (left for Left, right for Right). Inactive marks are
+muted, while hovered marks approach the active color; the collapsed
+edge keeps its color marks. Activation, close buttons,
 menus, keyboard switching and ordering still use the existing group behavior.
 
 The column sits outside the chosen window edge when it fits within one monitor's

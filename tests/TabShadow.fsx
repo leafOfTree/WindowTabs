@@ -217,6 +217,48 @@ let main () =
                 for tab in tabs do check (TextContrast.ratio tab.textColor tab.fillColor>=4.5) "Tint made text unreadable"
                 let flash = {inactive with displayInfo={inactive.displayInfo with bgColor=Some Color.Orange}}
                 check (flash.fillColor=Color.Orange) "Tint overrode attention"
+    // Vertical stripes stay on the outside edge, including when the group is overlaid.
+    for dpi in [96;144] do
+        let previousDpi = Dpi.value()
+        Dpi.set dpi
+        use scope = {new IDisposable with member _.Dispose() = Dpi.set previousDpi}
+        for dock in [TabDockLeft;TabDockRight] do
+            for direction in [TabUp;TabDown] do
+                let column = {ts with dock=dock;direction=direction;appearance=Theme.dark.scaled;size=Dpi.scaleSize(Sz(220,160))
+                                      tabs=Map2(List2([1,{info "One" with tint=Some Color.Red;colorStyle="Stripe"};2,{info "Two" with tint=Some Color.Red;colorStyle="Stripe"}]))}
+                let tab = column.tabSprites.list |> List.map snd |> List.find(fun tab -> tab.isTop)
+                use image = (tab :> ISprite).render.bitmap
+                let inset = Dpi.scale 2 + Dpi.scale 3/2
+                let x = if dock=TabDockLeft then inset else image.Width-Dpi.scale 2-Dpi.scale 3+Dpi.scale 3/2
+                let opposite = if dock=TabDockLeft then image.Width-inset-1 else inset
+                if not System.Windows.Forms.SystemInformation.HighContrast then
+                    check (image.GetPixel(x,image.Height/2).ToArgb()=Color.Red.ToArgb()) "Vertical stripe is not on the outside edge"
+                    check (image.GetPixel(opposite,image.Height/2).ToArgb()<>Color.Red.ToArgb()) "Vertical stripe also appears on the inside edge"
+                    check (image.GetPixel(x,Dpi.scale 3).ToArgb()<>Color.Red.ToArgb() &&
+                           image.GetPixel(x,image.Height-Dpi.scale 3-1).ToArgb()<>Color.Red.ToArgb()) "Vertical color mark is not shortened and centered"
+                    use collapsed = column.renderCollapsed.bitmap
+                    let location = column.tabLocation tab.id
+                    check (collapsed.GetPixel(1,location.y+tab.size.height/2).ToArgb()=Color.Red.ToArgb()) "Collapsed vertical strip lost its color mark"
+                let inactive = column.tabSprites.list |> List.map snd |> List.find(fun tab -> not tab.isTop)
+                let inactive = {inactive with hover=None;captured=None}
+                if not System.Windows.Forms.SystemInformation.HighContrast then
+                    use quiet = (inactive :> ISprite).render.bitmap
+                    let quietX = x
+                    let color = quiet.GetPixel(quietX,quiet.Height/2)
+                    check (color.ToArgb()=(Theme.blend 0.30 Color.Red inactive.fillColor).ToArgb()) "Inactive stripe is not faint"
+                    let hovered = {inactive with hover=Some TabBackground}
+                    use highlighted = (hovered :> ISprite).render.bitmap
+                    check (highlighted.GetPixel(quietX,highlighted.Height/2).R>color.R &&
+                           highlighted.GetPixel(quietX,highlighted.Height/2).ToArgb()<>Color.Red.ToArgb())
+                          "Hovered stripe does not stay between the inactive and active colors"
+                    check (highlighted.GetPixel(quietX,highlighted.Height/2).ToArgb()=(Theme.blend 0.85 Color.Red hovered.fillColor).ToArgb())
+                          "Hovered stripe is not close to the active color"
+                if dpi=96 && direction=TabUp then
+                    use preview = column.render.bitmap
+                    preview.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "vertical-stripe-%A.png" dock),ImageFormat.Png)
+                let flash = {tab with displayInfo={tab.displayInfo with bgColor=Some Color.Orange}}
+                use flashing = (flash :> ISprite).render.bitmap
+                check (flashing.GetPixel(x,flashing.Height/2).ToArgb()<>Color.Red.ToArgb()) "Vertical stripe overrode an attention color"
     check (Theme.tabTint true (Some Color.Red)=None) "High contrast retained tint"
     let tabImage = ts.render
     // Short tabs shrink their contents to fit instead of clipping them.

@@ -54,6 +54,16 @@ type TabPreview() as this =
     do
         this.DoubleBuffered <- true
         this.ResizeRedraw <- true
+    member val Position = TabDockTop with get,set
+    member val ColumnWidth = 220 with get,set
+    member this.TabBounds(tabHeight:int) =
+        let inset = Dpi.scale 16
+        let width = max 1 (this.ClientSize.Width-inset*2)
+        if this.Position=TabDockTop then Rectangle(inset,Dpi.scale 14,width,tabHeight+2)
+        else
+            let column = min (Dpi.scale this.ColumnWidth) (max 1 (width-Dpi.scale 64))
+            let x = if this.Position=TabDockLeft then inset else inset+width-column
+            Rectangle(x,Dpi.scale 14,column,3*(max (Dpi.scale 32) tabHeight+Dpi.scale 4)+Dpi.scale 4)
 
 type AppearanceView(?settings:ISettings) =
     let settings = defaultArg settings Services.settings
@@ -114,8 +124,7 @@ type AppearanceView(?settings:ISettings) =
                                  AccessibleName=tr Strings.Appearance.explorerPreview)
     /// Where the preview draws its tabs: all that a colour edit changes.
     let previewTabs() =
-        let height = max 12 (ThemeService.currentAppearance().scaled.tabHeight)
-        Rectangle(Dpi.scale 16,Dpi.scale 14,max 100 (preview.ClientSize.Width-Dpi.scale 32),height+2)
+        preview.TabBounds(ThemeService.currentAppearance().scaled.tabHeight)
     /// What the rest of the preview is drawn from besides its size, so it is redrawn only when one changes.
     let mutable previewFrame = None
     let colorFields : (string * (TabPalette -> Color) * (Color -> TabPalette -> TabPalette)) list = [
@@ -132,6 +141,8 @@ type AppearanceView(?settings:ISettings) =
         "tabOverlap",(fun g -> -g.overlap),(fun v g -> {g with overlap= -v})
         "tabIndentNormal",(fun g -> g.indentNormal),(fun v g -> {g with indentNormal=v}) ]
 
+    let low,high = SettingsCatalog.columnWidthRange
+    let columnWidth = new SettingsNumberInput(Minimum=decimal low,Maximum=decimal high,Font=SettingsUi.bodyFont())
     let dimensions = dimensionFields |> List.map(fun (key,get,set) ->
         let low,high = SettingsCatalog.range key
         key,get,set,new SettingsNumberInput(Minimum=decimal low,Maximum=decimal high,Font=SettingsUi.bodyFont()))
@@ -179,6 +190,9 @@ type AppearanceView(?settings:ISettings) =
         refreshing <- true
         try
             editingDark <- ThemeService.currentIsDark()
+            preview.Position <- match settings.getValue("tabPosition") :?> string with "Left" -> TabDockLeft | "Right" -> TabDockRight | _ -> TabDockTop
+            preview.ColumnWidth <- settings.getValue("tabColumnWidth") :?> int
+            columnWidth.Value <- decimal preview.ColumnWidth
             let settings = settings.appearance
             let palette = activePalette settings
             // A preset with changed colours says so, in the list and when chosen.
@@ -202,14 +216,16 @@ type AppearanceView(?settings:ISettings) =
                 editor.Value <- value
             // One height for any usual tab height: the window below the tabs gives up the room.
             // Only tabs too tall to leave its toolbar visible make the panel grow.
-            preview.Height <- max (Dpi.scale 145) (ThemeService.currentAppearance().scaled.tabHeight+Dpi.scale (14+14+28)+2)
+            let tabHeight = ThemeService.currentAppearance().scaled.tabHeight
+            preview.Height <- if preview.Position=TabDockTop then max (Dpi.scale 145) (tabHeight+Dpi.scale 56+2)
+                              else max (Dpi.scale 145) ((preview.TabBounds tabHeight).Bottom+Dpi.scale 14)
             // A reset with nothing to undo would do nothing visible, so it is not offered.
             resetColorsButton.Offered <-
                 match selection settings with
                 | Some index -> values palette<>values (original index)
                 | None -> true
-            resetLayoutButton.Offered <- geometry<>Theme.defaultGeometry
-            let frame = Some(SettingsColors.current(),editingDark,settings.geometry)
+            resetLayoutButton.Offered <- geometry<>Theme.defaultGeometry || preview.ColumnWidth<>SettingsCatalog.columnWidthDefault
+            let frame = Some(SettingsColors.current(),editingDark,settings.geometry,preview.Position,preview.ColumnWidth)
             if frame=previewFrame then preview.Invalidate(previewTabs())
             else
                 previewFrame <- frame
@@ -230,9 +246,12 @@ type AppearanceView(?settings:ISettings) =
             e.Graphics.FillPath(frameFill,frame)
             e.Graphics.DrawPath(border,frame)
             let appearance = ThemeService.currentAppearance().scaled
+            let appearance = if preview.Position=TabDockTop then appearance else {appearance with tabHeight=max (Dpi.scale 32) appearance.tabHeight}
             let tabs = previewTabs()
-            let height,width,left,top = tabs.Height-2,tabs.Width,tabs.Left,tabs.Top
-            let bodyTop = tabs.Bottom
+            let vertical = preview.Position<>TabDockTop
+            let left,top = Dpi.scale 16,Dpi.scale 14
+            let width = max 1 (preview.ClientSize.Width-Dpi.scale 32)
+            let bodyTop = if vertical then top else tabs.Bottom
             // The panel keeps one height; taller tabs leave less room for the window below them.
             let bodyHeight = max 0 (preview.Height-bodyTop-Dpi.scale 14)
             let fill color (rect:Rectangle) =
@@ -270,11 +289,11 @@ type AppearanceView(?settings:ISettings) =
                 textFont=font; textBrush=SystemBrushes.MenuText }
             let ts : TabStripSprite<int> = {
                 tabs=Map2(List2([1,info 1 (tr Strings.Settings.tabActiveBgColor.caption);2,info 2 (tr Strings.Settings.tabHighlightBgColor.caption);3,info 4 (tr Strings.Settings.tabNormalBgColor.caption)]))
-                lorder=List2([1;2;3]);zorder=List2([1;2;3]);size=Sz(width,height+2)
-                slide=None;direction=TabUp;alignment=TabLeft;onlyIcons=false;transparent=true;held=None;centerShift=0.0; dock=TabDockTop; scrollOffset=0
+                lorder=List2([1;2;3]);zorder=List2([1;2;3]);size=Sz(tabs.Width,tabs.Height)
+                slide=None;direction=TabUp;alignment=TabLeft;onlyIcons=(vertical && preview.ColumnWidth=fst SettingsCatalog.columnWidthRange);transparent=true;held=None;centerShift=0.0; dock=preview.Position; scrollOffset=0
                 appearance=appearance;hover=Some(2,TabBackground);captured=None }
             use bitmap = ts.render.bitmap
-            e.Graphics.DrawImageUnscaled(bitmap,left,top))
+            e.Graphics.DrawImageUnscaled(bitmap,tabs.Left,tabs.Top))
         // Beside the preview, which shows the change at once.
         let styleCard = new SettingsCard()
         SettingsUi.add table styleCard
@@ -322,9 +341,13 @@ type AppearanceView(?settings:ISettings) =
         SettingsUi.sectionHeading table (tr Strings.Appearance.tabLayout) [resetLayoutButton]
         let layoutCard = new SettingsCard()
         SettingsUi.add table layoutCard
+        SettingsUi.settingRow layoutCard "tabColumnWidth" columnWidth
+        columnWidth.ValueChanged.Add(fun _ ->
+            if not refreshing then settings.setValue("tabColumnWidth",box(int columnWidth.Value)))
         for key,read,write,editor in dimensions do SettingsUi.settingRow layoutCard key editor
         resetLayoutButton.Click.Add(fun _ ->
-            update Theme.resetLayout)
+            update Theme.resetLayout
+            settings.setValue("tabColumnWidth",box SettingsCatalog.columnWidthDefault))
         updateFilled()
         refresh()
         tabStyle.SelectedIndexChanged.Add(fun _ ->
@@ -340,6 +363,13 @@ type AppearanceView(?settings:ISettings) =
                 if not refreshing then
                     update(fun s -> {s with geometry=write (int editor.Value) s.geometry}))
         ThemeBinding.watch panel refresh
+        let subscriptions =
+            ["tabPosition";"tabColumnWidth"] |> List.map(fun key ->
+                settings.notifyValue key (fun _ ->
+                    if not panel.IsDisposed && panel.IsHandleCreated then
+                        try panel.BeginInvoke(Action(fun () -> if not panel.IsDisposed then refresh())) |> ignore
+                        with :? InvalidOperationException -> ()))
+        panel.Disposed.Add(fun _ -> subscriptions |> List.iter(fun subscription -> subscription.Dispose()))
 
     interface ISettingsView with
         member _.key = AppearanceSettings
