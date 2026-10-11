@@ -5,7 +5,7 @@ Tracks [issue #34](https://github.com/leafOfTree/WindowTabs/issues/34).
 ## Try it
 
 Right-click a tab and choose **Tab position (preview)**, then **Left** or **Right**.
-Choose **Horizontal** to return to the existing layout. The choice belongs to the
+Choose **Top** to return to the existing layout. The choice belongs to the
 group and survives an in-session group rebuild and a WindowTabs restart while
 its application windows remain open. Position, width and alignment choices are
 recorded immediately as native properties on those windows; closing the application
@@ -14,7 +14,7 @@ each group's position, logical width and alignment; restoring it reapplies those
 choices even if the global defaults have changed. Without a workspace restore,
 groups without remembered window choices use the saved global defaults.
 **Show icons only** makes the column a narrow icon rail.
-Under **General**, **Default tab position (preview)** and **Default vertical column
+Under **General**, **Tab position (preview)** and **Vertical column
 width** are saved across restarts and apply to newly created groups. Changing a
 default leaves existing groups' layouts intact. Per-group menu choices and edge
 resizing do not change these defaults.

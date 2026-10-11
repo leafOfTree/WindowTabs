@@ -164,7 +164,7 @@ type SettingsNumberInput() as this =
         | true,next -> setValue next
         | _ -> sync()
     do
-        this.Width <- Dpi.scale 180
+        this.Width <- Dpi.scale SettingsShapes.editorWidth
         this.Controls.AddRange([|text :> Control;minus :> Control;plus :> Control|])
         this.Layout.Add(fun _ ->
             let size = Dpi.scale 26

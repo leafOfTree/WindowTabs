@@ -10,7 +10,7 @@ type GeneralView() =
         let behaviour = SettingsUi.sectionCard table (tr Strings.General.tabBehavior)
         SettingsBindings.toggleRow behaviour "dim-inactive-groups"
         SettingsBindings.choiceRow behaviour "tab-position"
-            [|tr Strings.TabMenu.horizontal;tr Strings.Common.left;tr Strings.Common.right|] |> ignore
+            [|tr Strings.TabMenu.top;tr Strings.Common.left;tr Strings.Common.right|] |> ignore
         let low,high = SettingsCatalog.columnWidthRange
         let columnWidth = new SettingsNumberInput(Minimum=decimal low,Maximum=decimal high,Font=SettingsUi.bodyFont())
         columnWidth.Value <- decimal(Services.settings.getValue("tabColumnWidth") :?> int)

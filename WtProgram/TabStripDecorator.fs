@@ -246,7 +246,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 text=tr text; image=None; flags=checkedFlag(this.ts.dock=dock)
                 click=fun () -> this.ts.dock <- dock })
             CmiPopUp({ text=tr Strings.TabMenu.position; image=None
-                       items=List2([Strings.TabMenu.horizontal,TabDockTop; Strings.Common.left,TabDockLeft; Strings.Common.right,TabDockRight]).map(item) })
+                       items=List2([Strings.TabMenu.top,TabDockTop; Strings.Common.left,TabDockLeft; Strings.Common.right,TabDockRight]).map(item) })
 
         let alignmentItem =
             let direction = if this.ts.isVertical then TabUp else this.ts.direction

@@ -346,6 +346,8 @@ let main() =
         let general = GeneralView() :> ISettingsView
         let position = controls general.control |> Seq.pick(function :? SettingsCombo as c when c.Name="tab-position" -> Some c | _ -> None)
         let width = controls general.control |> Seq.pick(function :? SettingsNumberInput as c when c.Name="tabColumnWidth" -> Some c | _ -> None)
+        check (width.Width=Dpi.scale 144 && position.Width=width.Width) "Number and short-choice editors do not share their default width"
+        check (position.ItemText(0)=tr Strings.TabMenu.top) "Tab position still labels the top strip as horizontal"
         position.SelectedIndex <- 1
         width.Value <- 280M
         check (api.getValue("tabPosition") :?> string="Left" && api.getValue("tabColumnWidth") :?> int=280)
