@@ -44,7 +44,7 @@ let mutable preferences = {
     lightPalette=Theme.lightPalette;darkPalette=Theme.darkPalette
     lightCustomPalette=Theme.lightPalette;darkCustomPalette=Theme.darkPalette
     mode=DarkTheme;useCustomColors=true;lightPreset="";darkPreset="";presetEdits=Map.empty }
-let settingValues = Collections.Generic.Dictionary<string,obj>(dict ["appTabColors",box(Map.empty<string,string>);"tabColorMode",box "Off";"tabColorStyle",box "Stripe";"numberLeaderKeys",box "123456789";"numberHotKeyModifier",box "Ctrl";"disabledNumberShortcutPaths",box(Set2<string>());"enabledNumberShortcutPaths",box(Set2<string>())])
+let settingValues = Collections.Generic.Dictionary<string,obj>(dict ["tabPosition",box "Horizontal";"tabColumnWidth",box SettingsCatalog.columnWidthDefault;"appTabColors",box(Map.empty<string,string>);"tabColorMode",box "Off";"tabColorStyle",box "Stripe";"numberLeaderKeys",box "123456789";"numberHotKeyModifier",box "Ctrl";"disabledNumberShortcutPaths",box(Set2<string>());"enabledNumberShortcutPaths",box(Set2<string>())])
 let settings = { new ISettings with
     member _.appearance = preferences
     member _.updateAppearance update = preferences <- update preferences; ThemeService.notifyChanged()
