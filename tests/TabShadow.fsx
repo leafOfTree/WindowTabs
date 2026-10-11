@@ -113,8 +113,8 @@ let main () =
     try
         for dpi in [96;144;192] do
             Dpi.set dpi
-            for dock in [TabDockLeft;TabDockRight] do
-                let column = { ts with dock=dock; size=Dpi.scaleSize(Sz(220,300)); appearance=Theme.dark.scaled }
+            for dock,direction in [for dock in [TabDockLeft;TabDockRight] do for direction in [TabUp;TabDown] do yield dock,direction] do
+                let column = { ts with dock=dock; direction=direction; size=Dpi.scaleSize(Sz(220,300)); appearance=Theme.dark.scaled }
                 let first = column.tabLocation 1
                 let second = column.tabLocation 2
                 check (first.x=second.x && second.y>first.y) "Vertical tabs did not stack in rows"
@@ -128,12 +128,13 @@ let main () =
                 check ((column.tryHit(Pt(-1,second.y))).IsNone) "An off-column tab received pointer input"
                 use image = column.render.bitmap
                 check (image.Width=Dpi.scale 220 && image.Height=Dpi.scale 300) "Vertical rendering ignored the viewport size"
-                let contentX = if dock=TabDockLeft then image.Width-1 else 0
-                let edgeX = if dock=TabDockLeft then 0 else image.Width-1
+                let roundLeft = (dock=TabDockRight) <> (direction=TabUp)
+                let contentX = if roundLeft then 0 else image.Width-1
+                let edgeX = if roundLeft then image.Width-1 else 0
                 check (image.GetPixel(contentX,0).A=0uy && image.GetPixel(contentX,image.Height-1).A=0uy)
-                      "Vertical column did not round its content-facing top and bottom corners"
+                      "Vertical column did not round the corners away from its attached window edge"
                 check (image.GetPixel(edgeX,0).A>0uy && image.GetPixel(edgeX,image.Height-1).A>0uy)
-                      "Vertical column rounded its screen-edge corners"
+                      "Vertical column rounded the corners next to its attached window edge"
                 check (image.GetPixel(image.Width/2,image.Height/2).A=255uy) "Column background no longer covers the underlying scrollbar"
                 for y in [0;image.Height-1] do
                     let edge = image.GetPixel(image.Width/2,y)
@@ -150,9 +151,15 @@ let main () =
                     graphics.Clear(Color.FromArgb(45,45,45))
                     graphics.DrawImageUnscaled(shadow,15,10)
                     graphics.DrawImageUnscaled(rounded,30,25)
-                    canvas.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "vertical-rounded-%A.png" dock),Imaging.ImageFormat.Png)
+                    canvas.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "vertical-rounded-%A-%A.png" dock direction),Imaging.ImageFormat.Png)
                 use collapsed = column.renderCollapsed.bitmap
                 check (collapsed.Width=Dpi.scale 4 && collapsed.Height=image.Height) "Vertical auto-hide changed height instead of width"
+                let collapsedContentX = if roundLeft then 0 else collapsed.Width-1
+                let collapsedEdgeX = if roundLeft then collapsed.Width-1 else 0
+                for y in [0;collapsed.Height-1] do
+                    check (collapsed.GetPixel(collapsedContentX,y).A=0uy) "Collapsed vertical tabs have square content-side corners"
+                    check (collapsed.GetPixel(collapsedEdgeX,y).A>0uy) "Collapsed vertical tabs rounded their attached edge"
+                check (collapsed.GetPixel(collapsed.Width/2,collapsed.Height/2).A=255uy) "Collapsed vertical tabs lost their solid hover target"
                 let overflow = { column with size=Dpi.scaleSize(Sz(220,40)) }
                 check overflow.scrollThumb.IsSome "An overflowing column has no scrollbar"
                 let thumb = overflow.scrollThumb.Value
@@ -217,7 +224,7 @@ let main () =
                 for tab in tabs do check (TextContrast.ratio tab.textColor tab.fillColor>=4.5) "Tint made text unreadable"
                 let flash = {inactive with displayInfo={inactive.displayInfo with bgColor=Some Color.Orange}}
                 check (flash.fillColor=Color.Orange) "Tint overrode attention"
-    // Vertical stripes stay on the outside edge, including when the group is overlaid.
+    // The anchored edge carries the stripe, opposite the rounded side, inside or outside.
     for dpi in [96;144] do
         let previousDpi = Dpi.value()
         Dpi.set dpi
@@ -229,11 +236,12 @@ let main () =
                 let tab = column.tabSprites.list |> List.map snd |> List.find(fun tab -> tab.isTop)
                 use image = (tab :> ISprite).render.bitmap
                 let inset = Dpi.scale 2 + Dpi.scale 3/2
-                let x = if dock=TabDockLeft then inset else image.Width-Dpi.scale 2-Dpi.scale 3+Dpi.scale 3/2
-                let opposite = if dock=TabDockLeft then image.Width-inset-1 else inset
+                let opensLeft = (dock=TabDockRight) <> (direction=TabUp)
+                let x = if opensLeft then image.Width-Dpi.scale 2-Dpi.scale 3+Dpi.scale 3/2 else inset
+                let opposite = if opensLeft then inset else image.Width-inset-1
                 if not System.Windows.Forms.SystemInformation.HighContrast then
-                    check (image.GetPixel(x,image.Height/2).ToArgb()=Color.Red.ToArgb()) "Vertical stripe is not on the outside edge"
-                    check (image.GetPixel(opposite,image.Height/2).ToArgb()<>Color.Red.ToArgb()) "Vertical stripe also appears on the inside edge"
+                    check (image.GetPixel(x,image.Height/2).ToArgb()=Color.Red.ToArgb()) "Vertical stripe is not on the anchored edge for its expansion direction"
+                    check (image.GetPixel(opposite,image.Height/2).ToArgb()<>Color.Red.ToArgb()) "Vertical stripe also appears on the rounded edge"
                     check (image.GetPixel(x,Dpi.scale 3).ToArgb()<>Color.Red.ToArgb() &&
                            image.GetPixel(x,image.Height-Dpi.scale 3-1).ToArgb()<>Color.Red.ToArgb()) "Vertical color mark is not shortened and centered"
                     use collapsed = column.renderCollapsed.bitmap

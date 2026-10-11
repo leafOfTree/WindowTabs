@@ -105,6 +105,28 @@ let main() =
             pumpUntil "Desktop registry did not acquire three windows" (fun () -> publicOrder source = handles)
             check (onGroup source (fun _ -> restored |> Seq.toList) = handles)
                   "Startup grouping did not reclaim every ordinary taskbar button"
+            api.setValue("showTabsOnSwitch",box true)
+            api.setValue("autoHideMode",box "Always")
+            onGroup source (fun group -> group.foreground <- IntPtr.Zero)
+            pumpUntil "Automatic hiding did not collapse the group" (fun () -> onGroup source (fun group -> group.ts.isShrunk))
+            onGroup source (fun group -> group.foreground <- a)
+            check (onGroup source (fun group -> group.ts.isShrunk)) "Entering the group opened auto-hidden tabs"
+            onGroup source (fun group -> group.foreground <- b)
+            pumpUntil "Switching between group tabs did not show its tabs" (fun () -> onGroup source (fun group -> not group.ts.isShrunk))
+            onGroup source (fun group -> group.foreground <- IntPtr.Zero)
+            pumpUntil "Leaving the group for another screen or tray kept the switch peek open" (fun () -> onGroup source (fun group -> group.ts.isShrunk))
+            onGroup source (fun group -> group.foreground <- a)
+            check (onGroup source (fun group -> group.ts.isShrunk)) "Returning from another window reopened auto-hidden tabs"
+            api.setValue("showTabsOnSwitch",box false)
+            onGroup source (fun group -> group.foreground <- b)
+            check (onGroup source (fun group -> group.ts.isShrunk)) "Disabled switch reveals still opened auto-hidden tabs"
+            api.setValue("showTabsOnSwitch",box true)
+            onGroup source (fun group -> group.foreground <- IntPtr.Zero)
+            pumpUntil "Leaving the group did not finish hiding its tabs" (fun () -> onGroup source (fun group -> group.ts.isShrunk))
+            onGroup source (fun group -> group.removeWindow c;group.addWindow(c,false))
+            pumpUntil "Regrouping did not restore its window" (fun () -> nativeOrder source=handles)
+            check (onGroup source (fun group -> group.ts.isShrunk)) "A background z-order change opened auto-hidden tabs"
+            api.setValue("autoHideMode",box "Never")
             let localLayout = {dock=TabDockRight;columnWidth=264;normalAlignment=TabRight;insideAlignment=TabCenter}
             onGroup source (fun group -> group.applyTabLayout localLayout)
             api.setValue("tabPosition",box "Left")
@@ -121,10 +143,11 @@ let main() =
             pumpUntil "Switching back to Top did not update the live group" (fun () ->
                 onGroup source (fun group -> group.ts.dock,group.ts.columnWidth)=(TabDockTop,220))
             onGroup source (fun group -> group.ts.setAlignment(TabUp,TabLeft);group.ts.setAlignment(TabDown,TabLeft))
+            let beforeDuplicate = onGroup source (fun _ -> restored.Count)
             (source :> IGroup).addWindow(a,false)
             check (nativeOrder source = handles) "Duplicate add created a duplicate tab"
             check (publicOrder source = handles) "Duplicate add corrupted desktop membership"
-            check (onGroup source (fun _ -> restored.Count) = 3) "Duplicate grouping repeatedly restored a taskbar button"
+            check (onGroup source (fun _ -> restored.Count) = beforeDuplicate) "Duplicate grouping repeatedly restored a taskbar button"
             (source :> IGroup).removeWindow b
             (source :> IGroup).addWindow(b,false)
             pumpUntil "Queued remove-then-add lost the window" (fun () -> nativeOrder source = [a;c;b] && publicOrder source = [a;c;b])

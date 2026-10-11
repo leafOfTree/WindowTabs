@@ -4,7 +4,7 @@ Tracks [issue #34](https://github.com/leafOfTree/WindowTabs/issues/34).
 
 ## Try it
 
-Right-click a tab and choose **Tab position (preview)**, then **Left** or **Right**.
+Right-click a tab and choose **Tab position**, then **Left** or **Right**.
 Choose **Top** to return to the existing layout. The choice belongs to the
 group and survives an in-session group rebuild and a WindowTabs restart while
 its application windows remain open. Position, width and alignment choices are
@@ -14,7 +14,7 @@ each group's position, logical width and alignment; restoring it reapplies those
 choices even if the global defaults have changed. Without a workspace restore,
 groups without remembered window choices use the saved global defaults.
 **Show icons only** makes the column a narrow icon rail.
-**Tab position (preview)** under **General** and **Vertical column width** under
+**Tab position** under **General** and **Vertical column width** under
 **Appearance → Tab layout** are saved across restarts and apply immediately to all existing groups,
 including groups with individual choices, as well as newly created groups. Changing
 one setting preserves the other layout values and updates remembered window choices.
@@ -32,7 +32,9 @@ Its **Align tabs** menu offers **Top**, **Center** and **Bottom**; the global
 alignment maps left/right to top/bottom for vertical columns. It grows and shrinks
 when tabs join or leave. They use the
 existing themed tab renderer with the pill shape. Stripe color coding uses short, rounded marks centered vertically near
-the outside edge of each row (left for Left, right for Right). Inactive marks are
+the anchored edge of each row. Leftward expansion has rounded left corners and
+right-hand marks; rightward expansion mirrors that, for both inside overlays and
+outside columns. Inactive marks are
 muted, while hovered marks approach the active color; the collapsed
 edge keeps its color marks. Activation, close buttons,
 menus, keyboard switching and ordering still use the existing group behavior.
@@ -42,7 +44,9 @@ working area of the window's own monitor, including at a shared monitor boundary
 Otherwise it overlays that edge inside the window, below a 32-pixel
 title-bar inset. Overlays attach directly to the visible window edge and cover the
 application scrollbar. A soft shadow and rounded content-facing top/bottom corners
-distinguish the column from the window behind it; the screen-edge corners stay square.
+distinguish the column from the window behind it. The corners next to the attached
+window edge stay square; moving between an outside column and an inside overlay
+reverses the rounded side.
 Maximized invisible frame margins do not move the trigger beyond the screen.
 It does not resize the application to reserve space. Existing
 auto-hide modes apply; the column reveals horizontally from its attached edge over 150 ms and collapses
@@ -50,6 +54,9 @@ to a 4-pixel edge. Reversing the animation continues from its current width.
 Windows' animation setting is respected. Moving into the expanding column keeps it
 open until the pointer leaves the full target bounds plus a 16-logical-pixel
 tolerance beyond the outer side edge (including adjacent monitor boundaries).
+Brief switch reveals only follow switching between windows in the same group.
+Entering from another window or unrelated z-order updates do not reveal the tabs.
+Leaving the group ends the reveal.
 Selecting an overflow tab brings its row into view. Only visible rows are drawn.
 Overflowing columns show a draggable scrollbar; click its track to page through
 the list. Existing wheel switching and Ctrl + wheel ordering remain unchanged.

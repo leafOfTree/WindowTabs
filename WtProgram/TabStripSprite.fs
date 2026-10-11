@@ -196,7 +196,7 @@ type CloseButtonSprite = {
             | None -> ()
             // Inset so the cross sits inside the hover square rather than
             // filling it corner to corner.
-            let inset = float32 this.size.width * 0.32f
+            let inset = float32 this.size.width * 0.25f
             let far = float32 this.size.width - inset
             use pen = this.pen
             g.DrawLine(pen, inset, inset, far, far)
@@ -539,7 +539,8 @@ type TabSprite<'id> = {
                 | TabDockLeft | TabDockRight ->
                     let thickness = min this.size.width (Dpi.scale 3)
                     let inset = Dpi.scale 2
-                    let x = if this.dock=TabDockLeft then inset else this.size.width-inset-thickness
+                    let opensLeft = (this.dock=TabDockRight) <> (this.direction=TabUp)
+                    let x = if opensLeft then this.size.width-inset-thickness else inset
                     let length = max thickness (min (Dpi.scale 20) (this.size.height-Dpi.scale 12))
                     let y = (this.size.height-length)/2
                     use mark = new GraphicsPath()
@@ -720,9 +721,10 @@ type TabStripSprite<'id> when 'id : equality = {
     member private this.columnOutline =
         let path = new GraphicsPath()
         let w,h = float32(max 1 this.size.width),float32(max 1 this.size.height)
-        let radius = min (float32(Dpi.scale 8)) (min w h/2.0f)
+        let radius = min (float32(Dpi.scale 8)) (min w (h/2.0f))
         let diameter = radius*2.0f
-        if this.dock=TabDockRight then
+        let roundLeft = (this.dock=TabDockRight) <> (this.direction=TabUp)
+        if roundLeft then
             path.AddLine(radius,0.0f,w,0.0f)
             path.AddLine(w,0.0f,w,h)
             path.AddLine(w,h,radius,h)
@@ -930,11 +932,19 @@ type TabStripSprite<'id> when 'id : equality = {
         if this.isVertical then
             let image = Img(Sz(Dpi.scale 4,max 1 this.size.height))
             use graphics = image.graphics
-            graphics.Clear(this.appearance.tabNormalBgColor)
+            graphics.SmoothingMode <- SmoothingMode.AntiAlias
+            graphics.PixelOffsetMode <- PixelOffsetMode.Half
+            use outline = {this with size=image.size}.columnOutline
+            use background = new SolidBrush(this.appearance.tabNormalBgColor)
+            graphics.FillPath(background,outline)
             for location,tab in this.tabSprites.list do
                 let color = tab.stripeColor |> Option.defaultValue tab.fillColor
                 use brush = new SolidBrush(color)
-                graphics.FillRectangle(brush,Rectangle(0,location.y,image.size.width,tab.size.height))
+                let state = graphics.Save()
+                graphics.SetClip(Rectangle(0,location.y,image.size.width,tab.size.height))
+                graphics.CompositingMode <- CompositingMode.SourceCopy
+                graphics.FillPath(brush,outline)
+                graphics.Restore(state)
             image
         else this.renderHorizontalCollapsed
 

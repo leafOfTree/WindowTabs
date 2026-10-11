@@ -290,7 +290,7 @@ type AppearanceView(?settings:ISettings) =
             let ts : TabStripSprite<int> = {
                 tabs=Map2(List2([1,info 1 (tr Strings.Settings.tabActiveBgColor.caption);2,info 2 (tr Strings.Settings.tabHighlightBgColor.caption);3,info 4 (tr Strings.Settings.tabNormalBgColor.caption)]))
                 lorder=List2([1;2;3]);zorder=List2([1;2;3]);size=Sz(tabs.Width,tabs.Height)
-                slide=None;direction=TabUp;alignment=TabLeft;onlyIcons=(vertical && preview.ColumnWidth=fst SettingsCatalog.columnWidthRange);transparent=true;held=None;centerShift=0.0; dock=preview.Position; scrollOffset=0
+                slide=None;direction=(if vertical then TabDown else TabUp);alignment=TabLeft;onlyIcons=(vertical && preview.ColumnWidth=fst SettingsCatalog.columnWidthRange);transparent=true;held=None;centerShift=0.0; dock=preview.Position; scrollOffset=0
                 appearance=appearance;hover=Some(2,TabBackground);captured=None }
             use bitmap = ts.render.bitmap
             e.Graphics.DrawImageUnscaled(bitmap,tabs.Left,tabs.Top))

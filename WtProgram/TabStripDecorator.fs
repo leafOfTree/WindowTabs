@@ -504,18 +504,23 @@ type TabStripDecorator(group:WindowGroup) as this =
         let numberBadgesCell = propCell("numberBadges", false)
         Cell.listen(fun() -> this.ts.numberBadges <- numberBadgesCell.value)
         let renamingTabCell = propCell("renamingTab", false)
-        let isRecentlyChangedZorderCell =
+        let isRecentlySwitchedCell =
             let cell = Cell.create(false)
             let cbRef = ref None
+            let mutable previousForeground = group.foreground
             group.exited.Add(fun _ ->
                 cbRef.Value.iter(fun (pending:IDisposable) -> pending.Dispose())
                 cbRef := None)
-            group.zorder.changed.Add <| fun() ->
-                cell.value <- true
+            group.foregroundChanged.Add <| fun() ->
                 cbRef.Value.iter <| fun(d:IDisposable) -> d.Dispose()
-                cbRef := Some(ThreadHelper.cancelablePostBack 1000 <| fun() ->
-                    cell.value <- false
-                )
+                cbRef := None
+                let foreground = group.foreground
+                let switched = previousForeground <> foreground &&
+                               group.windows.contains(previousForeground) && group.windows.contains(foreground)
+                previousForeground <- foreground
+                cell.value <- switched
+                if switched then
+                    cbRef := Some(ThreadHelper.cancelablePostBack 1000 <| fun() -> cell.value <- false)
             cell
         Cell.listen <| fun() ->
             let shrink =
@@ -526,7 +531,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 contextMenuVisibleCell.value.not &&
                 numberBadgesCell.value.not &&
                 renamingTabCell.value.not &&
-                (showOnSwitchCell.value.not || isRecentlyChangedZorderCell.value.not)
+                (showOnSwitchCell.value.not || isRecentlySwitchedCell.value.not)
             callbackRef.Value.iter <| fun(d:IDisposable) -> d.Dispose()
             callbackRef := None
             if shrink then
