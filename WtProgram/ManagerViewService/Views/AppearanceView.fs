@@ -322,7 +322,6 @@ type AppearanceView(?settings:ISettings) =
         SettingsUi.sectionHeading table (tr Strings.Appearance.tabLayout) [resetLayoutButton]
         let layoutCard = new SettingsCard()
         SettingsUi.add table layoutCard
-        SettingsUi.note layoutCard (tr Strings.Appearance.sizesStayTheSame)
         for key,read,write,editor in dimensions do SettingsUi.settingRow layoutCard key editor
         resetLayoutButton.Click.Add(fun _ ->
             update Theme.resetLayout)

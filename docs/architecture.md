@@ -71,7 +71,9 @@ a versioned native property on each managed application HWND. It packs bounded
 logical values, not a memory pointer. Group discovery reads it before attaching the
 first window; an explicit workspace/rebuild layout takes precedence. The property
 survives WindowTabs termination and expires when the application HWND is destroyed.
-Unmodified groups continue to use global defaults.
+Unmodified groups start with global defaults. Changing the global tab position or
+column width posts the new value to every existing group's STA and updates its
+remembered window layout; individual menu choices can override it again.
 
 ## Settings persistence
 

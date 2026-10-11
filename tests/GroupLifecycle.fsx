@@ -82,8 +82,9 @@ let main() =
               "New group ignored the saved tab defaults"
         api.setValue("tabPosition",box "Left")
         api.setValue("tabColumnWidth",box 320)
-        check (onGroup defaults (fun group -> group.ts.dock,group.ts.columnWidth)=(TabDockRight,280))
-              "Changing defaults overwrote an existing group's layout"
+        for info in [source;target;combined;defaults] do
+            pumpUntil "Global layout settings did not update an existing group" (fun () ->
+                onGroup info (fun group -> group.ts.dock,group.ts.columnWidth)=(TabDockLeft,320))
         (defaults :> IGroup).destroy()
         pumpUntil "Default layout group did not exit" (fun () -> defaults.isExited)
         api.setValue("tabPosition",box "Horizontal")
@@ -104,6 +105,22 @@ let main() =
             pumpUntil "Desktop registry did not acquire three windows" (fun () -> publicOrder source = handles)
             check (onGroup source (fun _ -> restored |> Seq.toList) = handles)
                   "Startup grouping did not reclaim every ordinary taskbar button"
+            let localLayout = {dock=TabDockRight;columnWidth=264;normalAlignment=TabRight;insideAlignment=TabCenter}
+            onGroup source (fun group -> group.applyTabLayout localLayout)
+            api.setValue("tabPosition",box "Left")
+            pumpUntil "Global position did not replace the group's menu choice" (fun () ->
+                onGroup source (fun group -> group.tabLayout)={localLayout with dock=TabDockLeft})
+            api.setValue("tabColumnWidth",box 320)
+            let updatedLayout = {localLayout with dock=TabDockLeft;columnWidth=320}
+            pumpUntil "Global width did not replace the group's resized width" (fun () ->
+                onGroup source (fun group -> group.tabLayout)=updatedLayout)
+            check (handles |> List.forall(fun hwnd -> WindowTabLayout.read hwnd=Some updatedLayout))
+                  "Live global settings left stale remembered window layouts"
+            api.setValue("tabPosition",box "Horizontal")
+            api.setValue("tabColumnWidth",box 220)
+            pumpUntil "Switching back to Top did not update the live group" (fun () ->
+                onGroup source (fun group -> group.ts.dock,group.ts.columnWidth)=(TabDockTop,220))
+            onGroup source (fun group -> group.ts.setAlignment(TabUp,TabLeft);group.ts.setAlignment(TabDown,TabLeft))
             (source :> IGroup).addWindow(a,false)
             check (nativeOrder source = handles) "Duplicate add created a duplicate tab"
             check (publicOrder source = handles) "Duplicate add corrupted desktop membership"

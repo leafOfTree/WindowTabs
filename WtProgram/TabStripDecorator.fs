@@ -80,11 +80,20 @@ type TabStripDecorator(group:WindowGroup) as this =
             let alignment = value.cast<string>()
             group.invokeAsync(fun () -> if not disposed then this.ts.setDefaultAlignment(alignment)))
 
+        let positionSubscription = Services.settings.notifyValue "tabPosition" (fun value ->
+            let dock = match value.cast<string>() with "Left" -> TabDockLeft | "Right" -> TabDockRight | _ -> TabDockTop
+            group.invokeAsync(fun () -> if not disposed then this.ts.dock <- dock))
+        let widthSubscription = Services.settings.notifyValue "tabColumnWidth" (fun value ->
+            let width = value.cast<int>()
+            group.invokeAsync(fun () -> if not disposed then this.ts.columnWidth <- width))
+
         group.exited.Add <| fun() ->
             contextMenu |> Option.iter(fun menu -> menu.Dispose())
             contextMenu <- None
             disposed <- true
             alignmentSubscription.Dispose()
+            positionSubscription.Dispose()
+            widthSubscription.Dispose()
             geometrySubscription.Dispose()
             Services.dragDrop.unregisterTarget(this.ts.hwnd)
     

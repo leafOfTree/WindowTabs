@@ -15,9 +15,11 @@ choices even if the global defaults have changed. Without a workspace restore,
 groups without remembered window choices use the saved global defaults.
 **Show icons only** makes the column a narrow icon rail.
 Under **General**, **Tab position (preview)** and **Vertical column
-width** are saved across restarts and apply to newly created groups. Changing a
-default leaves existing groups' layouts intact. Per-group menu choices and edge
-resizing do not change these defaults.
+width** are saved across restarts and apply immediately to all existing groups,
+including groups with individual choices, as well as newly created groups. Changing
+one setting preserves the other layout values and updates remembered window choices.
+Per-group menu choices and edge resizing can override them again without changing
+the global settings.
 
 The expanded column starts at 220 logical pixels wide, or 48 in icon mode. Drag
 the exposed column edge to resize it between 120 and 420 logical pixels. The width
