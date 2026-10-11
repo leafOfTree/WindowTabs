@@ -600,7 +600,13 @@ type TabStripSprite<'id> when 'id : equality = {
     /// strip leaves room for the caption buttons on the right only, so its middle is left of the window's.
     /// Centred tabs keep the same room free on the left.
     centerShift: float
+    dock: TabDock
+    scrollOffset: int
     } with
+
+    member this.isVertical = this.dock=TabDockLeft || this.dock=TabDockRight
+    member this.rowHeight = max (Dpi.scale 32) this.appearance.tabHeight
+    member this.rowStep = this.rowHeight + Dpi.scale 4
 
     member private this.tabOverlap = float(this.appearance.tabOverlap)
     member private this.tabMaxLen = float(this.appearance.tabMaxWidth)
@@ -629,7 +635,7 @@ type TabStripSprite<'id> when 'id : equality = {
                 | Some(top) -> top = tab
                 | None -> false 
             displayInfo = this.tabs.find(tab)
-            appearance = this.appearance
+            appearance = if this.isVertical then { this.appearance with tabStyle=PillTabs; tabHeight=this.rowHeight } else this.appearance
             size = this.tabSizeOf tab
             onlyIcon = this.isCompact
             direction = this.direction
@@ -638,7 +644,7 @@ type TabStripSprite<'id> when 'id : equality = {
                 // already set apart by its own fill.
                 match this.indexOf tab with
                 | Some(index) when index > 0 ->
-                    this.isPlain(tab) && this.isPlain(this.lorder.at(index - 1))
+                    not this.isVertical && this.isPlain(tab) && this.isPlain(this.lorder.at(index - 1))
                 | _ -> false
             roundLeft =
                 match this.indexOf tab with
@@ -664,7 +670,8 @@ type TabStripSprite<'id> when 'id : equality = {
 
     member private this.bgImage =
         let bgColor = 
-            if this.transparent then Color.FromArgb(0, 0, 0, 0)
+            if this.isVertical then this.appearance.tabNormalBgColor
+            elif this.transparent then Color.FromArgb(0, 0, 0, 0)
             else Color.FromArgb(1, 1, 1, 1) 
         let img = Img(if this.size.isEmptyArea then Sz(1,1) else this.size)
         use gr = img.graphics
@@ -713,7 +720,7 @@ type TabStripSprite<'id> when 'id : equality = {
         | None -> this.fittedLength
 
     /// Tabs too narrow for their title show only the icon, as with "Show icons only".
-    member this.isCompact = this.onlyIcons || this.tabLength < this.compactLen
+    member this.isCompact = this.onlyIcons || (if this.isVertical then float this.size.width else this.tabLength) < this.compactLen
 
     member private this.tabOffset index =
         let tabOffset = this.tabLength - this.tabOverlap
@@ -749,16 +756,25 @@ type TabStripSprite<'id> when 'id : equality = {
             int(x), int(x + this.tabLength)
 
     member this.tabLocation tab =
-        let x,_ = this.tabSpan tab
-        Pt(x, 1)
+        if this.isVertical then
+            let y =
+                match this.slide with
+                | Some(id,y) when id=tab -> between (0,max 0 (this.size.height-this.rowHeight)) y
+                | _ -> this.adjustedLorder.findIndex((=)tab)*this.rowStep + Dpi.scale 4 - this.scrollOffset
+            Pt(Dpi.scale 4,y)
+        else
+            let x,_ = this.tabSpan tab
+            Pt(x, 1)
 
     // Tabs start one pixel into the strip. Above a window they then run to the strip's
     // bottom row, which overlaps the window's top edge by tabHeightOffset, so they cover
     // its border line. Inside the title bar the strip starts a pixel above the window and
     // that first row is already the window's edge.
     member private this.tabSizeOf tab =
-        let left,right = this.tabSpan tab
-        Sz(right - left, this.size.height - (if this.direction = TabUp then 1 else 2))
+        if this.isVertical then Sz(max 1 (this.size.width-Dpi.scale 8),this.rowHeight)
+        else
+            let left,right = this.tabSpan tab
+            Sz(right - left, this.size.height - (if this.direction = TabUp then 1 else 2))
 
     member this.movedTab =
         match this.slide with
@@ -766,10 +782,12 @@ type TabStripSprite<'id> when 'id : equality = {
             let index = 
                 if this.count = 0 then 0
                 else
-                    let x = float(x)
-                    let x = x - this.alignmentOffset
-                    let mid = x + this.tabLength / 2.0
-                    int((mid - this.tabOverlap / 2.0) / (this.tabLength - this.tabOverlap))
+                    if this.isVertical then (x + this.scrollOffset + this.rowHeight/2 - Dpi.scale 4)/this.rowStep
+                    else
+                        let x = float(x)
+                        let x = x - this.alignmentOffset
+                        let mid = x + this.tabLength / 2.0
+                        int((mid - this.tabOverlap / 2.0) / (this.tabLength - this.tabOverlap))
             Some(tab, index)
         | None -> None
 
@@ -786,7 +804,7 @@ type TabStripSprite<'id> when 'id : equality = {
     /// Tabs set apart by a gap have no bar between them to run into.
     member private this.feet =
         match this.appearance.tabStyle, this.zorder.tryHead with
-        | FolderTabs, Some(top) when this.tabOverlap >= 0.0 ->
+        | FolderTabs, Some(top) when this.tabOverlap >= 0.0 && not this.isVertical ->
             let tab = this.tabSpriteOf top
             let location = this.tabLocation top
             let index = this.adjustedLorder.findIndex((=)top)
@@ -807,7 +825,9 @@ type TabStripSprite<'id> when 'id : equality = {
             member x.image = this.bgImage
             // The feet come first so they are drawn over the tabs they reach into.
             member x.children =
-                List2(this.feet @ (this.tabSprites.map(fun (location, tab) -> location, tab :> ISprite)).list)
+                let tabs = this.tabSprites.list |> List.filter(fun (location,tab) ->
+                    not this.isVertical || (location.y<this.size.height && location.y+tab.size.height>0))
+                List2(this.feet @ (tabs |> List.map(fun (location,tab) -> location,tab :> ISprite)))
         }
 
     member this.renderTab tab = this.tabSprite(tab).render
@@ -821,6 +841,17 @@ type TabStripSprite<'id> when 'id : equality = {
 
     /// Keep a solid hover target at the window edge, without text or icons.
     member this.renderCollapsed =
+        if this.isVertical then
+            let image = Img(Sz(Dpi.scale 4,max 1 this.size.height))
+            use graphics = image.graphics
+            graphics.Clear(this.appearance.tabNormalBgColor)
+            for location,tab in this.tabSprites.list do
+                use brush = new SolidBrush(tab.fillColor)
+                graphics.FillRectangle(brush,Rectangle(0,location.y,image.size.width,tab.size.height))
+            image
+        else this.renderHorizontalCollapsed
+
+    member private this.renderHorizontalCollapsed =
         let image = Img(Sz(this.size.width,this.collapsedHeight))
         use graphics = image.graphics
         let gapInset = max 1 (Dpi.scale 2)
@@ -873,7 +904,7 @@ type TabStripSprite<'id> when 'id : equality = {
         image
 
     member this.tryHit pt = 
-        let path = this.sprite.hit(pt)
+        let path = if Rect(Pt(),this.size).containsPoint(pt) then this.sprite.hit(pt) else List2()
         maybe {
             let! tab = path.tryPick <| fun sprite ->
                 match sprite with

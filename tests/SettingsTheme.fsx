@@ -54,7 +54,7 @@ let main() =
             let ids = [0..count-1]
             let strip : TabStripSprite<int> = {
                 tabs=Map2(List2(ids |> List.map(fun i -> i,info i))); lorder=List2(ids); zorder=List2(ids); size=Sz(900,27)
-                slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; transparent=true; held=None; centerShift=0.0
+                slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; transparent=true; held=None; centerShift=0.0; dock=TabDockTop; scrollOffset=0
                 appearance=appearance; hover=None; captured=None }
             let fills = strip.tabSprites.list |> List.filter(fun (_,sprite) -> not sprite.isTop) |> List.map(fun (_,sprite) -> sprite.fillColor)
             let spread (colors:Color list) =
@@ -190,6 +190,14 @@ let main() =
         let maximized = placement (TabPalette.compose (TabGeometry.fromAppearance geometry) (TabPalette.fromAppearance geometry)) 0
         check (maximized.shouldShowInside && maximized.bounds.x=100+11 && maximized.bounds.height=37) "Inside placement ignores the shared side margin"
         check (maximized.bounds.right=100+900-11-TabGeometry.captionButtonsReserve) "Inside placement does not clear the caption buttons"
+        for dock in [TabDockLeft;TabDockRight] do
+            let side = normal.sidePlacement(dock,80)
+            check (not side.showInside && side.bounds.width=80 && side.bounds.height=600) "Vertical tabs failed to use available outside space"
+            check ((if dock=TabDockLeft then side.bounds.right=normal.windowBounds.left else side.bounds.left=normal.windowBounds.right)) "Vertical tabs are detached from the selected window edge"
+            let edge = { normal with windowBounds=Rect(Pt(0,0),Sz(1920,1080)) }
+            let overlay = edge.sidePlacement(dock,220)
+            check (overlay.showInside && edge.windowBounds.completlyContains overlay.bounds) "Maximized vertical tabs escaped the window"
+            check (overlay.bounds.top>=Dpi.scale 32) "Vertical overlay covers title-bar controls"
         let originalDpi = Dpi.value()
         try
             for dpi in [96;120;144;192] do

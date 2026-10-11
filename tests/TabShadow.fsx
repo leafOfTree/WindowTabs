@@ -107,8 +107,32 @@ let main () =
     let ts : TabStripSprite<int> = {
         tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"]))
         lorder=List2([1;2]); zorder=List2([1;2]); size=Sz(420,28)
-        slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; held=None; centerShift=0.0
+        slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; held=None; centerShift=0.0; dock=TabDockTop; scrollOffset=0
         transparent=true; appearance=appearance; hover=None; captured=None }
+    let originalVerticalDpi = Dpi.value()
+    try
+        for dpi in [96;144;192] do
+            Dpi.set dpi
+            for dock in [TabDockLeft;TabDockRight] do
+                let column = { ts with dock=dock; size=Dpi.scaleSize(Sz(220,300)); appearance=Theme.dark.scaled }
+                let first = column.tabLocation 1
+                let second = column.tabLocation 2
+                check (first.x=second.x && second.y>first.y) "Vertical tabs did not stack in rows"
+                check (column.tryHit(second.add(Pt(Dpi.scale 12,Dpi.scale 16))) |> Option.exists(fun (id,_) -> id=2)) "Vertical hit testing selected a neighbouring row"
+                let sprite = snd (column.tabSprites.list |> List.find(fun (_,tab) -> tab.id=1))
+                let closeLocation,closeSprite = (sprite :> ISprite).children.list |> List.find(fun (_,child) -> match child with :? CloseButtonSprite -> true | _ -> false)
+                use closeImage = closeSprite.image.bitmap
+                let close = first.add(closeLocation).add(Pt(closeImage.Width/2,closeImage.Height/2))
+                check (column.tryHit close=Some(1,TabClose)) "Vertical close button does not match its drawn position"
+                check (({ column with slide=Some(1,column.rowStep) }).movedTab=Some(1,1)) "Vertical dragging still uses horizontal geometry"
+                check ((column.tryHit(Pt(-1,second.y))).IsNone) "An off-column tab received pointer input"
+                use image = column.render.bitmap
+                check (image.Width=Dpi.scale 220 && image.Height=Dpi.scale 300) "Vertical rendering ignored the viewport size"
+                use collapsed = column.renderCollapsed.bitmap
+                check (collapsed.Width=Dpi.scale 4 && collapsed.Height=image.Height) "Vertical auto-hide changed height instead of width"
+                let icons = { column with onlyIcons=true; size=Dpi.scaleSize(Sz(48,300)) }
+                check ((snd icons.tabSprites.head).onlyIcon) "The vertical icon rail still shows titles"
+    finally Dpi.set originalVerticalDpi
     for appearance in [Theme.light;Theme.dark] do
         for icons in [false;true] do
             let badges = { ts with appearance=appearance;onlyIcons=icons;tabs=Map2(List2([1,{info "One" with numberBadge=Some "1"};2,{info "Ten" with numberBadge=Some "A"}])) }

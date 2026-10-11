@@ -49,6 +49,8 @@ module Strings =
 
     /// Tab context menu.
     module TabMenu =
+        let position = { en="Tab position (preview)"; zh="标签位置（预览）"; ja="タブの位置（プレビュー）" }
+        let horizontal = { en="Horizontal"; zh="横向"; ja="横向き" }
         let showTabTitles = { en="Show tab titles"; zh="显示标签标题"; ja="タブのタイトルを表示" }
         let showIconsOnly = { en="Show icons only"; zh="仅显示图标"; ja="アイコンのみ表示" }
         let newTab = { en="Open new tab"; zh="新建标签"; ja="新しいタブを開く" }

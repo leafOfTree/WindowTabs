@@ -576,6 +576,26 @@ let main() =
                 strip.refreshShadow()
                 Application.DoEvents()
                 check shadow.isVisible "Deferred activation refresh stopped restoring the shadow"
+                for dock in [TabDockLeft;TabDockRight] do
+                    strip.dock <- dock
+                    let columnSize = Dpi.scaleSize(Sz(220,100))
+                    for inside in [false;true] do
+                        strip.setPlacement(placement start columnSize inside)
+                        strip.isShrunk <- false
+                        check (strip.bounds.size=columnSize && not shadow.isVisible) "Vertical column retained the horizontal shadow or wrong bounds"
+                        let last = strip.lorder.list |> List.last
+                        strip.zorder <- List2(last::(strip.lorder.list |> List.filter((<>)last)))
+                        let row,sprite = strip.tabSprites.list |> List.find(fun (_,tab) -> tab.id=last)
+                        check (row.y>=0 && row.y+sprite.size.height<=columnSize.height) "Switching to an overflow tab did not reveal its row"
+                        strip.isShrunk <- true
+                        let edgeWidth = Dpi.scale 4
+                        let anchorRight = (dock=TabDockLeft) <> inside
+                        check (strip.bounds.width=edgeWidth && strip.bounds.height=columnSize.height) "Vertical auto-hide did not collapse horizontally"
+                        check (strip.bounds.x=(if anchorRight then start.x+columnSize.width-edgeWidth else start.x)) "Vertical auto-hide detached from the window edge"
+                        check ((strip.tryHit(Pt(1,1))).IsSome) "Collapsed vertical edge cannot reveal the column"
+                        strip.isShrunk <- false
+                        check (strip.bounds.location=start && strip.bounds.size=columnSize) "Vertical expansion failed to restore the column"
+                strip.dock <- TabDockTop
             finally strip.destroy()
         printfn "PASS: unchanged hover/moves skip rendering; cross-tab hover, clicks, capture, close, resize, direction, collapse and shadow recovery."
     finally

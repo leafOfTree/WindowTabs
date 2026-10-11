@@ -41,7 +41,7 @@ type TabTitleTip() =
         TextRenderer.DrawText(e.Graphics,wrapped,this.Font,Rectangle(inset,Dpi.scale 5,this.Width-2*inset,this.Height-Dpi.scale 10),p.text,format)
 
     /// Below the strip at the pointer, or above it where the screen ends; wrapped past 470px.
-    member this.show(text:string,tabFont:Font,strip:Rectangle,pointerX:int) =
+    member this.show(text:string,tabFont:Font,strip:Rectangle,pointerX:int,?side:TabDock,?pointerY:int) =
         if not styled then
             styled <- true
             this.FormBorderStyle <- FormBorderStyle.None
@@ -64,8 +64,17 @@ type TabTitleTip() =
             if screen.IntersectsWith(strip) then screen else Rectangle(Int32.MinValue/2,Int32.MinValue/2,Int32.MaxValue,Int32.MaxValue)
         let gap = Dpi.scale 4
         let below = strip.Bottom+gap
-        let y = if below+height<=area.Bottom then below else max area.Top (strip.Top-gap-height)
-        let x = max area.Left (min (pointerX-Dpi.scale 12) (area.Right-width))
+        let x,y =
+            match side with
+            | Some(TabDockLeft) | Some(TabDockRight) ->
+                let preferRight = side=Some TabDockLeft
+                let preferred = if preferRight then strip.Right+gap else strip.Left-gap-width
+                let alternate = if preferRight then strip.Left-gap-width else strip.Right+gap
+                let x = if preferred>=area.Left && preferred+width<=area.Right then preferred else alternate
+                max area.Left (min x (area.Right-width)),max area.Top (min (defaultArg pointerY strip.Top) (area.Bottom-height))
+            | _ ->
+                max area.Left (min (pointerX-Dpi.scale 12) (area.Right-width)),
+                (if below+height<=area.Bottom then below else max area.Top (strip.Top-gap-height))
         this.Bounds <- Rectangle(x,y,width,height)
         use shape = rounded (RectangleF(0.0f,0.0f,float32 width,float32 height)) (float32(Dpi.scale 6))
         let previousRegion = this.Region

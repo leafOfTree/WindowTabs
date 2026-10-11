@@ -69,6 +69,8 @@ type TabStripDecorator(group:WindowGroup) as this =
                         this.onCloseWindow hwnd
             | _ -> ()
         
+        this.ts.dockChanged.Add(fun () -> this.updateTsPlacement())
+
         group.bounds.changed.Add <| fun() ->
             this.updateTsPlacement()
 
@@ -89,7 +91,8 @@ type TabStripDecorator(group:WindowGroup) as this =
 
     member private this.tabSlide =
         dragInfoCell.value.map <| fun dragInfo ->
-                dragInfo.tab, dragPtCell.value.sub(dragInfo.tabOffset).x
+                let pt = dragPtCell.value.sub(dragInfo.tabOffset)
+                dragInfo.tab, (if this.ts.isVertical then pt.y else pt.x)
 
     member private this.updateTsSlide() =
         this.ts.slide <- this.tabSlide
@@ -113,10 +116,10 @@ type TabStripDecorator(group:WindowGroup) as this =
             decoratorIndentFlipped = group.tabAppearance.tabIndentFlipped
             decoratorIndentNormal = group.tabAppearance.tabIndentNormal
         }
-        {
-            showInside = decorator.shouldShowInside
-            bounds = decorator.bounds
-        }
+        if this.ts.isVertical then
+            decorator.sidePlacement(this.ts.dock,Dpi.scale (if this.ts.isIconOnly then 48 else 220))
+        else
+            { showInside=decorator.shouldShowInside; bounds=decorator.bounds }
 
     member this.beginRename(hwnd) =
         let tab = Tab(hwnd)
@@ -234,6 +237,13 @@ type TabStripDecorator(group:WindowGroup) as this =
         let pid = window.pid
         let exeName = pid.exeName
         let processPath = pid.processPath
+
+        let positionItem =
+            let item (text,dock) = CmiRegular({
+                text=tr text; image=None; flags=checkedFlag(this.ts.dock=dock)
+                click=fun () -> this.ts.dock <- dock })
+            CmiPopUp({ text=tr Strings.TabMenu.position; image=None
+                       items=List2([Strings.TabMenu.horizontal,TabDockTop; Strings.Common.left,TabDockLeft; Strings.Common.right,TabDockRight]).map(item) })
 
         let alignmentItem =
             let currentAlignment = this.ts.getAlignment(this.ts.direction)
@@ -424,7 +434,8 @@ type TabStripDecorator(group:WindowGroup) as this =
             (if group.isRenamed(hwnd) then Some(restoreTabNameItem) else None)
             Some(CmiSeparator)
             Some(iconOnlyItem)
-            Some(alignmentItem)
+            Some(positionItem)
+            (if this.ts.isVertical then None else Some(alignmentItem))
             Some(autoHideItem)
             Some(sortTabsItem)
             Some(combineIconsInTaskbar)

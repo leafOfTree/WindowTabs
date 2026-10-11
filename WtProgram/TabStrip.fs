@@ -41,6 +41,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let numberBadgeKeysCell = Bemo.Cell<string>(Cell, SettingsCatalog.textDefault "numberLeaderKeys", (=))
     let numberBadgesCell = Bemo.Cell<bool>(Cell, false, (=))
     let iconOnlyCell = Cell.create(false)
+    let dockCell = Cell.create(TabDockTop)
+    let scrollOffsetCell = Cell.create(0)
+    let dockChangedEvent = Event<unit>()
     let alignmentMap = 
         Map.ofList [
             "Left", TabLeft
@@ -97,7 +100,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let mutable renamedFont = makeFont 0 FontStyle.Italic
 
     let isMouseOverExport = Cell.export <| fun() ->
-        hoverCell.value.IsSome
+        if this.isVertical then ptCell.value.IsSome else hoverCell.value.IsSome
 
     let showInsideExport = Cell.export <| fun() -> showInsideCell.value
 
@@ -174,6 +177,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             alignment = alignment.value.find direction
             onlyIcons = this.isIconOnly
             transparent = this.transparent
+            dock = dockCell.value
+            scrollOffset = scrollOffsetCell.value
             held = heldLayoutCell.value
             centerShift =
                 if this.showInside then float(this.appearance.tabIndentFlipped - this.appearance.tabIndentNormal) / 2.0
@@ -191,7 +196,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         
     member private this.hit : Option<Tab*TabPart> = maybe {
         let! pt = ptCell.value
-        let! hit = this.ts.tryHit(pt)
+        let! hit = this.hitAt(pt)
         return hit 
         }
     
@@ -255,7 +260,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         titleTab |> Option.iter(fun tab ->
             let sprites : List2<Pt*TabSprite<Tab>> = this.tabSprites
             match sprites.list |> List.tryFind(fun (_,sprite) -> sprite.id=tab) with
-            | Some(_,sprite) when this.visible && not this.isShrunk && not (OpenMenus.any()) && sprite.titleCut ->
+            | Some(offset,sprite) when this.visible && not this.isShrunk && not (OpenMenus.any()) && sprite.titleCut ->
                 let tip =
                     match titleTip with
                     | Some tip -> tip
@@ -264,15 +269,18 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                         titleTip <- Some tip
                         tip
                 let strip : Rect = this.bounds
+                let anchor = if this.isVertical then Rect(strip.location.add(offset),sprite.size) else strip
+                let pointer = pointerSource()
                 tip.show(sprite.displayInfo.text,sprite.displayInfo.textFont,
-                         Rectangle(strip.x,strip.y,strip.size.width,strip.size.height),pointerSource().X)
+                         Rectangle(anchor.x,anchor.y,anchor.width,anchor.height),pointer.X,
+                         ?side=(if this.isVertical then Some this.dock else None),?pointerY=Some pointer.Y)
             | _ -> ())
 
     member internal _.titleTipShown = titleTip |> Option.exists(fun tip -> tip.Visible)
 
     member private this.wndProc(msg:Win32Message) =
         // Where the frame on screen sits in the full strip: collapsed, expanded or part way.
-        let mousePt() = msg.lParam.location.add(Pt(0,renderedOffset))
+        let mousePt() = msg.lParam.location.add(this.renderedShift)
         let mouseDown btn =
             this.processMouse(MouseClick(mousePt(), btn, MouseDown))
             msg.def()
@@ -339,7 +347,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             if target<>revealTarget then
                 revealTarget <- target
                 // The first frame and an empty strip have nothing to move from.
-                if renderedFrames>0L && not this.isEmpty && TabReveal.enabled() then
+                if renderedFrames>0L && not this.isEmpty && not this.isVertical && TabReveal.enabled() then
                     revealFrom <- reveal
                     revealClock.Restart()
                     revealTimer.Start()
@@ -367,7 +375,13 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member private this.paint() =
         let image,offset =
             if reveal>=1.0 then this.renderAt false,0
-            elif reveal<=0.0 then this.renderAt true,this.ts.collapsedOffset
+            elif reveal<=0.0 then
+                let offset =
+                    if this.isVertical then
+                        let anchoredRight = (this.dock=TabDockLeft) <> this.showInside
+                        if anchoredRight then max 0 (this.size.width-Dpi.scale 4) else 0
+                    else this.ts.collapsedOffset
+                this.renderAt true,offset
             else
                 let full,collapsed =
                     match revealImages with
@@ -380,9 +394,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         try
             renderedOffset <- offset
             renderedFrames <- renderedFrames+1L
-            this.window.update(image, this.location.add(Pt(0,renderedOffset)), 255uy)
+            this.window.update(image, this.location.add(this.renderedShift), 255uy)
             shadowWindow |> Option.iter (fun shadow ->
-                if reveal<1.0 || this.isEmpty then shadow.hide()
+                if reveal<1.0 || this.isEmpty || this.isVertical then shadow.hide()
                 else shadow.update(image, 255uy, this.direction))
         finally
             image.bitmap.Dispose()
@@ -410,7 +424,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         // strip bitmap nor extraction/comparison of the shadow silhouette.
         relocating <- true
         try
-            this.window.updateLocation(this.location.add(Pt(0,renderedOffset)))
+            this.window.updateLocation(this.location.add(this.renderedShift))
             shadowWindow |> Option.iter(fun shadow -> shadow.move())
         finally relocating <- false
 
@@ -444,6 +458,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         tabInfoCell.map(fun m -> m.remove tab)
         tabTint.map(fun m -> m.remove tab)
         tabBgColor.map(fun m -> m.remove tab)
+        this.ensureSelectedVisible()
         Cell.endUpdate()
 
     member this.tabs : Set2<Tab> = Set2(lorderCell.value)
@@ -455,7 +470,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.movedTab = this.ts.movedTab
 
     member this.moveTab(tab, index) =
-        lorderCell.set(lorderCell.value.move((=) tab, index))
+        this.withUpdate(fun () ->
+            lorderCell.set(lorderCell.value.move((=) tab, index))
+            this.ensureSelectedVisible())
         monitor.tabMoved(tab, index)
         tabMovedEvent.Trigger(tab, index)
 
@@ -465,7 +482,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         with get() = zorderCell.value
         and set(zorder:List2<Tab>) =
             let next = zorder.where(this.tabs.contains)
-            if next.list <> zorderCell.value.list then zorderCell.set(next)
+            if next.list <> zorderCell.value.list then
+                this.withUpdate(fun () ->
+                    zorderCell.set(next)
+                    this.ensureSelectedVisible())
 
     member this.sprite = this.ts.sprite
 
@@ -473,7 +493,36 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             
     member this.isIconOnly 
         with get() = iconOnlyCell.value
-        and set(value) = iconOnlyCell.set(value)
+        and set(value) =
+            iconOnlyCell.set(value)
+            if this.isVertical then dockChangedEvent.Trigger()
+
+    member this.dock
+        with get() = dockCell.value
+        and set(value) =
+            this.hideTitle()
+            this.withUpdate(fun () ->
+                slideCell.set(None)
+                heldLayoutCell.set(None)
+                scrollOffsetCell.set(0)
+                dockCell.set(value))
+            dockChangedEvent.Trigger()
+
+    member this.dockChanged = dockChangedEvent.Publish
+    member this.isVertical = this.dock=TabDockLeft || this.dock=TabDockRight
+    member private this.renderedShift = if this.isVertical then Pt(renderedOffset,0) else Pt(0,renderedOffset)
+
+    /// Switching into an overflowing column keeps the selected window's row reachable.
+    member private this.ensureSelectedVisible() =
+        if this.isVertical && not this.isEmpty then
+            let index = lorderCell.value.findIndex((=)zorderCell.value.head)
+            let top = index*this.ts.rowStep+Dpi.scale 4
+            let bottom = top+this.ts.rowHeight
+            let maximum = max 0 (this.lorder.count*this.ts.rowStep+Dpi.scale 4-this.size.height)
+            let desired = if top<scrollOffsetCell.value then top elif bottom>scrollOffsetCell.value+this.size.height then bottom-this.size.height else scrollOffsetCell.value
+            let next = between (0,maximum) desired
+            if next<>scrollOffsetCell.value then this.hideTitle()
+            scrollOffsetCell.set(next)
 
     member this.isShrunk    
         with get() = isShrunkCell.value
@@ -489,7 +538,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             let cursor = pointerSource()
             let bounds = this.window.bounds
             if bounds.containsPoint(Pt(cursor.X,cursor.Y)) then
-                this.processMouse(MouseMove(Pt(cursor.X-bounds.x,cursor.Y-bounds.y).add(Pt(0,renderedOffset))))
+                this.processMouse(MouseMove(Pt(cursor.X-bounds.x,cursor.Y-bounds.y).add(this.renderedShift)))
             else this.processMouse(MouseLeave)
 
     /// Where the pointer is on screen; native hosts supply one instead of moving the real cursor.
@@ -538,6 +587,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     
     /// The window capture is full size; release it here rather than waiting for the GC.
     member this.dragImage (tab:Tab) : Img= 
+        if this.isVertical then this.ts.renderTab(tab) else this.horizontalDragImage(tab)
+
+    member private this.horizontalDragImage (tab:Tab) : Img=
         use bmpTab = this.tsBase(TabUp).renderTab(tab).bitmap
         use bmpHwnd = this.tabInfo(tab).preview().bitmap
         let bmpOverlay = Img(Sz(bmpHwnd.Width, bmpHwnd.Height + bmpTab.Height - this.contentOffset))
@@ -586,7 +638,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         location <- placement.bounds.location
         this.withUpdate(fun () ->
             showInsideCell.set(placement.showInside)
-            sizeCell.set(placement.bounds.size))
+            sizeCell.set(placement.bounds.size)
+            this.ensureSelectedVisible())
         // A size/direction change already uploaded fresh pixels at the new
         // position. Otherwise keep the existing strip/shadow surfaces.
         if moved && this.visible && renderedFrames>0L && renderedFrames=previousRender then
@@ -640,5 +693,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         layeredWindowCell.value.iter <| fun w -> (w :?> IDisposable).Dispose()
         this.window.destroy()
             
+    member private this.hitAt(pt:Pt) =
+        if this.isVertical && this.isShrunk && Rect(Pt(),this.size).containsPoint(pt) then
+            zorderCell.value.tryHead.map(fun tab -> tab,TabBackground)
+        else this.ts.tryHit(pt)
+
     member this.tryHit(pt:Pt) : Option<_> =
-        this.ts.tryHit(pt.add(Pt(0,renderedOffset)))
+        this.hitAt(pt.add(this.renderedShift))

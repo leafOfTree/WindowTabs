@@ -39,6 +39,17 @@ type WindowDecorator = {
             use onMonitorOutsideRegion = monitorRegion.intersect(decoratorOutsideRegion)
             onMonitorInsideRegion.box.height > onMonitorOutsideRegion.box.height
 
+    /// Prefer the chosen outside edge; an inset overlay keeps snapped windows reachable.
+    member this.sidePlacement(dock:TabDock,width:int) : TabStripPlacment =
+        let rect = this.windowBounds
+        let width = min width (max 1 rect.width)
+        let left = dock=TabDockLeft
+        let outside = Rect(Pt((if left then rect.left-width else rect.right),rect.top),Sz(width,rect.height))
+        let fits = this.monitorBounds.any(fun area -> area.completlyContains outside)
+        let inset = min rect.height (Dpi.scale 32)
+        let inside = Rect(Pt((if left then rect.left else rect.right-width),rect.top+inset),Sz(width,max 1 (rect.height-inset)))
+        { showInside=not fits; bounds=if fits then outside else inside }
+
     member this.bounds : Rect =
         if this.shouldShowInside then this.insideBounds else this.outsideBounds
     

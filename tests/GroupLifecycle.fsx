@@ -174,7 +174,7 @@ let main() =
             (following :> IGroup).addWindow(a,false)
             (chosen :> IGroup).addWindow(b,false)
             pumpUntil "Groups did not acquire their windows" (fun () -> nativeOrder following = [a] && nativeOrder chosen = [b])
-            let choices = { iconOnly=true; alignments=[TabUp,TabRight]; autoHideMode=Some "Always" }
+            let choices = { iconOnly=true; dock=TabDockLeft; alignments=[TabUp,TabRight]; autoHideMode=Some "Always" }
             onGroup following (fun group -> group.applyMenuChoices choices)
             desktopApi.restartGroup(chosen.hwnd, true)
             pumpUntil "Tab menu did not combine its group's taskbar icons" (fun () -> (soleGroup b true).IsSome)
