@@ -84,6 +84,7 @@ module TabReveal =
 /// Tab contents keep their full size until the tab is too short for them, then shrink together,
 /// so a low tab still shows its icon, close button and text whole.
 module TabMetrics =
+    let sideHoverTolerance = 16
     /// Icon side for a tab this many pixels high: 16 logical px, or less to keep a tenth of the
     /// height clear above and below it.
     let iconSide (height:int) = max 1 (min (Dpi.scale 16) (height - 2*(max 1 (height/10))))
@@ -693,6 +694,27 @@ type TabStripSprite<'id> when 'id : equality = {
 
     member private this.count = this.lorder.length
 
+    member private this.columnOutline =
+        let path = new GraphicsPath()
+        let w,h = float32(max 1 this.size.width),float32(max 1 this.size.height)
+        let radius = min (float32(Dpi.scale 8)) (min w h/2.0f)
+        let diameter = radius*2.0f
+        if this.dock=TabDockRight then
+            path.AddLine(radius,0.0f,w,0.0f)
+            path.AddLine(w,0.0f,w,h)
+            path.AddLine(w,h,radius,h)
+            path.AddArc(0.0f,h-diameter,diameter,diameter,90.0f,90.0f)
+            path.AddLine(0.0f,h-radius,0.0f,radius)
+            path.AddArc(0.0f,0.0f,diameter,diameter,180.0f,90.0f)
+        else
+            path.AddLine(0.0f,0.0f,w-radius,0.0f)
+            path.AddArc(w-diameter,0.0f,diameter,diameter,270.0f,90.0f)
+            path.AddLine(w,radius,w,h-radius)
+            path.AddArc(w-diameter,h-diameter,diameter,diameter,0.0f,90.0f)
+            path.AddLine(w-radius,h,0.0f,h)
+        path.CloseFigure()
+        path
+
     member private this.bgImage =
         let bgColor = 
             if this.isVertical then this.appearance.tabNormalBgColor
@@ -702,7 +724,11 @@ type TabStripSprite<'id> when 'id : equality = {
         use gr = img.graphics
         use brush = new SolidBrush(bgColor)
         let bounds = Rect(Pt(), this.size)
-        gr.FillRectangle(brush, bounds.Rectangle)
+        if this.isVertical then
+            gr.SmoothingMode <- SmoothingMode.AntiAlias
+            use outline = this.columnOutline
+            gr.FillPath(brush,outline)
+        else gr.FillRectangle(brush, bounds.Rectangle)
         this.scrollThumb |> Option.iter(fun thumb ->
             use ink = new SolidBrush(this.appearance.tabBorderColor)
             gr.FillRectangle(ink,thumb.Rectangle))
@@ -860,7 +886,16 @@ type TabStripSprite<'id> when 'id : equality = {
 
     member this.renderTab tab = this.tabSprite(tab).render
 
-    member this.render = this.sprite.render
+    member this.render =
+        let image = this.sprite.render
+        if this.isVertical then
+            use graphics = image.graphics
+            use outline = this.columnOutline
+            graphics.SetClip(outline,CombineMode.Exclude)
+            graphics.CompositingMode <- CompositingMode.SourceCopy
+            use clear = new SolidBrush(Color.Transparent)
+            graphics.FillRectangle(clear,Rectangle(Point.Empty,image.size.Size))
+        image
 
     member this.collapsedHeight = max 1 (min this.size.height (Dpi.scale 4))
 

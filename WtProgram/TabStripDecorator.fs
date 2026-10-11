@@ -118,7 +118,9 @@ type TabStripDecorator(group:WindowGroup) as this =
             decoratorIndentNormal = group.tabAppearance.tabIndentNormal
         }
         if this.ts.isVertical then
-            decorator.sidePlacement(this.ts.dock,Dpi.scale (if this.ts.isIconOnly then 48 else this.ts.columnWidth))
+            let width = Dpi.scale (if this.ts.isIconOnly then 48 else this.ts.columnWidth)
+            decorator.sidePlacement(this.ts.dock,width,contentHeight=this.ts.columnContentHeight,
+                                    alignment=this.ts.getAlignment TabUp)
         else
             { showInside=decorator.shouldShowInside; bounds=decorator.bounds }
 
@@ -247,9 +249,10 @@ type TabStripDecorator(group:WindowGroup) as this =
                        items=List2([Strings.TabMenu.horizontal,TabDockTop; Strings.Common.left,TabDockLeft; Strings.Common.right,TabDockRight]).map(item) })
 
         let alignmentItem =
-            let currentAlignment = this.ts.getAlignment(this.ts.direction)
+            let direction = if this.ts.isVertical then TabUp else this.ts.direction
+            let currentAlignment = this.ts.getAlignment direction
             let setAlignment newAlignment = fun() -> 
-                this.ts.setAlignment(this.ts.direction, newAlignment)
+                this.ts.setAlignment(direction, newAlignment)
 
             let alignmentMenuItem(text,alignment) = CmiRegular({
                 text = text
@@ -261,9 +264,9 @@ type TabStripDecorator(group:WindowGroup) as this =
                 text = tr Strings.Settings.tabAlignment.caption
                 image = None
                 items = List2([
-                    (tr Strings.Common.left, TabLeft)
+                    (tr (if this.ts.isVertical then Strings.Common.top else Strings.Common.left), TabLeft)
                     (tr Strings.Common.center, TabCenter)
-                    (tr Strings.Common.right,TabRight)
+                    (tr (if this.ts.isVertical then Strings.Common.bottom else Strings.Common.right),TabRight)
                 ]).map(alignmentMenuItem)
             })
 
@@ -436,7 +439,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(CmiSeparator)
             Some(iconOnlyItem)
             Some(positionItem)
-            (if this.ts.isVertical then None else Some(alignmentItem))
+            Some(alignmentItem)
             Some(autoHideItem)
             Some(sortTabsItem)
             Some(combineIconsInTaskbar)

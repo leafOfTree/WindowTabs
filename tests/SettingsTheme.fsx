@@ -29,6 +29,21 @@ let main() =
     try
         use settings = new Settings(true, saveDelay=0)
         let api = settings :> ISettings
+        check (api.getValue("tabPosition") :?> string="Horizontal" && api.getValue("tabColumnWidth") :?> int=220)
+              "Legacy settings no longer default to horizontal tabs and logical width"
+        api.setValue("tabPosition",box "Right")
+        api.setValue("tabColumnWidth",box 280)
+        settings.Flush() |> ignore
+        settings.clearCaches()
+        check (api.getValue("tabPosition") :?> string="Right" && api.getValue("tabColumnWidth") :?> int=280)
+              "Tab position and width did not survive settings reload"
+        api.setValue("tabPosition",box "Unknown")
+        api.setValue("tabColumnWidth",box 9999)
+        check (api.getValue("tabPosition") :?> string="Horizontal" && api.getValue("tabColumnWidth") :?> int=420)
+              "Invalid tab defaults were not normalized"
+        api.setValue("tabColumnWidth",box -1)
+        check (api.getValue("tabColumnWidth") :?> int=120) "Tab default width fell below its minimum"
+        api.setValue("tabColumnWidth",box 220)
         for appearance in [Theme.light;Theme.dark] do
             let bar = appearance.tabNormalBgColor
             let dark = Theme.darkBar bar
@@ -329,6 +344,14 @@ let main() =
                 member _.setIsTabbingEnabledForProcesses _ _ = ()
                 member _.getIsTabbingEnabledForProcess _ = false })
         let general = GeneralView() :> ISettingsView
+        let position = controls general.control |> Seq.pick(function :? SettingsCombo as c when c.Name="tab-position" -> Some c | _ -> None)
+        let width = controls general.control |> Seq.pick(function :? SettingsNumberInput as c when c.Name="tabColumnWidth" -> Some c | _ -> None)
+        position.SelectedIndex <- 1
+        width.Value <- 280M
+        check (api.getValue("tabPosition") :?> string="Left" && api.getValue("tabColumnWidth") :?> int=280)
+              "Default tab layout controls did not update saved preferences"
+        position.SelectedIndex <- 0
+        width.Value <- 220M
         let appearance = AppearanceView() :> ISettingsView
         let placeholder key caption =
             let panel = new Panel()

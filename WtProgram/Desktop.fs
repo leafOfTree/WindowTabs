@@ -15,7 +15,7 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
             Some(MouseScrollPlugin().cast<IPlugin>())
             Some(NumericTabHotKeyPlugin().cast<IPlugin>())
             Some(HideTabsOnInactiveGroupPlugin().cast<IPlugin>())
-            (if enableSuperBar then Some(SuperBarPlugin().cast<IPlugin>()) else None)
+            Some(if enableSuperBar then SuperBarPlugin().cast<IPlugin>() else TaskbarRestorePlugin().cast<IPlugin>())
             ])
         let plugins = plugins.choose(id)
 

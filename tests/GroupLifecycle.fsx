@@ -74,6 +74,19 @@ let main() =
             match result.Value with Choice1Of2 value -> value | Choice2Of2 error -> raise error
         let nativeOrder info = onGroup info (fun group -> group.lorder.list)
         let publicOrder (info:GroupInfo) = (info :> IGroup).windows.list
+        api.setValue("tabPosition",box "Right")
+        api.setValue("tabColumnWidth",box 280)
+        let defaults = desktopApi.createGroup(false) :?> GroupInfo
+        check (onGroup defaults (fun group -> group.ts.dock,group.ts.columnWidth)=(TabDockRight,280))
+              "New group ignored the saved tab defaults"
+        api.setValue("tabPosition",box "Left")
+        api.setValue("tabColumnWidth",box 320)
+        check (onGroup defaults (fun group -> group.ts.dock,group.ts.columnWidth)=(TabDockRight,280))
+              "Changing defaults overwrote an existing group's layout"
+        (defaults :> IGroup).destroy()
+        pumpUntil "Default layout group did not exit" (fun () -> defaults.isExited)
+        api.setValue("tabPosition",box "Horizontal")
+        api.setValue("tabColumnWidth",box 220)
         // Hidden real HWNDs avoid changing the user's foreground window. Exercise
         // the production group and tab-strip implementations on their own STAs.
         let forms = [ for name in ["First"; "Second"; "Third"] ->
@@ -83,12 +96,17 @@ let main() =
         let handles = forms |> List.map (fun form -> form.Handle)
         let a,b,c = handles.[0],handles.[1],handles.[2]
         try
+            let restored = Collections.Generic.List<IntPtr>()
+            onGroup source (fun _ -> (TaskbarRestorePlugin(restored.Add) :> IPlugin).init())
             for hwnd in handles do (source :> IGroup).addWindow(hwnd,false)
             pumpUntil "Native group did not acquire three windows" (fun () -> nativeOrder source = handles)
             pumpUntil "Desktop registry did not acquire three windows" (fun () -> publicOrder source = handles)
+            check (onGroup source (fun _ -> restored |> Seq.toList) = handles)
+                  "Startup grouping did not reclaim every ordinary taskbar button"
             (source :> IGroup).addWindow(a,false)
             check (nativeOrder source = handles) "Duplicate add created a duplicate tab"
             check (publicOrder source = handles) "Duplicate add corrupted desktop membership"
+            check (onGroup source (fun _ -> restored.Count) = 3) "Duplicate grouping repeatedly restored a taskbar button"
             (source :> IGroup).removeWindow b
             (source :> IGroup).addWindow(b,false)
             pumpUntil "Queued remove-then-add lost the window" (fun () -> nativeOrder source = [a;c;b] && publicOrder source = [a;c;b])
@@ -106,12 +124,14 @@ let main() =
 
             // A dead foreign HWND is removed by reconciliation; exercise that
             // removal after destruction rather than only while the HWND is valid.
+            let beforeClose = onGroup source (fun _ -> restored.Count)
             forms.[2].Dispose()
             check (not(WinUserApi.IsWindow c)) "Helper window did not close"
             (source :> IGroup).removeWindow c
             pumpUntil "Closed window left a stale tab" (fun () -> nativeOrder source = [a] && publicOrder source = [a])
             onGroup source (fun group -> group.removeWindow(c))
             check (nativeOrder source = [a]) "Repeated removal damaged remaining tabs"
+            check (onGroup source (fun _ -> restored.Count) = beforeClose) "Taskbar restoration used a destroyed window"
 
             for info in [source;target;combined] do
                 for hwnd in publicOrder info do (info :> IGroup).removeWindow hwnd
@@ -138,6 +158,20 @@ let main() =
             check (nativeOrder combined = [a;b;d]) "Combined taskbar button failed a foreground window joining its group"
             onGroup combined (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
             pumpUntil "Taskbar proxies outlived their combined taskbar button" (fun () -> not(TaskbarProxies.contains proxy.Head))
+
+            // Restart discovers the same HWNDs; reclaim buttons without showing or activating them.
+            let restarted = desktopApi.createGroup(false) :?> GroupInfo
+            let reclaimed = Collections.Generic.List<IntPtr>()
+            onGroup restarted (fun _ -> (TaskbarRestorePlugin(reclaimed.Add) :> IPlugin).init())
+            let wasVisible = [a;b] |> List.map WinUserApi.IsWindowVisible
+            for hwnd in [a;b] do (restarted :> IGroup).addWindow(hwnd,false)
+            pumpUntil "Restart grouping did not acquire its windows" (fun () -> nativeOrder restarted=[a;b])
+            check (onGroup restarted (fun _ -> reclaimed |> Seq.toList) = [a;b]) "Restart did not restore ordinary taskbar buttons"
+            check ([a;b] |> List.map WinUserApi.IsWindowVisible = wasVisible) "Taskbar recovery changed application visibility"
+            (restarted :> IGroup).destroy()
+            pumpUntil "Group exit did not restore remaining taskbar buttons" (fun () -> restarted.isExited && reclaimed.Count=4)
+            check (reclaimed |> Seq.skip 2 |> Set.ofSeq = Set.ofList [a;b]) "Group exit restored unrelated taskbar windows"
+            check (WinUserApi.IsWindow a && WinUserApi.IsWindow b) "Taskbar recovery closed application windows"
 
             // Neovide and Alacritty windows join, leave and join again as they start. Explorer can
             // register the returning preview after the order that places it and show it first, so a
@@ -237,7 +271,7 @@ let main() =
                     onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
                     (info :> IGroup).destroy()
                 pumpUntil "Drag groups did not exit" (fun () -> dragSource.isExited && dragTarget.isExited)
-            printfn "PASS: real HWND grouping, duplicate add, reorder, cross-STA transfer, six cross-orientation drags, destroyed-window removal, ungrouping and taskbar icon rebuilds."
+            printfn "PASS: real HWND grouping, duplicate add, reorder, cross-STA transfer, six cross-orientation drags, destroyed-window removal, ungrouping, taskbar recovery and taskbar icon rebuilds."
         finally
             let rest = desktopApi.groups.list |> List.map(fun g -> g :?> GroupInfo)
             for info in List.distinct([source;target;combined] @ rest) do

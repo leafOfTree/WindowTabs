@@ -41,10 +41,14 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let numberBadgeKeysCell = Bemo.Cell<string>(Cell, SettingsCatalog.textDefault "numberLeaderKeys", (=))
     let numberBadgesCell = Bemo.Cell<bool>(Cell, false, (=))
     let iconOnlyCell = Cell.create(false)
-    let dockCell = Cell.create(TabDockTop)
+    let dockCell = Cell.create(
+        match Services.settings.getValue("tabPosition") :?> string with
+        | "Left" -> TabDockLeft
+        | "Right" -> TabDockRight
+        | _ -> TabDockTop)
     let scrollOffsetCell = Cell.create(0)
     let dockChangedEvent = Event<unit>()
-    let mutable columnWidthValue = SettingsCatalog.columnWidthDefault
+    let mutable columnWidthValue = Services.settings.getValue("tabColumnWidth") :?> int
     let mutable columnResize : (int*int*bool) option = None
     let mutable columnScroll : (int*int) option = None
     let mutable dragScrollLocation : Pt option = None
@@ -136,7 +140,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             | _ -> dragScrollTimer.Stop())
         titleTimer.Tick.Add(fun _ -> titleTimer.Stop(); this.showTitle())
         captureWatch.Tick.Add(fun _ ->
-            if WinUserApi.GetCapture()=IntPtr.Zero then
+            if this.isVertical && WinUserApi.GetCapture()=IntPtr.Zero then
+                this.refreshHover(trackLeave=false)
+                if not this.pointerInside then captureWatch.Stop()
+            elif WinUserApi.GetCapture()=IntPtr.Zero then
                 captureWatch.Stop()
                 this.refreshHover())
 
@@ -211,14 +218,14 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         return hit 
         }
     
-    member private this.processMouse(mouse) =
+    member private this.processMouse(mouse,?trackLeave:bool) =
         // Hover/capture changes share one render. Equal hover values leave the
         // render listener untouched, while pointer/click callbacks still run.
         this.withUpdate(fun () ->
             match mouse with
             | MouseMove(pt) ->
                 this.setPt(Some(pt))
-                if this.window.hasCapture.not then
+                if this.window.hasCapture.not && defaultArg trackLeave true then
                     this.window.trackMouseLeave()
                 let hit = this.hit
                 hoverCell.set(hit)
@@ -357,7 +364,11 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             // pointer leaving while it is still on the tab: auto-hide then began to collapse the
             // strip under the held button. Hover holds until the button is let go, then follows
             // where the pointer really is.
-            if WinUserApi.GetCapture()<>IntPtr.Zero && this.pointerInside then captureWatch.Start()
+            if this.isVertical && WinUserApi.GetCapture()=IntPtr.Zero && this.pointerInside then
+                // Expanding a layered column can deliver a stale leave at its attached edge.
+                this.refreshHover(trackLeave=false)
+                captureWatch.Start()
+            elif WinUserApi.GetCapture()<>IntPtr.Zero && this.pointerInside then captureWatch.Start()
             else this.processMouse(MouseLeave)
             msg.def()
         | _ ->
@@ -431,7 +442,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             renderedFrames <- renderedFrames+1L
             this.window.update(image, this.location.add(this.renderedShift), 255uy)
             shadowWindow |> Option.iter (fun shadow ->
-                if reveal<1.0 || this.isEmpty || this.isVertical then shadow.hide()
+                if reveal<1.0 || this.isEmpty || (this.isVertical && SystemInformation.HighContrast) then shadow.hide()
                 else shadow.update(image, 255uy, this.direction))
         finally
             image.bitmap.Dispose()
@@ -474,6 +485,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.hwnd = hwndRef.Value
     
     member this.addTabSlide tab (slide:Option<_>) =
+        let previousCount = this.tabs.count
         Cell.beginUpdate()
         let addToEnd(l:Cell<List2<_>>)=
             if l.value.any((=) tab).not then
@@ -483,6 +495,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         slide.iter <| fun slide ->
             this.slide <- Some(slide)
         Cell.endUpdate()
+        if this.isVertical && this.tabs.count<>previousCount then dockChangedEvent.Trigger()
     
     member this.addTab tab = this.addTabSlide tab None
 
@@ -495,6 +508,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         tabBgColor.map(fun m -> m.remove tab)
         this.ensureSelectedVisible()
         Cell.endUpdate()
+        if this.isVertical then dockChangedEvent.Trigger()
 
     member this.tabs : Set2<Tab> = Set2(lorderCell.value)
 
@@ -602,6 +616,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             this.updateDragScroll()
 
     member this.isVertical = this.dock=TabDockLeft || this.dock=TabDockRight
+    member this.columnContentHeight = this.lorder.count*this.ts.rowStep+Dpi.scale 4
     member private this.renderedShift = if this.isVertical then Pt(renderedOffset,0) else Pt(0,renderedOffset)
 
     /// Switching into an overflowing column keeps the selected window's row reachable.
@@ -626,20 +641,27 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     /// A popup over the strip, such as its menu, takes the pointer without a move, so hover
     /// ends. When it goes, the pointer may still be over a tab: hover there again and track
     /// its leaving, as a move would.
-    member this.refreshHover() =
+    member this.refreshHover(?trackLeave:bool) =
         if this.visible && this.window.isVisible then
             let cursor = pointerSource()
-            let bounds = this.window.bounds
+            let bounds = this.pointerBounds
             if bounds.containsPoint(Pt(cursor.X,cursor.Y)) then
-                this.processMouse(MouseMove(Pt(cursor.X-bounds.x,cursor.Y-bounds.y).add(this.renderedShift)))
+                this.processMouse(MouseMove(Pt(cursor.X-location.x,cursor.Y-location.y)),?trackLeave=trackLeave)
             else this.processMouse(MouseLeave)
 
     /// Where the pointer is on screen; native hosts supply one instead of moving the real cursor.
     member internal _.pointer with get() = pointerSource and set(value) = pointerSource <- value
 
+    member private this.pointerBounds : Rect =
+        if this.isVertical && revealTarget>0.0 then
+            let tolerance = Dpi.scale TabMetrics.sideHoverTolerance
+            if this.dock=TabDockLeft then Rect(location.sub(Pt(tolerance,0)),Sz(this.size.width+tolerance,this.size.height))
+            else Rect(location,Sz(this.size.width+tolerance,this.size.height))
+        else this.window.bounds
+
     member private this.pointerInside =
         let cursor = pointerSource()
-        this.window.bounds.containsPoint(Pt(cursor.X,cursor.Y))
+        this.pointerBounds.containsPoint(Pt(cursor.X,cursor.Y))
 
     /// No room above the window on its monitor, so the tabs sit inside it over the title bar:
     /// true when the window is maximized, snapped to the top, or moved against the top edge.
@@ -653,12 +675,14 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.setAlignment((direction, newAlignment)) =
         alignmentOverrides <- alignmentOverrides.Add(direction)
         alignment.map(fun m -> m.add direction newAlignment)
+        if this.isVertical then dockChangedEvent.Trigger()
 
     member this.setDefaultAlignment(value:string) =
         let next = alignmentMap.TryFind(value) |> Option.defaultValue TabCenter
         alignment.map(fun current ->
             [TabUp;TabDown] |> List.fold (fun result direction ->
                 if alignmentOverrides.Contains(direction) then result else result.add direction next) current)
+        if this.isVertical then dockChangedEvent.Trigger()
             
     member this.direction = if showInsideCell.value then TabDown else TabUp
     

@@ -597,7 +597,7 @@ let main() =
                     for inside in [false;true] do
                         strip.setPlacement(placement start columnSize inside)
                         strip.isShrunk <- false
-                        check (strip.bounds.size=columnSize && not shadow.isVisible) "Vertical column retained the horizontal shadow or wrong bounds"
+                        check (strip.bounds.size=columnSize && shadow.isVisible=not SystemInformation.HighContrast) "Expanded vertical column lost its shadow or viewport bounds"
                         let last = strip.lorder.list |> List.last
                         strip.zorder <- List2(strip.lorder.list)
                         strip.zorder <- List2(last::(strip.lorder.list |> List.filter((<>)last)))
@@ -606,11 +606,36 @@ let main() =
                         strip.isShrunk <- true
                         let edgeWidth = Dpi.scale 4
                         let anchorRight = (dock=TabDockLeft) <> inside
-                        check (strip.bounds.width=edgeWidth && strip.bounds.height=columnSize.height) "Vertical auto-hide did not collapse horizontally"
+                        check (strip.bounds.width=edgeWidth && strip.bounds.height=columnSize.height && not shadow.isVisible) "Collapsed vertical column retained its shadow or wrong bounds"
                         check (strip.bounds.x=(if anchorRight then start.x+columnSize.width-edgeWidth else start.x)) "Vertical auto-hide detached from the window edge"
                         check ((strip.tryHit(Pt(1,1))).IsSome) "Collapsed vertical edge cannot reveal the column"
                         strip.isShrunk <- false
                         check (strip.bounds.location=start && strip.bounds.size=columnSize) "Vertical expansion failed to restore the column"
+                        let pointerProperty = typeof<TabStrip>.GetProperty("pointer",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public)
+                        let edgePoint = Point(strip.bounds.right-1,strip.bounds.y+columnSize.height/2)
+                        pointerProperty.SetValue(strip,box(fun () -> edgePoint))
+                        send WindowMessages.WM_MOUSEMOVE (Pt(columnSize.width-1,columnSize.height/2))
+                        send WindowMessages.WM_MOUSELEAVE Pt.empty
+                        check strip.isMouseOver.value "A stale leave at the expanded side column edge cleared hover"
+                        if dock=TabDockRight then
+                            pointerProperty.SetValue(strip,box(fun () -> Point(strip.bounds.right+Dpi.scale 12,strip.bounds.y+columnSize.height/2)))
+                            send WindowMessages.WM_MOUSELEAVE Pt.empty
+                            check strip.isMouseOver.value "Moving just beyond the right screen edge hid the column"
+                        if dock=TabDockLeft then
+                            pointerProperty.SetValue(strip,box(fun () -> Point(strip.bounds.left-Dpi.scale 12,strip.bounds.y+columnSize.height/2)))
+                            send WindowMessages.WM_MOUSELEAVE Pt.empty
+                            check strip.isMouseOver.value "Moving just beyond the left screen edge hid the column"
+                        pointerProperty.SetValue(strip,box(fun () -> Point(strip.bounds.right+Dpi.scale 40,strip.bounds.y+columnSize.height/2)))
+                        send WindowMessages.WM_MOUSELEAVE Pt.empty
+                        check (not strip.isMouseOver.value) "Leaving the side column kept hover indefinitely"
+                        pointerProperty.SetValue(strip,box(fun () -> Cursor.Position))
+                        let fullContentHeight = strip.columnContentHeight
+                        let mutable placementChanges = 0
+                        use placementWatch = strip.dockChanged.Subscribe(fun () -> placementChanges <- placementChanges+1)
+                        strip.removeTab last
+                        check (strip.columnContentHeight<fullContentHeight && placementChanges>0) "Removing a vertical tab did not request a shorter column"
+                        strip.addTab last
+                        check (strip.columnContentHeight=fullContentHeight && placementChanges>1) "Adding a vertical tab did not request a taller column"
                         strip.scrollColumnTo 0
                         let beforeScroll = strip.tabLocation last
                         let beforeCloses = closes.Count
@@ -684,6 +709,10 @@ let main() =
                         check (strip.bounds.width=edgeWidth) "Animated side collapse did not finish at the edge"
                         let beforeSideExpand = frames strip
                         strip.isShrunk <- false
+                        let revealPoint = Point(start.x+columnSize.width/2,start.y+columnSize.height/2)
+                        pointerProperty.SetValue(strip,box(fun () -> revealPoint))
+                        send WindowMessages.WM_MOUSELEAVE Pt.empty
+                        check strip.isMouseOver.value "Moving into the revealing column cleared hover before it reached the pointer"
                         let expanding = watchWidth (fun () -> strip.bounds.width=columnSize.width)
                         check (strip.bounds.width=columnSize.width && frames strip-beforeSideExpand>=3L) "Side expansion jumped or failed to finish"
                         check (expanding |> List.pairwise |> List.forall(fun (a,b) -> b>=a)) "Side expansion ran backwards"
@@ -694,6 +723,8 @@ let main() =
                         strip.isShrunk <- false
                         let reversed = watchWidth (fun () -> strip.bounds.width=columnSize.width)
                         check (List.min reversed>=partialWidth && strip.bounds.width=columnSize.width) "Reversing side reveal restarted at the edge"
+                        pointerProperty.SetValue(strip,box(fun () -> Cursor.Position))
+                        send WindowMessages.WM_MOUSELEAVE Pt.empty
                         TabReveal.forced <- Some false
                 strip.dock <- TabDockTop
             finally strip.destroy()

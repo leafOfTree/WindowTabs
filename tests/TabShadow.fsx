@@ -128,6 +128,29 @@ let main () =
                 check ((column.tryHit(Pt(-1,second.y))).IsNone) "An off-column tab received pointer input"
                 use image = column.render.bitmap
                 check (image.Width=Dpi.scale 220 && image.Height=Dpi.scale 300) "Vertical rendering ignored the viewport size"
+                let contentX = if dock=TabDockLeft then image.Width-1 else 0
+                let edgeX = if dock=TabDockLeft then 0 else image.Width-1
+                check (image.GetPixel(contentX,0).A=0uy && image.GetPixel(contentX,image.Height-1).A=0uy)
+                      "Vertical column did not round its content-facing top and bottom corners"
+                check (image.GetPixel(edgeX,0).A>0uy && image.GetPixel(edgeX,image.Height-1).A>0uy)
+                      "Vertical column rounded its screen-edge corners"
+                check (image.GetPixel(image.Width/2,image.Height/2).A=255uy) "Column background no longer covers the underlying scrollbar"
+                for y in [0;image.Height-1] do
+                    let edge = image.GetPixel(image.Width/2,y)
+                    let background = column.appearance.tabNormalBgColor
+                    check (edge.R=background.R && edge.G=background.G && edge.B=background.B)
+                          "Vertical column still draws an outer border"
+                if dpi=96 then
+                    let preview = {column with size=Sz(220,76)}
+                    use rounded = preview.render.bitmap
+                    let renderer = TabShadow.Renderer()
+                    use shadow = renderer.Render(rounded.Width,rounded.Height,TabShadow.silhouette rounded,15,TabUp)
+                    use canvas = new Bitmap(280,120)
+                    use graphics = Graphics.FromImage(canvas)
+                    graphics.Clear(Color.FromArgb(45,45,45))
+                    graphics.DrawImageUnscaled(shadow,15,10)
+                    graphics.DrawImageUnscaled(rounded,30,25)
+                    canvas.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "vertical-rounded-%A.png" dock),Imaging.ImageFormat.Png)
                 use collapsed = column.renderCollapsed.bitmap
                 check (collapsed.Width=Dpi.scale 4 && collapsed.Height=image.Height) "Vertical auto-hide changed height instead of width"
                 let overflow = { column with size=Dpi.scaleSize(Sz(220,40)) }

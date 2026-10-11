@@ -17,6 +17,8 @@ module Strings =
         let name = { en="Name"; zh="名称"; ja="名称" }
         let title = { en="Title"; zh="标题"; ja="タイトル" }
         let left = { en="Left"; zh="左侧"; ja="左" }
+        let top = { en="Top"; zh="靠上"; ja="上" }
+        let bottom = { en="Bottom"; zh="靠下"; ja="下" }
         let center = { en="Center"; zh="居中"; ja="中央" }
         let right = { en="Right"; zh="右侧"; ja="右" }
         let never = { en="Never"; zh="从不"; ja="しない" }
@@ -129,6 +131,12 @@ module Strings =
         let showTabsOnSwitch = { caption={ en="Show tabs briefly after switching"; zh="切换后短暂显示标签"; ja="切り替え後にタブを一時的に表示" }
                                  description={ en="For about a second, so you can see where you are."; zh="显示约一秒，方便确认当前位置。"; ja="約 1 秒間表示して、今いる位置を確認できます。" }
                                  keywords={ en="peek"; zh="短暂显示"; ja="一時表示" } }
+        let tabPosition = { caption={ en="Default tab position (preview)"; zh="默认标签位置（预览）"; ja="既定のタブの位置（プレビュー）" }
+                            description={ en="Applies to new groups. Change individual groups from their tab menu."; zh="用于新分组；可在标签菜单中单独更改分组。"; ja="新しいグループに適用します。個別のグループはタブメニューで変更できます。" }
+                            keywords={ en="vertical horizontal sidebar left right"; zh="垂直 横向 侧栏 左 右"; ja="縦 横 サイドバー 左 右" } }
+        let tabColumnWidth = { caption={ en="Default vertical column width"; zh="默认垂直栏宽度"; ja="既定の縦タブ幅" }
+                               description={ en="Applies to new groups. Drag a column edge to resize that group."; zh="用于新分组；拖动侧栏边缘可单独调整分组宽度。"; ja="新しいグループに適用します。列の端をドラッグして個別に幅を変更できます。" }
+                               keywords={ en="vertical sidebar width size"; zh="垂直 侧栏 宽度 大小"; ja="縦 サイドバー 幅 サイズ" } }
         let tabAlignment = { caption={ en="Align tabs"; zh="对齐标签"; ja="タブを揃える" }
                              description=none
                              keywords={ en="alignment position"; zh="对齐 位置"; ja="配置 位置" } }

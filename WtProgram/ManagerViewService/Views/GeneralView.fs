@@ -9,6 +9,13 @@ type GeneralView() =
         SettingsBindings.toggleRow startup "launch-at-sign-in"
         let behaviour = SettingsUi.sectionCard table (tr Strings.General.tabBehavior)
         SettingsBindings.toggleRow behaviour "dim-inactive-groups"
+        SettingsBindings.choiceRow behaviour "tab-position"
+            [|tr Strings.TabMenu.horizontal;tr Strings.Common.left;tr Strings.Common.right|] |> ignore
+        let low,high = SettingsCatalog.columnWidthRange
+        let columnWidth = new SettingsNumberInput(Minimum=decimal low,Maximum=decimal high,Font=SettingsUi.bodyFont())
+        columnWidth.Value <- decimal(Services.settings.getValue("tabColumnWidth") :?> int)
+        columnWidth.ValueChanged.Add(fun _ -> Services.settings.setValue("tabColumnWidth",box(int columnWidth.Value)))
+        SettingsUi.settingRow behaviour "tabColumnWidth" columnWidth
         // Same order as the tab menu: position, then auto-hide.
         SettingsBindings.choiceRow behaviour "tab-alignment"
             [|tr Strings.Common.left;tr Strings.Common.center;tr Strings.Common.right|] |> ignore

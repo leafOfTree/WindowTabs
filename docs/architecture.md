@@ -60,6 +60,12 @@ shell events reconcile dirty windows; explicit refresh, group removal/exit and d
 completion retain full reconciliation. A queued full refresh supersedes dirty HWNDs.
 No periodic desktop polling was added.
 
+Ordinary groups reclaim each window's taskbar button when it joins, including
+windows rediscovered at startup after a combined session ended unexpectedly.
+Combined groups recreate their proxy and previews through the existing z-order
+updates. Both kinds restore remaining live windows' buttons when the group exits.
+Only managed windows are reconciled; no recovery file or taskbar polling is used.
+
 ## Settings persistence
 
 `Settings` updates its in-memory snapshot immediately and issues existing change

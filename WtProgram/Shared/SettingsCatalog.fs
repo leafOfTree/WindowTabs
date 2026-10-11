@@ -29,6 +29,8 @@ module SettingsCatalog =
         { id="enable-tabs-for-new-apps"; page=ProgramSettings; text=Strings.Settings.enableTabsByDefault; binding=Toggle("enableTabbingByDefault",true,false) }
         { id="dim-inactive-groups"; page=GeneralSettings; text=Strings.Settings.dimInactiveGroups; binding=Toggle("hideInactiveTabs",true,false) }
         { id="tab-alignment"; page=GeneralSettings; text=Strings.Settings.tabAlignment; binding=Choice("alignment",["Left";"Center";"Right"],"Center") }
+        { id="tab-position"; page=GeneralSettings; text=Strings.Settings.tabPosition; binding=Choice("tabPosition",["Horizontal";"Left";"Right"],"Horizontal") }
+        { id="tabColumnWidth"; page=GeneralSettings; text=Strings.Settings.tabColumnWidth; binding=Number(columnWidthRange) }
         // "Maximized" also covers windows whose tabs sit inside them (top snaps); the stored value keeps its original name.
         { id="auto-hide-tabs"; page=GeneralSettings; text=Strings.Settings.autoHide; binding=Choice("autoHideMode",["Never";"Maximized";"Always"],"Maximized") }
         { id="show-tabs-on-switch"; page=GeneralSettings; text=Strings.Settings.showTabsOnSwitch; binding=Toggle("showTabsOnSwitch",true,true) }
@@ -135,6 +137,7 @@ module SettingsCatalog =
     let storageKey item =
         match item.binding with
         | Toggle(key,_,_) | Choice(key,_,_) | Shortcut(key,_) | Text(key,_) -> key
+        | Number _ -> item.id
         | _ -> ""
     let searchTexts item =
         ([item.text.caption;item.text.keywords;searchContext item] |> List.collect Localization.all) @ [storageKey item]
