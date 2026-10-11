@@ -172,6 +172,13 @@ let main() =
         let flags = BindingFlags.Instance ||| BindingFlags.NonPublic
         let invoke name (group:WindowGroup) arguments =
             typeof<WindowGroup>.GetMethod(name,flags).Invoke(group,arguments)
+        let transitionTimer (group:WindowGroup) =
+            let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="minimizeStateTimer")
+            field.GetValue(group) :?> System.Windows.Forms.Timer
+        // Restore reconciliation can change z-order after the native workers finish.
+        // Finish it before injecting placements that deliberately differ from the top window.
+        let isOperationIdle (group:WindowGroup) = group.isPlacementIdle && not((transitionTimer group).Enabled)
+        let waitOperation() = pumpUntil(fun () -> onGroup isOperationIdle)
         let animationPreference = Win32Helper.GetMinMaxAnimation()
         let referenceOS = OS()
         onGroup(fun group ->
@@ -182,7 +189,7 @@ let main() =
                 hook |> Option.iter(fun subscription -> subscription.Dispose())
                 cell.GetType().GetMethod("set").Invoke(cell,[|box (None:IDisposable option)|]) |> ignore)
         let preparedSamples name count prepare action =
-            let wait() = pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle))
+            let wait() = waitOperation()
             onGroup prepare
             wait()
             onGroup(fun group -> action group 0)
@@ -332,6 +339,18 @@ let main() =
                 preparedSamples (sprintf "%dtabs-minimize" count) 10 (fun group -> group.restoreAll()) (fun group _ -> group.minimizeAll())
                 preparedSamples (sprintf "%dtabs-restore" count) 10 (fun group -> group.minimizeAll()) (fun group _ -> group.restoreAll())
                 check (handles |> List.take count |> List.forall(fun hwnd -> not(OS().windowFromHwnd(hwnd).isMinimized))) "Restore left minimized windows"
+                if count=2 then
+                    // Hold the deferred phase so the worker-only completion race is deterministic.
+                    onGroup(fun group -> group.restoreAll(); (transitionTimer group).Stop())
+                    pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle))
+                    try
+                        onGroup(fun group ->
+                            let timer = transitionTimer group
+                            timer.Interval <- 1000
+                            timer.Start())
+                        waitOperation()
+                        check (onGroup(fun group -> not((transitionTimer group).Enabled))) "Restore reconciliation remained pending before maximize"
+                    finally onGroup(fun group -> (transitionTimer group).Interval <- 16)
                 let normal = OS().windowFromHwnd(handles.Head).placement
                 let applyPlacement (group:WindowGroup) command =
                     let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="placement")
@@ -583,7 +602,7 @@ let main() =
                     let value = Some(target,{normal with showCmd=command},target)
                     cell.GetType().GetMethod("set").Invoke(cell,[|box value|]) |> ignore
                     invoke "updatePlacements" group [||] |> ignore)
-                let waitPlacement() = pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle))
+                let waitPlacement() = waitOperation()
                 for delay in [0;50;100] do
                     WinUserApi.SendMessage(foreignHwnd,0x804E,IntPtr(delay),IntPtr.Zero) |> ignore
                     let timings = ResizeArray<float>()
