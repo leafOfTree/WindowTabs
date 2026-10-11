@@ -5,23 +5,6 @@ open System.Threading
 open System.Windows.Forms
 
 module AutoGroup =
-    /// Windows stops telling which desktop a window is on once a group with combined taskbar
-    /// icons takes its taskbar button, so the desktop is noted while it can still be told.
-    let private lastDesktop = Collections.Concurrent.ConcurrentDictionary<IntPtr,Guid>()
-
-    /// The virtual desktop a window is on, or was last seen on, when Windows can tell.
-    let desktopId (hwnd:IntPtr) =
-        match WindowCloaking.TryGetDesktopId(hwnd) with
-        | true, id ->
-            lastDesktop.[hwnd] <- id
-            Some id
-        | _ ->
-            match lastDesktop.TryGetValue hwnd with
-            | true, id -> Some id
-            | _ -> None
-
-    let forget (hwnd:IntPtr) = lastDesktop.TryRemove(hwnd) |> ignore
-
     /// The first group, in the order given, that holds a window of the same program and a
     /// window on the same virtual desktop as `hwnd`, so a window opened on another desktop
     /// starts its own group rather than pulling the group across desktops. A window whose
@@ -91,7 +74,7 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
             windowsCell.map <| fun l -> l.append hwnd
         // Still queue the operation: a preceding asynchronous remove may not
         // have updated this snapshot yet, and remove-then-add must reattach it.
-        AutoGroup.desktopId hwnd |> ignore
+        VirtualDesktop.desktopId hwnd |> ignore
         this.invokeGroup <| fun() -> this.group.addWindow(hwnd, withDelay)
     member private this.removeWindow hwnd =
         this.invokeGroup <| fun() -> this.group.removeWindow(hwnd)

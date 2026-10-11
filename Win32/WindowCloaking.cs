@@ -57,6 +57,18 @@ namespace Bemo
             catch (InvalidCastException) { return false; }
         }
 
+        /// <summary>Moves one of this process's windows to the given virtual desktop.</summary>
+        public static bool MoveToDesktop(IntPtr hwnd, Guid desktopId)
+        {
+            try
+            {
+                if (desktops == null) desktops = (IVirtualDesktopManager)new VirtualDesktopManager();
+                return desktops.MoveWindowToDesktop(hwnd, ref desktopId) == 0;
+            }
+            catch (COMException) { return false; }
+            catch (InvalidCastException) { return false; }
+        }
+
         private delegate bool EnumChildProc(IntPtr hwnd, IntPtr lParam);
         [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, EnumChildProc callback, IntPtr lParam);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hwnd, StringBuilder name, int size);

@@ -144,8 +144,18 @@ let main() =
                 group.foreground <- d
                 group.addWindow(d,false))
             check (nativeOrder combined = [a;b;d]) "Combined taskbar button failed a foreground window joining its group"
+            // Without taskbar buttons of their own the windows would show on every virtual desktop;
+            // owned by the group's taskbar window, they stay on its desktop and in the group.
+            let owner hwnd = WinUserApi.GetWindow(hwnd, GetWindowConstants.GW_OWNER)
+            pumpUntil "A combined group's windows are not owned by its taskbar window" (fun () ->
+                [a;b;d] |> List.forall(fun hwnd -> owner hwnd = proxy.Head && TaskbarProxies.ownsWindow hwnd))
+            check (FilterService().isValidOwner(OS().windowFromHwnd d)) "The filter drops windows a combined group owns"
+            match WindowCloaking.TryGetDesktopId(proxy.Head) with
+            | true, desktop -> check (VirtualDesktop.desktopId d = Some desktop) "A combined group's window is not on its taskbar window's desktop"
+            | _ -> ()
             onGroup combined (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
             pumpUntil "Taskbar proxies outlived their combined taskbar button" (fun () -> not(TaskbarProxies.contains proxy.Head))
+            check ([a;b;d] |> List.forall(fun hwnd -> owner hwnd = IntPtr.Zero)) "Windows that left a combined group are still owned by its taskbar window"
 
             // Neovide and Alacritty windows join, leave and join again as they start. Explorer can
             // register the returning preview after the order that places it and show it first, so a

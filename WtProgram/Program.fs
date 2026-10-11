@@ -89,6 +89,10 @@ type Program(lifetime:LifetimeScope) as this =
     // The initial full refresh processes those windows once the services are ready.
     let refreshQueue = lifetime.Own(new WindowRefreshQueue(30, this.updateChangedWindows, this.updateAppWindows,
                                             isReady=(fun () -> Services.has<IFilterService>() && Services.has<IProgram>())))
+    /// When each new auto-grouped window was first seen before Windows placed it on a desktop.
+    let awaitingDesktop = Dictionary<IntPtr,DateTime>()
+    let desktopRetry = lifetime.Own(new CoalescedAction(100, fun () ->
+                                        for hwnd in List.ofSeq awaitingDesktop.Keys do refreshQueue.RequestWindow hwnd))
 
     do
         Desktop(this :> IDesktopNotification, Services.settings, invoker :> IDispatcher).ignore
@@ -153,7 +157,7 @@ type Program(lifetime:LifetimeScope) as this =
             let groups = this.desktop.groups
             let groups = groups.where(fun g-> g.windows.count > 0).sortBy(fun g -> g.windows.map(fun hwnd -> hwndZorders.tryFind(hwnd).def(Int32.MaxValue)).minBy(id))
             let processPath hwnd = os.windowFromHwnd(hwnd).pid.processPath
-            Some(AutoGroup.pick (fun (g:IGroup) -> g.windows) processPath AutoGroup.desktopId groups window.hwnd)
+            Some(AutoGroup.pick (fun (g:IGroup) -> g.windows) processPath VirtualDesktop.desktopId groups window.hwnd)
         else None
 
     member this.updateAppWindows() = RuntimeMetrics.measure(fun () ->
@@ -199,8 +203,23 @@ type Program(lifetime:LifetimeScope) as this =
             isSubscribed.Add(hwnd,dispose)
 
     member this.ensureWindowIsGrouped(window) =
-        if this.isTabbableWindow(window) && this.isInGroup(window.hwnd).not then
+        if this.isTabbableWindow(window) && this.isInGroup(window.hwnd).not && not (this.awaitsDesktop window) then
             this.addWindowToGroup(window)
+
+    /// Auto-grouping waits, up to a second, for a new window to be placed on a virtual desktop,
+    /// or it would match groups on every desktop.
+    member this.awaitsDesktop(window:Window) =
+        let hwnd = window.hwnd
+        let waiting =
+            (this :> IProgram).getAutoGroupingEnabled(window.pid.processPath) && not (VirtualDesktop.isPlaced hwnd) &&
+            (match awaitingDesktop.TryGetValue hwnd with
+             | true, first -> DateTime.UtcNow - first < TimeSpan.FromSeconds(1.0)
+             | _ ->
+                awaitingDesktop.[hwnd] <- DateTime.UtcNow
+                true)
+        if waiting then desktopRetry.Request()
+        else awaitingDesktop.Remove hwnd |> ignore
+        waiting
 
     member this.destroyEmptyGroups() =
         this.desktop.groups.iter <| fun gi ->
@@ -241,7 +260,8 @@ type Program(lifetime:LifetimeScope) as this =
                 isDroppedAndAwaitingGrouping.map(fun s -> s.remove hwnd)
                 windowNameOverride <- windowNameOverride.remove hwnd
                 windowColors.remove hwnd
-                AutoGroup.forget hwnd
+                VirtualDesktop.forget hwnd
+                awaitingDesktop.Remove hwnd |> ignore
             | _ ->()
             refreshQueue.RequestWindow(hwnd)
 

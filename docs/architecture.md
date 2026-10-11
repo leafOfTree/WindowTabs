@@ -60,6 +60,18 @@ shell events reconcile dirty windows; explicit refresh, group removal/exit and d
 completion retain full reconciliation. A queued full refresh supersedes dirty HWNDs.
 No periodic desktop polling was added.
 
+## Virtual desktops
+
+A window without a taskbar button belongs to no virtual desktop, so Windows shows it on
+every desktop. A group with combined taskbar icons therefore makes its stand-in taskbar
+window the owner of its windows before removing their buttons: owned windows follow their
+owner's desktop. The stand-in starts on the desktop in view and is moved once to its
+windows' desktop. Windows hides a group on another desktop, which is not the app hiding
+its window, so the filter keeps owned windows in their group. Owned Explorer windows
+report no desktop of their own; `VirtualDesktop.desktopId` asks the owner first, then the
+desktop a window was last seen on. Auto-grouping waits up to a second for a new window
+to be placed on a desktop, and joins it only to a group on the same desktop.
+
 ## Settings persistence
 
 `Settings` updates its in-memory snapshot immediately and issues existing change
