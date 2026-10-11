@@ -152,8 +152,8 @@ type Program(lifetime:LifetimeScope) as this =
             let hwndZorders = this.hwndZorders()
             let groups = this.desktop.groups
             let groups = groups.where(fun g-> g.windows.count > 0).sortBy(fun g -> g.windows.map(fun hwnd -> hwndZorders.tryFind(hwnd).def(Int32.MaxValue)).minBy(id))
-            let group = groups.tryFind(fun g -> g.windows.map(fun hwnd -> os.windowFromHwnd(hwnd).pid.processPath).contains((=) window.pid.processPath))
-            Some(group)
+            let processPath hwnd = os.windowFromHwnd(hwnd).pid.processPath
+            Some(AutoGroup.pick (fun (g:IGroup) -> g.windows) processPath AutoGroup.desktopId groups window.hwnd)
         else None
 
     member this.updateAppWindows() = RuntimeMetrics.measure(fun () ->
@@ -241,6 +241,7 @@ type Program(lifetime:LifetimeScope) as this =
                 isDroppedAndAwaitingGrouping.map(fun s -> s.remove hwnd)
                 windowNameOverride <- windowNameOverride.remove hwnd
                 windowColors.remove hwnd
+                AutoGroup.forget hwnd
             | _ ->()
             refreshQueue.RequestWindow(hwnd)
 

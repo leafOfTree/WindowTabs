@@ -21,6 +21,8 @@ namespace Bemo
         private interface IVirtualDesktopManager
         {
             [PreserveSig] int IsWindowOnCurrentVirtualDesktop(IntPtr hwnd, out int onCurrentDesktop);
+            [PreserveSig] int GetWindowDesktopId(IntPtr hwnd, out Guid desktopId);
+            [PreserveSig] int MoveWindowToDesktop(IntPtr hwnd, ref Guid desktopId);
         }
 
         [ComImport, Guid("aa509086-5ca9-4c25-8f95-589d3c07b48a")]
@@ -37,6 +39,22 @@ namespace Bemo
         {
             if (desktops == null) desktops = (IVirtualDesktopManager)new VirtualDesktopManager();
             return desktops.IsWindowOnCurrentVirtualDesktop(hwnd, out onCurrent);
+        }
+
+        /// <summary>
+        /// The virtual desktop the window is on. False when that cannot be told: on systems without
+        /// virtual desktops, for windows not yet placed on one, or when the call is not possible here.
+        /// </summary>
+        public static bool TryGetDesktopId(IntPtr hwnd, out Guid desktopId)
+        {
+            desktopId = Guid.Empty;
+            try
+            {
+                if (desktops == null) desktops = (IVirtualDesktopManager)new VirtualDesktopManager();
+                return desktops.GetWindowDesktopId(hwnd, out desktopId) == 0 && desktopId != Guid.Empty;
+            }
+            catch (COMException) { return false; }
+            catch (InvalidCastException) { return false; }
         }
 
         private delegate bool EnumChildProc(IntPtr hwnd, IntPtr lParam);

@@ -4,6 +4,39 @@ open System.Drawing
 open System.Threading
 open System.Windows.Forms
 
+module AutoGroup =
+    /// Windows stops telling which desktop a window is on once a group with combined taskbar
+    /// icons takes its taskbar button, so the desktop is noted while it can still be told.
+    let private lastDesktop = Collections.Concurrent.ConcurrentDictionary<IntPtr,Guid>()
+
+    /// The virtual desktop a window is on, or was last seen on, when Windows can tell.
+    let desktopId (hwnd:IntPtr) =
+        match WindowCloaking.TryGetDesktopId(hwnd) with
+        | true, id ->
+            lastDesktop.[hwnd] <- id
+            Some id
+        | _ ->
+            match lastDesktop.TryGetValue hwnd with
+            | true, id -> Some id
+            | _ -> None
+
+    let forget (hwnd:IntPtr) = lastDesktop.TryRemove(hwnd) |> ignore
+
+    /// The first group, in the order given, that holds a window of the same program and a
+    /// window on the same virtual desktop as `hwnd`, so a window opened on another desktop
+    /// starts its own group rather than pulling the group across desktops. A window whose
+    /// desktop cannot be told matches any desktop, as before desktops were taken into account.
+    let pick (windowsOf:'g -> List2<IntPtr>) (processPath:IntPtr -> string) (desktopOf:IntPtr -> Guid option) (groups:List2<'g>) (hwnd:IntPtr) =
+        let path = processPath hwnd
+        let desktop = desktopOf hwnd
+        let sameDesktop other =
+            match desktop, desktopOf other with
+            | Some a, Some b -> a = b
+            | _ -> true
+        groups.tryFind(fun g ->
+            let windows = windowsOf g
+            windows.any(fun w -> processPath w = path) && windows.any sameDesktop)
+
 
 type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher) as this =
     let Cell = CellScope(true, true)
@@ -58,6 +91,7 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
             windowsCell.map <| fun l -> l.append hwnd
         // Still queue the operation: a preceding asynchronous remove may not
         // have updated this snapshot yet, and remove-then-add must reattach it.
+        AutoGroup.desktopId hwnd |> ignore
         this.invokeGroup <| fun() -> this.group.addWindow(hwnd, withDelay)
     member private this.removeWindow hwnd =
         this.invokeGroup <| fun() -> this.group.removeWindow(hwnd)

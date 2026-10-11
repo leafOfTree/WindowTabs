@@ -23,6 +23,19 @@ let pumpUntil description predicate =
 let main() =
     check (TabTitle.display false (IntPtr(0x123)) "Editor"="Editor") "Normal tab titles contain a window handle"
     check (TabTitle.display true (IntPtr(0x123)) "Editor"="123 - Editor") "Debug builds lost the debugger-only window handle"
+    // Explorer windows 1 and 3 are on desktop 1, window 4 on desktop 2; window 5's desktop is unknown.
+    let desk1, desk2 = Guid.NewGuid(), Guid.NewGuid()
+    let pathOf (hwnd:IntPtr) = if hwnd = IntPtr(2) then "chrome.exe" else "explorer.exe"
+    let deskOf (hwnd:IntPtr) =
+        match hwnd.ToInt32() with 1 | 2 | 3 -> Some desk1 | 4 -> Some desk2 | _ -> None
+    let chromeGroup, explorerGroup = List2([IntPtr(2)]), List2([IntPtr(1)])
+    let pickFrom groups (hwnd:int) =AutoGroup.pick id pathOf deskOf (List2(groups)) (IntPtr(hwnd))
+    let picked expected result = match result with Some g -> obj.ReferenceEquals(g, expected) | None -> false
+    check (pickFrom [chromeGroup; explorerGroup] 4 = None) "Auto-grouping joined a window to a group on another virtual desktop"
+    check (picked explorerGroup (pickFrom [chromeGroup; explorerGroup] 3)) "Auto-grouping missed a group on the same virtual desktop"
+    check (picked explorerGroup (pickFrom [chromeGroup; explorerGroup] 5)) "Auto-grouping ignored a group when the new window's desktop is unknown"
+    let unknownGroup = List2([IntPtr(5)])
+    check (picked unknownGroup (pickFrom [unknownGroup] 4)) "Auto-grouping ignored a group whose virtual desktop is unknown"
     Application.EnableVisualStyles()
     let directory = Path.Combine(__SOURCE_DIRECTORY__, "Debug", "groups-" + Guid.NewGuid().ToString("N"))
     Directory.CreateDirectory(directory) |> ignore
