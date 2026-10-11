@@ -116,6 +116,16 @@ let main () =
             check (drawn.Length=1 && drawn.Head.label="A") "Active tab hint was shown or inactive letter hint was missing"
     for appearance in [Theme.light;Theme.dark] do
         for style in [JoinedTabs;FolderTabs;PillTabs] do
+            let plain = { ts with appearance={appearance with tabStyle=style} }
+            let active = plain.tabSprites.list |> List.map snd |> List.find(fun tab -> tab.isTop)
+            let inactive = plain.tabSprites.list |> List.map snd |> List.find(fun tab -> not tab.isTop)
+            check (active.textColor=appearance.tabTextColor) "Active title lost its full text colour"
+            check (inactive.textColor<>active.textColor &&
+                   TextContrast.ratio inactive.textColor inactive.fillColor<TextContrast.ratio active.textColor inactive.fillColor &&
+                   TextContrast.ratio inactive.textColor inactive.fillColor>=TextContrast.minimum)
+                  "Inactive title was not quieter and readable on every tab style"
+            for highlighted in [{inactive with hover=Some TabBackground};{inactive with captured=Some TabBackground}] do
+                check (highlighted.textColor=appearance.tabTextColor) "Hover or capture did not restore full title colour"
             for colorStyle in ["Stripe";"Fill"] do
                 let tinted = { ts with appearance={appearance with tabStyle=style}; tabs=Map2(List2([1,{info "One" with tint=Some Color.Blue;colorStyle=colorStyle};2,{info "Two" with tint=Some Color.Blue;colorStyle=colorStyle}])) }
                 let tabs = tinted.sprite.children.list |> List.choose(fun (_,child) -> match child with :? TabSprite<int> as tab -> Some tab | _ -> None)
