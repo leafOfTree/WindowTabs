@@ -584,6 +584,7 @@ let main() =
                         strip.isShrunk <- false
                         check (strip.bounds.size=columnSize && not shadow.isVisible) "Vertical column retained the horizontal shadow or wrong bounds"
                         let last = strip.lorder.list |> List.last
+                        strip.zorder <- List2(strip.lorder.list)
                         strip.zorder <- List2(last::(strip.lorder.list |> List.filter((<>)last)))
                         let row,sprite = strip.tabSprites.list |> List.find(fun (_,tab) -> tab.id=last)
                         check (row.y>=0 && row.y+sprite.size.height<=columnSize.height) "Switching to an overflow tab did not reveal its row"
@@ -595,6 +596,38 @@ let main() =
                         check ((strip.tryHit(Pt(1,1))).IsSome) "Collapsed vertical edge cannot reveal the column"
                         strip.isShrunk <- false
                         check (strip.bounds.location=start && strip.bounds.size=columnSize) "Vertical expansion failed to restore the column"
+                        strip.scrollColumnTo 0
+                        let beforeScroll = strip.tabLocation last
+                        let beforeCloses = closes.Count
+                        let trackX = columnSize.width-Dpi.scale 9
+                        send WindowMessages.WM_LBUTTONDOWN (Pt(trackX,Dpi.scale 8))
+                        send WindowMessages.WM_MOUSEMOVE (Pt(trackX,columnSize.height-Dpi.scale 8))
+                        send WindowMessages.WM_LBUTTONUP (Pt(trackX,columnSize.height-Dpi.scale 8))
+                        check ((strip.tabLocation last).y<beforeScroll.y) "Dragging the vertical thumb did not scroll the list"
+                        check (closes.Count=beforeCloses) "Scrolling should not close a tab"
+                        strip.scrollColumnTo -10000
+                        check ((strip.tabLocation strip.lorder.head).y=Dpi.scale 4) "Column scrolling escaped its first row"
+                        let firstBeforeMove = strip.tabLocation strip.lorder.head
+                        strip.setPlacement(placement (start.add(Pt(10,10))) columnSize inside)
+                        check (strip.tabLocation strip.lorder.head=firstBeforeMove) "Moving a window discarded manual column scrolling"
+                        strip.setPlacement(placement start columnSize inside)
+                        strip.columnWidth <- 220
+                        let growsRight = (dock=TabDockRight) <> inside
+                        let edgeX = if growsRight then columnSize.width-1 else 1
+                        let drag = Dpi.scale 32
+                        let beforeClicks = clicks.Count
+                        send WindowMessages.WM_LBUTTONDOWN (Pt(edgeX,Dpi.scale 20))
+                        strip.isShrunk <- true
+                        check (not strip.isShrunk) "Auto-hide interrupted column resizing"
+                        send WindowMessages.WM_MOUSEMOVE (Pt(edgeX+drag,Dpi.scale 20))
+                        send WindowMessages.WM_LBUTTONUP (Pt(edgeX+drag,Dpi.scale 20))
+                        check (strip.columnWidth=(if growsRight then 252 else 188)) "Column resize moved the wrong edge or stored scaled pixels"
+                        check (clicks.Count=beforeClicks) "Column resizing activated or dragged a tab"
+                        strip.columnWidth <- 9999
+                        check (strip.columnWidth=snd SettingsCatalog.columnWidthRange) "Column width exceeded its maximum"
+                        strip.columnWidth <- 1
+                        check (strip.columnWidth=fst SettingsCatalog.columnWidthRange) "Column width fell below its minimum"
+                        strip.columnWidth <- 220
                 strip.dock <- TabDockTop
             finally strip.destroy()
         printfn "PASS: unchanged hover/moves skip rendering; cross-tab hover, clicks, capture, close, resize, direction, collapse and shadow recovery."

@@ -130,6 +130,13 @@ let main () =
                 check (image.Width=Dpi.scale 220 && image.Height=Dpi.scale 300) "Vertical rendering ignored the viewport size"
                 use collapsed = column.renderCollapsed.bitmap
                 check (collapsed.Width=Dpi.scale 4 && collapsed.Height=image.Height) "Vertical auto-hide changed height instead of width"
+                let overflow = { column with size=Dpi.scaleSize(Sz(220,40)) }
+                check overflow.scrollThumb.IsSome "An overflowing column has no scrollbar"
+                let thumb = overflow.scrollThumb.Value
+                check (thumb.x+thumb.width<=overflow.size.width) "Scrollbar escaped the column at high DPI"
+                let bottom = { overflow with scrollOffset=overflow.scrollMaximum }
+                check (bottom.scrollThumb.Value.bottom=bottom.scrollTrack.bottom) "Scrollbar thumb cannot reach the last row"
+                check (column.scrollThumb.IsNone) "A short column shows an unnecessary scrollbar"
                 let icons = { column with onlyIcons=true; size=Dpi.scaleSize(Sz(48,300)) }
                 check ((snd icons.tabSprites.head).onlyIcon) "The vertical icon rail still shows titles"
     finally Dpi.set originalVerticalDpi

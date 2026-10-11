@@ -9,7 +9,9 @@ Choose **Horizontal** to return to the existing layout. The choice belongs to th
 group, survives an in-session group rebuild, and is not saved across restarts.
 **Show icons only** makes the column a narrow icon rail.
 
-The expanded column is 220 logical pixels wide, or 48 in icon mode. Rows have a
+The expanded column starts at 220 logical pixels wide, or 48 in icon mode. Drag
+the exposed column edge to resize it between 120 and 420 logical pixels. The width
+survives an in-session group rebuild. Rows have a
 minimum height of 32 logical pixels and keep their titles horizontal. They use the
 existing themed tab renderer with the pill shape. Activation, close buttons,
 menus, keyboard switching and ordering still use the existing group behavior.
@@ -19,11 +21,13 @@ working area. Otherwise it overlays that edge inside the window, below a 32-pixe
 title-bar inset. It does not resize the application to reserve space. Existing
 auto-hide modes apply; the column collapses to a 4-pixel edge without animation.
 Selecting an overflow tab brings its row into view. Only visible rows are drawn.
+Overflowing columns show a draggable scrollbar; click its track to page through
+the list. Existing wheel switching and Ctrl + wheel ordering remain unchanged.
 
 ## Remaining work
 
-- Adjustable width and persistent global defaults / workspace preferences.
-- Explicit list scrolling, drag-edge scrolling and fuller cross-orientation drag tests.
+- Persistent global defaults / workspace preferences.
+- Drag-edge scrolling and fuller cross-orientation drag tests.
 - Smooth side reveal, side shadows and refinement of the title-bar inset.
 - Real desktop E2E across snapped/maximized windows and mixed-DPI monitors.
 

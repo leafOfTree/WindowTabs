@@ -607,6 +607,15 @@ type TabStripSprite<'id> when 'id : equality = {
     member this.isVertical = this.dock=TabDockLeft || this.dock=TabDockRight
     member this.rowHeight = max (Dpi.scale 32) this.appearance.tabHeight
     member this.rowStep = this.rowHeight + Dpi.scale 4
+    member this.scrollMaximum = max 0 (this.lorder.count*this.rowStep+Dpi.scale 4-this.size.height)
+    member this.scrollTrack = Rect(Pt(this.size.width-Dpi.scale 12,Dpi.scale 4),Sz(Dpi.scale 6,max 1 (this.size.height-Dpi.scale 8)))
+    member this.scrollThumb =
+        if not this.isVertical || this.scrollMaximum=0 then None
+        else
+            let track = this.scrollTrack
+            let height = min track.height (max (Dpi.scale 24) (track.height*this.size.height/(this.size.height+this.scrollMaximum)))
+            let y = track.y + (track.height-height)*this.scrollOffset/this.scrollMaximum
+            Some(Rect(Pt(track.x,y),Sz(track.width,height)))
 
     member private this.tabOverlap = float(this.appearance.tabOverlap)
     member private this.tabMaxLen = float(this.appearance.tabMaxWidth)
@@ -678,6 +687,9 @@ type TabStripSprite<'id> when 'id : equality = {
         use brush = new SolidBrush(bgColor)
         let bounds = Rect(Pt(), this.size)
         gr.FillRectangle(brush, bounds.Rectangle)
+        this.scrollThumb |> Option.iter(fun thumb ->
+            use ink = new SolidBrush(this.appearance.tabBorderColor)
+            gr.FillRectangle(ink,thumb.Rectangle))
         img
 
     /// Narrowest a tab gets: its icon with room either side to click it. Tabs that still do
@@ -771,7 +783,7 @@ type TabStripSprite<'id> when 'id : equality = {
     // its border line. Inside the title bar the strip starts a pixel above the window and
     // that first row is already the window's edge.
     member private this.tabSizeOf tab =
-        if this.isVertical then Sz(max 1 (this.size.width-Dpi.scale 8),this.rowHeight)
+        if this.isVertical then Sz(max 1 (this.size.width-Dpi.scale (if this.scrollMaximum>0 then 18 else 8)),this.rowHeight)
         else
             let left,right = this.tabSpan tab
             Sz(right - left, this.size.height - (if this.direction = TabUp then 1 else 2))

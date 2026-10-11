@@ -44,6 +44,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let dockCell = Cell.create(TabDockTop)
     let scrollOffsetCell = Cell.create(0)
     let dockChangedEvent = Event<unit>()
+    let mutable columnWidthValue = SettingsCatalog.columnWidthDefault
+    let mutable columnResize : (int*int*bool) option = None
+    let mutable columnScroll : (int*int) option = None
     let alignmentMap = 
         Map.ofList [
             "Left", TabLeft
@@ -282,10 +285,17 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         // Where the frame on screen sits in the full strip: collapsed, expanded or part way.
         let mousePt() = msg.lParam.location.add(this.renderedShift)
         let mouseDown btn =
-            this.processMouse(MouseClick(mousePt(), btn, MouseDown))
+            let pt = mousePt()
+            if btn<>MouseLeft || not (this.beginColumnInteraction(pt)) then
+                this.processMouse(MouseClick(pt, btn, MouseDown))
             msg.def()
         let mouseUp btn = 
-            this.processMouse(MouseClick(mousePt(), btn, MouseUp))
+            if btn=MouseLeft && (columnResize.IsSome || columnScroll.IsSome) then
+                columnResize <- None
+                columnScroll <- None
+                this.window.releaseCapture()
+                this.refreshHover()
+            else this.processMouse(MouseClick(mousePt(), btn, MouseUp))
             msg.def()
         let mouseDblClick btn =
             this.processMouse(MouseClick(mousePt(), btn, MouseDblClick))
@@ -310,7 +320,22 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         | WindowMessages.WM_MOUSEACTIVATE ->
             MouseActivateReturnCodes.MA_NOACTIVATE
         | WindowMessages.WM_MOUSEMOVE ->
-            this.processMouse(MouseMove(mousePt()))
+            let pt = mousePt()
+            match columnResize,columnScroll with
+            | Some(start,width,growsRight),_ ->
+                let delta = this.window.ptToScreen(pt).x-start
+                let logical = int(Math.Round(float delta*96.0/float(Dpi.value())))
+                this.columnWidth <- width+(if growsRight then logical else -logical)
+            | _,Some(start,offset) ->
+                let travel = this.ts.scrollTrack.height-(this.ts.scrollThumb |> Option.map(fun thumb -> thumb.height) |> Option.defaultValue 0)
+                if travel>0 then this.scrollColumnTo(offset+(pt.y-start)*this.ts.scrollMaximum/travel)
+            | _ ->
+                Cursor.Current <- if this.isColumnResizeEdge(pt) then Cursors.SizeWE else Cursors.Default
+                this.processMouse(MouseMove(pt))
+            msg.def()
+        | 0x0215 -> // Another window took the capture; stop before the next movement.
+            columnResize <- None
+            columnScroll <- None
             msg.def()
         | WindowMessages.WM_LBUTTONDOWN -> mouseDown MouseLeft
         | WindowMessages.WM_LBUTTONUP -> mouseUp MouseLeft
@@ -505,10 +530,49 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 slideCell.set(None)
                 heldLayoutCell.set(None)
                 scrollOffsetCell.set(0)
-                dockCell.set(value))
+                dockCell.set(value)
+                this.ensureSelectedVisible())
             dockChangedEvent.Trigger()
 
     member this.dockChanged = dockChangedEvent.Publish
+    member this.columnWidth
+        with get() = columnWidthValue
+        and set(value) =
+            let next = between SettingsCatalog.columnWidthRange value
+            if next<>columnWidthValue then
+                columnWidthValue <- next
+                dockChangedEvent.Trigger()
+
+    member private this.isColumnResizeEdge(pt:Pt) =
+        if not this.isVertical || this.isIconOnly || this.isShrunk then false
+        else
+            let growsRight = (this.dock=TabDockRight) <> this.showInside
+            if growsRight then pt.x>=this.size.width-Dpi.scale 4 else pt.x<Dpi.scale 4
+
+    member private this.beginColumnInteraction(pt:Pt) =
+        if not this.isVertical || this.isShrunk then false
+        elif this.isColumnResizeEdge(pt) then
+            this.hideTitle()
+            columnResize <- Some(this.window.ptToScreen(pt).x,columnWidthValue,(this.dock=TabDockRight) <> this.showInside)
+            this.window.setCapture()
+            true
+        elif this.ts.scrollThumb.IsSome && this.ts.scrollTrack.containsPoint(pt) then
+            this.hideTitle()
+            let thumb = this.ts.scrollThumb.Value
+            if thumb.containsPoint(pt) then
+                columnScroll <- Some(pt.y,scrollOffsetCell.value)
+                this.window.setCapture()
+            else this.scrollColumnTo(scrollOffsetCell.value+(if pt.y<thumb.y then -this.size.height else this.size.height))
+            true
+        else false
+
+    member this.scrollColumnTo(value) =
+        if this.isVertical then
+            this.hideTitle()
+            this.withUpdate(fun () ->
+                scrollOffsetCell.set(between (0,this.ts.scrollMaximum) value)
+                hoverCell.set(None))
+
     member this.isVertical = this.dock=TabDockLeft || this.dock=TabDockRight
     member private this.renderedShift = if this.isVertical then Pt(renderedOffset,0) else Pt(0,renderedOffset)
 
@@ -526,7 +590,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member this.isShrunk    
         with get() = isShrunkCell.value
-        and set(newValue) = isShrunkCell.set(newValue)
+        and set(newValue) =
+            if not newValue || (columnResize.IsNone && columnScroll.IsNone) then isShrunkCell.set(newValue)
 
     member this.isMouseOver = isMouseOverExport :> ICellOutput<_>
 
@@ -634,12 +699,13 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member this.setPlacement(placement) =
         let moved = location <> placement.bounds.location
+        let heightChanged = this.size.height<>placement.bounds.height
         let previousRender = renderedFrames
         location <- placement.bounds.location
         this.withUpdate(fun () ->
             showInsideCell.set(placement.showInside)
             sizeCell.set(placement.bounds.size)
-            this.ensureSelectedVisible())
+            if heightChanged then this.ensureSelectedVisible())
         // A size/direction change already uploaded fresh pixels at the new
         // position. Otherwise keep the existing strip/shadow surfaces.
         if moved && this.visible && renderedFrames>0L && renderedFrames=previousRender then

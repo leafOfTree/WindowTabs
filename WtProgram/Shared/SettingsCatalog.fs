@@ -17,6 +17,8 @@ type SettingDefinition = {
     binding:SettingBinding }
 
 module SettingsCatalog =
+    let columnWidthDefault = 220
+    let columnWidthRange = 120,420
     let leaderKeyPresets = List.zip ["123456789";"QWERTYUIOP";"ASDFGHJKL;"] (Array.toList Strings.Settings.leaderKeyPresets)
     let all = [
         { id="tab-color-mode"; page=AppearanceSettings; text=Strings.Settings.tabColorMode; binding=Choice("tabColorMode",["Off";"ByWindow";"ByApp"],"Off") }

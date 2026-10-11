@@ -117,7 +117,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             decoratorIndentNormal = group.tabAppearance.tabIndentNormal
         }
         if this.ts.isVertical then
-            decorator.sidePlacement(this.ts.dock,Dpi.scale (if this.ts.isIconOnly then 48 else 220))
+            decorator.sidePlacement(this.ts.dock,Dpi.scale (if this.ts.isIconOnly then 48 else this.ts.columnWidth))
         else
             { showInside=decorator.shouldShowInside; bounds=decorator.bounds }
 
