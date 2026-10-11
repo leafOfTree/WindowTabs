@@ -70,7 +70,9 @@ windows' desktop. Windows hides a group on another desktop, which is not the app
 its window, so the filter keeps owned windows in their group. Owned Explorer windows
 report no desktop of their own; `VirtualDesktop.desktopId` asks the owner first, then the
 desktop a window was last seen on. Auto-grouping waits up to a second for a new window
-to be placed on a desktop, and joins it only to a group on the same desktop.
+to be placed on a desktop, and joins it only to a group on the same desktop. Windows
+shows a minimized owned window as a small title bar above the taskbar, so the group moves
+it off screen (`Window.parkIfMinimized`), where a window with its own button would be.
 
 ## Settings persistence
 

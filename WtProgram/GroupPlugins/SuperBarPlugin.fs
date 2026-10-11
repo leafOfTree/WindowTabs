@@ -495,6 +495,7 @@ type SuperBarPlugin() as this =
             this.zorder.iter <| fun hwnd ->
                 if adopted.Add hwnd then
                     WinUserApi.SetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT, owner) |> ignore
+                    this.os.windowFromHwnd(hwnd).parkIfMinimized()
 
     member private this.release(hwnd:IntPtr) =
         if adopted.Remove hwnd && TaskbarProxies.ownsWindow hwnd then

@@ -661,6 +661,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         | WinEvent.EVENT_SYSTEM_MINIMIZESTART -> 
             // Queued notifications may be overtaken by a fast restore.
             if minimizeReady && this.windows.contains(hwnd) && this.os.windowFromHwnd(hwnd).isMinimized then
+                this.os.windowFromHwnd(hwnd).parkIfMinimized()
                 if not propagated then
                     this.reclaimLeftTab(hwnd)
                     let needsMinimized = zorderCell.value.any <| fun hwnd -> this.os.windowFromHwnd(hwnd).isMinimized.not

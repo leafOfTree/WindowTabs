@@ -153,6 +153,15 @@ let main() =
             match WindowCloaking.TryGetDesktopId(proxy.Head) with
             | true, desktop -> check (VirtualDesktop.desktopId d = Some desktop) "A combined group's window is not on its taskbar window's desktop"
             | _ -> ()
+            // Windows lays an owned window out above the taskbar when minimized, as a small title bar.
+            let minimizedBar = OS().windowFromHwnd d
+            WinUserApi.ShowWindow(d, ShowWindowCommands.SW_SHOWMINNOACTIVE) |> ignore
+            WinUserApi.SetWindowPos(d, IntPtr.Zero, 0, 0, 0, 0,
+                SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOZORDER ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore
+            check (minimizedBar.isMinimized && minimizedBar.bounds.y > -10000) "The test could not put a minimized window's title bar on screen"
+            minimizedBar.parkIfMinimized()
+            check (minimizedBar.isMinimized && minimizedBar.bounds.y <= -10000) (sprintf "A minimized window of a combined group shows above the taskbar: %A" minimizedBar.bounds)
+            WinUserApi.ShowWindow(d, ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
             onGroup combined (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
             pumpUntil "Taskbar proxies outlived their combined taskbar button" (fun () -> not(TaskbarProxies.contains proxy.Head))
             check ([a;b;d] |> List.forall(fun hwnd -> owner hwnd = IntPtr.Zero)) "Windows that left a combined group are still owned by its taskbar window"

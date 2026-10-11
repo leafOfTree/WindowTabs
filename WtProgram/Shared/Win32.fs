@@ -465,6 +465,13 @@ and
         if this.parent.hwnd <> owner.hwnd then
             WinUserApi.SetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT, owner.hwnd).ignore
 
+    /// Windows shows a minimized window that a WindowTabs window owns as a small title bar above
+    /// the taskbar, where a window with a taskbar button of its own would be off screen.
+    member this.parkIfMinimized() =
+        if this.isMinimized && this.parent.pid.isCurrentProcess && this.bounds.y > -10000 then
+            WinUserApi.SetWindowPos(hwnd, IntPtr.Zero, -32000, -32000, 0, 0,
+                SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOZORDER ||| SetWindowPosFlags.SWP_NOACTIVATE).ignore
+
     member this.showNoActivate() = WinUserApi.ShowWindow(hwnd, ShowWindowCommands.SW_SHOWNOACTIVATE).ignore
 
     member this.update(image:Img, location:Pt, alpha) =       
