@@ -12,9 +12,9 @@ between them with a click or a shortcut.
 > **v2026.10.10-beta.1 preview**: improved file drops, themed tab and tray menus, taskbar
 > previews and tab switching. [What's changed →](CHANGELOG.md)
 
-![Light tabs grouping three File Explorer windows](docs/images/light.png)
+<a href="docs/images/light.png"><img src="docs/images/light-rounded.svg" width="600" alt="Light tabs grouping three File Explorer windows" /></a>
 
-![Dark tabs grouping three File Explorer windows](docs/images/dark.png)
+<a href="docs/images/dark.png"><img src="docs/images/dark-rounded.svg" width="600" alt="Dark tabs grouping three File Explorer windows" /></a>
 
 ## Get started
 
@@ -24,7 +24,7 @@ It runs in the system tray.
 
 - **Group windows:** drag a tab onto another window's tab bar. Drag it away to ungroup.
 - **Group an app automatically:** right-click its tab → **Enable auto-grouping**.
-- **Settings:** right-click a tab or the tray icon.
+- **Settings:** left-click the tray icon.
 
 Grouped windows move and resize together. Tabs hide on maximized windows; point at
 the top edge to show them, or set **Auto-hide tabs** to **Never**.
