@@ -47,6 +47,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let mutable columnWidthValue = SettingsCatalog.columnWidthDefault
     let mutable columnResize : (int*int*bool) option = None
     let mutable columnScroll : (int*int) option = None
+    let mutable dragScrollLocation : Pt option = None
+    let dragScrollTimer = new Timer(Interval=80)
     let alignmentMap = 
         Map.ofList [
             "Left", TabLeft
@@ -126,6 +128,12 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         showInsideExport.init()
 
         revealTimer.Tick.Add(fun _ -> this.stepReveal())
+        dragScrollTimer.Tick.Add(fun _ ->
+            match dragScrollLocation with
+            | Some pt when this.isVertical && slideCell.value.IsSome ->
+                this.scrollColumnTo(scrollOffsetCell.value+this.dragScrollDirection(pt)*this.ts.rowStep)
+                this.updateDragScroll()
+            | _ -> dragScrollTimer.Stop())
         titleTimer.Tick.Add(fun _ -> titleTimer.Stop(); this.showTitle())
         captureWatch.Tick.Add(fun _ ->
             if WinUserApi.GetCapture()=IntPtr.Zero then
@@ -192,7 +200,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 else
                     this.appearance
         }
-    member private this.ts = this.tsBase this.direction
+    member private this.ts : TabStripSprite<Tab> = this.tsBase this.direction
         
     member private this.onMouse(down, pt:Pt, btn, (tab:Tab, part)) =
         monitor.tabClick(btn, tab, part, down, pt)
@@ -575,6 +583,24 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 scrollOffsetCell.set(between (0,this.ts.scrollMaximum) value)
                 hoverCell.set(None))
 
+    member private this.dragScrollDirection(pt:Pt) =
+        let margin = Dpi.scale 20
+        let edge = min (Dpi.scale 24) (this.size.height/3)
+        if pt.x < -margin || pt.x > this.size.width+margin || pt.y < -margin || pt.y > this.size.height+margin then 0
+        elif pt.y<edge && scrollOffsetCell.value>0 then -1
+        elif pt.y>=this.size.height-edge && scrollOffsetCell.value<this.ts.scrollMaximum then 1
+        else 0
+
+    member private this.updateDragScroll() =
+        let active = this.isVertical && slideCell.value.IsSome &&
+                     (dragScrollLocation |> Option.exists(fun pt -> this.dragScrollDirection(pt)<>0))
+        if active then dragScrollTimer.Start() else dragScrollTimer.Stop()
+
+    member this.dragScrollPoint
+        with set(value) =
+            dragScrollLocation <- value
+            this.updateDragScroll()
+
     member this.isVertical = this.dock=TabDockLeft || this.dock=TabDockRight
     member private this.renderedShift = if this.isVertical then Pt(renderedOffset,0) else Pt(0,renderedOffset)
 
@@ -731,7 +757,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member this.slide 
         with get() : (Tab * int) option = slideCell.value
-        and set(value) = slideCell.set(value)
+        and set(value) =
+            slideCell.set(value)
+            this.updateDragScroll()
 
     member this.renderTs(top) =
         let ts = this.ts
@@ -746,6 +774,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member _.destroying = destroyingEvent.Publish
     member this.destroy() = 
+        dragScrollTimer.Dispose()
         destroyingEvent.Trigger()
         revealTimer.Dispose()
         captureWatch.Dispose()

@@ -58,6 +58,11 @@ let main() =
                                 member _.dragDrop _ = ()
                                 member _.dragEnd() = ()}, api, InvokerService.invoker :> IDispatcher)
         let desktopApi = desktop :> IDesktop
+        let dragTargetFor hwnd =
+            let field = typeof<DragDropController>.GetFields(Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic)
+                        |> Array.find(fun field -> field.FieldType=typeof<Cell<Map2<IntPtr,IDragDropTarget>>>)
+            let targets = field.GetValue(Services.dragDrop) :?> Cell<Map2<IntPtr,IDragDropTarget>>
+            targets.value.find hwnd
         let source = desktopApi.createGroup(false) :?> GroupInfo
         let target = desktopApi.createGroup(false) :?> GroupInfo
         let combined = desktopApi.createGroup(true) :?> GroupInfo
@@ -195,7 +200,44 @@ let main() =
             check (soleGroup a false = Some separate) "Setting turned back still rebuilt the group"
             for info in [separate;chosenNow] do
                 onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
-            printfn "PASS: real HWND grouping, duplicate add, reorder, cross-STA transfer, destroyed-window removal, ungrouping and taskbar icon rebuilds."
+            // Exercise production drag targets on their owning STAs without taking over the mouse.
+            for sourceDock,targetDock in [TabDockTop,TabDockLeft;TabDockLeft,TabDockTop;
+                                          TabDockTop,TabDockRight;TabDockRight,TabDockTop;
+                                          TabDockLeft,TabDockRight;TabDockRight,TabDockLeft] do
+                let dragSource = desktopApi.createGroup(false) :?> GroupInfo
+                let dragTarget = desktopApi.createGroup(false) :?> GroupInfo
+                for hwnd in [a;b] do (dragSource :> IGroup).addWindow(hwnd,false)
+                (dragTarget :> IGroup).addWindow(d,false)
+                pumpUntil "Drag groups did not acquire windows" (fun () -> nativeOrder dragSource=[a;b] && nativeOrder dragTarget=[d])
+                let data = onGroup dragSource (fun group ->
+                    group.ts.dock <- sourceDock
+                    let size = if group.ts.isVertical then Sz(220,400) else Sz(600,40)
+                    group.ts.setPlacement({bounds=Rect(Pt(-20000,-20000),size);showInside=false})
+                    let tab = Tab b
+                    let _,sprite = group.ts.tabSprites.pick(fun (location,sprite) -> if sprite.id=tab then Some(location,sprite) else None)
+                    let data = {tab=tab;tabSize=sprite.size;tabOffset=Pt(sprite.size.width/2,sprite.size.height/2);tabInfo=group.ts.tabInfo tab}
+                    let proportional = {data with tabSize=Sz(200,32);tabOffset=Pt(100,16)}
+                    check (proportional.offsetIn(Sz(300,48))=Pt(150,24)) "Cross-DPI drag lost its grabbed point"
+                    check (proportional.offsetIn(Sz(120,64))=Pt(60,32)) "Cross-orientation drag lost its grabbed point"
+                    let target = dragTargetFor group.ts.hwnd
+                    check (target.dragEnter (box data) (group.ts.tabLocation(tab).add(data.tabOffset))) "Source rejected a drag"
+                    target.dragExit()
+                    data)
+                pumpUntil "Drag source retained moved window" (fun () -> nativeOrder dragSource=[a] && publicOrder dragSource=[a])
+                onGroup dragTarget (fun group ->
+                    group.ts.dock <- targetDock
+                    let size = if group.ts.isVertical then Sz(220,400) else Sz(600,40)
+                    group.ts.setPlacement({bounds=Rect(Pt(-20000,-20000),size);showInside=false})
+                    let target = dragTargetFor group.ts.hwnd
+                    check (target.dragEnter (box data) (Pt(1,1))) "Destination rejected a drag"
+                    target.dragEnd())
+                pumpUntil "Cross-orientation drag lost its insertion order" (fun () -> nativeOrder dragTarget=[b;d] && publicOrder dragTarget=[b;d])
+                check (onGroup dragTarget (fun group -> group.ts.dock)=targetDock) "Drag changed the destination orientation"
+                for info in [dragSource;dragTarget] do
+                    onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
+                    (info :> IGroup).destroy()
+                pumpUntil "Drag groups did not exit" (fun () -> dragSource.isExited && dragTarget.isExited)
+            printfn "PASS: real HWND grouping, duplicate add, reorder, cross-STA transfer, six cross-orientation drags, destroyed-window removal, ungrouping and taskbar icon rebuilds."
         finally
             let rest = desktopApi.groups.list |> List.map(fun g -> g :?> GroupInfo)
             for info in List.distinct([source;target;combined] @ rest) do

@@ -643,6 +643,30 @@ let main() =
                         strip.columnWidth <- 1
                         check (strip.columnWidth=fst SettingsCatalog.columnWidthRange) "Column width fell below its minimum"
                         strip.columnWidth <- 220
+                        strip.scrollColumnTo 0
+                        let dragged = strip.lorder.head
+                        strip.slide <- Some(dragged,0)
+                        strip.dragScrollPoint <- Some(Pt(Dpi.scale 50,columnSize.height-1))
+                        let pumpDrag duration =
+                            let clock = Diagnostics.Stopwatch.StartNew()
+                            while clock.ElapsedMilliseconds<int64 duration do
+                                Application.DoEvents()
+                                Threading.Thread.Sleep(2)
+                        pumpDrag 260
+                        let scrolledRow = strip.tabLocation last
+                        check (scrolledRow.y<columnSize.height) "Holding a dragged tab at the bottom did not scroll"
+                        strip.dragScrollPoint <- Some(Pt(Dpi.scale 50,columnSize.height/2))
+                        let centeredRow = strip.tabLocation last
+                        pumpDrag 180
+                        check (strip.tabLocation last=centeredRow) "Drag scrolling continued in the middle of the column"
+                        strip.dragScrollPoint <- Some(Pt(Dpi.scale 50,1))
+                        pumpDrag 260
+                        check ((strip.tabLocation last).y>scrolledRow.y) "Holding a dragged tab at the top did not scroll back"
+                        strip.dragScrollPoint <- None
+                        strip.slide <- None
+                        let stoppedRow = strip.tabLocation last
+                        pumpDrag 180
+                        check (strip.tabLocation last=stoppedRow) "Drag scrolling survived a completed drag"
                         TabReveal.forced <- Some true
                         let watchWidth until =
                             let widths = ResizeArray([strip.bounds.width])

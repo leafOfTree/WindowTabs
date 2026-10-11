@@ -25,11 +25,16 @@ Windows' animation setting is respected.
 Selecting an overflow tab brings its row into view. Only visible rows are drawn.
 Overflowing columns show a draggable scrollbar; click its track to page through
 the list. Existing wheel switching and Ctrl + wheel ordering remain unchanged.
+While dragging a tab, holding it near the top or bottom scrolls one row every
+80 ms until that edge is reached. Moving back into the column's middle or leaving
+the drop target stops scrolling. Transfers between horizontal, left and right
+columns preserve the grabbed point proportionally to the destination tab size.
+Native regression tests cover all six directional transfers and insertion order;
+separate assertions cover offset conversion for different DPI and row sizes.
 
 ## Remaining work
 
 - Persistent global defaults / workspace preferences.
-- Drag-edge scrolling and fuller cross-orientation drag tests.
 - Side shadows and refinement of the title-bar inset.
 - Real desktop E2E across snapped/maximized windows and mixed-DPI monitors.
 

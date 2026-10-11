@@ -15,8 +15,14 @@ and TabInfo = {
 and TabDragInfo = {
     tab: Tab
     tabOffset: Pt
+    tabSize: Sz
     tabInfo: TabInfo
-    }
+    } with
+    /// Keep the grabbed point proportional when entering a differently sized tab or DPI.
+    member this.offsetIn(size:Sz) =
+        let fit offset source target =
+            int(Math.Round(float(between (0,max 1 source) offset)*float target/float(max 1 source)))
+        Pt(fit this.tabOffset.x this.tabSize.width size.width,fit this.tabOffset.y this.tabSize.height size.height)
 
 and TabStripPlacment = {
     showInside: bool

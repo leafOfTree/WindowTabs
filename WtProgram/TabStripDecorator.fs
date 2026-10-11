@@ -91,7 +91,8 @@ type TabStripDecorator(group:WindowGroup) as this =
 
     member private this.tabSlide =
         dragInfoCell.value.map <| fun dragInfo ->
-                let pt = dragPtCell.value.sub(dragInfo.tabOffset)
+                let _,sprite = this.ts.tabSprites.pick(fun (location,sprite) -> if sprite.id=dragInfo.tab then Some(location,sprite) else None)
+                let pt = dragPtCell.value.sub(dragInfo.offsetIn(sprite.size))
                 dragInfo.tab, (if this.ts.isVertical then pt.y else pt.x)
 
     member private this.updateTsSlide() =
@@ -539,7 +540,8 @@ type TabStripDecorator(group:WindowGroup) as this =
                     if part <> TabClose then
                         let dragOffset = pt.sub(this.ts.tabLocation tab)
                         let dragImage = fun() -> this.ts.dragImage(tab)
-                        let dragInfo = box({ tab = tab; tabOffset = dragOffset; tabInfo = this.ts.tabInfo(tab)})
+                        let _,sprite = this.ts.tabSprites.pick(fun (location,sprite) -> if sprite.id=tab then Some(location,sprite) else None)
+                        let dragInfo = box({ tab = tab; tabOffset = dragOffset; tabSize=sprite.size; tabInfo = this.ts.tabInfo(tab)})
                         Services.dragDrop.beginDrag(this.ts.hwnd, dragImage, dragOffset, ptScreen, dragInfo)
                 | MouseMiddle ->
                     group.tabActivate(tab, false)
@@ -576,21 +578,24 @@ type TabStripDecorator(group:WindowGroup) as this =
                     else 
                         dragPtCell.set(pt)
                         dragInfoCell.set(Some(dragInfo))
-                        this.ts.addTabSlide dragInfo.tab this.tabSlide
+                        this.ts.addTab dragInfo.tab
                         // The destination group owns its cached icons. Drag data
                         // can outlive the source group's membership and cache.
                         group.addWindow(hwnd, false)
                         true
                 this.updateTsSlide()
+                this.ts.dragScrollPoint <- Some pt
                 result
 
         member this.dragMove(pt) =
             this.invokeSync <| fun() ->
                 dragPtCell.set(pt)
                 this.updateTsSlide()
+                this.ts.dragScrollPoint <- Some pt
 
         member this.dragExit() =
             this.invokeSync <| fun() ->
+                this.ts.dragScrollPoint <- None
                 match dragInfoCell.value with
                 | Some(dragInfo) ->
                     let tab = dragInfo.tab
@@ -606,6 +611,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         member this.dragEnd() =
             this.invokeAsync <| fun() ->
+                this.ts.dragScrollPoint <- None
                 isDraggingCell.value <- false
                 this.ts.transparent <- true
                 match this.ts.movedTab with
