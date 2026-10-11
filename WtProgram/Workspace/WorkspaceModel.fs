@@ -124,6 +124,7 @@ and
     [<DefaultValue>] val mutable workspace : Workspace
     let mutable _windows  = System.Collections.Generic.List<Dynamic>()
     let removedEvent = Event<_>()
+    member val tabLayout : GroupTabLayout option = None with get,set
 
     member this.addWindow(window) =
         _windows.Add(window)
@@ -158,6 +159,7 @@ and
         groupObj.setString("name", this.name)
         groupObj.setObject("placement", placementObj)
         groupObj.setObjectArray("windows", windowObjects)
+        this.tabLayout |> Option.iter(fun layout -> groupObj.["tabLayout"] <- WorkspaceData.writeTabLayout layout)
         groupObj
 
     static member deserialize(obj:JObject) =
@@ -165,6 +167,9 @@ and
             name = obj.getString("name").Value,
             placement = WorkspaceData.placement (obj.getObject("placement").Value))
         obj.getObjectArray("windows").Value.map(WorkspaceWindow.deserialize).iter(group.addWindow)
+        match obj.["tabLayout"] with
+        | :? JObject as layout -> group.tabLayout <- Some(WorkspaceData.tabLayout layout)
+        | _ -> ()
         group
 
 
@@ -284,6 +289,7 @@ type WorkspaceModel() as this =
     let _workspaces = System.Collections.Generic.List<Workspace>()
     let mutable _selected = null : obj
     let mutable loading = false
+    let mutable creating = false
     let mutable readOnly = false
     let mutable recovery : JToken option = None
 
@@ -307,7 +313,7 @@ type WorkspaceModel() as this =
         let nextNumber = this.workspaces.choose(fun(w) -> w.name.Replace("Workspace ", "").tryToInt()).maxBy 0 id + 1
         sprintf "Workspace %A" nextNumber
 
-    member private this.createWorkspace() =
+    member private this.createWorkspace(complete:Workspace -> unit) =
         let zorder = os.windowZorders
         let groups = Services.desktop.groups.where(fun group -> not group.windows.isEmpty).enumerate.map <| fun (i, group) ->
             let windowsInZorder = group.windows.sortBy(zorder.find)
@@ -327,14 +333,23 @@ type WorkspaceModel() as this =
                 ww.zorder <- innerZorder.find(hwnd)
                 ww.matchType <- WorkspaceWindowTitleMatchType.ExactMatch
                 wsGroup.addWindow(ww)
-            wsGroup
+            group :?> GroupInfo,wsGroup
             
         let ws = Workspace(
             name = this.newWorkspaceName()
         )
 
-        groups.iter(ws.addGroup)
-        ws
+        let mutable remaining = groups.count
+        if remaining=0 then complete ws
+        else
+            // Group STAs read their own layout; saving never blocks them from reading settings.
+            groups.iter(fun (info,saved) ->
+                info.captureTabLayout(fun layout ->
+                    saved.tabLayout <- layout
+                    remaining <- remaining-1
+                    if remaining=0 then
+                        groups.iter(fun (_,group) -> ws.addGroup(group))
+                        complete ws))
 
     member private this.restoreWorkspace(workspace:Workspace) =
         let resolver = WindowResolver()
@@ -357,7 +372,11 @@ type WorkspaceModel() as this =
                                 // Complete native placement before detaching from the old group.
                                 WinUserApi.ShowWindow(hwnd,ShowWindowCommands.SW_RESTORE) |> ignore
                                 window.setPlacement(placement)
-                                if destination.IsNone then destination <- Some(Services.desktop.createGroup(Services.settings.getValue("combineIconsInTaskbar").cast<bool>()))
+                                if destination.IsNone then
+                                    let next = Services.desktop.createGroup(Services.settings.getValue("combineIconsInTaskbar").cast<bool>())
+                                    (groupInfo :?> WorkspaceGroup).tabLayout |> Option.iter(fun layout ->
+                                        (next :?> GroupInfo).invokeGroup(fun () -> (next :?> GroupInfo).group.applyTabLayout(layout)))
+                                    destination <- Some next
                                 owners.tryFind(hwnd).iter(fun owner -> owner.removeWindow(hwnd))
                                 destination.Value.addWindow(hwnd,false)
                                 successful.Add(saved,hwnd)
@@ -376,9 +395,15 @@ type WorkspaceModel() as this =
         workspaceAddedEvt.Trigger(ws) 
          
     member this.create() =
-        if not readOnly then
-            let ws = this.createWorkspace()
-            this.addWorkspace(ws)
+        if not readOnly && not creating then
+            creating <- true
+            try
+                this.createWorkspace(fun ws ->
+                    creating <- false
+                    if not readOnly then this.addWorkspace(ws))
+            with _ ->
+                creating <- false
+                reraise()
     
     member this.remove() =
         if not readOnly && this.selected <> null then

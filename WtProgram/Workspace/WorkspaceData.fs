@@ -17,7 +17,7 @@ module WindowTitleMatcher =
         | _ -> invalidArg "kind" (tr Strings.Workspaces.unknownMatchMethod)
 
 module WorkspaceData =
-    let version = 2
+    let version = 3
     /// Drops an entry that is harmless rather than damaged, without a warning.
     exception private SkipEntry
     let number (obj:JObject) key fallback =
@@ -30,6 +30,26 @@ module WorkspaceData =
         | null -> fallback
         | value when value.Type=JTokenType.String -> value.Value<string>()
         | _ -> invalidArg key ("Invalid text: "+key)
+    let tabLayout (obj:JObject) : GroupTabLayout =
+        let alignment key =
+            match text obj key "Center" with
+            | "Left" -> TabLeft | "Center" -> TabCenter | "Right" -> TabRight
+            | _ -> invalidArg key (tr Strings.Workspaces.invalidTabLayout)
+        let dock =
+            match text obj "position" "Horizontal" with
+            | "Horizontal" -> TabDockTop | "Bottom" -> TabDockBottom
+            | "Left" -> TabDockLeft | "Right" -> TabDockRight
+            | _ -> invalidArg "position" (tr Strings.Workspaces.invalidTabLayout)
+        { dock=dock
+          columnWidth=number obj "columnWidth" SettingsCatalog.columnWidthDefault |> between SettingsCatalog.columnWidthRange
+          normalAlignment=alignment "normalAlignment"; insideAlignment=alignment "insideAlignment" }
+
+    let writeTabLayout (layout:GroupTabLayout) =
+        let position = match layout.dock with TabDockTop -> "Horizontal" | TabDockBottom -> "Bottom" | TabDockLeft -> "Left" | TabDockRight -> "Right"
+        let alignment = function TabLeft -> "Left" | TabCenter -> "Center" | TabRight -> "Right"
+        JObject(JProperty("position",position),JProperty("columnWidth",between SettingsCatalog.columnWidthRange layout.columnWidth),
+                JProperty("normalAlignment",alignment layout.normalAlignment),JProperty("insideAlignment",alignment layout.insideAlignment))
+
     /// Normal placement uses workspace coordinates, including the taskbar offset.
     let fitPlacement (monitors:(Rect * Rect) list) (value:OSWindowPlacement) =
         let areas = monitors |> List.map(fun (display,work) ->
@@ -107,6 +127,14 @@ module WorkspaceData =
             obj.["name"] <- JValue(text obj "name" "Group")
             obj.["placement"] <- writePlacement p
             obj.["windows"] <- JArray(windows |> Seq.map box)
+            try
+                match obj.["tabLayout"] with
+                | null -> ()
+                | :? JObject as layout -> obj.["tabLayout"] <- writeTabLayout (tabLayout layout)
+                | _ -> invalidArg "tabLayout" (tr Strings.Workspaces.invalidTabLayout)
+            with _ ->
+                warnings.Add(tr Strings.Workspaces.invalidTabLayout)
+                obj.Remove("tabLayout") |> ignore
             obj
         let workspace (obj:JObject) =
             let groups = collect "Group" obj.["groups"] group

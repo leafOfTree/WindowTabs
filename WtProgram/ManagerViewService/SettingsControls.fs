@@ -1087,7 +1087,7 @@ type SettingsCombo(items:string[]) as this =
         let textWidth = items |> Array.map(fun text -> TextRenderer.MeasureText(text,this.Font).Width) |> Array.fold max 0
         let dot = if itemColors.Length>0 then Dpi.scale 22 else 0
         // One width for lists of short words, so stacked rows line up their left edges too.
-        this.Width <- max (Dpi.scale 140) (textWidth+dot+Dpi.scale 60)
+        this.Width <- max (Dpi.scale SettingsShapes.editorWidth) (textWidth+dot+Dpi.scale 60)
     member _.CompactLabel with set(label:unit -> string) = compactLabel <- Some label; this.Invalidate()
     member _.ItemColors
         with get() = Array.copy itemColors

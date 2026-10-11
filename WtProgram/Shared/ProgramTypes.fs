@@ -41,6 +41,8 @@ type SettingsRec = {
     /// "Icons" (large icons in a row) or "List" (window titles in a column).
     switcherStyle: string
     alignment: string
+    tabPosition: string
+    tabColumnWidth: int
     /// "system", "en", "zh" or "ja".
     language: string
     }

@@ -9,9 +9,17 @@ type GeneralView() =
         SettingsBindings.toggleRow startup "launch-at-sign-in"
         let behaviour = SettingsUi.sectionCard table (tr Strings.General.tabBehavior)
         SettingsBindings.toggleRow behaviour "dim-inactive-groups"
-        // Same order as the tab menu: position, then auto-hide.
-        SettingsBindings.choiceRow behaviour "tab-alignment"
-            [|tr Strings.Common.left;tr Strings.Common.center;tr Strings.Common.right|] |> ignore
+        let position = SettingsBindings.choiceRow behaviour "tab-position"
+                           [|tr Strings.TabMenu.top;tr Strings.Common.left;tr Strings.Common.right|]
+        let alignment = SettingsBindings.choiceRow behaviour "tab-alignment"
+                            [|tr Strings.Common.left;tr Strings.Common.center;tr Strings.Common.right|]
+        let updateAlignmentLabels() =
+            let vertical = position.SelectedIndex > 0
+            alignment.SetItemText(0,tr (if vertical then Strings.Common.top else Strings.Common.left))
+            alignment.SetItemText(2,tr (if vertical then Strings.Common.bottom else Strings.Common.right))
+            alignment.FitToItems()
+        updateAlignmentLabels()
+        position.SelectedIndexChanged.Add(fun _ -> updateAlignmentLabels())
         let autoHide = SettingsBindings.choiceRow behaviour "auto-hide-tabs"
                            [|tr Strings.Common.never;tr Strings.Common.whenMaximized;tr Strings.Common.always|]
         let showOnSwitch = SettingsUi.settingRowControl behaviour "show-tabs-on-switch" (SettingsBindings.settingToggle "showTabsOnSwitch")

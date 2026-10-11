@@ -30,7 +30,7 @@ type DragCapturedState(info:DragCapturedStateInfo) =
     let dragOutDistance = 20
     interface IDragState with
         member this.mouseMove(ptScreen) =
-            let dragBounds = info.targetWindow.bounds.inflate(0, dragOutDistance)
+            let dragBounds = info.targetWindow.bounds.inflate(dragOutDistance, dragOutDistance)
             if dragBounds.containsPoint(ptScreen) then
                 info.target.dragMove(info.targetWindow.ptToClient(ptScreen))
             else

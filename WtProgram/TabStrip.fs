@@ -41,6 +41,19 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let numberBadgeKeysCell = Bemo.Cell<string>(Cell, SettingsCatalog.textDefault "numberLeaderKeys", (=))
     let numberBadgesCell = Bemo.Cell<bool>(Cell, false, (=))
     let iconOnlyCell = Cell.create(false)
+    let dockCell = Cell.create(
+        match Services.settings.getValue("tabPosition") :?> string with
+        | "Left" -> TabDockLeft
+        | "Right" -> TabDockRight
+        | _ -> TabDockTop)
+    let scrollOffsetCell = Cell.create(0)
+    let dockChangedEvent = Event<unit>()
+    let layoutChangedEvent = Event<bool>()
+    let mutable columnWidthValue = Services.settings.getValue("tabColumnWidth") :?> int
+    let mutable columnResize : (int*int*bool) option = None
+    let mutable columnScroll : (int*int) option = None
+    let mutable dragScrollLocation : Pt option = None
+    let dragScrollTimer = new Timer(Interval=80)
     let alignmentMap = 
         Map.ofList [
             "Left", TabLeft
@@ -97,7 +110,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let mutable renamedFont = makeFont 0 FontStyle.Italic
 
     let isMouseOverExport = Cell.export <| fun() ->
-        hoverCell.value.IsSome
+        if this.isVertical then ptCell.value.IsSome else hoverCell.value.IsSome
 
     let showInsideExport = Cell.export <| fun() -> showInsideCell.value
 
@@ -120,9 +133,18 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         showInsideExport.init()
 
         revealTimer.Tick.Add(fun _ -> this.stepReveal())
+        dragScrollTimer.Tick.Add(fun _ ->
+            match dragScrollLocation with
+            | Some pt when this.isVertical && slideCell.value.IsSome ->
+                this.scrollColumnTo(scrollOffsetCell.value+this.dragScrollDirection(pt)*this.ts.rowStep)
+                this.updateDragScroll()
+            | _ -> dragScrollTimer.Stop())
         titleTimer.Tick.Add(fun _ -> titleTimer.Stop(); this.showTitle())
         captureWatch.Tick.Add(fun _ ->
-            if WinUserApi.GetCapture()=IntPtr.Zero then
+            if this.isVertical && WinUserApi.GetCapture()=IntPtr.Zero then
+                this.refreshHover(trackLeave=false)
+                if not this.pointerInside then captureWatch.Stop()
+            elif WinUserApi.GetCapture()=IntPtr.Zero then
                 captureWatch.Stop()
                 this.refreshHover())
 
@@ -174,6 +196,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             alignment = alignment.value.find direction
             onlyIcons = this.isIconOnly
             transparent = this.transparent
+            dock = dockCell.value
+            scrollOffset = scrollOffsetCell.value
             held = heldLayoutCell.value
             centerShift =
                 if this.showInside then float(this.appearance.tabIndentFlipped - this.appearance.tabIndentNormal) / 2.0
@@ -184,25 +208,25 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 else
                     this.appearance
         }
-    member private this.ts = this.tsBase this.direction
+    member private this.ts : TabStripSprite<Tab> = this.tsBase this.direction
         
     member private this.onMouse(down, pt:Pt, btn, (tab:Tab, part)) =
         monitor.tabClick(btn, tab, part, down, pt)
         
     member private this.hit : Option<Tab*TabPart> = maybe {
         let! pt = ptCell.value
-        let! hit = this.ts.tryHit(pt)
+        let! hit = this.hitAt(pt)
         return hit 
         }
     
-    member private this.processMouse(mouse) =
+    member private this.processMouse(mouse,?trackLeave:bool) =
         // Hover/capture changes share one render. Equal hover values leave the
         // render listener untouched, while pointer/click callbacks still run.
         this.withUpdate(fun () ->
             match mouse with
             | MouseMove(pt) ->
                 this.setPt(Some(pt))
-                if this.window.hasCapture.not then
+                if this.window.hasCapture.not && defaultArg trackLeave true then
                     this.window.trackMouseLeave()
                 let hit = this.hit
                 hoverCell.set(hit)
@@ -255,7 +279,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         titleTab |> Option.iter(fun tab ->
             let sprites : List2<Pt*TabSprite<Tab>> = this.tabSprites
             match sprites.list |> List.tryFind(fun (_,sprite) -> sprite.id=tab) with
-            | Some(_,sprite) when this.visible && not this.isShrunk && not (OpenMenus.any()) && sprite.titleCut ->
+            | Some(offset,sprite) when this.visible && not this.isShrunk && not (OpenMenus.any()) && sprite.titleCut ->
                 let tip =
                     match titleTip with
                     | Some tip -> tip
@@ -264,20 +288,30 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                         titleTip <- Some tip
                         tip
                 let strip : Rect = this.bounds
+                let anchor = if this.isVertical then Rect(strip.location.add(offset),sprite.size) else strip
+                let pointer = pointerSource()
                 tip.show(sprite.displayInfo.text,sprite.displayInfo.textFont,
-                         Rectangle(strip.x,strip.y,strip.size.width,strip.size.height),pointerSource().X)
+                         Rectangle(anchor.x,anchor.y,anchor.width,anchor.height),pointer.X,
+                         ?side=(if this.isVertical then Some this.dock else None),?pointerY=Some pointer.Y)
             | _ -> ())
 
     member internal _.titleTipShown = titleTip |> Option.exists(fun tip -> tip.Visible)
 
     member private this.wndProc(msg:Win32Message) =
         // Where the frame on screen sits in the full strip: collapsed, expanded or part way.
-        let mousePt() = msg.lParam.location.add(Pt(0,renderedOffset))
+        let mousePt() = msg.lParam.location.add(this.renderedShift)
         let mouseDown btn =
-            this.processMouse(MouseClick(mousePt(), btn, MouseDown))
+            let pt = mousePt()
+            if btn<>MouseLeft || not (this.beginColumnInteraction(pt)) then
+                this.processMouse(MouseClick(pt, btn, MouseDown))
             msg.def()
         let mouseUp btn = 
-            this.processMouse(MouseClick(mousePt(), btn, MouseUp))
+            if btn=MouseLeft && (columnResize.IsSome || columnScroll.IsSome) then
+                columnResize <- None
+                columnScroll <- None
+                this.window.releaseCapture()
+                this.refreshHover()
+            else this.processMouse(MouseClick(mousePt(), btn, MouseUp))
             msg.def()
         let mouseDblClick btn =
             this.processMouse(MouseClick(mousePt(), btn, MouseDblClick))
@@ -302,7 +336,22 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         | WindowMessages.WM_MOUSEACTIVATE ->
             MouseActivateReturnCodes.MA_NOACTIVATE
         | WindowMessages.WM_MOUSEMOVE ->
-            this.processMouse(MouseMove(mousePt()))
+            let pt = mousePt()
+            match columnResize,columnScroll with
+            | Some(start,width,growsRight),_ ->
+                let delta = this.window.ptToScreen(pt).x-start
+                let logical = int(Math.Round(float delta*96.0/float(Dpi.value())))
+                this.columnWidth <- width+(if growsRight then logical else -logical)
+            | _,Some(start,offset) ->
+                let travel = this.ts.scrollTrack.height-(this.ts.scrollThumb |> Option.map(fun thumb -> thumb.height) |> Option.defaultValue 0)
+                if travel>0 then this.scrollColumnTo(offset+(pt.y-start)*this.ts.scrollMaximum/travel)
+            | _ ->
+                Cursor.Current <- if this.isColumnResizeEdge(pt) then Cursors.SizeWE else Cursors.Default
+                this.processMouse(MouseMove(pt))
+            msg.def()
+        | 0x0215 -> // Another window took the capture; stop before the next movement.
+            columnResize <- None
+            columnScroll <- None
             msg.def()
         | WindowMessages.WM_LBUTTONDOWN -> mouseDown MouseLeft
         | WindowMessages.WM_LBUTTONUP -> mouseUp MouseLeft
@@ -316,7 +365,11 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             // pointer leaving while it is still on the tab: auto-hide then began to collapse the
             // strip under the held button. Hover holds until the button is let go, then follows
             // where the pointer really is.
-            if WinUserApi.GetCapture()<>IntPtr.Zero && this.pointerInside then captureWatch.Start()
+            if this.isVertical && WinUserApi.GetCapture()=IntPtr.Zero && this.pointerInside then
+                // Expanding a layered column can deliver a stale leave at its attached edge.
+                this.refreshHover(trackLeave=false)
+                captureWatch.Start()
+            elif WinUserApi.GetCapture()<>IntPtr.Zero && this.pointerInside then captureWatch.Start()
             else this.processMouse(MouseLeave)
             msg.def()
         | _ ->
@@ -367,7 +420,13 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member private this.paint() =
         let image,offset =
             if reveal>=1.0 then this.renderAt false,0
-            elif reveal<=0.0 then this.renderAt true,this.ts.collapsedOffset
+            elif reveal<=0.0 then
+                let offset =
+                    if this.isVertical then
+                        let anchoredRight = (this.dock=TabDockLeft) <> this.showInside
+                        if anchoredRight then max 0 (this.size.width-Dpi.scale 4) else 0
+                    else this.ts.collapsedOffset
+                this.renderAt true,offset
             else
                 let full,collapsed =
                     match revealImages with
@@ -376,13 +435,15 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                         let images = this.renderAt false,this.renderAt true
                         revealImages <- Some images
                         images
-                TabReveal.frame full.bitmap collapsed.bitmap reveal this.direction
+                if this.isVertical then
+                    TabReveal.sideFrame full.bitmap collapsed.bitmap reveal ((this.dock=TabDockLeft) <> this.showInside)
+                else TabReveal.frame full.bitmap collapsed.bitmap reveal this.direction
         try
             renderedOffset <- offset
             renderedFrames <- renderedFrames+1L
-            this.window.update(image, this.location.add(Pt(0,renderedOffset)), 255uy)
+            this.window.update(image, this.location.add(this.renderedShift), 255uy)
             shadowWindow |> Option.iter (fun shadow ->
-                if reveal<1.0 || this.isEmpty then shadow.hide()
+                if reveal<1.0 || this.isEmpty || (this.isVertical && SystemInformation.HighContrast) then shadow.hide()
                 else shadow.update(image, 255uy, this.direction))
         finally
             image.bitmap.Dispose()
@@ -410,7 +471,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         // strip bitmap nor extraction/comparison of the shadow silhouette.
         relocating <- true
         try
-            this.window.updateLocation(this.location.add(Pt(0,renderedOffset)))
+            this.window.updateLocation(this.location.add(this.renderedShift))
             shadowWindow |> Option.iter(fun shadow -> shadow.move())
         finally relocating <- false
 
@@ -425,6 +486,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.hwnd = hwndRef.Value
     
     member this.addTabSlide tab (slide:Option<_>) =
+        let previousCount = this.tabs.count
         Cell.beginUpdate()
         let addToEnd(l:Cell<List2<_>>)=
             if l.value.any((=) tab).not then
@@ -434,6 +496,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         slide.iter <| fun slide ->
             this.slide <- Some(slide)
         Cell.endUpdate()
+        if this.isVertical && this.tabs.count<>previousCount then dockChangedEvent.Trigger()
     
     member this.addTab tab = this.addTabSlide tab None
 
@@ -444,7 +507,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         tabInfoCell.map(fun m -> m.remove tab)
         tabTint.map(fun m -> m.remove tab)
         tabBgColor.map(fun m -> m.remove tab)
+        this.ensureSelectedVisible()
         Cell.endUpdate()
+        if this.isVertical then dockChangedEvent.Trigger()
 
     member this.tabs : Set2<Tab> = Set2(lorderCell.value)
 
@@ -455,7 +520,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.movedTab = this.ts.movedTab
 
     member this.moveTab(tab, index) =
-        lorderCell.set(lorderCell.value.move((=) tab, index))
+        this.withUpdate(fun () ->
+            lorderCell.set(lorderCell.value.move((=) tab, index))
+            this.ensureSelectedVisible())
         monitor.tabMoved(tab, index)
         tabMovedEvent.Trigger(tab, index)
 
@@ -465,39 +532,157 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         with get() = zorderCell.value
         and set(zorder:List2<Tab>) =
             let next = zorder.where(this.tabs.contains)
-            if next.list <> zorderCell.value.list then zorderCell.set(next)
+            if next.list <> zorderCell.value.list then
+                this.withUpdate(fun () ->
+                    zorderCell.set(next)
+                    this.ensureSelectedVisible())
 
     member this.sprite = this.ts.sprite
 
     member this.tabSprites = this.ts.tabSprites
             
     member this.isIconOnly 
-        with get() = iconOnlyCell.value
-        and set(value) = iconOnlyCell.set(value)
+        with get() = iconOnlyCell.value || (this.isVertical && columnWidthValue=fst SettingsCatalog.columnWidthRange)
+        and set(value) =
+            iconOnlyCell.set(value)
+            if this.isVertical then
+                if not value && columnWidthValue=fst SettingsCatalog.columnWidthRange then this.columnWidth <- SettingsCatalog.columnWidthDefault
+                else dockChangedEvent.Trigger()
+
+    member this.dock
+        with get() = dockCell.value
+        and set(value) =
+            this.hideTitle()
+            this.withUpdate(fun () ->
+                slideCell.set(None)
+                heldLayoutCell.set(None)
+                scrollOffsetCell.set(0)
+                dockCell.set(value)
+                this.ensureSelectedVisible())
+            dockChangedEvent.Trigger()
+            layoutChangedEvent.Trigger(true)
+
+    member this.layoutChanged = layoutChangedEvent.Publish
+    member this.dockChanged = dockChangedEvent.Publish
+    member this.columnWidth
+        with get() = columnWidthValue
+        and set(value) =
+            let next = between SettingsCatalog.columnWidthRange value
+            let wasIconOnly = iconOnlyCell.value
+            if this.isVertical then iconOnlyCell.set(false)
+            if next<>columnWidthValue || (this.isVertical && wasIconOnly) then
+                columnWidthValue <- next
+                dockChangedEvent.Trigger()
+                layoutChangedEvent.Trigger(true)
+
+    member private this.isColumnResizeEdge(pt:Pt) =
+        if not this.isVertical || this.isShrunk then false
+        else
+            let growsRight = (this.dock=TabDockRight) <> this.showInside
+            if growsRight then pt.x>=this.size.width-Dpi.scale 4 else pt.x<Dpi.scale 4
+
+    member private this.beginColumnInteraction(pt:Pt) =
+        if not this.isVertical || this.isShrunk then false
+        elif this.isColumnResizeEdge(pt) then
+            this.hideTitle()
+            columnResize <- Some(this.window.ptToScreen(pt).x,(if this.isIconOnly then fst SettingsCatalog.columnWidthRange else columnWidthValue),(this.dock=TabDockRight) <> this.showInside)
+            this.window.setCapture()
+            true
+        elif this.ts.scrollThumb.IsSome && this.ts.scrollTrack.containsPoint(pt) then
+            this.hideTitle()
+            let thumb = this.ts.scrollThumb.Value
+            if thumb.containsPoint(pt) then
+                columnScroll <- Some(pt.y,scrollOffsetCell.value)
+                this.window.setCapture()
+            else this.scrollColumnTo(scrollOffsetCell.value+(if pt.y<thumb.y then -this.size.height else this.size.height))
+            true
+        else false
+
+    member this.scrollColumnTo(value) =
+        if this.isVertical then
+            this.hideTitle()
+            this.withUpdate(fun () ->
+                scrollOffsetCell.set(between (0,this.ts.scrollMaximum) value)
+                hoverCell.set(None))
+
+    member private this.dragScrollDirection(pt:Pt) =
+        let margin = Dpi.scale 20
+        let edge = min (Dpi.scale 24) (this.size.height/3)
+        if pt.x < -margin || pt.x > this.size.width+margin || pt.y < -margin || pt.y > this.size.height+margin then 0
+        elif pt.y<edge && scrollOffsetCell.value>0 then -1
+        elif pt.y>=this.size.height-edge && scrollOffsetCell.value<this.ts.scrollMaximum then 1
+        else 0
+
+    member private this.updateDragScroll() =
+        let active = this.isVertical && slideCell.value.IsSome &&
+                     (dragScrollLocation |> Option.exists(fun pt -> this.dragScrollDirection(pt)<>0))
+        if active then dragScrollTimer.Start() else dragScrollTimer.Stop()
+
+    member this.dragScrollPoint
+        with set(value) =
+            dragScrollLocation <- value
+            this.updateDragScroll()
+
+    member this.isVertical = this.dock=TabDockLeft || this.dock=TabDockRight
+    member this.columnContentHeight = this.lorder.count*this.ts.rowStep+Dpi.scale 4
+    member private this.renderedShift = if this.isVertical then Pt(renderedOffset,0) else Pt(0,renderedOffset)
+
+    /// Switching into an overflowing column keeps the selected window's row reachable.
+    member private this.ensureSelectedVisible() =
+        if this.isVertical && not this.isEmpty then
+            let index = lorderCell.value.findIndex((=)zorderCell.value.head)
+            let top = index*this.ts.rowStep+Dpi.scale 4
+            let bottom = top+this.ts.rowHeight
+            let maximum = max 0 (this.lorder.count*this.ts.rowStep+Dpi.scale 4-this.size.height)
+            let desired = if top<scrollOffsetCell.value then top elif bottom>scrollOffsetCell.value+this.size.height then bottom-this.size.height else scrollOffsetCell.value
+            let next = between (0,maximum) desired
+            if next<>scrollOffsetCell.value then this.hideTitle()
+            scrollOffsetCell.set(next)
 
     member this.isShrunk    
         with get() = isShrunkCell.value
-        and set(newValue) = isShrunkCell.set(newValue)
+        and set(newValue) =
+            if not newValue || (columnResize.IsNone && columnScroll.IsNone) then isShrunkCell.set(newValue)
 
     member this.isMouseOver = isMouseOverExport :> ICellOutput<_>
 
     /// A popup over the strip, such as its menu, takes the pointer without a move, so hover
     /// ends. When it goes, the pointer may still be over a tab: hover there again and track
     /// its leaving, as a move would.
-    member this.refreshHover() =
+    member this.refreshHover(?trackLeave:bool) =
         if this.visible && this.window.isVisible then
             let cursor = pointerSource()
-            let bounds = this.window.bounds
-            if bounds.containsPoint(Pt(cursor.X,cursor.Y)) then
-                this.processMouse(MouseMove(Pt(cursor.X-bounds.x,cursor.Y-bounds.y).add(Pt(0,renderedOffset))))
+            let point = Pt(cursor.X,cursor.Y)
+            if this.pointerBounds.containsPoint(point) && this.pointerUncovered(point) then
+                this.processMouse(MouseMove(Pt(cursor.X-location.x,cursor.Y-location.y)),?trackLeave=trackLeave)
             else this.processMouse(MouseLeave)
 
     /// Where the pointer is on screen; native hosts supply one instead of moving the real cursor.
     member internal _.pointer with get() = pointerSource and set(value) = pointerSource <- value
 
+    member private this.pointerBounds : Rect =
+        if this.isVertical && revealTarget>0.0 then
+            let tolerance = Dpi.scale TabMetrics.sideHoverTolerance
+            if this.dock=TabDockLeft then Rect(location.sub(Pt(tolerance,0)),Sz(this.size.width+tolerance,this.size.height))
+            else Rect(location,Sz(this.size.width+tolerance,this.size.height))
+        else this.window.bounds
+
+    /// Coordinate polling must respect popups covering the strip, while retaining the
+    /// tolerance beyond its edge and the full target bounds during expansion.
+    member private this.pointerUncovered(point:Pt) =
+        let hit = WinUserApi.WindowFromPoint(point.POINT)
+        if hit=IntPtr.Zero || hit=this.hwnd then true
+        elif this.window.bounds.containsPoint(point) then false
+        else
+            let root = WinUserApi.GetAncestor(hit,GetAncestorConstants.GA_ROOT)
+            let rec above hwnd =
+                hwnd<>IntPtr.Zero && (hwnd=root || above (WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_HWNDPREV)))
+            not (above (WinUserApi.GetWindow(this.hwnd,GetWindowConstants.GW_HWNDPREV)))
+
     member private this.pointerInside =
         let cursor = pointerSource()
-        this.window.bounds.containsPoint(Pt(cursor.X,cursor.Y))
+        let point = Pt(cursor.X,cursor.Y)
+        this.pointerBounds.containsPoint(point) && this.pointerUncovered(point)
 
     /// No room above the window on its monitor, so the tabs sit inside it over the title bar:
     /// true when the window is maximized, snapped to the top, or moved against the top edge.
@@ -511,12 +696,16 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.setAlignment((direction, newAlignment)) =
         alignmentOverrides <- alignmentOverrides.Add(direction)
         alignment.map(fun m -> m.add direction newAlignment)
+        if this.isVertical then dockChangedEvent.Trigger()
+        layoutChangedEvent.Trigger(true)
 
     member this.setDefaultAlignment(value:string) =
         let next = alignmentMap.TryFind(value) |> Option.defaultValue TabCenter
         alignment.map(fun current ->
             [TabUp;TabDown] |> List.fold (fun result direction ->
                 if alignmentOverrides.Contains(direction) then result else result.add direction next) current)
+        if this.isVertical then dockChangedEvent.Trigger()
+        layoutChangedEvent.Trigger(false)
             
     member this.direction = if showInsideCell.value then TabDown else TabUp
     
@@ -538,6 +727,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     
     /// The window capture is full size; release it here rather than waiting for the GC.
     member this.dragImage (tab:Tab) : Img= 
+        if this.isVertical then this.ts.renderTab(tab) else this.horizontalDragImage(tab)
+
+    member private this.horizontalDragImage (tab:Tab) : Img=
         use bmpTab = this.tsBase(TabUp).renderTab(tab).bitmap
         use bmpHwnd = this.tabInfo(tab).preview().bitmap
         let bmpOverlay = Img(Sz(bmpHwnd.Width, bmpHwnd.Height + bmpTab.Height - this.contentOffset))
@@ -582,11 +774,13 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member this.setPlacement(placement) =
         let moved = location <> placement.bounds.location
+        let heightChanged = this.size.height<>placement.bounds.height
         let previousRender = renderedFrames
         location <- placement.bounds.location
         this.withUpdate(fun () ->
             showInsideCell.set(placement.showInside)
-            sizeCell.set(placement.bounds.size))
+            sizeCell.set(placement.bounds.size)
+            if heightChanged then this.ensureSelectedVisible())
         // A size/direction change already uploaded fresh pixels at the new
         // position. Otherwise keep the existing strip/shadow surfaces.
         if moved && this.visible && renderedFrames>0L && renderedFrames=previousRender then
@@ -610,7 +804,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member this.slide 
         with get() : (Tab * int) option = slideCell.value
-        and set(value) = slideCell.set(value)
+        and set(value) =
+            slideCell.set(value)
+            this.updateDragScroll()
 
     member this.renderTs(top) =
         let ts = this.ts
@@ -625,6 +821,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member _.destroying = destroyingEvent.Publish
     member this.destroy() = 
+        dragScrollTimer.Dispose()
         destroyingEvent.Trigger()
         revealTimer.Dispose()
         captureWatch.Dispose()
@@ -640,5 +837,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         layeredWindowCell.value.iter <| fun w -> (w :?> IDisposable).Dispose()
         this.window.destroy()
             
+    member private this.hitAt(pt:Pt) =
+        if this.isVertical && this.isShrunk && Rect(Pt(),this.size).containsPoint(pt) then
+            zorderCell.value.tryHead.map(fun tab -> tab,TabBackground)
+        else this.ts.tryHit(pt)
+
     member this.tryHit(pt:Pt) : Option<_> =
-        this.ts.tryHit(pt.add(Pt(0,renderedOffset)))
+        this.hitAt(pt.add(this.renderedShift))

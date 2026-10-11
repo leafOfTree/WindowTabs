@@ -40,6 +40,21 @@ let main() =
     try
         use settings = new Settings(true,saveDelay=0)
         let api = settings :> ISettings
+        use sideFull = new Bitmap(220,120)
+        use sideBar = new Bitmap(4,120)
+        for y in 0..119 do
+            for x in 0..219 do sideFull.SetPixel(x,y,Color.FromArgb(255,x,y,50))
+            for x in 0..3 do sideBar.SetPixel(x,y,Color.Blue)
+        for anchoredRight in [false;true] do
+            let mutable previousWidth = 0
+            for reveal in [0.0;0.25;0.5;0.75;1.0] do
+                let image,offset = TabReveal.sideFrame sideFull sideBar reveal anchoredRight
+                use pixels = image.bitmap
+                check (pixels.Width>=previousWidth && pixels.Height=sideFull.Height) "Side reveal changed row height or reversed direction"
+                check (offset=(if anchoredRight then sideFull.Width-pixels.Width else 0)) "Side reveal left its attached window edge"
+                if reveal>=0.5 then check (pixels.GetPixel(0,50)=sideFull.GetPixel(offset,50)) "Side reveal scaled tab contents instead of cropping them"
+                if reveal=0.0 then check (pixels.Width=4 && pixels.GetPixel(0,50).ToArgb()=Color.Blue.ToArgb()) "Side reveal did not start at the collapsed edge"
+                previousWidth <- pixels.Width
         for bar in [Theme.light.tabNormalBgColor;Theme.dark.tabNormalBgColor] do
             use source = new Bitmap(4,1)
             for x,color in [0,Color.Red;1,Color.White;2,Color.FromArgb(128,20,40,60);3,Color.Transparent] do source.SetPixel(x,0,color)
@@ -68,12 +83,14 @@ let main() =
             let command flags image text = CmiRegular({text=text;image=image;flags=List2(flags);click=fun () -> selected <- selected+1})
             let entries = List2([command [] None "Open new tab\tCtrl+Alt+N";
                                  command [MenuFlags.MF_CHECKED] None "Checked";
-                                 CmiSeparator;
+                                 CmiSection(tr Strings.TabMenu.currentGroup);
                                  CmiPopUp({text="Tab color";image=None;items=List2([command [MenuFlags.MF_CHECKED] (Some(Img(dot))) "Blue";command [MenuFlags.MF_DISABLED] None "Disabled"])})])
             use menu = new ThemedContextMenu(entries,fun () -> closed <- true)
             let first = menu.Items.[0] :?> ToolStripMenuItem
             let nested = menu.Items.[3] :?> ToolStripMenuItem
             let colour = nested.DropDownItems.[0] :?> ToolStripMenuItem
+            let section = menu.Items.[2] :?> ToolStripSeparator
+            check (section.Text=tr Strings.TabMenu.currentGroup && not section.CanSelect) "Menu scope heading is missing or selectable"
             check (first.ShortcutKeyDisplayString="Ctrl+Alt+N" && first.Text="Open new tab") "Themed menu lost its shortcut column"
             check (colour.Checked && not nested.DropDownItems.[1].Enabled) "Themed submenu lost checked or disabled state"
             check (not(Object.ReferenceEquals(colour.Image,dot))) "Themed menu retained a caller-owned image"
@@ -81,6 +98,10 @@ let main() =
             menu.Show(Point(40,40))
             Application.DoEvents()
             check (OpenMenus.any()) "An open menu was not counted, so a title tip could cover it"
+            check (section.Height>=section.Font.Height+Dpi.scale 8) "Menu scope heading clips its text"
+            use screenshot = new Bitmap(menu.Width,menu.Height)
+            menu.DrawToBitmap(screenshot,Rectangle(Point.Empty,menu.Size))
+            screenshot.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "menu-scope-%s.png" name),Imaging.ImageFormat.Png)
             // Pointing at an item with a submenu opens it after a short pause of our own, not the
             // Windows menu delay through WinForms' timer, which a menu of an app behind could lose.
             // The pointer entering an item, as WinForms reports it: HandleMouseEnter raises MouseEnter.
@@ -576,6 +597,199 @@ let main() =
                 strip.refreshShadow()
                 Application.DoEvents()
                 check shadow.isVisible "Deferred activation refresh stopped restoring the shadow"
+                for dock in [TabDockLeft;TabDockRight] do
+                    strip.dock <- dock
+                    let columnSize = Dpi.scaleSize(Sz(220,100))
+                    for inside in [false;true] do
+                        strip.setPlacement(placement start columnSize inside)
+                        strip.isShrunk <- false
+                        check (strip.bounds.size=columnSize && shadow.isVisible=not SystemInformation.HighContrast)
+                              (sprintf "Expanded vertical column lost its shadow or viewport bounds: dock=%A inside=%b actual=%A expected=%A shadow=%b highContrast=%b" dock inside strip.bounds.size columnSize shadow.isVisible SystemInformation.HighContrast)
+                        let last = strip.lorder.list |> List.last
+                        strip.zorder <- List2(strip.lorder.list)
+                        strip.zorder <- List2(last::(strip.lorder.list |> List.filter((<>)last)))
+                        let row,sprite = strip.tabSprites.list |> List.find(fun (_,tab) -> tab.id=last)
+                        check (row.y>=0 && row.y+sprite.size.height<=columnSize.height) "Switching to an overflow tab did not reveal its row"
+                        strip.isShrunk <- true
+                        let edgeWidth = Dpi.scale 4
+                        let anchorRight = (dock=TabDockLeft) <> inside
+                        check (strip.bounds.width=edgeWidth && strip.bounds.height=columnSize.height && not shadow.isVisible) "Collapsed vertical column retained its shadow or wrong bounds"
+                        check (strip.bounds.x=(if anchorRight then start.x+columnSize.width-edgeWidth else start.x)) "Vertical auto-hide detached from the window edge"
+                        check ((strip.tryHit(Pt(1,1))).IsSome) "Collapsed vertical edge cannot reveal the column"
+                        strip.isShrunk <- false
+                        check (strip.bounds.location=start && strip.bounds.size=columnSize) "Vertical expansion failed to restore the column"
+                        let pointerProperty = typeof<TabStrip>.GetProperty("pointer",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public)
+                        let edgePoint = Point(strip.bounds.right-1,strip.bounds.y+columnSize.height/2)
+                        pointerProperty.SetValue(strip,box(fun () -> edgePoint))
+                        send WindowMessages.WM_MOUSEMOVE (Pt(columnSize.width-1,columnSize.height/2))
+                        send WindowMessages.WM_MOUSELEAVE Pt.empty
+                        check strip.isMouseOver.value "A stale leave at the expanded side column edge cleared hover"
+                        if dock=TabDockRight then
+                            pointerProperty.SetValue(strip,box(fun () -> Point(strip.bounds.right+Dpi.scale 12,strip.bounds.y+columnSize.height/2)))
+                            send WindowMessages.WM_MOUSELEAVE Pt.empty
+                            check strip.isMouseOver.value "Moving just beyond the right screen edge hid the column"
+                        if dock=TabDockLeft then
+                            pointerProperty.SetValue(strip,box(fun () -> Point(strip.bounds.left-Dpi.scale 12,strip.bounds.y+columnSize.height/2)))
+                            send WindowMessages.WM_MOUSELEAVE Pt.empty
+                            check strip.isMouseOver.value "Moving just beyond the left screen edge hid the column"
+                        pointerProperty.SetValue(strip,box(fun () -> Point(strip.bounds.right+Dpi.scale 40,strip.bounds.y+columnSize.height/2)))
+                        send WindowMessages.WM_MOUSELEAVE Pt.empty
+                        check (not strip.isMouseOver.value) "Leaving the side column kept hover indefinitely"
+                        pointerProperty.SetValue(strip,box(fun () -> Cursor.Position))
+                        let fullContentHeight = strip.columnContentHeight
+                        let mutable placementChanges = 0
+                        use placementWatch = strip.dockChanged.Subscribe(fun () -> placementChanges <- placementChanges+1)
+                        strip.removeTab last
+                        check (strip.columnContentHeight<fullContentHeight && placementChanges>0) "Removing a vertical tab did not request a shorter column"
+                        strip.addTab last
+                        check (strip.columnContentHeight=fullContentHeight && placementChanges>1) "Adding a vertical tab did not request a taller column"
+                        strip.scrollColumnTo 0
+                        let beforeScroll = strip.tabLocation last
+                        let beforeCloses = closes.Count
+                        let trackX = columnSize.width-Dpi.scale 9
+                        send WindowMessages.WM_LBUTTONDOWN (Pt(trackX,Dpi.scale 8))
+                        send WindowMessages.WM_MOUSEMOVE (Pt(trackX,columnSize.height-Dpi.scale 8))
+                        send WindowMessages.WM_LBUTTONUP (Pt(trackX,columnSize.height-Dpi.scale 8))
+                        check ((strip.tabLocation last).y<beforeScroll.y) "Dragging the vertical thumb did not scroll the list"
+                        check (closes.Count=beforeCloses) "Scrolling should not close a tab"
+                        strip.scrollColumnTo -10000
+                        check ((strip.tabLocation strip.lorder.head).y=Dpi.scale 4) "Column scrolling escaped its first row"
+                        let firstBeforeMove = strip.tabLocation strip.lorder.head
+                        strip.setPlacement(placement (start.add(Pt(10,10))) columnSize inside)
+                        check (strip.tabLocation strip.lorder.head=firstBeforeMove) "Moving a window discarded manual column scrolling"
+                        strip.setPlacement(placement start columnSize inside)
+                        strip.columnWidth <- 220
+                        let growsRight = (dock=TabDockRight) <> inside
+                        let edgeX = if growsRight then columnSize.width-1 else 1
+                        let drag = Dpi.scale 32
+                        let beforeClicks = clicks.Count
+                        send WindowMessages.WM_LBUTTONDOWN (Pt(edgeX,Dpi.scale 20))
+                        strip.isShrunk <- true
+                        check (not strip.isShrunk) "Auto-hide interrupted column resizing"
+                        send WindowMessages.WM_MOUSEMOVE (Pt(edgeX+drag,Dpi.scale 20))
+                        send WindowMessages.WM_LBUTTONUP (Pt(edgeX+drag,Dpi.scale 20))
+                        check (strip.columnWidth=(if growsRight then 252 else 188)) "Column resize moved the wrong edge or stored scaled pixels"
+                        check (clicks.Count=beforeClicks) "Column resizing activated or dragged a tab"
+                        strip.columnWidth <- 9999
+                        check (strip.columnWidth=snd SettingsCatalog.columnWidthRange) "Column width exceeded its maximum"
+                        strip.columnWidth <- 1
+                        check (strip.columnWidth=fst SettingsCatalog.columnWidthRange) "Column width fell below its minimum"
+                        check strip.isIconOnly "Minimum column width did not show an icon rail"
+                        strip.setPlacement(placement start (Sz(Dpi.scale 48,columnSize.height)) inside)
+                        let iconEdge = if growsRight then Dpi.scale 48-1 else 1
+                        let outward = if growsRight then Dpi.scale 32 else -Dpi.scale 32
+                        send WindowMessages.WM_LBUTTONDOWN (Pt(iconEdge,Dpi.scale 20))
+                        send WindowMessages.WM_MOUSEMOVE (Pt(iconEdge+outward,Dpi.scale 20))
+                        send WindowMessages.WM_LBUTTONUP (Pt(iconEdge+outward,Dpi.scale 20))
+                        check (strip.columnWidth=80 && not strip.isIconOnly) "Icon rail could not be expanded by dragging its edge"
+                        strip.columnWidth <- 220
+                        strip.setPlacement(placement start columnSize inside)
+                        strip.scrollColumnTo 0
+                        let dragged = strip.lorder.head
+                        strip.slide <- Some(dragged,0)
+                        strip.dragScrollPoint <- Some(Pt(Dpi.scale 50,columnSize.height-1))
+                        let pumpDrag duration =
+                            let clock = Diagnostics.Stopwatch.StartNew()
+                            while clock.ElapsedMilliseconds<int64 duration do
+                                Application.DoEvents()
+                                Threading.Thread.Sleep(2)
+                        pumpDrag 260
+                        let scrolledRow = strip.tabLocation last
+                        check (scrolledRow.y<columnSize.height) "Holding a dragged tab at the bottom did not scroll"
+                        strip.dragScrollPoint <- Some(Pt(Dpi.scale 50,columnSize.height/2))
+                        let centeredRow = strip.tabLocation last
+                        pumpDrag 180
+                        check (strip.tabLocation last=centeredRow) "Drag scrolling continued in the middle of the column"
+                        strip.dragScrollPoint <- Some(Pt(Dpi.scale 50,1))
+                        pumpDrag 260
+                        check ((strip.tabLocation last).y>scrolledRow.y) "Holding a dragged tab at the top did not scroll back"
+                        strip.dragScrollPoint <- None
+                        strip.slide <- None
+                        let stoppedRow = strip.tabLocation last
+                        pumpDrag 180
+                        check (strip.tabLocation last=stoppedRow) "Drag scrolling survived a completed drag"
+                        TabReveal.forced <- Some true
+                        let watchWidth until =
+                            let widths = ResizeArray([strip.bounds.width])
+                            let clock = Diagnostics.Stopwatch.StartNew()
+                            while not (until()) && clock.ElapsedMilliseconds<1000L do
+                                Application.DoEvents()
+                                Threading.Thread.Sleep(2)
+                                widths.Add(strip.bounds.width)
+                                let bounds = strip.bounds
+                                check (bounds.y=start.y && bounds.height=columnSize.height) "Side animation moved or resized its rows vertically"
+                                check ((if anchorRight then bounds.right=start.x+columnSize.width else bounds.left=start.x)) "Side animation drifted away from the attached edge"
+                            List.ofSeq widths
+                        strip.isShrunk <- true
+                        watchWidth (fun () -> strip.bounds.width=edgeWidth) |> ignore
+                        check (strip.bounds.width=edgeWidth) "Animated side collapse did not finish at the edge"
+                        let beforeSideExpand = frames strip
+                        strip.isShrunk <- false
+                        let revealPoint = Point(start.x+columnSize.width/2,start.y+columnSize.height/2)
+                        pointerProperty.SetValue(strip,box(fun () -> revealPoint))
+                        send WindowMessages.WM_MOUSELEAVE Pt.empty
+                        check strip.isMouseOver.value "Moving into the revealing column cleared hover before it reached the pointer"
+                        let expanding = watchWidth (fun () -> strip.bounds.width=columnSize.width && (SystemInformation.HighContrast || shadow.isVisible))
+                        check (strip.bounds.width=columnSize.width && frames strip-beforeSideExpand>=3L) "Side expansion jumped or failed to finish"
+                        check (expanding |> List.pairwise |> List.forall(fun (a,b) -> b>=a)) "Side expansion ran backwards"
+                        strip.isShrunk <- true
+                        watchWidth (fun () -> strip.bounds.width<columnSize.width) |> ignore
+                        let partialWidth = strip.bounds.width
+                        check (partialWidth>edgeWidth) "Side collapse skipped intermediate frames"
+                        strip.isShrunk <- false
+                        let reversed = watchWidth (fun () -> strip.bounds.width=columnSize.width && (SystemInformation.HighContrast || shadow.isVisible))
+                        check (List.min reversed>=partialWidth && strip.bounds.width=columnSize.width) "Reversing side reveal restarted at the edge"
+                        pointerProperty.SetValue(strip,box(fun () -> Cursor.Position))
+                        send WindowMessages.WM_MOUSELEAVE Pt.empty
+                        TabReveal.forced <- Some false
+                strip.dock <- TabDockTop
+                // Real popup HWNDs cover the strip; coordinate polling must respect their hit test.
+                TabReveal.forced <- Some false
+                strip.dock <- TabDockLeft
+                strip.isShrunk <- false
+                strip.setPlacement(placement (Pt(40,40)) (Dpi.scaleSize(Sz(220,300))) true)
+                let item = CmiRegular({text="Command";image=None;flags=List2();click=ignore})
+                let popup = CmiPopUp({text="Options";image=None;items=List2([item])})
+                use overlay = new ThemedContextMenu(List2([item;popup]),ignore)
+                overlay.Show(strip.hwnd,60,60)
+                Application.DoEvents()
+                let pointOn (entry:ToolStripItem) =
+                    let rect = entry.Owner.RectangleToScreen(entry.Bounds)
+                    Point(rect.X+rect.Width/2,rect.Y+rect.Height/2)
+                let setPointer point = pointerProperty.SetValue(strip,box(fun () -> point))
+                let point = pointOn overlay.Items.[0]
+                setPointer point
+                check (WinUserApi.WindowFromPoint(Pt(point.X,point.Y).POINT)=overlay.Handle) "Popup test pointer did not hit the real menu"
+                api.setValue("enableHoverActivate",box true)
+                let beforePopup = activations.Count
+                send WindowMessages.WM_MOUSELEAVE Pt.empty
+                strip.refreshHover()
+                check (not strip.isMouseOver.value && activations.Count=beforePopup) "Polling through a menu highlighted or activated underlying tabs"
+                let parent = overlay.Items.[1] :?> ToolStripMenuItem
+                parent.ShowDropDown()
+                Application.DoEvents()
+                let submenuPoint = pointOn parent.DropDownItems.[0]
+                setPointer submenuPoint
+                strip.refreshHover()
+                check (not strip.isMouseOver.value && activations.Count=beforePopup) "A submenu allowed underlying tab hover"
+                parent.HideDropDown()
+                overlay.Close()
+                Application.DoEvents()
+                api.setValue("enableHoverActivate",box false)
+                setPointer point
+                strip.refreshHover()
+                check strip.isMouseOver.value "Closing a covering menu did not restore tab hover"
+                use cover = new Form(ShowInTaskbar=false,FormBorderStyle=FormBorderStyle.None,
+                                     StartPosition=FormStartPosition.Manual,Location=Point(80,80),Size=Size(120,100),TopMost=true)
+                WinUserApi.ShowWindow(cover.Handle,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
+                Application.DoEvents()
+                setPointer (Point(100,100))
+                strip.refreshHover()
+                check (not strip.isMouseOver.value) "A covering application window allowed tab hover"
+                cover.Hide()
+                strip.refreshHover()
+                check strip.isMouseOver.value "Removing a covering application window did not restore tab hover"
+                pointerProperty.SetValue(strip,box(fun () -> Cursor.Position))
             finally strip.destroy()
         printfn "PASS: unchanged hover/moves skip rendering; cross-tab hover, clicks, capture, close, resize, direction, collapse and shadow recovery."
     finally

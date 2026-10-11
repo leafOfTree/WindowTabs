@@ -111,6 +111,26 @@ let main() =
     savedGroup.addWindow first
     savedGroup.addWindow second
     let roundTrip = WorkspaceGroup.deserialize(savedGroup.serialize())
+    check roundTrip.tabLayout.IsNone "Legacy workspace acquired an unintended tab layout"
+    for dock in [TabDockTop;TabDockLeft;TabDockRight] do
+        let layout = {dock=dock;columnWidth=284;normalAlignment=TabRight;insideAlignment=TabLeft}
+        savedGroup.tabLayout <- Some layout
+        let restored = WorkspaceGroup.deserialize(savedGroup.serialize())
+        check (restored.tabLayout=Some layout) "Workspace lost tab position, logical width or alignment"
+    let invalidLayout = root.DeepClone() :?> JObject
+    invalidLayout.["workspaces"].[0].["groups"].[0].["tabLayout"] <- JObject(JProperty("position","invalid"))
+    let originalLayout = invalidLayout.ToString()
+    let validGroups,layoutWarnings,_ = WorkspaceData.read invalidLayout
+    check (validGroups.Length=1 && layoutWarnings.Length=3 && invalidLayout.ToString()=originalLayout)
+          "Damaged tab layout discarded windows or changed saved recovery data"
+    check ((Workspace.deserialize validGroups.Head).groups.head.cast<WorkspaceGroup>().tabLayout.IsNone)
+          "Damaged tab layout did not fall back to current defaults"
+    let oversized = WorkspaceData.tabLayout (JObject(JProperty("position","Right"),JProperty("columnWidth",10000)))
+    check (oversized.columnWidth=snd SettingsCatalog.columnWidthRange) "Workspace width escaped the supported range"
+    for schema in [1;2;3] do
+        let compatible = JObject(JProperty("workspaceSchemaVersion",schema),JProperty("workspaces",JArray(savedGroup.serialize() |> fun group -> JObject(JProperty("groups",JArray(group))))))
+        let entries,_,blocked = WorkspaceData.read compatible
+        check (entries.Length=1 && not blocked) "A supported workspace schema became read-only"
     let resolver = WindowResolver(List2([IntPtr(10),"Shared title",@"c:\apps\browser.EXE";
                                          IntPtr(20),"Shared title",@"c:\apps\editor.EXE"]))
     let restore resolver groups missing =

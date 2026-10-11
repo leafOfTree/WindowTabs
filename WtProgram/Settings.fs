@@ -145,6 +145,8 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         enableCtrlScroll = settingsJson.getBool("enableCtrlScroll").def(SettingsCatalog.toggleDefault "enableCtrlScroll" hasExistingSettings)
                         version = settingsJson.getString("version").def(String.Empty)
                         alignment = settingsJson.getString("alignment").def(SettingsCatalog.choiceDefault "alignment") |> SettingsCatalog.normalizeChoice "alignment"
+                        tabPosition = settingsJson.getString("tabPosition").def(SettingsCatalog.choiceDefault "tabPosition") |> SettingsCatalog.normalizeChoice "tabPosition"
+                        tabColumnWidth = settingsJson.getInt32("tabColumnWidth").def(SettingsCatalog.columnWidthDefault) |> between SettingsCatalog.columnWidthRange
                         switcherStyle = settingsJson.getString("switcherStyle").def(SettingsCatalog.choiceDefault "switcherStyle") |> SettingsCatalog.normalizeChoice "switcherStyle"
                         language = settingsJson.getString("language").def(SettingsCatalog.choiceDefault "language") |> SettingsCatalog.normalizeChoice "language"
                         appearance = {
@@ -225,6 +227,8 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.Remove("ticket") |> ignore
             settingsJson.setBool("enableShiftScroll", settings.enableShiftScroll)
             settingsJson.setBool("enableCtrlScroll", settings.enableCtrlScroll)
+            settingsJson.setString("tabPosition",settings.tabPosition)
+            settingsJson.setInt32("tabColumnWidth",settings.tabColumnWidth)
             settingsJson.setStringArray("includedPaths", settings.includedPaths.items)
             settingsJson.setStringArray("excludedPaths", settings.excludedPaths.items)
             settingsJson.setStringArray("autoGroupingPaths", settings.autoGroupingPaths.items)
@@ -267,7 +271,8 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
         member x.setValue((key,value)) =
             let api = x :> ISettings
             let value = if key="numberLeaderKeys" then box(NumberLeaderKeys.normalize (unbox value)) else value
-            let value = if key="alignment" || key="language" || key="autoHideMode" || key="switcherStyle" || key="numberHotKeyModifier" || key="tabColorStyle" || key="tabColorMode" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
+            let value = if key="alignment" || key="language" || key="autoHideMode" || key="switcherStyle" || key="numberHotKeyModifier" || key="tabColorStyle" || key="tabColorMode" || key="tabPosition" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
+            let value = if key="tabColumnWidth" then box(between SettingsCatalog.columnWidthRange (unbox<int> value)) else value
             match key with
             | "tabAppearance" ->
                 let appearance = value :?> TabAppearanceInfo
