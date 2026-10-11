@@ -34,6 +34,7 @@ let main() =
         api.setValue("enableCtrlNumberHotKey", box false)
         api.setValue("autoHideMode", box "Never")
         let mouse = Event<int * IntPtr>()
+        let mutable workspaceWindows = List2<IntPtr>()
         Services.register<IProgram>({new IProgram with
             member _.version = "test"
             member _.isFirstRun = false
@@ -44,7 +45,7 @@ let main() =
             member _.getTabColorOverride _ = None
             member _.setTabColorOverride _ = ()
             member _.getTabColor(_,_) = None
-            member _.appWindows = List2()
+            member _.appWindows = workspaceWindows
             member _.getAutoGroupingEnabled _ = false
             member _.setAutoGroupingEnabled _ _ = ()
             member _.tabAppearanceInfo = ThemeService.currentAppearance()
@@ -173,6 +174,89 @@ let main() =
             check (reclaimed |> Seq.skip 2 |> Set.ofSeq = Set.ofList [a;b]) "Group exit restored unrelated taskbar windows"
             check (WinUserApi.IsWindow a && WinUserApi.IsWindow b) "Taskbar recovery closed application windows"
 
+            // Menu choices survive full group teardown while the foreign windows stay open.
+            let remembered = desktopApi.createGroup(false) :?> GroupInfo
+            (remembered :> IGroup).addWindow(a,false)
+            pumpUntil "Remembered group did not acquire its window" (fun () -> nativeOrder remembered=[a])
+            let rememberedLayout = {dock=TabDockRight;columnWidth=308;normalAlignment=TabRight;insideAlignment=TabLeft}
+            onGroup remembered (fun group -> group.applyTabLayout rememberedLayout)
+            check (WindowTabLayout.read a=Some rememberedLayout) "Menu layout was not saved immediately on its window"
+            onGroup remembered (fun group -> group.removeWindow a)
+            (remembered :> IGroup).destroy()
+            pumpUntil "Remembered group did not exit" (fun () -> remembered.isExited)
+            api.setValue("tabPosition",box "Left")
+            api.setValue("tabColumnWidth",box 180)
+            let reopened = desktopApi.createGroup(false) :?> GroupInfo
+            (reopened :> IGroup).addWindow(a,false)
+            pumpUntil "Restarted group did not acquire its window" (fun () -> nativeOrder reopened=[a])
+            check (onGroup reopened (fun group -> group.tabLayout)=rememberedLayout)
+                  "Restarted group replaced menu choices with global defaults"
+            let explicitLayout = {rememberedLayout with dock=TabDockLeft;columnWidth=264}
+            onGroup reopened (fun group -> group.applyTabLayout explicitLayout)
+            check (WindowTabLayout.read a=Some explicitLayout) "Updated menu choice left stale window metadata"
+            onGroup reopened (fun group -> group.removeWindow a)
+            let explicit = desktopApi.createGroup(false) :?> GroupInfo
+            onGroup explicit (fun group -> group.applyTabLayout rememberedLayout)
+            (explicit :> IGroup).addWindow(a,false)
+            pumpUntil "Explicit group did not acquire its window" (fun () -> nativeOrder explicit=[a])
+            check (onGroup explicit (fun group -> group.tabLayout)=rememberedLayout)
+                  "Stale window metadata overrode an explicit restored layout"
+            onGroup explicit (fun group -> group.removeWindow a)
+            use unrelated = new Form(Text="Unrelated",ShowInTaskbar=false)
+            check ((WindowTabLayout.read unrelated.Handle).IsNone) "New application window inherited another window's layout"
+            check ((WindowTabLayout.read c).IsNone) "Closed HWND retained another window's layout"
+            api.setValue("tabPosition",box "Horizontal")
+            api.setValue("tabColumnWidth",box 220)
+
+            // Save and restore the production workspace across group STAs, after defaults change.
+            let left = desktopApi.createGroup(false) :?> GroupInfo
+            let right = desktopApi.createGroup(false) :?> GroupInfo
+            let leftLayout = {dock=TabDockLeft;columnWidth=284;normalAlignment=TabRight;insideAlignment=TabCenter}
+            let rightLayout = {dock=TabDockRight;columnWidth=316;normalAlignment=TabLeft;insideAlignment=TabRight}
+            for info,hwnd,layout in [left,a,leftLayout;right,b,rightLayout] do
+                onGroup info (fun group -> group.applyTabLayout layout)
+                (info :> IGroup).addWindow(hwnd,false)
+            pumpUntil "Workspace groups did not acquire windows" (fun () -> nativeOrder left=[a] && nativeOrder right=[b])
+            workspaceWindows <- List2([a;b])
+            let alerts = Collections.Generic.List<AlertKind>()
+            Alert.install(fun kind _ _ -> alerts.Add kind)
+            let model = WorkspaceModel()
+            model.init()
+            model.create()
+            model.create()
+            pumpUntil "Workspace save did not collect group layouts" (fun () -> model.workspaces.length=1)
+            let saved = model.workspaces.head
+            check (saved.groups.list |> List.map(fun group -> group.cast<WorkspaceGroup>().tabLayout) |> Set.ofList = Set.ofList [Some leftLayout;Some rightLayout])
+                  "Workspace snapshot lost different groups' layouts"
+            api.setValue("tabPosition",box "Horizontal")
+            api.setValue("tabColumnWidth",box 220)
+            api.setValue("alignment",box "Left")
+            let reloaded = WorkspaceModel()
+            reloaded.init()
+            reloaded.selected <- reloaded.workspaces.head
+            reloaded.restore()
+            let restoredGroup hwnd =
+                match desktopApi.groups.list |> List.filter(fun group -> group.windows.contains((=)hwnd)) with
+                | [group] -> Some(group :?> GroupInfo)
+                | _ -> None
+            pumpUntil "Workspace restore did not transfer both windows" (fun () ->
+                restoredGroup a |> Option.exists(fun info -> info.hwnd<>left.hwnd) &&
+                restoredGroup b |> Option.exists(fun info -> info.hwnd<>right.hwnd))
+            for hwnd,layout in [a,leftLayout;b,rightLayout] do
+                check (onGroup (restoredGroup hwnd).Value (fun group -> group.tabLayout)=layout)
+                      "Workspace restore used new defaults instead of the saved tab layout"
+            check (alerts |> Seq.forall((=) AlertKind.Info)) "Workspace layout restore reported a warning"
+            for info in desktopApi.groups.list |> List.map(fun group -> group :?> GroupInfo) do
+                if not info.isExited then onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
+            workspaceWindows <- List2()
+            let closing = desktopApi.createGroup(false) :?> GroupInfo
+            let mutable captured : GroupTabLayout option option = None
+            let mutable captures = 0
+            (closing :> IGroup).destroy()
+            closing.captureTabLayout(fun value -> captures <- captures+1;captured <- Some value)
+            pumpUntil "Layout snapshot hung behind group exit" (fun () -> closing.isExited && captured.IsSome)
+            check (captured=Some None && captures=1) "Closed group returned stale or duplicate layout snapshots"
+
             // Neovide and Alacritty windows join, leave and join again as they start. Explorer can
             // register the returning preview after the order that places it and show it first, so a
             // changed order is sent again once settled.
@@ -214,7 +298,7 @@ let main() =
             (chosen :> IGroup).addWindow(b,false)
             pumpUntil "Groups did not acquire their windows" (fun () -> nativeOrder following = [a] && nativeOrder chosen = [b])
             let choices = { iconOnly=true; dock=TabDockLeft; columnWidth=280; alignments=[TabUp,TabRight]; autoHideMode=Some "Always" }
-            onGroup following (fun group -> group.applyMenuChoices choices)
+            let savedChoices = onGroup following (fun group -> group.applyMenuChoices choices; group.menuChoices)
             desktopApi.restartGroup(chosen.hwnd, true)
             pumpUntil "Tab menu did not combine its group's taskbar icons" (fun () -> (soleGroup b true).IsSome)
             let chosenNow = (soleGroup b true).Value
@@ -222,7 +306,7 @@ let main() =
             pumpUntil "Setting did not combine an open group's taskbar icons" (fun () -> (soleGroup a true).IsSome)
             let rebuilt = (soleGroup a true).Value
             check (nativeOrder rebuilt = [a]) "Rebuilt group lost its window"
-            check (onGroup rebuilt (fun group -> group.menuChoices) = choices) "Rebuilt group lost its tab menu choices"
+            check (onGroup rebuilt (fun group -> group.menuChoices) = savedChoices) "Rebuilt group lost its tab menu choices"
             api.setValue("combineIconsInTaskbar", box false)
             pumpUntil "Setting did not separate an open group's taskbar icons" (fun () -> (soleGroup a false).IsSome)
             check (soleGroup b true = Some chosenNow) "Setting overrode a group's taskbar choice from its tab menu"

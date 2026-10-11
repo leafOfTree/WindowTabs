@@ -133,6 +133,27 @@ module TabOrder =
             | 0 -> compare.Compare(title a,title b)
             | order -> order)
 
+/// Native window properties survive WindowTabs restarts and expire with their owning HWND.
+module WindowTabLayout =
+    let private key = "WindowTabs.TabLayout.v1"
+    let private marker = 0x57000000
+    let save hwnd (layout:GroupTabLayout) =
+        let dock = match layout.dock with TabDockTop -> 0 | TabDockBottom -> 1 | TabDockLeft -> 2 | TabDockRight -> 3
+        let alignment = function TabLeft -> 0 | TabCenter -> 1 | TabRight -> 2
+        let width = between SettingsCatalog.columnWidthRange layout.columnWidth
+        let value = marker ||| width ||| (dock <<< 9) ||| (alignment layout.normalAlignment <<< 11) ||| (alignment layout.insideAlignment <<< 13)
+        WinUserApi.SetProp(hwnd,key,IntPtr(value)) |> ignore
+
+    let read hwnd =
+        let value = WinUserApi.GetProp(hwnd,key).ToInt64()
+        let width = int(value &&& 511L)
+        let normal,inside = int((value >>> 11) &&& 3L),int((value >>> 13) &&& 3L)
+        if value &&& ~~~32767L <> int64 marker || width<fst SettingsCatalog.columnWidthRange || width>snd SettingsCatalog.columnWidthRange || normal>2 || inside>2 then None
+        else
+            let alignment = function 0 -> TabLeft | 1 -> TabCenter | _ -> TabRight
+            let dock = match int((value >>> 9) &&& 3L) with 0 -> TabDockTop | 1 -> TabDockBottom | 2 -> TabDockLeft | _ -> TabDockRight
+            Some {dock=dock;columnWidth=width;normalAlignment=alignment normal;insideAlignment=alignment inside}
+
 /// What a group's tab menu chose for that group alone, carried over when the group is rebuilt.
 type GroupMenuChoices = {
     iconOnly: bool
@@ -146,6 +167,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let _bb = Blackboard()
     let invoker = InvokerService.invoker
     let _os = OS()
+    let mutable hasSavedTabLayout = false
     let addedEvent = Event<_>()
     let movedEvent = Event<IntPtr*int>()
     let removedEvent = Event<_>()
@@ -290,6 +312,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         Cell.listen <| fun() ->
             this.ts.visible <- isVisibleCell.value
 
+        this.ts.layoutChanged.Add(fun chosen ->
+            if chosen then hasSavedTabLayout <- true
+            if hasSavedTabLayout then this.windows.items.iter(fun hwnd -> WindowTabLayout.save hwnd this.tabLayout))
         Services.registerLocal(this)
 
         plugins.iter <| fun p -> p.init()
@@ -509,6 +534,16 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.isIconOnly 
         with get() = this.ts.isIconOnly
         and set(value) = this.ts.isIconOnly <- value
+
+    member this.tabLayout : GroupTabLayout = {
+        dock=this.ts.dock; columnWidth=this.ts.columnWidth
+        normalAlignment=this.ts.getAlignment TabUp; insideAlignment=this.ts.getAlignment TabDown }
+
+    member this.applyTabLayout(layout:GroupTabLayout) =
+        this.ts.dock <- layout.dock
+        this.ts.columnWidth <- layout.columnWidth
+        this.ts.setAlignment(TabUp,layout.normalAlignment)
+        this.ts.setAlignment(TabDown,layout.insideAlignment)
 
     member this.menuChoices = {
         iconOnly = this.isIconOnly
@@ -744,6 +779,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if withDelay then System.Threading.Thread.Sleep(250)
             let window = this.os.windowFromHwnd(hwnd)                
             let window = this.os.windowFromHwnd(hwnd)
+            if this.windows.isEmpty && not hasSavedTabLayout then WindowTabLayout.read hwnd |> Option.iter this.applyTabLayout
             this.setWindows(this.windows.add hwnd)
             FollowerPlacement.queue.claim(placementOwner,hwnd)
             if prevTop.value.IsNone then
@@ -781,6 +817,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 opener <- lastActiveTab |> Option.filter(fun owner -> owner<>hwnd && this.windows.contains(owner) && isOpen owner) |> Option.map(fun owner -> hwnd,owner)
             lastActiveTab <- TabNavigation.rememberActive this.lorder.list isOpen lastActiveTab foreground
             this.adjustWindowPlacement(hwnd)
+            if hasSavedTabLayout then WindowTabLayout.save hwnd this.tabLayout
             addedEvent.Trigger(hwnd)
             // A visible window joining a minimized group restores it, as restoring any tab does,
             // so closing that window shows the previous tab instead of minimizing the group again.

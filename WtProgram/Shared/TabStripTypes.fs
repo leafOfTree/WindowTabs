@@ -49,6 +49,13 @@ and TabDock =
     | TabDockLeft
     | TabDockRight
 
+/// Workspace widths stay in logical pixels across monitor DPI changes.
+type GroupTabLayout = {
+    dock: TabDock
+    columnWidth: int
+    normalAlignment: TabAlignment
+    insideAlignment: TabAlignment }
+
 /// How the tabs are drawn. Joined: one bar, the active tab told apart by its fill. Folder: the
 /// active tab rises out of the bar like the tab of a paper folder, with curved feet into its
 /// neighbours. Pill: the active and hovered tabs are rounded pills set into the bar.

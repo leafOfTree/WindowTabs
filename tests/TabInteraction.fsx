@@ -597,7 +597,8 @@ let main() =
                     for inside in [false;true] do
                         strip.setPlacement(placement start columnSize inside)
                         strip.isShrunk <- false
-                        check (strip.bounds.size=columnSize && shadow.isVisible=not SystemInformation.HighContrast) "Expanded vertical column lost its shadow or viewport bounds"
+                        check (strip.bounds.size=columnSize && shadow.isVisible=not SystemInformation.HighContrast)
+                              (sprintf "Expanded vertical column lost its shadow or viewport bounds: dock=%A inside=%b actual=%A expected=%A shadow=%b highContrast=%b" dock inside strip.bounds.size columnSize shadow.isVisible SystemInformation.HighContrast)
                         let last = strip.lorder.list |> List.last
                         strip.zorder <- List2(strip.lorder.list)
                         strip.zorder <- List2(last::(strip.lorder.list |> List.filter((<>)last)))
@@ -713,7 +714,7 @@ let main() =
                         pointerProperty.SetValue(strip,box(fun () -> revealPoint))
                         send WindowMessages.WM_MOUSELEAVE Pt.empty
                         check strip.isMouseOver.value "Moving into the revealing column cleared hover before it reached the pointer"
-                        let expanding = watchWidth (fun () -> strip.bounds.width=columnSize.width)
+                        let expanding = watchWidth (fun () -> strip.bounds.width=columnSize.width && (SystemInformation.HighContrast || shadow.isVisible))
                         check (strip.bounds.width=columnSize.width && frames strip-beforeSideExpand>=3L) "Side expansion jumped or failed to finish"
                         check (expanding |> List.pairwise |> List.forall(fun (a,b) -> b>=a)) "Side expansion ran backwards"
                         strip.isShrunk <- true
@@ -721,7 +722,7 @@ let main() =
                         let partialWidth = strip.bounds.width
                         check (partialWidth>edgeWidth) "Side collapse skipped intermediate frames"
                         strip.isShrunk <- false
-                        let reversed = watchWidth (fun () -> strip.bounds.width=columnSize.width)
+                        let reversed = watchWidth (fun () -> strip.bounds.width=columnSize.width && (SystemInformation.HighContrast || shadow.isVisible))
                         check (List.min reversed>=partialWidth && strip.bounds.width=columnSize.width) "Reversing side reveal restarted at the edge"
                         pointerProperty.SetValue(strip,box(fun () -> Cursor.Position))
                         send WindowMessages.WM_MOUSELEAVE Pt.empty

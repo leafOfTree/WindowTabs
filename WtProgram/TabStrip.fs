@@ -48,6 +48,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         | _ -> TabDockTop)
     let scrollOffsetCell = Cell.create(0)
     let dockChangedEvent = Event<unit>()
+    let layoutChangedEvent = Event<bool>()
     let mutable columnWidthValue = Services.settings.getValue("tabColumnWidth") :?> int
     let mutable columnResize : (int*int*bool) option = None
     let mutable columnScroll : (int*int) option = None
@@ -557,7 +558,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 dockCell.set(value)
                 this.ensureSelectedVisible())
             dockChangedEvent.Trigger()
+            layoutChangedEvent.Trigger(true)
 
+    member this.layoutChanged = layoutChangedEvent.Publish
     member this.dockChanged = dockChangedEvent.Publish
     member this.columnWidth
         with get() = columnWidthValue
@@ -566,6 +569,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             if next<>columnWidthValue then
                 columnWidthValue <- next
                 dockChangedEvent.Trigger()
+                layoutChangedEvent.Trigger(true)
 
     member private this.isColumnResizeEdge(pt:Pt) =
         if not this.isVertical || this.isIconOnly || this.isShrunk then false
@@ -676,6 +680,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         alignmentOverrides <- alignmentOverrides.Add(direction)
         alignment.map(fun m -> m.add direction newAlignment)
         if this.isVertical then dockChangedEvent.Trigger()
+        layoutChangedEvent.Trigger(true)
 
     member this.setDefaultAlignment(value:string) =
         let next = alignmentMap.TryFind(value) |> Option.defaultValue TabCenter
@@ -683,6 +688,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             [TabUp;TabDown] |> List.fold (fun result direction ->
                 if alignmentOverrides.Contains(direction) then result else result.add direction next) current)
         if this.isVertical then dockChangedEvent.Trigger()
+        layoutChangedEvent.Trigger(false)
             
     member this.direction = if showInsideCell.value then TabDown else TabUp
     

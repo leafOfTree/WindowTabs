@@ -408,6 +408,7 @@ module Strings =
         let expectedObject = { en="Expected an object."; zh="应为对象。"; ja="オブジェクトが必要です。" }
         let expectedList = { en=": expected a list."; zh="：应为列表。"; ja="：リストが必要です。" }
         let missingPlacement = { en="Missing placement."; zh="缺少窗口位置。"; ja="ウィンドウの配置がありません。" }
+        let invalidTabLayout = { en="Invalid saved tab layout; the group will use current defaults."; zh="保存的标签布局无效；该分组将使用当前默认设置。"; ja="保存されたタブ配置が無効です。グループには現在の既定値を使用します。" }
         let noValidWindows = { en="No valid windows in this group."; zh="此分组中没有有效窗口。"; ja="このグループに有効なウィンドウがありません。" }
         let unsupportedVersion = { en="Unsupported workspace version; saved workspaces will not be modified."
                                    zh="不支持此工作区版本；已保存的工作区不会被修改。"

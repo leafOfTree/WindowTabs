@@ -39,6 +39,21 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
                 windowsCell.map <| fun l -> l.where((<>) hwnd)
 
     member this.invokeGroup = invoker.asyncInvoke
+    /// Complete on the main STA, including when the group exits before its queued read.
+    member this.captureTabLayout(callback:GroupTabLayout option -> unit) =
+        let mutable completed = false
+        let mutable subscription : IDisposable option = None
+        let complete result =
+            if not completed then
+                completed <- true
+                subscription |> Option.iter(fun value -> value.Dispose())
+                callback result
+        subscription <- Some(_group.exited.Subscribe(fun () -> desktopDispatcher.Post(fun () -> complete None)))
+        if this.isExited then complete None
+        else this.invokeGroup(fun () ->
+            let layout = _group.tabLayout
+            desktopDispatcher.Post(fun () -> complete (Some layout)))
+
     member this.isSuperBarEnabled = enableSuperBar
     /// The group's tab menu chose whether to combine its taskbar icons, so the setting leaves it alone. Main thread only.
     member val isTaskbarChosen = false with get, set

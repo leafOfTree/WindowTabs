@@ -6,7 +6,13 @@ Tracks [issue #34](https://github.com/leafOfTree/WindowTabs/issues/34).
 
 Right-click a tab and choose **Tab position (preview)**, then **Left** or **Right**.
 Choose **Horizontal** to return to the existing layout. The choice belongs to the
-group, survives an in-session group rebuild, and is not saved across restarts.
+group and survives an in-session group rebuild and a WindowTabs restart while
+its application windows remain open. Position, width and alignment choices are
+recorded immediately as native properties on those windows; closing the application
+windows clears them. Saving a workspace also records
+each group's position, logical width and alignment; restoring it reapplies those
+choices even if the global defaults have changed. Without a workspace restore,
+groups without remembered window choices use the saved global defaults.
 **Show icons only** makes the column a narrow icon rail.
 Under **General**, **Default tab position (preview)** and **Default vertical column
 width** are saved across restarts and apply to newly created groups. Changing a
@@ -49,7 +55,6 @@ separate assertions cover offset conversion for different DPI and row sizes.
 
 ## Remaining work
 
-- Save per-group position and width in workspaces.
 - Refinement of the title-bar inset.
 - Real desktop E2E across snapped/maximized windows and mixed-DPI monitors.
 
