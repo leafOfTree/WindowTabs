@@ -276,11 +276,8 @@ type TabSprite<'id> = {
                 else Theme.tabShade 0.12 0.6 tint
             | _ -> basis
 
-    /// The text and close button colour for this tab's own background: the chosen colour,
-    /// or a darker or lighter shade of it where that would be hard to read. On the bar of a
-    /// folder or pill strip it is taken part way towards the bar, as a browser greys out the
-    /// titles of the tabs behind, but never below readable contrast. Filled tabs grey theirs
-    /// behind the active tab, and only there.
+    /// Quiet inactive titles and close buttons on every tab style, while preserving readable
+    /// contrast. Hover, capture, attention and high contrast keep the full text colour.
     member this.textColor =
         let chosen = this.appearance.tabTextColor
         let filled = this.displayInfo.colorStyle="Fill" && this.tint.IsSome && this.displayInfo.bgColor.IsNone
@@ -300,7 +297,7 @@ type TabSprite<'id> = {
                     let bar = this.fillColor
                     let mix (a:byte) (b:byte) = int(Math.Round(float a+(float b-float a)*0.3))
                     Color.FromArgb(255,mix own.R bar.R,mix own.G bar.G,mix own.B bar.B)
-            elif this.style = JoinedTabs || this.isRaised then chosen
+            elif SystemInformation.HighContrast || this.isRaised then chosen
             else fade 0.3
         TextContrast.readable chosen this.fillColor
 
