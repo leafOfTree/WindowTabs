@@ -62,6 +62,25 @@ module TabReveal =
             image,offset
         with _ -> image.bitmap.Dispose(); reraise()
 
+    /// Reveal a side column from its attached edge, leaving each row's contents in place.
+    let sideFrame (full:Bitmap) (collapsed:Bitmap) (reveal:float) anchoredRight =
+        let barWidth = min full.Width collapsed.Width
+        let width = barWidth+int(Math.Round(float(full.Width-barWidth)*reveal)) |> max barWidth |> min full.Width
+        let offset = if anchoredRight then full.Width-width else 0
+        let image = Img(Sz(width,full.Height))
+        try
+            use g = Graphics.FromImage(image.bitmap)
+            let appear = min 1.0 (max 0.0 (reveal*2.0))
+            let draw (source:Bitmap) (target:Rectangle) sourceX opacity =
+                if opacity>0.0 then
+                    use attributes = new ImageAttributes()
+                    attributes.SetColorMatrix(ColorMatrix(Matrix33=float32 opacity))
+                    g.DrawImage(source,target,sourceX,0,target.Width,target.Height,GraphicsUnit.Pixel,attributes)
+            draw collapsed (Rectangle((if anchoredRight then width-barWidth else 0),0,barWidth,full.Height)) 0 (1.0-appear)
+            draw full (Rectangle(0,0,width,full.Height)) offset appear
+            image,offset
+        with _ -> image.bitmap.Dispose(); reraise()
+
 /// Tab contents keep their full size until the tab is too short for them, then shrink together,
 /// so a low tab still shows its icon, close button and text whole.
 module TabMetrics =

@@ -19,7 +19,9 @@ menus, keyboard switching and ordering still use the existing group behavior.
 The column sits outside the chosen window edge when it fits within one monitor's
 working area. Otherwise it overlays that edge inside the window, below a 32-pixel
 title-bar inset. It does not resize the application to reserve space. Existing
-auto-hide modes apply; the column collapses to a 4-pixel edge without animation.
+auto-hide modes apply; the column reveals horizontally from its attached edge over 150 ms and collapses
+to a 4-pixel edge. Reversing the animation continues from its current width.
+Windows' animation setting is respected.
 Selecting an overflow tab brings its row into view. Only visible rows are drawn.
 Overflowing columns show a draggable scrollbar; click its track to page through
 the list. Existing wheel switching and Ctrl + wheel ordering remain unchanged.
@@ -28,7 +30,7 @@ the list. Existing wheel switching and Ctrl + wheel ordering remain unchanged.
 
 - Persistent global defaults / workspace preferences.
 - Drag-edge scrolling and fuller cross-orientation drag tests.
-- Smooth side reveal, side shadows and refinement of the title-bar inset.
+- Side shadows and refinement of the title-bar inset.
 - Real desktop E2E across snapped/maximized windows and mixed-DPI monitors.
 
 ## References

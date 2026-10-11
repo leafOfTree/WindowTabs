@@ -40,6 +40,21 @@ let main() =
     try
         use settings = new Settings(true,saveDelay=0)
         let api = settings :> ISettings
+        use sideFull = new Bitmap(220,120)
+        use sideBar = new Bitmap(4,120)
+        for y in 0..119 do
+            for x in 0..219 do sideFull.SetPixel(x,y,Color.FromArgb(255,x,y,50))
+            for x in 0..3 do sideBar.SetPixel(x,y,Color.Blue)
+        for anchoredRight in [false;true] do
+            let mutable previousWidth = 0
+            for reveal in [0.0;0.25;0.5;0.75;1.0] do
+                let image,offset = TabReveal.sideFrame sideFull sideBar reveal anchoredRight
+                use pixels = image.bitmap
+                check (pixels.Width>=previousWidth && pixels.Height=sideFull.Height) "Side reveal changed row height or reversed direction"
+                check (offset=(if anchoredRight then sideFull.Width-pixels.Width else 0)) "Side reveal left its attached window edge"
+                if reveal>=0.5 then check (pixels.GetPixel(0,50)=sideFull.GetPixel(offset,50)) "Side reveal scaled tab contents instead of cropping them"
+                if reveal=0.0 then check (pixels.Width=4 && pixels.GetPixel(0,50).ToArgb()=Color.Blue.ToArgb()) "Side reveal did not start at the collapsed edge"
+                previousWidth <- pixels.Width
         for bar in [Theme.light.tabNormalBgColor;Theme.dark.tabNormalBgColor] do
             use source = new Bitmap(4,1)
             for x,color in [0,Color.Red;1,Color.White;2,Color.FromArgb(128,20,40,60);3,Color.Transparent] do source.SetPixel(x,0,color)
@@ -628,6 +643,34 @@ let main() =
                         strip.columnWidth <- 1
                         check (strip.columnWidth=fst SettingsCatalog.columnWidthRange) "Column width fell below its minimum"
                         strip.columnWidth <- 220
+                        TabReveal.forced <- Some true
+                        let watchWidth until =
+                            let widths = ResizeArray([strip.bounds.width])
+                            let clock = Diagnostics.Stopwatch.StartNew()
+                            while not (until()) && clock.ElapsedMilliseconds<1000L do
+                                Application.DoEvents()
+                                Threading.Thread.Sleep(2)
+                                widths.Add(strip.bounds.width)
+                                let bounds = strip.bounds
+                                check (bounds.y=start.y && bounds.height=columnSize.height) "Side animation moved or resized its rows vertically"
+                                check ((if anchorRight then bounds.right=start.x+columnSize.width else bounds.left=start.x)) "Side animation drifted away from the attached edge"
+                            List.ofSeq widths
+                        strip.isShrunk <- true
+                        watchWidth (fun () -> strip.bounds.width=edgeWidth) |> ignore
+                        check (strip.bounds.width=edgeWidth) "Animated side collapse did not finish at the edge"
+                        let beforeSideExpand = frames strip
+                        strip.isShrunk <- false
+                        let expanding = watchWidth (fun () -> strip.bounds.width=columnSize.width)
+                        check (strip.bounds.width=columnSize.width && frames strip-beforeSideExpand>=3L) "Side expansion jumped or failed to finish"
+                        check (expanding |> List.pairwise |> List.forall(fun (a,b) -> b>=a)) "Side expansion ran backwards"
+                        strip.isShrunk <- true
+                        watchWidth (fun () -> strip.bounds.width<columnSize.width) |> ignore
+                        let partialWidth = strip.bounds.width
+                        check (partialWidth>edgeWidth) "Side collapse skipped intermediate frames"
+                        strip.isShrunk <- false
+                        let reversed = watchWidth (fun () -> strip.bounds.width=columnSize.width)
+                        check (List.min reversed>=partialWidth && strip.bounds.width=columnSize.width) "Reversing side reveal restarted at the edge"
+                        TabReveal.forced <- Some false
                 strip.dock <- TabDockTop
             finally strip.destroy()
         printfn "PASS: unchanged hover/moves skip rendering; cross-tab hover, clicks, capture, close, resize, direction, collapse and shadow recovery."

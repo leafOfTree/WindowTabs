@@ -372,7 +372,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             if target<>revealTarget then
                 revealTarget <- target
                 // The first frame and an empty strip have nothing to move from.
-                if renderedFrames>0L && not this.isEmpty && not this.isVertical && TabReveal.enabled() then
+                if renderedFrames>0L && not this.isEmpty && TabReveal.enabled() then
                     revealFrom <- reveal
                     revealClock.Restart()
                     revealTimer.Start()
@@ -415,7 +415,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                         let images = this.renderAt false,this.renderAt true
                         revealImages <- Some images
                         images
-                TabReveal.frame full.bitmap collapsed.bitmap reveal this.direction
+                if this.isVertical then
+                    TabReveal.sideFrame full.bitmap collapsed.bitmap reveal ((this.dock=TabDockLeft) <> this.showInside)
+                else TabReveal.frame full.bitmap collapsed.bitmap reveal this.direction
         try
             renderedOffset <- offset
             renderedFrames <- renderedFrames+1L
