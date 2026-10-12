@@ -290,6 +290,18 @@ let main() =
                         let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="minimizeStateTimer")
                         not((field.GetValue(group) :?> System.Windows.Forms.Timer).Enabled)))
                     check (onGroup(fun group -> OS().windowFromHwnd(group.hwnd).zorder < OS().windowFromHwnd(joining).zorder)) "Visible tab strip stayed behind its owner after restore reconciliation"
+                    onGroup(fun group ->
+                        let top = OS().windowFromHwnd(group.topWindow)
+                        let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="placement")
+                        let cell = field.GetValue(group)
+                        cell.GetType().GetMethod("set").Invoke(cell,[|box (Some(top.bounds,top.placement,top.visibleBounds))|]) |> ignore
+                        invoke "updatePlacements" group [||] |> ignore
+                        let strip = OS().windowFromHwnd(group.hwnd)
+                        strip.hide()
+                        strip.insertAfter(WindowHandleTypes.HWND_BOTTOM))
+                    pumpUntil(fun () -> onGroup(fun group ->
+                        let strip = OS().windowFromHwnd(group.hwnd)
+                        group.isPlacementIdle && strip.isVisible && strip.zorder < OS().windowFromHwnd(group.topWindow).zorder))
                 onGroup(fun group ->
                     let actual = invoke "inZorder" group [|box group.windows.items|] :?> List2<IntPtr>
                     let expected = group.windows.items.sortBy(fun hwnd -> referenceOS.windowFromHwnd(hwnd).zorder)

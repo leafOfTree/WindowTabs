@@ -73,8 +73,8 @@ type TaskbarBadgedIcon(icon:Icon) =
             g.DrawImage(app,Rectangle(0,0,size,size))
             use badgeIcon = Services.openIcon("Bemo.ico")
             use badge = badgeIcon.ToBitmap()
-            // As large as the overlay icon it replaces: 16 pixels on a 24 pixel taskbar icon.
-            let side = size*2/3
+            // Leave more of the application visible, with the badge tucked into the right corner.
+            let side = size*7/12
             g.DrawImage(badge,Rectangle(size-side,size-side,side,side))
         canvas.GetHicon()
     let badged = Icon.FromHandle(handle)
@@ -496,6 +496,7 @@ type SuperBarPlugin() as this =
                 if adopted.Add hwnd then
                     WinUserApi.SetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT, owner) |> ignore
                     this.os.windowFromHwnd(hwnd).parkIfMinimized()
+                    this.wtGroup.prepareMinimizeAnchor hwnd
 
     member private this.release(hwnd:IntPtr) =
         if adopted.Remove hwnd && TaskbarProxies.ownsWindow hwnd then

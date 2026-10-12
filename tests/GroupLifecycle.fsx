@@ -82,6 +82,68 @@ let main() =
             match result.Value with Choice1Of2 value -> value | Choice2Of2 error -> raise error
         let nativeOrder info = onGroup info (fun group -> group.lorder.list)
         let publicOrder (info:GroupInfo) = (info :> IGroup).windows.list
+        // Win+Right restores maximized followers to the snapped frame, not the
+        // unsnapped restore rectangle kept in WINDOWPLACEMENT.
+        use snapOwner = new Form(ShowInTaskbar=false)
+        use snapSource = new Form(ShowInTaskbar=false)
+        use snapFollower = new Form(ShowInTaskbar=false)
+        let sourceWindow = OS().windowFromHwnd(snapSource.Handle)
+        let followerWindow = OS().windowFromHwnd(snapFollower.Handle)
+        let snapOwnerWindow = OS().windowFromHwnd(snapOwner.Handle)
+        sourceWindow.setOwner(snapOwnerWindow)
+        followerWindow.setOwner(snapOwnerWindow)
+        let hiddenBounds = sourceWindow.bounds
+        sourceWindow.prepareMinimizeAnchor(fun () -> true)
+        check (not sourceWindow.isVisible && sourceWindow.bounds=hiddenBounds) "Preparing a hidden window exposed or moved it"
+        snapFollower.Show()
+        followerWindow.showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED)
+        snapSource.Show()
+        let normalPlacement = sourceWindow.placement
+        let work = Screen.PrimaryScreen.WorkingArea
+        let snapped = Rect(Pt(work.Left+work.Width/2,work.Top),Sz(work.Width/2,work.Height))
+        sourceWindow.move(snapped)
+        sourceWindow.setForeground(false)
+        let snapForeground = WinUserApi.GetForegroundWindow()
+        check (WinUserApi.GetActiveWindow()=snapSource.Handle) "Snap fixture did not activate its source"
+        let snapQueueOwner = obj()
+        FollowerPlacement.queue.claim(snapQueueOwner,snapFollower.Handle)
+        try
+            FollowerPlacement.queue.submit(snapQueueOwner,snapFollower.Handle,
+                FollowerPlacement.request snapFollower.Handle snapped normalPlacement)
+            pumpUntil "Snapped follower placement did not finish" (fun () -> FollowerPlacement.queue.isIdle(snapQueueOwner))
+            check (followerWindow.bounds=snapped) "A maximized follower restored to unsnapped bounds"
+            check (sourceWindow.zorder<followerWindow.zorder) "A snapped follower rose above the originating window"
+            check (WinUserApi.GetForegroundWindow()=snapForeground) "A snapped follower stole activation"
+            check (WinUserApi.GetActiveWindow()=snapSource.Handle) "A snapped follower changed the active tab"
+            sourceWindow.showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED)
+            // Another worker may already have raised this owned window. Its current
+            // predecessor is not a stable reference for restoring the group's order.
+            followerWindow.insertAfter(WindowHandleTypes.HWND_TOP)
+            FollowerPlacement.queue.submit(snapQueueOwner,snapFollower.Handle,
+                FollowerPlacement.alignBelowRequest snapFollower.Handle sourceWindow.bounds sourceWindow.placement snapSource.Handle)
+            pumpUntil "Maximized follower placement did not finish" (fun () -> FollowerPlacement.queue.isIdle(snapQueueOwner))
+            check followerWindow.isMaximized "A follower did not maximize"
+            check (sourceWindow.zorder<followerWindow.zorder) "A maximized follower covered the originating tab"
+            check (WinUserApi.GetActiveWindow()=snapSource.Handle) "Maximizing a follower changed the active tab"
+            for screen in Screen.AllScreens do
+                sourceWindow.showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE)
+                let frame = Rect(Pt(screen.WorkingArea.Left+100,screen.WorkingArea.Top+100),Sz(640,480))
+                sourceWindow.move(frame)
+                sourceWindow.prepareMinimizeAnchor(fun () -> true)
+                check (sourceWindow.bounds=frame) "Preparing the minimize destination moved the window"
+                let anchor = sourceWindow.placement.ptMinPosition
+                let x = screen.Bounds.Left+(screen.Bounds.Width-SystemInformation.MinimizedWindowSize.Width)/2
+                check (anchor.x=x-(screen.WorkingArea.Left-screen.Bounds.Left)) (sprintf "Minimize destination is not centred: anchor=%A expectedX=%d frame=%A screen=%A owner=%A needs=%b" anchor x sourceWindow.bounds screen.Bounds sourceWindow.parent.hwnd sourceWindow.needsMinimizeAnchor)
+                sourceWindow.showWindow(ShowWindowCommands.SW_SHOWMINNOACTIVE)
+                check (sourceWindow.bounds.x=x) "Windows minimized to a different horizontal position"
+                sourceWindow.parkIfMinimized()
+                check (not(SystemInformation.VirtualScreen.IntersectsWith(sourceWindow.bounds.Rectangle))) "A centred minimized title bar remains on screen"
+                sourceWindow.showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE)
+                check (sourceWindow.bounds=frame) "Restoring from the centred destination changed the window frame"
+        finally
+            FollowerPlacement.queue.release(snapQueueOwner,snapFollower.Handle)
+            snapSource.Hide()
+            snapFollower.Hide()
         // Hidden real HWNDs avoid changing the user's foreground window. Exercise
         // the production group and tab-strip implementations on their own STAs.
         let forms = [ for name in ["First"; "Second"; "Third"] ->
@@ -153,14 +215,61 @@ let main() =
             match WindowCloaking.TryGetDesktopId(proxy.Head) with
             | true, desktop -> check (VirtualDesktop.desktopId d = Some desktop) "A combined group's window is not on its taskbar window's desktop"
             | _ -> ()
+            // Moving a maximized owned window restores its followers without activation,
+            // which can raise one above it before the move-end notification arrives.
+            let moving = onGroup combined (fun group -> group.topWindow)
+            let tabsBeforeMove = nativeOrder combined
+            onGroup combined (fun group -> group.onEnterMoveSize())
+            pumpUntil "Move followers did not settle" (fun () -> onGroup combined (fun group -> group.isPlacementIdle))
+            let follower = tabsBeforeMove |> List.find ((<>) moving)
+            OS().windowFromHwnd(follower).insertAfter(WindowHandleTypes.HWND_TOP)
+            onGroup combined (fun group -> group.main(follower,WinEvent.EVENT_OBJECT_REORDER))
+            onGroup combined (fun group -> group.main(moving,WinEvent.EVENT_SYSTEM_MOVESIZEEND))
+            pumpUntil "A reordered follower swallowed move-end and left the strip hidden" (fun () ->
+                onGroup combined (fun group -> group.ts.visible))
+            check (nativeOrder combined = tabsBeforeMove) "Moving a combined group changed its tab positions"
+            // Exercise the group hooks as well as the worker: no mouse move events
+            // or later tab click are available to repair keyboard snapping.
+            let keyboardSource = OS().windowFromHwnd(a)
+            for hwnd in [a;b;d] do WinUserApi.ShowWindow(hwnd,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
+            keyboardSource.setForeground(false)
+            for _ in 1..3 do
+                keyboardSource.showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED)
+                pumpUntil "Combined followers did not maximize" (fun () ->
+                    onGroup combined (fun group -> group.isPlacementIdle) &&
+                    [a;b;d] |> List.forall (fun hwnd -> OS().windowFromHwnd(hwnd).isMaximized))
+                check ([b;d] |> List.forall(fun hwnd -> keyboardSource.zorder<OS().windowFromHwnd(hwnd).zorder)) "Maximizing several owned followers covered the originating tab"
+                keyboardSource.showWindow(ShowWindowCommands.SW_SHOWNORMAL)
+                keyboardSource.move(snapped)
+                pumpUntil "Combined followers did not reach the snapped frame" (fun () ->
+                    onGroup combined (fun group -> group.isPlacementIdle) &&
+                    [a;b;d] |> List.forall (fun hwnd -> OS().windowFromHwnd(hwnd).bounds=snapped))
+                check (nativeOrder combined=tabsBeforeMove) "Keyboard snapping changed the tab positions"
+                check (onGroup combined (fun group -> group.topWindow=a)) "Keyboard snapping displaced the originating tab"
+                check (WinUserApi.GetActiveWindow()=a) "Keyboard snapping activated a follower"
+                check (onGroup combined (fun group ->
+                    let strip = OS().windowFromHwnd(group.hwnd)
+                    strip.isVisible && strip.zorder<keyboardSource.zorder)) "Keyboard snapping left the strip hidden behind its window"
+            // Restored without activation, an owned tab rises above the one in front. Restoring the
+            // group keeps the tab it is restored from in front and the order of the others.
+            let zorder() = onGroup combined (fun group -> group.zorder.value.list)
+            let before = zorder()
+            onGroup combined (fun group -> group.minimizeAll())
+            pumpUntil "A combined group did not minimize" (fun () -> before |> List.forall WinUserApi.IsIconic)
+            pumpUntil "A minimized combined group lost its tab order" (fun () -> zorder() = before)
+            WinUserApi.ShowWindow(before.Head, ShowWindowCommands.SW_RESTORE) |> ignore
+            pumpUntil "A combined group did not restore with its tab" (fun () -> before |> List.forall (WinUserApi.IsIconic >> not))
+            pumpUntil (sprintf "Restoring a combined group changed its tab order: %A, was %A" (zorder()) before) (fun () -> zorder() = before)
             // Windows lays an owned window out above the taskbar when minimized, as a small title bar.
             let minimizedBar = OS().windowFromHwnd d
             WinUserApi.ShowWindow(d, ShowWindowCommands.SW_SHOWMINNOACTIVE) |> ignore
             WinUserApi.SetWindowPos(d, IntPtr.Zero, 0, 0, 0, 0,
                 SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOZORDER ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore
-            check (minimizedBar.isMinimized && minimizedBar.bounds.y > -10000) "The test could not put a minimized window's title bar on screen"
+            check (minimizedBar.isMinimized && SystemInformation.VirtualScreen.IntersectsWith(minimizedBar.bounds.Rectangle)) "The test could not put a minimized window's title bar on screen"
             minimizedBar.parkIfMinimized()
-            check (minimizedBar.isMinimized && minimizedBar.bounds.y <= -10000) (sprintf "A minimized window of a combined group shows above the taskbar: %A" minimizedBar.bounds)
+            check (minimizedBar.isMinimized && not (SystemInformation.VirtualScreen.IntersectsWith(minimizedBar.bounds.Rectangle))) (sprintf "A minimized window of a combined group shows above the taskbar: %A" minimizedBar.bounds)
+            // Outside the display, so an owned window leaves no miniature title bar behind.
+            check (minimizedBar.bounds.y >= SystemInformation.VirtualScreen.Bottom) (sprintf "A minimized window of a combined group was parked away from where it minimizes to: %A" minimizedBar.bounds)
             WinUserApi.ShowWindow(d, ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
             onGroup combined (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
             pumpUntil "Taskbar proxies outlived their combined taskbar button" (fun () -> not(TaskbarProxies.contains proxy.Head))

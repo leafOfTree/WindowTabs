@@ -33,8 +33,8 @@
 
 ## Window reconciliation
 
-Follower placement uses a shared `WindowPlacementQueue` with at most four native
-workers. Group STAs submit immutable bounds/placement snapshots; workers never
+Follower placement uses a shared `WindowPlacementQueue` with up to one native worker
+per processor, between four and sixteen. Group STAs submit immutable bounds/placement snapshots; workers never
 read group cells or call group services. Each HWND has one serial stream across
 group transfers, with only its newest pending request retained. Ownership and
 generation checks cancel queued work, including the second phase of a superseded
@@ -50,9 +50,21 @@ work to finish, then reconciles strip visibility and placement without requiring
 another foreground event. It stops when the transition checks are complete.
 Reconciliation also puts the strip immediately above its owner even when neither
 the owner nor the group's tab order changed: native visibility alone does not
-mean the strip is above restored windows. This does not activate the group.
+mean the strip is above restored windows. Placement completion uses the same timer
+to reconcile the strip after maximize/snap, preserving its auto-hide state and
+keeping its collapsed hover area above its owner. This does not activate the group.
 Maximized cross-monitor positioning still moves before applying
 placement; normal positioning still uses `MoveWindow` to preserve snapped bounds.
+When a maximized follower returns to normal, restore it without activation, apply
+the source's actual bounds (its saved restore rectangle may predate snapping), and
+retain its native stacking position. The same stacking protection applies when
+maximizing followers, including after a monitor change; owned followers can rise
+above the source even without changing the active window. Each group request names
+the originating top window: another follower's transient position is not a stable
+stacking reference while native placements run concurrently.
+During a move/resize, native reordering of owned followers does not replace the
+group's top window. Its move-end event must still restore the strip and align the
+followers; membership changes continue to apply immediately.
 
 `WindowRefreshQueue` batches events for 30 ms without continually resetting its
 deadline. Repeated events for an HWND collapse to one update. Ordinary show/hide and
@@ -73,6 +85,11 @@ desktop a window was last seen on. Auto-grouping waits up to a second for a new 
 to be placed on a desktop, and joins it only to a group on the same desktop. Windows
 shows a minimized owned window as a small title bar above the taskbar, so the group moves
 it off screen (`Window.parkIfMinimized`), where a window with its own button would be.
+Before minimization, the placement queue sets its destination at the bottom centre
+of its current monitor, in WINDOWPLACEMENT workspace coordinates. After minimization,
+the title bar is parked just below that monitor. MonitorFromWindow retains the
+pre-minimize frame, so a maximized window moved between monitors uses the current
+screen rather than the monitor of an older normal restore rectangle.
 
 ## Settings persistence
 
