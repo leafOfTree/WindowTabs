@@ -419,7 +419,7 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
                 use pen = new Pen(p.text,float32(Dpi.scale 2))
                 g.DrawRectangle(pen,Rectangle.Inflate(iconBounds,-Dpi.scale 8,-Dpi.scale 12))
             // A tab group shows the WindowTabs badge on its icon.
-            if isGroup then g.DrawImage(badge,iconBounds.Right-badge.Width+Dpi.scale 4,iconBounds.Bottom-badge.Height+Dpi.scale 4))
+            if isGroup then g.DrawImage(badge,iconBounds.Right-badge.Width+Dpi.scale 4,iconBounds.Bottom-badge.Height))
         if items.Length>0 then
             let title,_,_ = items.[max 0 (min (items.Length-1) selected)]
             let bottom = padding+rows*cell+(rows-1)*gap
@@ -586,7 +586,7 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop) as this=
             // WindowTabs' own windows, such as Settings, are listed like any other, but not the
             // hidden ones that stand in for groups on the taskbar. The switcher is not shown yet
             // when this runs, so it does not list itself.
-            w.isAltTabWindow
+            (w.isAltTabWindow || (TaskbarProxies.ownsWindow w.hwnd && w.isVisible))
             && not(TaskbarProxies.contains w.hwnd)
             && not(String.IsNullOrEmpty w.text)
             && w.text <> "Microsoft Text Input Application"

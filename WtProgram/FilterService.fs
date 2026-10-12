@@ -49,13 +49,14 @@ type FilterService() as this =
             fun() -> this.isBanned(window).not
             fun() -> this.isOnScreenOrMinimized(window)
             // Background UWP apps keep a "visible" but cloaked frame window.
-            fun() -> not (WindowCloaking.IsHiddenOnCurrentDesktop window.hwnd)
+            // A group on another desktop hides the windows it owns; they stay in the group.
+            fun() -> TaskbarProxies.ownsWindow window.hwnd || not (WindowCloaking.IsHiddenOnCurrentDesktop window.hwnd)
             ])
         tests.all(fun pred -> pred()) 
 
     member this.isValidOwner (window:Window) =
         let owner = window.parent
-        if owner.hwnd = IntPtr.Zero then true
+        if owner.hwnd = IntPtr.Zero || TaskbarProxies.contains owner.hwnd then true
         // Delphi and MFC have owner windows w/ zero size.
         else owner.bounds.width = 0
 

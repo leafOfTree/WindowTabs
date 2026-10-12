@@ -4,6 +4,22 @@ open System.Drawing
 open System.Threading
 open System.Windows.Forms
 
+module AutoGroup =
+    /// The first group, in the order given, that holds a window of the same program and a
+    /// window on the same virtual desktop as `hwnd`, so a window opened on another desktop
+    /// starts its own group rather than pulling the group across desktops. A window whose
+    /// desktop cannot be told matches any desktop, as before desktops were taken into account.
+    let pick (windowsOf:'g -> List2<IntPtr>) (processPath:IntPtr -> string) (desktopOf:IntPtr -> Guid option) (groups:List2<'g>) (hwnd:IntPtr) =
+        let path = processPath hwnd
+        let desktop = desktopOf hwnd
+        let sameDesktop other =
+            match desktop, desktopOf other with
+            | Some a, Some b -> a = b
+            | _ -> true
+        groups.tryFind(fun g ->
+            let windows = windowsOf g
+            windows.any(fun w -> processPath w = path) && windows.any sameDesktop)
+
 
 type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher) as this =
     let Cell = CellScope(true, true)
@@ -73,6 +89,7 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
             windowsCell.map <| fun l -> l.append hwnd
         // Still queue the operation: a preceding asynchronous remove may not
         // have updated this snapshot yet, and remove-then-add must reattach it.
+        VirtualDesktop.desktopId hwnd |> ignore
         this.invokeGroup <| fun() -> this.group.addWindow(hwnd, withDelay)
     member private this.removeWindow hwnd =
         this.invokeGroup <| fun() -> this.group.removeWindow(hwnd)

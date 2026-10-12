@@ -222,6 +222,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let requestedMinimizeStates = Collections.Generic.Dictionary<IntPtr,bool>()
     let minimizeStateTimer = new System.Windows.Forms.Timer(Interval=16)
     let mutable reconcileMinimizeState = false
+    let mutable reconcilePlacementState = false
+    /// The tab the group was last minimized from, which comes back first.
+    let mutable minimizedFrom : IntPtr option = None
     let transitionClock = Stopwatch.StartNew()
     let iconCache = new WindowIconCache(invoker :> IDispatcher,fun hwnd ->
         Cell.beginUpdate()
@@ -255,12 +258,32 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if reconcileMinimizeState && FollowerPlacement.queue.isIdle(placementOwner) then
                 reconcileMinimizeState <- false
                 this.withUpdate(fun () ->
+                    // Minimizing sends the tab in front to the bottom; once the whole group is
+                    // minimized, it goes back in front, so restoring the group brings it back first.
+                    let order =
+                        match minimizedFrom with
+                        | Some hwnd when this.windows.contains(hwnd) && zorderCell.value.all isMinimized ->
+                            // Windows gives the focus to the next window, often another tab, and a
+                            // click on the taskbar button would then restore that tab instead.
+                            let focused = WinUserApi.GetForegroundWindow()
+                            if focused<>hwnd && this.windows.contains(focused) then
+                                this.os.windowFromHwnd(hwnd).setForeground(true)
+                            zorderCell.value.where((<>) hwnd).prepend hwnd
+                        | _ -> zorderCell.value
+                    minimizedFrom <- None
+                    let order = order.where(fun hwnd -> this.windows.contains(hwnd) && WinUserApi.IsWindow(hwnd))
+                    this.os.setZorder(order)
+                    this.setZorder(order)
                     this.saveZorder()
                     if not this.isEmpty then this.saveTopWindowPlacement()
                     this.updateIsVisible()
                     this.foreground <- this.os.foreground.hwnd)
                 if not this.isEmpty then this.setTsParent(this.topWindow)
-            if pendingMinimizeStates.Count=0 && not reconcileMinimizeState then minimizeStateTimer.Stop())
+            if reconcilePlacementState && FollowerPlacement.queue.isIdle(placementOwner) then
+                reconcilePlacementState <- false
+                this.withUpdate(fun () -> this.updateIsVisible())
+                if not this.isEmpty then this.setTsParent(this.topWindow)
+            if pendingMinimizeStates.Count=0 && not reconcileMinimizeState && not reconcilePlacementState then minimizeStateTimer.Stop())
 
         winEventHandler.set(Some(
             _os.setSingleWinEvent WinEvent.EVENT_SYSTEM_FOREGROUND <| fun(hwnd) -> 
@@ -423,12 +446,23 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             prevTop.set(zorderCell.value.tryHead)
             zorderCell.set(newZorder)
 
+    /// While the group minimizes or restores, Windows reorders its windows one by one; restored
+    /// without activation, a tab owned by the taskbar window even rises above the one in front.
+    /// The order is put back and saved once the transition ends.
     member private this.saveZorder() =
-        this.setZorder(this.inZorder(this.windows.items))
+        // Restoring owned followers during a move can raise them above its source;
+        // keep that source on top so its move-end event still restores the strip.
+        if not reconcileMinimizeState && not inMoveSize.value then
+            this.setZorder(this.inZorder(this.windows.items))
 
     member private this.setWindows(newWindows) =
         windowsCell.set(newWindows)
-        this.saveZorder()
+        // Tabs that join or leave during a transition change the order at once; the others keep theirs.
+        if reconcileMinimizeState || inMoveSize.value then
+            let kept = zorderCell.value.where(this.windows.contains)
+            let joined = this.inZorder(this.windows.items.where(fun hwnd -> not (kept.contains((=) hwnd))))
+            this.setZorder(List2(kept.list @ joined.list))
+        else this.saveZorder()
         this.updateIsVisible()
 
     member private this.isEmpty : bool = this.windows.items.isEmpty
@@ -598,6 +632,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             let bounds = monitorBounds.def(window.bounds)
             let visible = monitorBounds.def(window.visibleBounds)
             placement.set(Some(bounds, window.placement, visible))
+            if enableSuperBar then this.prepareMinimizeAnchor window.hwnd
+
+    member this.prepareMinimizeAnchor hwnd =
+        if FollowerPlacement.queue.isWindowIdle(placementOwner,hwnd) && this.os.windowFromHwnd(hwnd).needsMinimizeAnchor then
+            FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.prepareMinimizeRequest hwnd)
+            reconcilePlacementState <- true
+            minimizeStateTimer.Start()
            
     member private this.adjustWindowPlacement(hwnd) =
         let changingMinimizeState =
@@ -606,7 +647,14 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             | _ -> false
         if placement.value.IsSome && not changingMinimizeState then
             let bounds,wp,_ = placement.value.Value
-            FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.request hwnd bounds wp)
+            let request =
+                match zorderCell.value.tryHead with
+                | Some top when top<>hwnd -> FollowerPlacement.alignBelowRequest hwnd bounds wp top
+                | _ -> FollowerPlacement.request hwnd bounds wp
+            FollowerPlacement.queue.submit(placementOwner,hwnd,request)
+            // Maximize/snap can hide or cover the owned strip after its early events.
+            reconcilePlacementState <- true
+            minimizeStateTimer.Start()
 
     member this.isPlacementIdle = FollowerPlacement.queue.isIdle(placementOwner)
                      
@@ -702,10 +750,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         | WinEvent.EVENT_SYSTEM_MINIMIZESTART -> 
             // Queued notifications may be overtaken by a fast restore.
             if minimizeReady && this.windows.contains(hwnd) && this.os.windowFromHwnd(hwnd).isMinimized then
+                this.os.windowFromHwnd(hwnd).parkIfMinimized()
                 if not propagated then
                     this.reclaimLeftTab(hwnd)
                     let needsMinimized = zorderCell.value.any <| fun hwnd -> this.os.windowFromHwnd(hwnd).isMinimized.not
                     if needsMinimized then
+                        minimizedFrom <- Some hwnd
                         this.minimizeAll()
                         this.os.setZorder(zorderCell.value.moveToEnd((=)hwnd))
                 this.updateIsVisible()
@@ -715,6 +765,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 if not propagated then
                     let needsRestore = zorderCell.value.any <| fun hwnd -> this.os.windowFromHwnd(hwnd).isMinimized
                     if needsRestore then
+                        // The tab restored comes back in front of the others.
+                        this.setZorder(zorderCell.value.where((<>) hwnd).prepend hwnd)
                         this.restoreAll()
                         this.os.setZorder(zorderCell.value.moveToEnd((=)hwnd))
                 this.updateIsVisible()      
@@ -823,6 +875,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             // so closing that window shows the previous tab instead of minimizing the group again.
             let others = this.windows.items.where((<>) hwnd)
             if not window.isMinimized && not others.isEmpty && others.all isMinimized then
+                this.setZorder(zorderCell.value.where((<>) hwnd).prepend hwnd)
                 others.iter(fun other ->
                     requestedMinimizeStates.[other] <- false
                     FollowerPlacement.queue.submit(placementOwner,other,FollowerPlacement.restoreBelowRequest other hwnd))
@@ -944,9 +997,15 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         this.watchMinimizeCompletion()
         
     member this.restoreAll = fun() ->
+        // Each tab goes back below the one restored first, which stays in front.
+        let top = zorderCell.value.where(isMinimized >> not).tryHead
         zorderCell.value.where(this.needsMinimizeState false).iter <| fun hwnd ->
             requestedMinimizeStates.[hwnd] <- false
-            FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.minimizeRequest hwnd false)
+            let request =
+                match top with
+                | Some top when top<>hwnd -> FollowerPlacement.restoreBelowRequest hwnd top
+                | _ -> FollowerPlacement.minimizeRequest hwnd false
+            FollowerPlacement.queue.submit(placementOwner,hwnd,request)
         this.watchMinimizeCompletion()
         
     member this.tabActivate(Tab(hwnd), force) =

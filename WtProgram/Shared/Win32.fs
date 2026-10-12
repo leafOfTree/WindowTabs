@@ -465,6 +465,59 @@ and
         if this.parent.hwnd <> owner.hwnd then
             WinUserApi.SetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT, owner.hwnd).ignore
 
+    member private this.minimizeAnchor =
+        // MonitorFromWindow remembers the pre-minimize frame, including a maximized
+        // window moved away from the monitor holding its normal restore rectangle.
+        let screen = Screen.FromHandle(hwnd)
+        let x = screen.Bounds.Left + (screen.Bounds.Width-SystemInformation.MinimizedWindowSize.Width)/2
+        let y =
+            if Screen.AllScreens |> Array.exists(fun other -> other.Bounds.Contains(x,screen.Bounds.Bottom)) then
+                SystemInformation.VirtualScreen.Bottom
+            else screen.Bounds.Bottom
+        let screenPoint = Pt(x,y)
+        let workspacePoint =
+            Pt(x,screen.WorkingArea.Bottom-SystemInformation.MinimizedWindowSize.Height)
+                .sub(Pt(screen.WorkingArea.Left-screen.Bounds.Left,screen.WorkingArea.Top-screen.Bounds.Top))
+        screenPoint,workspacePoint
+
+    member this.needsMinimizeAnchor =
+        this.isVisible && not this.isMinimized && this.parent.pid.isCurrentProcess && this.placement.ptMinPosition<>snd this.minimizeAnchor
+
+    /// Set the destination before minimizing, so both animations use the same monitor.
+    member this.prepareMinimizeAnchor(isCurrent:unit -> bool) =
+        if isCurrent() && this.needsMinimizeAnchor then
+            let bounds = this.bounds
+            let previous = this.prevZorder.hwnd
+            let wp = this.placement
+            let _,anchor = this.minimizeAnchor
+            let normalBounds =
+                let screen = Screen.FromHandle(hwnd)
+                let restoreScreen = Screen.FromRectangle(wp.rcNormalPosition.Rectangle)
+                if this.isMaximized && screen.DeviceName<>restoreScreen.DeviceName then
+                    // Windows rejects a minimize destination on a different monitor from
+                    // the normal restore frame, even while the maximized frame is there.
+                    wp.rcNormalPosition.move(screen.Bounds.Left-restoreScreen.Bounds.Left,screen.Bounds.Top-restoreScreen.Bounds.Top)
+                else wp.rcNormalPosition
+            this.setPlacement({
+                wp with
+                    flags=wp.flags ||| WindowPlacementFlags.WPF_SETMINPOSITION
+                    ptMinPosition=anchor
+                    rcNormalPosition=normalBounds
+                    showCmd=if wp.showCmd=ShowWindowCommands.SW_SHOWNORMAL then ShowWindowCommands.SW_SHOWNOACTIVATE else wp.showCmd})
+            if isCurrent() then
+                // WINDOWPLACEMENT remembers the unsnapped restore rectangle.
+                if wp.showCmd=ShowWindowCommands.SW_SHOWNORMAL && this.bounds<>bounds then this.move(bounds)
+                if isCurrent() && not this.isMinimized && previous<>IntPtr.Zero && WinUserApi.IsWindow(previous) then this.insertAfter(previous)
+
+    /// Owned minimized windows otherwise leave a small title bar above the taskbar.
+    member this.parkIfMinimized() =
+        let bar = this.bounds
+        if this.isMinimized && this.parent.pid.isCurrentProcess then
+            let anchor,_ = this.minimizeAnchor
+            if bar.location<>anchor then
+                WinUserApi.SetWindowPos(hwnd, IntPtr.Zero, anchor.x, anchor.y, 0, 0,
+                SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOZORDER ||| SetWindowPosFlags.SWP_NOACTIVATE).ignore
+
     member this.showNoActivate() = WinUserApi.ShowWindow(hwnd, ShowWindowCommands.SW_SHOWNOACTIVATE).ignore
 
     member this.update(image:Img, location:Pt, alpha) =       

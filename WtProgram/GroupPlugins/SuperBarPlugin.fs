@@ -56,6 +56,8 @@ module TaskbarProxies =
     let add hwnd = windows.TryAdd(hwnd,()) |> ignore
     let remove hwnd = windows.TryRemove(hwnd) |> ignore
     let contains hwnd = windows.ContainsKey(hwnd)
+    /// A group with combined icons owns its windows, so they follow it between desktops.
+    let ownsWindow (hwnd:IntPtr) = contains (WinUserApi.GetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT))
 
 /// A group's taskbar icon: the app's icon with the WindowTabs badge at the bottom right, as in
 /// the window switcher. Windows 11 draws an overlay icon at the top right instead.
@@ -71,9 +73,11 @@ type TaskbarBadgedIcon(icon:Icon) =
             g.DrawImage(app,Rectangle(0,0,size,size))
             use badgeIcon = Services.openIcon("Bemo.ico")
             use badge = badgeIcon.ToBitmap()
-            // As large as the overlay icon it replaces: 16 pixels on a 24 pixel taskbar icon.
-            let side = size*2/3
-            g.DrawImage(badge,Rectangle(size-side,size-side,side,side))
+            // Leave more of the application visible, with the badge tucked into the right corner.
+            let side = size*7/12
+            // The badge's transparent margin otherwise keeps its visible edge inset.
+            let rightOffset = size/12
+            g.DrawImage(badge,Rectangle(size-side+rightOffset,size-side,side,side))
         canvas.GetHicon()
     let badged = Icon.FromHandle(handle)
     member _.source = icon
@@ -249,6 +253,10 @@ type TaskBarButton(info) as this =
                         config().close()
                         0
                     | SystemMenuCommandValues.SC_RESTORE ->
+                        config().toggleMinimizeRestore()
+                        0
+                    // Minimizing an owner hides the windows it owns, which would leave the group.
+                    | SystemMenuCommandValues.SC_MINIMIZE ->
                         config().toggleMinimizeRestore()
                         0
                     | _ ->
@@ -460,6 +468,10 @@ type SuperBarPlugin() as this =
     let captures = new TabCaptures()
     /// A tab that comes to the front is captured once it has painted, for when it is hidden again.
     let captureTimer = new System.Windows.Forms.Timer(Interval=500)
+    /// The windows the taskbar window owns.
+    let adopted = Collections.Generic.HashSet<IntPtr>()
+    /// The taskbar window last placed on the group's desktop.
+    let mutable placedOwner = IntPtr.Zero
 
     member this.os = _os
     
@@ -478,7 +490,36 @@ type SuperBarPlugin() as this =
     member this.zorder = this.wtGroup.zorder.value
 
     member private this.showInTaskbar(hwnd, visible) =
-        if visible then this.taskbar.AddTab(hwnd) else this.taskbar.DeleteTab(hwnd)
+        if visible then
+            this.release hwnd
+            this.taskbar.AddTab(hwnd)
+        else this.taskbar.DeleteTab(hwnd)
+
+    /// A window without a taskbar button is on no virtual desktop and shows on all of them;
+    /// a window the taskbar window owns follows that window's desktop instead.
+    member private this.adopt() =
+        if taskbarButton <> null && this.zorder.count > 1 then
+            let owner = (taskbarButton:TaskBarButton).window.hwnd
+            // A new taskbar window starts on the desktop in view, which is not always the group's.
+            if owner <> placedOwner then
+                placedOwner <- owner
+                this.zorder.tryPick VirtualDesktop.desktopId |> Option.iter(fun desktop ->
+                    match WindowCloaking.TryGetDesktopId(owner) with
+                    | true, current when current = desktop -> ()
+                    | _ ->
+                        WindowCloaking.MoveToDesktop(owner, desktop) |> ignore)
+            this.zorder.iter <| fun hwnd ->
+                if adopted.Add hwnd then
+                    WinUserApi.SetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT, owner) |> ignore
+                    this.os.windowFromHwnd(hwnd).parkIfMinimized()
+                    this.wtGroup.prepareMinimizeAnchor hwnd
+
+    member private this.release(hwnd:IntPtr) =
+        if adopted.Remove hwnd && TaskbarProxies.ownsWindow hwnd then
+            WinUserApi.SetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT, IntPtr.Zero) |> ignore
+
+    member private this.releaseAll() =
+        for hwnd in List.ofSeq adopted do this.release hwnd
 
     member this.updateTaskbar() =
         if this.os.isWin7OrHigher then
@@ -486,6 +527,7 @@ type SuperBarPlugin() as this =
                 match taskbarButton with
                 | null -> ()
                 | button ->
+                    this.releaseAll()
                     (button :> IDisposable).Dispose()
                     taskbarButton <- null
             elif this.zorder.isEmpty.not then
@@ -604,8 +646,12 @@ type SuperBarPlugin() as this =
         if this.zorder.count = 1 then
             this.showInTaskbar(this.zorder.head, true)
         else
+            // Owned before their buttons go, the windows never lose their desktop.
+            this.updateTaskbar()
+            this.adopt()
             this.zorder.iter <| fun hwnd -> this.showInTaskbar(hwnd, false)
         this.updateTaskbar()
+        this.adopt()
         if this.zorder.count > 1 then
             captureTimer.Stop()
             captureTimer.Start()
@@ -618,6 +664,7 @@ type SuperBarPlugin() as this =
             if WinUserApi.IsWindow hwnd then this.showInTaskbar(hwnd,true))
         captureTimer.Dispose()
         (captures :> IDisposable).Dispose()
+        this.releaseAll()
         if taskbarButton <> null then
             (taskbarButton :> IDisposable).Dispose()
             taskbarButton <- null

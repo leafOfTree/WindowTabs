@@ -109,11 +109,12 @@ type WindowPlacementQueue<'a>(apply:IntPtr -> 'a -> (unit -> bool) -> unit, ?wor
     member _.retainedCount = lock gate (fun () -> entries.Count)
 
 type FollowerPlacementRequest =
-    | AlignWindow of Rect * OSWindowPlacement
+    | AlignWindow of Rect * OSWindowPlacement * IntPtr option
     /// A window restored without activation can still rise above the tab that asked for it;
     /// the handle it should stay below goes with the request.
     | SetMinimized of bool * IntPtr option
     | HideForMove
+    | PrepareMinimizeAnchor
 
 module FollowerPlacement =
     let private identity hwnd =
@@ -126,32 +127,51 @@ module FollowerPlacement =
         if valid() then
             let window = OS().windowFromHwnd(hwnd)
             match request with
+            | PrepareMinimizeAnchor -> window.prepareMinimizeAnchor(valid)
             | HideForMove -> if valid() && not window.isMinimized then window.hideOffScreen(None)
             | SetMinimized(minimized,below) ->
                 if window.isMinimized<>minimized && valid() then
-                    window.showWindow(if minimized then ShowWindowCommands.SW_SHOWMINNOACTIVE else ShowWindowCommands.SW_SHOWNOACTIVATE)
+                    if minimized then window.prepareMinimizeAnchor(valid)
+                    if valid() then window.showWindow(if minimized then ShowWindowCommands.SW_SHOWMINNOACTIVE else ShowWindowCommands.SW_SHOWNOACTIVATE)
                     below |> Option.iter(fun top -> if valid() && WinUserApi.IsWindow(top) then window.insertAfter(top))
-            | AlignWindow(bounds,wp) ->
+            | AlignWindow(bounds,wp,below) ->
                 let actual = window.placement
+                let previous = defaultArg below window.prevZorder.hwnd
                 let move() = if valid() then window.move(bounds)
-                let place value = if valid() then window.setPlacement(value)
+                let place value =
+                    if valid() then
+                        window.setPlacement(value)
+                        // Both maximizing and restoring an owned follower can raise it.
+                        if valid() && not window.isMinimized && previous<>IntPtr.Zero && WinUserApi.IsWindow(previous) then
+                            window.insertAfter(previous)
                 // MoveWindow preserves the visible bounds of an Aero snapped window.
                 if wp.showCmd=ShowWindowCommands.SW_SHOWNORMAL && actual.showCmd=ShowWindowCommands.SW_SHOWNORMAL then
                     if window.bounds<>bounds then move()
                 elif actual.showCmd=ShowWindowCommands.SW_SHOWMINIMIZED then
                     let minimized = {wp with showCmd=ShowWindowCommands.SW_SHOWMINIMIZED}
                     if actual<>minimized then place minimized
+                elif wp.showCmd=ShowWindowCommands.SW_SHOWNORMAL then
+                    // Snapping keeps the old restore rectangle in WINDOWPLACEMENT.
+                    // Restore without activation, then use the source's actual frame.
+                    place {wp with showCmd=ShowWindowCommands.SW_SHOWNOACTIVATE}
+                    move()
                 elif actual.showCmd=ShowWindowCommands.SW_SHOWMAXIMIZED && wp.showCmd=ShowWindowCommands.SW_SHOWMAXIMIZED then
                     // Cross-monitor maximization requires moving before restoring placement.
                     if actual<>wp || window.bounds<>bounds then
                         move()
                         place wp
                 elif actual<>wp then place wp
+                window.prepareMinimizeAnchor(valid)
 
-    let queue = WindowPlacementQueue(apply)
-    let request hwnd bounds placement = identity hwnd,AlignWindow(bounds,placement)
+    /// A group's windows usually each have a thread of their own and change state together, so a
+    /// large group is not minimized or restored four windows at a time. The thread pool adds threads
+    /// beyond the processor count only slowly, so the limit stays within it.
+    let queue = WindowPlacementQueue(apply, workerLimit=(Environment.ProcessorCount |> min 16 |> max 4))
+    let request hwnd bounds placement = identity hwnd,AlignWindow(bounds,placement,None)
+    let alignBelowRequest hwnd bounds placement top = identity hwnd,AlignWindow(bounds,placement,Some top)
     let minimizeRequest hwnd minimized = identity hwnd,SetMinimized(minimized,None)
     let restoreBelowRequest hwnd top = identity hwnd,SetMinimized(false,Some top)
     let hideRequest hwnd = identity hwnd,HideForMove
+    let prepareMinimizeRequest hwnd = identity hwnd,PrepareMinimizeAnchor
     let isChangingMinimizeState owner hwnd =
         queue.isWindowBusyWith(owner,hwnd,fun (_,request) -> match request with SetMinimized _ -> true | _ -> false)
