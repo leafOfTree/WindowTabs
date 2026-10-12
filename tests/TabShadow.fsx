@@ -107,8 +107,69 @@ let main () =
     let ts : TabStripSprite<int> = {
         tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"]))
         lorder=List2([1;2]); zorder=List2([1;2]); size=Sz(420,28)
-        slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; held=None; centerShift=0.0
+        slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; held=None; centerShift=0.0; dock=TabDockTop; scrollOffset=0
         transparent=true; appearance=appearance; hover=None; captured=None }
+    let originalVerticalDpi = Dpi.value()
+    try
+        for dpi in [96;144;192] do
+            Dpi.set dpi
+            for dock,direction in [for dock in [TabDockLeft;TabDockRight] do for direction in [TabUp;TabDown] do yield dock,direction] do
+                let column = { ts with dock=dock; direction=direction; size=Dpi.scaleSize(Sz(220,300)); appearance=Theme.dark.scaled }
+                let first = column.tabLocation 1
+                let second = column.tabLocation 2
+                check (first.x=second.x && second.y>first.y) "Vertical tabs did not stack in rows"
+                check (column.tryHit(second.add(Pt(Dpi.scale 12,Dpi.scale 16))) |> Option.exists(fun (id,_) -> id=2)) "Vertical hit testing selected a neighbouring row"
+                let sprite = snd (column.tabSprites.list |> List.find(fun (_,tab) -> tab.id=1))
+                let closeLocation,closeSprite = (sprite :> ISprite).children.list |> List.find(fun (_,child) -> match child with :? CloseButtonSprite -> true | _ -> false)
+                use closeImage = closeSprite.image.bitmap
+                let close = first.add(closeLocation).add(Pt(closeImage.Width/2,closeImage.Height/2))
+                check (column.tryHit close=Some(1,TabClose)) "Vertical close button does not match its drawn position"
+                check (({ column with slide=Some(1,column.rowStep) }).movedTab=Some(1,1)) "Vertical dragging still uses horizontal geometry"
+                check ((column.tryHit(Pt(-1,second.y))).IsNone) "An off-column tab received pointer input"
+                use image = column.render.bitmap
+                check (image.Width=Dpi.scale 220 && image.Height=Dpi.scale 300) "Vertical rendering ignored the viewport size"
+                let roundLeft = (dock=TabDockRight) <> (direction=TabUp)
+                let contentX = if roundLeft then 0 else image.Width-1
+                let edgeX = if roundLeft then image.Width-1 else 0
+                check (image.GetPixel(contentX,0).A=0uy && image.GetPixel(contentX,image.Height-1).A=0uy)
+                      "Vertical column did not round the corners away from its attached window edge"
+                check (image.GetPixel(edgeX,0).A>0uy && image.GetPixel(edgeX,image.Height-1).A>0uy)
+                      "Vertical column rounded the corners next to its attached window edge"
+                check (image.GetPixel(image.Width/2,image.Height/2).A=255uy) "Column background no longer covers the underlying scrollbar"
+                for y in [0;image.Height-1] do
+                    let edge = image.GetPixel(image.Width/2,y)
+                    let background = column.appearance.tabNormalBgColor
+                    check (edge.R=background.R && edge.G=background.G && edge.B=background.B)
+                          "Vertical column still draws an outer border"
+                if dpi=96 then
+                    let preview = {column with size=Sz(220,76)}
+                    use rounded = preview.render.bitmap
+                    let renderer = TabShadow.Renderer()
+                    use shadow = renderer.Render(rounded.Width,rounded.Height,TabShadow.silhouette rounded,15,TabUp)
+                    use canvas = new Bitmap(280,120)
+                    use graphics = Graphics.FromImage(canvas)
+                    graphics.Clear(Color.FromArgb(45,45,45))
+                    graphics.DrawImageUnscaled(shadow,15,10)
+                    graphics.DrawImageUnscaled(rounded,30,25)
+                    canvas.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "vertical-rounded-%A-%A.png" dock direction),Imaging.ImageFormat.Png)
+                use collapsed = column.renderCollapsed.bitmap
+                check (collapsed.Width=Dpi.scale 4 && collapsed.Height=image.Height) "Vertical auto-hide changed height instead of width"
+                let collapsedContentX = if roundLeft then 0 else collapsed.Width-1
+                let collapsedEdgeX = if roundLeft then collapsed.Width-1 else 0
+                for y in [0;collapsed.Height-1] do
+                    check (collapsed.GetPixel(collapsedContentX,y).A=0uy) "Collapsed vertical tabs have square content-side corners"
+                    check (collapsed.GetPixel(collapsedEdgeX,y).A>0uy) "Collapsed vertical tabs rounded their attached edge"
+                check (collapsed.GetPixel(collapsed.Width/2,collapsed.Height/2).A=255uy) "Collapsed vertical tabs lost their solid hover target"
+                let overflow = { column with size=Dpi.scaleSize(Sz(220,40)) }
+                check overflow.scrollThumb.IsSome "An overflowing column has no scrollbar"
+                let thumb = overflow.scrollThumb.Value
+                check (thumb.x+thumb.width<=overflow.size.width) "Scrollbar escaped the column at high DPI"
+                let bottom = { overflow with scrollOffset=overflow.scrollMaximum }
+                check (bottom.scrollThumb.Value.bottom=bottom.scrollTrack.bottom) "Scrollbar thumb cannot reach the last row"
+                check (column.scrollThumb.IsNone) "A short column shows an unnecessary scrollbar"
+                let icons = { column with onlyIcons=true; size=Dpi.scaleSize(Sz(48,300)) }
+                check ((snd icons.tabSprites.head).onlyIcon) "The vertical icon rail still shows titles"
+    finally Dpi.set originalVerticalDpi
     for appearance in [Theme.light;Theme.dark] do
         for icons in [false;true] do
             let badges = { ts with appearance=appearance;onlyIcons=icons;tabs=Map2(List2([1,{info "One" with numberBadge=Some "1"};2,{info "Ten" with numberBadge=Some "A"}])) }
@@ -116,6 +177,16 @@ let main () =
             check (drawn.Length=1 && drawn.Head.label="A") "Active tab hint was shown or inactive letter hint was missing"
     for appearance in [Theme.light;Theme.dark] do
         for style in [JoinedTabs;FolderTabs;PillTabs] do
+            let plain = { ts with appearance={appearance with tabStyle=style} }
+            let active = plain.tabSprites.list |> List.map snd |> List.find(fun tab -> tab.isTop)
+            let inactive = plain.tabSprites.list |> List.map snd |> List.find(fun tab -> not tab.isTop)
+            check (active.textColor=appearance.tabTextColor) "Active title lost its full text colour"
+            check (inactive.textColor<>active.textColor &&
+                   TextContrast.ratio inactive.textColor inactive.fillColor<TextContrast.ratio active.textColor inactive.fillColor &&
+                   TextContrast.ratio inactive.textColor inactive.fillColor>=TextContrast.minimum)
+                  "Inactive title was not quieter and readable on every tab style"
+            for highlighted in [{inactive with hover=Some TabBackground};{inactive with captured=Some TabBackground}] do
+                check (highlighted.textColor=appearance.tabTextColor) "Hover or capture did not restore full title colour"
             for colorStyle in ["Stripe";"Fill"] do
                 let tinted = { ts with appearance={appearance with tabStyle=style}; tabs=Map2(List2([1,{info "One" with tint=Some Color.Blue;colorStyle=colorStyle};2,{info "Two" with tint=Some Color.Blue;colorStyle=colorStyle}])) }
                 let tabs = tinted.sprite.children.list |> List.choose(fun (_,child) -> match child with :? TabSprite<int> as tab -> Some tab | _ -> None)
@@ -153,6 +224,49 @@ let main () =
                 for tab in tabs do check (TextContrast.ratio tab.textColor tab.fillColor>=4.5) "Tint made text unreadable"
                 let flash = {inactive with displayInfo={inactive.displayInfo with bgColor=Some Color.Orange}}
                 check (flash.fillColor=Color.Orange) "Tint overrode attention"
+    // The anchored edge carries the stripe, opposite the rounded side, inside or outside.
+    for dpi in [96;144] do
+        let previousDpi = Dpi.value()
+        Dpi.set dpi
+        use scope = {new IDisposable with member _.Dispose() = Dpi.set previousDpi}
+        for dock in [TabDockLeft;TabDockRight] do
+            for direction in [TabUp;TabDown] do
+                let column = {ts with dock=dock;direction=direction;appearance=Theme.dark.scaled;size=Dpi.scaleSize(Sz(220,160))
+                                      tabs=Map2(List2([1,{info "One" with tint=Some Color.Red;colorStyle="Stripe"};2,{info "Two" with tint=Some Color.Red;colorStyle="Stripe"}]))}
+                let tab = column.tabSprites.list |> List.map snd |> List.find(fun tab -> tab.isTop)
+                use image = (tab :> ISprite).render.bitmap
+                let inset = Dpi.scale 2 + Dpi.scale 3/2
+                let opensLeft = (dock=TabDockRight) <> (direction=TabUp)
+                let x = if opensLeft then image.Width-Dpi.scale 2-Dpi.scale 3+Dpi.scale 3/2 else inset
+                let opposite = if opensLeft then inset else image.Width-inset-1
+                if not System.Windows.Forms.SystemInformation.HighContrast then
+                    check (image.GetPixel(x,image.Height/2).ToArgb()=Color.Red.ToArgb()) "Vertical stripe is not on the anchored edge for its expansion direction"
+                    check (image.GetPixel(opposite,image.Height/2).ToArgb()<>Color.Red.ToArgb()) "Vertical stripe also appears on the rounded edge"
+                    check (image.GetPixel(x,Dpi.scale 3).ToArgb()<>Color.Red.ToArgb() &&
+                           image.GetPixel(x,image.Height-Dpi.scale 3-1).ToArgb()<>Color.Red.ToArgb()) "Vertical color mark is not shortened and centered"
+                    use collapsed = column.renderCollapsed.bitmap
+                    let location = column.tabLocation tab.id
+                    check (collapsed.GetPixel(1,location.y+tab.size.height/2).ToArgb()=Color.Red.ToArgb()) "Collapsed vertical strip lost its color mark"
+                let inactive = column.tabSprites.list |> List.map snd |> List.find(fun tab -> not tab.isTop)
+                let inactive = {inactive with hover=None;captured=None}
+                if not System.Windows.Forms.SystemInformation.HighContrast then
+                    use quiet = (inactive :> ISprite).render.bitmap
+                    let quietX = x
+                    let color = quiet.GetPixel(quietX,quiet.Height/2)
+                    check (color.ToArgb()=(Theme.blend 0.30 Color.Red inactive.fillColor).ToArgb()) "Inactive stripe is not faint"
+                    let hovered = {inactive with hover=Some TabBackground}
+                    use highlighted = (hovered :> ISprite).render.bitmap
+                    check (highlighted.GetPixel(quietX,highlighted.Height/2).R>color.R &&
+                           highlighted.GetPixel(quietX,highlighted.Height/2).ToArgb()<>Color.Red.ToArgb())
+                          "Hovered stripe does not stay between the inactive and active colors"
+                    check (highlighted.GetPixel(quietX,highlighted.Height/2).ToArgb()=(Theme.blend 0.85 Color.Red hovered.fillColor).ToArgb())
+                          "Hovered stripe is not close to the active color"
+                if dpi=96 && direction=TabUp then
+                    use preview = column.render.bitmap
+                    preview.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "vertical-stripe-%A.png" dock),ImageFormat.Png)
+                let flash = {tab with displayInfo={tab.displayInfo with bgColor=Some Color.Orange}}
+                use flashing = (flash :> ISprite).render.bitmap
+                check (flashing.GetPixel(x,flashing.Height/2).ToArgb()<>Color.Red.ToArgb()) "Vertical stripe overrode an attention color"
     check (Theme.tabTint true (Some Color.Red)=None) "High contrast retained tint"
     let tabImage = ts.render
     // Short tabs shrink their contents to fit instead of clipping them.

@@ -5,6 +5,7 @@ open System.Windows.Forms
 open System.Runtime.InteropServices
 
 module SettingsShapes =
+    let editorWidth = 144
     /// The rectangle for a 1px outline of a width x height control. GDI+ puts pixel centres on
     /// whole coordinates, so whole-number edges fill exactly one row or column each; at 0.5 the
     /// top and left spread over two and half the bottom and right fell outside the control.

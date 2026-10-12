@@ -69,6 +69,8 @@ type TabStripDecorator(group:WindowGroup) as this =
                         this.onCloseWindow hwnd
             | _ -> ()
         
+        this.ts.dockChanged.Add(fun () -> this.updateTsPlacement())
+
         group.bounds.changed.Add <| fun() ->
             this.updateTsPlacement()
 
@@ -78,18 +80,29 @@ type TabStripDecorator(group:WindowGroup) as this =
             let alignment = value.cast<string>()
             group.invokeAsync(fun () -> if not disposed then this.ts.setDefaultAlignment(alignment)))
 
+        let positionSubscription = Services.settings.notifyValue "tabPosition" (fun value ->
+            let dock = match value.cast<string>() with "Left" -> TabDockLeft | "Right" -> TabDockRight | _ -> TabDockTop
+            group.invokeAsync(fun () -> if not disposed then this.ts.dock <- dock))
+        let widthSubscription = Services.settings.notifyValue "tabColumnWidth" (fun value ->
+            let width = value.cast<int>()
+            group.invokeAsync(fun () -> if not disposed then this.ts.columnWidth <- width))
+
         group.exited.Add <| fun() ->
             contextMenu |> Option.iter(fun menu -> menu.Dispose())
             contextMenu <- None
             disposed <- true
             alignmentSubscription.Dispose()
+            positionSubscription.Dispose()
+            widthSubscription.Dispose()
             geometrySubscription.Dispose()
             Services.dragDrop.unregisterTarget(this.ts.hwnd)
     
 
     member private this.tabSlide =
         dragInfoCell.value.map <| fun dragInfo ->
-                dragInfo.tab, dragPtCell.value.sub(dragInfo.tabOffset).x
+                let _,sprite = this.ts.tabSprites.pick(fun (location,sprite) -> if sprite.id=dragInfo.tab then Some(location,sprite) else None)
+                let pt = dragPtCell.value.sub(dragInfo.offsetIn(sprite.size))
+                dragInfo.tab, (if this.ts.isVertical then pt.y else pt.x)
 
     member private this.updateTsSlide() =
         this.ts.slide <- this.tabSlide
@@ -113,10 +126,12 @@ type TabStripDecorator(group:WindowGroup) as this =
             decoratorIndentFlipped = group.tabAppearance.tabIndentFlipped
             decoratorIndentNormal = group.tabAppearance.tabIndentNormal
         }
-        {
-            showInside = decorator.shouldShowInside
-            bounds = decorator.bounds
-        }
+        if this.ts.isVertical then
+            let width = Dpi.scale (if this.ts.isIconOnly then 48 else this.ts.columnWidth)
+            decorator.sidePlacement(this.ts.dock,width,contentHeight=this.ts.columnContentHeight,
+                                    alignment=this.ts.getAlignment TabUp)
+        else
+            { showInside=decorator.shouldShowInside; bounds=decorator.bounds }
 
     member this.beginRename(hwnd) =
         let tab = Tab(hwnd)
@@ -235,10 +250,18 @@ type TabStripDecorator(group:WindowGroup) as this =
         let exeName = pid.exeName
         let processPath = pid.processPath
 
+        let positionItem =
+            let item (text,dock) = CmiRegular({
+                text=tr text; image=None; flags=checkedFlag(this.ts.dock=dock)
+                click=fun () -> this.ts.dock <- dock })
+            CmiPopUp({ text=tr Strings.TabMenu.position; image=None
+                       items=List2([Strings.TabMenu.top,TabDockTop; Strings.Common.left,TabDockLeft; Strings.Common.right,TabDockRight]).map(item) })
+
         let alignmentItem =
-            let currentAlignment = this.ts.getAlignment(this.ts.direction)
+            let direction = if this.ts.isVertical then TabUp else this.ts.direction
+            let currentAlignment = this.ts.getAlignment direction
             let setAlignment newAlignment = fun() -> 
-                this.ts.setAlignment(this.ts.direction, newAlignment)
+                this.ts.setAlignment(direction, newAlignment)
 
             let alignmentMenuItem(text,alignment) = CmiRegular({
                 text = text
@@ -250,9 +273,9 @@ type TabStripDecorator(group:WindowGroup) as this =
                 text = tr Strings.Settings.tabAlignment.caption
                 image = None
                 items = List2([
-                    (tr Strings.Common.left, TabLeft)
+                    (tr (if this.ts.isVertical then Strings.Common.top else Strings.Common.left), TabLeft)
                     (tr Strings.Common.center, TabCenter)
-                    (tr Strings.Common.right,TabRight)
+                    (tr (if this.ts.isVertical then Strings.Common.bottom else Strings.Common.right),TabRight)
                 ]).map(alignmentMenuItem)
             })
 
@@ -294,7 +317,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         let combineIconsInTaskbar =
             CmiRegular({
-                text = tr Strings.Settings.combineTaskbarIcons.caption
+                text = tr Strings.TabMenu.combineTaskbarIcons
                 image = None
                 click = fun() -> Services.desktop.restartGroup(group.hwnd, group.isSuperBarEnabled.not)
                 flags = checkedFlag(group.isSuperBarEnabled)
@@ -340,7 +363,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 use dialog = new ColorDialog(FullOpen=true,Color=initial)
                 let owner = {new IWin32Window with member _.Handle=group.hwnd}
                 if dialog.ShowDialog(owner)=DialogResult.OK then choose (CustomColor dialog.Color)})
-            CmiRegular({text=tr (Strings.Settings.rememberTabColor exeName);image=None
+            CmiRegular({text=tr Strings.Settings.rememberTabColor;image=None
                         flags=checkedFlag remembered |> fun flags -> if not remembered && currentColor.IsNone then flags.append(MenuFlags.MF_GRAYED) else flags
                         click=fun() -> saveAppColor (if remembered then None else currentColor)})
             CmiRegular({text=tr Strings.Settings.clearTabColor;image=None;flags=List2();click=fun() ->
@@ -357,19 +380,19 @@ type TabStripDecorator(group:WindowGroup) as this =
         let isTabbingEnabled = Services.filter.getIsTabbingEnabledForProcess processPath
         let enableTabsItem =
             CmiRegular({
-                text = tr (Strings.TabMenu.enableTabsFor exeName)
+                text = tr Strings.TabMenu.enableTabs
                 image = None
                 click = fun() -> Services.filter.setIsTabbingEnabledForProcess processPath isTabbingEnabled.not
                 flags = checkedFlag(isTabbingEnabled)
             })
 
         let numberEnabled = NumberShortcutRules.enabled processPath
-        let numberItem = CmiRegular({ text=tr (Strings.Settings.numberShortcutFor exeName); image=None; flags=checkedFlag numberEnabled
+        let numberItem = CmiRegular({ text=tr Strings.TabMenu.numberShortcut; image=None; flags=checkedFlag numberEnabled
                                       click=fun() -> NumberShortcutRules.setEnabled processPath (not numberEnabled) })
         let isGrouped = Services.program.getAutoGroupingEnabled processPath
         let groupTabsItem =
             CmiRegular({
-                text = tr (Strings.TabMenu.autoGroupWindowsOf exeName)
+                text = tr Strings.TabMenu.autoGroupWindows
                 image = None
                 click = fun() -> Services.program.setAutoGroupingEnabled processPath isGrouped.not
                 flags = checkedFlag(isGrouped)
@@ -420,12 +443,14 @@ type TabStripDecorator(group:WindowGroup) as this =
         List2([
             Some(newTabItem)
             Some(renameTabItem)
-            Some(colorMenu)
             (if group.isRenamed(hwnd) then Some(restoreTabNameItem) else None)
-            Some(CmiSeparator)
-            Some(iconOnlyItem)
+            Some(colorMenu)
+            Some(CmiSection(tr Strings.TabMenu.currentGroup))
+            Some(positionItem)
             Some(alignmentItem)
             Some(autoHideItem)
+            Some(iconOnlyItem)
+            Some(CmiSeparator)
             Some(sortTabsItem)
             Some(combineIconsInTaskbar)
             Some(CmiSeparator)
@@ -433,7 +458,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(closeOtherTabsItem)
             (if mixesApps then Some(closeAllExeTabsItem) else None)
             Some(closeAllTabsItem)
-            Some(CmiSeparator)
+            Some(CmiSection(tr Strings.TabMenu.currentApp))
             Some(enableTabsItem)
             Some(groupTabsItem)
             Some(numberItem)
@@ -480,18 +505,23 @@ type TabStripDecorator(group:WindowGroup) as this =
         let numberBadgesCell = propCell("numberBadges", false)
         Cell.listen(fun() -> this.ts.numberBadges <- numberBadgesCell.value)
         let renamingTabCell = propCell("renamingTab", false)
-        let isRecentlyChangedZorderCell =
+        let isRecentlySwitchedCell =
             let cell = Cell.create(false)
             let cbRef = ref None
+            let mutable previousForeground = group.foreground
             group.exited.Add(fun _ ->
                 cbRef.Value.iter(fun (pending:IDisposable) -> pending.Dispose())
                 cbRef := None)
-            group.zorder.changed.Add <| fun() ->
-                cell.value <- true
+            group.foregroundChanged.Add <| fun() ->
                 cbRef.Value.iter <| fun(d:IDisposable) -> d.Dispose()
-                cbRef := Some(ThreadHelper.cancelablePostBack 1000 <| fun() ->
-                    cell.value <- false
-                )
+                cbRef := None
+                let foreground = group.foreground
+                let switched = previousForeground <> foreground &&
+                               group.windows.contains(previousForeground) && group.windows.contains(foreground)
+                previousForeground <- foreground
+                cell.value <- switched
+                if switched then
+                    cbRef := Some(ThreadHelper.cancelablePostBack 1000 <| fun() -> cell.value <- false)
             cell
         Cell.listen <| fun() ->
             let shrink =
@@ -502,7 +532,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 contextMenuVisibleCell.value.not &&
                 numberBadgesCell.value.not &&
                 renamingTabCell.value.not &&
-                (showOnSwitchCell.value.not || isRecentlyChangedZorderCell.value.not)
+                (showOnSwitchCell.value.not || isRecentlySwitchedCell.value.not)
             callbackRef.Value.iter <| fun(d:IDisposable) -> d.Dispose()
             callbackRef := None
             if shrink then
@@ -528,7 +558,8 @@ type TabStripDecorator(group:WindowGroup) as this =
                     if part <> TabClose then
                         let dragOffset = pt.sub(this.ts.tabLocation tab)
                         let dragImage = fun() -> this.ts.dragImage(tab)
-                        let dragInfo = box({ tab = tab; tabOffset = dragOffset; tabInfo = this.ts.tabInfo(tab)})
+                        let _,sprite = this.ts.tabSprites.pick(fun (location,sprite) -> if sprite.id=tab then Some(location,sprite) else None)
+                        let dragInfo = box({ tab = tab; tabOffset = dragOffset; tabSize=sprite.size; tabInfo = this.ts.tabInfo(tab)})
                         Services.dragDrop.beginDrag(this.ts.hwnd, dragImage, dragOffset, ptScreen, dragInfo)
                 | MouseMiddle ->
                     group.tabActivate(tab, false)
@@ -565,21 +596,24 @@ type TabStripDecorator(group:WindowGroup) as this =
                     else 
                         dragPtCell.set(pt)
                         dragInfoCell.set(Some(dragInfo))
-                        this.ts.addTabSlide dragInfo.tab this.tabSlide
+                        this.ts.addTab dragInfo.tab
                         // The destination group owns its cached icons. Drag data
                         // can outlive the source group's membership and cache.
                         group.addWindow(hwnd, false)
                         true
                 this.updateTsSlide()
+                this.ts.dragScrollPoint <- Some pt
                 result
 
         member this.dragMove(pt) =
             this.invokeSync <| fun() ->
                 dragPtCell.set(pt)
                 this.updateTsSlide()
+                this.ts.dragScrollPoint <- Some pt
 
         member this.dragExit() =
             this.invokeSync <| fun() ->
+                this.ts.dragScrollPoint <- None
                 match dragInfoCell.value with
                 | Some(dragInfo) ->
                     let tab = dragInfo.tab
@@ -595,6 +629,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         member this.dragEnd() =
             this.invokeAsync <| fun() ->
+                this.ts.dragScrollPoint <- None
                 isDraggingCell.value <- false
                 this.ts.transparent <- true
                 match this.ts.movedTab with

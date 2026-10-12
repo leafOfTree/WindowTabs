@@ -35,7 +35,7 @@ let strip count dpi font =
           textFont=font; textBrush=Brushes.Black })))
       lorder=List2(ids); zorder=List2(ids); size=Dpi.scaleSize(Sz(min 1800 (count*210),28))
       slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false
-      transparent=true; held=None; centerShift=0.0; appearance=appearance; hover=None; captured=None }
+      transparent=true; held=None; centerShift=0.0; dock=TabDockTop; scrollOffset=0; appearance=appearance; hover=None; captured=None }
 
 /// Times each action alone; setup and cleanup run around it, untimed but within cpuMs.
 let measureWith name iterations (setup:int -> 'state) (action:'state -> unit) (cleanup:'state -> unit) =

@@ -48,6 +48,9 @@ Search must not instantiate unopened pages. Page selection reuses controls. Them
 
 No setting exposed by the settings UI requires restarting WindowTabs after the live-update fixes below.
 The taskbar default is deliberately scoped to **new groups**, which its description states. Settings a group can override from its tab menu (tab position, auto-hide, taskbar icons) carry an (i) button that says so.
+The preview's default tab position and vertical column width are also scoped to new
+groups and saved in settings. Individual groups retain their menu position and
+resized width when these defaults change.
 
 | Setting | Effect and limitations | Runtime path |
 | --- | --- | --- |
@@ -57,6 +60,7 @@ The taskbar default is deliberately scoped to **new groups**, which its descript
 | Auto-hide tabs (Never / When maximized / Always) | Updates existing groups immediately; "maximized" means the window is maximized or its tabs sit inside it for lack of room above (`TabStrip.isShownInside`), which covers top snaps and windows moved against the top edge; a mode chosen in a group's tab menu takes priority. Pointer, drag and menu state still control expansion. Replaces the former `autoHide` and `minimalMode` toggles, which are migrated on load (minimal mode → Always) and dropped on save. | `TabStripDecorator.initAutoHide` subscription |
 | Show tabs briefly after switching | Updates existing groups immediately; expands auto-hidden tabs for about a second after a tab switch, in either auto-hide mode. Defaults on, except for legacy minimal mode; an explicitly saved value is preserved. Hidden in the page while auto-hide is Never. | `TabStripDecorator.initAutoHide` subscription |
 | Align tabs | Updates both normal and maximized positions in existing groups. A position explicitly chosen in the tab menu stays overridden for that direction. Previously applied only to new groups. | `TabStripDecorator` → `TabStrip.setDefaultAlignment` |
+| Default tab position (preview); default vertical column width | Saved across restarts and used by new groups. Existing groups retain their layout; their tab menu and exposed column edge provide individual overrides. Width is stored in logical pixels, from 120 to 420. | `SettingsCatalog` → `Settings` → `TabStrip` initialization |
 | Combine taskbar icons per group | Global preference applies to new groups. Use an existing group's tab menu to change that group without restarting the app. Taskbar plugin and preview-window lifetime are tied to the group; the existing menu action rebuilds it. Automatically rebuilding every group could discard its local state and interrupt interaction, so this remains explicitly scoped. | `GroupInfo` plugin creation; `Desktop.restartGroup` |
 | Replace Alt+Tab | Installs or removes the switcher immediately. | `Program.updateTaskSwitcher` |
 | Group windows in Alt+Tab | Used when the next Alt+Tab list is built; requires the WindowTabs switcher, and is hidden in the page while it is off. | `TaskSwitcher.windows` |

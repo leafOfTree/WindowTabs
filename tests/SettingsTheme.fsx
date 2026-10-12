@@ -29,6 +29,21 @@ let main() =
     try
         use settings = new Settings(true, saveDelay=0)
         let api = settings :> ISettings
+        check (api.getValue("tabPosition") :?> string="Horizontal" && api.getValue("tabColumnWidth") :?> int=220)
+              "Legacy settings no longer default to horizontal tabs and logical width"
+        api.setValue("tabPosition",box "Right")
+        api.setValue("tabColumnWidth",box 280)
+        settings.Flush() |> ignore
+        settings.clearCaches()
+        check (api.getValue("tabPosition") :?> string="Right" && api.getValue("tabColumnWidth") :?> int=280)
+              "Tab position and width did not survive settings reload"
+        api.setValue("tabPosition",box "Unknown")
+        api.setValue("tabColumnWidth",box 9999)
+        check (api.getValue("tabPosition") :?> string="Horizontal" && api.getValue("tabColumnWidth") :?> int=420)
+              "Invalid tab defaults were not normalized"
+        api.setValue("tabColumnWidth",box -1)
+        check (api.getValue("tabColumnWidth") :?> int=fst SettingsCatalog.columnWidthRange) "Tab default width fell below its minimum"
+        api.setValue("tabColumnWidth",box 220)
         for appearance in [Theme.light;Theme.dark] do
             let bar = appearance.tabNormalBgColor
             let dark = Theme.darkBar bar
@@ -54,7 +69,7 @@ let main() =
             let ids = [0..count-1]
             let strip : TabStripSprite<int> = {
                 tabs=Map2(List2(ids |> List.map(fun i -> i,info i))); lorder=List2(ids); zorder=List2(ids); size=Sz(900,27)
-                slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; transparent=true; held=None; centerShift=0.0
+                slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; transparent=true; held=None; centerShift=0.0; dock=TabDockTop; scrollOffset=0
                 appearance=appearance; hover=None; captured=None }
             let fills = strip.tabSprites.list |> List.filter(fun (_,sprite) -> not sprite.isTop) |> List.map(fun (_,sprite) -> sprite.fillColor)
             let spread (colors:Color list) =
@@ -190,6 +205,14 @@ let main() =
         let maximized = placement (TabPalette.compose (TabGeometry.fromAppearance geometry) (TabPalette.fromAppearance geometry)) 0
         check (maximized.shouldShowInside && maximized.bounds.x=100+11 && maximized.bounds.height=37) "Inside placement ignores the shared side margin"
         check (maximized.bounds.right=100+900-11-TabGeometry.captionButtonsReserve) "Inside placement does not clear the caption buttons"
+        for dock in [TabDockLeft;TabDockRight] do
+            let side = normal.sidePlacement(dock,80)
+            check (not side.showInside && side.bounds.width=80 && side.bounds.height=600) "Vertical tabs failed to use available outside space"
+            check ((if dock=TabDockLeft then side.bounds.right=normal.windowBounds.left else side.bounds.left=normal.windowBounds.right)) "Vertical tabs are detached from the selected window edge"
+            let edge = { normal with windowBounds=Rect(Pt(0,0),Sz(1920,1080)) }
+            let overlay = edge.sidePlacement(dock,220)
+            check (overlay.showInside && edge.windowBounds.completlyContains overlay.bounds) "Maximized vertical tabs escaped the window"
+            check (overlay.bounds.top>=Dpi.scale 32) "Vertical overlay covers title-bar controls"
         let originalDpi = Dpi.value()
         try
             for dpi in [96;120;144;192] do
@@ -321,7 +344,34 @@ let main() =
                 member _.setIsTabbingEnabledForProcesses _ _ = ()
                 member _.getIsTabbingEnabledForProcess _ = false })
         let general = GeneralView() :> ISettingsView
+        let position = controls general.control |> Seq.pick(function :? SettingsCombo as c when c.Name="tab-position" -> Some c | _ -> None)
         let appearance = AppearanceView() :> ISettingsView
+        check (controls general.control |> Seq.forall(fun c -> c.Name<>"tabColumnWidth")) "Column width remains on General"
+        check ((SettingsCatalog.find "tabColumnWidth").page=AppearanceSettings) "Column width search opens the wrong page"
+        let width = controls appearance.control |> Seq.pick(function :? SettingsNumberInput as c when c.Name="tabColumnWidth" -> Some c | _ -> None)
+        check (width.Width=Dpi.scale 144 && position.Width=width.Width) "Number and short-choice editors do not share their default width"
+        check (position.ItemText(0)=tr Strings.TabMenu.top) "Tab position still labels the top strip as horizontal"
+        let alignment = controls general.control |> Seq.pick(function :? SettingsCombo as c when c.Name="tab-alignment" -> Some c | _ -> None)
+        let savedAlignment = api.getValue("alignment")
+        let alignmentIndex = alignment.SelectedIndex
+        for index in [1;2;0] do
+            position.SelectedIndex <- index
+            let first,last = if index=0 then Strings.Common.left,Strings.Common.right else Strings.Common.top,Strings.Common.bottom
+            check (alignment.ItemText(0)=tr first && alignment.ItemText(1)=tr Strings.Common.center && alignment.ItemText(2)=tr last)
+                  "Alignment labels did not follow the live tab position"
+            check (alignment.SelectedIndex=alignmentIndex && api.getValue("alignment")=savedAlignment)
+                  "Relabeling alignment changed the saved alignment or selection"
+        position.SelectedIndex <- 1
+        let reopened = GeneralView() :> ISettingsView
+        let reopenedAlignment = controls reopened.control |> Seq.pick(function :? SettingsCombo as c when c.Name="tab-alignment" -> Some c | _ -> None)
+        check (reopenedAlignment.ItemText(0)=tr Strings.Common.top && reopenedAlignment.ItemText(2)=tr Strings.Common.bottom)
+              "Opening settings with vertical tabs used horizontal alignment labels"
+        reopened.control.Dispose()
+        width.Value <- 280M
+        check (api.getValue("tabPosition") :?> string="Left" && api.getValue("tabColumnWidth") :?> int=280)
+              "Default tab layout controls did not update saved preferences"
+        position.SelectedIndex <- 0
+        width.Value <- 220M
         let placeholder key caption =
             let panel = new Panel()
             { new ISettingsView with
@@ -566,6 +616,47 @@ let main() =
         let nav = controls form |> Seq.choose (function :? Button as b when b.Text="Appearance" -> Some b | _ -> None) |> Seq.head
         nav.PerformClick()
         Application.DoEvents()
+        do
+            let preview = controls appearance.control |> Seq.pick(function :? TabPreview as p -> Some p | _ -> None)
+            let beforePosition,beforeWidth = api.getValue("tabPosition"),api.getValue("tabColumnWidth")
+            let render name =
+                use image = new Bitmap(preview.Width,preview.Height)
+                preview.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","appearance-preview-"+name+".png"),ImageFormat.Png)
+            for value,dock in ["Horizontal",TabDockTop;"Left",TabDockLeft;"Right",TabDockRight] do
+                api.setValue("tabPosition",box value)
+                Application.DoEvents()
+                check (preview.Position=dock) "Appearance preview did not follow the live tab position"
+                let row key = (controls appearance.control |> Seq.find(fun c -> c.Name=key)).Parent :?> SettingsRow
+                for key in ["tabColumnWidth";"tabStyle";"tabHeight";"tabMaxWidth";"tabOverlap";"tabIndentNormal"] do
+                    check (not (row key).Collapsed) "Global tab position hid settings needed by a group's own layout"
+                let bounds = preview.TabBounds(ThemeService.currentAppearance().scaled.tabHeight)
+                check (bounds.Left>=0 && bounds.Right<=preview.Width && bounds.Bottom<=preview.Height) "Preview tabs overflow their panel"
+                if dock<>TabDockTop then
+                    check (bounds.Width=Dpi.scale (beforeWidth :?> int)) "Vertical preview ignored the column width"
+                    check ((dock=TabDockLeft && bounds.Left=Dpi.scale 16) ||
+                           (dock=TabDockRight && bounds.Right=preview.Width-Dpi.scale 16)) "Vertical preview is on the wrong edge"
+                render value
+            width.Value <- decimal(fst SettingsCatalog.columnWidthRange)
+            Application.DoEvents()
+            check (preview.ColumnWidth=48 && (preview.TabBounds(ThemeService.currentAppearance().scaled.tabHeight)).Width=Dpi.scale 48)
+                  "Vertical preview did not shrink to an icon rail"
+            width.Value <- 220M
+            Application.DoEvents()
+            let initialBounds = preview.TabBounds(ThemeService.currentAppearance().scaled.tabHeight)
+            width.Value <- 280M
+            Application.DoEvents()
+            check (preview.ColumnWidth=280 && (preview.TabBounds(ThemeService.currentAppearance().scaled.tabHeight)).Width>initialBounds.Width)
+                  "Column width editor did not resize the vertical preview"
+            let reset = controls appearance.control |> Seq.pick(function :? SettingsResetButton as b when b.Name="reset-tab-layout" -> Some b | _ -> None)
+            check reset.Offered "A changed column width did not offer layout reset"
+            reset.PerformClick()
+            Application.DoEvents()
+            check (api.getValue("tabColumnWidth")=box SettingsCatalog.columnWidthDefault && width.Value=decimal SettingsCatalog.columnWidthDefault)
+                  "Layout reset did not restore the column width"
+            api.setValue("tabPosition",beforePosition)
+            api.setValue("tabColumnWidth",beforeWidth)
+            Application.DoEvents()
         let tiles = controls appearance.control |> Seq.choose (function :? SettingsThemeTile as tile -> Some tile | _ -> None) |> Seq.toList
         check (tiles.Length=3) "Missing theme preview choices"
         let lightTile = tiles |> List.find (fun tile -> tile.Text="Light")

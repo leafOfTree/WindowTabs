@@ -31,6 +31,39 @@ let main() =
     let previous = Native.SetThreadDpiAwarenessContext(IntPtr(-4))
     let originalDpi = Dpi.value()
     try
+        for dpi in [96;144;192] do
+            Dpi.set dpi
+            for dock in [TabDockLeft;TabDockRight] do
+                for inside in [false;true] do
+                    let area = Rect(Pt(0,0),Sz(Dpi.scale 1920,Dpi.scale 1080))
+                    let bounds = if inside then area else Rect(Pt(Dpi.scale 400,Dpi.scale 100),Sz(Dpi.scale 600,Dpi.scale 500))
+                    let decorator = { windowBounds=bounds;monitorBounds=List2([area]);decoratorHeight=Dpi.scale 32
+                                      decoratorHeightOffset=0;decoratorIndentNormal=0;decoratorIndentFlipped=0 }
+                    let inset = if inside then Dpi.scale 32 else 0
+                    for count in [1;3;100] do
+                        let content = count*Dpi.scale 36+Dpi.scale 4
+                        let height = min content (bounds.height-inset)
+                        for alignment in [TabLeft;TabCenter;TabRight] do
+                            let placed = decorator.sidePlacement(dock,Dpi.scale 220,contentHeight=content,alignment=alignment)
+                            let spare = bounds.height-inset-height
+                            let offset = match alignment with TabLeft -> 0 | TabCenter -> spare/2 | TabRight -> spare
+                            check (placed.showInside=inside && placed.bounds.height=height) "Vertical column did not fit its tabs within the available height"
+                            check (placed.bounds.y=bounds.y+inset+offset) "Vertical alignment ignored available height or the title-bar inset"
+                            if inside && dock=TabDockRight then
+                                check (placed.bounds.right=area.right) "Right overlay left an unwanted edge gap"
+                    let maximized = {decorator with windowBounds=area.inflate(Dpi.scale 8,Dpi.scale 8)}
+                    let overlay = maximized.sidePlacement(dock,Dpi.scale 220,contentHeight=Dpi.scale 120)
+                    check (area.completlyContains overlay.bounds) "Maximized invisible frame placed the trigger beyond the screen"
+                    if dock=TabDockRight then
+                        check (overlay.bounds.right=area.right) "Maximized overlay did not attach to the visible screen edge"
+            let rightScreen = Rect(Pt(0,0),Dpi.scaleSize(Sz(1920,1080)))
+            let leftScreen = rightScreen.move(-rightScreen.width,0)
+            for owner,dock in [rightScreen,TabDockLeft;leftScreen,TabDockRight] do
+                let decorator = {windowBounds=owner;monitorBounds=List2([leftScreen;rightScreen]);decoratorHeight=Dpi.scale 32
+                                 decoratorHeightOffset=0;decoratorIndentNormal=0;decoratorIndentFlipped=0}
+                let side = decorator.sidePlacement(dock,Dpi.scale 220,contentHeight=Dpi.scale 120)
+                check (side.showInside && owner.completlyContains side.bounds) "Side column crossed into the neighboring monitor"
+        Dpi.set originalDpi
         use form = new Form(AutoScaleDimensions=SizeF(float32(Dpi.value()),float32(Dpi.value())),AutoScaleMode=AutoScaleMode.Dpi,
                             ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ClientSize=Size(980,760))
         form.DpiChanged.Add(fun e -> Dpi.set e.DeviceDpiNew)
@@ -82,6 +115,20 @@ let main() =
         let rec labels (control:Control) = seq { if control :? Label then yield control
                                                  for child in control.Controls do yield! labels child }
         Application.DoEvents()
+        let checkVersionFooter (window:Form) =
+            let version = window.Controls.Find("version-link",true).[0] :?> Label
+            let language = window.Controls.Find("language",true).[0]
+            let previousText = version.Text
+            try
+                version.Text <- "v2026.10.10-beta.1"
+                window.PerformLayout()
+                let measured = TextRenderer.MeasureText(version.Text,version.Font)
+                check (measured.Width<=version.ClientSize.Width && measured.Height<=version.ClientSize.Height)
+                      (sprintf "Preview version clipped: text %A, available %A" measured version.ClientSize)
+                check (not (version.RectangleToScreen(version.ClientRectangle).IntersectsWith(language.RectangleToScreen(language.ClientRectangle))))
+                      "Language picker overlaps the version link"
+            finally version.Text <- previousText
+        checkVersionFooter settingsForm
         let target = start*2
         let bounds = settingsForm.Bounds
         let memory = Marshal.AllocHGlobal(16)
@@ -91,6 +138,7 @@ let main() =
         finally Marshal.FreeHGlobal(memory)
         Application.DoEvents()
         check (Dpi.value()=target) "Settings window did not process the DPI change"
+        checkVersionFooter settingsForm
         frame.showView(AppearanceSettings)
         Application.DoEvents()
         let expected = 10.5f*float32 target/float32(Dpi.system())

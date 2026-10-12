@@ -442,6 +442,20 @@ and TaskbarTab(parent:TaskBarButton, config,size) =
         parent.unregisterTab(_window.hwnd)
         parent.releaseWindow(_window.hwnd)
 
+/// Ordinary groups reclaim buttons removed by a previous combined session.
+type TaskbarRestorePlugin(restoreWindow:IntPtr -> unit) =
+    let restore hwnd = if WinUserApi.IsWindow hwnd then restoreWindow hwnd
+
+    new() =
+        let taskbar = OS().getTaskbar()
+        TaskbarRestorePlugin(fun hwnd -> taskbar |> Option.iter(fun bar -> bar.AddTab(hwnd)))
+
+    interface IPlugin with
+        member _.init() =
+            let group = Services.get<WindowGroup>()
+            group.added.Add restore
+            group.exited.Add(fun () -> group.windows.items.iter restore)
+
 type SuperBarPlugin() as this =
     let _os = OS()
 
@@ -646,6 +660,8 @@ type SuperBarPlugin() as this =
         this.updateTaskbar()
 
     member this.onGroupExited() =
+        this.wtGroup.windows.items.iter(fun hwnd ->
+            if WinUserApi.IsWindow hwnd then this.showInTaskbar(hwnd,true))
         captureTimer.Dispose()
         (captures :> IDisposable).Dispose()
         this.releaseAll()

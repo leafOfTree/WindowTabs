@@ -5,6 +5,7 @@ open System.Drawing
 type ContextMenuItem =
     | CmiRegular of CmiRegular
     | CmiSeparator
+    | CmiSection of string
     | CmiPopUp of CmiPopUp
 
 and CmiRegular = {
@@ -85,6 +86,7 @@ type NativeContextMenu(items:List2<ContextMenuItem>) =
                 handlers.Add(nextId,item.click)
                 imageAt position (item.flags.list |> List.exists(fun flag -> flag &&& MenuFlags.MF_CHECKED <> 0)) item.image
             | CmiSeparator -> WinUserApi.AppendMenu(menu,MenuFlags.MF_SEPARATOR,0,"") |> ignore
+            | CmiSection text -> WinUserApi.AppendMenu(menu,MenuFlags.MF_STRING ||| MenuFlags.MF_GRAYED,0,text) |> ignore
             | CmiPopUp item ->
                 let child = create item.items.list
                 if WinUserApi.AppendMenu(menu,MenuFlags.MF_POPUP,int child,item.text) then roots.Remove(child) |> ignore

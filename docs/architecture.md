@@ -94,6 +94,23 @@ When those monitors differ for a maximized window, move its normal restore recta
 to the current monitor, keeping its size and relative position. Windows otherwise
 rejects the minimize destination on the new monitor and resets it to its default.
 
+## Taskbar recovery and remembered layouts
+
+Ordinary groups reclaim each window's taskbar button when it joins, including
+windows rediscovered at startup after a combined session ended unexpectedly.
+Combined groups recreate their proxy and previews through the existing z-order
+updates. Both kinds restore remaining live windows' buttons when the group exits.
+Only managed windows are reconciled; no recovery file or taskbar polling is used.
+
+Explicit tab position, width and alignment choices are also stored immediately in
+a versioned native property on each managed application HWND. It packs bounded
+logical values, not a memory pointer. Group discovery reads it before attaching the
+first window; an explicit workspace/rebuild layout takes precedence. The property
+survives WindowTabs termination and expires when the application HWND is destroyed.
+Unmodified groups start with global defaults. Changing the global tab position or
+column width posts the new value to every existing group's STA and updates its
+remembered window layout; individual menu choices can override it again.
+
 ## Settings persistence
 
 `Settings` updates its in-memory snapshot immediately and issues existing change
@@ -188,7 +205,13 @@ preserves the working shortcut and does not persist the rejected value.
 
 ## Workspace data and background work
 
-Workspace schema 2 stores placement points and rectangles as separate objects.
+Workspace schema 3 stores placement points and rectangles as separate objects
+and an optional per-group tab layout (position, logical width and both alignments).
+Saving collects layouts asynchronously on their group STAs and publishes the
+workspace once all snapshots complete. Restore queues the saved layout before
+adding windows. Schemas 1 and 2 still load; absent or damaged layouts use current
+defaults (or remembered choices on live windows), and a damaged layout does not
+discard its group or windows.
 The reader accepts the previous flat placement format, validates each entry, and
 retains valid siblings. Unsupported schema versions are read-only. Rejected data
 is retained in `workspaceRecovery` on subsequent save. Opening the workspace page

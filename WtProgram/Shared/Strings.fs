@@ -17,6 +17,8 @@ module Strings =
         let name = { en="Name"; zh="名称"; ja="名称" }
         let title = { en="Title"; zh="标题"; ja="タイトル" }
         let left = { en="Left"; zh="左侧"; ja="左" }
+        let top = { en="Top"; zh="靠上"; ja="上" }
+        let bottom = { en="Bottom"; zh="靠下"; ja="下" }
         let center = { en="Center"; zh="居中"; ja="中央" }
         let right = { en="Right"; zh="右侧"; ja="右" }
         let never = { en="Never"; zh="从不"; ja="しない" }
@@ -49,18 +51,24 @@ module Strings =
 
     /// Tab context menu.
     module TabMenu =
+        let currentGroup = { en="Current group"; zh="当前分组"; ja="現在のグループ" }
+        let currentApp = { en="Current app"; zh="当前应用"; ja="現在のアプリ" }
+        let position = { en="Tab position"; zh="标签位置"; ja="タブの位置" }
+        let top = { en="Top"; zh="顶部"; ja="上部" }
         let showTabTitles = { en="Show tab titles"; zh="显示标签标题"; ja="タブのタイトルを表示" }
         let showIconsOnly = { en="Show icons only"; zh="仅显示图标"; ja="アイコンのみ表示" }
-        let newTab = { en="Open new tab"; zh="新建标签"; ja="新しいタブを開く" }
-        let renameTab = { en="Rename tab"; zh="重命名标签"; ja="タブ名を変更" }
-        let restoreTabName = { en="Restore tab name"; zh="恢复标签名称"; ja="タブ名を元に戻す" }
-        let sortTabs = { en="Sort tabs by app then title"; zh="按应用和标题排序标签"; ja="アプリとタイトルの順にタブを並べ替え" }
-        let enableTabsFor exe = { en=sprintf "Enable tabs for %s" exe; zh=sprintf "为 %s 启用标签" exe; ja=sprintf "%s のタブを有効にする" exe }
-        let autoGroupWindowsOf exe = { en=sprintf "Enable auto-grouping for %s" exe; zh=sprintf "为 %s 启用自动分组" exe; ja=sprintf "%s の自動グループ化を有効にする" exe }
+        let newTab = { en="New tab"; zh="新建标签"; ja="新しいタブ" }
+        let renameTab = { en="Rename"; zh="重命名"; ja="名前を変更" }
+        let restoreTabName = { en="Reset name"; zh="重置名称"; ja="名前をリセット" }
+        let sortTabs = { en="Sort by app and title"; zh="按应用和标题排序"; ja="アプリとタイトル順に並べ替え" }
+        let combineTaskbarIcons = { en="Combine taskbar icons"; zh="合并任务栏图标"; ja="タスクバーアイコンをまとめる" }
+        let numberShortcut = { en="Switch by number"; zh="数字键切换"; ja="番号で切り替え" }
+        let enableTabs = { en="Enable tabs"; zh="启用标签"; ja="タブを有効にする" }
+        let autoGroupWindows = { en="Auto-group windows"; zh="自动分组"; ja="ウィンドウを自動グループ化" }
         let close = { en="Close"; zh="关闭"; ja="閉じる" }
         let closeOthers = { en="Close others"; zh="关闭其他"; ja="他を閉じる" }
         let closeAllOf exe = { en=sprintf "Close all '%s' windows" exe; zh=sprintf "关闭所有“%s”窗口" exe; ja=sprintf "「%s」のウィンドウをすべて閉じる" exe }
-        let closeAll = { en="Close all"; zh="全部关闭"; ja="すべて閉じる" }
+        let closeAll = { en="Close all"; zh="关闭全部"; ja="すべて閉じる" }
         let settings = { en="Settings..."; zh="设置..."; ja="設定..." }
 
     /// Menu shown when a tab is dropped with the right mouse button.
@@ -127,6 +135,13 @@ module Strings =
         let showTabsOnSwitch = { caption={ en="Show tabs briefly after switching"; zh="切换后短暂显示标签"; ja="切り替え後にタブを一時的に表示" }
                                  description={ en="For about a second, so you can see where you are."; zh="显示约一秒，方便确认当前位置。"; ja="約 1 秒間表示して、今いる位置を確認できます。" }
                                  keywords={ en="peek"; zh="短暂显示"; ja="一時表示" } }
+        let tabPosition = { caption={ en="Tab position"; zh="标签位置"; ja="タブの位置" }
+                            description=none
+                            keywords={ en="vertical horizontal sidebar left right"; zh="垂直 横向 侧栏 左 右"; ja="縦 横 サイドバー 左 右" } }
+        let tabColumnWidthHint = { en="For left/right tabs. Drag a column edge to resize one group, down to an icon rail."; zh="用于左／右标签。拖动侧栏边缘可单独调整分组宽度，最窄可只显示图标。"; ja="左・右のタブ用です。列の端をドラッグしてグループの幅を変更できます。最小幅ではアイコンのみを表示します。" }
+        let tabColumnWidth = { caption={ en="Vertical column width"; zh="垂直栏宽度"; ja="縦タブ幅" }
+                               description=none
+                               keywords={ en="vertical sidebar width size"; zh="垂直 侧栏 宽度 大小"; ja="縦 サイドバー 幅 サイズ" } }
         let tabAlignment = { caption={ en="Align tabs"; zh="对齐标签"; ja="タブを揃える" }
                              description=none
                              keywords={ en="alignment position"; zh="对齐 位置"; ja="配置 位置" } }
@@ -151,7 +166,7 @@ module Strings =
         let searchTabs = { caption={ en="Search tabs"; zh="搜索标签"; ja="タブを検索" }
                            description={ en="By title or app name, current group first."; zh="按标题或应用名查找，优先当前分组。"; ja="タイトルやアプリ名で探します。現在のグループを優先。" }
                            keywords={ en="find"; zh="查找"; ja="検索" } }
-        let newTab = { caption={ en="Open new tab"; zh="新建标签"; ja="新しいタブを開く" }
+        let newTab = { caption={ en="New tab"; zh="新建标签"; ja="新しいタブ" }
                        description={ en="Starts the current tab's app again."
                                      zh="再次启动当前标签的应用。"
                                      ja="現在のタブのアプリをもう一度起動します。" }
@@ -167,10 +182,10 @@ module Strings =
         let leaderKeyPresets = [| {en="123456789";zh="123456789";ja="123456789"}; {en="QWERTYUIOP";zh="QWERTYUIOP";ja="QWERTYUIOP"}; {en="ASDFGHJKL;";zh="ASDFGHJKL;";ja="ASDFGHJKL;"} |]
         let invalidLeaderKeys = {en="Use at least one unique letter, digit or unshifted punctuation key.";zh="请使用至少一个不重复的字母、数字或无需 Shift 的标点键。";ja="重複しない英字、数字、Shift 不要の記号を 1 つ以上指定してください。"}
         let numberLeader = { caption={ en="Tab selection leader"; zh="标签选择引导键"; ja="タブ選択のリーダーキー" }; description=none; keywords=none }
-        let tabColors = { en="Tab color"; zh="标签着色"; ja="タブの色分け" }
+        let tabColors = { en="Color"; zh="颜色"; ja="色" }
         let customTabColor = { en="Custom…"; zh="自定义…"; ja="カスタム…" }
         let clearTabColor = { en="Clear color"; zh="清除颜色"; ja="色を解除" }
-        let rememberTabColor name = { en=sprintf "Remember color for %s" name; zh=sprintf "记住 %s 的颜色" name; ja=sprintf "%s の色を記憶" name }
+        let rememberTabColor = { en="Remember color for current app"; zh="为当前应用记住颜色"; ja="現在のアプリの色を記憶" }
         let tabColorNames = [|
             { en="Grey";zh="灰色";ja="グレー" }; { en="Blue";zh="蓝色";ja="青" }
             { en="Red";zh="红色";ja="赤" }; { en="Yellow";zh="黄色";ja="黄" }
@@ -220,6 +235,7 @@ module Strings =
         let tabStyle = { caption={ en="Tab style"; zh="标签样式"; ja="タブのスタイル" }
                          description={ en="How the active tab stands out from the rest."; zh="活动标签以何种方式与其他标签区分。"; ja="アクティブなタブをほかのタブとどう見分けるかを選びます。" }
                          keywords={ en="shape folder pill"; zh="形状 文件夹 胶囊"; ja="形 フォルダー ピル" } }
+        let tabHeightHint = { en="Left/right tabs have a minimum height of 32 px."; zh="左／右标签的实际高度最低为 32px。"; ja="左・右のタブの最小高さは 32px です。" }
         let tabHeight = { caption={ en="Tab height"; zh="标签高度"; ja="タブの高さ" }; description=none; keywords=sizeWords }
         let tabMaxWidth = { caption={ en="Maximum tab width"; zh="标签最大宽度"; ja="タブの最大幅" }; description=none; keywords=sizeWords }
         let tabOverlap = { caption={ en="Tab spacing"; zh="标签间距"; ja="タブの間隔" }
@@ -309,7 +325,6 @@ module Strings =
         let editedPreset name = { en=sprintf "%s*" name; zh=sprintf "%s*" name; ja=sprintf "%s*" name }
         let resetColors = { en="Reset colors"; zh="重置配色"; ja="配色をリセット" }
         let tabLayout = { en="Tab layout"; zh="标签布局"; ja="タブのレイアウト" }
-        let sizesStayTheSame = { en="Sizes stay the same when you switch themes."; zh="切换主题不会改变这些尺寸。"; ja="テーマを切り替えてもサイズは変わりません。" }
         let resetTabLayout = { en="Reset tab layout"; zh="重置标签布局"; ja="タブのレイアウトをリセット" }
         /// Stable source order; ThemePresets arranges the displayed colour families.
         let presets =
@@ -398,6 +413,7 @@ module Strings =
         let expectedObject = { en="Expected an object."; zh="应为对象。"; ja="オブジェクトが必要です。" }
         let expectedList = { en=": expected a list."; zh="：应为列表。"; ja="：リストが必要です。" }
         let missingPlacement = { en="Missing placement."; zh="缺少窗口位置。"; ja="ウィンドウの配置がありません。" }
+        let invalidTabLayout = { en="Invalid saved tab layout; the group will use current defaults."; zh="保存的标签布局无效；该分组将使用当前默认设置。"; ja="保存されたタブ配置が無効です。グループには現在の既定値を使用します。" }
         let noValidWindows = { en="No valid windows in this group."; zh="此分组中没有有效窗口。"; ja="このグループに有効なウィンドウがありません。" }
         let unsupportedVersion = { en="Unsupported workspace version; saved workspaces will not be modified."
                                    zh="不支持此工作区版本；已保存的工作区不会被修改。"

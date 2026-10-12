@@ -17,6 +17,8 @@ type SettingDefinition = {
     binding:SettingBinding }
 
 module SettingsCatalog =
+    let columnWidthDefault = 220
+    let columnWidthRange = 48,420
     let leaderKeyPresets = List.zip ["123456789";"QWERTYUIOP";"ASDFGHJKL;"] (Array.toList Strings.Settings.leaderKeyPresets)
     let all = [
         { id="tab-color-mode"; page=AppearanceSettings; text=Strings.Settings.tabColorMode; binding=Choice("tabColorMode",["Off";"ByWindow";"ByApp"],"Off") }
@@ -27,6 +29,8 @@ module SettingsCatalog =
         { id="enable-tabs-for-new-apps"; page=ProgramSettings; text=Strings.Settings.enableTabsByDefault; binding=Toggle("enableTabbingByDefault",true,false) }
         { id="dim-inactive-groups"; page=GeneralSettings; text=Strings.Settings.dimInactiveGroups; binding=Toggle("hideInactiveTabs",true,false) }
         { id="tab-alignment"; page=GeneralSettings; text=Strings.Settings.tabAlignment; binding=Choice("alignment",["Left";"Center";"Right"],"Center") }
+        { id="tab-position"; page=GeneralSettings; text=Strings.Settings.tabPosition; binding=Choice("tabPosition",["Horizontal";"Left";"Right"],"Horizontal") }
+        { id="tabColumnWidth"; page=AppearanceSettings; text=Strings.Settings.tabColumnWidth; binding=Number(columnWidthRange) }
         // "Maximized" also covers windows whose tabs sit inside them (top snaps); the stored value keeps its original name.
         { id="auto-hide-tabs"; page=GeneralSettings; text=Strings.Settings.autoHide; binding=Choice("autoHideMode",["Never";"Maximized";"Always"],"Maximized") }
         { id="show-tabs-on-switch"; page=GeneralSettings; text=Strings.Settings.showTabsOnSwitch; binding=Toggle("showTabsOnSwitch",true,true) }
@@ -66,8 +70,9 @@ module SettingsCatalog =
     let find id = all |> List.find(fun item -> item.id=id)
     /// Shown from an (i) button beside the caption.
     let help id =
-        // Changeable per group from the tab menu; groups do not save it, so it lasts as long as the group.
-        if List.contains id ["auto-hide-tabs";"tab-alignment";"combine-taskbar-icons"] then Some Strings.General.tabMenuHint
+        if id="tabHeight" then Some Strings.Settings.tabHeightHint
+        elif id="tabColumnWidth" then Some Strings.Settings.tabColumnWidthHint
+        elif List.contains id ["tab-position";"auto-hide-tabs";"tab-alignment";"combine-taskbar-icons"] then Some Strings.General.tabMenuHint
         // A tab's own color, picked from its menu, comes before the automatic one.
         elif id="tab-color-mode" then Some Strings.Settings.tabColorMenuHint
         elif id="switch-tabs-by-number" then Some Strings.Settings.numberShortcutMenuHint
@@ -133,6 +138,7 @@ module SettingsCatalog =
     let storageKey item =
         match item.binding with
         | Toggle(key,_,_) | Choice(key,_,_) | Shortcut(key,_) | Text(key,_) -> key
+        | Number _ -> item.id
         | _ -> ""
     let searchTexts item =
         ([item.text.caption;item.text.keywords;searchContext item] |> List.collect Localization.all) @ [storageKey item]
