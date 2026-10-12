@@ -490,10 +490,19 @@ and
             let previous = this.prevZorder.hwnd
             let wp = this.placement
             let _,anchor = this.minimizeAnchor
+            let normalBounds =
+                let screen = Screen.FromHandle(hwnd)
+                let restoreScreen = Screen.FromRectangle(wp.rcNormalPosition.Rectangle)
+                if this.isMaximized && screen.DeviceName<>restoreScreen.DeviceName then
+                    // Windows rejects a minimize destination on a different monitor from
+                    // the normal restore frame, even while the maximized frame is there.
+                    wp.rcNormalPosition.move(screen.Bounds.Left-restoreScreen.Bounds.Left,screen.Bounds.Top-restoreScreen.Bounds.Top)
+                else wp.rcNormalPosition
             this.setPlacement({
                 wp with
                     flags=wp.flags ||| WindowPlacementFlags.WPF_SETMINPOSITION
                     ptMinPosition=anchor
+                    rcNormalPosition=normalBounds
                     showCmd=if wp.showCmd=ShowWindowCommands.SW_SHOWNORMAL then ShowWindowCommands.SW_SHOWNOACTIVATE else wp.showCmd})
             if isCurrent() then
                 // WINDOWPLACEMENT remembers the unsnapped restore rectangle.

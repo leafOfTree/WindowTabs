@@ -124,6 +124,7 @@ let main() =
         check (pixels.Width=32 && pixels.Height=32) (sprintf "Badged taskbar icon is %dx%d" pixels.Width pixels.Height)
         check (isAppColour(pixels.GetPixel(4,4)) && isAppColour(pixels.GetPixel(28,4)) && isAppColour(pixels.GetPixel(4,28))) "Badge covered more than the bottom right of the app's icon"
         check (not(isAppColour(pixels.GetPixel(24,24)))) "Taskbar icon has no badge at the bottom right"
+        check (isAppColour(pixels.GetPixel(17,24))) "Taskbar badge was not shifted towards the right edge"
     finally pixels.Dispose()
     let handle = badged.icon.Handle
     (badged :> IDisposable).Dispose()

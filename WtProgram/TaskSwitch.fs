@@ -419,7 +419,7 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
                 use pen = new Pen(p.text,float32(Dpi.scale 2))
                 g.DrawRectangle(pen,Rectangle.Inflate(iconBounds,-Dpi.scale 8,-Dpi.scale 12))
             // A tab group shows the WindowTabs badge on its icon.
-            if isGroup then g.DrawImage(badge,iconBounds.Right-badge.Width+Dpi.scale 4,iconBounds.Bottom-badge.Height+Dpi.scale 4))
+            if isGroup then g.DrawImage(badge,iconBounds.Right-badge.Width+Dpi.scale 4,iconBounds.Bottom-badge.Height))
         if items.Length>0 then
             let title,_,_ = items.[max 0 (min (items.Length-1) selected)]
             let bottom = padding+rows*cell+(rows-1)*gap

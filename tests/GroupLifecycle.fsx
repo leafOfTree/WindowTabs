@@ -140,6 +140,25 @@ let main() =
                 check (not(SystemInformation.VirtualScreen.IntersectsWith(sourceWindow.bounds.Rectangle))) "A centred minimized title bar remains on screen"
                 sourceWindow.showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE)
                 check (sourceWindow.bounds=frame) "Restoring from the centred destination changed the window frame"
+            // A maximized window can move to another monitor while its normal restore
+            // rectangle remains on the old one; both animations must use the current screen.
+            sourceWindow.showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED)
+            for screen in Screen.AllScreens do
+                let work = screen.WorkingArea
+                sourceWindow.move(Rect(Pt(work.Left,work.Top),Sz(work.Width,work.Height)))
+                check (sourceWindow.isMaximized && Screen.FromHandle(snapSource.Handle).DeviceName=screen.DeviceName) "Maximized fixture did not move to the target monitor"
+                sourceWindow.prepareMinimizeAnchor(fun () -> true)
+                let x = screen.Bounds.Left+(screen.Bounds.Width-SystemInformation.MinimizedWindowSize.Width)/2
+                check (sourceWindow.placement.ptMinPosition.x=x-(work.Left-screen.Bounds.Left)) (sprintf "A maximized window kept its previous monitor's minimize destination: anchor=%A expectedX=%d screen=%s actualScreen=%s bounds=%A normal=%A" sourceWindow.placement.ptMinPosition x screen.DeviceName (Screen.FromHandle(snapSource.Handle).DeviceName) sourceWindow.bounds sourceWindow.placement.rcNormalPosition)
+                sourceWindow.showWindow(ShowWindowCommands.SW_SHOWMINNOACTIVE)
+                check (sourceWindow.bounds.x=x) "A maximized window did not minimize to its current monitor's centre"
+                sourceWindow.parkIfMinimized()
+                check (sourceWindow.bounds.x=x && not(SystemInformation.VirtualScreen.IntersectsWith(sourceWindow.bounds.Rectangle))) "Parking a maximized window moved its restore origin away from the current monitor's centre"
+                sourceWindow.showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE)
+                check (sourceWindow.isMaximized && Screen.FromHandle(snapSource.Handle).DeviceName=screen.DeviceName) "Restoring a maximized window selected its old monitor or lost maximization"
+            sourceWindow.showWindow(ShowWindowCommands.SW_SHOWNORMAL)
+            check (sourceWindow.bounds.size=Sz(640,480)) "Moving the maximize restore frame changed the window's normal size"
+            printfn "PASS: centred minimize/restore for normal and maximized windows on %d monitors." Screen.AllScreens.Length
         finally
             FollowerPlacement.queue.release(snapQueueOwner,snapFollower.Handle)
             snapSource.Hide()
@@ -239,6 +258,12 @@ let main() =
                     onGroup combined (fun group -> group.isPlacementIdle) &&
                     [a;b;d] |> List.forall (fun hwnd -> OS().windowFromHwnd(hwnd).isMaximized))
                 check ([b;d] |> List.forall(fun hwnd -> keyboardSource.zorder<OS().windowFromHwnd(hwnd).zorder)) "Maximizing several owned followers covered the originating tab"
+                check (nativeOrder combined=tabsBeforeMove && onGroup combined (fun group -> group.topWindow=a)) "Returning from half-screen to maximized changed the active tab or tab positions"
+                check (WinUserApi.GetActiveWindow()=a) "Returning from half-screen to maximized activated a follower"
+                pumpUntil "Returning from half-screen to maximized left the strip hidden or behind its owner" (fun () ->
+                    onGroup combined (fun group ->
+                        let strip = OS().windowFromHwnd(group.hwnd)
+                        strip.isVisible && strip.zorder<keyboardSource.zorder))
                 keyboardSource.showWindow(ShowWindowCommands.SW_SHOWNORMAL)
                 keyboardSource.move(snapped)
                 pumpUntil "Combined followers did not reach the snapped frame" (fun () ->

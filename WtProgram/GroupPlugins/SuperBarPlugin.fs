@@ -75,7 +75,9 @@ type TaskbarBadgedIcon(icon:Icon) =
             use badge = badgeIcon.ToBitmap()
             // Leave more of the application visible, with the badge tucked into the right corner.
             let side = size*7/12
-            g.DrawImage(badge,Rectangle(size-side,size-side,side,side))
+            // The badge's transparent margin otherwise keeps its visible edge inset.
+            let rightOffset = size/12
+            g.DrawImage(badge,Rectangle(size-side+rightOffset,size-side,side,side))
         canvas.GetHicon()
     let badged = Icon.FromHandle(handle)
     member _.source = icon

@@ -90,6 +90,9 @@ of its current monitor, in WINDOWPLACEMENT workspace coordinates. After minimiza
 the title bar is parked just below that monitor. MonitorFromWindow retains the
 pre-minimize frame, so a maximized window moved between monitors uses the current
 screen rather than the monitor of an older normal restore rectangle.
+When those monitors differ for a maximized window, move its normal restore rectangle
+to the current monitor, keeping its size and relative position. Windows otherwise
+rejects the minimize destination on the new monitor and resets it to its default.
 
 ## Settings persistence
 

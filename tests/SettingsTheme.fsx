@@ -439,6 +439,20 @@ let main() =
                               new Form(Text=title,StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false) ]
             try
                 let items count = List2([ for index in 0..count-1 -> TaskWindowItem(windows.[index%windows.Length].Handle,index=1) ])
+                let plain = TaskSwitchIconView(List2([TaskWindowItem(windows.Head.Handle,false)]))
+                let grouped = TaskSwitchIconView(List2([TaskWindowItem(windows.Head.Handle,true)]))
+                try
+                    use before = plain.Render()
+                    use after = grouped.Render()
+                    let changedRows =
+                        [for y in 0..after.Height-1 do
+                            if seq {0..after.Width-1} |> Seq.exists(fun x -> before.GetPixel(x,y).ToArgb()<>after.GetPixel(x,y).ToArgb()) then yield y]
+                    let iconBottom = Dpi.scale 20+(Dpi.scale 96-Dpi.scale 64)/2+Dpi.scale 64
+                    check (not changedRows.IsEmpty) "Horizontal switcher has no group badge"
+                    check (List.max changedRows<iconBottom) "Horizontal switcher's group badge hangs below its app icon"
+                finally
+                    (plain :> ITaskSwitchView).hide()
+                    (grouped :> ITaskSwitchView).hide()
                 let three = TaskSwitchIconView(items 3)
                 let crowd = TaskSwitchIconView(items 60)
                 do
