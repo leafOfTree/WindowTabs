@@ -136,6 +136,25 @@ understand and have tested your changes. See [AGENTS.md](AGENTS.md), [architectu
   light, dark and high-contrast modes.
 
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io),
+certificate by [SignPath Foundation](https://signpath.org).
+
+- Committers and reviewers: [contributors](https://github.com/leafOfTree/WindowTabs/graphs/contributors)
+- Approvers: [@leafOfTree](https://github.com/leafOfTree)
+
+Release binaries are built from source by GitHub Actions
+([release.yml](.github/workflows/release.yml)), and every signing request is
+approved by a maintainer. AI coding agents assist with development, but all
+changes are reviewed and merged by a human maintainer.
+
+### Privacy policy
+
+This program will not transfer any information to other networked systems
+unless specifically requested by the user or the person installing or
+operating it.
+
 ## Credits and license
 
 Created by Maurice Flanagan in 2009 ([mauricef/WindowTabs](https://github.com/mauricef/WindowTabs)),
