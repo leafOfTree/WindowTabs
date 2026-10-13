@@ -12,6 +12,8 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    outputs:
+      executable-artifact-id: ${{ steps.executable.outputs.artifact-id }}
 
     steps:
       - uses: actions/checkout@v6
@@ -49,6 +51,7 @@ jobs:
         run: ./tests/Run-ReleaseSmoke.ps1
 
       - name: Upload WindowTabs.exe
+        id: executable
         uses: actions/upload-artifact@v6
         with:
           name: release-executable
@@ -116,8 +119,56 @@ jobs:
       profile: Full
       executable-artifact: release-executable
 
-  draft:
+  # SignPath signs the tested exe once a maintainer approves the request. Until the
+  # SIGNPATH_ORGANIZATION_ID variable is set, releases are drafted unsigned.
+  sign:
     needs: [build, regressions, desktop-e2e]
+    if: vars.SIGNPATH_ORGANIZATION_ID != ''
+    runs-on: windows-latest
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Submit signing request
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'WindowTabs' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG || 'initial' }}
+          github-artifact-id: ${{ needs.build.outputs.executable-artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 86400
+          output-artifact-directory: signed
+
+      - name: Check the signed executable
+        shell: powershell
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          $signature = Get-AuthenticodeSignature signed/WindowTabs.exe
+          if ($null -eq $signature.SignerCertificate -or $signature.Status -in 'NotSigned','HashMismatch') {
+              throw "WindowTabs.exe is not signed: $($signature.StatusMessage)"
+          }
+          # The self-signed test certificate is not trusted; the production one must be.
+          if ($signature.Status -ne 'Valid') { Write-Warning "Signature status: $($signature.Status), $($signature.StatusMessage)" }
+          Write-Host "Signed by $($signature.SignerCertificate.Subject)"
+          ./tests/Check-ReleaseVersion.ps1 -Executable signed/WindowTabs.exe -ExpectedVersion $env:TAG.Substring(1)
+
+      - name: Upload signed WindowTabs.exe
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-executable-signed
+          path: signed/WindowTabs.exe
+          if-no-files-found: error
+
+  draft:
+    needs: [build, regressions, desktop-e2e, sign]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.regressions.result == 'success' && needs.desktop-e2e.result == 'success' && (needs.sign.result == 'success' || needs.sign.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -125,7 +176,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v7
         with:
-          name: release-executable
+          name: ${{ needs.sign.result == 'success' && 'release-executable-signed' || 'release-executable' }}
 
       - name: Draft GitHub release
         env:
