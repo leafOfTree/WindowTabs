@@ -20,10 +20,39 @@ New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 
 Add-Type @'
 using System;
+using System.ComponentModel;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 public static class P1Snapshot {
+    [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+    [DllImport("advapi32.dll", SetLastError=true)] static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+    [DllImport("advapi32.dll", SetLastError=true)] static extern bool GetTokenInformation(IntPtr token, int info, IntPtr buffer, int size, out int needed);
+    [DllImport("advapi32.dll")] static extern IntPtr GetSidSubAuthorityCount(IntPtr sid);
+    [DllImport("advapi32.dll")] static extern IntPtr GetSidSubAuthority(IntPtr sid, uint index);
+    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
+    public static bool LeftButtonDown() { return (GetAsyncKeyState(1) & 0x8000) != 0; }
+    public static int Integrity(int pid) {
+        var process = OpenProcess(0x1000, false, pid);
+        if (process == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
+        IntPtr token = IntPtr.Zero, buffer = IntPtr.Zero;
+        try {
+            if (!OpenProcessToken(process, 8, out token)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            int needed;
+            GetTokenInformation(token, 25, IntPtr.Zero, 0, out needed);
+            if (needed <= 0) throw new Win32Exception(Marshal.GetLastWin32Error());
+            buffer = Marshal.AllocHGlobal(needed);
+            if (!GetTokenInformation(token, 25, buffer, needed, out needed)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            var sid = Marshal.ReadIntPtr(buffer);
+            var count = Marshal.ReadByte(GetSidSubAuthorityCount(sid));
+            return Marshal.ReadInt32(GetSidSubAuthority(sid, (uint)(count-1)));
+        } finally {
+            if (buffer != IntPtr.Zero) Marshal.FreeHGlobal(buffer);
+            if (token != IntPtr.Zero) CloseHandle(token);
+            CloseHandle(process);
+        }
+    }
     [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] struct Gui {
         public int Size; public uint Flags;
@@ -122,6 +151,11 @@ $metadata = [ordered]@{
     applicationIds = $ApplicationIds; durationSeconds = $DurationSeconds; intervalMs = $IntervalMs
     resourcesOnly = [bool]$ResourcesOnly
     clrCounterError = $counterError
+    processIntegrity = @(@($WindowTabsId) + $ApplicationIds | ForEach-Object {
+        $measuredId = $_
+        try { [ordered]@{ id = $measuredId; rid = [P1Snapshot]::Integrity($measuredId); error = $null } }
+        catch { [ordered]@{ id = $measuredId; rid = $null; error = $_.Exception.Message } }
+    })
 }
 $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'metadata.json') -Encoding UTF8
 $writer = New-Object IO.StreamWriter (Join-Path $OutputDirectory 'samples.jsonl'), $false, (New-Object Text.UTF8Encoding $false)
@@ -144,6 +178,7 @@ try {
             managedHeapBytesAtLastGc = $heap; clrCounterError = $counterError
         }
         if (-not $ResourcesOnly) {
+            $sample.leftButtonDown = [P1Snapshot]::LeftButtonDown()
             $sample.foreground = [P1Snapshot]::Read([P1Snapshot]::GetForegroundWindow())
             $sample.windows = @([P1Snapshot]::Windows(@($WindowTabsId) + $ApplicationIds))
         }

@@ -88,6 +88,18 @@ let main() =
             match result.Value with Choice1Of2 value -> value | Choice2Of2 error -> raise error
         let nativeOrder info = onGroup info (fun group -> group.lorder.list)
         let publicOrder (info:GroupInfo) = (info :> IGroup).windows.list
+        let checkStripOwner info =
+            onGroup info (fun group ->
+                let owner = WinUserApi.GetWindow(group.hwnd, GetWindowConstants.GW_OWNER)
+                let expected =
+                    if not(WindowInputOwnership.CanShareWithCurrentProcess group.topWindow) then IntPtr.Zero
+                    else group.topWindow
+                check (owner=expected) (sprintf "Strip input isolation/ownership changed: owner=%A expected=%A" owner expected))
+        let closedHandle =
+            use closedWindow = new Form(ShowInTaskbar=false)
+            closedWindow.Handle
+        check (not(WinUserApi.IsWindow closedHandle)) "Input-ownership fixture did not close"
+        check (onGroup source (fun group -> not(group.canShareInput closedHandle))) "Unknown window bypassed the input-ownership check"
         // Win+Right restores maximized followers to the snapped frame, not the
         // unsnapped restore rectangle kept in WINDOWPLACEMENT.
         use snapOwner = new Form(ShowInTaskbar=false)
@@ -169,6 +181,43 @@ let main() =
             FollowerPlacement.queue.release(snapQueueOwner,snapFollower.Handle)
             snapSource.Hide()
             snapFollower.Hide()
+        // #46: a taskbar proxy also links input queues. Falling back releases existing
+        // ownership, and compatible membership can resume combining without losing tabs.
+        use permissionFirst = new Form(ShowInTaskbar=false)
+        use permissionSecond = new Form(ShowInTaskbar=false)
+        let permissionHandles = [permissionFirst.Handle;permissionSecond.Handle]
+        let permissionProbe = desktopApi.createGroup(false) :?> GroupInfo
+        let mutable compatible = true
+        let permissionPlugin = onGroup permissionProbe (fun group ->
+            let plugin = SuperBarPlugin(fun hwnd -> compatible && group.canShareInput hwnd)
+            (plugin :> IPlugin).init()
+            plugin)
+        try
+            for hwnd in permissionHandles do (permissionProbe :> IGroup).addWindow(hwnd,false)
+            pumpUntil "Permission probe did not acquire windows" (fun () -> nativeOrder permissionProbe=permissionHandles)
+            let owner hwnd = WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)
+            pumpUntil "Compatible input queues did not combine taskbar ownership" (fun () ->
+                permissionHandles |> List.forall TaskbarProxies.ownsWindow)
+            let cloakTarget = onGroup permissionProbe (fun group -> group.topWindow)
+            let mutable cloak = 1
+            check (DwmApi.DwmSetWindowAttribute(cloakTarget,13,&cloak,4)=0) "Could not cloak input-isolation fixture"
+            try
+                onGroup permissionProbe (fun group -> group.main(cloakTarget,WinEvent.EVENT_OBJECT_CLOAKED))
+                pumpUntil "A cloaked application left its tab strip visible" (fun () -> onGroup permissionProbe (fun group -> not group.ts.visible))
+            finally
+                cloak <- 0
+                DwmApi.DwmSetWindowAttribute(cloakTarget,13,&cloak,4) |> ignore
+            onGroup permissionProbe (fun group -> group.main(cloakTarget,WinEvent.EVENT_OBJECT_UNCLOAKED))
+            pumpUntil "An uncloaked application did not restore its tab strip" (fun () -> onGroup permissionProbe (fun group -> group.ts.visible))
+            onGroup permissionProbe (fun _ -> compatible <- false;permissionPlugin.onZorderChanged())
+            check (permissionHandles |> List.forall(fun hwnd -> owner hwnd=IntPtr.Zero)) "Incompatible input queues retained taskbar proxy owners"
+            check (nativeOrder permissionProbe=permissionHandles) "Taskbar input isolation changed tab membership"
+            onGroup permissionProbe (fun _ -> compatible <- true;permissionPlugin.onZorderChanged())
+            check (permissionHandles |> List.forall TaskbarProxies.ownsWindow) "Compatible input queues did not resume taskbar combining"
+        finally
+            (permissionProbe :> IGroup).destroy()
+            pumpUntil "Permission probe did not exit" (fun () -> permissionProbe.isExited)
+        check (permissionHandles |> List.forall(fun hwnd -> WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)=IntPtr.Zero)) "Taskbar isolation probe left an owner after shutdown"
         api.setValue("tabPosition",box "Right")
         api.setValue("tabColumnWidth",box 280)
         let defaults = desktopApi.createGroup(false) :?> GroupInfo
@@ -197,6 +246,7 @@ let main() =
             for hwnd in handles do (source :> IGroup).addWindow(hwnd,false)
             pumpUntil "Native group did not acquire three windows" (fun () -> nativeOrder source = handles)
             pumpUntil "Desktop registry did not acquire three windows" (fun () -> publicOrder source = handles)
+            checkStripOwner source
             check (onGroup source (fun _ -> restored |> Seq.toList) = handles)
                   "Startup grouping did not reclaim every ordinary taskbar button"
             api.setValue("showTabsOnSwitch",box true)
@@ -256,6 +306,8 @@ let main() =
             pumpUntil "Attach did not update target membership" (fun () -> nativeOrder target = [b] && publicOrder target = [b])
             check (nativeOrder source = [c;a]) "Transfer changed unrelated source tabs"
             check ((desktop.findGroupContainingHwnd b).Value.hwnd = target.hwnd) "Transferred window resolves to wrong group"
+            checkStripOwner source
+            checkStripOwner target
 
             // A dead foreign HWND is removed by reconciliation; exercise that
             // removal after destruction rather than only while the HWND is valid.
@@ -318,6 +370,8 @@ let main() =
             let keyboardSource = OS().windowFromHwnd(a)
             for hwnd in [a;b;d] do WinUserApi.ShowWindow(hwnd,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
             keyboardSource.setForeground(false)
+            onGroup combined (fun group -> group.tabActivate(Tab(a),false))
+            checkStripOwner combined
             for _ in 1..3 do
                 keyboardSource.showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED)
                 pumpUntil "Combined followers did not maximize" (fun () ->

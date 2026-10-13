@@ -164,6 +164,7 @@ type GroupMenuChoices = {
 
 type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:TabAppearanceInfo) as this =
     let Cell = CellScope(true)
+    let inputOwnership = Collections.Generic.Dictionary<IntPtr,bool>()
     let _bb = Blackboard()
     let invoker = InvokerService.invoker
     let _os = OS()
@@ -412,7 +413,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.updateIsVisible() =
         isVisibleCell.value <-
             this.isEmpty.not &&
-            zorderCell.value.where(isMinimized >> not).tryHead.IsSome &&
+            zorderCell.value.where(isMinimized >> not).tryHead.exists(fun hwnd -> not(WindowCloaking.IsCloaked hwnd)) &&
             inMoveSize.value.not
             
     member private this.updatePlacements() =
@@ -554,10 +555,25 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             this.ts.setTabInfo(Tab(hwnd),info)
             tabInfoChangedEvent.Trigger(hwnd)
 
+    member private this.setTsOwner(owner:Window) =
+        let strip = this.os.windowFromHwnd(this.ts.hwnd)
+        strip.setOwner(if this.canShareInput owner.hwnd then owner else this.os.nullWindow)
+
+    /// Permission checks stay off the placement hot path and expire with group membership.
+    member this.canShareInput hwnd =
+        if hwnd=IntPtr.Zero then false
+        else
+            match inputOwnership.TryGetValue hwnd with
+            | true,compatible -> compatible
+            | _ ->
+                let compatible = WindowInputOwnership.CanShareWithCurrentProcess hwnd
+                inputOwnership.[hwnd] <- compatible
+                compatible
+
     member private this.setTsParent(parentHwnd) =
         let strip = this.os.windowFromHwnd(this.ts.hwnd)
         let parent = this.os.windowFromHwnd(parentHwnd)
-        strip.setOwner(parent)
+        this.setTsOwner(parent)
         // Restore can leave an owned popup visible but behind its unchanged owner.
         // Keep it adjacent to that window without activating or raising the group.
         if parentHwnd<>IntPtr.Zero && not parent.isMinimized then
@@ -824,6 +840,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         | WinEvent.EVENT_OBJECT_HIDE | WinEvent.EVENT_OBJECT_DESTROY ->
             this.reclaimLeftTab(hwnd)
             if lastActiveTab=Some hwnd then this.followClosedTab(this.os.foreground.hwnd)
+        | WinEvent.EVENT_OBJECT_CLOAKED | WinEvent.EVENT_OBJECT_UNCLOAKED ->
+            if this.windows.contains(hwnd) then this.updateIsVisible()
         | _ -> ()
       
     member this.addWindow(hwnd, withDelay) = this.withUpdate <| fun() ->
@@ -850,6 +868,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     WinEvent.EVENT_SYSTEM_MINIMIZEEND
                     WinEvent.EVENT_OBJECT_HIDE
                     WinEvent.EVENT_OBJECT_DESTROY
+                    WinEvent.EVENT_OBJECT_CLOAKED
+                    WinEvent.EVENT_OBJECT_UNCLOAKED
                 ]).map(registerEvent)
             let dispose = 
                 {
@@ -882,6 +902,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 this.watchMinimizeCompletion()
 
     member this.removeWindow(hwnd) = this.withUpdate <| fun() ->
+        inputOwnership.Remove hwnd |> ignore
         if this.windows.contains(hwnd) then
             this.reclaimLeftTab(hwnd)
             let foreground = this.os.foreground.hwnd
@@ -1010,18 +1031,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         
     member this.tabActivate(Tab(hwnd), force) =
         let window = this.os.windowFromHwnd(hwnd)
-        let strip = this.os.windowFromHwnd(this.ts.hwnd)
         // The strip is owned by the top window and only follows a new top window once the
         // foreground event comes back through the group. Until then the activated window
         // covers it, which flashes whenever the tabs sit inside the title bar. Owned windows
         // are raised with their owner, so hand the strip over before activating.
-        if this.windows.contains(hwnd) then strip.setOwner(window)
+        if this.windows.contains(hwnd) then this.setTsOwner(window)
         window.setForegroundOrRestore(force)
         window.bringToTop()
         if this.os.foreground.hwnd=hwnd then lastActiveTab <- Some hwnd
         // Activation can be refused (foreground lock); keep the strip with the real top window.
         this.inZorder(this.windows.items).tryHead |> Option.iter (fun top ->
-            if top <> hwnd then strip.setOwner(this.os.windowFromHwnd(top)))
+            if top <> hwnd then this.setTsOwner(this.os.windowFromHwnd(top)))
 
     member this.onTabMoved(hwnd, index) = movedEvent.Trigger(hwnd, index)
 

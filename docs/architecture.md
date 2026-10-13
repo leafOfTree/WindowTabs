@@ -74,6 +74,15 @@ No periodic desktop polling was added.
 
 ## Virtual desktops
 
+Tab strips only use application owners when both processes have the same
+integrity level. Cross-thread owners implicitly share input queues; unlike
+permissions break mouse capture in applications such as Notepad and Word.
+Unreadable integrity also leaves the strip unowned. Checks are cached for each
+HWND's group membership and cleared on removal. Cloak/uncloak events reconcile
+strip visibility even without a native owner. Combined taskbar groups retain
+individual buttons while any member cannot safely share the proxy's input queue,
+then resume combining when membership is compatible.
+
 A window without a taskbar button belongs to no virtual desktop, so Windows shows it on
 every desktop. A group with combined taskbar icons therefore makes its stand-in taskbar
 window the owner of its windows before removing their buttons: owned windows follow their

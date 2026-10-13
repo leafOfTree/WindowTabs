@@ -456,7 +456,7 @@ type TaskbarRestorePlugin(restoreWindow:IntPtr -> unit) =
             group.added.Add restore
             group.exited.Add(fun () -> group.windows.items.iter restore)
 
-type SuperBarPlugin() as this =
+type SuperBarPlugin(canShareInput:IntPtr -> bool) as this =
     let _os = OS()
 
     let _taskbar = _os.getTaskbar().Value
@@ -472,6 +472,8 @@ type SuperBarPlugin() as this =
     let adopted = Collections.Generic.HashSet<IntPtr>()
     /// The taskbar window last placed on the group's desktop.
     let mutable placedOwner = IntPtr.Zero
+
+    new() = SuperBarPlugin(fun hwnd -> Services.get<WindowGroup>().canShareInput hwnd)
 
     member this.os = _os
     
@@ -489,6 +491,9 @@ type SuperBarPlugin() as this =
 
     member this.zorder = this.wtGroup.zorder.value
 
+    /// The proxy must not attach an application's input queue across integrity levels.
+    member private this.canCombine = this.zorder.count > 1 && this.zorder.all canShareInput
+
     member private this.showInTaskbar(hwnd, visible) =
         if visible then
             this.release hwnd
@@ -498,7 +503,7 @@ type SuperBarPlugin() as this =
     /// A window without a taskbar button is on no virtual desktop and shows on all of them;
     /// a window the taskbar window owns follows that window's desktop instead.
     member private this.adopt() =
-        if taskbarButton <> null && this.zorder.count > 1 then
+        if taskbarButton <> null && this.canCombine then
             let owner = (taskbarButton:TaskBarButton).window.hwnd
             // A new taskbar window starts on the desktop in view, which is not always the group's.
             if owner <> placedOwner then
@@ -523,13 +528,16 @@ type SuperBarPlugin() as this =
 
     member this.updateTaskbar() =
         if this.os.isWin7OrHigher then
-            if this.zorder.length = 1 then
+            if not this.canCombine then
                 match taskbarButton with
                 | null -> ()
                 | button ->
                     this.releaseAll()
                     (button :> IDisposable).Dispose()
                     taskbarButton <- null
+                    activePreview <- None
+                    placedOwner <- IntPtr.Zero
+                    this.zorder.iter(fun hwnd -> this.taskbar.AddTab(hwnd))
             elif this.zorder.isEmpty.not then
                 // A hidden strip has no bounds; the preview is then the window alone.
                 let stripShown = this.ts.visible && not(this.ts.bounds.size.isEmptyArea)
@@ -643,8 +651,9 @@ type SuperBarPlugin() as this =
         if taskbarButton <> null then taskbarButton.invalidate()
 
     member this.onZorderChanged() =
-        if this.zorder.count = 1 then
-            this.showInTaskbar(this.zorder.head, true)
+        if not this.canCombine then
+            this.updateTaskbar()
+            this.zorder.iter(fun hwnd -> this.showInTaskbar(hwnd,true))
         else
             // Owned before their buttons go, the windows never lose their desktop.
             this.updateTaskbar()
@@ -652,8 +661,8 @@ type SuperBarPlugin() as this =
             this.zorder.iter <| fun hwnd -> this.showInTaskbar(hwnd, false)
         this.updateTaskbar()
         this.adopt()
-        if this.zorder.count > 1 then
-            captureTimer.Stop()
+        captureTimer.Stop()
+        if this.canCombine then
             captureTimer.Start()
 
     member this.onTabMoved(tab, index) =

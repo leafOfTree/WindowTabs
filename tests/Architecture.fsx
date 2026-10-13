@@ -27,6 +27,15 @@ let pump milliseconds =
 
 let main() =
     Application.EnableVisualStyles()
+    // #46: unlike integrity levels must never share an owner-linked input queue.
+    let level value = Nullable<int>(value)
+    for current,target,expected in [8192,8192,true;12288,12288,true;12288,8192,false;8192,12288,false;8192,4096,false] do
+        check (WindowInputOwnership.CanShareIntegrityLevels(level current,level target)=expected) "Input ownership ignored integrity boundaries"
+    check (not(WindowInputOwnership.CanShareIntegrityLevels(Nullable<int>(),level 8192)) &&
+           not(WindowInputOwnership.CanShareIntegrityLevels(level 12288,Nullable<int>()))) "Unknown integrity allowed an input queue attachment"
+    check (WindowInputOwnership.GetProcessIntegrityLevel(Diagnostics.Process.GetCurrentProcess().Id).HasValue) "Native integrity query failed for the current process"
+    check (not(WindowInputOwnership.GetProcessIntegrityLevel(0).HasValue) &&
+           not(WindowInputOwnership.CanShareWithCurrentProcess(IntPtr.Zero))) "Invalid process/window was accepted as input-compatible"
     let directory = Path.Combine(__SOURCE_DIRECTORY__,"Debug","architecture-"+Guid.NewGuid().ToString("N"))
     Directory.CreateDirectory(directory) |> ignore
     let path = Path.Combine(directory,"settings.json")
