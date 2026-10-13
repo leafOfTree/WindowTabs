@@ -139,7 +139,7 @@ module Strings =
                             description=none
                             keywords={ en="vertical horizontal sidebar left right"; zh="垂直 横向 侧栏 左 右"; ja="縦 横 サイドバー 左 右" } }
         let tabColumnWidthHint = { en="For left/right tabs. Drag a column edge to resize one group, down to an icon rail."; zh="用于左／右标签。拖动侧栏边缘可单独调整分组宽度，最窄可只显示图标。"; ja="左・右のタブ用です。列の端をドラッグしてグループの幅を変更できます。最小幅ではアイコンのみを表示します。" }
-        let tabColumnWidth = { caption={ en="Vertical column width"; zh="垂直栏宽度"; ja="縦タブ幅" }
+        let tabColumnWidth = { caption={ en="Vertical tab width"; zh="垂直标签宽度"; ja="縦タブ幅" }
                                description=none
                                keywords={ en="vertical sidebar width size"; zh="垂直 侧栏 宽度 大小"; ja="縦 サイドバー 幅 サイズ" } }
         let tabAlignment = { caption={ en="Align tabs"; zh="对齐标签"; ja="タブを揃える" }

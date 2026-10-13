@@ -164,6 +164,11 @@ let main() =
         Application.DoEvents()
         SettingsUi.apply form
         let all = view.control.Controls.Find("tabTextColor",true)
+        let layoutIds = ["tabHeight";"tabMaxWidth";"tabOverlap";"tabIndentNormal";"tabColumnWidth"]
+        let layoutRows = layoutIds |> List.map(fun id -> view.control.Controls.Find(id,true).[0].Parent)
+        let layoutCard = layoutRows.Head.Parent :?> TableLayoutPanel
+        assertTrue (layoutRows |> List.forall(fun row -> row.Parent=layoutCard)) "Tab layout settings are split across cards"
+        assertTrue (layoutRows |> List.map layoutCard.GetRow = [0..4]) "Vertical tab width is not last in tab layout"
         let preset = view.control.Controls.Find("palette-preset",true).[0] :?> SettingsCombo
         // Filled by automatic colours, tabs ignore the background rows: hide them, and judge
         // readability on the automatic colours, which give way to the text.

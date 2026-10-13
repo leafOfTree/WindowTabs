@@ -341,10 +341,10 @@ type AppearanceView(?settings:ISettings) =
         SettingsUi.sectionHeading table (tr Strings.Appearance.tabLayout) [resetLayoutButton]
         let layoutCard = new SettingsCard()
         SettingsUi.add table layoutCard
+        for key,read,write,editor in dimensions do SettingsUi.settingRow layoutCard key editor
         SettingsUi.settingRow layoutCard "tabColumnWidth" columnWidth
         columnWidth.ValueChanged.Add(fun _ ->
             if not refreshing then settings.setValue("tabColumnWidth",box(int columnWidth.Value)))
-        for key,read,write,editor in dimensions do SettingsUi.settingRow layoutCard key editor
         resetLayoutButton.Click.Add(fun _ ->
             update Theme.resetLayout
             settings.setValue("tabColumnWidth",box SettingsCatalog.columnWidthDefault))
