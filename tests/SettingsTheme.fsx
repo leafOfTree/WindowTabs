@@ -233,7 +233,8 @@ let main() =
         for dock in [TabDockLeft;TabDockRight] do
             let side = normal.sidePlacement(dock,80)
             check (not side.showInside && side.bounds.width=80 && side.bounds.height=600) "Vertical tabs failed to use available outside space"
-            check ((if dock=TabDockLeft then side.bounds.right=normal.windowBounds.left else side.bounds.left=normal.windowBounds.right)) "Vertical tabs are detached from the selected window edge"
+            check ((if dock=TabDockLeft then side.bounds.right=normal.windowBounds.left+Dpi.scale 1
+                    else side.bounds.left=normal.windowBounds.right-Dpi.scale 1)) "Vertical tabs do not cover the selected window edge"
             let edge = { normal with windowBounds=Rect(Pt(0,0),Sz(1920,1080)) }
             let overlay = edge.sidePlacement(dock,220)
             check (overlay.showInside && edge.windowBounds.completlyContains overlay.bounds) "Maximized vertical tabs escaped the window"
