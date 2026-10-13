@@ -470,13 +470,15 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
         member this.hovered = hovered.Publish
         member this.clicked = clicked.Publish
 
-type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string) as this =
+type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string, ?backward:bool, ?view:ITaskSwitchView) as this =
     let os = OS()
     let Cell = CellScope()
     let switchIndex = Cell.create(0)
     let form : ITaskSwitchView =
-        if style="List" then TaskSwitchForm(TaskSwitchListControl(windows)) :> ITaskSwitchView
-        else TaskSwitchIconView(windows) :> ITaskSwitchView
+        match view with
+        | Some view -> view
+        | None when style="List" -> TaskSwitchForm(TaskSwitchListControl(windows)) :> ITaskSwitchView
+        | None -> TaskSwitchIconView(windows) :> ITaskSwitchView
     let endedEvent = Event<_>()
     let mutable finished = false
 
@@ -496,7 +498,8 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string) as this =
 
     do
         if windows.length > 0 then
-            setIndex 0
+            // The opening chord already advances the choice, before either view paints.
+            doSwitch (defaultArg backward false)
         form.show()
         
         // Clicking another column moves focus inside the switcher; only another window taking
@@ -542,14 +545,15 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop) as this=
     let Cell = CellScope()
     let hotKeyManager = new HotKeyManager()
     let switcherCell = Cell.create(None:TaskSwitchAction option)
-    let doTaskSwitch prev =
-        if switcherCell.value.IsNone then
-            let switcher = TaskSwitchAction(this.windows,settings.settings.switcherStyle)
+    let doTaskSwitch forward =
+        match switcherCell.value with
+        | None ->
+            let switcher = TaskSwitchAction(this.windows,settings.settings.switcherStyle,backward=not forward)
             switcher.ended.Add <| fun() ->
                 switcherCell.set(None)
             switcherCell.set(Some(switcher))
-        let switcher = switcherCell.value.Value    
-        if prev then switcher.switchPrev() else switcher.switchNext()
+        | Some switcher ->
+            if forward then switcher.switchPrev() else switcher.switchNext()
 
     let hook = os.registerKeyboardLLHook <| fun(wParam:IntPtr, hookStruct) ->
         let wParam = int(wParam)
@@ -586,7 +590,11 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop) as this=
             // WindowTabs' own windows, such as Settings, are listed like any other, but not the
             // hidden ones that stand in for groups on the taskbar. The switcher is not shown yet
             // when this runs, so it does not list itself.
-            (w.isAltTabWindow || (TaskbarProxies.ownsWindow w.hwnd && w.isVisible))
+            // Discovery retains other desktops' windows; Alt+Tab only lists windows
+            // DWM shows here. Check before the ownership bypass and without COM in the hook.
+            not(WindowCloaking.IsCloaked w.hwnd)
+            && not(WindowCloaking.IsEmptyAppFrame w.hwnd)
+            && (w.isAltTabWindow || (TaskbarProxies.ownsWindow w.hwnd && w.isVisible))
             && not(TaskbarProxies.contains w.hwnd)
             && not(String.IsNullOrEmpty w.text)
             && w.text <> "Microsoft Text Input Application"

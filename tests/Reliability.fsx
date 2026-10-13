@@ -409,6 +409,48 @@ let main() =
                 Thread.Sleep(5)
         finally probe.DestroyHandle()
         check (insideCall.Value = Some true) (sprintf "A cloaked window counted as shown inside an input-synchronous call: %A" insideCall.Value)
-    printfn "PASS: startup ownership, singleton, transactional shortcuts, workspace recovery and regex timeout, private diagnostics, single-flight cancellation, DPI geometry and cloaked windows inside an input-synchronous call."
+    // Owned application windows bypass the ordinary Alt+Tab ownership filter, but
+    // must still disappear when DWM cloaks them on another desktop.
+    do
+        let directory = System.IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug","switch-desktop-"+Guid.NewGuid().ToString("N"))
+        System.IO.Directory.CreateDirectory(directory) |> ignore
+        let previous = Environment.CurrentDirectory
+        Environment.CurrentDirectory <- directory
+        try
+            use settings = new Settings(true)
+            use proxy = new System.Windows.Forms.Form(ShowInTaskbar=false)
+            use current = new System.Windows.Forms.Form(Text="Current desktop probe",Owner=proxy,
+                              StartPosition=System.Windows.Forms.FormStartPosition.Manual,
+                              Location=System.Drawing.Point(-20000,-20000))
+            use other = new System.Windows.Forms.Form(Text="Other desktop probe",Owner=proxy,
+                            StartPosition=System.Windows.Forms.FormStartPosition.Manual,
+                            Location=System.Drawing.Point(-20000,-20000))
+            TaskbarProxies.add proxy.Handle
+            try
+                current.Show()
+                other.Show()
+                let mutable cloak = 1
+                check (CloakProbe.DwmSetWindowAttribute(other.Handle,13,&cloak,4)=0) "Could not cloak switcher fixture"
+                check (WindowCloaking.IsCloaked other.Handle && OS().windowFromHwnd(other.Handle).isVisible)
+                      "Switcher fixture must be user32-visible but DWM-cloaked"
+                let group = {new ITaskSwitchGroup with
+                    member _.hwnd = proxy.Handle
+                    member _.windows = Set2(List2([current.Handle;other.Handle]))}
+                let desktop = {new ITaskSwitchDesktop with member _.groups = List2([group])}
+                use switcher = new TaskSwitcher(settings,desktop)
+                for grouped in [false;true] do
+                    (settings :> ISettings).setValue("groupWindowsInSwitcher",box grouped)
+                    let candidates() = switcher.windows.list |> List.map(fun (TaskWindowItem(hwnd,_)) -> hwnd)
+                    check (List.contains current.Handle (candidates())) "Switcher omitted a current-desktop owned window"
+                    check (not(List.contains other.Handle (candidates()))) "Switcher listed a cloaked owned window from another desktop"
+                    cloak <- 0
+                    check (CloakProbe.DwmSetWindowAttribute(other.Handle,13,&cloak,4)=0) "Could not uncloak switcher fixture"
+                    if not grouped then
+                        check (List.contains other.Handle (candidates())) "Switcher did not refresh windows after a desktop visibility change"
+                    cloak <- 1
+                    CloakProbe.DwmSetWindowAttribute(other.Handle,13,&cloak,4) |> ignore
+            finally TaskbarProxies.remove proxy.Handle
+        finally Environment.CurrentDirectory <- previous
+    printfn "PASS: startup ownership, singleton, transactional shortcuts, workspace recovery and regex timeout, private diagnostics, single-flight cancellation, DPI geometry and cloaked windows inside an input-synchronous call and the switcher."
 
 TestInit.run main

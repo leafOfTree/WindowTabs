@@ -40,6 +40,7 @@ type SettingsRec = {
     enableCtrlScroll: bool
     /// "Icons" (large icons in a row) or "List" (window titles in a column).
     switcherStyle: string
+    tabSearchScope: string
     alignment: string
     tabPosition: string
     tabColumnWidth: int

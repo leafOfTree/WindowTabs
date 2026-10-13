@@ -109,6 +109,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         includedPaths = Set2(settingsJson.getStringArray("includedPaths").def(List2()))
                         excludedPaths = Set2(settingsJson.getStringArray("excludedPaths").def(List2()))
                         autoGroupingPaths = Set2(settingsJson.getStringArray("autoGroupingPaths").def(List2()))
+                        tabSearchScope = settingsJson.getString("tabSearchScope").def(SettingsCatalog.tabSearchScopeDefault) |> SettingsCatalog.normalizeTabSearchScope
                         runAtStartup = settingsJson.getBool("runAtStartup").def(SettingsCatalog.toggleDefault "runAtStartup" hasExistingSettings)
                         hideInactiveTabs = settingsJson.getBool("hideInactiveTabs").def(SettingsCatalog.toggleDefault "hideInactiveTabs" hasExistingSettings)
                         enableTabbingByDefault = settingsJson.getBool("enableTabbingByDefault").def(SettingsCatalog.toggleDefault "enableTabbingByDefault" hasExistingSettings)
@@ -205,6 +206,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setBool("combineIconsInTaskbar", settings.combineIconsInTaskbar)
             settingsJson.setBool("replaceAltTab", settings.replaceAltTab)
             settingsJson.setBool("groupWindowsInSwitcher", settings.groupWindowsInSwitcher)
+            settingsJson.setString("tabSearchScope", settings.tabSearchScope)
             settingsJson.setBool("enableCtrlNumberHotKey", settings.enableCtrlNumberHotKey)
             settingsJson.setBool("enableNumberLeader", settings.enableNumberLeader)
             let appColors = JObject()
@@ -270,6 +272,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
         // Compatibility adapter for older callers; new appearance code uses the typed API.
         member x.setValue((key,value)) =
             let api = x :> ISettings
+            let value = if key="tabSearchScope" then box(SettingsCatalog.normalizeTabSearchScope (unbox value)) else value
             let value = if key="numberLeaderKeys" then box(NumberLeaderKeys.normalize (unbox value)) else value
             let value = if key="alignment" || key="language" || key="autoHideMode" || key="switcherStyle" || key="numberHotKeyModifier" || key="tabColorStyle" || key="tabColorMode" || key="tabPosition" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
             let value = if key="tabColumnWidth" then box(between SettingsCatalog.columnWidthRange (unbox<int> value)) else value

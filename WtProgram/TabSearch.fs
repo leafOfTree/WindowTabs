@@ -20,34 +20,39 @@ type TabSearchEntry = {
     recency:int }
 
 module TabSearch =
-    /// How well a lower-case term matches a lower-case text: 2 at the start of a word,
-    /// 1 elsewhere, 0 not at all.
-    let quality (term:string) (text:string) =
-        let rec find start best =
+    /// Keep the earliest position of the strongest match, rather than an earlier weak occurrence.
+    let private termMatch (term:string) (text:string) =
+        let rec find start firstInside =
             match text.IndexOf(term,start,StringComparison.Ordinal) with
-            | -1 -> best
-            | at when at=0 || not (Char.IsLetterOrDigit text.[at-1]) -> 2
-            | at -> find (at+1) 1
-        find 0 0
+            | -1 -> firstInside |> Option.map(fun at -> 1,at)
+            | at when at=0 || not (Char.IsLetterOrDigit text.[at-1]) -> Some(2,at)
+            | at -> find (at+1) (firstInside |> Option.orElse (Some at))
+        find 0 None
+
+    /// 2 at the start of a word, 1 elsewhere, 0 not at all.
+    let quality term text = termMatch term text |> Option.map fst |> Option.defaultValue 0
 
     /// None when a term is missing; otherwise higher for better matches. Terms are separated by
     /// spaces and may come in any order; case is ignored.
-    let score (query:string) (entry:TabSearchEntry) =
+    let private rank (query:string) (entry:TabSearchEntry) =
         query.ToLowerInvariant().Split([|' ';'\t'|],StringSplitOptions.RemoveEmptyEntries)
         |> Array.fold (fun total term ->
-            total |> Option.bind(fun sum ->
-                match entry.keywords |> List.map (quality term) |> List.max with
-                | 0 -> None
-                | best -> Some(sum+best))) (Some 0)
+            total |> Option.bind(fun (sum,position) ->
+                entry.keywords |> List.choose (termMatch term)
+                |> List.sortBy(fun (quality,at) -> -quality,at)
+                |> List.tryHead
+                |> Option.map(fun (quality,at) -> sum+quality,position+at))) (Some(0,0))
+
+    let score query entry = rank query entry |> Option.map fst
 
     let matches query entry = (score query entry).IsSome
 
-    /// The entry to choose among those shown: the best match, then the most recently used. With
+    /// Choose by match quality, earlier positions, then recency. With
     /// nothing typed that is the previous tab, so Enter goes back to it as Alt+Tab does.
     let best query (entries:TabSearchEntry list) =
         entries
-        |> List.choose(fun entry -> score query entry |> Option.map(fun found -> entry,found))
-        |> List.sortBy(fun (entry,found) -> -found,entry.recency)
+        |> List.choose(fun entry -> rank query entry |> Option.map(fun found -> entry,found))
+        |> List.sortBy(fun (entry,(quality,position)) -> -quality,position,entry.recency)
         |> List.tryHead
         |> Option.map fst
 
@@ -95,10 +100,19 @@ module TabSearch =
         |> List.mapi(fun group tabs -> tabs |> List.map(fun entry -> { entry with group=group; recency=recency.[entry.hwnd] }))
         |> List.concat
 
-    /// Every group's tabs, as the search lists them.
+    /// Every group's tabs and switchable windows without tabs, each listed once.
     let tabs nameOverride (active:IntPtr) (groups:IntPtr list list) =
         let os = OS()
-        let zorder = os.windowsInZorder.list |> List.mapi(fun index window -> window.hwnd,index) |> Map.ofList
+        let windows = os.windowsInZorder.list
+        let zorder = windows |> List.mapi(fun index window -> window.hwnd,index) |> Map.ofList
+        let grouped = groups |> List.concat |> Set.ofList
+        let ungrouped =
+            windows |> List.filter(fun window ->
+                not(grouped.Contains window.hwnd) && not(TaskbarProxies.contains window.hwnd) &&
+                window.isAltTabWindow && not(String.IsNullOrEmpty window.text) &&
+                window.text <> "Microsoft Text Input Application" && window.className <> "Windows.UI.Core.CoreWindow")
+            |> List.map(fun window -> [window.hwnd])
+        let groups = groups @ ungrouped
         groups
         |> List.map(List.map os.windowFromHwnd >> List.filter(fun window -> not (String.IsNullOrEmpty window.text)) >> List.map (entry nameOverride))
         |> arrange (fun hwnd -> zorder.TryFind hwnd |> Option.defaultValue Int32.MaxValue) active
@@ -115,10 +129,10 @@ module private TabSearchNative =
     extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, string lParam)
 
 /// A search box over the tabs, in the switcher's look: type to filter, then Enter or a click
-/// switches. It starts in the active window's group when that has more than one tab; Tab, or
-/// clicking the line under the box, switches between the group and all tabs. Esc or clicking
+/// switches. It remembers the chosen scope; Tab, or clicking the line under the box,
+/// switches between the group and all windows. Esc or clicking
 /// elsewhere closes it. Used once, then disposed.
-type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list) =
+type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISettings) =
     let rowHeight = 44
     let visibleRows = 9
     let palette = SettingsColors.current()
@@ -138,7 +152,11 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list) =
             | None -> item.Glyph <- WindowGlyph
             item,entry) |> Array.ofList
     let groupItems = items |> Array.filter(fun (_,entry) -> List.contains entry.hwnd group)
-    let mutable scope = if groupItems.Length>1 then GroupTabs else AllTabs
+    let preferred =
+        settings |> Option.map(fun api -> api.getValue("tabSearchScope") :?> string)
+        |> Option.defaultValue SettingsCatalog.tabSearchScopeDefault
+        |> SettingsCatalog.normalizeTabSearchScope
+    let mutable scope = if groupItems.Length>1 && preferred<>"All" then GroupTabs else AllTabs
     /// Only when the group is worth searching on its own and is not every tab.
     let canSwitchScope = groupItems.Length>1 && groupItems.Length<items.Length
     let scoped() = match scope with GroupTabs -> groupItems | AllTabs -> items
@@ -208,7 +226,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list) =
                     g.FillPath(faceFill,face)
                     g.DrawPath(outline,face)
                     TextRenderer.DrawText(g,"Tab",keyFont,cap,p.muted,centred)) }
-    let list = new SettingsTreeList([TreeListColumn("",0,TextColumn);TreeListColumn("",160,TextColumn)],
+    let list = new SettingsTreeList([TreeListColumn("",0,TextColumn);TreeListColumn("",160,TextColumn,RightAligned=true)],
                                     ShowHeader=false,ShowExpanders=false,ExpandOnDoubleClick=false,
                                     RowHeight=rowHeight,IconSize=24,TabStop=false,Dock=DockStyle.Fill,
                                     BackColor=palette.surface,ForeColor=palette.text)
@@ -288,6 +306,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list) =
     let setScope target =
         if canSwitchScope && target<>scope then
             scope <- target
+            settings |> Option.iter(fun api -> api.setValue("tabSearchScope",box(if target=AllTabs then "All" else "Group")))
             scopeLine.Invalidate()
             apply()
     let switchScope() = setScope (match scope with GroupTabs -> AllTabs | AllTabs -> GroupTabs)

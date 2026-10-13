@@ -173,20 +173,23 @@ let main () =
         finally (native :?> IDisposable).Dispose()
         // A large icon with colour only in its bottom-right quadrant used to
         // render blank because IconSprite cropped the top-left 20x20 pixels.
-        use source = new Bitmap(40,40)
-        do
-            use g = Graphics.FromImage(source)
-            g.Clear(Color.Transparent)
-            g.FillRectangle(Brushes.Red,24,24,16,16)
-        let handle = source.GetHicon()
-        try
-            use icon = Icon.FromHandle(handle)
-            let sprite : IconSprite = { icon=icon; size=Sz(20,20); opacity=1.0f }
-            use rendered = (sprite :> ISprite).image.bitmap
-            let pixel = rendered.GetPixel(17,17)
-            check (pixel.A > 0uy && pixel.R > 200uy) "Large icon was cropped instead of scaled"
-        finally
-            WinUserApi.DestroyIcon(handle) |> ignore
+        for side in [16;32;40;48;64;256] do
+            use source = new Bitmap(side,side)
+            do
+                use g = Graphics.FromImage(source)
+                g.Clear(Color.Transparent)
+                let start = side*3/5
+                g.FillRectangle(Brushes.Red,start,start,side-start,side-start)
+            let handle = source.GetHicon()
+            try
+                use icon = Icon.FromHandle(handle)
+                let sprite : IconSprite = { icon=icon; size=Sz(20,20); opacity=1.0f }
+                use rendered = (sprite :> ISprite).image.bitmap
+                let pixel = rendered.GetPixel(17,17)
+                check (pixel.A > 0uy && pixel.R > 200uy) (sprintf "%dpx icon was cropped instead of scaled" side)
+                check (rendered.GetPixel(2,2).A=0uy) (sprintf "%dpx icon lost its transparent quadrant" side)
+            finally
+                WinUserApi.DestroyIcon(handle) |> ignore
         printfn "Window icon fallback, priority, lifetime and scaling checks passed."
     finally
         (wnd :?> IDisposable).Dispose()

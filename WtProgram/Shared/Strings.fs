@@ -163,8 +163,8 @@ module Strings =
         let previousTab = { caption={ en="Switch to previous tab"; zh="切换到上一个标签"; ja="前のタブに切り替え" }
                             description=none
                             keywords=hotkeyWords }
-        let searchTabs = { caption={ en="Search tabs"; zh="搜索标签"; ja="タブを検索" }
-                           description={ en="By title or app name, current group first."; zh="按标题或应用名查找，优先当前分组。"; ja="タイトルやアプリ名で探します。現在のグループを優先。" }
+        let searchTabs = { caption={ en="Switch windows"; zh="切换窗口"; ja="ウィンドウを切り替え" }
+                           description={ en="Switch to a window by title or app name."; zh="按标题或应用名查找并切换窗口。"; ja="タイトルやアプリ名でウィンドウを探して切り替えます。" }
                            keywords={ en="find"; zh="查找"; ja="検索" } }
         let newTab = { caption={ en="New tab"; zh="新建标签"; ja="新しいタブ" }
                        description={ en="Starts the current tab's app again."
@@ -370,10 +370,10 @@ module Strings =
 
     /// The tab search box.
     module TabSearch =
-        let prompt = { en="Search tabs by title or app"; zh="按标题或应用搜索标签"; ja="タイトルやアプリでタブを検索" }
-        let noMatches = { en="No matching tabs."; zh="没有匹配的标签。"; ja="一致するタブはありません。" }
+        let prompt = { en="Type a title or app name to switch windows"; zh="输入标题或应用名，切换窗口"; ja="タイトルやアプリ名を入力してウィンドウを切り替え" }
+        let noMatches = { en="No matching windows."; zh="没有匹配的窗口。"; ja="一致するウィンドウはありません。" }
         let groupTabs count = { en=sprintf "This group · %d" count; zh=sprintf "当前分组 · %d" count; ja=sprintf "このグループ · %d" count }
-        let allTabs count = { en=sprintf "All tabs · %d" count; zh=sprintf "全部标签 · %d" count; ja=sprintf "すべてのタブ · %d" count }
+        let allTabs count = { en=sprintf "All windows · %d" count; zh=sprintf "全局窗口 · %d" count; ja=sprintf "すべてのウィンドウ · %d" count }
 
     module AppRules =
         let description = { en="Choose which apps use tabs and automatic grouping. Turning off auto-grouping keeps existing groups. Expand an app to see its windows."
