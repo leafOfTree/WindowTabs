@@ -29,6 +29,31 @@ let main() =
     try
         use settings = new Settings(true, saveDelay=0)
         let api = settings :> ISettings
+        do
+            use first = new Form()
+            use second = new Form()
+            use third = new Form()
+            let entries = [first;second;third] |> List.map(fun window -> TabSearch.create window.Handle "Scope probe" "Scope probe" "app")
+            let group = [first.Handle;second.Handle]
+            check (api.getValue("tabSearchScope") :?> string="Group") "Missing search scope changed the existing group default"
+            let choose = TabSearchForm(entries,group,settings=api)
+            choose.SwitchScope()
+            choose.Close()
+            settings.Flush() |> ignore
+            settings.clearCaches()
+            let globalSearch = TabSearchForm(entries,group,settings=api)
+            check (globalSearch.Scope=AllTabs && globalSearch.Results=entries) "Global search scope did not survive settings reload"
+            globalSearch.SwitchScope()
+            globalSearch.Close()
+            let fallback = TabSearchForm(entries,[],settings=api)
+            check (fallback.Scope=AllTabs) "A remembered group scope hid all windows when there was no group"
+            fallback.Close()
+            check (api.getValue("tabSearchScope") :?> string="Group") "Automatic fallback overwrote the chosen search scope"
+            let groupSearch = TabSearchForm(entries,group,settings=api)
+            check (groupSearch.Scope=GroupTabs) "Group search scope was not remembered"
+            groupSearch.Close()
+            api.setValue("tabSearchScope",box "invalid")
+            check (api.getValue("tabSearchScope") :?> string="Group") "Invalid search scope was not normalized"
         check (api.getValue("tabPosition") :?> string="Horizontal" && api.getValue("tabColumnWidth") :?> int=220)
               "Legacy settings no longer default to horizontal tabs and logical width"
         api.setValue("tabPosition",box "Right")
@@ -208,7 +233,8 @@ let main() =
         for dock in [TabDockLeft;TabDockRight] do
             let side = normal.sidePlacement(dock,80)
             check (not side.showInside && side.bounds.width=80 && side.bounds.height=600) "Vertical tabs failed to use available outside space"
-            check ((if dock=TabDockLeft then side.bounds.right=normal.windowBounds.left else side.bounds.left=normal.windowBounds.right)) "Vertical tabs are detached from the selected window edge"
+            check ((if dock=TabDockLeft then side.bounds.right=normal.windowBounds.left+Dpi.scale 1
+                    else side.bounds.left=normal.windowBounds.right-Dpi.scale 1)) "Vertical tabs do not cover the selected window edge"
             let edge = { normal with windowBounds=Rect(Pt(0,0),Sz(1920,1080)) }
             let overlay = edge.sidePlacement(dock,220)
             check (overlay.showInside && edge.windowBounds.completlyContains overlay.bounds) "Maximized vertical tabs escaped the window"
@@ -474,6 +500,37 @@ let main() =
         // The Alt+Tab switcher: the pointer finds the window under it, a choice is selected in its
         // own column alone, and ending a switch twice is harmless.
         do
+            // Capture the selection at Show, not after startup has already repainted it.
+            for style in ["Icons";"List"] do
+                for count in [0;1;2;3] do
+                    for backward in [false;true] do
+                        use input = new Control()
+                        let deactivated,hovered,clicked = Event<unit>(),Event<int>(),Event<int>()
+                        let selections = ResizeArray<int>()
+                        let firstFrames = ResizeArray<int option>()
+                        let mutable selected = None
+                        let view = {new ITaskSwitchView with
+                            member _.show() = firstFrames.Add(selected)
+                            member _.hide() = ()
+                            member _.select index = selected <- Some index; selections.Add(index)
+                            member _.inputControl = input
+                            member _.deactivated = deactivated.Publish
+                            member _.hovered = hovered.Publish
+                            member _.clicked = clicked.Publish}
+                        let handles = [for index in 1..count -> IntPtr(index)]
+                        let action = TaskSwitchAction(List2(handles |> List.map(fun hwnd -> TaskWindowItem(hwnd,false))),
+                                                      style,backward=backward,view=view)
+                        try
+                            let expected = if count=0 then None elif backward then Some(count-1) else Some(1%count)
+                            check (Seq.toList firstFrames=[expected] && Seq.toList selections=Option.toList expected)
+                                  "Switcher painted the current window before the opening chord's target"
+                            if count>0 then
+                                check (action.selectedHwnd=handles.[expected.Value]) "Opening chord advanced the choice twice"
+                                action.switchPrev()
+                                check (action.selectedHwnd=handles.[(expected.Value+1)%count]) "Repeated Alt+Tab skipped a window"
+                                action.switchNext()
+                                check (action.selectedHwnd=handles.[expected.Value]) "Reverse switching did not return to the initial choice"
+                        finally action.switchEnd(true)
             do
                 let control = TaskSwitchListControl(List2())
                 let tree = (control :> ITaskSwitchListControl).control :?> SettingsTreeList

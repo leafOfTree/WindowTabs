@@ -17,6 +17,10 @@ type SettingDefinition = {
     binding:SettingBinding }
 
 module SettingsCatalog =
+    let tabSearchScopeDefault = "Group"
+    let tabSearchScopeValues = ["Group";"All"]
+    let normalizeTabSearchScope value =
+        if List.contains value tabSearchScopeValues then value else tabSearchScopeDefault
     let columnWidthDefault = 220
     let columnWidthRange = 48,420
     let leaderKeyPresets = List.zip ["123456789";"QWERTYUIOP";"ASDFGHJKL;"] (Array.toList Strings.Settings.leaderKeyPresets)

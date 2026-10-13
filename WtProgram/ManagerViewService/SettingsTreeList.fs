@@ -26,8 +26,9 @@ type TreeListGlyph =
 /// Column 0 is the tree column: expand chevron, icon and the item's Text.
 type TreeListColumn(header:string, width:int, kind:TreeListColumnKind) =
     member _.Header = header
-    member _.Width = width
+    member val Width = width with get,set
     member _.Kind = kind
+    member val RightAligned = false with get,set
 
 /// One row. Values.[i] is the text of text column i (i >= 1); Checks.[i] is the state of
 /// check column i, or None for no box on this row.
@@ -470,6 +471,12 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         SettingsTreeList.drawGlyph(g,glyph,Rectangle(button.X+(button.Width-side)/2,button.Y+(button.Height-side)/2,side,side),color))
                 | TextColumn ->
                     let bounds = Rectangle(cell.X+Dpi.scale 8,top,max 1 (cell.Width-Dpi.scale 16),rowHeight)
+                    // Move text and its match highlights together, preserving ellipsis clipping.
+                    let bounds =
+                        if columns.[column].RightAligned then
+                            let width = min bounds.Width (TextRenderer.MeasureText(g,item.value column,this.Font,Size(Int32.MaxValue,rowHeight),flags).Width)
+                            Rectangle(bounds.Right-width,bounds.Y,width,bounds.Height)
+                        else bounds
                     this.drawHighlights(g,item.value column,item.highlights column,bounds,flags,p)
                     // Muted text is hard to read on a highlight: a column with matches takes the full colour.
                     let color = if isSelected || not (item.highlights column).IsEmpty then text else p.muted

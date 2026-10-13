@@ -40,23 +40,27 @@ type WindowDecorator = {
             onMonitorInsideRegion.box.height > onMonitorOutsideRegion.box.height
 
     /// Prefer the chosen outside edge; an inset overlay keeps snapped windows reachable.
-    member this.sidePlacement(dock:TabDock,width:int,?contentHeight:int,?alignment:TabAlignment) : TabStripPlacment =
-        let rect = this.windowBounds
-        let width = min width (max 1 rect.width)
+    member this.sidePlacement(dock:TabDock,width:int,?contentHeight:int,?alignment:TabAlignment,?maximized:bool) : TabStripPlacment =
+        let source = this.windowBounds
         let left = dock=TabDockLeft
         let fit (area:Rect) =
             let height = min area.height (max 1 (defaultArg contentHeight area.height))
             let spare = area.height-height
             let offset = match defaultArg alignment TabCenter with TabLeft -> 0 | TabRight -> spare | TabCenter -> spare/2
             Rect(Pt(area.x,area.y+offset),Sz(area.width,height))
-        let outside = fit (Rect(Pt((if left then rect.left-width else rect.right),rect.top),Sz(width,rect.height)))
         // Stay on the owner's monitor even when a neighboring screen has outside space.
         let ownerArea =
             match this.monitorBounds.list with
-            | [] -> rect
+            | [] -> source
             | areas -> areas |> List.maxBy(fun area ->
-                let overlap = rect.intersection area
+                let overlap = source.intersection area
                 int64 overlap.width*int64 overlap.height)
+        // The top strip's one-pixel offset must not leave a gap at a maximized side edge.
+        let rect = if defaultArg maximized false then ownerArea else source
+        let width = min width (max 1 rect.width)
+        // Cover the visible frame's antialiased border instead of stopping just before it.
+        let seam = min width (Dpi.scale 1)
+        let outside = fit (Rect(Pt((if left then rect.left-width+seam else rect.right-seam),rect.top),Sz(width,rect.height)))
         let fits = ownerArea.completlyContains outside
         // Maximized HWND bounds include an invisible frame beyond the screen edge.
         let overlap = rect.intersection ownerArea

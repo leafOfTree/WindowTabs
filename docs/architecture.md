@@ -94,6 +94,17 @@ When those monitors differ for a maximized window, move its normal restore recta
 to the current monitor, keeping its size and relative position. Windows otherwise
 rejects the minimize destination on the new monitor and resets it to its default.
 
+The WindowTabs Alt+Tab switcher excludes DWM-cloaked windows, including application
+windows owned by a combined taskbar proxy. Discovery retains windows on other
+desktops, but the switcher lists those shown on the current desktop. Its cloak
+check precedes the ownership bypass and does not query COM desktop membership
+inside the low-level keyboard hook. Empty UWP frames are also excluded.
+
+The opening Alt+Tab chord selects its target before the switcher is shown: the
+second candidate for forward switching or the last for Alt+Shift+Tab. It is not
+processed again after showing, so the first paint already contains that choice.
+Subsequent chords advance the existing selection in either direction.
+
 ## Taskbar recovery and remembered layouts
 
 Ordinary groups reclaim each window's taskbar button when it joins, including
@@ -110,6 +121,10 @@ survives WindowTabs termination and expires when the application HWND is destroy
 Unmodified groups start with global defaults. Changing the global tab position or
 column width posts the new value to every existing group's STA and updates its
 remembered window layout; individual menu choices can override it again.
+Maximized side columns attach to the monitor work-area edge, without the top
+strip's one-pixel placement offset, so the visible side edge does not leave a seam.
+Outside side columns overlap the visible window frame by one logical pixel to
+cover its antialiased border, including at a half-screen window's inward edge.
 
 ## Settings persistence
 
@@ -202,6 +217,20 @@ them in reverse order, continuing when one cleanup fails. OLE drop targets revok
 registration before the native HWND is destroyed and balance `OleInitialize`.
 Hotkeys reserve a new native registration before releasing the old one. A conflict
 preserves the working shortcut and does not persist the rejected value.
+
+Window search includes grouped tabs and switchable application windows without
+tabs, keeping each HWND only once. Ungrouped windows act as individual entries in
+the existing group/recency ordering; helper windows and taskbar proxies are excluded.
+An explicit search scope change is persisted as `tabSearchScope`. Missing or invalid
+values retain the group default, while a saved global choice opens globally even
+inside a group. Falling back to global when no searchable group exists does not
+overwrite the preferred scope.
+
+Filtering preserves that list order. The initial choice ranks word-start matches
+above word-internal matches, then prefers earlier positions of equally strong
+matches, then recency. Each query term uses its strongest, earliest occurrence
+across the title, original title and app name; quality and position are summed
+across terms, so changing query word order does not change the choice.
 
 ## Workspace data and background work
 

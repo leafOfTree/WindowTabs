@@ -303,7 +303,8 @@ type Program(lifetime:LifetimeScope) as this =
             // The desktop keeps each group's windows in tab order.
             let groups = this.desktop.groups.list |> List.map(fun group -> group.windows.list)
             let group = this.desktop.foregroundGroup |> Option.map(fun group -> group.windows.list) |> Option.defaultValue []
-            let search = TabSearchForm(TabSearch.tabs nameOverride (WinUserApi.GetForegroundWindow()) groups,group)
+            let search = TabSearchForm(TabSearch.tabs nameOverride (WinUserApi.GetForegroundWindow()) groups,group,
+                                      settings=(settingsManager :> ISettings))
             search.Ended.Add(fun () -> tabSearchCell.set(None))
             tabSearchCell.set(Some(search))
             search.Show()

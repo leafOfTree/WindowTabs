@@ -543,6 +543,29 @@ let main() =
     let mail = searchEntry mailWindow "Inbox - Mail" "outlook"
     let notes = searchEntry notesWindow "Untitled - Notepad" "notepad"
     let editor = searchEntry editorWindow "README.md - Code" "code"
+    // An untabbed app is still a global switch target; shell proxies and tool windows are not.
+    do
+        use untabbed = new Form(Text="Untabbed search probe",ShowInTaskbar=true,
+                                StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-12000,-12000))
+        use tool = new Form(Text="Tool search probe",FormBorderStyle=FormBorderStyle.FixedToolWindow,
+                            StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-12000,-12000))
+        use proxy = new Form(Text="Proxy search probe",ShowInTaskbar=true,
+                             StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-12000,-12000))
+        notesWindow.Text <- "Grouped search probe"
+        untabbed.Show()
+        tool.Show()
+        proxy.Show()
+        TaskbarProxies.add proxy.Handle
+        try
+            let entries = TabSearch.tabs (fun _ -> None) untabbed.Handle [[notesWindow.Handle;untabbed.Handle]]
+            check (entries |> List.filter(fun entry -> entry.hwnd=untabbed.Handle) |> List.length = 1)
+                  "Global search duplicated a grouped window"
+            let entries = TabSearch.tabs (fun _ -> None) notesWindow.Handle [[notesWindow.Handle]]
+            check (entries |> List.exists(fun entry -> entry.hwnd=untabbed.Handle)) "Global search omitted an app without tabs"
+            check (entries |> List.exists(fun entry -> entry.hwnd=notesWindow.Handle)) "Global search omitted a grouped tab"
+            check (entries |> List.forall(fun entry -> entry.hwnd<>tool.Handle && entry.hwnd<>proxy.Handle))
+                  "Global search included a tool window or taskbar proxy"
+        finally TaskbarProxies.remove proxy.Handle
     check (TabSearch.matches "" notes) "An empty tab search hid a window"
     check (TabSearch.matches "PAD untitled" notes) "Tab search terms were not matched in any case and order"
     check (TabSearch.matches "outlook" mail) "Tab search did not match the program name"
@@ -553,7 +576,7 @@ let main() =
     check (TabSearch.highlights "o" "Foo" = [1,2]) "Adjacent matches were not merged"
     check (TabSearch.highlights "ab bc" "xabcx" = [1,3]) "Overlapping matches were not merged"
     check (TabSearch.highlights "" "Foo" = [] && TabSearch.highlights "zz" "Foo" = []) "Text was highlighted without a match"
-    // Choosing: the best match, then the most recently used; a match at a word start is best.
+    // Choosing: word-start quality, earlier positions, then recency.
     check (TabSearch.quality "set" "windowtabs settings" = 2) "A match at a word start was not ranked best"
     check (TabSearch.quality "tabs" "windowtabs settings" = 1) "A match inside a word did not count"
     check (TabSearch.quality "wts" "windowtabs settings" = 0) "Scattered letters matched"
@@ -565,6 +588,21 @@ let main() =
     let start = { TabSearch.create IntPtr.Zero "Settings" "Settings" "" with recency=5 }
     check (TabSearch.best "set" [inside;start] = Some start) "The better match was not chosen"
     check (TabSearch.best "zzz" [inside;start] = None) "A tab was chosen with nothing matching"
+    let early = { TabSearch.create IntPtr.Zero "notepad file" "notepad file" "" with recency=5 }
+    let late = { TabSearch.create IntPtr.Zero "scratchpad file" "scratchpad file" "" with recency=0 }
+    check (TabSearch.best "pad" [late;early] = Some early) "An earlier word-internal match lost to recency"
+    check (TabSearch.best "pad file" [late;early] = Some early && TabSearch.best "file pad" [late;early] = Some early)
+          "Multiple search terms did not prefer earlier positions independently of query order"
+    let same = {early with recency=1}
+    check (TabSearch.best "pad" [early;same] = Some same) "Equal match positions did not fall back to recency"
+    let boundary = { TabSearch.create IntPtr.Zero "a long title - pad" "a long title - pad" "" with recency=9 }
+    check (TabSearch.best "pad" [early;boundary] = Some boundary) "An earlier internal match outranked a later word-start match"
+    let repeated = TabSearch.create IntPtr.Zero "xxpad pad" "xxpad pad" ""
+    let earlierBoundary = TabSearch.create IntPtr.Zero "yyyy pad" "yyyy pad" ""
+    check (TabSearch.best "pad" [repeated;earlierBoundary] = Some earlierBoundary)
+          "A stronger later occurrence used the position of an earlier weak occurrence"
+    let appMatch = { TabSearch.create IntPtr.Zero "a long window title" "a long window title" "padapp" with recency=9 }
+    check (TabSearch.best "PAD" [boundary;appMatch] = Some appMatch) "Application name positions or case-insensitive matching were ignored"
     // Grouping: groups by last use, each in tab order; the active tab is the least recent.
     let zorder hwnd = if hwnd=editor.hwnd then 0 elif hwnd=notes.hwnd then 1 else 2
     let arranged = TabSearch.arrange zorder editor.hwnd [[mail;notes];[];[editor]]

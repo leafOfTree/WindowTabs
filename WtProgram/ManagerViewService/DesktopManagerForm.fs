@@ -166,10 +166,30 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         let brand = new Label(Text="WindowTabs",Font=SettingsUi.sectionFont(),AutoSize=false,
                               Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,UseMnemonic=false)
         let releasesUrl = "https://github.com/leafOfTree/WindowTabs/releases"
-        let version = new Label(Text=sprintf "v%s" AssemblyInfo.informationalVersion,AutoSize=false,
-                                Dock=DockStyle.Fill,Tag="muted",UseMnemonic=false,AutoEllipsis=true,TextAlign=ContentAlignment.MiddleLeft,
-                                Name="version-link",Cursor=Cursors.Hand,AccessibleRole=AccessibleRole.Link,
-                                AccessibleDescription=tr Strings.Diagnostics.releases)
+        let mutable versionHovered = false
+        let version =
+            { new Button(Text=sprintf "v%s" AssemblyInfo.informationalVersion,AutoSize=false,
+                         Dock=DockStyle.Fill,Tag="muted",UseMnemonic=false,TextAlign=ContentAlignment.MiddleLeft,
+                         Name="version-link",Cursor=languageChoice.Cursor,AccessibleRole=AccessibleRole.PushButton,
+                         FlatStyle=FlatStyle.Flat,AccessibleDescription=tr Strings.Diagnostics.releases) with
+                override this.OnMouseEnter(e) = base.OnMouseEnter(e); versionHovered <- true; this.Invalidate()
+                override this.OnMouseLeave(e) = base.OnMouseLeave(e); versionHovered <- false; this.Invalidate()
+                override this.OnGotFocus(e) = base.OnGotFocus(e); this.Invalidate()
+                override this.OnLostFocus(e) = base.OnLostFocus(e); this.Invalidate()
+                override this.OnPaintBackground(e) = ()
+                override this.OnPaint(e) =
+                    let palette = SettingsColors.current()
+                    let graphics = e.Graphics
+                    graphics.Clear(if isNull this.Parent then palette.background else this.Parent.BackColor)
+                    graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+                    if (versionHovered || this.Focused) && this.Enabled then
+                        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 6))
+                        use fill = new SolidBrush(palette.selection)
+                        graphics.FillPath(fill,shape)
+                    TextRenderer.DrawText(graphics,this.Text,this.Font,this.ClientRectangle,
+                        (if versionHovered && this.Enabled then palette.text else palette.muted),
+                        TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis) }
+        version.FlatAppearance.BorderSize <- 0
         version.Click.Add(fun _ ->
             try Diagnostics.Process.Start(releasesUrl) |> ignore
             with _ -> ())

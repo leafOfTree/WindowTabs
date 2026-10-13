@@ -51,12 +51,31 @@ let main() =
                             check (placed.bounds.y=bounds.y+inset+offset) "Vertical alignment ignored available height or the title-bar inset"
                             if inside && dock=TabDockRight then
                                 check (placed.bounds.right=area.right) "Right overlay left an unwanted edge gap"
+                            if not inside then
+                                check ((if dock=TabDockLeft then placed.bounds.right=bounds.left+Dpi.scale 1
+                                        else placed.bounds.left=bounds.right-Dpi.scale 1))
+                                      "Outside side column does not overlap the application's visible frame"
                     let maximized = {decorator with windowBounds=area.inflate(Dpi.scale 8,Dpi.scale 8)}
                     let overlay = maximized.sidePlacement(dock,Dpi.scale 220,contentHeight=Dpi.scale 120)
                     check (area.completlyContains overlay.bounds) "Maximized invisible frame placed the trigger beyond the screen"
                     if dock=TabDockRight then
                         check (overlay.bounds.right=area.right) "Maximized overlay did not attach to the visible screen edge"
+                    let shifted = {decorator with windowBounds=area.move(-1,-1)}
+                    let flush = shifted.sidePlacement(dock,Dpi.scale 220,contentHeight=Dpi.scale 120,maximized=true)
+                    check (flush.showInside && (if dock=TabDockLeft then flush.bounds.left=area.left else flush.bounds.right=area.right))
+                          "Top-strip offset left a gap next to a maximized side column"
+                    check (flush.bounds.top>=area.top+Dpi.scale 32) "Maximized side column inherited the top-strip offset"
             let rightScreen = Rect(Pt(0,0),Dpi.scaleSize(Sz(1920,1080)))
+            for dock in [TabDockLeft;TabDockRight] do
+                let half =
+                    if dock=TabDockRight then Rect(rightScreen.location,Sz(rightScreen.width/2,rightScreen.height))
+                    else Rect(Pt(rightScreen.width/2,0),Sz(rightScreen.width/2,rightScreen.height))
+                let decorator = {windowBounds=half;monitorBounds=List2([rightScreen]);decoratorHeight=Dpi.scale 32
+                                 decoratorHeightOffset=0;decoratorIndentNormal=0;decoratorIndentFlipped=0}
+                let placed = decorator.sidePlacement(dock,Dpi.scale 220,contentHeight=Dpi.scale 120)
+                check (not placed.showInside && (if dock=TabDockLeft then placed.bounds.right=half.left+Dpi.scale 1
+                                                 else placed.bounds.left=half.right-Dpi.scale 1))
+                      "Half-screen side column left a seam at the adjoining window edge"
             let leftScreen = rightScreen.move(-rightScreen.width,0)
             for owner,dock in [rightScreen,TabDockLeft;leftScreen,TabDockRight] do
                 let decorator = {windowBounds=owner;monitorBounds=List2([leftScreen;rightScreen]);decoratorHeight=Dpi.scale 32
@@ -116,8 +135,10 @@ let main() =
                                                  for child in control.Controls do yield! labels child }
         Application.DoEvents()
         let checkVersionFooter (window:Form) =
-            let version = window.Controls.Find("version-link",true).[0] :?> Label
+            let version = window.Controls.Find("version-link",true).[0] :?> Button
             let language = window.Controls.Find("language",true).[0]
+            check (version.Cursor=language.Cursor && version.AccessibleRole=AccessibleRole.PushButton)
+                  "Version button does not share the language picker's cursor or button semantics"
             let previousText = version.Text
             try
                 version.Text <- "v2026.10.10-beta.1"
