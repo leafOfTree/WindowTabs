@@ -26,7 +26,7 @@ type TreeListGlyph =
 /// Column 0 is the tree column: expand chevron, icon and the item's Text.
 type TreeListColumn(header:string, width:int, kind:TreeListColumnKind) =
     member _.Header = header
-    member _.Width = width
+    member val Width = width with get,set
     member _.Kind = kind
     member val RightAligned = false with get,set
 

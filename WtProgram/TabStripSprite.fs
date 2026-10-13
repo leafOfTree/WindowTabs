@@ -751,6 +751,8 @@ type TabStripSprite<'id> when 'id : equality = {
         let bounds = Rect(Pt(), this.size)
         if this.isVertical then
             gr.SmoothingMode <- SmoothingMode.AntiAlias
+            // Cover the attached edge's whole pixel, so the app cannot bleed through the seam.
+            gr.PixelOffsetMode <- PixelOffsetMode.Half
             use outline = this.columnOutline
             gr.FillPath(brush,outline)
         else gr.FillRectangle(brush, bounds.Rectangle)

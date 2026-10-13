@@ -135,6 +135,8 @@ let main () =
                       "Vertical column did not round the corners away from its attached window edge"
                 check (image.GetPixel(edgeX,0).A>0uy && image.GetPixel(edgeX,image.Height-1).A>0uy)
                       "Vertical column rounded the corners next to its attached window edge"
+                check ([0..image.Height-1] |> List.forall(fun y -> image.GetPixel(edgeX,y).A=255uy))
+                      "Vertical column lets the application bleed through its attached edge"
                 check (image.GetPixel(image.Width/2,image.Height/2).A=255uy) "Column background no longer covers the underlying scrollbar"
                 for y in [0;image.Height-1] do
                     let edge = image.GetPixel(image.Width/2,y)

@@ -135,7 +135,7 @@ module Strings =
         let showTabsOnSwitch = { caption={ en="Show tabs briefly after switching"; zh="切换后短暂显示标签"; ja="切り替え後にタブを一時的に表示" }
                                  description={ en="For about a second, so you can see where you are."; zh="显示约一秒，方便确认当前位置。"; ja="約 1 秒間表示して、今いる位置を確認できます。" }
                                  keywords={ en="peek"; zh="短暂显示"; ja="一時表示" } }
-        let tabPosition = { caption={ en="Tab position"; zh="标签位置"; ja="タブの位置" }
+        let tabPosition = { caption={ en="Position tabs"; zh="放置标签"; ja="タブを配置" }
                             description=none
                             keywords={ en="vertical horizontal sidebar left right"; zh="垂直 横向 侧栏 左 右"; ja="縦 横 サイドバー 左 右" } }
         let tabColumnWidthHint = { en="For left/right tabs. Drag a column edge to resize one group, down to an icon rail."; zh="用于左／右标签。拖动侧栏边缘可单独调整分组宽度，最窄可只显示图标。"; ja="左・右のタブ用です。列の端をドラッグしてグループの幅を変更できます。最小幅ではアイコンのみを表示します。" }

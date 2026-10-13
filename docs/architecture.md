@@ -121,6 +121,10 @@ survives WindowTabs termination and expires when the application HWND is destroy
 Unmodified groups start with global defaults. Changing the global tab position or
 column width posts the new value to every existing group's STA and updates its
 remembered window layout; individual menu choices can override it again.
+Maximized side columns attach to the monitor work-area edge, without the top
+strip's one-pixel placement offset, so the visible side edge does not leave a seam.
+Outside side columns overlap the visible window frame by one logical pixel to
+cover its antialiased border, including at a half-screen window's inward edge.
 
 ## Settings persistence
 

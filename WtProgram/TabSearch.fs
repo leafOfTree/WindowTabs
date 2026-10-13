@@ -226,7 +226,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     g.FillPath(faceFill,face)
                     g.DrawPath(outline,face)
                     TextRenderer.DrawText(g,"Tab",keyFont,cap,p.muted,centred)) }
-    let list = new SettingsTreeList([TreeListColumn("",0,TextColumn);TreeListColumn("",160,TextColumn,RightAligned=true)],
+    let programColumn = TreeListColumn("",160,TextColumn,RightAligned=true)
+    let list = new SettingsTreeList([TreeListColumn("",0,TextColumn);programColumn],
                                     ShowHeader=false,ShowExpanders=false,ExpandOnDoubleClick=false,
                                     RowHeight=rowHeight,IconSize=24,TabStop=false,Dock=DockStyle.Fill,
                                     BackColor=palette.surface,ForeColor=palette.text)
@@ -274,6 +275,12 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let apply() =
         // Matches stay in their groups; the best one is chosen.
         let shown = scoped() |> Array.filter(fun (_,entry) -> TabSearch.matches input.Text entry)
+        // Titles reclaim the fixed app column's spare space, including after filtering.
+        let programWidth =
+            shown |> Array.fold(fun width (_,entry) ->
+                max width (TextRenderer.MeasureText(entry.program,list.Font,Size(Int32.MaxValue,Dpi.scale rowHeight),
+                              TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine).Width)) 0
+        programColumn.Width <- max 48 (min 160 (int(Math.Ceiling(float programWidth/Dpi.currentFactor()))+16))
         shown |> Array.iteri(fun index (item,entry) ->
             item.SeparatorAbove <- index>0 && (snd shown.[index-1]).group<>entry.group
             item.Highlights <- [| TabSearch.highlights input.Text entry.title; TabSearch.highlights input.Text entry.program |])
