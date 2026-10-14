@@ -38,9 +38,11 @@ type HelperWindow() =
     let mutable changes = 0
     let mutable delay = 0
     let mutable iconDelay = 0
+    let mutable positionPause : (ManualResetEventSlim * ManualResetEventSlim) option = None
     member _.Changes = Volatile.Read(&changes)
     member _.Delay with set value = delay <- value
     member _.IconDelay with set value = iconDelay <- value
+    member _.HoldNextPositionChanged(entered,resume) = positionPause <- Some(entered,resume)
     override this.CreateParams =
         let parameters = base.CreateParams
         parameters.ExStyle <- parameters.ExStyle ||| 0x08000000 ||| 0x80
@@ -61,6 +63,13 @@ type HelperWindow() =
                 position.cx <- min position.cx 660
                 position.cy <- min position.cy 500
             Marshal.StructureToPtr(position,message.LParam,false)
+        if message.Msg=0x47 then
+            positionPause |> Option.iter(fun (entered,resume) ->
+                positionPause <- None
+                // Owned followers can rise before the worker puts them below the source.
+                OS().windowFromHwnd(this.Handle).insertAfter(WindowHandleTypes.HWND_TOP)
+                entered.Set()
+                resume.Wait())
         // Stand in for a native window that ignores WM_DPICHANGED. Off screen, Windows moves these
         // windows between monitors of different DPI, and a Form then resizes itself and, when the
         // DPI drops, pins MinimumSize to the clamped size, so it no longer takes the group's size.
@@ -78,6 +87,8 @@ let main() =
     let queue = WindowPlacementQueue<int>((fun _ value valid ->
         if value=1 then entered.Set(); resume.Wait()
         if valid() then applied.Enqueue(value)),workerLimit=1)
+    let completed = Collections.Concurrent.ConcurrentQueue<obj>()
+    use completion = queue.Idle.Subscribe(completed.Enqueue)
     let owner,other = obj(),obj()
     let first,removed = IntPtr(1),IntPtr(2)
     queue.claim(owner,first)
@@ -85,6 +96,7 @@ let main() =
     try
         queue.submit(owner,first,1)
         check (entered.Wait(10000)) "Placement worker did not start"
+        check (completed.IsEmpty) "An unfinished native call published completion"
         check (queue.isWindowBusyWith(owner,first,((=)1))) "In-flight request kind was lost"
         check (not(queue.isWindowBusyWith(owner,first,((=)99)))) "An unrelated request kind was marked busy"
         queue.submit(owner,first,2)
@@ -93,21 +105,32 @@ let main() =
         queue.release(owner,removed)
         check (queue.retainedCount=1) "Cancelled queued HWND remained retained behind a slow call"
         queue.claim(other,first)
+        check (completed.ToArray()=[|owner|]) "Transferred work did not release the previous owner's wait"
         queue.submit(other,first,4)
         queue.release(owner,first)
         resume.Set()
-        pumpUntil(fun () -> queue.isIdle(other) && queue.retainedCount=1)
+        pumpUntil(fun () -> queue.isIdle(other) && queue.retainedCount=1 && completed.Count=2)
+        check (completed.ToArray()=[|owner;other|]) "The replacement owner did not receive placement completion"
         check (applied.ToArray()=[|4|]) "Stale placement survived coalescing, transfer or removal"
         entered.Reset()
         resume.Reset()
         queue.submit(other,first,1)
         check (entered.Wait(10000)) "Second placement worker did not start"
         for value in 5..25 do queue.submit(other,first,value)
+        check (completed.Count=2) "Pending requests repeatedly published completion"
         resume.Set()
-        pumpUntil(fun () -> queue.isIdle(other))
+        pumpUntil(fun () -> queue.isIdle(other) && completed.Count=3)
         check (applied.ToArray()=[|4;25|]) "Repeated placement requests did not retain only the latest state"
         queue.release(other,first)
+        queue.release(other,first)
+        check (completed.Count=3) "Releasing idle work published repeated completion"
         check (queue.retainedCount=0) "Placement queue retained a released HWND"
+        completion.Dispose()
+        queue.claim(other,first)
+        queue.submit(other,first,26)
+        pumpUntil(fun () -> queue.isIdle(other))
+        check (completed.Count=3) "A disposed placement subscription received completion"
+        queue.release(other,first)
     finally resume.Set()
     let original = Environment.CurrentDirectory
     let isolated = Path.Combine(__SOURCE_DIRECTORY__,"Debug","group-operations-"+Guid.NewGuid().ToString("N"))
@@ -125,6 +148,7 @@ let main() =
             member _.version = "test"
             member _.isFirstRun = false
             member _.refresh() = ()
+            member _.regroupApplications _ = ()
             member _.shutdown() = ()
             member _.setWindowNameOverride((hwnd,name)) =
                 match name with
@@ -266,6 +290,35 @@ let main() =
                     let empty = hooks.items.map(fun (hwnd,_) -> hwnd, {new IDisposable with member _.Dispose() = ()})
                     cell.GetType().GetMethod("set").Invoke(cell,[|box (Map2(empty))|]) |> ignore)
                 if count=2 then
+                    // Reorder may arrive between native placement and its stacking correction.
+                    // Hold that phase by notification, rather than guessing its duration.
+                    waitOperation()
+                    let source,follower = onGroup(fun group -> group.topWindow,group.zorder.value.tail.head)
+                    let followerForm = forms.[handles |> List.findIndex((=)follower)]
+                    for command in [ShowWindowCommands.SW_SHOWMAXIMIZED;ShowWindowCommands.SW_SHOWNOACTIVATE] do
+                        onHelper(fun () -> OS().windowFromHwnd(source).showWindow(command))
+                        use entered = new ManualResetEventSlim(false)
+                        use resume = new ManualResetEventSlim(false)
+                        onHelper(fun () -> followerForm.HoldNextPositionChanged(entered,resume))
+                        let focused = WinUserApi.GetForegroundWindow()
+                        try
+                            onGroup(fun group ->
+                                let top = OS().windowFromHwnd(source)
+                                let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="placement")
+                                let cell = field.GetValue(group)
+                                cell.GetType().GetMethod("set").Invoke(cell,[|box (Some(top.bounds,top.placement,top.visibleBounds))|]) |> ignore
+                                invoke "updatePlacements" group [||] |> ignore)
+                            check (entered.Wait(10000)) "Follower placement did not enter its stacking-correction phase"
+                            check (OS().windowFromHwnd(follower).zorder < OS().windowFromHwnd(source).zorder)
+                                  "Placement fixture did not temporarily raise the follower"
+                            onGroup(fun group -> invoke "handleWindowEvent" group [|box follower;box WinEvent.EVENT_OBJECT_REORDER|] |> ignore)
+                            check (onGroup(fun group -> group.topWindow=source && group.ts.zorder.head=Tab(source)))
+                                  "A placement reorder changed the selected tab before completion"
+                        finally resume.Set()
+                        waitOperation()
+                        check (onGroup(fun group -> group.topWindow=source) && OS().windowFromHwnd(source).zorder < OS().windowFromHwnd(follower).zorder)
+                              "Placement completion did not keep the original tab above its follower"
+                        check (WinUserApi.GetForegroundWindow()=focused) "Background placement stole the foreground"
                     // Reproduce an owned strip being hidden after the early restore events.
                     // No foreground event or click is allowed to repair it for us.
                     let joining = handles.[1]

@@ -76,10 +76,13 @@ Next reproduction: for RustDesk record client/server versions, touch mode and
 local-mouse versus remote-touch behavior with WindowTabs on/off. Capture state is
 available in the passive sampler, but the actual touch/injected event sequence needs
 a dedicated event trace; sampling cannot establish delivery of double-clicks.
-For Word use a disposable document and compare all four elevation combinations
-with tabs enabled/disabled. Record both process elevations and the thread capture
-HWND during the failed drag. Do not change application capture behavior without
-a reproduction demonstrating that WindowTabs takes or retains it.
+Word update: partial fix `9eafdd2` avoids owner-linked input queues across integrity
+levels. The user confirmed drag selection in both Notepad and Word; the recorded
+Notepad comparison used elevated WindowTabs and ordinary-permission Notepad.
+Groups containing incompatible windows currently keep individual taskbar buttons,
+even when combining is enabled. Restoring cross-integrity combining, explaining
+the fallback and adding repeatable mixed-integrity checks are tracked in the
+[follow-up plan](input-isolation-probe.md#follow-up-plan).
 
 ## 4. Memory growth (#39)
 

@@ -33,7 +33,7 @@ module private ProgramItems =
     /// The icon the app shows on the taskbar (its first window), else the executable's own
     /// icon. A host without icons of its own (ApplicationFrameHost.exe) gets a line glyph
     /// rather than borrowing one hosted app's logo. An app that is not running has no window.
-    let exe (path:string) (first:Window option) =
+    let exe (path:string) (first:Window option) custom =
         let icon =
             if not (AppIcons.HasOwnIcon path) then None
             else
@@ -43,7 +43,7 @@ module private ProgramItems =
         let tabs = Services.filter.getIsTabbingEnabledForProcess path
         // Auto grouping only decides which group a tabbed window joins.
         TreeListItem(Path.GetFileName(path),Icon=Option.toObj icon,Glyph=WindowGlyph,Tag=path,
-                     Checks=[|None;Some tabs;Some(Services.program.getAutoGroupingEnabled path)|],CheckEnabled=[|true;true;true|])
+                     Checks=[|None;Some tabs;Some(not custom && Services.program.getAutoGroupingEnabled path)|],CheckEnabled=[|true;true;not custom|])
     let window (window:Window) =
         TreeListItem(window.text,Icon=Option.toObj (ImgHelper.windowIcon window),Glyph=WindowGlyph)
 type ProgramView() as this=
@@ -59,6 +59,7 @@ type ProgramView() as this=
     /// Each of the All row's boxes is on when every app's is, and a dash when only some are.
     let updateAll() =
         let summarise column (items:TreeListItem list) =
+            let items = items |> List.filter(fun item -> item.checkEnabled column)
             let on = items |> List.filter(fun item -> item.check column = Some true) |> List.length
             all.Checks.[column] <- Some(on>0 && on=items.Length)
             all.Mixed.[column] <- on>0 && on<items.Length
@@ -66,18 +67,28 @@ type ProgramView() as this=
         let apps = apps()
         summarise ProgramItems.tabsColumn apps
         summarise ProgramItems.groupingColumn apps
-    /// For apps that have not been turned on or off in the list.
+    /// The default only applies when an application is first discovered.
     let footer =
-        let table = new TableLayoutPanel(ColumnCount=1,Margin=Padding.Empty,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink)
+        let table = new TableLayoutPanel(ColumnCount=2,RowCount=1,Margin=Padding.Empty,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink)
         table.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
-        let card = new SettingsCard()
-        SettingsUi.add table card
-        SettingsBindings.toggleRow card "enable-tabs-for-new-apps"
+        table.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
+        let item = SettingsCatalog.find "enable-tabs-for-new-apps"
+        let label = new Label(Text=tr item.text.caption,AutoSize=true,Anchor=AnchorStyles.Left,UseMnemonic=false,Margin=Padding.Empty)
+        let toggle = SettingsBindings.settingToggle "enableTabbingByDefault"
+        toggle.Name <- "enable-tabs-for-new-apps"
+        toggle.AccessibleName <- tr item.text.caption
+        toggle.Anchor <- AnchorStyles.Right
+        toggle.Margin <- Padding.Empty
+        table.Controls.Add(label,0,0)
+        table.Controls.Add(toggle,1,0)
+        SettingsHover(label,tr item.text.description) |> ignore
         table :> Control
+    let groupingRules = new AppGroupingRulesView()
     let panel =
         new SettingsListPage(tr Strings.Pages.appRules,
-                             tr Strings.AppRules.description,
-                             list,[],footer=footer)
+                             "",
+                             list,[],footer=groupingRules,header=footer,
+                             helpText=tr Strings.AppRules.description,compact=true)
 
     let scanner = new LatestWork<TreeListItem list>(invoker :> IDispatcher,
         (fun items ->
@@ -91,14 +102,15 @@ type ProgramView() as this=
             list.Roots.AddRange(items)
             updateAll()
             list.Rebuild()
-            panel.Status <- tr (Strings.AppRules.appCount items.Length)),
+            panel.Status <- ""),
         ImgHelper.disposeItems,
         (fun error -> panel.Status <- tr (Strings.AppRules.scanFailed error.Message)))
 
     do
+        groupingRules.Changed.Add(fun _ -> this.populateNodes())
         list.CheckChanged.Add(fun (item,column,value) ->
             let isAll = obj.ReferenceEquals(item,all)
-            let changed = if isAll then apps() else [item]
+            let changed = (if isAll then apps() else [item]) |> List.filter(fun app -> app.checkEnabled column)
             if column=ProgramItems.tabsColumn then
                 Services.filter.setIsTabbingEnabledForProcesses (changed |> List.map path) value
                 for app in changed do
@@ -148,6 +160,8 @@ type ProgramView() as this=
         // Apps with a rule are listed even when they are not running, so they can be changed.
         let ruled = SettingsCatalog.appRulePathKeys |> List.collect(fun key -> (Services.settings.getValue(key).cast<Set2<string>>()).items.list)
         let ruled = ruled @ ((Services.settings.getValue("appTabColors") :?> Map<string,string>) |> Map.toList |> List.map fst)
+        let customRules = Services.settings.getValue("appGroupingRules") :?> AppGroupingRule list
+        let ruled = ruled @ (customRules |> List.map(fun rule -> rule.processPath))
         scanner.Request(fun cancellation ->
             let items = ResizeArray<TreeListItem>()
             try
@@ -164,7 +178,7 @@ type ProgramView() as this=
                                     match procs.TryGetValue(path) with
                                     | true,item -> item
                                     | _ ->
-                                        let item = ProgramItems.exe path (Some window)
+                                        let item = ProgramItems.exe path (Some window) (AppGroupingRules.hasEnabled customRules path)
                                         procs.Add(path,item)
                                         items.Add(item)
                                         item
@@ -177,7 +191,7 @@ type ProgramView() as this=
                 for path in ruled do
                     cancellation.ThrowIfCancellationRequested()
                     if not (String.IsNullOrEmpty path) && not (procs.ContainsKey path) && File.Exists path then
-                        let item = ProgramItems.exe path None
+                        let item = ProgramItems.exe path None (AppGroupingRules.hasEnabled customRules path)
                         procs.Add(path,item)
                         items.Add(item)
                 cancellation.ThrowIfCancellationRequested()

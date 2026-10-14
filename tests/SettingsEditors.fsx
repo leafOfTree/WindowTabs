@@ -45,10 +45,17 @@ let mutable preferences = {
     lightCustomPalette=Theme.lightPalette;darkCustomPalette=Theme.darkPalette
     mode=DarkTheme;useCustomColors=true;lightPreset="";darkPreset="";presetEdits=Map.empty }
 let settingValues = Collections.Generic.Dictionary<string,obj>(dict ["tabPosition",box "Horizontal";"tabColumnWidth",box SettingsCatalog.columnWidthDefault;"appTabColors",box(Map.empty<string,string>);"tabColorMode",box "Off";"tabColorStyle",box "Stripe";"numberLeaderKeys",box "123456789";"numberHotKeyModifier",box "Ctrl";"disabledNumberShortcutPaths",box(Set2<string>());"enabledNumberShortcutPaths",box(Set2<string>())])
+do settingValues.["appGroupingRules"] <- box ([] : AppGroupingRule list)
+do settingValues.["appGroupingTargets"] <- box ([] : AppGroupingTarget list)
 let settings = { new ISettings with
     member _.appearance = preferences
     member _.updateAppearance update = preferences <- update preferences; ThemeService.notifyChanged()
-    member _.root with get() = JObject() and set(_) = ()
+    member _.root
+        with get() = JObject(JProperty("appGroupingRules",AppGroupingRules.write (settingValues.["appGroupingRules"] :?> AppGroupingRule list)),
+                             JProperty("appGroupingTargets",AppGroupingRules.writeTargets (settingValues.["appGroupingTargets"] :?> AppGroupingTarget list)))
+        and set(value) =
+            settingValues.["appGroupingRules"] <- box(AppGroupingRules.read value)
+            settingValues.["appGroupingTargets"] <- box(AppGroupingRules.readTargets value)
     member _.path = ""
     member _.getValue key = if settingValues.ContainsKey(key) then settingValues.[key] else box false
     member _.setValue args = let key,value = args in settingValues.[key] <- value
@@ -65,6 +72,14 @@ let paints (control:Control) what =
 let key (control:Control) k =
     control.GetType().GetMethod("OnKeyDown",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(control,[|box(KeyEventArgs(k))|]) |> ignore
 let main() =
+    // Rebuilding the picker must replace and dispose its previous control.
+    do
+        use picker = new GroupingApplicationPicker("saved.exe")
+        let combo() = picker.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as value -> Some value | _ -> None)
+        let initial = combo()
+        picker.UpdateApplications ["other.exe"]
+        assertTrue initial.IsDisposed "Application picker leaked its replaced choice control"
+        assertTrue (not(obj.ReferenceEquals(initial,combo())) && picker.SelectedPath="saved.exe") "Application picker rebuild lost its choice or selected path"
     let found query = SettingsCatalog.all |> List.filter(SettingsCatalog.matches query) |> List.map(fun item -> item.id)
     // Ordered as the settings window lists results: caption matches first.
     let ranked query = found query |> List.sortByDescending(fun id -> SettingsCatalog.searchRank query (SettingsCatalog.find id))
@@ -308,6 +323,7 @@ let main() =
         member _.version = "test"
         member _.isFirstRun = false
         member _.refresh() = ()
+        member _.regroupApplications _ = ()
         member _.shutdown() = ()
         member _.setWindowNameOverride _ = ()
         member _.getWindowNameOverride _ = None
@@ -478,6 +494,27 @@ let main() =
     treeList.Rebuild()
     assertTrue (isNull treeList.SelectedItem) "Tree list: removed selection is cleared"
     treeList.Dispose()
+    // Fractional scrolling must never let GDI row text paint over the fixed column header.
+    do
+        use host = new Form(ClientSize=Size(520,190),ShowInTaskbar=false,Font=SettingsUi.bodyFont())
+        use tree = new SettingsTreeList([TreeListColumn("Header",0,TextColumn)])
+        tree.Dock <- DockStyle.Fill
+        for number in 1..20 do tree.Roots.Add(TreeListItem(sprintf "ROW TEXT OVERLAP %d" number))
+        tree.Rebuild()
+        host.Controls.Add(tree)
+        host.Show()
+        Application.DoEvents()
+        use before = new Bitmap(tree.Width,tree.Height)
+        tree.DrawToBitmap(before,Rectangle(Point.Empty,before.Size))
+        typeof<SettingsTreeList>.GetField("offset",BindingFlags.Instance ||| BindingFlags.NonPublic).SetValue(tree,Dpi.scale 18)
+        use after = new Bitmap(tree.Width,tree.Height)
+        tree.DrawToBitmap(after,Rectangle(Point.Empty,after.Size))
+        let mutable changed = 0
+        for y in 0..Dpi.scale 30-1 do
+            for x in 0..tree.Width-Dpi.scale 24-1 do
+                if before.GetPixel(x,y)<>after.GetPixel(x,y) then changed <- changed+1
+        assertTrue (changed=0) (sprintf "Scrolled row text changed %d header pixels" changed)
+        host.Close()
     // Row actions: buttons beside the name of the row under the pointer. A press selects the row
     // and acts, and a double-click on one does not also open the row.
     do
@@ -573,7 +610,8 @@ let main() =
         dialog.Close()
         settings.updateAppearance(fun p -> {p with mode=mode})
     // App rules: a choice made for an app outlasts a change of the default for new apps.
-    let filter = FilterService() :> IFilterService
+    let filterImplementation = FilterService()
+    let filter = filterImplementation :> IFilterService
     // The settings fake lives in this script's static initialiser, which the whole test runs
     // inside: a background thread reading it would wait for the test to end. The App rules page
     // scans on one, so it gets rules of its own below.
@@ -602,6 +640,16 @@ let main() =
                "An app set off, or one without a rule, does not follow its rule and the default"
     filter.setIsTabbingEnabledForProcess "off.exe" true
     assertTrue (filter.getIsTabbingEnabledForProcess "off.exe" && not ((rule "excludedPaths").contains "off.exe")) "Turning an app back on left it in the off list"
+    settingValues.["enableTabbingByDefault"] <- box true
+    filterImplementation.rememberApplications ["seen-default-on.exe"]
+    filter.isTabbingEnabledForAllProcessesByDefault <- false
+    assertTrue (filter.getIsTabbingEnabledForProcess "seen-default-on.exe" && not(filter.getIsTabbingEnabledForProcess "unseen.exe"))
+               "Turning off the new-app default disabled an already discovered app"
+    filterImplementation.rememberApplications ["seen-default-off.exe"]
+    filter.isTabbingEnabledForAllProcessesByDefault <- true
+    assertTrue (not(filter.getIsTabbingEnabledForProcess "seen-default-off.exe") && filter.getIsTabbingEnabledForProcess "next-new.exe")
+               "Turning on the new-app default changed a previously discovered disabled app"
+    settingValues.["enableTabbingByDefault"] <- box false
     // The App rules page lists apps with a rule even when they are not running, under a row for all of them.
     do
         let installed = [Diagnostics.Process.GetCurrentProcess().MainModule.FileName;Path.Combine(__SOURCE_DIRECTORY__,"Debug","WindowTabs.exe")]
@@ -645,6 +693,9 @@ let main() =
         assertTrue (installed |> List.forall(fun path -> (listed path).IsSome)) "An app with a rule is missing from the list when it is not running"
         assertTrue ((apps()).Head.SeparatorAbove) "Nothing sets All apps apart from the apps"
         assertTrue (view.control.Controls.Find("enable-tabs-for-new-apps",true).Length=1) "The default for new apps is not on the App rules page"
+        let newAppToggle = view.control.Controls.Find("enable-tabs-for-new-apps",true).[0]
+        assertTrue (newAppToggle.PointToScreen(Point.Empty).Y < list.PointToScreen(Point.Empty).Y) "The new-app default was not moved above the application table"
+        assertTrue (not(status.Contains(tr(Strings.AppRules.appCount (list.Roots.Count-1))))) "The application count is still displayed"
         let tabs = 1
         let space item =
             list.SelectedItem <- item
@@ -679,6 +730,91 @@ let main() =
         Application.DoEvents()
         form.Close()
         rules.Value <- filter
-    printfn "PASS: input validation, no-op changes, HSV colours, repeated popup dismissal, shortcut recording and light/dark renders."
+    // Application mappings stay below the app list and save without a dialog.
+    for mode in [LightTheme;DarkTheme] do
+        let appTabs = Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        rules.Value <- {new IFilterService with
+            member _.isAppWindow hwnd = filter.isAppWindow hwnd
+            member _.isAppWindowStyle hwnd = filter.isAppWindowStyle hwnd
+            member _.isTabbableWindow _ = false
+            member _.isTabbingEnabledForAllProcessesByDefault with get() = true and set _ = ()
+            member x.setIsTabbingEnabledForProcess path enabled = x.setIsTabbingEnabledForProcesses [path] enabled
+            member _.setIsTabbingEnabledForProcesses paths enabled =
+                lock appTabs (fun () -> for path in paths do (if enabled then appTabs.Add path else appTabs.Remove path) |> ignore)
+            member _.getIsTabbingEnabledForProcess path = lock appTabs (fun () -> appTabs.Contains path)}
+        preferences <- {preferences with mode=mode}
+        ThemeService.publishPreferences preferences
+        settingValues.["appGroupingRules"] <- box ([] : AppGroupingRule list)
+        settingValues.["appGroupingTargets"] <- box ([] : AppGroupingTarget list)
+        use form = new Form(ClientSize=Size(1040,820),ShowInTaskbar=false,Font=SettingsUi.bodyFont())
+        let view = ProgramView() :> ISettingsView
+        form.Controls.Add(view.control)
+        SettingsUi.apply form
+        form.Show()
+        let rec descendants (control:Control) = seq {
+            yield control
+            for child in control.Controls do yield! descendants child }
+        let button (control:Control) text = descendants control |> Seq.pick(function :? Button as button when button.Text=text -> Some button | _ -> None)
+        let opened = Application.OpenForms.Count
+        let groupView = descendants view.control |> Seq.pick(function :? AppGroupingRulesView as page -> Some page | _ -> None)
+        assertTrue groupView.Visible "Application mappings were hidden behind a second page"
+        let tree = descendants groupView |> Seq.pick(function :? SettingsTreeList as list -> Some list | _ -> None)
+        let saved() = settingValues.["appGroupingRules"] :?> AppGroupingRule list
+        let targets() = settingValues.["appGroupingTargets"] :?> AppGroupingTarget list
+        let name = descendants groupView |> Seq.pick(function :? TextBox as text when text.Name="group-name" -> Some text | _ -> None)
+        let rename target =
+            name.Text <- target
+            typeof<TextBox>.GetMethod("OnLeave",BindingFlags.Instance ||| BindingFlags.NonPublic).Invoke(name,[|box EventArgs.Empty|]) |> ignore
+        (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
+        rename "Group A"
+        let groupA = targets().Head.id
+        assertTrue (targets().Length=1 && saved().IsEmpty && tree.Roots.[0].Text="Group A") "An empty group root was not saved and renamed"
+        let application = descendants groupView |> Seq.pick(function :? GroupingApplicationPicker as picker -> Some picker | _ -> None)
+        let selectedPath = Path.Combine(__SOURCE_DIRECTORY__,"Debug","WindowTabs.exe")
+        application.UpdateApplications [selectedPath;selectedPath.ToUpperInvariant();@"C:\Apps\browser.exe";@"D:\Other\browser.exe"]
+        assertTrue (application.Applications.Length=3) "Running application choices did not deduplicate paths"
+        let choice = application.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as choice -> Some choice | _ -> None)
+        choice.SelectedIndex <- 1+Array.findIndex ((=)selectedPath) application.Applications
+        (button groupView (tr Strings.AppRules.addApplication)).PerformClick()
+        assertTrue (saved().Length=1 && saved().Head.processPath=selectedPath && saved().Head.groupId=groupA && saved().Head.matchType= -1 && tree.Roots.[0].Children.Count=1)
+                   "An app-only mapping was not added beneath its group"
+        assertTrue (Application.OpenForms.Count=opened) "Editing group applications opened another window"
+        let appList = descendants view.control |> Seq.pick(function :? SettingsTreeList as list -> Some list | _ -> None)
+        let clock = Diagnostics.Stopwatch.StartNew()
+        let mapped() = appList.Roots |> Seq.tryFind(fun row -> match row.Tag with :? string as path -> path=selectedPath | _ -> false)
+        while (mapped() |> Option.forall(fun row -> row.checkEnabled 2)) && clock.ElapsedMilliseconds<5000L do Application.DoEvents(); Threading.Thread.Sleep(20)
+        assertTrue (mapped() |> Option.exists(fun row -> not(row.checkEnabled 2) && row.check 2=Some false)) "A group application did not disable Group by app"
+        rename "Group Alpha"
+        assertTrue (saved().Head.groupId=groupA && saved().Head.groupName="Group Alpha") "Renaming a group changed its identity or left application captions stale"
+        (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
+        rename "Group B"
+        (button groupView (tr Strings.AppRules.addApplication)).PerformClick()
+        assertTrue (saved().Length=1 && saved().Head.groupName="Group B" && tree.Roots.[0].Children.Count=0 && tree.Roots.[1].Children.Count=1)
+                   "Moving an application to another group created duplicate grouping rules"
+        tree.SelectedItem <- tree.Roots.[1].Children.[0]
+        typeof<SettingsTreeList>.GetMethod("toggleCheck",BindingFlags.Instance ||| BindingFlags.NonPublic).Invoke(tree,[|box tree.SelectedItem;box 1|]) |> ignore
+        assertTrue (not(saved().Head.enabled)) "The application tree checkbox did not save disabled state"
+        clock.Restart()
+        while (mapped() |> Option.forall(fun row -> not(row.checkEnabled 2))) && clock.ElapsedMilliseconds<5000L do Application.DoEvents(); Threading.Thread.Sleep(20)
+        assertTrue (mapped() |> Option.exists(fun row -> row.checkEnabled 2 && row.check 2=Some false)) "Disabling a group application did not unlock Group by app"
+        form.PerformLayout()
+        Application.DoEvents()
+        assertTrue (groupView.Height>=Dpi.scale 200 && groupView.Bottom<=view.control.ClientSize.Height)
+                   (sprintf "Grouping tree is outside the page: %A in %A" groupView.Bounds view.control.ClientSize)
+        use image = new Bitmap(form.Width,form.Height)
+        form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+        image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "grouping-app-tree-%A.png" mode))
+        key tree Keys.Delete
+        assertTrue (saved().IsEmpty && targets().Length=2) "Deleting a group application deleted the group root"
+        groupView.Reload()
+        assertTrue (tree.Roots.Count=2 && tree.Roots.[1].Children.Count=0) "An empty group was lost on reload"
+        tree.SelectedItem <- tree.Roots.[1]
+        (button groupView (tr Strings.AppRules.addApplication)).PerformClick()
+        tree.SelectedItem <- tree.Roots.[1]
+        key tree Keys.Delete
+        assertTrue (saved().IsEmpty && targets().Length=1) "Deleting a group left its application mappings behind"
+        form.Close()
+        rules.Value <- filter
+    printfn "PASS: input validation, no-op changes, HSV colours, repeated popup dismissal, shortcut recording, grouping rule editors and light/dark renders."
 
 TestInit.run main

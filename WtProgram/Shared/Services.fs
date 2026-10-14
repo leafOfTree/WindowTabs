@@ -78,6 +78,7 @@ type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
         member _.isFirstRun = dispatcher.Send(fun () -> inner.isFirstRun)
         // Fire-and-forget: callers must not wait on a refresh or on shutdown.
         member _.refresh() = dispatcher.Post(fun () -> inner.refresh())
+        member _.regroupApplications paths = dispatcher.Post(fun () -> inner.regroupApplications paths)
         member _.shutdown() = dispatcher.Post(fun () -> inner.shutdown())
         member _.setWindowNameOverride value = dispatcher.Send(fun () -> inner.setWindowNameOverride value)
         // Reads an immutable snapshot; called by tab strips on every title change.

@@ -25,6 +25,34 @@ Stored preferences take priority. Missing optional settings and a full reset use
 minimal defaults from `SettingsCatalog`; explicit legacy auto-hide settings retain
 their behavior. App auto-grouping and workspaces start empty and run only when chosen.
 
+App Rules places the new-app default at the top right, one application list below,
+and a Grouping rules tree underneath. Group roots are created and renamed first;
+applications are added beneath the selected group from the running-app picker.
+Applications or entire groups can be deleted. Empty groups persist in
+`appGroupingTargets`. Adding an already-mapped app to another group moves its
+single mapping instead of creating competing rules. Group names save on leaving
+the editor or Enter, retaining the group ID and updating child captions. There are
+no title match editors or application counts.
+
+The default applies to newly discovered applications. Discovery records each valid
+app's effective tab choice in `includedPaths` or `excludedPaths`, and changing the
+default snapshots currently running apps before applying the new value. Existing
+choices survive either direction of a default change and subsequent launches.
+
+Enabled mappings remove that application's legacy `autoGroupingPaths` entry,
+disable its Group by app checkbox, and take precedence in the runtime. Disabling
+or deleting a mapping makes the checkbox available again, without re-enabling the
+old automatic setting. Changing an enabled mapping uses the existing app regroup
+path, enables tabs and applies the destination to its open windows. Both grouping
+paths still require compatible virtual desktop membership. Older title-based rows
+migrate to application-only mappings, keeping the first row per executable.
+
+The rule editor selects applications from a background scan of running app windows,
+showing executable names rather than requiring typed paths. Multiple windows of
+the same executable share a choice; identical names from different folders include
+the folder. Saved applications remain selectable when not running. Browse selects
+an executable file for an app that has not been opened yet.
+
 Use `ISettings.appearance` and `updateAppearance` for all new appearance code. Update multiple fields in one function so persistence and theme notification occur once. Identical updates do not write or notify. Use `Theme.resetLayout` to reset geometry without touching any palette.
 
 String-based appearance `getValue`/`setValue` remain only as compatibility adapters; the settings UI and theme service do not use them. Other legacy settings can migrate incrementally without changing the JSON format.

@@ -415,7 +415,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         g.Clear(this.BackColor)
         g.SmoothingMode <- SmoothingMode.AntiAlias
         let bounds = this.columnBounds
-        let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis ||| TextFormatFlags.SingleLine
+        // GDI text must honour the GDI+ viewport when a row scrolls partly under the header.
+        let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis ||| TextFormatFlags.SingleLine ||| TextFormatFlags.PreserveGraphicsClipping
         let rowHeight = this.rowHeight
         let first = offset/rowHeight
         let last = min (rows.Length-1) ((offset+this.viewport)/rowHeight)

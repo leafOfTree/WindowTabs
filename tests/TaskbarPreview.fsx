@@ -13,6 +13,20 @@ let disposed (bitmap:Bitmap) =
     with :? ArgumentException -> true
 
 let main() =
+    let changes = ResizeArray<IntPtr * bool>()
+    let mutable shell = IntPtr(1)
+    let visibility = TaskbarVisibility(changes.Add,shellIdentity=(fun () -> shell))
+    for _ in 1..100 do visibility.set(IntPtr(10),true)
+    check (changes.Count=1) "Repeated visibility notifications called the taskbar again"
+    visibility.set(IntPtr(10),false)
+    visibility.set(IntPtr(10),true)
+    check (changes.Count=3) "Taskbar visibility transitions were lost"
+    shell <- IntPtr(2)
+    visibility.set(IntPtr(10),true)
+    check (changes.Count=4) "Explorer restart did not restore the taskbar button"
+    visibility.forget(IntPtr(10))
+    visibility.set(IntPtr(10),true)
+    check (changes.Count=5) "Reused window handle retained old taskbar visibility"
     let source() = Img(Sz(64,32))
     for fails in [false;true] do
       for sameImage in [false;true] do
@@ -89,6 +103,33 @@ let main() =
     use cleanup = helper :?> IDisposable
     // The HWND belongs to this process and remains hidden; no real preview is shown.
     let window = os.windowFromHwnd(helper.hwnd)
+    // At the work-area edge Windows may trim the client area below the requested outer size.
+    let peekHelper = os.createWindow (fun msg -> if msg.msg=WindowMessages.WM_NCCALCSIZE then 0 else msg.def())
+                         WindowsStyles.WS_POPUP WindowsExtendedStyles.WS_EX_LAYERED
+    use peekCleanup = peekHelper :?> IDisposable
+    let peekWindow = os.windowFromHwnd(peekHelper.hwnd)
+    peekWindow.move(Rect(Pt(area.Left-1,area.Top-2),Sz(area.Width,area.Height+5)))
+    peekWindow.dwmSetAttribute DWMWINDOWATTRIBUTE.DWMWA_FORCE_ICONIC_REPRESENTATION 1
+    peekWindow.dwmSetAttribute DWMWINDOWATTRIBUTE.DWMWA_HAS_ICONIC_BITMAP 1
+    let mutable peekClient = RECT()
+    check (WinUserApi.GetClientRect(peekWindow.hwnd,&peekClient)) "Peek proxy has no native client area"
+    check (peekWindow.clientSize=peekClient.Rect.size && not peekWindow.clientSize.isEmptyArea) "Peek bitmap limit differs from the native client area"
+    use oversizedPeek = (Img(Sz(peekWindow.clientSize.width,peekWindow.clientSize.height+1))).bitmap
+    let oversizedHandle = oversizedPeek.GetHbitmap(Color.Transparent)
+    try
+        let mutable offset = POINT(0,0)
+        let result = DwmApi.DwmSetIconicLivePreviewBitmap(peekWindow.hwnd,oversizedHandle,ref offset,0)
+        check (result<0) "DWM unexpectedly accepted a Peek bitmap beyond the proxy client area"
+    finally WinGdiApi.DeleteObject(oversizedHandle) |> ignore
+    TaskbarPreview.send (fun () -> Some(Img(peekWindow.size)))
+        (fun image -> image.crop(peekWindow.clientSize))
+        (fun image ->
+            let bitmap = image.hbitmap
+            try
+                let mutable offset = POINT(0,0)
+                let result = DwmApi.DwmSetIconicLivePreviewBitmap(peekWindow.hwnd,bitmap,ref offset,0)
+                check (result>=0) (sprintf "DWM rejected client-sized Peek bitmap: 0x%08X" result)
+            finally WinGdiApi.DeleteObject(bitmap) |> ignore)
     let send() =
         TaskbarPreview.send (fun () -> Some(Img(Sz(512,256))))
             (fun image -> image.resize(Sz(128,64))) window.dwmSetIconicThumbnail

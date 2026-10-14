@@ -124,7 +124,7 @@ module Strings =
                                description={ en="Runs in the system tray after you sign in."; zh="登录后在系统托盘中运行。"; ja="サインイン後にシステムトレイで実行します。" }
                                keywords={ en="startup autostart"; zh="开机启动 自启动"; ja="スタートアップ 自動起動" } }
         let enableTabsByDefault = { caption={ en="Use tabs for new apps"; zh="新应用自动启用标签"; ja="新しいアプリでタブを使う" }
-                                    description={ en="Apps you haven't set in the list."; zh="适用于列表中还没设置过的应用。"; ja="一覧でまだ設定していないアプリに適用されます。" }
+                                    description={ en="Only apps first discovered after this change. Existing apps keep their tab setting."; zh="只影响此后首次出现的应用。已有应用保留原来的标签设置。"; ja="変更後に初めて検出するアプリに適用します。既存のアプリのタブ設定は維持します。" }
                                     keywords={ en=""; zh=""; ja="" } }
         let dimInactiveGroups = { caption={ en="Dim tabs in inactive groups"; zh="淡化非活动分组的标签"; ja="非アクティブなグループのタブの色を薄くする" }
                                   description={ en="Make the active group easier to spot."; zh="让当前活动的分组更容易辨认。"; ja="アクティブなグループを見分けやすくします。" }
@@ -376,11 +376,40 @@ module Strings =
         let allTabs count = { en=sprintf "All windows · %d" count; zh=sprintf "全局窗口 · %d" count; ja=sprintf "すべてのウィンドウ · %d" count }
 
     module AppRules =
-        let description = { en="Choose which apps use tabs and automatic grouping. Turning off auto-grouping keeps existing groups. Expand an app to see its windows."
-                            zh="为应用设置标签和自动分组。关闭自动分组不会拆散已有分组。展开应用可查看其窗口。"
-                            ja="アプリごとにタブと自動グループ化を設定します。自動グループ化をオフにしても既存のグループは維持されます。展開するとウィンドウが表示されます。" }
+        let addApplication = { en="Add application"; zh="添加应用"; ja="アプリを追加" }
+        let deleteRule = { en="Delete"; zh="删除"; ja="削除" }
+        let applicationRuleExists = { en="This application already has a grouping rule."; zh="这个应用已有分组规则，请编辑已有行。"; ja="このアプリには既にグループ化ルールがあります。既存の行を編集してください。" }
+        let groupingRules = { en="Grouping rules"; zh="分组规则"; ja="グループ化ルール" }
+        let applications = { en="Applications"; zh="应用"; ja="アプリ" }
+        let addGroup = { en="Add group"; zh="添加组"; ja="グループを追加" }
+        let newGroup = { en="New group"; zh="新组"; ja="新しいグループ" }
+        let selectRule = { en="Select a group or rule to edit here. Changes save automatically."; zh="选中组或规则即可在此编辑，修改会自动保存。"; ja="グループかルールを選択して編集します。変更は自動保存されます。" }
+        let newRule = { en="New rule"; zh="新规则"; ja="新しいルール" }
+        let groupNameRequired = { en="Enter a group name."; zh="请填写组名。"; ja="グループ名を入力してください。" }
+        let groupNameExists = { en="A group with this name already exists."; zh="已有同名组，请使用其他名称。"; ja="同じ名前のグループが存在します。" }
+        let groupRulesHelp = { en="Map each application to one group. Group by app is disabled for mapped apps."
+                               zh="每个应用指定一个目标组；启用后会禁用同应用归组。"
+                               ja="アプリごとに宛先を一つ指定します。有効なアプリでは同じアプリのグループ化が無効になります。" }
+        let groupingHelp = { en="Send new windows to a named group. Enable Tabs for the application first. Title rules override app-only rules. Conflicting targets keep windows separate. Existing groups stay as arranged."
+                             zh="将新窗口加入命名组。请先为应用启用标签。标题规则优先于仅按应用的规则；目标冲突时窗口保持独立。已有分组保持手动安排。"
+                             ja="新しいウィンドウを名前付きグループに追加します。まずアプリのタブを有効にしてください。タイトルのルールはアプリのみのルールより優先されます。宛先が競合すると個別に保ちます。既存のグループは維持されます。" }
+        let application = { en="Application"; zh="应用"; ja="アプリ" }
+        let chooseApplication = { en="Choose a running app"; zh="选择正在运行的应用"; ja="実行中のアプリを選択" }
+        let browseApplication = { en="Browse…"; zh="浏览…"; ja="参照…" }
+        let applicationFiles = { en="Applications (*.exe)|*.exe"; zh="应用程序 (*.exe)|*.exe"; ja="アプリ (*.exe)|*.exe" }
+        let applicationOnly = { en="Application only"; zh="仅按应用"; ja="アプリのみ" }
+        let targetGroup = { en="Target group"; zh="目标组"; ja="宛先グループ" }
+        let chooseGroup = { en="Existing group"; zh="选择已有组"; ja="既存のグループ" }
+        let enabled = { en="Enabled"; zh="启用"; ja="有効" }
+        let addRule = { en="Add rule"; zh="添加规则"; ja="ルールを追加" }
+        let invalidRule = { en="Invalid grouping rule"; zh="分组规则无效"; ja="無効なグループ化ルール" }
+        let requiredFields = { en="Choose an application and enter a target group."; zh="请选择应用并填写目标组。"; ja="アプリを選択して宛先グループを入力してください。" }
+        let requiredTitle = { en="Enter a title pattern, or choose Application only."; zh="请填写标题条件，或选择“仅按应用”。"; ja="タイトル条件を入力するか「アプリのみ」を選択してください。" }
+        let description = { en="Choose apps that use tabs. Map apps to groups below; mapped apps disable Group by app. Expand an app to see its windows."
+                            zh="选择使用标签的应用。在下方指定应用的目标组；启用规则后，同应用归组会禁用。展开应用可查看窗口。"
+                            ja="タブを使うアプリを選び、下の表で宛先を指定します。有効なルールがあるアプリでは同じアプリのグループ化が無効になります。展開するとウィンドウを表示します。" }
         let tabs = { en="Tabs"; zh="标签"; ja="タブ" }
-        let autoGroup = { en="Auto-group"; zh="自动分组"; ja="自動グループ化" }
+        let autoGroup = { en="Group by app"; zh="同应用归组"; ja="同じアプリ" }
         /// The first row: its boxes turn a column on or off for every app below.
         let allApps = { en="All apps"; zh="全部应用"; ja="すべてのアプリ" }
         let appCount count =

@@ -140,6 +140,8 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
                     groupInfo.invokeGroup <| fun() -> groupInfo.group.activateIndex(index,true))
             if consumed || capturedLeader then Some 1 else None
 
+    interface IStartupInputPlugin
+
     interface IPlugin with
         member x.init() =
             leaderCode <- Services.program.getHotKey "numberLeader"

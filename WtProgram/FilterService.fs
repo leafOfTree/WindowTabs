@@ -18,6 +18,11 @@ type FilterService() as this =
     member this.isTabbingEnabledForAllProcessesByDefault 
         with get() = Services.settings.getValue("enableTabbingByDefault").cast<bool>()
         and set(value) = 
+            // Snapshot existing apps without synchronous virtual-desktop shell queries.
+            let running = os.windowsInZorder.where(fun window ->
+                window.isVisible && not window.pid.isCurrentProcess && window.pid.canQueryProcess &&
+                this.isAppWindowStyle window && not(TaskbarProxies.contains window.hwnd)).map(fun window -> window.pid.processPath).list
+            this.rememberApplications (running @ this.includedPaths.items.list @ this.excludedPaths.items.list)
             Services.settings.setValue("enableTabbingByDefault", box(value))
             Services.program.refresh().ignore
 
@@ -78,6 +83,22 @@ type FilterService() as this =
         | false, true -> false
         | false, false -> this.isTabbingEnabledForAllProcessesByDefault
 
+    /// Once an app is discovered, later default changes must not change its choice.
+    member this.rememberApplications(processPaths:string list) =
+        let mutable included,excluded = this.includedPaths,this.excludedPaths
+        let previousIncluded,previousExcluded = included,excluded
+        for path in processPaths |> List.distinct do
+            if not(String.IsNullOrWhiteSpace path) &&
+               (not(included.contains path || excluded.contains path) || (included.contains path && excluded.contains path)) then
+                if this.getIsTabbingEnabledForProcess path then
+                    included <- included.add path
+                    excluded <- excluded.remove path
+                else
+                    excluded <- excluded.add path
+                    included <- included.remove path
+        if included<>previousIncluded then this.includedPaths <- included
+        if excluded<>previousExcluded then this.excludedPaths <- excluded
+
     /// Records the choice for each app, then applies it to open windows once.
     member this.setIsTabbingEnabledForProcesses (processPaths:string list) enabled =
         let add (paths:Set2<string>) = processPaths |> List.fold (fun (paths:Set2<string>) path -> paths.add path) paths
@@ -91,7 +112,11 @@ type FilterService() as this =
         Services.program.refresh().ignore
 
     member this.isTabbableWindow(window:Window) = 
-        this.getIsTabbingEnabledForProcess(window.pid.processPath) && this.isAppWindow(window)
+        let path = StartupTrace.measure "filter.path" (fun () -> window.pid.processPath)
+        if StartupTrace.measure "filter.window" (fun () -> this.isAppWindow(window)) then
+            this.rememberApplications [path]
+            this.getIsTabbingEnabledForProcess(path)
+        else false
 
     interface IFilterService with
         

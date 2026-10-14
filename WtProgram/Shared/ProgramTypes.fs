@@ -9,10 +9,25 @@ type TabColorChoice =
     | PaletteColor of int
     | CustomColor of Drawing.Color
 
+type AppGroupingTarget = { id:string; name:string }
+
+type AppGroupingRule = {
+    id: string
+    enabled: bool
+    processPath: string
+    title: string
+    /// Retained for reading older exports; application mappings normalize this to -1.
+    matchType: int
+    groupId: string
+    groupName: string
+}
+
 type SettingsRec = {
     includedPaths: Set2<string>
     excludedPaths: Set2<string>
     autoGroupingPaths : Set2<string>
+    appGroupingRules: AppGroupingRule list
+    appGroupingTargets: AppGroupingTarget list
     version: string
     appearance: AppearancePreferences
     runAtStartup: bool
@@ -97,6 +112,8 @@ type IProgram =
     abstract member isFirstRun : bool
     /// Posted to the UI thread; returns before the work runs.
     abstract member refresh : unit -> unit
+    /// Regroup the selected apps on the main STA without transient tab-setting changes.
+    abstract member regroupApplications : string list -> unit
     /// Posted to the UI thread; returns before the work runs.
     abstract member shutdown : unit -> unit
     abstract member setWindowNameOverride : (IntPtr * Option<string>) -> unit
@@ -136,3 +153,14 @@ type IDesktop =
 
 type IPlugin =
     abstract member init: unit -> unit
+
+/// Global input hooks must not be active while initial discovery waits for group STAs.
+type IStartupInputPlugin =
+    inherit IPlugin
+
+module StartupPlugins =
+    let initialize (plugins:IPlugin list) discover =
+        let input,other = plugins |> List.partition(fun plugin -> plugin :? IStartupInputPlugin)
+        other |> List.iter(fun plugin -> plugin.init())
+        discover()
+        input |> List.iter(fun plugin -> plugin.init())

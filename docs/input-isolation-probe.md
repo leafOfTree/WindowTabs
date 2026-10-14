@@ -82,3 +82,44 @@ Check selection with combined taskbar icons enabled as well as disabled, tab
 switching, minimize/restore, moving/resizing, and virtual desktop visibility.
 Word can be rechecked using `-ApplicationId <PID>`. Ordinary hidden-desktop
 regressions supplement the manual acceptance and do not replace it.
+
+## Follow-up plan
+
+Current milestone: partial fix committed as `9eafdd2`; Notepad and Word drag
+selection manually accepted. Cross-integrity taskbar combining remains unavailable.
+
+1. **P1 — Restore combining without sharing unlike input queues.**
+   - [ ] Prototype a taskbar proxy without cross-integrity owner relationships,
+     and compare it with a helper process running at the applications' integrity
+     level. Select an approach only after proving selection and virtual desktop
+     behavior; do not restore the old owner relationship just to regain combining.
+   - [ ] Define behavior for a group containing applications at several integrity
+     levels, as well as helper startup failure, crashes, group transfers and shutdown.
+   - [ ] Acceptance: elevated WindowTabs + ordinary-permission Notepad/Word can
+     both select text continuously and use a combined taskbar button. Activation,
+     previews, close, minimize/restore and virtual desktop membership remain correct.
+
+2. **P2 — Explain the current fallback in settings and the group menu.**
+   - [ ] Show a concise reason when combining is requested but permissions require
+     individual buttons. Preserve the saved preference and explain when it resumes.
+   - [ ] Add the text through `Strings.fs` in English, Chinese and Japanese; verify
+     light, dark and high contrast appearance.
+   - [ ] Acceptance: users can distinguish an enabled preference from an effective
+     fallback without having to inspect process permissions or diagnostic logs.
+
+3. **P2 — Add repeatable cross-integrity regression coverage.**
+   - [ ] Use dedicated application/helper test processes to verify unlike-integrity
+     ownership, continuous capture and fallback/resumption, including inaccessible
+     tokens and closed/reused HWNDs. Keep native UI runs serial.
+   - [ ] Cover group transfer, helper failure and deterministic resource cleanup.
+     Record process integrity and capture HWND on failure.
+   - [ ] Keep real Word selection as a manual acceptance check; simulated messages
+     or sampled capture alone must not count as selected-text verification.
+
+4. **P3 — Finish compatibility checks and document the supported combinations.**
+   - [ ] Compare both WindowTabs/application permission levels with combining on/off,
+     including mixed-permission groups. Record unsupported combinations explicitly.
+   - [ ] Check maximized and normal windows, multiple monitors/DPI, repeated tab
+     switching, minimize/restore, virtual desktop switching and application restart.
+   - [ ] After the combined-button acceptance passes, update the issue/roadmap and
+     release notes to distinguish the completed selection fix from restored combining.

@@ -5,6 +5,24 @@ open System.Drawing.Imaging
 open System.Runtime.InteropServices
 open System.Windows.Forms
 
+/// Opt-in Peek diagnostics contain handles and sizes, never titles or window contents.
+module TaskbarPreviewTrace =
+    let private directory = AppDomain.CurrentDomain.BaseDirectory
+    let private enabled = IO.File.Exists(IO.Path.Combine(directory,"peek-trace.enabled"))
+    let private gate = obj()
+    let write (stage:string) (proxy:IntPtr) (tab:string) (detail:string) =
+        if enabled then
+            let entry = Newtonsoft.Json.Linq.JObject(
+                Newtonsoft.Json.Linq.JProperty("time",DateTime.UtcNow.ToString("O")),
+                Newtonsoft.Json.Linq.JProperty("stage",stage),
+                Newtonsoft.Json.Linq.JProperty("proxy",proxy.ToInt64()),
+                Newtonsoft.Json.Linq.JProperty("tab",tab),
+                Newtonsoft.Json.Linq.JProperty("detail",detail)).ToString(Newtonsoft.Json.Formatting.None)
+            Threading.ThreadPool.QueueUserWorkItem(fun _ ->
+                lock gate (fun () ->
+                    try IO.File.AppendAllText(IO.Path.Combine(directory,"peek-trace.jsonl"),entry+Environment.NewLine)
+                    with _ -> ())) |> ignore
+
 /// Preview producers transfer ownership of their bitmap to this request.
 module TaskbarPreview =
     let relativeLocation (previewBounds:Rect) (windowBounds:Rect) =
@@ -211,9 +229,10 @@ type TaskBarButton(info) as this =
     let windows = Collections.Generic.Dictionary<IntPtr,IDisposable>()
     let appId = Guid.NewGuid().ToString()
     let addTab hwnd =
-        taskbar.AddTab(hwnd)
+        StartupTrace.measure "taskbar.proxy.add" (fun () -> taskbar.AddTab(hwnd))
     let registerTab(hwndTab) = 
-        taskbar.RegisterTab(hwndTab, this.window.hwnd)
+        StartupTrace.measure "taskbar.preview.register" (fun () -> taskbar.RegisterTab(hwndTab, this.window.hwnd))
+        TaskbarPreviewTrace.write "register" hwndTab "" (sprintf "host=%d" (this.window.hwnd.ToInt64()))
     /// Each preview goes to the end in turn, which leaves them in the strip's order.
     let sendTabOrder() =
         infoCell.value |> Option.iter(fun info ->
@@ -262,6 +281,9 @@ type TaskBarButton(info) as this =
                     | _ ->
                         msg.def()
                 | WindowMessages.WM_CLOSE -> 0
+                | WindowMessages.WM_DWMSENDICONICLIVEPREVIEWBITMAP ->
+                    TaskbarPreviewTrace.write "host-request" msg.hwnd "" ""
+                    msg.def()
                 | WindowMessages.WM_NCCALCSIZE -> 0
                 | _ -> msg.def()
         } 
@@ -325,7 +347,7 @@ type TaskBarButton(info) as this =
             let isNew = not(tabWindowsCell.value.contains tab)
             let tabWindow = findOrCreate tabWindowsCell tab <| fun() ->
                 let config() = infoCell.value.Value.tabs.find(fst >> (=) tab) |> snd
-                let tabWindow = TaskbarTab(this, config, fun() -> this.window.size)
+                let tabWindow = TaskbarTab(this, config, (fun() -> this.window.clientSize),tab)
                 tabWindow.window.dwmSetAttribute DWMWINDOWATTRIBUTE.DWMWA_FORCE_ICONIC_REPRESENTATION 1
                 tabWindow.window.dwmSetAttribute DWMWINDOWATTRIBUTE.DWMWA_HAS_ICONIC_BITMAP 1
                 tabWindow.window.setAppId(appId)
@@ -359,6 +381,18 @@ type TaskBarButton(info) as this =
 
     /// A group can announce a window before its tab joins the strip, so the tab may have no preview window yet.
     member this.tryTabWindow key = tabWindowsCell.value.tryFind(key) |> Option.map(fun tab -> tab.window)
+
+    /// Another group may already have taken over while this group's removal was queued.
+    member _.ownsApplication(hwnd:IntPtr) = windows.ContainsKey(WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER))
+
+    /// Peek must own only the application represented by that preview, rather than every tab.
+    member this.adoptWindow(hwnd:IntPtr) =
+        match tabWindowsCell.value.tryFind(TaskBarButton.key hwnd) with
+        | Some tab -> tab.adoptWindow hwnd
+        | None ->
+            // Discovery can announce a member before its preview joins the strip.
+            if WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)<>this.window.hwnd then
+                WinUserApi.SetWindowLong(hwnd,WindowLongFieldOffset.GWL_HWNDPARENT,this.window.hwnd) |> ignore
 
     member this.createDwmWindow (dwmWindow:DwmWindow) : Window =
         let wndProc m =
@@ -403,8 +437,9 @@ type TaskBarButton(info) as this =
             badgedIcon |> Option.iter(fun icon -> (icon :> IDisposable).Dispose())
             badgedIcon <- None
 
-and TaskbarTab(parent:TaskBarButton, config,size) =
+and TaskbarTab(parent:TaskBarButton, config,size,key) =
     let os = OS()
+    let mutable ownedWindow = IntPtr.Zero
     let rec _window = parent.createDwmWindow {
             style = WindowsStyles.WS_POPUP
             exStyle = WindowsExtendedStyles.WS_EX_LAYERED
@@ -421,28 +456,71 @@ and TaskbarTab(parent:TaskBarButton, config,size) =
                         msg.def()
                 | WindowMessages.WM_DWMSENDICONICTHUMBNAIL ->
                     let msgWindow = os.windowFromHwnd(msg.hwnd)
+                    TaskbarPreviewTrace.write "thumbnail-request" msg.hwnd key ""
                     TaskbarPreview.send (fun () -> config().preview(true))
                         (TaskbarPreview.centre msg.lParam.size) msgWindow.dwmSetIconicThumbnail
                     msg.def()
                 | WindowMessages.WM_DWMSENDICONICLIVEPREVIEWBITMAP ->
                     let msgWindow = os.windowFromHwnd(msg.hwnd)
-                    //DwmSetIconic fails if the image is larger than the preview window, windows can't be larger than
-                    //a certain size determined by the workspace - this happens when the window is maximized
-                    TaskbarPreview.send (fun () -> config().preview(false))
-                        (fun img -> img.crop(size())) msgWindow.dwmSetIconicLivePreview
-                    msg.def()
+                    TaskbarPreviewTrace.write "request" msg.hwnd key (sprintf "host=%d" (parent.window.hwnd.ToInt64()))
+                    // Windows can trim a proxy's client area at the work-area edge.
+                    let limit = size().intersect(msgWindow.clientSize)
+                    if not limit.isEmptyArea then
+                        TaskbarPreview.send (fun () ->
+                            let image = config().preview(false)
+                            TaskbarPreviewTrace.write "capture" msg.hwnd key (sprintf "%A" (image |> Option.map(fun img -> img.size.record)))
+                            image)
+                            (fun img -> img.crop(limit))
+                            (fun img ->
+                                let result = msgWindow.dwmPublishIconicLivePreview img
+                                TaskbarPreviewTrace.write "publish" msg.hwnd key (sprintf "HRESULT=0x%08X bitmap=%A limit=%A" result img.size.record limit.record))
+                    else TaskbarPreviewTrace.write "empty-client" msg.hwnd key (sprintf "%A" limit.record)
+                    0
                 // a ghost window is shown during peek preview if this isn't here
                 | WindowMessages.WM_NCCALCSIZE -> 0
                 | _ -> msg.def()
         }
+
+    do _window.setOwner(parent.window)
+
+    member this.adoptWindow hwnd =
+        if WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)<>_window.hwnd then
+            StartupTrace.measure "taskbar.owner" (fun () ->
+                WinUserApi.SetWindowLong(hwnd,WindowLongFieldOffset.GWL_HWNDPARENT,_window.hwnd) |> ignore)
+        ownedWindow <- hwnd
+
+    /// Destroying an owner also destroys its owned windows; a preview never owns their lifetime.
+    member private this.releaseOwnedWindow() =
+        if ownedWindow<>IntPtr.Zero && WinUserApi.GetWindow(ownedWindow,GetWindowConstants.GW_OWNER)=_window.hwnd then
+            WinUserApi.SetWindowLong(ownedWindow,WindowLongFieldOffset.GWL_HWNDPARENT,IntPtr.Zero) |> ignore
+        ownedWindow <- IntPtr.Zero
     
     member this.window : Window = _window
     member this.invalidate() = this.window.dwmInvalidateIconicBitmaps()
     member this.Dispose() =
+        this.releaseOwnedWindow()
         parent.unregisterTab(_window.hwnd)
         parent.releaseWindow(_window.hwnd)
 
 /// Ordinary groups reclaim buttons removed by a previous combined session.
+/// Shell calls are needed on visibility transitions, not on every z-order notification.
+type TaskbarVisibility(setVisible:IntPtr * bool -> unit, ?shellIdentity:unit -> IntPtr) =
+    let states = Collections.Generic.Dictionary<IntPtr,bool>()
+    let shellIdentity = defaultArg shellIdentity (fun () -> WinUserApi.FindWindow("Shell_TrayWnd",null))
+    let mutable shell = shellIdentity()
+    let mutable changes = 0
+    member _.set(hwnd,visible) =
+        let current = shellIdentity()
+        if current<>shell then states.Clear(); shell <- current
+        match states.TryGetValue hwnd with
+        | true,previous when previous=visible -> ()
+        | _ ->
+            setVisible(hwnd,visible)
+            states.[hwnd] <- visible
+            changes <- changes+1
+    member _.forget hwnd = states.Remove hwnd |> ignore
+    member _.changeCount = changes
+
 type TaskbarRestorePlugin(restoreWindow:IntPtr -> unit) =
     let restore hwnd = if WinUserApi.IsWindow hwnd then restoreWindow hwnd
 
@@ -456,10 +534,37 @@ type TaskbarRestorePlugin(restoreWindow:IntPtr -> unit) =
             group.added.Add restore
             group.exited.Add(fun () -> group.windows.items.iter restore)
 
-type SuperBarPlugin(canShareInput:IntPtr -> bool) as this =
+/// A stable member/desktop context gets three attempts; unrelated UI events cannot restart it.
+type TaskbarPlacementAttempts(?now:unit -> int64) =
+    let watch = Diagnostics.Stopwatch.StartNew()
+    let clock = defaultArg now (fun () -> watch.ElapsedMilliseconds)
+    let mutable context : (Set<IntPtr> * Guid option * bool) option = None
+    let mutable attempts = 0
+    let mutable nextAt = 0L
+    member _.Observe(members:Set<IntPtr>,desktop:Guid option,compatible:bool) =
+        let value = members,desktop,compatible
+        if context<>Some value then
+            context <- Some value
+            attempts <- 0
+            nextAt <- 0L
+    member _.TryBegin() =
+        match context with
+        | Some(_,Some desktop,true) when WindowCloaking.IsConcreteDesktopId desktop && attempts<3 && clock()>=nextAt ->
+            attempts <- attempts+1
+            true
+        | _ -> false
+    member _.Failed() = nextAt <- clock() + (if attempts=1 then 1000L else 2000L)
+    member _.Succeeded() = attempts <- 0;nextAt <- 0L
+    member _.RetryDelay = if attempts>0 && attempts<3 then Some(max 1 (int(nextAt-clock()))) else None
+    member _.Count = attempts
+
+type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid option, ?placeDesktop:IntPtr * Guid -> bool) as this =
     let _os = OS()
 
     let _taskbar = _os.getTaskbar().Value
+    let taskbarVisibility = TaskbarVisibility(fun (hwnd,visible) ->
+        StartupTrace.measure (if visible then "taskbar.window.show" else "taskbar.window.hide") (fun () ->
+            if visible then _taskbar.AddTab(hwnd) else _taskbar.DeleteTab(hwnd)))
 
     let mutable taskbarButton = null
     /// The preview last shown as active, None while the group is not in front.
@@ -472,6 +577,17 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool) as this =
     let adopted = Collections.Generic.HashSet<IntPtr>()
     /// The taskbar window last placed on the group's desktop.
     let mutable placedOwner = IntPtr.Zero
+    let desktopOf = defaultArg desktopOf VirtualDesktop.groupingDesktopId
+    let placeDesktop = defaultArg placeDesktop (fun (owner,desktop) ->
+        match WindowCloaking.TryGetDesktopId(owner) with
+        | true,current when current=desktop -> true
+        | _ -> WindowCloaking.MoveToDesktop(owner,desktop))
+    let placementRetry = new System.Windows.Forms.Timer(Interval=1000)
+    let placementAttempts = TaskbarPlacementAttempts()
+    let mutable placementMembers = Set.empty
+    let mutable placementDesktop : Guid option = None
+    let mutable desktopSubscription : IDisposable option = None
+    let mutable disposed = false
 
     new() = SuperBarPlugin(fun hwnd -> Services.get<WindowGroup>().canShareInput hwnd)
 
@@ -491,69 +607,97 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool) as this =
 
     member this.zorder = this.wtGroup.zorder.value
 
+    /// Removal notifies plugins before the deferred z-order refresh has dropped that HWND.
+    member private this.members = this.zorder.where(this.wtGroup.windows.contains)
+
     /// The proxy must not attach an application's input queue across integrity levels.
-    member private this.canCombine = this.zorder.count > 1 && this.zorder.all canShareInput
+    member private this.canCombine = this.members.count > 1 && this.members.all canShareInput
 
     member private this.showInTaskbar(hwnd, visible) =
         if visible then
             this.release hwnd
-            this.taskbar.AddTab(hwnd)
-        else this.taskbar.DeleteTab(hwnd)
+            if not(TaskbarProxies.ownsWindow hwnd) then taskbarVisibility.set(hwnd,true)
+        else taskbarVisibility.set(hwnd,false)
+
+    member _.taskbarVisibilityChanges = taskbarVisibility.changeCount
+    member _.isAwaitingDesktopPlacement = placementRetry.Enabled
 
     /// A window without a taskbar button is on no virtual desktop and shows on all of them;
     /// a window the taskbar window owns follows that window's desktop instead.
-    member private this.adopt() =
+    member private this.adopt(desktop:Guid option) =
         if taskbarButton <> null && this.canCombine then
             let owner = (taskbarButton:TaskBarButton).window.hwnd
             // A new taskbar window starts on the desktop in view, which is not always the group's.
-            if owner <> placedOwner then
+            let placed = owner=placedOwner ||
+                         (desktop |> Option.exists(fun target ->
+                             WindowCloaking.IsConcreteDesktopId target && placeDesktop(owner,target)))
+            if placed then
                 placedOwner <- owner
-                this.zorder.tryPick VirtualDesktop.desktopId |> Option.iter(fun desktop ->
-                    match WindowCloaking.TryGetDesktopId(owner) with
-                    | true, current when current = desktop -> ()
-                    | _ ->
-                        WindowCloaking.MoveToDesktop(owner, desktop) |> ignore)
-            this.zorder.iter <| fun hwnd ->
-                if adopted.Add hwnd then
-                    WinUserApi.SetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT, owner) |> ignore
-                    this.os.windowFromHwnd(hwnd).parkIfMinimized()
-                    this.wtGroup.prepareMinimizeAnchor hwnd
+                this.members.iter <| fun hwnd ->
+                    taskbarButton.adoptWindow hwnd
+                    if adopted.Add hwnd then
+                        this.os.windowFromHwnd(hwnd).parkIfMinimized()
+                        this.wtGroup.prepareMinimizeAnchor hwnd
+            placed
+        else false
 
     member private this.release(hwnd:IntPtr) =
-        if adopted.Remove hwnd && TaskbarProxies.ownsWindow hwnd then
+        if adopted.Remove hwnd && taskbarButton<>null && taskbarButton.ownsApplication hwnd then
             WinUserApi.SetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT, IntPtr.Zero) |> ignore
 
     member private this.releaseAll() =
         for hwnd in List.ofSeq adopted do this.release hwnd
 
-    member this.updateTaskbar() =
+    member private this.clearTaskbarButton() =
+        if taskbarButton<>null then
+            this.releaseAll()
+            (taskbarButton :> IDisposable).Dispose()
+            taskbarButton <- null
+            activePreview <- None
+            placedOwner <- IntPtr.Zero
+
+    member private this.retryPlacement() =
+        placementRetry.Stop()
+        placementAttempts.RetryDelay |> Option.iter(fun interval ->
+            placementRetry.Interval <- interval
+            placementRetry.Start())
+
+    member this.updateTaskbar(?refreshDesktop:bool) =
+        if not disposed then
+            StartupTrace.measure "taskbar.update" (fun () -> this.updateTaskbarCore(defaultArg refreshDesktop false))
+
+    member private this.updateTaskbarCore(refreshDesktop) =
         if this.os.isWin7OrHigher then
-            if not this.canCombine then
-                match taskbarButton with
-                | null -> ()
-                | button ->
-                    this.releaseAll()
-                    (button :> IDisposable).Dispose()
-                    taskbarButton <- null
-                    activePreview <- None
-                    placedOwner <- IntPtr.Zero
-                    this.zorder.iter(fun hwnd -> this.taskbar.AddTab(hwnd))
-            elif this.zorder.isEmpty.not then
+            let members = this.members
+            let memberSet = Set.ofSeq members.list
+            if refreshDesktop || memberSet<>placementMembers then placementDesktop <- members.tryPick desktopOf
+            placementMembers <- memberSet
+            let desktop = placementDesktop
+            placementAttempts.Observe(memberSet,desktop,this.canCombine)
+            if not this.canCombine || (desktop.IsNone && placedOwner=IntPtr.Zero) then
+                this.clearTaskbarButton()
+                members.iter(fun hwnd -> this.showInTaskbar(hwnd,true))
+                // The asynchronous desktop query publishes completion; no timer polls an unknown answer.
+                placementRetry.Stop()
+            elif placedOwner=IntPtr.Zero && not(placementAttempts.TryBegin()) then
+                members.iter(fun hwnd -> this.showInTaskbar(hwnd,true))
+                this.retryPlacement()
+            elif members.isEmpty.not then
                 // A hidden strip has no bounds; the preview is then the window alone.
                 let stripShown = this.ts.visible && not(this.ts.bounds.size.isEmptyArea)
                 let previewBounds =
                     if stripShown then this.ts.bounds.union(this.wtGroup.previewArea)
                     else this.wtGroup.previewArea
-                let top = this.zorder.head
+                let top = members.head
                 let topTab = Tab(top)
                 let tbButtonInfo = {
                     text = this.ts.tabInfo(topTab).text
                     bounds = previewBounds
                     icon = this.ts.tabInfo(topTab).iconBig
                     activate = fun() -> this.invokeAsync <| fun() ->
-                        this.tabActivate(Tab(this.zorder.head), true)
+                        this.tabActivate(Tab(this.members.head), true)
                     toggleMinimizeRestore = fun() -> 
-                        let hwnd = this.zorder.head
+                        let hwnd = this.members.head
                         let window = this.os.windowFromHwnd(hwnd)
                         if window.isMinimized then
                             window.restore()
@@ -612,17 +756,29 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool) as this =
                         this.taskbar.ActivateTab(button.window.hwnd)
                         this.taskbar.SetTabActive(preview, button.window.hwnd, 0))
 
+                if this.adopt desktop then
+                    placementRetry.Stop()
+                    placementAttempts.Succeeded()
+                    members.iter(fun hwnd -> this.showInTaskbar(hwnd,false))
+                else
+                    // Keep each application's desktop and button until the proxy is safely placed.
+                    this.clearTaskbarButton()
+                    members.iter(fun hwnd -> this.showInTaskbar(hwnd,true))
+                    placementAttempts.Failed()
+                    this.retryPlacement()
+
     member this.onForegroundChanged() =
-        this.updateTaskbar()
+        this.updateTaskbar(refreshDesktop=placementDesktop.IsNone)
 
     member this.onAdded(hwnd) =
-        this.updateTaskbar()
+        this.updateTaskbar(refreshDesktop=true)
 
     member this.onRemoved(hwnd) =
         captures.forget hwnd
         flashingTabs.Remove(TaskBarButton.key hwnd) |> ignore
         this.updateTaskbar()
         this.showInTaskbar(hwnd, true)
+        taskbarVisibility.forget hwnd
 
     member private this.captureTop() =
         captureTimer.Stop()
@@ -651,16 +807,7 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool) as this =
         if taskbarButton <> null then taskbarButton.invalidate()
 
     member this.onZorderChanged() =
-        if not this.canCombine then
-            this.updateTaskbar()
-            this.zorder.iter(fun hwnd -> this.showInTaskbar(hwnd,true))
-        else
-            // Owned before their buttons go, the windows never lose their desktop.
-            this.updateTaskbar()
-            this.adopt()
-            this.zorder.iter <| fun hwnd -> this.showInTaskbar(hwnd, false)
-        this.updateTaskbar()
-        this.adopt()
+        this.updateTaskbar(refreshDesktop=true)
         captureTimer.Stop()
         if this.canCombine then
             captureTimer.Start()
@@ -669,9 +816,13 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool) as this =
         this.updateTaskbar()
 
     member this.onGroupExited() =
+        disposed <- true
+        desktopSubscription |> Option.iter(fun subscription -> subscription.Dispose())
+        desktopSubscription <- None
         this.wtGroup.windows.items.iter(fun hwnd ->
             if WinUserApi.IsWindow hwnd then this.showInTaskbar(hwnd,true))
         captureTimer.Dispose()
+        placementRetry.Dispose()
         (captures :> IDisposable).Dispose()
         this.releaseAll()
         if taskbarButton <> null then
@@ -680,6 +831,10 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool) as this =
 
     interface IPlugin with
         member x.init() =
+            let group = this.wtGroup
+            desktopSubscription <- Some(VirtualDesktop.groupingReady.Subscribe(fun hwnd ->
+                group.invokeAsync(fun () ->
+                    if not disposed && group.windows.contains hwnd then this.updateTaskbar(refreshDesktop=true))))
             this.wtGroup.foregroundChanged.Add this.onForegroundChanged
             this.wtGroup.tabInfoChanged.Add(fun _ -> this.updateTaskbar())
             this.wtGroup.added.Add this.onAdded
@@ -690,3 +845,6 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool) as this =
             this.ts.tabMoved.Add this.onTabMoved
             this.wtGroup.exited.Add this.onGroupExited
             captureTimer.Tick.Add(fun _ -> this.captureTop())
+            placementRetry.Tick.Add(fun _ ->
+                placementRetry.Stop()
+                this.updateTaskbar())

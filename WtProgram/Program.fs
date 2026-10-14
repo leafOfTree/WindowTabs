@@ -1,4 +1,4 @@
-﻿//namespace Bemo
+//namespace Bemo
 open Bemo
 open System
 open System.Collections.Generic
@@ -20,7 +20,7 @@ type ProgramInput =
     | WinEvent of (IntPtr * WinEvent)
     | ShellEvent of (IntPtr * ShellEvent)
 
-type Program(lifetime:LifetimeScope) as this =
+type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let version = AssemblyInfo.informationalVersion
     let isStandAlone = System.Diagnostics.Debugger.IsAttached 
 
@@ -28,6 +28,7 @@ type Program(lifetime:LifetimeScope) as this =
     let os = OS()
     let invoker = InvokerService.invoker
     let taskSwitchCell = Cell.create(None)
+    let mutable initialDiscoveryComplete = false
     let tabSearchCell = Cell.create(None:TabSearchForm option)
     let isTabMonitoringSuspendedCell = Cell.create(0)
     let llMouseEvent = Event<_>()
@@ -35,7 +36,7 @@ type Program(lifetime:LifetimeScope) as this =
     // case 727 outlook calendar items appear behind outlook main window
     let delayTabExeNames = Set2(List2(["outlook.exe"]))
 
-    let settingsManager = lifetime.Own(new Settings(isStandAlone))
+    let settingsManager = lifetime.Own(settings |> Option.defaultWith(fun () -> new Settings(isStandAlone)))
     let themeMonitor = lifetime.Own(ThemeService.startMonitoring())
 
     let inShutdown = Cell.create(false)
@@ -95,6 +96,8 @@ type Program(lifetime:LifetimeScope) as this =
                                         for hwnd in List.ofSeq awaitingDesktop.Keys do refreshQueue.RequestWindow hwnd))
 
     do
+        lifetime.Own(VirtualDesktop.groupingReady.Subscribe(fun hwnd ->
+            invoker.asyncInvoke(fun () -> refreshQueue.RequestWindow hwnd))) |> ignore
         Desktop(this :> IDesktopNotification, Services.settings, invoker :> IDispatcher).ignore
         lifetime.Own({new IDisposable with
             member _.Dispose() = taskSwitchCell.value.iter(fun switcher -> (switcher :> IDisposable).Dispose())}) |> ignore
@@ -107,9 +110,9 @@ type Program(lifetime:LifetimeScope) as this =
                     Services.settings.setValue("enableNumberLeader",box false)
                     Alert.showSystem AlertKind.Warning (tr Strings.Settings.numberLeader.caption) (tr Strings.Shortcuts.inUse)
             else hotKeyManager.unregister "numberLeader")) |> ignore
-        this.updateTaskSwitcher(Services.settings.getValue("replaceAltTab"))
         let startupSubscription = Services.settings.notifyValue "runAtStartup" this.updateRunAtStartup
-        let switcherSubscription = Services.settings.notifyValue "replaceAltTab" this.updateTaskSwitcher
+        let switcherSubscription = Services.settings.notifyValue "replaceAltTab" (fun value ->
+            if initialDiscoveryComplete then this.updateTaskSwitcher value)
         let languageSubscription = Services.settings.notifyValue "language" (fun value -> Localization.setPreference (unbox value))
         lifetime.Own(startupSubscription) |> ignore
         lifetime.Own(switcherSubscription) |> ignore
@@ -155,18 +158,36 @@ type Program(lifetime:LifetimeScope) as this =
         if (this :> IProgram).getAutoGroupingEnabled(window.pid.processPath) then
             let hwndZorders = this.hwndZorders()
             let groups = this.desktop.groups
-            let groups = groups.where(fun g-> g.windows.count > 0).sortBy(fun g -> g.windows.map(fun hwnd -> hwndZorders.tryFind(hwnd).def(Int32.MaxValue)).minBy(id))
+            let groups = groups.where(fun g ->
+                g.windows.count > 0 && not(g.windows.contains((=)window.hwnd)) &&
+                (g :?> GroupInfo).ruleGroupId.IsNone && not (g :?> GroupInfo).isRetiring &&
+                not (g :?> GroupInfo).awaitsGroupingDesktop)
+            let groups = groups.sortBy(fun g -> g.windows.map(fun hwnd -> hwndZorders.tryFind(hwnd).def(Int32.MaxValue)).minBy(id))
             let processPath hwnd = os.windowFromHwnd(hwnd).pid.processPath
-            Some(AutoGroup.pick (fun (g:IGroup) -> g.windows) processPath VirtualDesktop.desktopId groups window.hwnd)
+            Some(AutoGroup.pick (fun (g:IGroup) -> g.windows) processPath VirtualDesktop.groupingDesktopId groups window.hwnd)
         else None
+
+    member this.tryGroupingRule(window:Window) =
+        match AppGroupingRules.resolve settingsManager.settings.appGroupingRules window.pid.processPath "" with
+        | NoGroupingRule -> None
+        | GroupingTarget target ->
+            let groups = this.desktop.groups.list |> List.choose(fun group ->
+                match group with
+                | :? GroupInfo as info when not info.isExited && not info.isRetiring &&
+                                           not info.awaitsGroupingDesktop && not ((info :> IGroup).windows.contains((=)window.hwnd)) -> Some info
+                | _ -> None)
+            let found = AppGroupingRules.pick (fun (group:GroupInfo) -> (group :> IGroup).windows.list)
+                            (fun group -> group.ruleGroupId) VirtualDesktop.groupingDesktopId groups target window.hwnd
+            Some(found |> Option.map(fun group -> group :> IGroup))
 
     member this.updateAppWindows() = RuntimeMetrics.measure(fun () ->
         if this.desktop.isDragging.not then
             if inShutdown.value.not then
-                os.windowsInZorder.iter <| fun window ->
-                    this.ensureWindowIsSubscribed(window)
+                let windows = StartupTrace.measure "scan.enumerate" (fun () -> os.windowsInZorder)
+                windows.iter <| fun window ->
+                    StartupTrace.measure "scan.subscribe" (fun () -> this.ensureWindowIsSubscribed(window))
                     if this.isTabMonitoringSuspended.not then
-                        this.ensureWindowIsGrouped(window)
+                        StartupTrace.measure "scan.group" (fun () -> this.ensureWindowIsGrouped(window))
             this.destroyEmptyGroups()
             this.removeUntabableWindows()
 
@@ -203,15 +224,26 @@ type Program(lifetime:LifetimeScope) as this =
             isSubscribed.Add(hwnd,dispose)
 
     member this.ensureWindowIsGrouped(window) =
-        if this.isTabbableWindow(window) && this.isInGroup(window.hwnd).not && not (this.awaitsDesktop window) then
-            this.addWindowToGroup(window)
+        if this.isTabbableWindow(window) then
+            match this.desktop.groups.tryFind(fun group -> group.windows.contains((=)window.hwnd)) with
+            | None -> if not (this.awaitsDesktop window) then this.addWindowToGroup(window)
+            | Some group ->
+                let info = group :?> GroupInfo
+                if info.awaitsGroupingDesktop then
+                    if group.windows.count<>1 then info.awaitsGroupingDesktop <- false
+                    elif (VirtualDesktop.groupingDesktopId window.hwnd).IsSome then
+                        info.awaitsGroupingDesktop <- false
+                        this.findGroupForWindow(window) |> Option.iter(fun target ->
+                            (target :?> GroupInfo).addAfterDetaching(info,window.hwnd))
 
     /// Auto-grouping waits, up to a second, for a new window to be placed on a virtual desktop,
     /// or it would match groups on every desktop.
     member this.awaitsDesktop(window:Window) =
         let hwnd = window.hwnd
         let waiting =
-            (this :> IProgram).getAutoGroupingEnabled(window.pid.processPath) && not (VirtualDesktop.isPlaced hwnd) &&
+            ((this :> IProgram).getAutoGroupingEnabled(window.pid.processPath) ||
+             AppGroupingRules.resolve settingsManager.settings.appGroupingRules window.pid.processPath "" <> NoGroupingRule) &&
+            not (VirtualDesktop.isPlacedForGrouping hwnd) &&
             (match awaitingDesktop.TryGetValue hwnd with
              | true, first -> DateTime.UtcNow - first < TimeSpan.FromSeconds(1.0)
              | _ ->
@@ -231,9 +263,10 @@ type Program(lifetime:LifetimeScope) as this =
             gi.windows.iter <| fun hwnd ->
                 if this.isTabbableWindow(os.windowFromHwnd(hwnd)).not then gi.removeWindow hwnd
 
-    member this.findGroupForWindow(window:Window) =
+    member this.findGroupForWindow(window:Window) : IGroup option =
         let handlers = List2([
             this.tryDropped
+            this.tryGroupingRule
             this.tryAutoGroup
             ])
         handlers.tryPick(fun f -> f(window)).def(None)
@@ -245,6 +278,15 @@ type Program(lifetime:LifetimeScope) as this =
             | Some(group) -> (group, false)
             | None -> (Services.desktop.createGroup(Services.settings.getValue("combineIconsInTaskbar").cast<bool>()), true)
         let isDropped = isDroppedAndAwaitingGrouping.value.contains(hwnd)
+        if isNewGroup && not isDropped then
+            (group :?> GroupInfo).awaitsGroupingDesktop <-
+                (VirtualDesktop.groupingDesktopId hwnd).IsNone &&
+                ((this :> IProgram).getAutoGroupingEnabled(window.pid.processPath) ||
+                 AppGroupingRules.resolve settingsManager.settings.appGroupingRules window.pid.processPath "" <> NoGroupingRule)
+        if isNewGroup && not isDropped then
+            match AppGroupingRules.resolve settingsManager.settings.appGroupingRules window.pid.processPath "" with
+            | GroupingTarget target -> (group :?> GroupInfo).ruleGroupId <- Some target
+            | _ -> ()
         //need to add this now so we don't end up creating another group for it while waiting for the WgnWindowAdded notification
         isDroppedAndAwaitingGrouping.map(fun s -> s.remove hwnd)
         let withDelay = not isDropped && isNewGroup && delayTabExeNames.contains(window.pid.exeName)
@@ -332,6 +374,17 @@ type Program(lifetime:LifetimeScope) as this =
         member x.version = version
         member x.isFirstRun = isFirstRun
         member x.refresh() = this.refresh()
+        member _.regroupApplications paths =
+            let paths = paths |> List.filter(String.IsNullOrWhiteSpace >> not) |> List.distinct
+            if not paths.IsEmpty then
+                Services.filter.setIsTabbingEnabledForProcesses paths true
+                // Removal notifications refresh discovery after native owner cleanup finishes.
+                for group in this.desktop.groups.list do
+                    for hwnd in group.windows.list do
+                        let path = os.windowFromHwnd(hwnd).pid.processPath
+                        if paths |> List.exists(fun requested -> String.Equals(path,requested,StringComparison.OrdinalIgnoreCase)) then
+                            group.removeWindow hwnd
+                this.refresh()
         member x.suspendTabMonitoring() = 
             isTabMonitoringSuspendedCell.map(fun depth -> depth+1)
 
@@ -365,10 +418,11 @@ type Program(lifetime:LifetimeScope) as this =
             os.windowsInZorder.where(this.isAppWindow).map(fun w -> w.hwnd)
 
         member x.getAutoGroupingEnabled procPath =
+            not(AppGroupingRules.hasEnabled settingsManager.settings.appGroupingRules procPath) &&
             settingsManager.settings.autoGroupingPaths.contains(procPath)
 
         member x.setAutoGroupingEnabled procPath enabled =
-            if enabled then 
+            if enabled && not(AppGroupingRules.hasEnabled settingsManager.settings.appGroupingRules procPath) then
                 this.saveSettingsAndUpdateAppWindows <| fun s -> { s with autoGroupingPaths = s.autoGroupingPaths.add procPath }                        
                //toggle tabbing for the process to force regrouping
                 Services.filter.setIsTabbingEnabledForProcess procPath false
@@ -408,7 +462,7 @@ type Program(lifetime:LifetimeScope) as this =
             this.updateAppWindows()
             
 
-    member this.run(plugins:List2<IPlugin>) =
+    member this.initializePlugins(plugins:List2<IPlugin>) =
         let dispatcher = InvokerService.invoker :> IDispatcher
         Services.register(DispatchedProgram(this, dispatcher) :> IProgram)
         Services.register(DispatchedFilterService(FilterService(), dispatcher) :> IFilterService)
@@ -417,9 +471,14 @@ type Program(lifetime:LifetimeScope) as this =
         plugins.iter(fun plugin ->
             match plugin with
             | :? IDisposable as resource -> lifetime.Own(resource) |> ignore
-            | _ -> ()
-            plugin.init())
-        Services.program.refresh()
+            | _ -> ())
+        StartupPlugins.initialize plugins.list (fun () ->
+            this.refresh()
+            initialDiscoveryComplete <- true
+            this.updateTaskSwitcher(Services.settings.getValue("replaceAltTab")))
+
+    member this.run(plugins:List2<IPlugin>) =
+        this.initializePlugins plugins
         Application.Run()
 
 module Bootstrap =
@@ -440,7 +499,7 @@ module Bootstrap =
             else
                 Application.EnableVisualStyles()
                 use lifetime = new LifetimeScope(fun error -> logger.log "Shutdown" error)
-                let program = Program(lifetime)
+                let program = StartupTrace.measure "program.initialize" (fun () -> Program(lifetime))
                 program.run(List2<IPlugin>([
                     lifetime.Own(new InputManagerPlugin(Set2(List2([WindowMessages.WM_MOUSEWHEEL])))) :> IPlugin
                     new NotifyIconPlugin() :> IPlugin ]))

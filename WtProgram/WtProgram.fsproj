@@ -67,6 +67,7 @@
     <Compile Include="Shared\Win32Menu.fs" />
     <Compile Include="Shared\Services.fs" />
     <Compile Include="Shared\NumberShortcutRules.fs" />
+    <Compile Include="Shared\AppGroupingRules.fs" />
     <Compile Include="Shared\RuntimeDiagnostics.fs" />
     <Compile Include="Shared\Theme.fs" />
     <Compile Include="Shared\ThemePresets.fs" />
@@ -110,6 +111,7 @@
     <Compile Include="ManagerViewService\SettingsBindings.fs" />
     <Compile Include="ManagerViewService\SettingsListPage.fs" />
     <Compile Include="ManagerViewService\Views\GeneralView.fs" />
+    <Compile Include="ManagerViewService\Views\AppGroupingRulesView.fs" />
     <Compile Include="ManagerViewService\Views\AppearanceView.fs" />
     <Compile Include="ManagerViewService\Views\HotKeyView.fs" />
     <Compile Include="ManagerViewService\Views\DiagnosticsView.fs" />

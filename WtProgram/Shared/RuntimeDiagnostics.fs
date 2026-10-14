@@ -4,6 +4,35 @@ open System.Diagnostics
 open System.Runtime.InteropServices
 open Newtonsoft.Json.Linq
 
+/// Opt-in startup timings contain only phase names and durations, never window contents.
+module StartupTrace =
+    /// A local marker also works for restarts from an existing debugger session.
+    let resolvePath configured directory exists =
+        if not(String.IsNullOrWhiteSpace configured) then configured
+        elif exists (IO.Path.Combine(directory,"startup-trace.enabled")) then IO.Path.Combine(directory,"startup-trace.jsonl")
+        else null
+    let private path = resolvePath (Environment.GetEnvironmentVariable("WINDOWTABS_STARTUP_TRACE")) AppDomain.CurrentDomain.BaseDirectory IO.File.Exists
+    let private clock = Stopwatch.StartNew()
+    let private entries = Collections.Concurrent.ConcurrentQueue<string>()
+    let mutable private writer : Threading.Timer option = None
+    let private flush() =
+        try IO.File.WriteAllLines(path,entries.ToArray()) with _ -> ()
+        if clock.ElapsedMilliseconds>16000L then writer |> Option.iter(fun timer -> timer.Dispose())
+    do
+        if not(String.IsNullOrWhiteSpace path) then
+            writer <- Some(new Threading.Timer(Threading.TimerCallback(fun _ -> flush()),null,1000,1000))
+    let measure (stage:string) action =
+        if String.IsNullOrWhiteSpace path || clock.ElapsedMilliseconds>15000L then action()
+        else
+            let started = clock.Elapsed.TotalMilliseconds
+            let watch = Stopwatch.StartNew()
+            try action()
+            finally
+                let record = JObject(JProperty("stage",stage),JProperty("startMs",started),
+                                     JProperty("durationMs",watch.Elapsed.TotalMilliseconds),
+                                     JProperty("thread",Threading.Thread.CurrentThread.ManagedThreadId))
+                entries.Enqueue(record.ToString(Newtonsoft.Json.Formatting.None))
+
 module RuntimeMetrics =
     let private gate = obj()
     let mutable private scans = 0L
@@ -11,7 +40,7 @@ module RuntimeMetrics =
     let mutable private maximumMilliseconds = 0.0
     let measure action =
         let watch = Stopwatch.StartNew()
-        try action()
+        try StartupTrace.measure "scan" action
         finally lock gate (fun () ->
             scans <- scans+1L
             lastMilliseconds <- watch.Elapsed.TotalMilliseconds

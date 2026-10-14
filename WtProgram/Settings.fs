@@ -108,7 +108,9 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                     let settings = {
                         includedPaths = Set2(settingsJson.getStringArray("includedPaths").def(List2()))
                         excludedPaths = Set2(settingsJson.getStringArray("excludedPaths").def(List2()))
-                        autoGroupingPaths = Set2(settingsJson.getStringArray("autoGroupingPaths").def(List2()))
+                        autoGroupingPaths = Set2(settingsJson.getStringArray("autoGroupingPaths").def(List2()).where(fun path -> not(AppGroupingRules.hasEnabled (AppGroupingRules.read settingsJson) path)))
+                        appGroupingRules = AppGroupingRules.read settingsJson
+                        appGroupingTargets = AppGroupingRules.readTargets settingsJson
                         tabSearchScope = settingsJson.getString("tabSearchScope").def(SettingsCatalog.tabSearchScopeDefault) |> SettingsCatalog.normalizeTabSearchScope
                         runAtStartup = settingsJson.getBool("runAtStartup").def(SettingsCatalog.toggleDefault "runAtStartup" hasExistingSettings)
                         hideInactiveTabs = settingsJson.getBool("hideInactiveTabs").def(SettingsCatalog.toggleDefault "hideInactiveTabs" hasExistingSettings)
@@ -184,6 +186,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             cachedSettingsRec.Value
 
         and set(settings) =
+            let settings = {settings with autoGroupingPaths=Set2(settings.autoGroupingPaths.items.where(fun path -> not(AppGroupingRules.hasEnabled settings.appGroupingRules path)))}
             let settingsJson = this.settingsJson
             settingsJson.setString("version", settings.version)
             settingsJson.setString("alignment", settings.alignment)
@@ -234,6 +237,8 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setStringArray("includedPaths", settings.includedPaths.items)
             settingsJson.setStringArray("excludedPaths", settings.excludedPaths.items)
             settingsJson.setStringArray("autoGroupingPaths", settings.autoGroupingPaths.items)
+            settingsJson.["appGroupingRules"] <- AppGroupingRules.write settings.appGroupingRules
+            settingsJson.["appGroupingTargets"] <- AppGroupingRules.writeTargets settings.appGroupingTargets
             settingsJson.setObject("tabAppearance",AppearanceJson.writeLegacy settings.appearance.geometry settings.appearance.legacyPalette)
             this.settingsJson <- settingsJson
             ThemeService.publishPreferences settings.appearance

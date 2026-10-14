@@ -273,12 +273,18 @@ and
 
     member this.zorder = os.windowsInZorder.tryFindIndex(fun w -> w.hwnd = hwnd).def(9999)
 
-    member this.dwmSetIconicLivePreview (image:Img) =
+    member this.dwmPublishIconicLivePreview (image:Img) =
         if os.isWin7OrHigher then
             let mutable ptClient = POINT(0, 0)
             let hbitmap = image.hbitmap
-            try DwmApi.DwmSetIconicLivePreviewBitmap(hwnd, hbitmap, ref ptClient, 0) |> ignore
+            try
+                let result = DwmApi.DwmSetIconicLivePreviewBitmap(hwnd, hbitmap, ref ptClient, 0)
+                if result<0 then Diagnostics.Trace.TraceWarning("DWM Peek bitmap rejected: HRESULT=0x{0:X8}, bitmap={1}, client={2}",result,image.size,this.clientSize)
+                result
             finally WinGdiApi.DeleteObject(hbitmap) |> ignore
+        else 0
+
+    member this.dwmSetIconicLivePreview (image:Img) = this.dwmPublishIconicLivePreview image |> ignore
 
     member this.dwmSetIconicThumbnail (image:Img) =
         if os.isWin7OrHigher then
@@ -323,6 +329,11 @@ and
     member this.visibleBounds = Win32Helper.GetVisibleWindowRectangle(hwnd).Rect
 
     member this.size = this.bounds.size
+
+    /// DWM limits Peek bitmaps to the client area, which can be smaller than the outer bounds.
+    member this.clientSize =
+        let mutable rect = RECT()
+        if WinUserApi.GetClientRect(hwnd,&rect) then rect.Rect.size else Sz(0,0)
     
     member this.location = this.bounds.location
 

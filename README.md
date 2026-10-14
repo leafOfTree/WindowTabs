@@ -55,7 +55,7 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
 
 - **Appearance:** light, dark or follow Windows; Joined, Folder or Floating tabs;
   per-tab or per-app colors.
-- **App rules:** choose which apps get tabs and which group automatically.
+- **App rules:** choose which apps get tabs and which group automatically. In the Grouping rules tree below, create named groups and add applications to them. Each app belongs to one rule group and disables Group by app while its rule is enabled. The new-app default at the top keeps existing app choices unchanged.
 - **Workspaces:** save groups and window positions, then restore them onto open windows.
 - **Taskbar:** optionally combine each group into one taskbar button.
 - **Languages:** English, 中文, 日本語.

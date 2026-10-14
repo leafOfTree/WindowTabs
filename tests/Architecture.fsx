@@ -26,7 +26,25 @@ let pump milliseconds =
         Thread.Sleep(5)
 
 let main() =
+    let traceDirectory = System.IO.Path.GetTempPath()
+    check (isNull(StartupTrace.resolvePath null traceDirectory (fun _ -> false))) "Startup tracing was enabled without an explicit opt-in"
+    check (StartupTrace.resolvePath "chosen.jsonl" traceDirectory (fun _ -> true)="chosen.jsonl") "Startup tracing ignored the environment override"
+    let marker = System.IO.Path.Combine(traceDirectory,"startup-trace.enabled")
+    check (StartupTrace.resolvePath null traceDirectory ((=) marker)=System.IO.Path.Combine(traceDirectory,"startup-trace.jsonl")) "Debugger restarts lost the startup trace marker"
     Application.EnableVisualStyles()
+    let startupEvents = ResizeArray<string>()
+    let mutable inputInstalled = false
+    let input = {new IStartupInputPlugin with
+                    member _.init() = inputInstalled <- true; startupEvents.Add("input")} :> IPlugin
+    let logging = {new IPlugin with member _.init() = startupEvents.Add("logging")}
+    StartupPlugins.initialize [input;logging] (fun () ->
+        check (not inputInstalled) "Global input hooks were active during initial blocking window discovery"
+        startupEvents.Add("discovery"))
+    check (inputInstalled && List.ofSeq startupEvents=["logging";"discovery";"input"]) "Startup lost its early services or deferred input hooks"
+    inputInstalled <- false
+    let mutable discoveryFailed = false
+    try StartupPlugins.initialize [input] (fun () -> failwith "discovery failed") with _ -> discoveryFailed <- true
+    check (discoveryFailed && not inputInstalled) "Failed initial discovery left global input hooks installed"
     // #46: unlike integrity levels must never share an owner-linked input queue.
     let level value = Nullable<int>(value)
     for current,target,expected in [8192,8192,true;12288,12288,true;12288,8192,false;8192,12288,false;8192,4096,false] do
@@ -36,6 +54,37 @@ let main() =
     check (WindowInputOwnership.GetProcessIntegrityLevel(Diagnostics.Process.GetCurrentProcess().Id).HasValue) "Native integrity query failed for the current process"
     check (not(WindowInputOwnership.GetProcessIntegrityLevel(0).HasValue) &&
            not(WindowInputOwnership.CanShareWithCurrentProcess(IntPtr.Zero))) "Invalid process/window was accepted as input-compatible"
+    for pinned in [Guid.Empty;Guid("BB64D5B7-4DE3-4AB2-A87C-DB7601AEA7DC");Guid("C2DDEA68-66F2-4CF9-8264-1BFD00FBBBAC")] do
+        check (not(WindowCloaking.IsConcreteDesktopId pinned)) "An all-desktop sentinel became a concrete grouping/placement target"
+        check (not(WindowCloaking.MoveToDesktop(IntPtr.Zero,pinned))) "Invalid desktop placement was sent to the shell"
+    check (WindowCloaking.IsConcreteDesktopId(Guid.NewGuid())) "A normal desktop ID was rejected"
+    let mutable retryTime = 0L
+    let retry = TaskbarPlacementAttempts(now=(fun () -> retryTime))
+    let retryMembers = Set.ofList [IntPtr(101);IntPtr(102)]
+    let retryDesktop = Guid.NewGuid()
+    retry.Observe(retryMembers,None,true)
+    check (not(retry.TryBegin()) && retry.RetryDelay.IsNone) "Unknown desktop started placement polling"
+    retry.Observe(retryMembers,Some retryDesktop,true)
+    check (retry.TryBegin()) "First confirmed placement attempt was blocked"
+    retry.Failed()
+    for _ in 1..100 do
+        retry.Observe(retryMembers,Some retryDesktop,true)
+        check (not(retry.TryBegin())) "UI refresh bypassed the placement retry delay"
+    retryTime <- 1000L
+    check (retry.TryBegin()) "Second placement attempt did not become ready"
+    retry.Failed()
+    retryTime <- 3000L
+    check (retry.TryBegin()) "Third placement attempt did not become ready"
+    retry.Failed()
+    retryTime <- 100000L
+    for _ in 1..100 do
+        retry.Observe(retryMembers,Some retryDesktop,true)
+        check (not(retry.TryBegin()) && retry.RetryDelay.IsNone) "Exhausted placement retries restarted without a state change"
+    check (retry.Count=3) "Placement attempt limit changed after repeated refreshes"
+    retry.Observe(retryMembers,Some(Guid.NewGuid()),true)
+    check (retry.TryBegin() && retry.Count=1) "A newly confirmed desktop did not allow a fresh attempt"
+    retry.Observe(retryMembers.Add(IntPtr(103)),Some retryDesktop,true)
+    check (retry.TryBegin() && retry.Count=1) "Changed group membership did not allow a fresh attempt"
     let directory = Path.Combine(__SOURCE_DIRECTORY__,"Debug","architecture-"+Guid.NewGuid().ToString("N"))
     Directory.CreateDirectory(directory) |> ignore
     let path = Path.Combine(directory,"settings.json")
@@ -189,6 +238,7 @@ let main() =
             member _.version = "test"
             member _.isFirstRun = false
             member _.refresh() = ()
+            member _.regroupApplications _ = ()
             member _.shutdown() = ()
             member _.setWindowNameOverride _ = ()
             member _.getWindowNameOverride _ = None

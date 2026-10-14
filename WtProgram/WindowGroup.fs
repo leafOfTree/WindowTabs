@@ -211,6 +211,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let shellHookWindow = Cell.create(None)
     let winEventHandler = Cell.create(None)
     let mutable themeSubscription : IDisposable option = None
+    let mutable placementCompletion : IDisposable option = None
     /// Each tab's colour as chosen, turned into a colour for the current theme when drawn.
     let mutable tabColors : Map<IntPtr,TabColorChoice> = Map.empty
     let isDraggingCell = Cell.create(false)
@@ -245,15 +246,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.isSuperBarEnabled = enableSuperBar
 
-    member this.init(ts:TabStrip) =
-        _ts := Some(ts)
-        minimizeStateTimer.Tick.Add(fun _ ->
-            let now = transitionClock.ElapsedMilliseconds
-            for hwnd,(minimized,deadline) in pendingMinimizeStates |> Seq.map(fun pair -> pair.Key,pair.Value) |> Seq.toList do
-                if this.windows.contains(hwnd).not || not(WinUserApi.IsWindow(hwnd)) || now>=deadline then pendingMinimizeStates.Remove(hwnd) |> ignore
-                elif this.os.windowFromHwnd(hwnd).isMinimized=minimized then
-                    pendingMinimizeStates.Remove(hwnd) |> ignore
-                    this.main(hwnd,if minimized then WinEvent.EVENT_SYSTEM_MINIMIZESTART else WinEvent.EVENT_SYSTEM_MINIMIZEEND)
+    member private this.finishPlacementReconciliation() =
+        if not isDestroyed.value then
             // WinEvents report the start of restoration, before ShowWindow and its
             // owned-popup visibility changes finish on the placement worker.
             if reconcileMinimizeState && FollowerPlacement.queue.isIdle(placementOwner) then
@@ -284,7 +278,21 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 reconcilePlacementState <- false
                 this.withUpdate(fun () -> this.updateIsVisible())
                 if not this.isEmpty then this.setTsParent(this.topWindow)
-            if pendingMinimizeStates.Count=0 && not reconcileMinimizeState && not reconcilePlacementState then minimizeStateTimer.Stop())
+            if pendingMinimizeStates.Count=0 then minimizeStateTimer.Stop()
+
+    member this.init(ts:TabStrip) =
+        _ts := Some(ts)
+        placementCompletion <- Some(FollowerPlacement.queue.Idle.Subscribe(fun owner ->
+            if obj.ReferenceEquals(owner,placementOwner) then
+                invoker.asyncInvoke(fun () -> this.finishPlacementReconciliation())))
+        minimizeStateTimer.Tick.Add(fun _ ->
+            let now = transitionClock.ElapsedMilliseconds
+            for hwnd,(minimized,deadline) in pendingMinimizeStates |> Seq.map(fun pair -> pair.Key,pair.Value) |> Seq.toList do
+                if this.windows.contains(hwnd).not || not(WinUserApi.IsWindow(hwnd)) || now>=deadline then pendingMinimizeStates.Remove(hwnd) |> ignore
+                elif this.os.windowFromHwnd(hwnd).isMinimized=minimized then
+                    pendingMinimizeStates.Remove(hwnd) |> ignore
+                    this.main(hwnd,if minimized then WinEvent.EVENT_SYSTEM_MINIMIZESTART else WinEvent.EVENT_SYSTEM_MINIMIZEEND)
+            this.finishPlacementReconciliation())
 
         winEventHandler.set(Some(
             _os.setSingleWinEvent WinEvent.EVENT_SYSTEM_FOREGROUND <| fun(hwnd) -> 
@@ -454,15 +462,22 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         // Restoring owned followers during a move can raise them above its source;
         // keep that source on top so its move-end event still restores the strip.
         if not reconcileMinimizeState && not inMoveSize.value then
-            this.setZorder(this.inZorder(this.windows.items))
+            let focused = this.os.foreground.hwnd
+            let selected = this.windows.contains(focused) && not(isMinimized focused) && zorderCell.value.tryHead<>Some focused
+            // Placement can raise a follower before its stacking correction. Only an
+            // actual foreground change may select another tab while that work is pending.
+            if not reconcilePlacementState || selected then
+                let order = this.inZorder(this.windows.items)
+                this.setZorder(if reconcilePlacementState then order.where((<>) focused).prepend focused else order)
 
     member private this.setWindows(newWindows) =
         windowsCell.set(newWindows)
         // Tabs that join or leave during a transition change the order at once; the others keep theirs.
-        if reconcileMinimizeState || inMoveSize.value then
+        if reconcileMinimizeState || reconcilePlacementState || inMoveSize.value then
             let kept = zorderCell.value.where(this.windows.contains)
             let joined = this.inZorder(this.windows.items.where(fun hwnd -> not (kept.contains((=) hwnd))))
             this.setZorder(List2(kept.list @ joined.list))
+            this.saveZorder()
         else this.saveZorder()
         this.updateIsVisible()
 
@@ -491,7 +506,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member private this.getTabInfo(hwnd) =
         let window = this.os.windowFromHwnd(hwnd)
-        let small,big = iconCache.get(hwnd)
+        let small,big = StartupTrace.measure "group.icons" (fun () -> iconCache.get(hwnd))
         {
             text = this.hwndText hwnd
             isRenamed = this.isRenamed hwnd
@@ -514,7 +529,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                             img.bitmap.Dispose()
                             reraise()
                     else
-                        Img(Win32Helper.PrintWindow(hwnd))
+                        StartupTrace.measure "preview.print" (fun () -> Img(Win32Helper.PrintWindow(hwnd)))
                 with ex -> Img(Sz(1, 1))
         }
     
@@ -557,7 +572,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member private this.setTsOwner(owner:Window) =
         let strip = this.os.windowFromHwnd(this.ts.hwnd)
-        strip.setOwner(if this.canShareInput owner.hwnd then owner else this.os.nullWindow)
+        StartupTrace.measure "group.owner" (fun () ->
+            strip.setOwner(if this.canShareInput owner.hwnd then owner else this.os.nullWindow))
 
     /// Permission checks stay off the placement hot path and expire with group membership.
     member this.canShareInput hwnd =
@@ -654,7 +670,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if FollowerPlacement.queue.isWindowIdle(placementOwner,hwnd) && this.os.windowFromHwnd(hwnd).needsMinimizeAnchor then
             FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.prepareMinimizeRequest hwnd)
             reconcilePlacementState <- true
-            minimizeStateTimer.Start()
+            this.finishPlacementReconciliation()
            
     member private this.adjustWindowPlacement(hwnd) =
         let changingMinimizeState =
@@ -670,9 +686,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             FollowerPlacement.queue.submit(placementOwner,hwnd,request)
             // Maximize/snap can hide or cover the owned strip after its early events.
             reconcilePlacementState <- true
-            minimizeStateTimer.Start()
+            this.finishPlacementReconciliation()
 
-    member this.isPlacementIdle = FollowerPlacement.queue.isIdle(placementOwner)
+    member this.isPlacementIdle = FollowerPlacement.queue.isIdle(placementOwner) && not reconcileMinimizeState && not reconcilePlacementState
                      
     member this.setTabColor(hwnd,color) =
         Services.program.setTabColorOverride(hwnd,color)
@@ -981,6 +997,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.destroy() =
         if isDestroyed.value.not then
             isDestroyed.set(true)
+            placementCompletion |> Option.iter(fun subscription -> subscription.Dispose())
+            placementCompletion <- None
             this.windows.items.iter(fun hwnd -> FollowerPlacement.queue.release(placementOwner,hwnd))
             lock locationGate (fun () -> pendingLocations.Clear())
             minimizeStateTimer.Dispose()
@@ -1009,7 +1027,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member private this.watchMinimizeCompletion() =
         reconcileMinimizeState <- true
-        minimizeStateTimer.Start()
+        this.finishPlacementReconciliation()
 
     member this.minimizeAll = fun() ->
         zorderCell.value.reverse.where(this.needsMinimizeState true).iter <| fun hwnd ->
