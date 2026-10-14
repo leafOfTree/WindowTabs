@@ -173,6 +173,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let movedEvent = Event<IntPtr*int>()
     let removedEvent = Event<_>()
     let exitedEvent = Event<_>()
+    let exitPreparations = Collections.Generic.List<(unit -> unit) -> unit>()
     let mouseLLEvent = Event<Int32 * Pt * IntPtr>()
     let flashEvent = Event<_>()
     let keyboardLLEvent = Event<Int32 * KBDLLHOOKSTRUCT * bool>()
@@ -861,7 +862,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         | _ -> ()
       
     member this.addWindow(hwnd, withDelay) = this.withUpdate <| fun() ->
-       if this.windows.contains(hwnd).not then
+       if not isDestroyed.value && this.windows.contains(hwnd).not then
             if withDelay then System.Threading.Thread.Sleep(250)
             let window = this.os.windowFromHwnd(hwnd)                
             let window = this.os.windowFromHwnd(hwnd)
@@ -919,7 +920,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.removeWindow(hwnd) = this.withUpdate <| fun() ->
         inputOwnership.Remove hwnd |> ignore
-        if this.windows.contains(hwnd) then
+        if not isDestroyed.value && this.windows.contains(hwnd) then
             this.reclaimLeftTab(hwnd)
             let foreground = this.os.foreground.hwnd
             let next = TabNavigation.closeTarget this.lorder.list isOpen hwnd foreground lastActiveTab opener (this.leftOnClose hwnd)
@@ -994,6 +995,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             TabNavigation.targetIndex order foreground zorderCell.value.tryHead next
             |> Option.iter(fun index -> this.activateIndex(index, force))
                         
+    /// A plugin can retain its native owners until asynchronous shell registration finishes.
+    member _.addExitPreparation(action:(unit -> unit) -> unit) = exitPreparations.Add action
+
+    member private this.finishDestroy() =
+        this.ts.destroy()
+        shellHookWindow.value.iter <| fun d -> d.Dispose()
+        winEventHandler.value.iter <| fun d -> d.Dispose()
+        exitedEvent.Trigger()
+        (iconCache :> IDisposable).Dispose()
+        (invoker :> IDisposable).Dispose()
+
     member this.destroy() =
         if isDestroyed.value.not then
             isDestroyed.set(true)
@@ -1004,14 +1016,19 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             minimizeStateTimer.Dispose()
             pendingMinimizeStates.Clear()
             requestedMinimizeStates.Clear()
+            hookCleanup.value.values.iter(fun hook -> hook.Dispose())
+            hookCleanup.set(Map2())
             themeSubscription |> Option.iter (fun subscription -> subscription.Dispose())
             themeSubscription <- None
-            this.ts.destroy()
-            shellHookWindow.value.iter <| fun d -> d.Dispose()
-            winEventHandler.value.iter <| fun d -> d.Dispose()
-            exitedEvent.Trigger()
-            (iconCache :> IDisposable).Dispose()
-            (invoker :> IDisposable).Dispose()
+            let rec prepare index =
+                if index=exitPreparations.Count then this.finishDestroy()
+                else
+                    let mutable completed = false
+                    exitPreparations.[index](fun () -> invoker.asyncInvoke(fun () ->
+                        if not completed then
+                            completed <- true
+                            prepare (index+1)))
+            prepare 0
 
    
 

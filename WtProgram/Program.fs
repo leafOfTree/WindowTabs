@@ -395,9 +395,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         member x.shutdown() =
             settingsManager.Flush() |> ignore
             inShutdown.set(true)
-            this.desktop.groups.iter <| fun gi ->
-                gi.windows.iter <| fun window ->
-                    gi.removeWindow window
+            // Keep group ownership intact until its exit preparation restores native desktop records.
+            this.desktop.groups.iter(fun group -> group.destroy())
             this.updateAppWindows()
                    
      

@@ -136,6 +136,76 @@ discovery or overflow UI. The suite also does not claim pixel-perfect rendering,
 cross-monitor DPI behavior, third-party application compatibility, import-triggered
 automatic restart, double-click rename, or multi-hour stability.
 
+## Virtual desktops and combined taskbar icons
+
+```powershell
+# Compile without creating desktops or sending input.
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-DesktopE2E.ps1 -BuildOnly -VirtualDesktops
+
+# Run the separate four-scenario workload on the real interactive desktop.
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/Run-DesktopE2E.ps1 -Interactive -VirtualDesktops
+```
+
+`-VirtualDesktops` is separate from Quick/Full/Soak and refuses profile, cycle,
+duration and randomization options. It tests application auto-grouping and named
+application rules, each with `combineIconsInTaskbar` off and on. Two temporary
+desktops contain two windows from the same fixture executable each, mixing native
+unowned-window taskbar eligibility with explicit `WS_EX_APPWINDOW`. Anchors use
+a different executable path and are excluded by the portable settings.
+
+The driver uses Windows' Win+Ctrl+D/Left/Right/F4 shortcuts to create, switch and
+remove desktops. Public `IVirtualDesktopManager` queries independently verify
+each fixture's native desktop and the taskbar root's desktop. It does not call
+WindowTabs' cached desktop resolver or undocumented shell COM interfaces.
+Explorer's `VirtualDesktopIDs` and `CurrentVirtualDesktop` registry diagnostics
+record the original topology and identify each newly created desktop before
+window registration can fail. The test refuses to create desktops if these
+diagnostics are unavailable or disagree with public COM. These registry reads
+belong only to the driver; production desktop behavior is unchanged.
+
+Every scenario checks:
+
+1. Startup creates one group per desktop, despite the executable/rule target
+   being identical. All members settle into their group's native frame.
+2. Desktop switching preserves group membership, foreground/strip ownership and
+   DWM cloaking. Windows and strips from the other desktop must remain hidden.
+3. Combined mode gives each tab its own preview owner and each desktop its own
+   taskbar root, placed on that desktop. Separate mode keeps native owners clear.
+4. A new window created on the second desktop joins its existing group. Reading
+   every tab checks that the first desktop's windows were not adopted.
+5. Maximizing/restoring on the second desktop preserves the active HWND;
+   closing the added window leaves both original groups usable.
+6. Normal Exit releases owners while retaining each application's desktop and
+   original `WS_EX_APPWINDOW` flag. UI Automation reads actual fixture taskbar
+   buttons on both desktops and compares them with the pre-grouping baseline;
+   native desktop registration alone is not evidence that a button exists.
+   Restart rediscovers the same groups; tab selection still works on the second
+   desktop. There are 336 individually checked numeric switches across the matrix,
+   plus mouse selection of every tab.
+
+Success requires all four scenarios, removal of both temporary desktops,
+unchanged original topology and return to the original desktop. Cleanup runs
+after failures too and only closes recorded new desktop IDs. Cancellation uses
+`stop-requested` to let the driver restore desktops before the runner force-stops
+staged processes. Keep input idle and do not create/remove/reorder desktops during
+the test. Forced termination of the driver or a blocked Explorer can prevent
+cleanup; retained `desktop-topology.json` and `desktop-cleanup.json` identify the
+original/created IDs and observed cleanup outcome.
+`taskbar-restoration.jsonl` records fixture button names and style restoration for
+each desktop after both exits. User application button names are excluded.
+
+If an Exit changes a fixture's desktop, `released-windows.jsonl` records expected
+and actual IDs and the scenario remains failed. Only then does the driver move
+its own unowned fixture HWNDs back using public COM so it can check restart and
+the remaining matrix cases. It never resets user windows or retries the failed
+Exit, and any failed scenario makes the process and runner return failure.
+
+This scenario verifies native preview ownership and desktop isolation; it does
+not hover Explorer's taskbar thumbnails or assert the rendered Aero Peek image.
+It also does not cover pinned/all-desktop windows, third-party app compatibility,
+mixed administrator permissions or changing the combine setting inside a live
+group. Those need separate scenarios.
+
 ## Results and gates
 
 The staging directory contains `result.json`, `manifest.json` with the binary's

@@ -211,6 +211,7 @@ let main() =
         use permissionFirst = new Form(ShowInTaskbar=false)
         use permissionSecond = new Form(ShowInTaskbar=false)
         let permissionHandles = [permissionFirst.Handle;permissionSecond.Handle]
+        let permissionStyles = permissionHandles |> List.map(fun hwnd -> WinUserApi.GetWindowLong(hwnd,WindowLongFieldOffset.GWL_EXSTYLE))
         let permissionProbe = desktopApi.createGroup(false) :?> GroupInfo
         let mutable compatible = true
         let permissionPlugin = onGroup permissionProbe (fun group ->
@@ -248,6 +249,8 @@ let main() =
             (permissionProbe :> IGroup).destroy()
             pumpUntil "Permission probe did not exit" (fun () -> permissionProbe.isExited)
         check (permissionHandles |> List.forall(fun hwnd -> WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)=IntPtr.Zero)) "Taskbar isolation probe left an owner after shutdown"
+        check (permissionHandles |> List.map(fun hwnd -> WinUserApi.GetWindowLong(hwnd,WindowLongFieldOffset.GWL_EXSTYLE)) = permissionStyles)
+              "Taskbar exit registration changed the application's original window styles"
 
         // Placement failure keeps real windows independent; a later successful attempt may combine them.
         do
@@ -658,6 +661,40 @@ let main() =
                 if not info.isExited then onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
             workspaceWindows <- List2()
             let closing = desktopApi.createGroup(false) :?> GroupInfo
+            let deferredExit = desktopApi.createGroup(false) :?> GroupInfo
+            use exitMember = new Form(ShowInTaskbar=false)
+            use lateMember = new Form(ShowInTaskbar=false)
+            let retainedMember = exitMember.Handle
+            let ignoredMember = lateMember.Handle
+            (deferredExit :> IGroup).addWindow(retainedMember,false)
+            pumpUntil "Exit fixture did not acquire its member" (fun () -> nativeOrder deferredExit=[retainedMember])
+            let mutable exitContinuation : (unit -> unit) option = None
+            let mutable secondExitContinuation : (unit -> unit) option = None
+            let mutable preparations = 0
+            let mutable exits = 0
+            onGroup deferredExit (fun group ->
+                group.addExitPreparation(fun complete -> preparations <- preparations+1;exitContinuation <- Some complete)
+                group.addExitPreparation(fun complete -> preparations <- preparations+1;secondExitContinuation <- Some complete)
+                group.exited.Add(fun () -> exits <- exits+1))
+            let retainedHwnd = deferredExit.hwnd
+            (deferredExit :> IGroup).destroy()
+            (deferredExit :> IGroup).destroy()
+            pumpUntil "Exit preparation did not start" (fun () -> exitContinuation.IsSome)
+            check (preparations=1 && not deferredExit.isExited && WinUserApi.IsWindow retainedHwnd)
+                  "Repeated destroy bypassed pending shell registration or destroyed its owner"
+            onGroup deferredExit (fun group ->
+                group.removeWindow retainedMember
+                group.addWindow(ignoredMember,false)
+                check (group.windows.items.list=[retainedMember] && group.lorder.list=[retainedMember])
+                      "Late membership updates released an owner while exit registration was pending")
+            exitContinuation.Value()
+            exitContinuation.Value()
+            pumpUntil "Second exit preparation did not start once" (fun () -> secondExitContinuation.IsSome && preparations=2)
+            check (not deferredExit.isExited && WinUserApi.IsWindow retainedHwnd) "Repeated completion bypassed another pending exit preparation"
+            secondExitContinuation.Value()
+            secondExitContinuation.Value()
+            pumpUntil "Prepared group did not finish exiting" (fun () -> deferredExit.isExited && exits=1 && not(WinUserApi.IsWindow retainedHwnd))
+            check (exits=1 && not(WinUserApi.IsWindow retainedHwnd)) "Exit completion destroyed the group twice or retained native windows"
             let mutable captured : GroupTabLayout option option = None
             let mutable captures = 0
             (closing :> IGroup).destroy()

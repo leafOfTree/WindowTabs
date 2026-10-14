@@ -168,7 +168,22 @@ Ordinary groups reclaim each window's taskbar button when it joins, including
 windows rediscovered at startup after a combined session ended unexpectedly.
 Combined groups recreate their proxy and previews through the existing z-order
 updates. Both kinds restore remaining live windows' buttons when the group exits.
-Only managed windows are reconciled; no recovery file or taskbar polling is used.
+Only managed windows are reconciled; no recovery file or regular taskbar polling is used.
+Shutdown destroys whole groups rather than removing their members one at a time.
+Combined groups restore buttons while their preview owners still carry the desktop,
+then confirm the shell's direct desktop records on workers before releasing owners.
+Applications without `WS_EX_APPWINDOW` temporarily receive that flag during this
+registration: Explorer otherwise ignores the restored button while it is owned.
+After proxies are released, only the added flag is removed and each surviving,
+unowned application receives one final AddTab, regardless of the visibility cache.
+PID/thread checks prevent restoring styles to a closed window's reused HWND.
+The group STA keeps pumping messages while confirmation runs. Its 50 ms timer
+exists only during exit preparation and stops on completion or after three seconds;
+single-flight queries and invalidated lookup tokens prevent duplicate work or late
+results. If Explorer cannot finish within that deadline, cleanup proceeds and
+opt-in Peek diagnostics record the timeout. Whole-group teardown also disposes
+every per-window WinEvent subscription. Exit preparations finish on the group STA
+once, even if a continuation or shutdown request is repeated.
 Rebuilds and deferred automatic regrouping stage target membership on the main
 STA, but queue its native add only after the source STA finishes removing the HWND.
 Old cleanup checks its own proxy identity and does not restore a taskbar button

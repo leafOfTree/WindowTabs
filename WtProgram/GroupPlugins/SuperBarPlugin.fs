@@ -588,6 +588,7 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
     let mutable placementDesktop : Guid option = None
     let mutable desktopSubscription : IDisposable option = None
     let mutable disposed = false
+    let mutable exitCleanedUp = false
 
     new() = SuperBarPlugin(fun hwnd -> Services.get<WindowGroup>().canShareInput hwnd)
 
@@ -815,23 +816,91 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
     member this.onTabMoved(tab, index) =
         this.updateTaskbar()
 
-    member this.onGroupExited() =
+    /// Explorer registers restored buttons asynchronously; their owners carry the desktop until then.
+    member private this.prepareExit(complete:unit -> unit) =
         disposed <- true
-        desktopSubscription |> Option.iter(fun subscription -> subscription.Dispose())
-        desktopSubscription <- None
-        this.wtGroup.windows.items.iter(fun hwnd ->
-            if WinUserApi.IsWindow hwnd then this.showInTaskbar(hwnd,true))
-        captureTimer.Dispose()
-        placementRetry.Dispose()
-        (captures :> IDisposable).Dispose()
-        this.releaseAll()
-        if taskbarButton <> null then
-            (taskbarButton :> IDisposable).Dispose()
-            taskbarButton <- null
+        captureTimer.Stop()
+        placementRetry.Stop()
+        if taskbarButton=null || adopted.Count=0 then complete()
+        else
+            let button = taskbarButton
+            let owner = button.window.hwnd
+            let members = List.ofSeq adopted |> List.filter(fun hwnd -> WinUserApi.IsWindow hwnd && button.ownsApplication hwnd)
+            let identity hwnd =
+                let mutable pid = 0
+                let tid = WinUserApi.GetWindowThreadProcessId(hwnd,&pid)
+                pid,tid
+            let identities = members |> List.map(fun hwnd -> hwnd,identity hwnd) |> Map.ofList
+            let alive hwnd = WinUserApi.IsWindow hwnd && identity hwnd=identities.[hwnd]
+            // Without APPWINDOW, Explorer ignores AddTab while a preview still owns the application.
+            let registrationStyles = members |> List.choose(fun hwnd ->
+                let style = WinUserApi.GetWindowLong(hwnd,WindowLongFieldOffset.GWL_EXSTYLE).ToInt64()
+                let appWindow = int64 WindowsExtendedStyles.WS_EX_APPWINDOW
+                if style &&& appWindow <> 0L then None
+                else
+                    WinUserApi.SetWindowLong(hwnd,WindowLongFieldOffset.GWL_EXSTYLE,IntPtr(style ||| appWindow)) |> ignore
+                    Some hwnd)
+            for hwnd in members do taskbarVisibility.set(hwnd,true)
+            let lookup = DesktopLookup((fun hwnd ->
+                match WindowCloaking.TryGetDesktopId hwnd with true,id -> Some id | _ -> None),ThreadHelper.queueBackground)
+            let watch = Diagnostics.Stopwatch.StartNew()
+            let timer = new System.Windows.Forms.Timer(Interval=50)
+            let mutable completed = false
+            let finish() =
+                if not completed then
+                    completed <- true
+                    timer.Dispose()
+                    for hwnd in owner::members do lookup.Forget hwnd
+                    this.onGroupExited()
+                    for hwnd in registrationStyles do
+                        if alive hwnd then
+                            let style = WinUserApi.GetWindowLong(hwnd,WindowLongFieldOffset.GWL_EXSTYLE).ToInt64()
+                            WinUserApi.SetWindowLong(hwnd,WindowLongFieldOffset.GWL_EXSTYLE,
+                                IntPtr(style &&& ~~~(int64 WindowsExtendedStyles.WS_EX_APPWINDOW))) |> ignore
+                    // Owner/style changes can discard the earlier button; publish it once after teardown.
+                    for hwnd in members do
+                        if alive hwnd && WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)=IntPtr.Zero then
+                            taskbarVisibility.forget hwnd
+                            taskbarVisibility.set(hwnd,true)
+                    complete()
+            let check() =
+                let desktop = lookup.TryGet owner
+                let answers = members |> List.map(fun hwnd ->
+                    if alive hwnd && button.ownsApplication hwnd then Some(lookup.TryGet hwnd)
+                    else None)
+                let registered =
+                    match desktop with
+                    | Some(Some desktop) ->
+                        answers |> List.forall(function None -> true | Some answer -> answer=Some(Some desktop))
+                    | _ -> false
+                if registered then finish()
+                elif watch.ElapsedMilliseconds>=3000L then
+                    TaskbarPreviewTrace.write "restore-timeout" owner "" (sprintf "members=%d" members.Length)
+                    finish()
+            timer.Tick.Add(fun _ -> check())
+            timer.Start()
+            check()
+
+    member this.onGroupExited() =
+        if not exitCleanedUp then
+            exitCleanedUp <- true
+            disposed <- true
+            desktopSubscription |> Option.iter(fun subscription -> subscription.Dispose())
+            desktopSubscription <- None
+            this.wtGroup.windows.items.iter(fun hwnd ->
+                if WinUserApi.IsWindow hwnd then this.showInTaskbar(hwnd,true))
+            captureTimer.Dispose()
+            placementRetry.Dispose()
+            (captures :> IDisposable).Dispose()
+            this.releaseAll()
+            if taskbarButton <> null then
+                (taskbarButton :> IDisposable).Dispose()
+                taskbarButton <- null
 
     interface IPlugin with
         member x.init() =
             let group = this.wtGroup
+            group.addExitPreparation this.prepareExit
             desktopSubscription <- Some(VirtualDesktop.groupingReady.Subscribe(fun hwnd ->
                 group.invokeAsync(fun () ->
                     if not disposed && group.windows.contains hwnd then this.updateTaskbar(refreshDesktop=true))))

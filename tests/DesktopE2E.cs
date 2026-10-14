@@ -12,7 +12,7 @@ using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
-static class DesktopE2E
+static partial class DesktopE2E
 {
     delegate bool EnumProc(IntPtr hwnd, IntPtr data);
     [StructLayout(LayoutKind.Sequential)] struct Rect { public int Left, Top, Right, Bottom; }
@@ -61,6 +61,7 @@ static class DesktopE2E
     static Point savedCursor;
     static bool inputOwned;
     static bool randomize;
+    static bool cleaningUp;
     static int seed, randomActionCount, randomBatchesPerCycle;
     sealed class RandomAction
     {
@@ -162,8 +163,10 @@ static class DesktopE2E
     static async Task Until(string description, Func<bool> condition, int timeout=5000)
     {
         var watch=Stopwatch.StartNew();
+        Check(cleaningUp || !File.Exists(Path.Combine(Root,"stop-requested")),"Runner requested cancellation");
         while(!condition())
         {
+            Check(cleaningUp || !File.Exists(Path.Combine(Root,"stop-requested")),"Runner requested cancellation");
             Check(app==null || !app.HasExited,"Application exited unexpectedly");
             Check(watch.ElapsedMilliseconds<timeout,description);
             await Task.Delay(10);
@@ -256,9 +259,17 @@ static class DesktopE2E
         CheckGrowth(before,after);
         return before;
     }
-    static Form NewHelper(Point position)
+    // Browsers, Terminal and Explorer rely on an unowned top-level window, rather than APPWINDOW.
+    sealed class NativeTaskbarForm : Form
     {
-        var helper=new Form { Text="WindowTabs E2E fixture",StartPosition=FormStartPosition.Manual,
+        public bool ForceTaskbar;
+        protected override CreateParams CreateParams {
+            get { var parameters=base.CreateParams; if(!ForceTaskbar) parameters.ExStyle &= ~0x40000; return parameters; }
+        }
+    }
+    static Form NewHelper(Point position, bool appWindow=false)
+    {
+        var helper=new NativeTaskbarForm { ForceTaskbar=appWindow,Text="WindowTabs E2E fixture",StartPosition=FormStartPosition.Manual,
             Location=position,Size=new Size(560,150),BackColor=Color.LightBlue };
         helper.Menu=new MainMenu(new[]{new MenuItem("&File",new[]{new MenuItem("&Test")})});
         Forms.Add(helper); helper.Show(); ShowWindow(helper.Handle,4);
@@ -380,16 +391,20 @@ static class DesktopE2E
         var timer=Stopwatch.StartNew();
         while(!app.HasExited) { Check(timer.ElapsedMilliseconds<10000,"Normal Exit did not terminate the process"); await Task.Delay(20); }
         Check(app.ExitCode==0,"Normal Exit returned "+app.ExitCode);
-        Check(Windows(app.Id).Count==0,"Native windows survived process exit");
+        int exitedPid=app.Id;
         Check(Helpers().All(IsWindow),"Exiting WindowTabs closed a helper application");
         app.Dispose(); app=null;
+        // USER window teardown can finish just after the process handle signals.
+        await Until("Native windows survived process exit",()=>Windows(exitedPid).Count==0,2000);
     }
-    static void Fixture()
+    static void Fixture(bool combined=false, string grouping="manual")
     {
         var own=Process.GetCurrentProcess().MainModule.FileName;
         File.WriteAllText(Path.Combine(Root,"WindowTabsSettings.json"),Json.Serialize(new {
-            enableTabbingByDefault=false, includedPaths=new[]{own},autoGroupingPaths=new string[0],
-            runAtStartup=false,replaceAltTab=false,combineIconsInTaskbar=false,hideInactiveTabs=false,
+            enableTabbingByDefault=false, includedPaths=new[]{own},autoGroupingPaths=grouping=="auto"?new[]{own}:new string[0],
+            appGroupingTargets=grouping=="rule"?new object[]{new {id="e2e-group",name="E2E group"}}:new object[0],
+            appGroupingRules=grouping=="rule"?new object[]{new {id="e2e-rule",enabled=true,processPath=own,groupId="e2e-group",groupName="E2E group"}}:new object[0],
+            runAtStartup=false,replaceAltTab=false,combineIconsInTaskbar=combined,hideInactiveTabs=false,
             enableCtrlNumberHotKey=true,numberHotKeyModifier="Alt",enableNumberLeader=true,enableHoverActivate=false,autoHideMode="Never",alignment="Left",language="en",
             hotKeys=new { nextTab=0x67A, prevTab=0x67B, numberLeader=0x453 },
             tabAppearance=new { tabMaxWidth=160,tabHeight=28,tabOverlap=0,tabHeightOffset=0 }
@@ -504,8 +519,10 @@ static class DesktopE2E
     }
     [STAThread] static int Main(string[] args)
     {
+        if(args.Length==1 && args[0]=="--desktop-anchor") { RunDesktopAnchor(); return 0; }
         if(args.Length==1 && args[0]=="--check-random-plan") { CheckRandomPlan(); return 0; }
-        if((args.Length!=3 && args.Length!=4 && args.Length!=7) || args[0]!="--run") { Console.Error.WriteLine("Use Run-DesktopE2E.ps1 -Interactive"); return 2; }
+        bool virtualDesktops=args.Length==1 && args[0]=="--virtual-desktops";
+        if(!virtualDesktops && ((args.Length!=3 && args.Length!=4 && args.Length!=7) || args[0]!="--run")) { Console.Error.WriteLine("Use Run-DesktopE2E.ps1 -Interactive"); return 2; }
         if(args.Length==7) { seed=int.Parse(args[4]); randomize=bool.Parse(args[5]); randomBatchesPerCycle=int.Parse(args[6]); }
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
         Application.EnableVisualStyles();
@@ -515,16 +532,23 @@ static class DesktopE2E
         {
             start.Tick+=async (s,e)=> {
                 start.Stop();
-                try { await Run(int.Parse(args[1]),int.Parse(args[2]),args.Length>=4?int.Parse(args[3]):0); code=0; }
+                try { if(virtualDesktops) await RunVirtualDesktops(); else await Run(int.Parse(args[1]),int.Parse(args[2]),args.Length>=4?int.Parse(args[3]):0); code=0; }
                 catch(Exception error) { Console.Error.WriteLine(error); File.WriteAllText(Path.Combine(Root,"failure.txt"),error.ToString()); Diagnose(); }
                 finally
                 {
-                    if(inputOwned) { Inject(MouseInput(4),KeyInput(0x11,true),KeyInput(0x12,true)); Move(savedCursor); }
                     if(app!=null) { if(!app.HasExited) app.Kill(); app.WaitForExit(); app.Dispose(); }
+                    app=null;
                     foreach(var f in Forms) f.Dispose();
-                    File.WriteAllText(Path.Combine(Root,"result.json"),Json.Serialize(new { status=code==0?"passed":"failed",phase,step,seed,randomize,randomActionCount,completedCycles=completed,verifiedSwitches=totalSwitches,switchingSeconds,measurements=Measurements,resourceSamples=ResourceSamples,recentActions=RecentActions.ToArray() }));
-                    context.ExitThread();
                 }
+                // The Framework compiler supports C# 5, before await-in-finally.
+                if(virtualDesktops) {
+                    cleaningUp=true;
+                    try { await CleanupVirtualDesktops(); }
+                    catch(Exception error) { code=1; Console.Error.WriteLine(error); File.AppendAllText(Path.Combine(Root,"failure.txt"),Environment.NewLine+"Cleanup: "+error); }
+                }
+                if(inputOwned) { Inject(MouseInput(4),KeyInput(0x11,true),KeyInput(0x12,true),KeyInput(0x5B,true)); Move(savedCursor); }
+                File.WriteAllText(Path.Combine(Root,"result.json"),Json.Serialize(new { status=code==0?"passed":"failed",phase,step,seed,randomize,randomActionCount,completedCycles=completed,verifiedSwitches=totalSwitches,switchingSeconds,virtualDesktops,virtualDesktopScenarios=DesktopScenarios,temporaryDesktopsRemoved,originalDesktopRestored,measurements=Measurements,resourceSamples=ResourceSamples,recentActions=RecentActions.ToArray() }));
+                context.ExitThread();
             };
             start.Start(); Application.Run(context);
         }
