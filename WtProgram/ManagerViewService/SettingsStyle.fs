@@ -22,6 +22,23 @@ module SettingsShapes =
                 path.AddArc(rect.Left,rect.Bottom-d,d,d,90.0f,90.0f)
                 path.CloseFigure()
         path
+    /// The fill and outline of a plain button, shared by a closed drop-down so the two look alike
+    /// side by side and both stand out from a hovered or selected row.
+    let neutralColors (p:SettingsPalette) (hot:bool) (pressed:bool) =
+        let light = not SystemInformation.HighContrast && not (ThemeService.currentIsDark())
+        let mix (a:Color) (b:Color) (t:float32) =
+            Color.FromArgb(int(float32 a.R*(1.0f-t)+float32 b.R*t),int(float32 a.G*(1.0f-t)+float32 b.G*t),int(float32 a.B*(1.0f-t)+float32 b.B*t))
+        let fill =
+            if light then Color.FromRGB(if pressed then 0xE0E0DE elif hot then 0xEAEAE8 else 0xF3F3F1)
+            // Dark buttons dim when pressed rather than brighten further, as Windows' do.
+            elif pressed && not SystemInformation.HighContrast then p.background
+            elif pressed then mix p.hover p.surface 0.5f
+            // Darker than the resting fill, towards the page: the old hover fill was nearly the
+            // colour of a selected row, so a control in one vanished under the pointer.
+            elif hot && not SystemInformation.HighContrast then mix p.surface p.background 0.6f
+            elif hot then p.hover
+            else p.surface
+        fill,(if light then fill else p.border)
 
 /// Eases wheel scrolling toward a target offset. Anything else that moves the view (scrollbar,
 /// focus, search) calls jump or stop, so it lands at once and no animation fights it.

@@ -1244,8 +1244,11 @@ type SettingsCombo(items:string[]) as this =
         | None -> this.paintFull(e.Graphics,p)
     member private this.paintFull(graphics:Graphics,p:SettingsPalette) =
         use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 8))
-        use fill = new SolidBrush(if hovering && this.Enabled then p.selection else p.hover)
-        use border = new Pen(p.border)
+        // Coloured as a button: the old hover fill was the colour of a selected row, so a
+        // drop-down in an edited row vanished into it under the pointer.
+        let fillColor,borderColor = SettingsShapes.neutralColors p (hovering && this.Enabled) (popup.IsSome && this.Enabled)
+        use fill = new SolidBrush(fillColor)
+        use border = new Pen(borderColor)
         graphics.FillPath(fill,shape)
         if flash > 0.0 then
             use tint = new SolidBrush(Color.FromArgb(int(90.0*flash),p.accent))

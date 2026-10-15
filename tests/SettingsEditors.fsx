@@ -800,6 +800,15 @@ let main() =
         (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
         assertTrue (tree.RowActions=[NoGlyph;EditGlyph;DeleteGlyph] && obj.ReferenceEquals(name.Parent.Parent,tree) && name.Parent.Visible)
                    "Adding a group did not start editing its name directly in the row"
+        // In a selected row the name field and the application drop-down keep a fill of their own,
+        // as the Browse button does, instead of vanishing into the row's colour.
+        let palette = SettingsColors.current()
+        let field = name.Parent :?> SettingsInputFrame
+        assertTrue (field.BackColor.ToArgb()=palette.surface.ToArgb() && name.BackColor.ToArgb()=palette.surface.ToArgb())
+                   "The row's name field took the row's colour"
+        let hoveredDropDown,_ = SettingsShapes.neutralColors palette true false
+        assertTrue (SystemInformation.HighContrast || abs(int hoveredDropDown.R-int palette.selection.R) >= 6)
+                   "A hovered drop-down is close to the colour of a selected row"
         assertTrue (tree.Parent.Width=groupView.ClientSize.Width && tree.Tag=box "surface") "Grouping rules still use a split list and editor layout"
         assertTrue (descendants groupView |> Seq.forall(fun control -> control.Name<>"group-target")) "A separate target selector remains above the grouping rows"
         rename "Group A"

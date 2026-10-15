@@ -160,10 +160,18 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         rowEditor <- None
         previous |> Option.iter(fun (_,editor,_) -> editor.Visible <- false; this.Controls.Remove(editor))
 
+    /// A text field keeps its field colour so it stands out from a selected row, as buttons do;
+    /// other editors take the row's colour behind their own controls.
+    member private this.colorEditor(item:TreeListItem,editor:Control) =
+        let p = SettingsColors.current()
+        let row = if Object.ReferenceEquals(item,selected) then p.selection else p.surface
+        match editor with
+        | :? SettingsInputFrame as field -> field.PlaceOn row
+        | _ -> editor.BackColor <- row
+
     member private this.updateEditorBounds() =
         rowEditor |> Option.iter(fun (item,editor,includeIcon) ->
-            let palette = SettingsColors.current()
-            editor.BackColor <- if Object.ReferenceEquals(item,selected) then palette.selection else palette.surface
+            this.colorEditor(item,editor)
             match rows |> Array.tryFindIndex(fun (row,_) -> Object.ReferenceEquals(row,item)) with
             | Some index ->
                 let top = this.headerHeight+index*this.rowHeight-offset
@@ -450,8 +458,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
 
     override this.OnPaint(e) =
         let p = SettingsColors.current()
-        rowEditor |> Option.iter(fun (item,editor,_) ->
-            editor.BackColor <- if Object.ReferenceEquals(item,selected) then p.selection else p.surface)
+        rowEditor |> Option.iter(fun (item,editor,_) -> this.colorEditor(item,editor))
         let g = e.Graphics
         g.Clear(this.BackColor)
         g.SmoothingMode <- SmoothingMode.AntiAlias
