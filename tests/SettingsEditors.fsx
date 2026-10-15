@@ -883,12 +883,22 @@ let main() =
                    "Editing an application row did not preserve its target group and enabled state"
         form.PerformLayout()
         Application.DoEvents()
-        assertTrue (groupView.Height>=Dpi.scale 200 && groupView.Bottom<=view.control.ClientSize.Height)
+        assertTrue (groupView.Height<=Dpi.scale 244 && groupView.Bottom<=view.control.ClientSize.Height)
                    (sprintf "Grouping tree is outside the page: %A in %A" groupView.Bounds view.control.ClientSize)
+        // The section is as tall as its rows, up to a limit: collapsing a group shrinks it.
+        let expandedGroup = tree.Roots |> Seq.find(fun row -> row.Children.Count>0 && row.Expanded)
+        let fullHeight = groupView.Height
+        tree.SetExpanded(expandedGroup,false)
+        let collapsedHeight = groupView.Height
+        tree.SetExpanded(expandedGroup,true)
+        assertTrue (collapsedHeight<fullHeight && groupView.Height=fullHeight)
+                   (sprintf "Groups across apps did not follow its rows: %d expanded, %d collapsed, %d again" fullHeight collapsedHeight groupView.Height)
         use image = new Bitmap(form.Width,form.Height)
         form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
         image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "grouping-app-tree-%A.png" mode))
         clickAction tree.Roots.[1] 0
+        // The new row makes the section taller; let the page lay out before opening a drop-down.
+        Application.DoEvents()
         form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
         image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "grouping-app-entry-%A.png" mode))
         groupBPicker.UpdateApplications [selectedPath]

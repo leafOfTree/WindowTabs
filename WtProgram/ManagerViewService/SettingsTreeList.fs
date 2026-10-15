@@ -74,6 +74,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     let itemActivated = Event<TreeListItem>()
     let checkChanged = Event<TreeListItem * int * bool>()
     let expandedChanged = Event<TreeListItem>()
+    let rowsChanged = Event<EventArgs>()
     let actionInvoked = Event<TreeListItem * int>()
     let mutable rows : (TreeListItem * int)[] = [||]
     let mutable offset = 0
@@ -114,6 +115,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     /// Raised when a row is expanded or collapsed, before the rows are laid out again, so a
     /// handler can expand or collapse the rows under it too.
     member _.ExpandedChanged = expandedChanged.Publish
+    /// Rows were added, removed, expanded or collapsed: a list sized to its rows grows or shrinks.
+    member _.RowsChanged = rowsChanged.Publish
     /// Buttons drawn in the action column on the row under the pointer, as their glyphs.
     member val RowActions : TreeListGlyph list = [] with get,set
     /// Raised when a row action is clicked, after its row is selected: item, index in RowActions.
@@ -122,6 +125,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member private this.rowHeight = Dpi.scale this.RowHeight
     member private this.headerHeight = if this.ShowHeader then Dpi.scale 30 else 0
     member private this.viewport = max 1 (this.ClientSize.Height-this.headerHeight)
+    /// The height that shows the header and every visible row without scrolling.
+    member this.ContentHeight = this.headerHeight+rows.Length*this.rowHeight
     member private this.contentWidth = this.ClientSize.Width-(if scroll.Visible then scroll.Width else 0)
 
     /// Recomputes the visible rows after items, expansion or roots change.
@@ -137,6 +142,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             selectionChanged.Trigger(EventArgs.Empty)
         this.updateScroll()
         this.Invalidate()
+        rowsChanged.Trigger(EventArgs.Empty)
 
     member private this.updateScroll() =
         let maximum = max 0 (rows.Length*this.rowHeight-this.viewport)

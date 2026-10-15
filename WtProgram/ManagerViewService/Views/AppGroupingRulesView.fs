@@ -236,7 +236,8 @@ type AppGroupingRulesView() as this =
                 save (Some previous)
                 pendingGroup <- None
                 reload (Some(ApplicationNode rule.id)))
-        this.Height <- Dpi.scale 244
+        this.fitToRows()
+        tree.RowsChanged.Add(fun _ -> this.fitToRows())
         addGroup.Anchor <- AnchorStyles.Top ||| AnchorStyles.Right
         header.Controls.AddRange([|caption :> Control;help;addGroup|])
         caption.SizeChanged.Add(fun _ -> help.Location <- Point(caption.Right+Dpi.scale 10,caption.Top-Dpi.scale 2))
@@ -344,6 +345,14 @@ type AppGroupingRulesView() as this =
                     if not(isNull child.Icon) then child.Icon.Dispose())
         this.Resize.Add(fun _ -> this.PerformLayout())
         reload None
+    /// Only as tall as its rows need, from two rows up to six; more rows scroll.
+    member private this.fitToRows() =
+        if not(isNull header) then
+            let rows = Dpi.scale tree.RowHeight
+            let around = Dpi.scale 36+Dpi.scale 8+2*Dpi.scale 6+(if status.Text="" then 0 else Dpi.scale 28)
+            let wanted = around+tree.ContentHeight
+            let height = max (around+Dpi.scale 30+2*rows) (min (Dpi.scale 244) wanted)
+            if this.Height<>height then this.Height <- height
     member _.Changed = changed.Publish
     member _.Reload() =
         groups <- Services.settings.getValue("appGroupingTargets") :?> AppGroupingTarget list
