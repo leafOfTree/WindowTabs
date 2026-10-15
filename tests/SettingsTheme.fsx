@@ -424,6 +424,7 @@ let main() =
             member _.groups = List2()
             member _.groupExited = Event<IGroup>().Publish
             member _.groupRemoved = Event<IGroup>().Publish
+            member _.groupChanged = Event<IGroup>().Publish
             member _.foregroundGroup = None })
         // Closing a diagnostics page must not dispose the process-wide cached font.
         for _ in 1..3 do

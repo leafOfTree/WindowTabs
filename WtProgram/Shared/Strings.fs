@@ -51,8 +51,6 @@ module Strings =
 
     /// Tab context menu.
     module TabMenu =
-        let currentGroup = { en="Current group"; zh="当前分组"; ja="現在のグループ" }
-        let currentApp = { en="Current app"; zh="当前应用"; ja="現在のアプリ" }
         let position = { en="Tab position"; zh="标签位置"; ja="タブの位置" }
         let top = { en="Top"; zh="顶部"; ja="上部" }
         let showTabTitles = { en="Show tab titles"; zh="显示标签标题"; ja="タブのタイトルを表示" }

@@ -121,6 +121,8 @@ type IProgram =
     abstract member getTabColorOverride : IntPtr -> TabColorChoice option
     abstract member setTabColorOverride : (IntPtr * TabColorChoice option) -> unit
     abstract member getTabColor : IntPtr * IntPtr list -> TabColorChoice option
+    /// Every tab's colour in one call, for a group whose tabs changed.
+    abstract member getTabColors : IntPtr list * IntPtr list -> TabColorChoice option list
     abstract member appWindows : List2<IntPtr>
     abstract member getAutoGroupingEnabled : string -> bool
     abstract member setAutoGroupingEnabled : string -> bool -> unit
@@ -149,6 +151,8 @@ type IDesktop =
     abstract member groups : List2<IGroup>
     abstract member groupExited: IEvent<IGroup>
     abstract member groupRemoved: IEvent<IGroup>
+    /// A group's windows, their titles, or whether it was made by hand changed. Main thread.
+    abstract member groupChanged: IEvent<IGroup>
     abstract member foregroundGroup: IGroup option
 
 type IPlugin =

@@ -147,6 +147,7 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
     let invoker = InvokerService.invoker
     let exitedEvent = Event<_>()
     let removedEvent = Event<_>()
+    let changedEvent = Event<_>()
     let _dd = DragDropController(this :> IDragDropParent) :> IDragDrop
     
     do 
@@ -167,6 +168,11 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
                 groupCell.map(fun groups -> groups.remove group)
                 exitedEvent.Trigger ig)
             group.removed.Add <| fun _ -> dispatcher.Post(fun () -> removedEvent.Trigger ig)
+            let changed() = dispatcher.Post(fun () -> changedEvent.Trigger ig)
+            group.group.added.Add(fun _ -> changed())
+            group.group.removed.Add(fun _ -> changed())
+            group.group.tabInfoChanged.Add(fun _ -> changed())
+            group.group.madeByHand.Add changed
             TabStripDecorator(group.group).ignore
         group
 
@@ -196,6 +202,7 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
                         newGroup.isTaskbarChosen <- isTaskbarChosen
                         newGroup.ruleGroupId <- old.ruleGroupId
                         newGroup.awaitsGroupingDesktop <- old.awaitsGroupingDesktop
+                        newGroup.group.groupToken <- old.group.groupToken
                         newGroup.invokeGroup(fun() -> newGroup.group.applyMenuChoices choices)
                         group.windows.iter <| fun hwnd ->
                             newGroup.addAfterDetaching(old,hwnd))
@@ -220,6 +227,7 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
         member x.groups = this.groups.where(fun(g) -> g.isExited.not).map(fun(g) -> g.cast<IGroup>())
         member x.groupExited = exitedEvent.Publish
         member x.groupRemoved = removedEvent.Publish
+        member x.groupChanged = changedEvent.Publish
         member x.foregroundGroup
             with get() =
                 let foregroundWindow = os.foreground

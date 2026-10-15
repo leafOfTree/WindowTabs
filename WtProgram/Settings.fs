@@ -90,6 +90,15 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
 
     member this.update f = this.settings <- f(this.settings)
 
+    /// Groups made by hand, kept after their windows close. Written by the program as groups
+    /// change rather than edited on a settings page, so it stays out of the settings record.
+    member this.rememberedGroups
+        with get() = RememberedGroups.read (this.settingsJson.["rememberedGroups"])
+        and set(groups:RememberedGroup list) =
+            let json = this.settingsJson
+            json.["rememberedGroups"] <- RememberedGroups.write groups
+            this.settingsJson <- json
+
     member x.settings
         with get() =
             if cachedSettingsRec.IsNone then 

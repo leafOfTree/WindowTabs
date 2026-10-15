@@ -63,6 +63,7 @@ let main() =
             member _.getTabColorOverride _ = None
             member _.setTabColorOverride _ = ()
             member _.getTabColor(_,_) = None
+            member _.getTabColors(hwnds,_) = hwnds |> List.map(fun _ -> None)
             member _.appWindows = workspaceWindows
             member _.getAutoGroupingEnabled _ = false
             member _.setAutoGroupingEnabled _ _ = ()
@@ -496,10 +497,12 @@ let main() =
                 group.addWindow(d,false))
             check (nativeOrder combined = [a;b;d]) "Combined taskbar button failed a foreground window joining its group"
             // Without taskbar buttons of their own the windows would show on every virtual desktop;
-            // owned through distinct preview proxies, they stay on the group's desktop without sharing Peek contents.
+            // owned by distinct preview proxies, placed on the group's desktop, they stay there without
+            // sharing Peek contents. The previews have no owner, or a thumbnail click opens the group's
+            // last active tab.
             let owner hwnd = WinUserApi.GetWindow(hwnd, GetWindowConstants.GW_OWNER)
-            pumpUntil "A combined group's windows are not owned by its taskbar window" (fun () ->
-                [a;b;d] |> List.forall(fun hwnd -> owner(owner hwnd) = proxy.Head && TaskbarProxies.ownsWindow hwnd))
+            pumpUntil "A combined group's windows are not owned by its preview windows" (fun () ->
+                [a;b;d] |> List.forall(fun hwnd -> TaskbarProxies.ownsWindow hwnd && owner(owner hwnd) = IntPtr.Zero))
             check ([a;b;d] |> List.map owner |> List.distinct |> List.length = 3) "Combined tabs share a native Peek owner"
             check (FilterService().isValidOwner(OS().windowFromHwnd d)) "The filter drops windows a combined group owns"
             match WindowCloaking.TryGetDesktopId(proxy.Head) with
@@ -715,10 +718,15 @@ let main() =
                     text, { icon=Drawing.SystemIcons.Application; text=text; activate=(fun () -> previewActivations <- previewActivations+1); close=ignore
                             preview=fun thumbnail -> previewRequests.Add(text,thumbnail); Some(Img(Sz(320,200))) }
                 let info texts : TbButton =
-                    { icon=Drawing.SystemIcons.Application; text="Order"; bounds=Rect(Pt(-20000,-20000),Sz(320,200))
+                    { icon=Drawing.SystemIcons.Application; otherIcons=[]; text="Order"; bounds=Rect(Pt(-20000,-20000),Sz(320,200))
                       activate=ignore; toggleMinimizeRestore=ignore; close=ignore; tabs=List2(texts |> List.map tab) }
                 let button = new TaskBarButton(info ["a";"b"])
                 try
+                    // Owned by the taskbar window, a preview's thumbnail click opened the group's
+                    // last active tab instead of its own.
+                    check (["a";"b"] |> List.forall(fun key ->
+                        WinUserApi.GetWindow((button.tryTabWindow key).Value.hwnd,GetWindowConstants.GW_OWNER)=IntPtr.Zero))
+                        "A tab preview is owned by the group's taskbar window"
                     pumpUntil "First preview order was not sent again" (fun () -> not button.isResendingTabOrder)
                     button.update(info ["a";"b";"c"])
                     button.update(info ["a";"b"])
@@ -811,6 +819,9 @@ let main() =
                     target.dragEnd())
                 pumpUntil "Cross-orientation drag lost its insertion order" (fun () -> nativeOrder dragTarget=[b;d] && publicOrder dragTarget=[b;d])
                 check (onGroup dragTarget (fun group -> group.ts.dock)=targetDock) "Drag changed the destination orientation"
+                // Only the group a tab was dropped into is one made by hand, to be remembered.
+                check (onGroup dragTarget (fun group -> group.isManual) && not(onGroup dragSource (fun group -> group.isManual)))
+                    "A dropped tab did not mark its new group as made by hand, or a tab dragged out marked its old one"
                 for info in [dragSource;dragTarget] do
                     onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
                     (info :> IGroup).destroy()

@@ -70,6 +70,7 @@ type DispatchedDesktop(inner:IDesktop, dispatcher:IDispatcher) =
         member _.groups = dispatcher.Send(fun () -> inner.groups)
         member _.groupExited = dispatcher.Send(fun () -> inner.groupExited)
         member _.groupRemoved = dispatcher.Send(fun () -> inner.groupRemoved)
+        member _.groupChanged = dispatcher.Send(fun () -> inner.groupChanged)
         member _.foregroundGroup = dispatcher.Send(fun () -> inner.foregroundGroup)
 
 type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
@@ -86,6 +87,7 @@ type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
         member _.getTabColorOverride hwnd = inner.getTabColorOverride hwnd
         member _.setTabColorOverride value = dispatcher.Send(fun () -> inner.setTabColorOverride value)
         member _.getTabColor(hwnd,peers) = dispatcher.Send(fun () -> inner.getTabColor(hwnd,peers))
+        member _.getTabColors(hwnds,peers) = dispatcher.Send(fun () -> inner.getTabColors(hwnds,peers))
         member _.appWindows = dispatcher.Send(fun () -> inner.appWindows)
         member _.getAutoGroupingEnabled path = dispatcher.Send(fun () -> inner.getAutoGroupingEnabled path)
         member _.setAutoGroupingEnabled path enabled = dispatcher.Send(fun () -> inner.setAutoGroupingEnabled path enabled)

@@ -92,6 +92,20 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                             isReady=(fun () -> Services.has<IFilterService>() && Services.has<IProgram>())))
     /// When each new auto-grouped window was first seen before Windows placed it on a desktop.
     let awaitingDesktop = Dictionary<IntPtr,DateTime>()
+    /// Windows this run has grouped. Only the first grouping of a window restores its saved
+    /// group; later regrouping (rule edits, auto grouping turned on) must apply the new choice.
+    let groupedThisRun = HashSet<IntPtr>()
+    /// Groups made by hand, kept after their windows close.
+    let mutable remembered = settingsManager.rememberedGroups
+    /// Each window's program, looked up once.
+    let appKeys = Dictionary<IntPtr,string>()
+    /// New windows of an app with remembered windows whose title may still settle into a
+    /// remembered one: when each was first seen and the group it was put in.
+    let settling = Dictionary<IntPtr,DateTime * GroupInfo>()
+    /// Checks settling titles once a second, only while there are any.
+    let settleTimer = lifetime.Own(new System.Windows.Forms.Timer(Interval=1000))
+    /// Groups are recorded a moment after they change, once for a burst of changes.
+    let rememberSoon = lifetime.Own(new CoalescedAction(500, fun () -> this.rememberGroups()))
     let desktopRetry = lifetime.Own(new CoalescedAction(100, fun () ->
                                         for hwnd in List.ofSeq awaitingDesktop.Keys do refreshQueue.RequestWindow hwnd))
 
@@ -167,6 +181,127 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             Some(AutoGroup.pick (fun (g:IGroup) -> g.windows) processPath VirtualDesktop.groupingDesktopId groups window.hwnd)
         else None
 
+    /// A window that was in a group before WindowTabs restarted goes back to it, ahead of rules
+    /// and auto grouping, so groups made by hand are kept; the first of its group starts it again.
+    member this.restoredToken(hwnd:IntPtr) =
+        if groupedThisRun.Contains hwnd then None else WindowGroupToken.read hwnd
+
+    member private this.appKey(hwnd:IntPtr) =
+        match appKeys.TryGetValue hwnd with
+        | true,app -> app
+        | _ ->
+            let app = try os.windowFromHwnd(hwnd).pid.processPath with _ -> ""
+            appKeys.[hwnd] <- app
+            app
+
+    member private this.rememberedMember(hwnd:IntPtr) =
+        RememberedGroups.memberOf (this.appKey hwnd) (os.windowFromHwnd(hwnd).text)
+
+    member private this.liveGroupWithToken(token:int) =
+        this.desktop.groups.list |> List.tryPick(fun group ->
+            match group with
+            | :? GroupInfo as info when not info.isExited && not info.isRetiring && info.group.groupToken=token -> Some info
+            | _ -> None)
+
+    /// A window joins a group on another virtual desktop only if neither desktop is known.
+    member private this.sameDesktop (group:GroupInfo) (hwnd:IntPtr) =
+        match VirtualDesktop.groupingDesktopId hwnd with
+        | None -> true
+        | Some desktop ->
+            (group :> IGroup).windows.isEmpty ||
+            (group :> IGroup).windows.any(fun other ->
+                match VirtualDesktop.groupingDesktopId other with
+                | Some known -> known=desktop
+                | None -> true)
+
+    /// The group a window seen for the first time this run belongs back in: the one it was in
+    /// before WindowTabs restarted, else the one a window with its program and title was last in.
+    member this.savedPlacement(window:Window) =
+        match this.restoredToken window.hwnd with
+        | Some token -> Some token
+        | None when groupedThisRun.Contains window.hwnd || remembered.IsEmpty -> None
+        | None ->
+            this.rememberedMember window.hwnd
+            |> Option.bind(RememberedGroups.find remembered)
+            |> Option.filter(fun token ->
+                match this.liveGroupWithToken token with
+                | Some group -> this.sameDesktop group window.hwnd
+                | None -> true)
+
+    member this.tryRestoredGroup(window:Window) =
+        this.savedPlacement window |> Option.map(fun token ->
+            this.liveGroupWithToken token
+            |> Option.filter(fun info -> not ((info :> IGroup).windows.contains((=)window.hwnd)))
+            |> Option.map(fun info -> info :> IGroup))
+
+    /// Records the groups made by hand that are in view, and drops windows now in other groups
+    /// from them. Windows whose title may still change are left as they were.
+    member this.rememberGroups() =
+        let inView =
+            this.desktop.groups.list |> List.choose(fun group ->
+                match group with
+                | :? GroupInfo as info when not info.isExited && not info.isRetiring ->
+                    let members =
+                        group.windows.list |> List.filter(fun hwnd -> not(settling.ContainsKey hwnd))
+                        |> List.choose this.rememberedMember
+                    if members.IsEmpty then None else Some(info,members)
+                | _ -> None)
+        // A group restored from memory was made by hand, though this run did not see it made.
+        let manual (info:GroupInfo) =
+            info.group.isManual || remembered |> List.exists(fun group -> group.id=info.group.groupToken)
+        let live,elsewhere = inView |> List.partition(fst >> manual)
+        let next =
+            RememberedGroups.update DateTime.UtcNow
+                (live |> List.map(fun (info,members) -> info.group.groupToken,members))
+                (elsewhere |> List.collect snd) remembered
+        let shape (groups:RememberedGroup list) = groups |> List.map(fun group -> group.id,group.members)
+        let changed = shape next <> shape remembered
+        remembered <- next
+        if changed then settingsManager.rememberedGroups <- next
+
+    /// A window whose title has settled into a remembered one moves to that group, unless it
+    /// was moved meanwhile.
+    member private this.recheckSettling() =
+        let now = DateTime.UtcNow
+        for KeyValue(hwnd,(since,placed)) in List.ofSeq settling do
+            let current =
+                this.desktop.groups.list |> List.tryPick(fun group ->
+                    match group with
+                    | :? GroupInfo as info when group.windows.contains((=)hwnd) -> Some info
+                    | _ -> None)
+            let moved = current |> Option.forall(fun info -> not(obj.ReferenceEquals(info,placed)))
+            if not(WinUserApi.IsWindow hwnd) || now-since > TimeSpan.FromSeconds(10.0) || moved || placed.isRetiring then
+                settling.Remove hwnd |> ignore
+            elif not this.desktop.isDragging then
+                match this.rememberedMember hwnd |> Option.bind(RememberedGroups.find remembered) with
+                | Some token when token<>placed.group.groupToken ->
+                    settling.Remove hwnd |> ignore
+                    match this.liveGroupWithToken token |> Option.filter(fun target -> this.sameDesktop target hwnd) with
+                    | Some target -> target.addAfterDetaching(placed,hwnd)
+                    | None when (placed :> IGroup).windows.count=1 ->
+                        placed.group.groupToken <- token
+                        WindowGroupToken.save hwnd token
+                    | None ->
+                        let target = Services.desktop.createGroup(Services.settings.getValue("combineIconsInTaskbar").cast<bool>()) :?> GroupInfo
+                        target.group.groupToken <- token
+                        target.addAfterDetaching(placed,hwnd)
+                | _ -> ()
+
+    member private this.settleTick() =
+        this.recheckSettling()
+        if settling.Count=0 then
+            settleTimer.Stop()
+            // Windows that settled were left out of the record until now.
+            rememberSoon.Request()
+
+    /// Only groups made by hand, or restored from memory, are recorded; others change all the
+    /// time (browser titles) and need no record.
+    member private this.onGroupChanged(group:IGroup) =
+        match group with
+        | :? GroupInfo as info when info.group.isManual || remembered |> List.exists(fun saved -> saved.id=info.group.groupToken) ->
+            rememberSoon.Request()
+        | _ -> ()
+
     member this.tryGroupingRule(window:Window) =
         match AppGroupingRules.resolve settingsManager.settings.appGroupingRules window.pid.processPath "" with
         | NoGroupingRule -> None
@@ -241,6 +376,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     member this.awaitsDesktop(window:Window) =
         let hwnd = window.hwnd
         let waiting =
+            (this.savedPlacement window).IsNone &&
             ((this :> IProgram).getAutoGroupingEnabled(window.pid.processPath) ||
              AppGroupingRules.resolve settingsManager.settings.appGroupingRules window.pid.processPath "" <> NoGroupingRule) &&
             not (VirtualDesktop.isPlacedForGrouping hwnd) &&
@@ -266,6 +402,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     member this.findGroupForWindow(window:Window) : IGroup option =
         let handlers = List2([
             this.tryDropped
+            this.tryRestoredGroup
             this.tryGroupingRule
             this.tryAutoGroup
             ])
@@ -278,7 +415,13 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             | Some(group) -> (group, false)
             | None -> (Services.desktop.createGroup(Services.settings.getValue("combineIconsInTaskbar").cast<bool>()), true)
         let isDropped = isDroppedAndAwaitingGrouping.value.contains(hwnd)
-        if isNewGroup && not isDropped then
+        let restored = this.savedPlacement window
+        groupedThisRun.Add hwnd |> ignore
+        if isNewGroup then restored |> Option.iter(fun token -> (group :?> GroupInfo).group.groupToken <- token)
+        // A tab dragged out onto the desktop starts a group by hand.
+        if isNewGroup && isDropped then (group :?> GroupInfo).group.isManual <- true
+        // A restored group is where the window was put, so it does not wait to join another.
+        if isNewGroup && not isDropped && restored.IsNone then
             (group :?> GroupInfo).awaitsGroupingDesktop <-
                 (VirtualDesktop.groupingDesktopId hwnd).IsNone &&
                 ((this :> IProgram).getAutoGroupingEnabled(window.pid.processPath) ||
@@ -291,6 +434,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         isDroppedAndAwaitingGrouping.map(fun s -> s.remove hwnd)
         let withDelay = not isDropped && isNewGroup && delayTabExeNames.contains(window.pid.exeName)
         group.addWindow(hwnd, withDelay)
+        if restored.IsNone && not isDropped && RememberedGroups.hasApp remembered (AppIdentity.key (this.appKey hwnd)) then
+            settling.[hwnd] <- (DateTime.UtcNow,group :?> GroupInfo)
+            if initialDiscoveryComplete then settleTimer.Start()
 
     member this.receive message =
         match message with
@@ -299,6 +445,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             match evt with
             | ShellEvent.HSHELL_WINDOWDESTROYED ->
                 isSubscribed.Remove(hwnd)
+                groupedThisRun.Remove hwnd |> ignore
+                appKeys.Remove hwnd |> ignore
+                settling.Remove hwnd |> ignore
                 isDroppedAndAwaitingGrouping.map(fun s -> s.remove hwnd)
                 windowNameOverride <- windowNameOverride.remove hwnd
                 windowColors.remove hwnd
@@ -394,6 +543,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
         member x.shutdown() =
             settingsManager.Flush() |> ignore
+            settleTimer.Stop()
+            rememberSoon.Cancel()
+            this.rememberGroups()
             inShutdown.set(true)
             // Keep group ownership intact until its exit preparation restores native desktop records.
             this.desktop.groups.iter(fun group -> group.destroy())
@@ -412,6 +564,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         member x.getTabColor(hwnd,peers) =
             let path = windowColors.path hwnd (fun () -> try os.windowFromHwnd(hwnd).pid.processPath with _ -> "")
             windowColors.resolve hwnd path settingsManager.settings.tabColorMode settingsManager.settings.appTabColors peers
+
+        member x.getTabColors(hwnds,peers) = hwnds |> List.map(fun hwnd -> (x :> IProgram).getTabColor(hwnd,peers))
 
         member x.appWindows = 
             os.windowsInZorder.where(this.isAppWindow).map(fun w -> w.hwnd)
@@ -474,6 +628,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         StartupPlugins.initialize plugins.list (fun () ->
             this.refresh()
             initialDiscoveryComplete <- true
+            settleTimer.Tick.Add(fun _ -> this.settleTick())
+            if settling.Count>0 then settleTimer.Start()
+            Services.desktop.groupChanged.Add this.onGroupChanged
             this.updateTaskSwitcher(Services.settings.getValue("replaceAltTab")))
 
     member this.run(plugins:List2<IPlugin>) =

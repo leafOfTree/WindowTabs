@@ -78,8 +78,10 @@ module TaskbarProxies =
     let ownsWindow (hwnd:IntPtr) = contains (WinUserApi.GetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT))
 
 /// A group's taskbar icon: the app's icon with the WindowTabs badge at the bottom right, as in
-/// the window switcher. Windows 11 draws an overlay icon at the top right instead.
-type TaskbarBadgedIcon(icon:Icon) =
+/// the window switcher. Windows 11 draws an overlay icon at the top right instead. In a group
+/// of several apps the badge is the next app's icon instead, so the front app keeps its full size.
+type TaskbarBadgedIcon(icon:Icon, ?stacked:Icon list) =
+    let others = defaultArg stacked [] |> List.truncate TaskbarBadgedIcon.maxStacked
     // Some apps give a 256 pixel icon, which the Windows Alt+Tab drew across a group's whole tile.
     let size = min 64 (max 32 icon.Width)
     let handle =
@@ -89,16 +91,42 @@ type TaskbarBadgedIcon(icon:Icon) =
             g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
             use app = icon.ToBitmap()
             g.DrawImage(app,Rectangle(0,0,size,size))
-            use badgeIcon = Services.openIcon("Bemo.ico")
-            use badge = badgeIcon.ToBitmap()
-            // Leave more of the application visible, with the badge tucked into the right corner.
-            let side = size*7/12
-            // The badge's transparent margin otherwise keeps its visible edge inset.
-            let rightOffset = size/12
-            g.DrawImage(badge,Rectangle(size-side+rightOffset,size-side,side,side))
+            match others with
+            | other :: _ ->
+                // A clear ring round the corner icon keeps it apart from the front app's. One
+                // pixel at taskbar size: a wider one read as a dark border on the taskbar.
+                let side = size*7/16
+                let gap = max 1 (size/32)
+                let corner = size-side
+                use ring = new Drawing2D.GraphicsPath()
+                // Half a pixel further out, so the ring's first column is cleared whole.
+                let x,span = float32(corner-gap)-0.5f,float32(side+2*gap)+0.5f
+                let d = span*0.4f
+                ring.AddArc(x,x,d,d,180.0f,90.0f)
+                ring.AddArc(x+span-d,x,d,d,270.0f,90.0f)
+                ring.AddArc(x+span-d,x+span-d,d,d,0.0f,90.0f)
+                ring.AddArc(x,x+span-d,d,d,90.0f,90.0f)
+                ring.CloseFigure()
+                use clear = new SolidBrush(Color.Transparent)
+                g.CompositingMode <- Drawing2D.CompositingMode.SourceCopy
+                g.FillPath(clear,ring)
+                g.CompositingMode <- Drawing2D.CompositingMode.SourceOver
+                use image = other.ToBitmap()
+                g.DrawImage(image,Rectangle(corner,corner,side,side))
+            | [] ->
+                use badgeIcon = Services.openIcon("Bemo.ico")
+                use badge = badgeIcon.ToBitmap()
+                // Leave more of the application visible, with the badge tucked into the right corner.
+                let side = size*7/12
+                // The badge's transparent margin otherwise keeps its visible edge inset.
+                let rightOffset = size/12
+                g.DrawImage(badge,Rectangle(size-side+rightOffset,size-side,side,side))
         canvas.GetHicon()
     let badged = Icon.FromHandle(handle)
+    /// The other apps' icons shown: one, in the corner, which is all a taskbar icon has room for.
+    static member maxStacked = 1
     member _.source = icon
+    member _.stacked = others
     member _.icon = badged
     interface IDisposable with
         member _.Dispose() =
@@ -193,6 +221,8 @@ type TabCaptures() =
 
 type TbButton = {
     icon : Icon
+    /// The icons of the group's other apps, front-most first.
+    otherIcons : Icon list
     text : string
     bounds : Rect
     activate : unit -> unit
@@ -331,9 +361,13 @@ type TaskBarButton(info) as this =
         infoCell.set(Some(info))
 
         // Notify the shell before the group releases its previous icon copies.
-        if badgedIcon |> Option.exists(fun badged -> obj.ReferenceEquals(badged.source,info.icon)) |> not then
+        let sameIcons (badged:TaskbarBadgedIcon) =
+            let others = List.truncate TaskbarBadgedIcon.maxStacked info.otherIcons
+            obj.ReferenceEquals(badged.source,info.icon) &&
+            badged.stacked.Length=others.Length && List.forall2 (fun a b -> obj.ReferenceEquals(a,b)) badged.stacked others
+        if badgedIcon |> Option.exists sameIcons |> not then
             let previous = badgedIcon
-            let badged = new TaskbarBadgedIcon(info.icon)
+            let badged = new TaskbarBadgedIcon(info.icon,info.otherIcons)
             badgedIcon <- Some badged
             this.window.setIcons(badged.icon)
             previous |> Option.iter(fun icon -> (icon :> IDisposable).Dispose())
@@ -397,6 +431,9 @@ type TaskBarButton(info) as this =
     member this.createDwmWindow (dwmWindow:DwmWindow) : Window =
         let wndProc m =
             let ({hwnd=hwnd; msg=msg; wParam=wParam; lParam=lParam}) = m
+            // WM_ACTIVATE, WM_SHOWWINDOW, WM_ACTIVATEAPP, WM_MOUSEACTIVATE, WM_SYSCOMMAND
+            if msg=0x06 || msg=0x18 || msg=0x1C || msg=0x21 || msg=0x112 then
+                TaskbarPreviewTrace.write "message" hwnd "" (sprintf "msg=0x%X wParam=0x%X" msg (wParam.ToInt64()))
             match msg with
             | WindowMessages.WM_ACTIVATE ->
                 if WinDefApi.LOWORD(wParam) = int16(ActivateStateValues.WA_ACTIVE) then 
@@ -424,6 +461,9 @@ type TaskBarButton(info) as this =
 
     /// The windows this button holds: its own and one per tab.
     member this.windowCount = windows.Count
+
+    /// Each tab's preview window, which owns that tab's application window.
+    member this.tabWindowHandles = tabWindowsCell.value.values.list |> List.map(fun (tab:TaskbarTab) -> tab.window.hwnd)
 
     interface IDisposable with
         member this.Dispose() =
@@ -481,7 +521,9 @@ and TaskbarTab(parent:TaskBarButton, config,size,key) =
                 | _ -> msg.def()
         }
 
-    do _window.setOwner(parent.window)
+    // No owner: Windows hands a thumbnail click to the last active window under the clicked
+    // window's top owner. Owned by the group's taskbar window, every thumbnail opened the
+    // group's last active tab instead of its own. The plugin keeps it on the group's desktop.
 
     member this.adoptWindow hwnd =
         if WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)<>_window.hwnd then
@@ -567,6 +609,8 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
             if visible then _taskbar.AddTab(hwnd) else _taskbar.DeleteTab(hwnd)))
 
     let mutable taskbarButton = null
+    /// Each member's program, looked up once: the icon is rebuilt on every title change.
+    let apps = Collections.Generic.Dictionary<IntPtr,string>()
     /// The preview last shown as active, None while the group is not in front.
     let mutable activePreview : IntPtr option = None
     let flashingTabs = Collections.Generic.HashSet<string>()
@@ -578,10 +622,13 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
     /// The taskbar window last placed on the group's desktop.
     let mutable placedOwner = IntPtr.Zero
     let desktopOf = defaultArg desktopOf VirtualDesktop.groupingDesktopId
-    let placeDesktop = defaultArg placeDesktop (fun (owner,desktop) ->
+    let moveToDesktop (owner,desktop) =
         match WindowCloaking.TryGetDesktopId(owner) with
         | true,current when current=desktop -> true
-        | _ -> WindowCloaking.MoveToDesktop(owner,desktop))
+        | _ -> WindowCloaking.MoveToDesktop(owner,desktop)
+    let placeDesktop = defaultArg placeDesktop moveToDesktop
+    /// Preview windows already on the group's desktop.
+    let placedTabs = Collections.Generic.HashSet<IntPtr>()
     let placementRetry = new System.Windows.Forms.Timer(Interval=1000)
     let placementAttempts = TaskbarPlacementAttempts()
     let mutable placementMembers = Set.empty
@@ -614,6 +661,14 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
     /// The proxy must not attach an application's input queue across integrity levels.
     member private this.canCombine = this.members.count > 1 && this.members.all canShareInput
 
+    member private this.appOf(hwnd:IntPtr) =
+        match apps.TryGetValue hwnd with
+        | true,app -> app
+        | _ ->
+            let app = try AppIdentity.key(this.os.windowFromHwnd(hwnd).pid.processPath) with _ -> ""
+            apps.[hwnd] <- app
+            app
+
     member private this.showInTaskbar(hwnd, visible) =
         if visible then
             this.release hwnd
@@ -634,6 +689,18 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
                              WindowCloaking.IsConcreteDesktopId target && placeDesktop(owner,target)))
             if placed then
                 placedOwner <- owner
+                // Each application follows the desktop of the preview that owns it, so the
+                // previews go to the group's desktop before they take their applications.
+                let tabs = taskbarButton.tabWindowHandles
+                placedTabs.IntersectWith(tabs)
+                let target =
+                    desktop |> Option.orElse(
+                        match WindowCloaking.TryGetDesktopId(owner) with
+                        | true,current -> Some current
+                        | _ -> None)
+                target |> Option.filter WindowCloaking.IsConcreteDesktopId |> Option.iter(fun target ->
+                    for tab in tabs do
+                        if not(placedTabs.Contains tab) && moveToDesktop(tab,target) then placedTabs.Add tab |> ignore)
                 this.members.iter <| fun hwnd ->
                     taskbarButton.adoptWindow hwnd
                     if adopted.Add hwnd then
@@ -656,6 +723,7 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
             taskbarButton <- null
             activePreview <- None
             placedOwner <- IntPtr.Zero
+            placedTabs.Clear()
 
     member private this.retryPlacement() =
         placementRetry.Stop()
@@ -695,6 +763,11 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
                     text = this.ts.tabInfo(topTab).text
                     bounds = previewBounds
                     icon = this.ts.tabInfo(topTab).iconBig
+                    otherIcons =
+                        let topApp = this.appOf top
+                        members.list |> List.filter(fun hwnd -> this.appOf hwnd <> topApp)
+                        |> List.distinctBy this.appOf |> List.truncate TaskbarBadgedIcon.maxStacked
+                        |> List.map(fun hwnd -> this.ts.tabInfo(Tab(hwnd)).iconBig)
                     activate = fun() -> this.invokeAsync <| fun() ->
                         this.tabActivate(Tab(this.members.head), true)
                     toggleMinimizeRestore = fun() -> 
@@ -725,8 +798,13 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
                                             captures.preview hwnd area.size.Size window.isMinimized (this.zorder.tryHead = Some hwnd) (fun () -> this.ts.tabInfo(tab).preview()))
                                         (fun () -> if stripShown then this.ts.renderTs(Some(tab)) else Img(Sz(1,1))))
                                 with _ -> None
-                            activate = fun() -> this.invokeAsync <| fun() ->
-                                this.tabActivate(tab, false)
+                            activate = fun() ->
+                                let (Tab(hwnd)) = tab
+                                TaskbarPreviewTrace.write "tab-activate" hwnd "" ""
+                                this.invokeAsync <| fun() ->
+                                    this.tabActivate(tab, false)
+                                    TaskbarPreviewTrace.write "tab-activated" hwnd ""
+                                        (sprintf "foreground=%d" (WinUserApi.GetForegroundWindow().ToInt64()))
                             text = this.ts.tabInfo(tab).text
                             icon = this.ts.tabInfo(tab).iconSmall
                         }
@@ -776,6 +854,7 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
 
     member this.onRemoved(hwnd) =
         captures.forget hwnd
+        apps.Remove hwnd |> ignore
         flashingTabs.Remove(TaskBarButton.key hwnd) |> ignore
         this.updateTaskbar()
         this.showInTaskbar(hwnd, true)

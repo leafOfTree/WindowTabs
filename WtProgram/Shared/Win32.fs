@@ -682,6 +682,14 @@ and Pid(pid:int) =
 
     member this.exeName = Path.GetFileName(this.processPath).ToLower()
 
+    /// The program's own description (e.g. "Windows Explorer"), or its file name without ".exe".
+    member this.appName = Cell.cacheProp this <| fun() ->
+        let description =
+            try System.Diagnostics.FileVersionInfo.GetVersionInfo(this.processPath).FileDescription
+            with _ -> null
+        if String.IsNullOrWhiteSpace description then Path.GetFileNameWithoutExtension(this.processPath)
+        else description.Trim()
+
 and Win32Message = {
     hwnd : IntPtr
     msg : int

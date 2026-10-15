@@ -199,6 +199,31 @@ let main() =
         (capped :> IDisposable).Dispose()
         WinUserApi.DestroyIcon(hugeHandle) |> ignore
         check (width = 64) (sprintf "A 256 pixel app icon made a %d pixel taskbar icon" width)
+    // A group of several apps keeps the front app's icon whole and shows the next app's icon in
+    // the bottom right corner, set apart by a one pixel clear ring.
+    do
+        use blue = new Bitmap(32,32)
+        do
+            use g = Graphics.FromImage(blue)
+            g.Clear(Color.FromArgb(255,0,0,200))
+        let blueHandle = blue.GetHicon()
+        use other = Icon.FromHandle(blueHandle)
+        let stacked = new TaskbarBadgedIcon(app,[other])
+        use pixels = stacked.icon.ToBitmap()
+        let isOther (c:Color) = c.A=255uy && c.B>190uy && c.R<10uy && c.G<10uy
+        check (pixels.Width=32 && isAppColour(pixels.GetPixel(2,2)) && isAppColour(pixels.GetPixel(29,2)) && isAppColour(pixels.GetPixel(2,29)))
+            "The front app's icon is not shown at full size"
+        check (isOther(pixels.GetPixel(25,25)) && isOther(pixels.GetPixel(30,30)) && isAppColour(pixels.GetPixel(16,16))) "The other app's icon is not in the bottom right corner"
+        check (pixels.GetPixel(17,26).A=0uy && pixels.GetPixel(26,17).A=0uy) "No clear ring parts the corner icon from the front one"
+        check (isAppColour(pixels.GetPixel(16,26)) && isAppColour(pixels.GetPixel(26,16)) && isOther(pixels.GetPixel(20,20))) "The ring round the corner icon is wider than a pixel"
+        // Further apps add nothing: the corner holds one icon and the front one stays clear.
+        let more = new TaskbarBadgedIcon(app,[other;other;other])
+        use morePixels = more.icon.ToBitmap()
+        check (more.stacked.Length = TaskbarBadgedIcon.maxStacked) "More app icons were kept than the taskbar icon shows"
+        check (isAppColour(morePixels.GetPixel(16,22)) && isAppColour(morePixels.GetPixel(22,16))) "Further apps covered the front app's icon"
+        (more :> IDisposable).Dispose()
+        (stacked :> IDisposable).Dispose()
+        WinUserApi.DestroyIcon(blueHandle) |> ignore
     WinUserApi.DestroyIcon(appHandle) |> ignore
     // A hidden Chromium tab prints blank: its last capture from the front stands in for it,
     // and it is not printed again until it has been in front.

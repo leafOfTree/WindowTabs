@@ -658,6 +658,8 @@ type TabStripSprite<'id> when 'id : equality = {
             Some(Rect(Pt(track.x,y),Sz(track.width,height)))
 
     member private this.tabOverlap = float(this.appearance.tabOverlap)
+    /// Tab spacing is stored as a negative overlap; any gap at all parts the tabs.
+    member private this.isSpaced = not this.isVertical && this.appearance.tabOverlap < 0
     member private this.tabMaxLen = float(this.appearance.tabMaxWidth)
 
     // A tab is "plain" when nothing about it is already drawing a fill that
@@ -690,19 +692,20 @@ type TabStripSprite<'id> when 'id : equality = {
             dock = this.dock
             direction = this.direction
             showLeftSeparator =
-                // Never before the first tab, and never where either side is
+                // Never before the first tab, never across a gap, and never where either side is
                 // already set apart by its own fill.
                 match this.indexOf tab with
                 | Some(index) when index > 0 ->
-                    not this.isVertical && this.isPlain(tab) && this.isPlain(this.lorder.at(index - 1))
+                    not this.isVertical && not this.isSpaced && this.isPlain(tab) && this.isPlain(this.lorder.at(index - 1))
                 | _ -> false
+            // Spaced tabs stand apart, so each is rounded at both ends like the whole strip.
             roundLeft =
                 match this.indexOf tab with
-                | Some(index) -> index = 0
+                | Some(index) -> this.isSpaced || index = 0
                 | None -> false
             roundRight =
                 match this.indexOf tab with
-                | Some(index) -> index = this.lorder.length - 1
+                | Some(index) -> this.isSpaced || index = this.lorder.length - 1
                 | None -> false
             hover = 
                 match this.hover with

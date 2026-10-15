@@ -154,6 +154,18 @@ module WindowTabLayout =
             let dock = match int((value >>> 9) &&& 3L) with 0 -> TabDockTop | 1 -> TabDockBottom | 2 -> TabDockLeft | _ -> TabDockRight
             Some {dock=dock;columnWidth=width;normalAlignment=alignment normal;insideAlignment=alignment inside}
 
+/// Which group a window was in, kept on the window itself, so a restarted WindowTabs puts
+/// windows back together as they were, however they came to be grouped.
+module WindowGroupToken =
+    let private key = "WindowTabs.Group.v1"
+    let private random = Random()
+    let fresh() = lock random (fun () -> random.Next(1,Int32.MaxValue))
+    let save hwnd (token:int) = WinUserApi.SetProp(hwnd,key,IntPtr(token)) |> ignore
+    let read hwnd =
+        match WinUserApi.GetProp(hwnd,key).ToInt64() with
+        | value when value>0L && value<=int64 Int32.MaxValue -> Some(int value)
+        | _ -> None
+
 /// What a group's tab menu chose for that group alone, carried over when the group is rebuilt.
 type GroupMenuChoices = {
     iconOnly: bool
@@ -169,6 +181,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let invoker = InvokerService.invoker
     let _os = OS()
     let mutable hasSavedTabLayout = false
+    let mutable token = WindowGroupToken.fresh()
     let addedEvent = Event<_>()
     let movedEvent = Event<IntPtr*int>()
     let removedEvent = Event<_>()
@@ -180,6 +193,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let foregroundEvent = Event<_>()
     let geometryChangedEvent = Event<unit>()
     let tabInfoChangedEvent = Event<IntPtr>()
+    let madeByHandEvent = Event<unit>()
+    let mutable isMadeByHand = false
     // Supplied by the caller: the main thread waits while this constructor runs.
     // Calling the settings service here would synchronously invoke that blocked thread.
     let mutable logicalAppearance = initialAppearance
@@ -246,6 +261,20 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         zorderCell.value.any((=) foregroundCell.value)
 
     member this.isSuperBarEnabled = enableSuperBar
+    /// A tab was dragged into it, or it was made by dragging a tab out: only such groups are
+    /// remembered after their windows close, as rules and auto grouping remake the others.
+    member this.isManual
+        with get() = isMadeByHand
+        and set value =
+            let changed = value && not isMadeByHand
+            isMadeByHand <- value
+            if changed then madeByHandEvent.Trigger()
+    /// The group became one made by hand, after the tabs that made it so had joined.
+    member this.madeByHand = madeByHandEvent.Publish
+    /// Saved on each window it holds; a group restored after a restart takes its windows' token.
+    member this.groupToken
+        with get() = System.Threading.Volatile.Read(&token)
+        and set value = System.Threading.Volatile.Write(&token,value)
 
     member private this.finishPlacementReconciliation() =
         if not isDestroyed.value then
@@ -555,8 +584,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         this.fetchTabColor hwnd
         this.tintTab this.tintsDark hwnd
 
+    /// One call to the main thread for the whole group: a call per tab made adding each
+    /// window to a large group at startup cost a round trip for every tab already in it.
     member private this.refreshTabColors() =
-        this.windows.items.iter this.fetchTabColor
+        let order = this.lorder.list
+        let hwnds = this.windows.items.list
+        let peers = order @ (hwnds |> List.filter(fun hwnd -> not(List.contains hwnd order)))
+        let colors = Services.program.getTabColors(hwnds,peers)
+        tabColors <- List.zip hwnds colors |> List.fold (fun known (hwnd,color) ->
+            match color with
+            | Some color -> known.Add(hwnd,color)
+            | None -> known.Remove hwnd) tabColors
         this.applyTabColors()
 
     member this.tabColor hwnd = tabColors.TryFind hwnd
@@ -868,6 +906,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             let window = this.os.windowFromHwnd(hwnd)
             if this.windows.isEmpty && not hasSavedTabLayout then WindowTabLayout.read hwnd |> Option.iter this.applyTabLayout
             this.setWindows(this.windows.add hwnd)
+            WindowGroupToken.save hwnd this.groupToken
             FollowerPlacement.queue.claim(placementOwner,hwnd)
             if prevTop.value.IsNone then
                 prevTop.set(Some(hwnd))
@@ -894,20 +933,18 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                         member this.Dispose() = hooks.iter(fun h -> h.Dispose())
                 }
             hookCleanup.map(fun hooks -> hooks.add hwnd dispose)
-            this.setTabInfo hwnd
-
-
-            this.ts.addTab(Tab(hwnd))
-            this.refreshTabColors()
+            StartupTrace.measure "group.add.info" (fun () -> this.setTabInfo hwnd)
+            StartupTrace.measure "group.add.strip" (fun () -> this.ts.addTab(Tab(hwnd)))
+            StartupTrace.measure "group.add.colors" this.refreshTabColors
             // Only a window that opens in the foreground has an opener. Windows found at
             // startup or dropped in the background then close like any other tab.
             let foreground = this.os.foreground.hwnd
             if foreground=hwnd then
                 opener <- lastActiveTab |> Option.filter(fun owner -> owner<>hwnd && this.windows.contains(owner) && isOpen owner) |> Option.map(fun owner -> hwnd,owner)
             lastActiveTab <- TabNavigation.rememberActive this.lorder.list isOpen lastActiveTab foreground
-            this.adjustWindowPlacement(hwnd)
+            StartupTrace.measure "group.add.placement" (fun () -> this.adjustWindowPlacement(hwnd))
             if hasSavedTabLayout then WindowTabLayout.save hwnd this.tabLayout
-            addedEvent.Trigger(hwnd)
+            StartupTrace.measure "group.add.notify" (fun () -> addedEvent.Trigger(hwnd))
             // A visible window joining a minimized group restores it, as restoring any tab does,
             // so closing that window shows the previous tab instead of minimizing the group again.
             let others = this.windows.items.where((<>) hwnd)

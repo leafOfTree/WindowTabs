@@ -89,6 +89,7 @@
     <Compile Include="TabStrip.fs" />
     <Compile Include="AppearanceJson.fs" />
     <Compile Include="SettingsFileStore.fs" />
+    <Compile Include="RememberedGroups.fs" />
     <Compile Include="Settings.fs" />
     <Compile Include="WindowDecorator.fs" />
     <Compile Include="OleDropTarget.fs" />
