@@ -411,6 +411,8 @@ module Strings =
         let notRunning count = { en=sprintf "Not running (%d)" count; zh=sprintf "未运行 (%d)" count; ja=sprintf "実行していないアプリ (%d)" count }
         /// ApplicationFrameHost.exe, which hosts every Store (UWP) app: Settings, Calculator, Photos.
         let windowsApps = { en="Windows apps"; zh="Windows 应用"; ja="Windows アプリ" }
+        /// A group made by dragging tabs together, shown read-only beside the named groups.
+        let handMadeGroup = { en="Dragged together"; zh="拖拽形成"; ja="ドラッグでまとめたグループ" }
         /// Between the running-app choice and Browse.
         let orBrowse = { en="or"; zh="或"; ja="または" }
         let scanning = { en="Scanning…"; zh="正在扫描…"; ja="スキャン中…" }

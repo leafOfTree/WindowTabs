@@ -324,6 +324,9 @@ let main() =
     let rejected = SettingsShortcut.encode (Keys.Control ||| Keys.B)
     let grouping = Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
     let mouse = Event<int32 * IntPtr>()
+    // One group made by dragging tabs, as the program remembers it, and the ones taken apart.
+    let handMade = ref [4711,["NOTEPAD.EXE","Notes - Notepad";"EXPLORER.EXE","Downloads"]]
+    let ungrouped = Collections.Generic.List<int>()
     Services.register<IProgram>({new IProgram with
         member _.version = "test"
         member _.isFirstRun = false
@@ -336,6 +339,10 @@ let main() =
         member _.setTabColorOverride _ = ()
         member _.getTabColor(_,_) = None
         member _.getTabColors(hwnds,_) = hwnds |> List.map(fun _ -> None)
+        member _.handMadeGroups() = handMade.Value
+        member _.ungroupHandMade id =
+            ungrouped.Add id
+            handMade.Value <- handMade.Value |> List.filter(fun (group,_) -> group<>id)
         member _.appWindows = List2()
         member _.getAutoGroupingEnabled path = lock grouping (fun () -> grouping.Contains path)
         member _.setAutoGroupingEnabled path enabled =
@@ -754,6 +761,8 @@ let main() =
         rules.Value <- filter
     // Application mappings stay below the app list and save without a dialog.
     for mode in [LightTheme;DarkTheme] do
+        handMade.Value <- [4711,["NOTEPAD.EXE","Notes - Notepad";"EXPLORER.EXE","Downloads"]]
+        ungrouped.Clear()
         let appTabs = Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
         rules.Value <- {new IFilterService with
             member _.isAppWindow hwnd = filter.isAppWindow hwnd
@@ -860,12 +869,15 @@ let main() =
                     && alternative.[0].BackColor=Color.Transparent)
                    "Nothing between the running-app choice and Browse says they are alternatives"
         choice.SelectedIndex <- 1+Array.findIndex ((=)selectedPath) application.Applications
-        assertTrue (saved().Length=1 && saved().Head.processPath=selectedPath && saved().Head.groupId=groupA && saved().Head.matchType= -1 && tree.Roots.[0].Children.Count=1)
-                   "An app-only mapping was not added beneath its group"
+        // One row a group: its apps are chips after its name, not rows beneath it.
+        assertTrue (saved().Length=1 && saved().Head.processPath=selectedPath && saved().Head.groupId=groupA && saved().Head.matchType= -1
+                    && tree.Roots.[0].Children.Count=0 && tree.Roots.[0].Chips.Length=1 && tree.Roots.[0].Chips.Head.Removable
+                    && tree.Roots.[0].Chips.Head.Text=IO.Path.GetFileName selectedPath)
+                   "An app was not added to its group as a chip on the group's row"
         clickAction tree.Roots.[0] 0
         let cancelChoice = application.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as choice -> Some choice | _ -> None)
         key cancelChoice Keys.Escape
-        assertTrue (tree.Roots.[0].Children.Count=1 && saved().Length=1) "Cancelling an empty application row changed saved mappings"
+        assertTrue (tree.Roots.[0].Children.Count=0 && tree.Roots.[0].Chips.Length=1 && saved().Length=1) "Cancelling an empty application row changed saved mappings"
         assertTrue (Application.OpenForms.Count=opened) "Editing group applications opened another window"
         let appList = descendants view.control |> Seq.pick(function :? SettingsTreeList as list -> Some list | _ -> None)
         let clock = Diagnostics.Stopwatch.StartNew()
@@ -879,38 +891,37 @@ let main() =
         clickAction tree.Roots.[1] 0
         let groupBPicker = application
         selectApplication groupBPicker selectedPath
-        assertTrue (saved().Length=1 && saved().Head.groupName="Group B" && tree.Roots.[0].Children.Count=0 && tree.Roots.[1].Children.Count=1)
-                   (sprintf "Moving an application to another group created duplicate grouping rules: %A children %d/%d picker visible %b roots %d"
-                        (saved() |> List.map(fun rule -> rule.groupName,IO.Path.GetFileName rule.processPath)) tree.Roots.[0].Children.Count tree.Roots.[1].Children.Count
+        assertTrue (saved().Length=1 && saved().Head.groupName="Group B" && tree.Roots.[0].Chips.IsEmpty && tree.Roots.[1].Chips.Length=1)
+                   (sprintf "Moving an application to another group created duplicate grouping rules: %A chips %d/%d picker visible %b roots %d"
+                        (saved() |> List.map(fun rule -> rule.groupName,IO.Path.GetFileName rule.processPath)) tree.Roots.[0].Chips.Length tree.Roots.[1].Chips.Length
                         groupBPicker.Visible tree.Roots.Count)
-        tree.SelectedItem <- tree.Roots.[1].Children.[0]
+        // The group's box turns all its apps on or off.
+        tree.SelectedItem <- tree.Roots.[1]
         typeof<SettingsTreeList>.GetMethod("toggleCheck",BindingFlags.Instance ||| BindingFlags.NonPublic).Invoke(tree,[|box tree.SelectedItem;box 1|]) |> ignore
-        assertTrue (not(saved().Head.enabled)) "The application tree checkbox did not save disabled state"
+        assertTrue (not(saved().Head.enabled)) "The group's checkbox did not save its apps as disabled"
         clock.Restart()
         while (mapped() |> Option.forall(fun row -> not(row.checkEnabled 2))) && clock.ElapsedMilliseconds<5000L do Application.DoEvents(); Threading.Thread.Sleep(20)
         assertTrue (mapped() |> Option.exists(fun row -> row.checkEnabled 2 && row.check 2=Some false)) "Disabling a group application did not unlock Group by app"
-        clickAction tree.Roots.[1].Children.[0] 1
-        let inlinePicker = tree.Controls |> Seq.cast<Control> |> Seq.pick(function :? GroupingApplicationPicker as picker when picker.Name="" -> Some picker | _ -> None)
-        assertTrue inlinePicker.Visible "Clicking Edit did not edit the application directly in its row"
-        assertTrue (inlinePicker.Width>Dpi.scale 400 && inlinePicker.Height=Dpi.scale tree.RowHeight-2*Dpi.scale 3)
-                   "The application editor is squeezed into a narrow name cell or touches row edges"
-        inlinePicker.UpdateApplications [selectedPath;@"C:\Apps\replacement.exe"]
-        let inlineChoice = inlinePicker.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as choice -> Some choice | _ -> None)
-        inlineChoice.SelectedIndex <- 1+Array.findIndex ((=)@"C:\Apps\replacement.exe") inlinePicker.Applications
-        assertTrue (saved().Head.processPath= @"C:\Apps\replacement.exe" && saved().Head.groupId=targets().[1].id && not (saved().Head.enabled))
-                   "Editing an application row did not preserve its target group and enabled state"
         form.PerformLayout()
         Application.DoEvents()
         assertTrue (groupView.Height<=Dpi.scale 244 && groupView.Bottom<=view.control.ClientSize.Height)
                    (sprintf "Grouping tree is outside the page: %A in %A" groupView.Bounds view.control.ClientSize)
-        // The section is as tall as its rows, up to a limit: collapsing a group shrinks it.
-        let expandedGroup = tree.Roots |> Seq.find(fun row -> row.Children.Count>0 && row.Expanded)
-        let fullHeight = groupView.Height
-        tree.SetExpanded(expandedGroup,false)
-        let collapsedHeight = groupView.Height
-        tree.SetExpanded(expandedGroup,true)
-        assertTrue (collapsedHeight<fullHeight && groupView.Height=fullHeight)
-                   (sprintf "Groups across apps did not follow its rows: %d expanded, %d collapsed, %d again" fullHeight collapsedHeight groupView.Height)
+        // The section is as tall as its rows, up to a limit: the row picking an app makes it taller.
+        let baseHeight = groupView.Height
+        clickAction tree.Roots.[1] 0
+        Application.DoEvents()
+        let pickingHeight = groupView.Height
+        key (groupBPicker.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as choice -> Some choice | _ -> None)) Keys.Escape
+        Application.DoEvents()
+        assertTrue (pickingHeight>baseHeight && groupView.Height=baseHeight)
+                   (sprintf "Groups across apps did not follow its rows: %d, %d while picking, %d again" baseHeight pickingHeight groupView.Height)
+        // Groups made by dragging tabs show after the named ones, read only, and come apart in one go.
+        let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Text=tr Strings.AppRules.handMadeGroup)
+        assertTrue (handMadeRow.SeparatorAbove && handMadeRow.Checks |> Array.forall Option.isNone
+                    && handMadeRow.Chips |> List.map(fun chip -> chip.Text)=["Notes - Notepad";"Downloads"]
+                    && handMadeRow.Chips |> List.forall(fun chip -> not chip.Removable)
+                    && handMadeRow.Actions=Some [NoGlyph;NoGlyph;UngroupGlyph])
+                   "A group made by dragging tabs is missing, editable, or cannot be taken apart"
         use image = new Bitmap(form.Width,form.Height)
         form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
         image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "grouping-app-tree-%A.png" mode))
@@ -930,16 +941,29 @@ let main() =
             window.Close())
         key groupChoice Keys.Escape
         tree.Focus() |> ignore
-        tree.SelectedItem <- tree.Roots.[1].Children.[0]
-        key tree Keys.Delete
-        assertTrue (saved().IsEmpty && targets().Length=2) "Deleting a group application deleted the group root"
+        // An app leaves its group by the x on its chip, found where the list draws it.
+        let removeChip (item:TreeListItem) =
+            tree.EnsureVisible(item)
+            let rowTop = [0..tree.Height-1] |> List.find(fun y -> tree.ItemAt(Point(Dpi.scale 20,y)) |> Option.exists(fun row -> obj.ReferenceEquals(row,item)))
+            let y = rowTop+Dpi.scale (tree.RowHeight/2)
+            let closeAt = typeof<SettingsTreeList>.GetMethod("chipCloseAt",BindingFlags.Instance ||| BindingFlags.NonPublic)
+            let x = [0..tree.Width-1] |> List.find(fun x -> not(isNull (closeAt.Invoke(tree,[|box (Point(x,y))|]))))
+            let mouse = new MouseEventArgs(MouseButtons.Left,1,x+Dpi.scale 2,y,0)
+            typeof<SettingsTreeList>.GetMethod("OnMouseDown",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(tree,[|box mouse|]) |> ignore
+        removeChip tree.Roots.[1]
+        assertTrue (saved().IsEmpty && targets().Length=2) "Removing an app's chip deleted the group or kept the app"
         groupView.Reload()
-        assertTrue (tree.Roots.Count=2 && tree.Roots.[1].Children.Count=0) "An empty group was lost on reload"
+        assertTrue (tree.Roots |> Seq.filter(fun row -> row.Text<>tr Strings.AppRules.handMadeGroup) |> Seq.length=2 && tree.Roots.[1].Chips.IsEmpty) "An empty group was lost on reload"
         clickAction tree.Roots.[1] 0
         selectApplication groupBPicker selectedPath
         tree.SelectedItem <- tree.Roots.[1]
         key tree Keys.Delete
         assertTrue (saved().IsEmpty && targets().Length=1) "Deleting a group left its application mappings behind"
+        // Taking a group made by hand apart forgets it, through the program, and drops its row.
+        let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Text=tr Strings.AppRules.handMadeGroup)
+        clickAction handMadeRow 2
+        assertTrue (List.ofSeq ungrouped=[4711] && tree.Roots |> Seq.forall(fun row -> row.Text<>tr Strings.AppRules.handMadeGroup))
+                   "Ungrouping a group made by hand did not forget it or kept its row"
         form.Close()
         rules.Value <- filter
     printfn "PASS: input validation, no-op changes, HSV colours, repeated popup dismissal, shortcut recording, grouping rule editors and light/dark renders."

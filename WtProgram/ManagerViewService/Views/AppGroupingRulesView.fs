@@ -121,7 +121,8 @@ type GroupingApplicationPicker(initialPath:string) as this =
     member _.SelectionChanged = selectionChanged.Publish
     member _.CancelRequested = cancelRequested.Publish
 
-type private GroupApplicationNode = GroupNode of string | ApplicationNode of string | PendingApplicationNode of string
+/// A named group, the row that picks an app to add to one, or a group made by dragging tabs.
+type private GroupApplicationNode = GroupNode of string | PendingApplicationNode of string | HandMadeNode of int
 
 type AppGroupingRulesView() as this =
     inherit Panel()
@@ -151,37 +152,46 @@ type AppGroupingRulesView() as this =
             match selected() with
             | Some(GroupNode id) -> Some id
             | Some(PendingApplicationNode id) -> Some id
-            | Some(ApplicationNode id) -> rules |> List.tryFind(fun rule -> rule.id=id) |> Option.map(fun rule -> rule.groupId)
-            | None -> None
+            | Some(HandMadeNode _) | None -> None
         id |> Option.bind(fun id -> groups |> List.tryFind(fun group -> group.id=id))
     let updateEditor() =
         name.Text <- selectedGroup() |> Option.map(fun group -> group.name) |> Option.defaultValue ""
+    /// Each named group's rules in the order of its chips, to remove the one whose x is pressed.
+    let chipRules = Collections.Generic.Dictionary<string,AppGroupingRule list>()
     let reload selection =
-        let collapsed = tree.Roots |> Seq.filter(fun row -> not row.Expanded) |> Seq.map(fun row -> row.Tag :?> GroupApplicationNode) |> Set.ofSeq
         rebuilding <- true
         try
             editing <- None
             tree.ClearRowEditor()
             for row in tree.Roots do
-                for child in row.Children do
-                    if not(isNull child.Icon) then child.Icon.Dispose()
+                for chip in row.Chips do
+                    if not(isNull chip.Icon) then chip.Icon.Dispose()
             tree.Roots.Clear()
+            chipRules.Clear()
+            // One row a group, its apps in chips that add and remove; the Enabled box covers them all.
             for group in groups do
                 let members = rules |> List.filter(fun rule -> rule.groupId=group.id)
                 let enabled = members |> List.filter(fun rule -> rule.enabled) |> List.length
-                let row = TreeListItem(group.name,Tag=GroupNode group.id,Glyph=GroupGlyph,Expanded=not(collapsed.Contains(GroupNode group.id)),
+                let row = TreeListItem(group.name,Tag=GroupNode group.id,Glyph=GroupGlyph,
                                        Checks=[|None;if members.IsEmpty then None else Some(enabled=members.Length)|],
                                        Mixed=[|false;enabled>0 && enabled<members.Length|],
                                        Actions=Some [AddGlyph;EditGlyph;DeleteGlyph],AlwaysShowActions=true)
-                let labels = members |> List.map(fun rule -> ApplicationNames.label rule.processPath) |> List.toArray
-                for rule,label in List.zip members (Array.toList labels) do
-                    row.Add(TreeListItem(label,Icon=ApplicationNames.icon rule.processPath,Tag=ApplicationNode rule.id,Glyph=WindowGlyph,Checks=[|None;Some rule.enabled|])) |> ignore
-                    if selection=Some(ApplicationNode rule.id) then row.Expanded<-true
+                row.Chips <- members |> List.map(fun rule ->
+                    { Text=ApplicationNames.label rule.processPath; Icon=ApplicationNames.icon rule.processPath; Removable=true })
+                chipRules.[group.id] <- members
                 if pendingGroup=Some group.id then
                     row.Add(TreeListItem(tr Strings.AppRules.chooseApplication,Tag=PendingApplicationNode group.id,
                                          Actions=Some [NoGlyph;NoGlyph;DeleteGlyph])) |> ignore
                     row.Expanded <- true
                 tree.Roots.Add(row)
+            // Groups made by dragging tabs, kept after their windows close: shown, not edited here,
+            // and taken apart in one go.
+            Services.program.handMadeGroups() |> List.iteri(fun index (id,members) ->
+                let row = TreeListItem(tr Strings.AppRules.handMadeGroup,Tag=HandMadeNode id,Glyph=GroupGlyph,SeparatorAbove=(index=0),
+                                       Checks=[|None;None|],Actions=Some [NoGlyph;NoGlyph;UngroupGlyph],AlwaysShowActions=true)
+                row.Chips <- members |> List.map(fun (app,title) ->
+                    { Text=(if String.IsNullOrWhiteSpace title then app else title); Icon=null; Removable=false })
+                tree.Roots.Add(row))
             tree.Rebuild()
             tree.SelectedItem <- tree.Roots |> Seq.collect(fun row -> Seq.append [row] row.Children)
                                  |> Seq.tryFind(fun row -> selection=Some(row.Tag :?> GroupApplicationNode)) |> Option.toObj
@@ -232,26 +242,21 @@ type AppGroupingRulesView() as this =
             tree.SetRowEditor(tree.SelectedItem,nameInput)
             name.Focus() |> ignore
             name.SelectAll()
-        | Some(ApplicationNode id) ->
-            rules |> List.tryFind(fun rule -> rule.id=id) |> Option.iter(fun rule ->
-                inlineApplication.SelectPath(rule.processPath)
-                tree.SetRowEditor(tree.SelectedItem,inlineApplication,includeIcon=true)
-                inlineApplication.SelectNextControl(null,true,true,true,false) |> ignore)
         | Some(PendingApplicationNode _) ->
             inlineApplication.SelectPath("")
             tree.SetRowEditor(tree.SelectedItem,inlineApplication,includeIcon=true)
             inlineApplication.SelectNextControl(null,true,true,true,false) |> ignore
-        | None -> ()
+        | Some(HandMadeNode _) | None -> ()
     let delete() =
         let isPending = match selected() with Some(PendingApplicationNode _) -> true | _ -> false
         match selected() with
         | Some(GroupNode id) ->
             groups <- groups |> List.filter(fun group -> group.id<>id)
             rules <- rules |> List.filter(fun rule -> rule.groupId<>id)
-        | Some(ApplicationNode id) -> rules <- rules |> List.filter(fun rule -> rule.id<>id)
         | Some(PendingApplicationNode _) -> pendingGroup <- None
-        | None -> ()
-        if not isPending then save None
+        | Some(HandMadeNode _) | None -> ()
+        let isHandMade = match selected() with Some(HandMadeNode _) -> true | _ -> false
+        if not isPending && not isHandMade then save None
         reload None
     do
         addToGroup <- fun (groupId,path) ->
@@ -262,7 +267,7 @@ type AppGroupingRulesView() as this =
                 rules <- (rules |> List.filter(fun other -> not(AppIdentity.same other.processPath path))) @ [rule]
                 save (Some previous)
                 pendingGroup <- None
-                reload (Some(ApplicationNode rule.id)))
+                reload (Some(GroupNode group.id)))
         this.fitToRows()
         tree.RowsChanged.Add(fun _ -> this.fitToRows())
         addGroup.Anchor <- AnchorStyles.Top ||| AnchorStyles.Right
@@ -286,13 +291,30 @@ type AppGroupingRulesView() as this =
                 pendingGroup <- Some id
                 reload (Some(PendingApplicationNode id))
                 beginEdit()
+            | HandMadeNode id,2 ->
+                Services.program.ungroupHandMade id
+                reload None
+            | HandMadeNode _,_ -> ()
             | _,1 -> beginEdit()
             | _,2 -> delete()
             | _ -> ())
+        tree.ChipRemoved.Add(fun (item,index) ->
+            match item.Tag :?> GroupApplicationNode with
+            | GroupNode id ->
+                match chipRules.TryGetValue id with
+                | true,members when index<members.Length ->
+                    let removed = members.[index]
+                    rules <- rules |> List.filter(fun rule -> rule.id<>removed.id)
+                    save None
+                    reload (Some(GroupNode id))
+                | _ -> ()
+            | _ -> ())
+        // Groups made by hand change as tabs are dragged: shown again, the list catches up.
+        this.VisibleChanged.Add(fun _ -> if this.Visible && editing.IsNone && pendingGroup.IsNone then reload (selected()))
         tree.KeyDown.Add(fun e -> if e.KeyCode=Keys.Delete then e.Handled<-true; delete())
         tree.CheckChanged.Add(fun (item,_,enabled) ->
             let previous = rules
-            let matches rule = match item.Tag :?> GroupApplicationNode with GroupNode id -> rule.groupId=id | ApplicationNode id -> rule.id=id | PendingApplicationNode _ -> false
+            let matches rule = match item.Tag :?> GroupApplicationNode with GroupNode id -> rule.groupId=id | PendingApplicationNode _ | HandMadeNode _ -> false
             rules <- rules |> List.map(fun rule -> if matches rule then {rule with enabled=enabled} else rule)
             save (Some previous)
             reload (selected()))
@@ -319,14 +341,6 @@ type AppGroupingRulesView() as this =
             match editing with
             | Some(PendingApplicationNode id) when not(String.IsNullOrWhiteSpace inlineApplication.SelectedPath) ->
                 addToGroup(id,inlineApplication.SelectedPath)
-                tree.Focus() |> ignore
-            | Some(ApplicationNode id) when not(String.IsNullOrWhiteSpace inlineApplication.SelectedPath) ->
-                let previous = rules
-                let path = inlineApplication.SelectedPath
-                rules <- rules |> List.filter(fun rule -> rule.id=id || not(AppIdentity.same rule.processPath path))
-                               |> List.map(fun rule -> if rule.id=id then {rule with processPath=path} else rule)
-                save (Some previous)
-                reload (Some(ApplicationNode id))
                 tree.Focus() |> ignore
             | _ -> ())
         inlineApplication.CancelRequested.Add(fun _ ->

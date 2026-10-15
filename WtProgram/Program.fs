@@ -587,6 +587,18 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
         member x.getTabColors(hwnds,peers) = hwnds |> List.map(fun hwnd -> (x :> IProgram).getTabColor(hwnd,peers))
 
+        member x.handMadeGroups() =
+            remembered |> List.map(fun group -> group.id,group.members |> List.map(fun m -> m.app,m.title))
+
+        member x.ungroupHandMade id =
+            remembered <- remembered |> List.filter(fun group -> group.id<>id)
+            settingsManager.rememberedGroups <- remembered
+            // Its windows leave the group and are found again by the next scan; seen already this
+            // run, they no longer return to their saved group but follow the rules.
+            this.liveGroupWithToken id |> Option.iter(fun group ->
+                for hwnd in (group :> IGroup).windows.list do (group :> IGroup).removeWindow hwnd)
+            refreshQueue.RequestAll()
+
         member x.appWindows = 
             os.windowsInZorder.where(this.isAppWindow).map(fun w -> w.hwnd)
 
