@@ -98,6 +98,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             let json = this.settingsJson
             json.["rememberedGroups"] <- RememberedGroups.write groups
             this.settingsJson <- json
+            settingChangedEvent.Trigger("rememberedGroups",null)
 
     member x.settings
         with get() =
