@@ -52,7 +52,11 @@ type ProgramView() as this=
         new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn)
                               TreeListColumn(tr Strings.AppRules.tabs,130,CheckColumn)
                               TreeListColumn(tr Strings.AppRules.autoGroup,130,CheckColumn)])
-    let apps() = list.Roots |> List.ofSeq
+    /// Apps with a rule that are not running sit under one row, folded away unless opened:
+    /// the running apps are the ones looked for.
+    let mutable historyExpanded = false
+    let isApp (item:TreeListItem) = item.Tag :? string
+    let apps() = list.Roots |> Seq.collect(fun item -> if isApp item then Seq.singleton item else item.Children :> seq<_>) |> List.ofSeq
     let path (item:TreeListItem) = item.Tag :?> string
     /// The default only applies when an application is first discovered.
     let footer =
@@ -84,7 +88,19 @@ type ProgramView() as this=
             ImgHelper.disposeItems list.Roots
             list.Roots.Clear()
             for item in items do item.Expanded <- expanded.Contains(AppIdentity.key (path item))
-            list.Roots.AddRange(items)
+            // The scan marks the first app that is not running; with none running, all show.
+            let running,history =
+                match items |> List.tryFindIndex(fun item -> item.SeparatorAbove) with
+                | Some index -> List.splitAt index items
+                | None -> items,[]
+            list.Roots.AddRange(running)
+            if not history.IsEmpty then
+                let folder = TreeListItem(tr (Strings.AppRules.notRunning history.Length),Checks=[|None;None;None|],
+                                          SeparatorAbove=true,Expanded=historyExpanded)
+                for item in history do
+                    item.SeparatorAbove <- false
+                    folder.Add(item) |> ignore
+                list.Roots.Add(folder)
             list.Rebuild()
             panel.Status <- ""),
         ImgHelper.disposeItems,
@@ -92,6 +108,7 @@ type ProgramView() as this=
 
     do
         groupingRules.Changed.Add(fun _ -> this.populateNodes())
+        list.ExpandedChanged.Add(fun item -> if not(isApp item) && isNull item.Parent then historyExpanded <- item.Expanded)
         list.CheckChanged.Add(fun (item,column,value) ->
             let changed = [item] |> List.filter(fun app -> app.checkEnabled column)
             if column=ProgramItems.tabsColumn then
