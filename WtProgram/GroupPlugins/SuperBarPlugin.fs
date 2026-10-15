@@ -528,7 +528,13 @@ and TaskbarTab(parent:TaskBarButton, config,size,key) =
     member this.adoptWindow hwnd =
         if WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)<>_window.hwnd then
             StartupTrace.measure "taskbar.owner" (fun () ->
-                WinUserApi.SetWindowLong(hwnd,WindowLongFieldOffset.GWL_HWNDPARENT,_window.hwnd) |> ignore)
+                WinUserApi.SetWindowLong(hwnd,WindowLongFieldOffset.GWL_HWNDPARENT,_window.hwnd) |> ignore
+                // A new owner keeps its place in the z-order, which can be above the window it now
+                // owns. Activating that window then raised nothing: Windows raises a window by its
+                // top owner, already on top, so the window stayed under other tabs. The preview
+                // goes just below the window, as an owner would be.
+                WinUserApi.SetWindowPos(_window.hwnd,hwnd,0,0,0,0,
+                    SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore)
         ownedWindow <- hwnd
 
     /// Destroying an owner also destroys its owned windows; a preview never owns their lifetime.

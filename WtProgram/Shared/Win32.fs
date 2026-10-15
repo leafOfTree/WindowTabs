@@ -432,6 +432,13 @@ and
 
     member this.bringToTop() = 
         WinUserApi.BringWindowToTop(hwnd).ignore
+
+    /// Above every other window, its owners with it, without activating it. Activation alone can
+    /// leave a window whose owner was set by another process (a combined taskbar's preview) under
+    /// other windows: Windows raised the owner, already on top, and not the window.
+    member this.raise() =
+        WinUserApi.SetWindowPos(hwnd, WindowHandleTypes.HWND_TOP, 0, 0, 0, 0,
+            SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore
     
     member this.insertAfter(hwndInsertAfter:IntPtr) =
         WinUserApi.SetWindowPos(hwnd,

@@ -881,6 +881,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     this.foreground <- this.os.foreground.hwnd
                     isMaximizedExport.update()
         | WinEvent.EVENT_SYSTEM_FOREGROUND ->
+            // Activated some other way (Alt+Tab, its own window), an owned tab can stay under the
+            // others in the same way as one activated from the strip.
+            if this.windows.contains(hwnd) then
+                let window = this.os.windowFromHwnd(hwnd)
+                if window.isOwned && not window.isMinimized then window.raise()
             this.foreground <- hwnd
             this.followClosedTab(this.os.foreground.hwnd)
             this.saveZorder()
@@ -1108,6 +1113,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if this.windows.contains(hwnd) then this.setTsOwner(window)
         window.setForegroundOrRestore(force)
         window.bringToTop()
+        // Activated but still under the other tabs when its owner is a combined taskbar's preview;
+        // only once it is in front, as a refused activation leaves the strip with the real top window.
+        if this.os.foreground.hwnd=hwnd then window.raise()
         if this.os.foreground.hwnd=hwnd then lastActiveTab <- Some hwnd
         // Activation can be refused (foreground lock); keep the strip with the real top window.
         this.inZorder(this.windows.items).tryHead |> Option.iter (fun top ->

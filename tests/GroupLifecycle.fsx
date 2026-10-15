@@ -133,6 +133,29 @@ let main() =
         check (WinUserApi.GetActiveWindow()=snapSource.Handle) "Snap fixture did not activate its source"
         let snapQueueOwner = obj()
         FollowerPlacement.queue.claim(snapQueueOwner,snapFollower.Handle)
+        // A window under a hidden owner that went to the top on its own (Windows raises a window by
+        // its owner) stayed under the other tabs when activated; raising takes it above them all.
+        do
+            let shown() =
+                let form = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Bounds=Drawing.Rectangle(-18000,-18000,300,200))
+                OS().windowFromHwnd(form.Handle).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE)
+                form
+            use first = shown()
+            use second = shown()
+            use tab = shown()
+            use preview = new Form(ShowInTaskbar=false)
+            let window = OS().windowFromHwnd(tab.Handle)
+            window.setOwner(OS().windowFromHwnd(preview.Handle))
+            OS().windowFromHwnd(preview.Handle).insertAfter(WindowHandleTypes.HWND_TOP)
+            for other in [second;first] do OS().windowFromHwnd(other.Handle).insertAfter(WindowHandleTypes.HWND_TOP)
+            let stacking() =
+                let rec scan (h:IntPtr) acc =
+                    if h=IntPtr.Zero then List.rev acc
+                    else scan (WinUserApi.GetWindow(h,GetWindowConstants.GW_HWNDNEXT)) (if List.contains h [first.Handle;second.Handle;tab.Handle] then h::acc else acc)
+                scan (WinUserApi.GetTopWindow(IntPtr.Zero)) []
+            check ((stacking() |> List.last)=tab.Handle) "Raise fixture did not start under the other windows"
+            window.raise()
+            check ((stacking() |> List.head)=tab.Handle) "A raised window under a hidden owner stayed under the others"
         // Windows with resize borders of different widths line up by what is seen, as the tabs do.
         do
             use wide = new Form(ShowInTaskbar=false,FormBorderStyle=FormBorderStyle.Sizable,StartPosition=FormStartPosition.Manual,Bounds=Drawing.Rectangle(-20000,-20000,640,420))
@@ -529,6 +552,12 @@ let main() =
             pumpUntil "A combined group's windows are not owned by its preview windows" (fun () ->
                 [a;b;d] |> List.forall(fun hwnd -> TaskbarProxies.ownsWindow hwnd && owner(owner hwnd) = IntPtr.Zero))
             check ([a;b;d] |> List.map owner |> List.distinct |> List.length = 3) "Combined tabs share a native Peek owner"
+            // Each preview sits below the window it owns. Above it, activating the window raised
+            // nothing and it stayed under the other tabs.
+            let below (window:IntPtr) (other:IntPtr) =
+                let rec scan (h:IntPtr) = h<>IntPtr.Zero && (h=other || scan (WinUserApi.GetWindow(h,GetWindowConstants.GW_HWNDNEXT)))
+                scan (WinUserApi.GetWindow(window,GetWindowConstants.GW_HWNDNEXT))
+            check ([a;b;d] |> List.forall(fun hwnd -> below hwnd (owner hwnd))) "A preview is above the window it owns"
             check (FilterService().isValidOwner(OS().windowFromHwnd d)) "The filter drops windows a combined group owns"
             match WindowCloaking.TryGetDesktopId(proxy.Head) with
             | true, desktop -> check (VirtualDesktop.desktopId d = Some desktop) "A combined group's window is not on its taskbar window's desktop"
