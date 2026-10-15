@@ -154,6 +154,18 @@ module WindowTabLayout =
             let dock = match int((value >>> 9) &&& 3L) with 0 -> TabDockTop | 1 -> TabDockBottom | 2 -> TabDockLeft | _ -> TabDockRight
             Some {dock=dock;columnWidth=width;normalAlignment=alignment normal;insideAlignment=alignment inside}
 
+/// Which group a window was in, kept on the window itself, so a restarted WindowTabs puts
+/// windows back together as they were, however they came to be grouped.
+module WindowGroupToken =
+    let private key = "WindowTabs.Group.v1"
+    let private random = Random()
+    let fresh() = lock random (fun () -> random.Next(1,Int32.MaxValue))
+    let save hwnd (token:int) = WinUserApi.SetProp(hwnd,key,IntPtr(token)) |> ignore
+    let read hwnd =
+        match WinUserApi.GetProp(hwnd,key).ToInt64() with
+        | value when value>0L && value<=int64 Int32.MaxValue -> Some(int value)
+        | _ -> None
+
 /// What a group's tab menu chose for that group alone, carried over when the group is rebuilt.
 type GroupMenuChoices = {
     iconOnly: bool
@@ -164,20 +176,25 @@ type GroupMenuChoices = {
 
 type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:TabAppearanceInfo) as this =
     let Cell = CellScope(true)
+    let inputOwnership = Collections.Generic.Dictionary<IntPtr,bool>()
     let _bb = Blackboard()
     let invoker = InvokerService.invoker
     let _os = OS()
     let mutable hasSavedTabLayout = false
+    let mutable token = WindowGroupToken.fresh()
     let addedEvent = Event<_>()
     let movedEvent = Event<IntPtr*int>()
     let removedEvent = Event<_>()
     let exitedEvent = Event<_>()
+    let exitPreparations = Collections.Generic.List<(unit -> unit) -> unit>()
     let mouseLLEvent = Event<Int32 * Pt * IntPtr>()
     let flashEvent = Event<_>()
     let keyboardLLEvent = Event<Int32 * KBDLLHOOKSTRUCT * bool>()
     let foregroundEvent = Event<_>()
     let geometryChangedEvent = Event<unit>()
     let tabInfoChangedEvent = Event<IntPtr>()
+    let madeByHandEvent = Event<unit>()
+    let mutable isMadeByHand = false
     // Supplied by the caller: the main thread waits while this constructor runs.
     // Calling the settings service here would synchronously invoke that blocked thread.
     let mutable logicalAppearance = initialAppearance
@@ -210,6 +227,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let shellHookWindow = Cell.create(None)
     let winEventHandler = Cell.create(None)
     let mutable themeSubscription : IDisposable option = None
+    let mutable placementCompletion : IDisposable option = None
     /// Each tab's colour as chosen, turned into a colour for the current theme when drawn.
     let mutable tabColors : Map<IntPtr,TabColorChoice> = Map.empty
     let isDraggingCell = Cell.create(false)
@@ -243,16 +261,23 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         zorderCell.value.any((=) foregroundCell.value)
 
     member this.isSuperBarEnabled = enableSuperBar
+    /// A tab was dragged into it, or it was made by dragging a tab out: only such groups are
+    /// remembered after their windows close, as rules and auto grouping remake the others.
+    member this.isManual
+        with get() = isMadeByHand
+        and set value =
+            let changed = value && not isMadeByHand
+            isMadeByHand <- value
+            if changed then madeByHandEvent.Trigger()
+    /// The group became one made by hand, after the tabs that made it so had joined.
+    member this.madeByHand = madeByHandEvent.Publish
+    /// Saved on each window it holds; a group restored after a restart takes its windows' token.
+    member this.groupToken
+        with get() = System.Threading.Volatile.Read(&token)
+        and set value = System.Threading.Volatile.Write(&token,value)
 
-    member this.init(ts:TabStrip) =
-        _ts := Some(ts)
-        minimizeStateTimer.Tick.Add(fun _ ->
-            let now = transitionClock.ElapsedMilliseconds
-            for hwnd,(minimized,deadline) in pendingMinimizeStates |> Seq.map(fun pair -> pair.Key,pair.Value) |> Seq.toList do
-                if this.windows.contains(hwnd).not || not(WinUserApi.IsWindow(hwnd)) || now>=deadline then pendingMinimizeStates.Remove(hwnd) |> ignore
-                elif this.os.windowFromHwnd(hwnd).isMinimized=minimized then
-                    pendingMinimizeStates.Remove(hwnd) |> ignore
-                    this.main(hwnd,if minimized then WinEvent.EVENT_SYSTEM_MINIMIZESTART else WinEvent.EVENT_SYSTEM_MINIMIZEEND)
+    member private this.finishPlacementReconciliation() =
+        if not isDestroyed.value then
             // WinEvents report the start of restoration, before ShowWindow and its
             // owned-popup visibility changes finish on the placement worker.
             if reconcileMinimizeState && FollowerPlacement.queue.isIdle(placementOwner) then
@@ -283,7 +308,21 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 reconcilePlacementState <- false
                 this.withUpdate(fun () -> this.updateIsVisible())
                 if not this.isEmpty then this.setTsParent(this.topWindow)
-            if pendingMinimizeStates.Count=0 && not reconcileMinimizeState && not reconcilePlacementState then minimizeStateTimer.Stop())
+            if pendingMinimizeStates.Count=0 then minimizeStateTimer.Stop()
+
+    member this.init(ts:TabStrip) =
+        _ts := Some(ts)
+        placementCompletion <- Some(FollowerPlacement.queue.Idle.Subscribe(fun owner ->
+            if obj.ReferenceEquals(owner,placementOwner) then
+                invoker.asyncInvoke(fun () -> this.finishPlacementReconciliation())))
+        minimizeStateTimer.Tick.Add(fun _ ->
+            let now = transitionClock.ElapsedMilliseconds
+            for hwnd,(minimized,deadline) in pendingMinimizeStates |> Seq.map(fun pair -> pair.Key,pair.Value) |> Seq.toList do
+                if this.windows.contains(hwnd).not || not(WinUserApi.IsWindow(hwnd)) || now>=deadline then pendingMinimizeStates.Remove(hwnd) |> ignore
+                elif this.os.windowFromHwnd(hwnd).isMinimized=minimized then
+                    pendingMinimizeStates.Remove(hwnd) |> ignore
+                    this.main(hwnd,if minimized then WinEvent.EVENT_SYSTEM_MINIMIZESTART else WinEvent.EVENT_SYSTEM_MINIMIZEEND)
+            this.finishPlacementReconciliation())
 
         winEventHandler.set(Some(
             _os.setSingleWinEvent WinEvent.EVENT_SYSTEM_FOREGROUND <| fun(hwnd) -> 
@@ -412,7 +451,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.updateIsVisible() =
         isVisibleCell.value <-
             this.isEmpty.not &&
-            zorderCell.value.where(isMinimized >> not).tryHead.IsSome &&
+            zorderCell.value.where(isMinimized >> not).tryHead.exists(fun hwnd -> not(WindowCloaking.IsCloaked hwnd)) &&
             inMoveSize.value.not
             
     member private this.updatePlacements() =
@@ -453,15 +492,22 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         // Restoring owned followers during a move can raise them above its source;
         // keep that source on top so its move-end event still restores the strip.
         if not reconcileMinimizeState && not inMoveSize.value then
-            this.setZorder(this.inZorder(this.windows.items))
+            let focused = this.os.foreground.hwnd
+            let selected = this.windows.contains(focused) && not(isMinimized focused) && zorderCell.value.tryHead<>Some focused
+            // Placement can raise a follower before its stacking correction. Only an
+            // actual foreground change may select another tab while that work is pending.
+            if not reconcilePlacementState || selected then
+                let order = this.inZorder(this.windows.items)
+                this.setZorder(if reconcilePlacementState then order.where((<>) focused).prepend focused else order)
 
     member private this.setWindows(newWindows) =
         windowsCell.set(newWindows)
         // Tabs that join or leave during a transition change the order at once; the others keep theirs.
-        if reconcileMinimizeState || inMoveSize.value then
+        if reconcileMinimizeState || reconcilePlacementState || inMoveSize.value then
             let kept = zorderCell.value.where(this.windows.contains)
             let joined = this.inZorder(this.windows.items.where(fun hwnd -> not (kept.contains((=) hwnd))))
             this.setZorder(List2(kept.list @ joined.list))
+            this.saveZorder()
         else this.saveZorder()
         this.updateIsVisible()
 
@@ -490,7 +536,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member private this.getTabInfo(hwnd) =
         let window = this.os.windowFromHwnd(hwnd)
-        let small,big = iconCache.get(hwnd)
+        let small,big = StartupTrace.measure "group.icons" (fun () -> iconCache.get(hwnd))
         {
             text = this.hwndText hwnd
             isRenamed = this.isRenamed hwnd
@@ -513,7 +559,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                             img.bitmap.Dispose()
                             reraise()
                     else
-                        Img(Win32Helper.PrintWindow(hwnd))
+                        StartupTrace.measure "preview.print" (fun () -> Img(Win32Helper.PrintWindow(hwnd)))
                 with ex -> Img(Sz(1, 1))
         }
     
@@ -538,8 +584,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         this.fetchTabColor hwnd
         this.tintTab this.tintsDark hwnd
 
+    /// One call to the main thread for the whole group: a call per tab made adding each
+    /// window to a large group at startup cost a round trip for every tab already in it.
     member private this.refreshTabColors() =
-        this.windows.items.iter this.fetchTabColor
+        let order = this.lorder.list
+        let hwnds = this.windows.items.list
+        let peers = order @ (hwnds |> List.filter(fun hwnd -> not(List.contains hwnd order)))
+        let colors = Services.program.getTabColors(hwnds,peers)
+        tabColors <- List.zip hwnds colors |> List.fold (fun known (hwnd,color) ->
+            match color with
+            | Some color -> known.Add(hwnd,color)
+            | None -> known.Remove hwnd) tabColors
         this.applyTabColors()
 
     member this.tabColor hwnd = tabColors.TryFind hwnd
@@ -554,10 +609,26 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             this.ts.setTabInfo(Tab(hwnd),info)
             tabInfoChangedEvent.Trigger(hwnd)
 
+    member private this.setTsOwner(owner:Window) =
+        let strip = this.os.windowFromHwnd(this.ts.hwnd)
+        StartupTrace.measure "group.owner" (fun () ->
+            strip.setOwner(if this.canShareInput owner.hwnd then owner else this.os.nullWindow))
+
+    /// Permission checks stay off the placement hot path and expire with group membership.
+    member this.canShareInput hwnd =
+        if hwnd=IntPtr.Zero then false
+        else
+            match inputOwnership.TryGetValue hwnd with
+            | true,compatible -> compatible
+            | _ ->
+                let compatible = WindowInputOwnership.CanShareWithCurrentProcess hwnd
+                inputOwnership.[hwnd] <- compatible
+                compatible
+
     member private this.setTsParent(parentHwnd) =
         let strip = this.os.windowFromHwnd(this.ts.hwnd)
         let parent = this.os.windowFromHwnd(parentHwnd)
-        strip.setOwner(parent)
+        this.setTsOwner(parent)
         // Restore can leave an owned popup visible but behind its unchanged owner.
         // Keep it adjacent to that window without activating or raising the group.
         if parentHwnd<>IntPtr.Zero && not parent.isMinimized then
@@ -638,7 +709,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if FollowerPlacement.queue.isWindowIdle(placementOwner,hwnd) && this.os.windowFromHwnd(hwnd).needsMinimizeAnchor then
             FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.prepareMinimizeRequest hwnd)
             reconcilePlacementState <- true
-            minimizeStateTimer.Start()
+            this.finishPlacementReconciliation()
            
     member private this.adjustWindowPlacement(hwnd) =
         let changingMinimizeState =
@@ -646,17 +717,15 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             | true,expected -> this.os.windowFromHwnd(hwnd).isMinimized<>expected && FollowerPlacement.isChangingMinimizeState placementOwner hwnd
             | _ -> false
         if placement.value.IsSome && not changingMinimizeState then
-            let bounds,wp,_ = placement.value.Value
-            let request =
-                match zorderCell.value.tryHead with
-                | Some top when top<>hwnd -> FollowerPlacement.alignBelowRequest hwnd bounds wp top
-                | _ -> FollowerPlacement.request hwnd bounds wp
+            let bounds,wp,visible = placement.value.Value
+            let below = zorderCell.value.tryHead |> Option.filter((<>) hwnd)
+            let request = FollowerPlacement.alignFrameRequest hwnd bounds visible wp below
             FollowerPlacement.queue.submit(placementOwner,hwnd,request)
             // Maximize/snap can hide or cover the owned strip after its early events.
             reconcilePlacementState <- true
-            minimizeStateTimer.Start()
+            this.finishPlacementReconciliation()
 
-    member this.isPlacementIdle = FollowerPlacement.queue.isIdle(placementOwner)
+    member this.isPlacementIdle = FollowerPlacement.queue.isIdle(placementOwner) && not reconcileMinimizeState && not reconcilePlacementState
                      
     member this.setTabColor(hwnd,color) =
         Services.program.setTabColorOverride(hwnd,color)
@@ -812,6 +881,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     this.foreground <- this.os.foreground.hwnd
                     isMaximizedExport.update()
         | WinEvent.EVENT_SYSTEM_FOREGROUND ->
+            // Activated some other way (Alt+Tab, its own window), an owned tab can stay under the
+            // others in the same way as one activated from the strip.
+            if this.windows.contains(hwnd) then
+                let window = this.os.windowFromHwnd(hwnd)
+                if window.isOwned && not window.isMinimized then window.raise()
             this.foreground <- hwnd
             this.followClosedTab(this.os.foreground.hwnd)
             this.saveZorder()
@@ -824,15 +898,18 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         | WinEvent.EVENT_OBJECT_HIDE | WinEvent.EVENT_OBJECT_DESTROY ->
             this.reclaimLeftTab(hwnd)
             if lastActiveTab=Some hwnd then this.followClosedTab(this.os.foreground.hwnd)
+        | WinEvent.EVENT_OBJECT_CLOAKED | WinEvent.EVENT_OBJECT_UNCLOAKED ->
+            if this.windows.contains(hwnd) then this.updateIsVisible()
         | _ -> ()
       
     member this.addWindow(hwnd, withDelay) = this.withUpdate <| fun() ->
-       if this.windows.contains(hwnd).not then
+       if not isDestroyed.value && this.windows.contains(hwnd).not then
             if withDelay then System.Threading.Thread.Sleep(250)
             let window = this.os.windowFromHwnd(hwnd)                
             let window = this.os.windowFromHwnd(hwnd)
             if this.windows.isEmpty && not hasSavedTabLayout then WindowTabLayout.read hwnd |> Option.iter this.applyTabLayout
             this.setWindows(this.windows.add hwnd)
+            WindowGroupToken.save hwnd this.groupToken
             FollowerPlacement.queue.claim(placementOwner,hwnd)
             if prevTop.value.IsNone then
                 prevTop.set(Some(hwnd))
@@ -850,6 +927,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     WinEvent.EVENT_SYSTEM_MINIMIZEEND
                     WinEvent.EVENT_OBJECT_HIDE
                     WinEvent.EVENT_OBJECT_DESTROY
+                    WinEvent.EVENT_OBJECT_CLOAKED
+                    WinEvent.EVENT_OBJECT_UNCLOAKED
                 ]).map(registerEvent)
             let dispose = 
                 {
@@ -857,20 +936,18 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                         member this.Dispose() = hooks.iter(fun h -> h.Dispose())
                 }
             hookCleanup.map(fun hooks -> hooks.add hwnd dispose)
-            this.setTabInfo hwnd
-
-
-            this.ts.addTab(Tab(hwnd))
-            this.refreshTabColors()
+            StartupTrace.measure "group.add.info" (fun () -> this.setTabInfo hwnd)
+            StartupTrace.measure "group.add.strip" (fun () -> this.ts.addTab(Tab(hwnd)))
+            StartupTrace.measure "group.add.colors" this.refreshTabColors
             // Only a window that opens in the foreground has an opener. Windows found at
             // startup or dropped in the background then close like any other tab.
             let foreground = this.os.foreground.hwnd
             if foreground=hwnd then
                 opener <- lastActiveTab |> Option.filter(fun owner -> owner<>hwnd && this.windows.contains(owner) && isOpen owner) |> Option.map(fun owner -> hwnd,owner)
             lastActiveTab <- TabNavigation.rememberActive this.lorder.list isOpen lastActiveTab foreground
-            this.adjustWindowPlacement(hwnd)
+            StartupTrace.measure "group.add.placement" (fun () -> this.adjustWindowPlacement(hwnd))
             if hasSavedTabLayout then WindowTabLayout.save hwnd this.tabLayout
-            addedEvent.Trigger(hwnd)
+            StartupTrace.measure "group.add.notify" (fun () -> addedEvent.Trigger(hwnd))
             // A visible window joining a minimized group restores it, as restoring any tab does,
             // so closing that window shows the previous tab instead of minimizing the group again.
             let others = this.windows.items.where((<>) hwnd)
@@ -882,7 +959,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 this.watchMinimizeCompletion()
 
     member this.removeWindow(hwnd) = this.withUpdate <| fun() ->
-        if this.windows.contains(hwnd) then
+        inputOwnership.Remove hwnd |> ignore
+        if not isDestroyed.value && this.windows.contains(hwnd) then
             this.reclaimLeftTab(hwnd)
             let foreground = this.os.foreground.hwnd
             let next = TabNavigation.closeTarget this.lorder.list isOpen hwnd foreground lastActiveTab opener (this.leftOnClose hwnd)
@@ -957,22 +1035,40 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             TabNavigation.targetIndex order foreground zorderCell.value.tryHead next
             |> Option.iter(fun index -> this.activateIndex(index, force))
                         
+    /// A plugin can retain its native owners until asynchronous shell registration finishes.
+    member _.addExitPreparation(action:(unit -> unit) -> unit) = exitPreparations.Add action
+
+    member private this.finishDestroy() =
+        this.ts.destroy()
+        shellHookWindow.value.iter <| fun d -> d.Dispose()
+        winEventHandler.value.iter <| fun d -> d.Dispose()
+        exitedEvent.Trigger()
+        (iconCache :> IDisposable).Dispose()
+        (invoker :> IDisposable).Dispose()
+
     member this.destroy() =
         if isDestroyed.value.not then
             isDestroyed.set(true)
+            placementCompletion |> Option.iter(fun subscription -> subscription.Dispose())
+            placementCompletion <- None
             this.windows.items.iter(fun hwnd -> FollowerPlacement.queue.release(placementOwner,hwnd))
             lock locationGate (fun () -> pendingLocations.Clear())
             minimizeStateTimer.Dispose()
             pendingMinimizeStates.Clear()
             requestedMinimizeStates.Clear()
+            hookCleanup.value.values.iter(fun hook -> hook.Dispose())
+            hookCleanup.set(Map2())
             themeSubscription |> Option.iter (fun subscription -> subscription.Dispose())
             themeSubscription <- None
-            this.ts.destroy()
-            shellHookWindow.value.iter <| fun d -> d.Dispose()
-            winEventHandler.value.iter <| fun d -> d.Dispose()
-            exitedEvent.Trigger()
-            (iconCache :> IDisposable).Dispose()
-            (invoker :> IDisposable).Dispose()
+            let rec prepare index =
+                if index=exitPreparations.Count then this.finishDestroy()
+                else
+                    let mutable completed = false
+                    exitPreparations.[index](fun () -> invoker.asyncInvoke(fun () ->
+                        if not completed then
+                            completed <- true
+                            prepare (index+1)))
+            prepare 0
 
    
 
@@ -988,7 +1084,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member private this.watchMinimizeCompletion() =
         reconcileMinimizeState <- true
-        minimizeStateTimer.Start()
+        this.finishPlacementReconciliation()
 
     member this.minimizeAll = fun() ->
         zorderCell.value.reverse.where(this.needsMinimizeState true).iter <| fun hwnd ->
@@ -1010,18 +1106,20 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         
     member this.tabActivate(Tab(hwnd), force) =
         let window = this.os.windowFromHwnd(hwnd)
-        let strip = this.os.windowFromHwnd(this.ts.hwnd)
         // The strip is owned by the top window and only follows a new top window once the
         // foreground event comes back through the group. Until then the activated window
         // covers it, which flashes whenever the tabs sit inside the title bar. Owned windows
         // are raised with their owner, so hand the strip over before activating.
-        if this.windows.contains(hwnd) then strip.setOwner(window)
+        if this.windows.contains(hwnd) then this.setTsOwner(window)
         window.setForegroundOrRestore(force)
         window.bringToTop()
+        // Activated but still under the other tabs when its owner is a combined taskbar's preview;
+        // only once it is in front, as a refused activation leaves the strip with the real top window.
+        if this.os.foreground.hwnd=hwnd then window.raise()
         if this.os.foreground.hwnd=hwnd then lastActiveTab <- Some hwnd
         // Activation can be refused (foreground lock); keep the strip with the real top window.
         this.inZorder(this.windows.items).tryHead |> Option.iter (fun top ->
-            if top <> hwnd then strip.setOwner(this.os.windowFromHwnd(top)))
+            if top <> hwnd then this.setTsOwner(this.os.windowFromHwnd(top)))
 
     member this.onTabMoved(hwnd, index) = movedEvent.Trigger(hwnd, index)
 

@@ -25,6 +25,44 @@ Stored preferences take priority. Missing optional settings and a full reset use
 minimal defaults from `SettingsCatalog`; explicit legacy auto-hide settings retain
 their behavior. App auto-grouping and workspaces start empty and run only when chosen.
 
+App Rules places the new-app default at the top right, one application list below,
+and a Grouping rules tree underneath. Group roots are created and renamed first;
+each group has a plus button that inserts a temporary application row. The icon
+picker and Browse button appear in that row, save on selection, and can be
+cancelled with Escape. Existing applications and group names edit in place with
+the same row spacing; normal rows keep the full width for names.
+Applications or entire groups can be deleted. Empty groups persist in
+`appGroupingTargets`. Adding an already-mapped app to another group moves its
+single mapping instead of creating competing rules. Group names save on leaving
+the editor or Enter, retaining the group ID and updating child captions. There are
+no title match editors or application counts.
+
+Application identity is the case-insensitive executable filename, independent of
+its installation directory. App Rules and the application picker merge same-name
+executables into one entry. A running installation keeps that entry in the running
+section; saved apps without an open app window appear below a divider. Full paths
+remain in settings to locate executables and icons, while tabbing, grouping,
+number-shortcut and remembered-colour rules match through `AppIdentity`.
+
+The default applies to newly discovered applications. Discovery records each valid
+app's effective tab choice in `includedPaths` or `excludedPaths`, and changing the
+default snapshots currently running apps before applying the new value. Existing
+choices survive either direction of a default change and subsequent launches.
+
+Enabled mappings remove that application's legacy `autoGroupingPaths` entry,
+disable its Group by app checkbox, and take precedence in the runtime. Disabling
+or deleting a mapping makes the checkbox available again, without re-enabling the
+old automatic setting. Changing an enabled mapping uses the existing app regroup
+path, enables tabs and applies the destination to its open windows. Both grouping
+paths still require compatible virtual desktop membership. Older title-based rows
+migrate to application-only mappings, keeping the first row per executable.
+
+The rule editor selects applications from a background scan of running app windows,
+showing executable names rather than requiring typed paths. Multiple windows of
+the same executable share a choice across different folders. The picker shows app
+icons, and its selected path remains available when not running. Browse selects
+an executable file for an app that has not been opened yet.
+
 Use `ISettings.appearance` and `updateAppearance` for all new appearance code. Update multiple fields in one function so persistence and theme notification occur once. Identical updates do not write or notify. Use `Theme.resetLayout` to reset geometry without touching any palette.
 
 String-based appearance `getValue`/`setValue` remain only as compatibility adapters; the settings UI and theme service do not use them. Other legacy settings can migrate incrementally without changing the JSON format.
@@ -71,6 +109,7 @@ resized width when these defaults change.
 | Language | Recreates the open settings window on the same page and rebuilds tray text; tab menus use the language when opened. | `Program`, `ManagerViewService`, `NotifyIconPlugin` |
 | Per-app automatic grouping | Enabling requests regrouping of current windows. Disabling affects future grouping and preserves existing groups; the UI explains this. | `Program.setAutoGroupingEnabled` |
 | Settings file | Location shows the file chosen at startup: `WindowTabsSettings.json` next to `WindowTabs.exe` when it or the legacy `WindowTabsSettings.txt` is there (portable), else `%AppData%\WindowTabs`; debug and test runs use the working directory. Until the `.json` file exists, settings are read from `WindowTabsSettings.txt`, which is never written. Import keeps the current file as `WindowTabsSettings.before-import.json`, replaces the in-memory settings and restarts (`--restart` waits for the old instance to exit and write them). | `Settings`, `DiagnosticsView` (Support page), `Bootstrap.main` |
+| Remembered groups | `rememberedGroups` in the settings file, outside the settings record and pages, records the windows of each group made by hand (a tab dropped into it, or dragged out to start it) by program name and title, kept after they close and recorded half a second after such a group's windows, titles or hand-made state change (no polling); a window moved into any other group leaves it (groups unseen for 30 days are dropped). A window seen for the first time joins the group it was in before a WindowTabs restart (a native window property), else the group a window with its program and title was last in, ahead of grouping rules and auto grouping; a title that settles within 10 seconds of opening is matched again. Later regrouping follows rules as usual. | `RememberedGroups`, `Settings.rememberedGroups`, `WindowGroupToken`, `Program.savedPlacement` |
 | Workspaces | Save/edit changes stored layouts (Edit, or double-click or Enter on an item); Restore applies them when invoked. | `WorkspaceModel` |
 
 New group subscriptions marshal changes onto the group thread and are disposed on group exit.

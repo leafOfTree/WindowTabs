@@ -62,7 +62,7 @@ jobs:
       matrix:
         include:
           - group: architecture
-            suites: 'Architecture,WindowIcon'
+            suites: 'Architecture,StartupGrouping,WindowIcon'
           - group: operations
             suites: 'GroupOperations,SettingsEditors'
           - group: ui

@@ -34,12 +34,14 @@ let run measure iterations (pixels:Bitmap -> string) (results:JArray) (images:JA
             member _.version = "benchmark"
             member _.isFirstRun = false
             member _.refresh() = ()
+            member _.regroupApplications _ = ()
             member _.shutdown() = ()
             member _.setWindowNameOverride _ = ()
             member _.getWindowNameOverride _ = None
             member _.getTabColorOverride _ = None
             member _.setTabColorOverride _ = ()
             member _.getTabColor(_,_) = None
+            member _.getTabColors(hwnds,_) = hwnds |> List.map(fun _ -> None)
             member _.appWindows = List2()
             member _.getAutoGroupingEnabled _ = false
             member _.setAutoGroupingEnabled _ _ = ()

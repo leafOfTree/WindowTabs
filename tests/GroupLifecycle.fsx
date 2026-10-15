@@ -33,9 +33,13 @@ let main() =
     let picked expected result = match result with Some g -> obj.ReferenceEquals(g, expected) | None -> false
     check (pickFrom [chromeGroup; explorerGroup] 4 = None) "Auto-grouping joined a window to a group on another virtual desktop"
     check (picked explorerGroup (pickFrom [chromeGroup; explorerGroup] 3)) "Auto-grouping missed a group on the same virtual desktop"
-    check (picked explorerGroup (pickFrom [chromeGroup; explorerGroup] 5)) "Auto-grouping ignored a group when the new window's desktop is unknown"
+    let installedPath hwnd = if hwnd=IntPtr(1) then @"C:\Windows\explorer.exe" else @"D:\Updated\EXPLORER.exe"
+    check (picked explorerGroup (AutoGroup.pick id installedPath deskOf (List2([explorerGroup])) (IntPtr(3))))
+          "Same-name executables in different directories did not share an automatic group"
+    check (pickFrom [chromeGroup; explorerGroup] 5=None) "An unresolved new window joined another desktop's taskbar group"
     let unknownGroup = List2([IntPtr(5)])
-    check (picked unknownGroup (pickFrom [unknownGroup] 4)) "Auto-grouping ignored a group whose virtual desktop is unknown"
+    check (pickFrom [unknownGroup] 4=None) "A known desktop matched an unresolved target group"
+    check (pickFrom [unknownGroup] 5=None) "Two unresolved windows were assumed to share a desktop"
     Application.EnableVisualStyles()
     let directory = Path.Combine(__SOURCE_DIRECTORY__, "Debug", "groups-" + Guid.NewGuid().ToString("N"))
     Directory.CreateDirectory(directory) |> ignore
@@ -52,12 +56,14 @@ let main() =
             member _.version = "test"
             member _.isFirstRun = false
             member _.refresh() = ()
+            member _.regroupApplications _ = ()
             member _.shutdown() = ()
             member _.setWindowNameOverride _ = ()
             member _.getWindowNameOverride _ = None
             member _.getTabColorOverride _ = None
             member _.setTabColorOverride _ = ()
             member _.getTabColor(_,_) = None
+            member _.getTabColors(hwnds,_) = hwnds |> List.map(fun _ -> None)
             member _.appWindows = workspaceWindows
             member _.getAutoGroupingEnabled _ = false
             member _.setAutoGroupingEnabled _ _ = ()
@@ -70,7 +76,9 @@ let main() =
             member _.llMouse = mouse.Publish})
         let desktop = Desktop({new IDesktopNotification with
                                 member _.dragDrop _ = ()
-                                member _.dragEnd() = ()}, api, InvokerService.invoker :> IDispatcher)
+                                member _.dragEnd() = ()}, api, InvokerService.invoker :> IDispatcher,
+                              taskbarPlugin=(fun () -> SuperBarPlugin((fun hwnd -> Services.get<WindowGroup>().canShareInput hwnd),
+                                  desktopOf=(fun _ -> Some desk1),placeDesktop=(fun _ -> true)) :> IPlugin))
         let desktopApi = desktop :> IDesktop
         let dragTargetFor hwnd =
             let field = typeof<DragDropController>.GetFields(Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic)
@@ -88,6 +96,18 @@ let main() =
             match result.Value with Choice1Of2 value -> value | Choice2Of2 error -> raise error
         let nativeOrder info = onGroup info (fun group -> group.lorder.list)
         let publicOrder (info:GroupInfo) = (info :> IGroup).windows.list
+        let checkStripOwner info =
+            onGroup info (fun group ->
+                let owner = WinUserApi.GetWindow(group.hwnd, GetWindowConstants.GW_OWNER)
+                let expected =
+                    if not(WindowInputOwnership.CanShareWithCurrentProcess group.topWindow) then IntPtr.Zero
+                    else group.topWindow
+                check (owner=expected) (sprintf "Strip input isolation/ownership changed: owner=%A expected=%A" owner expected))
+        let closedHandle =
+            use closedWindow = new Form(ShowInTaskbar=false)
+            closedWindow.Handle
+        check (not(WinUserApi.IsWindow closedHandle)) "Input-ownership fixture did not close"
+        check (onGroup source (fun group -> not(group.canShareInput closedHandle))) "Unknown window bypassed the input-ownership check"
         // Win+Right restores maximized followers to the snapped frame, not the
         // unsnapped restore rectangle kept in WINDOWPLACEMENT.
         use snapOwner = new Form(ShowInTaskbar=false)
@@ -113,6 +133,47 @@ let main() =
         check (WinUserApi.GetActiveWindow()=snapSource.Handle) "Snap fixture did not activate its source"
         let snapQueueOwner = obj()
         FollowerPlacement.queue.claim(snapQueueOwner,snapFollower.Handle)
+        // A window under a hidden owner that went to the top on its own (Windows raises a window by
+        // its owner) stayed under the other tabs when activated; raising takes it above them all.
+        do
+            let shown() =
+                let form = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Bounds=Drawing.Rectangle(-18000,-18000,300,200))
+                OS().windowFromHwnd(form.Handle).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE)
+                form
+            use first = shown()
+            use second = shown()
+            use tab = shown()
+            use preview = new Form(ShowInTaskbar=false)
+            let window = OS().windowFromHwnd(tab.Handle)
+            window.setOwner(OS().windowFromHwnd(preview.Handle))
+            OS().windowFromHwnd(preview.Handle).insertAfter(WindowHandleTypes.HWND_TOP)
+            for other in [second;first] do OS().windowFromHwnd(other.Handle).insertAfter(WindowHandleTypes.HWND_TOP)
+            let stacking() =
+                let rec scan (h:IntPtr) acc =
+                    if h=IntPtr.Zero then List.rev acc
+                    else scan (WinUserApi.GetWindow(h,GetWindowConstants.GW_HWNDNEXT)) (if List.contains h [first.Handle;second.Handle;tab.Handle] then h::acc else acc)
+                scan (WinUserApi.GetTopWindow(IntPtr.Zero)) []
+            check ((stacking() |> List.last)=tab.Handle) "Raise fixture did not start under the other windows"
+            window.raise()
+            check ((stacking() |> List.head)=tab.Handle) "A raised window under a hidden owner stayed under the others"
+        // Windows with resize borders of different widths line up by what is seen, as the tabs do.
+        do
+            use wide = new Form(ShowInTaskbar=false,FormBorderStyle=FormBorderStyle.Sizable,StartPosition=FormStartPosition.Manual,Bounds=Drawing.Rectangle(-20000,-20000,640,420))
+            use narrow = new Form(ShowInTaskbar=false,FormBorderStyle=FormBorderStyle.None,StartPosition=FormStartPosition.Manual,Bounds=Drawing.Rectangle(-19000,-19000,500,300))
+            let source,follower = OS().windowFromHwnd(wide.Handle),OS().windowFromHwnd(narrow.Handle)
+            // Shown without activation: the snap checks below expect their own window to stay active.
+            for window in [source;follower] do window.showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE)
+            let borders (window:Window) = window.visibleBounds.x-window.bounds.x
+            let frameOwner = obj()
+            FollowerPlacement.queue.claim(frameOwner,narrow.Handle)
+            try
+                FollowerPlacement.queue.submit(frameOwner,narrow.Handle,
+                    FollowerPlacement.alignFrameRequest narrow.Handle source.bounds source.visibleBounds source.placement None)
+                pumpUntil "Visible-frame placement did not finish" (fun () -> FollowerPlacement.queue.isIdle(frameOwner))
+                check (borders source<>borders follower) "Visible-frame fixture windows have the same borders"
+                check (follower.visibleBounds=source.visibleBounds)
+                      (sprintf "Windows with different borders were aligned by their window bounds: %A vs %A" follower.visibleBounds source.visibleBounds)
+            finally FollowerPlacement.queue.release(frameOwner,narrow.Handle)
         try
             FollowerPlacement.queue.submit(snapQueueOwner,snapFollower.Handle,
                 FollowerPlacement.request snapFollower.Handle snapped normalPlacement)
@@ -131,6 +192,27 @@ let main() =
             check followerWindow.isMaximized "A follower did not maximize"
             check (sourceWindow.zorder<followerWindow.zorder) "A maximized follower covered the originating tab"
             check (WinUserApi.GetActiveWindow()=snapSource.Handle) "Maximizing a follower changed the active tab"
+            // Combined Peek uses one preview owner per tab, below a common taskbar root.
+            use sourcePreview = new Form(ShowInTaskbar=false)
+            use followerPreview = new Form(ShowInTaskbar=false)
+            let sourcePreviewWindow = OS().windowFromHwnd(sourcePreview.Handle)
+            let followerPreviewWindow = OS().windowFromHwnd(followerPreview.Handle)
+            sourcePreviewWindow.setOwner(snapOwnerWindow)
+            followerPreviewWindow.setOwner(snapOwnerWindow)
+            sourceWindow.setOwner(sourcePreviewWindow)
+            followerWindow.setOwner(followerPreviewWindow)
+            for command in [ShowWindowCommands.SW_SHOWNOACTIVATE;ShowWindowCommands.SW_SHOWMAXIMIZED;ShowWindowCommands.SW_SHOWNOACTIVATE] do
+                sourceWindow.showWindow(command)
+                sourceWindow.setForeground(false)
+                let focused = WinUserApi.GetForegroundWindow()
+                FollowerPlacement.queue.submit(snapQueueOwner,snapFollower.Handle,
+                    FollowerPlacement.alignBelowRequest snapFollower.Handle sourceWindow.bounds sourceWindow.placement snapSource.Handle)
+                pumpUntil "Separate preview-owner placement did not finish" (fun () -> FollowerPlacement.queue.isIdle(snapQueueOwner))
+                check (sourceWindow.zorder<followerWindow.zorder) "A follower with its own Peek owner covered the originating tab"
+                check (WinUserApi.GetForegroundWindow()=focused && WinUserApi.GetActiveWindow()=snapSource.Handle)
+                      "A follower with its own Peek owner changed activation"
+            sourceWindow.setOwner(snapOwnerWindow)
+            followerWindow.setOwner(snapOwnerWindow)
             for screen in Screen.AllScreens do
                 sourceWindow.showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE)
                 let frame = Rect(Pt(screen.WorkingArea.Left+100,screen.WorkingArea.Top+100),Sz(640,480))
@@ -169,6 +251,174 @@ let main() =
             FollowerPlacement.queue.release(snapQueueOwner,snapFollower.Handle)
             snapSource.Hide()
             snapFollower.Hide()
+        // #46: a taskbar proxy also links input queues. Falling back releases existing
+        // ownership, and compatible membership can resume combining without losing tabs.
+        use permissionFirst = new Form(ShowInTaskbar=false)
+        use permissionSecond = new Form(ShowInTaskbar=false)
+        let permissionHandles = [permissionFirst.Handle;permissionSecond.Handle]
+        let permissionStyles = permissionHandles |> List.map(fun hwnd -> WinUserApi.GetWindowLong(hwnd,WindowLongFieldOffset.GWL_EXSTYLE))
+        let permissionProbe = desktopApi.createGroup(false) :?> GroupInfo
+        let mutable compatible = true
+        let permissionPlugin = onGroup permissionProbe (fun group ->
+            let plugin = SuperBarPlugin((fun hwnd -> compatible && group.canShareInput hwnd),
+                                        desktopOf=(fun _ -> Some desk1),placeDesktop=(fun _ -> true))
+            (plugin :> IPlugin).init()
+            plugin)
+        try
+            for hwnd in permissionHandles do (permissionProbe :> IGroup).addWindow(hwnd,false)
+            pumpUntil "Permission probe did not acquire windows" (fun () -> nativeOrder permissionProbe=permissionHandles)
+            let owner hwnd = WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)
+            pumpUntil "Compatible input queues did not combine taskbar ownership" (fun () ->
+                permissionHandles |> List.forall TaskbarProxies.ownsWindow)
+            let cloakTarget = onGroup permissionProbe (fun group -> group.topWindow)
+            let mutable cloak = 1
+            check (DwmApi.DwmSetWindowAttribute(cloakTarget,13,&cloak,4)=0) "Could not cloak input-isolation fixture"
+            try
+                onGroup permissionProbe (fun group -> group.main(cloakTarget,WinEvent.EVENT_OBJECT_CLOAKED))
+                pumpUntil "A cloaked application left its tab strip visible" (fun () -> onGroup permissionProbe (fun group -> not group.ts.visible))
+            finally
+                cloak <- 0
+                DwmApi.DwmSetWindowAttribute(cloakTarget,13,&cloak,4) |> ignore
+            onGroup permissionProbe (fun group -> group.main(cloakTarget,WinEvent.EVENT_OBJECT_UNCLOAKED))
+            pumpUntil "An uncloaked application did not restore its tab strip" (fun () -> onGroup permissionProbe (fun group -> group.ts.visible))
+            onGroup permissionProbe (fun _ -> compatible <- false;permissionPlugin.onZorderChanged())
+            check (permissionHandles |> List.forall(fun hwnd -> owner hwnd=IntPtr.Zero)) "Incompatible input queues retained taskbar proxy owners"
+            check (nativeOrder permissionProbe=permissionHandles) "Taskbar input isolation changed tab membership"
+            let changes = onGroup permissionProbe (fun _ -> permissionPlugin.taskbarVisibilityChanges)
+            onGroup permissionProbe (fun _ -> for _ in 1..100 do permissionPlugin.onZorderChanged())
+            check (onGroup permissionProbe (fun _ -> permissionPlugin.taskbarVisibilityChanges)=changes)
+                  "Repeated incompatible-group notifications kept adding already-visible taskbar buttons"
+            onGroup permissionProbe (fun _ -> compatible <- true;permissionPlugin.onZorderChanged())
+            check (permissionHandles |> List.forall TaskbarProxies.ownsWindow) "Compatible input queues did not resume taskbar combining"
+        finally
+            (permissionProbe :> IGroup).destroy()
+            pumpUntil "Permission probe did not exit" (fun () -> permissionProbe.isExited)
+        check (permissionHandles |> List.forall(fun hwnd -> WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)=IntPtr.Zero)) "Taskbar isolation probe left an owner after shutdown"
+        check (permissionHandles |> List.map(fun hwnd -> WinUserApi.GetWindowLong(hwnd,WindowLongFieldOffset.GWL_EXSTYLE)) = permissionStyles)
+              "Taskbar exit registration changed the application's original window styles"
+
+        // Placement failure keeps real windows independent; a later successful attempt may combine them.
+        do
+            use first = new Form(ShowInTaskbar=false)
+            use second = new Form(ShowInTaskbar=false)
+            let handles = [first.Handle;second.Handle]
+            let fixture = desktopApi.createGroup(false) :?> GroupInfo
+            let mutable knownDesktop = None
+            let mutable placeSucceeded = false
+            let mutable attempts = 0
+            let plugin = onGroup fixture (fun group ->
+                let plugin = SuperBarPlugin(group.canShareInput,desktopOf=(fun _ -> knownDesktop),
+                    placeDesktop=(fun _ -> attempts <- attempts+1;placeSucceeded))
+                (plugin :> IPlugin).init()
+                plugin)
+            try
+                for hwnd in handles do (fixture :> IGroup).addWindow(hwnd,false)
+                pumpUntil "Unknown desktop did not defer taskbar ownership" (fun () -> nativeOrder fixture=handles)
+                check (attempts=0 && (handles |> List.forall(fun hwnd -> not(TaskbarProxies.ownsWindow hwnd))))
+                      "Unknown desktop attempted placement or adopted an application"
+                check (not(onGroup fixture (fun _ -> plugin.isAwaitingDesktopPlacement))) "Unknown desktop started an automatic retry loop"
+                onGroup fixture (fun _ -> knownDesktop <- Some desk1;plugin.onZorderChanged())
+                check (attempts=1 && (handles |> List.forall(fun hwnd -> not(TaskbarProxies.ownsWindow hwnd))))
+                      "Failed desktop placement adopted an application"
+                check (onGroup fixture (fun _ -> plugin.isAwaitingDesktopPlacement)) "Failed placement was marked complete"
+                onGroup fixture (fun _ -> placeSucceeded <- true)
+                pumpUntil "Failed placement did not retry and resume combining" (fun () ->
+                    handles |> List.forall TaskbarProxies.ownsWindow)
+                check (attempts>=2 && not(onGroup fixture (fun _ -> plugin.isAwaitingDesktopPlacement)))
+                      "Successful desktop placement retained a retry timer"
+                let failedStart = attempts
+                onGroup fixture (fun group ->
+                    placeSucceeded <- false
+                    group.removeWindow second.Handle
+                    group.addWindow(second.Handle,false))
+                pumpUntil "Failed placement did not reach its attempt limit" (fun () ->
+                    attempts-failedStart=3 && not(onGroup fixture (fun _ -> plugin.isAwaitingDesktopPlacement)))
+                onGroup fixture (fun _ ->
+                    for _ in 1..100 do
+                        plugin.updateTaskbar()
+                        plugin.onForegroundChanged()
+                        plugin.onZorderChanged())
+                check (attempts-failedStart=3 && not(onGroup fixture (fun _ -> plugin.isAwaitingDesktopPlacement)))
+                      "Title/focus/z-order refresh restarted exhausted placement retries"
+                check (handles |> List.forall(fun hwnd -> not(TaskbarProxies.ownsWindow hwnd))) "Exhausted retries retained native owners"
+                onGroup fixture (fun _ -> knownDesktop <- Some desk2;placeSucceeded <- true;plugin.onZorderChanged())
+                check (attempts-failedStart=4 && (handles |> List.forall TaskbarProxies.ownsWindow))
+                      "A changed confirmed desktop did not resume combining"
+            finally
+                (fixture :> IGroup).destroy()
+                pumpUntil "Placement fixture did not exit" (fun () -> fixture.isExited)
+            check (handles |> List.forall WinUserApi.IsWindow) "Placement fixture closed an application"
+
+        // A replacement STA may take over before a delayed removal on the previous STA.
+        do
+            let oldGroup = desktopApi.createGroup(true) :?> GroupInfo
+            let newGroup = desktopApi.createGroup(true) :?> GroupInfo
+            let forms = [for _ in 1..5 -> new Form(ShowInTaskbar=false)]
+            let handles = forms |> List.map(fun form -> form.Handle)
+            let a,b,c,d,e = handles.[0],handles.[1],handles.[2],handles.[3],handles.[4]
+            let owner hwnd = WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)
+            use releaseSource = new Threading.ManualResetEvent(false)
+            try
+                for hwnd in [a;b;c] do (oldGroup :> IGroup).addWindow(hwnd,false)
+                for hwnd in [d;e] do (newGroup :> IGroup).addWindow(hwnd,false)
+                pumpUntil "Owner handoff fixtures did not settle" (fun () ->
+                    nativeOrder oldGroup=[a;b;c] && nativeOrder newGroup=[d;e] && (handles |> List.forall TaskbarProxies.ownsWindow))
+                let oldOwner = owner a
+                (newGroup :> IGroup).addWindow(a,false)
+                pumpUntil "Replacement group did not adopt the window" (fun () ->
+                    nativeOrder newGroup=[d;e;a] && owner a<>oldOwner && TaskbarProxies.ownsWindow a)
+                let newOwner = owner a
+                // The old group still lists the window until its removal arrives; a refresh there
+                // meanwhile (here a title change) must not take the window back.
+                forms.Head.Text <- "Moved to the replacement group"
+                pumpUntil "The old group did not see the moved window's new title" (fun () ->
+                    onGroup oldGroup (fun group -> group.ts.tabInfo(Tab a).text.Contains("Moved to the replacement group")))
+                check (owner a=newOwner) (sprintf "The group a window left took it back from its new group: owner %d, new %d, old %d, proxy %b"
+                                              ((owner a).ToInt64()) (newOwner.ToInt64()) (oldOwner.ToInt64()) (TaskbarProxies.contains (owner a)))
+                let afterCleanup = onGroup oldGroup (fun group -> group.removeWindow a;owner a)
+                check (afterCleanup=newOwner) "Old cleanup detached the replacement group's owner"
+
+                let beforeTransfer = owner b
+                let mutable sourceHeld = false
+                oldGroup.invokeGroup(fun () -> sourceHeld <- true;releaseSource.WaitOne() |> ignore)
+                pumpUntil "Source dispatcher was not held for the transfer probe" (fun () -> sourceHeld)
+                newGroup.addAfterDetaching(oldGroup,b)
+                check (nativeOrder newGroup=[d;e;a] && owner b=beforeTransfer)
+                      "Replacement attached before source cleanup completed"
+                (newGroup :> IGroup).removeWindow b
+                check (not((newGroup :> IGroup).windows.contains((=)b))) "Cancelling a staged transfer retained optimistic membership"
+                releaseSource.Set() |> ignore
+                pumpUntil "A cancelled transfer was attached after source cleanup" (fun () ->
+                    nativeOrder oldGroup=[c] && nativeOrder newGroup=[d;e;a] && owner b=IntPtr.Zero)
+                (oldGroup :> IGroup).addWindow(b,false)
+                pumpUntil "Cancelled transfer could not be grouped again" (fun () -> nativeOrder oldGroup=[c;b] && TaskbarProxies.ownsWindow b)
+                let beforeTransfer = owner b
+                releaseSource.Reset() |> ignore
+                sourceHeld <- false
+                oldGroup.invokeGroup(fun () -> sourceHeld <- true;releaseSource.WaitOne() |> ignore)
+                pumpUntil "Source dispatcher was not held for the replacement transfer" (fun () -> sourceHeld)
+                newGroup.addAfterDetaching(oldGroup,b)
+                check (nativeOrder newGroup=[d;e;a] && owner b=beforeTransfer) "A replacement transfer attached before native cleanup"
+                releaseSource.Set() |> ignore
+                pumpUntil "Ordered owner transfer did not complete" (fun () ->
+                    nativeOrder oldGroup=[c] && nativeOrder newGroup=[d;e;a;b] && TaskbarProxies.ownsWindow b)
+                releaseSource.Reset() |> ignore
+                sourceHeld <- false
+                oldGroup.invokeGroup(fun () -> sourceHeld <- true;releaseSource.WaitOne() |> ignore)
+                pumpUntil "Source dispatcher was not held for its exit" (fun () -> sourceHeld)
+                (oldGroup :> IGroup).destroy()
+                newGroup.addAfterDetaching(oldGroup,c)
+                releaseSource.Set() |> ignore
+                pumpUntil "Source exit discarded a staged transfer" (fun () ->
+                    oldGroup.isExited && nativeOrder newGroup=[d;e;a;b;c] && WinUserApi.IsWindow c)
+            finally
+                releaseSource.Set() |> ignore
+                for fixture in [oldGroup;newGroup] do
+                    if not fixture.isExited then
+                        onGroup fixture (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
+                        (fixture :> IGroup).destroy()
+                pumpUntil "Owner handoff fixtures did not exit" (fun () -> oldGroup.isExited && newGroup.isExited)
+                for form in forms do form.Dispose()
         api.setValue("tabPosition",box "Right")
         api.setValue("tabColumnWidth",box 280)
         let defaults = desktopApi.createGroup(false) :?> GroupInfo
@@ -197,6 +447,7 @@ let main() =
             for hwnd in handles do (source :> IGroup).addWindow(hwnd,false)
             pumpUntil "Native group did not acquire three windows" (fun () -> nativeOrder source = handles)
             pumpUntil "Desktop registry did not acquire three windows" (fun () -> publicOrder source = handles)
+            checkStripOwner source
             check (onGroup source (fun _ -> restored |> Seq.toList) = handles)
                   "Startup grouping did not reclaim every ordinary taskbar button"
             api.setValue("showTabsOnSwitch",box true)
@@ -256,6 +507,8 @@ let main() =
             pumpUntil "Attach did not update target membership" (fun () -> nativeOrder target = [b] && publicOrder target = [b])
             check (nativeOrder source = [c;a]) "Transfer changed unrelated source tabs"
             check ((desktop.findGroupContainingHwnd b).Value.hwnd = target.hwnd) "Transferred window resolves to wrong group"
+            checkStripOwner source
+            checkStripOwner target
 
             // A dead foreign HWND is removed by reconciliation; exercise that
             // removal after destruction rather than only while the HWND is valid.
@@ -292,10 +545,19 @@ let main() =
                 group.addWindow(d,false))
             check (nativeOrder combined = [a;b;d]) "Combined taskbar button failed a foreground window joining its group"
             // Without taskbar buttons of their own the windows would show on every virtual desktop;
-            // owned by the group's taskbar window, they stay on its desktop and in the group.
+            // owned by distinct preview proxies, placed on the group's desktop, they stay there without
+            // sharing Peek contents. The previews have no owner, or a thumbnail click opens the group's
+            // last active tab.
             let owner hwnd = WinUserApi.GetWindow(hwnd, GetWindowConstants.GW_OWNER)
-            pumpUntil "A combined group's windows are not owned by its taskbar window" (fun () ->
-                [a;b;d] |> List.forall(fun hwnd -> owner hwnd = proxy.Head && TaskbarProxies.ownsWindow hwnd))
+            pumpUntil "A combined group's windows are not owned by its preview windows" (fun () ->
+                [a;b;d] |> List.forall(fun hwnd -> TaskbarProxies.ownsWindow hwnd && owner(owner hwnd) = IntPtr.Zero))
+            check ([a;b;d] |> List.map owner |> List.distinct |> List.length = 3) "Combined tabs share a native Peek owner"
+            // Each preview sits below the window it owns. Above it, activating the window raised
+            // nothing and it stayed under the other tabs.
+            let below (window:IntPtr) (other:IntPtr) =
+                let rec scan (h:IntPtr) = h<>IntPtr.Zero && (h=other || scan (WinUserApi.GetWindow(h,GetWindowConstants.GW_HWNDNEXT)))
+                scan (WinUserApi.GetWindow(window,GetWindowConstants.GW_HWNDNEXT))
+            check ([a;b;d] |> List.forall(fun hwnd -> below hwnd (owner hwnd))) "A preview is above the window it owns"
             check (FilterService().isValidOwner(OS().windowFromHwnd d)) "The filter drops windows a combined group owns"
             match WindowCloaking.TryGetDesktopId(proxy.Head) with
             | true, desktop -> check (VirtualDesktop.desktopId d = Some desktop) "A combined group's window is not on its taskbar window's desktop"
@@ -318,6 +580,8 @@ let main() =
             let keyboardSource = OS().windowFromHwnd(a)
             for hwnd in [a;b;d] do WinUserApi.ShowWindow(hwnd,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
             keyboardSource.setForeground(false)
+            onGroup combined (fun group -> group.tabActivate(Tab(a),false))
+            checkStripOwner combined
             for _ in 1..3 do
                 keyboardSource.showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED)
                 pumpUntil "Combined followers did not maximize" (fun () ->
@@ -364,6 +628,7 @@ let main() =
             WinUserApi.ShowWindow(d, ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
             onGroup combined (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
             pumpUntil "Taskbar proxies outlived their combined taskbar button" (fun () -> not(TaskbarProxies.contains proxy.Head))
+            check ([a;b;d] |> List.forall WinUserApi.IsWindow) "Removing Peek proxies destroyed application windows"
             check ([a;b;d] |> List.forall(fun hwnd -> owner hwnd = IntPtr.Zero)) "Windows that left a combined group are still owned by its taskbar window"
 
             // Restart discovers the same HWNDs; reclaim buttons without showing or activating them.
@@ -456,6 +721,40 @@ let main() =
                 if not info.isExited then onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
             workspaceWindows <- List2()
             let closing = desktopApi.createGroup(false) :?> GroupInfo
+            let deferredExit = desktopApi.createGroup(false) :?> GroupInfo
+            use exitMember = new Form(ShowInTaskbar=false)
+            use lateMember = new Form(ShowInTaskbar=false)
+            let retainedMember = exitMember.Handle
+            let ignoredMember = lateMember.Handle
+            (deferredExit :> IGroup).addWindow(retainedMember,false)
+            pumpUntil "Exit fixture did not acquire its member" (fun () -> nativeOrder deferredExit=[retainedMember])
+            let mutable exitContinuation : (unit -> unit) option = None
+            let mutable secondExitContinuation : (unit -> unit) option = None
+            let mutable preparations = 0
+            let mutable exits = 0
+            onGroup deferredExit (fun group ->
+                group.addExitPreparation(fun complete -> preparations <- preparations+1;exitContinuation <- Some complete)
+                group.addExitPreparation(fun complete -> preparations <- preparations+1;secondExitContinuation <- Some complete)
+                group.exited.Add(fun () -> exits <- exits+1))
+            let retainedHwnd = deferredExit.hwnd
+            (deferredExit :> IGroup).destroy()
+            (deferredExit :> IGroup).destroy()
+            pumpUntil "Exit preparation did not start" (fun () -> exitContinuation.IsSome)
+            check (preparations=1 && not deferredExit.isExited && WinUserApi.IsWindow retainedHwnd)
+                  "Repeated destroy bypassed pending shell registration or destroyed its owner"
+            onGroup deferredExit (fun group ->
+                group.removeWindow retainedMember
+                group.addWindow(ignoredMember,false)
+                check (group.windows.items.list=[retainedMember] && group.lorder.list=[retainedMember])
+                      "Late membership updates released an owner while exit registration was pending")
+            exitContinuation.Value()
+            exitContinuation.Value()
+            pumpUntil "Second exit preparation did not start once" (fun () -> secondExitContinuation.IsSome && preparations=2)
+            check (not deferredExit.isExited && WinUserApi.IsWindow retainedHwnd) "Repeated completion bypassed another pending exit preparation"
+            secondExitContinuation.Value()
+            secondExitContinuation.Value()
+            pumpUntil "Prepared group did not finish exiting" (fun () -> deferredExit.isExited && exits=1 && not(WinUserApi.IsWindow retainedHwnd))
+            check (exits=1 && not(WinUserApi.IsWindow retainedHwnd)) "Exit completion destroyed the group twice or retained native windows"
             let mutable captured : GroupTabLayout option option = None
             let mutable captures = 0
             (closing :> IGroup).destroy()
@@ -467,13 +766,21 @@ let main() =
             // register the returning preview after the order that places it and show it first, so a
             // changed order is sent again once settled.
             do
+                let previewRequests = ResizeArray<string * bool>()
+                let mutable previewActivations = 0
                 let tab text : string * TbButtonTab =
-                    text, { icon=Drawing.SystemIcons.Application; text=text; activate=ignore; close=ignore; preview=fun _ -> None }
+                    text, { icon=Drawing.SystemIcons.Application; text=text; activate=(fun () -> previewActivations <- previewActivations+1); close=ignore
+                            preview=fun thumbnail -> previewRequests.Add(text,thumbnail); Some(Img(Sz(320,200))) }
                 let info texts : TbButton =
-                    { icon=Drawing.SystemIcons.Application; text="Order"; bounds=Rect(Pt(-20000,-20000),Sz(320,200))
+                    { icon=Drawing.SystemIcons.Application; otherIcons=[]; text="Order"; bounds=Rect(Pt(-20000,-20000),Sz(320,200))
                       activate=ignore; toggleMinimizeRestore=ignore; close=ignore; tabs=List2(texts |> List.map tab) }
                 let button = new TaskBarButton(info ["a";"b"])
                 try
+                    // Owned by the taskbar window, a preview's thumbnail click opened the group's
+                    // last active tab instead of its own.
+                    check (["a";"b"] |> List.forall(fun key ->
+                        WinUserApi.GetWindow((button.tryTabWindow key).Value.hwnd,GetWindowConstants.GW_OWNER)=IntPtr.Zero))
+                        "A tab preview is owned by the group's taskbar window"
                     pumpUntil "First preview order was not sent again" (fun () -> not button.isResendingTabOrder)
                     button.update(info ["a";"b";"c"])
                     button.update(info ["a";"b"])
@@ -482,6 +789,13 @@ let main() =
                     pumpUntil "Preview order was not sent again" (fun () -> not button.isResendingTabOrder)
                     button.update(info ["a";"b";"c"])
                     check (not button.isResendingTabOrder) "An unchanged order is sent again"
+                    // Hover requests must use the requested tab, including an inactive one, without activating it.
+                    previewRequests.Clear()
+                    for key in ["b";"a";"c"] do
+                        let preview = (button.tryTabWindow key).Value
+                        WinUserApi.SendMessage(preview.hwnd,WindowMessages.WM_DWMSENDICONICLIVEPREVIEWBITMAP,IntPtr.Zero,IntPtr.Zero) |> ignore
+                    check (List.ofSeq previewRequests=["b",false;"a",false;"c",false]) "Inactive Peek requests reuse another tab's preview"
+                    check (previewActivations=0) "Hovering a Peek preview activates the window"
                     // A preview that leaves frees its window, class and procedure then, not with the group.
                     let leaving = (button.tryTabWindow "c").Value.hwnd
                     for _ in 1..20 do
@@ -499,6 +813,7 @@ let main() =
                 | [g] when g.isSuperBarEnabled=combinedIcons && not g.isRetiring -> Some g
                 | _ -> None
             let following = desktopApi.createGroup(false) :?> GroupInfo
+            following.ruleGroupId <- Some "project-a"
             let chosen = desktopApi.createGroup(false) :?> GroupInfo
             (following :> IGroup).addWindow(a,false)
             (chosen :> IGroup).addWindow(b,false)
@@ -512,6 +827,7 @@ let main() =
             pumpUntil "Setting did not combine an open group's taskbar icons" (fun () -> (soleGroup a true).IsSome)
             let rebuilt = (soleGroup a true).Value
             check (nativeOrder rebuilt = [a]) "Rebuilt group lost its window"
+            check (rebuilt.ruleGroupId=Some "project-a") "Taskbar rebuild lost the named grouping target"
             check (onGroup rebuilt (fun group -> group.menuChoices) = savedChoices) "Rebuilt group lost its tab menu choices"
             api.setValue("combineIconsInTaskbar", box false)
             pumpUntil "Setting did not separate an open group's taskbar icons" (fun () -> (soleGroup a false).IsSome)
@@ -557,6 +873,9 @@ let main() =
                     target.dragEnd())
                 pumpUntil "Cross-orientation drag lost its insertion order" (fun () -> nativeOrder dragTarget=[b;d] && publicOrder dragTarget=[b;d])
                 check (onGroup dragTarget (fun group -> group.ts.dock)=targetDock) "Drag changed the destination orientation"
+                // Only the group a tab was dropped into is one made by hand, to be remembered.
+                check (onGroup dragTarget (fun group -> group.isManual) && not(onGroup dragSource (fun group -> group.isManual)))
+                    "A dropped tab did not mark its new group as made by hand, or a tab dragged out marked its old one"
                 for info in [dragSource;dragTarget] do
                     onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
                     (info :> IGroup).destroy()

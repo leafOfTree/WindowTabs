@@ -7,23 +7,24 @@ open System.Windows.Forms
 module AutoGroup =
     /// The first group, in the order given, that holds a window of the same program and a
     /// window on the same virtual desktop as `hwnd`, so a window opened on another desktop
-    /// starts its own group rather than pulling the group across desktops. A window whose
-    /// desktop cannot be told matches any desktop, as before desktops were taken into account.
+    /// starts its own group rather than pulling the group across desktops. Unknown membership
+    /// cannot establish that two windows share a desktop.
     let pick (windowsOf:'g -> List2<IntPtr>) (processPath:IntPtr -> string) (desktopOf:IntPtr -> Guid option) (groups:List2<'g>) (hwnd:IntPtr) =
         let path = processPath hwnd
         let desktop = desktopOf hwnd
         let sameDesktop other =
             match desktop, desktopOf other with
             | Some a, Some b -> a = b
-            | _ -> true
+            | _ -> false
         groups.tryFind(fun g ->
             let windows = windowsOf g
-            windows.any(fun w -> processPath w = path) && windows.any sameDesktop)
+            windows.any(fun w -> AppIdentity.same (processPath w) path) && windows.any sameDesktop)
 
 
-type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher) as this =
+type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher, ?taskbarPlugin:unit -> IPlugin) as this =
     let Cell = CellScope(true, true)
     let windowsCell = Cell.create(List2())
+    let stagedAdds = Collections.Generic.Dictionary<IntPtr,obj>()
     let mutable _isExited = 0
     let initialAppearance = ThemeService.currentAppearance()
     let (_group, invoker) = ThreadHelper.startOnThreadAndWait <| fun() ->
@@ -31,7 +32,7 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
             Some(MouseScrollPlugin().cast<IPlugin>())
             Some(NumericTabHotKeyPlugin().cast<IPlugin>())
             Some(HideTabsOnInactiveGroupPlugin().cast<IPlugin>())
-            Some(if enableSuperBar then SuperBarPlugin().cast<IPlugin>() else TaskbarRestorePlugin().cast<IPlugin>())
+            Some(if enableSuperBar then (defaultArg taskbarPlugin (fun () -> SuperBarPlugin().cast<IPlugin>()))() else TaskbarRestorePlugin().cast<IPlugin>())
             ])
         let plugins = plugins.choose(id)
 
@@ -75,6 +76,10 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
     member val isTaskbarChosen = false with get, set
     /// Its windows are moving to a group that replaces it. Main thread only.
     member val isRetiring = false with get, set
+    /// Explicit rules claim only groups they created; manual groups remain untouched.
+    member val ruleGroupId : string option = None with get,set
+    /// A temporary singleton can join its automatic target once its desktop is known.
+    member val awaitsGroupingDesktop = false with get,set
     member this.isExited = System.Threading.Volatile.Read(&_isExited)=1
     member this.exited = _group.exited
     member this.removed = _group.removed
@@ -89,10 +94,35 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
             windowsCell.map <| fun l -> l.append hwnd
         // Still queue the operation: a preceding asynchronous remove may not
         // have updated this snapshot yet, and remove-then-add must reattach it.
-        VirtualDesktop.desktopId hwnd |> ignore
-        this.invokeGroup <| fun() -> this.group.addWindow(hwnd, withDelay)
+        VirtualDesktop.groupingDesktopId hwnd |> ignore
+        this.invokeGroup <| fun() -> StartupTrace.measure "group.add" (fun () -> this.group.addWindow(hwnd, withDelay))
     member private this.removeWindow hwnd =
+        if stagedAdds.Remove hwnd then
+            windowsCell.map(fun windows -> windows.where((<>)hwnd))
         this.invokeGroup <| fun() -> this.group.removeWindow(hwnd)
+    /// Stage main-thread membership, then attach only after the source STA has finished cleanup.
+    member this.addAfterDetaching(source:GroupInfo, hwnd:IntPtr) =
+        if not(windowsCell.value.contains((=)hwnd)) then windowsCell.map(fun windows -> windows.append hwnd)
+        let token = obj()
+        stagedAdds.[hwnd] <- token
+        let mutable queued = false
+        let mutable subscription : IDisposable option = None
+        let attach() =
+            if not queued then
+                queued <- true
+                subscription |> Option.iter(fun value -> value.Dispose())
+                match stagedAdds.TryGetValue hwnd with
+                | true,current when obj.ReferenceEquals(current,token) ->
+                    stagedAdds.Remove hwnd |> ignore
+                    this.invokeGroup(fun () ->
+                        if not this.isExited && WinUserApi.IsWindow hwnd then this.group.addWindow(hwnd,false)
+                        else desktopDispatcher.Post(fun () -> windowsCell.map(fun windows -> windows.where((<>)hwnd))))
+                | _ -> ()
+        subscription <- Some(source.exited.Subscribe(fun () -> desktopDispatcher.Post attach))
+        if source.isExited then attach()
+        else source.invokeGroup(fun () ->
+            if not source.isExited then source.group.removeWindow hwnd
+            desktopDispatcher.Post attach)
     member private this.destroy() = this.invokeGroup <| fun() -> this.group.destroy()
     member private x.switchWindow(next, force) = this.invokeGroup <| fun() -> this.group.switchWindow(next, force)
 
@@ -109,7 +139,7 @@ type IDesktopNotification =
     abstract member dragDrop : IntPtr -> unit
     abstract member dragEnd : unit -> unit
 
-type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispatcher) as this =
+type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispatcher, ?taskbarPlugin:unit -> IPlugin) as this =
     let os = OS()
     let Cell = CellScope()
     let groupCell = Cell.create(Set2<GroupInfo>())
@@ -117,6 +147,7 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
     let invoker = InvokerService.invoker
     let exitedEvent = Event<_>()
     let removedEvent = Event<_>()
+    let changedEvent = Event<_>()
     let _dd = DragDropController(this :> IDragDropParent) :> IDragDrop
     
     do 
@@ -129,7 +160,7 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
     member private this.isEmpty = this.groups.all(fun g -> g.isExited)
     member private this.isDragging = isDraggingCell.value
     member private this.createGroupInfo(enableSuperBar) =
-        let group = GroupInfo(enableSuperBar, settings, dispatcher)
+        let group = StartupTrace.measure "group.create" (fun () -> GroupInfo(enableSuperBar, settings, dispatcher,?taskbarPlugin=taskbarPlugin))
         groupCell.map(fun g -> g.add(group))
         group.invokeGroup <| fun() -> 
             let ig = group.cast<IGroup>()
@@ -137,6 +168,11 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
                 groupCell.map(fun groups -> groups.remove group)
                 exitedEvent.Trigger ig)
             group.removed.Add <| fun _ -> dispatcher.Post(fun () -> removedEvent.Trigger ig)
+            let changed() = dispatcher.Post(fun () -> changedEvent.Trigger ig)
+            group.group.added.Add(fun _ -> changed())
+            group.group.removed.Add(fun _ -> changed())
+            group.group.tabInfoChanged.Add(fun _ -> changed())
+            group.group.madeByHand.Add changed
             TabStripDecorator(group.group).ignore
         group
 
@@ -164,10 +200,12 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
                     TemporaryState.run Services.program.suspendTabMonitoring Services.program.resumeTabMonitoring (fun () ->
                         let newGroup = this.createGroupInfo(enableSuperBar)
                         newGroup.isTaskbarChosen <- isTaskbarChosen
+                        newGroup.ruleGroupId <- old.ruleGroupId
+                        newGroup.awaitsGroupingDesktop <- old.awaitsGroupingDesktop
+                        newGroup.group.groupToken <- old.group.groupToken
                         newGroup.invokeGroup(fun() -> newGroup.group.applyMenuChoices choices)
                         group.windows.iter <| fun hwnd ->
-                            group.removeWindow(hwnd)
-                            (newGroup :> IGroup).addWindow(hwnd, false))
+                            newGroup.addAfterDetaching(old,hwnd))
 
     member this.restartGroup(groupHwnd, enableSuperBar) =
         this.groups.tryFind(fun g -> g.hwnd = groupHwnd && not g.isRetiring && g.isSuperBarEnabled <> enableSuperBar)
@@ -189,6 +227,7 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
         member x.groups = this.groups.where(fun(g) -> g.isExited.not).map(fun(g) -> g.cast<IGroup>())
         member x.groupExited = exitedEvent.Publish
         member x.groupRemoved = removedEvent.Publish
+        member x.groupChanged = changedEvent.Publish
         member x.foregroundGroup
             with get() =
                 let foregroundWindow = os.foreground

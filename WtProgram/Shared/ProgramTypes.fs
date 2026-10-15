@@ -9,10 +9,25 @@ type TabColorChoice =
     | PaletteColor of int
     | CustomColor of Drawing.Color
 
+type AppGroupingTarget = { id:string; name:string }
+
+type AppGroupingRule = {
+    id: string
+    enabled: bool
+    processPath: string
+    title: string
+    /// Retained for reading older exports; application mappings normalize this to -1.
+    matchType: int
+    groupId: string
+    groupName: string
+}
+
 type SettingsRec = {
     includedPaths: Set2<string>
     excludedPaths: Set2<string>
     autoGroupingPaths : Set2<string>
+    appGroupingRules: AppGroupingRule list
+    appGroupingTargets: AppGroupingTarget list
     version: string
     appearance: AppearancePreferences
     runAtStartup: bool
@@ -97,6 +112,8 @@ type IProgram =
     abstract member isFirstRun : bool
     /// Posted to the UI thread; returns before the work runs.
     abstract member refresh : unit -> unit
+    /// Regroup the selected apps on the main STA without transient tab-setting changes.
+    abstract member regroupApplications : string list -> unit
     /// Posted to the UI thread; returns before the work runs.
     abstract member shutdown : unit -> unit
     abstract member setWindowNameOverride : (IntPtr * Option<string>) -> unit
@@ -104,6 +121,8 @@ type IProgram =
     abstract member getTabColorOverride : IntPtr -> TabColorChoice option
     abstract member setTabColorOverride : (IntPtr * TabColorChoice option) -> unit
     abstract member getTabColor : IntPtr * IntPtr list -> TabColorChoice option
+    /// Every tab's colour in one call, for a group whose tabs changed.
+    abstract member getTabColors : IntPtr list * IntPtr list -> TabColorChoice option list
     abstract member appWindows : List2<IntPtr>
     abstract member getAutoGroupingEnabled : string -> bool
     abstract member setAutoGroupingEnabled : string -> bool -> unit
@@ -132,7 +151,20 @@ type IDesktop =
     abstract member groups : List2<IGroup>
     abstract member groupExited: IEvent<IGroup>
     abstract member groupRemoved: IEvent<IGroup>
+    /// A group's windows, their titles, or whether it was made by hand changed. Main thread.
+    abstract member groupChanged: IEvent<IGroup>
     abstract member foregroundGroup: IGroup option
 
 type IPlugin =
     abstract member init: unit -> unit
+
+/// Global input hooks must not be active while initial discovery waits for group STAs.
+type IStartupInputPlugin =
+    inherit IPlugin
+
+module StartupPlugins =
+    let initialize (plugins:IPlugin list) discover =
+        let input,other = plugins |> List.partition(fun plugin -> plugin :? IStartupInputPlugin)
+        other |> List.iter(fun plugin -> plugin.init())
+        discover()
+        input |> List.iter(fun plugin -> plugin.init())

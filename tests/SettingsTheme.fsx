@@ -29,6 +29,17 @@ let main() =
     try
         use settings = new Settings(true, saveDelay=0)
         let api = settings :> ISettings
+        let rule = {id="roundtrip";enabled=true;processPath = @"C:\Editor.exe";title="";matchType= -1;groupId="project";groupName="Project"}
+        api.setValue("autoGroupingPaths",box(Set2(List2([rule.processPath;@"C:\Other.exe"]))))
+        api.setValue("appGroupingRules",box [rule])
+        settings.Flush() |> ignore
+        settings.clearCaches()
+        check (api.getValue("appGroupingRules") :?> AppGroupingRule list=[rule]) "Grouping rules did not survive settings reload"
+        let automatic = api.getValue("autoGroupingPaths") :?> Set2<string>
+        check (not(automatic.contains rule.processPath) && automatic.contains @"C:\Other.exe") "Saving an application mapping retained overlapping automatic grouping or erased other apps"
+        api.setValue("hideInactiveTabs",box true)
+        settings.clearCaches()
+        check (api.getValue("appGroupingRules") :?> AppGroupingRule list=[rule]) "Updating a preference erased grouping rules"
         do
             use first = new Form()
             use second = new Form()
@@ -413,6 +424,7 @@ let main() =
             member _.groups = List2()
             member _.groupExited = Event<IGroup>().Publish
             member _.groupRemoved = Event<IGroup>().Publish
+            member _.groupChanged = Event<IGroup>().Publish
             member _.foregroundGroup = None })
         // Closing a diagnostics page must not dispose the process-wide cached font.
         for _ in 1..3 do

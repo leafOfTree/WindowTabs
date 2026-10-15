@@ -58,14 +58,7 @@ type SettingsActionButton() as this =
         let pressed = this.IsPressed
         let mix (a:Color) (b:Color) (t:float32) =
             Color.FromArgb(int(float32 a.R*(1.0f-t)+float32 b.R*t),int(float32 a.G*(1.0f-t)+float32 b.G*t),int(float32 a.B*(1.0f-t)+float32 b.B*t))
-        let neutral() =
-            let fill =
-                if light then Color.FromRGB(if pressed then 0xE0E0DE elif hot then 0xEAEAE8 else 0xF3F3F1)
-                // Dark buttons dim when pressed rather than brighten further, as Windows' do.
-                elif pressed then mix p.hover p.surface 0.5f
-                elif hot then p.hover
-                else p.surface
-            fill,(if light then fill else p.border)
+        let neutral() = SettingsShapes.neutralColors p hot pressed
         // Hover moves a filled colour towards the page, as Windows accent buttons do; pressing
         // moves it further.
         let hoverShade (color:Color) =
@@ -108,6 +101,17 @@ type SettingsInputFrame() as this =
         this.ResizeRedraw <- true
     /// Fully rounded ends instead of the usual corners.
     member this.Pill with get() = pill and set value = pill <- value; this.Invalidate()
+    /// What shows round the rounded corners, when the field sits on something other than its
+    /// parent's colour, such as a selected list row.
+    member val Surroundings = Color.Empty with get,set
+    /// Fills the field and its text with the usual field colour, over the given surroundings.
+    member this.PlaceOn(surroundings:Color) =
+        let field = (SettingsColors.current()).surface
+        if this.Surroundings<>surroundings || this.BackColor<>field then
+            this.Surroundings <- surroundings
+            this.BackColor <- field
+            for child in this.Controls do child.BackColor <- field
+            this.Invalidate()
     abstract member ApplyTheme : unit -> unit
     default this.ApplyTheme() =
         let p = SettingsColors.current()
@@ -119,7 +123,8 @@ type SettingsInputFrame() as this =
         this.Invalidate()
     override this.OnPaintBackground(e) =
         let p = SettingsColors.current()
-        e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
+        e.Graphics.Clear(if not this.Surroundings.IsEmpty then this.Surroundings
+                         elif isNull this.Parent then p.background else this.Parent.BackColor)
         e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
         if this.Width>2 && this.Height>2 then
             let radius = if pill then float32 this.Height/2.0f else float32(Dpi.scale 8)

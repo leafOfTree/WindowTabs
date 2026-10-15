@@ -24,6 +24,83 @@ type SyncCallWindow(onMessage:unit -> unit) =
         if m.Msg = 0x8001 then onMessage() else base.WndProc(&m)
 
 let main() =
+    let queued = ResizeArray<unit -> unit>()
+    let mutable desktopReads = 0
+    let desktopA,desktopB = Guid.NewGuid(),Guid.NewGuid()
+    let mutable queriedDesktop = desktopA
+    let mutable lookupTime = DateTime.UtcNow
+    let lookup = DesktopLookup((fun _ -> desktopReads<-desktopReads+1;Some queriedDesktop),queued.Add,now=(fun () -> lookupTime))
+    let mutable desktopReady = 0
+    use desktopSubscription = lookup.Ready.Subscribe(fun _ -> desktopReady<-desktopReady+1)
+    let probeHwnd = IntPtr(123)
+    for _ in 1..100 do check ((lookup.TryGet probeHwnd).IsNone) "Discovery waited for or invented an unfinished shell answer"
+    check (desktopReads=0 && queued.Count=1) "Discovery ran a shell query inline or duplicated pending work"
+    queued.[0]()
+    check (lookup.TryGet probeHwnd=Some(Some desktopA) && desktopReady=1) "A completed desktop query did not wake discovery"
+    lookupTime <- lookupTime.AddSeconds(2.0)
+    check (lookup.TryGet probeHwnd=Some(Some desktopA) && queued.Count=2) "Desktop moves could not refresh a cached answer"
+    lookup.Forget probeHwnd
+    check ((lookup.TryGet probeHwnd).IsNone && queued.Count=3) "A reused HWND inherited a previous desktop answer"
+    queued.[1]()
+    check ((lookup.TryGet probeHwnd).IsNone && desktopReady=1) "An obsolete shell query republished a destroyed window"
+    queriedDesktop <- desktopB
+    queued.[2]()
+    check (lookup.TryGet probeHwnd=Some(Some desktopB) && desktopReady=2) "A reused HWND lost its new desktop answer"
+    let desktop value () = value
+    let unexpectedDesktop() = failwith "A confirmed desktop unnecessarily fell back to the visible desktop"
+    check (VirtualDesktop.resolveGroupingDesktop (desktop(Some desktopB)) unexpectedDesktop unexpectedDesktop unexpectedDesktop=Some desktopB)
+          "A known background desktop was replaced by the current visible desktop"
+    check (VirtualDesktop.resolveGroupingDesktop (desktop None) (desktop(Some desktopB)) unexpectedDesktop unexpectedDesktop=Some desktopB)
+          "A grouped window lost its taskbar owner's desktop"
+    check (VirtualDesktop.resolveGroupingDesktop (desktop None) (desktop None) (desktop(Some desktopA)) unexpectedDesktop=Some desktopA)
+          "An unregistered grouped window lost its previously confirmed desktop after a desktop switch"
+    check (VirtualDesktop.resolveGroupingDesktop (desktop None) (desktop None) (desktop None) (desktop(Some desktopA))=Some desktopA)
+          "A visible unregistered application window could not resolve its desktop"
+    check ((VirtualDesktop.resolveGroupingDesktop (desktop None) (desktop None) (desktop None) (desktop None)).IsNone)
+          "An unconfirmed desktop became a wildcard grouping target"
+    let appRule target kind title =
+        { id=Guid.NewGuid().ToString("N");enabled=true;processPath = @"C:\Editor.exe";title=title;matchType=kind
+          groupId=target;groupName=target }
+    let broad = appRule "General" -1 ""
+    let legacy = appRule "Project A" 3 "Project A"
+    let browser = {broad with id="browser";processPath = @"C:\Browser.exe"}
+    check (AppGroupingRules.resolve [broad] @"c:\EDITOR.exe" "Any title"=GroupingTarget "General") "Application grouping compared titles or path case"
+    check (AppGroupingRules.resolve [{broad with enabled=false}] broad.processPath ""=NoGroupingRule) "Disabled application rule was applied"
+    check (AppGroupingRules.resolve [broad] browser.processPath ""=NoGroupingRule) "Application rule matched another executable"
+    check (AppGroupingRules.hasEnabled [broad] @"c:\editor.exe") "Custom grouping did not claim its app case-insensitively"
+    check (AppGroupingRules.resolve [broad] @"D:\Updated\EDITOR.exe" ""=GroupingTarget "General") "A custom grouping rule did not apply across installation directories"
+    check (AppGroupingRules.withoutAutoGrouping [broad] [@"c:\editor.exe";browser.processPath]=[browser.processPath]) "Custom grouping retained duplicate automatic grouping"
+    check (AppGroupingRules.withoutAutoGrouping [{broad with enabled=false}] [broad.processPath]=[broad.processPath]) "Disabled custom grouping disabled an independent automatic choice"
+    let rootRules = JObject(JProperty("appGroupingRules",AppGroupingRules.write [broad;browser]))
+    check (AppGroupingRules.read rootRules=[broad;browser]) "Application grouping lost its paths or destination"
+    let aliases = JObject(JProperty("appGroupingRules",AppGroupingRules.write [broad;{broad with id="alias";processPath= @"D:\Other\EDITOR.exe"}]))
+    check (AppGroupingRules.read aliases=[broad]) "Imported aliases created multiple grouping destinations for one executable"
+    let migrated = JObject(JProperty("appGroupingRules",AppGroupingRules.write [legacy;broad]))
+    check (AppGroupingRules.read migrated=[{legacy with title="";matchType= -1}]) "Legacy title rules did not become one application mapping"
+    let malformedRules = rootRules.DeepClone() :?> JObject
+    (malformedRules.["appGroupingRules"] :?> JArray).Add(JObject(JProperty("processPath","broken")))
+    let invalidPath = (AppGroupingRules.write [broad]).[0].DeepClone()
+    invalidPath.["processPath"] <- JValue("broken\u0000.exe")
+    (malformedRules.["appGroupingRules"] :?> JArray).Add(invalidPath)
+    check (AppGroupingRules.read malformedRules=[broad;browser]) "Malformed import erased valid application mappings"
+    check (AppGroupingRules.read (SettingsCatalog.resetRoot rootRules false false)=[broad;browser]) "Reset discarded application grouping without clearing app rules"
+    check (AppGroupingRules.read (SettingsCatalog.resetRoot rootRules true false)=[]) "Clearing app rules retained application grouping"
+    let desktopA,desktopB = Guid.NewGuid(),Guid.NewGuid()
+    let desktopOf hwnd = if hwnd=1 then Some desktopA elif hwnd=2 then Some desktopB else None
+    let groupRules = ["A",[1];"A",[2];"B",[1]]
+    let pick hwnd = AppGroupingRules.pick snd (fst >> Some) desktopOf groupRules "A" hwnd
+    check (pick 1=Some("A",[1]) && pick 2=Some("A",[2])) "Named grouping crossed virtual desktops"
+    check (pick 3=None) "An unresolved named-rule window joined another desktop's group"
+    check (AppGroupingRules.pick snd (fst >> Some) (fun _ -> None) ["A",[1]] "A" 2=None)
+          "Unresolved named-rule windows were assumed to share a desktop"
+    let mutable resolvedDesktop = None
+    let pendingDesktop hwnd = if hwnd=1 then Some desktopA else resolvedDesktop
+    let pendingPick() = AppGroupingRules.pick snd (fst >> Some) pendingDesktop ["A",[1]] "A" 2
+    check ((pendingPick()).IsNone) "A pending query could pull a new window onto the first desktop"
+    resolvedDesktop <- Some desktopB
+    check ((pendingPick()).IsNone) "Completing a query for a different desktop allowed adoption"
+    resolvedDesktop <- Some desktopA
+    check (pendingPick()=Some("A",[1])) "A confirmed same-desktop window could not join its target"
     // A system theme change deadlocked when SystemEvents ran on the main thread while a tab
     // group thread waited on it for the appearance.
     ThemeService.moveSystemEventsOffMainThread()
@@ -62,6 +139,12 @@ let main() =
     thread.Start()
     thread.Join()
     check (not duplicate) "Duplicate process lock accepted"
+    // Sign-in follows the copy started last: an entry naming an older copy, or none, is replaced.
+    let exe = @"C:\Apps\WindowTabs\WindowTabs.exe"
+    check (not(Program.RunAtStartup.isStale (Program.RunAtStartup.command exe) exe)) "The current copy's sign-in entry was taken as stale"
+    check (not(Program.RunAtStartup.isStale (Program.RunAtStartup.command (exe.ToLowerInvariant())) exe)) "A sign-in entry differing only in case was taken as stale"
+    check (Program.RunAtStartup.isStale (Program.RunAtStartup.command @"C:\Old\WindowTabs.exe") exe && Program.RunAtStartup.isStale null exe)
+          "A sign-in entry for another copy, or none, was kept"
 
     let registered = Collections.Generic.HashSet<int>()
     let operations = ResizeArray<string>()
@@ -396,6 +479,7 @@ let main() =
         let mutable cloak = 1
         CloakProbe.DwmSetWindowAttribute(cloaked.Handle, 13, &cloak, 4) |> ignore
         let target = cloaked.Handle
+        check (not(fst(WindowCloaking.TryGetVisibleDesktopId target))) "A cloaked window inherited the visible desktop and could cross-group"
         check (WindowCloaking.IsHiddenOnCurrentDesktop target) "A cloaked window on this desktop is not hidden"
         let insideCall = ref None
         let probe = SyncCallWindow(fun () -> insideCall.Value <- Some(WindowCloaking.IsHiddenOnCurrentDesktop target))

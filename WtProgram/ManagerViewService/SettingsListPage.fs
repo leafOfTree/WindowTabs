@@ -7,12 +7,13 @@ open System.Windows.Forms
 /// the same margins and column as SettingsPage, a title and description, a row of
 /// actions, and the list in a rounded card that follows the light/dark theme.
 type SettingsListPage(title:string, description:string, list:Control, actions:Control list, ?helpText:string,
-                      ?links:(string*string) list, ?extra:Control, ?footer:Control) as this =
+                      ?links:(string*string) list, ?extra:Control, ?footer:Control, ?compact:bool, ?header:Control) as this =
     inherit Panel()
     let inset() = Dpi.scale 32
     let mutable arranging = false
     let mutable relayoutPending = false
     let topInset() = Dpi.scale 16
+    let gap() = Dpi.scale (if defaultArg compact false then 8 else 16)
     let heading = new Label(Text=title,AutoSize=true,Font=SettingsUi.sectionFont(),UseMnemonic=false)
     let helpButton = helpText |> Option.map(fun text ->
         new SettingsHelpButton(text,AccessibleName=tr Strings.SettingsWindow.howToUse,Font=SettingsUi.bodyFont()))
@@ -71,6 +72,7 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
         linkRow |> Option.iter(fun (row,_,_) -> this.Controls.Add(row))
         extra |> Option.iter(fun control -> this.Controls.Add(control))
         footer |> Option.iter(fun control -> this.Controls.Add(control))
+        header |> Option.iter(fun control -> this.Controls.Add(control))
         // The link row is measured in OnLayout. The extra and footer blocks size themselves: rows only settle
         // once they have their real width, which can be after the pass that placed it, so a size
         // change lays the page out again afterwards rather than inside that pass.
@@ -85,7 +87,7 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
             list.Invalidate()
             card.Invalidate())
     /// Short note above the list (scan progress, counts, errors).
-    member _.Status with get() = status.Text and set(value) = status.Text <- value
+    member _.Status with get() = status.Text and set(value) = status.Text <- value; this.PerformLayout()
     override this.OnLayout(e) =
         base.OnLayout(e)
         if not (isNull heading) && not arranging then
@@ -104,8 +106,17 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
             actionRow.Size <- actionRow.GetPreferredSize(Size.Empty)
             let mutable y =
                 if not hasTitle then topInset()
-                elif detail.Visible then detail.Bottom+Dpi.scale 16
-                else heading.Bottom+Dpi.scale 16
+                elif detail.Visible then detail.Bottom+gap()
+                else heading.Bottom+gap()
+            header |> Option.iter(fun control ->
+                control.Size <- control.GetPreferredSize(Size(width,0))
+                let titleWidth = heading.Width+(helpButton |> Option.map(fun button -> button.Width+Dpi.scale 10) |> Option.defaultValue 0)
+                if hasTitle && titleWidth+control.Width+Dpi.scale 16<=width then
+                    control.Location <- Point(left+width-control.Width,heading.Top)
+                    y <- max y (control.Bottom+gap())
+                else
+                    control.Location <- Point(left,y)
+                    y <- control.Bottom+gap())
             match linkRow with
             | Some(row,web,files) ->
                 // Side by side when they fit; otherwise the files take the next line, still at the right.
@@ -141,8 +152,11 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
                         status.Bounds <- Rectangle(x,row.Top,max 0 (right-x),web.Height)
                         y
                     | None ->
-                        status.Bounds <- Rectangle(left,y,width,Dpi.scale 24)
-                        status.Bottom+Dpi.scale 8
+                        status.Visible <- status.Text<>""
+                        if status.Visible then
+                            status.Bounds <- Rectangle(left,y,width,Dpi.scale 24)
+                            status.Bottom+Dpi.scale 8
+                        else y
                 else
                     actionRow.Location <- Point(left,y)
                     let statusGap = Dpi.scale 16
@@ -152,13 +166,15 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
                         status.Bounds <- Rectangle(left,actionRow.Bottom+Dpi.scale 4,width,Dpi.scale 24)
                     else
                         status.Bounds <- Rectangle(left+actionRow.Width+statusGap,actionRow.Top,statusWidth,actionRow.Height)
-                    (if statusOnNextLine then status.Bottom else actionRow.Bottom)+Dpi.scale 16
+                    (if statusOnNextLine then status.Bottom else actionRow.Bottom)+gap()
             // Below the list, which takes the height the footer leaves.
             let footerHeight =
                 match footer with
                 | Some control ->
-                    control.MinimumSize <- Size(width,0)
-                    control.MaximumSize <- Size(width,0)
+                    if control.AutoSize then
+                        control.MinimumSize <- Size(width,0)
+                        control.MaximumSize <- Size(width,0)
+                    else control.Width <- width
                     control.Height+Dpi.scale 12
                 | None -> 0
             card.Bounds <- Rectangle(left,top,width,max (Dpi.scale 80) (this.ClientSize.Height-top-inset()-footerHeight))

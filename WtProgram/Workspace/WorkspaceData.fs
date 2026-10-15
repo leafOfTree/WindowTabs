@@ -1,20 +1,6 @@
 namespace Bemo
 open System
-open System.Text.RegularExpressions
 open Newtonsoft.Json.Linq
-
-module WindowTitleMatcher =
-    let compile kind (target:string) =
-        if isNull target || target.Length>4096 then invalidArg "target" (tr Strings.Workspaces.titleInvalid)
-        match kind with
-        | 0 -> fun title -> String.Equals(title,target,StringComparison.Ordinal)
-        | 1 -> fun (title:string) -> title.StartsWith(target,StringComparison.Ordinal)
-        | 2 -> fun (title:string) -> title.EndsWith(target,StringComparison.Ordinal)
-        | 3 -> fun (title:string) -> title.Contains(target)
-        | 4 ->
-            let regex = Regex(target,RegexOptions.CultureInvariant,TimeSpan.FromMilliseconds(100.0))
-            fun title -> regex.IsMatch(title)
-        | _ -> invalidArg "kind" (tr Strings.Workspaces.unknownMatchMethod)
 
 module WorkspaceData =
     let version = 3

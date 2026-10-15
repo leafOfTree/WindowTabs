@@ -198,9 +198,15 @@ type SettingsHover(target:Control, text:string, ?enabled:bool) =
             popup |> Option.iter(fun window ->
                 let pointer = Cursor.Position
                 let owner = target.FindForm()
-                if not window.Visible || not target.Visible || isNull owner || not owner.ContainsFocus ||
-                   (not (target.RectangleToScreen(target.ClientRectangle).Contains(pointer))
-                    && not (window.Bounds.Contains(pointer)) && not (pinned && target.Focused)) then
+                // The window actually under the pointer: the settings window covered by another
+                // window does not count as pointing at the button.
+                let shownAt =
+                    if isNull owner then IntPtr.Zero
+                    else WinUserApi.GetAncestor(WinUserApi.WindowFromPoint(POINT(pointer.X,pointer.Y)),GetAncestorConstants.GA_ROOT)
+                let onTarget = shownAt=owner.Handle && target.RectangleToScreen(target.ClientRectangle).Contains(pointer)
+                let onPopup = shownAt=window.Handle || window.Bounds.Contains(pointer)
+                let pinnedHere = pinned && target.Focused && owner.ContainsFocus
+                if not window.Visible || not target.Visible || isNull owner || not (SettingsHover.staysOpen(onTarget,onPopup,pinnedHere)) then
                     window.Hide()
                     watcher.Stop()))
         target.MouseEnter.Add(fun _ -> show false)
@@ -210,6 +216,10 @@ type SettingsHover(target:Control, text:string, ?enabled:bool) =
         target.Disposed.Add(fun _ ->
             watcher.Dispose()
             popup |> Option.iter(fun window -> window.Dispose()))
+    /// A popup opened by hovering stays while the pointer is on its button or on it, whether or not
+    /// the settings window is active: requiring focus closed it at once over an inactive window.
+    /// One opened by a click also stays while its button keeps focus.
+    static member staysOpen(onTarget:bool,onPopup:bool,pinnedHere:bool) = onTarget || onPopup || pinnedHere
     member _.Enabled
         with get() = offered
         and set value =
@@ -1033,10 +1043,15 @@ type SettingsCombo(items:string[]) as this =
     let mutable popup : SettingsChoicePopup option = None
     let mutable suppressNextClick = false
     let mutable itemColors : Color array = [||]
+    let mutable itemImages : Image array = [||]
     /// When set, the closed control shows a globe and this short label instead of the full choice.
     let mutable compactLabel : (unit -> string) option = None
     let drawDot (graphics:Graphics) (bounds:Rectangle) index =
-        if index>=0 && index<itemColors.Length then
+        if index>=0 && index<itemImages.Length && not(isNull itemImages.[index]) then
+            let size = Dpi.scale 16
+            graphics.DrawImage(itemImages.[index],Rectangle(bounds.Left+Dpi.scale 12,bounds.Top+(bounds.Height-size)/2,size,size))
+            Dpi.scale 24
+        elif index>=0 && index<itemColors.Length then
             let size = Dpi.scale 12
             let circle = Rectangle(bounds.Left+Dpi.scale 12,bounds.Top+(bounds.Height-size)/2,size,size)
             graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
@@ -1075,6 +1090,15 @@ type SettingsCombo(items:string[]) as this =
                 this.Invalidate()
                 changed.Trigger(EventArgs.Empty)
     member _.SelectedIndexChanged = changed.Publish
+    /// Images remain owned by the caller, as tree-list item icons do.
+    member _.ItemImages
+        with get() = Array.copy itemImages
+        and set(value:Image array) =
+            if isNull value || (value.Length<>0 && value.Length<>items.Length) then
+                invalidArg "value" "Provide one image per option, or an empty array."
+            itemImages <- Array.copy value
+            this.Invalidate()
+            popup |> Option.iter(fun window -> window.Invalidate(true))
     /// Relabels a choice, such as to mark it changed, without selecting anything.
     member this.SetItemText(index,text:string) =
         if items.[index]<>text then
@@ -1085,7 +1109,7 @@ type SettingsCombo(items:string[]) as this =
     /// Narrowest width that shows every choice untrimmed, matching the insets used by paintFull.
     member this.FitToItems() =
         let textWidth = items |> Array.map(fun text -> TextRenderer.MeasureText(text,this.Font).Width) |> Array.fold max 0
-        let dot = if itemColors.Length>0 then Dpi.scale 22 else 0
+        let dot = if itemImages.Length>0 then Dpi.scale 24 elif itemColors.Length>0 then Dpi.scale 22 else 0
         // One width for lists of short words, so stacked rows line up their left edges too.
         this.Width <- max (Dpi.scale SettingsShapes.editorWidth) (textWidth+dot+Dpi.scale 60)
     member _.CompactLabel with set(label:unit -> string) = compactLabel <- Some label; this.Invalidate()
@@ -1175,7 +1199,7 @@ type SettingsCombo(items:string[]) as this =
             // Realize the list first, then size the client area using its final row height.
             list.Handle |> ignore
             list.ItemHeight <- max (Dpi.scale 34) (list.Font.Height+Dpi.scale 12)
-            window.Size <- Size(min area.Width (max this.Width (labelWidth+Dpi.scale (if itemColors.Length>0 then 80 else 58))),
+            window.Size <- Size(min area.Width (max this.Width (labelWidth+Dpi.scale (if itemImages.Length>0 then 82 elif itemColors.Length>0 then 80 else 58))),
                                 min (area.Height-Dpi.scale 12) (items.Length*list.ItemHeight+window.Padding.Vertical+2))
             listHost.Size <- Size(window.Width-window.Padding.Horizontal,window.Height-window.Padding.Vertical)
             frame.Size <- listHost.Size
@@ -1230,8 +1254,11 @@ type SettingsCombo(items:string[]) as this =
         | None -> this.paintFull(e.Graphics,p)
     member private this.paintFull(graphics:Graphics,p:SettingsPalette) =
         use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 8))
-        use fill = new SolidBrush(if hovering && this.Enabled then p.selection else p.hover)
-        use border = new Pen(p.border)
+        // Coloured as a button: the old hover fill was the colour of a selected row, so a
+        // drop-down in an edited row vanished into it under the pointer.
+        let fillColor,borderColor = SettingsShapes.neutralColors p (hovering && this.Enabled) (popup.IsSome && this.Enabled)
+        use fill = new SolidBrush(fillColor)
+        use border = new Pen(borderColor)
         graphics.FillPath(fill,shape)
         if flash > 0.0 then
             use tint = new SolidBrush(Color.FromArgb(int(90.0*flash),p.accent))

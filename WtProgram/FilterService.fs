@@ -18,6 +18,11 @@ type FilterService() as this =
     member this.isTabbingEnabledForAllProcessesByDefault 
         with get() = Services.settings.getValue("enableTabbingByDefault").cast<bool>()
         and set(value) = 
+            // Snapshot existing apps without synchronous virtual-desktop shell queries.
+            let running = os.windowsInZorder.where(fun window ->
+                window.isVisible && not window.pid.isCurrentProcess && window.pid.canQueryProcess &&
+                this.isAppWindowStyle window && not(TaskbarProxies.contains window.hwnd)).map(fun window -> window.pid.processPath).list
+            this.rememberApplications (running @ this.includedPaths.items.list @ this.excludedPaths.items.list)
             Services.settings.setValue("enableTabbingByDefault", box(value))
             Services.program.refresh().ignore
 
@@ -70,7 +75,7 @@ type FilterService() as this =
     
     /// An app turned on or off in the app rules keeps that choice; the default is for the rest.
     member this.getIsTabbingEnabledForProcess(processPath) =
-        match this.includedPaths.contains processPath, this.excludedPaths.contains processPath with
+        match AppIdentity.contains this.includedPaths processPath, AppIdentity.contains this.excludedPaths processPath with
         // Each list once applied only under its own default, so an app could be in both: the
         // list of the current default wins, as it did then.
         | true, true -> this.isTabbingEnabledForAllProcessesByDefault.not
@@ -78,10 +83,26 @@ type FilterService() as this =
         | false, true -> false
         | false, false -> this.isTabbingEnabledForAllProcessesByDefault
 
+    /// Once an app is discovered, later default changes must not change its choice.
+    member this.rememberApplications(processPaths:string list) =
+        let mutable included,excluded = this.includedPaths,this.excludedPaths
+        let previousIncluded,previousExcluded = included,excluded
+        for path in processPaths |> List.distinct do
+            if not(String.IsNullOrWhiteSpace path) &&
+               (not(AppIdentity.contains included path || AppIdentity.contains excluded path) || (AppIdentity.contains included path && AppIdentity.contains excluded path)) then
+                if this.getIsTabbingEnabledForProcess path then
+                    included <- included.add path
+                    excluded <- AppIdentity.without excluded path
+                else
+                    excluded <- excluded.add path
+                    included <- AppIdentity.without included path
+        if included<>previousIncluded then this.includedPaths <- included
+        if excluded<>previousExcluded then this.excludedPaths <- excluded
+
     /// Records the choice for each app, then applies it to open windows once.
     member this.setIsTabbingEnabledForProcesses (processPaths:string list) enabled =
         let add (paths:Set2<string>) = processPaths |> List.fold (fun (paths:Set2<string>) path -> paths.add path) paths
-        let remove (paths:Set2<string>) = processPaths |> List.fold (fun (paths:Set2<string>) path -> paths.remove path) paths
+        let remove (paths:Set2<string>) = processPaths |> List.fold AppIdentity.without paths
         if enabled then
             this.includedPaths <- add this.includedPaths
             this.excludedPaths <- remove this.excludedPaths
@@ -91,7 +112,11 @@ type FilterService() as this =
         Services.program.refresh().ignore
 
     member this.isTabbableWindow(window:Window) = 
-        this.getIsTabbingEnabledForProcess(window.pid.processPath) && this.isAppWindow(window)
+        let path = StartupTrace.measure "filter.path" (fun () -> window.pid.processPath)
+        if StartupTrace.measure "filter.window" (fun () -> this.isAppWindow(window)) then
+            this.rememberApplications [path]
+            this.getIsTabbingEnabledForProcess(path)
+        else false
 
     interface IFilterService with
         

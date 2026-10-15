@@ -45,13 +45,15 @@ for native calls and releases queue entries when outstanding work ends.
 
 Minimize/restore uses the same stream and acknowledges its own WinEvents to avoid
 feeding an older transition back into the group. Native animation settings are
-left unchanged. The group transition timer also waits for queued minimize/restore
-work to finish, then reconciles strip visibility and placement without requiring
-another foreground event. It stops when the transition checks are complete.
+left unchanged. The placement queue publishes completion outside its lock; the
+owning group posts reconciliation to its STA without requiring another foreground
+event. A 16 ms timer only acknowledges pending native minimize/restore events, with
+a one-second deadline per acknowledgement. It stops once those acknowledgements
+are resolved or expire, even if a native call remains blocked.
 Reconciliation also puts the strip immediately above its owner even when neither
 the owner nor the group's tab order changed: native visibility alone does not
-mean the strip is above restored windows. Placement completion uses the same timer
-to reconcile the strip after maximize/snap, preserving its auto-hide state and
+mean the strip is above restored windows. Placement completion also reconciles
+the strip after maximize/snap, preserving its auto-hide state and
 keeping its collapsed hover area above its owner. This does not activate the group.
 Maximized cross-monitor positioning still moves before applying
 placement; normal positioning still uses `MoveWindow` to preserve snapped bounds.
@@ -62,9 +64,18 @@ maximizing followers, including after a monitor change; owned followers can rise
 above the source even without changing the active window. Each group request names
 the originating top window: another follower's transient position is not a stable
 stacking reference while native placements run concurrently.
+Stacking correction follows the entire placement sequence, including restored
+bounds and minimize-anchor preparation; correcting only SetWindowPlacement can
+be undone by a later native move. Unchanged placement does not reorder windows.
 During a move/resize, native reordering of owned followers does not replace the
 group's top window. Its move-end event must still restore the strip and align the
 followers; membership changes continue to apply immediately.
+Maximize/restore placement has the same order protection until its completion
+notification is handled. A follower's temporary native reordering is not a tab
+selection and must not cancel its remaining stacking correction. A different
+member becoming the actual foreground window still selects that tab immediately;
+membership updates retain the remaining order throughout the transition. This
+policy applies to every application and both shared and separate preview owners.
 
 `WindowRefreshQueue` batches events for 30 ms without continually resetting its
 deadline. Repeated events for an HWND collapse to one update. Ordinary show/hide and
@@ -74,13 +85,59 @@ No periodic desktop polling was added.
 
 ## Virtual desktops
 
+Discovery's grouping decisions use `VirtualDesktop.groupingDesktopId` and
+`isPlacedForGrouping`: these schedule one native query per HWND on the pool and
+read completed snapshots without waiting on Explorer. Completion posts a dirty
+window refresh to the main STA. The existing one-second placement grace period
+still applies. After it expires, an unresolved window starts an independent group;
+unknown membership never matches another group. If the background query later
+confirms its desktop, an automatic singleton can join a confirmed target on that
+desktop. A group extended manually is left alone. Known
+answers refresh on demand after a second; unknown answers after 100 ms. Destroyed
+HWNDs invalidate both saved answers and outstanding query tokens, so late results
+cannot populate a reused handle. Grouping does not synchronously query the shell
+again while choosing a target or adding a window.
+
+Some Notepad windows lack taskbar registration and never report a direct desktop
+ID. The worker resolves them through their owner or previously confirmed desktop
+first. Only for a visible, uncloaked window that the shell confirms is on the current
+desktop may it infer the ID from a registered, shell-confirmed current-desktop
+anchor. It validates the anchor again after querying and retains the confirmed
+window assignment, so later desktop switches do not reinterpret it as the newly
+visible desktop. Missing or cloaked answers remain unresolved, never wildcards.
+The shell's all-desktop sentinel IDs for pinned windows/apps are not concrete
+desktop IDs. They are excluded from grouping, proxy placement and visible anchors;
+a pinned target is not assigned a guessed current desktop.
+
+Tab strips only use application owners when both processes have the same
+integrity level. Cross-thread owners implicitly share input queues; unlike
+permissions break mouse capture in applications such as Notepad and Word.
+Unreadable integrity also leaves the strip unowned. Checks are cached for each
+HWND's group membership and cleared on removal. Cloak/uncloak events reconcile
+strip visibility even without a native owner. Combined taskbar groups retain
+individual buttons while any member cannot safely share the proxy's input queue,
+then resume combining when membership is compatible.
+
 A window without a taskbar button belongs to no virtual desktop, so Windows shows it on
-every desktop. A group with combined taskbar icons therefore makes its stand-in taskbar
-window the owner of its windows before removing their buttons: owned windows follow their
-owner's desktop. The stand-in starts on the desktop in view and is moved once to its
-windows' desktop. Windows hides a group on another desktop, which is not the app hiding
+every desktop. A group with combined taskbar icons therefore owns each application through
+its distinct preview proxy, which is itself owned by the stand-in taskbar window, before
+removing their buttons. Directly owning every application with the same stand-in leaves
+the current application over other tabs' Peek images. The per-tab ownership separates
+their Peek contents while retaining the common root owner's desktop. A preview releases
+its application before destroying its HWND, so closing a preview cannot close that app.
+The stand-in starts on the desktop in view and is moved once to its
+windows' confirmed desktop. Placement is marked complete only after success.
+Until then the applications keep their native owners and individual taskbar buttons;
+failed placement gets at most three attempts on the group STA, with one- and
+two-second delays before the final attempts. Exhaustion stops the retry timer and
+keeps individual taskbar buttons. Only changed membership, a different confirmed
+desktop or changed input compatibility starts a fresh attempt budget; title, focus
+and z-order refreshes cannot reset it or bypass its cooldown. Unknown desktop IDs
+wait for the background query's completion notification without a polling timer.
+Successful placement, incompatible membership and group exit stop the retry timer.
+Windows hides a group on another desktop, which is not the app hiding
 its window, so the filter keeps owned windows in their group. Owned Explorer windows
-report no desktop of their own; `VirtualDesktop.desktopId` asks the owner first, then the
+report no desktop of their own; `VirtualDesktop.desktopId` asks the owner and root owner first, then the
 desktop a window was last seen on. Auto-grouping waits up to a second for a new window
 to be placed on a desktop, and joins it only to a group on the same desktop. Windows
 shows a minimized owned window as a small title bar above the taskbar, so the group moves
@@ -111,7 +168,35 @@ Ordinary groups reclaim each window's taskbar button when it joins, including
 windows rediscovered at startup after a combined session ended unexpectedly.
 Combined groups recreate their proxy and previews through the existing z-order
 updates. Both kinds restore remaining live windows' buttons when the group exits.
-Only managed windows are reconciled; no recovery file or taskbar polling is used.
+Only managed windows are reconciled; no recovery file or regular taskbar polling is used.
+Shutdown destroys whole groups rather than removing their members one at a time.
+Combined groups restore buttons while their preview owners still carry the desktop,
+then confirm the shell's direct desktop records on workers before releasing owners.
+Applications without `WS_EX_APPWINDOW` temporarily receive that flag during this
+registration: Explorer otherwise ignores the restored button while it is owned.
+After proxies are released, only the added flag is removed and each surviving,
+unowned application receives one final AddTab, regardless of the visibility cache.
+PID/thread checks prevent restoring styles to a closed window's reused HWND.
+The group STA keeps pumping messages while confirmation runs. Its 50 ms timer
+exists only during exit preparation and stops on completion or after three seconds;
+single-flight queries and invalidated lookup tokens prevent duplicate work or late
+results. If Explorer cannot finish within that deadline, cleanup proceeds and
+opt-in Peek diagnostics record the timeout. Whole-group teardown also disposes
+every per-window WinEvent subscription. Exit preparations finish on the group STA
+once, even if a continuation or shutdown request is repeated.
+Rebuilds and deferred automatic regrouping stage target membership on the main
+STA, but queue its native add only after the source STA finishes removing the HWND.
+Old cleanup checks its own proxy identity and does not restore a taskbar button
+for an application already owned by another group. Ownership reconciliation uses
+actual membership: the deferred z-order snapshot can still contain a removed HWND.
+Staged transfers carry a main-thread token; removing a pending member invalidates
+that token so its late source-cleanup callback cannot reattach it after a newer
+rule edit.
+
+Combined-icon Peek images are cropped to both the host and tab proxy's native
+client areas, rather than their outer bounds. Windows can trim a proxy at the
+work-area edge; even a one-pixel excess makes DWM reject the live preview.
+Failed bitmap submissions emit a diagnostic trace with the HRESULT and sizes.
 
 Explicit tab position, width and alignment choices are also stored immediately in
 a versioned native property on each managed application HWND. It packs bounded
@@ -211,6 +296,14 @@ before the group minimizes it too. Neither activation selects that tab: the
 minimized tab stays active, so a window that later opens into the minimized group
 gets it as opener and closes back to it.
 
+Plugins marked `IStartupInputPlugin` install global input hooks
+only after the initial window scan and synchronous group creation finish. The
+Alt+Tab replacement is likewise created after that scan, so the main STA's startup
+waits do not hold up desktop input through low-level hooks. This does not move
+subsequent input hooks or window reconciliation off the main STA.
+Initialization calls the owner-thread refresh directly; posting through the public
+service adapter would return before discovery and install hooks too early.
+
 The entry point installs exception reporting and acquires the single-instance mutex
 before constructing services. `LifetimeScope` owns resources immediately and releases
 them in reverse order, continuing when one cleanup fails. OLE drop targets revoke
@@ -262,6 +355,36 @@ already in progress. Generation checks discard queued stale results, and stale n
 trees release their owned icons. Closing the view cancels its worker.
 
 ## Settings and diagnostics
+
+Taskbar button visibility is remembered per HWND, so unchanged z-order
+notifications do not repeatedly call Explorer to add or delete a button.
+A new Shell_TrayWnd handle invalidates this state after Explorer restarts;
+removing a tab forgets its state so HWND reuse does not inherit it. Ownership
+release still happens independently of the visibility cache.
+
+`WINDOWTABS_STARTUP_TRACE` enables phase timings for the first 15 seconds of a
+launch. The background writer stops after 16 seconds; the default performs no
+file writes. Events contain phase names and durations rather than window titles
+or executable paths. The isolated comparison host is documented in
+`tests/StartupPerf/README.md`.
+
+App grouping rules map each executable to one persistent target group ID and name,
+with an enabled flag. Paths ignore case; titles do not participate. Older exports
+normalize title rows into the first application mapping per executable. The main
+STA evaluates the mapping for newly discovered windows, joining a rule-created
+group only after compatible desktop membership is confirmed. Target IDs survive
+taskbar group rebuilds. Enabled mappings exclude their app from legacy automatic
+grouping in persistence, runtime selection, and the Group by app checkbox.
+App Rules places a group-root application tree below its app list, with the new-app
+default in the header. Empty group roots persist independently of their applications.
+Changing an enabled mapping uses the established app regroup path; disabling or
+deleting one leaves legacy automatic grouping off until the user enables it.
+The editor posts `regroupApplications` to the main STA. It enables the affected
+apps once and removes their old membership; removal notifications rediscover them
+only after native cleanup. It never toggles tabs off around an asynchronous refresh.
+`StartupGrouping` exercises both startup and the actual editor/service boundary on
+a hidden desktop, with isolated settings and explicit fixture HWNDs.
+Dragging does not create rules.
 
 `SettingsCatalog` shares setting IDs, labels, boolean defaults, numeric
 ranges and choice values between search and editors. Appearance values are normalized

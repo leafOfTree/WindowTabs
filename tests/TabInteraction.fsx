@@ -83,14 +83,14 @@ let main() =
             let command flags image text = CmiRegular({text=text;image=image;flags=List2(flags);click=fun () -> selected <- selected+1})
             let entries = List2([command [] None "Open new tab\tCtrl+Alt+N";
                                  command [MenuFlags.MF_CHECKED] None "Checked";
-                                 CmiSection(tr Strings.TabMenu.currentGroup);
+                                 CmiSection("Section");
                                  CmiPopUp({text="Tab color";image=None;items=List2([command [MenuFlags.MF_CHECKED] (Some(Img(dot))) "Blue";command [MenuFlags.MF_DISABLED] None "Disabled"])})])
             use menu = new ThemedContextMenu(entries,fun () -> closed <- true)
             let first = menu.Items.[0] :?> ToolStripMenuItem
             let nested = menu.Items.[3] :?> ToolStripMenuItem
             let colour = nested.DropDownItems.[0] :?> ToolStripMenuItem
             let section = menu.Items.[2] :?> ToolStripSeparator
-            check (section.Text=tr Strings.TabMenu.currentGroup && not section.CanSelect) "Menu scope heading is missing or selectable"
+            check (section.Text="Section" && not section.CanSelect) "Menu scope heading is missing or selectable"
             check (first.ShortcutKeyDisplayString="Ctrl+Alt+N" && first.Text="Open new tab") "Themed menu lost its shortcut column"
             check (colour.Checked && not nested.DropDownItems.[1].Enabled) "Themed submenu lost checked or disabled state"
             check (not(Object.ReferenceEquals(colour.Image,dot))) "Themed menu retained a caller-owned image"
@@ -268,8 +268,9 @@ let main() =
         check (palette.resolve (IntPtr(100)) "editor.exe" "ByWindow" Map.empty replacement=allocated.[1]) "Closed windows do not release their automatic colour"
         let remembered = Map.ofList [@"C:\Apps\EDITOR.EXE","#00FF00"]
         let resolveAt path hwnd = colors.resolve hwnd path "ByWindow" remembered peers
+        check (resolveAt @"D:\Updated\editor.exe" (IntPtr(999))=Some(CustomColor(Color.FromArgb(0,255,0)))) "Remembered application colours did not follow the exe to another directory"
         check (resolveAt @"c:\apps\editor.exe" a=Some(CustomColor(Color.FromArgb(0,255,0)))) "Remembered colour did not override automatic colour or depended on path case"
-        check (resolveAt @"C:\Other\EDITOR.EXE" a=first) "Remembered colour applied to another app with the same name"
+        check (resolveAt @"C:\Other\EDITOR.EXE" a=Some(CustomColor(Color.FromArgb(0,255,0)))) "Remembered colour did not apply to another installation of the same app"
         colors.setOverride a (Some red)
         check (resolveAt @"C:\Apps\EDITOR.EXE" a=Some red) "Remembered colour overrode window colour"
         let loads = ref 0

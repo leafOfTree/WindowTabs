@@ -47,6 +47,8 @@ type WinEvent =
     | EVENT_OBJECT_REORDER = 0x8004
     | EVENT_OBJECT_LOCATIONCHANGE = 0x800B
     | EVENT_OBJECT_NAMECHANGE = 0x800C
+    | EVENT_OBJECT_CLOAKED = 0x8017
+    | EVENT_OBJECT_UNCLOAKED = 0x8018
     | EVENT_SYSTEM_MINIMIZESTART = 0x0016
     | EVENT_SYSTEM_MINIMIZEEND = 0x0017
 
@@ -271,12 +273,18 @@ and
 
     member this.zorder = os.windowsInZorder.tryFindIndex(fun w -> w.hwnd = hwnd).def(9999)
 
-    member this.dwmSetIconicLivePreview (image:Img) =
+    member this.dwmPublishIconicLivePreview (image:Img) =
         if os.isWin7OrHigher then
             let mutable ptClient = POINT(0, 0)
             let hbitmap = image.hbitmap
-            try DwmApi.DwmSetIconicLivePreviewBitmap(hwnd, hbitmap, ref ptClient, 0) |> ignore
+            try
+                let result = DwmApi.DwmSetIconicLivePreviewBitmap(hwnd, hbitmap, ref ptClient, 0)
+                if result<0 then Diagnostics.Trace.TraceWarning("DWM Peek bitmap rejected: HRESULT=0x{0:X8}, bitmap={1}, client={2}",result,image.size,this.clientSize)
+                result
             finally WinGdiApi.DeleteObject(hbitmap) |> ignore
+        else 0
+
+    member this.dwmSetIconicLivePreview (image:Img) = this.dwmPublishIconicLivePreview image |> ignore
 
     member this.dwmSetIconicThumbnail (image:Img) =
         if os.isWin7OrHigher then
@@ -321,6 +329,11 @@ and
     member this.visibleBounds = Win32Helper.GetVisibleWindowRectangle(hwnd).Rect
 
     member this.size = this.bounds.size
+
+    /// DWM limits Peek bitmaps to the client area, which can be smaller than the outer bounds.
+    member this.clientSize =
+        let mutable rect = RECT()
+        if WinUserApi.GetClientRect(hwnd,&rect) then rect.Rect.size else Sz(0,0)
     
     member this.location = this.bounds.location
 
@@ -419,6 +432,13 @@ and
 
     member this.bringToTop() = 
         WinUserApi.BringWindowToTop(hwnd).ignore
+
+    /// Above every other window, its owners with it, without activating it. Activation alone can
+    /// leave a window whose owner was set by another process (a combined taskbar's preview) under
+    /// other windows: Windows raised the owner, already on top, and not the window.
+    member this.raise() =
+        WinUserApi.SetWindowPos(hwnd, WindowHandleTypes.HWND_TOP, 0, 0, 0, 0,
+            SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore
     
     member this.insertAfter(hwndInsertAfter:IntPtr) =
         WinUserApi.SetWindowPos(hwnd,
@@ -668,6 +688,14 @@ and Pid(pid:int) =
         path.def(this.processKernelPath)
 
     member this.exeName = Path.GetFileName(this.processPath).ToLower()
+
+    /// The program's own description (e.g. "Windows Explorer"), or its file name without ".exe".
+    member this.appName = Cell.cacheProp this <| fun() ->
+        let description =
+            try System.Diagnostics.FileVersionInfo.GetVersionInfo(this.processPath).FileDescription
+            with _ -> null
+        if String.IsNullOrWhiteSpace description then Path.GetFileNameWithoutExtension(this.processPath)
+        else description.Trim()
 
 and Win32Message = {
     hwnd : IntPtr

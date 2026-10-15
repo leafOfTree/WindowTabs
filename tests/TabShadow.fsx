@@ -356,6 +356,14 @@ let main () =
                     (sprintf "A column between %A tabs facing %A is left uncovered" style direction)
         let folder = strip FolderTabs
         check (match folder.tryHit(Pt(138,26)) with Some(1,_) -> true | _ -> false) "A folder tab's foot takes the pointer from the tab beneath it"
+        // Spaced tabs stand apart: each is rounded at both ends and no hairline divides them.
+        let plain = { strip JoinedTabs with zorder=List2([1;2;3]) }
+        let joined = plain.tabSprites.list |> List.map(fun (_,tab) -> tab.showLeftSeparator,tab.roundLeft,tab.roundRight)
+        // Tab 1 is active, so only the hairline between the two plain tabs shows.
+        check (joined = [false,true,false;false,false,false;true,false,true]) (sprintf "Joined tabs are divided or rounded wrongly: %A" joined)
+        let spaced = { plain with appearance={ plain.appearance with tabOverlap= -4 } }
+        check (spaced.tabSprites.list |> List.forall(fun (_,tab) -> not tab.showLeftSeparator && tab.roundLeft && tab.roundRight))
+            "Spaced tabs keep the divider or square corners"
     let originalDpi = Dpi.value()
     try
         for dpi in [96;144;192] do

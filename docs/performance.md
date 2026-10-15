@@ -1,5 +1,73 @@
 # Rendering performance
 
+## Startup stalls
+
+The isolated startup comparison host is documented in
+[`tests/StartupPerf/README.md`](../tests/StartupPerf/README.md). Its completion
+measurement waits for work on each group STA; discovery's optimistic window list
+alone does not mean native grouping has finished. Hidden-desktop comparisons do
+not reproduce Explorer's visible taskbar workload or a debugger restart.
+
+For a real startup, set `WINDOWTABS_STARTUP_TRACE` to an absolute JSONL output path,
+or create `startup-trace.enabled` beside the executable before launching it. The
+marker writes `startup-trace.jsonl` in the same directory and works with an existing
+VSCode session. Remove the marker to disable it. Tracing records only phase names,
+elapsed start times, durations and managed thread IDs for the first 15 seconds,
+including group icon/owner work, taskbar registration/updates and preview printing.
+It writes on a background timer which stops after 16 seconds. Concurrent or nested
+durations must not be added together as elapsed startup time.
+
+The 2026-10-13 comparison found unnecessary groups when new rules encountered an
+unknown virtual desktop, plus repeated taskbar visibility notices in the permission
+fallback. Both have regression assertions. Isolated completion times around 1.7–2
+seconds did not establish the cause of the reported 5–6 second whole-desktop stall;
+real restart traces are still needed.
+
+Two subsequent real Debug launches from VSCode captured a 7,300 ms initial scan
+(first group creation at 7,377 ms), then a 248 ms initial scan with window-add
+records ending at 3,239 ms. The user reported a clear improvement on the second
+launch. Only additional tracing changed between these two launches, so this does
+not prove a causal fix. The second trace measured enumeration at 2.45 ms,
+subscriptions at 18 ms in total, and grouping decisions at 221 ms in total.
+The slow trace predates those subphase measurements, leaving its blocking call
+unidentified. Saved traces stay under ignored `tests/Debug/startup-compare/`.
+
+A later recurrence captured a 7,035 ms `scan.group` operation within a 7,263 ms
+initial scan. Its path lookup took 0.07 ms and native filtering 7.04 ms; no group
+was constructed until after that operation returned. This narrows the stall to the
+pre-group desktop-placement wait. Grouping's synchronous desktop lookup has now
+been replaced by a single-flight pool query and cached snapshots, with completion
+posting a window refresh. Regression checks cover pending queries, expiry and
+HWND reuse. The subsequent real VSCode restart showed a 208 ms maximum scan,
+22 ms maximum initial grouping decision, and window-add records ending at
+2,726 ms. The user reported clear improvement. The saved trace is
+`tests/Debug/startup-compare/vscode-async-desktop.jsonl`; this confirms the long
+main-thread wait was absent in that launch, rather than establishing that every
+future shell call is fast.
+
+Subsequent manual use exposed a correctness regression: the old unknown-desktop
+fallback could join a newly opened Notepad window to a group on the first desktop
+while its asynchronous answer was still pending. The combined-taskbar proxy then
+adopted it onto that group's desktop. Both automatic grouping paths now require
+matching known desktop IDs. An unresolved window remains an automatic singleton
+after the placement grace period; when its answer arrives it can join a confirmed
+target on the same desktop. Thus hidden-desktop runs with unknown IDs now retain
+separate windows and should not be compared with earlier fallback grouping counts.
+Reliability, GroupLifecycle, Architecture and TabInteraction passed; Debug and
+Release builds succeeded. The user's multi-desktop Notepad scenario still needs
+manual validation on the updated Debug executable.
+
+The next user screenshot showed two same-desktop Notepad groups. A read-only
+probe found 12 visible Notepad HWNDs with no direct desktop ID, while the shell
+confirmed they were on the current desktop. A separate cloaked Notepad HWND had
+a different known desktop ID. The worker now preserves owner/cached assignments,
+then resolves an unregistered visible window through a registered anchor confirmed
+by the shell to be on the current desktop. The probe resolved all 12 visible
+windows to the same ID and rejected the cloaked window for this fallback. Tests
+cover known background IDs, owner IDs, retained assignments, unavailable answers
+and native cloak rejection. Actual grouping after restarting remains a separate
+user validation step.
+
 ## Run and compare
 
 On Windows with the .NET SDK and .NET Framework 4.8:

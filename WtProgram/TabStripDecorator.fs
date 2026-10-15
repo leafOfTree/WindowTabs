@@ -10,6 +10,8 @@ type TabStripDecorator(group:WindowGroup) as this =
     let Cell = CellScope(false, true)
     let isDraggingCell = Cell.create(false)
     let dragInfoCell = Cell.create(None)
+    /// A tab from another group was dragged in and is still here: dropped, it makes this group one made by hand.
+    let mutable joinedByDrag = false
     let dragPtCell = Cell.create(Pt.empty)
     let dropTarget = Cell.create(None)
     let mouseEvent = Event<_>()
@@ -332,7 +334,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                     this.beginRename(hwnd)
             })
         let colors() = Services.settings.getValue("appTabColors") :?> Map<string,string>
-        let sameApp path = String.Equals(path,processPath,StringComparison.OrdinalIgnoreCase)
+        let sameApp path = AppIdentity.same path processPath
         let remembered = colors() |> Map.exists(fun path _ -> sameApp path)
         let currentColor = group.tabColor hwnd
         let dark = Theme.darkBar group.tabAppearance.tabNormalBgColor
@@ -445,7 +447,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(renameTabItem)
             (if group.isRenamed(hwnd) then Some(restoreTabNameItem) else None)
             Some(colorMenu)
-            Some(CmiSection(tr Strings.TabMenu.currentGroup))
+            Some(CmiSeparator)
             Some(positionItem)
             Some(alignmentItem)
             Some(autoHideItem)
@@ -458,7 +460,8 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(closeOtherTabsItem)
             (if mixesApps then Some(closeAllExeTabsItem) else None)
             Some(closeAllTabsItem)
-            Some(CmiSection(tr Strings.TabMenu.currentApp))
+            // Named after the program itself, since these choices apply to all its windows.
+            Some(CmiSection(pid.appName))
             Some(enableTabsItem)
             Some(groupTabsItem)
             Some(numberItem)
@@ -600,6 +603,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                         // The destination group owns its cached icons. Drag data
                         // can outlive the source group's membership and cache.
                         group.addWindow(hwnd, false)
+                        joinedByDrag <- true
                         true
                 this.updateTsSlide()
                 this.ts.dragScrollPoint <- Some pt
@@ -624,6 +628,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                         let window = os.windowFromHwnd(hwnd)
                         group.removeWindow(hwnd)
                         window.hideOffScreen(None)
+                        joinedByDrag <- false
                 | None -> ()
                 this.updateTsSlide()
 
@@ -636,5 +641,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 | Some(tab, index) ->
                     this.ts.moveTab(tab, index)
                 | None -> ()
+                if joinedByDrag && dragInfoCell.value.IsSome then group.isManual <- true
+                joinedByDrag <- false
                 dragInfoCell.set(None)
                 this.updateTsSlide()
