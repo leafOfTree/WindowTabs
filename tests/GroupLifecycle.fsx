@@ -540,9 +540,14 @@ let main() =
             let proxies() = OS().windowsInZorder.where(fun w -> TaskbarProxies.contains w.hwnd).map(fun w -> w.hwnd).list
             let proxy = proxies() |> List.filter(fun hwnd -> OS().windowFromHwnd(hwnd).isAltTabWindow)
             check (proxy.Length=1) "Combined group's taskbar window is not known as a taskbar proxy"
+            // A joining window's first details come with its added event; announcing them as a change
+            // as well updated the taskbar twice for every window at startup.
+            let detailChanges = ref 0
             onGroup combined (fun group ->
+                group.tabInfoChanged.Add(fun hwnd -> if hwnd=d then detailChanges.Value <- detailChanges.Value+1)
                 group.foreground <- d
                 group.addWindow(d,false))
+            check (detailChanges.Value=0) "A joining window's first details were announced as a change"
             check (nativeOrder combined = [a;b;d]) "Combined taskbar button failed a foreground window joining its group"
             // Without taskbar buttons of their own the windows would show on every virtual desktop;
             // owned by distinct preview proxies, placed on the group's desktop, they stay there without

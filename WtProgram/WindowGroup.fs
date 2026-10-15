@@ -600,14 +600,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.tabColor hwnd = tabColors.TryFind hwnd
 
     member private this.setTabInfo(hwnd) =
-        if not(this.ts.hasTabInfo(Tab(hwnd))) then this.refreshTabColor(hwnd)
+        let isNew = not(this.ts.hasTabInfo(Tab(hwnd)))
+        if isNew then this.refreshTabColor(hwnd)
         let info = this.getTabInfo(hwnd)
         let previous = this.ts.tabInfo(Tab(hwnd))
-        if not(this.ts.hasTabInfo(Tab(hwnd))) || info.text <> previous.text || info.isRenamed <> previous.isRenamed ||
+        if isNew || info.text <> previous.text || info.isRenamed <> previous.isRenamed ||
            not(obj.ReferenceEquals(info.iconSmall,previous.iconSmall)) ||
            not(obj.ReferenceEquals(info.iconBig,previous.iconBig)) then
             this.ts.setTabInfo(Tab(hwnd),info)
-            tabInfoChangedEvent.Trigger(hwnd)
+            // A new tab's first details come as it joins, and its added event follows: telling
+            // listeners twice updated the taskbar twice for every window at startup.
+            if not isNew then tabInfoChangedEvent.Trigger(hwnd)
 
     member private this.setTsOwner(owner:Window) =
         let strip = this.os.windowFromHwnd(this.ts.hwnd)
