@@ -137,7 +137,7 @@ type AppGroupingRulesView() as this =
     let help = new SettingsHelpButton(tr Strings.AppRules.groupRulesHelp,AccessibleName=tr Strings.SettingsWindow.howToUse,
                                       Font=SettingsUi.bodyFont(),Name="grouping-help")
     let addGroup = SettingsUi.button (tr Strings.AppRules.addGroup)
-    let tree = new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn);TreeListColumn(tr Strings.AppRules.enabled,110,CheckColumn);TreeListColumn("",86,ActionColumn)],RowHeight=36)
+    let tree = new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn);TreeListColumn(tr Strings.AppRules.enabled,76,CheckColumn);TreeListColumn("",58,ActionColumn)],RowHeight=36)
     let card = new Panel(Tag="surface",Padding=Padding(Dpi.scale 6))
     let name = new TextBox(Name="group-name")
     let nameInput = new SettingsTextInput(name)
@@ -175,20 +175,20 @@ type AppGroupingRulesView() as this =
                 let row = TreeListItem(group.name,Tag=GroupNode group.id,Glyph=GroupGlyph,
                                        Checks=[|None;if members.IsEmpty then None else Some(enabled=members.Length)|],
                                        Mixed=[|false;enabled>0 && enabled<members.Length|],
-                                       Actions=Some [AddGlyph;EditGlyph;DeleteGlyph],AlwaysShowActions=true)
+                                       ChipAdd=true,Actions=Some [EditGlyph;DeleteGlyph],AlwaysShowActions=true)
                 row.Chips <- members |> List.map(fun rule ->
                     { Text=ApplicationNames.label rule.processPath; Icon=ApplicationNames.icon rule.processPath; Removable=true })
                 chipRules.[group.id] <- members
                 if pendingGroup=Some group.id then
                     row.Add(TreeListItem(tr Strings.AppRules.chooseApplication,Tag=PendingApplicationNode group.id,
-                                         Actions=Some [NoGlyph;NoGlyph;DeleteGlyph])) |> ignore
+                                         Actions=Some [NoGlyph;DeleteGlyph])) |> ignore
                     row.Expanded <- true
                 tree.Roots.Add(row)
             // Groups made by dragging tabs, kept after their windows close: shown, not edited here,
             // and taken apart in one go.
             Services.program.handMadeGroups() |> List.iteri(fun index (id,members) ->
                 let row = TreeListItem(tr Strings.AppRules.handMadeGroup,Tag=HandMadeNode id,Glyph=GroupGlyph,SeparatorAbove=(index=0),
-                                       Checks=[|None;None|],Actions=Some [NoGlyph;NoGlyph;UngroupGlyph],AlwaysShowActions=true)
+                                       Checks=[|None;None|],Actions=Some [NoGlyph;UngroupGlyph],AlwaysShowActions=true)
                 row.Chips <- members |> List.map(fun (app,title) ->
                     { Text=(if String.IsNullOrWhiteSpace title then app else title); Icon=null; Removable=false })
                 tree.Roots.Add(row))
@@ -275,7 +275,7 @@ type AppGroupingRulesView() as this =
         caption.SizeChanged.Add(fun _ -> help.Location <- Point(caption.Right+Dpi.scale 10,caption.Top-Dpi.scale 2))
         help.Location <- Point(caption.Right+Dpi.scale 10,caption.Top-Dpi.scale 2)
         header.Resize.Add(fun _ -> addGroup.Location<-Point(max 0 (header.Width-addGroup.Width),0))
-        tree.RowActions <- [NoGlyph;EditGlyph;DeleteGlyph]
+        tree.RowActions <- [EditGlyph;DeleteGlyph]
         tree.ExpandOnDoubleClick <- false
         tree.SelectionChanged.Add(fun _ ->
             if not rebuilding then
@@ -287,16 +287,20 @@ type AppGroupingRulesView() as this =
         tree.ItemActivated.Add(fun _ -> beginEdit())
         tree.ActionInvoked.Add(fun (item,action) ->
             match item.Tag :?> GroupApplicationNode,action with
-            | GroupNode id,0 ->
-                pendingGroup <- Some id
-                reload (Some(PendingApplicationNode id))
-                beginEdit()
-            | HandMadeNode id,2 ->
+            | HandMadeNode id,1 ->
                 Services.program.ungroupHandMade id
                 reload None
             | HandMadeNode _,_ -> ()
-            | _,1 -> beginEdit()
-            | _,2 -> delete()
+            | _,0 -> beginEdit()
+            | _,1 -> delete()
+            | _ -> ())
+        // The "+" after a group's apps opens the row that picks one more.
+        tree.ChipAddInvoked.Add(fun item ->
+            match item.Tag :?> GroupApplicationNode with
+            | GroupNode id ->
+                pendingGroup <- Some id
+                reload (Some(PendingApplicationNode id))
+                beginEdit()
             | _ -> ())
         tree.ChipRemoved.Add(fun (item,index) ->
             match item.Tag :?> GroupApplicationNode with
@@ -311,6 +315,13 @@ type AppGroupingRulesView() as this =
             | _ -> ())
         // Groups made by hand change as tabs are dragged: shown again, the list catches up.
         this.VisibleChanged.Add(fun _ -> if this.Visible && editing.IsNone && pendingGroup.IsNone then reload (selected()))
+        // A group dragged together while the page is open shows at once.
+        let invoker = InvokerService.invoker
+        let handMadeSubscription = Services.settings.notifyValue "rememberedGroups" (fun _ ->
+            if not this.IsDisposed then
+                invoker.asyncInvoke(fun () ->
+                    if not this.IsDisposed && editing.IsNone && pendingGroup.IsNone then reload (selected())))
+        this.Disposed.Add(fun _ -> handMadeSubscription.Dispose())
         tree.KeyDown.Add(fun e -> if e.KeyCode=Keys.Delete then e.Handled<-true; delete())
         tree.CheckChanged.Add(fun (item,_,enabled) ->
             let previous = rules

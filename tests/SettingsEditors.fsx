@@ -808,7 +808,7 @@ let main() =
             name.Text <- target
             typeof<TextBox>.GetMethod("OnLeave",BindingFlags.Instance ||| BindingFlags.NonPublic).Invoke(name,[|box EventArgs.Empty|]) |> ignore
         (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
-        assertTrue (tree.RowActions=[NoGlyph;EditGlyph;DeleteGlyph] && obj.ReferenceEquals(name.Parent.Parent,tree) && name.Parent.Visible)
+        assertTrue (tree.RowActions=[EditGlyph;DeleteGlyph] && obj.ReferenceEquals(name.Parent.Parent,tree) && name.Parent.Visible)
                    "Adding a group did not start editing its name directly in the row"
         // In a selected row the name field and the application drop-down keep a fill of their own,
         // as the Browse button does, instead of vanishing into the row's colour.
@@ -836,13 +836,26 @@ let main() =
             let scrollWidth =
                 tree.Controls |> Seq.cast<Control> |> Seq.tryFind(fun bar -> bar.Visible && bar.Right=tree.ClientSize.Width && bar.Height>bar.Width)
                 |> Option.map(fun bar -> bar.Width) |> Option.defaultValue 0
-            let point = Point(tree.ClientSize.Width-scrollWidth-Dpi.scale 86+action*Dpi.scale 26+Dpi.scale 12,rowTop+Dpi.scale (tree.RowHeight/2))
+            let point = Point(tree.ClientSize.Width-scrollWidth-Dpi.scale 58+action*Dpi.scale 26+Dpi.scale 12,rowTop+Dpi.scale (tree.RowHeight/2))
             let mouse = new MouseEventArgs(MouseButtons.Left,1,point.X,point.Y,0)
             for method in ["OnMouseMove";"OnMouseDown"] do
                 typeof<SettingsTreeList>.GetMethod(method,BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(tree,[|box mouse|]) |> ignore
+        /// Presses the part of a row's chips that a hit test finds, wherever the list drew it.
+        let pressChipPart hitTest (item:TreeListItem) =
+            tree.EnsureVisible(item)
+            let hit = typeof<SettingsTreeList>.GetMethod(hitTest,BindingFlags.Instance ||| BindingFlags.NonPublic)
+            let point =
+                seq { for y in 0..2..tree.Height-1 do for x in 0..2..tree.Width-1 -> Point(x,y) }
+                |> Seq.find(fun point -> tree.ItemAt(point) |> Option.exists(fun row -> obj.ReferenceEquals(row,item))
+                                         && not(isNull (hit.Invoke(tree,[|box point|]))))
+            let mouse = new MouseEventArgs(MouseButtons.Left,1,point.X,point.Y,0)
+            for method in ["OnMouseMove";"OnMouseDown"] do
+                typeof<SettingsTreeList>.GetMethod(method,BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(tree,[|box mouse|]) |> ignore
+        // The "+" after a group's apps adds one.
+        let clickAdd = pressChipPart "chipAddAt"
         assertTrue (descendants groupView |> Seq.forall(fun control -> not(control :? GroupingApplicationPicker) || not control.Visible))
                    "A group still has a permanent application dropdown"
-        clickAction tree.Roots.[0] 0
+        clickAdd tree.Roots.[0]
         assertTrue (tree.Roots.[0].Children.Count=1 && saved().IsEmpty) "The plus button did not create an unsaved application row"
         let application = descendants groupView |> Seq.pick(function :? GroupingApplicationPicker as picker -> Some picker | _ -> None)
         assertTrue (obj.ReferenceEquals(application.Parent,tree) && application.Top=Dpi.scale 30+Dpi.scale 36+Dpi.scale 3)
@@ -874,7 +887,7 @@ let main() =
                     && tree.Roots.[0].Children.Count=0 && tree.Roots.[0].Chips.Length=1 && tree.Roots.[0].Chips.Head.Removable
                     && tree.Roots.[0].Chips.Head.Text=IO.Path.GetFileName selectedPath)
                    "An app was not added to its group as a chip on the group's row"
-        clickAction tree.Roots.[0] 0
+        clickAdd tree.Roots.[0]
         let cancelChoice = application.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as choice -> Some choice | _ -> None)
         key cancelChoice Keys.Escape
         assertTrue (tree.Roots.[0].Children.Count=0 && tree.Roots.[0].Chips.Length=1 && saved().Length=1) "Cancelling an empty application row changed saved mappings"
@@ -888,7 +901,7 @@ let main() =
         assertTrue (saved().Head.groupId=groupA && saved().Head.groupName="Group Alpha") "Renaming a group changed its identity or left application captions stale"
         (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
         rename "Group B"
-        clickAction tree.Roots.[1] 0
+        clickAdd tree.Roots.[1]
         let groupBPicker = application
         selectApplication groupBPicker selectedPath
         assertTrue (saved().Length=1 && saved().Head.groupName="Group B" && tree.Roots.[0].Chips.IsEmpty && tree.Roots.[1].Chips.Length=1)
@@ -908,7 +921,7 @@ let main() =
                    (sprintf "Grouping tree is outside the page: %A in %A" groupView.Bounds view.control.ClientSize)
         // The section is as tall as its rows, up to a limit: the row picking an app makes it taller.
         let baseHeight = groupView.Height
-        clickAction tree.Roots.[1] 0
+        clickAdd tree.Roots.[1]
         Application.DoEvents()
         let pickingHeight = groupView.Height
         key (groupBPicker.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as choice -> Some choice | _ -> None)) Keys.Escape
@@ -920,12 +933,22 @@ let main() =
         assertTrue (handMadeRow.SeparatorAbove && handMadeRow.Checks |> Array.forall Option.isNone
                     && handMadeRow.Chips |> List.map(fun chip -> chip.Text)=["Notes - Notepad";"Downloads"]
                     && handMadeRow.Chips |> List.forall(fun chip -> not chip.Removable)
-                    && handMadeRow.Actions=Some [NoGlyph;NoGlyph;UngroupGlyph])
+                    && handMadeRow.Actions=Some [NoGlyph;UngroupGlyph])
                    "A group made by dragging tabs is missing, editable, or cannot be taken apart"
+        // Chips that do not fit wrap onto more lines and the row grows; none are hidden behind a count.
+        let oneLine = tree.ContentHeight
+        let shown = handMadeRow.Chips
+        handMadeRow.Chips <- [for i in 1..12 -> { Text=sprintf "Window title %d" i; Icon=null; Removable=false }]
+        tree.Rebuild()
+        let wrapped = tree.ContentHeight
+        handMadeRow.Chips <- shown
+        tree.Rebuild()
+        assertTrue (wrapped>=oneLine+2*Dpi.scale 24 && tree.ContentHeight=oneLine)
+                   (sprintf "Chips that do not fit did not wrap: %d for one line, %d with twelve, %d again" oneLine wrapped tree.ContentHeight)
         use image = new Bitmap(form.Width,form.Height)
         form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
         image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "grouping-app-tree-%A.png" mode))
-        clickAction tree.Roots.[1] 0
+        clickAdd tree.Roots.[1]
         // The new row makes the section taller; let the page lay out before opening a drop-down.
         Application.DoEvents()
         form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
@@ -941,27 +964,19 @@ let main() =
             window.Close())
         key groupChoice Keys.Escape
         tree.Focus() |> ignore
-        // An app leaves its group by the x on its chip, found where the list draws it.
-        let removeChip (item:TreeListItem) =
-            tree.EnsureVisible(item)
-            let rowTop = [0..tree.Height-1] |> List.find(fun y -> tree.ItemAt(Point(Dpi.scale 20,y)) |> Option.exists(fun row -> obj.ReferenceEquals(row,item)))
-            let y = rowTop+Dpi.scale (tree.RowHeight/2)
-            let closeAt = typeof<SettingsTreeList>.GetMethod("chipCloseAt",BindingFlags.Instance ||| BindingFlags.NonPublic)
-            let x = [0..tree.Width-1] |> List.find(fun x -> not(isNull (closeAt.Invoke(tree,[|box (Point(x,y))|]))))
-            let mouse = new MouseEventArgs(MouseButtons.Left,1,x+Dpi.scale 2,y,0)
-            typeof<SettingsTreeList>.GetMethod("OnMouseDown",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(tree,[|box mouse|]) |> ignore
-        removeChip tree.Roots.[1]
+        // An app leaves its group by the x on its chip.
+        pressChipPart "chipCloseAt" tree.Roots.[1]
         assertTrue (saved().IsEmpty && targets().Length=2) "Removing an app's chip deleted the group or kept the app"
         groupView.Reload()
         assertTrue (tree.Roots |> Seq.filter(fun row -> row.Text<>tr Strings.AppRules.handMadeGroup) |> Seq.length=2 && tree.Roots.[1].Chips.IsEmpty) "An empty group was lost on reload"
-        clickAction tree.Roots.[1] 0
+        clickAdd tree.Roots.[1]
         selectApplication groupBPicker selectedPath
         tree.SelectedItem <- tree.Roots.[1]
         key tree Keys.Delete
         assertTrue (saved().IsEmpty && targets().Length=1) "Deleting a group left its application mappings behind"
         // Taking a group made by hand apart forgets it, through the program, and drops its row.
         let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Text=tr Strings.AppRules.handMadeGroup)
-        clickAction handMadeRow 2
+        clickAction handMadeRow 1
         assertTrue (List.ofSeq ungrouped=[4711] && tree.Roots |> Seq.forall(fun row -> row.Text<>tr Strings.AppRules.handMadeGroup))
                    "Ungrouping a group made by hand did not forget it or kept its row"
         form.Close()

@@ -62,6 +62,8 @@ type TreeListItem(text:string) =
     member val Actions : TreeListGlyph list option = None with get,set
     /// Shown after the name; their icons are drawn but not owned by the list.
     member val Chips : TreeListChip list = [] with get,set
+    /// A "+" button after the last chip, raising ChipAddInvoked.
+    member val ChipAdd = false with get,set
     member val AlwaysShowActions = false with get,set
     member _.Children = children :> IReadOnlyList<TreeListItem>
     member this.Add(child:TreeListItem) = child.Parent <- this; children.Add(child); child
@@ -82,6 +84,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     let checkChanged = Event<TreeListItem * int * bool>()
     let expandedChanged = Event<TreeListItem>()
     let chipRemoved = Event<TreeListItem * int>()
+    let chipAddInvoked = Event<TreeListItem>()
     let rowsChanged = Event<EventArgs>()
     let actionInvoked = Event<TreeListItem * int>()
     let mutable rows : (TreeListItem * int)[] = [||]
@@ -91,11 +94,17 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     /// The row action under the pointer, or -1.
     let mutable hoveredAction = -1
     let mutable hoveredChip : (TreeListItem * int) option = None
+    let mutable hoveredChipAdd : TreeListItem = null
+    /// Where each shown row starts, below the header and before scrolling, and where the last
+    /// ends; rows with chips grow a line for each line of chips. Kept for one set of rows at
+    /// one width.
+    let mutable rowTops : int[] = [|0|]
+    let mutable rowTopsKey : obj * int * int = (null,0,0)
     let mutable tooltipText = ""
     let mutable rowEditor : (TreeListItem * Control * bool) option = None
     let columns = List.toArray columns
     let smooth = new SmoothScroller((fun () -> offset),
-                                    (fun value -> max 0 (min (max 0 (rows.Length*this.rowHeight-this.viewport)) value)),
+                                    (fun value -> max 0 (min (max 0 (this.rowsHeight-this.viewport)) value)),
                                     (fun value -> offset <- value; this.updateScroll(); this.Invalidate()))
     do
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint |||
@@ -126,6 +135,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member _.ExpandedChanged = expandedChanged.Publish
     /// The x of a removable chip was pressed: the row and the chip's index.
     member _.ChipRemoved = chipRemoved.Publish
+    /// The "+" after a row's chips was pressed.
+    member _.ChipAddInvoked = chipAddInvoked.Publish
     /// Rows were added, removed, expanded or collapsed: a list sized to its rows grows or shrinks.
     member _.RowsChanged = rowsChanged.Publish
     /// Buttons drawn in the action column on the row under the pointer, as their glyphs.
@@ -137,8 +148,31 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member private this.headerHeight = if this.ShowHeader then Dpi.scale 30 else 0
     member private this.viewport = max 1 (this.ClientSize.Height-this.headerHeight)
     /// The height that shows the header and every visible row without scrolling.
-    member this.ContentHeight = this.headerHeight+rows.Length*this.rowHeight
+    member this.ContentHeight = this.headerHeight+this.rowsHeight
     member private this.contentWidth = this.ClientSize.Width-(if scroll.Visible then scroll.Width else 0)
+
+    member private this.tops =
+        let key = (box rows,this.contentWidth,this.rowHeight)
+        let (keyRows,keyWidth,keyHeight) = rowTopsKey
+        let (_,width,height) = key
+        if not (Object.ReferenceEquals(keyRows,rows)) || keyWidth<>width || keyHeight<>height then
+            let tops = Array.zeroCreate (rows.Length+1)
+            rows |> Array.iteri(fun index (item,level) -> tops.[index+1] <- tops.[index]+this.itemHeight(item,level))
+            rowTops <- tops
+            rowTopsKey <- key
+        rowTops
+    member private this.rowsHeight = this.tops.[rows.Length]
+    /// The top of a shown row in client coordinates.
+    member private this.rowTop(index:int) = this.headerHeight+this.tops.[index]-offset
+    member private this.rowSpan(index:int) = this.tops.[index+1]-this.tops.[index]
+    /// One line, or as many as its chips need.
+    member private this.itemHeight(item:TreeListItem, level:int) =
+        if item.Chips.IsEmpty && not item.ChipAdd then this.rowHeight
+        else
+            let _,_,_,lines = this.chipLayout(item,level,0)
+            this.rowHeight+(lines-1)*this.chipPitch
+    member private this.chipHeight = this.rowHeight-Dpi.scale 12
+    member private this.chipPitch = this.chipHeight+Dpi.scale 6
 
     /// Recomputes the visible rows after items, expansion or roots change.
     member this.Rebuild() =
@@ -156,7 +190,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         rowsChanged.Trigger(EventArgs.Empty)
 
     member private this.updateScroll() =
-        let maximum = max 0 (rows.Length*this.rowHeight-this.viewport)
+        let maximum = max 0 (this.rowsHeight-this.viewport)
         offset <- max 0 (min maximum offset)
         scroll.Bounds <- Rectangle(this.ClientSize.Width-scroll.Width,this.headerHeight,scroll.Width,this.viewport)
         scroll.configure(maximum,this.viewport,offset)
@@ -190,7 +224,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             this.colorEditor(item,editor)
             match rows |> Array.tryFindIndex(fun (row,_) -> Object.ReferenceEquals(row,item)) with
             | Some index ->
-                let top = this.headerHeight+index*this.rowHeight-offset
+                let top = this.rowTop index
                 let (icon:Rectangle),(bounds:Rectangle) = this.nameLayout(item,snd rows.[index],top)
                 let left = if includeIcon then icon.Left else bounds.Left
                 editor.Bounds <- Rectangle(left,top+Dpi.scale 3,bounds.Right-left,max 1 (this.rowHeight-Dpi.scale 6))
@@ -219,10 +253,10 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member this.EnsureVisible(item:TreeListItem) =
         match this.indexOf item with
         | Some index ->
-            let top = index*this.rowHeight
+            let top,bottom = this.tops.[index],this.tops.[index+1]
             smooth.stop()
             if top < offset then offset <- top
-            elif top+this.rowHeight > offset+this.viewport then offset <- top+this.rowHeight-this.viewport
+            elif bottom > offset+this.viewport then offset <- max 0 (min top (bottom-this.viewport))
             this.updateScroll()
             this.Invalidate()
         | None -> ()
@@ -236,8 +270,12 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member private this.rowAt(y:int) =
         if y < this.headerHeight then None
         else
-            let index = (y-this.headerHeight+offset)/this.rowHeight
-            if index>=0 && index<rows.Length then Some(index,rows.[index]) else None
+            let y = y-this.headerHeight+offset
+            let tops = this.tops
+            if y<0 then None
+            else
+                [0..rows.Length-1] |> List.tryFind(fun index -> y<tops.[index+1])
+                |> Option.map(fun index -> index,rows.[index])
 
     /// The item on the shown row at a point, if any.
     member this.ItemAt(point:Point) = this.rowAt point.Y |> Option.map(fun (_,(item,_)) -> item)
@@ -264,44 +302,57 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         iconBox,Rectangle(x,top,max 1 (cell.Right-Dpi.scale 8-x),this.rowHeight)
 
     /// Where a row's name ends and its chips go: the name keeps at most a third of the cell when
-    /// the row has chips. The chips that fit, each with its x box when removable, and how many
-    /// more there are in a "+n" box at the end.
+    /// the row has chips. The chips, each with its x box when removable, then the "+" box; they
+    /// wrap onto more lines, lined up under the first chip, and the last value is how many lines.
     member private this.chipLayout(item:TreeListItem, level:int, top:int) =
         let _,bounds = this.nameLayout(item,level,top)
         let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine
         let measure (text:string) = TextRenderer.MeasureText(text,this.Font,Size(Int32.MaxValue,this.rowHeight),flags).Width
-        let nameWidth = min (measure item.Text) (if item.Chips.IsEmpty then bounds.Width else bounds.Width/3)
-        let height = this.rowHeight-Dpi.scale 12
-        let y = top+(this.rowHeight-height)/2
+        let nameWidth = min (measure item.Text) (bounds.Width/3)
+        let height = this.chipHeight
+        let firstY = top+(this.rowHeight-height)/2
         let pad,gap,icon,close = Dpi.scale 8,Dpi.scale 6,Dpi.scale 16,Dpi.scale 14
-        let moreWidth = measure "+99"+2*pad
+        let left = bounds.X+nameWidth+Dpi.scale 12
+        let right = max (left+height) bounds.Right
         let widthOf (chip:TreeListChip) =
             let iconWidth = if isNull chip.Icon then 0 else icon+Dpi.scale 5
             let closeWidth = if chip.Removable then Dpi.scale 4+close+Dpi.scale 2 else pad
-            pad+iconWidth+min (Dpi.scale 160) (measure chip.Text+Dpi.scale 4)+closeWidth
-        let rec place index x acc =
-            match List.tryItem index item.Chips with
-            | None -> List.rev acc,None
-            | Some chip ->
-                let width = widthOf chip
-                let room = bounds.Right-(if index<item.Chips.Length-1 then gap+moreWidth else 0)
-                if x+width>room then List.rev acc,Some(item.Chips.Length-index,Rectangle(x,y,moreWidth,height))
-                else
-                    let box = Rectangle(x,y,width,height)
-                    let closeBox = if chip.Removable then Some(Rectangle(box.Right-Dpi.scale 2-close-Dpi.scale 2,y+(height-close)/2,close,close)) else None
-                    place (index+1) (x+width+gap) ((index,box,closeBox)::acc)
-        let laid,more = place 0 (bounds.X+nameWidth+Dpi.scale 12) []
-        Rectangle(bounds.X,bounds.Y,nameWidth,bounds.Height),laid,more
+            min (right-left) (pad+iconWidth+min (Dpi.scale 160) (measure chip.Text+Dpi.scale 4)+closeWidth)
+        let mutable x,line = left,0
+        let place width =
+            if x>left && x+width>right then
+                x <- left
+                line <- line+1
+            let box = Rectangle(x,firstY+line*this.chipPitch,width,height)
+            x <- x+width+gap
+            box
+        let laid =
+            item.Chips |> List.mapi(fun index chip ->
+                let box = place (widthOf chip)
+                let closeBox = if chip.Removable then Some(Rectangle(box.Right-Dpi.scale 2-close-Dpi.scale 2,box.Y+(height-close)/2,close,close)) else None
+                index,box,closeBox)
+        let add = if item.ChipAdd then Some(place height) else None
+        Rectangle(bounds.X,bounds.Y,nameWidth,bounds.Height),laid,add,line+1
+
+    /// The row under a point whose chips are drawn, with their layout.
+    member private this.chipsAt(point:Point) =
+        match this.rowAt point.Y with
+        | Some(index,(item,level)) when not item.Chips.IsEmpty || item.ChipAdd ->
+            let _,laid,add,_ = this.chipLayout(item,level,this.rowTop index)
+            Some(item,laid,add)
+        | _ -> None
 
     /// The removable chip whose x is under a point, with its row.
     member private this.chipCloseAt(point:Point) =
-        match this.rowAt point.Y with
-        | Some(index,(item,level)) when not item.Chips.IsEmpty ->
-            let _,laid,_ = this.chipLayout(item,level,this.headerHeight+index*this.rowHeight-offset)
+        this.chipsAt point |> Option.bind(fun (item,laid,_) ->
             laid |> List.tryPick(fun (chip,_,closeBox) ->
                 closeBox |> Option.filter(fun (box:Rectangle) -> Rectangle.Inflate(box,Dpi.scale 2,Dpi.scale 2).Contains(point))
-                         |> Option.map(fun _ -> item,chip))
-        | _ -> None
+                         |> Option.map(fun _ -> item,chip)))
+
+    /// The row whose "+" after its chips is under a point.
+    member private this.chipAddAt(point:Point) =
+        this.chipsAt point |> Option.bind(fun (item,_,add) ->
+            add |> Option.filter(fun (box:Rectangle) -> box.Contains(point)) |> Option.map(fun _ -> item))
 
     /// The action buttons of the row under the pointer, at the start of the action column, so
     /// they stay in one place from row to row.
@@ -319,7 +370,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member private this.actionAt(point:Point) =
         match this.rowAt point.Y with
         | Some(index,(item,_)) ->
-            this.actionButtons(item,this.headerHeight+index*this.rowHeight-offset)
+            this.actionButtons(item,this.rowTop index)
             |> List.tryFindIndex(fun (button:Rectangle) -> button.Contains(point))
             |> Option.filter(fun action -> (this.actions item).[action]<>NoGlyph)
             |> Option.map(fun action -> item,action)
@@ -412,11 +463,11 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
 
     member private this.onExpander(index,item:TreeListItem,level,point:Point) =
         this.ShowExpanders && item.Children.Count>0 &&
-        (this.expanderBounds(level,this.headerHeight+index*this.rowHeight-offset)).Contains(point)
+        (this.expanderBounds(level,this.rowTop index)).Contains(point)
 
     /// The check column whose box is under the point, if any.
     member private this.checkAt(index,item:TreeListItem,point:Point) =
-        let rowTop = this.headerHeight+index*this.rowHeight-offset
+        let rowTop = this.rowTop index
         let bounds = this.columnBounds
         [0..columns.Length-1] |> List.tryFind(fun i ->
             columns.[i].Kind=CheckColumn && (item.check i).IsSome &&
@@ -430,6 +481,10 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             let item,chip = (this.chipCloseAt e.Location).Value
             this.SelectedItem <- item
             chipRemoved.Trigger((item,chip))
+        | _,_ when e.Button=MouseButtons.Left && (this.chipAddAt e.Location).IsSome ->
+            let item = (this.chipAddAt e.Location).Value
+            this.SelectedItem <- item
+            chipAddInvoked.Trigger(item)
         | _,Some(item,action) when e.Button=MouseButtons.Left ->
             this.SelectedItem <- item
             actionInvoked.Trigger((item,action))
@@ -450,6 +505,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         // there must not also expand, collapse or open the row.
         | Some(index,(item,level)) when not (this.onExpander(index,item,level,e.Location))
                                         && (this.checkAt(index,item,e.Location)).IsNone
+                                        && (this.chipCloseAt e.Location).IsNone && (this.chipAddAt e.Location).IsNone
                                         && (this.actionAt e.Location).IsNone ->
             if not this.ExpandOnDoubleClick then itemActivated.Trigger(item)
             elif item.Children.Count>0 then this.SetExpanded(item,not item.Expanded)
@@ -473,11 +529,15 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         if not same then
             hoveredChip <- chip
             this.Invalidate()
+        let add = this.chipAddAt e.Location |> Option.toObj
+        if not (Object.ReferenceEquals(add,hoveredChipAdd)) then
+            hoveredChipAdd <- add
+            this.Invalidate()
         // Show the full text when the tree column truncates it.
         let text =
             match this.rowAt e.Y with
             | Some(index,(item,level)) when e.X < (this.columnBounds).[0].Right ->
-                let _,bounds = this.nameLayout(item,level,this.headerHeight+index*this.rowHeight-offset)
+                let _,bounds = this.nameLayout(item,level,this.rowTop index)
                 if TextRenderer.MeasureText(item.Text,this.Font).Width > bounds.Width then item.Text else ""
             | _ -> ""
         if text<>tooltipText then
@@ -489,6 +549,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         hovered <- null
         hoveredAction <- -1
         hoveredChip <- None
+        hoveredChipAdd <- null
         tooltipText <- ""
         tooltip.Hide(this)
         this.Invalidate()
@@ -538,13 +599,13 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         // GDI text must honour the GDI+ viewport when a row scrolls partly under the header.
         let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis ||| TextFormatFlags.SingleLine ||| TextFormatFlags.PreserveGraphicsClipping
         let rowHeight = this.rowHeight
-        let first = offset/rowHeight
-        let last = min (rows.Length-1) ((offset+this.viewport)/rowHeight)
+        let tops = this.tops
         g.SetClip(Rectangle(0,this.headerHeight,this.contentWidth,this.viewport))
-        for index in first..last do
+        for index in 0..rows.Length-1 do
+          if tops.[index+1]>offset && tops.[index]<offset+this.viewport then
             let item,level = rows.[index]
-            let top = this.headerHeight+index*rowHeight-offset
-            let row = Rectangle(Dpi.scale 2,top+1,this.contentWidth-Dpi.scale 4,rowHeight-2)
+            let top = this.rowTop index
+            let row = Rectangle(Dpi.scale 2,top+1,this.contentWidth-Dpi.scale 4,this.rowSpan index-2)
             let isSelected = Object.ReferenceEquals(item,selected)
             if isSelected || Object.ReferenceEquals(item,hovered) then
                 use shape = SettingsShapes.rounded (RectangleF(float32 row.X,float32 row.Y,float32 row.Width,float32 row.Height)) (float32(Dpi.scale 6))
@@ -578,7 +639,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                     elif not hidesIcon && item.Glyph<>NoGlyph then
                         SettingsTreeList.drawGlyph(g,item.Glyph,iconBox,p.muted)
                     if not editing then
-                        let nameBounds,laid,more = if item.Chips.IsEmpty then bounds,[],None else this.chipLayout(item,level,top)
+                        let nameBounds,laid,add,_ = if item.Chips.IsEmpty && not item.ChipAdd then bounds,[],None,1 else this.chipLayout(item,level,top)
                         this.drawHighlights(g,item.Text,item.highlights 0,nameBounds,flags,p)
                         TextRenderer.DrawText(g,item.Text,this.Font,nameBounds,text,flags)
                         // Chips: a shade of the text over the row, so they show on any highlight.
@@ -609,11 +670,19 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                                 let inset = float32(Dpi.scale 4)
                                 g.DrawLine(pen,float32 close.X+inset,float32 close.Y+inset,float32 close.Right-inset,float32 close.Bottom-inset)
                                 g.DrawLine(pen,float32 close.Right-inset,float32 close.Y+inset,float32 close.X+inset,float32 close.Bottom-inset))
-                        more |> Option.iter(fun (count,box) ->
+                        add |> Option.iter(fun box ->
+                            let pointed = Object.ReferenceEquals(item,hoveredChipAdd)
                             use shape = SettingsShapes.rounded (RectangleF(float32 box.X,float32 box.Y,float32 box.Width,float32 box.Height)) (float32(Dpi.scale 6))
-                            use fill = new SolidBrush(chipFill)
-                            g.FillPath(fill,shape)
-                            TextRenderer.DrawText(g,sprintf "+%d" count,this.Font,box,p.muted,flags ||| TextFormatFlags.HorizontalCenter))
+                            if pointed then
+                                use fill = new SolidBrush(if SystemInformation.HighContrast then SystemColors.Highlight else Color.FromArgb(46,p.text))
+                                g.FillPath(fill,shape)
+                            else
+                                use edge = new Pen(if SystemInformation.HighContrast then SystemColors.WindowText else Color.FromArgb(70,p.text))
+                                edge.DashStyle <- DashStyle.Dash
+                                g.DrawPath(edge,shape)
+                            let side = Dpi.scale 14
+                            let color = if pointed && SystemInformation.HighContrast then SystemColors.HighlightText elif pointed then text else p.muted
+                            SettingsTreeList.drawGlyph(g,AddGlyph,Rectangle(box.X+(box.Width-side)/2,box.Y+(box.Height-side)/2,side,side),color))
                 | ActionColumn ->
                     this.actionButtons(item,top) |> List.iteri(fun index (button:Rectangle) ->
                         let pointed = Object.ReferenceEquals(item,hovered) && index=hoveredAction
