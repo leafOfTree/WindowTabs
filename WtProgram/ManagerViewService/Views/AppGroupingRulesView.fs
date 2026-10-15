@@ -198,6 +198,8 @@ type AppGroupingRulesView() as this =
     let beginEdit() =
         tree.ClearRowEditor()
         editing <- selected()
+        // A new group or application row can start below the short list's visible rows.
+        if not(isNull tree.SelectedItem) then tree.EnsureVisible(tree.SelectedItem)
         match editing with
         | Some(GroupNode _) ->
             tree.SetRowEditor(tree.SelectedItem,nameInput)

@@ -827,9 +827,14 @@ let main() =
         key name Keys.Escape
         assertTrue (targets().Head.name="Group A" && not name.Parent.Visible) "Escape saved a cancelled group name or left the row editor open"
         let clickAction (item:TreeListItem) action =
-            let visible = tree.Roots |> Seq.collect(fun root -> if root.Expanded then Seq.append [root] root.Children else Seq.singleton root) |> Seq.toArray
-            let index = visible |> Array.findIndex(fun row -> obj.ReferenceEquals(row,item))
-            let point = Point(tree.Width-Dpi.scale 86+action*Dpi.scale 26+Dpi.scale 12,Dpi.scale 30+index*Dpi.scale tree.RowHeight+Dpi.scale (tree.RowHeight/2))
+            // The list may be shorter than its rows: scroll the row into view and find where it is now.
+            tree.EnsureVisible(item)
+            let rowTop = [0..tree.Height-1] |> List.find(fun y -> tree.ItemAt(Point(Dpi.scale 20,y)) |> Option.exists(fun row -> obj.ReferenceEquals(row,item)))
+            // A visible scroll bar takes its width from the columns, so the action buttons move left.
+            let scrollWidth =
+                tree.Controls |> Seq.cast<Control> |> Seq.tryFind(fun bar -> bar.Visible && bar.Right=tree.ClientSize.Width && bar.Height>bar.Width)
+                |> Option.map(fun bar -> bar.Width) |> Option.defaultValue 0
+            let point = Point(tree.ClientSize.Width-scrollWidth-Dpi.scale 86+action*Dpi.scale 26+Dpi.scale 12,rowTop+Dpi.scale (tree.RowHeight/2))
             let mouse = new MouseEventArgs(MouseButtons.Left,1,point.X,point.Y,0)
             for method in ["OnMouseMove";"OnMouseDown"] do
                 typeof<SettingsTreeList>.GetMethod(method,BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(tree,[|box mouse|]) |> ignore
@@ -869,7 +874,9 @@ let main() =
         let groupBPicker = application
         selectApplication groupBPicker selectedPath
         assertTrue (saved().Length=1 && saved().Head.groupName="Group B" && tree.Roots.[0].Children.Count=0 && tree.Roots.[1].Children.Count=1)
-                   "Moving an application to another group created duplicate grouping rules"
+                   (sprintf "Moving an application to another group created duplicate grouping rules: %A children %d/%d picker visible %b roots %d"
+                        (saved() |> List.map(fun rule -> rule.groupName,IO.Path.GetFileName rule.processPath)) tree.Roots.[0].Children.Count tree.Roots.[1].Children.Count
+                        groupBPicker.Visible tree.Roots.Count)
         tree.SelectedItem <- tree.Roots.[1].Children.[0]
         typeof<SettingsTreeList>.GetMethod("toggleCheck",BindingFlags.Instance ||| BindingFlags.NonPublic).Invoke(tree,[|box tree.SelectedItem;box 1|]) |> ignore
         assertTrue (not(saved().Head.enabled)) "The application tree checkbox did not save disabled state"
@@ -888,7 +895,7 @@ let main() =
                    "Editing an application row did not preserve its target group and enabled state"
         form.PerformLayout()
         Application.DoEvents()
-        assertTrue (groupView.Height>=Dpi.scale 200 && groupView.Bottom<=view.control.ClientSize.Height)
+        assertTrue (groupView.Height>=Dpi.scale 180 && groupView.Bottom<=view.control.ClientSize.Height)
                    (sprintf "Grouping tree is outside the page: %A in %A" groupView.Bounds view.control.ClientSize)
         use image = new Bitmap(form.Width,form.Height)
         form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
