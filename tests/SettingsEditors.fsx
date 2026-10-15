@@ -72,16 +72,21 @@ let paints (control:Control) what =
 let key (control:Control) k =
     control.GetType().GetMethod("OnKeyDown",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(control,[|box(KeyEventArgs(k))|]) |> ignore
 let main() =
-    // Rebuilding the picker must replace and dispose its previous control.
+    // Opening the app list again replaces and disposes the one before; apps come with icons.
     do
-        use picker = new GroupingApplicationPicker("saved.exe")
-        let combo() = picker.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as value -> Some value | _ -> None)
-        let initial = combo()
-        picker.UpdateApplications ["other.exe"]
-        assertTrue initial.IsDisposed "Application picker leaked its replaced choice control"
-        assertTrue (not(obj.ReferenceEquals(initial,combo())) && picker.SelectedPath="saved.exe") "Application picker rebuild lost its choice or selected path"
-        assertTrue ((combo()).ItemImages.Length=3 && (combo()).ItemImages |> Array.skip 1 |> Array.forall(fun image -> not(isNull image)))
-                   "Application choices did not include icons"
+        use host = new Form(ShowInTaskbar=false)
+        use menu = new GroupingApplicationMenu(Owner=host)
+        let notepad = Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,"notepad.exe")
+        menu.UpdateApplications [notepad;"other.exe"]
+        menu.Open(Rectangle(0,0,10,10),[])
+        let initial = menu.Choice.Value
+        menu.DropDown |> Option.iter(fun window -> window.Close())
+        menu.Open(Rectangle(0,0,10,10),["other.exe"])
+        assertTrue initial.IsDisposed "The app list leaked the drop-down it replaced"
+        assertTrue (menu.Shown=[|notepad|] && menu.Choice.Value.ItemImages.Length=2
+                    && menu.Choice.Value.ItemImages |> Array.forall(fun image -> not(isNull image)))
+                   "The app list showed an app the group has, or its apps have no icons"
+        menu.DropDown |> Option.iter(fun window -> window.Close())
     let installedPaths = [|@"C:\Program Files\RustDesk\rustdesk.exe";@"C:\Users\cl\AppData\Local\rustdesk\rustdesk.exe"|]
     assertTrue (AppIdentity.same installedPaths.[0] installedPaths.[1] && not(AppIdentity.same installedPaths.[0] @"C:\Other.exe"))
                "Application identity still depends on the installation directory"
@@ -325,7 +330,7 @@ let main() =
     let grouping = Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
     let mouse = Event<int32 * IntPtr>()
     // One group made by dragging tabs, as the program remembers it, and the ones taken apart.
-    let handMade = ref [4711,["NOTEPAD.EXE","Notes - Notepad";"EXPLORER.EXE","Downloads"]]
+    let handMade = ref [4711,["NOTEPAD.EXE","Notes - Notepad","";"EXPLORER.EXE","Downloads",Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,"explorer.exe")]]
     let ungrouped = Collections.Generic.List<int>()
     Services.register<IProgram>({new IProgram with
         member _.version = "test"
@@ -761,7 +766,7 @@ let main() =
         rules.Value <- filter
     // Application mappings stay below the app list and save without a dialog.
     for mode in [LightTheme;DarkTheme] do
-        handMade.Value <- [4711,["NOTEPAD.EXE","Notes - Notepad";"EXPLORER.EXE","Downloads"]]
+        handMade.Value <- [4711,["NOTEPAD.EXE","Notes - Notepad","";"EXPLORER.EXE","Downloads",Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,"explorer.exe")]]
         ungrouped.Clear()
         let appTabs = Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
         rules.Value <- {new IFilterService with
@@ -851,23 +856,18 @@ let main() =
             let mouse = new MouseEventArgs(MouseButtons.Left,1,point.X,point.Y,0)
             for method in ["OnMouseMove";"OnMouseDown"] do
                 typeof<SettingsTreeList>.GetMethod(method,BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(tree,[|box mouse|]) |> ignore
-        // The "+" after a group's apps adds one.
-        let clickAdd = pressChipPart "chipAddAt"
-        assertTrue (descendants groupView |> Seq.forall(fun control -> not(control :? GroupingApplicationPicker) || not control.Visible))
-                   "A group still has a permanent application dropdown"
-        clickAdd tree.Roots.[0]
-        assertTrue (tree.Roots.[0].Children.Count=1 && saved().IsEmpty) "The plus button did not create an unsaved application row"
-        let application = descendants groupView |> Seq.pick(function :? GroupingApplicationPicker as picker -> Some picker | _ -> None)
-        assertTrue (obj.ReferenceEquals(application.Parent,tree) && application.Top=Dpi.scale 30+Dpi.scale 36+Dpi.scale 3)
-                   "The application dropdown did not appear beneath its group with row padding"
-        let selectApplication (picker:GroupingApplicationPicker) path =
-            picker.UpdateApplications [path]
-            let choice = picker.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as choice -> Some choice | _ -> None)
-            choice.SelectedIndex <- 1+Array.findIndex ((=)path) picker.Applications
+        // The "+" after a group's apps lists the apps that can join it.
+        let menu = groupView.AddMenu
         let selectedPath = Path.Combine(__SOURCE_DIRECTORY__,"Debug","WindowTabs.exe")
-        application.UpdateApplications [selectedPath;selectedPath.ToUpperInvariant();@"C:\Apps\browser.exe";@"D:\Other\browser.exe"]
-        assertTrue (application.Applications.Length=2) "Running application choices did not merge same-name executables across directories"
-        let choice = application.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as choice -> Some choice | _ -> None)
+        menu.UpdateApplications [selectedPath;selectedPath.ToUpperInvariant();@"C:\Apps\browser.exe";@"D:\Other\browser.exe"]
+        assertTrue (menu.Applications.Length=2) "Running application choices did not merge same-name executables across directories"
+        // A scan of the windows really running may have come in meanwhile: list known apps first.
+        let clickAdd row =
+            menu.UpdateApplications [selectedPath;@"C:\Apps\browser.exe"]
+            pressChipPart "chipAddAt" row
+        let pick path =
+            let choice = menu.Choice.Value
+            choice.SelectedIndex <- Array.findIndex (AppIdentity.same path) menu.Shown
         // The host of every Store app is named for what it stands for, with an icon of its own.
         assertTrue (ApplicationNames.label @"C:\Windows\System32\ApplicationFrameHost.exe"=tr Strings.AppRules.windowsApps
                     && ApplicationNames.label @"C:\Apps\browser.exe"="browser.exe")
@@ -876,21 +876,25 @@ let main() =
             use hostIcon = ApplicationNames.icon @"C:\Windows\System32\ApplicationFrameHost.exe" :?> Bitmap
             let blue = hostIcon.GetPixel(Dpi.scale 3,Dpi.scale 3)
             assertTrue (blue.A=255uy && blue.B>200uy && blue.R<20uy) "Windows apps have no icon of their own"
-        // The running-app choice and Browse are alternatives, said between them.
-        let alternative = application.Controls.Find("or-browse",false)
-        assertTrue (alternative.Length=1 && alternative.[0].Text=tr Strings.AppRules.orBrowse && application.GetColumn(alternative.[0])=1
-                    && alternative.[0].BackColor=Color.Transparent)
-                   "Nothing between the running-app choice and Browse says they are alternatives"
-        choice.SelectedIndex <- 1+Array.findIndex ((=)selectedPath) application.Applications
+        clickAdd tree.Roots.[0]
+        // The list opens below the "+", with Browse… for an app that is not running, and adds
+        // nothing until an app is picked: no row to fill in.
+        let addBox = tree.RectangleToScreen((tree.ChipAddBounds tree.Roots.[0]).Value)
+        assertTrue (menu.Choice.Value.DropDownAnchor=Some addBox && menu.DropDown |> Option.exists(fun window -> window.Visible)
+                    && menu.Shown.Length=2 && menu.Choice.Value.ItemText(2)=tr Strings.AppRules.browseApplication
+                    && saved().IsEmpty && tree.Roots.[0].Children.Count=0)
+                   "The plus did not open the app list below itself, or it lacks Browse"
+        pick selectedPath
         // One row a group: its apps are chips after its name, not rows beneath it.
         assertTrue (saved().Length=1 && saved().Head.processPath=selectedPath && saved().Head.groupId=groupA && saved().Head.matchType= -1
                     && tree.Roots.[0].Children.Count=0 && tree.Roots.[0].Chips.Length=1 && tree.Roots.[0].Chips.Head.Removable
                     && tree.Roots.[0].Chips.Head.Text=IO.Path.GetFileName selectedPath)
                    "An app was not added to its group as a chip on the group's row"
         clickAdd tree.Roots.[0]
-        let cancelChoice = application.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as choice -> Some choice | _ -> None)
-        key cancelChoice Keys.Escape
-        assertTrue (tree.Roots.[0].Children.Count=0 && tree.Roots.[0].Chips.Length=1 && saved().Length=1) "Cancelling an empty application row changed saved mappings"
+        assertTrue (menu.Shown |> Array.forall(fun path -> not(AppIdentity.same path selectedPath)) && saved().Length=1)
+                   "The app list offered an app the group has already, or opening it changed the group"
+        menu.DropDown |> Option.iter(fun window -> window.Close())
+        Application.DoEvents()
         assertTrue (Application.OpenForms.Count=opened) "Editing group applications opened another window"
         let appList = descendants view.control |> Seq.pick(function :? SettingsTreeList as list -> Some list | _ -> None)
         let clock = Diagnostics.Stopwatch.StartNew()
@@ -902,12 +906,11 @@ let main() =
         (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
         rename "Group B"
         clickAdd tree.Roots.[1]
-        let groupBPicker = application
-        selectApplication groupBPicker selectedPath
+        pick selectedPath
         assertTrue (saved().Length=1 && saved().Head.groupName="Group B" && tree.Roots.[0].Chips.IsEmpty && tree.Roots.[1].Chips.Length=1)
-                   (sprintf "Moving an application to another group created duplicate grouping rules: %A chips %d/%d picker visible %b roots %d"
+                   (sprintf "Moving an application to another group created duplicate grouping rules: %A chips %d/%d roots %d"
                         (saved() |> List.map(fun rule -> rule.groupName,IO.Path.GetFileName rule.processPath)) tree.Roots.[0].Chips.Length tree.Roots.[1].Chips.Length
-                        groupBPicker.Visible tree.Roots.Count)
+                        tree.Roots.Count)
         // The group's box turns all its apps on or off.
         tree.SelectedItem <- tree.Roots.[1]
         typeof<SettingsTreeList>.GetMethod("toggleCheck",BindingFlags.Instance ||| BindingFlags.NonPublic).Invoke(tree,[|box tree.SelectedItem;box 1|]) |> ignore
@@ -919,19 +922,12 @@ let main() =
         Application.DoEvents()
         assertTrue (groupView.Height<=Dpi.scale 244 && groupView.Bottom<=view.control.ClientSize.Height)
                    (sprintf "Grouping tree is outside the page: %A in %A" groupView.Bounds view.control.ClientSize)
-        // The section is as tall as its rows, up to a limit: the row picking an app makes it taller.
-        let baseHeight = groupView.Height
-        clickAdd tree.Roots.[1]
-        Application.DoEvents()
-        let pickingHeight = groupView.Height
-        key (groupBPicker.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as choice -> Some choice | _ -> None)) Keys.Escape
-        Application.DoEvents()
-        assertTrue (pickingHeight>baseHeight && groupView.Height=baseHeight)
-                   (sprintf "Groups across apps did not follow its rows: %d, %d while picking, %d again" baseHeight pickingHeight groupView.Height)
         // Groups made by dragging tabs show after the named ones, read only, and come apart in one go.
-        let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Text=tr Strings.AppRules.handMadeGroup)
+        // Short numbered names, as there can be several; chips carry the app's icon when its path is known.
+        let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Text=tr (Strings.AppRules.handMadeGroup 1))
         assertTrue (handMadeRow.SeparatorAbove && handMadeRow.Checks |> Array.forall Option.isNone
                     && handMadeRow.Chips |> List.map(fun chip -> chip.Text)=["Notes - Notepad";"Downloads"]
+                    && isNull handMadeRow.Chips.Head.Icon && not(isNull handMadeRow.Chips.[1].Icon)
                     && handMadeRow.Chips |> List.forall(fun chip -> not chip.Removable)
                     && handMadeRow.Actions=Some [NoGlyph;UngroupGlyph])
                    "A group made by dragging tabs is missing, editable, or cannot be taken apart"
@@ -949,35 +945,28 @@ let main() =
         form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
         image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "grouping-app-tree-%A.png" mode))
         clickAdd tree.Roots.[1]
-        // The new row makes the section taller; let the page lay out before opening a drop-down.
         Application.DoEvents()
-        form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
-        image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "grouping-app-entry-%A.png" mode))
-        groupBPicker.UpdateApplications [selectedPath]
-        let groupChoice = groupBPicker.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as choice -> Some choice | _ -> None)
-        groupChoice.CreateDropDown() |> Option.iter(fun window ->
-            window.Show(window.Location)
-            Application.DoEvents()
+        menu.DropDown |> Option.iter(fun window ->
             use dropdownImage = new Bitmap(window.Width,window.Height)
             window.DrawToBitmap(dropdownImage,Rectangle(Point.Empty,dropdownImage.Size))
             dropdownImage.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "grouping-app-choices-%A.png" mode))
             window.Close())
-        key groupChoice Keys.Escape
+        Application.DoEvents()
         tree.Focus() |> ignore
         // An app leaves its group by the x on its chip.
         pressChipPart "chipCloseAt" tree.Roots.[1]
         assertTrue (saved().IsEmpty && targets().Length=2) "Removing an app's chip deleted the group or kept the app"
         groupView.Reload()
-        assertTrue (tree.Roots |> Seq.filter(fun row -> row.Text<>tr Strings.AppRules.handMadeGroup) |> Seq.length=2 && tree.Roots.[1].Chips.IsEmpty) "An empty group was lost on reload"
+        assertTrue (tree.Roots |> Seq.filter(fun row -> row.Text<>tr (Strings.AppRules.handMadeGroup 1)) |> Seq.length=2 && tree.Roots.[1].Chips.IsEmpty) "An empty group was lost on reload"
         clickAdd tree.Roots.[1]
-        selectApplication groupBPicker selectedPath
+        pick selectedPath
         tree.SelectedItem <- tree.Roots.[1]
         key tree Keys.Delete
         assertTrue (saved().IsEmpty && targets().Length=1) "Deleting a group left its application mappings behind"
         // Taking a group made by hand apart forgets it, through the program, and drops its row.
-        let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Text=tr Strings.AppRules.handMadeGroup)
+        let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Text=tr (Strings.AppRules.handMadeGroup 1))
         clickAction handMadeRow 1
-        assertTrue (List.ofSeq ungrouped=[4711] && tree.Roots |> Seq.forall(fun row -> row.Text<>tr Strings.AppRules.handMadeGroup))
+        assertTrue (List.ofSeq ungrouped=[4711] && tree.Roots |> Seq.forall(fun row -> row.Text<>tr (Strings.AppRules.handMadeGroup 1)))
                    "Ungrouping a group made by hand did not forget it or kept its row"
         form.Close()
         rules.Value <- filter

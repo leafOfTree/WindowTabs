@@ -28,101 +28,90 @@ module ApplicationNames =
             if isNull icon then SystemIcons.Application.ToBitmap() :> Image else icon.ToBitmap() :> Image
         with _ -> SystemIcons.Application.ToBitmap() :> Image
 
-type GroupingApplicationPicker(initialPath:string) as this =
-    inherit TableLayoutPanel(ColumnCount=3,RowCount=1,Margin=Padding.Empty)
-    let mutable selectedPath = initialPath
+/// The apps that can join a group, in a drop-down that opens from the "+" after a group's apps:
+/// the running ones, then Browse… for one that is not running.
+type GroupingApplicationMenu() as this =
+    /// Holds the hidden drop-down control; set once the page is built.
+    let mutable owner : Control = null
     let mutable paths : string[] = [||]
-    let mutable choice : SettingsCombo option = None
+    let mutable shown : string[] = [||]
     let mutable icons : Image[] = [||]
-    let selectionChanged = Event<EventArgs>()
-    let cancelRequested = Event<EventArgs>()
-    let browse = SettingsUi.button (tr Strings.AppRules.browseApplication)
-    /// Says the two are alternatives: pick a running app, or browse for one.
-    let alternative = new Label(Text=tr Strings.AppRules.orBrowse,AutoSize=true,Tag="muted",UseMnemonic=false,
-                                Anchor=AnchorStyles.None,Margin=Padding(Dpi.scale 10,0,Dpi.scale 4,0),Name="or-browse")
+    let mutable choice : SettingsCombo option = None
+    let mutable dropDown : ToolStripDropDown option = None
+    let picked = Event<string>()
     let scanner = new LatestWork<string list>(InvokerService.invoker :> IDispatcher,
-        (fun apps -> if not this.IsDisposed then this.UpdateApplications apps),ignore,ignore)
+        (fun apps -> this.UpdateApplications apps),ignore,ignore)
+    let retire() =
+        choice |> Option.iter(fun previous -> owner.Controls.Remove(previous); previous.Dispose())
+        choice <- None
+        dropDown <- None
+        for icon in icons do icon.Dispose()
+        icons <- [||]
 
-    do
-        this.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
-        this.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
-        this.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
-        this.RowStyles.Add(RowStyle(SizeType.Percent,100.0f)) |> ignore
-        browse.AutoSize <- false
-        browse.Dock <- DockStyle.Fill
-        browse.Margin <- Padding(Dpi.scale 4,0,0,0)
-        browse.KeyDown.Add(fun e ->
-            if e.KeyCode=Keys.Escape then e.SuppressKeyPress<-true; cancelRequested.Trigger(EventArgs.Empty))
-        // The row behind it takes the list's selection colour, and the theme paints every label the
-        // page colour: the word keeps no box of its own.
-        alternative.BackColor <- Drawing.Color.Transparent
-        alternative.BackColorChanged.Add(fun _ ->
-            if alternative.BackColor<>Drawing.Color.Transparent then alternative.BackColor <- Drawing.Color.Transparent)
-        this.Controls.Add(alternative,1,0)
-        this.Controls.Add(browse,2,0)
-        browse.Click.Add(fun _ ->
-            use dialog = new OpenFileDialog(Title=tr Strings.AppRules.application,
-                                           Filter=tr Strings.AppRules.applicationFiles,CheckFileExists=true)
-            if dialog.ShowDialog(this)=DialogResult.OK then
-                selectedPath <- dialog.FileName
-                this.UpdateApplications (Array.toList paths)
-                selectionChanged.Trigger(EventArgs.Empty))
-        this.UpdateApplications []
-        this.HandleCreated.Add(fun _ ->
-            scanner.Request(fun cancellation ->
-                let os = OS()
-                os.windowsInZorder.toArray |> Array.choose(fun window ->
-                    cancellation.ThrowIfCancellationRequested()
-                    try
-                        if window.isWindow && Services.filter.isAppWindow(window.hwnd) then
-                            let path = window.pid.processPath
-                            if String.IsNullOrWhiteSpace path then None else Some path
-                        else None
-                    with
-                    | :? OperationCanceledException -> reraise()
-                    | _ -> None) |> Array.toList))
-        this.Disposed.Add(fun _ ->
-            (scanner :> IDisposable).Dispose()
-            for icon in icons do icon.Dispose())
-
-    /// Retain saved or browsed apps even when they have no open windows.
+    member _.Owner with set(control:Control) = owner <- control
     member _.UpdateApplications(applications:string list) =
         let unique = Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        paths <- selectedPath :: applications
+        paths <- applications
                  |> List.filter(fun path -> not (String.IsNullOrWhiteSpace path) && unique.Add(AppIdentity.key path))
                  |> List.sortBy(fun path -> (ApplicationNames.label path).ToUpperInvariant(),path.ToUpperInvariant())
                  |> List.toArray
-        let labels = paths |> Array.map ApplicationNames.label
-        let nextIcons = paths |> Array.map ApplicationNames.icon
-        let next = SettingsUi.choice (Array.append [|tr Strings.AppRules.chooseApplication|] labels)
-        next.ItemImages <- Array.append [|null|] nextIcons
-        next.AccessibleName <- tr Strings.AppRules.application
-        next.Dock <- DockStyle.Fill
-        next.Margin <- Padding.Empty
-        next.KeyDown.Add(fun e ->
-            if e.KeyCode=Keys.Escape then e.SuppressKeyPress<-true; cancelRequested.Trigger(EventArgs.Empty))
-        next.SelectedIndex <- paths |> Array.tryFindIndex(fun path -> String.Equals(path,selectedPath,StringComparison.OrdinalIgnoreCase))
-                              |> Option.map ((+) 1) |> Option.defaultValue 0
-        next.SelectedIndexChanged.Add(fun _ ->
-            selectedPath <- if next.SelectedIndex>0 then paths.[next.SelectedIndex-1] else ""
-            selectionChanged.Trigger(EventArgs.Empty))
-        choice |> Option.iter(fun previous -> this.Controls.Remove(previous); previous.Dispose())
-        for icon in icons do icon.Dispose()
-        icons <- nextIcons
-        choice <- Some next
-        this.Controls.Add(next,0,0)
-        this.PerformLayout()
-
-    member _.SelectedPath = selectedPath
-    member this.SelectPath(path:string) =
-        selectedPath <- path
-        this.UpdateApplications (Array.toList paths)
+    /// Looks for running apps again, off the UI thread.
+    member _.Scan() =
+        scanner.Request(fun cancellation ->
+            let os = OS()
+            os.windowsInZorder.toArray |> Array.choose(fun window ->
+                cancellation.ThrowIfCancellationRequested()
+                try
+                    if window.isWindow && Services.filter.isAppWindow(window.hwnd) then
+                        let path = window.pid.processPath
+                        if String.IsNullOrWhiteSpace path then None else Some path
+                    else None
+                with
+                | :? OperationCanceledException -> reraise()
+                | _ -> None) |> Array.toList)
     member _.Applications = Array.copy paths
-    member _.SelectionChanged = selectionChanged.Publish
-    member _.CancelRequested = cancelRequested.Publish
+    /// The apps in the drop-down last opened, in order; Browse… follows them.
+    member _.Shown = Array.copy shown
+    member _.Choice = choice
+    /// The list of the drop-down last opened.
+    member _.DropDown = dropDown
+    member _.Picked = picked.Publish
+    /// Opens below a box on screen, leaving out the apps the group has already.
+    member _.Open(anchor:Rectangle, excluded:string list) =
+        retire()
+        shown <- paths |> Array.filter(fun path -> not (excluded |> List.exists(AppIdentity.same path)))
+        // Browse… has a folder, so its words line up with the apps' names.
+        let folder = new Bitmap(Dpi.scale 16,Dpi.scale 16)
+        do
+            use g = Graphics.FromImage(folder)
+            SettingsTreeList.drawGlyph(g,GroupGlyph,Rectangle(0,0,folder.Width,folder.Height),(SettingsColors.current()).muted)
+        icons <- Array.append (shown |> Array.map ApplicationNames.icon) [|folder :> Image|]
+        let next = SettingsUi.choice (Array.append (shown |> Array.map ApplicationNames.label) [|tr Strings.AppRules.browseApplication|])
+        next.ItemImages <- icons
+        next.AccessibleName <- tr Strings.AppRules.chooseApplication
+        next.DropDownAnchor <- Some anchor
+        next.Visible <- false
+        owner.Controls.Add(next)
+        next.SelectedIndexChanged.Add(fun _ ->
+            let index = next.SelectedIndex
+            if index>=0 && index<shown.Length then picked.Trigger(shown.[index])
+            elif index=shown.Length then
+                use dialog = new OpenFileDialog(Title=tr Strings.AppRules.application,
+                                               Filter=tr Strings.AppRules.applicationFiles,CheckFileExists=true)
+                if dialog.ShowDialog(owner)=DialogResult.OK then picked.Trigger(dialog.FileName))
+        choice <- Some next
+        dropDown <- next.CreateDropDown() |> Option.map(fun window ->
+            window.Show(window.Location)
+            let frame = (window.Items.[0] :?> ToolStripControlHost).Control :?> SettingsListFrame
+            frame.List.Focus() |> ignore
+            window :> ToolStripDropDown)
+    interface IDisposable with
+        member _.Dispose() =
+            (scanner :> IDisposable).Dispose()
+            retire()
 
-/// A named group, the row that picks an app to add to one, or a group made by dragging tabs.
-type private GroupApplicationNode = GroupNode of string | PendingApplicationNode of string | HandMadeNode of int
+/// A named group, or a group made by dragging tabs.
+type private GroupApplicationNode = GroupNode of string | HandMadeNode of int
 
 type AppGroupingRulesView() as this =
     inherit Panel()
@@ -137,21 +126,21 @@ type AppGroupingRulesView() as this =
     let help = new SettingsHelpButton(tr Strings.AppRules.groupRulesHelp,AccessibleName=tr Strings.SettingsWindow.howToUse,
                                       Font=SettingsUi.bodyFont(),Name="grouping-help")
     let addGroup = SettingsUi.button (tr Strings.AppRules.addGroup)
-    let tree = new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn);TreeListColumn(tr Strings.AppRules.enabled,76,CheckColumn);TreeListColumn("",58,ActionColumn)],RowHeight=36)
+    let tree = new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn);TreeListColumn(tr Strings.AppRules.enabled,AppGroupingRulesView.CheckWidth(),CheckColumn);TreeListColumn("",58,ActionColumn)],RowHeight=36)
     let card = new Panel(Tag="surface",Padding=Padding(Dpi.scale 6))
     let name = new TextBox(Name="group-name")
     let nameInput = new SettingsTextInput(name)
-    let mutable pendingGroup : string option = None
     let mutable addToGroup : (string * string -> unit) = ignore
-    let inlineApplication = new GroupingApplicationPicker("")
+    let addMenu = new GroupingApplicationMenu()
     let mutable editing : GroupApplicationNode option = None
+    /// The group whose "+" opened the app list.
+    let mutable pickingFor : string option = None
     let status = new Label(Tag="muted",UseMnemonic=false,AutoEllipsis=true)
     let selected() = if isNull tree.SelectedItem then None else Some(tree.SelectedItem.Tag :?> GroupApplicationNode)
     let selectedGroup() =
         let id =
             match selected() with
             | Some(GroupNode id) -> Some id
-            | Some(PendingApplicationNode id) -> Some id
             | Some(HandMadeNode _) | None -> None
         id |> Option.bind(fun id -> groups |> List.tryFind(fun group -> group.id=id))
     let updateEditor() =
@@ -179,21 +168,18 @@ type AppGroupingRulesView() as this =
                 row.Chips <- members |> List.map(fun rule ->
                     { Text=ApplicationNames.label rule.processPath; Icon=ApplicationNames.icon rule.processPath; Removable=true })
                 chipRules.[group.id] <- members
-                if pendingGroup=Some group.id then
-                    row.Add(TreeListItem(tr Strings.AppRules.chooseApplication,Tag=PendingApplicationNode group.id,
-                                         Actions=Some [NoGlyph;DeleteGlyph])) |> ignore
-                    row.Expanded <- true
                 tree.Roots.Add(row)
             // Groups made by dragging tabs, kept after their windows close: shown, not edited here,
             // and taken apart in one go.
             Services.program.handMadeGroups() |> List.iteri(fun index (id,members) ->
-                let row = TreeListItem(tr Strings.AppRules.handMadeGroup,Tag=HandMadeNode id,Glyph=GroupGlyph,SeparatorAbove=(index=0),
+                let row = TreeListItem(tr (Strings.AppRules.handMadeGroup (index+1)),Tag=HandMadeNode id,Glyph=GroupGlyph,SeparatorAbove=(index=0),
                                        Checks=[|None;None|],Actions=Some [NoGlyph;UngroupGlyph],AlwaysShowActions=true)
-                row.Chips <- members |> List.map(fun (app,title) ->
-                    { Text=(if String.IsNullOrWhiteSpace title then app else title); Icon=null; Removable=false })
+                row.Chips <- members |> List.map(fun (app,title,path) ->
+                    { Text=(if String.IsNullOrWhiteSpace title then app else title)
+                      Icon=(if String.IsNullOrWhiteSpace path then null else ApplicationNames.icon path); Removable=false })
                 tree.Roots.Add(row))
             tree.Rebuild()
-            tree.SelectedItem <- tree.Roots |> Seq.collect(fun row -> Seq.append [row] row.Children)
+            tree.SelectedItem <- tree.Roots
                                  |> Seq.tryFind(fun row -> selection=Some(row.Tag :?> GroupApplicationNode)) |> Option.toObj
             updateEditor()
         finally rebuilding <- false
@@ -242,23 +228,17 @@ type AppGroupingRulesView() as this =
             tree.SetRowEditor(tree.SelectedItem,nameInput)
             name.Focus() |> ignore
             name.SelectAll()
-        | Some(PendingApplicationNode _) ->
-            inlineApplication.SelectPath("")
-            tree.SetRowEditor(tree.SelectedItem,inlineApplication,includeIcon=true)
-            inlineApplication.SelectNextControl(null,true,true,true,false) |> ignore
         | Some(HandMadeNode _) | None -> ()
     let delete() =
-        let isPending = match selected() with Some(PendingApplicationNode _) -> true | _ -> false
         match selected() with
         | Some(GroupNode id) ->
             groups <- groups |> List.filter(fun group -> group.id<>id)
             rules <- rules |> List.filter(fun rule -> rule.groupId<>id)
-        | Some(PendingApplicationNode _) -> pendingGroup <- None
+            save None
+            reload None
         | Some(HandMadeNode _) | None -> ()
-        let isHandMade = match selected() with Some(HandMadeNode _) -> true | _ -> false
-        if not isPending && not isHandMade then save None
-        reload None
     do
+        addMenu.Owner <- this
         addToGroup <- fun (groupId,path) ->
             groups |> List.tryFind(fun group -> group.id=groupId) |> Option.iter(fun group ->
                 let previous = rules
@@ -266,7 +246,6 @@ type AppGroupingRulesView() as this =
                 let rule = {id=existing |> Option.map(fun rule -> rule.id) |> Option.defaultWith(fun () -> Guid.NewGuid().ToString("N"));enabled=true;processPath=path;title="";matchType= -1;groupId=group.id;groupName=group.name}
                 rules <- (rules |> List.filter(fun other -> not(AppIdentity.same other.processPath path))) @ [rule]
                 save (Some previous)
-                pendingGroup <- None
                 reload (Some(GroupNode group.id)))
         this.fitToRows()
         tree.RowsChanged.Add(fun _ -> this.fitToRows())
@@ -295,14 +274,15 @@ type AppGroupingRulesView() as this =
             | _,0 -> beginEdit()
             | _,1 -> delete()
             | _ -> ())
-        // The "+" after a group's apps opens the row that picks one more.
+        // The "+" after a group's apps lists the apps that can join it.
         tree.ChipAddInvoked.Add(fun item ->
-            match item.Tag :?> GroupApplicationNode with
-            | GroupNode id ->
-                pendingGroup <- Some id
-                reload (Some(PendingApplicationNode id))
-                beginEdit()
+            match item.Tag :?> GroupApplicationNode,tree.ChipAddBounds item with
+            | GroupNode id,Some box ->
+                let members = rules |> List.filter(fun rule -> rule.groupId=id) |> List.map(fun rule -> rule.processPath)
+                pickingFor <- Some id
+                addMenu.Open(tree.RectangleToScreen(box),members)
             | _ -> ())
+        addMenu.Picked.Add(fun path -> pickingFor |> Option.iter(fun id -> addToGroup(id,path)))
         tree.ChipRemoved.Add(fun (item,index) ->
             match item.Tag :?> GroupApplicationNode with
             | GroupNode id ->
@@ -315,18 +295,22 @@ type AppGroupingRulesView() as this =
                 | _ -> ()
             | _ -> ())
         // Groups made by hand change as tabs are dragged: shown again, the list catches up.
-        this.VisibleChanged.Add(fun _ -> if this.Visible && editing.IsNone && pendingGroup.IsNone then reload (selected()))
+        this.VisibleChanged.Add(fun _ ->
+            if this.Visible then
+                addMenu.Scan()
+                if editing.IsNone then reload (selected()))
+        this.HandleCreated.Add(fun _ -> addMenu.Scan())
         // A group dragged together while the page is open shows at once.
         let invoker = InvokerService.invoker
         let handMadeSubscription = Services.settings.notifyValue "rememberedGroups" (fun _ ->
             if not this.IsDisposed then
                 invoker.asyncInvoke(fun () ->
-                    if not this.IsDisposed && editing.IsNone && pendingGroup.IsNone then reload (selected())))
+                    if not this.IsDisposed && editing.IsNone then reload (selected())))
         this.Disposed.Add(fun _ -> handMadeSubscription.Dispose())
         tree.KeyDown.Add(fun e -> if e.KeyCode=Keys.Delete then e.Handled<-true; delete())
         tree.CheckChanged.Add(fun (item,_,enabled) ->
             let previous = rules
-            let matches rule = match item.Tag :?> GroupApplicationNode with GroupNode id -> rule.groupId=id | PendingApplicationNode _ | HandMadeNode _ -> false
+            let matches rule = match item.Tag :?> GroupApplicationNode with GroupNode id -> rule.groupId=id | HandMadeNode _ -> false
             rules <- rules |> List.map(fun rule -> if matches rule then {rule with enabled=enabled} else rule)
             save (Some previous)
             reload (selected()))
@@ -349,19 +333,6 @@ type AppGroupingRulesView() as this =
                 status.Text<-""
                 tree.ClearRowEditor()
                 tree.Focus() |> ignore)
-        inlineApplication.SelectionChanged.Add(fun _ ->
-            match editing with
-            | Some(PendingApplicationNode id) when not(String.IsNullOrWhiteSpace inlineApplication.SelectedPath) ->
-                addToGroup(id,inlineApplication.SelectedPath)
-                tree.Focus() |> ignore
-            | _ -> ())
-        inlineApplication.CancelRequested.Add(fun _ ->
-            match editing with
-            | Some(PendingApplicationNode id) ->
-                pendingGroup <- None
-                reload (Some(GroupNode id))
-            | _ -> editing<-None; tree.ClearRowEditor()
-            tree.Focus() |> ignore)
         addGroup.Click.Add(fun _ ->
             let mutable number = 1
             let mutable target = tr Strings.AppRules.newGroup
@@ -374,7 +345,6 @@ type AppGroupingRulesView() as this =
             reload (Some(GroupNode group.id))
             beginEdit())
         nameInput.Visible <- false
-        inlineApplication.Visible <- false
         tree.Tag <- "surface"
         tree.Dock <- DockStyle.Fill
         card.Controls.Add(tree)
@@ -388,14 +358,14 @@ type AppGroupingRulesView() as this =
             e.Graphics.FillPath(fill,shape)
             e.Graphics.DrawPath(border,shape))
         card.Resize.Add(fun _ -> card.Invalidate())
-        this.Controls.AddRange([|header :> Control;card;status;nameInput;inlineApplication|])
+        this.Controls.AddRange([|header :> Control;card;status;nameInput|])
         status.TextChanged.Add(fun _ -> this.PerformLayout())
         this.Disposed.Add(fun _ ->
             nameInput.Dispose()
-            inlineApplication.Dispose()
+            (addMenu :> IDisposable).Dispose()
             for row in tree.Roots do
-                for child in row.Children do
-                    if not(isNull child.Icon) then child.Icon.Dispose())
+                for chip in row.Chips do
+                    if not(isNull chip.Icon) then chip.Icon.Dispose())
         this.Resize.Add(fun _ -> this.PerformLayout())
         reload None
     /// Only as tall as its rows need, from two rows up to six; more rows scroll.
@@ -407,6 +377,11 @@ type AppGroupingRulesView() as this =
             let height = max (around+Dpi.scale 30+2*rows) (min (Dpi.scale 244) wanted)
             if this.Height<>height then this.Height <- height
     member _.Changed = changed.Publish
+    member _.AddMenu = addMenu
+    /// Just wide enough for the Enabled heading and its boxes, in logical pixels.
+    static member CheckWidth() =
+        let text = TextRenderer.MeasureText(tr Strings.AppRules.enabled,SettingsUi.bodyFont()).Width
+        max 44 (int(float text/Dpi.currentFactor())+16)
     member _.Reload() =
         groups <- Services.settings.getValue("appGroupingTargets") :?> AppGroupingTarget list
         rules <- Services.settings.getValue("appGroupingRules") :?> AppGroupingRule list

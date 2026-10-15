@@ -1113,6 +1113,9 @@ type SettingsCombo(items:string[]) as this =
         // One width for lists of short words, so stacked rows line up their left edges too.
         this.Width <- max (Dpi.scale SettingsShapes.editorWidth) (textWidth+dot+Dpi.scale 60)
     member _.CompactLabel with set(label:unit -> string) = compactLabel <- Some label; this.Invalidate()
+    /// Where on screen the choices open from, left-aligned below it, when the control itself is
+    /// not shown: a button drawn by a list, say.
+    member val DropDownAnchor : Rectangle option = None with get,set
     member _.ItemColors
         with get() = Array.copy itemColors
         and set(value:Color array) =
@@ -1193,21 +1196,23 @@ type SettingsCombo(items:string[]) as this =
             let frame = new SettingsListFrame(list)
             let listHost = new ToolStripControlHost(frame,AutoSize=false,Margin=Padding.Empty,Padding=Padding.Empty,BackColor=p.hover)
             window.Items.Add(listHost) |> ignore
-            let area = Screen.FromControl(this).WorkingArea
+            let anchorBox = match this.DropDownAnchor with Some box -> box | None -> this.RectangleToScreen(this.ClientRectangle)
+            let area = Screen.FromRectangle(anchorBox).WorkingArea
             let labelWidth = items |> Array.map(fun text -> TextRenderer.MeasureText(text,this.Font).Width) |> Array.max
             // Native handle creation can change item metrics at non-100% DPI.
             // Realize the list first, then size the client area using its final row height.
             list.Handle |> ignore
             list.ItemHeight <- max (Dpi.scale 34) (list.Font.Height+Dpi.scale 12)
-            window.Size <- Size(min area.Width (max this.Width (labelWidth+Dpi.scale (if itemImages.Length>0 then 82 elif itemColors.Length>0 then 80 else 58))),
+            window.Size <- Size(min area.Width (max anchorBox.Width (labelWidth+Dpi.scale (if itemImages.Length>0 then 82 elif itemColors.Length>0 then 80 else 58))),
                                 min (area.Height-Dpi.scale 12) (items.Length*list.ItemHeight+window.Padding.Vertical+2))
             listHost.Size <- Size(window.Width-window.Padding.Horizontal,window.Height-window.Padding.Vertical)
             frame.Size <- listHost.Size
             list.SelectedIndex <- max 0 selected
             list.TopIndex <- 0
-            let anchor = this.PointToScreen(Point(0,this.Height+Dpi.scale 4))
-            let y = if anchor.Y+window.Height<=area.Bottom then anchor.Y else this.PointToScreen(Point.Empty).Y-window.Height-Dpi.scale 4
-            window.Location <- Point(max area.Left (min (area.Right-window.Width) (anchor.X+this.Width-window.Width)),max area.Top y)
+            let anchor = Point(anchorBox.X,anchorBox.Bottom+Dpi.scale 4)
+            let y = if anchor.Y+window.Height<=area.Bottom then anchor.Y else anchorBox.Y-window.Height-Dpi.scale 4
+            let x = if this.DropDownAnchor.IsSome then anchor.X else anchor.X+anchorBox.Width-window.Width
+            window.Location <- Point(max area.Left (min (area.Right-window.Width) x),max area.Top y)
             popup <- Some window
             this.Invalidate()
             window.Closed.Add(fun e ->

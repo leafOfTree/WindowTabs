@@ -358,6 +358,12 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                 closeBox |> Option.filter(fun (box:Rectangle) -> Rectangle.Inflate(box,Dpi.scale 2,Dpi.scale 2).Contains(point))
                          |> Option.map(fun _ -> item,chip)))
 
+    /// Where a shown row's "+" is, in client coordinates.
+    member this.ChipAddBounds(item:TreeListItem) =
+        this.indexOf item |> Option.bind(fun index ->
+            let _,_,add,_ = this.chipLayout(item,snd rows.[index],this.rowTop index)
+            add)
+
     /// The row whose "+" after its chips is under a point.
     member private this.chipAddAt(point:Point) =
         this.chipsAt point |> Option.bind(fun (item,_,add) ->

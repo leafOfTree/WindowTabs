@@ -390,7 +390,7 @@ module Strings =
                                zh="把不同应用的窗口放进同一个命名组。加入这里的应用不再使用“自动分组”。"
                                ja="異なるアプリのウィンドウを名前付きの一つのグループにまとめます。ここに追加したアプリでは「自動グループ化」は使われません。" }
         let application = { en="Application"; zh="应用"; ja="アプリ" }
-        let chooseApplication = { en="Choose a running app"; zh="选择正在运行的应用"; ja="実行中のアプリを選択" }
+        let chooseApplication = { en="Add an app"; zh="添加应用"; ja="アプリを追加" }
         let browseApplication = { en="Browse…"; zh="浏览…"; ja="参照…" }
         let applicationFiles = { en="Applications (*.exe)|*.exe"; zh="应用程序 (*.exe)|*.exe"; ja="アプリ (*.exe)|*.exe" }
         let applicationOnly = { en="Application only"; zh="仅按应用"; ja="アプリのみ" }
@@ -411,10 +411,9 @@ module Strings =
         let notRunning count = { en=sprintf "Not running (%d)" count; zh=sprintf "未运行 (%d)" count; ja=sprintf "実行していないアプリ (%d)" count }
         /// ApplicationFrameHost.exe, which hosts every Store (UWP) app: Settings, Calculator, Photos.
         let windowsApps = { en="Windows apps"; zh="Windows 应用"; ja="Windows アプリ" }
-        /// A group made by dragging tabs together, shown read-only beside the named groups.
-        let handMadeGroup = { en="Dragged together"; zh="拖拽形成"; ja="ドラッグでまとめたグループ" }
-        /// Between the running-app choice and Browse.
-        let orBrowse = { en="or"; zh="或"; ja="または" }
+        /// A group made by dragging tabs together, shown read-only beside the named groups; there
+        /// can be several, so a short name and a number.
+        let handMadeGroup number = { en=sprintf "Dragged %d" number; zh=sprintf "拖拽 %d" number; ja=sprintf "ドラッグ %d" number }
         let scanning = { en="Scanning…"; zh="正在扫描…"; ja="スキャン中…" }
         let scanFailed details = { en="Scan failed: " + details; zh="扫描失败：" + details; ja="スキャンに失敗しました: " + details }
 

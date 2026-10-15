@@ -156,15 +156,17 @@ let main() =
                 let tree = controls editor |> Seq.pick(function :? SettingsTreeList as tree -> Some tree | _ -> None)
                 let targets = api.getValue("appGroupingTargets") :?> AppGroupingTarget list
                 let root = tree.Roots.[targets |> List.findIndex(fun group -> group.id=target)]
-                let visible = tree.Roots |> Seq.collect(fun row -> if row.Expanded then Seq.append [row] row.Children else Seq.singleton row) |> Seq.toArray
-                let index = visible |> Array.findIndex(fun row -> obj.ReferenceEquals(root,row))
-                let point = Drawing.Point(tree.Width-Dpi.scale 86+Dpi.scale 12,Dpi.scale 30+index*Dpi.scale tree.RowHeight+Dpi.scale (tree.RowHeight/2))
+                // The "+" after the group's apps opens the list of apps to add.
+                editor.AddMenu.UpdateApplications [path]
+                let addAt = typeof<SettingsTreeList>.GetMethod("chipAddAt",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic)
+                let point =
+                    seq { for y in 0..2..tree.Height-1 do for x in 0..2..tree.Width-1 -> Drawing.Point(x,y) }
+                    |> Seq.find(fun point -> tree.ItemAt(point) |> Option.exists(fun row -> obj.ReferenceEquals(row,root))
+                                             && not(isNull (addAt.Invoke(tree,[|box point|]))))
                 let mouse = new MouseEventArgs(MouseButtons.Left,1,point.X,point.Y,0)
                 typeof<SettingsTreeList>.GetMethod("OnMouseDown",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.Public ||| Reflection.BindingFlags.NonPublic).Invoke(tree,[|box mouse|]) |> ignore
-                let picker = controls tree |> Seq.pick(function :? GroupingApplicationPicker as picker -> Some picker | _ -> None)
-                picker.UpdateApplications [path]
-                let combo = picker.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as combo -> Some combo | _ -> None)
-                combo.SelectedIndex <- 1+Array.findIndex ((=)path) picker.Applications
+                editor.AddMenu.Choice.Value.SelectedIndex <- Array.findIndex ((=)path) editor.AddMenu.Shown
+                editor.AddMenu.DropDown |> Option.iter(fun window -> window.Close())
             let waitForTarget target =
                 pumpUntil "Editing a rule did not regroup existing HWNDs through the production adapter" (fun () ->
                     let groups = Services.desktop.groups.list |> List.map(fun group -> group :?> GroupInfo)
