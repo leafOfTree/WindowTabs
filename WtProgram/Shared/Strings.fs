@@ -407,10 +407,6 @@ module Strings =
         let tabs = { en="Tabs"; zh="标签"; ja="タブ" }
         /// Each app's windows join one group of their own; named as in the tab menu.
         let autoGroup = { en="Auto-group"; zh="自动分组"; ja="自動グループ化" }
-        /// The first row: its boxes turn a column on or off for every app below.
-        let allApps = { en="All apps"; zh="全部应用"; ja="すべてのアプリ" }
-        let appCount count =
-            { en=(if count=1 then "1 app" else sprintf "%d apps" count); zh=sprintf "%d 个应用" count; ja=sprintf "%d 個のアプリ" count }
         let scanning = { en="Scanning…"; zh="正在扫描…"; ja="スキャン中…" }
         let scanFailed details = { en="Scan failed: " + details; zh="扫描失败：" + details; ja="スキャンに失敗しました: " + details }
 

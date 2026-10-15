@@ -52,21 +52,8 @@ type ProgramView() as this=
         new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn)
                               TreeListColumn(tr Strings.AppRules.tabs,130,CheckColumn)
                               TreeListColumn(tr Strings.AppRules.autoGroup,130,CheckColumn)])
-    let all = TreeListItem(tr Strings.AppRules.allApps,Glyph=AppsGlyph,Checks=[|None;Some false;Some false|],
-                           CheckEnabled=[|true;true;true|],Mixed=[|false;false;false|])
-    let apps() = list.Roots |> Seq.filter(fun item -> not (obj.ReferenceEquals(item,all))) |> List.ofSeq
+    let apps() = list.Roots |> List.ofSeq
     let path (item:TreeListItem) = item.Tag :?> string
-    /// Each of the All row's boxes is on when every app's is, and a dash when only some are.
-    let updateAll() =
-        let summarise column (items:TreeListItem list) =
-            let items = items |> List.filter(fun item -> item.checkEnabled column)
-            let on = items |> List.filter(fun item -> item.check column = Some true) |> List.length
-            all.Checks.[column] <- Some(on>0 && on=items.Length)
-            all.Mixed.[column] <- on>0 && on<items.Length
-            all.CheckEnabled.[column] <- not items.IsEmpty
-        let apps = apps()
-        summarise ProgramItems.tabsColumn apps
-        summarise ProgramItems.groupingColumn apps
     /// The default only applies when an application is first discovered.
     let footer =
         let table = new TableLayoutPanel(ColumnCount=2,RowCount=1,Margin=Padding.Empty,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink)
@@ -96,11 +83,8 @@ type ProgramView() as this=
             let expanded = apps() |> List.filter(fun item -> item.Expanded) |> List.map(path >> AppIdentity.key) |> Set.ofList
             ImgHelper.disposeItems list.Roots
             list.Roots.Clear()
-            list.Roots.Add(all)
             for item in items do item.Expanded <- expanded.Contains(AppIdentity.key (path item))
-            items |> List.tryHead |> Option.iter(fun item -> item.SeparatorAbove <- true)
             list.Roots.AddRange(items)
-            updateAll()
             list.Rebuild()
             panel.Status <- ""),
         ImgHelper.disposeItems,
@@ -109,8 +93,7 @@ type ProgramView() as this=
     do
         groupingRules.Changed.Add(fun _ -> this.populateNodes())
         list.CheckChanged.Add(fun (item,column,value) ->
-            let isAll = obj.ReferenceEquals(item,all)
-            let changed = (if isAll then apps() else [item]) |> List.filter(fun app -> app.checkEnabled column)
+            let changed = [item] |> List.filter(fun app -> app.checkEnabled column)
             if column=ProgramItems.tabsColumn then
                 Services.filter.setIsTabbingEnabledForProcesses (changed |> List.map path) value
                 for app in changed do
@@ -124,11 +107,8 @@ type ProgramView() as this=
                     Services.filter.setIsTabbingEnabledForProcesses (changed |> List.map path) true
                     for app in changed do app.Checks.[ProgramItems.tabsColumn] <- Some true
                 for app in changed do
-                    // Turning grouping on regroups the app's windows, so apps already set are left alone.
-                    if app.checkEnabled column && (not isAll || app.check column <> Some value) then
-                        Services.program.setAutoGroupingEnabled (path app) value
-                        app.Checks.[column] <- Some value
-            updateAll()
+                    Services.program.setAutoGroupingEnabled (path app) value
+                    app.Checks.[column] <- Some value
             list.Invalidate())
         this.populateNodes()
         let subscription = Services.settings.notifyValue "enableTabbingByDefault" (fun _ ->

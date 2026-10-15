@@ -18,7 +18,6 @@ type TreeListGlyph =
     | WindowGlyph
     | GroupGlyph
     | WorkspaceGlyph
-    | AppsGlyph
     | AddGlyph
     | EditGlyph
     | DeleteGlyph
@@ -303,10 +302,6 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             use front = SettingsShapes.rounded (RectangleF(5.0f,6.0f,9.5f,8.5f)) 1.5f
             g.DrawPath(pen,back)
             g.DrawPath(pen,front)
-        | AppsGlyph ->
-            for x,y in [1.5f,1.5f;9.0f,1.5f;1.5f,9.0f;9.0f,9.0f] do
-                use square = SettingsShapes.rounded (RectangleF(x,y,5.5f,5.5f)) 1.5f
-                g.DrawPath(pen,square)
         | EditGlyph ->
             use pencil = new GraphicsPath()
             pencil.AddLines([|PointF(2.5f,13.5f);PointF(3.2f,10.6f);PointF(10.8f,3.0f);PointF(13.0f,5.2f);PointF(5.4f,12.8f)|])

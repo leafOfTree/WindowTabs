@@ -703,14 +703,14 @@ let main() =
         let status = view.control.Controls |> Seq.cast<Control> |> Seq.choose(function :? Label as l -> Some l.Text | _ -> None) |> String.concat " | "
         assertTrue (list.Roots.Count>=2) ("The App rules page did not list its apps: "+status)
         assertTrue (list.Roots |> Seq.forall(fun item -> item.Checks.Length=3)) "App rules still have a number shortcut column"
-        let all = list.Roots.[0]
-        let apps() = list.Roots |> Seq.skip 1 |> List.ofSeq
+        let apps() = list.Roots |> List.ofSeq
         let listed path = apps() |> List.tryFind(fun item -> String.Equals(item.Tag :?> string,path,StringComparison.OrdinalIgnoreCase))
-        assertTrue (all.Text=tr Strings.AppRules.allApps && all.Glyph=AppsGlyph) "The App rules list does not start with All apps"
         assertTrue (installed |> List.forall(fun path -> (listed path).IsSome)) "An app with a rule is missing from the list when it is not running"
         assertTrue (apps() |> List.filter(fun item -> AppIdentity.same (item.Tag :?> string) aliasPath) |> List.length = 1)
                    "A historical installation duplicated the running app's rule row"
-        assertTrue ((apps()).Head.SeparatorAbove) "Nothing sets All apps apart from the apps"
+        // No row turns every app on or off at once: one click changed them all. Each row is an app.
+        assertTrue (not((apps()).Head.SeparatorAbove) && apps() |> List.forall(fun item -> item.Tag :? string))
+                   "The App rules list still has a row for all apps"
         let runningApp = (listed installed.Head).Value
         let historicalApp = (listed installed.[1]).Value
         assertTrue (runningApp.Children.Count>0 && historicalApp.Children.Count=0 && obj.ReferenceEquals((apps()).Head,runningApp) && historicalApp.SeparatorAbove)
@@ -718,20 +718,12 @@ let main() =
         assertTrue (view.control.Controls.Find("enable-tabs-for-new-apps",true).Length=1) "The default for new apps is not on the App rules page"
         let newAppToggle = view.control.Controls.Find("enable-tabs-for-new-apps",true).[0]
         assertTrue (newAppToggle.PointToScreen(Point.Empty).Y < list.PointToScreen(Point.Empty).Y) "The new-app default was not moved above the application table"
-        assertTrue (not(status.Contains(tr(Strings.AppRules.appCount (list.Roots.Count-1))))) "The application count is still displayed"
         let tabs = 1
         let space item =
             list.SelectedItem <- item
             key list Keys.Space
-        // Every app off: All is off. Pressing it turns every app on; again, every app off.
         let isOn path = lock on (fun () -> on.Contains path)
-        assertTrue (all.check tabs=Some false && not (all.mixed tabs)) "All apps is not off while every app is"
-        space all
-        assertTrue (apps() |> List.forall(fun app -> app.check tabs=Some true) && all.check tabs=Some true && not (all.mixed tabs)) "All apps does not turn every app on"
-        assertTrue (installed |> List.forall isOn && saves.Value=1) "All apps did not save every app as on, at once"
-        space all
-        assertTrue (apps() |> List.forall(fun app -> app.check tabs=Some false) && all.check tabs=Some false) "All apps pressed again does not turn every app off"
-        assertTrue (installed |> List.forall(isOn >> not)) "All apps did not save every app as off"
+        assertTrue (apps() |> List.forall(fun app -> app.check tabs=Some false)) "An app started with tabs on"
         let group (item:TreeListItem) =
             typeof<SettingsTreeList>.GetMethod("toggleCheck",BindingFlags.Instance ||| BindingFlags.NonPublic).Invoke(list,[|box item;box 2|]) |> ignore
         let first = (listed installed.Head).Value
@@ -740,15 +732,8 @@ let main() =
         assertTrue (first.check tabs=Some true && first.check 2=Some true && isOn installed.Head && grouping.Contains installed.Head) "Auto-group did not enable tabs"
         space first
         assertTrue (first.check 2=Some false && not (grouping.Contains installed.Head)) "Tabs off did not clear auto-group"
-        group all
-        assertTrue (apps() |> List.forall(fun app -> app.check tabs=Some true && app.check 2=Some true && isOn (app.Tag :?> string) && grouping.Contains(app.Tag :?> string))) "All apps auto-group did not enable both rules"
-        space all
-        assertTrue (apps() |> List.forall(fun app -> app.check tabs=Some false && app.check 2=Some false && not (grouping.Contains(app.Tag :?> string)))) "All apps tabs off did not clear auto-group"
-        // One app on: All shows a dash, and pressing it turns the rest on.
-        space (listed installed.Head).Value
-        assertTrue (all.mixed tabs && all.check tabs=Some false) "All apps does not show that only some apps are on"
-        space all
-        assertTrue (apps() |> List.forall(fun app -> app.check tabs=Some true) && not (all.mixed tabs)) "Pressing a dashed All apps does not turn every app on"
+        for app in apps() do space app
+        assertTrue (apps() |> List.forall(fun app -> app.check tabs=Some true) && installed |> List.forall isOn) "Turning on each app's tabs did not save them"
         form.PerformLayout()
         Application.DoEvents()
         appWindow.Value <- IntPtr.Zero
