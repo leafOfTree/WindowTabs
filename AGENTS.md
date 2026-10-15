@@ -17,7 +17,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
   serially on a hidden desktop (`-VisibleDesktop` to watch them). Native UI suites need
   a desktop session and must not run in parallel with another UI test run. Logs are
   written to `tests/Debug`.
-- A running `WindowTabs.exe` locks the output; exit it from the tray before building.
+- A running Release `WindowTabs.exe` locks the output; exit it from the tray before building.
+  A Debug build moves the running exe and `Win32.dll` aside instead (`*.running-*`, deleted by
+  a later build), so build without exiting first. Starting any copy asks the running one to
+  exit as from its tray menu and takes over.
 - New suites must be added to the `$Suites` default in `tests/Run-Tests.ps1`, start
   with `TestInit.run main`, and reference the app as `#r "Debug/WindowTabs.exe"`.
 - Desktop E2E (`tests/Run-DesktopE2E.ps1`) drives real input and takes over the

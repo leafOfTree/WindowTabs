@@ -145,4 +145,21 @@
     <ProjectReference Include="..\Win32\Win32.csproj" />
   </ItemGroup>
 
+  <!-- A running Debug copy locks its exe and DLLs. Windows lets a running file be renamed, so they
+       are moved aside before the copy, and a new Debug instance then replaces the running one.
+       Files left from earlier runs are deleted once nothing has them open. Only for the project's
+       own output folder: a build into a shared folder (-o) also holds Win32's fresh output. -->
+  <Target Name="MoveRunningDebugOutput" BeforeTargets="_CopyFilesMarkedCopyLocal;CopyFilesToOutputDirectory"
+          Condition="'$(Configuration)'=='Debug' and !$([System.IO.Path]::IsPathRooted('$(OutDir)'))">
+    <ItemGroup>
+      <_EarlierRunFiles Include="$(OutDir)*.running-*" />
+      <_RunningOutput Include="$(OutDir)WindowTabs.exe" Condition="Exists('$(OutDir)WindowTabs.exe')" />
+      <_RunningOutput Include="$(OutDir)WindowTabs.pdb" Condition="Exists('$(OutDir)WindowTabs.pdb')" />
+      <_RunningOutput Include="$(OutDir)Win32.dll" Condition="Exists('$(OutDir)Win32.dll')" />
+      <_RunningOutput Include="$(OutDir)Win32.pdb" Condition="Exists('$(OutDir)Win32.pdb')" />
+    </ItemGroup>
+    <Delete Files="@(_EarlierRunFiles)" ContinueOnError="true" />
+    <Move SourceFiles="@(_RunningOutput)" DestinationFiles="@(_RunningOutput->'%(FullPath).running-$([System.DateTime]::Now.Ticks)')" ContinueOnError="true" />
+  </Target>
+
 </Project>

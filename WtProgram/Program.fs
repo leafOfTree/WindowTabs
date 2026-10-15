@@ -647,18 +647,32 @@ module Bootstrap =
         (logger :> IPlugin).init()
         try
             use instance = new SingleInstance("BemoSoftware.WindowTabs")
+            // Starting WindowTabs again replaces the running copy, whichever build or folder either
+            // came from: the running one exits as from its tray menu, and this one takes over.
+            use replaceRequest = new Threading.EventWaitHandle(false,Threading.EventResetMode.AutoReset,"BemoSoftware.WindowTabs.Replace")
             // A restart (after importing settings) waits for the previous instance to exit.
             let wait = if Array.contains "--restart" argv then 10000 else 0
-            if not(instance.TryAcquire(wait)) then
+            // Only a copy that does not exit in time is reported as already running.
+            let acquired = instance.TryAcquire(wait) || (replaceRequest.Set() && instance.TryAcquire(15000))
+            if not acquired then
                 Alert.showSystem AlertKind.Info "WindowTabs" (tr Strings.Messages.alreadyRunning)
                 0
             else
                 Application.EnableVisualStyles()
                 use lifetime = new LifetimeScope(fun error -> logger.log "Shutdown" error)
                 let program = StartupTrace.measure "program.initialize" (fun () -> Program(lifetime))
-                program.run(List2<IPlugin>([
-                    lifetime.Own(new InputManagerPlugin(Set2(List2([WindowMessages.WM_MOUSEWHEEL])))) :> IPlugin
-                    new NotifyIconPlugin() :> IPlugin ]))
+                // Its own request was taken by the instance it replaced, or none was made.
+                replaceRequest.Reset() |> ignore
+                // The invoker is per thread: the main thread's, taken here, not the pool thread's.
+                let mainThread = InvokerService.invoker
+                let replaced = Threading.ThreadPool.RegisterWaitForSingleObject(replaceRequest,
+                                   Threading.WaitOrTimerCallback(fun _ _ ->
+                                       mainThread.asyncInvoke(fun () -> Services.program.shutdown())),null,-1,true)
+                try
+                    program.run(List2<IPlugin>([
+                        lifetime.Own(new InputManagerPlugin(Set2(List2([WindowMessages.WM_MOUSEWHEEL])))) :> IPlugin
+                        new NotifyIconPlugin() :> IPlugin ]))
+                finally replaced.Unregister(null) |> ignore
                 0
         with error ->
             logger.log "Startup/runtime" error
