@@ -35,14 +35,15 @@ module private ProgramItems =
     /// rather than borrowing one hosted app's logo. An app that is not running has no window.
     let exe (path:string) (first:Window option) custom =
         let icon =
-            if not (AppIcons.HasOwnIcon path) then None
+            if ApplicationNames.isWindowsApps path then Some(ApplicationNames.windowsAppsIcon())
+            elif not (AppIcons.HasOwnIcon path) then None
             else
                 match first |> Option.bind ImgHelper.windowIcon with
                 | Some icon -> Some icon
                 | None -> try Some(use icon = Icon.ExtractAssociatedIcon(path) in ImgHelper.imgFromIcon icon) with _ -> None
         let tabs = Services.filter.getIsTabbingEnabledForProcess path
         // Auto grouping only decides which group a tabbed window joins.
-        TreeListItem(Path.GetFileName(path),Icon=Option.toObj icon,Glyph=WindowGlyph,Tag=path,
+        TreeListItem(ApplicationNames.label path,Icon=Option.toObj icon,Glyph=WindowGlyph,Tag=path,
                      Checks=[|None;Some tabs;Some(not custom && Services.program.getAutoGroupingEnabled path)|],CheckEnabled=[|true;true;not custom|])
     let window (window:Window) =
         TreeListItem(window.text,Icon=Option.toObj (ImgHelper.windowIcon window),Glyph=WindowGlyph)

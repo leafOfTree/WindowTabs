@@ -846,6 +846,14 @@ let main() =
         application.UpdateApplications [selectedPath;selectedPath.ToUpperInvariant();@"C:\Apps\browser.exe";@"D:\Other\browser.exe"]
         assertTrue (application.Applications.Length=2) "Running application choices did not merge same-name executables across directories"
         let choice = application.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as choice -> Some choice | _ -> None)
+        // The host of every Store app is named for what it stands for, with an icon of its own.
+        assertTrue (ApplicationNames.label @"C:\Windows\System32\ApplicationFrameHost.exe"=tr Strings.AppRules.windowsApps
+                    && ApplicationNames.label @"C:\Apps\browser.exe"="browser.exe")
+                   "Store apps are not listed as Windows apps, or another app lost its file name"
+        do
+            use hostIcon = ApplicationNames.icon @"C:\Windows\System32\ApplicationFrameHost.exe" :?> Bitmap
+            let blue = hostIcon.GetPixel(Dpi.scale 3,Dpi.scale 3)
+            assertTrue (blue.A=255uy && blue.B>200uy && blue.R<20uy) "Windows apps have no icon of their own"
         // The running-app choice and Browse are alternatives, said between them.
         let alternative = application.Controls.Find("or-browse",false)
         assertTrue (alternative.Length=1 && alternative.[0].Text=tr Strings.AppRules.orBrowse && application.GetColumn(alternative.[0])=1

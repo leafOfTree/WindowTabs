@@ -5,7 +5,24 @@ open System.IO
 open System.Windows.Forms
 
 module ApplicationNames =
+    /// ApplicationFrameHost.exe hosts every Store (UWP) app, so it stands for them all, under a
+    /// name and icon that say so rather than the host's file name and blank icon.
+    let isWindowsApps (path:string) = AppIdentity.key path = "APPLICATIONFRAMEHOST.EXE"
+    let label (path:string) = if isWindowsApps path then tr Strings.AppRules.windowsApps else Path.GetFileName path
+    /// Four squares in the Windows blue, which reads on light and dark alike.
+    let windowsAppsIcon() : Image =
+        let side = Dpi.scale 16
+        let image = new Bitmap(side,side,Imaging.PixelFormat.Format32bppArgb)
+        use g = Graphics.FromImage(image)
+        use brush = new SolidBrush(Color.FromArgb(0,120,212))
+        let gap = max 1 (side/16)
+        let square = (side-gap)/2
+        for x,y in [0,0;square+gap,0;0,square+gap;square+gap,square+gap] do
+            g.FillRectangle(brush,x,y,square,square)
+        image :> Image
     let icon path : Image =
+        if isWindowsApps path then windowsAppsIcon()
+        else
         try
             use icon = Icon.ExtractAssociatedIcon(path)
             if isNull icon then SystemIcons.Application.ToBitmap() :> Image else icon.ToBitmap() :> Image
@@ -73,9 +90,9 @@ type GroupingApplicationPicker(initialPath:string) as this =
         let unique = Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
         paths <- selectedPath :: applications
                  |> List.filter(fun path -> not (String.IsNullOrWhiteSpace path) && unique.Add(AppIdentity.key path))
-                 |> List.sortBy(fun path -> Path.GetFileName(path).ToUpperInvariant(),path.ToUpperInvariant())
+                 |> List.sortBy(fun path -> (ApplicationNames.label path).ToUpperInvariant(),path.ToUpperInvariant())
                  |> List.toArray
-        let labels = paths |> Array.map Path.GetFileName
+        let labels = paths |> Array.map ApplicationNames.label
         let nextIcons = paths |> Array.map ApplicationNames.icon
         let next = SettingsUi.choice (Array.append [|tr Strings.AppRules.chooseApplication|] labels)
         next.ItemImages <- Array.append [|null|] nextIcons
@@ -156,7 +173,7 @@ type AppGroupingRulesView() as this =
                                        Checks=[|None;if members.IsEmpty then None else Some(enabled=members.Length)|],
                                        Mixed=[|false;enabled>0 && enabled<members.Length|],
                                        Actions=Some [AddGlyph;EditGlyph;DeleteGlyph],AlwaysShowActions=true)
-                let labels = members |> List.map(fun rule -> Path.GetFileName rule.processPath) |> List.toArray
+                let labels = members |> List.map(fun rule -> ApplicationNames.label rule.processPath) |> List.toArray
                 for rule,label in List.zip members (Array.toList labels) do
                     row.Add(TreeListItem(label,Icon=ApplicationNames.icon rule.processPath,Tag=ApplicationNode rule.id,Glyph=WindowGlyph,Checks=[|None;Some rule.enabled|])) |> ignore
                     if selection=Some(ApplicationNode rule.id) then row.Expanded<-true

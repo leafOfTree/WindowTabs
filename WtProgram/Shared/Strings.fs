@@ -409,6 +409,8 @@ module Strings =
         let autoGroup = { en="Auto-group"; zh="自动分组"; ja="自動グループ化" }
         /// The collapsed row holding apps with a rule that are not running.
         let notRunning count = { en=sprintf "Not running (%d)" count; zh=sprintf "未运行 (%d)" count; ja=sprintf "実行していないアプリ (%d)" count }
+        /// ApplicationFrameHost.exe, which hosts every Store (UWP) app: Settings, Calculator, Photos.
+        let windowsApps = { en="Windows apps (UWP)"; zh="Windows 应用（UWP）"; ja="Windows アプリ（UWP）" }
         /// Between the running-app choice and Browse.
         let orBrowse = { en="or"; zh="或"; ja="または" }
         let scanning = { en="Scanning…"; zh="正在扫描…"; ja="スキャン中…" }
