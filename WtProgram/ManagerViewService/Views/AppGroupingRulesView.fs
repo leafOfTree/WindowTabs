@@ -236,8 +236,7 @@ type AppGroupingRulesView() as this =
                 save (Some previous)
                 pendingGroup <- None
                 reload (Some(ApplicationNode rule.id)))
-        // Two thirds of its former height; the app list above takes the rest.
-        this.Height <- Dpi.scale 187
+        this.Height <- Dpi.scale 280
         addGroup.Anchor <- AnchorStyles.Top ||| AnchorStyles.Right
         header.Controls.AddRange([|caption :> Control;help;addGroup|])
         caption.SizeChanged.Add(fun _ -> help.Location <- Point(caption.Right+Dpi.scale 10,caption.Top-Dpi.scale 2))
