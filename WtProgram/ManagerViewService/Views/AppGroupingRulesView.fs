@@ -104,8 +104,9 @@ type AppGroupingRulesView() as this =
     let changed = Event<EventArgs>()
     let header = new Panel(Height=Dpi.scale 36)
     let caption = new Label(Text=tr Strings.AppRules.groupingRules,AutoSize=true,Location=Point(0,Dpi.scale 7),Font=SettingsUi.sectionFont(),UseMnemonic=false)
-    /// What these groups are for, under the heading, as the page's own explanation sits under its title.
-    let note = new Label(Text=tr Strings.AppRules.groupRulesHelp,AutoSize=true,Tag="muted",UseMnemonic=false,Name="grouping-note")
+    /// What these groups are for, on hover beside the heading, as the page title explains the list above.
+    let help = new SettingsHelpButton(tr Strings.AppRules.groupRulesHelp,AccessibleName=tr Strings.SettingsWindow.howToUse,
+                                      Font=SettingsUi.bodyFont(),Name="grouping-help")
     let addGroup = SettingsUi.button (tr Strings.AppRules.addGroup)
     let tree = new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn);TreeListColumn(tr Strings.AppRules.enabled,110,CheckColumn);TreeListColumn("",86,ActionColumn)],RowHeight=36)
     let card = new Panel(Tag="surface",Padding=Padding(Dpi.scale 6))
@@ -232,9 +233,11 @@ type AppGroupingRulesView() as this =
                 save (Some previous)
                 pendingGroup <- None
                 reload (Some(ApplicationNode rule.id)))
-        this.Height <- Dpi.scale 310
+        this.Height <- Dpi.scale 280
         addGroup.Anchor <- AnchorStyles.Top ||| AnchorStyles.Right
-        header.Controls.AddRange([|caption :> Control;addGroup|])
+        header.Controls.AddRange([|caption :> Control;help;addGroup|])
+        caption.SizeChanged.Add(fun _ -> help.Location <- Point(caption.Right+Dpi.scale 10,caption.Top-Dpi.scale 2))
+        help.Location <- Point(caption.Right+Dpi.scale 10,caption.Top-Dpi.scale 2)
         header.Resize.Add(fun _ -> addGroup.Location<-Point(max 0 (header.Width-addGroup.Width),0))
         tree.RowActions <- [NoGlyph;EditGlyph;DeleteGlyph]
         tree.ExpandOnDoubleClick <- false
@@ -328,7 +331,7 @@ type AppGroupingRulesView() as this =
             e.Graphics.FillPath(fill,shape)
             e.Graphics.DrawPath(border,shape))
         card.Resize.Add(fun _ -> card.Invalidate())
-        this.Controls.AddRange([|header :> Control;note;card;status;nameInput;inlineApplication|])
+        this.Controls.AddRange([|header :> Control;card;status;nameInput;inlineApplication|])
         status.TextChanged.Add(fun _ -> this.PerformLayout())
         this.Disposed.Add(fun _ ->
             nameInput.Dispose()
@@ -349,9 +352,7 @@ type AppGroupingRulesView() as this =
             let width = max (Dpi.scale 120) this.ClientSize.Width
             header.Bounds<-Rectangle(0,0,width,Dpi.scale 36)
             let gap = Dpi.scale 8
-            note.MaximumSize <- Size(width,0)
-            note.Location <- Point(0,header.Bottom)
-            let top = note.Bottom+gap
+            let top = header.Bottom+gap
             let statusHeight = if status.Text="" then 0 else Dpi.scale 28
             card.Bounds<-Rectangle(0,top,width,max (Dpi.scale 80) (this.Height-top-statusHeight))
             status.Bounds<-Rectangle(0,card.Bottom,width,statusHeight)

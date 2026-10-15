@@ -790,11 +790,10 @@ let main() =
         let opened = Application.OpenForms.Count
         let groupView = descendants view.control |> Seq.pick(function :? AppGroupingRulesView as page -> Some page | _ -> None)
         assertTrue groupView.Visible "Application mappings were hidden behind a second page"
-        // The explanations sit on the page under their headings, not behind help buttons.
-        assertTrue (descendants view.control |> Seq.forall(fun control -> not(control :? SettingsHelpButton)))
-                   "The App rules page still hides its explanation behind a help button"
-        assertTrue (descendants groupView |> Seq.exists(fun control -> control.Name="grouping-note" && control.Text=tr Strings.AppRules.groupRulesHelp))
-                   "Groups across apps has no explanation under its heading"
+        // Each section explains itself on hover beside its heading.
+        let helps = descendants view.control |> Seq.choose(function :? SettingsHelpButton as help -> Some help.AccessibleDescription | _ -> None) |> Set.ofSeq
+        assertTrue (helps.Contains(tr Strings.AppRules.description) && helps.Contains(tr Strings.AppRules.groupRulesHelp))
+                   "App rules or Groups across apps has no explanation beside its heading"
         let tree = descendants groupView |> Seq.pick(function :? SettingsTreeList as list -> Some list | _ -> None)
         let saved() = settingValues.["appGroupingRules"] :?> AppGroupingRule list
         let targets() = settingValues.["appGroupingTargets"] :?> AppGroupingTarget list
