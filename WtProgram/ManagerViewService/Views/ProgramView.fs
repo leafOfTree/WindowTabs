@@ -51,7 +51,7 @@ type ProgramView() as this=
     let list =
         new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn)
                               TreeListColumn(tr Strings.AppRules.tabs,130,CheckColumn)
-                              TreeListColumn(tr Strings.AppRules.autoGroup,130,CheckColumn)])
+                              TreeListColumn(tr Strings.AppRules.autoGroup,160,CheckColumn)])
     let all = TreeListItem(tr Strings.AppRules.allApps,Glyph=AppsGlyph,Checks=[|None;Some false;Some false|],
                            CheckEnabled=[|true;true;true|],Mixed=[|false;false;false|])
     let apps() = list.Roots |> Seq.filter(fun item -> not (obj.ReferenceEquals(item,all))) |> List.ofSeq
@@ -85,10 +85,10 @@ type ProgramView() as this=
         table :> Control
     let groupingRules = new AppGroupingRulesView()
     let panel =
+        // The explanation stays on the page rather than behind a help button.
         new SettingsListPage(tr Strings.Pages.appRules,
-                             "",
-                             list,[],footer=groupingRules,header=footer,
-                             helpText=tr Strings.AppRules.description,compact=true)
+                             tr Strings.AppRules.description,
+                             list,[],footer=groupingRules,header=footer,compact=true)
 
     let scanner = new LatestWork<TreeListItem list>(invoker :> IDispatcher,
         (fun items ->

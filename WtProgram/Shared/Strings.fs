@@ -377,7 +377,8 @@ module Strings =
         let addApplication = { en="Add application"; zh="添加应用"; ja="アプリを追加" }
         let deleteRule = { en="Delete"; zh="删除"; ja="削除" }
         let applicationRuleExists = { en="This application already has a grouping rule."; zh="这个应用已有分组规则，请编辑已有行。"; ja="このアプリには既にグループ化ルールがあります。既存の行を編集してください。" }
-        let groupingRules = { en="Grouping rules"; zh="分组规则"; ja="グループ化ルール" }
+        /// Several apps sharing one named group, as opposed to each app's windows grouping by themselves.
+        let groupingRules = { en="Groups across apps"; zh="跨应用分组"; ja="アプリをまたぐグループ" }
         let applications = { en="Applications"; zh="应用"; ja="アプリ" }
         let addGroup = { en="Add group"; zh="添加组"; ja="グループを追加" }
         let newGroup = { en="New group"; zh="新组"; ja="新しいグループ" }
@@ -385,12 +386,9 @@ module Strings =
         let newRule = { en="New rule"; zh="新规则"; ja="新しいルール" }
         let groupNameRequired = { en="Enter a group name."; zh="请填写组名。"; ja="グループ名を入力してください。" }
         let groupNameExists = { en="A group with this name already exists."; zh="已有同名组，请使用其他名称。"; ja="同じ名前のグループが存在します。" }
-        let groupRulesHelp = { en="Map each application to one group. Group by app is disabled for mapped apps."
-                               zh="每个应用指定一个目标组；启用后会禁用同应用归组。"
-                               ja="アプリごとに宛先を一つ指定します。有効なアプリでは同じアプリのグループ化が無効になります。" }
-        let groupingHelp = { en="Send new windows to a named group. Enable Tabs for the application first. Title rules override app-only rules. Conflicting targets keep windows separate. Existing groups stay as arranged."
-                             zh="将新窗口加入命名组。请先为应用启用标签。标题规则优先于仅按应用的规则；目标冲突时窗口保持独立。已有分组保持手动安排。"
-                             ja="新しいウィンドウを名前付きグループに追加します。まずアプリのタブを有効にしてください。タイトルのルールはアプリのみのルールより優先されます。宛先が競合すると個別に保ちます。既存のグループは維持されます。" }
+        let groupRulesHelp = { en="Put windows of different apps into one named group. Apps added here don't use One group per app."
+                               zh="把不同应用的窗口放进同一个命名组。加入这里的应用不再使用“同应用一组”。"
+                               ja="異なるアプリのウィンドウを名前付きの一つのグループにまとめます。ここに追加したアプリでは「アプリごとにまとめる」は使われません。" }
         let application = { en="Application"; zh="应用"; ja="アプリ" }
         let chooseApplication = { en="Choose a running app"; zh="选择正在运行的应用"; ja="実行中のアプリを選択" }
         let browseApplication = { en="Browse…"; zh="浏览…"; ja="参照…" }
@@ -403,11 +401,12 @@ module Strings =
         let invalidRule = { en="Invalid grouping rule"; zh="分组规则无效"; ja="無効なグループ化ルール" }
         let requiredFields = { en="Choose an application and enter a target group."; zh="请选择应用并填写目标组。"; ja="アプリを選択して宛先グループを入力してください。" }
         let requiredTitle = { en="Enter a title pattern, or choose Application only."; zh="请填写标题条件，或选择“仅按应用”。"; ja="タイトル条件を入力するか「アプリのみ」を選択してください。" }
-        let description = { en="Choose apps that use tabs. Map apps to groups below; mapped apps disable Group by app. Expand an app to see its windows."
-                            zh="选择使用标签的应用。在下方指定应用的目标组；启用规则后，同应用归组会禁用。展开应用可查看窗口。"
-                            ja="タブを使うアプリを選び、下の表で宛先を指定します。有効なルールがあるアプリでは同じアプリのグループ化が無効になります。展開するとウィンドウを表示します。" }
+        let description = { en="Choose which apps get tabs. One group per app keeps each app's windows together. Expand an app to see its windows."
+                            zh="选择哪些应用使用标签。勾选“同应用一组”后，同一应用的窗口会合在一个组里。展开应用可查看它的窗口。"
+                            ja="タブを使うアプリを選びます。「アプリごとにまとめる」をオンにすると、同じアプリのウィンドウが一つのグループに入ります。展開するとウィンドウを表示します。" }
         let tabs = { en="Tabs"; zh="标签"; ja="タブ" }
-        let autoGroup = { en="Group by app"; zh="同应用归组"; ja="同じアプリ" }
+        /// Each app's windows join one group of their own.
+        let autoGroup = { en="One group per app"; zh="同应用一组"; ja="アプリごとにまとめる" }
         /// The first row: its boxes turn a column on or off for every app below.
         let allApps = { en="All apps"; zh="全部应用"; ja="すべてのアプリ" }
         let appCount count =
