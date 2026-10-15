@@ -4,8 +4,9 @@ open System
 type FilterService() as this =
     let os = OS()
     let blackListedExeNames = 
-        let names = Set2(List2(["taskmgr.exe"]))
-        if System.Diagnostics.Debugger.IsAttached then names.add("devenv.exe") else names
+        // Elevated apps such as Task Manager need no entry: a process WindowTabs cannot query, as
+        // when WindowTabs is not elevated itself, is never an app window. Elevated, it manages them.
+        if System.Diagnostics.Debugger.IsAttached then Set2(List2(["devenv.exe"])) else Set2(List2())
 
     member this.includedPaths 
         with get() = Services.settings.getValue("includedPaths").cast<Set2<string>>()
