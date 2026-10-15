@@ -139,6 +139,12 @@ let main() =
     thread.Start()
     thread.Join()
     check (not duplicate) "Duplicate process lock accepted"
+    // Sign-in follows the copy started last: an entry naming an older copy, or none, is replaced.
+    let exe = @"C:\Apps\WindowTabs\WindowTabs.exe"
+    check (not(Program.RunAtStartup.isStale (Program.RunAtStartup.command exe) exe)) "The current copy's sign-in entry was taken as stale"
+    check (not(Program.RunAtStartup.isStale (Program.RunAtStartup.command (exe.ToLowerInvariant())) exe)) "A sign-in entry differing only in case was taken as stale"
+    check (Program.RunAtStartup.isStale (Program.RunAtStartup.command @"C:\Old\WindowTabs.exe") exe && Program.RunAtStartup.isStale null exe)
+          "A sign-in entry for another copy, or none, was kept"
 
     let registered = Collections.Generic.HashSet<int>()
     let operations = ResizeArray<string>()

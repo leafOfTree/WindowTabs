@@ -16,6 +16,15 @@ open Newtonsoft.Json
 open Newtonsoft.Json.Linq
 open Microsoft.Win32
 
+/// The Windows Run entry that starts WindowTabs at sign-in.
+module RunAtStartup =
+    let command (exePath:string) = sprintf "\"%s\"" exePath
+    /// The entry names another copy, or none: true for a copy moved or upgraded elsewhere since
+    /// the setting was turned on, which would otherwise start the old one, or nothing.
+    let isStale (registered:string) (exePath:string) =
+        String.IsNullOrWhiteSpace registered ||
+        not (String.Equals(registered.Trim().Trim('"'),exePath,StringComparison.OrdinalIgnoreCase))
+
 type ProgramInput =
     | WinEvent of (IntPtr * WinEvent)
     | ShellEvent of (IntPtr * ShellEvent)
@@ -145,9 +154,20 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         if runAtStartup then
             let entryAssembly = System.Reflection.Assembly.GetEntryAssembly()
             let exeUri = Uri(entryAssembly.CodeBase)
-            key.SetValue(keyName, sprintf "\"%s\"" exeUri.LocalPath)
+            key.SetValue(keyName, RunAtStartup.command exeUri.LocalPath)
         else
             key.DeleteValue(keyName, false)
+
+    /// With the setting on, the entry follows the copy started last, as that copy replaced the
+    /// running one; the setting alone only writes it when changed.
+    member this.claimRunAtStartup() =
+        if settingsManager.settings.runAtStartup then
+            try
+                let exePath = Uri(System.Reflection.Assembly.GetEntryAssembly().CodeBase).LocalPath
+                use key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", false)
+                let registered = if isNull key then null else key.GetValue("WindowTabs") :?> string
+                if RunAtStartup.isStale registered exePath then this.updateRunAtStartup(box true)
+            with _ -> ()
 
     member this.isAppWindow(window:Window) =
         Services.filter.isAppWindow(window.hwnd)
@@ -661,6 +681,7 @@ module Bootstrap =
                 Application.EnableVisualStyles()
                 use lifetime = new LifetimeScope(fun error -> logger.log "Shutdown" error)
                 let program = StartupTrace.measure "program.initialize" (fun () -> Program(lifetime))
+                program.claimRunAtStartup()
                 // Its own request was taken by the instance it replaced, or none was made.
                 replaceRequest.Reset() |> ignore
                 // The invoker is per thread: the main thread's, taken here, not the pool thread's.
