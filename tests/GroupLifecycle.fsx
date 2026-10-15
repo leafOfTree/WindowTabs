@@ -345,6 +345,13 @@ let main() =
                 pumpUntil "Replacement group did not adopt the window" (fun () ->
                     nativeOrder newGroup=[d;e;a] && owner a<>oldOwner && TaskbarProxies.ownsWindow a)
                 let newOwner = owner a
+                // The old group still lists the window until its removal arrives; a refresh there
+                // meanwhile (here a title change) must not take the window back.
+                forms.Head.Text <- "Moved to the replacement group"
+                pumpUntil "The old group did not see the moved window's new title" (fun () ->
+                    onGroup oldGroup (fun group -> group.ts.tabInfo(Tab a).text.Contains("Moved to the replacement group")))
+                check (owner a=newOwner) (sprintf "The group a window left took it back from its new group: owner %d, new %d, old %d, proxy %b"
+                                              ((owner a).ToInt64()) (newOwner.ToInt64()) (oldOwner.ToInt64()) (TaskbarProxies.contains (owner a)))
                 let afterCleanup = onGroup oldGroup (fun group -> group.removeWindow a;owner a)
                 check (afterCleanup=newOwner) "Old cleanup detached the replacement group's owner"
 
