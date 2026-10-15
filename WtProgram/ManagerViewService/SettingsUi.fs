@@ -29,6 +29,8 @@ module SettingsUi =
     let bodyFont() = font "Segoe UI" 10.5f FontStyle.Regular
     let rowFont() = bodyFont()
     let sectionFont() = font "Segoe UI" 11.0f FontStyle.Bold
+    /// A part of a page's section: the body size, a step lighter than the section heading.
+    let subsectionFont() = font "Segoe UI Semibold" 10.5f FontStyle.Regular
 
     let palette() = SettingsColors.current()
 

@@ -794,6 +794,10 @@ let main() =
         let helps = descendants view.control |> Seq.choose(function :? SettingsHelpButton as help -> Some help.AccessibleDescription | _ -> None) |> Set.ofSeq
         assertTrue (helps.Contains(tr Strings.AppRules.description) && helps.Contains(tr Strings.AppRules.groupRulesHelp))
                    "App rules or Groups across apps has no explanation beside its heading"
+        // Groups across apps is part of App rules: its heading is a step below the page's.
+        let groupingCaption = descendants groupView |> Seq.find(fun control -> control.Name="grouping-caption")
+        assertTrue (groupingCaption.Font.Size < SettingsUi.sectionFont().Size && not groupingCaption.Font.Bold)
+                   "Groups across apps has a heading as large as the page's"
         let tree = descendants groupView |> Seq.pick(function :? SettingsTreeList as list -> Some list | _ -> None)
         let saved() = settingValues.["appGroupingRules"] :?> AppGroupingRule list
         let targets() = settingValues.["appGroupingTargets"] :?> AppGroupingTarget list

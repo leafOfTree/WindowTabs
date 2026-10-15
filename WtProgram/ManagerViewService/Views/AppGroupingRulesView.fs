@@ -103,7 +103,8 @@ type AppGroupingRulesView() as this =
     let mutable rebuilding = false
     let changed = Event<EventArgs>()
     let header = new Panel(Height=Dpi.scale 36)
-    let caption = new Label(Text=tr Strings.AppRules.groupingRules,AutoSize=true,Location=Point(0,Dpi.scale 7),Font=SettingsUi.sectionFont(),UseMnemonic=false)
+    // Part of App rules rather than a section of its own, so a step below the page heading.
+    let caption = new Label(Text=tr Strings.AppRules.groupingRules,AutoSize=true,Location=Point(0,Dpi.scale 8),Font=SettingsUi.subsectionFont(),UseMnemonic=false,Name="grouping-caption")
     /// What these groups are for, on hover beside the heading, as the page title explains the list above.
     let help = new SettingsHelpButton(tr Strings.AppRules.groupRulesHelp,AccessibleName=tr Strings.SettingsWindow.howToUse,
                                       Font=SettingsUi.bodyFont(),Name="grouping-help")
@@ -233,7 +234,8 @@ type AppGroupingRulesView() as this =
                 save (Some previous)
                 pendingGroup <- None
                 reload (Some(ApplicationNode rule.id)))
-        this.Height <- Dpi.scale 280
+        // Two thirds of its former height; the app list above takes the rest.
+        this.Height <- Dpi.scale 187
         addGroup.Anchor <- AnchorStyles.Top ||| AnchorStyles.Right
         header.Controls.AddRange([|caption :> Control;help;addGroup|])
         caption.SizeChanged.Add(fun _ -> help.Location <- Point(caption.Right+Dpi.scale 10,caption.Top-Dpi.scale 2))
