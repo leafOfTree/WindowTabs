@@ -114,22 +114,26 @@ let main() =
     let mutable peekClient = RECT()
     check (WinUserApi.GetClientRect(peekWindow.hwnd,&peekClient)) "Peek proxy has no native client area"
     check (peekWindow.clientSize=peekClient.Rect.size && not peekWindow.clientSize.isEmptyArea) "Peek bitmap limit differs from the native client area"
-    use oversizedPeek = (Img(Sz(peekWindow.clientSize.width,peekWindow.clientSize.height+1))).bitmap
-    let oversizedHandle = oversizedPeek.GetHbitmap(Color.Transparent)
-    try
-        let mutable offset = POINT(0,0)
-        let result = DwmApi.DwmSetIconicLivePreviewBitmap(peekWindow.hwnd,oversizedHandle,ref offset,0)
-        check (result<0) "DWM unexpectedly accepted a Peek bitmap beyond the proxy client area"
-    finally WinGdiApi.DeleteObject(oversizedHandle) |> ignore
-    TaskbarPreview.send (fun () -> Some(Img(peekWindow.size)))
-        (fun image -> image.crop(peekWindow.clientSize))
-        (fun image ->
-            let bitmap = image.hbitmap
-            try
-                let mutable offset = POINT(0,0)
-                let result = DwmApi.DwmSetIconicLivePreviewBitmap(peekWindow.hwnd,bitmap,ref offset,0)
-                check (result>=0) (sprintf "DWM rejected client-sized Peek bitmap: 0x%08X" result)
-            finally WinGdiApi.DeleteObject(bitmap) |> ignore)
+    let publishPeek (image:Bitmap) =
+        let handle = image.GetHbitmap(Color.Transparent)
+        try
+            let mutable offset = POINT(0,0)
+            DwmApi.DwmSetIconicLivePreviewBitmap(peekWindow.hwnd,handle,ref offset,0)
+        finally WinGdiApi.DeleteObject(handle) |> ignore
+    // Windows without live preview (a CI runner's session) refuses every Peek bitmap as not
+    // supported; the size checks below only mean something where Peek works.
+    let peekSupported =
+        use probe = new Bitmap(1,1)
+        publishPeek probe <> 0x80070032
+    if not peekSupported then printfn "Peek bitmap checks skipped: live preview is not supported in this session."
+    else
+        use oversizedPeek = (Img(Sz(peekWindow.clientSize.width,peekWindow.clientSize.height+1))).bitmap
+        check (publishPeek oversizedPeek<0) "DWM unexpectedly accepted a Peek bitmap beyond the proxy client area"
+        TaskbarPreview.send (fun () -> Some(Img(peekWindow.size)))
+            (fun image -> image.crop(peekWindow.clientSize))
+            (fun image ->
+                let result = publishPeek image.bitmap
+                check (result>=0) (sprintf "DWM rejected client-sized Peek bitmap: 0x%08X" result))
     let send() =
         TaskbarPreview.send (fun () -> Some(Img(Sz(512,256))))
             (fun image -> image.resize(Sz(128,64))) window.dwmSetIconicThumbnail
