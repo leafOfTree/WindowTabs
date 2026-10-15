@@ -129,7 +129,9 @@ type WindowPlacementQueue<'a>(apply:IntPtr -> 'a -> (unit -> bool) -> unit, ?wor
     member _.retainedCount = lock gate (fun () -> entries.Count)
 
 type FollowerPlacementRequest =
-    | AlignWindow of Rect * OSWindowPlacement * IntPtr option
+    /// The source's window bounds and placement, the window to stay below, and the source's
+    /// visible frame when the follower should match that rather than the window bounds.
+    | AlignWindow of Rect * OSWindowPlacement * IntPtr option * Rect option
     /// A window restored without activation can still rise above the tab that asked for it;
     /// the handle it should stay below goes with the request.
     | SetMinimized of bool * IntPtr option
@@ -154,18 +156,31 @@ module FollowerPlacement =
                     if minimized then window.prepareMinimizeAnchor(valid)
                     if valid() then window.showWindow(if minimized then ShowWindowCommands.SW_SHOWMINNOACTIVE else ShowWindowCommands.SW_SHOWNOACTIVATE)
                     below |> Option.iter(fun top -> if valid() && WinUserApi.IsWindow(top) then window.insertAfter(top))
-            | AlignWindow(bounds,wp,below) ->
+            | AlignWindow(bounds,wp,below,visible) ->
                 let actual = window.placement
                 let previous = defaultArg below window.prevZorder.hwnd
                 let mutable positioned = false
-                let move() = if valid() then positioned <- true;window.move(bounds)
+                // Apps draw invisible resize borders of different widths (new Outlook 10px, most
+                // 7px at 125%). Matching window bounds left the visible frames a few pixels apart,
+                // so the tabs, which sit on the visible frame, shifted as the tabs were switched.
+                // A restored follower takes the source's visible frame plus its own borders.
+                let target() =
+                    match visible with
+                    | Some frame when wp.showCmd=ShowWindowCommands.SW_SHOWNORMAL ->
+                        let own,seen = window.bounds,window.visibleBounds
+                        if seen.size.isEmptyArea then bounds
+                        else
+                            let left,top = seen.x-own.x,seen.y-own.y
+                            Rect(Pt(frame.x-left,frame.y-top),Sz(frame.width+own.width-seen.width,frame.height+own.height-seen.height))
+                    | _ -> bounds
+                let move() = if valid() then positioned <- true;window.move(target())
                 let place value =
                     if valid() then
                         positioned <- true
                         window.setPlacement(value)
                 // MoveWindow preserves the visible bounds of an Aero snapped window.
                 if wp.showCmd=ShowWindowCommands.SW_SHOWNORMAL && actual.showCmd=ShowWindowCommands.SW_SHOWNORMAL then
-                    if window.bounds<>bounds then move()
+                    if window.bounds<>target() then move()
                 elif actual.showCmd=ShowWindowCommands.SW_SHOWMINIMIZED then
                     let minimized = {wp with showCmd=ShowWindowCommands.SW_SHOWMINIMIZED}
                     if actual<>minimized then place minimized
@@ -176,7 +191,7 @@ module FollowerPlacement =
                     move()
                 elif actual.showCmd=ShowWindowCommands.SW_SHOWMAXIMIZED && wp.showCmd=ShowWindowCommands.SW_SHOWMAXIMIZED then
                     // Cross-monitor maximization requires moving before restoring placement.
-                    if actual<>wp || window.bounds<>bounds then
+                    if actual<>wp || window.bounds<>target() then
                         move()
                         place wp
                 elif actual<>wp then place wp
@@ -191,8 +206,10 @@ module FollowerPlacement =
     /// large group is not minimized or restored four windows at a time. The thread pool adds threads
     /// beyond the processor count only slowly, so the limit stays within it.
     let queue = WindowPlacementQueue(apply, workerLimit=(Environment.ProcessorCount |> min 16 |> max 4))
-    let request hwnd bounds placement = identity hwnd,AlignWindow(bounds,placement,None)
-    let alignBelowRequest hwnd bounds placement top = identity hwnd,AlignWindow(bounds,placement,Some top)
+    let request hwnd bounds placement = identity hwnd,AlignWindow(bounds,placement,None,None)
+    let alignBelowRequest hwnd bounds placement top = identity hwnd,AlignWindow(bounds,placement,Some top,None)
+    /// As request and alignBelowRequest, matching the source's visible frame when restored.
+    let alignFrameRequest hwnd bounds visible placement below = identity hwnd,AlignWindow(bounds,placement,below,Some visible)
     let minimizeRequest hwnd minimized = identity hwnd,SetMinimized(minimized,None)
     let restoreBelowRequest hwnd top = identity hwnd,SetMinimized(false,Some top)
     let hideRequest hwnd = identity hwnd,HideForMove

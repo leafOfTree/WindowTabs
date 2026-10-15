@@ -717,11 +717,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             | true,expected -> this.os.windowFromHwnd(hwnd).isMinimized<>expected && FollowerPlacement.isChangingMinimizeState placementOwner hwnd
             | _ -> false
         if placement.value.IsSome && not changingMinimizeState then
-            let bounds,wp,_ = placement.value.Value
-            let request =
-                match zorderCell.value.tryHead with
-                | Some top when top<>hwnd -> FollowerPlacement.alignBelowRequest hwnd bounds wp top
-                | _ -> FollowerPlacement.request hwnd bounds wp
+            let bounds,wp,visible = placement.value.Value
+            let below = zorderCell.value.tryHead |> Option.filter((<>) hwnd)
+            let request = FollowerPlacement.alignFrameRequest hwnd bounds visible wp below
             FollowerPlacement.queue.submit(placementOwner,hwnd,request)
             // Maximize/snap can hide or cover the owned strip after its early events.
             reconcilePlacementState <- true

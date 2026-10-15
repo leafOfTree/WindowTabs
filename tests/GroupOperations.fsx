@@ -374,10 +374,15 @@ let main() =
                     group.windows.items.sortBy(fun hwnd -> referenceOS.windowFromHwnd(hwnd).zorder) |> ignore)
                 samples (sprintf "%dtabs-order" count) 100 (fun group _ -> invoke "inZorder" group [|box group.windows.items|] |> ignore)
                 let bounds = Rect(Pt(-20000,-20000),Sz(640,480))
-                let setBounds (group:WindowGroup) target =
+                let setBounds (group:WindowGroup) (target:Rect) =
                     let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="placement")
                     let cell = field.GetValue(group)
-                    let value = Some(target,OS().windowFromHwnd(handles.Head).placement,target)
+                    // The visible frame as the group records it: the target less the window's own borders.
+                    let head = OS().windowFromHwnd(handles.Head)
+                    let own,seen = head.bounds,head.visibleBounds
+                    let frame = Rect(Pt(target.x+seen.x-own.x,target.y+seen.y-own.y),
+                                     Sz(target.width-(own.width-seen.width),target.height-(own.height-seen.height)))
+                    let value = Some(target,head.placement,frame)
                     cell.GetType().GetMethod("set").Invoke(cell,[|box value|]) |> ignore
                 if count=2 then
                     // Tabs sit on the frame the user sees; a sizable window's rect also holds

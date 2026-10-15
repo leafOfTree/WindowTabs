@@ -133,6 +133,24 @@ let main() =
         check (WinUserApi.GetActiveWindow()=snapSource.Handle) "Snap fixture did not activate its source"
         let snapQueueOwner = obj()
         FollowerPlacement.queue.claim(snapQueueOwner,snapFollower.Handle)
+        // Windows with resize borders of different widths line up by what is seen, as the tabs do.
+        do
+            use wide = new Form(ShowInTaskbar=false,FormBorderStyle=FormBorderStyle.Sizable,StartPosition=FormStartPosition.Manual,Bounds=Drawing.Rectangle(-20000,-20000,640,420))
+            use narrow = new Form(ShowInTaskbar=false,FormBorderStyle=FormBorderStyle.None,StartPosition=FormStartPosition.Manual,Bounds=Drawing.Rectangle(-19000,-19000,500,300))
+            let source,follower = OS().windowFromHwnd(wide.Handle),OS().windowFromHwnd(narrow.Handle)
+            // Shown without activation: the snap checks below expect their own window to stay active.
+            for window in [source;follower] do window.showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE)
+            let borders (window:Window) = window.visibleBounds.x-window.bounds.x
+            let frameOwner = obj()
+            FollowerPlacement.queue.claim(frameOwner,narrow.Handle)
+            try
+                FollowerPlacement.queue.submit(frameOwner,narrow.Handle,
+                    FollowerPlacement.alignFrameRequest narrow.Handle source.bounds source.visibleBounds source.placement None)
+                pumpUntil "Visible-frame placement did not finish" (fun () -> FollowerPlacement.queue.isIdle(frameOwner))
+                check (borders source<>borders follower) "Visible-frame fixture windows have the same borders"
+                check (follower.visibleBounds=source.visibleBounds)
+                      (sprintf "Windows with different borders were aligned by their window bounds: %A vs %A" follower.visibleBounds source.visibleBounds)
+            finally FollowerPlacement.queue.release(frameOwner,narrow.Handle)
         try
             FollowerPlacement.queue.submit(snapQueueOwner,snapFollower.Handle,
                 FollowerPlacement.request snapFollower.Handle snapped normalPlacement)
