@@ -18,7 +18,7 @@ module AutoGroup =
             | _ -> false
         groups.tryFind(fun g ->
             let windows = windowsOf g
-            windows.any(fun w -> processPath w = path) && windows.any sameDesktop)
+            windows.any(fun w -> AppIdentity.same (processPath w) path) && windows.any sameDesktop)
 
 
 type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher, ?taskbarPlugin:unit -> IPlugin) as this =

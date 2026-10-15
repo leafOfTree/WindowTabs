@@ -27,12 +27,22 @@ their behavior. App auto-grouping and workspaces start empty and run only when c
 
 App Rules places the new-app default at the top right, one application list below,
 and a Grouping rules tree underneath. Group roots are created and renamed first;
-applications are added beneath the selected group from the running-app picker.
+each group has a plus button that inserts a temporary application row. The icon
+picker and Browse button appear in that row, save on selection, and can be
+cancelled with Escape. Existing applications and group names edit in place with
+the same row spacing; normal rows keep the full width for names.
 Applications or entire groups can be deleted. Empty groups persist in
 `appGroupingTargets`. Adding an already-mapped app to another group moves its
 single mapping instead of creating competing rules. Group names save on leaving
 the editor or Enter, retaining the group ID and updating child captions. There are
 no title match editors or application counts.
+
+Application identity is the case-insensitive executable filename, independent of
+its installation directory. App Rules and the application picker merge same-name
+executables into one entry. A running installation keeps that entry in the running
+section; saved apps without an open app window appear below a divider. Full paths
+remain in settings to locate executables and icons, while tabbing, grouping,
+number-shortcut and remembered-colour rules match through `AppIdentity`.
 
 The default applies to newly discovered applications. Discovery records each valid
 app's effective tab choice in `includedPaths` or `excludedPaths`, and changing the
@@ -49,8 +59,8 @@ migrate to application-only mappings, keeping the first row per executable.
 
 The rule editor selects applications from a background scan of running app windows,
 showing executable names rather than requiring typed paths. Multiple windows of
-the same executable share a choice; identical names from different folders include
-the folder. Saved applications remain selectable when not running. Browse selects
+the same executable share a choice across different folders. The picker shows app
+icons, and its selected path remains available when not running. Browse selects
 an executable file for an app that has not been opened yet.
 
 Use `ISettings.appearance` and `updateAppearance` for all new appearance code. Update multiple fields in one function so persistence and theme notification occur once. Identical updates do not write or notify. Use `Theme.resetLayout` to reset geometry without touching any palette.

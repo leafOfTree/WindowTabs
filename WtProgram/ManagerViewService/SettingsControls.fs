@@ -1033,10 +1033,15 @@ type SettingsCombo(items:string[]) as this =
     let mutable popup : SettingsChoicePopup option = None
     let mutable suppressNextClick = false
     let mutable itemColors : Color array = [||]
+    let mutable itemImages : Image array = [||]
     /// When set, the closed control shows a globe and this short label instead of the full choice.
     let mutable compactLabel : (unit -> string) option = None
     let drawDot (graphics:Graphics) (bounds:Rectangle) index =
-        if index>=0 && index<itemColors.Length then
+        if index>=0 && index<itemImages.Length && not(isNull itemImages.[index]) then
+            let size = Dpi.scale 16
+            graphics.DrawImage(itemImages.[index],Rectangle(bounds.Left+Dpi.scale 12,bounds.Top+(bounds.Height-size)/2,size,size))
+            Dpi.scale 24
+        elif index>=0 && index<itemColors.Length then
             let size = Dpi.scale 12
             let circle = Rectangle(bounds.Left+Dpi.scale 12,bounds.Top+(bounds.Height-size)/2,size,size)
             graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
@@ -1075,6 +1080,15 @@ type SettingsCombo(items:string[]) as this =
                 this.Invalidate()
                 changed.Trigger(EventArgs.Empty)
     member _.SelectedIndexChanged = changed.Publish
+    /// Images remain owned by the caller, as tree-list item icons do.
+    member _.ItemImages
+        with get() = Array.copy itemImages
+        and set(value:Image array) =
+            if isNull value || (value.Length<>0 && value.Length<>items.Length) then
+                invalidArg "value" "Provide one image per option, or an empty array."
+            itemImages <- Array.copy value
+            this.Invalidate()
+            popup |> Option.iter(fun window -> window.Invalidate(true))
     /// Relabels a choice, such as to mark it changed, without selecting anything.
     member this.SetItemText(index,text:string) =
         if items.[index]<>text then
@@ -1085,7 +1099,7 @@ type SettingsCombo(items:string[]) as this =
     /// Narrowest width that shows every choice untrimmed, matching the insets used by paintFull.
     member this.FitToItems() =
         let textWidth = items |> Array.map(fun text -> TextRenderer.MeasureText(text,this.Font).Width) |> Array.fold max 0
-        let dot = if itemColors.Length>0 then Dpi.scale 22 else 0
+        let dot = if itemImages.Length>0 then Dpi.scale 24 elif itemColors.Length>0 then Dpi.scale 22 else 0
         // One width for lists of short words, so stacked rows line up their left edges too.
         this.Width <- max (Dpi.scale SettingsShapes.editorWidth) (textWidth+dot+Dpi.scale 60)
     member _.CompactLabel with set(label:unit -> string) = compactLabel <- Some label; this.Invalidate()
@@ -1175,7 +1189,7 @@ type SettingsCombo(items:string[]) as this =
             // Realize the list first, then size the client area using its final row height.
             list.Handle |> ignore
             list.ItemHeight <- max (Dpi.scale 34) (list.Font.Height+Dpi.scale 12)
-            window.Size <- Size(min area.Width (max this.Width (labelWidth+Dpi.scale (if itemColors.Length>0 then 80 else 58))),
+            window.Size <- Size(min area.Width (max this.Width (labelWidth+Dpi.scale (if itemImages.Length>0 then 82 elif itemColors.Length>0 then 80 else 58))),
                                 min (area.Height-Dpi.scale 12) (items.Length*list.ItemHeight+window.Padding.Vertical+2))
             listHost.Size <- Size(window.Width-window.Padding.Horizontal,window.Height-window.Padding.Vertical)
             frame.Size <- listHost.Size

@@ -197,7 +197,7 @@ type WindowTabColors() =
     /// Allocate in group order once; singleton previews do not reserve a colour.
     member _.resolve hwnd (path:string) mode (remembered:Map<string,string>) (peers:IntPtr list) =
         let app = remembered |> Map.tryPick(fun key value ->
-            if String.Equals(key,path,StringComparison.OrdinalIgnoreCase) then Theme.parseTabColor value else None)
+            if AppIdentity.same key path then Theme.parseTabColor value else None)
         match overrides.TryFind hwnd,app with
         | Some color,_ | _,Some color -> Some color
         | _ ->

@@ -332,7 +332,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                     this.beginRename(hwnd)
             })
         let colors() = Services.settings.getValue("appTabColors") :?> Map<string,string>
-        let sameApp path = String.Equals(path,processPath,StringComparison.OrdinalIgnoreCase)
+        let sameApp path = AppIdentity.same path processPath
         let remembered = colors() |> Map.exists(fun path _ -> sameApp path)
         let currentColor = group.tabColor hwnd
         let dark = Theme.darkBar group.tabAppearance.tabNormalBgColor

@@ -268,8 +268,9 @@ let main() =
         check (palette.resolve (IntPtr(100)) "editor.exe" "ByWindow" Map.empty replacement=allocated.[1]) "Closed windows do not release their automatic colour"
         let remembered = Map.ofList [@"C:\Apps\EDITOR.EXE","#00FF00"]
         let resolveAt path hwnd = colors.resolve hwnd path "ByWindow" remembered peers
+        check (resolveAt @"D:\Updated\editor.exe" (IntPtr(999))=Some(CustomColor(Color.FromArgb(0,255,0)))) "Remembered application colours did not follow the exe to another directory"
         check (resolveAt @"c:\apps\editor.exe" a=Some(CustomColor(Color.FromArgb(0,255,0)))) "Remembered colour did not override automatic colour or depended on path case"
-        check (resolveAt @"C:\Other\EDITOR.EXE" a=first) "Remembered colour applied to another app with the same name"
+        check (resolveAt @"C:\Other\EDITOR.EXE" a=Some(CustomColor(Color.FromArgb(0,255,0)))) "Remembered colour did not apply to another installation of the same app"
         colors.setOverride a (Some red)
         check (resolveAt @"C:\Apps\EDITOR.EXE" a=Some red) "Remembered colour overrode window colour"
         let loads = ref 0

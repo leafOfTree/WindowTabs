@@ -22,7 +22,7 @@ type AppGroupingMatch =
 
 module AppGroupingRules =
     let hasEnabled rules path =
-        rules |> List.exists(fun rule -> rule.enabled && String.Equals(rule.processPath,path,StringComparison.OrdinalIgnoreCase))
+        rules |> List.exists(fun rule -> rule.enabled && AppIdentity.same rule.processPath path)
     let withoutAutoGrouping rules paths = paths |> List.filter(fun path -> not(hasEnabled rules path))
     let validate (rule:AppGroupingRule) =
         if [rule.id;rule.processPath;rule.groupId;rule.groupName] |> List.exists String.IsNullOrWhiteSpace then
@@ -47,7 +47,7 @@ module AppGroupingRules =
                                  groupId=text "groupId";groupName=text "groupName" }
                     validate rule
                     Some rule
-                with _ -> None) |> Seq.distinctBy(fun rule -> rule.processPath.ToUpperInvariant()) |> Seq.toList
+                with _ -> None) |> Seq.distinctBy(fun rule -> AppIdentity.key rule.processPath) |> Seq.toList
         | _ -> []
 
     let write rules =
@@ -77,7 +77,7 @@ module AppGroupingRules =
 
     /// One application has one custom destination, independent of window titles.
     let resolve rules path _ =
-        rules |> List.tryFind(fun rule -> rule.enabled && String.Equals(rule.processPath,path,StringComparison.OrdinalIgnoreCase))
+        rules |> List.tryFind(fun rule -> rule.enabled && AppIdentity.same rule.processPath path)
         |> Option.map(fun rule -> GroupingTarget rule.groupId) |> Option.defaultValue NoGroupingRule
 
     /// Joining an unknown desktop can adopt the window into another desktop's taskbar proxy.

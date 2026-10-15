@@ -68,10 +68,13 @@ let main() =
     check (AppGroupingRules.resolve [{broad with enabled=false}] broad.processPath ""=NoGroupingRule) "Disabled application rule was applied"
     check (AppGroupingRules.resolve [broad] browser.processPath ""=NoGroupingRule) "Application rule matched another executable"
     check (AppGroupingRules.hasEnabled [broad] @"c:\editor.exe") "Custom grouping did not claim its app case-insensitively"
+    check (AppGroupingRules.resolve [broad] @"D:\Updated\EDITOR.exe" ""=GroupingTarget "General") "A custom grouping rule did not apply across installation directories"
     check (AppGroupingRules.withoutAutoGrouping [broad] [@"c:\editor.exe";browser.processPath]=[browser.processPath]) "Custom grouping retained duplicate automatic grouping"
     check (AppGroupingRules.withoutAutoGrouping [{broad with enabled=false}] [broad.processPath]=[broad.processPath]) "Disabled custom grouping disabled an independent automatic choice"
     let rootRules = JObject(JProperty("appGroupingRules",AppGroupingRules.write [broad;browser]))
     check (AppGroupingRules.read rootRules=[broad;browser]) "Application grouping lost its paths or destination"
+    let aliases = JObject(JProperty("appGroupingRules",AppGroupingRules.write [broad;{broad with id="alias";processPath= @"D:\Other\EDITOR.exe"}]))
+    check (AppGroupingRules.read aliases=[broad]) "Imported aliases created multiple grouping destinations for one executable"
     let migrated = JObject(JProperty("appGroupingRules",AppGroupingRules.write [legacy;broad]))
     check (AppGroupingRules.read migrated=[{legacy with title="";matchType= -1}]) "Legacy title rules did not become one application mapping"
     let malformedRules = rootRules.DeepClone() :?> JObject

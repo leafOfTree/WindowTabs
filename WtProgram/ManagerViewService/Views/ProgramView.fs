@@ -93,11 +93,11 @@ type ProgramView() as this=
     let scanner = new LatestWork<TreeListItem list>(invoker :> IDispatcher,
         (fun items ->
             // A rescan keeps the apps that were open still open.
-            let expanded = apps() |> List.filter(fun item -> item.Expanded) |> List.map path |> Set.ofList
+            let expanded = apps() |> List.filter(fun item -> item.Expanded) |> List.map(path >> AppIdentity.key) |> Set.ofList
             ImgHelper.disposeItems list.Roots
             list.Roots.Clear()
             list.Roots.Add(all)
-            for item in items do item.Expanded <- expanded.Contains(path item)
+            for item in items do item.Expanded <- expanded.Contains(AppIdentity.key (path item))
             items |> List.tryHead |> Option.iter(fun item -> item.SeparatorAbove <- true)
             list.Roots.AddRange(items)
             updateAll()
@@ -167,6 +167,7 @@ type ProgramView() as this=
             try
                 let os = OS()
                 let procs = Collections.Generic.Dictionary<string,TreeListItem>(StringComparer.OrdinalIgnoreCase)
+                let running = Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 for window in os.windowsInZorder.toArray do
                     cancellation.ThrowIfCancellationRequested()
                     try
@@ -175,13 +176,14 @@ type ProgramView() as this=
                             let path = window.pid.processPath
                             if not(String.IsNullOrEmpty(path)) then
                                 let exe =
-                                    match procs.TryGetValue(path) with
+                                    match procs.TryGetValue(AppIdentity.key path) with
                                     | true,item -> item
                                     | _ ->
                                         let item = ProgramItems.exe path (Some window) (AppGroupingRules.hasEnabled customRules path)
-                                        procs.Add(path,item)
+                                        procs.Add(AppIdentity.key path,item)
                                         items.Add(item)
                                         item
+                                running.Add(AppIdentity.key path) |> ignore
                                 cancellation.ThrowIfCancellationRequested()
                                 if window.isWindow then exe.Add(ProgramItems.window window) |> ignore
                     with
@@ -190,12 +192,16 @@ type ProgramView() as this=
                 // An app that has since been uninstalled is left out.
                 for path in ruled do
                     cancellation.ThrowIfCancellationRequested()
-                    if not (String.IsNullOrEmpty path) && not (procs.ContainsKey path) && File.Exists path then
+                    if not (String.IsNullOrEmpty path) && not (procs.ContainsKey(AppIdentity.key path)) && File.Exists path then
                         let item = ProgramItems.exe path None (AppGroupingRules.hasEnabled customRules path)
-                        procs.Add(path,item)
+                        procs.Add(AppIdentity.key path,item)
                         items.Add(item)
                 cancellation.ThrowIfCancellationRequested()
-                items |> Seq.sortBy(fun item -> item.Text.ToUpperInvariant()) |> Seq.toList
+                let ordered = items |> Seq.sortBy(fun item -> (if running.Contains(AppIdentity.key (item.Tag :?> string)) then 0 else 1),item.Text.ToUpperInvariant()) |> Seq.toList
+                if running.Count>0 then
+                    ordered |> List.tryFind(fun item -> not(running.Contains(AppIdentity.key (item.Tag :?> string))))
+                            |> Option.iter(fun item -> item.SeparatorAbove <- true)
+                ordered
             with error ->
                 ImgHelper.disposeItems items
                 raise error)

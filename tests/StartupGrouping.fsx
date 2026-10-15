@@ -80,8 +80,16 @@ let main() =
                 for child in control.Controls do yield! controls child }
             let click text =
                 controls editor |> Seq.pick(function :? Button as button when button.Text=text -> Some button | _ -> None) |> fun button -> button.PerformClick()
-            let picker = controls editor |> Seq.pick(function :? GroupingApplicationPicker as picker -> Some picker | _ -> None)
-            let selectApp() =
+            let selectApp target =
+                let tree = controls editor |> Seq.pick(function :? SettingsTreeList as tree -> Some tree | _ -> None)
+                let targets = api.getValue("appGroupingTargets") :?> AppGroupingTarget list
+                let root = tree.Roots.[targets |> List.findIndex(fun group -> group.id=target)]
+                let visible = tree.Roots |> Seq.collect(fun row -> if row.Expanded then Seq.append [row] row.Children else Seq.singleton row) |> Seq.toArray
+                let index = visible |> Array.findIndex(fun row -> obj.ReferenceEquals(root,row))
+                let point = Drawing.Point(tree.Width-Dpi.scale 86+Dpi.scale 12,Dpi.scale 30+index*Dpi.scale tree.RowHeight+Dpi.scale (tree.RowHeight/2))
+                let mouse = new MouseEventArgs(MouseButtons.Left,1,point.X,point.Y,0)
+                typeof<SettingsTreeList>.GetMethod("OnMouseDown",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.Public ||| Reflection.BindingFlags.NonPublic).Invoke(tree,[|box mouse|]) |> ignore
+                let picker = controls tree |> Seq.pick(function :? GroupingApplicationPicker as picker -> Some picker | _ -> None)
                 picker.UpdateApplications [path]
                 let combo = picker.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as combo -> Some combo | _ -> None)
                 combo.SelectedIndex <- 1+Array.findIndex ((=)path) picker.Applications
@@ -94,13 +102,11 @@ let main() =
                         not((group :> IGroup).windows.contains((=)hwnd)) || group.ruleGroupId=Some target))))
             click (tr Strings.AppRules.addGroup)
             let firstTarget = (api.getValue("appGroupingTargets") :?> AppGroupingTarget list).Head.id
-            selectApp()
-            click (tr Strings.AppRules.addApplication)
+            selectApp firstTarget
             waitForTarget firstTarget
             click (tr Strings.AppRules.addGroup)
             let secondTarget = (api.getValue("appGroupingTargets") :?> AppGroupingTarget list) |> List.last |> fun group -> group.id
-            selectApp()
-            click (tr Strings.AppRules.addApplication)
+            selectApp secondTarget
             waitForTarget secondTarget
             check (not disabledDuringRegroup && filter.getIsTabbingEnabledForProcess path) "Rule editing transiently disabled the application's tabs"
             check (handles |> List.forall WinUserApi.IsWindow) "Rule editing destroyed an application HWND"

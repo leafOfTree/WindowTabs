@@ -382,7 +382,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 for group in this.desktop.groups.list do
                     for hwnd in group.windows.list do
                         let path = os.windowFromHwnd(hwnd).pid.processPath
-                        if paths |> List.exists(fun requested -> String.Equals(path,requested,StringComparison.OrdinalIgnoreCase)) then
+                        if paths |> List.exists(fun requested -> AppIdentity.same path requested) then
                             group.removeWindow hwnd
                 this.refresh()
         member x.suspendTabMonitoring() = 
@@ -418,18 +418,18 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
         member x.getAutoGroupingEnabled procPath =
             not(AppGroupingRules.hasEnabled settingsManager.settings.appGroupingRules procPath) &&
-            settingsManager.settings.autoGroupingPaths.contains(procPath)
+            AppIdentity.contains settingsManager.settings.autoGroupingPaths procPath
 
         member x.setAutoGroupingEnabled procPath enabled =
             if enabled && not(AppGroupingRules.hasEnabled settingsManager.settings.appGroupingRules procPath) then
-                this.saveSettingsAndUpdateAppWindows <| fun s -> { s with autoGroupingPaths = s.autoGroupingPaths.add procPath }                        
+                this.saveSettingsAndUpdateAppWindows <| fun s -> { s with autoGroupingPaths = (AppIdentity.without s.autoGroupingPaths procPath).add procPath }
                //toggle tabbing for the process to force regrouping
                 Services.filter.setIsTabbingEnabledForProcess procPath false
                 this.refresh()
                 Services.filter.setIsTabbingEnabledForProcess procPath true
                 this.refresh()
             else
-                this.saveSettingsAndUpdateAppWindows <| fun s -> { s with autoGroupingPaths = s.autoGroupingPaths.remove procPath }
+                this.saveSettingsAndUpdateAppWindows <| fun s -> { s with autoGroupingPaths = AppIdentity.without s.autoGroupingPaths procPath }
   
         // Logical pixels. The Appearance page both displays and saves this,
         // so scaling here would persist scaled values and compound them on

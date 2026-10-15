@@ -33,6 +33,9 @@ let main() =
     let picked expected result = match result with Some g -> obj.ReferenceEquals(g, expected) | None -> false
     check (pickFrom [chromeGroup; explorerGroup] 4 = None) "Auto-grouping joined a window to a group on another virtual desktop"
     check (picked explorerGroup (pickFrom [chromeGroup; explorerGroup] 3)) "Auto-grouping missed a group on the same virtual desktop"
+    let installedPath hwnd = if hwnd=IntPtr(1) then @"C:\Windows\explorer.exe" else @"D:\Updated\EXPLORER.exe"
+    check (picked explorerGroup (AutoGroup.pick id installedPath deskOf (List2([explorerGroup])) (IntPtr(3))))
+          "Same-name executables in different directories did not share an automatic group"
     check (pickFrom [chromeGroup; explorerGroup] 5=None) "An unresolved new window joined another desktop's taskbar group"
     let unknownGroup = List2([IntPtr(5)])
     check (pickFrom [unknownGroup] 4=None) "A known desktop matched an unresolved target group"

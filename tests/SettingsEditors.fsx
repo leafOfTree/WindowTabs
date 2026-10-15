@@ -80,6 +80,11 @@ let main() =
         picker.UpdateApplications ["other.exe"]
         assertTrue initial.IsDisposed "Application picker leaked its replaced choice control"
         assertTrue (not(obj.ReferenceEquals(initial,combo())) && picker.SelectedPath="saved.exe") "Application picker rebuild lost its choice or selected path"
+        assertTrue ((combo()).ItemImages.Length=3 && (combo()).ItemImages |> Array.skip 1 |> Array.forall(fun image -> not(isNull image)))
+                   "Application choices did not include icons"
+    let installedPaths = [|@"C:\Program Files\RustDesk\rustdesk.exe";@"C:\Users\cl\AppData\Local\rustdesk\rustdesk.exe"|]
+    assertTrue (AppIdentity.same installedPaths.[0] installedPaths.[1] && not(AppIdentity.same installedPaths.[0] @"C:\Other.exe"))
+               "Application identity still depends on the installation directory"
     let found query = SettingsCatalog.all |> List.filter(SettingsCatalog.matches query) |> List.map(fun item -> item.id)
     // Ordered as the settings window lists results: caption matches first.
     let ranked query = found query |> List.sortByDescending(fun id -> SettingsCatalog.searchRank query (SettingsCatalog.find id))
@@ -633,6 +638,11 @@ let main() =
     assertTrue (not (filter.getIsTabbingEnabledForProcess "both.exe")) "An app in both lists does not follow the list of the current default"
     filter.setIsTabbingEnabledForProcesses ["off.exe";"both.exe"] false
     filter.setIsTabbingEnabledForProcess "on.exe" true
+    assertTrue (filter.getIsTabbingEnabledForProcess @"D:\Updated\ON.exe") "A tabbing rule did not follow the same exe to a new directory"
+    filter.setIsTabbingEnabledForProcess @"D:\Updated\ON.exe" false
+    assertTrue (not(filter.getIsTabbingEnabledForProcess "on.exe") && not(filter.getIsTabbingEnabledForProcess @"E:\Portable\on.exe"))
+               "Changing one installation left another installation with a different tabbing rule"
+    filter.setIsTabbingEnabledForProcess "on.exe" true
     settingValues.["enableTabbingByDefault"] <- box false
     assertTrue (not (filter.getIsTabbingEnabledForProcess "off.exe") && filter.getIsTabbingEnabledForProcess "on.exe")
                "Changing the default for new apps changed apps that were set"
@@ -653,12 +663,17 @@ let main() =
     // The App rules page lists apps with a rule even when they are not running, under a row for all of them.
     do
         let installed = [Diagnostics.Process.GetCurrentProcess().MainModule.FileName;Path.Combine(__SOURCE_DIRECTORY__,"Debug","WindowTabs.exe")]
+        let aliasFolder = Path.Combine(__SOURCE_DIRECTORY__,"Debug","app-rule-alias")
+        Directory.CreateDirectory(aliasFolder) |> ignore
+        let aliasPath = Path.Combine(aliasFolder,Path.GetFileName installed.Head)
+        File.Copy(installed.Head,aliasPath,true)
         settingValues.["includedPaths"] <- box (Set2<string>())
-        settingValues.["excludedPaths"] <- box (Set2(List2(installed)))
+        settingValues.["excludedPaths"] <- box (Set2(List2(installed @ [aliasPath])))
         let on = Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
         let saves = ref 0
+        let appWindow = ref IntPtr.Zero
         rules.Value <- { new IFilterService with
-            member _.isAppWindow hwnd = filter.isAppWindow hwnd
+            member _.isAppWindow hwnd = hwnd=appWindow.Value
             member _.isAppWindowStyle hwnd = filter.isAppWindowStyle hwnd
             member _.isTabbableWindow _ = false
             member _.isTabbingEnabledForAllProcessesByDefault with get() = true and set _ = ()
@@ -672,6 +687,7 @@ let main() =
         let view = ProgramView() :> ISettingsView
         form.Controls.Add(view.control)
         SettingsUi.apply form
+        appWindow.Value <- form.Handle
         form.Show()
         let rec findList (control:Control) =
             match control with
@@ -691,7 +707,13 @@ let main() =
         let listed path = apps() |> List.tryFind(fun item -> String.Equals(item.Tag :?> string,path,StringComparison.OrdinalIgnoreCase))
         assertTrue (all.Text=tr Strings.AppRules.allApps && all.Glyph=AppsGlyph) "The App rules list does not start with All apps"
         assertTrue (installed |> List.forall(fun path -> (listed path).IsSome)) "An app with a rule is missing from the list when it is not running"
+        assertTrue (apps() |> List.filter(fun item -> AppIdentity.same (item.Tag :?> string) aliasPath) |> List.length = 1)
+                   "A historical installation duplicated the running app's rule row"
         assertTrue ((apps()).Head.SeparatorAbove) "Nothing sets All apps apart from the apps"
+        let runningApp = (listed installed.Head).Value
+        let historicalApp = (listed installed.[1]).Value
+        assertTrue (runningApp.Children.Count>0 && historicalApp.Children.Count=0 && obj.ReferenceEquals((apps()).Head,runningApp) && historicalApp.SeparatorAbove)
+                   "Historical applications were not placed below a divider after running applications"
         assertTrue (view.control.Controls.Find("enable-tabs-for-new-apps",true).Length=1) "The default for new apps is not on the App rules page"
         let newAppToggle = view.control.Controls.Find("enable-tabs-for-new-apps",true).[0]
         assertTrue (newAppToggle.PointToScreen(Point.Empty).Y < list.PointToScreen(Point.Empty).Y) "The new-app default was not moved above the application table"
@@ -728,7 +750,16 @@ let main() =
         assertTrue (apps() |> List.forall(fun app -> app.check tabs=Some true) && not (all.mixed tabs)) "Pressing a dashed All apps does not turn every app on"
         form.PerformLayout()
         Application.DoEvents()
+        appWindow.Value <- IntPtr.Zero
+        typeof<ProgramView>.GetMethod("populateNodes",BindingFlags.Instance ||| BindingFlags.NonPublic).Invoke(view,[||]) |> ignore
+        clock.Restart()
+        while ((listed installed.Head).Value.Children.Count>0) && clock.ElapsedMilliseconds<5000L do
+            Application.DoEvents()
+            Threading.Thread.Sleep(20)
+        assertTrue (apps() |> List.forall(fun app -> app.Children.Count=0)) "An application that exited remained in the running section"
+        assertTrue (apps() |> List.tail |> List.forall(fun app -> not app.SeparatorAbove)) "A divider between running and historical apps remained when no apps were running"
         form.Close()
+        File.Delete(aliasPath)
         rules.Value <- filter
     // Application mappings stay below the app list and save without a dialog.
     for mode in [LightTheme;DarkTheme] do
@@ -766,18 +797,46 @@ let main() =
             name.Text <- target
             typeof<TextBox>.GetMethod("OnLeave",BindingFlags.Instance ||| BindingFlags.NonPublic).Invoke(name,[|box EventArgs.Empty|]) |> ignore
         (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
+        assertTrue (tree.RowActions=[NoGlyph;EditGlyph;DeleteGlyph] && obj.ReferenceEquals(name.Parent.Parent,tree) && name.Parent.Visible)
+                   "Adding a group did not start editing its name directly in the row"
+        assertTrue (tree.Parent.Width=groupView.ClientSize.Width && tree.Tag=box "surface") "Grouping rules still use a split list and editor layout"
+        assertTrue (descendants groupView |> Seq.forall(fun control -> control.Name<>"group-target")) "A separate target selector remains above the grouping rows"
         rename "Group A"
         let groupA = targets().Head.id
         assertTrue (targets().Length=1 && saved().IsEmpty && tree.Roots.[0].Text="Group A") "An empty group root was not saved and renamed"
+        key tree Keys.Enter
+        name.Text <- "Cancelled rename"
+        key name Keys.Escape
+        assertTrue (targets().Head.name="Group A" && not name.Parent.Visible) "Escape saved a cancelled group name or left the row editor open"
+        let clickAction (item:TreeListItem) action =
+            let visible = tree.Roots |> Seq.collect(fun root -> if root.Expanded then Seq.append [root] root.Children else Seq.singleton root) |> Seq.toArray
+            let index = visible |> Array.findIndex(fun row -> obj.ReferenceEquals(row,item))
+            let point = Point(tree.Width-Dpi.scale 86+action*Dpi.scale 26+Dpi.scale 12,Dpi.scale 30+index*Dpi.scale tree.RowHeight+Dpi.scale (tree.RowHeight/2))
+            let mouse = new MouseEventArgs(MouseButtons.Left,1,point.X,point.Y,0)
+            for method in ["OnMouseMove";"OnMouseDown"] do
+                typeof<SettingsTreeList>.GetMethod(method,BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(tree,[|box mouse|]) |> ignore
+        assertTrue (descendants groupView |> Seq.forall(fun control -> not(control :? GroupingApplicationPicker) || not control.Visible))
+                   "A group still has a permanent application dropdown"
+        clickAction tree.Roots.[0] 0
+        assertTrue (tree.Roots.[0].Children.Count=1 && saved().IsEmpty) "The plus button did not create an unsaved application row"
         let application = descendants groupView |> Seq.pick(function :? GroupingApplicationPicker as picker -> Some picker | _ -> None)
+        assertTrue (obj.ReferenceEquals(application.Parent,tree) && application.Top=Dpi.scale 30+Dpi.scale 36+Dpi.scale 3)
+                   "The application dropdown did not appear beneath its group with row padding"
+        let selectApplication (picker:GroupingApplicationPicker) path =
+            picker.UpdateApplications [path]
+            let choice = picker.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as choice -> Some choice | _ -> None)
+            choice.SelectedIndex <- 1+Array.findIndex ((=)path) picker.Applications
         let selectedPath = Path.Combine(__SOURCE_DIRECTORY__,"Debug","WindowTabs.exe")
         application.UpdateApplications [selectedPath;selectedPath.ToUpperInvariant();@"C:\Apps\browser.exe";@"D:\Other\browser.exe"]
-        assertTrue (application.Applications.Length=3) "Running application choices did not deduplicate paths"
+        assertTrue (application.Applications.Length=2) "Running application choices did not merge same-name executables across directories"
         let choice = application.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as choice -> Some choice | _ -> None)
         choice.SelectedIndex <- 1+Array.findIndex ((=)selectedPath) application.Applications
-        (button groupView (tr Strings.AppRules.addApplication)).PerformClick()
         assertTrue (saved().Length=1 && saved().Head.processPath=selectedPath && saved().Head.groupId=groupA && saved().Head.matchType= -1 && tree.Roots.[0].Children.Count=1)
                    "An app-only mapping was not added beneath its group"
+        clickAction tree.Roots.[0] 0
+        let cancelChoice = application.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as choice -> Some choice | _ -> None)
+        key cancelChoice Keys.Escape
+        assertTrue (tree.Roots.[0].Children.Count=1 && saved().Length=1) "Cancelling an empty application row changed saved mappings"
         assertTrue (Application.OpenForms.Count=opened) "Editing group applications opened another window"
         let appList = descendants view.control |> Seq.pick(function :? SettingsTreeList as list -> Some list | _ -> None)
         let clock = Diagnostics.Stopwatch.StartNew()
@@ -788,7 +847,9 @@ let main() =
         assertTrue (saved().Head.groupId=groupA && saved().Head.groupName="Group Alpha") "Renaming a group changed its identity or left application captions stale"
         (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
         rename "Group B"
-        (button groupView (tr Strings.AppRules.addApplication)).PerformClick()
+        clickAction tree.Roots.[1] 0
+        let groupBPicker = application
+        selectApplication groupBPicker selectedPath
         assertTrue (saved().Length=1 && saved().Head.groupName="Group B" && tree.Roots.[0].Children.Count=0 && tree.Roots.[1].Children.Count=1)
                    "Moving an application to another group created duplicate grouping rules"
         tree.SelectedItem <- tree.Roots.[1].Children.[0]
@@ -797,6 +858,16 @@ let main() =
         clock.Restart()
         while (mapped() |> Option.forall(fun row -> not(row.checkEnabled 2))) && clock.ElapsedMilliseconds<5000L do Application.DoEvents(); Threading.Thread.Sleep(20)
         assertTrue (mapped() |> Option.exists(fun row -> row.checkEnabled 2 && row.check 2=Some false)) "Disabling a group application did not unlock Group by app"
+        clickAction tree.Roots.[1].Children.[0] 1
+        let inlinePicker = tree.Controls |> Seq.cast<Control> |> Seq.pick(function :? GroupingApplicationPicker as picker when picker.Name="" -> Some picker | _ -> None)
+        assertTrue inlinePicker.Visible "Clicking Edit did not edit the application directly in its row"
+        assertTrue (inlinePicker.Width>Dpi.scale 400 && inlinePicker.Height=Dpi.scale tree.RowHeight-2*Dpi.scale 3)
+                   "The application editor is squeezed into a narrow name cell or touches row edges"
+        inlinePicker.UpdateApplications [selectedPath;@"C:\Apps\replacement.exe"]
+        let inlineChoice = inlinePicker.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as choice -> Some choice | _ -> None)
+        inlineChoice.SelectedIndex <- 1+Array.findIndex ((=)@"C:\Apps\replacement.exe") inlinePicker.Applications
+        assertTrue (saved().Head.processPath= @"C:\Apps\replacement.exe" && saved().Head.groupId=targets().[1].id && not (saved().Head.enabled))
+                   "Editing an application row did not preserve its target group and enabled state"
         form.PerformLayout()
         Application.DoEvents()
         assertTrue (groupView.Height>=Dpi.scale 200 && groupView.Bottom<=view.control.ClientSize.Height)
@@ -804,12 +875,27 @@ let main() =
         use image = new Bitmap(form.Width,form.Height)
         form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
         image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "grouping-app-tree-%A.png" mode))
+        clickAction tree.Roots.[1] 0
+        form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+        image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "grouping-app-entry-%A.png" mode))
+        groupBPicker.UpdateApplications [selectedPath]
+        let groupChoice = groupBPicker.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as choice -> Some choice | _ -> None)
+        groupChoice.CreateDropDown() |> Option.iter(fun window ->
+            window.Show(window.Location)
+            Application.DoEvents()
+            use dropdownImage = new Bitmap(window.Width,window.Height)
+            window.DrawToBitmap(dropdownImage,Rectangle(Point.Empty,dropdownImage.Size))
+            dropdownImage.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "grouping-app-choices-%A.png" mode))
+            window.Close())
+        key groupChoice Keys.Escape
+        tree.Focus() |> ignore
+        tree.SelectedItem <- tree.Roots.[1].Children.[0]
         key tree Keys.Delete
         assertTrue (saved().IsEmpty && targets().Length=2) "Deleting a group application deleted the group root"
         groupView.Reload()
         assertTrue (tree.Roots.Count=2 && tree.Roots.[1].Children.Count=0) "An empty group was lost on reload"
-        tree.SelectedItem <- tree.Roots.[1]
-        (button groupView (tr Strings.AppRules.addApplication)).PerformClick()
+        clickAction tree.Roots.[1] 0
+        selectApplication groupBPicker selectedPath
         tree.SelectedItem <- tree.Roots.[1]
         key tree Keys.Delete
         assertTrue (saved().IsEmpty && targets().Length=1) "Deleting a group left its application mappings behind"

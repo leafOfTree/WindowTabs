@@ -19,6 +19,7 @@ type TreeListGlyph =
     | GroupGlyph
     | WorkspaceGlyph
     | AppsGlyph
+    | AddGlyph
     | EditGlyph
     | DeleteGlyph
 
@@ -54,6 +55,8 @@ type TreeListItem(text:string) =
     member val Expanded = false with get,set
     member val Tag : obj = null with get,set
     member val Parent : TreeListItem = null with get,set
+    member val Actions : TreeListGlyph list option = None with get,set
+    member val AlwaysShowActions = false with get,set
     member _.Children = children :> IReadOnlyList<TreeListItem>
     member this.Add(child:TreeListItem) = child.Parent <- this; children.Add(child); child
     member this.value index = if index<this.Values.Length && not (isNull this.Values.[index]) then this.Values.[index] else ""
@@ -80,6 +83,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     /// The row action under the pointer, or -1.
     let mutable hoveredAction = -1
     let mutable tooltipText = ""
+    let mutable rowEditor : (TreeListItem * Control * bool) option = None
     let columns = List.toArray columns
     let smooth = new SmoothScroller((fun () -> offset),
                                     (fun value -> max 0 (min (max 0 (rows.Length*this.rowHeight-this.viewport)) value)),
@@ -91,7 +95,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         this.AccessibleRole <- AccessibleRole.Outline
         this.Font <- SettingsUi.bodyFont()
         this.Controls.Add(scroll)
-        scroll.changed.Add(fun value -> smooth.stop(); offset <- value; this.Invalidate())
+        scroll.changed.Add(fun value -> smooth.stop(); offset <- value; this.updateEditorBounds(); this.Invalidate())
         this.Disposed.Add(fun _ -> tooltip.Dispose(); (smooth :> IDisposable).Dispose())
 
     /// Logical pixels.
@@ -140,8 +144,36 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         offset <- max 0 (min maximum offset)
         scroll.Bounds <- Rectangle(this.ClientSize.Width-scroll.Width,this.headerHeight,scroll.Width,this.viewport)
         scroll.configure(maximum,this.viewport,offset)
+        this.updateEditorBounds()
 
-    member private this.columnBounds =
+    /// The caller owns the editor; keep it attached to its name cell while scrolling.
+    member this.SetRowEditor(item:TreeListItem, editor:Control, ?includeIcon:bool) =
+        this.ClearRowEditor()
+        rowEditor <- Some(item,editor,defaultArg includeIcon false)
+        this.Controls.Add(editor)
+        this.EnsureVisible(item)
+        this.updateEditorBounds()
+        editor.BringToFront()
+
+    member this.ClearRowEditor() =
+        let previous = rowEditor
+        rowEditor <- None
+        previous |> Option.iter(fun (_,editor,_) -> editor.Visible <- false; this.Controls.Remove(editor))
+
+    member private this.updateEditorBounds() =
+        rowEditor |> Option.iter(fun (item,editor,includeIcon) ->
+            let palette = SettingsColors.current()
+            editor.BackColor <- if Object.ReferenceEquals(item,selected) then palette.selection else palette.surface
+            match rows |> Array.tryFindIndex(fun (row,_) -> Object.ReferenceEquals(row,item)) with
+            | Some index ->
+                let top = this.headerHeight+index*this.rowHeight-offset
+                let (icon:Rectangle),(bounds:Rectangle) = this.nameLayout(item,snd rows.[index],top)
+                let left = if includeIcon then icon.Left else bounds.Left
+                editor.Bounds <- Rectangle(left,top+Dpi.scale 3,bounds.Right-left,max 1 (this.rowHeight-Dpi.scale 6))
+                editor.Visible <- top>=this.headerHeight && top+this.rowHeight<=this.ClientSize.Height
+            | None -> editor.Visible <- false)
+
+    member private this.columnBounds : Rectangle[] =
         let widths = columns |> Array.map(fun column -> Dpi.scale column.Width)
         let fixedWidth = widths |> Array.sum
         let fill = max (Dpi.scale 80) (this.contentWidth-fixedWidth)
@@ -211,18 +243,22 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     /// they stay in one place from row to row.
     member private this.actionButtons(item:TreeListItem, top:int) =
         match columns |> Array.tryFindIndex(fun column -> column.Kind=ActionColumn) with
-        | Some column when Object.ReferenceEquals(item,hovered) ->
+        | Some column when Object.ReferenceEquals(item,hovered) || item.AlwaysShowActions ->
             let cell = this.columnBounds.[column]
             let button,gap = Dpi.scale 24,Dpi.scale 2
-            this.RowActions |> List.mapi(fun i _ -> Rectangle(cell.X+i*(button+gap),top+(this.rowHeight-button)/2,button,button))
+            (this.actions item) |> List.mapi(fun i _ -> Rectangle(cell.X+i*(button+gap),top+(this.rowHeight-button)/2,button,button))
         | _ -> []
+
+    member private this.actions(item:TreeListItem) = item.Actions |> Option.defaultValue this.RowActions
 
     /// The row action under a point, with its row.
     member private this.actionAt(point:Point) =
         match this.rowAt point.Y with
         | Some(index,(item,_)) ->
             this.actionButtons(item,this.headerHeight+index*this.rowHeight-offset)
-            |> List.tryFindIndex(fun (button:Rectangle) -> button.Contains(point)) |> Option.map(fun action -> item,action)
+            |> List.tryFindIndex(fun (button:Rectangle) -> button.Contains(point))
+            |> Option.filter(fun action -> (this.actions item).[action]<>NoGlyph)
+            |> Option.map(fun action -> item,action)
         | None -> None
 
     member private this.toggleCheck(item:TreeListItem, column:int) =
@@ -243,6 +279,9 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         g.ScaleTransform(float32 box.Width/16.0f,float32 box.Height/16.0f)
         use pen = new Pen(color,1.2f)
         match glyph with
+        | AddGlyph ->
+            g.DrawLine(pen,3.0f,8.0f,13.0f,8.0f)
+            g.DrawLine(pen,8.0f,3.0f,8.0f,13.0f)
         | WindowGlyph ->
             use frame = SettingsShapes.rounded (RectangleF(1.5f,2.5f,13.0f,11.0f)) 2.0f
             g.DrawPath(pen,frame)
@@ -411,6 +450,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
 
     override this.OnPaint(e) =
         let p = SettingsColors.current()
+        rowEditor |> Option.iter(fun (item,editor,_) ->
+            editor.BackColor <- if Object.ReferenceEquals(item,selected) then p.selection else p.surface)
         let g = e.Graphics
         g.Clear(this.BackColor)
         g.SmoothingMode <- SmoothingMode.AntiAlias
@@ -450,23 +491,26 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         use pen = new Pen(p.muted,1.5f)
                         g.DrawLines(pen,points)
                     let iconBox,bounds = this.nameLayout(item,level,top)
-                    if not (isNull item.Icon) then
+                    let editing = rowEditor |> Option.exists(fun (row,_,_) -> Object.ReferenceEquals(row,item))
+                    let hidesIcon = rowEditor |> Option.exists(fun (row,_,includeIcon) -> includeIcon && Object.ReferenceEquals(row,item))
+                    if not hidesIcon && not (isNull item.Icon) then
                         g.InterpolationMode <- InterpolationMode.HighQualityBicubic
                         g.DrawImage(item.Icon,iconBox)
-                    elif item.Glyph<>NoGlyph then
+                    elif not hidesIcon && item.Glyph<>NoGlyph then
                         SettingsTreeList.drawGlyph(g,item.Glyph,iconBox,p.muted)
-                    this.drawHighlights(g,item.Text,item.highlights 0,bounds,flags,p)
-                    TextRenderer.DrawText(g,item.Text,this.Font,bounds,text,flags)
+                    if not editing then
+                        this.drawHighlights(g,item.Text,item.highlights 0,bounds,flags,p)
+                        TextRenderer.DrawText(g,item.Text,this.Font,bounds,text,flags)
                 | ActionColumn ->
                     this.actionButtons(item,top) |> List.iteri(fun index (button:Rectangle) ->
-                        let pointed = index=hoveredAction
+                        let pointed = Object.ReferenceEquals(item,hovered) && index=hoveredAction
                         let highContrast = SystemInformation.HighContrast
                         // A shade of the text over the row's own highlight, so it shows on either.
                         if pointed then
                             use shape = SettingsShapes.rounded (RectangleF(float32 button.X,float32 button.Y,float32 button.Width,float32 button.Height)) (float32(Dpi.scale 4))
                             use fill = new SolidBrush(if highContrast then SystemColors.Highlight else Color.FromArgb(36,p.text))
                             g.FillPath(fill,shape)
-                        let glyph = this.RowActions.[index]
+                        let glyph = (this.actions item).[index]
                         let color = if pointed && highContrast then SystemColors.HighlightText elif pointed || highContrast then text else p.muted
                         let side = Dpi.scale this.IconSize
                         SettingsTreeList.drawGlyph(g,glyph,Rectangle(button.X+(button.Width-side)/2,button.Y+(button.Height-side)/2,side,side),color))

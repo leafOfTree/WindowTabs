@@ -418,6 +418,7 @@ let main() =
         let paths = Set2(List2([@"C:\Apps\Editor.exe"]))
         let none = Set2<string>()
         check (not (NumberShortcutRules.allows true none paths @"c:\apps\EDITOR.exe")) "Disabled application rule must ignore path case"
+        check (not (NumberShortcutRules.allows true none paths @"D:\Updated\editor.exe")) "Number shortcut rules must ignore installation directories"
         check (NumberShortcutRules.allows true none paths @"C:\Other.exe") "Unlisted applications must follow the global switch"
         // Switched off globally, an app enabled from the tab menu still switches by number.
         check (NumberShortcutRules.allows false paths none @"c:\apps\EDITOR.exe" && not (NumberShortcutRules.allows false paths none @"C:\Other.exe"))
