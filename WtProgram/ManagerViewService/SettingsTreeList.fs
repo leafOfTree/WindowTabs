@@ -118,6 +118,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
 
     /// Logical pixels.
     member val RowHeight = 30 with get,set
+    /// Hover and selection at half strength, so chips stay apart from a highlighted row.
+    member val SoftHighlight = false with get,set
     member val IconSize = 16 with get,set
     member val ShowHeader = true with get,set
     member val ShowExpanders = true with get,set
@@ -210,11 +212,18 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         rowEditor <- None
         previous |> Option.iter(fun (_,editor,_) -> editor.Visible <- false; this.Controls.Remove(editor))
 
+    member private this.highlight(isSelected:bool, p:SettingsPalette) =
+        let color = if isSelected then p.selection else p.hover
+        if not this.SoftHighlight || SystemInformation.HighContrast then color
+        else
+            let half (a:byte) (b:byte) = (int a+int b)/2
+            Color.FromArgb(half p.surface.R color.R,half p.surface.G color.G,half p.surface.B color.B)
+
     /// A text field keeps its field colour so it stands out from a selected row, as buttons do;
     /// other editors take the row's colour behind their own controls.
     member private this.colorEditor(item:TreeListItem,editor:Control) =
         let p = SettingsColors.current()
-        let row = if Object.ReferenceEquals(item,selected) then p.selection else p.surface
+        let row = if Object.ReferenceEquals(item,selected) then this.highlight(true,p) else p.surface
         match editor with
         | :? SettingsInputFrame as field -> field.PlaceOn row
         | _ -> editor.BackColor <- row
@@ -609,7 +618,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             let isSelected = Object.ReferenceEquals(item,selected)
             if isSelected || Object.ReferenceEquals(item,hovered) then
                 use shape = SettingsShapes.rounded (RectangleF(float32 row.X,float32 row.Y,float32 row.Width,float32 row.Height)) (float32(Dpi.scale 6))
-                use fill = new SolidBrush(if isSelected then p.selection else p.hover)
+                use fill = new SolidBrush(this.highlight(isSelected,p))
                 g.FillPath(fill,shape)
             // After the highlight, and one crisp pixel: smoothed, it would blur into the rows around it.
             if item.SeparatorAbove && index>0 then

@@ -277,6 +277,7 @@ type AppGroupingRulesView() as this =
         header.Resize.Add(fun _ -> addGroup.Location<-Point(max 0 (header.Width-addGroup.Width),0))
         tree.RowActions <- [EditGlyph;DeleteGlyph]
         tree.ExpandOnDoubleClick <- false
+        tree.SoftHighlight <- true
         tree.SelectionChanged.Add(fun _ ->
             if not rebuilding then
                 editing <- None
