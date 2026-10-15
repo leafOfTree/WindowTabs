@@ -790,6 +790,9 @@ let main() =
         let opened = Application.OpenForms.Count
         let groupView = descendants view.control |> Seq.pick(function :? AppGroupingRulesView as page -> Some page | _ -> None)
         assertTrue groupView.Visible "Application mappings were hidden behind a second page"
+        // Hovering an (i) over a settings window that is not active keeps its popup open.
+        assertTrue (SettingsHover.staysOpen(true,false,false) && SettingsHover.staysOpen(false,true,false) && not(SettingsHover.staysOpen(false,false,false)))
+                   "A hover popup closed while the pointer was on its button or popup"
         // Each section explains itself on hover beside its heading.
         let helps = descendants view.control |> Seq.choose(function :? SettingsHelpButton as help -> Some help.AccessibleDescription | _ -> None) |> Set.ofSeq
         assertTrue (helps.Contains(tr Strings.AppRules.description) && helps.Contains(tr Strings.AppRules.groupRulesHelp))
@@ -895,7 +898,7 @@ let main() =
                    "Editing an application row did not preserve its target group and enabled state"
         form.PerformLayout()
         Application.DoEvents()
-        assertTrue (groupView.Height>=Dpi.scale 180 && groupView.Bottom<=view.control.ClientSize.Height)
+        assertTrue (groupView.Height>=Dpi.scale 200 && groupView.Bottom<=view.control.ClientSize.Height)
                    (sprintf "Grouping tree is outside the page: %A in %A" groupView.Bounds view.control.ClientSize)
         use image = new Bitmap(form.Width,form.Height)
         form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))

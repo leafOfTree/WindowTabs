@@ -198,9 +198,15 @@ type SettingsHover(target:Control, text:string, ?enabled:bool) =
             popup |> Option.iter(fun window ->
                 let pointer = Cursor.Position
                 let owner = target.FindForm()
-                if not window.Visible || not target.Visible || isNull owner || not owner.ContainsFocus ||
-                   (not (target.RectangleToScreen(target.ClientRectangle).Contains(pointer))
-                    && not (window.Bounds.Contains(pointer)) && not (pinned && target.Focused)) then
+                // The window actually under the pointer: the settings window covered by another
+                // window does not count as pointing at the button.
+                let shownAt =
+                    if isNull owner then IntPtr.Zero
+                    else WinUserApi.GetAncestor(WinUserApi.WindowFromPoint(POINT(pointer.X,pointer.Y)),GetAncestorConstants.GA_ROOT)
+                let onTarget = shownAt=owner.Handle && target.RectangleToScreen(target.ClientRectangle).Contains(pointer)
+                let onPopup = shownAt=window.Handle || window.Bounds.Contains(pointer)
+                let pinnedHere = pinned && target.Focused && owner.ContainsFocus
+                if not window.Visible || not target.Visible || isNull owner || not (SettingsHover.staysOpen(onTarget,onPopup,pinnedHere)) then
                     window.Hide()
                     watcher.Stop()))
         target.MouseEnter.Add(fun _ -> show false)
@@ -210,6 +216,10 @@ type SettingsHover(target:Control, text:string, ?enabled:bool) =
         target.Disposed.Add(fun _ ->
             watcher.Dispose()
             popup |> Option.iter(fun window -> window.Dispose()))
+    /// A popup opened by hovering stays while the pointer is on its button or on it, whether or not
+    /// the settings window is active: requiring focus closed it at once over an inactive window.
+    /// One opened by a click also stays while its button keeps focus.
+    static member staysOpen(onTarget:bool,onPopup:bool,pinnedHere:bool) = onTarget || onPopup || pinnedHere
     member _.Enabled
         with get() = offered
         and set value =
