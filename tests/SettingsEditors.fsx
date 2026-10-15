@@ -703,18 +703,22 @@ let main() =
         let status = view.control.Controls |> Seq.cast<Control> |> Seq.choose(function :? Label as l -> Some l.Text | _ -> None) |> String.concat " | "
         assertTrue (list.Roots.Count>=2) ("The App rules page did not list its apps: "+status)
         assertTrue (list.Roots |> Seq.forall(fun item -> item.Checks.Length=3)) "App rules still have a number shortcut column"
-        let apps() = list.Roots |> List.ofSeq
+        let apps() = list.Roots |> Seq.collect(fun item -> if item.Tag :? string then Seq.singleton item else item.Children :> seq<_>) |> List.ofSeq
         let listed path = apps() |> List.tryFind(fun item -> String.Equals(item.Tag :?> string,path,StringComparison.OrdinalIgnoreCase))
         assertTrue (installed |> List.forall(fun path -> (listed path).IsSome)) "An app with a rule is missing from the list when it is not running"
         assertTrue (apps() |> List.filter(fun item -> AppIdentity.same (item.Tag :?> string) aliasPath) |> List.length = 1)
                    "A historical installation duplicated the running app's rule row"
         // No row turns every app on or off at once: one click changed them all. Each row is an app.
-        assertTrue (not((apps()).Head.SeparatorAbove) && apps() |> List.forall(fun item -> item.Tag :? string))
+        assertTrue (not((apps()).Head.SeparatorAbove) && (list.Roots |> Seq.filter(fun item -> not(item.Tag :? string)) |> Seq.length) <= 1)
                    "The App rules list still has a row for all apps"
         let runningApp = (listed installed.Head).Value
         let historicalApp = (listed installed.[1]).Value
-        assertTrue (runningApp.Children.Count>0 && historicalApp.Children.Count=0 && obj.ReferenceEquals((apps()).Head,runningApp) && historicalApp.SeparatorAbove)
-                   "Historical applications were not placed below a divider after running applications"
+        // Apps that are not running are folded under one row below the running ones, closed at first.
+        let history = historicalApp.Parent
+        assertTrue (runningApp.Children.Count>0 && historicalApp.Children.Count=0 && obj.ReferenceEquals((apps()).Head,runningApp)
+                    && not(isNull history) && history.SeparatorAbove && not history.Expanded && obj.ReferenceEquals(Seq.last list.Roots,history)
+                    && history.Text=tr (Strings.AppRules.notRunning history.Children.Count) && history.Checks |> Array.forall Option.isNone)
+                   "Apps that are not running were not folded under a closed row after the running ones"
         assertTrue (view.control.Controls.Find("enable-tabs-for-new-apps",true).Length=1) "The default for new apps is not on the App rules page"
         let newAppToggle = view.control.Controls.Find("enable-tabs-for-new-apps",true).[0]
         assertTrue (newAppToggle.PointToScreen(Point.Empty).Y < list.PointToScreen(Point.Empty).Y) "The new-app default was not moved above the application table"
@@ -732,6 +736,7 @@ let main() =
         assertTrue (first.check tabs=Some true && first.check 2=Some true && isOn installed.Head && grouping.Contains installed.Head) "Auto-group did not enable tabs"
         space first
         assertTrue (first.check 2=Some false && not (grouping.Contains installed.Head)) "Tabs off did not clear auto-group"
+        list.SetExpanded(history,true)
         for app in apps() do space app
         assertTrue (apps() |> List.forall(fun app -> app.check tabs=Some true) && installed |> List.forall isOn) "Turning on each app's tabs did not save them"
         form.PerformLayout()
@@ -841,6 +846,11 @@ let main() =
         application.UpdateApplications [selectedPath;selectedPath.ToUpperInvariant();@"C:\Apps\browser.exe";@"D:\Other\browser.exe"]
         assertTrue (application.Applications.Length=2) "Running application choices did not merge same-name executables across directories"
         let choice = application.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as choice -> Some choice | _ -> None)
+        // The running-app choice and Browse are alternatives, said between them.
+        let alternative = application.Controls.Find("or-browse",false)
+        assertTrue (alternative.Length=1 && alternative.[0].Text=tr Strings.AppRules.orBrowse && application.GetColumn(alternative.[0])=1
+                    && alternative.[0].BackColor=Color.Transparent)
+                   "Nothing between the running-app choice and Browse says they are alternatives"
         choice.SelectedIndex <- 1+Array.findIndex ((=)selectedPath) application.Applications
         assertTrue (saved().Length=1 && saved().Head.processPath=selectedPath && saved().Head.groupId=groupA && saved().Head.matchType= -1 && tree.Roots.[0].Children.Count=1)
                    "An app-only mapping was not added beneath its group"

@@ -12,7 +12,7 @@ module ApplicationNames =
         with _ -> SystemIcons.Application.ToBitmap() :> Image
 
 type GroupingApplicationPicker(initialPath:string) as this =
-    inherit TableLayoutPanel(ColumnCount=2,RowCount=1,Margin=Padding.Empty)
+    inherit TableLayoutPanel(ColumnCount=3,RowCount=1,Margin=Padding.Empty)
     let mutable selectedPath = initialPath
     let mutable paths : string[] = [||]
     let mutable choice : SettingsCombo option = None
@@ -20,19 +20,29 @@ type GroupingApplicationPicker(initialPath:string) as this =
     let selectionChanged = Event<EventArgs>()
     let cancelRequested = Event<EventArgs>()
     let browse = SettingsUi.button (tr Strings.AppRules.browseApplication)
+    /// Says the two are alternatives: pick a running app, or browse for one.
+    let alternative = new Label(Text=tr Strings.AppRules.orBrowse,AutoSize=true,Tag="muted",UseMnemonic=false,
+                                Anchor=AnchorStyles.None,Margin=Padding(Dpi.scale 10,0,Dpi.scale 4,0),Name="or-browse")
     let scanner = new LatestWork<string list>(InvokerService.invoker :> IDispatcher,
         (fun apps -> if not this.IsDisposed then this.UpdateApplications apps),ignore,ignore)
 
     do
         this.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
         this.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
+        this.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
         this.RowStyles.Add(RowStyle(SizeType.Percent,100.0f)) |> ignore
         browse.AutoSize <- false
         browse.Dock <- DockStyle.Fill
-        browse.Margin <- Padding(Dpi.scale 6,0,0,0)
+        browse.Margin <- Padding(Dpi.scale 4,0,0,0)
         browse.KeyDown.Add(fun e ->
             if e.KeyCode=Keys.Escape then e.SuppressKeyPress<-true; cancelRequested.Trigger(EventArgs.Empty))
-        this.Controls.Add(browse,1,0)
+        // The row behind it takes the list's selection colour, and the theme paints every label the
+        // page colour: the word keeps no box of its own.
+        alternative.BackColor <- Drawing.Color.Transparent
+        alternative.BackColorChanged.Add(fun _ ->
+            if alternative.BackColor<>Drawing.Color.Transparent then alternative.BackColor <- Drawing.Color.Transparent)
+        this.Controls.Add(alternative,1,0)
+        this.Controls.Add(browse,2,0)
         browse.Click.Add(fun _ ->
             use dialog = new OpenFileDialog(Title=tr Strings.AppRules.application,
                                            Filter=tr Strings.AppRules.applicationFiles,CheckFileExists=true)
