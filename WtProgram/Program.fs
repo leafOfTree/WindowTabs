@@ -504,7 +504,10 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         | WinEvent(hwnd, evt) -> refreshQueue.RequestWindow(hwnd)
         | ShellEvent(hwnd, evt) ->
             match evt with
-            | ShellEvent.HSHELL_WINDOWDESTROYED ->
+            // The shell also says so when a window only loses its taskbar button, as one does when a
+            // group with combined icons takes it; forgetting that window let ungrouped windows be
+            // put back together by their saved group.
+            | ShellEvent.HSHELL_WINDOWDESTROYED when not (WinUserApi.IsWindow hwnd) ->
                 isSubscribed.Remove(hwnd)
                 groupedThisRun.Remove hwnd |> ignore
                 appKeys.Remove hwnd |> ignore

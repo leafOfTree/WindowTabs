@@ -133,7 +133,11 @@ let main() =
             runtimeSettings.rememberedGroups |> List.exists(fun group ->
                 group.id=5151 && List.contains { app=app; title="Renamed A" } group.members))
         // Ungroup from App rules takes the group apart for good: its windows part, and it is
-        // neither recorded again as they leave nor put back together.
+        // neither recorded again as they leave nor put back together. The shell reports a window
+        // as destroyed when a group with combined taskbar icons takes its button; a window still
+        // there stays one already grouped this run, not one to put back in its saved group.
+        for hwnd in [reopenedA.Handle;reopenedB.Handle;late.Handle] do
+            program.receive(Program.ProgramInput.ShellEvent(hwnd,ShellEvent.HSHELL_WINDOWDESTROYED))
         (program :> IProgram).ungroupHandMade 5151
         let together() =
             [reopenedA.Handle;reopenedB.Handle;late.Handle] |> List.choose groupOf |> List.countBy id |> List.exists(fun (_,count) -> count>1)
