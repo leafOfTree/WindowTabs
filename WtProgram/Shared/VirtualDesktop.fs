@@ -122,6 +122,25 @@ module VirtualDesktop =
             | true,desktop -> Some desktop
             | _ -> None
 
+    /// A desktop's place among the desktops (from 1) and the name the user gave it, as Explorer
+    /// saves them; None for what it does not say.
+    let describe (desktop:Guid) =
+        let key = @"Software\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops"
+        try
+            use desktops = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(key)
+            let place =
+                match (if isNull desktops then null else desktops.GetValue("VirtualDesktopIDs")) with
+                | :? (byte[]) as ids ->
+                    [0..16..ids.Length-16] |> List.tryFindIndex(fun at -> Guid(ids.[at..at+15])=desktop) |> Option.map((+) 1)
+                | _ -> None
+            use named = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(key+ @"\Desktops\"+desktop.ToString("B"))
+            let name =
+                match (if isNull named then null else named.GetValue("Name")) with
+                | :? string as name when not (String.IsNullOrWhiteSpace name) -> Some name
+                | _ -> None
+            place,name
+        with _ -> None,None
+
     let forget (hwnd:IntPtr) =
         grouping.Forget hwnd
         lastDesktop.TryRemove(hwnd) |> ignore
