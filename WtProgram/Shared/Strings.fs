@@ -63,9 +63,10 @@ module Strings =
         /// For the group's own taskbar button, shown while its icons are combined.
         let changeTaskbarIcon = { en="Change taskbar icon…"; zh="更换任务栏图标…"; ja="タスクバーアイコンを変更…" }
         let restoreTaskbarIcon = { en="Restore taskbar icon"; zh="恢复默认任务栏图标"; ja="タスクバーアイコンを元に戻す" }
-        let taskbarIconFiles = { en="Icons and pictures|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|All files|*.*"
-                                 zh="图标和图片|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|所有文件|*.*"
-                                 ja="アイコンと画像|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|すべてのファイル|*.*" }
+        /// The kinds named with their extensions, so programs are seen to be taken too.
+        let taskbarIconFiles = { en="Icons, pictures and programs (*.ico, *.png, *.jpg, *.bmp, *.gif, *.exe, *.dll)|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|All files (*.*)|*.*"
+                                 zh="图标、图片和程序 (*.ico, *.png, *.jpg, *.bmp, *.gif, *.exe, *.dll)|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|所有文件 (*.*)|*.*"
+                                 ja="アイコン、画像、プログラム (*.ico, *.png, *.jpg, *.bmp, *.gif, *.exe, *.dll)|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|すべてのファイル (*.*)|*.*" }
         let numberShortcut = { en="Switch by number"; zh="数字键切换"; ja="番号で切り替え" }
         let enableTabs = { en="Enable tabs"; zh="启用标签"; ja="タブを有効にする" }
         let autoGroupWindows = { en="Auto-group windows"; zh="自动分组"; ja="ウィンドウを自動グループ化" }
