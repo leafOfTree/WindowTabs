@@ -60,6 +60,16 @@ module RememberedGroups =
                         if apps.Contains app then paths.Add(app,path) else paths) group.paths
                 { group with paths = paths })
 
+    /// Taskbar pictures (Settings.groupIcons), less those of groups made by hand that are neither
+    /// remembered nor open (tokens), which no group can show again.
+    let keptIcons (tokens:Set<int>) (icons:Map<string,string>) =
+        icons |> Map.filter(fun key _ ->
+            if key.StartsWith("hand:",StringComparison.Ordinal) then
+                match Int32.TryParse(key.Substring 5) with
+                | true,token -> tokens.Contains token
+                | _ -> false
+            else true)
+
     /// The group a window opening with this program and title was last in.
     let find (saved:RememberedGroup list) (m:RememberedMember) =
         saved |> List.tryFind(fun group -> List.contains m group.members) |> Option.map(fun group -> group.id)

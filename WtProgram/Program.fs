@@ -290,13 +290,25 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         let shape (groups:RememberedGroup list) = groups |> List.map(fun group -> group.id,group.members,group.paths)
         let changed = shape next <> shape remembered
         remembered <- next
-        if changed then settingsManager.rememberedGroups <- next
+        if changed then
+            settingsManager.rememberedGroups <- next
+            this.pruneGroupIcons()
         // A closed window stays in its group's record, to come back to it; the record is the
         // same, but App rules shows which windows are open, so it is told.
         let openNow = live |> List.map(fun (info,members) -> info.group.groupToken,members) |> List.sort
         if openNow<>shownOpen then
             shownOpen <- openNow
             if not changed then settingsManager.announce "rememberedGroups"
+
+    /// Forgets the taskbar pictures of groups made by hand that are gone for good.
+    member private this.pruneGroupIcons() =
+        let icons = settingsManager.groupIcons
+        let tokens =
+            (remembered |> List.map(fun group -> group.id))
+            @ (this.desktop.groups.list |> List.choose(function :? GroupInfo as info -> Some info.group.groupToken | _ -> None))
+            |> Set.ofList
+        let kept = RememberedGroups.keptIcons tokens icons
+        if kept.Count<>icons.Count then settingsManager.groupIcons <- kept
 
     /// A window whose title has settled into a remembered one moves to that group, unless it
     /// was moved meanwhile.
@@ -684,6 +696,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 group.group.isManual <- false
                 group.group.groupToken <- WindowGroupToken.fresh()
                 for hwnd in (group :> IGroup).windows.list do (group :> IGroup).removeWindow hwnd)
+            this.pruneGroupIcons()
             refreshQueue.RequestAll()
 
         member x.groupIcon hwnd =

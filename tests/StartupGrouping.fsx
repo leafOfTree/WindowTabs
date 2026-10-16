@@ -45,6 +45,11 @@ let rememberedGroupUpdates() =
     check (reread = located) "Where a group's programs ran was not saved and read back"
     let moved = RememberedGroups.update now [1,[{ app="NEW.EXE"; title="n" };{ app="NEW.EXE"; title="o" }]] [m "a";m "c"] located
     check ((moved |> List.find(fun group -> group.id=1)).paths = Map.empty) "A group kept the path of a program it no longer has"
+    // The taskbar picture of a group made by hand goes once the group is neither remembered nor
+    // open; named groups' and apps' pictures stay.
+    let icons = Map.ofList ["hand:1","a.ico";"hand:9","b.ico";"hand:x","c.ico";"rule:g","d.ico";"app:APP.EXE","e.ico"]
+    check (RememberedGroups.keptIcons (Set.ofList [1;3]) icons = Map.ofList ["hand:1","a.ico";"rule:g","d.ico";"app:APP.EXE","e.ico"])
+          "A taken-apart group's taskbar picture was kept, or another picture was dropped"
 
 let main() =
     rememberedGroupUpdates()
@@ -158,6 +163,8 @@ let main() =
               "A group's taskbar picture was not kept for the group"
         (program :> IProgram).setGroupIcon(reopenedB.Handle,None)
         check ((program :> IProgram).groupIcon reopenedA.Handle=None && runtimeSettings.groupIcons.IsEmpty) "Restoring a group's taskbar picture left it set"
+        // Set again, it goes with the group when the group is taken apart below.
+        (program :> IProgram).setGroupIcon(reopenedA.Handle,Some @"C:\icons\work.ico")
         // Ungroup from App rules takes the group apart for good: its windows part, and it is
         // neither recorded again as they leave nor put back together. The shell reports a window
         // as destroyed when a group with combined taskbar icons takes its button; a window still
@@ -173,6 +180,7 @@ let main() =
         check (not (together()) && runtimeSettings.rememberedGroups |> List.forall(fun group -> group.id<>5151)
                && [reopenedA.Handle;reopenedB.Handle;lateHandle] |> List.forall(fun hwnd -> WindowGroupToken.read hwnd<>Some 5151))
               (sprintf "An ungrouped group came back: together %b, remembered %A" (together()) (runtimeSettings.rememberedGroups |> List.map(fun group -> group.id)))
+        check (runtimeSettings.groupIcons.TryFind "hand:5151"=None) "An ungrouped group's taskbar picture was kept"
         restoring <- false
         program.refresh()
         pumpUntil "Restored fixture windows did not leave their groups" (fun () ->
