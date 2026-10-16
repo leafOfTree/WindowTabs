@@ -642,6 +642,11 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             // Its windows leave the group and are found again by the next scan; seen already this
             // run, they no longer return to their saved group but follow the rules.
             this.liveGroupWithToken id |> Option.iter(fun group ->
+                // Taken apart for good: leaving a group with combined taskbar icons is slow, and
+                // still made by hand and under its token, the windows not yet out were recorded
+                // again and the group came back.
+                group.group.isManual <- false
+                group.group.groupToken <- WindowGroupToken.fresh()
                 for hwnd in (group :> IGroup).windows.list do (group :> IGroup).removeWindow hwnd)
             refreshQueue.RequestAll()
 

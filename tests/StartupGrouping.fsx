@@ -132,6 +132,17 @@ let main() =
         pumpUntil "A title change in a remembered group was not recorded" (fun () ->
             runtimeSettings.rememberedGroups |> List.exists(fun group ->
                 group.id=5151 && List.contains { app=app; title="Renamed A" } group.members))
+        // Ungroup from App rules takes the group apart for good: its windows part, and it is
+        // neither recorded again as they leave nor put back together.
+        (program :> IProgram).ungroupHandMade 5151
+        let together() =
+            [reopenedA.Handle;reopenedB.Handle;late.Handle] |> List.choose groupOf |> List.countBy id |> List.exists(fun (_,count) -> count>1)
+        pumpUntil "Ungrouping a remembered group left its windows together" (fun () -> not (together()))
+        let settle = Diagnostics.Stopwatch.StartNew()
+        while settle.ElapsedMilliseconds<1500L do Application.DoEvents(); Threading.Thread.Sleep(20)
+        check (not (together()) && runtimeSettings.rememberedGroups |> List.forall(fun group -> group.id<>5151)
+               && [reopenedA.Handle;reopenedB.Handle;late.Handle] |> List.forall(fun hwnd -> WindowGroupToken.read hwnd<>Some 5151))
+              (sprintf "An ungrouped group came back: together %b, remembered %A" (together()) (runtimeSettings.rememberedGroups |> List.map(fun group -> group.id)))
         restoring <- false
         program.refresh()
         pumpUntil "Restored fixture windows did not leave their groups" (fun () ->

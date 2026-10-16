@@ -830,6 +830,14 @@ let main() =
         let rename target =
             name.Text <- target
             typeof<TextBox>.GetMethod("OnLeave",BindingFlags.Instance ||| BindingFlags.NonPublic).Invoke(name,[|box EventArgs.Empty|]) |> ignore
+        // With no groups the list is a single row tall, not a large empty box.
+        do
+            let dragged = handMade.Value
+            handMade.Value <- []
+            use empty = new AppGroupingRulesView(Width=900)
+            handMade.Value <- dragged
+            assertTrue (empty.Height <= Dpi.scale 36+Dpi.scale 8+2*Dpi.scale 6+Dpi.scale 36+Dpi.scale 2)
+                       (sprintf "An empty Groups across apps is %d tall" empty.Height)
         (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
         assertTrue (tree.RowActions=[EditGlyph;DeleteGlyph] && obj.ReferenceEquals(name.Parent.Parent,tree) && name.Parent.Visible)
                    "Adding a group did not start editing its name directly in the row"
