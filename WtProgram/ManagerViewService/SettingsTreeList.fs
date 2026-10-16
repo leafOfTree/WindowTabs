@@ -688,7 +688,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                                 let pointed = hoveredChip |> Option.exists(fun (row,i) -> Object.ReferenceEquals(row,item) && i=chipIndex)
                                 if pointed then
                                     use dot = new SolidBrush(if SystemInformation.HighContrast then SystemColors.Highlight else Color.FromArgb(46,p.text))
-                                    g.FillEllipse(dot,close)
+                                    g.FillEllipse(dot,Rectangle.Inflate(close,Dpi.scale 2,Dpi.scale 2))
                                 use pen = new Pen((if pointed then chipText else p.muted),1.3f)
                                 let inset = float32(Dpi.scale 4)
                                 g.DrawLine(pen,float32 close.X+inset,float32 close.Y+inset,float32 close.Right-inset,float32 close.Bottom-inset)
