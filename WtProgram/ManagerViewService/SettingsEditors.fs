@@ -220,8 +220,19 @@ type SettingsShortcutInput() as this =
             changed.Trigger(EventArgs.Empty)
         elif next<>0 then showMessage false (tr Strings.Shortcuts.alreadySet)
         this.Invalidate()
+    /// As wide as its key caps and clear button, or its prompt, need, and no narrower than the
+    /// other editors, so the rows line up.
+    let fitWidth() =
+        let measure (text:string) = TextRenderer.MeasureText(text,this.Font,Size.Empty,TextFormatFlags.NoPadding).Width
+        let capHeight = this.Height-Dpi.scale 14
+        let caps = SettingsShortcut.parts shortcut |> List.sumBy(fun label -> max capHeight (measure label+Dpi.scale 14)+Dpi.scale 4)
+        let clear = if shortcut<>0 then Dpi.scale 24+Dpi.scale 5 else 0
+        let prompts = [Strings.Shortcuts.pressShortcut;Strings.Shortcuts.notSet] |> List.map(fun text -> Dpi.scale 12+measure (tr text)+Dpi.scale 12)
+        let wanted = List.max ((Dpi.scale 8+caps+clear+Dpi.scale 8)::prompts)
+        let width = max (Dpi.scale SettingsShapes.editorWidth) wanted
+        if this.Width<>width then this.Width <- width
     do
-        this.Width <- Dpi.scale 220
+        this.Width <- Dpi.scale SettingsShapes.editorWidth
         this.TabStop <- true
         this.Cursor <- Cursors.Hand
         this.SetStyle(ControlStyles.Selectable ||| ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer,true)
@@ -230,7 +241,12 @@ type SettingsShortcutInput() as this =
         this.Disposed.Add(fun _ -> messageTimer.Dispose())
     member _.Shortcut
         with get() = shortcut
-        and set(value) = shortcut <- value; this.AccessibleDescription <- String.Join(" + ",SettingsShortcut.parts value); this.Invalidate()
+        and set(value) =
+            shortcut <- value
+            this.AccessibleDescription <- String.Join(" + ",SettingsShortcut.parts value)
+            fitWidth()
+            this.Invalidate()
+    override this.OnFontChanged(e) = base.OnFontChanged(e); fitWidth()
     member _.Changed = changed.Publish
     member _.IsRecording = recording
     /// Whether the accent outline is drawn: while recording, or on fresh keyboard focus.

@@ -395,6 +395,15 @@ let main() =
         Application.DoEvents()
         let next = view.control.Controls.Find("next-tab",true).[0] :?> SettingsShortcutInput
         let previous = view.control.Controls.Find("previous-tab",true).[0] :?> SettingsShortcutInput
+        // Shortcut boxes start from the other editors' width and grow only for longer shortcuts.
+        do
+            let rec all (control:Control) = seq { yield control; for child in control.Controls do yield! all child }
+            let boxes = all view.control |> Seq.choose(function :? SettingsShortcutInput as box -> Some box | _ -> None) |> List.ofSeq
+            assertTrue (not boxes.IsEmpty && boxes |> List.forall(fun box -> box.Width>=Dpi.scale SettingsShapes.editorWidth && box.Width<Dpi.scale 220))
+                       (sprintf "Shortcut boxes are not editor width: %A" (boxes |> List.map(fun box -> box.Width)))
+            use image = new Bitmap(form.Width,form.Height)
+            form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+            image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "shortcuts-%A.png" mode))
         let leaderToggle = view.control.Controls.Find("enable-number-leader",true).[0] :?> SettingsToggle
         let leaderKeys = view.control.Controls.Find("leader-keys",true).[0] :?> SettingsTextInput
         let keysText = leaderKeys.Controls.[0] :?> TextBox
