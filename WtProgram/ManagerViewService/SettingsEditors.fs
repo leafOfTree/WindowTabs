@@ -320,7 +320,16 @@ type SettingsShortcutInput() as this =
                 use border = new Pen(p.border)
                 g.FillPath(fill,shape)
                 g.DrawPath(border,shape)
-                TextRenderer.DrawText(g,label,this.Font,bounds,p.text,TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter)
+                // Centred by its ink, not its advance: a symbol such as ] sits to one side of
+                // the space the font gives it, and looked off centre in its cap.
+                let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.NoPadding ||| TextFormatFlags.VerticalCenter
+                let advance = TextRenderer.MeasureText(g,label,this.Font,Size.Empty,flags).Width
+                let shift =
+                    use outline = new GraphicsPath()
+                    outline.AddString(label,this.Font.FontFamily,int this.Font.Style,this.Font.SizeInPoints*g.DpiY/72.0f,PointF.Empty,StringFormat.GenericTypographic)
+                    let ink = outline.GetBounds()
+                    if ink.Width>0.0f then int(Math.Round(float advance/2.0-float(ink.X+ink.Width/2.0f))) else 0
+                TextRenderer.DrawText(g,label,this.Font,Rectangle(bounds.X+(bounds.Width-advance)/2+shift,bounds.Y,advance+Dpi.scale 2,bounds.Height),p.text,flags)
                 x+bounds.Width+Dpi.scale 2) left
         match message with
         | Some(text,isError) -> TextRenderer.DrawText(g,text,this.Font,textArea (Dpi.scale 12),(if isError then error else p.muted),flags)

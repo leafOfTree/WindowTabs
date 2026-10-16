@@ -405,6 +405,13 @@ let main() =
             use image = new Bitmap(form.Width,form.Height)
             form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
             image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "shortcuts-%A.png" mode))
+            // Symbol keys sit in the middle of their caps; a sheet of them to look at.
+            use symbols = new Bitmap(Dpi.scale 160,Dpi.scale 40*8)
+            for row,key in List.indexed [0xDD;0xDB;0xDC;0xBF;0xBA;0xDE;0xBC;0xBE] do
+                use box = new SettingsShortcutInput(Font=next.Font,Height=next.Height,BackColor=next.BackColor)
+                box.Shortcut <- (2 <<< 8) ||| key
+                box.DrawToBitmap(symbols,Rectangle(0,row*Dpi.scale 40,box.Width,box.Height))
+            symbols.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "shortcut-symbols-%A.png" mode))
         let leaderToggle = view.control.Controls.Find("enable-number-leader",true).[0] :?> SettingsToggle
         let leaderKeys = view.control.Controls.Find("leader-keys",true).[0] :?> SettingsTextInput
         let keysText = leaderKeys.Controls.[0] :?> TextBox
