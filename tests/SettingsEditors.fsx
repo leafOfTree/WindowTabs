@@ -1005,6 +1005,11 @@ let main() =
         // The button said what it does while the pointer was on it.
         let tip = clickAction handMadeRow 1
         assertTrue (tip=tr Strings.AppRules.ungroup) (sprintf "The ungroup button has no hover tip: %A" tip)
+        // A one-word tip sits in a bubble its own width, not one widened to a window's minimum.
+        let tipWidth = TextRenderer.MeasureText(tr Strings.AppRules.ungroup,tree.Font).Width+2*Dpi.scale 12
+        let bubbles = Application.OpenForms |> Seq.cast<Form> |> Seq.filter(fun form -> form.GetType().Name="SettingsHelpPopup") |> Seq.map(fun form -> form.Width) |> List.ofSeq
+        assertTrue (bubbles |> List.exists(fun width -> width<=tipWidth+2))
+                   (sprintf "The ungroup tip's bubble is wider than its text: %A for %d" bubbles tipWidth)
         assertTrue (List.ofSeq ungrouped=[4711] && tree.Roots |> Seq.forall(fun row -> row.Text<>tr (Strings.AppRules.handMadeGroup 1)))
                    "Ungrouping a group made by hand did not forget it or kept its row"
         form.Close()

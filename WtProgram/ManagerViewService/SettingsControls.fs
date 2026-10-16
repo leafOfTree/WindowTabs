@@ -133,7 +133,18 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
         this.DoubleBuffered <- true
         let textSize = TextRenderer.MeasureText(wrapped,font,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPrefix)
         this.ClientSize <- Size(width,textSize.Height+2*padY+arrow())
+        // Windows widens a window to its minimum width when it is created; a one-word tip then
+        // sat in a wide, empty bubble.
+        this.HandleCreated.Add(fun _ -> this.ClientSize <- Size(width,textSize.Height+2*padY+arrow()))
     override _.ShowWithoutActivation = true
+    override this.WndProc(m) =
+        base.WndProc(&m)
+        // WM_GETMINMAXINFO: no minimum size, so the bubble fits short text.
+        if m.Msg=0x24 then
+            let mutable info = Runtime.InteropServices.Marshal.PtrToStructure<MINMAXINFO>(m.LParam)
+            info.ptMinTrackSize.cx <- 1
+            info.ptMinTrackSize.cy <- 1
+            Runtime.InteropServices.Marshal.StructureToPtr(info,m.LParam,false)
     /// Below the target where it fits on the screen, else above it. The arrow points at the
     /// target's middle, or for a wide one near its start, where its text begins.
     member this.place (target:Rectangle) (bounds:Rectangle) =
