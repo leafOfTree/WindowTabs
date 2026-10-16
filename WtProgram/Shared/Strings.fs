@@ -421,7 +421,7 @@ module Strings =
         let windowsApps = { en="Windows apps"; zh="Windows 应用"; ja="Windows アプリ" }
         /// Said on hover over the icon of a group made by dragging tabs together, shown read-only
         /// after the named groups.
-        let handMadeGroups = { en="Dragged together"; zh="拖拽形成的分组"; ja="ドラッグでまとめたグループ" }
+        let handMadeGroups = { en="Windows grouped by dragging"; zh="拖拽形成的窗口分组"; ja="ドラッグでまとめたウィンドウのグループ" }
         let scanning = { en="Scanning…"; zh="正在扫描…"; ja="スキャン中…" }
         let scanFailed details = { en="Scan failed: " + details; zh="扫描失败：" + details; ja="スキャンに失敗しました: " + details }
 
