@@ -322,14 +322,22 @@ type SettingsShortcutInput() as this =
                 g.DrawPath(border,shape)
                 // Centred by its ink, not its advance: a symbol such as ] sits to one side of
                 // the space the font gives it, and looked off centre in its cap.
-                let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.NoPadding ||| TextFormatFlags.VerticalCenter
-                let advance = TextRenderer.MeasureText(g,label,this.Font,Size.Empty,flags).Width
-                let shift =
+                // A tall symbol (a bracket or a slash) is centred by its ink up and down too: it
+                // reaches below the baseline and sat low. Short marks (. , ') keep the text line.
+                let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.NoPadding
+                let line = TextRenderer.MeasureText(g,label,this.Font,Size.Empty,flags)
+                let ink =
                     use outline = new GraphicsPath()
                     outline.AddString(label,this.Font.FontFamily,int this.Font.Style,this.Font.SizeInPoints*g.DpiY/72.0f,PointF.Empty,StringFormat.GenericTypographic)
-                    let ink = outline.GetBounds()
-                    if ink.Width>0.0f then int(Math.Round(float advance/2.0-float(ink.X+ink.Width/2.0f))) else 0
-                TextRenderer.DrawText(g,label,this.Font,Rectangle(bounds.X+(bounds.Width-advance)/2+shift,bounds.Y,advance+Dpi.scale 2,bounds.Height),p.text,flags)
+                    outline.GetBounds()
+                let textX =
+                    if ink.Width>0.0f then bounds.X+int(Math.Round(float bounds.Width/2.0-float(ink.X+ink.Width/2.0f)))
+                    else bounds.X+(bounds.Width-line.Width)/2
+                let tall = label.Length=1 && not (Char.IsLetterOrDigit label.[0]) && ink.Height>=0.6f*float32 line.Height
+                let textY =
+                    if tall then bounds.Y+int(Math.Round(float bounds.Height/2.0-float(ink.Y+ink.Height/2.0f)))
+                    else bounds.Y+(bounds.Height-line.Height)/2
+                TextRenderer.DrawText(g,label,this.Font,Rectangle(textX,textY,line.Width+Dpi.scale 2,line.Height),p.text,flags)
                 x+bounds.Width+Dpi.scale 2) left
         match message with
         | Some(text,isError) -> TextRenderer.DrawText(g,text,this.Font,textArea (Dpi.scale 12),(if isError then error else p.muted),flags)
