@@ -391,9 +391,9 @@ module Strings =
         let newRule = { en="New rule"; zh="新规则"; ja="新しいルール" }
         let groupNameRequired = { en="Enter a group name."; zh="请填写组名。"; ja="グループ名を入力してください。" }
         let groupNameExists = { en="A group with this name already exists."; zh="已有同名组，请使用其他名称。"; ja="同じ名前のグループが存在します。" }
-        let groupRulesHelp = { en="Put windows of different apps into one named group. Apps added here always have tabs, leave the list above and don't use Auto-group. Groups you make by dragging tabs together show here too."
-                               zh="把不同应用的窗口放进同一个命名组。加入这里的应用会始终启用标签，不再出现在上面的列表里，也不再使用“自动分组”。拖拽标签合并形成的分组也会显示在这里。"
-                               ja="異なるアプリのウィンドウを名前付きの一つのグループにまとめます。ここに追加したアプリは常にタブを使い、上の一覧からは外れ、「自動グループ化」も使われません。タブをドラッグしてまとめたグループもここに表示されます。" }
+        let groupRulesHelp = { en="Put windows of different apps into one named group. Apps added here always have tabs, leave the list above and don't use Auto-group. Windows you group by dragging tabs together show here too."
+                               zh="把不同应用的窗口放进同一个命名组。加入这里的应用会始终启用标签，不再出现在上面的列表里，也不再使用“自动分组”。拖拽标签合并形成的窗口分组也会显示在这里。"
+                               ja="異なるアプリのウィンドウを名前付きの一つのグループにまとめます。ここに追加したアプリは常にタブを使い、上の一覧からは外れ、「自動グループ化」も使われません。タブをドラッグしてまとめたウィンドウのグループもここに表示されます。" }
         let application = { en="Application"; zh="应用"; ja="アプリ" }
         let chooseApplication = { en="Add an app"; zh="添加应用"; ja="アプリを追加" }
         /// Hover tips on a group's buttons.
