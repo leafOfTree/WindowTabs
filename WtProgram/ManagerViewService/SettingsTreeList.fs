@@ -104,6 +104,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     let mutable hoveredAction = -1
     let mutable hoveredChip : (TreeListItem * int) option = None
     let mutable hoveredChipAdd : TreeListItem = null
+    /// The row whose icon, which says something on hover, is under the pointer.
+    let mutable hoveredIcon : TreeListItem = null
     /// Where each shown row starts, below the header and before scrolling, and where the last
     /// ends; rows with chips grow a line for each line of chips. Kept for one set of rows at
     /// one width.
@@ -571,6 +573,14 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         if not same then
             hoveredChip <- chip
             this.Invalidate()
+        let icon =
+            match this.rowAt e.Y with
+            | Some(index,(item,level)) when item.IconTip<>"" &&
+                                            (let box,_ = this.nameLayout(item,level,this.rowTop index) in Rectangle.Inflate(box,Dpi.scale 4,Dpi.scale 4).Contains(e.Location)) -> item
+            | _ -> null
+        if not (Object.ReferenceEquals(icon,hoveredIcon)) then
+            hoveredIcon <- icon
+            this.Invalidate()
         let add = this.chipAddAt e.Location |> Option.toObj
         if not (Object.ReferenceEquals(add,hoveredChipAdd)) then
             hoveredChipAdd <- add
@@ -620,6 +630,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         hoveredAction <- -1
         hoveredChip <- None
         hoveredChipAdd <- null
+        hoveredIcon <- null
         tooltipText <- ""
         tooltip.Hide()
         this.Invalidate()
@@ -707,7 +718,15 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         g.InterpolationMode <- InterpolationMode.HighQualityBicubic
                         g.DrawImage(item.Icon,iconBox)
                     elif not hidesIcon && item.Glyph<>NoGlyph then
-                        SettingsTreeList.drawGlyph(g,item.Glyph,iconBox,p.muted)
+                        // An icon that says something on hover lights up as the row buttons do.
+                        let pointed = Object.ReferenceEquals(item,hoveredIcon)
+                        if pointed then
+                            let button = Rectangle.Inflate(iconBox,(Dpi.scale 24-iconBox.Width)/2,(Dpi.scale 24-iconBox.Height)/2)
+                            use shape = SettingsShapes.rounded (RectangleF(float32 button.X,float32 button.Y,float32 button.Width,float32 button.Height)) (float32(Dpi.scale 4))
+                            use fill = new SolidBrush(if SystemInformation.HighContrast then SystemColors.Highlight else Color.FromArgb(36,p.text))
+                            g.FillPath(fill,shape)
+                        let color = if pointed && SystemInformation.HighContrast then SystemColors.HighlightText elif pointed then text else p.muted
+                        SettingsTreeList.drawGlyph(g,item.Glyph,iconBox,color)
                     if not editing then
                         let nameBounds,laid,add,_ = if item.Chips.IsEmpty && not item.ChipAdd then bounds,[],None,1 else this.chipLayout(item,level,top)
                         this.drawHighlights(g,item.Text,item.highlights 0,nameBounds,flags,p)

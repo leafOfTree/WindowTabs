@@ -1025,6 +1025,10 @@ let main() =
             typeof<SettingsTreeList>.GetMethod("OnMouseMove",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(tree,[|box mouse|]) |> ignore
             typeof<SettingsTreeList>.GetField("tooltipText",BindingFlags.Instance ||| BindingFlags.NonPublic).GetValue(tree) :?> string
         assertTrue ([0..4..tree.Width-1] |> List.exists(fun x -> tipAt x=longTitle)) "A chip cut short did not show its whole text on hover"
+        // Its icon says what the row is and lights up on hover, as the row buttons do.
+        let iconHovered = [0..2..Dpi.scale 80] |> List.exists(fun x -> tipAt x=tr Strings.AppRules.handMadeGroups)
+        let lit = typeof<SettingsTreeList>.GetField("hoveredIcon",BindingFlags.Instance ||| BindingFlags.NonPublic).GetValue(tree)
+        assertTrue (iconHovered && obj.ReferenceEquals(lit,handMadeRow)) "A dragged group's icon did not say what it is or light up on hover"
         tipAt 1 |> ignore
         handMadeRow.Chips <- kept
         tree.Rebuild()
