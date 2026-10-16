@@ -953,8 +953,10 @@ let main() =
         let appList = descendants view.control |> Seq.pick(function :? SettingsTreeList as list -> Some list | _ -> None)
         let clock = Diagnostics.Stopwatch.StartNew()
         let mapped() = appList.Roots |> Seq.tryFind(fun row -> match row.Tag with :? string as path -> path=selectedPath | _ -> false)
-        while (mapped() |> Option.forall(fun row -> row.checkEnabled 2)) && clock.ElapsedMilliseconds<5000L do Application.DoEvents(); Threading.Thread.Sleep(20)
-        assertTrue (mapped() |> Option.exists(fun row -> not(row.checkEnabled 2) && row.check 2=Some false)) "A group application did not disable Group by app"
+        // An app in a group is set there: it has tabs, and App rules no longer lists it, where its
+        // tabs could be turned off and contradict the group.
+        while (mapped()).IsSome && clock.ElapsedMilliseconds<5000L do Application.DoEvents(); Threading.Thread.Sleep(20)
+        assertTrue ((mapped()).IsNone && rules.Value.getIsTabbingEnabledForProcess selectedPath) "An app added to a group stayed in App rules or has no tabs"
         rename "Group Alpha"
         assertTrue (saved().Head.groupId=groupA && saved().Head.groupName="Group Alpha") "Renaming a group changed its identity or left application captions stale"
         (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
@@ -981,8 +983,8 @@ let main() =
             assertTrue (tip=tr Strings.AppRules.enabled && point.X>tree.ClientSize.Width-Dpi.scale 100)
                        (sprintf "The Enabled box is not beside the buttons or has no hover tip: %A at %A" tip point)
         clock.Restart()
-        while (mapped() |> Option.forall(fun row -> not(row.checkEnabled 2))) && clock.ElapsedMilliseconds<5000L do Application.DoEvents(); Threading.Thread.Sleep(20)
-        assertTrue (mapped() |> Option.exists(fun row -> row.checkEnabled 2 && row.check 2=Some false)) "Disabling a group application did not unlock Group by app"
+        while (mapped()).IsNone && clock.ElapsedMilliseconds<5000L do Application.DoEvents(); Threading.Thread.Sleep(20)
+        assertTrue (mapped() |> Option.exists(fun row -> row.check 1=Some true && row.check 2=Some false)) "An app whose group was turned off did not come back to App rules"
         form.PerformLayout()
         Application.DoEvents()
         assertTrue (not tree.ShowHeader && tree.ItemAt(Point(Dpi.scale 20,Dpi.scale 4)).IsSome) "Groups across apps still opens with a heading row"

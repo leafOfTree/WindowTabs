@@ -326,6 +326,9 @@ type AppGroupingRulesView() as this =
                 let existing = rules |> List.tryFind(fun rule -> AppIdentity.same rule.processPath path)
                 let rule = {id=existing |> Option.map(fun rule -> rule.id) |> Option.defaultWith(fun () -> Guid.NewGuid().ToString("N"));enabled=true;processPath=path;title="";matchType= -1;groupId=group.id;groupName=group.name}
                 rules <- (rules |> List.filter(fun other -> not(AppIdentity.same other.processPath path))) @ [rule]
+                // A group only gathers windows with tabs; the app leaves App rules, where its tabs
+                // could be turned off.
+                if not (Services.filter.getIsTabbingEnabledForProcess path) then Services.filter.setIsTabbingEnabledForProcess path true
                 save (Some previous)
                 reload (Some(GroupNode group.id)))
         this.fitToRows()
@@ -470,6 +473,10 @@ type AppGroupingRulesView() as this =
                 for chip in row.Chips do
                     if not(isNull chip.Icon) then chip.Icon.Dispose())
         this.Resize.Add(fun _ -> this.PerformLayout())
+        // Apps grouped before a group turned their tabs on, whose tabs were turned off since.
+        for rule in rules do
+            if rule.enabled && not (Services.filter.getIsTabbingEnabledForProcess rule.processPath) then
+                Services.filter.setIsTabbingEnabledForProcess rule.processPath true
         reload None
     /// Only as tall as its rows need, from one row up to six; more rows scroll.
     member private this.fitToRows() =

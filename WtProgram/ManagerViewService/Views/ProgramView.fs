@@ -9,12 +9,12 @@ module private ProgramItems =
     /// Column indexes of the check boxes.
     let tabsColumn,groupingColumn = 1,2
     /// An app that is not running has no window, and shows its executable's icon.
-    let exe (path:string) (first:Window option) custom =
+    let exe (path:string) (first:Window option) =
         let icon = ApplicationNames.appIcon path first
         let tabs = Services.filter.getIsTabbingEnabledForProcess path
         // Auto grouping only decides which group a tabbed window joins.
         TreeListItem(ApplicationNames.label path,Icon=Option.toObj icon,Glyph=WindowGlyph,Tag=path,
-                     Checks=[|None;Some tabs;Some(not custom && Services.program.getAutoGroupingEnabled path)|],CheckEnabled=[|true;true;not custom|])
+                     Checks=[|None;Some tabs;Some(Services.program.getAutoGroupingEnabled path)|])
     let window (window:Window) =
         TreeListItem(window.text,Icon=Option.toObj (ImgHelper.windowIcon window),Glyph=WindowGlyph)
 type ProgramView() as this=
@@ -147,7 +147,7 @@ type ProgramView() as this=
                                     match procs.TryGetValue(AppIdentity.key path) with
                                     | true,item -> item
                                     | _ ->
-                                        let item = ProgramItems.exe path (Some window) (AppGroupingRules.hasEnabled customRules path)
+                                        let item = ProgramItems.exe path (Some window)
                                         procs.Add(AppIdentity.key path,item)
                                         items.Add(item)
                                         item
@@ -161,10 +161,14 @@ type ProgramView() as this=
                 for path in ruled do
                     cancellation.ThrowIfCancellationRequested()
                     if not (String.IsNullOrEmpty path) && not (procs.ContainsKey(AppIdentity.key path)) && File.Exists path then
-                        let item = ProgramItems.exe path None (AppGroupingRules.hasEnabled customRules path)
+                        let item = ProgramItems.exe path None
                         procs.Add(AppIdentity.key path,item)
                         items.Add(item)
                 cancellation.ThrowIfCancellationRequested()
+                // An app in a group across apps is set there: its tabs are on and the group decides
+                // where its windows go, so a row here could only contradict it.
+                let grouped,items = items |> List.ofSeq |> List.partition(fun item -> AppGroupingRules.hasEnabled customRules (item.Tag :?> string))
+                ImgHelper.disposeItems grouped
                 let ordered = items |> Seq.sortBy(fun item -> (if running.Contains(AppIdentity.key (item.Tag :?> string)) then 0 else 1),item.Text.ToUpperInvariant()) |> Seq.toList
                 if running.Count>0 then
                     ordered |> List.tryFind(fun item -> not(running.Contains(AppIdentity.key (item.Tag :?> string))))
