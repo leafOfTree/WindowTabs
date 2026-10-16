@@ -955,6 +955,7 @@ let main() =
         assertTrue (mapped() |> Option.exists(fun row -> row.checkEnabled 2 && row.check 2=Some false)) "Disabling a group application did not unlock Group by app"
         form.PerformLayout()
         Application.DoEvents()
+        assertTrue (not tree.ShowHeader && tree.ItemAt(Point(Dpi.scale 20,Dpi.scale 4)).IsSome) "Groups across apps still opens with a heading row"
         assertTrue (groupView.Height<=Dpi.scale 244 && groupView.Bottom<=view.control.ClientSize.Height)
                    (sprintf "Grouping tree is outside the page: %A in %A" groupView.Bounds view.control.ClientSize)
         // Groups made by dragging tabs show after the named ones, read only, and come apart in one go.
