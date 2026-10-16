@@ -439,26 +439,26 @@ let main() =
         key keysText Keys.Escape
         leaderToggle.Checked <- false
         assertTrue ((leaderKeys.Parent :?> SettingsRow).Collapsed) "Selection keys remain visible while the leader is disabled"
-        let numeric = view.control.Controls.Find("switch-tabs-by-number",true).[0] :?> SettingsToggle
+        // One drop-down switches tabs by number: off, Ctrl + 1–9 or Alt + 1–9.
+        let numeric = view.control.Controls.Find("switch-tabs-by-number",true).[0] :?> SettingsCombo
         let numericChoice = view.control.Controls.Find("number-shortcut",true).[0] :?> SettingsCombo
         assertTrue (view.control.Controls.Find("number-shortcut-apps",true).Length=0 && SettingsCatalog.all |> List.forall(fun item -> item.id<>"number-shortcut-apps")) "App shortcut mode remains on the settings page or in search"
         let numericRow = numericChoice.Parent :?> SettingsRow
-        numeric.Checked <- false
-        assertTrue numericRow.Collapsed "Disabled numeric shortcuts must hide modifier selection"
-        numeric.Checked <- true
-        assertTrue (not numericRow.Collapsed) "Enabled numeric shortcuts must show modifier selection"
-        // An app enabled from the tab menu still uses the modifier while the switch is off.
+        numeric.SelectedIndex <- 0
+        assertTrue (numericRow.Collapsed && not (settings.getValue("enableCtrlNumberHotKey") :?> bool)) "Off did not turn switching by number off"
+        numeric.SelectedIndex <- 2
+        assertTrue (numericRow.Collapsed && (settings.getValue("enableCtrlNumberHotKey") :?> bool) && settings.getValue("numberHotKeyModifier") :?> string = "Alt")
+                   "Alt + 1–9 was not saved, or the key still has a row of its own"
+        // Off, an app switched on from the tab menu still uses a key, chosen on its own row.
         settingValues.["enabledNumberShortcutPaths"] <- box(Set2(List2([@"C:\Apps\Editor.exe"])))
-        numeric.Checked <- false
-        assertTrue (not numericRow.Collapsed) "The modifier was hidden while an app still switches tabs by number"
+        numeric.SelectedIndex <- 0
+        assertTrue (not numericRow.Collapsed) "The key was hidden while an app still switches tabs by number"
         settingValues.["enabledNumberShortcutPaths"] <- box(Set2<string>())
-        numeric.Checked <- true
-        numericChoice.SelectedIndex <- 1
-        assertTrue (settings.getValue("numberHotKeyModifier") :?> string = "Alt") "Alt selection was not saved"
+        numeric.SelectedIndex <- 2
         let numericPlugin = NumericTabHotKeyPlugin()
         let target ctrl alt = numericPlugin.targetIndex(WindowMessages.WM_KEYDOWN,0x31,ctrl,altPressed=alt)
         assertTrue (target false true=Some 0 && target true false=None && target true true=None) "Alt mode captures another modifier combination"
-        numericChoice.SelectedIndex <- 0
+        numeric.SelectedIndex <- 1
         assertTrue (target true false=Some 0 && target false true=None && target true true=None) "Ctrl mode captures another modifier combination"
         match (SettingsCatalog.find "number-shortcut").binding with
         | Choice(_,values,_) -> assertTrue (values=["Ctrl";"Alt"]) "Modifier picker offers more than Ctrl and Alt"

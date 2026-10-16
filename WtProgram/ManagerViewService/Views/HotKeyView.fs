@@ -42,21 +42,51 @@ type HotKeyView() =
             let update() = for row in rows do row.Collapsed <- not toggle.Checked
             update()
             toggle.CheckedChanged.Add(fun _ -> update())
-        let numericEnabled = SettingsBindings.settingToggle "enableCtrlNumberHotKey"
-        SettingsUi.settingRow keyboard "switch-tabs-by-number" numericEnabled
+        // One choice for switching by number: off, or the key held with 1–9.
+        let numberChoice =
+            SettingsUi.choice [|tr Strings.Settings.numberShortcutOff
+                                tr (Strings.Settings.numberShortcutWith (tr Strings.Settings.numberShortcutCtrl))
+                                tr (Strings.Settings.numberShortcutWith (tr Strings.Settings.numberShortcutAlt))|]
+        numberChoice.Name <- "switch-tabs-by-number"
+        numberChoice.AccessibleName <- tr Strings.Settings.switchTabsByNumber.caption
+        let chosen() =
+            if not (Services.settings.getValue("enableCtrlNumberHotKey") :?> bool) then 0
+            elif (Services.settings.getValue("numberHotKeyModifier") :?> string)="Alt" then 2 else 1
+        numberChoice.SelectedIndex <- chosen()
+        SettingsUi.settingRow keyboard "switch-tabs-by-number" numberChoice
+        // Off, an app switched on from the tab menu still uses a key: only then is the key chosen
+        // on its own row.
         let numericChoice = SettingsBindings.choiceRow keyboard "number-shortcut"
                                 [|tr Strings.Settings.numberShortcutCtrl;tr Strings.Settings.numberShortcutAlt|]
-        // Switched off, an app enabled from the tab menu still uses the modifier, so it stays.
         let numericRow = numericChoice.Parent :?> SettingsRow
         SettingsUi.indentDependentRow numericRow
         let updateNumeric() =
             let appsEnabled = (Services.settings.getValue("enabledNumberShortcutPaths") :?> Set2<string>).items.list.IsEmpty |> not
-            numericRow.Collapsed <- not numericEnabled.Checked && not appsEnabled
+            numericRow.Collapsed <- numberChoice.SelectedIndex<>0 || not appsEnabled
+        let mutable syncing = false
+        numberChoice.SelectedIndexChanged.Add(fun _ ->
+            if not syncing then
+                match numberChoice.SelectedIndex with
+                | 0 -> Services.settings.setValue("enableCtrlNumberHotKey",box false)
+                | index ->
+                    let key = if index=2 then "Alt" else "Ctrl"
+                    Services.settings.setValue("numberHotKeyModifier",box key)
+                    Services.settings.setValue("enableCtrlNumberHotKey",box true)
+                    syncing <- true
+                    try numericChoice.SelectedIndex <- index-1 finally syncing <- false
+            updateNumeric())
+        // A reset, or the tab menu, changes them elsewhere; the choice follows.
+        let follow _ =
+            if not numberChoice.IsDisposed && not syncing then
+                syncing <- true
+                try numberChoice.SelectedIndex <- chosen() finally syncing <- false
+                updateNumeric()
+        let subscriptions =
+            [Services.settings.notifyValue "enabledNumberShortcutPaths" (fun _ -> if not numericRow.IsDisposed then updateNumeric())
+             Services.settings.notifyValue "enableCtrlNumberHotKey" follow
+             Services.settings.notifyValue "numberHotKeyModifier" follow]
         updateNumeric()
-        numericEnabled.CheckedChanged.Add(fun _ -> updateNumeric())
-        let appsSubscription = Services.settings.notifyValue "enabledNumberShortcutPaths" (fun _ ->
-            if not numericRow.IsDisposed then updateNumeric())
-        numericRow.Disposed.Add(fun _ -> appsSubscription.Dispose())
+        numericRow.Disposed.Add(fun _ -> for subscription in subscriptions do subscription.Dispose())
         let leaderEnabled = SettingsBindings.settingToggle "enableNumberLeader"
         SettingsUi.settingRow keyboard "enable-number-leader" leaderEnabled
         let leaderEditor = editors |> List.find(fun (key,_) -> key="numberLeader") |> snd
