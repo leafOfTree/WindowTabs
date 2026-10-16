@@ -394,6 +394,20 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                             (target :?> GroupInfo).addAfterDetaching(info,window.hwnd))
                 else mergeSoon.Request()
 
+    /// What keeps the group of a window recognisable for its taskbar picture: a named group's id,
+    /// a group made by hand's token, else the one app of an automatic group, so each of that
+    /// app's groups shows it.
+    member private this.groupIconKey(hwnd:IntPtr) =
+        this.desktop.groups.list |> List.tryPick(function
+            | :? GroupInfo as info when (info :> IGroup).windows.contains((=)hwnd) ->
+                let apps = (info :> IGroup).windows.list |> List.map(fun window -> AppIdentity.key (this.appKey window)) |> List.distinct
+                match info.ruleGroupId,apps with
+                | Some id,_ -> Some("rule:"+id)
+                | None,_ when this.isHandMade info -> Some(sprintf "hand:%d" info.group.groupToken)
+                | None,[app] when app<>"" -> Some("app:"+app)
+                | None,_ -> Some(sprintf "hand:%d" info.group.groupToken)
+            | _ -> None)
+
     /// Made by hand, or restored from groups made by hand: never merged or taken apart unasked.
     member private this.isHandMade(info:GroupInfo) =
         info.group.isManual || remembered |> List.exists(fun saved -> saved.id=info.group.groupToken)
@@ -653,7 +667,15 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 for hwnd in (group :> IGroup).windows.list do (group :> IGroup).removeWindow hwnd)
             refreshQueue.RequestAll()
 
-        member x.appWindows = 
+        member x.groupIcon hwnd =
+            this.groupIconKey hwnd |> Option.bind(fun key -> settingsManager.groupIcons.TryFind key)
+
+        member x.setGroupIcon(hwnd,path) =
+            this.groupIconKey hwnd |> Option.iter(fun key ->
+                let icons = settingsManager.groupIcons
+                settingsManager.groupIcons <- match path with Some path -> icons.Add(key,path) | None -> icons.Remove key)
+
+        member x.appWindows =
             os.windowsInZorder.where(this.isAppWindow).map(fun w -> w.hwnd)
 
         member x.getAutoGroupingEnabled procPath =

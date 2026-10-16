@@ -44,6 +44,8 @@ let run measure iterations (pixels:Bitmap -> string) (results:JArray) (images:JA
             member _.getTabColors(hwnds,_) = hwnds |> List.map(fun _ -> None)
             member _.handMadeGroups() = []
             member _.ungroupHandMade _ = ()
+            member _.groupIcon _ = None
+            member _.setGroupIcon(_,_) = ()
             member _.appWindows = List2()
             member _.getAutoGroupingEnabled _ = false
             member _.setAutoGroupingEnabled _ _ = ()

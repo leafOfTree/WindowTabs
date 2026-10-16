@@ -365,6 +365,8 @@ let main() =
         member _.ungroupHandMade id =
             ungrouped.Add id
             handMade.Value <- handMade.Value |> List.filter(fun (group,_) -> group<>id)
+        member _.groupIcon _ = None
+        member _.setGroupIcon(_,_) = ()
         member _.appWindows = List2()
         member _.getAutoGroupingEnabled path = lock grouping (fun () -> grouping.Contains path)
         member _.setAutoGroupingEnabled path enabled =

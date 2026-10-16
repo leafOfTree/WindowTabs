@@ -132,6 +132,13 @@ let main() =
         pumpUntil "A title change in a remembered group was not recorded" (fun () ->
             runtimeSettings.rememberedGroups |> List.exists(fun group ->
                 group.id=5151 && List.contains { app=app; title="Renamed A" } group.members))
+        // A picture for a group's taskbar button is kept for that group, whichever of its windows
+        // it was chosen from, and the default comes back on request.
+        (program :> IProgram).setGroupIcon(reopenedA.Handle,Some @"C:\icons\work.ico")
+        check ((program :> IProgram).groupIcon reopenedB.Handle=Some @"C:\icons\work.ico" && runtimeSettings.groupIcons.TryFind "hand:5151"=Some @"C:\icons\work.ico")
+              "A group's taskbar picture was not kept for the group"
+        (program :> IProgram).setGroupIcon(reopenedB.Handle,None)
+        check ((program :> IProgram).groupIcon reopenedA.Handle=None && runtimeSettings.groupIcons.IsEmpty) "Restoring a group's taskbar picture left it set"
         // Ungroup from App rules takes the group apart for good: its windows part, and it is
         // neither recorded again as they leave nor put back together. The shell reports a window
         // as destroyed when a group with combined taskbar icons takes its button; a window still

@@ -100,6 +100,21 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             this.settingsJson <- json
             settingChangedEvent.Trigger("rememberedGroups",null)
 
+    /// Pictures chosen for groups' taskbar buttons, by what keeps a group recognisable: a named
+    /// group's id, a group made by hand's token, or the app of an automatic group.
+    member this.groupIcons
+        with get() =
+            match this.settingsJson.["groupIcons"] with
+            | :? JObject as icons -> icons.Properties() |> Seq.choose(fun p -> if p.Value.Type=JTokenType.String then Some(p.Name,p.Value.Value<string>()) else None) |> Map.ofSeq
+            | _ -> Map.empty
+        and set(icons:Map<string,string>) =
+            let json = this.settingsJson
+            let saved = JObject()
+            for KeyValue(key,path) in icons do saved.[key] <- JValue(path)
+            json.["groupIcons"] <- saved
+            this.settingsJson <- json
+            settingChangedEvent.Trigger("groupIcons",null)
+
     member x.settings
         with get() =
             if cachedSettingsRec.IsNone then 

@@ -128,6 +128,10 @@ type IProgram =
     abstract member handMadeGroups : unit -> (int * (string * string * IntPtr) list) list
     /// Forgets a group made by hand and takes its open windows apart, to be grouped as rules say.
     abstract member ungroupHandMade : int -> unit
+    /// The picture chosen for the taskbar button of the group a window is in, if any.
+    abstract member groupIcon : IntPtr -> string option
+    /// Chooses, or with None clears, the picture for the taskbar button of a window's group.
+    abstract member setGroupIcon : IntPtr * string option -> unit
     abstract member appWindows : List2<IntPtr>
     abstract member getAutoGroupingEnabled : string -> bool
     abstract member setAutoGroupingEnabled : string -> bool -> unit

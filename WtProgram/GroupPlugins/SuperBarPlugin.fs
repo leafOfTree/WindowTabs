@@ -137,6 +137,40 @@ type TaskbarBadgedIcon(icon:Icon, ?stacked:Icon list) =
 /// behind the active one prints blank, and a minimized one prints only a placeholder. Each
 /// tab's last good capture stands in for it, kept small: thumbnails are a few hundred pixels
 /// and a peek at a hidden tab may be soft.
+/// A picture the user chose for a group's taskbar button, read as an icon.
+module GroupIconFile =
+    let private pictures = set [".png";".jpg";".jpeg";".bmp";".gif"]
+    /// An icon that owns its own copy of the bitmap's handle.
+    let private fromBitmap (bitmap:Bitmap) =
+        let handle = bitmap.GetHicon()
+        try (Icon.FromHandle(handle).Clone() :?> Icon) finally WinUserApi.DestroyIcon(handle) |> ignore
+    /// An .ico, a picture (square and whole, centred), or a program's or library's icon; None when
+    /// the file is gone or unreadable.
+    let load (path:string) : Icon option =
+        try
+            if not (IO.File.Exists path) then None
+            else
+                match IO.Path.GetExtension(path).ToLowerInvariant() with
+                | ".ico" -> Some(new Icon(path,Size(64,64)))
+                | extension when pictures.Contains extension ->
+                    use source = new Bitmap(path)
+                    let side = 128
+                    use square = new Bitmap(side,side,PixelFormat.Format32bppArgb)
+                    do
+                        use g = Graphics.FromImage(square)
+                        g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
+                        let scale = float side/float (max source.Width source.Height)
+                        let width,height = max 1 (int(float source.Width*scale)),max 1 (int(float source.Height*scale))
+                        g.DrawImage(source,Rectangle((side-width)/2,(side-height)/2,width,height))
+                    Some(fromBitmap square)
+                | _ ->
+                    match AppIcons.GetFileIcon(path,64) with
+                    | null -> Some(Icon.ExtractAssociatedIcon(path))
+                    | bitmap ->
+                        use shell = bitmap
+                        Some(fromBitmap shell)
+        with _ -> None
+
 type TabCaptures() =
     let captures = Collections.Generic.Dictionary<IntPtr,Bitmap>()
     /// Tabs that printed blank while hidden; printing them again before they come to the front
@@ -677,6 +711,11 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
     let mutable taskbarButton = null
     /// Each member's program, looked up once: the icon is rebuilt on every title change.
     let apps = Collections.Generic.Dictionary<IntPtr,string>()
+    /// The picture chosen for this group's button and its file, looked up again when the group's
+    /// windows or the chosen pictures change.
+    let mutable customIcon : (string * Icon) option = None
+    let mutable customIconKnown = false
+    let mutable iconSubscription : IDisposable option = None
     /// The preview last shown as active, None while the group is not in front.
     let mutable activePreview : IntPtr option = None
     let flashingTabs = Collections.Generic.HashSet<string>()
@@ -833,11 +872,14 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
                     else this.wtGroup.previewArea
                 let top = members.head
                 let topTab = Tab(top)
+                let chosen = this.chosenIcon top
                 let tbButtonInfo = {
                     text = this.ts.tabInfo(topTab).text
                     bounds = previewBounds
-                    icon = this.ts.tabInfo(topTab).iconBig
+                    // A chosen picture stands alone: it is the point, not the apps inside.
+                    icon = chosen |> Option.defaultWith(fun () -> this.ts.tabInfo(topTab).iconBig)
                     otherIcons =
+                        if chosen.IsSome then [] else
                         let topApp = this.appOf top
                         members.list |> List.filter(fun hwnd -> this.appOf hwnd <> topApp)
                         |> List.distinctBy this.appOf |> List.truncate TaskbarBadgedIcon.maxStacked
@@ -921,10 +963,25 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
     member this.onForegroundChanged() =
         this.updateTaskbar(refreshDesktop=placementDesktop.IsNone)
 
+    /// The picture chosen for this group's button, if any: asked of the program once for each
+    /// change of the group's windows or of the chosen pictures, and read from its file then.
+    member private this.chosenIcon(member':IntPtr) =
+        if not customIconKnown then
+            customIconKnown <- true
+            let path = try Services.program.groupIcon member' with _ -> None
+            match path,customIcon with
+            | Some path,Some(file,_) when file=path -> ()
+            | _ ->
+                customIcon |> Option.iter(fun (_,icon) -> icon.Dispose())
+                customIcon <- path |> Option.bind(fun path -> GroupIconFile.load path |> Option.map(fun icon -> path,icon))
+        customIcon |> Option.map snd
+
     member this.onAdded(hwnd) =
+        customIconKnown <- false
         this.updateTaskbar(refreshDesktop=true)
 
     member this.onRemoved(hwnd) =
+        customIconKnown <- false
         captures.forget hwnd
         apps.Remove hwnd |> ignore
         flashingTabs.Remove(TaskBarButton.key hwnd) |> ignore
@@ -1038,6 +1095,8 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
             disposed <- true
             desktopSubscription |> Option.iter(fun subscription -> subscription.Dispose())
             desktopSubscription <- None
+            iconSubscription |> Option.iter(fun subscription -> subscription.Dispose())
+            iconSubscription <- None
             this.wtGroup.windows.items.iter(fun hwnd ->
                 if WinUserApi.IsWindow hwnd then this.showInTaskbar(hwnd,true))
             captureTimer.Dispose()
@@ -1047,6 +1106,8 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
             if taskbarButton <> null then
                 (taskbarButton :> IDisposable).Dispose()
                 taskbarButton <- null
+            customIcon |> Option.iter(fun (_,icon) -> icon.Dispose())
+            customIcon <- None
 
     interface IPlugin with
         member x.init() =
@@ -1055,6 +1116,11 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
             desktopSubscription <- Some(VirtualDesktop.groupingReady.Subscribe(fun hwnd ->
                 group.invokeAsync(fun () ->
                     if not disposed && group.windows.contains hwnd then this.updateTaskbar(refreshDesktop=true))))
+            iconSubscription <- Some(Services.settings.notifyValue "groupIcons" (fun _ ->
+                group.invokeAsync(fun () ->
+                    if not disposed then
+                        customIconKnown <- false
+                        this.updateTaskbar())))
             this.wtGroup.foregroundChanged.Add this.onForegroundChanged
             this.wtGroup.tabInfoChanged.Add(fun _ -> this.updateTaskbar())
             this.wtGroup.added.Add this.onAdded
