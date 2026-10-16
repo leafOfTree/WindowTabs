@@ -450,9 +450,11 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             g.DrawPath(pen,pencil)
             g.DrawLine(pen,9.2f,4.6f,11.4f,6.8f)
         | TabsGlyph ->
-            use body = SettingsShapes.rounded (RectangleF(3.0f,3.5f,10.0f,9.0f)) 1.5f
-            g.DrawPath(pen,body)
-            g.DrawLine(pen,8.0f,3.5f,8.0f,12.5f)
+            // Fuller and heavier than the other glyphs: it stands alone where a name would be.
+            use heavy = new Pen(color,1.6f)
+            use body = SettingsShapes.rounded (RectangleF(1.5f,2.0f,13.0f,12.0f)) 2.0f
+            g.DrawPath(heavy,body)
+            g.DrawLine(heavy,8.0f,2.0f,8.0f,14.0f)
         | UngroupGlyph ->
             use left = SettingsShapes.rounded (RectangleF(1.5f,4.0f,5.0f,8.0f)) 1.5f
             use right = SettingsShapes.rounded (RectangleF(9.5f,4.0f,5.0f,8.0f)) 1.5f
