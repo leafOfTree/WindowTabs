@@ -176,7 +176,7 @@ type AppGroupingRulesView() as this =
     let help = new SettingsHelpButton(tr Strings.AppRules.groupRulesHelp,AccessibleName=tr Strings.SettingsWindow.howToUse,
                                       Font=SettingsUi.bodyFont(),Name="grouping-help")
     let addGroup = SettingsUi.button (tr Strings.AppRules.addGroup)
-    let tree = new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn);TreeListColumn(tr Strings.AppRules.enabled,AppGroupingRulesView.CheckWidth(),CheckColumn);TreeListColumn("",58,ActionColumn)],RowHeight=36)
+    let tree = new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn);TreeListColumn("",28,CheckColumn,Tip=tr Strings.AppRules.enabled);TreeListColumn("",58,ActionColumn)],RowHeight=36)
     let card = new Panel(Tag="surface",Padding=Padding(Dpi.scale 6))
     let name = new TextBox(Name="group-name")
     let nameInput = new SettingsTextInput(name)
@@ -311,8 +311,8 @@ type AppGroupingRulesView() as this =
         tree.RowActions <- [EditGlyph;DeleteGlyph]
         tree.ExpandOnDoubleClick <- false
         tree.SoftHighlight <- true
-        tree.GlyphTips <- Map.ofList [EditGlyph,tr Strings.AppRules.renameGroup;DeleteGlyph,tr Strings.AppRules.deleteGroup
-                                      UngroupGlyph,tr Strings.AppRules.ungroup]
+        // Rename and delete read at a glance; ungroup needs saying.
+        tree.GlyphTips <- Map.ofList [UngroupGlyph,tr Strings.AppRules.ungroup]
         tree.ChipRemoveTip <- tr Strings.AppRules.removeFromGroup
         tree.ChipAddTip <- tr Strings.AppRules.chooseApplication
         tree.SelectionChanged.Add(fun _ ->
@@ -438,10 +438,6 @@ type AppGroupingRulesView() as this =
             if this.Height<>height then this.Height <- height
     member _.Changed = changed.Publish
     member _.AddMenu = addMenu
-    /// Just wide enough for the Enabled heading and its boxes, in logical pixels.
-    static member CheckWidth() =
-        let text = TextRenderer.MeasureText(tr Strings.AppRules.enabled,SettingsUi.bodyFont()).Width
-        max 44 (int(float text/Dpi.currentFactor())+16)
     member _.Reload() =
         groups <- Services.settings.getValue("appGroupingTargets") :?> AppGroupingTarget list
         rules <- Services.settings.getValue("appGroupingRules") :?> AppGroupingRule list

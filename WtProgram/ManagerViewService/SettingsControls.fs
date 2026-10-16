@@ -234,6 +234,36 @@ type SettingsHover(target:Control, text:string, ?enabled:bool) =
             quiet <- value
             if value then popup |> Option.iter(fun window -> if window.Visible then window.Hide())
 
+/// Hover help for parts of a control that draws its own buttons, such as a list's row buttons:
+/// the same themed popup as SettingsHover, pointing at the part under the pointer.
+type SettingsPartHover(target:Control) =
+    let popups = Collections.Generic.Dictionary<string,SettingsHelpPopup>()
+    let mutable current : SettingsHelpPopup option = None
+    let hide() =
+        current |> Option.iter(fun window -> if not window.IsDisposed then window.Hide())
+        current <- None
+    do
+        target.MouseLeave.Add(fun _ -> hide())
+        target.VisibleChanged.Add(fun _ -> if not target.Visible then hide())
+        ThemeBinding.watch target (fun () -> hide(); (for window in popups.Values do window.Dispose()); popups.Clear())
+        target.Disposed.Add(fun _ -> for window in popups.Values do window.Dispose())
+    /// Shows the text below a part, given in the target's coordinates; empty text hides it.
+    member _.Show(text:string, part:Rectangle) =
+        if String.IsNullOrEmpty text || isNull (target.FindForm()) then hide()
+        else
+            let window =
+                match popups.TryGetValue text with
+                | true,window -> window
+                | _ ->
+                    let window = new SettingsHelpPopup(text,target.Font)
+                    popups.[text] <- window
+                    window
+            if not (current |> Option.exists(fun shown -> obj.ReferenceEquals(shown,window))) then hide()
+            window.place (target.RectangleToScreen(part)) (Screen.FromControl(target).WorkingArea)
+            if not window.Visible then window.Show(target.FindForm())
+            current <- Some window
+    member _.Hide() = hide()
+
 /// Where a link goes, shown by a mark after its text: an arrow for the web, a folder for a file
 /// on this PC.
 type SettingsLinkKind =

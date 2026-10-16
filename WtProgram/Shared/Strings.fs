@@ -392,8 +392,6 @@ module Strings =
         let application = { en="Application"; zh="应用"; ja="アプリ" }
         let chooseApplication = { en="Add an app"; zh="添加应用"; ja="アプリを追加" }
         /// Hover tips on a group's buttons.
-        let renameGroup = { en="Rename"; zh="重命名"; ja="名前を変更" }
-        let deleteGroup = { en="Delete group"; zh="删除分组"; ja="グループを削除" }
         let ungroup = { en="Ungroup"; zh="解除分组"; ja="グループを解除" }
         let removeFromGroup = { en="Remove from group"; zh="从分组中移除"; ja="グループから外す" }
         let browseApplication = { en="Browse…"; zh="浏览…"; ja="参照…" }

@@ -808,7 +808,8 @@ let main() =
             yield control
             for child in control.Controls do yield! descendants child }
         let button (control:Control) text = descendants control |> Seq.pick(function :? Button as button when button.Text=text -> Some button | _ -> None)
-        let opened = Application.OpenForms.Count
+        let shownForms() = Application.OpenForms |> Seq.cast<Form> |> Seq.filter(fun form -> form.Visible) |> Seq.length
+        let opened = shownForms()
         let groupView = descendants view.control |> Seq.pick(function :? AppGroupingRulesView as page -> Some page | _ -> None)
         assertTrue groupView.Visible "Application mappings were hidden behind a second page"
         // Hovering an (i) over a settings window that is not active keeps its popup open.
@@ -860,8 +861,12 @@ let main() =
                 |> Option.map(fun bar -> bar.Width) |> Option.defaultValue 0
             let point = Point(tree.ClientSize.Width-scrollWidth-Dpi.scale 58+action*Dpi.scale 26+Dpi.scale 12,rowTop+Dpi.scale (tree.RowHeight/2))
             let mouse = new MouseEventArgs(MouseButtons.Left,1,point.X,point.Y,0)
-            for method in ["OnMouseMove";"OnMouseDown"] do
-                typeof<SettingsTreeList>.GetMethod(method,BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(tree,[|box mouse|]) |> ignore
+            let send method = typeof<SettingsTreeList>.GetMethod(method,BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(tree,[|box mouse|]) |> ignore
+            send "OnMouseMove"
+            // What the button said on hover, before the press puts the tip away.
+            let tip = typeof<SettingsTreeList>.GetField("tooltipText",BindingFlags.Instance ||| BindingFlags.NonPublic).GetValue(tree) :?> string
+            send "OnMouseDown"
+            tip
         /// Presses the part of a row's chips that a hit test finds, wherever the list drew it.
         let pressChipPart hitTest (item:TreeListItem) =
             tree.EnsureVisible(item)
@@ -912,7 +917,7 @@ let main() =
                    "The app list offered an app the group has already, or opening it changed the group"
         menu.DropDown |> Option.iter(fun window -> window.Close())
         Application.DoEvents()
-        assertTrue (Application.OpenForms.Count=opened) "Editing group applications opened another window"
+        assertTrue (shownForms()=opened) "Editing group applications opened another window"
         let appList = descendants view.control |> Seq.pick(function :? SettingsTreeList as list -> Some list | _ -> None)
         let clock = Diagnostics.Stopwatch.StartNew()
         let mapped() = appList.Roots |> Seq.tryFind(fun row -> match row.Tag with :? string as path -> path=selectedPath | _ -> false)
@@ -932,6 +937,17 @@ let main() =
         tree.SelectedItem <- tree.Roots.[1]
         typeof<SettingsTreeList>.GetMethod("toggleCheck",BindingFlags.Instance ||| BindingFlags.NonPublic).Invoke(tree,[|box tree.SelectedItem;box 1|]) |> ignore
         assertTrue (not(saved().Head.enabled)) "The group's checkbox did not save its apps as disabled"
+        // The box has no column heading of its own: it sits by the buttons and names itself on hover.
+        do
+            let checkAt = typeof<SettingsTreeList>.GetMethod("checkAt",BindingFlags.Instance ||| BindingFlags.NonPublic)
+            let point =
+                seq { for y in 0..2..tree.Height-1 do for x in 0..2..tree.Width-1 -> Point(x,y) }
+                |> Seq.find(fun point -> not(isNull (checkAt.Invoke(tree,[|box 1;box tree.Roots.[1];box point|]))))
+            let mouse = new MouseEventArgs(MouseButtons.None,0,point.X,point.Y,0)
+            typeof<SettingsTreeList>.GetMethod("OnMouseMove",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(tree,[|box mouse|]) |> ignore
+            let tip = typeof<SettingsTreeList>.GetField("tooltipText",BindingFlags.Instance ||| BindingFlags.NonPublic).GetValue(tree) :?> string
+            assertTrue (tip=tr Strings.AppRules.enabled && point.X>tree.ClientSize.Width-Dpi.scale 100)
+                       (sprintf "The Enabled box is not beside the buttons or has no hover tip: %A at %A" tip point)
         clock.Restart()
         while (mapped() |> Option.forall(fun row -> not(row.checkEnabled 2))) && clock.ElapsedMilliseconds<5000L do Application.DoEvents(); Threading.Thread.Sleep(20)
         assertTrue (mapped() |> Option.exists(fun row -> row.checkEnabled 2 && row.check 2=Some false)) "Disabling a group application did not unlock Group by app"
@@ -983,9 +999,8 @@ let main() =
         assertTrue (saved().IsEmpty && targets().Length=1) "Deleting a group left its application mappings behind"
         // Taking a group made by hand apart forgets it, through the program, and drops its row.
         let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Text=tr (Strings.AppRules.handMadeGroup 1))
-        clickAction handMadeRow 1
         // The button said what it does while the pointer was on it.
-        let tip = typeof<SettingsTreeList>.GetField("tooltipText",BindingFlags.Instance ||| BindingFlags.NonPublic).GetValue(tree) :?> string
+        let tip = clickAction handMadeRow 1
         assertTrue (tip=tr Strings.AppRules.ungroup) (sprintf "The ungroup button has no hover tip: %A" tip)
         assertTrue (List.ofSeq ungrouped=[4711] && tree.Roots |> Seq.forall(fun row -> row.Text<>tr (Strings.AppRules.handMadeGroup 1)))
                    "Ungrouping a group made by hand did not forget it or kept its row"

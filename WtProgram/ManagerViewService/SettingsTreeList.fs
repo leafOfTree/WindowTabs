@@ -31,6 +31,8 @@ type TreeListColumn(header:string, width:int, kind:TreeListColumnKind) =
     member val Width = width with get,set
     member _.Kind = kind
     member val RightAligned = false with get,set
+    /// Shown on hover over the column's boxes, for a column without a heading.
+    member val Tip = "" with get,set
 
 /// A small labelled box after a row's name, such as an app in a group; a removable one has an x.
 type TreeListChip = { Text: string; Icon: Image; Removable: bool }
@@ -78,7 +80,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     inherit Control()
     let roots = ResizeArray<TreeListItem>()
     let scroll = new SettingsScrollBar(TabStop=false)
-    let tooltip = new ToolTip(ShowAlways=true)
+    /// Built once the list exists, as it listens to the list.
+    let mutable tooltip = Unchecked.defaultof<SettingsPartHover>
     let selectionChanged = Event<EventArgs>()
     let itemActivated = Event<TreeListItem>()
     let checkChanged = Event<TreeListItem * int * bool>()
@@ -114,7 +117,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         this.Font <- SettingsUi.bodyFont()
         this.Controls.Add(scroll)
         scroll.changed.Add(fun value -> smooth.stop(); offset <- value; this.updateEditorBounds(); this.Invalidate())
-        this.Disposed.Add(fun _ -> tooltip.Dispose(); (smooth :> IDisposable).Dispose())
+        tooltip <- SettingsPartHover(this)
+        this.Disposed.Add(fun _ -> (smooth :> IDisposable).Dispose())
 
     /// Logical pixels.
     member val RowHeight = 30 with get,set
@@ -314,14 +318,14 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         let x = if not (isNull item.Icon) || item.Glyph<>NoGlyph then left+size+Dpi.scale 8 else left
         iconBox,Rectangle(x,top,max 1 (cell.Right-Dpi.scale 8-x),this.rowHeight)
 
-    /// Where a row's name ends and its chips go: the name keeps at most a third of the cell when
-    /// the row has chips. The chips, each with its x box when removable, then the "+" box; they
+    /// Where a row's name ends and its chips go: the name keeps at most a quarter of the cell, and
+    /// no more than a short name needs, when the row has chips. The chips, each with its x box when removable, then the "+" box; they
     /// wrap onto more lines, lined up under the first chip, and the last value is how many lines.
     member private this.chipLayout(item:TreeListItem, level:int, top:int) =
         let _,bounds = this.nameLayout(item,level,top)
         let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine
         let measure (text:string) = TextRenderer.MeasureText(text,this.Font,Size(Int32.MaxValue,this.rowHeight),flags).Width
-        let nameWidth = min (measure item.Text) (bounds.Width/3)
+        let nameWidth = min (measure item.Text) (min (bounds.Width/4) (Dpi.scale 130))
         let height = this.chipHeight
         let firstY = top+(this.rowHeight-height)/2
         let pad,gap,icon,close = Dpi.scale 8,Dpi.scale 6,Dpi.scale 16,Dpi.scale 14
@@ -494,6 +498,9 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
 
     override this.OnMouseDown(e) =
         base.OnMouseDown(e)
+        // A press acts: the tip has done its job, and must not cover what the press opens.
+        tooltipText <- ""
+        tooltip.Hide()
         this.Focus() |> ignore
         match this.rowAt e.Y, this.actionAt e.Location with
         | _,_ when e.Button=MouseButtons.Left && (this.chipCloseAt e.Location).IsSome ->
@@ -552,20 +559,30 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         if not (Object.ReferenceEquals(add,hoveredChipAdd)) then
             hoveredChipAdd <- add
             this.Invalidate()
-        // Say what a button does; show the full text when the tree column truncates it.
-        let text =
+        // Say what a button does, in the settings' own popup pointing at it; show the full text
+        // when the tree column truncates it.
+        let around = Rectangle(e.X-Dpi.scale 8,e.Y-Dpi.scale 8,Dpi.scale 16,Dpi.scale 16)
+        let text,part =
             match this.actionAt e.Location,this.rowAt e.Y with
-            | Some(item,action),_ -> this.GlyphTips.TryFind((this.actions item).[action]) |> Option.defaultValue ""
-            | None,_ when chip.IsSome -> this.ChipRemoveTip
-            | None,_ when not(isNull add) -> this.ChipAddTip
-            | None,Some(_,(item,_)) when not item.Chips.IsEmpty -> ""
+            | Some(item,action),Some(index,_) ->
+                this.GlyphTips.TryFind((this.actions item).[action]) |> Option.defaultValue "",
+                (this.actionButtons(item,this.rowTop index)).[action]
+            | None,_ when chip.IsSome ->
+                let box = this.chipsAt e.Location |> Option.bind(fun (_,laid,_) ->
+                              laid |> List.tryPick(fun (index,_,close) -> if index=snd chip.Value then close else None))
+                this.ChipRemoveTip,Option.defaultValue around box
+            | None,_ when not(isNull add) -> this.ChipAddTip,Option.defaultValue around (this.ChipAddBounds add)
+            | None,Some(index,(item,_)) when (this.checkAt(index,item,e.Location)).IsSome ->
+                let column = (this.checkAt(index,item,e.Location)).Value
+                columns.[column].Tip,this.checkBounds(this.columnBounds.[column],this.rowTop index)
+            | None,Some(_,(item,_)) when not item.Chips.IsEmpty -> "",around
             | None,Some(index,(item,level)) when e.X < (this.columnBounds).[0].Right ->
                 let _,bounds = this.nameLayout(item,level,this.rowTop index)
-                if TextRenderer.MeasureText(item.Text,this.Font).Width > bounds.Width then item.Text else ""
-            | _ -> ""
+                (if TextRenderer.MeasureText(item.Text,this.Font).Width > bounds.Width then item.Text else ""),bounds
+            | _ -> "",around
         if text<>tooltipText then
             tooltipText <- text
-            if text="" then tooltip.Hide(this) else tooltip.Show(text,this,e.X+Dpi.scale 12,e.Y+Dpi.scale 18,4000)
+            tooltip.Show(text,part)
 
     override this.OnMouseLeave(e) =
         base.OnMouseLeave(e)
@@ -574,7 +591,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         hoveredChip <- None
         hoveredChipAdd <- null
         tooltipText <- ""
-        tooltip.Hide(this)
+        tooltip.Hide()
         this.Invalidate()
 
     override this.IsInputKey(key) =
