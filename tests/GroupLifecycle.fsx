@@ -643,6 +643,17 @@ let main() =
             check (minimizedBar.isMinimized && not (SystemInformation.VirtualScreen.IntersectsWith(minimizedBar.bounds.Rectangle))) (sprintf "A minimized window of a combined group shows above the taskbar: %A" minimizedBar.bounds)
             // Outside the display, so an owned window leaves no miniature title bar behind.
             check (minimizedBar.bounds.y >= SystemInformation.VirtualScreen.Bottom) (sprintf "A minimized window of a combined group was parked away from where it minimizes to: %A" minimizedBar.bounds)
+            // A minimized tab's thumbnail is its app's icon at a third of the window's shorter side:
+            // drawn at 32 pixels in a window-sized image, it shrank to a dot in the taskbar.
+            do
+                use stand = (onGroup combined (fun group -> group.ts.tabInfo(Tab d).preview())).bitmap
+                let side = max 32 (min 256 (min stand.Width stand.Height / 3))
+                let background = stand.GetPixel(2,2)
+                let row = stand.Height/2
+                let drawn = [0..stand.Width-1] |> List.filter(fun x -> stand.GetPixel(x,row)<>background)
+                let span = if drawn.IsEmpty then 0 else List.last drawn - List.head drawn + 1
+                check (side<64 || span>=side/2)
+                      (sprintf "A minimized tab's thumbnail icon spans %d of %d pixels, not about %d" span stand.Width side)
             WinUserApi.ShowWindow(d, ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
             onGroup combined (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
             pumpUntil "Taskbar proxies outlived their combined taskbar button" (fun () -> not(TaskbarProxies.contains proxy.Head))
