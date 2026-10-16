@@ -208,7 +208,9 @@ type SettingsShortcutInput() as this =
     let clearMessage() = messageTimer.Stop(); message <- None
     let showMessage error text = message <- Some(text,error); messageTimer.Stop(); messageTimer.Start(); this.Invalidate()
     let stopRecording() = if recording then recording <- false; focusCue <- false; this.Invalidate()
-    let canClear() = shortcut<>0 && not recording && message.IsNone
+    /// The × shows while the pointer is on the box, or it has the keyboard focus, so it takes no
+    /// room the rest of the time.
+    let canClear() = shortcut<>0 && not recording && message.IsNone && (hovering || this.Focused)
     let commit next =
         recording <- false
         focusCue <- false
@@ -217,27 +219,19 @@ type SettingsShortcutInput() as this =
             changed.Trigger(EventArgs.Empty)
         elif next<>0 then showMessage false (tr Strings.Shortcuts.alreadySet)
         this.Invalidate()
-    /// Key caps in a smaller face than the box's text, as keys are labelled, so three keys and
-    /// the clear button fit the editors' width.
-    let mutable capFont : Font = null
-    let capFace() =
-        if isNull capFont || capFont.FontFamily.Name<>this.Font.FontFamily.Name || capFont.Size<>this.Font.Size*0.82f then
-            if not (isNull capFont) then capFont.Dispose()
-            capFont <- new Font(this.Font.FontFamily,this.Font.Size*0.82f,this.Font.Style,this.Font.Unit)
-        capFont
-    let capHeight() = this.Height-Dpi.scale 16
-    let capWidth (label:string) = max (capHeight()) (TextRenderer.MeasureText(label,capFace(),Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 9)
-    let capsEnd() = Dpi.scale 8+(SettingsShortcut.parts shortcut |> List.sumBy(fun label -> capWidth label+Dpi.scale 3))
-    /// Right after the key caps, so the keys and their × read as one; the rest of the box is
-    /// left blank, as an input's is.
+    /// Key caps padded tightly, so three keys and the clear button fit the editors' width.
+    let capHeight() = this.Height-Dpi.scale 14
+    let capWidth (label:string) = max (capHeight()) (TextRenderer.MeasureText(label,this.Font,Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 8)
+    let capsEnd() = Dpi.scale 8+(SettingsShortcut.parts shortcut |> List.sumBy(fun label -> capWidth label+Dpi.scale 2))
+    /// At the right edge, shown only while the pointer is on the box or it has the focus.
     let clearBounds() =
-        let size = Dpi.scale 22
-        Rectangle(min (this.Width-size-Dpi.scale 4) (capsEnd()+Dpi.scale 1),(this.Height-size)/2,size,size)
+        let size = Dpi.scale 18
+        Rectangle(this.Width-size-Dpi.scale 3,(this.Height-size)/2,size,size)
     /// As wide as its key caps and clear button, or its prompt, need, and no narrower than the
     /// other editors, so the rows line up.
     let fitWidth() =
         let measure (text:string) = TextRenderer.MeasureText(text,this.Font,Size.Empty,TextFormatFlags.NoPadding).Width
-        let clear = if shortcut<>0 then Dpi.scale 1+Dpi.scale 22+Dpi.scale 4 else Dpi.scale 8
+        let clear = if shortcut<>0 then Dpi.scale 18+Dpi.scale 3 else Dpi.scale 8
         let prompts = [Strings.Shortcuts.pressShortcut;Strings.Shortcuts.notSet] |> List.map(fun text -> Dpi.scale 12+measure (tr text)+Dpi.scale 12)
         let wanted = List.max ((capsEnd()+clear)::prompts)
         let width = max (Dpi.scale SettingsShapes.editorWidth) wanted
@@ -249,9 +243,7 @@ type SettingsShortcutInput() as this =
         this.SetStyle(ControlStyles.Selectable ||| ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer,true)
         this.AccessibleRole <- AccessibleRole.HotkeyField
         messageTimer.Tick.Add(fun _ -> clearMessage(); this.Invalidate())
-        this.Disposed.Add(fun _ ->
-            messageTimer.Dispose()
-            if not (isNull capFont) then capFont.Dispose())
+        this.Disposed.Add(fun _ -> messageTimer.Dispose())
     member _.Shortcut
         with get() = shortcut
         and set(value) =
@@ -328,8 +320,8 @@ type SettingsShortcutInput() as this =
                 use border = new Pen(p.border)
                 g.FillPath(fill,shape)
                 g.DrawPath(border,shape)
-                TextRenderer.DrawText(g,label,capFace(),bounds,p.text,TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter)
-                x+bounds.Width+Dpi.scale 3) left
+                TextRenderer.DrawText(g,label,this.Font,bounds,p.text,TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter)
+                x+bounds.Width+Dpi.scale 2) left
         match message with
         | Some(text,isError) -> TextRenderer.DrawText(g,text,this.Font,textArea (Dpi.scale 12),(if isError then error else p.muted),flags)
         | None when recording ->

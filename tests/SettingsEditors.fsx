@@ -399,7 +399,7 @@ let main() =
         do
             let rec all (control:Control) = seq { yield control; for child in control.Controls do yield! all child }
             let boxes = all view.control |> Seq.choose(function :? SettingsShortcutInput as box -> Some box | _ -> None) |> List.ofSeq
-            // Small key caps keep three keys and the clear button within that width.
+            // Tightly padded key caps keep three keys and the clear button within that width.
             assertTrue (not boxes.IsEmpty && boxes |> List.forall(fun box -> box.Width=Dpi.scale SettingsShapes.editorWidth))
                        (sprintf "Shortcut boxes are not editor width: %A" (boxes |> List.map(fun box -> box.Width)))
             use image = new Bitmap(form.Width,form.Height)
