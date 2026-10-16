@@ -420,8 +420,9 @@ type TabStripDecorator(group:WindowGroup) as this =
             })
                  
         let closeTabItem = 
+            let shortcut = SettingsShortcut.text (Services.program.getHotKey "closeTab")
             CmiRegular({
-                text = tr Strings.TabMenu.close
+                text = tr Strings.TabMenu.close + (if shortcut = "" then "" else "\t" + shortcut)
                 image = None
                 click = fun() -> this.onCloseWindow hwnd
                 flags = List2()

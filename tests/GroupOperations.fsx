@@ -168,7 +168,7 @@ let main() =
             member _.setAutoGroupingEnabled _ _ = ()
             member _.tabAppearanceInfo = ThemeService.currentAppearance()
             member _.setHotKey _ _ = true
-            member _.getHotKey key = if key="newTab" then 1614 else 0
+            member _.getHotKey key = if key="newTab" then 1614 elif key="closeTab" then SettingsCatalog.shortcutDefault "closeTab" else 0
             member _.newTab hwnd = newTabRequests.Enqueue(hwnd)
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
@@ -566,6 +566,8 @@ let main() =
                 let closeAllOf hwnd = Localization.tr (Strings.TabMenu.closeAllOf (OS().windowFromHwnd(hwnd).pid.exeName))
                 let alone = menuTexts handles.Head
                 check (List.head alone = Localization.tr Strings.TabMenu.newTab + "\tCtrl+Alt+N") "The tab menu does not start with New tab and its shortcut"
+                // Closing the tab has a shortcut of its own, Ctrl+Alt+W, shown beside Close.
+                check (List.contains (Localization.tr Strings.TabMenu.close + "\tCtrl+Alt+W") alone) "Close does not show its shortcut in the tab menu"
                 (List.head (menu handles.[1])).click()
                 check (newTabRequests.ToArray() = [|handles.[1]|]) "New tab did not start the program of the tab it was opened from"
                 // Renaming edits the name in place: a field in the tab's own colours and font, inside the tab.

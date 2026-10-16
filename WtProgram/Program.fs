@@ -92,6 +92,10 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         ("searchTabs", fun () -> this.toggleTabSearch())
         ("numberLeader", fun () -> if settingsManager.settings.enableNumberLeader then NumberLeaderRequest.toggle.Trigger())
         ("newTab", fun () -> this.openNewTab(WinUserApi.GetForegroundWindow()))
+        // As the tab menu's Close: the window of the tab in front, and only a tab's.
+        ("closeTab", fun () ->
+            let hwnd = WinUserApi.GetForegroundWindow()
+            if this.isInGroup hwnd then os.windowFromHwnd(hwnd).close())
         ]))
         
     let hotKeyManager = lifetime.Own(new HotKeyManager())

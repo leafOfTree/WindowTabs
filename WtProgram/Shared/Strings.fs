@@ -176,6 +176,11 @@ module Strings =
                                      zh="再次启动当前标签的应用。"
                                      ja="現在のタブのアプリをもう一度起動します。" }
                        keywords={ en="new window"; zh="新建窗口"; ja="新しいウィンドウ" } }
+        let closeTab = { caption={ en="Close tab"; zh="关闭标签"; ja="タブを閉じる" }
+                         description={ en="Closes the window of the tab in front."
+                                       zh="关闭当前标签的窗口。"
+                                       ja="前面のタブのウィンドウを閉じます。" }
+                         keywords={ en="close window"; zh="关闭窗口"; ja="ウィンドウを閉じる" } }
         let switchTabsByNumber = { caption={ en="Switch tabs by number"; zh="按数字切换标签"; ja="番号でタブを切り替え" }
                                    description={ en="Hold a modifier key and press 1–9."; zh="按住修饰键再按 1–9。"; ja="修飾キーを押しながら 1～9 を押します。" }
                                    keywords={ en="digit"; zh="数字"; ja="数字" } }
