@@ -23,11 +23,7 @@ type ProgramView() as this=
         new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn)
                               TreeListColumn(tr Strings.AppRules.tabs,130,CheckColumn)
                               TreeListColumn(tr Strings.AppRules.autoGroup,130,CheckColumn)])
-    /// Apps with a rule that are not running sit under one row, folded away unless opened:
-    /// the running apps are the ones looked for.
-    let mutable historyExpanded = false
-    let isApp (item:TreeListItem) = item.Tag :? string
-    let apps() = list.Roots |> Seq.collect(fun item -> if isApp item then Seq.singleton item else item.Children :> seq<_>) |> List.ofSeq
+    let apps() = list.Roots |> List.ofSeq
     let path (item:TreeListItem) = item.Tag :?> string
     /// The default only applies when an application is first discovered.
     let footer =
@@ -59,19 +55,7 @@ type ProgramView() as this=
             ImgHelper.disposeItems list.Roots
             list.Roots.Clear()
             for item in items do item.Expanded <- expanded.Contains(AppIdentity.key (path item))
-            // The scan marks the first app that is not running; with none running, all show.
-            let running,history =
-                match items |> List.tryFindIndex(fun item -> item.SeparatorAbove) with
-                | Some index -> List.splitAt index items
-                | None -> items,[]
-            list.Roots.AddRange(running)
-            if not history.IsEmpty then
-                let folder = TreeListItem(tr (Strings.AppRules.notRunning history.Length),Checks=[|None;None;None|],
-                                          SeparatorAbove=true,Expanded=historyExpanded)
-                for item in history do
-                    item.SeparatorAbove <- false
-                    folder.Add(item) |> ignore
-                list.Roots.Add(folder)
+            list.Roots.AddRange(items)
             list.Rebuild()
             panel.Status <- ""),
         ImgHelper.disposeItems,
@@ -79,7 +63,6 @@ type ProgramView() as this=
 
     do
         groupingRules.Changed.Add(fun _ -> this.populateNodes())
-        list.ExpandedChanged.Add(fun item -> if not(isApp item) && isNull item.Parent then historyExpanded <- item.Expanded)
         list.CheckChanged.Add(fun (item,column,value) ->
             let changed = [item] |> List.filter(fun app -> app.checkEnabled column)
             if column=ProgramItems.tabsColumn then
@@ -125,17 +108,14 @@ type ProgramView() as this=
     member private this.populateNodes() =
         // Only the first scan says so: later ones replace the list in place.
         if list.Roots.Count=0 then panel.Status <- tr Strings.AppRules.scanning
-        // Apps with a rule are listed even when they are not running, so they can be changed.
-        let ruled = SettingsCatalog.appRulePathKeys |> List.collect(fun key -> (Services.settings.getValue(key).cast<Set2<string>>()).items.list)
-        let ruled = ruled @ ((Services.settings.getValue("appTabColors") :?> Map<string,string>) |> Map.toList |> List.map fst)
+        // Only running apps: an app is set while it is open, and a saved rule for one that is not
+        // (an installer run once, say) still applies when it runs again.
         let customRules = Services.settings.getValue("appGroupingRules") :?> AppGroupingRule list
-        let ruled = ruled @ (customRules |> List.map(fun rule -> rule.processPath))
         scanner.Request(fun cancellation ->
             let items = ResizeArray<TreeListItem>()
             try
                 let os = OS()
                 let procs = Collections.Generic.Dictionary<string,TreeListItem>(StringComparer.OrdinalIgnoreCase)
-                let running = Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 for window in os.windowsInZorder.toArray do
                     cancellation.ThrowIfCancellationRequested()
                     try
@@ -151,29 +131,17 @@ type ProgramView() as this=
                                         procs.Add(AppIdentity.key path,item)
                                         items.Add(item)
                                         item
-                                running.Add(AppIdentity.key path) |> ignore
                                 cancellation.ThrowIfCancellationRequested()
                                 if window.isWindow then exe.Add(ProgramItems.window window) |> ignore
                     with
                     | :? OperationCanceledException -> reraise()
                     | _ -> () // A window/process can disappear while scanning.
-                // An app that has since been uninstalled is left out.
-                for path in ruled do
-                    cancellation.ThrowIfCancellationRequested()
-                    if not (String.IsNullOrEmpty path) && not (procs.ContainsKey(AppIdentity.key path)) && File.Exists path then
-                        let item = ProgramItems.exe path None
-                        procs.Add(AppIdentity.key path,item)
-                        items.Add(item)
                 cancellation.ThrowIfCancellationRequested()
                 // An app in a group across apps is set there: its tabs are on and the group decides
                 // where its windows go, so a row here could only contradict it.
                 let grouped,items = items |> List.ofSeq |> List.partition(fun item -> AppGroupingRules.hasEnabled customRules (item.Tag :?> string))
                 ImgHelper.disposeItems grouped
-                let ordered = items |> Seq.sortBy(fun item -> (if running.Contains(AppIdentity.key (item.Tag :?> string)) then 0 else 1),item.Text.ToUpperInvariant()) |> Seq.toList
-                if running.Count>0 then
-                    ordered |> List.tryFind(fun item -> not(running.Contains(AppIdentity.key (item.Tag :?> string))))
-                            |> Option.iter(fun item -> item.SeparatorAbove <- true)
-                ordered
+                items |> List.sortBy(fun item -> item.Text.ToUpperInvariant())
             with error ->
                 ImgHelper.disposeItems items
                 raise error)

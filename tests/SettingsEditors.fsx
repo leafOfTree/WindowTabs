@@ -690,7 +690,7 @@ let main() =
     assertTrue (not(filter.getIsTabbingEnabledForProcess "seen-default-off.exe") && filter.getIsTabbingEnabledForProcess "next-new.exe")
                "Turning on the new-app default changed a previously discovered disabled app"
     settingValues.["enableTabbingByDefault"] <- box false
-    // The App rules page lists apps with a rule even when they are not running, under a row for all of them.
+    // The App rules page lists the running apps, one row each.
     do
         let installed = [Diagnostics.Process.GetCurrentProcess().MainModule.FileName;Path.Combine(__SOURCE_DIRECTORY__,"Debug","WindowTabs.exe")]
         let aliasFolder = Path.Combine(__SOURCE_DIRECTORY__,"Debug","app-rule-alias")
@@ -726,28 +726,22 @@ let main() =
         let list = findList view.control |> Option.get
         let clock = Diagnostics.Stopwatch.StartNew()
         // Showing the page and activating its window each rescan; wait for the list to settle.
-        while (list.Roots.Count<2 || clock.ElapsedMilliseconds<1500L) && clock.ElapsedMilliseconds<10000L do
+        while (list.Roots.Count<1 || clock.ElapsedMilliseconds<1500L) && clock.ElapsedMilliseconds<10000L do
             Application.DoEvents()
             Threading.Thread.Sleep(20)
         let status = view.control.Controls |> Seq.cast<Control> |> Seq.choose(function :? Label as l -> Some l.Text | _ -> None) |> String.concat " | "
-        assertTrue (list.Roots.Count>=2) ("The App rules page did not list its apps: "+status)
+        assertTrue (list.Roots.Count>=1) ("The App rules page did not list its apps: "+status)
         assertTrue (list.Roots |> Seq.forall(fun item -> item.Checks.Length=3)) "App rules still have a number shortcut column"
-        let apps() = list.Roots |> Seq.collect(fun item -> if item.Tag :? string then Seq.singleton item else item.Children :> seq<_>) |> List.ofSeq
+        let apps() = list.Roots |> List.ofSeq
         let listed path = apps() |> List.tryFind(fun item -> String.Equals(item.Tag :?> string,path,StringComparison.OrdinalIgnoreCase))
-        assertTrue (installed |> List.forall(fun path -> (listed path).IsSome)) "An app with a rule is missing from the list when it is not running"
+        // Only running apps are listed: an app is set while it is open, and the rule of one that is
+        // not running (an installer run once) stays saved without a row.
+        assertTrue ((listed installed.Head).IsSome && (listed installed.[1]).IsNone && list.Roots |> Seq.forall(fun item -> item.Tag :? string))
+                   "An app that is not running is listed, or a running one is missing"
         assertTrue (apps() |> List.filter(fun item -> AppIdentity.same (item.Tag :?> string) aliasPath) |> List.length = 1)
-                   "A historical installation duplicated the running app's rule row"
-        // No row turns every app on or off at once: one click changed them all. Each row is an app.
-        assertTrue (not((apps()).Head.SeparatorAbove) && (list.Roots |> Seq.filter(fun item -> not(item.Tag :? string)) |> Seq.length) <= 1)
-                   "The App rules list still has a row for all apps"
+                   "A second installation duplicated the running app's rule row"
         let runningApp = (listed installed.Head).Value
-        let historicalApp = (listed installed.[1]).Value
-        // Apps that are not running are folded under one row below the running ones, closed at first.
-        let history = historicalApp.Parent
-        assertTrue (runningApp.Children.Count>0 && historicalApp.Children.Count=0 && obj.ReferenceEquals((apps()).Head,runningApp)
-                    && not(isNull history) && history.SeparatorAbove && not history.Expanded && obj.ReferenceEquals(Seq.last list.Roots,history)
-                    && history.Text=tr (Strings.AppRules.notRunning history.Children.Count) && history.Checks |> Array.forall Option.isNone)
-                   "Apps that are not running were not folded under a closed row after the running ones"
+        assertTrue (runningApp.Children.Count>0 && not runningApp.SeparatorAbove) "A running app does not list its windows"
         assertTrue (view.control.Controls.Find("enable-tabs-for-new-apps",true).Length=1) "The default for new apps is not on the App rules page"
         let newAppToggle = view.control.Controls.Find("enable-tabs-for-new-apps",true).[0]
         assertTrue (newAppToggle.PointToScreen(Point.Empty).Y < list.PointToScreen(Point.Empty).Y) "The new-app default was not moved above the application table"
@@ -765,19 +759,17 @@ let main() =
         assertTrue (first.check tabs=Some true && first.check 2=Some true && isOn installed.Head && grouping.Contains installed.Head) "Auto-group did not enable tabs"
         space first
         assertTrue (first.check 2=Some false && not (grouping.Contains installed.Head)) "Tabs off did not clear auto-group"
-        list.SetExpanded(history,true)
         for app in apps() do space app
-        assertTrue (apps() |> List.forall(fun app -> app.check tabs=Some true) && installed |> List.forall isOn) "Turning on each app's tabs did not save them"
+        assertTrue (apps() |> List.forall(fun app -> app.check tabs=Some true) && isOn installed.Head) "Turning on each app's tabs did not save them"
         form.PerformLayout()
         Application.DoEvents()
         appWindow.Value <- IntPtr.Zero
         typeof<ProgramView>.GetMethod("populateNodes",BindingFlags.Instance ||| BindingFlags.NonPublic).Invoke(view,[||]) |> ignore
         clock.Restart()
-        while ((listed installed.Head).Value.Children.Count>0) && clock.ElapsedMilliseconds<5000L do
+        while list.Roots.Count>0 && clock.ElapsedMilliseconds<5000L do
             Application.DoEvents()
             Threading.Thread.Sleep(20)
-        assertTrue (apps() |> List.forall(fun app -> app.Children.Count=0)) "An application that exited remained in the running section"
-        assertTrue (apps() |> List.tail |> List.forall(fun app -> not app.SeparatorAbove)) "A divider between running and historical apps remained when no apps were running"
+        assertTrue (list.Roots.Count=0) "An application that exited stayed in the list"
         form.Close()
         File.Delete(aliasPath)
         rules.Value <- filter
@@ -786,8 +778,10 @@ let main() =
         handMade.Value <- draggedTogether()
         ungrouped.Clear()
         let appTabs = Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        // The settings window stands for this program's window, so App rules lists it as running.
+        let appWindow = ref IntPtr.Zero
         rules.Value <- {new IFilterService with
-            member _.isAppWindow hwnd = filter.isAppWindow hwnd
+            member _.isAppWindow hwnd = hwnd=appWindow.Value || filter.isAppWindow hwnd
             member _.isAppWindowStyle hwnd = filter.isAppWindowStyle hwnd
             member _.isTabbableWindow _ = false
             member _.isTabbingEnabledForAllProcessesByDefault with get() = true and set _ = ()
@@ -803,6 +797,7 @@ let main() =
         let view = ProgramView() :> ISettingsView
         form.Controls.Add(view.control)
         SettingsUi.apply form
+        appWindow.Value <- form.Handle
         form.Show()
         let rec descendants (control:Control) = seq {
             yield control
@@ -912,7 +907,8 @@ let main() =
                 typeof<SettingsTreeList>.GetMethod(method,BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(tree,[|box mouse|]) |> ignore
         // The "+" after a group's apps lists the apps that can join it.
         let menu = groupView.AddMenu
-        let selectedPath = Path.Combine(__SOURCE_DIRECTORY__,"Debug","WindowTabs.exe")
+        // This test's own program: running, so App rules lists it until a group takes it.
+        let selectedPath = Diagnostics.Process.GetCurrentProcess().MainModule.FileName
         menu.UpdateApplications [selectedPath;selectedPath.ToUpperInvariant();@"C:\Apps\browser.exe";@"D:\Other\browser.exe"]
         assertTrue (menu.Applications.Length=2) "Running application choices did not merge same-name executables across directories"
         // A scan of the windows really running may have come in meanwhile: list known apps first.
@@ -952,7 +948,7 @@ let main() =
         assertTrue (shownForms()=opened) "Editing group applications opened another window"
         let appList = descendants view.control |> Seq.pick(function :? SettingsTreeList as list -> Some list | _ -> None)
         let clock = Diagnostics.Stopwatch.StartNew()
-        let mapped() = appList.Roots |> Seq.tryFind(fun row -> match row.Tag with :? string as path -> path=selectedPath | _ -> false)
+        let mapped() = appList.Roots |> Seq.tryFind(fun row -> match row.Tag with :? string as path -> AppIdentity.same path selectedPath | _ -> false)
         // An app in a group is set there: it has tabs, and App rules no longer lists it, where its
         // tabs could be turned off and contradict the group.
         while (mapped()).IsSome && clock.ElapsedMilliseconds<5000L do Application.DoEvents(); Threading.Thread.Sleep(20)
