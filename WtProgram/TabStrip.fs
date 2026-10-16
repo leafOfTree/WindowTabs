@@ -245,7 +245,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                         capturedCell.value.iter <| fun(capturedTab, capturedPart) ->
                         let closeClick = btn = MouseLeft && hitPart = capturedPart && hitPart = TabClose
                         // Middle-click closes too (TabStripDecorator); both keep the layout.
-                        if hitTab = capturedTab && (closeClick || btn = MouseMiddle) then
+                        let middleCloses = btn = MouseMiddle && (Services.settings.getValue("enableMiddleClickClose") :?> bool)
+                        if hitTab = capturedTab && (closeClick || middleCloses) then
                             heldLayoutCell.set(Some(this.ts.layout))
                         if hitTab = capturedTab && closeClick then
                             monitor.tabClose(hitTab)

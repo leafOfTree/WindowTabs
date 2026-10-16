@@ -133,6 +133,40 @@ type TaskbarBadgedIcon(icon:Icon, ?stacked:Icon list) =
             badged.Dispose()
             WinUserApi.DestroyIcon(handle) |> ignore
 
+/// A picture the user chose for a group's taskbar button, read as an icon.
+module GroupIconFile =
+    let private pictures = set [".png";".jpg";".jpeg";".bmp";".gif"]
+    /// An icon that owns its own copy of the bitmap's handle.
+    let private fromBitmap (bitmap:Bitmap) =
+        let handle = bitmap.GetHicon()
+        try (Icon.FromHandle(handle).Clone() :?> Icon) finally WinUserApi.DestroyIcon(handle) |> ignore
+    /// An .ico, a picture (square and whole, centred), or a program's or library's icon; None when
+    /// the file is gone or unreadable.
+    let load (path:string) : Icon option =
+        try
+            if not (IO.File.Exists path) then None
+            else
+                match IO.Path.GetExtension(path).ToLowerInvariant() with
+                | ".ico" -> Some(new Icon(path,Size(64,64)))
+                | extension when pictures.Contains extension ->
+                    use source = new Bitmap(path)
+                    let side = 128
+                    use square = new Bitmap(side,side,PixelFormat.Format32bppArgb)
+                    do
+                        use g = Graphics.FromImage(square)
+                        g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
+                        let scale = float side/float (max source.Width source.Height)
+                        let width,height = max 1 (int(float source.Width*scale)),max 1 (int(float source.Height*scale))
+                        g.DrawImage(source,Rectangle((side-width)/2,(side-height)/2,width,height))
+                    Some(fromBitmap square)
+                | _ ->
+                    match AppIcons.GetFileIcon(path,64) with
+                    | null -> Some(Icon.ExtractAssociatedIcon(path))
+                    | bitmap ->
+                        use shell = bitmap
+                        Some(fromBitmap shell)
+        with _ -> None
+
 /// Chromium and Electron windows stop painting while another window covers them, so a tab
 /// behind the active one prints blank, and a minimized one prints only a placeholder. Each
 /// tab's last good capture stands in for it, kept small: thumbnails are a few hundred pixels
@@ -275,6 +309,50 @@ type TaskBarButton(info) as this =
     do resendTabOrder.Tick.Add(fun _ ->
         resendTabOrder.Stop()
         sendTabOrder())
+    /// Each application follows its preview's owner between virtual desktops, so this window
+    /// owns the previews: a window without a taskbar button of its own shows on every desktop.
+    /// Explorer, though, hands a click on a thumbnail to the last active window under the
+    /// clicked preview's top owner, which opened the group's last active tab. So while the
+    /// group's thumbnails are up the previews have no owner; their applications keep the desktop
+    /// they were on meanwhile.
+    let mutable previewsReleased = false
+    /// Explorer's thumbnail popup: a TaskListThumbnailWnd up to Windows 10, and on Windows 11
+    /// one of its "PopupHost" XAML windows (also used for its other taskbar popups, which only
+    /// keep the previews let go a little longer).
+    let thumbnailsShown() =
+        let shown (hwnd:IntPtr) = hwnd<>IntPtr.Zero && WinUserApi.IsWindowVisible hwnd
+        let legacy = WinUserApi.FindWindow("TaskListThumbnailWnd",(null:string))
+        let tray = WinUserApi.FindWindow("Shell_TrayWnd",(null:string))
+        let explorer = if tray=IntPtr.Zero then 0 else (let _,pid = WinUserApi.GetWindowThreadProcessId(tray) in pid)
+        let rec anyPopup (after:IntPtr) =
+            let popup = WinUserApi.FindWindowEx(IntPtr.Zero,after,"Xaml_WindowedPopupClass","PopupHost")
+            popup<>IntPtr.Zero &&
+            ((shown popup && explorer<>0 && snd (WinUserApi.GetWindowThreadProcessId(popup))=explorer) || anyPopup popup)
+        shown legacy || anyPopup IntPtr.Zero
+    let chainPreview (preview:IntPtr) =
+        WinUserApi.SetWindowLong(preview,WindowLongFieldOffset.GWL_HWNDPARENT,
+            (if previewsReleased then IntPtr.Zero else this.window.hwnd)) |> ignore
+    /// The preview shown as the group's active tab.
+    let mutable activeTab = IntPtr.Zero
+    let showActive (preview:IntPtr) =
+        activeTab <- preview
+        taskbar.ActivateTab(this.window.hwnd)
+        taskbar.SetTabActive(preview,this.window.hwnd,0)
+    let rechain = new System.Windows.Forms.Timer(Interval=400)
+    do rechain.Tick.Add(fun _ ->
+        if not (thumbnailsShown()) then
+            rechain.Stop()
+            previewsReleased <- false
+            // A preview whose owner changes is no longer one of the button's tabs to Explorer:
+            // each is registered again, in order, with the active one marked.
+            tabWindowsCell.value.values.iter <| fun (tab:TaskbarTab) ->
+                chainPreview tab.window.hwnd
+                taskbar.UnregisterTab(tab.window.hwnd)
+                registerTab(tab.window.hwnd)
+                // Explorer keeps thumbnails it was given; asked again, the previews are let go again.
+                tab.invalidate()
+            sendTabOrder()
+            if activeTab<>IntPtr.Zero && WinUserApi.IsWindow activeTab then showActive activeTab)
     let _window = lazy(
         let config() : TbButton = infoCell.value.Value
         
@@ -339,6 +417,20 @@ type TaskBarButton(info) as this =
         tabWindowsCell.value.values.iter <| fun (tab:TaskbarTab) ->
             tab.invalidate()
 
+    /// Explorer is showing the group's thumbnails: a click on one must open that tab.
+    member this.releasePreviews() =
+        if not previewsReleased then
+            previewsReleased <- true
+            tabWindowsCell.value.values.iter <| fun (tab:TaskbarTab) -> chainPreview tab.window.hwnd
+        rechain.Stop()
+        rechain.Start()
+
+    /// Shows a preview as the group's active tab.
+    member _.markActive(preview:IntPtr) = showActive preview
+
+    /// Whether the previews are let go while thumbnails are up.
+    member _.arePreviewsReleased = previewsReleased
+
     member this.update info =
         let findOrCreate (map:Cell<Map2<_,_>>) key create =
             match map.value.tryFind key with
@@ -385,7 +477,7 @@ type TaskBarButton(info) as this =
                 tabWindow.window.dwmSetAttribute DWMWINDOWATTRIBUTE.DWMWA_FORCE_ICONIC_REPRESENTATION 1
                 tabWindow.window.dwmSetAttribute DWMWINDOWATTRIBUTE.DWMWA_HAS_ICONIC_BITMAP 1
                 tabWindow.window.setAppId(appId)
-                
+                chainPreview tabWindow.window.hwnd
                 registerTab(tabWindow.window.hwnd)
                 tabWindow
 
@@ -468,6 +560,7 @@ type TaskBarButton(info) as this =
     interface IDisposable with
         member this.Dispose() =
             resendTabOrder.Dispose()
+            rechain.Dispose()
             // Previews are unregistered while the window they belong to still exists.
             tabWindowsCell.value.items.iter <| fun (tab, tabWindow) ->
                 tabWindow.Dispose()
@@ -495,12 +588,14 @@ and TaskbarTab(parent:TaskBarButton, config,size,key) =
                     | _ ->
                         msg.def()
                 | WindowMessages.WM_DWMSENDICONICTHUMBNAIL ->
+                    parent.releasePreviews()
                     let msgWindow = os.windowFromHwnd(msg.hwnd)
                     TaskbarPreviewTrace.write "thumbnail-request" msg.hwnd key ""
                     TaskbarPreview.send (fun () -> config().preview(true))
                         (TaskbarPreview.centre msg.lParam.size) msgWindow.dwmSetIconicThumbnail
                     msg.def()
                 | WindowMessages.WM_DWMSENDICONICLIVEPREVIEWBITMAP ->
+                    parent.releasePreviews()
                     let msgWindow = os.windowFromHwnd(msg.hwnd)
                     TaskbarPreviewTrace.write "request" msg.hwnd key (sprintf "host=%d" (parent.window.hwnd.ToInt64()))
                     // Windows can trim a proxy's client area at the work-area edge.
@@ -521,9 +616,8 @@ and TaskbarTab(parent:TaskBarButton, config,size,key) =
                 | _ -> msg.def()
         }
 
-    // No owner: Windows hands a thumbnail click to the last active window under the clicked
-    // window's top owner. Owned by the group's taskbar window, every thumbnail opened the
-    // group's last active tab instead of its own. The plugin keeps it on the group's desktop.
+    // Owned by the group's taskbar window, except while the group's thumbnails are up: see
+    // TaskBarButton.releasePreviews.
 
     member this.adoptWindow hwnd =
         if WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)<>_window.hwnd then
@@ -617,6 +711,11 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
     let mutable taskbarButton = null
     /// Each member's program, looked up once: the icon is rebuilt on every title change.
     let apps = Collections.Generic.Dictionary<IntPtr,string>()
+    /// The picture chosen for this group's button and its file, looked up again when the group's
+    /// windows or the chosen pictures change.
+    let mutable customIcon : (string * Icon) option = None
+    let mutable customIconKnown = false
+    let mutable iconSubscription : IDisposable option = None
     /// The preview last shown as active, None while the group is not in front.
     let mutable activePreview : IntPtr option = None
     let flashingTabs = Collections.Generic.HashSet<string>()
@@ -773,11 +872,14 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
                     else this.wtGroup.previewArea
                 let top = members.head
                 let topTab = Tab(top)
+                let chosen = this.chosenIcon top
                 let tbButtonInfo = {
                     text = this.ts.tabInfo(topTab).text
                     bounds = previewBounds
-                    icon = this.ts.tabInfo(topTab).iconBig
+                    // A chosen picture stands alone: it is the point, not the apps inside.
+                    icon = chosen |> Option.defaultWith(fun () -> this.ts.tabInfo(topTab).iconBig)
                     otherIcons =
+                        if chosen.IsSome then [] else
                         let topApp = this.appOf top
                         members.list |> List.filter(fun hwnd -> this.appOf hwnd <> topApp)
                         |> List.distinctBy this.appOf |> List.truncate TaskbarBadgedIcon.maxStacked
@@ -845,9 +947,7 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
                 let active = this.foregroundTab |> Option.bind(fun (Tab(hwnd)) -> button.tryTabWindow(TaskBarButton.key hwnd)) |> Option.map(fun w -> w.hwnd)
                 if active <> activePreview then
                     activePreview <- active
-                    active |> Option.iter(fun preview ->
-                        this.taskbar.ActivateTab(button.window.hwnd)
-                        this.taskbar.SetTabActive(preview, button.window.hwnd, 0))
+                    active |> Option.iter button.markActive
 
                 if this.adopt desktop then
                     placementRetry.Stop()
@@ -863,10 +963,25 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
     member this.onForegroundChanged() =
         this.updateTaskbar(refreshDesktop=placementDesktop.IsNone)
 
+    /// The picture chosen for this group's button, if any: asked of the program once for each
+    /// change of the group's windows or of the chosen pictures, and read from its file then.
+    member private this.chosenIcon(member':IntPtr) =
+        if not customIconKnown then
+            customIconKnown <- true
+            let path = try Services.program.groupIcon member' with _ -> None
+            match path,customIcon with
+            | Some path,Some(file,_) when file=path -> ()
+            | _ ->
+                customIcon |> Option.iter(fun (_,icon) -> icon.Dispose())
+                customIcon <- path |> Option.bind(fun path -> GroupIconFile.load path |> Option.map(fun icon -> path,icon))
+        customIcon |> Option.map snd
+
     member this.onAdded(hwnd) =
+        customIconKnown <- false
         this.updateTaskbar(refreshDesktop=true)
 
     member this.onRemoved(hwnd) =
+        customIconKnown <- false
         captures.forget hwnd
         apps.Remove hwnd |> ignore
         flashingTabs.Remove(TaskBarButton.key hwnd) |> ignore
@@ -980,6 +1095,8 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
             disposed <- true
             desktopSubscription |> Option.iter(fun subscription -> subscription.Dispose())
             desktopSubscription <- None
+            iconSubscription |> Option.iter(fun subscription -> subscription.Dispose())
+            iconSubscription <- None
             this.wtGroup.windows.items.iter(fun hwnd ->
                 if WinUserApi.IsWindow hwnd then this.showInTaskbar(hwnd,true))
             captureTimer.Dispose()
@@ -989,6 +1106,8 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
             if taskbarButton <> null then
                 (taskbarButton :> IDisposable).Dispose()
                 taskbarButton <- null
+            customIcon |> Option.iter(fun (_,icon) -> icon.Dispose())
+            customIcon <- None
 
     interface IPlugin with
         member x.init() =
@@ -997,6 +1116,11 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
             desktopSubscription <- Some(VirtualDesktop.groupingReady.Subscribe(fun hwnd ->
                 group.invokeAsync(fun () ->
                     if not disposed && group.windows.contains hwnd then this.updateTaskbar(refreshDesktop=true))))
+            iconSubscription <- Some(Services.settings.notifyValue "groupIcons" (fun _ ->
+                group.invokeAsync(fun () ->
+                    if not disposed then
+                        customIconKnown <- false
+                        this.updateTaskbar())))
             this.wtGroup.foregroundChanged.Add this.onForegroundChanged
             this.wtGroup.tabInfoChanged.Add(fun _ -> this.updateTaskbar())
             this.wtGroup.added.Add this.onAdded

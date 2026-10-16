@@ -65,7 +65,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                     for image in images do image.bitmap.Dispose()
             | MouseDown, _ ->
                 capturedHwnd := Some(hwnd)
-            | MouseUp, MouseMiddle -> 
+            | MouseUp, MouseMiddle when (Services.settings.getValue("enableMiddleClickClose") :?> bool) ->
                 capturedHwnd.Value.iter <| fun capturedHwnd ->
                     if hwnd = capturedHwnd then
                         this.onCloseWindow hwnd
@@ -325,6 +325,25 @@ type TabStripDecorator(group:WindowGroup) as this =
                 flags = checkedFlag(group.isSuperBarEnabled)
             })
         
+        // Only a group with combined icons has a taskbar button of its own to change.
+        let customIcon = if group.isSuperBarEnabled then Services.program.groupIcon hwnd else None
+        let changeIconItem =
+            CmiRegular({
+                text = tr Strings.TabMenu.changeTaskbarIcon
+                image = None
+                flags = List2()
+                click = fun() ->
+                    use dialog = new OpenFileDialog(Title=tr Strings.TabMenu.changeTaskbarIcon,Filter=tr Strings.TabMenu.taskbarIconFiles,CheckFileExists=true)
+                    let owner = {new IWin32Window with member _.Handle=group.hwnd}
+                    if dialog.ShowDialog(owner)=DialogResult.OK then Services.program.setGroupIcon(hwnd,Some dialog.FileName)
+            })
+        let restoreIconItem =
+            CmiRegular({
+                text = tr Strings.TabMenu.restoreTaskbarIcon
+                image = None
+                flags = List2()
+                click = fun() -> Services.program.setGroupIcon(hwnd,None)
+            })
         let renameTabItem =
             CmiRegular({
                 text = tr Strings.TabMenu.renameTab
@@ -401,8 +420,9 @@ type TabStripDecorator(group:WindowGroup) as this =
             })
                  
         let closeTabItem = 
+            let shortcut = SettingsShortcut.text (Services.program.getHotKey "closeTab")
             CmiRegular({
-                text = tr Strings.TabMenu.close
+                text = tr Strings.TabMenu.close + (if shortcut = "" then "" else "\t" + shortcut)
                 image = None
                 click = fun() -> this.onCloseWindow hwnd
                 flags = List2()
@@ -455,6 +475,8 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(CmiSeparator)
             Some(sortTabsItem)
             Some(combineIconsInTaskbar)
+            (if group.isSuperBarEnabled then Some(changeIconItem) else None)
+            (if customIcon.IsSome then Some(restoreIconItem) else None)
             Some(CmiSeparator)
             Some(closeTabItem)
             Some(closeOtherTabsItem)

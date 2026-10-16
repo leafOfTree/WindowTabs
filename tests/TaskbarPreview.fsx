@@ -248,6 +248,28 @@ let main() =
         use blankImage = (solidImage (Sz(64,48)) Color.Black).bitmap
         use drawnImage = (drawn (Sz(64,48))).bitmap
         check (TabCaptures.isBlank blankImage && not(TabCaptures.isBlank drawnImage)) "Blank captures are not told from drawn ones"
+    // A picture chosen for a group's button: a picture comes square and whole, a program gives
+    // its icon, and a file that is gone gives none.
+    do
+        let folder = IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug","group-icons")
+        IO.Directory.CreateDirectory(folder) |> ignore
+        let wide = IO.Path.Combine(folder,"wide.png")
+        do
+            use picture = new Bitmap(200,100)
+            use g = Graphics.FromImage(picture)
+            g.Clear(Color.Red)
+            picture.Save(wide,Imaging.ImageFormat.Png)
+        match GroupIconFile.load wide with
+        | Some icon ->
+            use shown = icon.ToBitmap()
+            let middle,corner = shown.GetPixel(shown.Width/2,shown.Height/2),shown.GetPixel(1,1)
+            icon.Dispose()
+            check (shown.Width=shown.Height && middle.R>200uy && middle.A=255uy && corner.A=0uy)
+                  (sprintf "A wide picture did not come square and whole: %dx%d middle %A corner %A" shown.Width shown.Height middle corner)
+        | None -> check false "A picture could not be used as a group's taskbar icon"
+        let program = Diagnostics.Process.GetCurrentProcess().MainModule.FileName
+        check (GroupIconFile.load program |> Option.exists(fun icon -> let ok = icon.Width>0 in icon.Dispose(); ok)) "A program's icon could not be used for a group"
+        check (GroupIconFile.load (IO.Path.Combine(folder,"gone.png")) = None) "A missing picture was used for a group"
     let captures = new TabCaptures()
     let hwnd = IntPtr(0x1234)
     let size = Size(1600,1000)

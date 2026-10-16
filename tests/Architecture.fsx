@@ -246,6 +246,10 @@ let main() =
             member _.setTabColorOverride _ = ()
             member _.getTabColor(_,_) = None
             member _.getTabColors(hwnds,_) = hwnds |> List.map(fun _ -> None)
+            member _.handMadeGroups() = []
+            member _.ungroupHandMade _ = ()
+            member _.groupIcon _ = None
+            member _.setGroupIcon(_,_) = ()
             member _.appWindows = List2()
             member _.getAutoGroupingEnabled _ = false
             member _.setAutoGroupingEnabled _ _ = ()
@@ -656,6 +660,17 @@ let main() =
           "Multiple search terms did not prefer earlier positions independently of query order"
     let same = {early with recency=1}
     check (TabSearch.best "pad" [early;same] = Some same) "Equal match positions did not fall back to recency"
+    // Typed, the list shows the best matches first; with nothing typed it keeps the groups' order.
+    let chatgpt = { TabSearch.create IntPtr.Zero "Open ChatGPT Desktop - Brave" "Open ChatGPT Desktop - Brave" "brave" with group=0; recency=0 }
+    let rust = { TabSearch.create IntPtr.Zero "RustDesk" "RustDesk" "rustdesk" with group=1; recency=1 }
+    let search = { TabSearch.create IntPtr.Zero "desktop2 2 - Google Search - Brave" "desktop2 2 - Google Search - Brave" "brave" with group=2; recency=2 }
+    let listed query = TabSearch.shown query [1,chatgpt;2,rust;3,search] |> List.map fst
+    check (listed "desk" = [3;1;2] && listed "" = [1;2;3]) (sprintf "Search results are not best first while typing, or groups lost their order: %A %A" (listed "desk") (listed ""))
+    // A window on another virtual desktop loses a tie to one in view, and says where it is.
+    let away = { chatgpt with desktop="Desktop 2"; recency=0 }
+    let here = { chatgpt with recency=3 }
+    check (TabSearch.best "chatgpt" [away;here] = Some here && TabSearch.source away = "brave · Desktop 2" && TabSearch.source here = "brave")
+          "A window on another desktop won a tie, or does not say which desktop it is on"
     let boundary = { TabSearch.create IntPtr.Zero "a long title - pad" "a long title - pad" "" with recency=9 }
     check (TabSearch.best "pad" [early;boundary] = Some boundary) "An earlier internal match outranked a later word-start match"
     let repeated = TabSearch.create IntPtr.Zero "xxpad pad" "xxpad pad" ""

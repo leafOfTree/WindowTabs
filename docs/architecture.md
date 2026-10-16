@@ -125,6 +125,17 @@ removing their buttons. Directly owning every application with the same stand-in
 the current application over other tabs' Peek images. The per-tab ownership separates
 their Peek contents while retaining the common root owner's desktop. A preview releases
 its application before destroying its HWND, so closing a preview cannot close that app.
+Explorer hands a thumbnail click to the last active window under the clicked preview's
+top owner, so while the group's thumbnails are up (a thumbnail or Peek request, until
+Explorer's thumbnail popup closes: `TaskListThumbnailWnd`, or a "PopupHost" XAML window on
+Windows 11) the previews have no owner and a click opens its own tab. The applications
+keep their desktop meanwhile. Owned again, each preview is registered again, in order,
+with the active one marked, or Explorer shows the group as a single window.
+
+Auto-grouping keeps one group of an app per desktop. When windows move between desktops
+(closing a desktop moves its windows to the next), two automatic groups of one app can
+end up together; the smaller joins the larger, checked at most once a second, using only
+desktops the shell reports for the front windows, never a remembered or guessed one.
 The stand-in starts on the desktop in view and is moved once to its
 windows' confirmed desktop. Placement is marked complete only after success.
 Until then the applications keep their native owners and individual taskbar buttons;
@@ -319,11 +330,15 @@ values retain the group default, while a saved global choice opens globally even
 inside a group. Falling back to global when no searchable group exists does not
 overwrite the preferred scope.
 
-Filtering preserves that list order. The initial choice ranks word-start matches
-above word-internal matches, then prefers earlier positions of equally strong
-matches, then recency. Each query term uses its strongest, earliest occurrence
-across the title, original title and app name; quality and position are summed
-across terms, so changing query word order does not change the choice.
+With nothing typed the list keeps that group order. Once a query is typed the
+matches are listed best first, without group separators, and the first one is the
+initial choice. Word-start matches rank above word-internal matches, then earlier
+positions of equally strong matches, then windows on the desktop in view, then
+recency. Each query term uses its strongest, earliest occurrence across the title,
+original title and app name; quality and position are summed across terms, so
+changing query word order does not change the order. A window the shell cloaks
+because it is on another virtual desktop shows that desktop's name, or its number,
+after the app name.
 
 ## Workspace data and background work
 

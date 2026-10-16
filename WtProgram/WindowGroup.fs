@@ -545,15 +545,26 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             preview = fun() ->
                 try
                     if window.isMinimized then
+                        // A minimized window cannot be printed. It stands in as its app's icon, a
+                        // third of the window's shorter side: the taskbar shrinks the whole window
+                        // to a thumbnail, and a 32-pixel icon became a dot.
                         let size = this.previewArea.size
-                        let _,icon = iconCache.get(hwnd)
-                        let iconSize = icon.Size.Sz
+                        let side = max 32 (min 256 (min size.width size.height / 3))
+                        let shellIcon =
+                            try
+                                if window.className="ApplicationFrameWindow" then AppIcons.GetAppIcon(AppIcons.GetHostedAppId(hwnd),side)
+                                else
+                                    let path = window.pid.processPath
+                                    if AppIcons.HasOwnIcon(path) then AppIcons.GetFileIcon(path,side) else null
+                            with _ -> null
+                        use large = if isNull shellIcon then (let _,icon = iconCache.get(hwnd) in icon.ToBitmap()) else shellIcon
                         let img = Img(size)
                         try
                             use g = img.graphics
-                            use background = new SolidBrush(Color.LightGray)
+                            use background = new SolidBrush(if ThemeService.currentIsDark() then Color.FromArgb(56,56,56) else Color.FromArgb(232,232,232))
                             g.FillRectangle(background, Rect(Pt(), size).Rectangle)
-                            g.DrawIcon(icon, ((size.width - iconSize.width).float / 2.0).Int32, ((size.height - iconSize.height).float / 2.0).Int32)
+                            g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
+                            g.DrawImage(large, Rectangle((size.width-side)/2, (size.height-side)/2, side, side))
                             img
                         with _ ->
                             img.bitmap.Dispose()
@@ -600,14 +611,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.tabColor hwnd = tabColors.TryFind hwnd
 
     member private this.setTabInfo(hwnd) =
-        if not(this.ts.hasTabInfo(Tab(hwnd))) then this.refreshTabColor(hwnd)
+        let isNew = not(this.ts.hasTabInfo(Tab(hwnd)))
+        if isNew then this.refreshTabColor(hwnd)
         let info = this.getTabInfo(hwnd)
         let previous = this.ts.tabInfo(Tab(hwnd))
-        if not(this.ts.hasTabInfo(Tab(hwnd))) || info.text <> previous.text || info.isRenamed <> previous.isRenamed ||
+        if isNew || info.text <> previous.text || info.isRenamed <> previous.isRenamed ||
            not(obj.ReferenceEquals(info.iconSmall,previous.iconSmall)) ||
            not(obj.ReferenceEquals(info.iconBig,previous.iconBig)) then
             this.ts.setTabInfo(Tab(hwnd),info)
-            tabInfoChangedEvent.Trigger(hwnd)
+            // A new tab's first details come as it joins, and its added event follows: telling
+            // listeners twice updated the taskbar twice for every window at startup.
+            if not isNew then tabInfoChangedEvent.Trigger(hwnd)
 
     member private this.setTsOwner(owner:Window) =
         let strip = this.os.windowFromHwnd(this.ts.hwnd)

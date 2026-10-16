@@ -208,10 +208,9 @@ type SettingsShortcutInput() as this =
     let clearMessage() = messageTimer.Stop(); message <- None
     let showMessage error text = message <- Some(text,error); messageTimer.Stop(); messageTimer.Start(); this.Invalidate()
     let stopRecording() = if recording then recording <- false; focusCue <- false; this.Invalidate()
-    let clearBounds() =
-        let size = Dpi.scale 24
-        Rectangle(this.Width-size-Dpi.scale 5,(this.Height-size)/2,size,size)
-    let canClear() = shortcut<>0 && not recording && message.IsNone
+    /// The × shows while the pointer is on the box, or it has the keyboard focus, so it takes no
+    /// room the rest of the time.
+    let canClear() = shortcut<>0 && not recording && message.IsNone && (hovering || this.Focused)
     let commit next =
         recording <- false
         focusCue <- false
@@ -220,8 +219,25 @@ type SettingsShortcutInput() as this =
             changed.Trigger(EventArgs.Empty)
         elif next<>0 then showMessage false (tr Strings.Shortcuts.alreadySet)
         this.Invalidate()
+    /// Key caps padded tightly, so three keys and the clear button fit the editors' width.
+    let capHeight() = this.Height-Dpi.scale 14
+    let capWidth (label:string) = max (capHeight()) (TextRenderer.MeasureText(label,this.Font,Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 8)
+    let capsEnd() = Dpi.scale 8+(SettingsShortcut.parts shortcut |> List.sumBy(fun label -> capWidth label+Dpi.scale 2))
+    /// At the right edge, shown only while the pointer is on the box or it has the focus.
+    let clearBounds() =
+        let size = Dpi.scale 18
+        Rectangle(this.Width-size-Dpi.scale 3,(this.Height-size)/2,size,size)
+    /// As wide as its key caps and clear button, or its prompt, need, and no narrower than the
+    /// other editors, so the rows line up.
+    let fitWidth() =
+        let measure (text:string) = TextRenderer.MeasureText(text,this.Font,Size.Empty,TextFormatFlags.NoPadding).Width
+        let clear = if shortcut<>0 then Dpi.scale 18+Dpi.scale 3 else Dpi.scale 8
+        let prompts = [Strings.Shortcuts.pressShortcut;Strings.Shortcuts.notSet] |> List.map(fun text -> Dpi.scale 12+measure (tr text)+Dpi.scale 12)
+        let wanted = List.max ((capsEnd()+clear)::prompts)
+        let width = max (Dpi.scale SettingsShapes.editorWidth) wanted
+        if this.Width<>width then this.Width <- width
     do
-        this.Width <- Dpi.scale 220
+        this.Width <- Dpi.scale SettingsShapes.editorWidth
         this.TabStop <- true
         this.Cursor <- Cursors.Hand
         this.SetStyle(ControlStyles.Selectable ||| ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer,true)
@@ -230,7 +246,12 @@ type SettingsShortcutInput() as this =
         this.Disposed.Add(fun _ -> messageTimer.Dispose())
     member _.Shortcut
         with get() = shortcut
-        and set(value) = shortcut <- value; this.AccessibleDescription <- String.Join(" + ",SettingsShortcut.parts value); this.Invalidate()
+        and set(value) =
+            shortcut <- value
+            this.AccessibleDescription <- String.Join(" + ",SettingsShortcut.parts value)
+            fitWidth()
+            this.Invalidate()
+    override this.OnFontChanged(e) = base.OnFontChanged(e); fitWidth()
     member _.Changed = changed.Publish
     member _.IsRecording = recording
     /// Whether the accent outline is drawn: while recording, or on fresh keyboard focus.
@@ -290,18 +311,34 @@ type SettingsShortcutInput() as this =
         let textArea x = Rectangle(x,0,max 1 (this.Width-x-Dpi.scale 8),this.Height)
         let error = if ThemeService.currentIsDark() then Color.FromRGB(0xFF99A4) else Color.FromRGB(0xC42B1C)
         let chips (labels:string list) =
-            let height = this.Height-Dpi.scale 14
+            let height = capHeight()
             let top = (this.Height-height)/2
             labels |> List.fold(fun x label ->
-                let size = TextRenderer.MeasureText(g,label,this.Font,Size.Empty,TextFormatFlags.NoPadding)
-                let bounds = Rectangle(x,top,max height (size.Width+Dpi.scale 14),height)
-                use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X+0.5f,float32 bounds.Y+0.5f,float32 bounds.Width-1.0f,float32 bounds.Height-1.0f)) (float32(Dpi.scale 5))
+                let bounds = Rectangle(x,top,capWidth label,height)
+                use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X+0.5f,float32 bounds.Y+0.5f,float32 bounds.Width-1.0f,float32 bounds.Height-1.0f)) (float32(Dpi.scale 4))
                 use fill = new SolidBrush(p.selection)
                 use border = new Pen(p.border)
                 g.FillPath(fill,shape)
                 g.DrawPath(border,shape)
-                TextRenderer.DrawText(g,label,this.Font,bounds,p.text,TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter)
-                x+bounds.Width+Dpi.scale 4) left
+                // Centred by its ink, not its advance: a symbol such as ] sits to one side of
+                // the space the font gives it, and looked off centre in its cap.
+                // A tall symbol (a bracket or a slash) is centred by its ink up and down too: it
+                // reaches below the baseline and sat low. Short marks (. , ') keep the text line.
+                let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.NoPadding
+                let line = TextRenderer.MeasureText(g,label,this.Font,Size.Empty,flags)
+                let ink =
+                    use outline = new GraphicsPath()
+                    outline.AddString(label,this.Font.FontFamily,int this.Font.Style,this.Font.SizeInPoints*g.DpiY/72.0f,PointF.Empty,StringFormat.GenericTypographic)
+                    outline.GetBounds()
+                let textX =
+                    if ink.Width>0.0f then bounds.X+int(Math.Round(float bounds.Width/2.0-float(ink.X+ink.Width/2.0f)))
+                    else bounds.X+(bounds.Width-line.Width)/2
+                let tall = label.Length=1 && not (Char.IsLetterOrDigit label.[0]) && ink.Height>=0.6f*float32 line.Height
+                let textY =
+                    if tall then bounds.Y+int(Math.Round(float bounds.Height/2.0-float(ink.Y+ink.Height/2.0f)))
+                    else bounds.Y+(bounds.Height-line.Height)/2
+                TextRenderer.DrawText(g,label,this.Font,Rectangle(textX,textY,line.Width+Dpi.scale 2,line.Height),p.text,flags)
+                x+bounds.Width+Dpi.scale 2) left
         match message with
         | Some(text,isError) -> TextRenderer.DrawText(g,text,this.Font,textArea (Dpi.scale 12),(if isError then error else p.muted),flags)
         | None when recording ->

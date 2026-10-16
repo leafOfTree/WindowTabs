@@ -92,6 +92,10 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         ("searchTabs", fun () -> this.toggleTabSearch())
         ("numberLeader", fun () -> if settingsManager.settings.enableNumberLeader then NumberLeaderRequest.toggle.Trigger())
         ("newTab", fun () -> this.openNewTab(WinUserApi.GetForegroundWindow()))
+        // As the tab menu's Close: the window of the tab in front, and only a tab's.
+        ("closeTab", fun () ->
+            let hwnd = WinUserApi.GetForegroundWindow()
+            if this.isInGroup hwnd then os.windowFromHwnd(hwnd).close())
         ]))
         
     let hotKeyManager = lifetime.Own(new HotKeyManager())
@@ -106,6 +110,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let groupedThisRun = HashSet<IntPtr>()
     /// Groups made by hand, kept after their windows close.
     let mutable remembered = settingsManager.rememberedGroups
+    /// The open windows of each group made by hand when App rules was last told.
+    let mutable shownOpen : (int * RememberedMember list) list = []
     /// Each window's program, looked up once.
     let appKeys = Dictionary<IntPtr,string>()
     /// New windows of an app with remembered windows whose title may still settle into a
@@ -115,6 +121,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let settleTimer = lifetime.Own(new System.Windows.Forms.Timer(Interval=1000))
     /// Groups are recorded a moment after they change, once for a burst of changes.
     let rememberSoon = lifetime.Own(new CoalescedAction(500, fun () -> this.rememberGroups()))
+    /// Automatic groups of one app that have come to share a desktop are looked for at most once a second.
+    let mergeSoon = lifetime.Own(new CoalescedAction(1000, fun () -> this.mergeAutoGroups()))
     let desktopRetry = lifetime.Own(new CoalescedAction(100, fun () ->
                                         for hwnd in List.ofSeq awaitingDesktop.Keys do refreshQueue.RequestWindow hwnd))
 
@@ -270,14 +278,25 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         let manual (info:GroupInfo) =
             info.group.isManual || remembered |> List.exists(fun group -> group.id=info.group.groupToken)
         let live,elsewhere = inView |> List.partition(fst >> manual)
+        let running =
+            live |> List.map(fun (info,_) ->
+                info.group.groupToken,
+                (info :> IGroup).windows.list |> List.map this.appKey |> List.filter(String.IsNullOrEmpty >> not))
         let next =
             RememberedGroups.update DateTime.UtcNow
                 (live |> List.map(fun (info,members) -> info.group.groupToken,members))
                 (elsewhere |> List.collect snd) remembered
-        let shape (groups:RememberedGroup list) = groups |> List.map(fun group -> group.id,group.members)
+            |> RememberedGroups.withPaths running
+        let shape (groups:RememberedGroup list) = groups |> List.map(fun group -> group.id,group.members,group.paths)
         let changed = shape next <> shape remembered
         remembered <- next
         if changed then settingsManager.rememberedGroups <- next
+        // A closed window stays in its group's record, to come back to it; the record is the
+        // same, but App rules shows which windows are open, so it is told.
+        let openNow = live |> List.map(fun (info,members) -> info.group.groupToken,members) |> List.sort
+        if openNow<>shownOpen then
+            shownOpen <- openNow
+            if not changed then settingsManager.announce "rememberedGroups"
 
     /// A window whose title has settled into a remembered one moves to that group, unless it
     /// was moved meanwhile.
@@ -390,6 +409,59 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                         info.awaitsGroupingDesktop <- false
                         this.findGroupForWindow(window) |> Option.iter(fun target ->
                             (target :?> GroupInfo).addAfterDetaching(info,window.hwnd))
+                else mergeSoon.Request()
+
+    /// What keeps the group of a window recognisable for its taskbar picture: a named group's id,
+    /// a group made by hand's token, else the one app of an automatic group, so each of that
+    /// app's groups shows it.
+    member private this.groupIconKey(hwnd:IntPtr) =
+        this.desktop.groups.list |> List.tryPick(function
+            | :? GroupInfo as info when (info :> IGroup).windows.contains((=)hwnd) ->
+                let apps = (info :> IGroup).windows.list |> List.map(fun window -> AppIdentity.key (this.appKey window)) |> List.distinct
+                match info.ruleGroupId,apps with
+                | Some id,_ -> Some("rule:"+id)
+                | None,_ when this.isHandMade info -> Some(sprintf "hand:%d" info.group.groupToken)
+                | None,[app] when app<>"" -> Some("app:"+app)
+                | None,_ -> Some(sprintf "hand:%d" info.group.groupToken)
+            | _ -> None)
+
+    /// Made by hand, or restored from groups made by hand: never merged or taken apart unasked.
+    member private this.isHandMade(info:GroupInfo) =
+        info.group.isManual || remembered |> List.exists(fun saved -> saved.id=info.group.groupToken)
+
+    /// Auto-grouping keeps one group of an app on each virtual desktop. Windows that move between
+    /// desktops (closing a desktop moves its windows to the next one) can leave two such groups on
+    /// one desktop; the smaller joins the larger. Checked a moment after windows change, one
+    /// merge at a time.
+    member private this.mergeAutoGroups() =
+        let appOf (group:GroupInfo) =
+            match (group :> IGroup).windows.list |> List.map(fun hwnd -> AppIdentity.key (this.appKey hwnd)) |> List.distinct with
+            | [app] when app<>"" -> Some app
+            | _ -> None
+        let auto =
+            this.desktop.groups.list |> List.choose(function
+                | :? GroupInfo as group when
+                    not group.isExited && not group.isRetiring && not group.awaitsGroupingDesktop &&
+                    group.ruleGroupId.IsNone && not (this.isHandMade group) && (group :> IGroup).windows.count>0 &&
+                    (appOf group).IsSome &&
+                    (this :> IProgram).getAutoGroupingEnabled(this.appKey (group :> IGroup).windows.head) -> Some group
+                | _ -> None)
+        let shared = auto |> List.countBy appOf |> List.exists(fun (_,count) -> count>1)
+        if not this.desktop.isDragging && shared then
+            // A group is where its front tab is, as Windows reports it now: a desktop remembered or
+            // guessed from the one in view merged groups from different desktops.
+            let zorders = this.hwndZorders()
+            let desktopOf (group:GroupInfo) =
+                (group :> IGroup).windows.list
+                |> List.minBy(fun hwnd -> zorders.tryFind(hwnd).def(Int32.MaxValue))
+                |> VirtualDesktop.reportedDesktopId
+            let desktops = auto |> List.map(fun group -> group,desktopOf group) |> dict
+            let size (group:GroupInfo) = (group :> IGroup).windows.count
+            auto |> List.tryPick(fun group ->
+                AutoGroup.mergePair size appOf (fun other -> desktops.[other]) group (auto |> List.filter(fun other -> not (obj.ReferenceEquals(other,group)))))
+            |> Option.iter(fun (keep,leave) ->
+                for hwnd in (leave :> IGroup).windows.list do keep.addAfterDetaching(leave,hwnd)
+                mergeSoon.Request())
 
     /// Auto-grouping waits, up to a second, for a new window to be placed on a virtual desktop,
     /// or it would match groups on every desktop.
@@ -463,7 +535,10 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         | WinEvent(hwnd, evt) -> refreshQueue.RequestWindow(hwnd)
         | ShellEvent(hwnd, evt) ->
             match evt with
-            | ShellEvent.HSHELL_WINDOWDESTROYED ->
+            // The shell also says so when a window only loses its taskbar button, as one does when a
+            // group with combined icons takes it; forgetting that window let ungrouped windows be
+            // put back together by their saved group.
+            | ShellEvent.HSHELL_WINDOWDESTROYED when not (WinUserApi.IsWindow hwnd) ->
                 isSubscribed.Remove(hwnd)
                 groupedThisRun.Remove hwnd |> ignore
                 appKeys.Remove hwnd |> ignore
@@ -587,7 +662,39 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
         member x.getTabColors(hwnds,peers) = hwnds |> List.map(fun hwnd -> (x :> IProgram).getTabColor(hwnd,peers))
 
-        member x.appWindows = 
+        member x.handMadeGroups() =
+            let open' = Dictionary<RememberedMember,IntPtr>(HashIdentity.Structural)
+            for group in this.desktop.groups.list do
+                for hwnd in group.windows.list do
+                    this.rememberedMember hwnd |> Option.iter(fun m -> if not(open'.ContainsKey m) then open'.[m] <- hwnd)
+            let hwndOf m = match open'.TryGetValue m with | true,hwnd -> hwnd | _ -> IntPtr.Zero
+            // Where the app was last seen running, when known, which finds its icon while closed.
+            let appOf (group:RememberedGroup) (m:RememberedMember) = group.paths.TryFind m.app |> Option.defaultValue m.app
+            remembered |> List.map(fun group -> group.id,group.members |> List.map(fun m -> appOf group m,m.title,hwndOf m))
+
+        member x.ungroupHandMade id =
+            remembered <- remembered |> List.filter(fun group -> group.id<>id)
+            settingsManager.rememberedGroups <- remembered
+            // Its windows leave the group and are found again by the next scan; seen already this
+            // run, they no longer return to their saved group but follow the rules.
+            this.liveGroupWithToken id |> Option.iter(fun group ->
+                // Taken apart for good: leaving a group with combined taskbar icons is slow, and
+                // still made by hand and under its token, the windows not yet out were recorded
+                // again and the group came back.
+                group.group.isManual <- false
+                group.group.groupToken <- WindowGroupToken.fresh()
+                for hwnd in (group :> IGroup).windows.list do (group :> IGroup).removeWindow hwnd)
+            refreshQueue.RequestAll()
+
+        member x.groupIcon hwnd =
+            this.groupIconKey hwnd |> Option.bind(fun key -> settingsManager.groupIcons.TryFind key)
+
+        member x.setGroupIcon(hwnd,path) =
+            this.groupIconKey hwnd |> Option.iter(fun key ->
+                let icons = settingsManager.groupIcons
+                settingsManager.groupIcons <- match path with Some path -> icons.Add(key,path) | None -> icons.Remove key)
+
+        member x.appWindows =
             os.windowsInZorder.where(this.isAppWindow).map(fun w -> w.hwnd)
 
         member x.getAutoGroupingEnabled procPath =

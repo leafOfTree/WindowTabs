@@ -5,45 +5,16 @@ open System.IO
 open System.Windows.Forms
 open Bemo.Win32.Forms
 
-module ImgHelper =
-    /// Keeps the icon's native size; the list scales it to the row, so 32px sources stay sharp at high DPI.
-    let imgFromIcon (icon:Icon) =
-        (try icon.ToBitmap() with _ -> SystemIcons.Application.ToBitmap()) :> Image
-    /// A window's own icon, or None when it only has the generic application icon. UWP apps
-    /// behind ApplicationFrameHost publish no window icon; their package icon is used instead.
-    let windowIcon (window:Window) : Image option =
-        if window.className="ApplicationFrameWindow" then
-            AppIcons.GetAppIcon(AppIcons.GetHostedAppId(window.hwnd),32) |> Option.ofObj |> Option.map(fun icon -> icon :> Image)
-        else
-            let big,small = window.iconBig,window.iconSmall
-            let source,other = if big.Width >= small.Width then big,small else small,big
-            if not (obj.ReferenceEquals(other,SystemIcons.Application)) then other.Dispose()
-            if obj.ReferenceEquals(source,SystemIcons.Application) then None
-            elif AppIcons.IsGenericIcon(source.Handle) then source.Dispose(); None
-            else try Some(imgFromIcon source) finally source.Dispose()
-    /// List items own their icons; release them when a list is replaced or discarded.
-    let rec disposeItems (items:seq<TreeListItem>) =
-        for item in items do
-            disposeItems item.Children
-            if not (isNull item.Icon) then item.Icon.Dispose()
-
 module private ProgramItems =
     /// Column indexes of the check boxes.
     let tabsColumn,groupingColumn = 1,2
-    /// The icon the app shows on the taskbar (its first window), else the executable's own
-    /// icon. A host without icons of its own (ApplicationFrameHost.exe) gets a line glyph
-    /// rather than borrowing one hosted app's logo. An app that is not running has no window.
-    let exe (path:string) (first:Window option) custom =
-        let icon =
-            if not (AppIcons.HasOwnIcon path) then None
-            else
-                match first |> Option.bind ImgHelper.windowIcon with
-                | Some icon -> Some icon
-                | None -> try Some(use icon = Icon.ExtractAssociatedIcon(path) in ImgHelper.imgFromIcon icon) with _ -> None
+    /// An app that is not running has no window, and shows its executable's icon.
+    let exe (path:string) (first:Window option) =
+        let icon = ApplicationNames.appIcon path first
         let tabs = Services.filter.getIsTabbingEnabledForProcess path
         // Auto grouping only decides which group a tabbed window joins.
-        TreeListItem(Path.GetFileName(path),Icon=Option.toObj icon,Glyph=WindowGlyph,Tag=path,
-                     Checks=[|None;Some tabs;Some(not custom && Services.program.getAutoGroupingEnabled path)|],CheckEnabled=[|true;true;not custom|])
+        TreeListItem(ApplicationNames.label path,Icon=Option.toObj icon,Glyph=WindowGlyph,Tag=path,
+                     Checks=[|None;Some tabs;Some(Services.program.getAutoGroupingEnabled path)|])
     let window (window:Window) =
         TreeListItem(window.text,Icon=Option.toObj (ImgHelper.windowIcon window),Glyph=WindowGlyph)
 type ProgramView() as this=
@@ -52,11 +23,7 @@ type ProgramView() as this=
         new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn)
                               TreeListColumn(tr Strings.AppRules.tabs,130,CheckColumn)
                               TreeListColumn(tr Strings.AppRules.autoGroup,130,CheckColumn)])
-    /// Apps with a rule that are not running sit under one row, folded away unless opened:
-    /// the running apps are the ones looked for.
-    let mutable historyExpanded = false
-    let isApp (item:TreeListItem) = item.Tag :? string
-    let apps() = list.Roots |> Seq.collect(fun item -> if isApp item then Seq.singleton item else item.Children :> seq<_>) |> List.ofSeq
+    let apps() = list.Roots |> List.ofSeq
     let path (item:TreeListItem) = item.Tag :?> string
     /// The default only applies when an application is first discovered.
     let footer =
@@ -88,19 +55,7 @@ type ProgramView() as this=
             ImgHelper.disposeItems list.Roots
             list.Roots.Clear()
             for item in items do item.Expanded <- expanded.Contains(AppIdentity.key (path item))
-            // The scan marks the first app that is not running; with none running, all show.
-            let running,history =
-                match items |> List.tryFindIndex(fun item -> item.SeparatorAbove) with
-                | Some index -> List.splitAt index items
-                | None -> items,[]
-            list.Roots.AddRange(running)
-            if not history.IsEmpty then
-                let folder = TreeListItem(tr (Strings.AppRules.notRunning history.Length),Checks=[|None;None;None|],
-                                          SeparatorAbove=true,Expanded=historyExpanded)
-                for item in history do
-                    item.SeparatorAbove <- false
-                    folder.Add(item) |> ignore
-                list.Roots.Add(folder)
+            list.Roots.AddRange(items)
             list.Rebuild()
             panel.Status <- ""),
         ImgHelper.disposeItems,
@@ -108,7 +63,6 @@ type ProgramView() as this=
 
     do
         groupingRules.Changed.Add(fun _ -> this.populateNodes())
-        list.ExpandedChanged.Add(fun item -> if not(isApp item) && isNull item.Parent then historyExpanded <- item.Expanded)
         list.CheckChanged.Add(fun (item,column,value) ->
             let changed = [item] |> List.filter(fun app -> app.checkEnabled column)
             if column=ProgramItems.tabsColumn then
@@ -154,17 +108,14 @@ type ProgramView() as this=
     member private this.populateNodes() =
         // Only the first scan says so: later ones replace the list in place.
         if list.Roots.Count=0 then panel.Status <- tr Strings.AppRules.scanning
-        // Apps with a rule are listed even when they are not running, so they can be changed.
-        let ruled = SettingsCatalog.appRulePathKeys |> List.collect(fun key -> (Services.settings.getValue(key).cast<Set2<string>>()).items.list)
-        let ruled = ruled @ ((Services.settings.getValue("appTabColors") :?> Map<string,string>) |> Map.toList |> List.map fst)
+        // Only running apps: an app is set while it is open, and a saved rule for one that is not
+        // (an installer run once, say) still applies when it runs again.
         let customRules = Services.settings.getValue("appGroupingRules") :?> AppGroupingRule list
-        let ruled = ruled @ (customRules |> List.map(fun rule -> rule.processPath))
         scanner.Request(fun cancellation ->
             let items = ResizeArray<TreeListItem>()
             try
                 let os = OS()
                 let procs = Collections.Generic.Dictionary<string,TreeListItem>(StringComparer.OrdinalIgnoreCase)
-                let running = Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 for window in os.windowsInZorder.toArray do
                     cancellation.ThrowIfCancellationRequested()
                     try
@@ -176,29 +127,21 @@ type ProgramView() as this=
                                     match procs.TryGetValue(AppIdentity.key path) with
                                     | true,item -> item
                                     | _ ->
-                                        let item = ProgramItems.exe path (Some window) (AppGroupingRules.hasEnabled customRules path)
+                                        let item = ProgramItems.exe path (Some window)
                                         procs.Add(AppIdentity.key path,item)
                                         items.Add(item)
                                         item
-                                running.Add(AppIdentity.key path) |> ignore
                                 cancellation.ThrowIfCancellationRequested()
                                 if window.isWindow then exe.Add(ProgramItems.window window) |> ignore
                     with
                     | :? OperationCanceledException -> reraise()
                     | _ -> () // A window/process can disappear while scanning.
-                // An app that has since been uninstalled is left out.
-                for path in ruled do
-                    cancellation.ThrowIfCancellationRequested()
-                    if not (String.IsNullOrEmpty path) && not (procs.ContainsKey(AppIdentity.key path)) && File.Exists path then
-                        let item = ProgramItems.exe path None (AppGroupingRules.hasEnabled customRules path)
-                        procs.Add(AppIdentity.key path,item)
-                        items.Add(item)
                 cancellation.ThrowIfCancellationRequested()
-                let ordered = items |> Seq.sortBy(fun item -> (if running.Contains(AppIdentity.key (item.Tag :?> string)) then 0 else 1),item.Text.ToUpperInvariant()) |> Seq.toList
-                if running.Count>0 then
-                    ordered |> List.tryFind(fun item -> not(running.Contains(AppIdentity.key (item.Tag :?> string))))
-                            |> Option.iter(fun item -> item.SeparatorAbove <- true)
-                ordered
+                // An app in a group across apps is set there: its tabs are on and the group decides
+                // where its windows go, so a row here could only contradict it.
+                let grouped,items = items |> List.ofSeq |> List.partition(fun item -> AppGroupingRules.hasEnabled customRules (item.Tag :?> string))
+                ImgHelper.disposeItems grouped
+                items |> List.sortBy(fun item -> item.Text.ToUpperInvariant())
             with error ->
                 ImgHelper.disposeItems items
                 raise error)

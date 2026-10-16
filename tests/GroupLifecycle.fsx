@@ -39,6 +39,17 @@ let main() =
     check (pickFrom [chromeGroup; explorerGroup] 5=None) "An unresolved new window joined another desktop's taskbar group"
     let unknownGroup = List2([IntPtr(5)])
     check (pickFrom [unknownGroup] 4=None) "A known desktop matched an unresolved target group"
+    // Closing a virtual desktop moves its windows to the next one: two automatic groups of one
+    // program that end up together become one, the smaller joining the larger.
+    let groupsOf = [ "big",("brave",Some desk1,3); "small",("brave",Some desk1,1); "away",("brave",Some desk2,2)
+                     "other",("explorer",Some desk1,2); "unknown",("brave",None,1) ] |> Map.ofList
+    let merge name others =
+        AutoGroup.mergePair (fun g -> let _,_,n = groupsOf.[g] in n) (fun g -> let app,_,_ = groupsOf.[g] in Some app)
+                            (fun g -> let _,desk,_ = groupsOf.[g] in desk) name others
+    check (merge "small" ["away";"other";"big"]=Some("big","small") && merge "big" ["small"]=Some("big","small"))
+          "Two automatic groups of one program on one virtual desktop stayed apart"
+    check (merge "away" ["big";"small";"other"]=None && merge "unknown" ["big"]=None && merge "big" ["unknown";"away"]=None)
+          "Automatic groups merged across virtual desktops, programs, or with an unknown desktop"
     check (pickFrom [unknownGroup] 5=None) "Two unresolved windows were assumed to share a desktop"
     Application.EnableVisualStyles()
     let directory = Path.Combine(__SOURCE_DIRECTORY__, "Debug", "groups-" + Guid.NewGuid().ToString("N"))
@@ -64,6 +75,10 @@ let main() =
             member _.setTabColorOverride _ = ()
             member _.getTabColor(_,_) = None
             member _.getTabColors(hwnds,_) = hwnds |> List.map(fun _ -> None)
+            member _.handMadeGroups() = []
+            member _.ungroupHandMade _ = ()
+            member _.groupIcon _ = None
+            member _.setGroupIcon(_,_) = ()
             member _.appWindows = workspaceWindows
             member _.getAutoGroupingEnabled _ = false
             member _.setAutoGroupingEnabled _ _ = ()
@@ -540,17 +555,22 @@ let main() =
             let proxies() = OS().windowsInZorder.where(fun w -> TaskbarProxies.contains w.hwnd).map(fun w -> w.hwnd).list
             let proxy = proxies() |> List.filter(fun hwnd -> OS().windowFromHwnd(hwnd).isAltTabWindow)
             check (proxy.Length=1) "Combined group's taskbar window is not known as a taskbar proxy"
+            // A joining window's first details come with its added event; announcing them as a change
+            // as well updated the taskbar twice for every window at startup.
+            let detailChanges = ref 0
             onGroup combined (fun group ->
+                group.tabInfoChanged.Add(fun hwnd -> if hwnd=d then detailChanges.Value <- detailChanges.Value+1)
                 group.foreground <- d
                 group.addWindow(d,false))
+            check (detailChanges.Value=0) "A joining window's first details were announced as a change"
             check (nativeOrder combined = [a;b;d]) "Combined taskbar button failed a foreground window joining its group"
-            // Without taskbar buttons of their own the windows would show on every virtual desktop;
-            // owned by distinct preview proxies, placed on the group's desktop, they stay there without
-            // sharing Peek contents. The previews have no owner, or a thumbnail click opens the group's
-            // last active tab.
+            // Without taskbar buttons of their own the windows would show on every virtual desktop.
+            // Owned by distinct preview proxies they do not share Peek contents, and the previews are
+            // owned by the group's taskbar window: an ownerless preview has no desktop, so its window
+            // showed on all of them.
             let owner hwnd = WinUserApi.GetWindow(hwnd, GetWindowConstants.GW_OWNER)
             pumpUntil "A combined group's windows are not owned by its preview windows" (fun () ->
-                [a;b;d] |> List.forall(fun hwnd -> TaskbarProxies.ownsWindow hwnd && owner(owner hwnd) = IntPtr.Zero))
+                [a;b;d] |> List.forall(fun hwnd -> TaskbarProxies.ownsWindow hwnd && TaskbarProxies.contains (owner(owner hwnd))))
             check ([a;b;d] |> List.map owner |> List.distinct |> List.length = 3) "Combined tabs share a native Peek owner"
             // Each preview sits below the window it owns. Above it, activating the window raised
             // nothing and it stayed under the other tabs.
@@ -625,6 +645,17 @@ let main() =
             check (minimizedBar.isMinimized && not (SystemInformation.VirtualScreen.IntersectsWith(minimizedBar.bounds.Rectangle))) (sprintf "A minimized window of a combined group shows above the taskbar: %A" minimizedBar.bounds)
             // Outside the display, so an owned window leaves no miniature title bar behind.
             check (minimizedBar.bounds.y >= SystemInformation.VirtualScreen.Bottom) (sprintf "A minimized window of a combined group was parked away from where it minimizes to: %A" minimizedBar.bounds)
+            // A minimized tab's thumbnail is its app's icon at a third of the window's shorter side:
+            // drawn at 32 pixels in a window-sized image, it shrank to a dot in the taskbar.
+            do
+                use stand = (onGroup combined (fun group -> group.ts.tabInfo(Tab d).preview())).bitmap
+                let side = max 32 (min 256 (min stand.Width stand.Height / 3))
+                let background = stand.GetPixel(2,2)
+                let row = stand.Height/2
+                let drawn = [0..stand.Width-1] |> List.filter(fun x -> stand.GetPixel(x,row)<>background)
+                let span = if drawn.IsEmpty then 0 else List.last drawn - List.head drawn + 1
+                check (side<64 || span>=side/2)
+                      (sprintf "A minimized tab's thumbnail icon spans %d of %d pixels, not about %d" span stand.Width side)
             WinUserApi.ShowWindow(d, ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
             onGroup combined (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
             pumpUntil "Taskbar proxies outlived their combined taskbar button" (fun () -> not(TaskbarProxies.contains proxy.Head))
@@ -776,11 +807,10 @@ let main() =
                       activate=ignore; toggleMinimizeRestore=ignore; close=ignore; tabs=List2(texts |> List.map tab) }
                 let button = new TaskBarButton(info ["a";"b"])
                 try
-                    // Owned by the taskbar window, a preview's thumbnail click opened the group's
-                    // last active tab instead of its own.
-                    check (["a";"b"] |> List.forall(fun key ->
-                        WinUserApi.GetWindow((button.tryTabWindow key).Value.hwnd,GetWindowConstants.GW_OWNER)=IntPtr.Zero))
-                        "A tab preview is owned by the group's taskbar window"
+                    // The taskbar window owns the previews, so their windows keep to its virtual desktop.
+                    let previewOwner key = WinUserApi.GetWindow((button.tryTabWindow key).Value.hwnd,GetWindowConstants.GW_OWNER)
+                    check (["a";"b"] |> List.forall(fun key -> previewOwner key=button.window.hwnd))
+                        "A tab preview is not owned by the group's taskbar window"
                     pumpUntil "First preview order was not sent again" (fun () -> not button.isResendingTabOrder)
                     button.update(info ["a";"b";"c"])
                     button.update(info ["a";"b"])
@@ -796,6 +826,12 @@ let main() =
                         WinUserApi.SendMessage(preview.hwnd,WindowMessages.WM_DWMSENDICONICLIVEPREVIEWBITMAP,IntPtr.Zero,IntPtr.Zero) |> ignore
                     check (List.ofSeq previewRequests=["b",false;"a",false;"c",false]) "Inactive Peek requests reuse another tab's preview"
                     check (previewActivations=0) "Hovering a Peek preview activates the window"
+                    // While thumbnails are up the previews have no owner: owned, a click on one opened
+                    // the group's last active tab. Once they are gone the taskbar window owns them again.
+                    check (button.arePreviewsReleased && ["a";"b";"c"] |> List.forall(fun key -> previewOwner key=IntPtr.Zero))
+                        "Previews kept their owner while their thumbnails were requested"
+                    pumpUntil "Previews were not owned again once their thumbnails were gone" (fun () ->
+                        not button.arePreviewsReleased && ["a";"b";"c"] |> List.forall(fun key -> previewOwner key=button.window.hwnd))
                     // A preview that leaves frees its window, class and procedure then, not with the group.
                     let leaving = (button.tryTabWindow "c").Value.hwnd
                     for _ in 1..20 do

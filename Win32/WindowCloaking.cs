@@ -150,6 +150,20 @@ namespace Bemo
             return !holdsApp;
         }
 
+        /// <summary>
+        /// True when the shell hides the window, as it does a window on another virtual desktop
+        /// (DWM_CLOAKED_SHELL), rather than its app or WindowTabs.
+        /// </summary>
+        public static bool IsCloakedByShell(IntPtr hwnd)
+        {
+            try
+            {
+                int cloaked;
+                return DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, out cloaked, sizeof(int)) == 0 && (cloaked & 2) != 0;
+            }
+            catch (DllNotFoundException) { return false; }
+        }
+
         public static bool IsCloaked(IntPtr hwnd)
         {
             try

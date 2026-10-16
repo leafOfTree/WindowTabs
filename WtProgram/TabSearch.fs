@@ -17,7 +17,9 @@ type TabSearchEntry = {
     /// Tabs of one group share a number; groups are numbered from the most recently used.
     group:int
     /// 0 for the most recently used tab, the active tab last.
-    recency:int }
+    recency:int
+    /// The virtual desktop the window is on when that is not the one in view, else "".
+    desktop:string }
 
 module TabSearch =
     /// Keep the earliest position of the strongest match, rather than an earlier weak occurrence.
@@ -47,14 +49,32 @@ module TabSearch =
 
     let matches query entry = (score query entry).IsSome
 
-    /// Choose by match quality, earlier positions, then recency. With
-    /// nothing typed that is the previous tab, so Enter goes back to it as Alt+Tab does.
+    /// How well an entry matches, best first: match quality, earlier positions, a window on the
+    /// desktop in view, then recency. None when it does not match.
+    let order query (entry:TabSearchEntry) =
+        rank query entry |> Option.map(fun (quality,position) -> -quality,position,(if entry.desktop="" then 0 else 1),entry.recency)
+
+    /// The best match. With nothing typed that is the previous tab, so Enter goes back to it as
+    /// Alt+Tab does.
     let best query (entries:TabSearchEntry list) =
         entries
-        |> List.choose(fun entry -> rank query entry |> Option.map(fun found -> entry,found))
-        |> List.sortBy(fun (entry,(quality,position)) -> -quality,position,entry.recency)
+        |> List.choose(fun entry -> order query entry |> Option.map(fun key -> entry,key))
+        |> List.sortBy snd
         |> List.tryHead
         |> Option.map fst
+
+    /// The matching entries to list: in their groups while nothing is typed, else best match first.
+    let shown query (entries:('a * TabSearchEntry) list) =
+        let matching = entries |> List.choose(fun (item,entry) -> order query entry |> Option.map(fun key -> (item,entry),key))
+        if String.IsNullOrWhiteSpace query then List.map fst matching
+        else matching |> List.sortBy snd |> List.map fst
+
+    /// The program, and the desktop of a window on another one.
+    let source (entry:TabSearchEntry) =
+        match entry.program,entry.desktop with
+        | program,"" -> program
+        | "",desktop -> desktop
+        | program,desktop -> program+" · "+desktop
 
     /// Where the typed terms appear in a text, as (start,length) runs to highlight.
     let highlights (query:string) (text:string) =
@@ -78,7 +98,17 @@ module TabSearch =
     let create hwnd title original program =
         { hwnd=hwnd; title=title; program=program
           keywords=[title;original;program] |> List.filter((<>) "") |> List.distinct |> List.map(fun text -> text.ToLowerInvariant())
-          group=0; recency=0 }
+          group=0; recency=0; desktop="" }
+
+    /// Where a window on another virtual desktop is: the name the user gave that desktop, or its
+    /// number.
+    let desktopOf (window:Window) =
+        if not (WindowCloaking.IsCloakedByShell window.hwnd) then ""
+        else
+            match VirtualDesktop.desktopId window.hwnd |> Option.map VirtualDesktop.describe with
+            | Some(_,Some name) -> name
+            | Some(Some place,None) -> tr (Strings.TabSearch.desktop place)
+            | _ -> tr Strings.TabSearch.otherDesktop
 
     let entry (nameOverride:IntPtr -> string option) (window:Window) =
         let text = window.text
@@ -86,7 +116,7 @@ module TabSearch =
         let program =
             if window.className="ApplicationFrameWindow" then ""
             else try IO.Path.GetFileNameWithoutExtension(window.pid.exeName) with _ -> ""
-        create window.hwnd (nameOverride window.hwnd |> Option.defaultValue text) text program
+        { create window.hwnd (nameOverride window.hwnd |> Option.defaultValue text) text program with desktop=desktopOf window }
 
     /// Lists groups one after another, the most recently used first, each in its tab order.
     /// zorder gives each window's place in the z-order, 0 at the top.
@@ -146,7 +176,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let mutable shadow : TaskSwitchShadow option = None
     let items =
         tabs |> List.map(fun entry ->
-            let item = TreeListItem(entry.title,Values=[|"";entry.program|])
+            let item = TreeListItem(entry.title,Values=[|"";TabSearch.source entry|])
             match ImgHelper.windowIcon (OS().windowFromHwnd entry.hwnd) with
             | Some icon -> item.Icon <- icon
             | None -> item.Glyph <- WindowGlyph
@@ -273,16 +303,18 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         f
     let entryOf (item:TreeListItem) = items |> Array.pick(fun (row,entry) -> if obj.ReferenceEquals(row,item) then Some entry else None)
     let apply() =
-        // Matches stay in their groups; the best one is chosen.
-        let shown = scoped() |> Array.filter(fun (_,entry) -> TabSearch.matches input.Text entry)
+        // In their groups while nothing is typed; then the best matches first, and the groups,
+        // no longer together, lose their dividers.
+        let typed = not (String.IsNullOrWhiteSpace input.Text)
+        let shown = TabSearch.shown input.Text (List.ofArray (scoped())) |> Array.ofList
         // Titles reclaim the fixed app column's spare space, including after filtering.
         let programWidth =
             shown |> Array.fold(fun width (_,entry) ->
-                max width (TextRenderer.MeasureText(entry.program,list.Font,Size(Int32.MaxValue,Dpi.scale rowHeight),
+                max width (TextRenderer.MeasureText(TabSearch.source entry,list.Font,Size(Int32.MaxValue,Dpi.scale rowHeight),
                               TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine).Width)) 0
-        programColumn.Width <- max 48 (min 160 (int(Math.Ceiling(float programWidth/Dpi.currentFactor()))+16))
+        programColumn.Width <- max 48 (min 220 (int(Math.Ceiling(float programWidth/Dpi.currentFactor()))+16))
         shown |> Array.iteri(fun index (item,entry) ->
-            item.SeparatorAbove <- index>0 && (snd shown.[index-1]).group<>entry.group
+            item.SeparatorAbove <- not typed && index>0 && (snd shown.[index-1]).group<>entry.group
             item.Highlights <- [| TabSearch.highlights input.Text entry.title; TabSearch.highlights input.Text entry.program |])
         list.Roots.Clear()
         list.Roots.AddRange(Array.map fst shown)

@@ -3045,6 +3045,8 @@ namespace Bemo
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         public static extern IntPtr FindWindow(IntPtr lpClassName, String lpWindowName);
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        public static extern IntPtr FindWindowEx(IntPtr hwndParent, IntPtr hwndChildAfter, String lpszClass, String lpszWindow);
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
         public static extern bool GetGUIThreadInfo(int idThread, out GUITHREADINFO lpgui);
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         public static extern IntPtr CopyImage(IntPtr hImage, int uType, int cxDesired, int cyDesired, int fuFlags);

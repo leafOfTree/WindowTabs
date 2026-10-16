@@ -22,8 +22,8 @@ let pumpUntil description predicate =
 let rememberedGroupUpdates() =
     let m title = { app="APP.EXE"; title=title }
     let now = DateTime.UtcNow
-    let saved = [{ id=1; seen=now.AddDays(-1.0); members=[m "a";m "b";m "c"] }
-                 { id=2; seen=now.AddDays(-40.0); members=[m "x";m "y"] }]
+    let saved = [{ id=1; seen=now.AddDays(-1.0); members=[m "a";m "b";m "c"]; paths=Map.empty }
+                 { id=2; seen=now.AddDays(-40.0); members=[m "x";m "y"]; paths=Map.empty }]
     // "a" is open in group 1, "b" was dragged into group 3 with "d", "c" has closed.
     let next = RememberedGroups.update now [1,[m "a"];3,[m "b";m "d"]] [] saved
     let find id = next |> List.tryFind(fun group -> group.id=id) |> Option.map(fun group -> group.members)
@@ -36,6 +36,15 @@ let rememberedGroupUpdates() =
     let alone = RememberedGroups.update now [4,[m "a"]] [] next
     check ((alone |> List.tryFind(fun group -> group.id=1)).IsNone) "A group left with one window was kept"
     check (RememberedGroups.find next (m "c") = Some 1 && RememberedGroups.find next (m "z") = None) "A remembered window was not found by its title"
+    // Where each program last ran is kept, saved and read back, so a closed window keeps its icon;
+    // a program no longer in the group is dropped.
+    let located = RememberedGroups.withPaths [1,[@"C:\Apps\App.exe";@"C:\Other\Other.exe"]] next
+    let paths id = (located |> List.find(fun group -> group.id=id)).paths
+    check (paths 1 = Map.ofList ["APP.EXE",@"C:\Apps\App.exe"] && paths 3 = Map.empty) "A group did not keep where its programs ran"
+    let reread = RememberedGroups.read (RememberedGroups.write located)
+    check (reread = located) "Where a group's programs ran was not saved and read back"
+    let moved = RememberedGroups.update now [1,[{ app="NEW.EXE"; title="n" };{ app="NEW.EXE"; title="o" }]] [m "a";m "c"] located
+    check ((moved |> List.find(fun group -> group.id=1)).paths = Map.empty) "A group kept the path of a program it no longer has"
 
 let main() =
     rememberedGroupUpdates()
@@ -58,7 +67,7 @@ let main() =
         let app = AppIdentity.key path
         let rememberedTitles = ["Remembered A";"Remembered B";"Remembered C"]
         runtimeSettings.rememberedGroups <-
-            [{ id=5151; seen=DateTime.UtcNow; members=rememberedTitles |> List.map(fun title -> { app=app; title=title }) }]
+            [{ id=5151; seen=DateTime.UtcNow; members=rememberedTitles |> List.map(fun title -> { app=app; title=title }); paths=Map.empty }]
         check ((runtimeSettings.rememberedGroups |> List.map(fun group -> group.id)) = [5151]) "Remembered groups were not kept in the settings"
         use lifetime = new LifetimeScope(fun error -> raise error)
         let program = Program.Program(lifetime,settings=runtimeSettings)
@@ -132,6 +141,38 @@ let main() =
         pumpUntil "A title change in a remembered group was not recorded" (fun () ->
             runtimeSettings.rememberedGroups |> List.exists(fun group ->
                 group.id=5151 && List.contains { app=app; title="Renamed A" } group.members))
+        // A window of a group made by hand that closes stays in the group's record, to come back to
+        // it, and App rules is told so it shows the window as closed.
+        let announced = ref 0
+        use watch = api.notifyValue "rememberedGroups" (fun _ -> announced.Value <- announced.Value+1)
+        let lateHandle = late.Handle
+        late.Close()
+        pumpUntil "Closing a window of a group made by hand did not tell App rules" (fun () ->
+            announced.Value>0 &&
+            (program :> IProgram).handMadeGroups() |> List.exists(fun (id,members) ->
+                id=5151 && members |> List.exists(fun (_,title,hwnd) -> title="Remembered C" && hwnd=IntPtr.Zero)))
+        // A picture for a group's taskbar button is kept for that group, whichever of its windows
+        // it was chosen from, and the default comes back on request.
+        (program :> IProgram).setGroupIcon(reopenedA.Handle,Some @"C:\icons\work.ico")
+        check ((program :> IProgram).groupIcon reopenedB.Handle=Some @"C:\icons\work.ico" && runtimeSettings.groupIcons.TryFind "hand:5151"=Some @"C:\icons\work.ico")
+              "A group's taskbar picture was not kept for the group"
+        (program :> IProgram).setGroupIcon(reopenedB.Handle,None)
+        check ((program :> IProgram).groupIcon reopenedA.Handle=None && runtimeSettings.groupIcons.IsEmpty) "Restoring a group's taskbar picture left it set"
+        // Ungroup from App rules takes the group apart for good: its windows part, and it is
+        // neither recorded again as they leave nor put back together. The shell reports a window
+        // as destroyed when a group with combined taskbar icons takes its button; a window still
+        // there stays one already grouped this run, not one to put back in its saved group.
+        for hwnd in [reopenedA.Handle;reopenedB.Handle;lateHandle] do
+            program.receive(Program.ProgramInput.ShellEvent(hwnd,ShellEvent.HSHELL_WINDOWDESTROYED))
+        (program :> IProgram).ungroupHandMade 5151
+        let together() =
+            [reopenedA.Handle;reopenedB.Handle;lateHandle] |> List.choose groupOf |> List.countBy id |> List.exists(fun (_,count) -> count>1)
+        pumpUntil "Ungrouping a remembered group left its windows together" (fun () -> not (together()))
+        let settle = Diagnostics.Stopwatch.StartNew()
+        while settle.ElapsedMilliseconds<1500L do Application.DoEvents(); Threading.Thread.Sleep(20)
+        check (not (together()) && runtimeSettings.rememberedGroups |> List.forall(fun group -> group.id<>5151)
+               && [reopenedA.Handle;reopenedB.Handle;lateHandle] |> List.forall(fun hwnd -> WindowGroupToken.read hwnd<>Some 5151))
+              (sprintf "An ungrouped group came back: together %b, remembered %A" (together()) (runtimeSettings.rememberedGroups |> List.map(fun group -> group.id)))
         restoring <- false
         program.refresh()
         pumpUntil "Restored fixture windows did not leave their groups" (fun () ->
@@ -156,15 +197,17 @@ let main() =
                 let tree = controls editor |> Seq.pick(function :? SettingsTreeList as tree -> Some tree | _ -> None)
                 let targets = api.getValue("appGroupingTargets") :?> AppGroupingTarget list
                 let root = tree.Roots.[targets |> List.findIndex(fun group -> group.id=target)]
-                let visible = tree.Roots |> Seq.collect(fun row -> if row.Expanded then Seq.append [row] row.Children else Seq.singleton row) |> Seq.toArray
-                let index = visible |> Array.findIndex(fun row -> obj.ReferenceEquals(root,row))
-                let point = Drawing.Point(tree.Width-Dpi.scale 86+Dpi.scale 12,Dpi.scale 30+index*Dpi.scale tree.RowHeight+Dpi.scale (tree.RowHeight/2))
+                // The "+" after the group's apps opens the list of apps to add.
+                editor.AddMenu.UpdateApplications [path]
+                let addAt = typeof<SettingsTreeList>.GetMethod("chipAddAt",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic)
+                let point =
+                    seq { for y in 0..2..tree.Height-1 do for x in 0..2..tree.Width-1 -> Drawing.Point(x,y) }
+                    |> Seq.find(fun point -> tree.ItemAt(point) |> Option.exists(fun row -> obj.ReferenceEquals(row,root))
+                                             && not(isNull (addAt.Invoke(tree,[|box point|]))))
                 let mouse = new MouseEventArgs(MouseButtons.Left,1,point.X,point.Y,0)
                 typeof<SettingsTreeList>.GetMethod("OnMouseDown",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.Public ||| Reflection.BindingFlags.NonPublic).Invoke(tree,[|box mouse|]) |> ignore
-                let picker = controls tree |> Seq.pick(function :? GroupingApplicationPicker as picker -> Some picker | _ -> None)
-                picker.UpdateApplications [path]
-                let combo = picker.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsCombo as combo -> Some combo | _ -> None)
-                combo.SelectedIndex <- 1+Array.findIndex ((=)path) picker.Applications
+                editor.AddMenu.Choice.Value.SelectedIndex <- Array.findIndex ((=)path) editor.AddMenu.Shown
+                editor.AddMenu.DropDown |> Option.iter(fun window -> window.Close())
             let waitForTarget target =
                 pumpUntil "Editing a rule did not regroup existing HWNDs through the production adapter" (fun () ->
                     let groups = Services.desktop.groups.list |> List.map(fun group -> group :?> GroupInfo)

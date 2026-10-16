@@ -89,13 +89,15 @@ type SettingsInfoButton() as this =
 
 type private SettingsHelpPopup(message:string,font:Font) as this =
     inherit Form()
+    /// Snug round the text, so a one-word tip looks as settled as a paragraph.
+    let padX,padY = Dpi.scale 12,Dpi.scale 8
     // As wide as a short message needs, wrapping only past 470px.
     let width =
         let oneLine = TextRenderer.MeasureText(message,font,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPrefix).Width
-        min (Dpi.scale 470) (oneLine+Dpi.scale 32)
-    let wrapped = String.Join("\n",SettingsTextWrap.lines message font (width-Dpi.scale 32))
+        min (Dpi.scale 470) (oneLine+2*padX)
+    let wrapped = String.Join("\n",SettingsTextWrap.lines message font (width-2*padX))
     let arrow() = Dpi.scale 7
-    let radius() = float32(Dpi.scale 10)
+    let radius() = float32(Dpi.scale 8)
     /// Where the arrow meets the target, across the popup, and whether the popup sits below the
     /// target (the arrow on its top edge) or above it.
     let mutable tip = 0
@@ -130,8 +132,18 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
         this.Font <- font
         this.DoubleBuffered <- true
         let textSize = TextRenderer.MeasureText(wrapped,font,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPrefix)
-        this.ClientSize <- Size(width,textSize.Height+Dpi.scale 32+arrow())
+        this.ClientSize <- Size(width,textSize.Height+2*padY+arrow())
+        // Windows widens a window to its minimum width when it is created; a one-word tip then
+        // sat in a wide, empty bubble.
     override _.ShowWithoutActivation = true
+    override this.WndProc(m) =
+        base.WndProc(&m)
+        // WM_GETMINMAXINFO: no minimum size, so the bubble fits short text.
+        if m.Msg=0x24 then
+            let mutable info = Runtime.InteropServices.Marshal.PtrToStructure<MINMAXINFO>(m.LParam)
+            info.ptMinTrackSize.cx <- 1
+            info.ptMinTrackSize.cy <- 1
+            Runtime.InteropServices.Marshal.StructureToPtr(info,m.LParam,false)
     /// Below the target where it fits on the screen, else above it. The arrow points at the
     /// target's middle, or for a wide one near its start, where its text begins.
     member this.place (target:Rectangle) (bounds:Rectangle) =
@@ -154,9 +166,9 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
         use shape = outline 1.0f
         use border = new Pen(p.border)
         e.Graphics.DrawPath(border,shape)
-        let top = Dpi.scale 16+(if below then arrow() else 0)
+        let top = padY+(if below then arrow() else 0)
         TextRenderer.DrawText(e.Graphics,wrapped,this.Font,
-            Rectangle(Dpi.scale 16,top,this.Width-Dpi.scale 32,this.Height-Dpi.scale 32-arrow()),
+            Rectangle(padX,top,this.Width-2*padX,this.Height-2*padY-arrow()),
             p.text,TextFormatFlags.NoPrefix)
 
 /// Hover help for any control, the way the (i) button shows it: a themed popup whose arrow
@@ -233,6 +245,36 @@ type SettingsHover(target:Control, text:string, ?enabled:bool) =
         and set value =
             quiet <- value
             if value then popup |> Option.iter(fun window -> if window.Visible then window.Hide())
+
+/// Hover help for parts of a control that draws its own buttons, such as a list's row buttons:
+/// the same themed popup as SettingsHover, pointing at the part under the pointer.
+type SettingsPartHover(target:Control) =
+    let popups = Collections.Generic.Dictionary<string,SettingsHelpPopup>()
+    let mutable current : SettingsHelpPopup option = None
+    let hide() =
+        current |> Option.iter(fun window -> if not window.IsDisposed then window.Hide())
+        current <- None
+    do
+        target.MouseLeave.Add(fun _ -> hide())
+        target.VisibleChanged.Add(fun _ -> if not target.Visible then hide())
+        ThemeBinding.watch target (fun () -> hide(); (for window in popups.Values do window.Dispose()); popups.Clear())
+        target.Disposed.Add(fun _ -> for window in popups.Values do window.Dispose())
+    /// Shows the text below a part, given in the target's coordinates; empty text hides it.
+    member _.Show(text:string, part:Rectangle) =
+        if String.IsNullOrEmpty text || isNull (target.FindForm()) then hide()
+        else
+            let window =
+                match popups.TryGetValue text with
+                | true,window -> window
+                | _ ->
+                    let window = new SettingsHelpPopup(text,target.Font)
+                    popups.[text] <- window
+                    window
+            if not (current |> Option.exists(fun shown -> obj.ReferenceEquals(shown,window))) then hide()
+            window.place (target.RectangleToScreen(part)) (Screen.FromControl(target).WorkingArea)
+            if not window.Visible then window.Show(target.FindForm())
+            current <- Some window
+    member _.Hide() = hide()
 
 /// Where a link goes, shown by a mark after its text: an arrow for the web, a folder for a file
 /// on this PC.
@@ -1113,6 +1155,9 @@ type SettingsCombo(items:string[]) as this =
         // One width for lists of short words, so stacked rows line up their left edges too.
         this.Width <- max (Dpi.scale SettingsShapes.editorWidth) (textWidth+dot+Dpi.scale 60)
     member _.CompactLabel with set(label:unit -> string) = compactLabel <- Some label; this.Invalidate()
+    /// Where on screen the choices open from, left-aligned below it, when the control itself is
+    /// not shown: a button drawn by a list, say.
+    member val DropDownAnchor : Rectangle option = None with get,set
     member _.ItemColors
         with get() = Array.copy itemColors
         and set(value:Color array) =
@@ -1193,21 +1238,23 @@ type SettingsCombo(items:string[]) as this =
             let frame = new SettingsListFrame(list)
             let listHost = new ToolStripControlHost(frame,AutoSize=false,Margin=Padding.Empty,Padding=Padding.Empty,BackColor=p.hover)
             window.Items.Add(listHost) |> ignore
-            let area = Screen.FromControl(this).WorkingArea
+            let anchorBox = match this.DropDownAnchor with Some box -> box | None -> this.RectangleToScreen(this.ClientRectangle)
+            let area = Screen.FromRectangle(anchorBox).WorkingArea
             let labelWidth = items |> Array.map(fun text -> TextRenderer.MeasureText(text,this.Font).Width) |> Array.max
             // Native handle creation can change item metrics at non-100% DPI.
             // Realize the list first, then size the client area using its final row height.
             list.Handle |> ignore
             list.ItemHeight <- max (Dpi.scale 34) (list.Font.Height+Dpi.scale 12)
-            window.Size <- Size(min area.Width (max this.Width (labelWidth+Dpi.scale (if itemImages.Length>0 then 82 elif itemColors.Length>0 then 80 else 58))),
+            window.Size <- Size(min area.Width (max anchorBox.Width (labelWidth+Dpi.scale (if itemImages.Length>0 then 82 elif itemColors.Length>0 then 80 else 58))),
                                 min (area.Height-Dpi.scale 12) (items.Length*list.ItemHeight+window.Padding.Vertical+2))
             listHost.Size <- Size(window.Width-window.Padding.Horizontal,window.Height-window.Padding.Vertical)
             frame.Size <- listHost.Size
             list.SelectedIndex <- max 0 selected
             list.TopIndex <- 0
-            let anchor = this.PointToScreen(Point(0,this.Height+Dpi.scale 4))
-            let y = if anchor.Y+window.Height<=area.Bottom then anchor.Y else this.PointToScreen(Point.Empty).Y-window.Height-Dpi.scale 4
-            window.Location <- Point(max area.Left (min (area.Right-window.Width) (anchor.X+this.Width-window.Width)),max area.Top y)
+            let anchor = Point(anchorBox.X,anchorBox.Bottom+Dpi.scale 4)
+            let y = if anchor.Y+window.Height<=area.Bottom then anchor.Y else anchorBox.Y-window.Height-Dpi.scale 4
+            let x = if this.DropDownAnchor.IsSome then anchor.X else anchor.X+anchorBox.Width-window.Width
+            window.Location <- Point(max area.Left (min (area.Right-window.Width) x),max area.Top y)
             popup <- Some window
             this.Invalidate()
             window.Closed.Add(fun e ->

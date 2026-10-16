@@ -98,6 +98,25 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             let json = this.settingsJson
             json.["rememberedGroups"] <- RememberedGroups.write groups
             this.settingsJson <- json
+            settingChangedEvent.Trigger("rememberedGroups",null)
+
+    /// Tells those watching a value that what it stands for changed, though the value did not.
+    member this.announce(key:string) = settingChangedEvent.Trigger(key,null)
+
+    /// Pictures chosen for groups' taskbar buttons, by what keeps a group recognisable: a named
+    /// group's id, a group made by hand's token, or the app of an automatic group.
+    member this.groupIcons
+        with get() =
+            match this.settingsJson.["groupIcons"] with
+            | :? JObject as icons -> icons.Properties() |> Seq.choose(fun p -> if p.Value.Type=JTokenType.String then Some(p.Name,p.Value.Value<string>()) else None) |> Map.ofSeq
+            | _ -> Map.empty
+        and set(icons:Map<string,string>) =
+            let json = this.settingsJson
+            let saved = JObject()
+            for KeyValue(key,path) in icons do saved.[key] <- JValue(path)
+            json.["groupIcons"] <- saved
+            this.settingsJson <- json
+            settingChangedEvent.Trigger("groupIcons",null)
 
     member x.settings
         with get() =
@@ -155,6 +174,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                             else SettingsCatalog.toggleDefault "showTabsOnSwitch" hasExistingSettings)
                         enableShiftScroll = settingsJson.getBool("enableShiftScroll").def(SettingsCatalog.toggleDefault "enableShiftScroll" hasExistingSettings)
                         enableCtrlScroll = settingsJson.getBool("enableCtrlScroll").def(SettingsCatalog.toggleDefault "enableCtrlScroll" hasExistingSettings)
+                        enableMiddleClickClose = settingsJson.getBool("enableMiddleClickClose").def(SettingsCatalog.toggleDefault "enableMiddleClickClose" hasExistingSettings)
                         version = settingsJson.getString("version").def(String.Empty)
                         alignment = settingsJson.getString("alignment").def(SettingsCatalog.choiceDefault "alignment") |> SettingsCatalog.normalizeChoice "alignment"
                         tabPosition = settingsJson.getString("tabPosition").def(SettingsCatalog.choiceDefault "tabPosition") |> SettingsCatalog.normalizeChoice "tabPosition"
@@ -241,6 +261,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.Remove("ticket") |> ignore
             settingsJson.setBool("enableShiftScroll", settings.enableShiftScroll)
             settingsJson.setBool("enableCtrlScroll", settings.enableCtrlScroll)
+            settingsJson.setBool("enableMiddleClickClose", settings.enableMiddleClickClose)
             settingsJson.setString("tabPosition",settings.tabPosition)
             settingsJson.setInt32("tabColumnWidth",settings.tabColumnWidth)
             settingsJson.setStringArray("includedPaths", settings.includedPaths.items)

@@ -439,6 +439,21 @@ let main() =
                 send WindowMessages.WM_LBUTTONDOWN closePoint
                 send WindowMessages.WM_LBUTTONUP background
                 check (closes.Count=1) "Releasing outside the close button closed a tab"
+                // A middle-click on a tab closes it, and the strip holds its layout for that, only
+                // while Middle-click closes a tab is on.
+                let heldCell = typeof<TabStrip>.GetField("heldLayoutCell",BindingFlags.Instance ||| BindingFlags.NonPublic).GetValue(strip)
+                let held() = heldCell.GetType().GetProperty("value").GetValue(heldCell) |> isNull |> not
+                let release() = heldCell.GetType().GetMethod("set").Invoke(heldCell,[|box (None:(float*float) option)|]) |> ignore
+                api.setValue("enableMiddleClickClose",box false)
+                release()
+                send WindowMessages.WM_MBUTTONDOWN background
+                send WindowMessages.WM_MBUTTONUP background
+                let heldWhenOff = held()
+                api.setValue("enableMiddleClickClose",box true)
+                release()
+                send WindowMessages.WM_MBUTTONDOWN background
+                send WindowMessages.WM_MBUTTONUP background
+                check (not heldWhenOff && held()) "Middle-click did not follow its setting"
                 send WindowMessages.WM_MOUSELEAVE Pt.empty
                 check (not strip.isMouseOver.value) "Mouse leave retained hover"
                 // A menu over the strip ends hover without a move. When it goes with the pointer still

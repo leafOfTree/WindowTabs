@@ -6,8 +6,9 @@ open Newtonsoft.Json.Linq
 type RememberedMember = { app: string; title: string }
 
 /// A group as it was last seen, kept after its windows close, so a window opened again with the
-/// same program and title goes back into it.
-type RememberedGroup = { id: int; members: RememberedMember list; seen: DateTime }
+/// same program and title goes back into it. paths keeps where each of its programs was last
+/// seen running, to find their icons while they are closed.
+type RememberedGroup = { id: int; members: RememberedMember list; seen: DateTime; paths: Map<string,string> }
 
 module RememberedGroups =
     /// Groups not seen for this long are forgotten.
@@ -31,16 +32,33 @@ module RememberedGroups =
             |> Option.map(fun group -> group.members |> List.filter(fun m -> not(inView.Contains m)))
             |> Option.defaultValue []
         let liveIds = live |> List.map fst |> Set.ofList
+        let pathsOf id = saved |> List.tryFind(fun group -> group.id=id) |> Option.map(fun group -> group.paths) |> Option.defaultValue Map.empty
         let current =
             live |> List.map(fun (id,members) ->
                 let closedMembers = closed id |> List.truncate maxMembers
-                { id=id; members=members @ closedMembers; seen=now })
+                { id=id; members=members @ closedMembers; seen=now; paths=pathsOf id })
         let earlier =
             saved |> List.filter(fun group -> not(liveIds.Contains group.id) && now-group.seen < maxAge)
             |> List.map(fun group -> { group with members = group.members |> List.filter(fun m -> not(inView.Contains m)) })
         current @ earlier
         |> List.filter(fun group -> group.members.Length >= 2)
         |> List.truncate maxGroups
+        |> List.map(fun group ->
+            let apps = group.members |> List.map(fun m -> m.app) |> Set.ofList
+            { group with paths = group.paths |> Map.filter(fun app _ -> apps.Contains app) })
+
+    /// Notes where the programs of each group in view run from (id, executable paths).
+    let withPaths (running:(int * string list) list) (groups:RememberedGroup list) =
+        groups |> List.map(fun group ->
+            match running |> List.tryFind(fun (id,_) -> id=group.id) with
+            | None -> group
+            | Some(_,found) ->
+                let apps = group.members |> List.map(fun m -> m.app) |> Set.ofList
+                let paths =
+                    found |> List.fold(fun (paths:Map<string,string>) path ->
+                        let app = AppIdentity.key path
+                        if apps.Contains app then paths.Add(app,path) else paths) group.paths
+                { group with paths = paths })
 
     /// The group a window opening with this program and title was last in.
     let find (saved:RememberedGroup list) (m:RememberedMember) =
@@ -59,13 +77,22 @@ module RememberedGroups =
                             let app,title = item.Value<string>("app"),item.Value<string>("title")
                             if String.IsNullOrEmpty app || String.IsNullOrEmpty title then None
                             else Some { app=app; title=title }) |> List.ofSeq
-                    Some { id=group.Value<int>("id"); members=members
+                    let paths =
+                        match group.["paths"] with
+                        | :? JObject as paths ->
+                            paths.Properties() |> Seq.choose(fun p ->
+                                match p.Value with
+                                | :? JValue as value when value.Type=JTokenType.String && not(String.IsNullOrEmpty(string value)) -> Some(p.Name,string value)
+                                | _ -> None) |> Map.ofSeq
+                        | _ -> Map.empty
+                    Some { id=group.Value<int>("id"); members=members; paths=paths
                            seen=DateTime.SpecifyKind(group.Value<DateTime>("seen"),DateTimeKind.Utc) }
                 with _ -> None) |> List.ofSeq
         | _ -> []
 
     let write (groups:RememberedGroup list) =
         JArray(groups |> List.map(fun group ->
+            let members = group.members |> List.map(fun m -> JObject(JProperty("app",m.app),JProperty("title",m.title)))
+            let paths = group.paths |> Map.toList |> List.map(fun (app,path) -> JProperty(app,path))
             JObject(JProperty("id",group.id),JProperty("seen",group.seen),
-                    JProperty("members",JArray(group.members |> List.map(fun m ->
-                        JObject(JProperty("app",m.app),JProperty("title",m.title))))))))
+                    JProperty("members",JArray(members)),JProperty("paths",JObject(paths)))))

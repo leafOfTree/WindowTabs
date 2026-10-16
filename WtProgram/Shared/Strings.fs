@@ -60,6 +60,13 @@ module Strings =
         let restoreTabName = { en="Reset name"; zh="重置名称"; ja="名前をリセット" }
         let sortTabs = { en="Sort by app and title"; zh="按应用和标题排序"; ja="アプリとタイトル順に並べ替え" }
         let combineTaskbarIcons = { en="Combine taskbar icons"; zh="合并任务栏图标"; ja="タスクバーアイコンをまとめる" }
+        /// For the group's own taskbar button, shown while its icons are combined.
+        let changeTaskbarIcon = { en="Change taskbar icon…"; zh="更换任务栏图标…"; ja="タスクバーアイコンを変更…" }
+        let restoreTaskbarIcon = { en="Restore taskbar icon"; zh="恢复默认任务栏图标"; ja="タスクバーアイコンを元に戻す" }
+        /// The kinds named with their extensions, so programs are seen to be taken too.
+        let taskbarIconFiles = { en="Icon files (*.ico, *.png, *.jpg, *.bmp, *.gif, *.exe, *.dll)|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|All files (*.*)|*.*"
+                                 zh="图标文件 (*.ico, *.png, *.jpg, *.bmp, *.gif, *.exe, *.dll)|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|所有文件 (*.*)|*.*"
+                                 ja="アイコン ファイル (*.ico, *.png, *.jpg, *.bmp, *.gif, *.exe, *.dll)|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|すべてのファイル (*.*)|*.*" }
         let numberShortcut = { en="Switch by number"; zh="数字键切换"; ja="番号で切り替え" }
         let enableTabs = { en="Enable tabs"; zh="启用标签"; ja="タブを有効にする" }
         let autoGroupWindows = { en="Auto-group windows"; zh="自动分组"; ja="ウィンドウを自動グループ化" }
@@ -169,6 +176,11 @@ module Strings =
                                      zh="再次启动当前标签的应用。"
                                      ja="現在のタブのアプリをもう一度起動します。" }
                        keywords={ en="new window"; zh="新建窗口"; ja="新しいウィンドウ" } }
+        let closeTab = { caption={ en="Close tab"; zh="关闭标签"; ja="タブを閉じる" }
+                         description={ en="Closes the window of the tab in front."
+                                       zh="关闭当前标签的窗口。"
+                                       ja="前面のタブのウィンドウを閉じます。" }
+                         keywords={ en="close window"; zh="关闭窗口"; ja="ウィンドウを閉じる" } }
         let switchTabsByNumber = { caption={ en="Switch tabs by number"; zh="按数字切换标签"; ja="番号でタブを切り替え" }
                                    description={ en="Hold a modifier key and press 1–9."; zh="按住修饰键再按 1–9。"; ja="修飾キーを押しながら 1～9 を押します。" }
                                    keywords={ en="digit"; zh="数字"; ja="数字" } }
@@ -211,6 +223,9 @@ module Strings =
         let fill = { en="Fill"; zh="填充"; ja="塗りつぶし" }
         let numberShortcutMenuHint = { en="Enable or disable it for one app from the tab menu."; zh="可在标签右键菜单中为单个应用启用或禁用数字快捷键。"; ja="タブメニューでアプリごとに番号ショートカットを有効・無効にできます。" }
         let numberShortcutFor name = { en=sprintf "Switch tabs by number in %s" name; zh=sprintf "在 %s 中按数字切换标签" name; ja=sprintf "%s のタブを番号で切り替え" name }
+        /// The choices of Switch tabs by number: off, or the key held with 1–9.
+        let numberShortcutOff = { en="Off"; zh="关闭"; ja="オフ" }
+        let numberShortcutWith key = { en=sprintf "%s + 1–9" key; zh=sprintf "%s + 1–9" key; ja=sprintf "%s + 1～9" key }
         let numberShortcutCtrl = { en="Ctrl"; zh="Ctrl"; ja="Ctrl" }
         let numberShortcutAlt = { en="Alt"; zh="Alt"; ja="Alt" }
         let activateOnHover = { caption={ en="Switch tabs on hover"; zh="悬停切换标签"; ja="ホバーでタブを切り替え" }
@@ -226,6 +241,11 @@ module Strings =
                                          zh="在标签栏上滚动，将当前标签向左或向右移动。"
                                          ja="タブバー上で、現在のタブを左右に移動します。" }
                            keywords={ en="wheel reorder"; zh="滚轮 排序"; ja="ホイール 並べ替え" } }
+        let middleClickClose = { caption={ en="Middle-click closes a tab"; zh="按下滚轮关闭标签"; ja="中クリックでタブを閉じる" }
+                                 description={ en="Press the wheel on a tab to close its window."
+                                               zh="在标签上按下滚轮，关闭它的窗口。"
+                                               ja="タブ上でホイールを押すと、そのウィンドウを閉じます。" }
+                                 keywords={ en="wheel click"; zh="中键 滚轮"; ja="ホイール クリック" } }
         let tabTextColor = { caption={ en="Text and close button"; zh="文字与关闭按钮"; ja="文字と閉じるボタン" }; description=none; keywords=colorWords }
         let tabNormalBgColor = { caption={ en="Inactive tab"; zh="非活动标签"; ja="非アクティブなタブ" }; description=none; keywords=colorWords }
         let tabActiveBgColor = { caption={ en="Active tab"; zh="活动标签"; ja="アクティブなタブ" }; description=none; keywords=colorWords }
@@ -370,6 +390,9 @@ module Strings =
     module TabSearch =
         let prompt = { en="Type a title or app name to switch windows"; zh="输入标题或应用名，切换窗口"; ja="タイトルやアプリ名を入力してウィンドウを切り替え" }
         let noMatches = { en="No matching windows."; zh="没有匹配的窗口。"; ja="一致するウィンドウはありません。" }
+        /// Beside a window on another virtual desktop that has no name of its own.
+        let desktop number = { en=sprintf "Desktop %d" number; zh=sprintf "桌面 %d" number; ja=sprintf "デスクトップ %d" number }
+        let otherDesktop = { en="Another desktop"; zh="其他桌面"; ja="別のデスクトップ" }
         let groupTabs count = { en=sprintf "This group · %d" count; zh=sprintf "当前分组 · %d" count; ja=sprintf "このグループ · %d" count }
         let allTabs count = { en=sprintf "All windows · %d" count; zh=sprintf "全局窗口 · %d" count; ja=sprintf "すべてのウィンドウ · %d" count }
 
@@ -381,16 +404,24 @@ module Strings =
         let groupingRules = { en="Groups across apps"; zh="跨应用分组"; ja="アプリをまたぐグループ" }
         let applications = { en="Applications"; zh="应用"; ja="アプリ" }
         let addGroup = { en="Add group"; zh="添加组"; ja="グループを追加" }
-        let newGroup = { en="New group"; zh="新组"; ja="新しいグループ" }
+        /// Shown while Groups across apps is empty.
+        let noGroups = { en="Add a group to put several apps together, or drag tabs onto each other: the groups show here"
+                         zh="点“添加组”把多个应用放在一起，或拖拽标签合并窗口，分组会显示在这里"
+                         ja="「グループを追加」で複数のアプリをまとめるか、タブをドラッグして重ねると、ここに表示されます" }
+        /// The name a new group starts with.
+        let newGroup number = { en=sprintf "Group %d" number; zh=sprintf "组 %d" number; ja=sprintf "グループ %d" number }
         let selectRule = { en="Select a group or rule to edit here. Changes save automatically."; zh="选中组或规则即可在此编辑，修改会自动保存。"; ja="グループかルールを選択して編集します。変更は自動保存されます。" }
         let newRule = { en="New rule"; zh="新规则"; ja="新しいルール" }
         let groupNameRequired = { en="Enter a group name."; zh="请填写组名。"; ja="グループ名を入力してください。" }
         let groupNameExists = { en="A group with this name already exists."; zh="已有同名组，请使用其他名称。"; ja="同じ名前のグループが存在します。" }
-        let groupRulesHelp = { en="Put windows of different apps into one named group. Apps added here don't use Auto-group."
-                               zh="把不同应用的窗口放进同一个命名组。加入这里的应用不再使用“自动分组”。"
-                               ja="異なるアプリのウィンドウを名前付きの一つのグループにまとめます。ここに追加したアプリでは「自動グループ化」は使われません。" }
+        let groupRulesHelp = { en="Put windows of different apps into one named group. Apps added here always have tabs, leave the list above and don't use Auto-group. Windows you group by dragging tabs together show here too."
+                               zh="把不同应用的窗口放进同一个命名组。加入这里的应用会始终启用标签，不再出现在上面的列表里，也不再使用“自动分组”。拖拽标签合并形成的窗口分组也会显示在这里。"
+                               ja="異なるアプリのウィンドウを名前付きの一つのグループにまとめます。ここに追加したアプリは常にタブを使い、上の一覧からは外れ、「自動グループ化」も使われません。タブをドラッグしてまとめたウィンドウのグループもここに表示されます。" }
         let application = { en="Application"; zh="应用"; ja="アプリ" }
-        let chooseApplication = { en="Choose a running app"; zh="选择正在运行的应用"; ja="実行中のアプリを選択" }
+        let chooseApplication = { en="Add an app"; zh="添加应用"; ja="アプリを追加" }
+        /// Hover tips on a group's buttons.
+        let ungroup = { en="Ungroup"; zh="解除分组"; ja="グループを解除" }
+        let removeFromGroup = { en="Remove from group"; zh="从分组中移除"; ja="グループから外す" }
         let browseApplication = { en="Browse…"; zh="浏览…"; ja="参照…" }
         let applicationFiles = { en="Applications (*.exe)|*.exe"; zh="应用程序 (*.exe)|*.exe"; ja="アプリ (*.exe)|*.exe" }
         let applicationOnly = { en="Application only"; zh="仅按应用"; ja="アプリのみ" }
@@ -407,10 +438,11 @@ module Strings =
         let tabs = { en="Tabs"; zh="标签"; ja="タブ" }
         /// Each app's windows join one group of their own; named as in the tab menu.
         let autoGroup = { en="Auto-group"; zh="自动分组"; ja="自動グループ化" }
-        /// The collapsed row holding apps with a rule that are not running.
-        let notRunning count = { en=sprintf "Not running (%d)" count; zh=sprintf "未运行 (%d)" count; ja=sprintf "実行していないアプリ (%d)" count }
-        /// Between the running-app choice and Browse.
-        let orBrowse = { en="or"; zh="或"; ja="または" }
+        /// ApplicationFrameHost.exe, which hosts every Store (UWP) app: Settings, Calculator, Photos.
+        let windowsApps = { en="Windows apps"; zh="Windows 应用"; ja="Windows アプリ" }
+        /// Said on hover over the icon of a group made by dragging tabs together, shown read-only
+        /// after the named groups.
+        let handMadeGroups = { en="Windows grouped by dragging"; zh="拖拽形成的窗口分组"; ja="ドラッグでまとめたウィンドウのグループ" }
         let scanning = { en="Scanning…"; zh="正在扫描…"; ja="スキャン中…" }
         let scanFailed details = { en="Scan failed: " + details; zh="扫描失败：" + details; ja="スキャンに失敗しました: " + details }
 
