@@ -959,17 +959,15 @@ let main() =
         assertTrue (groupView.Height<=Dpi.scale 244 && groupView.Bottom<=view.control.ClientSize.Height)
                    (sprintf "Grouping tree is outside the page: %A in %A" groupView.Bounds view.control.ClientSize)
         // Groups made by dragging tabs show after the named ones, read only, and come apart in one go.
-        // One heading names them, and each row is only its apps: they cannot be renamed, and a
-        // name of their own left less room. Chips carry the icon of their own open window, and a
-        // closed one its app's icon in grey.
+        // Each row is only its apps: they cannot be renamed, and a name of their own left less room;
+        // the icon says on hover what the row is. Chips carry the icon of their own open window, and
+        // a closed one its app's icon in grey.
         menu.UpdateApplications [Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,"notepad.exe")]
         groupView.Reload()
-        let heading = tree.Roots |> Seq.find(fun row -> row.IsHeading)
-        let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Glyph=DragGlyph)
-        tree.SelectedItem <- heading
-        assertTrue (heading.Text=tr Strings.AppRules.handMadeGroups && heading.SeparatorAbove && not(obj.ReferenceEquals(tree.SelectedItem,heading))
-                    && tree.Roots.IndexOf(handMadeRow)=tree.Roots.IndexOf(heading)+1)
-                   "Dragged groups have no heading of their own, or the heading can be selected"
+        let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Glyph=TabsGlyph)
+        assertTrue (handMadeRow.SeparatorAbove && handMadeRow.IconTip=tr Strings.AppRules.handMadeGroups
+                    && tree.Roots |> Seq.forall(fun row -> row.Text<>tr Strings.AppRules.handMadeGroups))
+                   "Dragged groups are not set apart, have a heading row, or their icon does not say what they are"
         assertTrue (handMadeRow.Text="" && handMadeRow.Checks |> Array.forall Option.isNone
                     && handMadeRow.Chips |> List.map(fun chip -> chip.Text)=["Notes - Notepad";"Downloads"]
                     && handMadeRow.Chips |> List.forall(fun chip -> not chip.Removable && not(isNull chip.Icon))
@@ -1022,23 +1020,25 @@ let main() =
         pressChipPart "chipCloseAt" tree.Roots.[1]
         assertTrue (saved().IsEmpty && targets().Length=2) "Removing an app's chip deleted the group or kept the app"
         groupView.Reload()
-        assertTrue (tree.Roots |> Seq.filter(fun row -> not row.IsHeading && row.Glyph<>DragGlyph) |> Seq.length=2 && tree.Roots.[1].Chips.IsEmpty) "An empty group was lost on reload"
+        assertTrue (tree.Roots |> Seq.filter(fun row -> row.Glyph<>TabsGlyph) |> Seq.length=2 && tree.Roots.[1].Chips.IsEmpty) "An empty group was lost on reload"
         clickAdd tree.Roots.[1]
         pick selectedPath
         tree.SelectedItem <- tree.Roots.[1]
         key tree Keys.Delete
         assertTrue (saved().IsEmpty && targets().Length=1) "Deleting a group left its application mappings behind"
         // Taking a group made by hand apart forgets it, through the program, and drops its row.
-        let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Glyph=DragGlyph)
+        let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Glyph=TabsGlyph)
         // The button said what it does while the pointer was on it.
         let tip = clickAction handMadeRow 1
         assertTrue (tip=tr Strings.AppRules.ungroup) (sprintf "The ungroup button has no hover tip: %A" tip)
-        // A one-word tip sits in a bubble its own width, not one widened to a window's minimum.
-        let tipWidth = TextRenderer.MeasureText(tr Strings.AppRules.ungroup,tree.Font).Width+2*Dpi.scale 12
-        let bubbles = Application.OpenForms |> Seq.cast<Form> |> Seq.filter(fun form -> form.GetType().Name="SettingsHelpPopup") |> Seq.map(fun form -> form.Width) |> List.ofSeq
-        assertTrue (bubbles |> List.exists(fun width -> width<=tipWidth+2))
-                   (sprintf "The ungroup tip's bubble is wider than its text: %A for %d" bubbles tipWidth)
-        assertTrue (List.ofSeq ungrouped=[4711] && tree.Roots |> Seq.forall(fun row -> row.Glyph<>DragGlyph && not row.IsHeading))
+        // A one-word tip sits in a bubble its own size, not one widened to a window's minimum or
+        // taller than its one line.
+        let tipSize = TextRenderer.MeasureText(tr Strings.AppRules.ungroup,tree.Font)
+        let tipWidth,tipHeight = tipSize.Width+2*Dpi.scale 12,tipSize.Height+2*Dpi.scale 8+Dpi.scale 7
+        let bubbles = Application.OpenForms |> Seq.cast<Form> |> Seq.filter(fun form -> form.GetType().Name="SettingsHelpPopup") |> Seq.map(fun form -> form.Size) |> List.ofSeq
+        assertTrue (bubbles |> List.exists(fun size -> size.Width<=tipWidth+2 && size.Height<=tipHeight+2))
+                   (sprintf "The ungroup tip's bubble is larger than its text: %A for %dx%d" bubbles tipWidth tipHeight)
+        assertTrue (List.ofSeq ungrouped=[4711] && tree.Roots |> Seq.forall(fun row -> row.Glyph<>TabsGlyph))
                    "Ungrouping a group made by hand did not forget it or kept its row"
         form.Close()
         rules.Value <- filter

@@ -135,7 +135,6 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
         this.ClientSize <- Size(width,textSize.Height+2*padY+arrow())
         // Windows widens a window to its minimum width when it is created; a one-word tip then
         // sat in a wide, empty bubble.
-        this.HandleCreated.Add(fun _ -> this.ClientSize <- Size(width,textSize.Height+2*padY+arrow()))
     override _.ShowWithoutActivation = true
     override this.WndProc(m) =
         base.WndProc(&m)

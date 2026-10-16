@@ -172,8 +172,8 @@ type GroupingApplicationMenu() as this =
             (scanner :> IDisposable).Dispose()
             retire()
 
-/// A named group, a group made by dragging tabs, or the heading above those.
-type private GroupApplicationNode = GroupNode of string | HandMadeNode of int | HandMadeHeading
+/// A named group, or a group made by dragging tabs.
+type private GroupApplicationNode = GroupNode of string | HandMadeNode of int
 
 type AppGroupingRulesView() as this =
     inherit Panel()
@@ -203,7 +203,7 @@ type AppGroupingRulesView() as this =
         let id =
             match selected() with
             | Some(GroupNode id) -> Some id
-            | Some(HandMadeNode _) | Some HandMadeHeading | None -> None
+            | Some(HandMadeNode _) | None -> None
         id |> Option.bind(fun id -> groups |> List.tryFind(fun group -> group.id=id))
     let updateEditor() =
         name.Text <- selectedGroup() |> Option.map(fun group -> group.name) |> Option.defaultValue ""
@@ -232,14 +232,10 @@ type AppGroupingRulesView() as this =
                 chipRules.[group.id] <- members
                 tree.Roots.Add(row)
             // Groups made by dragging tabs, kept after their windows close: shown, not edited here,
-            // and taken apart in one go. One heading names them all; a row is only its apps, which
-            // a name of its own (they cannot be renamed) would leave less room for.
-            let handMade = Services.program.handMadeGroups()
-            if not handMade.IsEmpty then
-                tree.Roots.Add(TreeListItem(tr Strings.AppRules.handMadeGroups,Tag=HandMadeHeading,IsHeading=true,SeparatorAbove=true,
-                                            Checks=[|None;None|],Actions=Some []))
-            handMade |> List.iter(fun (id,members) ->
-                let row = TreeListItem("",Tag=HandMadeNode id,Glyph=DragGlyph,
+            // and taken apart in one go. A row is only its apps, which a name of its own (they cannot
+            // be renamed) would leave less room for; its icon says on hover what it is.
+            Services.program.handMadeGroups() |> List.iteri(fun index (id,members) ->
+                let row = TreeListItem("",Tag=HandMadeNode id,Glyph=TabsGlyph,SeparatorAbove=(index=0),IconTip=tr Strings.AppRules.handMadeGroups,
                                        Checks=[|None;None|],Actions=Some [NoGlyph;UngroupGlyph],AlwaysShowActions=true)
                 row.Chips <- members |> List.map(fun (app,title,hwnd) ->
                     // An open window's own icon; a closed one's app icon in grey, as another of its
@@ -313,7 +309,7 @@ type AppGroupingRulesView() as this =
             tree.SetRowEditor(tree.SelectedItem,nameInput)
             name.Focus() |> ignore
             name.SelectAll()
-        | Some(HandMadeNode _) | Some HandMadeHeading | None -> ()
+        | Some(HandMadeNode _) | None -> ()
     let delete() =
         match selected() with
         | Some(GroupNode id) ->
@@ -321,7 +317,7 @@ type AppGroupingRulesView() as this =
             rules <- rules |> List.filter(fun rule -> rule.groupId<>id)
             save None
             reload None
-        | Some(HandMadeNode _) | Some HandMadeHeading | None -> ()
+        | Some(HandMadeNode _) | None -> ()
     do
         addMenu.Owner <- this
         addToGroup <- fun (groupId,path) ->
@@ -361,7 +357,7 @@ type AppGroupingRulesView() as this =
             | HandMadeNode id,1 ->
                 Services.program.ungroupHandMade id
                 reload None
-            | HandMadeNode _,_ | HandMadeHeading,_ -> ()
+            | HandMadeNode _,_ -> ()
             | _,0 -> beginEdit()
             | _,1 -> delete()
             | _ -> ())
@@ -403,7 +399,7 @@ type AppGroupingRulesView() as this =
         tree.KeyDown.Add(fun e -> if e.KeyCode=Keys.Delete then e.Handled<-true; delete())
         tree.CheckChanged.Add(fun (item,_,enabled) ->
             let previous = rules
-            let matches rule = match item.Tag :?> GroupApplicationNode with GroupNode id -> rule.groupId=id | HandMadeNode _ | HandMadeHeading -> false
+            let matches rule = match item.Tag :?> GroupApplicationNode with GroupNode id -> rule.groupId=id | HandMadeNode _ -> false
             rules <- rules |> List.map(fun rule -> if matches rule then {rule with enabled=enabled} else rule)
             save (Some previous)
             reload (selected()))
