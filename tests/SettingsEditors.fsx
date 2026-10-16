@@ -87,6 +87,19 @@ let main() =
                     && menu.Choice.Value.ItemImages |> Array.forall(fun image -> not(isNull image)))
                    "The app list showed an app the group has, or its apps have no icons"
         menu.DropDown |> Option.iter(fun window -> window.Close())
+        // An app's icon is the one its windows show, as in App rules above, not the exe's:
+        // packaged apps carry a different one in the exe.
+        use red = new Bitmap(32,32)
+        do
+            use g = Graphics.FromImage(red)
+            g.Clear(Color.Red)
+        use redIcon = Icon.FromHandle(red.GetHicon())
+        host.Icon <- redIcon
+        host.CreateControl()
+        let shown = ApplicationNames.appIcon notepad (Some(OS().windowFromHwnd host.Handle))
+        let pixel = match shown with Some(:? Bitmap as image) -> image.GetPixel(image.Width/2,image.Height/2) | _ -> Color.Empty
+        shown |> Option.iter(fun image -> image.Dispose())
+        assertTrue (pixel.R>200uy && pixel.G<50uy && pixel.B<50uy) (sprintf "An app's icon came from its exe rather than its window: %A" pixel)
     let installedPaths = [|@"C:\Program Files\RustDesk\rustdesk.exe";@"C:\Users\cl\AppData\Local\rustdesk\rustdesk.exe"|]
     assertTrue (AppIdentity.same installedPaths.[0] installedPaths.[1] && not(AppIdentity.same installedPaths.[0] @"C:\Other.exe"))
                "Application identity still depends on the installation directory"
@@ -873,7 +886,7 @@ let main() =
                     && ApplicationNames.label @"C:\Apps\browser.exe"="browser.exe")
                    "Store apps are not listed as Windows apps, or another app lost its file name"
         do
-            use hostIcon = ApplicationNames.icon @"C:\Windows\System32\ApplicationFrameHost.exe" :?> Bitmap
+            use hostIcon = ApplicationNames.icon @"C:\Windows\System32\ApplicationFrameHost.exe" None :?> Bitmap
             let blue = hostIcon.GetPixel(Dpi.scale 3,Dpi.scale 3)
             assertTrue (blue.A=255uy && blue.B>200uy && blue.R<20uy) "Windows apps have no icon of their own"
         clickAdd tree.Roots.[0]

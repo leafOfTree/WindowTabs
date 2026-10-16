@@ -3,6 +3,29 @@ open System
 open System.Drawing
 open System.IO
 open System.Windows.Forms
+open Bemo.Win32.Forms
+
+module ImgHelper =
+    /// Keeps the icon's native size; the list scales it to the row, so 32px sources stay sharp at high DPI.
+    let imgFromIcon (icon:Icon) =
+        (try icon.ToBitmap() with _ -> SystemIcons.Application.ToBitmap()) :> Image
+    /// A window's own icon, or None when it only has the generic application icon. UWP apps
+    /// behind ApplicationFrameHost publish no window icon; their package icon is used instead.
+    let windowIcon (window:Window) : Image option =
+        if window.className="ApplicationFrameWindow" then
+            AppIcons.GetAppIcon(AppIcons.GetHostedAppId(window.hwnd),32) |> Option.ofObj |> Option.map(fun icon -> icon :> Image)
+        else
+            let big,small = window.iconBig,window.iconSmall
+            let source,other = if big.Width >= small.Width then big,small else small,big
+            if not (obj.ReferenceEquals(other,SystemIcons.Application)) then other.Dispose()
+            if obj.ReferenceEquals(source,SystemIcons.Application) then None
+            elif AppIcons.IsGenericIcon(source.Handle) then source.Dispose(); None
+            else try Some(imgFromIcon source) finally source.Dispose()
+    /// List items own their icons; release them when a list is replaced or discarded.
+    let rec disposeItems (items:seq<TreeListItem>) =
+        for item in items do
+            disposeItems item.Children
+            if not (isNull item.Icon) then item.Icon.Dispose()
 
 module ApplicationNames =
     /// ApplicationFrameHost.exe hosts every Store (UWP) app, so it stands for them all, under a
@@ -20,13 +43,26 @@ module ApplicationNames =
         for x,y in [0,0;square+gap,0;0,square+gap;square+gap,square+gap] do
             g.FillRectangle(brush,x,y,square,square)
         image :> Image
-    let icon path : Image =
-        if isWindowsApps path then windowsAppsIcon()
+    /// The icon the app shows on the taskbar (one of its windows), else the executable's own:
+    /// packaged apps such as Electron ones carry a different icon in the exe than on their
+    /// windows. A host without icons of its own (ApplicationFrameHost.exe) gets None rather
+    /// than borrowing one hosted app's logo.
+    let appIcon (path:string) (window:Window option) : Image option =
+        if isWindowsApps path then Some(windowsAppsIcon())
+        elif not (AppIcons.HasOwnIcon path) then None
         else
-        try
-            use icon = Icon.ExtractAssociatedIcon(path)
-            if isNull icon then SystemIcons.Application.ToBitmap() :> Image else icon.ToBitmap() :> Image
-        with _ -> SystemIcons.Application.ToBitmap() :> Image
+            match window |> Option.bind ImgHelper.windowIcon with
+            | Some icon -> Some icon
+            | None -> try Some(use icon = Icon.ExtractAssociatedIcon(path) in ImgHelper.imgFromIcon icon) with _ -> None
+    /// A line glyph in the theme's muted colour, where an app has no icon of its own.
+    let glyphIcon glyph : Image =
+        let image = new Bitmap(Dpi.scale 16,Dpi.scale 16)
+        use g = Graphics.FromImage(image)
+        SettingsTreeList.drawGlyph(g,glyph,Rectangle(0,0,image.Width,image.Height),(SettingsColors.current()).muted)
+        image :> Image
+    /// Always an image, so lists of apps line up.
+    let icon path (window:Window option) : Image =
+        appIcon path window |> Option.defaultWith(fun () -> glyphIcon WindowGlyph)
 
 /// The apps that can join a group, in a drop-down that opens from the "+" after a group's apps:
 /// the running ones, then Browse… for one that is not running.
@@ -34,13 +70,19 @@ type GroupingApplicationMenu() as this =
     /// Holds the hidden drop-down control; set once the page is built.
     let mutable owner : Control = null
     let mutable paths : string[] = [||]
+    /// One window of each running app, by app, for its icon.
+    let mutable windows : Map<string,IntPtr> = Map.empty
+    let scanned = Event<EventArgs>()
     let mutable shown : string[] = [||]
     let mutable icons : Image[] = [||]
     let mutable choice : SettingsCombo option = None
     let mutable dropDown : ToolStripDropDown option = None
     let picked = Event<string>()
-    let scanner = new LatestWork<string list>(InvokerService.invoker :> IDispatcher,
-        (fun apps -> this.UpdateApplications apps),ignore,ignore)
+    let scanner = new LatestWork<(string * IntPtr) list>(InvokerService.invoker :> IDispatcher,
+        (fun found ->
+            windows <- found |> List.rev |> List.map(fun (path,hwnd) -> AppIdentity.key path,hwnd) |> Map.ofList
+            this.UpdateApplications(List.map fst found)
+            scanned.Trigger(EventArgs.Empty)),ignore,ignore)
     let retire() =
         choice |> Option.iter(fun previous -> owner.Controls.Remove(previous); previous.Dispose())
         choice <- None
@@ -64,12 +106,23 @@ type GroupingApplicationMenu() as this =
                 try
                     if window.isWindow && Services.filter.isAppWindow(window.hwnd) then
                         let path = window.pid.processPath
-                        if String.IsNullOrWhiteSpace path then None else Some path
+                        if String.IsNullOrWhiteSpace path then None else Some(path,window.hwnd)
                     else None
                 with
                 | :? OperationCanceledException -> reraise()
                 | _ -> None) |> Array.toList)
     member _.Applications = Array.copy paths
+    /// Raised when a scan for running apps comes in.
+    member _.Scanned = scanned.Publish
+    /// A running app's path and topmost window, from the last scan.
+    member _.Running(app:string) =
+        let key = AppIdentity.key app
+        let path = paths |> Array.tryFind(fun path -> AppIdentity.key path=key)
+        let window = windows.TryFind key |> Option.bind(fun hwnd -> try Some(OS().windowFromHwnd hwnd) with _ -> None)
+                     |> Option.filter(fun window -> window.isWindow)
+        path,window
+    /// The app's icon as its running windows show it.
+    member this.Icon(path:string) = ApplicationNames.icon path (snd (this.Running path))
     /// The apps in the drop-down last opened, in order; Browse… follows them.
     member _.Shown = Array.copy shown
     member _.Choice = choice
@@ -77,15 +130,12 @@ type GroupingApplicationMenu() as this =
     member _.DropDown = dropDown
     member _.Picked = picked.Publish
     /// Opens below a box on screen, leaving out the apps the group has already.
-    member _.Open(anchor:Rectangle, excluded:string list) =
+    member this.Open(anchor:Rectangle, excluded:string list) =
         retire()
         shown <- paths |> Array.filter(fun path -> not (excluded |> List.exists(AppIdentity.same path)))
         // Browse… has a folder, so its words line up with the apps' names.
-        let folder = new Bitmap(Dpi.scale 16,Dpi.scale 16)
-        do
-            use g = Graphics.FromImage(folder)
-            SettingsTreeList.drawGlyph(g,GroupGlyph,Rectangle(0,0,folder.Width,folder.Height),(SettingsColors.current()).muted)
-        icons <- Array.append (shown |> Array.map ApplicationNames.icon) [|folder :> Image|]
+        let folder = ApplicationNames.glyphIcon GroupGlyph
+        icons <- Array.append (shown |> Array.map this.Icon) [|folder|]
         let next = SettingsUi.choice (Array.append (shown |> Array.map ApplicationNames.label) [|tr Strings.AppRules.browseApplication|])
         next.ItemImages <- icons
         next.AccessibleName <- tr Strings.AppRules.chooseApplication
@@ -166,7 +216,7 @@ type AppGroupingRulesView() as this =
                                        Mixed=[|false;enabled>0 && enabled<members.Length|],
                                        ChipAdd=true,Actions=Some [EditGlyph;DeleteGlyph],AlwaysShowActions=true)
                 row.Chips <- members |> List.map(fun rule ->
-                    { Text=ApplicationNames.label rule.processPath; Icon=ApplicationNames.icon rule.processPath; Removable=true })
+                    { Text=ApplicationNames.label rule.processPath; Icon=addMenu.Icon rule.processPath; Removable=true })
                 chipRules.[group.id] <- members
                 tree.Roots.Add(row)
             // Groups made by dragging tabs, kept after their windows close: shown, not edited here,
@@ -175,8 +225,10 @@ type AppGroupingRulesView() as this =
                 let row = TreeListItem(tr (Strings.AppRules.handMadeGroup (index+1)),Tag=HandMadeNode id,Glyph=GroupGlyph,SeparatorAbove=(index=0),
                                        Checks=[|None;None|],Actions=Some [NoGlyph;UngroupGlyph],AlwaysShowActions=true)
                 row.Chips <- members |> List.map(fun (app,title,path) ->
+                    // A path seen by the program this run, else one of the app's running windows.
+                    let path = if String.IsNullOrWhiteSpace path then fst (addMenu.Running app) |> Option.defaultValue "" else path
                     { Text=(if String.IsNullOrWhiteSpace title then app else title)
-                      Icon=(if String.IsNullOrWhiteSpace path then null else ApplicationNames.icon path); Removable=false })
+                      Icon=(if String.IsNullOrWhiteSpace path then null else addMenu.Icon path); Removable=false })
                 tree.Roots.Add(row))
             tree.Rebuild()
             tree.SelectedItem <- tree.Roots
@@ -300,6 +352,8 @@ type AppGroupingRulesView() as this =
                 addMenu.Scan()
                 if editing.IsNone then reload (selected()))
         this.HandleCreated.Add(fun _ -> addMenu.Scan())
+        // Chips take their apps' icons from running windows once the scan finds them.
+        addMenu.Scanned.Add(fun _ -> if not this.IsDisposed && editing.IsNone then reload (selected()))
         // A group dragged together while the page is open shows at once.
         let invoker = InvokerService.invoker
         let handMadeSubscription = Services.settings.notifyValue "rememberedGroups" (fun _ ->

@@ -5,42 +5,12 @@ open System.IO
 open System.Windows.Forms
 open Bemo.Win32.Forms
 
-module ImgHelper =
-    /// Keeps the icon's native size; the list scales it to the row, so 32px sources stay sharp at high DPI.
-    let imgFromIcon (icon:Icon) =
-        (try icon.ToBitmap() with _ -> SystemIcons.Application.ToBitmap()) :> Image
-    /// A window's own icon, or None when it only has the generic application icon. UWP apps
-    /// behind ApplicationFrameHost publish no window icon; their package icon is used instead.
-    let windowIcon (window:Window) : Image option =
-        if window.className="ApplicationFrameWindow" then
-            AppIcons.GetAppIcon(AppIcons.GetHostedAppId(window.hwnd),32) |> Option.ofObj |> Option.map(fun icon -> icon :> Image)
-        else
-            let big,small = window.iconBig,window.iconSmall
-            let source,other = if big.Width >= small.Width then big,small else small,big
-            if not (obj.ReferenceEquals(other,SystemIcons.Application)) then other.Dispose()
-            if obj.ReferenceEquals(source,SystemIcons.Application) then None
-            elif AppIcons.IsGenericIcon(source.Handle) then source.Dispose(); None
-            else try Some(imgFromIcon source) finally source.Dispose()
-    /// List items own their icons; release them when a list is replaced or discarded.
-    let rec disposeItems (items:seq<TreeListItem>) =
-        for item in items do
-            disposeItems item.Children
-            if not (isNull item.Icon) then item.Icon.Dispose()
-
 module private ProgramItems =
     /// Column indexes of the check boxes.
     let tabsColumn,groupingColumn = 1,2
-    /// The icon the app shows on the taskbar (its first window), else the executable's own
-    /// icon. A host without icons of its own (ApplicationFrameHost.exe) gets a line glyph
-    /// rather than borrowing one hosted app's logo. An app that is not running has no window.
+    /// An app that is not running has no window, and shows its executable's icon.
     let exe (path:string) (first:Window option) custom =
-        let icon =
-            if ApplicationNames.isWindowsApps path then Some(ApplicationNames.windowsAppsIcon())
-            elif not (AppIcons.HasOwnIcon path) then None
-            else
-                match first |> Option.bind ImgHelper.windowIcon with
-                | Some icon -> Some icon
-                | None -> try Some(use icon = Icon.ExtractAssociatedIcon(path) in ImgHelper.imgFromIcon icon) with _ -> None
+        let icon = ApplicationNames.appIcon path first
         let tabs = Services.filter.getIsTabbingEnabledForProcess path
         // Auto grouping only decides which group a tabbed window joins.
         TreeListItem(ApplicationNames.label path,Icon=Option.toObj icon,Glyph=WindowGlyph,Tag=path,
