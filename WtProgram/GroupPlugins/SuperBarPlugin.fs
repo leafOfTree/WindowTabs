@@ -133,10 +133,6 @@ type TaskbarBadgedIcon(icon:Icon, ?stacked:Icon list) =
             badged.Dispose()
             WinUserApi.DestroyIcon(handle) |> ignore
 
-/// Chromium and Electron windows stop painting while another window covers them, so a tab
-/// behind the active one prints blank, and a minimized one prints only a placeholder. Each
-/// tab's last good capture stands in for it, kept small: thumbnails are a few hundred pixels
-/// and a peek at a hidden tab may be soft.
 /// A picture the user chose for a group's taskbar button, read as an icon.
 module GroupIconFile =
     let private pictures = set [".png";".jpg";".jpeg";".bmp";".gif"]
@@ -171,6 +167,10 @@ module GroupIconFile =
                         Some(fromBitmap shell)
         with _ -> None
 
+/// Chromium and Electron windows stop painting while another window covers them, so a tab
+/// behind the active one prints blank, and a minimized one prints only a placeholder. Each
+/// tab's last good capture stands in for it, kept small: thumbnails are a few hundred pixels
+/// and a peek at a hidden tab may be soft.
 type TabCaptures() =
     let captures = Collections.Generic.Dictionary<IntPtr,Bitmap>()
     /// Tabs that printed blank while hidden; printing them again before they come to the front
