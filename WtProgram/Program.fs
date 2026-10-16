@@ -390,6 +390,42 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                         info.awaitsGroupingDesktop <- false
                         this.findGroupForWindow(window) |> Option.iter(fun target ->
                             (target :?> GroupInfo).addAfterDetaching(info,window.hwnd))
+                else this.mergeAutoGroups info
+
+    /// Made by hand, or restored from groups made by hand: never merged or taken apart unasked.
+    member private this.isHandMade(info:GroupInfo) =
+        info.group.isManual || remembered |> List.exists(fun saved -> saved.id=info.group.groupToken)
+
+    /// Auto-grouping keeps one group of an app on each virtual desktop. Windows that move between
+    /// desktops (closing a desktop moves its windows to the next one) can leave two such groups on
+    /// one desktop; the smaller joins the larger.
+    member private this.mergeAutoGroups(info:GroupInfo) =
+        let isAuto (group:GroupInfo) =
+            not group.isExited && not group.isRetiring && not group.awaitsGroupingDesktop &&
+            group.ruleGroupId.IsNone && not (this.isHandMade group) && (group :> IGroup).windows.count>0
+        let appOf (group:GroupInfo) =
+            match (group :> IGroup).windows.list |> List.map(fun hwnd -> AppIdentity.key (this.appKey hwnd)) |> List.distinct with
+            | [app] when app<>"" -> Some app
+            | _ -> None
+        if not this.desktop.isDragging && isAuto info then
+            match appOf info with
+            | Some app when (this :> IProgram).getAutoGroupingEnabled(this.appKey (info :> IGroup).windows.head) ->
+                let others =
+                    this.desktop.groups.list |> List.choose(function
+                        | :? GroupInfo as other when not (obj.ReferenceEquals(other,info)) && isAuto other && appOf other=Some app -> Some other
+                        | _ -> None)
+                if not others.IsEmpty then
+                    // A group is where its front tab is: the tabs behind it can still carry the
+                    // desktop they were last seen on.
+                    let zorders = this.hwndZorders()
+                    let desktopOf (group:GroupInfo) =
+                        (group :> IGroup).windows.list
+                        |> List.minBy(fun hwnd -> zorders.tryFind(hwnd).def(Int32.MaxValue))
+                        |> VirtualDesktop.groupingDesktopId
+                    AutoGroup.mergePair (fun (group:GroupInfo) -> (group :> IGroup).windows.count) appOf desktopOf info others
+                    |> Option.iter(fun (keep,leave) ->
+                        for hwnd in (leave :> IGroup).windows.list do keep.addAfterDetaching(leave,hwnd))
+            | _ -> ()
 
     /// Auto-grouping waits, up to a second, for a new window to be placed on a virtual desktop,
     /// or it would match groups on every desktop.

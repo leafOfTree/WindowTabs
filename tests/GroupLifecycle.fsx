@@ -39,6 +39,17 @@ let main() =
     check (pickFrom [chromeGroup; explorerGroup] 5=None) "An unresolved new window joined another desktop's taskbar group"
     let unknownGroup = List2([IntPtr(5)])
     check (pickFrom [unknownGroup] 4=None) "A known desktop matched an unresolved target group"
+    // Closing a virtual desktop moves its windows to the next one: two automatic groups of one
+    // program that end up together become one, the smaller joining the larger.
+    let groupsOf = [ "big",("brave",Some desk1,3); "small",("brave",Some desk1,1); "away",("brave",Some desk2,2)
+                     "other",("explorer",Some desk1,2); "unknown",("brave",None,1) ] |> Map.ofList
+    let merge name others =
+        AutoGroup.mergePair (fun g -> let _,_,n = groupsOf.[g] in n) (fun g -> let app,_,_ = groupsOf.[g] in Some app)
+                            (fun g -> let _,desk,_ = groupsOf.[g] in desk) name others
+    check (merge "small" ["away";"other";"big"]=Some("big","small") && merge "big" ["small"]=Some("big","small"))
+          "Two automatic groups of one program on one virtual desktop stayed apart"
+    check (merge "away" ["big";"small";"other"]=None && merge "unknown" ["big"]=None && merge "big" ["unknown";"away"]=None)
+          "Automatic groups merged across virtual desktops, programs, or with an unknown desktop"
     check (pickFrom [unknownGroup] 5=None) "Two unresolved windows were assumed to share a desktop"
     Application.EnableVisualStyles()
     let directory = Path.Combine(__SOURCE_DIRECTORY__, "Debug", "groups-" + Guid.NewGuid().ToString("N"))

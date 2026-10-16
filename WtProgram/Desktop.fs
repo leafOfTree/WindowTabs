@@ -20,6 +20,15 @@ module AutoGroup =
             let windows = windowsOf g
             windows.any(fun w -> AppIdentity.same (processPath w) path) && windows.any sameDesktop)
 
+    /// Two automatic groups of one program that have come to share a virtual desktop, as (the one
+    /// kept, the one that joins it): the smaller joins the larger. A group whose program or desktop
+    /// is unknown is left alone.
+    let mergePair (size:'g -> int) (appOf:'g -> string option) (desktopOf:'g -> Guid option) (group:'g) (others:'g list) =
+        match appOf group, desktopOf group with
+        | Some app, Some desktop ->
+            others |> List.tryFind(fun other -> appOf other=Some app && desktopOf other=Some desktop)
+            |> Option.map(fun other -> if size other>=size group then other,group else group,other)
+        | _ -> None
 
 type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher, ?taskbarPlugin:unit -> IPlugin) as this =
     let Cell = CellScope(true, true)
