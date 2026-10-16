@@ -132,6 +132,16 @@ let main() =
         pumpUntil "A title change in a remembered group was not recorded" (fun () ->
             runtimeSettings.rememberedGroups |> List.exists(fun group ->
                 group.id=5151 && List.contains { app=app; title="Renamed A" } group.members))
+        // A window of a group made by hand that closes stays in the group's record, to come back to
+        // it, and App rules is told so it shows the window as closed.
+        let announced = ref 0
+        use watch = api.notifyValue "rememberedGroups" (fun _ -> announced.Value <- announced.Value+1)
+        let lateHandle = late.Handle
+        late.Close()
+        pumpUntil "Closing a window of a group made by hand did not tell App rules" (fun () ->
+            announced.Value>0 &&
+            (program :> IProgram).handMadeGroups() |> List.exists(fun (id,members) ->
+                id=5151 && members |> List.exists(fun (_,title,hwnd) -> title="Remembered C" && hwnd=IntPtr.Zero)))
         // A picture for a group's taskbar button is kept for that group, whichever of its windows
         // it was chosen from, and the default comes back on request.
         (program :> IProgram).setGroupIcon(reopenedA.Handle,Some @"C:\icons\work.ico")
@@ -143,16 +153,16 @@ let main() =
         // neither recorded again as they leave nor put back together. The shell reports a window
         // as destroyed when a group with combined taskbar icons takes its button; a window still
         // there stays one already grouped this run, not one to put back in its saved group.
-        for hwnd in [reopenedA.Handle;reopenedB.Handle;late.Handle] do
+        for hwnd in [reopenedA.Handle;reopenedB.Handle;lateHandle] do
             program.receive(Program.ProgramInput.ShellEvent(hwnd,ShellEvent.HSHELL_WINDOWDESTROYED))
         (program :> IProgram).ungroupHandMade 5151
         let together() =
-            [reopenedA.Handle;reopenedB.Handle;late.Handle] |> List.choose groupOf |> List.countBy id |> List.exists(fun (_,count) -> count>1)
+            [reopenedA.Handle;reopenedB.Handle;lateHandle] |> List.choose groupOf |> List.countBy id |> List.exists(fun (_,count) -> count>1)
         pumpUntil "Ungrouping a remembered group left its windows together" (fun () -> not (together()))
         let settle = Diagnostics.Stopwatch.StartNew()
         while settle.ElapsedMilliseconds<1500L do Application.DoEvents(); Threading.Thread.Sleep(20)
         check (not (together()) && runtimeSettings.rememberedGroups |> List.forall(fun group -> group.id<>5151)
-               && [reopenedA.Handle;reopenedB.Handle;late.Handle] |> List.forall(fun hwnd -> WindowGroupToken.read hwnd<>Some 5151))
+               && [reopenedA.Handle;reopenedB.Handle;lateHandle] |> List.forall(fun hwnd -> WindowGroupToken.read hwnd<>Some 5151))
               (sprintf "An ungrouped group came back: together %b, remembered %A" (together()) (runtimeSettings.rememberedGroups |> List.map(fun group -> group.id)))
         restoring <- false
         program.refresh()

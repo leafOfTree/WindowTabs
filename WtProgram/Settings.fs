@@ -100,6 +100,9 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             this.settingsJson <- json
             settingChangedEvent.Trigger("rememberedGroups",null)
 
+    /// Tells those watching a value that what it stands for changed, though the value did not.
+    member this.announce(key:string) = settingChangedEvent.Trigger(key,null)
+
     /// Pictures chosen for groups' taskbar buttons, by what keeps a group recognisable: a named
     /// group's id, a group made by hand's token, or the app of an automatic group.
     member this.groupIcons

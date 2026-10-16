@@ -110,6 +110,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let groupedThisRun = HashSet<IntPtr>()
     /// Groups made by hand, kept after their windows close.
     let mutable remembered = settingsManager.rememberedGroups
+    /// The open windows of each group made by hand when App rules was last told.
+    let mutable shownOpen : (int * RememberedMember list) list = []
     /// Each window's program, looked up once.
     let appKeys = Dictionary<IntPtr,string>()
     /// New windows of an app with remembered windows whose title may still settle into a
@@ -284,6 +286,12 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         let changed = shape next <> shape remembered
         remembered <- next
         if changed then settingsManager.rememberedGroups <- next
+        // A closed window stays in its group's record, to come back to it; the record is the
+        // same, but App rules shows which windows are open, so it is told.
+        let openNow = live |> List.map(fun (info,members) -> info.group.groupToken,members) |> List.sort
+        if openNow<>shownOpen then
+            shownOpen <- openNow
+            if not changed then settingsManager.announce "rememberedGroups"
 
     /// A window whose title has settled into a remembered one moves to that group, unless it
     /// was moved meanwhile.
