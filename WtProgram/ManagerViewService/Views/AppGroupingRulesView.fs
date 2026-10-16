@@ -479,5 +479,7 @@ type AppGroupingRulesView() as this =
             let gap = Dpi.scale 8
             let top = header.Bottom+gap
             let statusHeight = if status.Text="" then 0 else Dpi.scale 28
-            card.Bounds<-Rectangle(0,top,width,max (Dpi.scale 80) (this.Height-top-statusHeight))
+            // As tall as the section leaves it: a fixed minimum ran past a one-row section's bottom
+            // and cut off its rounded corners there.
+            card.Bounds<-Rectangle(0,top,width,max 1 (this.Height-top-statusHeight))
             status.Bounds<-Rectangle(0,card.Bottom,width,statusHeight)

@@ -838,6 +838,10 @@ let main() =
             handMade.Value <- dragged
             assertTrue (empty.Height <= Dpi.scale 36+Dpi.scale 8+2*Dpi.scale 6+Dpi.scale 36+Dpi.scale 2)
                        (sprintf "An empty Groups across apps is %d tall" empty.Height)
+            // Its rounded card ends inside it, or the bottom corners are cut off.
+            empty.PerformLayout()
+            let card = empty.Controls |> Seq.cast<Control> |> Seq.find(fun control -> control.Tag=box "surface")
+            assertTrue (card.Bottom<=empty.ClientSize.Height) (sprintf "The card ends at %d below a section %d tall" card.Bottom empty.ClientSize.Height)
         (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
         assertTrue (tree.RowActions=[EditGlyph;DeleteGlyph] && obj.ReferenceEquals(name.Parent.Parent,tree) && name.Parent.Visible)
                    "Adding a group did not start editing its name directly in the row"
