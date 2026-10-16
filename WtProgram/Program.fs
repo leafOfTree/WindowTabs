@@ -110,13 +110,6 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let groupedThisRun = HashSet<IntPtr>()
     /// Groups made by hand, kept after their windows close.
     let mutable remembered = settingsManager.rememberedGroups
-    /// Each open window of a group made by hand, with its group and how it is recorded, and the
-    /// ones closed since the record was last made.
-    let memberWindows = Dictionary<IntPtr,int * RememberedMember>()
-    let closedMembers = HashSet<int * RememberedMember>(HashIdentity.Structural)
-    /// When Windows last asked to sign out or shut down: windows closing in the two minutes after
-    /// keep their place in their group. A cancelled sign-out says nothing, so it runs out.
-    let mutable sessionEndingAt = DateTime.MinValue
     /// The open windows of each group made by hand when App rules was last told.
     let mutable shownOpen : (int * RememberedMember list) list = []
     /// Each window's program, looked up once.
@@ -134,10 +127,6 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                         for hwnd in List.ofSeq awaitingDesktop.Keys do refreshQueue.RequestWindow hwnd))
 
     do
-        // Windows asks before signing out or shutting down, ahead of the apps closing their windows.
-        let ending = Microsoft.Win32.SessionEndingEventHandler(fun _ _ -> sessionEndingAt <- DateTime.UtcNow)
-        Microsoft.Win32.SystemEvents.add_SessionEnding ending
-        lifetime.Own({new IDisposable with member _.Dispose() = Microsoft.Win32.SystemEvents.remove_SessionEnding ending}) |> ignore
         lifetime.Own(VirtualDesktop.groupingReady.Subscribe(fun hwnd ->
             invoker.asyncInvoke(fun () -> refreshQueue.RequestWindow hwnd))) |> ignore
         Desktop(this :> IDesktopNotification, Services.settings, invoker :> IDispatcher).ignore
@@ -289,29 +278,16 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         let manual (info:GroupInfo) =
             info.group.isManual || remembered |> List.exists(fun group -> group.id=info.group.groupToken)
         let live,elsewhere = inView |> List.partition(fst >> manual)
-        // Windows closed while the user works leave their group's record; ones closed as Windows
-        // signs out keep their place, so groups still come back after a restart.
-        if DateTime.UtcNow-sessionEndingAt > TimeSpan.FromMinutes(2.0) then
-            for KeyValue(hwnd,closed) in memberWindows do
-                if not (WinUserApi.IsWindow hwnd) then closedMembers.Add(closed) |> ignore
-        let kept =
-            remembered |> List.map(fun group ->
-                { group with members = group.members |> List.filter(fun m -> not (closedMembers.Contains((group.id,m)))) })
-        closedMembers.Clear()
-        memberWindows.Clear()
-        for info,_ in live do
-            for hwnd in (info :> IGroup).windows.list do
-                this.rememberedMember hwnd |> Option.iter(fun m -> memberWindows.[hwnd] <- (info.group.groupToken,m))
         let next =
             RememberedGroups.update DateTime.UtcNow
                 (live |> List.map(fun (info,members) -> info.group.groupToken,members))
-                (elsewhere |> List.collect snd) kept
+                (elsewhere |> List.collect snd) remembered
         let shape (groups:RememberedGroup list) = groups |> List.map(fun group -> group.id,group.members)
         let changed = shape next <> shape remembered
         remembered <- next
         if changed then settingsManager.rememberedGroups <- next
-        // A window that closes as Windows signs out stays in its group's record, to come back to
-        // it; the record is the same, but App rules shows which windows are open, so it is told.
+        // A closed window stays in its group's record, to come back to it; the record is the
+        // same, but App rules shows which windows are open, so it is told.
         let openNow = live |> List.map(fun (info,members) -> info.group.groupToken,members) |> List.sort
         if openNow<>shownOpen then
             shownOpen <- openNow

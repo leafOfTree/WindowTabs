@@ -132,16 +132,16 @@ let main() =
         pumpUntil "A title change in a remembered group was not recorded" (fun () ->
             runtimeSettings.rememberedGroups |> List.exists(fun group ->
                 group.id=5151 && List.contains { app=app; title="Renamed A" } group.members))
-        // A window of a group made by hand that the user closes leaves the group's record, and App
-        // rules is told; the group keeps its other windows.
+        // A window of a group made by hand that closes stays in the group's record, to come back to
+        // it, and App rules is told so it shows the window as closed.
         let announced = ref 0
         use watch = api.notifyValue "rememberedGroups" (fun _ -> announced.Value <- announced.Value+1)
         let lateHandle = late.Handle
         late.Close()
-        pumpUntil "Closing a window of a group made by hand left it in the group's record" (fun () ->
+        pumpUntil "Closing a window of a group made by hand did not tell App rules" (fun () ->
             announced.Value>0 &&
             (program :> IProgram).handMadeGroups() |> List.exists(fun (id,members) ->
-                id=5151 && members |> List.exists(fun (_,title,_) -> title="Renamed A") && members |> List.forall(fun (_,title,_) -> title<>"Remembered C")))
+                id=5151 && members |> List.exists(fun (_,title,hwnd) -> title="Remembered C" && hwnd=IntPtr.Zero)))
         // A picture for a group's taskbar button is kept for that group, whichever of its windows
         // it was chosen from, and the default comes back on request.
         (program :> IProgram).setGroupIcon(reopenedA.Handle,Some @"C:\icons\work.ico")
