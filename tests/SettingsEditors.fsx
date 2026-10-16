@@ -872,6 +872,16 @@ let main() =
         name.Text <- "Cancelled rename"
         key name Keys.Escape
         assertTrue (targets().Head.name="Group A" && not name.Parent.Visible) "Escape saved a cancelled group name or left the row editor open"
+        // A press on the page outside the field, which takes no focus, still finishes the name.
+        key tree Keys.Enter
+        name.Text <- "Group A2"
+        WinUserApi.PostMessage(groupingCaption.Handle,0x201,IntPtr(1),IntPtr.Zero) |> ignore
+        let pressClock = Diagnostics.Stopwatch.StartNew()
+        while name.Parent.Visible && pressClock.ElapsedMilliseconds<2000L do Application.DoEvents(); Threading.Thread.Sleep(10)
+        WinUserApi.PostMessage(groupingCaption.Handle,0x202,IntPtr.Zero,IntPtr.Zero) |> ignore
+        Application.DoEvents()
+        assertTrue (targets().Head.name="Group A2" && not name.Parent.Visible) "A press outside the name field did not finish the name"
+        rename "Group A"
         let clickAction (item:TreeListItem) action =
             // The list may be shorter than its rows: scroll the row into view and find where it is now.
             tree.EnsureVisible(item)

@@ -404,11 +404,25 @@ type AppGroupingRulesView() as this =
             rules <- rules |> List.map(fun rule -> if matches rule then {rule with enabled=enabled} else rule)
             save (Some previous)
             reload (selected()))
-        name.Leave.Add(fun _ ->
+        let finishName() =
             commitName()
             if status.Text="" && (match editing with Some(GroupNode _) -> true | _ -> false) then
                 editing <- None
-                tree.ClearRowEditor())
+                tree.ClearRowEditor()
+        name.Leave.Add(fun _ -> finishName())
+        // A press on the page around the list takes no focus, so the field is not left: any press
+        // outside it while a name is edited finishes the name, as leaving the field does.
+        let outsidePress =
+            { new IMessageFilter with
+                member _.PreFilterMessage(m) =
+                    // WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN and their non-client forms
+                    let press = m.Msg=0x201 || m.Msg=0x204 || m.Msg=0x207 || m.Msg=0xA1 || m.Msg=0xA4 || m.Msg=0xA7
+                    if press && not this.IsDisposed && this.IsHandleCreated && name.Visible && (match editing with Some(GroupNode _) -> true | _ -> false)
+                       && not (nameInput.RectangleToScreen(nameInput.ClientRectangle).Contains(Cursor.Position)) then
+                        this.BeginInvoke(Action(finishName)) |> ignore
+                    false }
+        Application.AddMessageFilter(outsidePress)
+        this.Disposed.Add(fun _ -> Application.RemoveMessageFilter(outsidePress))
         name.KeyDown.Add(fun e ->
             if e.KeyCode=Keys.Enter then
                 e.Handled<-true
