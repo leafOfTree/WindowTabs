@@ -174,6 +174,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                             else SettingsCatalog.toggleDefault "showTabsOnSwitch" hasExistingSettings)
                         enableShiftScroll = settingsJson.getBool("enableShiftScroll").def(SettingsCatalog.toggleDefault "enableShiftScroll" hasExistingSettings)
                         enableCtrlScroll = settingsJson.getBool("enableCtrlScroll").def(SettingsCatalog.toggleDefault "enableCtrlScroll" hasExistingSettings)
+                        enableMiddleClickClose = settingsJson.getBool("enableMiddleClickClose").def(SettingsCatalog.toggleDefault "enableMiddleClickClose" hasExistingSettings)
                         version = settingsJson.getString("version").def(String.Empty)
                         alignment = settingsJson.getString("alignment").def(SettingsCatalog.choiceDefault "alignment") |> SettingsCatalog.normalizeChoice "alignment"
                         tabPosition = settingsJson.getString("tabPosition").def(SettingsCatalog.choiceDefault "tabPosition") |> SettingsCatalog.normalizeChoice "tabPosition"
@@ -260,6 +261,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.Remove("ticket") |> ignore
             settingsJson.setBool("enableShiftScroll", settings.enableShiftScroll)
             settingsJson.setBool("enableCtrlScroll", settings.enableCtrlScroll)
+            settingsJson.setBool("enableMiddleClickClose", settings.enableMiddleClickClose)
             settingsJson.setString("tabPosition",settings.tabPosition)
             settingsJson.setInt32("tabColumnWidth",settings.tabColumnWidth)
             settingsJson.setStringArray("includedPaths", settings.includedPaths.items)

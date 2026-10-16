@@ -53,6 +53,7 @@ type SettingsRec = {
     enableShiftScroll: bool
     /// Ctrl + scroll over the tabs moves the current tab.
     enableCtrlScroll: bool
+    enableMiddleClickClose: bool
     /// "Icons" (large icons in a row) or "List" (window titles in a column).
     switcherStyle: string
     tabSearchScope: string

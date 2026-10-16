@@ -116,6 +116,7 @@ type HotKeyView() =
         SettingsBindings.toggleRow pointer "activate-on-hover"
         SettingsBindings.toggleRow pointer "shift-scroll"
         SettingsBindings.toggleRow pointer "ctrl-scroll"
+        SettingsBindings.toggleRow pointer "middle-click-close"
     interface ISettingsView with
         member _.key = SettingsViewType.HotKeySettings
         member _.title = tr Strings.Pages.shortcuts

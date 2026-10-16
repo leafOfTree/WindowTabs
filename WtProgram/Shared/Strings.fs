@@ -238,6 +238,11 @@ module Strings =
                                          zh="在标签栏上滚动，将当前标签向左或向右移动。"
                                          ja="タブバー上で、現在のタブを左右に移動します。" }
                            keywords={ en="wheel reorder"; zh="滚轮 排序"; ja="ホイール 並べ替え" } }
+        let middleClickClose = { caption={ en="Middle-click closes a tab"; zh="按下滚轮关闭标签"; ja="中クリックでタブを閉じる" }
+                                 description={ en="Press the wheel on a tab to close its window."
+                                               zh="在标签上按下滚轮，关闭它的窗口。"
+                                               ja="タブ上でホイールを押すと、そのウィンドウを閉じます。" }
+                                 keywords={ en="wheel click"; zh="中键 滚轮"; ja="ホイール クリック" } }
         let tabTextColor = { caption={ en="Text and close button"; zh="文字与关闭按钮"; ja="文字と閉じるボタン" }; description=none; keywords=colorWords }
         let tabNormalBgColor = { caption={ en="Inactive tab"; zh="非活动标签"; ja="非アクティブなタブ" }; description=none; keywords=colorWords }
         let tabActiveBgColor = { caption={ en="Active tab"; zh="活动标签"; ja="アクティブなタブ" }; description=none; keywords=colorWords }

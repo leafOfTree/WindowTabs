@@ -65,7 +65,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                     for image in images do image.bitmap.Dispose()
             | MouseDown, _ ->
                 capturedHwnd := Some(hwnd)
-            | MouseUp, MouseMiddle -> 
+            | MouseUp, MouseMiddle when (Services.settings.getValue("enableMiddleClickClose") :?> bool) ->
                 capturedHwnd.Value.iter <| fun capturedHwnd ->
                     if hwnd = capturedHwnd then
                         this.onCloseWindow hwnd
