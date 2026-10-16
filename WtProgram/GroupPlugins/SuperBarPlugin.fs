@@ -282,21 +282,43 @@ type TaskBarButton(info) as this =
     /// group's thumbnails are up the previews have no owner; their applications keep the desktop
     /// they were on meanwhile.
     let mutable previewsReleased = false
+    /// Explorer's thumbnail popup: a TaskListThumbnailWnd up to Windows 10, and on Windows 11
+    /// one of its "PopupHost" XAML windows (also used for its other taskbar popups, which only
+    /// keep the previews let go a little longer).
     let thumbnailsShown() =
-        let thumbnails = WinUserApi.FindWindow("TaskListThumbnailWnd",(null:string))
-        thumbnails<>IntPtr.Zero && WinUserApi.IsWindowVisible thumbnails
+        let shown (hwnd:IntPtr) = hwnd<>IntPtr.Zero && WinUserApi.IsWindowVisible hwnd
+        let legacy = WinUserApi.FindWindow("TaskListThumbnailWnd",(null:string))
+        let tray = WinUserApi.FindWindow("Shell_TrayWnd",(null:string))
+        let explorer = if tray=IntPtr.Zero then 0 else (let _,pid = WinUserApi.GetWindowThreadProcessId(tray) in pid)
+        let rec anyPopup (after:IntPtr) =
+            let popup = WinUserApi.FindWindowEx(IntPtr.Zero,after,"Xaml_WindowedPopupClass","PopupHost")
+            popup<>IntPtr.Zero &&
+            ((shown popup && explorer<>0 && snd (WinUserApi.GetWindowThreadProcessId(popup))=explorer) || anyPopup popup)
+        shown legacy || anyPopup IntPtr.Zero
     let chainPreview (preview:IntPtr) =
         WinUserApi.SetWindowLong(preview,WindowLongFieldOffset.GWL_HWNDPARENT,
             (if previewsReleased then IntPtr.Zero else this.window.hwnd)) |> ignore
+    /// The preview shown as the group's active tab.
+    let mutable activeTab = IntPtr.Zero
+    let showActive (preview:IntPtr) =
+        activeTab <- preview
+        taskbar.ActivateTab(this.window.hwnd)
+        taskbar.SetTabActive(preview,this.window.hwnd,0)
     let rechain = new System.Windows.Forms.Timer(Interval=400)
     do rechain.Tick.Add(fun _ ->
         if not (thumbnailsShown()) then
             rechain.Stop()
             previewsReleased <- false
+            // A preview whose owner changes is no longer one of the button's tabs to Explorer:
+            // each is registered again, in order, with the active one marked.
             tabWindowsCell.value.values.iter <| fun (tab:TaskbarTab) ->
                 chainPreview tab.window.hwnd
+                taskbar.UnregisterTab(tab.window.hwnd)
+                registerTab(tab.window.hwnd)
                 // Explorer keeps thumbnails it was given; asked again, the previews are let go again.
-                tab.invalidate())
+                tab.invalidate()
+            sendTabOrder()
+            if activeTab<>IntPtr.Zero && WinUserApi.IsWindow activeTab then showActive activeTab)
     let _window = lazy(
         let config() : TbButton = infoCell.value.Value
         
@@ -368,6 +390,9 @@ type TaskBarButton(info) as this =
             tabWindowsCell.value.values.iter <| fun (tab:TaskbarTab) -> chainPreview tab.window.hwnd
         rechain.Stop()
         rechain.Start()
+
+    /// Shows a preview as the group's active tab.
+    member _.markActive(preview:IntPtr) = showActive preview
 
     /// Whether the previews are let go while thumbnails are up.
     member _.arePreviewsReleased = previewsReleased
@@ -880,9 +905,7 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
                 let active = this.foregroundTab |> Option.bind(fun (Tab(hwnd)) -> button.tryTabWindow(TaskBarButton.key hwnd)) |> Option.map(fun w -> w.hwnd)
                 if active <> activePreview then
                     activePreview <- active
-                    active |> Option.iter(fun preview ->
-                        this.taskbar.ActivateTab(button.window.hwnd)
-                        this.taskbar.SetTabActive(preview, button.window.hwnd, 0))
+                    active |> Option.iter button.markActive
 
                 if this.adopt desktop then
                     placementRetry.Stop()
