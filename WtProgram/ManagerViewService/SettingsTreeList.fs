@@ -341,7 +341,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         let height = this.chipHeight
         let firstY = top+(this.rowHeight-height)/2
         let pad,gap,icon,close = Dpi.scale 8,Dpi.scale 6,Dpi.scale 16,Dpi.scale 14
-        let left = bounds.X+nameWidth+Dpi.scale 12
+        // A row without a name starts its chips where the names of the rows around it start.
+        let left = if item.Text="" then bounds.X else bounds.X+nameWidth+Dpi.scale 12
         let right = max (left+height) bounds.Right
         let widthOf (chip:TreeListChip) =
             let iconWidth = if isNull chip.Icon then 0 else icon+Dpi.scale 5

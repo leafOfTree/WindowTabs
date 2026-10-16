@@ -1029,6 +1029,14 @@ let main() =
         let iconHovered = [0..2..Dpi.scale 80] |> List.exists(fun x -> tipAt x=tr Strings.AppRules.handMadeGroups)
         let lit = typeof<SettingsTreeList>.GetField("hoveredIcon",BindingFlags.Instance ||| BindingFlags.NonPublic).GetValue(tree)
         assertTrue (iconHovered && obj.ReferenceEquals(lit,handMadeRow)) "A dragged group's icon did not say what it is or light up on hover"
+        // With no name, its chips start where the names of the other rows start.
+        do
+            let layout = typeof<SettingsTreeList>.GetMethod("chipLayout",BindingFlags.Instance ||| BindingFlags.NonPublic)
+            let name = typeof<SettingsTreeList>.GetMethod("nameLayout",BindingFlags.Instance ||| BindingFlags.NonPublic)
+            let _,laid,_,_ = layout.Invoke(tree,[|box handMadeRow;box 0;box 0|]) :?> (Rectangle * (int * Rectangle * Rectangle option) list * Rectangle option * int)
+            let _,named = name.Invoke(tree,[|box tree.Roots.[0];box 0;box 0|]) :?> (Rectangle * Rectangle)
+            let _,first,_ = laid.Head
+            assertTrue (first.X=named.X) (sprintf "A dragged group's chips start at %d, names at %d" first.X named.X)
         tipAt 1 |> ignore
         handMadeRow.Chips <- kept
         tree.Rebuild()
