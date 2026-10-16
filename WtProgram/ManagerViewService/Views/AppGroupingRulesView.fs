@@ -338,6 +338,7 @@ type AppGroupingRulesView() as this =
         tree.RowActions <- [EditGlyph;DeleteGlyph]
         tree.ExpandOnDoubleClick <- false
         tree.SoftHighlight <- true
+        tree.EmptyText <- tr Strings.AppRules.noGroups
         // Only names and buttons: a heading row would just say "Name".
         tree.ShowHeader <- false
         // Rename and delete read at a glance; ungroup needs saying.

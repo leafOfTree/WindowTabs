@@ -842,6 +842,13 @@ let main() =
             empty.PerformLayout()
             let card = empty.Controls |> Seq.cast<Control> |> Seq.find(fun control -> control.Tag=box "surface")
             assertTrue (card.Bottom<=empty.ClientSize.Height) (sprintf "The card ends at %d below a section %d tall" card.Bottom empty.ClientSize.Height)
+            // Empty, it says what goes there.
+            let emptyTree = card.Controls |> Seq.cast<Control> |> Seq.pick(function :? SettingsTreeList as list -> Some list | _ -> None)
+            assertTrue (emptyTree.Roots.Count=0 && emptyTree.EmptyText=tr Strings.AppRules.noGroups) "An empty Groups across apps does not say what goes there"
+            empty.CreateControl()
+            use emptyImage = new Bitmap(empty.Width,empty.Height)
+            empty.DrawToBitmap(emptyImage,Rectangle(Point.Empty,emptyImage.Size))
+            emptyImage.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "grouping-empty-%A.png" mode))
         (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
         assertTrue (tree.RowActions=[EditGlyph;DeleteGlyph] && obj.ReferenceEquals(name.Parent.Parent,tree) && name.Parent.Visible)
                    "Adding a group did not start editing its name directly in the row"

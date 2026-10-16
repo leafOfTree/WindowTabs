@@ -132,6 +132,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member val ChipAddTip = "" with get,set
     /// Hover and selection at half strength, so chips stay apart from a highlighted row.
     member val SoftHighlight = false with get,set
+    /// Said in the muted colour while the list has no rows: what would be listed, and how.
+    member val EmptyText = "" with get,set
     member val IconSize = 16 with get,set
     member val ShowHeader = true with get,set
     member val ShowExpanders = true with get,set
@@ -794,6 +796,10 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                             use border = new Pen((if enabled then p.muted else Color.FromArgb(90,p.muted)),1.3f)
                             g.DrawPath(border,shape)
                     | None -> ()
+        if rows.Length=0 && this.EmptyText<>"" then
+            TextRenderer.DrawText(g,this.EmptyText,this.Font,
+                                  Rectangle(Dpi.scale 14,this.headerHeight,max 1 (this.contentWidth-Dpi.scale 28),this.viewport),
+                                  p.muted,flags ||| TextFormatFlags.HorizontalCenter)
         g.ResetClip()
         if this.ShowHeader then
             use line = new Pen(p.border)
