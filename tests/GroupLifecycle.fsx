@@ -562,13 +562,13 @@ let main() =
                 group.addWindow(d,false))
             check (detailChanges.Value=0) "A joining window's first details were announced as a change"
             check (nativeOrder combined = [a;b;d]) "Combined taskbar button failed a foreground window joining its group"
-            // Without taskbar buttons of their own the windows would show on every virtual desktop;
-            // owned by distinct preview proxies, placed on the group's desktop, they stay there without
-            // sharing Peek contents. The previews have no owner, or a thumbnail click opens the group's
-            // last active tab.
+            // Without taskbar buttons of their own the windows would show on every virtual desktop.
+            // Owned by distinct preview proxies they do not share Peek contents, and the previews are
+            // owned by the group's taskbar window: an ownerless preview has no desktop, so its window
+            // showed on all of them.
             let owner hwnd = WinUserApi.GetWindow(hwnd, GetWindowConstants.GW_OWNER)
             pumpUntil "A combined group's windows are not owned by its preview windows" (fun () ->
-                [a;b;d] |> List.forall(fun hwnd -> TaskbarProxies.ownsWindow hwnd && owner(owner hwnd) = IntPtr.Zero))
+                [a;b;d] |> List.forall(fun hwnd -> TaskbarProxies.ownsWindow hwnd && TaskbarProxies.contains (owner(owner hwnd))))
             check ([a;b;d] |> List.map owner |> List.distinct |> List.length = 3) "Combined tabs share a native Peek owner"
             // Each preview sits below the window it owns. Above it, activating the window raised
             // nothing and it stayed under the other tabs.
@@ -794,11 +794,10 @@ let main() =
                       activate=ignore; toggleMinimizeRestore=ignore; close=ignore; tabs=List2(texts |> List.map tab) }
                 let button = new TaskBarButton(info ["a";"b"])
                 try
-                    // Owned by the taskbar window, a preview's thumbnail click opened the group's
-                    // last active tab instead of its own.
-                    check (["a";"b"] |> List.forall(fun key ->
-                        WinUserApi.GetWindow((button.tryTabWindow key).Value.hwnd,GetWindowConstants.GW_OWNER)=IntPtr.Zero))
-                        "A tab preview is owned by the group's taskbar window"
+                    // The taskbar window owns the previews, so their windows keep to its virtual desktop.
+                    let previewOwner key = WinUserApi.GetWindow((button.tryTabWindow key).Value.hwnd,GetWindowConstants.GW_OWNER)
+                    check (["a";"b"] |> List.forall(fun key -> previewOwner key=button.window.hwnd))
+                        "A tab preview is not owned by the group's taskbar window"
                     pumpUntil "First preview order was not sent again" (fun () -> not button.isResendingTabOrder)
                     button.update(info ["a";"b";"c"])
                     button.update(info ["a";"b"])
@@ -814,6 +813,12 @@ let main() =
                         WinUserApi.SendMessage(preview.hwnd,WindowMessages.WM_DWMSENDICONICLIVEPREVIEWBITMAP,IntPtr.Zero,IntPtr.Zero) |> ignore
                     check (List.ofSeq previewRequests=["b",false;"a",false;"c",false]) "Inactive Peek requests reuse another tab's preview"
                     check (previewActivations=0) "Hovering a Peek preview activates the window"
+                    // While thumbnails are up the previews have no owner: owned, a click on one opened
+                    // the group's last active tab. Once they are gone the taskbar window owns them again.
+                    check (button.arePreviewsReleased && ["a";"b";"c"] |> List.forall(fun key -> previewOwner key=IntPtr.Zero))
+                        "Previews kept their owner while their thumbnails were requested"
+                    pumpUntil "Previews were not owned again once their thumbnails were gone" (fun () ->
+                        not button.arePreviewsReleased && ["a";"b";"c"] |> List.forall(fun key -> previewOwner key=button.window.hwnd))
                     // A preview that leaves frees its window, class and procedure then, not with the group.
                     let leaving = (button.tryTabWindow "c").Value.hwnd
                     for _ in 1..20 do

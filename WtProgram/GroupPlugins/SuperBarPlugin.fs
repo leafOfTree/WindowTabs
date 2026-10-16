@@ -275,6 +275,28 @@ type TaskBarButton(info) as this =
     do resendTabOrder.Tick.Add(fun _ ->
         resendTabOrder.Stop()
         sendTabOrder())
+    /// Each application follows its preview's owner between virtual desktops, so this window
+    /// owns the previews: a window without a taskbar button of its own shows on every desktop.
+    /// Explorer, though, hands a click on a thumbnail to the last active window under the
+    /// clicked preview's top owner, which opened the group's last active tab. So while the
+    /// group's thumbnails are up the previews have no owner; their applications keep the desktop
+    /// they were on meanwhile.
+    let mutable previewsReleased = false
+    let thumbnailsShown() =
+        let thumbnails = WinUserApi.FindWindow("TaskListThumbnailWnd",(null:string))
+        thumbnails<>IntPtr.Zero && WinUserApi.IsWindowVisible thumbnails
+    let chainPreview (preview:IntPtr) =
+        WinUserApi.SetWindowLong(preview,WindowLongFieldOffset.GWL_HWNDPARENT,
+            (if previewsReleased then IntPtr.Zero else this.window.hwnd)) |> ignore
+    let rechain = new System.Windows.Forms.Timer(Interval=400)
+    do rechain.Tick.Add(fun _ ->
+        if not (thumbnailsShown()) then
+            rechain.Stop()
+            previewsReleased <- false
+            tabWindowsCell.value.values.iter <| fun (tab:TaskbarTab) ->
+                chainPreview tab.window.hwnd
+                // Explorer keeps thumbnails it was given; asked again, the previews are let go again.
+                tab.invalidate())
     let _window = lazy(
         let config() : TbButton = infoCell.value.Value
         
@@ -339,6 +361,17 @@ type TaskBarButton(info) as this =
         tabWindowsCell.value.values.iter <| fun (tab:TaskbarTab) ->
             tab.invalidate()
 
+    /// Explorer is showing the group's thumbnails: a click on one must open that tab.
+    member this.releasePreviews() =
+        if not previewsReleased then
+            previewsReleased <- true
+            tabWindowsCell.value.values.iter <| fun (tab:TaskbarTab) -> chainPreview tab.window.hwnd
+        rechain.Stop()
+        rechain.Start()
+
+    /// Whether the previews are let go while thumbnails are up.
+    member _.arePreviewsReleased = previewsReleased
+
     member this.update info =
         let findOrCreate (map:Cell<Map2<_,_>>) key create =
             match map.value.tryFind key with
@@ -385,7 +418,7 @@ type TaskBarButton(info) as this =
                 tabWindow.window.dwmSetAttribute DWMWINDOWATTRIBUTE.DWMWA_FORCE_ICONIC_REPRESENTATION 1
                 tabWindow.window.dwmSetAttribute DWMWINDOWATTRIBUTE.DWMWA_HAS_ICONIC_BITMAP 1
                 tabWindow.window.setAppId(appId)
-                
+                chainPreview tabWindow.window.hwnd
                 registerTab(tabWindow.window.hwnd)
                 tabWindow
 
@@ -468,6 +501,7 @@ type TaskBarButton(info) as this =
     interface IDisposable with
         member this.Dispose() =
             resendTabOrder.Dispose()
+            rechain.Dispose()
             // Previews are unregistered while the window they belong to still exists.
             tabWindowsCell.value.items.iter <| fun (tab, tabWindow) ->
                 tabWindow.Dispose()
@@ -495,12 +529,14 @@ and TaskbarTab(parent:TaskBarButton, config,size,key) =
                     | _ ->
                         msg.def()
                 | WindowMessages.WM_DWMSENDICONICTHUMBNAIL ->
+                    parent.releasePreviews()
                     let msgWindow = os.windowFromHwnd(msg.hwnd)
                     TaskbarPreviewTrace.write "thumbnail-request" msg.hwnd key ""
                     TaskbarPreview.send (fun () -> config().preview(true))
                         (TaskbarPreview.centre msg.lParam.size) msgWindow.dwmSetIconicThumbnail
                     msg.def()
                 | WindowMessages.WM_DWMSENDICONICLIVEPREVIEWBITMAP ->
+                    parent.releasePreviews()
                     let msgWindow = os.windowFromHwnd(msg.hwnd)
                     TaskbarPreviewTrace.write "request" msg.hwnd key (sprintf "host=%d" (parent.window.hwnd.ToInt64()))
                     // Windows can trim a proxy's client area at the work-area edge.
@@ -521,9 +557,8 @@ and TaskbarTab(parent:TaskBarButton, config,size,key) =
                 | _ -> msg.def()
         }
 
-    // No owner: Windows hands a thumbnail click to the last active window under the clicked
-    // window's top owner. Owned by the group's taskbar window, every thumbnail opened the
-    // group's last active tab instead of its own. The plugin keeps it on the group's desktop.
+    // Owned by the group's taskbar window, except while the group's thumbnails are up: see
+    // TaskBarButton.releasePreviews.
 
     member this.adoptWindow hwnd =
         if WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)<>_window.hwnd then

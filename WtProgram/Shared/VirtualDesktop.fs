@@ -83,6 +83,14 @@ module VirtualDesktop =
             | true, id -> Some id
             | _ -> None
 
+    /// The desktop Windows reports for the window or its owner now, without falling back on
+    /// the desktop it was last seen on or the one in view: either can be wrong for a window that
+    /// shows on every desktop.
+    let reportedDesktopId (hwnd:IntPtr) =
+        match current hwnd with
+        | None -> ownerDesktop hwnd
+        | found -> found
+
     /// Whether Windows has placed the window on a desktop yet; a new window is placed a moment
     /// after it is shown.
     let isPlaced (hwnd:IntPtr) = (current hwnd).IsSome
