@@ -438,11 +438,10 @@ type AppGroupingRulesView() as this =
                 tree.ClearRowEditor()
                 tree.Focus() |> ignore)
         addGroup.Click.Add(fun _ ->
-            let mutable number = 1
-            let mutable target = tr Strings.AppRules.newGroup
-            while groups |> List.exists(fun group -> String.Equals(group.name,target,StringComparison.OrdinalIgnoreCase)) do
-                number<-number+1
-                target<-sprintf "%s %d" (tr Strings.AppRules.newGroup) number
+            // Short and numbered from the start: Group 1, Group 2, the first number not taken.
+            let named number = tr (Strings.AppRules.newGroup number)
+            let taken number = groups |> List.exists(fun group -> String.Equals(group.name,named number,StringComparison.OrdinalIgnoreCase))
+            let target = Seq.initInfinite ((+) 1) |> Seq.find(taken >> not) |> named
             let group : AppGroupingTarget = {id=Guid.NewGuid().ToString("N");name=target}
             groups<-groups @ [group]
             save None

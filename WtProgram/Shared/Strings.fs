@@ -385,7 +385,8 @@ module Strings =
         let noGroups = { en="Add a group to put several apps together, or drag tabs onto each other: the groups show here"
                          zh="点“添加组”把多个应用放在一起，或拖拽标签合并窗口，分组会显示在这里"
                          ja="「グループを追加」で複数のアプリをまとめるか、タブをドラッグして重ねると、ここに表示されます" }
-        let newGroup = { en="New group"; zh="新组"; ja="新しいグループ" }
+        /// The name a new group starts with.
+        let newGroup number = { en=sprintf "Group %d" number; zh=sprintf "组 %d" number; ja=sprintf "グループ %d" number }
         let selectRule = { en="Select a group or rule to edit here. Changes save automatically."; zh="选中组或规则即可在此编辑，修改会自动保存。"; ja="グループかルールを選択して編集します。変更は自動保存されます。" }
         let newRule = { en="New rule"; zh="新规则"; ja="新しいルール" }
         let groupNameRequired = { en="Enter a group name."; zh="请填写组名。"; ja="グループ名を入力してください。" }

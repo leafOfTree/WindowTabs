@@ -852,6 +852,7 @@ let main() =
         (button groupView (tr Strings.AppRules.addGroup)).PerformClick()
         assertTrue (tree.RowActions=[EditGlyph;DeleteGlyph] && obj.ReferenceEquals(name.Parent.Parent,tree) && name.Parent.Visible)
                    "Adding a group did not start editing its name directly in the row"
+        assertTrue (name.Text=tr (Strings.AppRules.newGroup 1) && name.Text.Length<=8) (sprintf "A new group is not named short and numbered: %s" name.Text)
         // A group's name is short: its field takes half the name cell, not all of it.
         assertTrue (name.Parent.Width<=tree.ClientSize.Width/2) (sprintf "The group name field is %d wide in a list %d wide" name.Parent.Width tree.ClientSize.Width)
         // In a selected row the name field and the application drop-down keep a fill of their own,
