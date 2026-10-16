@@ -124,8 +124,8 @@ type IProgram =
     /// Every tab's colour in one call, for a group whose tabs changed.
     abstract member getTabColors : IntPtr list * IntPtr list -> TabColorChoice option list
     /// Groups made by dragging tabs, as remembered: each one's id and its windows' programs, titles
-    /// and, when one of the program's windows has been seen this run, its path.
-    abstract member handMadeGroups : unit -> (int * (string * string * string) list) list
+    /// and, for a window that is open, its handle (zero when closed).
+    abstract member handMadeGroups : unit -> (int * (string * string * IntPtr) list) list
     /// Forgets a group made by hand and takes its open windows apart, to be grouped as rules say.
     abstract member ungroupHandMade : int -> unit
     abstract member appWindows : List2<IntPtr>

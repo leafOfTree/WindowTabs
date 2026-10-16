@@ -343,7 +343,11 @@ let main() =
     let grouping = Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
     let mouse = Event<int32 * IntPtr>()
     // One group made by dragging tabs, as the program remembers it, and the ones taken apart.
-    let handMade = ref [4711,["NOTEPAD.EXE","Notes - Notepad","";"EXPLORER.EXE","Downloads",Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,"explorer.exe")]]
+    // An open window with an icon of its own stands for the Downloads folder.
+    let openWindow = new Form(ShowInTaskbar=false,Icon=SystemIcons.Information)
+    openWindow.CreateControl()
+    let draggedTogether() = [4711,["NOTEPAD.EXE","Notes - Notepad",IntPtr.Zero;"EXPLORER.EXE","Downloads",openWindow.Handle]]
+    let handMade = ref (draggedTogether())
     let ungrouped = Collections.Generic.List<int>()
     Services.register<IProgram>({new IProgram with
         member _.version = "test"
@@ -779,7 +783,7 @@ let main() =
         rules.Value <- filter
     // Application mappings stay below the app list and save without a dialog.
     for mode in [LightTheme;DarkTheme] do
-        handMade.Value <- [4711,["NOTEPAD.EXE","Notes - Notepad","";"EXPLORER.EXE","Downloads",Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,"explorer.exe")]]
+        handMade.Value <- draggedTogether()
         ungrouped.Clear()
         let appTabs = Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
         rules.Value <- {new IFilterService with
@@ -936,7 +940,8 @@ let main() =
         assertTrue (groupView.Height<=Dpi.scale 244 && groupView.Bottom<=view.control.ClientSize.Height)
                    (sprintf "Grouping tree is outside the page: %A in %A" groupView.Bounds view.control.ClientSize)
         // Groups made by dragging tabs show after the named ones, read only, and come apart in one go.
-        // Short numbered names, as there can be several; chips carry the app's icon when its path is known.
+        // Short numbered names, as there can be several; chips carry the icon of their own open
+        // window, and a closed one none rather than a guess from its exe.
         let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Text=tr (Strings.AppRules.handMadeGroup 1))
         assertTrue (handMadeRow.SeparatorAbove && handMadeRow.Checks |> Array.forall Option.isNone
                     && handMadeRow.Chips |> List.map(fun chip -> chip.Text)=["Notes - Notepad";"Downloads"]
@@ -979,6 +984,9 @@ let main() =
         // Taking a group made by hand apart forgets it, through the program, and drops its row.
         let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Text=tr (Strings.AppRules.handMadeGroup 1))
         clickAction handMadeRow 1
+        // The button said what it does while the pointer was on it.
+        let tip = typeof<SettingsTreeList>.GetField("tooltipText",BindingFlags.Instance ||| BindingFlags.NonPublic).GetValue(tree) :?> string
+        assertTrue (tip=tr Strings.AppRules.ungroup) (sprintf "The ungroup button has no hover tip: %A" tip)
         assertTrue (List.ofSeq ungrouped=[4711] && tree.Roots |> Seq.forall(fun row -> row.Text<>tr (Strings.AppRules.handMadeGroup 1)))
                    "Ungrouping a group made by hand did not forget it or kept its row"
         form.Close()

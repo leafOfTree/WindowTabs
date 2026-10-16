@@ -224,11 +224,13 @@ type AppGroupingRulesView() as this =
             Services.program.handMadeGroups() |> List.iteri(fun index (id,members) ->
                 let row = TreeListItem(tr (Strings.AppRules.handMadeGroup (index+1)),Tag=HandMadeNode id,Glyph=GroupGlyph,SeparatorAbove=(index=0),
                                        Checks=[|None;None|],Actions=Some [NoGlyph;UngroupGlyph],AlwaysShowActions=true)
-                row.Chips <- members |> List.map(fun (app,title,path) ->
-                    // A path seen by the program this run, else one of the app's running windows.
-                    let path = if String.IsNullOrWhiteSpace path then fst (addMenu.Running app) |> Option.defaultValue "" else path
-                    { Text=(if String.IsNullOrWhiteSpace title then app else title)
-                      Icon=(if String.IsNullOrWhiteSpace path then null else addMenu.Icon path); Removable=false })
+                row.Chips <- members |> List.map(fun (app,title,hwnd) ->
+                    // Only the window's own icon, from the window itself: a closed one shows none
+                    // rather than a guess from its exe.
+                    let icon =
+                        if hwnd=IntPtr.Zero then None
+                        else try ImgHelper.windowIcon (OS().windowFromHwnd hwnd) with _ -> None
+                    { Text=(if String.IsNullOrWhiteSpace title then app else title); Icon=Option.toObj icon; Removable=false })
                 tree.Roots.Add(row))
             tree.Rebuild()
             tree.SelectedItem <- tree.Roots
@@ -309,6 +311,10 @@ type AppGroupingRulesView() as this =
         tree.RowActions <- [EditGlyph;DeleteGlyph]
         tree.ExpandOnDoubleClick <- false
         tree.SoftHighlight <- true
+        tree.GlyphTips <- Map.ofList [EditGlyph,tr Strings.AppRules.renameGroup;DeleteGlyph,tr Strings.AppRules.deleteGroup
+                                      UngroupGlyph,tr Strings.AppRules.ungroup]
+        tree.ChipRemoveTip <- tr Strings.AppRules.removeFromGroup
+        tree.ChipAddTip <- tr Strings.AppRules.chooseApplication
         tree.SelectionChanged.Add(fun _ ->
             if not rebuilding then
                 editing <- None

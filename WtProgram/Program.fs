@@ -588,12 +588,12 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         member x.getTabColors(hwnds,peers) = hwnds |> List.map(fun hwnd -> (x :> IProgram).getTabColor(hwnd,peers))
 
         member x.handMadeGroups() =
-            let paths = Dictionary<string,string>()
-            for path in appKeys.Values do
-                let key = AppIdentity.key path
-                if key<>"" && not(paths.ContainsKey key) then paths.[key] <- path
-            let pathOf app = match paths.TryGetValue app with | true,path -> path | _ -> ""
-            remembered |> List.map(fun group -> group.id,group.members |> List.map(fun m -> m.app,m.title,pathOf m.app))
+            let open' = Dictionary<RememberedMember,IntPtr>(HashIdentity.Structural)
+            for group in this.desktop.groups.list do
+                for hwnd in group.windows.list do
+                    this.rememberedMember hwnd |> Option.iter(fun m -> if not(open'.ContainsKey m) then open'.[m] <- hwnd)
+            let hwndOf m = match open'.TryGetValue m with | true,hwnd -> hwnd | _ -> IntPtr.Zero
+            remembered |> List.map(fun group -> group.id,group.members |> List.map(fun m -> m.app,m.title,hwndOf m))
 
         member x.ungroupHandMade id =
             remembered <- remembered |> List.filter(fun group -> group.id<>id)

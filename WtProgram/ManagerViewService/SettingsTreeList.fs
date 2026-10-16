@@ -118,6 +118,10 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
 
     /// Logical pixels.
     member val RowHeight = 30 with get,set
+    /// Hover tips for row buttons, by glyph, and for the x and "+" of chips.
+    member val GlyphTips : Map<TreeListGlyph,string> = Map.empty with get,set
+    member val ChipRemoveTip = "" with get,set
+    member val ChipAddTip = "" with get,set
     /// Hover and selection at half strength, so chips stay apart from a highlighted row.
     member val SoftHighlight = false with get,set
     member val IconSize = 16 with get,set
@@ -548,10 +552,14 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         if not (Object.ReferenceEquals(add,hoveredChipAdd)) then
             hoveredChipAdd <- add
             this.Invalidate()
-        // Show the full text when the tree column truncates it.
+        // Say what a button does; show the full text when the tree column truncates it.
         let text =
-            match this.rowAt e.Y with
-            | Some(index,(item,level)) when e.X < (this.columnBounds).[0].Right ->
+            match this.actionAt e.Location,this.rowAt e.Y with
+            | Some(item,action),_ -> this.GlyphTips.TryFind((this.actions item).[action]) |> Option.defaultValue ""
+            | None,_ when chip.IsSome -> this.ChipRemoveTip
+            | None,_ when not(isNull add) -> this.ChipAddTip
+            | None,Some(_,(item,_)) when not item.Chips.IsEmpty -> ""
+            | None,Some(index,(item,level)) when e.X < (this.columnBounds).[0].Right ->
                 let _,bounds = this.nameLayout(item,level,this.rowTop index)
                 if TextRenderer.MeasureText(item.Text,this.Font).Width > bounds.Width then item.Text else ""
             | _ -> ""
