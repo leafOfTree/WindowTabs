@@ -240,7 +240,9 @@ type AppGroupingRulesView() as this =
                                        Checks=[|None;None|],Actions=Some [NoGlyph;UngroupGlyph],AlwaysShowActions=true)
                 row.Chips <- members |> List.map(fun (app,title,hwnd) ->
                     // An open window's own icon; a closed one's app icon in grey, as another of its
-                    // windows shows it, else from where the settings know the app to be.
+                    // windows shows it, else from where the app last ran or the settings know it to
+                    // be, else a grey window.
+                    let key = AppIdentity.key app
                     let icon =
                         if hwnd<>IntPtr.Zero then try ImgHelper.windowIcon (OS().windowFromHwnd hwnd) with _ -> None
                         else
@@ -249,16 +251,19 @@ type AppGroupingRulesView() as this =
                                     match Services.settings.getValue("autoGroupingPaths") with
                                     | :? Set2<string> as paths -> paths.items.list
                                     | _ -> []
-                                (rules |> List.map(fun rule -> rule.processPath)) @ automatic
-                                |> List.tryFind(fun path -> AppIdentity.key path=app)
-                            try
-                                match addMenu.Running app with
-                                | _,Some window -> ImgHelper.windowIcon window
-                                | Some path,None -> ApplicationNames.appIcon path None
-                                | None,None -> known() |> Option.bind(fun path -> ApplicationNames.appIcon path None)
-                                |> Option.map ApplicationNames.grey
-                            with _ -> None
-                    { Text=(if String.IsNullOrWhiteSpace title then app else title); Icon=Option.toObj icon; Removable=false })
+                                (if IO.Path.IsPathRooted app then [app] else [])
+                                @ (rules |> List.map(fun rule -> rule.processPath)) @ automatic
+                                |> List.filter(fun path -> AppIdentity.key path=key)
+                                |> List.tryPick(fun path -> ApplicationNames.appIcon path None)
+                            let found =
+                                try
+                                    match addMenu.Running app with
+                                    | _,Some window -> ImgHelper.windowIcon window |> Option.orElseWith known
+                                    | Some path,None -> ApplicationNames.appIcon path None |> Option.orElseWith known
+                                    | None,None -> known()
+                                with _ -> None
+                            Some(found |> Option.defaultWith(fun () -> ApplicationNames.glyphIcon WindowGlyph) |> ApplicationNames.grey)
+                    { Text=(if String.IsNullOrWhiteSpace title then key else title); Icon=Option.toObj icon; Removable=false })
                 tree.Roots.Add(row))
             tree.Rebuild()
             tree.SelectedItem <- tree.Roots

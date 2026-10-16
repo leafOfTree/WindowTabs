@@ -22,8 +22,8 @@ let pumpUntil description predicate =
 let rememberedGroupUpdates() =
     let m title = { app="APP.EXE"; title=title }
     let now = DateTime.UtcNow
-    let saved = [{ id=1; seen=now.AddDays(-1.0); members=[m "a";m "b";m "c"] }
-                 { id=2; seen=now.AddDays(-40.0); members=[m "x";m "y"] }]
+    let saved = [{ id=1; seen=now.AddDays(-1.0); members=[m "a";m "b";m "c"]; paths=Map.empty }
+                 { id=2; seen=now.AddDays(-40.0); members=[m "x";m "y"]; paths=Map.empty }]
     // "a" is open in group 1, "b" was dragged into group 3 with "d", "c" has closed.
     let next = RememberedGroups.update now [1,[m "a"];3,[m "b";m "d"]] [] saved
     let find id = next |> List.tryFind(fun group -> group.id=id) |> Option.map(fun group -> group.members)
@@ -36,6 +36,15 @@ let rememberedGroupUpdates() =
     let alone = RememberedGroups.update now [4,[m "a"]] [] next
     check ((alone |> List.tryFind(fun group -> group.id=1)).IsNone) "A group left with one window was kept"
     check (RememberedGroups.find next (m "c") = Some 1 && RememberedGroups.find next (m "z") = None) "A remembered window was not found by its title"
+    // Where each program last ran is kept, saved and read back, so a closed window keeps its icon;
+    // a program no longer in the group is dropped.
+    let located = RememberedGroups.withPaths [1,[@"C:\Apps\App.exe";@"C:\Other\Other.exe"]] next
+    let paths id = (located |> List.find(fun group -> group.id=id)).paths
+    check (paths 1 = Map.ofList ["APP.EXE",@"C:\Apps\App.exe"] && paths 3 = Map.empty) "A group did not keep where its programs ran"
+    let reread = RememberedGroups.read (RememberedGroups.write located)
+    check (reread = located) "Where a group's programs ran was not saved and read back"
+    let moved = RememberedGroups.update now [1,[{ app="NEW.EXE"; title="n" };{ app="NEW.EXE"; title="o" }]] [m "a";m "c"] located
+    check ((moved |> List.find(fun group -> group.id=1)).paths = Map.empty) "A group kept the path of a program it no longer has"
 
 let main() =
     rememberedGroupUpdates()
@@ -58,7 +67,7 @@ let main() =
         let app = AppIdentity.key path
         let rememberedTitles = ["Remembered A";"Remembered B";"Remembered C"]
         runtimeSettings.rememberedGroups <-
-            [{ id=5151; seen=DateTime.UtcNow; members=rememberedTitles |> List.map(fun title -> { app=app; title=title }) }]
+            [{ id=5151; seen=DateTime.UtcNow; members=rememberedTitles |> List.map(fun title -> { app=app; title=title }); paths=Map.empty }]
         check ((runtimeSettings.rememberedGroups |> List.map(fun group -> group.id)) = [5151]) "Remembered groups were not kept in the settings"
         use lifetime = new LifetimeScope(fun error -> raise error)
         let program = Program.Program(lifetime,settings=runtimeSettings)

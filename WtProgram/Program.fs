@@ -278,11 +278,16 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         let manual (info:GroupInfo) =
             info.group.isManual || remembered |> List.exists(fun group -> group.id=info.group.groupToken)
         let live,elsewhere = inView |> List.partition(fst >> manual)
+        let running =
+            live |> List.map(fun (info,_) ->
+                info.group.groupToken,
+                (info :> IGroup).windows.list |> List.map this.appKey |> List.filter(String.IsNullOrEmpty >> not))
         let next =
             RememberedGroups.update DateTime.UtcNow
                 (live |> List.map(fun (info,members) -> info.group.groupToken,members))
                 (elsewhere |> List.collect snd) remembered
-        let shape (groups:RememberedGroup list) = groups |> List.map(fun group -> group.id,group.members)
+            |> RememberedGroups.withPaths running
+        let shape (groups:RememberedGroup list) = groups |> List.map(fun group -> group.id,group.members,group.paths)
         let changed = shape next <> shape remembered
         remembered <- next
         if changed then settingsManager.rememberedGroups <- next
@@ -663,7 +668,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 for hwnd in group.windows.list do
                     this.rememberedMember hwnd |> Option.iter(fun m -> if not(open'.ContainsKey m) then open'.[m] <- hwnd)
             let hwndOf m = match open'.TryGetValue m with | true,hwnd -> hwnd | _ -> IntPtr.Zero
-            remembered |> List.map(fun group -> group.id,group.members |> List.map(fun m -> m.app,m.title,hwndOf m))
+            // Where the app was last seen running, when known, which finds its icon while closed.
+            let appOf (group:RememberedGroup) (m:RememberedMember) = group.paths.TryFind m.app |> Option.defaultValue m.app
+            remembered |> List.map(fun group -> group.id,group.members |> List.map(fun m -> appOf group m,m.title,hwndOf m))
 
         member x.ungroupHandMade id =
             remembered <- remembered |> List.filter(fun group -> group.id<>id)

@@ -1011,6 +1011,23 @@ let main() =
         // Each row is only its apps: they cannot be renamed, and a name of their own left less room;
         // the icon says on hover what the row is. Chips carry the icon of their own open window, and
         // a closed one its app's icon in grey.
+        let isGrey (image:Image) =
+            let bitmap = image :?> Bitmap
+            let pixels = [ for x in 0..bitmap.Width-1 do for y in 0..bitmap.Height-1 -> bitmap.GetPixel(x,y) ] |> List.filter(fun pixel -> pixel.A>40uy)
+            not pixels.IsEmpty && pixels |> List.forall(fun pixel -> abs(int pixel.R-int pixel.G)<=2 && abs(int pixel.G-int pixel.B)<=2)
+        // An app that is not running and in no rule still has a grey icon: from where it last ran,
+        // else a grey window.
+        do
+            let dragged = handMade.Value
+            menu.UpdateApplications []
+            handMade.Value <- [4712,[Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,"notepad.exe"),"Closed notes",IntPtr.Zero
+                                     "NOT-RUNNING-APP.EXE","",IntPtr.Zero]]
+            groupView.Reload()
+            let row = tree.Roots |> Seq.find(fun row -> row.Glyph=TabsGlyph)
+            assertTrue (row.Chips |> List.map(fun chip -> chip.Text)=["Closed notes";"NOT-RUNNING-APP.EXE"]
+                        && row.Chips |> List.forall(fun chip -> not(isNull chip.Icon) && isGrey chip.Icon))
+                       "A closed window of an app not running had no icon, or not a grey one"
+            handMade.Value <- dragged
         menu.UpdateApplications [Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,"notepad.exe")]
         groupView.Reload()
         let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Glyph=TabsGlyph)
@@ -1022,11 +1039,7 @@ let main() =
                     && handMadeRow.Chips |> List.forall(fun chip -> not chip.Removable && not(isNull chip.Icon))
                     && handMadeRow.Actions=Some [NoGlyph;UngroupGlyph])
                    "A group made by dragging tabs is missing, editable, without icons, or cannot be taken apart"
-        do
-            let closed = handMadeRow.Chips.Head.Icon :?> Bitmap
-            let pixels = [ for x in 0..closed.Width-1 do for y in 0..closed.Height-1 -> closed.GetPixel(x,y) ] |> List.filter(fun pixel -> pixel.A>40uy)
-            assertTrue (not pixels.IsEmpty && pixels |> List.forall(fun pixel -> abs(int pixel.R-int pixel.G)<=2 && abs(int pixel.G-int pixel.B)<=2))
-                       "A closed window's chip icon is not grey"
+        assertTrue (isGrey handMadeRow.Chips.Head.Icon) "A closed window's chip icon is not grey"
         // A chip cut short shows its whole text on hover.
         let longTitle = String.replicate 12 "Long window title "
         let kept = handMadeRow.Chips
