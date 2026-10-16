@@ -244,7 +244,9 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                 let top = this.rowTop index
                 let (icon:Rectangle),(bounds:Rectangle) = this.nameLayout(item,snd rows.[index],top)
                 let left = if includeIcon then icon.Left else bounds.Left
-                editor.Bounds <- Rectangle(left,top+Dpi.scale 3,bounds.Right-left,max 1 (this.rowHeight-Dpi.scale 6))
+                // A row with chips names something short: half the cell is room enough to rename it.
+                let right = if item.Chips.IsEmpty && not item.ChipAdd then bounds.Right else bounds.Left+bounds.Width/2
+                editor.Bounds <- Rectangle(left,top+Dpi.scale 3,right-left,max 1 (this.rowHeight-Dpi.scale 6))
                 editor.Visible <- top>=this.headerHeight && top+this.rowHeight<=this.ClientSize.Height
             | None -> editor.Visible <- false)
 
