@@ -23,7 +23,7 @@ type TreeListGlyph =
     | DeleteGlyph
     /// Two halves pulled apart: take a group's windows apart.
     | UngroupGlyph
-    /// Two halves pushed together, the opposite of UngroupGlyph: windows put together by hand.
+    /// Two halves joined in one box, the opposite of UngroupGlyph: windows put together by hand.
     | TabsGlyph
 
 /// A column of SettingsTreeList. Width is in logical pixels; 0 fills the remaining width.
@@ -446,11 +446,9 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             g.DrawPath(pen,pencil)
             g.DrawLine(pen,9.2f,4.6f,11.4f,6.8f)
         | TabsGlyph ->
-            use body = SettingsShapes.rounded (RectangleF(4.0f,3.5f,8.0f,9.0f)) 1.5f
+            use body = SettingsShapes.rounded (RectangleF(3.0f,3.5f,10.0f,9.0f)) 1.5f
             g.DrawPath(pen,body)
             g.DrawLine(pen,8.0f,3.5f,8.0f,12.5f)
-            g.DrawLines(pen,[|PointF(0.8f,6.0f);PointF(2.6f,8.0f);PointF(0.8f,10.0f)|])
-            g.DrawLines(pen,[|PointF(15.2f,6.0f);PointF(13.4f,8.0f);PointF(15.2f,10.0f)|])
         | UngroupGlyph ->
             use left = SettingsShapes.rounded (RectangleF(1.5f,4.0f,5.0f,8.0f)) 1.5f
             use right = SettingsShapes.rounded (RectangleF(9.5f,4.0f,5.0f,8.0f)) 1.5f
