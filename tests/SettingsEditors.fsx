@@ -961,7 +961,9 @@ let main() =
         // Groups made by dragging tabs show after the named ones, read only, and come apart in one go.
         // One heading names them, and each row is only its apps: they cannot be renamed, and a
         // name of their own left less room. Chips carry the icon of their own open window, and a
-        // closed one none rather than a guess from its exe.
+        // closed one its app's icon in grey.
+        menu.UpdateApplications [Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,"notepad.exe")]
+        groupView.Reload()
         let heading = tree.Roots |> Seq.find(fun row -> row.IsHeading)
         let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Glyph=DragGlyph)
         tree.SelectedItem <- heading
@@ -970,10 +972,30 @@ let main() =
                    "Dragged groups have no heading of their own, or the heading can be selected"
         assertTrue (handMadeRow.Text="" && handMadeRow.Checks |> Array.forall Option.isNone
                     && handMadeRow.Chips |> List.map(fun chip -> chip.Text)=["Notes - Notepad";"Downloads"]
-                    && isNull handMadeRow.Chips.Head.Icon && not(isNull handMadeRow.Chips.[1].Icon)
-                    && handMadeRow.Chips |> List.forall(fun chip -> not chip.Removable)
+                    && handMadeRow.Chips |> List.forall(fun chip -> not chip.Removable && not(isNull chip.Icon))
                     && handMadeRow.Actions=Some [NoGlyph;UngroupGlyph])
-                   "A group made by dragging tabs is missing, editable, or cannot be taken apart"
+                   "A group made by dragging tabs is missing, editable, without icons, or cannot be taken apart"
+        do
+            let closed = handMadeRow.Chips.Head.Icon :?> Bitmap
+            let pixels = [ for x in 0..closed.Width-1 do for y in 0..closed.Height-1 -> closed.GetPixel(x,y) ] |> List.filter(fun pixel -> pixel.A>40uy)
+            assertTrue (not pixels.IsEmpty && pixels |> List.forall(fun pixel -> abs(int pixel.R-int pixel.G)<=2 && abs(int pixel.G-int pixel.B)<=2))
+                       "A closed window's chip icon is not grey"
+        // A chip cut short shows its whole text on hover.
+        let longTitle = String.replicate 12 "Long window title "
+        let kept = handMadeRow.Chips
+        handMadeRow.Chips <- [{ Text=longTitle; Icon=null; Removable=false }]
+        tree.Rebuild()
+        tree.EnsureVisible(handMadeRow)
+        let rowY = [0..tree.Height-1] |> List.find(fun y -> tree.ItemAt(Point(Dpi.scale 20,y)) |> Option.exists(fun row -> obj.ReferenceEquals(row,handMadeRow)))
+                   |> fun top -> top+Dpi.scale (tree.RowHeight/2)
+        let tipAt x =
+            let mouse = new MouseEventArgs(MouseButtons.None,0,x,rowY,0)
+            typeof<SettingsTreeList>.GetMethod("OnMouseMove",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(tree,[|box mouse|]) |> ignore
+            typeof<SettingsTreeList>.GetField("tooltipText",BindingFlags.Instance ||| BindingFlags.NonPublic).GetValue(tree) :?> string
+        assertTrue ([0..4..tree.Width-1] |> List.exists(fun x -> tipAt x=longTitle)) "A chip cut short did not show its whole text on hover"
+        tipAt 1 |> ignore
+        handMadeRow.Chips <- kept
+        tree.Rebuild()
         // Chips that do not fit wrap onto more lines and the row grows; none are hidden behind a count.
         let oneLine = tree.ContentHeight
         let shown = handMadeRow.Chips

@@ -60,6 +60,18 @@ module ApplicationNames =
         use g = Graphics.FromImage(image)
         SettingsTreeList.drawGlyph(g,glyph,Rectangle(0,0,image.Width,image.Height),(SettingsColors.current()).muted)
         image :> Image
+    /// A grey, lighter copy, for an app whose window is not open; the image given is released.
+    let grey (image:Image) : Image =
+        use source = image
+        let result = new Bitmap(source.Width,source.Height,Imaging.PixelFormat.Format32bppArgb)
+        use g = Graphics.FromImage(result)
+        let l r g b = [|r;g;b;0.0f;0.0f|]
+        let matrix = Imaging.ColorMatrix([| l 0.3f 0.3f 0.3f; l 0.59f 0.59f 0.59f; l 0.11f 0.11f 0.11f
+                                            [|0.0f;0.0f;0.0f;0.6f;0.0f|]; [|0.0f;0.0f;0.0f;0.0f;1.0f|] |])
+        use attributes = new Imaging.ImageAttributes()
+        attributes.SetColorMatrix(matrix)
+        g.DrawImage(source,Rectangle(0,0,source.Width,source.Height),0,0,source.Width,source.Height,GraphicsUnit.Pixel,attributes)
+        result :> Image
     /// Always an image, so lists of apps line up.
     let icon path (window:Window option) : Image =
         appIcon path window |> Option.defaultWith(fun () -> glyphIcon WindowGlyph)
@@ -230,11 +242,25 @@ type AppGroupingRulesView() as this =
                 let row = TreeListItem("",Tag=HandMadeNode id,Glyph=DragGlyph,
                                        Checks=[|None;None|],Actions=Some [NoGlyph;UngroupGlyph],AlwaysShowActions=true)
                 row.Chips <- members |> List.map(fun (app,title,hwnd) ->
-                    // Only the window's own icon, from the window itself: a closed one shows none
-                    // rather than a guess from its exe.
+                    // An open window's own icon; a closed one's app icon in grey, as another of its
+                    // windows shows it, else from where the settings know the app to be.
                     let icon =
-                        if hwnd=IntPtr.Zero then None
-                        else try ImgHelper.windowIcon (OS().windowFromHwnd hwnd) with _ -> None
+                        if hwnd<>IntPtr.Zero then try ImgHelper.windowIcon (OS().windowFromHwnd hwnd) with _ -> None
+                        else
+                            let known() =
+                                let automatic =
+                                    match Services.settings.getValue("autoGroupingPaths") with
+                                    | :? Set2<string> as paths -> paths.items.list
+                                    | _ -> []
+                                (rules |> List.map(fun rule -> rule.processPath)) @ automatic
+                                |> List.tryFind(fun path -> AppIdentity.key path=app)
+                            try
+                                match addMenu.Running app with
+                                | _,Some window -> ImgHelper.windowIcon window
+                                | Some path,None -> ApplicationNames.appIcon path None
+                                | None,None -> known() |> Option.bind(fun path -> ApplicationNames.appIcon path None)
+                                |> Option.map ApplicationNames.grey
+                            with _ -> None
                     { Text=(if String.IsNullOrWhiteSpace title then app else title); Icon=Option.toObj icon; Removable=false })
                 tree.Roots.Add(row))
             tree.Rebuild()

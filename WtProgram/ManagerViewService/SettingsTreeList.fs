@@ -589,7 +589,18 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             | None,Some(index,(item,_)) when (this.checkAt(index,item,e.Location)).IsSome ->
                 let column = (this.checkAt(index,item,e.Location)).Value
                 columns.[column].Tip,this.checkBounds(this.columnBounds.[column],this.rowTop index)
-            | None,Some(_,(item,_)) when not item.Chips.IsEmpty -> "",around
+            | None,Some(_,(item,_)) when not item.Chips.IsEmpty ->
+                // A chip cut short says its whole text.
+                this.chipsAt e.Location
+                |> Option.bind(fun (_,laid,_) -> laid |> List.tryFind(fun (_,box:Rectangle,_) -> box.Contains(e.Location)))
+                |> Option.bind(fun (index,box,close) ->
+                    let chip = item.Chips.[index]
+                    let left = box.X+Dpi.scale 8+(if isNull chip.Icon then 0 else Dpi.scale 16+Dpi.scale 5)
+                    let right = match close with Some(close:Rectangle) -> close.X-Dpi.scale 4 | None -> box.Right-Dpi.scale 8
+                    let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine
+                    if TextRenderer.MeasureText(chip.Text,this.Font,Size(Int32.MaxValue,box.Height),flags).Width > right-left
+                    then Some(chip.Text,box) else None)
+                |> Option.defaultValue ("",around)
             | None,Some(index,(item,level)) when e.X < (this.columnBounds).[0].Right ->
                 let _,bounds = this.nameLayout(item,level,this.rowTop index)
                 (if TextRenderer.MeasureText(item.Text,this.Font).Width > bounds.Width then item.Text else ""),bounds
