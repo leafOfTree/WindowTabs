@@ -226,7 +226,8 @@ type AppGroupingRulesView() as this =
                 let row = TreeListItem(group.name,Tag=GroupNode group.id,Glyph=GroupGlyph,
                                        Checks=[|None;if members.IsEmpty then None else Some(enabled=members.Length)|],
                                        Mixed=[|false;enabled>0 && enabled<members.Length|],
-                                       ChipAdd=true,Actions=Some [EditGlyph;DeleteGlyph],AlwaysShowActions=true)
+                                       ChipAdd=true,Actions=Some [EditGlyph;DeleteGlyph],AlwaysShowActions=true,
+                                       ChipsDimmed=(not members.IsEmpty && enabled=0))
                 row.Chips <- members |> List.map(fun rule ->
                     { Text=ApplicationNames.label rule.processPath; Icon=addMenu.Icon rule.processPath; Removable=true })
                 chipRules.[group.id] <- members

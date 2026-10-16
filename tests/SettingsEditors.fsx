@@ -971,6 +971,8 @@ let main() =
         tree.SelectedItem <- tree.Roots.[1]
         typeof<SettingsTreeList>.GetMethod("toggleCheck",BindingFlags.Instance ||| BindingFlags.NonPublic).Invoke(tree,[|box tree.SelectedItem;box 1|]) |> ignore
         assertTrue (not(saved().Head.enabled)) "The group's checkbox did not save its apps as disabled"
+        // Turned off, the group's apps look it: muted, with grey icons.
+        assertTrue (tree.Roots.[1].ChipsDimmed && not tree.Roots.[0].ChipsDimmed) "A turned-off group's apps do not look turned off"
         // The box has no column heading of its own: it sits by the buttons and names itself on hover.
         do
             let checkAt = typeof<SettingsTreeList>.GetMethod("checkAt",BindingFlags.Instance ||| BindingFlags.NonPublic)

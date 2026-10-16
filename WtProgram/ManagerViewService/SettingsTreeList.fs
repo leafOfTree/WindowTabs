@@ -70,6 +70,8 @@ type TreeListItem(text:string) =
     member val Chips : TreeListChip list = [] with get,set
     /// A "+" button after the last chip, raising ChipAddInvoked.
     member val ChipAdd = false with get,set
+    /// Chips drawn muted, with grey icons, for a row whose items are turned off.
+    member val ChipsDimmed = false with get,set
     member val AlwaysShowActions = false with get,set
     member _.Children = children :> IReadOnlyList<TreeListItem>
     member this.Add(child:TreeListItem) = child.Parent <- this; children.Add(child); child
@@ -722,10 +724,21 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                             if not (isNull chip.Icon) then
                                 let side = Dpi.scale 16
                                 g.InterpolationMode <- InterpolationMode.HighQualityBicubic
-                                g.DrawImage(chip.Icon,Rectangle(x,box.Y+(box.Height-side)/2,side,side))
+                                let target = Rectangle(x,box.Y+(box.Height-side)/2,side,side)
+                                if item.ChipsDimmed then
+                                    // Grey and faded, as the rest of a turned-off row.
+                                    let l r gr b = [|r;gr;b;0.0f;0.0f|]
+                                    let matrix = Imaging.ColorMatrix([| l 0.3f 0.3f 0.3f; l 0.59f 0.59f 0.59f; l 0.11f 0.11f 0.11f
+                                                                        [|0.0f;0.0f;0.0f;0.45f;0.0f|]; [|0.0f;0.0f;0.0f;0.0f;1.0f|] |])
+                                    use attributes = new Imaging.ImageAttributes()
+                                    attributes.SetColorMatrix(matrix)
+                                    g.DrawImage(chip.Icon,target,0,0,chip.Icon.Width,chip.Icon.Height,GraphicsUnit.Pixel,attributes)
+                                else g.DrawImage(chip.Icon,target)
                                 x <- x+side+Dpi.scale 5
                             let textRight = match closeBox with Some(close:Rectangle) -> close.X-Dpi.scale 4 | None -> box.Right-Dpi.scale 8
-                            let chipText = if SystemInformation.HighContrast then SystemColors.WindowText else p.text
+                            let chipText =
+                                if SystemInformation.HighContrast then (if item.ChipsDimmed then SystemColors.GrayText else SystemColors.WindowText)
+                                elif item.ChipsDimmed then p.muted else p.text
                             TextRenderer.DrawText(g,chip.Text,this.Font,Rectangle(x,box.Y,max 1 (textRight-x),box.Height),chipText,flags)
                             closeBox |> Option.iter(fun close ->
                                 let pointed = hoveredChip |> Option.exists(fun (row,i) -> Object.ReferenceEquals(row,item) && i=chipIndex)
