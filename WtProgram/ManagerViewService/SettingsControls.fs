@@ -89,13 +89,15 @@ type SettingsInfoButton() as this =
 
 type private SettingsHelpPopup(message:string,font:Font) as this =
     inherit Form()
+    /// Snug round the text, so a one-word tip looks as settled as a paragraph.
+    let padX,padY = Dpi.scale 12,Dpi.scale 8
     // As wide as a short message needs, wrapping only past 470px.
     let width =
         let oneLine = TextRenderer.MeasureText(message,font,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPrefix).Width
-        min (Dpi.scale 470) (oneLine+Dpi.scale 32)
-    let wrapped = String.Join("\n",SettingsTextWrap.lines message font (width-Dpi.scale 32))
+        min (Dpi.scale 470) (oneLine+2*padX)
+    let wrapped = String.Join("\n",SettingsTextWrap.lines message font (width-2*padX))
     let arrow() = Dpi.scale 7
-    let radius() = float32(Dpi.scale 10)
+    let radius() = float32(Dpi.scale 8)
     /// Where the arrow meets the target, across the popup, and whether the popup sits below the
     /// target (the arrow on its top edge) or above it.
     let mutable tip = 0
@@ -130,7 +132,7 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
         this.Font <- font
         this.DoubleBuffered <- true
         let textSize = TextRenderer.MeasureText(wrapped,font,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPrefix)
-        this.ClientSize <- Size(width,textSize.Height+Dpi.scale 32+arrow())
+        this.ClientSize <- Size(width,textSize.Height+2*padY+arrow())
     override _.ShowWithoutActivation = true
     /// Below the target where it fits on the screen, else above it. The arrow points at the
     /// target's middle, or for a wide one near its start, where its text begins.
@@ -154,9 +156,9 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
         use shape = outline 1.0f
         use border = new Pen(p.border)
         e.Graphics.DrawPath(border,shape)
-        let top = Dpi.scale 16+(if below then arrow() else 0)
+        let top = padY+(if below then arrow() else 0)
         TextRenderer.DrawText(e.Graphics,wrapped,this.Font,
-            Rectangle(Dpi.scale 16,top,this.Width-Dpi.scale 32,this.Height-Dpi.scale 32-arrow()),
+            Rectangle(padX,top,this.Width-2*padX,this.Height-2*padY-arrow()),
             p.text,TextFormatFlags.NoPrefix)
 
 /// Hover help for any control, the way the (i) button shows it: a themed popup whose arrow
