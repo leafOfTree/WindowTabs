@@ -959,10 +959,16 @@ let main() =
         assertTrue (groupView.Height<=Dpi.scale 244 && groupView.Bottom<=view.control.ClientSize.Height)
                    (sprintf "Grouping tree is outside the page: %A in %A" groupView.Bounds view.control.ClientSize)
         // Groups made by dragging tabs show after the named ones, read only, and come apart in one go.
-        // Short numbered names, as there can be several; chips carry the icon of their own open
-        // window, and a closed one none rather than a guess from its exe.
-        let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Text=tr (Strings.AppRules.handMadeGroup 1))
-        assertTrue (handMadeRow.SeparatorAbove && handMadeRow.Checks |> Array.forall Option.isNone
+        // One heading names them, and each row is only its apps: they cannot be renamed, and a
+        // name of their own left less room. Chips carry the icon of their own open window, and a
+        // closed one none rather than a guess from its exe.
+        let heading = tree.Roots |> Seq.find(fun row -> row.IsHeading)
+        let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Glyph=DragGlyph)
+        tree.SelectedItem <- heading
+        assertTrue (heading.Text=tr Strings.AppRules.handMadeGroups && heading.SeparatorAbove && not(obj.ReferenceEquals(tree.SelectedItem,heading))
+                    && tree.Roots.IndexOf(handMadeRow)=tree.Roots.IndexOf(heading)+1)
+                   "Dragged groups have no heading of their own, or the heading can be selected"
+        assertTrue (handMadeRow.Text="" && handMadeRow.Checks |> Array.forall Option.isNone
                     && handMadeRow.Chips |> List.map(fun chip -> chip.Text)=["Notes - Notepad";"Downloads"]
                     && isNull handMadeRow.Chips.Head.Icon && not(isNull handMadeRow.Chips.[1].Icon)
                     && handMadeRow.Chips |> List.forall(fun chip -> not chip.Removable)
@@ -994,14 +1000,14 @@ let main() =
         pressChipPart "chipCloseAt" tree.Roots.[1]
         assertTrue (saved().IsEmpty && targets().Length=2) "Removing an app's chip deleted the group or kept the app"
         groupView.Reload()
-        assertTrue (tree.Roots |> Seq.filter(fun row -> row.Text<>tr (Strings.AppRules.handMadeGroup 1)) |> Seq.length=2 && tree.Roots.[1].Chips.IsEmpty) "An empty group was lost on reload"
+        assertTrue (tree.Roots |> Seq.filter(fun row -> not row.IsHeading && row.Glyph<>DragGlyph) |> Seq.length=2 && tree.Roots.[1].Chips.IsEmpty) "An empty group was lost on reload"
         clickAdd tree.Roots.[1]
         pick selectedPath
         tree.SelectedItem <- tree.Roots.[1]
         key tree Keys.Delete
         assertTrue (saved().IsEmpty && targets().Length=1) "Deleting a group left its application mappings behind"
         // Taking a group made by hand apart forgets it, through the program, and drops its row.
-        let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Text=tr (Strings.AppRules.handMadeGroup 1))
+        let handMadeRow = tree.Roots |> Seq.find(fun row -> row.Glyph=DragGlyph)
         // The button said what it does while the pointer was on it.
         let tip = clickAction handMadeRow 1
         assertTrue (tip=tr Strings.AppRules.ungroup) (sprintf "The ungroup button has no hover tip: %A" tip)
@@ -1010,7 +1016,7 @@ let main() =
         let bubbles = Application.OpenForms |> Seq.cast<Form> |> Seq.filter(fun form -> form.GetType().Name="SettingsHelpPopup") |> Seq.map(fun form -> form.Width) |> List.ofSeq
         assertTrue (bubbles |> List.exists(fun width -> width<=tipWidth+2))
                    (sprintf "The ungroup tip's bubble is wider than its text: %A for %d" bubbles tipWidth)
-        assertTrue (List.ofSeq ungrouped=[4711] && tree.Roots |> Seq.forall(fun row -> row.Text<>tr (Strings.AppRules.handMadeGroup 1)))
+        assertTrue (List.ofSeq ungrouped=[4711] && tree.Roots |> Seq.forall(fun row -> row.Glyph<>DragGlyph && not row.IsHeading))
                    "Ungrouping a group made by hand did not forget it or kept its row"
         form.Close()
         rules.Value <- filter

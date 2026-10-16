@@ -414,9 +414,9 @@ module Strings =
         let notRunning count = { en=sprintf "Not running (%d)" count; zh=sprintf "未运行 (%d)" count; ja=sprintf "実行していないアプリ (%d)" count }
         /// ApplicationFrameHost.exe, which hosts every Store (UWP) app: Settings, Calculator, Photos.
         let windowsApps = { en="Windows apps"; zh="Windows 应用"; ja="Windows アプリ" }
-        /// A group made by dragging tabs together, shown read-only beside the named groups; there
-        /// can be several, so a short name and a number.
-        let handMadeGroup number = { en=sprintf "Dragged %d" number; zh=sprintf "拖拽 %d" number; ja=sprintf "ドラッグ %d" number }
+        /// The heading above the groups made by dragging tabs together, shown read-only after the
+        /// named groups.
+        let handMadeGroups = { en="Dragged together"; zh="拖拽形成的分组"; ja="ドラッグでまとめたグループ" }
         let scanning = { en="Scanning…"; zh="正在扫描…"; ja="スキャン中…" }
         let scanFailed details = { en="Scan failed: " + details; zh="扫描失败：" + details; ja="スキャンに失敗しました: " + details }
 
