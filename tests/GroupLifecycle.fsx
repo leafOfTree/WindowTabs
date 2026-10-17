@@ -719,8 +719,6 @@ let main() =
                 (info :> IGroup).addWindow(hwnd,false)
             pumpUntil "Workspace groups did not acquire windows" (fun () -> nativeOrder left=[a] && nativeOrder right=[b])
             workspaceWindows <- List2([a;b])
-            let alerts = Collections.Generic.List<AlertKind>()
-            Alert.install(fun kind _ _ -> alerts.Add kind)
             let model = WorkspaceModel()
             model.init()
             model.create()
@@ -735,7 +733,8 @@ let main() =
             let reloaded = WorkspaceModel()
             reloaded.init()
             reloaded.selected <- reloaded.workspaces.head
-            reloaded.restore()
+            let result = reloaded.restore()
+            check (result |> Option.exists(fun result -> result.restored=2 && result.missing.IsEmpty)) (sprintf "Workspace restore result miscounted: %A" result)
             let restoredGroup hwnd =
                 match desktopApi.groups.list |> List.filter(fun group -> group.windows.contains((=)hwnd)) with
                 | [group] -> Some(group :?> GroupInfo)
@@ -746,7 +745,7 @@ let main() =
             for hwnd,layout in [a,leftLayout;b,rightLayout] do
                 check (onGroup (restoredGroup hwnd).Value (fun group -> group.tabLayout)=layout)
                       "Workspace restore used new defaults instead of the saved tab layout"
-            check (alerts |> Seq.forall((=) AlertKind.Info)) "Workspace layout restore reported a warning"
+            check (result |> Option.exists(fun result -> result.failed.IsEmpty)) "Workspace layout restore reported a failure"
             for info in desktopApi.groups.list |> List.map(fun group -> group :?> GroupInfo) do
                 if not info.isExited then onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
             workspaceWindows <- List2()

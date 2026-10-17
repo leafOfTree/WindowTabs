@@ -791,6 +791,44 @@ let main() =
         form.Close()
         File.Delete(aliasPath)
         rules.Value <- filter
+    // The restore result stays above the windows still being restored, marks each state's count
+    // and shows a long path title in full, wrapped.
+    let longTitle = @"WindowTabs - C:\Projects\WindowTabs\WtProgram\bin\Debug\net48\WindowTabs.exe --settings --workspace"
+    for mode in [LightTheme;DarkTheme] do
+        preferences <- {preferences with mode=mode}
+        ThemeService.publishPreferences preferences
+        use dialog = new WorkspaceRestoreDialog({workspace="Workspace 4";restored=17;missing=["neovide.exe",longTitle;"notepad.exe","Notes"]
+                                                 failed=["code.exe","Access is denied."]})
+        dialog.StartPosition <- FormStartPosition.Manual
+        dialog.Location <- Point(-20000,-20000)
+        dialog.Show()
+        Application.DoEvents()
+        let rec all (control:Control) = seq { yield control; for child in control.Controls do yield! all child }
+        assertTrue dialog.TopMost "Restore result could be covered by the windows being restored"
+        let marks = all dialog |> Seq.choose(function :? RestoreMark as mark -> Some(mark.State,mark.Active) | _ -> None) |> Seq.truncate 3 |> List.ofSeq
+        assertTrue (marks=[Restored,true;NotFound,true;Failed,true]) (sprintf "Restore states lack their marks: %A" marks)
+        // A clean restore shows only its restored count, not states with none in them.
+        use clean = new WorkspaceRestoreDialog({workspace="Workspace 5";restored=18;missing=[];failed=[]})
+        let cleanMarks = all clean |> Seq.choose(function :? RestoreMark as mark -> Some mark.State | _ -> None) |> List.ofSeq
+        assertTrue (cleanMarks=[Restored]) (sprintf "A restore listed states with no windows: %A" cleanMarks)
+        if mode=DarkTheme then
+            clean.StartPosition <- FormStartPosition.Manual
+            clean.Location <- Point(-20000,-20000)
+            clean.Show()
+            Application.DoEvents()
+            use cleanImage = new Bitmap(clean.Width,clean.Height)
+            clean.DrawToBitmap(cleanImage,Rectangle(Point.Empty,cleanImage.Size))
+            cleanImage.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","workspace-restore-clean.png"))
+            clean.Close()
+        let labels = all dialog |> Seq.choose(function :? Label as label -> Some label | _ -> None) |> List.ofSeq
+        let squeeze (text:string) = text.Replace("\n","").Replace(" ","")
+        assertTrue (labels |> List.exists(fun label -> squeeze label.Text=squeeze longTitle)) "Restore result cut a long window title short"
+        assertTrue (labels |> List.forall(fun label -> label.Right<=label.Parent.ClientSize.Width)) "Restore result text overflowed its dialog"
+        assertTrue (dialog.Summary.Contains(longTitle) && dialog.Summary.Contains("Access is denied.")) "Copied restore result lost a window"
+        use image = new Bitmap(dialog.Width,dialog.Height)
+        dialog.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+        image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "workspace-restore-%A.png" mode))
+        dialog.Close()
     // Application mappings stay below the app list and save without a dialog.
     for mode in [LightTheme;DarkTheme] do
         handMade.Value <- draggedTogether()

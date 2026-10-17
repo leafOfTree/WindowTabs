@@ -242,6 +242,30 @@ type WindowResolver(?windows:List2<IntPtr * string * string>) =
             remaining <- remaining.where(fun (candidate,_,_) -> candidate<>hwnd)
             hwnd)
 
+    /// Ignores the title, so an editor or browser showing another document still matches.
+    /// The same path wins over the same exe name, then the most similar title, then list order.
+    member _.resolveApp(windowInfo:WorkspaceWindow) =
+        let saved = windowInfo.processPath
+        if String.IsNullOrEmpty saved then None else
+        let exeName (path:string) = try Path.GetFileName(path) with _ -> ""
+        let savedExe = exeName saved
+        let samePrefix (title:string) =
+            let savedTitle = if isNull windowInfo.title then "" else windowInfo.title
+            let title = if isNull title then "" else title
+            let limit = min savedTitle.Length title.Length
+            let mutable i = 0
+            while i < limit && savedTitle.[i] = title.[i] do i <- i+1
+            i
+        let rank (_,title,path:string) =
+            if String.Equals(saved,path,StringComparison.OrdinalIgnoreCase) then Some(0,-samePrefix title)
+            elif savedExe<>"" && String.Equals(savedExe,exeName path,StringComparison.OrdinalIgnoreCase) then Some(1,-samePrefix title)
+            else None
+        let candidates = remaining.choose(fun window -> rank window |> Option.map(fun r -> r,window))
+        if candidates.isEmpty then None else
+        let _,(hwnd,_,_) = (candidates.sortBy fst).head
+        remaining <- remaining.where(fun (candidate,_,_) -> candidate<>hwnd)
+        Some hwnd
+
 /// The saved list is tab order; z-order only determines which restored window sits on top.
 module WorkspaceRestore =
     type private Slot =
@@ -251,26 +275,45 @@ module WorkspaceRestore =
 
     /// Every saved window first claims a window of its own app, anywhere in the workspace, so
     /// the title-only fallback cannot take the window of another saved app with the same title.
+    /// Only after every title pass does a window whose title changed take any window of its app.
     let resolve (resolver:WindowResolver) (groups:List2<'group * List2<Dynamic>>) missing failed =
-        let pass samePath slot =
+        let pass find slot =
             match slot with
             | Unmatched item ->
                 try
                     let window = item :?> WorkspaceWindow
-                    match resolver.resolve(window,samePath) with
+                    match find window with
                     | Some hwnd -> Matched(window,hwnd)
                     | None -> slot
                 with ex -> failed ex; Failed
             | _ -> slot
-        let ownApp = groups.map(fun (group,windows) -> group,windows.map(Unmatched >> pass true))
-        ownApp.map(fun (group,slots) ->
-            group,slots.map(pass false).choose(function
+        let passAll find (groups:List2<'group * List2<Slot>>) = groups.map(fun (group,slots) -> group,slots.map(pass find))
+        groups.map(fun (group,windows) -> group,windows.map Unmatched)
+        |> passAll (fun window -> resolver.resolve(window,true))
+        |> passAll (fun window -> resolver.resolve(window,false))
+        |> passAll resolver.resolveApp
+        |> fun resolved -> resolved.map(fun (group,slots) ->
+            group,slots.choose(function
                 | Matched(window,hwnd) -> Some(window,hwnd)
-                | Unmatched _ -> missing(); None
+                | Unmatched item -> missing item; None
                 | Failed -> None))
 
     let zorder (windows:List2<WorkspaceWindow * IntPtr>) =
         windows.sortBy(fun (window,_) -> window.zorder).map snd
+
+    /// A saved window as the result names it: its app and its full title.
+    let describe (item:Dynamic) =
+        match item with
+        | :? WorkspaceWindow as window -> window.name,(if isNull window.title then "" else window.title.Trim())
+        | _ -> string item,""
+
+/// What a restore did, for the result shown afterwards. Missing and failed windows are
+/// (app, title or error) pairs; a failure that concerns no single window has no app.
+type WorkspaceRestoreResult = {
+    workspace:string
+    restored:int
+    missing:(string*string) list
+    failed:(string*string) list }
 
 type IWorkspaceModel =
     abstract member list : List2<Workspace>
@@ -352,13 +395,13 @@ type WorkspaceModel() as this =
 
     member private this.restoreWorkspace(workspace:Workspace) =
         let resolver = WindowResolver()
-        let errors = ResizeArray<string>()
+        let errors = ResizeArray<string*string>()
         let mutable restored = 0
-        let mutable missing = 0
+        let missing = ResizeArray<string*string>()
         TemporaryState.run Services.program.suspendTabMonitoring Services.program.resumeTabMonitoring (fun () ->
             let owners = Map2(Services.desktop.groups.collect(fun group -> group.windows.map(fun hwnd -> hwnd,group)))
             let saved = workspace.children.map(fun groupInfo -> groupInfo,(groupInfo?windows : List2<Dynamic>))
-            let groups = WorkspaceRestore.resolve resolver saved (fun () -> missing <- missing+1) (fun ex -> errors.Add(ex.Message))
+            let groups = WorkspaceRestore.resolve resolver saved (WorkspaceRestore.describe >> missing.Add) (fun ex -> errors.Add("",ex.Message))
             groups.iter(fun (groupInfo:Dynamic,resolved) ->
                 if not resolved.isEmpty then
                     let mutable destination : IGroup option = None
@@ -380,12 +423,10 @@ type WorkspaceModel() as this =
                                 destination.Value.addWindow(hwnd,false)
                                 successful.Add(saved,hwnd)
                                 restored <- restored+1
-                            else missing <- missing+1
-                        with ex -> errors.Add(ex.Message))
-                    try os.setZorder(WorkspaceRestore.zorder (List2(successful))) with ex -> errors.Add(ex.Message)))
-        let details = if errors.Count=0 then "" else "\n\n"+String.concat "\n" (errors |> Seq.truncate 5)
-        Alert.show (if errors.Count=0 then AlertKind.Info else AlertKind.Warning) (tr Strings.Workspaces.restoreTitle)
-                   (tr (Strings.Workspaces.restoreSummary restored missing errors.Count details))
+                            else missing.Add(WorkspaceRestore.describe saved)
+                        with ex -> errors.Add(fst (WorkspaceRestore.describe saved),ex.Message))
+                    try os.setZorder(WorkspaceRestore.zorder (List2(successful))) with ex -> errors.Add("",ex.Message)))
+        { workspace=workspace.name; restored=restored; missing=List.ofSeq missing; failed=List.ofSeq errors }
 
     member this.addWorkspace(ws:Workspace) =
         ws.cast<IWorkspaceNode>().removed.Add <| fun() -> this.onWorkspaceRemoved(ws)
@@ -414,10 +455,10 @@ type WorkspaceModel() as this =
 
     member this.canRestoreChanged = canRestoreChangedEvt.Publish
 
+    /// What was restored, or None when no workspace is selected.
     member this.restore() =
-        if this.canRestore then
-            let ws = this.selected :?> Workspace
-            this.restoreWorkspace(ws)
+        if this.canRestore then Some(this.restoreWorkspace(this.selected :?> Workspace))
+        else None
 
     /// The selected node's edit fields, or None when it cannot be edited.
     member this.beginEdit() : IEditInfo option =

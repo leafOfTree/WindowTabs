@@ -246,9 +246,11 @@ let main() =
                                          IntPtr(20),"Shared title",@"c:\apps\editor.EXE"]))
     let restore resolver groups missing =
         (WorkspaceRestore.resolve resolver (List2(groups |> List.mapi(fun i windows -> i,windows))) missing raise).map snd
-    let matched = (restore resolver [roundTrip.windows] (fun () -> failwith "Missing saved app")).head
+    let matched = (restore resolver [roundTrip.windows] (fun _ -> failwith "Missing saved app")).head
     check (matched.map snd |> fun handles -> handles.list=[IntPtr(20);IntPtr(10)]) "Restoring sorted tabs by z-order or matched another app"
     check ((WorkspaceRestore.zorder matched).list=[IntPtr(10);IntPtr(20)]) "Restoring tab order lost window z-order"
+    // A missing window is named by its app and its whole title, however long.
+    check (WorkspaceRestore.describe (first :> Dynamic)=(first.name,first.title)) "A missing window was not named by its app and full title"
     check ((resolver.resolve(first,false)).IsNone) "A window was matched twice"
     let wrongApp = WindowResolver(List2([IntPtr(30),"Shared title",@"C:\Other.exe"]))
     check ((wrongApp.resolve(first,true)).IsNone) "A title from another app matched as the saved app"
@@ -257,13 +259,29 @@ let main() =
     check (legacy.processPath="" && (WindowResolver(List2([IntPtr(30),"Documents",@"C:\Other.exe"]))).resolve(legacy,true)=Some(IntPtr(30))) "Old title-only workspaces stopped matching"
     let missingCount = ref 0
     let unavailable = WindowResolver(List2([IntPtr(40),"Shared title",""]))
-    let fallback = restore unavailable [roundTrip.windows] (fun () -> missingCount.Value <- missingCount.Value+1)
+    let fallback = restore unavailable [roundTrip.windows] (fun _ -> missingCount.Value <- missingCount.Value+1)
     check ((fallback.head.map snd).list=[IntPtr(40)] && missingCount.Value=1) "An unknown executable path did not fall back to the title or lost missing counts"
     // The editor is gone: its title fallback must not take the browser saved in a later group.
     let moved = WindowResolver(List2([IntPtr(50),"Shared title",@"C:\Other.exe";
                                       IntPtr(60),"Shared title",@"C:\Apps\Browser.exe"]))
-    let split = restore moved [List2<Dynamic>([first :> Dynamic]);List2<Dynamic>([second :> Dynamic])] (fun () -> failwith "Missing saved app")
+    let split = restore moved [List2<Dynamic>([first :> Dynamic]);List2<Dynamic>([second :> Dynamic])] (fun _ -> failwith "Missing saved app")
     check (split.map(fun group -> (group.map snd).list).list=[[IntPtr(50)];[IntPtr(60)]]) "A title fallback took another saved app's window"
+    let handles (groups:List2<List2<WorkspaceWindow * IntPtr>>) = groups.map(fun group -> (group.map snd).list).list
+    let renamed = WindowResolver(List2([IntPtr(70),"Another document",@"c:\apps\EDITOR.exe"]))
+    check (handles (restore renamed [List2<Dynamic>([first :> Dynamic])] (fun _ -> failwith "Missing saved app"))=[[IntPtr(70)]]) "A window whose title changed was not matched by its app"
+    let movedApp = WindowResolver(List2([IntPtr(75),"Another document",@"D:\New\Editor.exe"]))
+    check (movedApp.resolveApp(first)=Some(IntPtr(75))) "An app moved to another folder was not matched by its exe name"
+    // The renamed note prefers the open "b" note by title, but a later group's title match needs it.
+    let notesA = savedWindow "Notes - b2.txt" @"C:\Apps\Notes.exe" 0
+    let notesB = savedWindow "Notes - b.txt" @"C:\Apps\Notes.exe" 1
+    let notes () = WindowResolver(List2([IntPtr(80),"Notes - c.txt",@"C:\Apps\Notes.exe";
+                                         IntPtr(90),"Notes - b.txt",@"C:\Apps\Notes.exe"]))
+    let noteGroups = [List2<Dynamic>([notesA :> Dynamic]);List2<Dynamic>([notesB :> Dynamic])]
+    check (handles (restore (notes()) noteGroups (fun _ -> failwith "Missing saved app"))=[[IntPtr(80)];[IntPtr(90)]]) "An app match took a window that a title match needed"
+    check ((notes()).resolveApp(notesA)=Some(IntPtr(90))) "An app match did not prefer the most similar title"
+    let otherMissing = ref 0
+    let otherApp = WindowResolver(List2([IntPtr(100),"Something else",@"C:\Other.exe"]))
+    check (handles (restore otherApp [List2<Dynamic>([first :> Dynamic])] (fun _ -> otherMissing.Value <- otherMissing.Value+1))=[[]] && otherMissing.Value=1) "A window of another app with a different title was taken"
     check ((roundTrip.windows.head :?> WorkspaceWindow).processPath=first.processPath) "Snapshot round trip lost app identity"
     // Monitor work areas are converted to WINDOWPLACEMENT's workspace coordinates.
     let screen x y w h = Rect(Pt(x,y),Sz(w,h))

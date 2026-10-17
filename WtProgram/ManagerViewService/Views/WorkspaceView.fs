@@ -4,18 +4,167 @@ open System.Collections.Generic
 open System.Drawing
 open System.Windows.Forms
 
+type RestoreState =
+    | Restored
+    | NotFound
+    | Failed
+
+/// A small filled circle with a tick, ! or x in the Windows 11 status colours; grey when no
+/// window is in that state.
+type RestoreMark(state:RestoreState, active:bool) as this =
+    inherit Control()
+    do
+        this.Size <- Size(Dpi.scale 18,Dpi.scale 18)
+        this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
+    member _.State = state
+    member _.Active = active
+    override this.OnPaint(e) =
+        let p = SettingsColors.current()
+        let contrast = SystemInformation.HighContrast
+        let dark = ThemeService.currentIsDark() && not contrast
+        let fill,ink =
+            if contrast then (if active then SystemColors.WindowText else SystemColors.GrayText),SystemColors.Window
+            elif not active then p.disabledText,p.background
+            else
+                match state with
+                | Restored -> if dark then Color.FromRGB(0x6CCB5F),Color.Black else Color.FromRGB(0x0F7B0F),Color.White
+                | NotFound -> if dark then Color.FromRGB(0xFCE100),Color.Black else Color.FromRGB(0x9D5D00),Color.White
+                | Failed -> if dark then Color.FromRGB(0xFF99A4),Color.Black else Color.FromRGB(0xC42B1C),Color.White
+        let g = e.Graphics
+        g.Clear(this.BackColor)
+        g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        g.PixelOffsetMode <- Drawing2D.PixelOffsetMode.Half
+        let size = let s = Dpi.scale 16 in s-s%2
+        let stroke = let s = max 2 (Dpi.scale 2) in s-s%2
+        let left,top = (this.Width-size)/2,(this.Height-size)/2
+        use circle = new SolidBrush(fill)
+        g.FillEllipse(circle,left,top,size,size)
+        let at (x:float32) (y:float32) = PointF(float32 left+float32 size*x,float32 top+float32 size*y)
+        use pen = new Pen(ink,float32 stroke,StartCap=Drawing2D.LineCap.Round,EndCap=Drawing2D.LineCap.Round,LineJoin=Drawing2D.LineJoin.Round)
+        match state with
+        | Restored -> g.DrawLines(pen,[|at 0.29f 0.52f;at 0.44f 0.67f;at 0.72f 0.37f|])
+        | NotFound ->
+            g.DrawLine(pen,at 0.5f 0.27f,at 0.5f 0.54f)
+            use dot = new SolidBrush(ink)
+            let centre = at 0.5f 0.73f
+            let r = float32 stroke*0.6f
+            g.FillEllipse(dot,centre.X-r,centre.Y-r,r*2.0f,r*2.0f)
+        | Failed ->
+            g.DrawLine(pen,at 0.34f 0.34f,at 0.66f 0.66f)
+            g.DrawLine(pen,at 0.66f 0.34f,at 0.34f 0.66f)
+
+/// The result of a restore: the workspace, how many windows are in each state with its mark,
+/// then each window that was not found or failed, with its full title or error, wrapped.
+/// It opens while the restored windows are still being placed and shown, so it stays on top
+/// until it is closed.
+type WorkspaceRestoreDialog(result:WorkspaceRestoreResult) as this =
+    inherit Form()
+    let states = [Restored,result.restored,Strings.Workspaces.restoredState
+                  NotFound,result.missing.Length,Strings.Workspaces.notFoundState
+                  Failed,result.failed.Length,Strings.Workspaces.failedState]
+    do
+        this.Text <- tr Strings.Workspaces.restoreTitle
+        this.Font <- SettingsUi.bodyFont()
+        this.FormBorderStyle <- FormBorderStyle.FixedDialog
+        this.MaximizeBox <- false
+        this.MinimizeBox <- false
+        this.ShowIcon <- false
+        this.ShowInTaskbar <- false
+        this.TopMost <- true
+        this.StartPosition <- FormStartPosition.CenterParent
+        this.AutoSize <- true
+        this.AutoSizeMode <- AutoSizeMode.GrowAndShrink
+        this.KeyPreview <- true
+        let width = Dpi.scale 460
+        let indent = Dpi.scale 26
+        let layout = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=1,
+                                          Padding=Padding(Dpi.scale 24,Dpi.scale 20,Dpi.scale 24,Dpi.scale 20))
+        layout.Controls.Add(new Label(Text=result.workspace,AutoSize=true,UseMnemonic=false,Font=SettingsUi.sectionFont(),
+                                      MaximumSize=Size(width,0),Margin=Padding(0,0,0,Dpi.scale 12),Anchor=AnchorStyles.None))
+        let counts = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
+                                         Margin=Padding.Empty,Anchor=AnchorStyles.None)
+        // A state no window is in is left out; an empty workspace still shows its count of none.
+        let shown = states |> List.filter(fun (_,count,_) -> count>0)
+        let shown = if shown.IsEmpty then List.truncate 1 states else shown
+        for i,(state,count,caption) in List.indexed shown do
+            counts.Controls.Add(new RestoreMark(state,count>0,Anchor=AnchorStyles.Left,Margin=Padding(0,0,Dpi.scale 5,0)))
+            // Labels pad their text on both sides; the caption moves back over that, next to its number.
+            counts.Controls.Add(new Label(Text=string count,AutoSize=true,Font=SettingsUi.subsectionFont(),Anchor=AnchorStyles.Left,
+                                          Tag=(if count=0 then "muted" else null),Margin=Padding.Empty))
+            counts.Controls.Add(new Label(Text=tr caption,AutoSize=true,Anchor=AnchorStyles.Left,Tag="muted",
+                                          Margin=Padding(-Dpi.scale 3,0,(if i<shown.Length-1 then Dpi.scale 22 else 0),0)))
+        layout.Controls.Add(counts)
+        // Titles are often file paths with no spaces, which a label would cut off rather than wrap.
+        let wrap (text:string) font = String.Join("\n",SettingsTextWrap.lines text font (width-indent-SystemInformation.VerticalScrollBarWidth))
+        let details = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,FlowDirection=FlowDirection.TopDown,
+                                          WrapContents=false,Margin=Padding.Empty)
+        let section state (items:(string*string) list) (hint:LocalizedText option) =
+            if not items.IsEmpty then
+                let heading = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
+                                                  Margin=Padding(0,Dpi.scale (if details.Controls.Count=0 then 0 else 16),0,Dpi.scale 2))
+                let _,_,caption = states |> List.find(fun (each,_,_) -> each=state)
+                heading.Controls.Add(new RestoreMark(state,true,Anchor=AnchorStyles.Left,Margin=Padding(0,0,Dpi.scale 8,0)))
+                heading.Controls.Add(new Label(Text=tr caption,AutoSize=true,Font=SettingsUi.subsectionFont(),Anchor=AnchorStyles.Left,Margin=Padding.Empty))
+                details.Controls.Add(heading)
+                hint |> Option.iter(fun text ->
+                    details.Controls.Add(new Label(Text=wrap (tr text) this.Font,AutoSize=true,Tag="muted",Margin=Padding(indent,0,0,Dpi.scale 2))))
+                for app,detail in items do
+                    if app<>"" then
+                        details.Controls.Add(new Label(Text=wrap app this.Font,AutoSize=true,UseMnemonic=false,Margin=Padding(indent,Dpi.scale 8,0,0)))
+                    if detail<>"" then
+                        details.Controls.Add(new Label(Text=wrap detail this.Font,AutoSize=true,UseMnemonic=false,Tag="muted",
+                                                       Margin=Padding(indent,(if app="" then Dpi.scale 8 else 0),0,0)))
+        section NotFound result.missing (Some Strings.Workspaces.notFoundHint)
+        section Failed result.failed None
+        let listed = details.Controls.Count>0
+        // The summary is centred; the list reads from the left and, empty, still
+        // keeps the dialog at its width.
+        let holder = new Panel(AutoScroll=true,Margin=Padding(0,(if listed then Dpi.scale 20 else 0),0,0))
+        holder.Controls.Add(details)
+        layout.Controls.Add(holder)
+        let ok = SettingsUi.button (tr Strings.Common.ok)
+        ok.Kind <- SettingsButtonKind.Primary
+        ok.DialogResult <- DialogResult.OK
+        ok.Anchor <- AnchorStyles.Right
+        ok.Margin <- Padding(0,Dpi.scale 24,0,0)
+        layout.Controls.Add(ok)
+        this.Controls.Add(layout)
+        // Measured once the labels have the dialog's font. Only a long list scrolls, so the
+        // dialog and its OK button stay on the screen.
+        let limit = min (Dpi.scale 560) (Screen.FromPoint(Cursor.Position).WorkingArea.Height*3/5)
+        holder.Size <- Size(width,if listed then min limit (details.GetPreferredSize(Size.Empty).Height) else 0)
+        this.AcceptButton <- ok
+        this.CancelButton <- ok
+        this.KeyDown.Add(fun e ->
+            if e.Control && e.KeyCode=Keys.C then
+                try Clipboard.SetText(this.Summary) with _ -> ()
+                e.SuppressKeyPress <- true)
+        ThemeBinding.watch this (fun () -> SettingsUi.apply this)
+    /// The whole result as plain text, for Ctrl+C.
+    member _.Summary =
+        let line (app:string,detail:string) = "  " + String.concat " – " ([app;detail] |> List.filter((<>) ""))
+        let section state items =
+            if List.isEmpty items then []
+            else
+                let _,_,caption = states |> List.find(fun (each,_,_) -> each=state)
+                "" :: tr caption :: List.map line items
+        String.concat Environment.NewLine
+            ([tr Strings.Workspaces.restoreTitle+": "+result.workspace
+              String.concat "   " (states |> List.map(fun (_,count,caption) -> sprintf "%s %d" (tr caption) count))]
+             @ section NotFound result.missing @ section Failed result.failed)
+
 type WorkspaceView() as this =
     let Cell = CellScope()
     /// Models whose rows are expanded, kept across rebuilds.
     let expanded = HashSet<obj>(HashIdentity.Reference)
-    /// The model raises workspaceAdded while it loads; rows are built once loading is done.
+    /// Rows are built with the page; a workspace saved before then has none to update.
     let mutable loaded = false
-    let mutable lastAdded : obj = null
 
     member this.wm = Cell.cacheProp this <| fun() ->
         let wm = WorkspaceModel()
-        wm.workspaceAdded.Add this.onWorkspaceAdded
         wm.init()
+        // Only a workspace saved from here opens up; loaded ones start collapsed, none selected.
+        wm.workspaceAdded.Add this.onWorkspaceAdded
         wm
 
     member this.list : SettingsTreeList = Cell.cacheProp this <| fun() ->
@@ -54,10 +203,10 @@ type WorkspaceView() as this =
         // In the order ActionInvoked expects them.
         if not this.wm.isReadOnly then this.list.RowActions <- [EditGlyph;DeleteGlyph]
         loaded <- true
-        this.reload(lastAdded)
+        this.reload()
         panel
 
-    /// Rebuilds the rows from the model (newest workspace first), keeping expansion and selection.
+    /// Rebuilds the rows from the model in the order saved, keeping expansion and selection.
     member this.reload(?select:obj) =
         let list = this.list
         let selected = defaultArg select (if isNull list.SelectedItem then null else list.SelectedItem.Tag)
@@ -73,22 +222,27 @@ type WorkspaceView() as this =
             for child in (model?children : List2<Dynamic>).list do row.Add(item child) |> ignore
             row
         list.Roots.Clear()
-        list.Roots.AddRange(this.wm.workspaces.list |> List.rev |> List.map(fun ws -> item ws))
+        list.Roots.AddRange(this.wm.workspaces.list |> List.map(fun ws -> item ws))
         list.Rebuild()
         let rec find (items:IReadOnlyList<TreeListItem>) =
             items |> Seq.tryPick(fun row -> if Object.ReferenceEquals(row.Tag,selected) then Some row else find row.Children)
         list.SelectedItem <- (if isNull selected then null else find list.Roots |> Option.toObj)
 
     member this.newButton : Button = Cell.cacheProp this <| fun() ->
-        let btn = SettingsUi.button (tr Strings.Common.save)
+        let btn = SettingsUi.button (tr Strings.Workspaces.saveCurrent)
         btn.Enabled <- not this.wm.isReadOnly
         btn.Click.Add <| fun _ -> this.wm.create()
         btn
 
     member this.restoreButton : Button = Cell.cacheProp this <| fun() ->
-        let btn = SettingsUi.button (tr Strings.Workspaces.restore)
+        let btn = SettingsUi.button (tr Strings.Workspaces.restoreSelected)
+        // The accent marks the action on the selected workspace, apart from saving a new one.
+        btn.Kind <- SettingsButtonKind.Primary
         btn.Enabled <- false
-        btn.Click.Add <| fun _ -> this.wm.restore()
+        btn.Click.Add <| fun _ ->
+            this.wm.restore() |> Option.iter(fun result ->
+                use dialog = new WorkspaceRestoreDialog(result)
+                dialog.ShowDialog(btn.FindForm()) |> ignore)
         this.wm.canRestoreChanged.Add <| fun(canRestore) ->
             btn.Enabled <- canRestore
         btn
@@ -154,14 +308,13 @@ type WorkspaceView() as this =
         form.Text <- tr (Strings.Workspaces.editTitle editInfo.title)
         form.ShowDialog(this.panel) = DialogResult.OK
 
-    /// A new or loaded workspace opens fully expanded and selected; the others collapse.
+    /// A newly saved workspace opens fully expanded and selected; the others collapse.
     member this.onWorkspaceAdded(ws:Workspace) =
         expanded.Clear()
         let rec expand (model:Dynamic) =
             expanded.Add(model) |> ignore
             (model?children : List2<Dynamic>).iter expand
         expand ws
-        lastAdded <- box ws
         if loaded then this.reload(box ws)
 
     interface ISettingsView with
