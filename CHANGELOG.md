@@ -1,5 +1,63 @@
 # Changelog
 
+## v2026.10.17-beta.1 — 2026-10-17 (preview)
+
+Changes since v2026.10.10-beta.1, including those first shipped in v2026.10.13-beta.1.
+This remains a preview release.
+
+### Grouping and app rules
+
+- Group different apps together automatically: App rules now has Groups across apps,
+  where named groups are edited inline and apps are added from the running ones.
+  Rules match apps by executable name, and apps in a cross-app group keep their tabs.
+- Remember groups across restarts. Groups made by dragging tabs come back when their
+  windows reopen, matched by app and window title, and can be ungrouped in one click
+  from App rules.
+- Group windows by virtual desktop: a window opened on another desktop starts its own
+  group, and automatic groups of one app that end up on the same desktop merge.
+- App rules lists only running apps, folds the rest under one row, shows Windows
+  (Store) apps with their own icon and explains both kinds of grouping on hover.
+  Task Manager can have tabs when WindowTabs runs elevated.
+
+### Workspaces
+
+- Show the restore result in front of the restored windows, with counts and every
+  window that was not found or failed.
+- Restore windows whose title changed by matching their app.
+- Offer to launch apps that are not running, wait for their windows and add them to
+  the restored groups. Windows (Store) apps are not offered.
+
+### Tabs, taskbar and shortcuts
+
+- Keep drag-selecting text working in apps that run with a different permission level
+  than WindowTabs, such as Word while WindowTabs runs as administrator. Such groups
+  keep separate taskbar buttons.
+- Keep groups with combined taskbar icons on their own virtual desktop. Clicking a
+  taskbar thumbnail opens that tab, and every thumbnail shows again after the group's
+  thumbnails close. Minimized tabs show their app icon.
+- Show the front app's icon with the next app's icon in its corner on a combined
+  taskbar icon, or choose an icon file for the group from the tab menu.
+- Add vertical tabs on the left or right, with resizable, scrolling columns that stay
+  on their monitor. Each group remembers its tab layout across restarts and workspace
+  restores.
+- Keep tabs stable when minimizing, maximizing and snapping, and line up grouped
+  windows by their visible frames.
+- Add a Close tab shortcut (Ctrl + Alt + W) and a setting to turn off middle-click
+  closing. Choose switching tabs by number from off, Ctrl + 1-9 or Alt + 1-9.
+- Tab search can switch directly to matching windows in any app, sorts results by
+  match while typing and marks windows on other virtual desktops.
+- Simplify the tab menu, which now names the app, and round both ends of spaced tabs.
+
+### Startup and releases
+
+- Starting WindowTabs while it runs makes the running copy exit and takes over;
+  run at startup points to the copy started last.
+- On exit, restore every window's virtual desktop and taskbar button.
+- Drop the Json.NET dependency, making WindowTabs.exe 0.7 MB smaller.
+- Release executables can be signed through SignPath.
+
+Exit WindowTabs before replacing the exe. Existing settings are kept.
+
 ## v2026.10.10-beta.1 — 2026-10-10 (preview)
 
 Changes since v2026.10.07. This remains a preview release.

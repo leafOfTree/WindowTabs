@@ -9,8 +9,8 @@ between them with a click or a shortcut.
 [![Build](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml/badge.svg)](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml)
 
 > [!IMPORTANT]
-> **v2026.10.10-beta.1 preview**: improved file drops, themed tab and tray menus, taskbar
-> previews and tab switching. [What's changed →](CHANGELOG.md)
+> **v2026.10.17-beta.1 preview**: group different apps together, remembered groups,
+> vertical tabs and workspace restores that launch missing apps. [What's changed →](CHANGELOG.md)
 
 <a href="docs/images/light.png"><img src="docs/images/light-rounded.svg" width="600" alt="Light tabs grouping three File Explorer windows" /></a>
 
@@ -39,7 +39,7 @@ the top edge to show them, or set **Auto-hide tabs** to **Never**.
 | New window of the current app | Ctrl + Alt + N |
 | Switch tabs with the mouse | Scroll over the tab bar, or Shift + scroll over the window |
 | Move the current tab | Ctrl + scroll over the tab bar |
-| Close a tab | Middle-click |
+| Close a tab | Ctrl + Alt + W, or middle-click |
 
 Change any shortcut under **Settings → Shortcuts**. If Ctrl/Alt + number conflicts
 with an app, turn it off for that app from the tab's right-click menu.
@@ -55,8 +55,11 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
 
 - **Appearance:** light, dark or follow Windows; Joined, Folder or Floating tabs;
   per-tab or per-app colors.
-- **App rules:** choose which apps get tabs and which group automatically. In the Grouping rules tree below, create named groups and add applications to them. Each app belongs to one rule group and disables Group by app while its rule is enabled. The new-app default at the top keeps existing app choices unchanged.
-- **Workspaces:** save groups and window positions, then restore them onto open windows.
+- **App rules:** choose which running apps get tabs and which group automatically.
+  Under **Groups across apps**, create named groups so windows of different apps join
+  one group. Groups made by dragging tabs are remembered and listed there too.
+- **Workspaces:** save groups and window positions, then restore them onto open windows;
+  apps that are not running can be launched and their windows restored.
 - **Taskbar:** optionally combine each group into one taskbar button.
 - **Languages:** English, 中文, 日本語.
 
