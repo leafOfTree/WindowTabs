@@ -512,9 +512,13 @@ static partial class DesktopE2E
             var saved=Json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(Root,"WindowTabsSettings.json")));
             Check(saved.ContainsKey("version") && !string.IsNullOrEmpty((string)saved["version"]),"Startup did not persist its settings version");
             Check((string)saved["alignment"]=="Left" && !(bool)saved["enableTabbingByDefault"],"Fixture settings were lost");
+            Check(saved.ContainsKey("rememberedGroups") && Json.Serialize(saved["rememberedGroups"]).Contains("WindowTabs E2E "),"Exit did not remember the dragged group");
             Check(!HasCrash(),"Application logged an exception during the cycle");
             completed++; Log("PASS: cycle "+completed+"; original entry point, drag grouping, switching, close and normal exit");
             // The next cycle reuses the saved portable configuration and reacquires the real singleton.
+            // Forget the dragged group so the surviving helpers start apart and are dragged together again.
+            saved.Remove("rememberedGroups");
+            File.WriteAllText(Path.Combine(Root,"WindowTabsSettings.json"),Json.Serialize(saved));
         }
     }
     [STAThread] static int Main(string[] args)
