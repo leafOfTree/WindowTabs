@@ -448,9 +448,9 @@ module Strings =
 
     module Workspaces =
         let description = { en="Save and restore window groups and positions."; zh="保存和恢复窗口分组与位置。"; ja="ウィンドウのグループと位置を保存・復元します。" }
-        let help = { en="How to use\n1  Group and position your windows, then click Save layout.\n2  Select a workspace and click Restore selected.\n3  To change an item's name or window title matching, double-click it, or point at it and click its edit button.\nA window whose title has changed since it was saved is still matched by its app.\nRestore only uses open windows. It does not launch apps."
-                     zh="使用说明\n1  将窗口分组并调整位置，然后点击“保存布局”。\n2  选中工作区，点击“恢复所选”。\n3  双击任意项，或将鼠标移到该项上点击编辑按钮，可修改名称或窗口标题的匹配方式。\n保存后标题发生变化的窗口，仍会按其所属应用匹配。\n恢复仅适用于已打开的窗口，不会启动应用。"
-                     ja="使い方\n1  ウィンドウをグループ化して配置し、「配置を保存」をクリックします。\n2  ワークスペースを選び、「選択したものを復元」をクリックします。\n3  項目をダブルクリックするか、項目にポインターを合わせて編集ボタンをクリックすると、名前やタイトルの一致方法を変更できます。\n保存後にタイトルが変わったウィンドウも、アプリで照合されます。\n復元は開いているウィンドウのみが対象です。アプリは起動しません。" }
+        let help = { en="How to use\n1  Group and position your windows, then click Save layout.\n2  Select a workspace and click Restore selected.\n3  To change an item's name or window title matching, double-click it, or point at it and click its edit button.\nA window whose title has changed since it was saved is still matched by its app.\nRestore uses open windows. If an app is not running, the result offers to launch it."
+                     zh="使用说明\n1  将窗口分组并调整位置，然后点击“保存布局”。\n2  选中工作区，点击“恢复所选”。\n3  双击任意项，或将鼠标移到该项上点击编辑按钮，可修改名称或窗口标题的匹配方式。\n保存后标题发生变化的窗口，仍会按其所属应用匹配。\n恢复使用已打开的窗口；应用未运行时，可在结果中启动它。"
+                     ja="使い方\n1  ウィンドウをグループ化して配置し、「配置を保存」をクリックします。\n2  ワークスペースを選び、「選択したものを復元」をクリックします。\n3  項目をダブルクリックするか、項目にポインターを合わせて編集ボタンをクリックすると、名前やタイトルの一致方法を変更できます。\n保存後にタイトルが変わったウィンドウも、アプリで照合されます。\n復元は開いているウィンドウを使います。アプリが起動していない場合は、結果から起動できます。" }
         /// Saving makes a new workspace of the windows as they are; restoring acts on the selected one.
         let saveCurrent = { en="Save layout"; zh="保存布局"; ja="配置を保存" }
         let restoreSelected = { en="Restore selected"; zh="恢复所选"; ja="選択したものを復元" }
@@ -466,7 +466,16 @@ module Strings =
         let restoredState = { en="Restored"; zh="已恢复"; ja="復元済み" }
         let notFoundState = { en="Not found"; zh="未找到"; ja="見つからない" }
         let failedState = { en="Failed"; zh="失败"; ja="失敗" }
-        let notFoundHint = { en="These windows may be closed, or their titles have changed."; zh="这些窗口可能已关闭，或标题已改变。"; ja="これらのウィンドウは閉じられたか、タイトルが変わった可能性があります。" }
+        /// Windows are matched by app when their title changed, so one not found is closed.
+        let notFoundHint = { en="These windows are closed, or their app is not running."; zh="这些窗口已关闭，或其应用未运行。"; ja="これらのウィンドウは閉じられているか、アプリが起動していません。" }
+        let launchApps count =
+            { en=(if count=1 then "Launch the app and retry" else sprintf "Launch %d apps and retry" count)
+              zh=sprintf "启动 %d 个应用并重试" count
+              ja=sprintf "%d 個のアプリを起動して再試行" count }
+        let launchingApps count =
+            { en=(if count=1 then "Launching the app…" else sprintf "Launching %d apps…" count)
+              zh=sprintf "正在启动 %d 个应用…" count
+              ja=sprintf "%d 個のアプリを起動中…" count }
         let invalidSetting = { en="Invalid workspace setting"; zh="工作区设置无效"; ja="ワークスペースの設定が無効です" }
         let dataWarnings = { en="Workspace data"; zh="工作区数据"; ja="ワークスペースのデータ" }
         let titleInvalid = { en="Window title is missing or exceeds 4,096 characters."; zh="窗口标题缺失或超过 4,096 个字符。"; ja="ウィンドウのタイトルがないか、4,096 文字を超えています。" }

@@ -746,6 +746,19 @@ let main() =
                 check (onGroup (restoredGroup hwnd).Value (fun group -> group.tabLayout)=layout)
                       "Workspace restore used new defaults instead of the saved tab layout"
             check (result |> Option.exists(fun result -> result.failed.IsEmpty)) "Workspace layout restore reported a failure"
+            // Trying again once an app has started adds its window to the group its saved group
+            // already went to, rather than starting another.
+            use late = new Form(Text="Late window",ShowInTaskbar=false)
+            let earlier = result.Value
+            let savedGroup,target = earlier.groups |> List.find(fun (_,group) -> group.windows.contains((=)a))
+            let lateSaved = WorkspaceWindow(name="late",title="Late window",processPath=OS().windowFromHwnd(a).pid.processPath,
+                                            matchType=WorkspaceWindowTitleMatchType.ExactMatch)
+            workspaceWindows <- List2([a;b;late.Handle])
+            let again = reloaded.retry {earlier with pending=[savedGroup,lateSaved]}
+            check (again.restored=1 && again.missing.IsEmpty && (earlier.Then(again,[])).restored=3)
+                  (sprintf "Trying a workspace again miscounted: %A" again)
+            pumpUntil "A window tried again did not join its saved group's restored group" (fun () ->
+                restoredGroup late.Handle |> Option.exists(fun info -> info.hwnd=target.hwnd))
             for info in desktopApi.groups.list |> List.map(fun group -> group :?> GroupInfo) do
                 if not info.isExited then onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
             workspaceWindows <- List2()

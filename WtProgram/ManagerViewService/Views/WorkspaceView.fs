@@ -56,31 +56,25 @@ type RestoreMark(state:RestoreState, active:bool) as this =
 /// The result of a restore: the workspace, how many windows are in each state with its mark,
 /// then each window that was not found or failed, with its full title or error, wrapped.
 /// It opens while the restored windows are still being placed and shown, so it stays on top
-/// until it is closed.
-type WorkspaceRestoreDialog(result:WorkspaceRestoreResult) as this =
+/// until it is closed. Given a way to launch apps, it offers once to start the apps of windows
+/// not found that are not running, then shows the result of trying those windows again.
+type WorkspaceRestoreDialog(first:WorkspaceRestoreResult, ?launch:WorkspaceRestoreResult -> (WorkspaceRestoreResult -> unit) -> unit) as this =
     inherit Form()
-    let states = [Restored,result.restored,Strings.Workspaces.restoredState
-                  NotFound,result.missing.Length,Strings.Workspaces.notFoundState
-                  Failed,result.failed.Length,Strings.Workspaces.failedState]
-    do
-        this.Text <- tr Strings.Workspaces.restoreTitle
-        this.Font <- SettingsUi.bodyFont()
-        this.FormBorderStyle <- FormBorderStyle.FixedDialog
-        this.MaximizeBox <- false
-        this.MinimizeBox <- false
-        this.ShowIcon <- false
-        this.ShowInTaskbar <- false
-        this.TopMost <- true
-        this.StartPosition <- FormStartPosition.CenterParent
-        this.AutoSize <- true
-        this.AutoSizeMode <- AutoSizeMode.GrowAndShrink
-        this.KeyPreview <- true
-        let width = Dpi.scale 460
-        let indent = Dpi.scale 26
-        let layout = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=1,
-                                          Padding=Padding(Dpi.scale 24,Dpi.scale 20,Dpi.scale 24,Dpi.scale 20))
-        layout.Controls.Add(new Label(Text=result.workspace,AutoSize=true,UseMnemonic=false,Font=SettingsUi.sectionFont(),
-                                      MaximumSize=Size(width,0),Margin=Padding(0,0,0,Dpi.scale 12),Anchor=AnchorStyles.None))
+    let mutable result = first
+    let mutable launched = false
+    let mutable layout : Control = null
+    let states() = [Restored,result.restored,Strings.Workspaces.restoredState
+                    NotFound,result.missing.Length,Strings.Workspaces.notFoundState
+                    Failed,result.failed.Length,Strings.Workspaces.failedState]
+    let width = Dpi.scale 460
+    let indent = Dpi.scale 26
+    let rec build() =
+        let previous = layout
+        let states = states()
+        let table = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=1,
+                                         Padding=Padding(Dpi.scale 24,Dpi.scale 20,Dpi.scale 24,Dpi.scale 20))
+        table.Controls.Add(new Label(Text=result.workspace,AutoSize=true,UseMnemonic=false,Font=SettingsUi.sectionFont(),
+                                     MaximumSize=Size(width,0),Margin=Padding(0,0,0,Dpi.scale 12),Anchor=AnchorStyles.None))
         let counts = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
                                          Margin=Padding.Empty,Anchor=AnchorStyles.None)
         // A state no window is in is left out; an empty workspace still shows its count of none.
@@ -93,7 +87,7 @@ type WorkspaceRestoreDialog(result:WorkspaceRestoreResult) as this =
                                           Tag=(if count=0 then "muted" else null),Margin=Padding.Empty))
             counts.Controls.Add(new Label(Text=tr caption,AutoSize=true,Anchor=AnchorStyles.Left,Tag="muted",
                                           Margin=Padding(-Dpi.scale 3,0,(if i<shown.Length-1 then Dpi.scale 22 else 0),0)))
-        layout.Controls.Add(counts)
+        table.Controls.Add(counts)
         // Titles are often file paths with no spaces, which a label would cut off rather than wrap.
         let wrap (text:string) font = String.Join("\n",SettingsTextWrap.lines text font (width-indent-SystemInformation.VerticalScrollBarWidth))
         let details = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,FlowDirection=FlowDirection.TopDown,
@@ -121,27 +115,70 @@ type WorkspaceRestoreDialog(result:WorkspaceRestoreResult) as this =
         // keeps the dialog at its width.
         let holder = new Panel(AutoScroll=true,Margin=Padding(0,(if listed then Dpi.scale 20 else 0),0,0))
         holder.Controls.Add(details)
-        layout.Controls.Add(holder)
+        table.Controls.Add(holder)
+        let buttons = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
+                                          FlowDirection=FlowDirection.RightToLeft,Anchor=AnchorStyles.Right,Margin=Padding(0,Dpi.scale 24,0,0))
         let ok = SettingsUi.button (tr Strings.Common.ok)
         ok.Kind <- SettingsButtonKind.Primary
         ok.DialogResult <- DialogResult.OK
-        ok.Anchor <- AnchorStyles.Right
-        ok.Margin <- Padding(0,Dpi.scale 24,0,0)
-        layout.Controls.Add(ok)
-        this.Controls.Add(layout)
+        ok.Margin <- Padding.Empty
+        buttons.Controls.Add(ok)
+        match launch with
+        | Some start when not launched && not result.launchable.IsEmpty ->
+            let apps = result.launchable.Length
+            let button = SettingsUi.button (tr (Strings.Workspaces.launchApps apps))
+            button.Name <- "launch-apps"
+            button.Margin <- Padding(0,0,Dpi.scale 8,0)
+            button.Click.Add(fun _ ->
+                launched <- true
+                button.Enabled <- false
+                button.Text <- tr (Strings.Workspaces.launchingApps apps)
+                start result (fun next ->
+                    if not this.IsDisposed then
+                        result <- next
+                        build()))
+            buttons.Controls.Add(button)
+        | _ -> ()
+        table.Controls.Add(buttons)
+        this.SuspendLayout()
+        if not (isNull previous) then
+            this.Controls.Remove(previous)
+            previous.Dispose()
+        layout <- table
+        this.Controls.Add(table)
         // Measured once the labels have the dialog's font. Only a long list scrolls, so the
         // dialog and its OK button stay on the screen.
         let limit = min (Dpi.scale 560) (Screen.FromPoint(Cursor.Position).WorkingArea.Height*3/5)
         holder.Size <- Size(width,if listed then min limit (details.GetPreferredSize(Size.Empty).Height) else 0)
         this.AcceptButton <- ok
         this.CancelButton <- ok
+        this.ResumeLayout()
+        SettingsUi.apply this
+        if this.Visible then ok.Focus() |> ignore
+    do
+        this.Text <- tr Strings.Workspaces.restoreTitle
+        this.Font <- SettingsUi.bodyFont()
+        this.FormBorderStyle <- FormBorderStyle.FixedDialog
+        this.MaximizeBox <- false
+        this.MinimizeBox <- false
+        this.ShowIcon <- false
+        this.ShowInTaskbar <- false
+        this.TopMost <- true
+        this.StartPosition <- FormStartPosition.CenterParent
+        this.AutoSize <- true
+        this.AutoSizeMode <- AutoSizeMode.GrowAndShrink
+        this.KeyPreview <- true
+        build()
         this.KeyDown.Add(fun e ->
             if e.Control && e.KeyCode=Keys.C then
                 try Clipboard.SetText(this.Summary) with _ -> ()
                 e.SuppressKeyPress <- true)
         ThemeBinding.watch this (fun () -> SettingsUi.apply this)
+    /// The result shown now.
+    member _.Result = result
     /// The whole result as plain text, for Ctrl+C.
     member _.Summary =
+        let states = states()
         let line (app:string,detail:string) = "  " + String.concat " – " ([app;detail] |> List.filter((<>) ""))
         let section state items =
             if List.isEmpty items then []
@@ -241,7 +278,10 @@ type WorkspaceView() as this =
         btn.Enabled <- false
         btn.Click.Add <| fun _ ->
             this.wm.restore() |> Option.iter(fun result ->
-                use dialog = new WorkspaceRestoreDialog(result)
+                // Started apps get a moment to open their windows; those windows are then tried again.
+                let launch (result:WorkspaceRestoreResult) shown =
+                    WorkspaceLaunch.start result.launchable (fun failures -> shown (result.Then(this.wm.retry result,failures)))
+                use dialog = new WorkspaceRestoreDialog(result,launch)
                 dialog.ShowDialog(btn.FindForm()) |> ignore)
         this.wm.canRestoreChanged.Add <| fun(canRestore) ->
             btn.Enabled <- canRestore
