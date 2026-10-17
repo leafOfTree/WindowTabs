@@ -12,8 +12,7 @@ open System.Threading
 open System.Windows.Forms
 open Microsoft.FSharp.Reflection
 open Bemo.Win32
-open Newtonsoft.Json
-open Newtonsoft.Json.Linq
+open Bemo.Json
 open Microsoft.Win32
 
 /// The Windows Run entry that starts WindowTabs at sign-in.

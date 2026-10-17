@@ -5,8 +5,7 @@ open System.Collections.Generic
 open System.IO
 open System.Windows.Forms
 open Microsoft.FSharp.Reflection
-open Newtonsoft.Json
-open Newtonsoft.Json.Linq
+open Bemo.Json
  
 type Settings(isStandAlone, ?saveDelay:int) as this =
     let mutable cachedSettingsString = None

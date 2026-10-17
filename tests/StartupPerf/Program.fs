@@ -5,7 +5,7 @@ open System.Drawing
 open System.IO
 open System.Windows.Forms
 open Bemo
-open Newtonsoft.Json.Linq
+open Bemo.Json
 
 [<STAThread;EntryPoint>]
 let main args =
@@ -110,7 +110,7 @@ let main args =
                                      JProperty("groups",Services.desktop.groups.count),JProperty("scans",scans),
                                      JProperty("lastScanMs",last),JProperty("maxScanMs",maximum),
                                      JProperty("taskbarStormMs",stormMs),JProperty("taskbarStormWindows",stormWindows),JProperty("visibilityCalls",visibilityCalls))
-                Console.WriteLine(result.ToString(Newtonsoft.Json.Formatting.None))
+                Console.WriteLine(result.ToString(Bemo.Json.Formatting.None))
                 Services.program.shutdown())
         timer.Start()
         program.run(List2<IPlugin>())

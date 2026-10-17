@@ -2,7 +2,7 @@ namespace Bemo
 open System
 open System.Diagnostics
 open System.Runtime.InteropServices
-open Newtonsoft.Json.Linq
+open Bemo.Json
 
 /// Opt-in startup timings contain only phase names and durations, never window contents.
 module StartupTrace =
@@ -31,7 +31,7 @@ module StartupTrace =
                 let record = JObject(JProperty("stage",stage),JProperty("startMs",started),
                                      JProperty("durationMs",watch.Elapsed.TotalMilliseconds),
                                      JProperty("thread",Threading.Thread.CurrentThread.ManagedThreadId))
-                entries.Enqueue(record.ToString(Newtonsoft.Json.Formatting.None))
+                entries.Enqueue(record.ToString(Formatting.None))
 
 module RuntimeMetrics =
     let private gate = obj()

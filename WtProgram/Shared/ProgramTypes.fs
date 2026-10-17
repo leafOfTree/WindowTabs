@@ -1,8 +1,7 @@
 namespace Bemo
 open System
 open System.Windows.Forms
-open Newtonsoft.Json
-open Newtonsoft.Json.Linq
+open Bemo.Json
 
 /// A palette colour is kept by its place in the palette, so it follows the light or dark theme.
 type TabColorChoice =

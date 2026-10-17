@@ -1,8 +1,7 @@
 ﻿namespace Bemo
 open System
 open System.Collections.Generic
-open Newtonsoft.Json
-open Newtonsoft.Json.Linq
+open Bemo.Json
 
 [<AutoOpen>]
 module JObjectHelper =

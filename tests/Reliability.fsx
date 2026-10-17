@@ -1,13 +1,12 @@
 #r "System.Drawing"
 #r "System.Windows.Forms"
-#r "Debug/Newtonsoft.Json.dll"
 #r "Debug/Win32.dll"
 #r "Debug/WindowTabs.exe"
 open System
 open System.Threading
 open System.Collections.Concurrent
 open Bemo
-open Newtonsoft.Json.Linq
+open Bemo.Json
 
 let check condition message = if not condition then failwith message
 
@@ -164,6 +163,35 @@ let main() =
     check (Seq.toList operations=["register";"release"] && registered.Count=1) "Hotkey replacement was not transactional"
     keys.Register "action" (0,0) ignore |> ignore
     check (registered.Count=0) "Disabling hotkey leaked registration"
+
+    // Settings files written by older versions (with Json.NET) read and write back unchanged.
+    let seen = DateTime(2026,10,16,8,30,0,DateTimeKind.Utc)
+    let written = JObject(JProperty("text","quote\" slash\\ tab\t nul\u0000 line\u2028 \u00e9"),JProperty("count",3),
+                          JProperty("ratio",12.0),JProperty("big",9007199254740993L),JProperty("on",true),JProperty("none",null),
+                          JProperty("list",JArray([1;2])),JProperty("empty",JObject()),JProperty("seen",seen))
+    let expected =
+        String.Join("\r\n",["{";"  \"text\": \"quote\\\" slash\\\\ tab\\t nul\\u0000 line\\u2028 \u00e9\",";"  \"count\": 3,";"  \"ratio\": 12.0,"
+                            "  \"big\": 9007199254740993,";"  \"on\": true,";"  \"none\": null,";"  \"list\": [";"    1,";"    2";"  ],"
+                            "  \"empty\": {},";"  \"seen\": \"2026-10-16T08:30:00Z\"";"}"])
+    check (written.ToString()=expected) "Settings JSON is no longer written as older versions wrote it"
+    let reread = JObject.Parse(expected)
+    check (reread.ToString()=expected) "Settings JSON did not read and write back unchanged"
+    check ((written.["count"] :?> JValue).Value :? int && (reread.["count"] :?> JValue).Value :? int64) "JSON integers changed type"
+    check (reread.Value<DateTime>("seen")=seen && reread.Value<DateTime>("seen").Kind=DateTimeKind.Utc) "A saved time did not read back as UTC"
+    // Hand-edited files that Json.NET accepted still load: comments, quotes, bare names, trailing
+    // commas, octal and hex, repeated names and the NUL padding a crash can leave.
+    let edited = JObject.Parse("// note\n{'a':1, b:[1,2,], /* c */ \"c\":010, \"d\":0x1F, \"c\":2,}\u0000\u0000")
+    check (edited.ToString(Formatting.None)="""{"a":1,"b":[1,2],"c":2,"d":31}""") "A hand-edited settings file no longer loads as before"
+    let nested depth = String.replicate depth "{\"a\":" + "1" + String.replicate depth "}"
+    check ((JObject.Parse(nested 64)).Count=1) "Deep settings JSON was rejected"
+    for broken in ["";"{";"{\"a\":}";"{\"a\":1}x";"[1]";"{\"a\":\"\\q\"}";nested 65] do
+        check (try JObject.Parse(broken) |> ignore; false with _ -> true) ("Malformed settings JSON was accepted: "+broken)
+    // A token already in a tree is copied when added to another, so later edits stay apart.
+    let shared = JObject(JProperty("inner",JObject(JProperty("x",1))))
+    let other = JObject()
+    other.["copy"] <- shared.["inner"]
+    (other.["copy"] :?> JObject).["x"] <- JValue(2)
+    check (shared.ToString(Formatting.None)="""{"inner":{"x":1}}""") "A JSON token added to a second tree was shared, not copied"
 
     let root = JObject.Parse("""{"workspaces":[{"name":"valid","groups":[{"placement":{"x":10,"y":20,"width":800,"height":600,"showCmd":1},"windows":[{"title":"Documents","matchType":0},{"title":"[","matchType":4}]}]},7]}""")
     let before = root.ToString()

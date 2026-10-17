@@ -1,7 +1,7 @@
 ﻿namespace Bemo
 open System
 open System.Drawing
-open Newtonsoft.Json.Linq
+open Bemo.Json
 
 /// Keep the legacy JSON schema at this boundary; runtime palettes never carry layout fields.
 module AppearanceJson =

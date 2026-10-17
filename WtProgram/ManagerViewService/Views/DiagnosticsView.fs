@@ -4,7 +4,7 @@ open System.Drawing
 open System.IO
 open System.Text
 open System.Windows.Forms
-open Newtonsoft.Json.Linq
+open Bemo.Json
 
 module private SettingsFile =
     type Location = Portable | AppData | WorkingDirectory

@@ -6,8 +6,7 @@ open System.IO
 open System.Text.RegularExpressions
 open System.Windows.Forms
 open Bemo.Win32.Forms
-open Newtonsoft.Json
-open Newtonsoft.Json.Linq
+open Bemo.Json
 
 /// One field of an edit dialog; the settings UI builds the controls.
 type EditField =

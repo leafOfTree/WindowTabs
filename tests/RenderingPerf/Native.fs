@@ -4,7 +4,7 @@ open System
 open System.Drawing
 open System.IO
 open Bemo
-open Newtonsoft.Json.Linq
+open Bemo.Json
 
 /// Native strip processing and uploads, using off-screen helper HWNDs. No real
 /// application windows, input hooks, foreground changes or user settings.

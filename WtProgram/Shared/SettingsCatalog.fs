@@ -1,5 +1,6 @@
 namespace Bemo
 open System
+open Bemo.Json
 
 type SettingBinding =
     | Toggle of key:string * freshDefault:bool * existingDefault:bool
@@ -105,11 +106,11 @@ module SettingsCatalog =
     let workspaceKeys = ["workspaces";"workspaceSchemaVersion";"workspaceRecovery"]
     /// The settings a reset leaves: fresh-install toggles, the version (so the next start does
     /// not take the reset for an upgrade) and, unless cleared, app rules and saved workspaces.
-    let resetRoot (current:Newtonsoft.Json.Linq.JObject) clearAppRules clearWorkspaces =
-        let fresh = Newtonsoft.Json.Linq.JObject()
+    let resetRoot (current:JObject) clearAppRules clearWorkspaces =
+        let fresh = JObject()
         let keep key = if not (isNull current.[key]) then fresh.[key] <- current.[key].DeepClone()
         keep "version"
-        for key,value in freshToggles do fresh.[key] <- Newtonsoft.Json.Linq.JValue(value)
+        for key,value in freshToggles do fresh.[key] <- JValue(value)
         if not clearAppRules then List.iter keep appRuleKeys
         if not clearWorkspaces then List.iter keep workspaceKeys
         fresh
