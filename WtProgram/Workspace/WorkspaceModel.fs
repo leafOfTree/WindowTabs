@@ -267,11 +267,25 @@ module WorkspaceRestore =
         ownApp.map(fun (group,slots) ->
             group,slots.map(pass false).choose(function
                 | Matched(window,hwnd) -> Some(window,hwnd)
-                | Unmatched _ -> missing(); None
+                | Unmatched item -> missing item; None
                 | Failed -> None))
 
     let zorder (windows:List2<WorkspaceWindow * IntPtr>) =
         windows.sortBy(fun (window,_) -> window.zorder).map snd
+
+    /// A saved window as the result names it: its app and its full title.
+    let describe (item:Dynamic) =
+        match item with
+        | :? WorkspaceWindow as window -> window.name,(if isNull window.title then "" else window.title.Trim())
+        | _ -> string item,""
+
+/// What a restore did, for the result shown afterwards. Missing and failed windows are
+/// (app, title or error) pairs; a failure that concerns no single window has no app.
+type WorkspaceRestoreResult = {
+    workspace:string
+    restored:int
+    missing:(string*string) list
+    failed:(string*string) list }
 
 type IWorkspaceModel =
     abstract member list : List2<Workspace>
@@ -353,13 +367,13 @@ type WorkspaceModel() as this =
 
     member private this.restoreWorkspace(workspace:Workspace) =
         let resolver = WindowResolver()
-        let errors = ResizeArray<string>()
+        let errors = ResizeArray<string*string>()
         let mutable restored = 0
-        let mutable missing = 0
+        let missing = ResizeArray<string*string>()
         TemporaryState.run Services.program.suspendTabMonitoring Services.program.resumeTabMonitoring (fun () ->
             let owners = Map2(Services.desktop.groups.collect(fun group -> group.windows.map(fun hwnd -> hwnd,group)))
             let saved = workspace.children.map(fun groupInfo -> groupInfo,(groupInfo?windows : List2<Dynamic>))
-            let groups = WorkspaceRestore.resolve resolver saved (fun () -> missing <- missing+1) (fun ex -> errors.Add(ex.Message))
+            let groups = WorkspaceRestore.resolve resolver saved (WorkspaceRestore.describe >> missing.Add) (fun ex -> errors.Add("",ex.Message))
             groups.iter(fun (groupInfo:Dynamic,resolved) ->
                 if not resolved.isEmpty then
                     let mutable destination : IGroup option = None
@@ -381,12 +395,10 @@ type WorkspaceModel() as this =
                                 destination.Value.addWindow(hwnd,false)
                                 successful.Add(saved,hwnd)
                                 restored <- restored+1
-                            else missing <- missing+1
-                        with ex -> errors.Add(ex.Message))
-                    try os.setZorder(WorkspaceRestore.zorder (List2(successful))) with ex -> errors.Add(ex.Message)))
-        let details = if errors.Count=0 then "" else "\n\n"+String.concat "\n" (errors |> Seq.truncate 5)
-        Alert.show (if errors.Count=0 then AlertKind.Info else AlertKind.Warning) (tr Strings.Workspaces.restoreTitle)
-                   (tr (Strings.Workspaces.restoreSummary restored missing errors.Count details))
+                            else missing.Add(WorkspaceRestore.describe saved)
+                        with ex -> errors.Add(fst (WorkspaceRestore.describe saved),ex.Message))
+                    try os.setZorder(WorkspaceRestore.zorder (List2(successful))) with ex -> errors.Add("",ex.Message)))
+        { workspace=workspace.name; restored=restored; missing=List.ofSeq missing; failed=List.ofSeq errors }
 
     member this.addWorkspace(ws:Workspace) =
         ws.cast<IWorkspaceNode>().removed.Add <| fun() -> this.onWorkspaceRemoved(ws)
@@ -415,10 +427,10 @@ type WorkspaceModel() as this =
 
     member this.canRestoreChanged = canRestoreChangedEvt.Publish
 
+    /// What was restored, or None when no workspace is selected.
     member this.restore() =
-        if this.canRestore then
-            let ws = this.selected :?> Workspace
-            this.restoreWorkspace(ws)
+        if this.canRestore then Some(this.restoreWorkspace(this.selected :?> Workspace))
+        else None
 
     /// The selected node's edit fields, or None when it cannot be edited.
     member this.beginEdit() : IEditInfo option =

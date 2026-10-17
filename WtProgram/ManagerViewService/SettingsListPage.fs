@@ -104,9 +104,14 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
             detail.MaximumSize <- Size(width,0)
             detail.Location <- Point(left,heading.Bottom+Dpi.scale 8)
             actionRow.Size <- actionRow.GetPreferredSize(Size.Empty)
+            // A short description sits at the right end of the action row, saving a line, unless
+            // a status note needs that space.
+            let detailBesideActions =
+                detail.Visible && actionRow.Controls.Count>0 && status.Text="" && linkRow.IsNone && extra.IsNone &&
+                detail.GetPreferredSize(Size.Empty).Width+Dpi.scale 16<=width-actionRow.Width
             let mutable y =
                 if not hasTitle then topInset()
-                elif detail.Visible then detail.Bottom+gap()
+                elif detail.Visible && not detailBesideActions then detail.Bottom+gap()
                 else heading.Bottom+gap()
             header |> Option.iter(fun control ->
                 control.Size <- control.GetPreferredSize(Size(width,0))
@@ -159,6 +164,8 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
                         else y
                 else
                     actionRow.Location <- Point(left,y)
+                    if detailBesideActions then
+                        detail.Location <- Point(left+width-detail.Width,actionRow.Top+(actionRow.Height-detail.Height)/2)
                     let statusGap = Dpi.scale 16
                     let statusWidth = width-actionRow.Width-statusGap
                     let statusOnNextLine = statusWidth < Dpi.scale 120

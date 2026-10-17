@@ -218,9 +218,11 @@ let main() =
                                          IntPtr(20),"Shared title",@"c:\apps\editor.EXE"]))
     let restore resolver groups missing =
         (WorkspaceRestore.resolve resolver (List2(groups |> List.mapi(fun i windows -> i,windows))) missing raise).map snd
-    let matched = (restore resolver [roundTrip.windows] (fun () -> failwith "Missing saved app")).head
+    let matched = (restore resolver [roundTrip.windows] (fun _ -> failwith "Missing saved app")).head
     check (matched.map snd |> fun handles -> handles.list=[IntPtr(20);IntPtr(10)]) "Restoring sorted tabs by z-order or matched another app"
     check ((WorkspaceRestore.zorder matched).list=[IntPtr(10);IntPtr(20)]) "Restoring tab order lost window z-order"
+    // A missing window is named by its app and its whole title, however long.
+    check (WorkspaceRestore.describe (first :> Dynamic)=(first.name,first.title)) "A missing window was not named by its app and full title"
     check ((resolver.resolve(first,false)).IsNone) "A window was matched twice"
     let wrongApp = WindowResolver(List2([IntPtr(30),"Shared title",@"C:\Other.exe"]))
     check ((wrongApp.resolve(first,true)).IsNone) "A title from another app matched as the saved app"
@@ -229,12 +231,12 @@ let main() =
     check (legacy.processPath="" && (WindowResolver(List2([IntPtr(30),"Documents",@"C:\Other.exe"]))).resolve(legacy,true)=Some(IntPtr(30))) "Old title-only workspaces stopped matching"
     let missingCount = ref 0
     let unavailable = WindowResolver(List2([IntPtr(40),"Shared title",""]))
-    let fallback = restore unavailable [roundTrip.windows] (fun () -> missingCount.Value <- missingCount.Value+1)
+    let fallback = restore unavailable [roundTrip.windows] (fun _ -> missingCount.Value <- missingCount.Value+1)
     check ((fallback.head.map snd).list=[IntPtr(40)] && missingCount.Value=1) "An unknown executable path did not fall back to the title or lost missing counts"
     // The editor is gone: its title fallback must not take the browser saved in a later group.
     let moved = WindowResolver(List2([IntPtr(50),"Shared title",@"C:\Other.exe";
                                       IntPtr(60),"Shared title",@"C:\Apps\Browser.exe"]))
-    let split = restore moved [List2<Dynamic>([first :> Dynamic]);List2<Dynamic>([second :> Dynamic])] (fun () -> failwith "Missing saved app")
+    let split = restore moved [List2<Dynamic>([first :> Dynamic]);List2<Dynamic>([second :> Dynamic])] (fun _ -> failwith "Missing saved app")
     check (split.map(fun group -> (group.map snd).list).list=[[IntPtr(50)];[IntPtr(60)]]) "A title fallback took another saved app's window"
     check ((roundTrip.windows.head :?> WorkspaceWindow).processPath=first.processPath) "Snapshot round trip lost app identity"
     // Monitor work areas are converted to WINDOWPLACEMENT's workspace coordinates.

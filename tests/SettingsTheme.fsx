@@ -894,6 +894,33 @@ let main() =
         recovery.showView(LayoutSettings)
         Application.DoEvents()
         check (workspace.control.Width>Dpi.scale 300) "Workspace page failed to initialize or lay out"
+        let workspaces = workspace :?> WorkspaceView
+        // A short description shares the buttons' line rather than taking its own.
+        let description = controls workspace.control |> Seq.find(fun control -> control :? Label && control.Text=tr Strings.Workspaces.description)
+        let restoreButton = workspaces.restoreButton
+        let toPage (control:Control) = workspace.control.PointToClient(control.Parent.PointToScreen(control.Location))
+        let descriptionAt,restoreAt = toPage description,toPage restoreButton
+        check (descriptionAt.X>restoreAt.X+restoreButton.Width && descriptionAt.Y<restoreAt.Y+restoreButton.Height && descriptionAt.Y+description.Height>restoreAt.Y)
+              (sprintf "Workspace description did not sit beside its buttons: %A %A" descriptionAt restoreAt)
+        // A newly saved workspace goes below the earlier ones, selected.
+        workspaces.wm.create()
+        workspaces.wm.create()
+        let tree = workspaces.list
+        check ((tree.Roots |> Seq.map(fun row -> row.Tag) |> Seq.toList)=(workspaces.wm.workspaces.list |> List.map box))
+              "Workspace rows are not in the order saved"
+        check (not(isNull tree.SelectedItem) && obj.ReferenceEquals(tree.SelectedItem,Seq.last tree.Roots)) "A newly saved workspace was not the last row, selected"
+        // Opened again, the saved workspaces start collapsed with none selected.
+        let reopened = WorkspaceView()
+        use reopenedHost = new Panel(Size=Size(900,600))
+        reopenedHost.Controls.Add((reopened :> ISettingsView).control)
+        check (reopened.list.Roots.Count>=2 && reopened.list.Roots |> Seq.forall(fun row -> not row.Expanded) && isNull reopened.list.SelectedItem)
+              "A loaded workspace started expanded or selected"
+        let kind (button:Button) = (button :?> SettingsActionButton).Kind
+        check (kind reopened.restoreButton=SettingsButtonKind.Primary && kind reopened.newButton<>SettingsButtonKind.Primary)
+              "Save and Restore look alike"
+        for _ in 1..2 do
+            workspaces.wm.selected <- box (workspaces.wm.workspaces.list |> List.last)
+            workspaces.wm.remove()
         recoveryForm.Close()
         use tinyTile = new SettingsThemeTile("system",Size=Size(16,80))
         use tinyImage = new Bitmap(16,80)
