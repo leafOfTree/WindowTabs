@@ -236,6 +236,22 @@ let main() =
                                       IntPtr(60),"Shared title",@"C:\Apps\Browser.exe"]))
     let split = restore moved [List2<Dynamic>([first :> Dynamic]);List2<Dynamic>([second :> Dynamic])] (fun () -> failwith "Missing saved app")
     check (split.map(fun group -> (group.map snd).list).list=[[IntPtr(50)];[IntPtr(60)]]) "A title fallback took another saved app's window"
+    let handles (groups:List2<List2<WorkspaceWindow * IntPtr>>) = groups.map(fun group -> (group.map snd).list).list
+    let renamed = WindowResolver(List2([IntPtr(70),"Another document",@"c:\apps\EDITOR.exe"]))
+    check (handles (restore renamed [List2<Dynamic>([first :> Dynamic])] (fun () -> failwith "Missing saved app"))=[[IntPtr(70)]]) "A window whose title changed was not matched by its app"
+    let movedApp = WindowResolver(List2([IntPtr(75),"Another document",@"D:\New\Editor.exe"]))
+    check (movedApp.resolveApp(first)=Some(IntPtr(75))) "An app moved to another folder was not matched by its exe name"
+    // The renamed note prefers the open "b" note by title, but a later group's title match needs it.
+    let notesA = savedWindow "Notes - b2.txt" @"C:\Apps\Notes.exe" 0
+    let notesB = savedWindow "Notes - b.txt" @"C:\Apps\Notes.exe" 1
+    let notes () = WindowResolver(List2([IntPtr(80),"Notes - c.txt",@"C:\Apps\Notes.exe";
+                                         IntPtr(90),"Notes - b.txt",@"C:\Apps\Notes.exe"]))
+    let noteGroups = [List2<Dynamic>([notesA :> Dynamic]);List2<Dynamic>([notesB :> Dynamic])]
+    check (handles (restore (notes()) noteGroups (fun () -> failwith "Missing saved app"))=[[IntPtr(80)];[IntPtr(90)]]) "An app match took a window that a title match needed"
+    check ((notes()).resolveApp(notesA)=Some(IntPtr(90))) "An app match did not prefer the most similar title"
+    let otherMissing = ref 0
+    let otherApp = WindowResolver(List2([IntPtr(100),"Something else",@"C:\Other.exe"]))
+    check (handles (restore otherApp [List2<Dynamic>([first :> Dynamic])] (fun () -> otherMissing.Value <- otherMissing.Value+1))=[[]] && otherMissing.Value=1) "A window of another app with a different title was taken"
     check ((roundTrip.windows.head :?> WorkspaceWindow).processPath=first.processPath) "Snapshot round trip lost app identity"
     // Monitor work areas are converted to WINDOWPLACEMENT's workspace coordinates.
     let screen x y w h = Rect(Pt(x,y),Sz(w,h))

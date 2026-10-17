@@ -243,6 +243,30 @@ type WindowResolver(?windows:List2<IntPtr * string * string>) =
             remaining <- remaining.where(fun (candidate,_,_) -> candidate<>hwnd)
             hwnd)
 
+    /// Ignores the title, so an editor or browser showing another document still matches.
+    /// The same path wins over the same exe name, then the most similar title, then list order.
+    member _.resolveApp(windowInfo:WorkspaceWindow) =
+        let saved = windowInfo.processPath
+        if String.IsNullOrEmpty saved then None else
+        let exeName (path:string) = try Path.GetFileName(path) with _ -> ""
+        let savedExe = exeName saved
+        let samePrefix (title:string) =
+            let savedTitle = if isNull windowInfo.title then "" else windowInfo.title
+            let title = if isNull title then "" else title
+            let limit = min savedTitle.Length title.Length
+            let mutable i = 0
+            while i < limit && savedTitle.[i] = title.[i] do i <- i+1
+            i
+        let rank (_,title,path:string) =
+            if String.Equals(saved,path,StringComparison.OrdinalIgnoreCase) then Some(0,-samePrefix title)
+            elif savedExe<>"" && String.Equals(savedExe,exeName path,StringComparison.OrdinalIgnoreCase) then Some(1,-samePrefix title)
+            else None
+        let candidates = remaining.choose(fun window -> rank window |> Option.map(fun r -> r,window))
+        if candidates.isEmpty then None else
+        let _,(hwnd,_,_) = (candidates.sortBy fst).head
+        remaining <- remaining.where(fun (candidate,_,_) -> candidate<>hwnd)
+        Some hwnd
+
 /// The saved list is tab order; z-order only determines which restored window sits on top.
 module WorkspaceRestore =
     type private Slot =
@@ -252,20 +276,25 @@ module WorkspaceRestore =
 
     /// Every saved window first claims a window of its own app, anywhere in the workspace, so
     /// the title-only fallback cannot take the window of another saved app with the same title.
+    /// Only after every title pass does a window whose title changed take any window of its app.
     let resolve (resolver:WindowResolver) (groups:List2<'group * List2<Dynamic>>) missing failed =
-        let pass samePath slot =
+        let pass find slot =
             match slot with
             | Unmatched item ->
                 try
                     let window = item :?> WorkspaceWindow
-                    match resolver.resolve(window,samePath) with
+                    match find window with
                     | Some hwnd -> Matched(window,hwnd)
                     | None -> slot
                 with ex -> failed ex; Failed
             | _ -> slot
-        let ownApp = groups.map(fun (group,windows) -> group,windows.map(Unmatched >> pass true))
-        ownApp.map(fun (group,slots) ->
-            group,slots.map(pass false).choose(function
+        let passAll find (groups:List2<'group * List2<Slot>>) = groups.map(fun (group,slots) -> group,slots.map(pass find))
+        groups.map(fun (group,windows) -> group,windows.map Unmatched)
+        |> passAll (fun window -> resolver.resolve(window,true))
+        |> passAll (fun window -> resolver.resolve(window,false))
+        |> passAll resolver.resolveApp
+        |> fun resolved -> resolved.map(fun (group,slots) ->
+            group,slots.choose(function
                 | Matched(window,hwnd) -> Some(window,hwnd)
                 | Unmatched _ -> missing(); None
                 | Failed -> None))
