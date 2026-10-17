@@ -101,9 +101,9 @@ The separate [desktop E2E suite](desktop-e2e.md) exercises the actual Release
 entry point, real mouse drag grouping, frequent foreground switching, maximized
 tabs, closing the active window, tray-menu exit and restart. It requires an idle
 interactive desktop and is not part of the focus-safe default suite.
-GitHub's separate **Desktop E2E Hosted** workflow runs Quick on pull requests
-using an isolated `windows-2022` VM; manual Full verifies exit/restart and 1,320
-switches. Both profiles have passed on hosted runners. See the linked E2E guide
+GitHub's separate **Desktop E2E Hosted** workflow runs Full on pull requests
+using an isolated `windows-2022` VM, verifying exit/restart and 1,320 switches
+like the release does; Quick remains a manual choice. See the linked E2E guide
 for run evidence, activation requirements and remaining limitations.
 
 | Risk | Existing evidence | Next validation |

@@ -231,7 +231,7 @@ Median, p95 and maximum are diagnostic observations, not compositor presentation
 latency or a portable speed benchmark. A switch has a 2-second correctness timeout.
 
 Normal CI compiles this harness with `-BuildOnly`. Actual input tests require
-an unlocked interactive Windows desktop. The hosted Quick workflow checks this
+an unlocked interactive Windows desktop. The hosted workflow checks this
 on GitHub's Windows VM; unusable hosted/service sessions fail rather than skip
 or silently report success. The deterministic navigation and modifier
 snapshot regressions also run in the regular Architecture suite.
@@ -240,10 +240,12 @@ snapshot regressions also run in the regular Architecture suite.
 
 `.github/workflows/desktop-e2e-hosted.yml` provides **Desktop E2E Hosted**
 on GitHub's `windows-2022` virtual machine, without a local runner. Every pull
-request runs Quick as the stable **Desktop E2E (Quick)** check. No path filters
+request runs Full as the stable **Desktop E2E (Full)** check, the same profile
+the release runs, so a defect that only appears after restart fails the pull
+request rather than the release; it adds about a minute over Quick. No path filters
 skip this check. Soak runs every day at 18:00 UTC on the default branch, which
 also catches changes in the hosted Windows image, and manual dispatch offers
-Quick, Full or Soak. These runs build their own Release binary. The release
+Quick, Full (default) or Soak. These runs build their own Release binary. The release
 workflow calls the same workflow with Full and `executable-artifact`, so it tests
 the very `WindowTabs.exe` the draft will carry; the draft is created only after
 the regression suites, the smoke test, the version check and that run all pass.
