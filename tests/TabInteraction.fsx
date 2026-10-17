@@ -1,7 +1,6 @@
 // Native mouse/placement regressions on off-screen HWNDs and isolated settings.
 #r "System.Drawing"
 #r "System.Windows.Forms"
-#r "Debug/Newtonsoft.Json.dll"
 #r "Debug/Win32.dll"
 #r "Debug/WindowTabs.exe"
 open System
@@ -338,7 +337,7 @@ let main() =
         check (leader.key (IntPtr(1)) now 0x5A 26 "ABCDEFGHIJKLMNOPQRSTUVWXYZ"=(true,Some 25)) "Letter keys did not support tabs beyond nine"
         api.setValue("numberLeaderKeys",box "asdfghjkl;")
         check (api.getValue("numberLeaderKeys")=box "ASDFGHJKL;" && string api.root.["numberLeaderKeys"]="ASDFGHJKL;") "Selection keys failed to normalize and persist"
-        let savedKeys = api.root.DeepClone() :?> Newtonsoft.Json.Linq.JObject
+        let savedKeys = api.root.DeepClone() :?> Bemo.Json.JObject
         api.root <- savedKeys
         check (api.getValue("numberLeaderKeys")=box "ASDFGHJKL;") "Custom selection keys failed to round trip"
         api.root <- SettingsCatalog.resetRoot savedKeys false false

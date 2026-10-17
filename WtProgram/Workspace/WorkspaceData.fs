@@ -1,6 +1,6 @@
 namespace Bemo
 open System
-open Newtonsoft.Json.Linq
+open Bemo.Json
 
 module WorkspaceData =
     let version = 3

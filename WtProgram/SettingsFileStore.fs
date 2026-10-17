@@ -3,7 +3,7 @@ open System
 open System.IO
 open System.Text
 open System.Windows.Forms
-open Newtonsoft.Json.Linq
+open Bemo.Json
 
 /// UI-thread owned persistence. Pending edits survive a failed write and can be retried.
 /// Until the file exists, settings are read from the legacy file if there is one; that file is

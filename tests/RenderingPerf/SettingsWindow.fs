@@ -6,7 +6,7 @@ open System.IO
 open System.Runtime.InteropServices
 open System.Windows.Forms
 open Bemo
-open Newtonsoft.Json.Linq
+open Bemo.Json
 
 [<DllImport("user32.dll")>]
 extern IntPtr private SendMessage(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam)

@@ -1,6 +1,5 @@
 #r "System.Drawing"
 #r "System.Windows.Forms"
-#r "Debug/Newtonsoft.Json.dll"
 #r "Debug/Win32.dll"
 #r "Debug/WindowTabs.exe"
 open System
@@ -414,8 +413,8 @@ let main() =
         let activeOnly = {basis with tabActiveBgColor=System.Drawing.Color.Red}
         check ((Theme.followSeparator (Some basis) basis activeOnly).tabBorderColor.ToArgb()=basis.tabBorderColor.ToArgb()) "Separator changed with an unrelated color"
         check (SettingsCatalog.all |> List.forall(fun item -> item.id<>"tabBorderColor" && item.id<>"tabFlashBgColor")) "Search still offers separator or flashing tab colors"
-        let renamed = api.root.DeepClone() :?> Newtonsoft.Json.Linq.JObject
-        renamed.["tabColorMode"] <- Newtonsoft.Json.Linq.JValue("Rainbow")
+        let renamed = api.root.DeepClone() :?> Bemo.Json.JObject
+        renamed.["tabColorMode"] <- Bemo.Json.JValue("Rainbow")
         let current = api.root
         api.root <- renamed
         check (api.getValue("tabColorMode")=box "ByWindow") "The development name for by-window colours was not carried over"

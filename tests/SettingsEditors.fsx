@@ -2,7 +2,6 @@
 // Uses in-memory settings; does not read or write real user preferences.
 #r "System.Drawing"
 #r "System.Windows.Forms"
-#r @"Debug\Newtonsoft.Json.dll"
 #r @"Debug\Win32.dll"
 #r @"Debug\WindowTabs.exe"
 open System
@@ -10,7 +9,7 @@ open System.Drawing
 open System.Windows.Forms
 open System.Reflection
 open System.IO
-open Newtonsoft.Json.Linq
+open Bemo.Json
 open Bemo
 type WindowCallback = delegate of IntPtr * IntPtr -> bool
 module Native =

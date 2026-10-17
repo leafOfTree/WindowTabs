@@ -8,7 +8,7 @@ open System.IO
 open System.Runtime.InteropServices
 open System.Security.Cryptography
 open Bemo
-open Newtonsoft.Json.Linq
+open Bemo.Json
 
 let collect() = GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect()
 

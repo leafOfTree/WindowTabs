@@ -1,5 +1,6 @@
 namespace Bemo
 open System
+open Bemo.Json
 open System.Drawing
 open System.IO
 open System.Windows.Forms
@@ -277,9 +278,9 @@ type AppGroupingRulesView() as this =
         root.["appGroupingTargets"] <- AppGroupingRules.writeTargets groups
         let automatic =
             match root.["autoGroupingPaths"] with
-            | :? Newtonsoft.Json.Linq.JArray as paths -> paths |> Seq.map(fun path -> path.ToObject<string>()) |> Seq.toList
+            | :? JArray as paths -> paths |> Seq.map(fun path -> path.ToObject<string>()) |> Seq.toList
             | _ -> []
-        root.["autoGroupingPaths"] <- Newtonsoft.Json.Linq.JArray(AppGroupingRules.withoutAutoGrouping rules automatic)
+        root.["autoGroupingPaths"] <- JArray(AppGroupingRules.withoutAutoGrouping rules automatic)
         Services.settings.root <- root
         previous |> Option.iter(fun before ->
             rules |> List.filter(fun rule ->

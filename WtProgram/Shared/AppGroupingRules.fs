@@ -1,7 +1,7 @@
 namespace Bemo
 open System
 open System.Text.RegularExpressions
-open Newtonsoft.Json.Linq
+open Bemo.Json
 
 module WindowTitleMatcher =
     let compile kind (target:string) =

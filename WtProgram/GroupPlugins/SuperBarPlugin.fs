@@ -1,5 +1,6 @@
 ﻿namespace Bemo
 open System
+open Bemo.Json
 open System.Drawing
 open System.Drawing.Imaging
 open System.Runtime.InteropServices
@@ -12,12 +13,12 @@ module TaskbarPreviewTrace =
     let private gate = obj()
     let write (stage:string) (proxy:IntPtr) (tab:string) (detail:string) =
         if enabled then
-            let entry = Newtonsoft.Json.Linq.JObject(
-                Newtonsoft.Json.Linq.JProperty("time",DateTime.UtcNow.ToString("O")),
-                Newtonsoft.Json.Linq.JProperty("stage",stage),
-                Newtonsoft.Json.Linq.JProperty("proxy",proxy.ToInt64()),
-                Newtonsoft.Json.Linq.JProperty("tab",tab),
-                Newtonsoft.Json.Linq.JProperty("detail",detail)).ToString(Newtonsoft.Json.Formatting.None)
+            let entry = JObject(
+                JProperty("time",DateTime.UtcNow.ToString("O")),
+                JProperty("stage",stage),
+                JProperty("proxy",proxy.ToInt64()),
+                JProperty("tab",tab),
+                JProperty("detail",detail)).ToString(Formatting.None)
             Threading.ThreadPool.QueueUserWorkItem(fun _ ->
                 lock gate (fun () ->
                     try IO.File.AppendAllText(IO.Path.Combine(directory,"peek-trace.jsonl"),entry+Environment.NewLine)

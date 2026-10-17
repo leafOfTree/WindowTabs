@@ -2,7 +2,6 @@
 // Uses an isolated settings directory and off-screen windows; no real preferences are changed.
 #r "System.Drawing"
 #r "System.Windows.Forms"
-#r "Debug/Newtonsoft.Json.dll"
 #r "Debug/Win32.dll"
 #r "Debug/WindowTabs.exe"
 open System
@@ -10,7 +9,7 @@ open System.IO
 open System.Drawing
 open System.Drawing.Imaging
 open System.Windows.Forms
-open Newtonsoft.Json.Linq
+open Bemo.Json
 open Bemo
 open Bemo.Win32.Forms
 

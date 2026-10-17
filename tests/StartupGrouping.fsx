@@ -1,6 +1,5 @@
 #r "System.Drawing"
 #r "System.Windows.Forms"
-#r "Debug/Newtonsoft.Json.dll"
 #r "Debug/Win32.dll"
 #r "Debug/WindowTabs.exe"
 open System

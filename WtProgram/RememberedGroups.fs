@@ -1,6 +1,6 @@
 namespace Bemo
 open System
-open Newtonsoft.Json.Linq
+open Bemo.Json
 
 /// A window as it can be recognised again once it has closed: its program and its title.
 type RememberedMember = { app: string; title: string }

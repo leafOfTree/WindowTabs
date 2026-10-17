@@ -31,7 +31,7 @@
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <Tailcalls>true</Tailcalls>
     <!-- Release is a single self-contained WindowTabs.exe. -->
-    <OtherFlags>$(OtherFlags) --standalone --staticlink:Win32 --staticlink:Newtonsoft.Json</OtherFlags>
+    <OtherFlags>$(OtherFlags) --standalone --staticlink:Win32</OtherFlags>
     <!-- FS2011: framework internals (SMDiagnostics, System.ServiceModel.Internals) reached through
          System.Runtime.Serialization are not in the reference assemblies; they stay in the GAC, not the exe. -->
     <NoWarn>$(NoWarn);2009;2011</NoWarn>
@@ -39,6 +39,7 @@
 
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
+    <Compile Include="Shared\JsonDom.fs" />
     <Compile Include="Shared\Operators.fs" />
     <Compile Include="Shared\Dynamic.fs" />
     <Compile Include="Shared\Observable.fs" />
@@ -137,10 +138,6 @@
 
   <ItemGroup>
     <PackageReference Update="FSharp.Core" Version="10.1.401" />
-    <!-- 13.0.2+ carries internal copies of System.Diagnostics.CodeAnalysis attributes that FSharp.Core 7+
-         also carries, and F# static linking (Release) cannot merge the duplicates.
-         13.0.1 already has the deep-nesting security fix. -->
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
     <Reference Include="System.Windows.Forms" />
     <ProjectReference Include="..\Win32\Win32.csproj" />
   </ItemGroup>
