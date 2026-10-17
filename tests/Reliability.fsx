@@ -251,6 +251,12 @@ let main() =
     check ((WorkspaceRestore.zorder matched).list=[IntPtr(10);IntPtr(20)]) "Restoring tab order lost window z-order"
     // A missing window is named by its app and its whole title, however long.
     check (WorkspaceRestore.describe (first :> Dynamic)=(first.name,first.title)) "A missing window was not named by its app and full title"
+    // Only apps that are not running, exist and start by their path are offered, once each.
+    let launchable =
+        WorkspaceRestore.launchable [@"C:\Apps\Running.exe"] (fun path -> not(path.Contains("Gone")))
+            [@"C:\Apps\Editor.exe";@"c:\apps\EDITOR.exe";@"C:\apps\running.EXE";@"C:\Apps\Gone.exe";""
+             @"C:\Windows\System32\ApplicationFrameHost.exe"]
+    check (launchable=[@"C:\Apps\Editor.exe"]) (sprintf "Wrong apps offered to launch: %A" launchable)
     check ((resolver.resolve(first,false)).IsNone) "A window was matched twice"
     let wrongApp = WindowResolver(List2([IntPtr(30),"Shared title",@"C:\Other.exe"]))
     check ((wrongApp.resolve(first,true)).IsNone) "A title from another app matched as the saved app"

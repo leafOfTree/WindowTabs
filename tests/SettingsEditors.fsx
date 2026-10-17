@@ -797,8 +797,13 @@ let main() =
     for mode in [LightTheme;DarkTheme] do
         preferences <- {preferences with mode=mode}
         ThemeService.publishPreferences preferences
-        use dialog = new WorkspaceRestoreDialog({workspace="Workspace 4";restored=17;missing=["neovide.exe",longTitle;"notepad.exe","Notes"]
-                                                 failed=["code.exe","Access is denied."]})
+        // Given a way to launch apps, apps that are not running are offered once.
+        let finish = ref None
+        let partial = WorkspaceRestoreResult.Of("Workspace 4",17,["neovide.exe",longTitle;"notepad.exe","Notes"],["code.exe","Access is denied."])
+        use dialog = new WorkspaceRestoreDialog({partial with launchable=[@"C:\Apps
+eovide.exe";@"C:\Apps
+otepad.exe"]},
+                                                (fun _ shown -> finish.Value <- Some shown))
         dialog.StartPosition <- FormStartPosition.Manual
         dialog.Location <- Point(-20000,-20000)
         dialog.Show()
@@ -808,7 +813,7 @@ let main() =
         let marks = all dialog |> Seq.choose(function :? RestoreMark as mark -> Some(mark.State,mark.Active) | _ -> None) |> Seq.truncate 3 |> List.ofSeq
         assertTrue (marks=[Restored,true;NotFound,true;Failed,true]) (sprintf "Restore states lack their marks: %A" marks)
         // A clean restore shows only its restored count, not states with none in them.
-        use clean = new WorkspaceRestoreDialog({workspace="Workspace 5";restored=18;missing=[];failed=[]})
+        use clean = new WorkspaceRestoreDialog(WorkspaceRestoreResult.Of("Workspace 5",18,[],[]))
         let cleanMarks = all clean |> Seq.choose(function :? RestoreMark as mark -> Some mark.State | _ -> None) |> List.ofSeq
         assertTrue (cleanMarks=[Restored]) (sprintf "A restore listed states with no windows: %A" cleanMarks)
         if mode=DarkTheme then
@@ -828,6 +833,15 @@ let main() =
         use image = new Bitmap(dialog.Width,dialog.Height)
         dialog.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
         image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "workspace-restore-%A.png" mode))
+        let launchButton() = all dialog |> Seq.tryFind(fun control -> control.Name="launch-apps")
+        assertTrue (launchButton() |> Option.exists(fun button -> button.Text=tr (Strings.Workspaces.launchApps 2))) "Restore result did not offer to launch the apps that are not running"
+        (launchButton().Value :?> Button).PerformClick()
+        assertTrue (launchButton() |> Option.exists(fun button -> not button.Enabled && button.Text=tr (Strings.Workspaces.launchingApps 2)) && finish.Value.IsSome)
+                   "Launching apps did not show that it is under way"
+        finish.Value.Value (partial.Then(WorkspaceRestoreResult.Of("Workspace 4",2,[],[]),["telegram.exe","Access is denied."]))
+        Application.DoEvents()
+        assertTrue (dialog.Result.restored=19 && dialog.Result.missing.IsEmpty && dialog.Result.failed.Length=2 && launchButton().IsNone)
+                   (sprintf "Restore result was not updated after launching apps: %A" dialog.Result)
         dialog.Close()
     // Application mappings stay below the app list and save without a dialog.
     for mode in [LightTheme;DarkTheme] do

@@ -307,13 +307,73 @@ module WorkspaceRestore =
         | :? WorkspaceWindow as window -> window.name,(if isNull window.title then "" else window.title.Trim())
         | _ -> string item,""
 
+    /// The apps worth starting for windows that were not found: one per path, only when none of
+    /// its windows is open (a running app is asked for nothing), the file exists and it can be
+    /// started by its path, which Store apps behind ApplicationFrameHost cannot.
+    let launchable (openPaths:string seq) (exists:string -> bool) (paths:string seq) =
+        let running = HashSet<string>(openPaths,StringComparer.OrdinalIgnoreCase)
+        paths
+        |> Seq.filter(fun path ->
+            not(String.IsNullOrEmpty path) && not(running.Contains path) &&
+            not(String.Equals(Path.GetFileName path,"ApplicationFrameHost.exe",StringComparison.OrdinalIgnoreCase)) && exists path)
+        |> Seq.distinctBy(fun path -> path.ToUpperInvariant())
+        |> List.ofSeq
+
 /// What a restore did, for the result shown afterwards. Missing and failed windows are
 /// (app, title or error) pairs; a failure that concerns no single window has no app.
 type WorkspaceRestoreResult = {
     workspace:string
     restored:int
     missing:(string*string) list
-    failed:(string*string) list }
+    failed:(string*string) list
+    /// The windows not found, with their saved group, for another try once their apps run.
+    pending:(Dynamic*WorkspaceWindow) list
+    /// Where each saved group went, so another try adds to the same group.
+    groups:(Dynamic*IGroup) list
+    /// Apps of windows not found that are not running and can be started.
+    launchable:string list }
+    with
+    static member Of(workspace,restored,missing,failed) =
+        { workspace=workspace; restored=restored; missing=missing; failed=failed; pending=[]; groups=[]; launchable=[] }
+    /// A second try after starting apps: everything restored so far counts, what is still
+    /// missing is what the second try did not find, and apps that would not start count as failed.
+    member first.Then(second:WorkspaceRestoreResult,launchFailures) =
+        { second with restored=first.restored+second.restored; failed=first.failed@launchFailures@second.failed }
+
+/// Starts apps by their path and waits, on this UI thread, for their windows: done once each has
+/// a window and no new one has appeared for a moment (an app restoring its session can open
+/// several), or after a time limit for an app that never shows one.
+module WorkspaceLaunch =
+    let start (paths:string list) (complete:(string*string) list -> unit) =
+        let failures = ResizeArray<string*string>()
+        let started =
+            paths |> List.filter(fun path ->
+                try
+                    Diagnostics.Process.Start(Diagnostics.ProcessStartInfo(path,UseShellExecute=true,
+                                                                            WorkingDirectory=Path.GetDirectoryName(path))) |> ignore
+                    true
+                with ex -> failures.Add(Path.GetFileName(path),ex.Message); false)
+        if started.IsEmpty then complete (List.ofSeq failures)
+        else
+            let os = OS()
+            let counts() =
+                let running = Services.program.appWindows.choose(fun hwnd -> try Some(os.windowFromHwnd(hwnd).pid.processPath) with _ -> None).list
+                started |> List.map(fun path -> running |> List.filter(fun each -> String.Equals(each,path,StringComparison.OrdinalIgnoreCase)) |> List.length)
+            let clock = Diagnostics.Stopwatch.StartNew()
+            let mutable last = []
+            let mutable changed = 0L
+            let timer = new Timer(Interval=250)
+            timer.Tick.Add(fun _ ->
+                let now = counts()
+                if now<>last then
+                    last <- now
+                    changed <- clock.ElapsedMilliseconds
+                let settled = now |> List.forall(fun count -> count>0) && clock.ElapsedMilliseconds-changed>=1500L
+                if settled || clock.ElapsedMilliseconds>=20000L then
+                    timer.Stop()
+                    timer.Dispose()
+                    complete (List.ofSeq failures))
+            timer.Start()
 
 type IWorkspaceModel =
     abstract member list : List2<Workspace>
@@ -393,18 +453,24 @@ type WorkspaceModel() as this =
                         groups.iter(fun (_,group) -> ws.addGroup(group))
                         complete ws))
 
-    member private this.restoreWorkspace(workspace:Workspace) =
+    /// Restores saved groups of windows; a group already restored into (by an earlier try)
+    /// takes the windows found now.
+    member private this.restoreInto(name:string, saved:List2<Dynamic * List2<Dynamic>>, existing:(Dynamic*IGroup) list) =
         let resolver = WindowResolver()
         let errors = ResizeArray<string*string>()
         let mutable restored = 0
         let missing = ResizeArray<string*string>()
+        let notFound = HashSet<obj>(HashIdentity.Reference)
+        let lost (item:Dynamic) =
+            notFound.Add(item) |> ignore
+            missing.Add(WorkspaceRestore.describe item)
+        let used = ResizeArray<Dynamic*IGroup>(existing |> List.filter(fun (_,group) -> not (group :?> GroupInfo).isExited))
         TemporaryState.run Services.program.suspendTabMonitoring Services.program.resumeTabMonitoring (fun () ->
             let owners = Map2(Services.desktop.groups.collect(fun group -> group.windows.map(fun hwnd -> hwnd,group)))
-            let saved = workspace.children.map(fun groupInfo -> groupInfo,(groupInfo?windows : List2<Dynamic>))
-            let groups = WorkspaceRestore.resolve resolver saved (WorkspaceRestore.describe >> missing.Add) (fun ex -> errors.Add("",ex.Message))
+            let groups = WorkspaceRestore.resolve resolver saved lost (fun ex -> errors.Add("",ex.Message))
             groups.iter(fun (groupInfo:Dynamic,resolved) ->
                 if not resolved.isEmpty then
-                    let mutable destination : IGroup option = None
+                    let mutable destination = used |> Seq.tryFind(fun (each,_) -> obj.ReferenceEquals(each,groupInfo)) |> Option.map snd
                     let successful = ResizeArray<WorkspaceWindow * IntPtr>()
                     let placement = WorkspaceData.fitPlacement (Mon.all.map(fun mon -> mon.displayRect,mon.workRect).list) (groupInfo?placement)
                     resolved.iter(fun (saved,hwnd) ->
@@ -419,14 +485,32 @@ type WorkspaceModel() as this =
                                     (groupInfo :?> WorkspaceGroup).tabLayout |> Option.iter(fun layout ->
                                         (next :?> GroupInfo).invokeGroup(fun () -> (next :?> GroupInfo).group.applyTabLayout(layout)))
                                     destination <- Some next
+                                    used.Add(groupInfo,next)
                                 owners.tryFind(hwnd).iter(fun owner -> owner.removeWindow(hwnd))
                                 destination.Value.addWindow(hwnd,false)
                                 successful.Add(saved,hwnd)
                                 restored <- restored+1
-                            else missing.Add(WorkspaceRestore.describe saved)
+                            else lost saved
                         with ex -> errors.Add(fst (WorkspaceRestore.describe saved),ex.Message))
                     try os.setZorder(WorkspaceRestore.zorder (List2(successful))) with ex -> errors.Add("",ex.Message)))
-        { workspace=workspace.name; restored=restored; missing=List.ofSeq missing; failed=List.ofSeq errors }
+        let pending =
+            saved.list |> List.collect(fun (groupInfo,windows) ->
+                windows.list |> List.choose(fun item ->
+                    match item with
+                    | :? WorkspaceWindow as window when notFound.Contains(item) -> Some(groupInfo,window)
+                    | _ -> None))
+        let openPaths = Services.program.appWindows.choose(fun hwnd -> try Some(os.windowFromHwnd(hwnd).pid.processPath) with _ -> None).list
+        { workspace=name; restored=restored; missing=List.ofSeq missing; failed=List.ofSeq errors; pending=pending
+          groups=List.ofSeq used
+          launchable=WorkspaceRestore.launchable openPaths File.Exists (pending |> List.map(fun (_,window) -> window.processPath)) }
+
+    member private this.restoreWorkspace(workspace:Workspace) =
+        this.restoreInto(workspace.name,workspace.children.map(fun groupInfo -> groupInfo,(groupInfo?windows : List2<Dynamic>)),[])
+
+    /// Tries the windows an earlier restore did not find again, after their apps have started.
+    member this.retry(result:WorkspaceRestoreResult) =
+        let saved = result.pending |> List.groupBy fst |> List.map(fun (groupInfo,windows) -> groupInfo,List2(windows |> List.map(fun (_,window) -> window :> Dynamic)))
+        this.restoreInto(result.workspace,List2(saved),result.groups)
 
     member this.addWorkspace(ws:Workspace) =
         ws.cast<IWorkspaceNode>().removed.Add <| fun() -> this.onWorkspaceRemoved(ws)
