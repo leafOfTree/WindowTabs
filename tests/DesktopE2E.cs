@@ -26,6 +26,8 @@ static partial class DesktopE2E
     [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint thread, ref GuiThread info);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hwnd, int command);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr GetProp(IntPtr hwnd, string name);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr RemoveProp(IntPtr hwnd, string name);
     [DllImport("user32.dll")] static extern bool IsWindow(IntPtr hwnd);
     [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr hwnd, uint command);
     [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hwnd, int index);
@@ -516,7 +518,11 @@ static partial class DesktopE2E
             Check(!HasCrash(),"Application logged an exception during the cycle");
             completed++; Log("PASS: cycle "+completed+"; original entry point, drag grouping, switching, close and normal exit");
             // The next cycle reuses the saved portable configuration and reacquires the real singleton.
-            // Forget the dragged group so the surviving helpers start apart and are dragged together again.
+            // Forget the dragged group, in the settings and on the windows themselves, so the
+            // surviving helpers start apart and are dragged together again.
+            var survivors=Forms.Where(f=>!f.IsDisposed).ToList();
+            Check(survivors.All(f=>GetProp(f.Handle,"WindowTabs.Group.v1")!=IntPtr.Zero),"Exit did not keep the group on its windows");
+            foreach(var f in survivors) RemoveProp(f.Handle,"WindowTabs.Group.v1");
             saved.Remove("rememberedGroups");
             File.WriteAllText(Path.Combine(Root,"WindowTabsSettings.json"),Json.Serialize(saved));
         }
