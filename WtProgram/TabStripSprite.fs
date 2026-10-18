@@ -93,8 +93,9 @@ module TabMetrics =
     /// A logical length (padding, gap, button) shrunk with the icon.
     let scaled (height:int) (logical:int) = max 1 (int(Math.Round(float(Dpi.scale logical) * scale height)))
     /// The menu font, made smaller only when its line would not fit the tab. 0 means any height.
+    /// GDI already sizes points at the system DPI, so only another monitor's scale is applied.
     let font (height:int) (style:FontStyle) =
-        let points = float32(Dpi.scaleF(float SystemFonts.MenuFont.SizeInPoints))
+        let points = SystemFonts.MenuFont.SizeInPoints*float32(Dpi.value())/float32(Dpi.system())
         use full = new Font(SystemFonts.MenuFont.FontFamily,points,style)
         let fit = if height>0 && full.Height>height then float32 height/float32 full.Height else 1.0f
         new Font(SystemFonts.MenuFont.FontFamily,max 1.0f (points*fit),style)
