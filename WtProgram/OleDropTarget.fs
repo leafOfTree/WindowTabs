@@ -56,7 +56,7 @@ type OleDropTarget(ts:TabStrip) as this=
                         label <- Some tip
                         tip
                 let strip : Rect = ts.bounds
-                use font = System.Drawing.SystemFonts.MessageBoxFont
+                use font = TabMetrics.font 0 System.Drawing.FontStyle.Regular
                 tip.show(text,font,System.Drawing.Rectangle(strip.x,strip.y,strip.size.width,strip.size.height),pointerX)
 
     let effectAt (keys:int) (pt:POINTL) (allowed:int) =

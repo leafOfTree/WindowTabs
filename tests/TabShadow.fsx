@@ -271,6 +271,17 @@ let main () =
                 check (flashing.GetPixel(x,flashing.Height/2).ToArgb()<>Color.Red.ToArgb()) "Vertical stripe overrode an attention color"
     check (Theme.tabTint true (Some Color.Red)=None) "High contrast retained tint"
     let tabImage = ts.render
+    // GDI already sizes points at the system DPI: tab text matches the menu font there and
+    // grows only in proportion on a monitor with another scale.
+    do
+        let before = Dpi.value()
+        try
+            for dpi,factor in [Dpi.system(),1.0f; Dpi.system()*2,2.0f] do
+                Dpi.set dpi
+                use font = TabMetrics.font 0 FontStyle.Regular
+                check (abs(font.SizeInPoints-SystemFonts.MenuFont.SizeInPoints*factor)<0.01f)
+                      (sprintf "Tab font is %.2fpt at %d DPI with the system at %d DPI" font.SizeInPoints dpi (Dpi.system()))
+        finally Dpi.set before
     // Short tabs shrink their contents to fit instead of clipping them.
     for h in [12;18;26] do
         use font = TabMetrics.font h FontStyle.Regular
