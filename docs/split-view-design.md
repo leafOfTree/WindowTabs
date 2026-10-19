@@ -72,10 +72,14 @@ More panes are left to a later extension of the model (section 3).
   and that pane resizes in its app's own loop, which paints at every step as a resize from
   outside does not; the other pane follows (`resizePane`). A wider band took that away, and
   every drag at the seam trailed the pointer.
-  While dragged, the bar follows the pointer itself and sends one ratio at a time, keeping only
-  the latest while the group places the one before: a ratio at every pointer move piled up
-  faster than the group placed them, and the bar trailed the pointer by seconds. A ratio-only
-  change also leaves the tabs' details alone.
+  While dragged, the bar follows the pointer itself and places the panes itself, straight into
+  the placement queue from its own thread, which keeps only the newest request for a window.
+  Sent through the group's thread, a ratio waited behind the storm of WinEvents the apps raise
+  as they resize, which reach that thread first, and the panes trailed the pointer by a few
+  steps. The group's own layout follows one ratio at a time, the next sent only once the group
+  reports the one before: taken as the word for any ratio, every pointer move sent one and they
+  queued up on the group's thread for hundreds of milliseconds. A ratio-only change also leaves
+  the tabs' details alone.
 - Ending the split: the divider menu, the tab menu or a shortcut. The focused tab fills the group;
   no window closes and no tab is removed. The first version's "merge" drop zone next to the strip
   is gone: no browser has it, and it competed with the zones for reordering tabs.

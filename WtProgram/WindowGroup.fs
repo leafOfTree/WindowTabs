@@ -860,7 +860,25 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             dividerShown <- dividerVisible
             let divider = splitDivider.Value
             let strip,gap,frame = this.ts.hwnd,this.splitGap,this.layoutFrame
-            this.onChrome(fun () -> if not divider.IsDisposed then divider.update(s,gap,frame,strip,dividerVisible))
+            // While the divider is dragged it places the panes itself, straight into the placement
+            // queue from its own thread. Sent through this thread, a ratio waited behind the storm
+            // of WinEvents the apps raise as they resize, delivered here first, and the panes
+            // trailed the pointer by a few steps.
+            let place =
+                match placement.value with
+                | Some(_,wp,_) ->
+                    let front = this.paneFront s |> Option.defaultValue IntPtr.Zero
+                    let anchor = this.paneAnchor
+                    let panes = [First;Second] |> List.choose(fun side -> SplitView.window side s |> Option.map(fun hwnd -> side,hwnd,isMinimized hwnd))
+                    fun (ratio:float) ->
+                        let a,_,b = SplitGeometry.rectangles gap frame {s with ratio=ratio}
+                        for side,hwnd,minimized in panes do
+                            if not minimized then
+                                let rect = if side=First then a else b
+                                let below = if hwnd<>front then Some(if front<>IntPtr.Zero then front else anchor) else None
+                                FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.alignFrameRequest hwnd rect rect wp below)
+                | None -> ignore
+            this.onChrome(fun () -> if not divider.IsDisposed then divider.update(s,gap,frame,strip,dividerVisible,place))
             match [First;Second] |> List.tryFind(fun side -> SplitView.pane side s=Empty) with
             | Some side ->
                 if emptySplitPane.IsNone then

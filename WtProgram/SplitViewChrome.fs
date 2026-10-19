@@ -64,6 +64,8 @@ type SplitDivider(execute:SplitCommand -> unit, live:bool -> unit) =
     /// The ratio last sent. Sent again, it changed nothing, so no word came back and the next
     /// ratio waited; a move the window's own repositioning causes repeats it.
     let mutable lastSent = nan
+    /// Places the panes for a ratio from this thread, as the group would.
+    let mutable place : float -> unit = ignore
     let sent = Diagnostics.Stopwatch()
     /// Bounds and state last drawn, so frequent updates leave an unchanged bar alone.
     let mutable drawn : (Rectangle * bool * bool * SplitAxis) option = None
@@ -124,6 +126,9 @@ type SplitDivider(execute:SplitCommand -> unit, live:bool -> unit) =
                     if this.Bounds<>bounds then
                         this.Bounds <- bounds
                         this.render()
+                        // The panes go straight to the placement queue, which keeps only the newest
+                        // request for a window; the group's own layout follows, one ratio at a time.
+                        place ratio
                     pending <- Some ratio
                     this.sendRatio()))
         this.MouseUp.Add(fun e ->
@@ -175,15 +180,19 @@ type SplitDivider(execute:SplitCommand -> unit, live:bool -> unit) =
         | _ -> ()
 
     /// Kept just below `below`, the strip: over both panes' edges, under the tabs.
-    member this.update(value:SplitLayout, dividerGap:int, groupFrame:Rect, below:IntPtr, visible:bool) =
+    member this.update(value:SplitLayout, dividerGap:int, groupFrame:Rect, below:IntPtr, visible:bool, placePanes:float -> unit) =
         layout <- Some value
         gap <- dividerGap
         frame <- groupFrame
+        place <- placePanes
         this.Cursor <- if value.axis=SideBySide then Cursors.VSplit else Cursors.HSplit
-        // While dragged the bar stays with the pointer; the group's word only lets the next ratio go.
+        // While dragged the bar stays with the pointer, and the next ratio goes only once the
+        // group reports the one sent: it reports every placement, and taken as the word for any
+        // ratio, ratios went out at every pointer move, faster than the group took them, and
+        // queued up on its thread for hundreds of milliseconds.
         let bounds = this.band value
         if not dragging && this.Bounds<>bounds then this.Bounds <- bounds
-        inFlight <- false
+        if not dragging || value.ratio=lastSent then inFlight <- false
         this.sendRatio()
         if visible then
             if not this.Visible then this.Show()
