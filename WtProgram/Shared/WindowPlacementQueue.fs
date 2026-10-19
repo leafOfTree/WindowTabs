@@ -137,6 +137,8 @@ type FollowerPlacementRequest =
     | SetMinimized of bool * IntPtr option
     | HideForMove
     | PrepareMinimizeAnchor
+    /// Only the stacking: directly below the given window, as a split's other pane goes below the tabs.
+    | StackBelow of IntPtr
 
 module FollowerPlacement =
     let private identity hwnd =
@@ -151,6 +153,9 @@ module FollowerPlacement =
             match request with
             | PrepareMinimizeAnchor -> window.prepareMinimizeAnchor(valid)
             | HideForMove -> if valid() && not window.isMinimized then window.hideOffScreen(None)
+            | StackBelow top ->
+                if valid() && not window.isMinimized && WinUserApi.IsWindow(top) && window.prevZorder.hwnd<>top then
+                    window.insertAfter(top)
             | SetMinimized(minimized,below) ->
                 if window.isMinimized<>minimized && valid() then
                     if minimized then window.prepareMinimizeAnchor(valid)
@@ -198,8 +203,11 @@ module FollowerPlacement =
                 if valid() && window.needsMinimizeAnchor then positioned <- true
                 window.prepareMinimizeAnchor(valid)
                 // Restoring can move again after SetWindowPlacement. Correct stacking
-                // after every native phase, using the source captured by the request.
-                if positioned && valid() && not window.isMinimized && previous<>IntPtr.Zero && WinUserApi.IsWindow(previous) then
+                // after every native phase, using the source captured by the request. A window
+                // already there is left alone: during a split's divider drag every step would
+                // otherwise wait on the app twice, once for the size and once for the stacking.
+                if positioned && valid() && not window.isMinimized && previous<>IntPtr.Zero && WinUserApi.IsWindow(previous) &&
+                   window.prevZorder.hwnd<>previous then
                     window.insertAfter(previous)
 
     /// A group's windows usually each have a thread of their own and change state together, so a
@@ -213,6 +221,7 @@ module FollowerPlacement =
     let minimizeRequest hwnd minimized = identity hwnd,SetMinimized(minimized,None)
     let restoreBelowRequest hwnd top = identity hwnd,SetMinimized(false,Some top)
     let hideRequest hwnd = identity hwnd,HideForMove
+    let stackBelowRequest hwnd top = identity hwnd,StackBelow top
     let prepareMinimizeRequest hwnd = identity hwnd,PrepareMinimizeAnchor
     let isChangingMinimizeState owner hwnd =
         queue.isWindowBusyWith(owner,hwnd,fun (_,request) -> match request with SetMinimized _ -> true | _ -> false)

@@ -34,6 +34,25 @@ type NumericShortcutCapture() =
             else pressed.Contains(key), None
         else false, None
 
+/// Esc beside an empty pane closes it, as its close button does. The pane is a choice still to
+/// make, so the key is taken, and its release with it, as a popup's dismissal would be.
+type EmptyPaneEscape() =
+    let mutable taken = false
+    /// `close` closes the pane beside the active tab, and says whether there was one.
+    member _.handle(msg:int, key:int, modified:bool, close:unit -> bool) =
+        if key<>0x1B then false
+        elif msg=WindowMessages.WM_KEYDOWN || msg=WindowMessages.WM_SYSKEYDOWN then
+            // A held key repeats its press: the first one closed the pane, the rest are taken too.
+            if taken then true
+            else
+                taken <- not modified && close()
+                taken
+        elif msg=WindowMessages.WM_KEYUP || msg=WindowMessages.WM_SYSKEYUP then
+            let wasTaken = taken
+            taken <- false
+            wasTaken
+        else false
+
 type InputManagerPlugin(msgSet:Set2<Int32>) as this =
     let hookProcDelegate = HOOKPROC(this.llHook)
     let mutable kbHook = null
@@ -42,6 +61,7 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
     let numericCapture = NumericShortcutCapture()
     let leader = NumberLeaderState()
     let leaderCapture = NumericShortcutCapture()
+    let emptyPaneEscape = EmptyPaneEscape()
     let mutable leaderGroup : GroupInfo option = None
     let timer = new System.Windows.Forms.Timer(Interval=50)
     let owned = new LifetimeScope(ignore)
@@ -102,9 +122,32 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
     member this.registerMouseLLHook() =
         mouseHook <- WinUserApi.SetWindowsHookEx(WindowHookTypes.WH_MOUSE_LL, hookProcDelegate, IntPtr.Zero, 0)
 
+    member private this.modifiersHeld(data:KBDLLHOOKSTRUCT) =
+        (data.flags &&& LlKeyboardHookFlags.LLKHF_ALTDOWN) <> 0 ||
+        [VirtualKeyCodes.VK_CONTROL;VirtualKeyCodes.VK_SHIFT;int System.Windows.Forms.Keys.LWin;int System.Windows.Forms.Keys.RWin]
+        |> List.exists Win32Helper.IsKeyPressed
+
+    /// The group of the active window, if an empty pane is shown beside it, is told to close it.
+    member private this.closeEmptyPane() =
+        match this.foregroundGroup with
+        | Some group ->
+            let info = group.cast<GroupInfo>()
+            let pane = info.group.emptyPaneHwnd
+            if pane<>IntPtr.Zero && WinUserApi.IsWindowVisible pane then
+                info.invokeGroup(fun () -> info.group.closeEmptyPane())
+                true
+            else false
+        | None -> false
+
     member this.registerKeyboardLLHook() =
         kbHook <- OS.registerKeyboardLLHook <| fun(key, data) ->
-            if data.dwExtraInfo = AltMenuMask.marker then None else
+            if data.dwExtraInfo = AltMenuMask.marker then None
+            // Escape during a tab drag cancels it and goes no further.
+            elif (int key=WindowMessages.WM_KEYDOWN || int key=WindowMessages.WM_SYSKEYDOWN) && data.vkCode=VirtualKeyCodes.VK_ESCAPE && Services.dragDrop.cancelDrag() then Some 1
+            // Escape beside an empty pane closes it.
+            elif data.vkCode=VirtualKeyCodes.VK_ESCAPE &&
+                 emptyPaneEscape.handle(int key,data.vkCode,this.modifiersHeld(data),this.closeEmptyPane) then Some 1
+            else
             // The group runs asynchronously; Ctrl may be released before it handles
             // this key. Preserve the modifier state belonging to this input event.
             let controlPressed = Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_CONTROL)

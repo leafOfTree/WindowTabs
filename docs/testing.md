@@ -78,12 +78,12 @@ parallel on separate runners. The final build check requires Release and every
 regression group to succeed. A failing group does not cancel the other groups.
 Each group uploads its own diagnostics. Groups are balanced by observed execution
 and compilation time rather than suite
-count: Architecture/WindowIcon, GroupOperations/SettingsEditors, and the remaining
+count: Architecture/SplitView/WindowIcon, GroupOperations/SettingsEditors, and the remaining
 nine suites.
 Each job caches downloaded NuGet packages; each regression group restores the shared test-host
 dependencies once, and the Release job reuses its exe when compiling the desktop driver.
 Interactive desktop E2E still builds its own isolated Release copy. Native suites
-remain serial within each runner, with all 13 suites retained across the groups.
+remain serial within each runner, with all 14 suites retained across the groups.
 Push and pull request builds run without
 coverage instrumentation. The Monthly coverage workflow measures the full suite
 on the default branch at 08:00 China Standard Time on the first day of each month,
@@ -94,6 +94,25 @@ build and smoke checks, in parallel with any remaining regression groups. Creati
 the release draft requires the build, every regression group and Full E2E to pass.
 The first cache miss still downloads dependencies; compare warm runs when measuring
 the improvement.
+
+## Split view on the real desktop
+
+`SplitViewDesktop` is opt-in and not in the default list: it moves the real pointer, so it
+needs an unlocked desktop left idle for about a minute, and fails as soon as anyone else moves
+the pointer.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 -Suites SplitViewDesktop -VisibleDesktop"
+```
+
+It runs its own group in the test process with windows kept out of the taskbar and Alt+Tab, so
+a WindowTabs already running leaves them alone. It drives Windows' own move-size loops through
+the empty pane's edges, a pane window's edge and the divider, and records for every step how
+long the dragged edge trailed the pointer and how long the other pane took to follow. It also
+checks the panes meet, the tabs stay over both panes after clicks, the tabs behind come back
+after a drag, and the empty pane's frame colour. One pass sits beside a window that spends 40ms
+on each resize, and one beside a window of another process, clicked first so that it is raised,
+as a slow app such as Explorer is in use.
 
 ## Remaining coverage plan
 
@@ -114,6 +133,7 @@ for run evidence, activation requirements and remaining limitations.
 | DPI | DpiLayout message transitions, settings page layout passes | Physical mixed-monitor movement and docking |
 | Release packaging | Isolated assembly smoke; desktop E2E startup, exit and restart | UI-driven settings edits and import-triggered restart |
 | Window grouping | GroupLifecycle plus desktop E2E drag/focus on foreign helper HWNDs | Third-party application scenarios, drag-out and cancellation |
+| Split view | SplitView pure model: geometry, commands, parking, placement plans; GroupOperations native pair placement | Drag transactions, native resize reconciliation, third-party applications |
 | Frequent tab switching | Desktop E2E clicks, numeric and next/previous shortcuts, maximized/closed tabs; deterministic stale-focus and Ctrl snapshot checks | Mixed-monitor switching, minimize/restore, prolonged soak |
 | Long-running desktop | Short resource-cycle tests | Multi-hour soak, sleep/resume, Explorer restart |
 

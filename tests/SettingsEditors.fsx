@@ -372,11 +372,13 @@ let main() =
             lock grouping (fun () -> (if enabled then grouping.Add path else grouping.Remove path) |> ignore)
         member _.tabAppearanceInfo = ThemeService.currentAppearance()
         member _.setHotKey key value = (if value<>rejected then hotKeys.[key] <- value); value<>rejected
-        member _.getHotKey key = hotKeys.[key]
+        // Shortcuts the test never set, such as the unbound split-view keys, read as none.
+        member _.getHotKey key = match hotKeys.TryGetValue key with | true,value -> value | _ -> 0
         member _.newTab _ = ()
         member _.suspendTabMonitoring() = ()
         member _.resumeTabMonitoring() = ()
-        member _.llMouse = mouse.Publish})
+        member _.llMouse = mouse.Publish
+        member _.paneCandidates() = []})
     let command (control:Control) (keys:Keys) =
         let mutable msg = Message()
         let processKey = control.GetType().GetMethod("ProcessCmdKey",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
@@ -1104,10 +1106,22 @@ otepad.exe"]},
             typeof<SettingsTreeList>.GetMethod("OnMouseMove",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public).Invoke(tree,[|box mouse|]) |> ignore
             typeof<SettingsTreeList>.GetField("tooltipText",BindingFlags.Instance ||| BindingFlags.NonPublic).GetValue(tree) :?> string
         assertTrue ([0..4..tree.Width-1] |> List.exists(fun x -> tipAt x=longTitle)) "A chip cut short did not show its whole text on hover"
-        // Its icon says what the row is and lights up on hover, as the row buttons do.
-        let iconHovered = [0..2..Dpi.scale 80] |> List.exists(fun x -> tipAt x=tr Strings.AppRules.handMadeGroups)
-        let lit = typeof<SettingsTreeList>.GetField("hoveredIcon",BindingFlags.Instance ||| BindingFlags.NonPublic).GetValue(tree)
-        assertTrue (iconHovered && obj.ReferenceEquals(lit,handMadeRow)) "A dragged group's icon did not say what it is or light up on hover"
+        // Its icon says what the row is on hover and stays as it is: it cannot be pressed, so it
+        // does not light up as the row buttons do.
+        let iconX = [0..2..Dpi.scale 80] |> List.tryFind(fun x -> tipAt x=tr Strings.AppRules.handMadeGroups)
+        assertTrue iconX.IsSome "A dragged group's icon did not say what it is"
+        do
+            let snapshot x =
+                tipAt x |> ignore
+                let image = new Bitmap(tree.Width,tree.Height)
+                tree.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                image
+            use away = snapshot 1
+            use over = snapshot iconX.Value
+            let unchanged =
+                [max 0 (rowY-Dpi.scale 10)..min (tree.Height-1) (rowY+Dpi.scale 10)] |> List.forall(fun y ->
+                    [0..min (tree.Width-1) (iconX.Value+Dpi.scale 20)] |> List.forall(fun x -> away.GetPixel(x,y)=over.GetPixel(x,y)))
+            assertTrue unchanged "A dragged group's icon lit up on hover, as if it could be pressed"
         // With no name, its chips start where the names of the other rows start.
         do
             let layout = typeof<SettingsTreeList>.GetMethod("chipLayout",BindingFlags.Instance ||| BindingFlags.NonPublic)
@@ -1116,6 +1130,14 @@ otepad.exe"]},
             let _,named = name.Invoke(tree,[|box tree.Roots.[0];box 0;box 0|]) :?> (Rectangle * Rectangle)
             let _,first,_ = laid.Head
             assertTrue (first.X=named.X) (sprintf "A dragged group's chips start at %d, names at %d" first.X named.X)
+            // Three to a line, one width, filling it, however short their titles.
+            handMadeRow.Chips <- [for i in 1..6 -> { Text=string i; Icon=null; Removable=false }]
+            let _,laid,_,lines = layout.Invoke(tree,[|box handMadeRow;box 0;box 0|]) :?> (Rectangle * (int * Rectangle * Rectangle option) list * Rectangle option * int)
+            let boxes = laid |> List.map(fun (_,box,_) -> box)
+            let widths = boxes |> List.map(fun box -> box.Width) |> List.distinct
+            assertTrue (lines=2 && widths.Length=1 && boxes.[2].Y=boxes.[0].Y && boxes.[3].Y>boxes.[0].Y && boxes.[3].X=boxes.[0].X
+                        && named.Right-boxes.[2].Right < Dpi.scale 6+3)
+                       (sprintf "A dragged group's chips are not three to a line filling it: %A, names end at %d" boxes named.Right)
         tipAt 1 |> ignore
         handMadeRow.Chips <- kept
         tree.Rebuild()

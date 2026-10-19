@@ -5,6 +5,17 @@ open System.Windows.Forms
 open System.Diagnostics
 open Bemo.Win32.Forms
 
+type private LayoutPreview() =
+    inherit Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Opacity=0.35)
+    override _.ShowWithoutActivation = true
+    override _.CreateParams =
+        let cp = base.CreateParams
+        cp.ExStyle <- cp.ExStyle ||| 0x08000000 ||| 0x80 ||| 0x20
+        cp
+    override this.OnPaint(e) =
+        base.OnPaint(e)
+        if this.Text<>"" then TextRenderer.DrawText(e.Graphics,this.Text,this.Font,this.ClientRectangle,(SettingsColors.current()).text,TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.WordBreak)
+
 type TabStripDecorator(group:WindowGroup) as this =
     let os = OS()
     let Cell = CellScope(false, true)
@@ -17,6 +28,13 @@ type TabStripDecorator(group:WindowGroup) as this =
     let mouseEvent = Event<_>()
     let _ts = TabStrip(this :> ITabStripMonitor)
     let mutable contextMenu : ThemedContextMenu option = None
+    let mutable layoutPreview : LayoutPreview option = None
+    /// The pane the pointer is over during a drag, as the last preview found it.
+    let mutable layoutDrop : (SplitAxis * Side) option = None
+    /// The tab on top when a drag began here, its tab and where in the strip it sat.
+    let mutable dragPartner = IntPtr.Zero
+    let mutable dragSource : IntPtr option = None
+    let mutable dragStartIndex : int option = None
 
     do this.init()
 
@@ -27,9 +45,20 @@ type TabStripDecorator(group:WindowGroup) as this =
         group.init(this.ts)
 
         Services.dragDrop.registerTarget(this.ts.hwnd, this:>IDragDropTarget)
-    
+        // The group's windows, and the helper windows the strip owns, are its drop surface.
+        Services.dragDrop.registerLayoutTarget(this.ts.hwnd, this:>ILayoutDropTarget)
+        group.windows.items.iter(fun hwnd -> Services.dragDrop.registerLayoutTarget(hwnd, this:>ILayoutDropTarget))
+        group.added.Add(fun hwnd -> Services.dragDrop.registerLayoutTarget(hwnd, this:>ILayoutDropTarget))
+        group.removed.Add(fun hwnd -> Services.dragDrop.unregisterLayoutTarget hwnd)
+        // The empty pane is owned by nothing, so it is found by its own window.
+        group.emptyPaneChanged.Add(fun (previous,current) ->
+            if previous<>IntPtr.Zero then Services.dragDrop.unregisterLayoutTarget previous
+            if current<>IntPtr.Zero then Services.dragDrop.registerLayoutTarget(current, this:>ILayoutDropTarget))
+
         dropTarget.set(Some(new OleDropTarget(this.ts)))
         this.ts.destroying.Add(fun () ->
+            layoutPreview |> Option.iter(fun window -> window.Dispose())
+            layoutPreview <- None
             dropTarget.value.iter(fun target -> (target :> IDisposable).Dispose())
             dropTarget.set(None))
         
@@ -98,6 +127,9 @@ type TabStripDecorator(group:WindowGroup) as this =
             widthSubscription.Dispose()
             geometrySubscription.Dispose()
             Services.dragDrop.unregisterTarget(this.ts.hwnd)
+            Services.dragDrop.unregisterLayoutTarget(this.ts.hwnd)
+            group.windows.items.iter Services.dragDrop.unregisterLayoutTarget
+            if group.emptyPaneHwnd<>IntPtr.Zero then Services.dragDrop.unregisterLayoutTarget group.emptyPaneHwnd
     
 
     member private this.tabSlide =
@@ -115,6 +147,8 @@ type TabStripDecorator(group:WindowGroup) as this =
         else
             this.ts.setPlacement(this.placement)
             this.ts.visible <- true
+        // An empty pane keeps clear of tabs shown inside the title bars, wherever they now are.
+        group.refreshSplitChrome()
 
     member private this.invokeAsync f = group.invokeAsync f
     member private this.invokeSync f = group.invokeSync f
@@ -238,6 +272,19 @@ type TabStripDecorator(group:WindowGroup) as this =
         this.sortedTabs() |> List.iteri(fun index hwnd ->
             if group.lorder.list.[index]<>hwnd then this.ts.moveTab(Tab(hwnd),index))
 
+    /// The split's menu, from the button between its two tabs.
+    member private this.showSplitMenu(ptScreen:Pt) =
+        let items = SplitMenu.items group.layout (fun command -> group.execute command)
+        if items.count>0 then
+            contextMenu |> Option.iter(fun menu -> menu.Dispose())
+            group.bb.write("contextMenuVisible", true)
+            let menuClosed () =
+                this.ts.refreshHover()
+                group.bb.write("contextMenuVisible", false)
+            let menu = new ThemedContextMenu(items,menuClosed,group.windows.contains)
+            contextMenu <- Some menu
+            menu.Show(this.ts.hwnd,ptScreen.x,ptScreen.y)
+
     member private this.contextMenu(hwnd,images:ResizeArray<Img>) =
         let checkedFlag(isChecked) = if isChecked then List2([MenuFlags.MF_CHECKED]) else List2()
         let grayed(isGrayed) = if isGrayed then List2([MenuFlags.MF_GRAYED]) else List2()
@@ -316,6 +363,27 @@ type TabStripDecorator(group:WindowGroup) as this =
                 click = fun() -> this.sortTabs()
                 flags = grayed(this.sortedTabs() = group.lorder.list)
             })
+
+        // The clicked tab leads an empty pane; splitting with it pairs it with the tab on top.
+        let splitCommand text enabled command current =
+            CmiRegular({text=tr text;image=None;flags=grayed(not enabled);click=fun () -> group.execute(command,current=current)})
+        let split = group.splitLayout
+        let canSplit = split.IsSome || (group.windows.count>1 && hwnd<>group.topWindow)
+        let top = group.topWindow
+        let splitMenu = CmiPopUp({text=tr Strings.TabMenu.split;image=None;items=List2([
+            splitCommand Strings.TabMenu.splitEmptyRight split.IsNone (NewEmptyPane SideBySide) hwnd
+            splitCommand Strings.TabMenu.splitEmptyBelow split.IsNone (NewEmptyPane Stacked) hwnd
+            CmiSeparator
+            splitCommand Strings.TabMenu.splitHorizontal canSplit (SplitWith(hwnd,SideBySide)) top
+            splitCommand Strings.TabMenu.splitVertical canSplit (SplitWith(hwnd,Stacked)) top
+            CmiSeparator
+            splitCommand Strings.TabMenu.splitSwap split.IsSome Swap top
+            splitCommand Strings.TabMenu.splitEqual split.IsSome Equalize top
+            splitCommand Strings.TabMenu.splitLess split.IsSome (AdjustRatio(-SplitMetrics.ratioStep)) top
+            splitCommand Strings.TabMenu.splitMore split.IsSome (AdjustRatio SplitMetrics.ratioStep) top
+            splitCommand Strings.TabMenu.splitFill split.IsSome ToggleFill top
+            splitCommand Strings.TabMenu.splitMerge split.IsSome (EndSplit(Some hwnd)) top
+        ])})
 
         let combineIconsInTaskbar =
             CmiRegular({
@@ -467,6 +535,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(renameTabItem)
             (if group.isRenamed(hwnd) then Some(restoreTabNameItem) else None)
             Some(colorMenu)
+            Some(splitMenu)
             Some(CmiSeparator)
             Some(positionItem)
             Some(alignmentItem)
@@ -568,10 +637,14 @@ type TabStripDecorator(group:WindowGroup) as this =
                 this.ts.isShrunk <- false
 
     interface ITabStripMonitor with
-        member x.tabClick((btn, tab, part, action, pt)) = 
+        member x.tabClick((btn, tab, part, action, pt)) =
             let (Tab(hwnd)) = tab
-            mouseEvent.Trigger(hwnd, btn, action, pt)
             let ptScreen = os.windowFromHwnd(this.ts.hwnd).ptToScreen(pt)
+            // The button between a split's tabs is not its tab: no activation, drag, rename or tab menu.
+            if part=TabSplit then
+                if action=MouseDown && (btn=MouseLeft || btn=MouseRight) then this.showSplitMenu(ptScreen)
+            else
+            mouseEvent.Trigger(hwnd, btn, action, pt)
             match action with
             | MouseDown ->
                 group.flashTab(tab, false)
@@ -579,13 +652,17 @@ type TabStripDecorator(group:WindowGroup) as this =
                 | MouseRight ->
                     os.windowFromHwnd(group.topWindow).setForeground(false)
                 | MouseLeft ->
+                    dragPartner <- group.topWindow
+                    dragSource <- Some hwnd
+                    dragStartIndex <- group.lorder.list |> List.tryFindIndex ((=) hwnd)
                     group.tabActivate(tab, false)
                     if part <> TabClose then
                         let dragOffset = pt.sub(this.ts.tabLocation tab)
-                        let dragImage = fun() -> this.ts.dragImage(tab)
+                        let shift = this.ts.dragTabShift(tab,os.windowFromHwnd(hwnd).visibleBounds.width)
+                        let dragImage = fun() -> this.ts.dragImage(tab,shift)
                         let _,sprite = this.ts.tabSprites.pick(fun (location,sprite) -> if sprite.id=tab then Some(location,sprite) else None)
-                        let dragInfo = box({ tab = tab; tabOffset = dragOffset; tabSize=sprite.size; tabInfo = this.ts.tabInfo(tab)})
-                        Services.dragDrop.beginDrag(this.ts.hwnd, dragImage, dragOffset, ptScreen, dragInfo)
+                        let dragInfo = box({ tab = tab; tabOffset = dragOffset; tabSize=sprite.size; tabInfo = this.ts.tabInfo(tab); tabShift = shift })
+                        Services.dragDrop.beginDrag(this.ts.hwnd, dragImage, dragOffset.add(Pt(shift,0)), ptScreen, dragInfo)
                 | MouseMiddle ->
                     group.tabActivate(tab, false)
             | _ -> ()
@@ -602,6 +679,83 @@ type TabStripDecorator(group:WindowGroup) as this =
         member x.windowMsg(msg) = 
             ()
             
+    /// Finds the pane a drag at this point would take and shows it.
+    member private this.previewLayout(data:obj,pt:Pt) =
+        let drag = unbox<TabDragInfo> data
+        let (Tab hwnd) = drag.tab
+        // A tab of this group, still in it or taken out by this drag, may split the group; a tab
+        // from elsewhere may too, or fill an empty pane, if it is on the same desktop.
+        let own = dragSource=Some hwnd || group.windows.contains hwnd
+        let gap = Dpi.scale SplitMetrics.gap
+        // Only refused when both desktops are known and differ; a window hidden for the drag may report none.
+        let sameDesktop() =
+            own ||
+            (match VirtualDesktop.groupingDesktopId hwnd,VirtualDesktop.groupingDesktopId group.topWindow with
+             | Some a,Some b -> a=b
+             | _ -> true)
+        let edge() =
+            group.bounds.value |> Option.bind(fun bounds ->
+                SplitGeometry.edgeDrop pt (Dpi.scale SplitMetrics.edgeZone) bounds group.splitLayout
+                |> Option.map(fun (axis,side) ->
+                    let shape = group.splitLayout |> Option.defaultValue {axis=axis;ratio=0.5;first=Occupied hwnd;second=Occupied hwnd;focused=First}
+                    (axis,side),SplitGeometry.paneRect side gap bounds shape))
+        let proposal =
+            if not(WinUserApi.IsWindow hwnd) then None
+            else
+                match group.emptyPaneAt(pt) with
+                | Some(axis,side,bounds) -> if sameDesktop() then Some((axis,side),bounds) else None
+                | None when group.windows.count>0 && sameDesktop() -> edge()
+                | None -> None
+        layoutDrop <- proposal |> Option.map fst
+        match proposal with
+        | Some(_,bounds) ->
+            if layoutPreview.IsNone then layoutPreview <- Some(new LayoutPreview())
+            let preview = layoutPreview.Value
+            preview.BackColor <- (SettingsColors.current()).accent
+            preview.Bounds <- bounds.Rectangle
+            if not preview.Visible then preview.Show({new IWin32Window with member _.Handle=this.ts.hwnd})
+            true
+        | None ->
+            layoutPreview |> Option.iter(fun window -> window.Hide())
+            false
+
+    member private this.resetLayoutDrop() =
+        layoutDrop <- None
+        layoutPreview |> Option.iter(fun window -> window.Hide())
+
+    interface ILayoutDropTarget with
+        member this.preview(data,pt) =
+            if not(WinUserApi.IsWindow(this.ts.hwnd)) then false
+            else this.invokeSync(fun () -> this.previewLayout(data,pt))
+
+        member this.clearPreview() =
+            if WinUserApi.IsWindow(this.ts.hwnd) then this.invokeSync(fun () -> this.resetLayoutDrop())
+
+        member this.commit(data,pt) =
+            if not(WinUserApi.IsWindow(this.ts.hwnd)) then false
+            else this.invokeSync(fun () ->
+                let drag = unbox<TabDragInfo> data
+                let (Tab hwnd) = drag.tab
+                let dropped =
+                    match layoutDrop with
+                    | Some(axis,side) when WinUserApi.IsWindow hwnd ->
+                        let own = dragSource=Some hwnd || group.windows.contains hwnd
+                        // The dragged tab went on top at mouse-down, so the tab shown before is its
+                        // partner; a tab from another group, or a pane's own tab that was already in
+                        // front, joins the tab shown now. The first other tab of the strip was taken
+                        // before: a tab behind, waiting pane-sized under a pane, whose rectangle the
+                        // group then took for its frame.
+                        let partner =
+                            if not own then group.topWindow
+                            elif dragPartner<>hwnd && group.windows.contains dragPartner then dragPartner
+                            elif group.topWindow<>hwnd && group.windows.contains group.topWindow then group.topWindow
+                            else group.lorder.list |> List.tryFind((<>) hwnd) |> Option.defaultValue hwnd
+                        group.dropTab(hwnd,axis,side,partner)
+                        true
+                    | _ -> false
+                this.resetLayoutDrop()
+                dropped)
+
     interface IDragDropTarget with
         member this.dragBegin() =
             this.invokeAsync <| fun() -> 
@@ -654,14 +808,31 @@ type TabStripDecorator(group:WindowGroup) as this =
                 | None -> ()
                 this.updateTsSlide()
 
+        /// The tab comes back to where the drag took it from; a tab that left is a member again.
+        member this.dragCancel(data) =
+            this.invokeSync <| fun() ->
+                let drag = unbox<TabDragInfo> data
+                let (Tab hwnd) = drag.tab
+                dragInfoCell.set(None)
+                this.ts.dragScrollPoint <- None
+                if WinUserApi.IsWindow hwnd then
+                    if not(group.windows.contains hwnd) then group.addWindow(hwnd,false)
+                    dragStartIndex |> Option.iter(fun index -> this.ts.moveTab(drag.tab,index))
+                    group.tabActivate(drag.tab,false)
+                joinedByDrag <- false
+                this.updateTsSlide()
+
         member this.dragEnd() =
             this.invokeAsync <| fun() ->
+                dragSource <- None
+                dragStartIndex <- None
                 this.ts.dragScrollPoint <- None
                 isDraggingCell.value <- false
                 this.ts.transparent <- true
                 match this.ts.movedTab with
                 | Some(tab, index) ->
                     this.ts.moveTab(tab, index)
+                    group.onTabsReordered()
                 | None -> ()
                 if joinedByDrag && dragInfoCell.value.IsSome then group.isManual <- true
                 joinedByDrag <- false

@@ -95,6 +95,16 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         ("closeTab", fun () ->
             let hwnd = WinUserApi.GetForegroundWindow()
             if this.isInGroup hwnd then os.windowFromHwnd(hwnd).close())
+        ("splitSideBySide", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.splitWithNext SideBySide))
+        ("splitStacked", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.splitWithNext Stacked))
+        ("splitEmptyRight", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(NewEmptyPane SideBySide)))
+        ("splitEmptyBelow", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(NewEmptyPane Stacked)))
+        ("splitFocusOther", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit FocusOther))
+        ("splitSwap", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit Swap))
+        ("splitGrow", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(AdjustRatio SplitMetrics.ratioStep)))
+        ("splitShrink", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(AdjustRatio(-SplitMetrics.ratioStep))))
+        ("splitEqualize", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit Equalize))
+        ("splitEnd", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(EndSplit None)))
         ]))
         
     let hotKeyManager = lifetime.Own(new HotKeyManager())
@@ -746,6 +756,13 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
         member x.llMouse = llMouseEvent.Publish
 
+        member x.paneCandidates() =
+            let nameOverride hwnd = windowNameOverride.tryFind(hwnd).bind(id)
+            let groups = this.desktop.groups.list |> List.map(fun group -> group.windows.list)
+            TabSearch.tabs nameOverride (WinUserApi.GetForegroundWindow()) groups
+            |> List.filter(fun entry -> entry.desktop="")
+            |> List.map(fun entry -> entry.hwnd,entry.title,entry.program)
+
     interface IDesktopNotification with
         member x.dragDrop(hwnd) =
             isDroppedAndAwaitingGrouping.map <| fun s -> s.add hwnd
@@ -759,6 +776,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         Services.register(DispatchedProgram(this, dispatcher) :> IProgram)
         Services.register(DispatchedFilterService(FilterService(), dispatcher) :> IFilterService)
         Services.register(DispatchedManagerView(ManagerViewService(), dispatcher) :> IManagerView)
+        // Not dispatched: it builds its drop-down on the group thread that opens it.
+        Services.register(SplitPanePicker() :> ISplitPanePicker)
         SettingsAlert.install()
         plugins.iter(fun plugin ->
             match plugin with

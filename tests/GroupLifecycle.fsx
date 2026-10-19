@@ -85,7 +85,8 @@ let main() =
             member _.newTab _ = ()
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
-            member _.llMouse = mouse.Publish})
+            member _.llMouse = mouse.Publish
+            member _.paneCandidates() = []})
         let desktop = Desktop({new IDesktopNotification with
                                 member _.dragDrop _ = ()
                                 member _.dragEnd() = ()}, api, InvokerService.invoker :> IDispatcher,
@@ -592,6 +593,23 @@ let main() =
             pumpUntil "A reordered follower swallowed move-end and left the strip hidden" (fun () ->
                 onGroup combined (fun group -> group.ts.visible))
             check (nativeOrder combined = tabsBeforeMove) "Moving a combined group changed its tab positions"
+            // Activating a window raises every window of the group's taskbar window, each just above
+            // its preview, in the previews' order. The group stacks its windows without their owners;
+            // previews left behind brought an old order back at the next activation, a tab behind
+            // a split over a pane.
+            for hwnd in [a;b;d] do WinUserApi.ShowWindow(hwnd,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
+            let stacked = onGroup combined (fun group -> group.zorder.value.list) |> List.rev
+            OS().windowFromHwnd(stacked.Head).insertAfter(WindowHandleTypes.HWND_TOP)
+            for above,hwnd in List.pairwise stacked do OS().windowFromHwnd(hwnd).insertAfter(above)
+            onGroup combined (fun group -> group.main(stacked.Head,WinEvent.EVENT_OBJECT_REORDER))
+            pumpUntil "A preview stayed where its window was before it was stacked" (fun () ->
+                [a;b;d] |> List.forall(fun hwnd -> WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_HWNDNEXT)=owner hwnd))
+            let raised = stacked.[1]
+            WinUserApi.SetWindowPos(raised,WindowHandleTypes.HWND_TOP,0,0,0,0,
+                SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore
+            let rank hwnd = OS().windowFromHwnd(hwnd).zorder
+            check (rank raised < rank stacked.[0] && rank stacked.[0] < rank stacked.[2])
+                  (sprintf "Raising a tab reordered the others: %A" ([a;b;d] |> List.sortBy rank))
             // Exercise the group hooks as well as the worker: no mouse move events
             // or later tab click are available to repair keyboard snapping.
             let keyboardSource = OS().windowFromHwnd(a)
@@ -900,7 +918,7 @@ let main() =
                     group.ts.setPlacement({bounds=Rect(Pt(-20000,-20000),size);showInside=false})
                     let tab = Tab b
                     let _,sprite = group.ts.tabSprites.pick(fun (location,sprite) -> if sprite.id=tab then Some(location,sprite) else None)
-                    let data = {tab=tab;tabSize=sprite.size;tabOffset=Pt(sprite.size.width/2,sprite.size.height/2);tabInfo=group.ts.tabInfo tab}
+                    let data = {tab=tab;tabSize=sprite.size;tabOffset=Pt(sprite.size.width/2,sprite.size.height/2);tabInfo=group.ts.tabInfo tab;tabShift=0}
                     let proportional = {data with tabSize=Sz(200,32);tabOffset=Pt(100,16)}
                     check (proportional.offsetIn(Sz(300,48))=Pt(150,24)) "Cross-DPI drag lost its grabbed point"
                     check (proportional.offsetIn(Sz(120,64))=Pt(60,32)) "Cross-orientation drag lost its grabbed point"

@@ -49,6 +49,17 @@ module SettingsCatalog =
         { id="new-tab"; page=HotKeySettings; text=Strings.Settings.newTab; binding=Shortcut("newTab",1614) }
         // Ctrl+Alt+W beside New tab's Ctrl+Alt+N; Ctrl+W alone belongs to the apps.
         { id="close-tab"; page=HotKeySettings; text=Strings.Settings.closeTab; binding=Shortcut("closeTab",1623) }
+        // Split view keys ship unbound: nothing global is taken until the user picks a key.
+        { id="split-side-by-side"; page=HotKeySettings; text=Strings.Settings.splitSideBySide; binding=Shortcut("splitSideBySide",0) }
+        { id="split-stacked"; page=HotKeySettings; text=Strings.Settings.splitStacked; binding=Shortcut("splitStacked",0) }
+        { id="split-empty-right"; page=HotKeySettings; text=Strings.Settings.splitEmptyRight; binding=Shortcut("splitEmptyRight",0) }
+        { id="split-empty-below"; page=HotKeySettings; text=Strings.Settings.splitEmptyBelow; binding=Shortcut("splitEmptyBelow",0) }
+        { id="split-focus-other"; page=HotKeySettings; text=Strings.Settings.splitFocusOther; binding=Shortcut("splitFocusOther",0) }
+        { id="split-swap"; page=HotKeySettings; text=Strings.Settings.splitSwap; binding=Shortcut("splitSwap",0) }
+        { id="split-grow"; page=HotKeySettings; text=Strings.Settings.splitGrow; binding=Shortcut("splitGrow",0) }
+        { id="split-shrink"; page=HotKeySettings; text=Strings.Settings.splitShrink; binding=Shortcut("splitShrink",0) }
+        { id="split-equalize"; page=HotKeySettings; text=Strings.Settings.splitEqualize; binding=Shortcut("splitEqualize",0) }
+        { id="split-end"; page=HotKeySettings; text=Strings.Settings.splitEnd; binding=Shortcut("splitEnd",0) }
         { id="switch-tabs-by-number"; page=HotKeySettings; text=Strings.Settings.switchTabsByNumber; binding=Toggle("enableCtrlNumberHotKey",true,true) }
         { id="number-shortcut"; page=HotKeySettings; text=Strings.Settings.numberShortcut; binding=Choice("numberHotKeyModifier",["Ctrl";"Alt"],"Ctrl") }
         { id="enable-number-leader"; page=HotKeySettings; text=Strings.Settings.enableNumberLeader; binding=Toggle("enableNumberLeader",false,false) }

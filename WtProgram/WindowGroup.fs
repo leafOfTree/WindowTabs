@@ -197,6 +197,42 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// Bounds to restore windows to, their placement, and the visible frame the tabs sit on.
     let placement = Cell.create(None:Option<Rect * OSWindowPlacement * Rect>)
     let placementOwner = obj()
+    let mutable groupLayout : GroupLayout = GroupLayout.Single
+    /// The frame before the split filled the work area, for the toggle back.
+    let mutable splitRestore : Rect option = None
+    /// A pane window moved or sized natively: the window, its frame and the group's at the start.
+    let mutable splitMove : (IntPtr * Rect * Rect) option = None
+    let mutable splitPending = false
+    let mutable splitDeadline = 0L
+    /// Collapsing to one window: the top window's bounds are not the frame until placement ends.
+    let mutable splitMerging = false
+    let splitSettleTimer = new System.Windows.Forms.Timer(Interval=100)
+    /// Looks, while split, for a pane raised over the tabs with no notice to the group.
+    let splitGuardTimer = new System.Windows.Forms.Timer(Interval=200)
+    let mutable splitDivider : SplitDivider option = None
+    let mutable emptySplitPane : EmptySplitPane option = None
+    /// The empty pane's handle, read by the desktop thread to recognize a native drop on it.
+    let mutable emptyPaneHandle = IntPtr.Zero
+    let mutable dividerHandle = IntPtr.Zero
+    /// What the chrome's thread was last told to show, for this thread to act on.
+    let mutable emptyPaneShown = false
+    let mutable dividerShown = false
+    /// The divider's and empty pane's own thread, made with the first split.
+    let mutable chromeInvoker : Invoker option = None
+    /// A new empty pane is opening out over the window, which takes its half once it has.
+    let mutable emptyReveal = false
+    /// The window the tabs behind were last placed under.
+    let mutable splitHost = IntPtr.Zero
+    let revealMs = 230
+    /// The empty pane's edges being dragged: its side, its bounds and the group's frame at the start.
+    let mutable emptyPaneResize : (Side * Rect * Rect) option = None
+    /// The latest size of that drag, waiting for the next turn.
+    let mutable pendingPaneBounds : Rect option = None
+    /// A pane, the empty pane or the divider is being dragged: only the panes follow, live.
+    let mutable liveResize = false
+    let layoutChangedEvent = Event<unit>()
+    /// The empty pane's window, before and after: a drop surface of its own, owned by nothing.
+    let emptyPaneChangedEvent = Event<IntPtr * IntPtr>()
     let windowsCell = Cell.create(Set2())
     let _ts = ref None 
     let inMoveSize = Cell.create(false)
@@ -293,16 +329,38 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     this.saveZorder()
                     if not this.isEmpty then this.saveTopWindowPlacement()
                     this.updateIsVisible()
-                    this.foreground <- this.os.foreground.hwnd)
+                    this.foreground <- this.os.foreground.hwnd
+                    this.checkRestoredOrder(order))
+                if this.isSplit && not(this.windows.items.all isMinimized) then this.applyLayout()
                 if not this.isEmpty then this.setTsParent(this.topWindow)
             if reconcilePlacementState && FollowerPlacement.queue.isIdle(placementOwner) then
                 reconcilePlacementState <- false
+                splitMerging <- false
                 this.withUpdate(fun () -> this.updateIsVisible())
                 if not this.isEmpty then this.setTsParent(this.topWindow)
+            if splitPending && FollowerPlacement.queue.isIdle(placementOwner) then this.checkSplitSettled()
             if pendingMinimizeStates.Count=0 then minimizeStateTimer.Stop()
+
+    /// A tab can finish restoring after the order was put back, and Windows raises it as it does,
+    /// over another tab behind. Once that has had the time, the order is put back again, unless
+    /// another tab has come to the front meanwhile.
+    member private this.checkRestoredOrder(order:List2<IntPtr>) =
+        let timer = new System.Windows.Forms.Timer(Interval=250)
+        timer.Tick.Add(fun _ ->
+            timer.Stop()
+            timer.Dispose()
+            if not isDestroyed.value && not reconcileMinimizeState && not this.isSplit then
+                let wanted = order.where(fun hwnd -> this.windows.contains hwnd && WinUserApi.IsWindow hwnd && not(isMinimized hwnd))
+                let actual : List2<IntPtr> = this.inZorder(wanted)
+                if wanted.list.Length>1 && wanted.tryHead=zorderCell.value.tryHead && actual.list<>wanted.list then
+                    this.os.setZorder(wanted)
+                    this.withUpdate(fun () -> this.saveZorder()))
+        timer.Start()
 
     member this.init(ts:TabStrip) =
         _ts := Some(ts)
+        splitSettleTimer.Tick.Add(fun _ -> this.checkSplitSettled())
+        splitGuardTimer.Tick.Add(fun _ -> this.guardSplitStrip())
         placementCompletion <- Some(FollowerPlacement.queue.Idle.Subscribe(fun owner ->
             if obj.ReferenceEquals(owner,placementOwner) then
                 invoker.asyncInvoke(fun () -> this.finishPlacementReconciliation())))
@@ -348,6 +406,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     if next <> appearanceSnapshot then
                         appearanceSnapshot <- next
                         this.ts.setTabAppearance(next)
+                        this.updateSplitChrome()
                         if geometryChanged then geometryChangedEvent.Trigger()))
 
         Cell.listen <| fun() ->
@@ -376,6 +435,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         with get() = foregroundCell.value
         and set(value) =
             let value = TabNavigation.currentForeground this.lorder.list value this.os.foreground.hwnd
+            if this.windows.contains(value) && not(isMinimized value) && not reconcileMinimizeState then this.onActivated(value)
             let active = TabNavigation.rememberActive this.lorder.list isOpen lastActiveTab value
             // Minimizing the active tab activates another tab that the group minimizes next.
             let active =
@@ -444,9 +504,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             this.isEmpty.not &&
             zorderCell.value.where(isMinimized >> not).tryHead.exists(fun hwnd -> not(WindowCloaking.IsCloaked hwnd)) &&
             inMoveSize.value.not
-            
-    member private this.updatePlacements() =
-        zorderCell.value.tail.iter(this.adjustWindowPlacement)
+        this.updateSplitChrome()
+
+    member private this.updatePlacements() = this.applyLayout()
 
     member private this.adjustChildWindows = fun() ->
         this.updatePlacements()
@@ -468,8 +528,15 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         windows.sortBy(fun hwnd -> order.tryFind(hwnd).def(9999))
 
     member private this.setZorder(newZorder:List2<_>) =
+        // In a split the pane in focus leads: its tab shows as the one in front and the strip
+        // belongs to it. Read from the stacking alone, a background tab or the other pane could
+        // lead, and the focused app then covered the tabs as it raised itself.
+        let newZorder =
+            match groupLayout with
+            | Split s -> match this.paneFront s with Some front -> newZorder.where((<>) front).prepend front | None -> newZorder
+            | _ -> newZorder
         if zorderCell.value.list <> newZorder.list then
-            if newZorder.tryHead<>zorderCell.value.tryHead then
+            if not this.isSplit && newZorder.tryHead<>zorderCell.value.tryHead then
                 newZorder.tryHead.iter(fun hwnd ->
                     FollowerPlacement.queue.cancel(placementOwner,hwnd,whenValue=(fun (_,request) ->
                         match request with SetMinimized _ -> false | _ -> true)))
@@ -526,6 +593,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         {
             text = this.tabName hwnd
             isRenamed = this.isRenamed hwnd
+            splitSide = SplitView.badge hwnd groupLayout
             iconSmall = small
             iconBig = big
             preview = fun() ->
@@ -601,7 +669,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if isNew then this.refreshTabColor(hwnd)
         let info = this.getTabInfo(hwnd)
         let previous = this.ts.tabInfo(Tab(hwnd))
-        if isNew || info.text <> previous.text || info.isRenamed <> previous.isRenamed ||
+        if isNew || info.text <> previous.text || info.isRenamed <> previous.isRenamed || info.splitSide <> previous.splitSide ||
            not(obj.ReferenceEquals(info.iconSmall,previous.iconSmall)) ||
            not(obj.ReferenceEquals(info.iconBig,previous.iconBig)) then
             this.ts.setTabInfo(Tab(hwnd),info)
@@ -634,7 +702,55 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if parentHwnd<>IntPtr.Zero && not parent.isMinimized then
             let previous = parent.prevZorder
             if previous.hwnd<>strip.hwnd then strip.insertAfter(previous)
+        this.keepPanesBelowStrip(parentHwnd)
         this.ts.refreshShadow()
+
+    /// In a split the strip covers both panes but belongs to the focused one. The other pane,
+    /// raised by a click or by its own app, is put back just below the focused pane. Kept just
+    /// below the strip, over the focused pane, it led the group's order. Only stacking, and only
+    /// for a pane with no placement pending, so no move is replaced.
+    member private this.keepPanesBelowStrip(owner) =
+        match groupLayout with
+        | Split s when not liveResize && not inMoveSize.value ->
+            let front = this.paneFront s |> Option.defaultValue owner
+            for hwnd in SplitView.windows s do
+                if hwnd<>front && not(isMinimized hwnd) && FollowerPlacement.queue.isWindowIdle(placementOwner,hwnd) && this.isAbove(hwnd,front) then
+                    FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.stackBelowRequest hwnd front)
+            // The divider and the empty pane, owned by nothing, are put back under the strip too.
+            this.updateSplitChrome()
+        | _ -> ()
+
+    /// The pane window in focus, which the strip belongs to and the other pane waits under.
+    member private this.paneFront(s:SplitLayout) =
+        SplitView.focusedWindow s |> Option.filter(fun hwnd -> this.windows.contains hwnd && not(isMinimized hwnd))
+
+    /// Whether a window is somewhere above another in the z-order, a few dozen windows up at most.
+    member private this.isAbove(hwnd:IntPtr, reference:IntPtr) =
+        let rec walk (current:IntPtr) steps =
+            if current=IntPtr.Zero || steps=0 then false
+            elif current=hwnd then true
+            else walk (WinUserApi.GetWindow(current,GetWindowConstants.GW_HWNDPREV)) (steps-1)
+        walk (WinUserApi.GetWindow(reference,GetWindowConstants.GW_HWNDPREV)) 64
+
+    /// The tabs stay over both panes. A pane raised over them with no notice to the group, by its
+    /// own app or with the taskbar window it belongs to, came with no foreground change: the
+    /// tabs stayed under it, cut short or hidden, until the next click. The order is read again
+    /// and the tabs go back over the window in front.
+    member private this.guardSplitStrip() =
+        match groupLayout with
+        | Split s when not isDestroyed.value ->
+            let covered() =
+                isVisibleCell.value &&
+                SplitView.windows s |> List.exists(fun hwnd -> not(isMinimized hwnd) && this.isAbove(hwnd,this.ts.hwnd))
+            if not liveResize && not inMoveSize.value && not reconcileMinimizeState && covered() then
+                this.withUpdate(fun () ->
+                    this.saveZorder()
+                    if covered() && not this.isEmpty then this.setTsParent(this.topWindow))
+        | _ -> splitGuardTimer.Stop()
+
+    /// What the panes go just below: the divider, which lies over their edges, or else the strip.
+    member private this.paneAnchor =
+        if dividerShown then System.Threading.Volatile.Read(&dividerHandle) else this.ts.hwnd
         
     member this.isIconOnly 
         with get() = this.ts.isIconOnly
@@ -672,6 +788,506 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.placementBounds : Rect = placement.value.map(fun(bounds,_,_) -> bounds).def(Rect())
 
+    member _.layout = groupLayout
+    member this.splitLayout = match groupLayout with Split s -> Some s | _ -> None
+    member _.layoutChanged = layoutChangedEvent.Publish
+    member _.isSplitFilled = splitRestore.IsSome
+    member private this.isSplit = match groupLayout with Split _ -> true | _ -> false
+    member private this.splitGap = Dpi.scale SplitMetrics.gap
+    /// The whole group's frame: what the panes divide and what one tab fills.
+    member this.layoutFrame : Rect = placement.value |> Option.map(fun (_,_,visible) -> visible) |> Option.defaultValue this.placementBounds
+
+    member private this.setFrame(frame:Rect) =
+        let wp =
+            match placement.value with
+            | Some(_,wp,_) -> wp
+            | None -> this.os.windowFromHwnd(this.topWindow).placement
+        placement.set(Some(frame,{wp with showCmd=ShowWindowCommands.SW_SHOWNORMAL},frame))
+
+    /// The empty pane under a point, while it is shown.
+    member this.emptyPaneAt(pt:Pt) =
+        match groupLayout with
+        | Split s when emptyPaneShown ->
+            [First;Second] |> List.tryPick(fun side ->
+                let rect = SplitGeometry.paneRect side this.splitGap this.layoutFrame s
+                if SplitView.pane side s=Empty && rect.containsPoint pt then Some(s.axis,side,rect) else None)
+        | _ -> None
+
+    /// The divider and the empty pane run on a thread of their own, owned by nothing. The strip,
+    /// owned by an app window, ties this thread's input to that app's: dragged from here they
+    /// waited at every step for the app, busy resizing, and trailed the pointer by its paint.
+    /// Calls go there posted; their actions come back here posted too, so neither thread waits.
+    member private this.chrome =
+        match chromeInvoker with
+        | Some invoker -> invoker
+        | None ->
+            let invoker = ThreadHelper.startOnThreadAndWait(fun () -> InvokerService.invoker)
+            chromeInvoker <- Some invoker
+            invoker
+
+    /// The DPI is kept per thread: the chrome's takes the group's, monitor and all, with each call.
+    member private this.onChrome(action:unit -> unit) =
+        let dpi = Dpi.value()
+        this.chrome.asyncInvoke(fun () ->
+            Dpi.set dpi
+            action())
+
+    /// Back on the group's thread, inside an update, unless the group is gone.
+    member private this.fromChrome(action:unit -> unit) =
+        this.invokeAsync(fun () -> if not isDestroyed.value then action())
+
+    member private this.updateSplitChrome() =
+        match groupLayout with
+        | Split s ->
+            splitGuardTimer.Start()
+            if splitDivider.IsNone then
+                let execute command = this.fromChrome(fun () -> this.execute command)
+                let live active = this.fromChrome(fun () -> if active then this.beginLive() else this.endLive())
+                let dpi = Dpi.value()
+                let divider = this.chrome.invoke(fun () ->
+                    Dpi.set dpi
+                    let divider = new SplitDivider(execute,live)
+                    divider.initialize()
+                    divider.Handle |> ignore
+                    divider)
+                System.Threading.Volatile.Write(&dividerHandle,divider.Handle)
+                splitDivider <- Some divider
+            let visible =
+                SplitView.windows s |> List.forall(fun hwnd -> this.windows.contains hwnd && not(isMinimized hwnd || WindowCloaking.IsCloaked hwnd)) &&
+                not inMoveSize.value
+            // No divider over the window while an empty pane is still opening out beside it.
+            let dividerVisible = visible && not emptyReveal
+            dividerShown <- dividerVisible
+            let divider = splitDivider.Value
+            let strip,gap,frame = this.ts.hwnd,this.splitGap,this.layoutFrame
+            this.onChrome(fun () -> if not divider.IsDisposed then divider.update(s,gap,frame,strip,dividerVisible))
+            match [First;Second] |> List.tryFind(fun side -> SplitView.pane side s=Empty) with
+            | Some side ->
+                if emptySplitPane.IsNone then
+                    let actions = {
+                        candidates = (fun () -> this.paneCandidates())
+                        choose = (fun hwnd -> this.fromChrome(fun () -> this.fillEmptyPane hwnd))
+                        close = (fun () -> this.fromChrome(fun () -> this.execute(EndSplit None)))
+                        resizeStarted = (fun () -> this.fromChrome(fun () -> this.beginEmptyPaneResize()))
+                        resized = (fun bounds -> this.fromChrome(fun () -> this.resizeEmptyPane bounds))
+                        resizeEnded = (fun () -> this.fromChrome(fun () -> this.endEmptyPaneResize())) }
+                    let dpi = Dpi.value()
+                    let pane = this.chrome.invoke(fun () ->
+                        Dpi.set dpi
+                        let pane = new EmptySplitPane(actions)
+                        pane.initialize()
+                        pane.Handle |> ignore
+                        pane)
+                    emptySplitPane <- Some pane
+                    this.setEmptyPaneHandle pane.Handle
+                // Below the strip and the divider, so tabs shown inside the title bars cover its
+                // top as they do a window's. Its own drag keeps it on screen while the move-size
+                // puts the rest away.
+                let rect = SplitGeometry.paneRect side gap frame s
+                let shown = visible || emptyPaneResize.IsSome
+                emptyPaneShown <- shown
+                let pane = emptySplitPane.Value
+                let below = if dividerVisible then divider.Handle else strip
+                // A sliver at the group's edge on its side, to open out from: from the right or the
+                // bottom for the second pane, the left or the top for the first.
+                let from =
+                    if not emptyReveal then None
+                    else
+                        Some(match s.axis,side with
+                             | SideBySide,Second -> Rect(Pt(rect.right-1,rect.y),Sz(1,rect.height))
+                             | SideBySide,First -> Rect(rect.location,Sz(1,rect.height))
+                             | Stacked,Second -> Rect(Pt(rect.x,rect.bottom-1),Sz(rect.width,1))
+                             | Stacked,First -> Rect(rect.location,Sz(rect.width,1)))
+                this.onChrome(fun () -> if not pane.IsDisposed then pane.update(rect,below,shown,from))
+            | None -> this.disposeEmptyPane()
+        | _ ->
+            dividerShown <- false
+            splitDivider |> Option.iter(fun divider -> this.onChrome(fun () -> if not divider.IsDisposed then divider.Hide()))
+            this.disposeEmptyPane()
+
+    /// The empty pane's edges dragged: the same move-size as a pane window's, the strip and
+    /// divider put away and only the panes following until it ends.
+    member private this.beginEmptyPaneResize() =
+        match groupLayout with
+        | Split s ->
+            [First;Second] |> List.tryFind(fun side -> SplitView.pane side s=Empty) |> Option.iter(fun side ->
+                let frame = this.layoutFrame
+                emptyPaneResize <- Some(side,SplitGeometry.paneRect side this.splitGap frame s,frame)
+                inMoveSize.set(true)
+                this.beginLive()
+                this.updateIsVisible())
+        | _ -> ()
+
+    /// Sizes arrive at every step of the drag; only the latest is applied, once per turn.
+    member private this.resizeEmptyPane(actual:Rect) =
+        let scheduled = pendingPaneBounds.IsSome
+        pendingPaneBounds <- Some actual
+        if not scheduled then
+            this.invokeAsync(fun () ->
+                let latest = pendingPaneBounds
+                pendingPaneBounds <- None
+                match groupLayout,emptyPaneResize,latest with
+                | Split s,Some(side,initial,startFrame),Some bounds ->
+                    // A size the layout cannot take is skipped; the pane snaps back when the drag ends.
+                    this.followSide(side,initial,startFrame,s,bounds) |> ignore
+                | _ -> ())
+
+    member private this.endEmptyPaneResize() =
+        if emptyPaneResize.IsSome then
+            emptyPaneResize <- None
+            pendingPaneBounds <- None
+            inMoveSize.set(false)
+            this.endLive()
+            this.updateIsVisible()
+
+    /// What the empty pane's list offers: every window on this desktop but the panes' own.
+    member private this.paneCandidates() =
+        let occupied = match groupLayout with Split s -> SplitView.windows s | _ -> []
+        Services.program.paneCandidates() |> List.filter(fun (hwnd,_,_) -> not(List.contains hwnd occupied))
+
+    /// A window chosen from the empty pane's list: a tab of this group goes straight in, any
+    /// other window is handed over by the desktop first.
+    member private this.fillEmptyPane(hwnd) =
+        match groupLayout with
+        | Split s ->
+            [First;Second] |> List.tryFind(fun side -> SplitView.pane side s=Empty) |> Option.iter(fun side ->
+                if this.windows.contains hwnd then this.execute(DropInto(hwnd,s.axis,side))
+                else Services.desktop.adoptIntoPane(this.ts.hwnd,hwnd,s.axis,side))
+        | _ -> ()
+
+    /// For the strip, once it has moved: the empty pane depends on where the tabs are.
+    member this.refreshSplitChrome() = if this.isSplit && not isDestroyed.value then this.updateSplitChrome()
+
+    member private this.setEmptyPaneHandle(hwnd:IntPtr) =
+        let previous = System.Threading.Volatile.Read(&emptyPaneHandle)
+        System.Threading.Volatile.Write(&emptyPaneHandle,hwnd)
+        if previous<>hwnd then emptyPaneChangedEvent.Trigger(previous,hwnd)
+
+    member private this.disposeEmptyPane() =
+        this.setEmptyPaneHandle IntPtr.Zero
+        emptyPaneShown <- false
+        emptySplitPane |> Option.iter(fun pane -> this.onChrome(fun () -> pane.Dispose()))
+        emptySplitPane <- None
+
+    member _.emptyPaneHwnd = System.Threading.Volatile.Read(&emptyPaneHandle)
+
+    /// Ends a split whose other pane is still empty, as the pane's close button does; Esc beside
+    /// the pane comes here. Checked again on this thread: the pane may have been filled since.
+    member this.closeEmptyPane() =
+        match groupLayout with
+        | Split s when SplitView.hasEmpty s -> this.execute(EndSplit None)
+        | _ -> ()
+    member _.emptyPaneChanged = emptyPaneChangedEvent.Publish
+
+    /// Badges follow the layout, and the pair's tabs stay next to each other.
+    member private this.refreshLayoutTabs() =
+        this.windows.items.iter this.setTabInfo
+        match SplitView.pairOrder groupLayout with
+        | [first;second] ->
+            let order = this.lorder.list
+            match List.tryFindIndex ((=) first) order,List.tryFindIndex ((=) second) order with
+            | Some a,Some b when b<>a+1 -> this.ts.moveTab(Tab(second),(if b<a then a else a+1))
+            | _ -> ()
+        | _ -> ()
+        this.updateSplitChrome()
+        layoutChangedEvent.Trigger()
+
+    /// Every member goes where the layout says; a single layout keeps the follower path.
+    member private this.applyLayout() =
+        match groupLayout with
+        | Split _ when emptyReveal ->
+            // The window keeps the whole frame while the empty pane opens out over it.
+            this.setFrame this.layoutFrame
+            this.updateSplitChrome()
+        | Split _ when not reconcileMinimizeState ->
+            let frame = this.layoutFrame
+            this.setFrame frame
+            let _,wp,_ = placement.value.Value
+            let moving = splitMove |> Option.map(fun (source,_,_) -> source)
+            let pane hwnd = match groupLayout with Split s -> SplitView.contains hwnd s | _ -> false
+            // The tabs behind wait under the host pane. When another window becomes the host, a swap
+            // say, in the same place, they only need restacking under it: an unchanged placement
+            // restacks nothing.
+            let host = match groupLayout with Split s -> SplitView.window (SplitView.host s) s |> Option.defaultValue IntPtr.Zero | _ -> IntPtr.Zero
+            let hostChanged = host<>splitHost
+            splitHost <- host
+            for target in SplitView.plan groupLayout frame this.splitGap this.windows.items.list this.topWindow do
+              if hostChanged && not liveResize && not(pane target.hwnd) && host<>IntPtr.Zero && not(isMinimized target.hwnd) &&
+                 FollowerPlacement.queue.isWindowIdle(placementOwner,target.hwnd) &&
+                 this.os.windowFromHwnd(target.hwnd).visibleBounds=target.rect then
+                FollowerPlacement.queue.submit(placementOwner,target.hwnd,FollowerPlacement.stackBelowRequest target.hwnd host)
+              else
+                // While dragging, the tabs behind are off screen until the drag ends, and a pane
+                // already in place is not asked again: each request moved and restacked windows
+                // under the pointer at every step.
+                let wanted =
+                    if not liveResize then true
+                    else pane target.hwnd &&
+                         not(FollowerPlacement.queue.isWindowIdle(placementOwner,target.hwnd) &&
+                             this.os.windowFromHwnd(target.hwnd).visibleBounds=target.rect)
+                // The strip rides above the focused pane, which it belongs to; the other pane goes
+                // just below that one, under the tabs over its title bar too.
+                let front = match groupLayout with Split s -> this.paneFront s | _ -> None
+                let below =
+                    if pane target.hwnd && Some target.hwnd<>front then Some(front |> Option.defaultValue this.paneAnchor)
+                    else target.below
+                if wanted && not(isMinimized target.hwnd) && moving<>Some target.hwnd then
+                    FollowerPlacement.queue.submit(placementOwner,target.hwnd,FollowerPlacement.alignFrameRequest target.hwnd target.rect target.rect wp below)
+            if not splitPending then splitDeadline <- transitionClock.ElapsedMilliseconds+int64 SplitMetrics.settleMs
+            splitPending <- true
+            splitSettleTimer.Start()
+            this.updateSplitChrome()
+        | Split _ -> ()
+        | _ -> zorderCell.value.tail.iter(this.adjustWindowPlacement)
+
+    /// A drag of a pane, the empty pane or the divider: the other tabs go off screen, as a
+    /// single window's followers do while it moves, and come back when it ends.
+    member private this.beginLive() =
+        match groupLayout with
+        | Split s when not liveResize ->
+            liveResize <- true
+            for hwnd in this.windows.items.list do
+                if not(SplitView.contains hwnd s) && not(isMinimized hwnd) then
+                    FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.hideRequest hwnd)
+        | _ -> ()
+
+    member private this.endLive() =
+        if liveResize then
+            liveResize <- false
+            this.applyLayout()
+
+    /// Both panes at their rectangles, within tolerance; DWM can report a frame after the worker finished.
+    member private this.panesSettled() =
+        match groupLayout with
+        | Split s when splitMove.IsNone && not reconcileMinimizeState ->
+            // In place, sized within what an app on a character grid rounds to.
+            let tolerance = Dpi.scale SplitMetrics.tolerance
+            let snap = Dpi.scale SplitMetrics.snap
+            let frame = this.layoutFrame
+            SplitView.windows s |> List.forall(fun hwnd ->
+                isMinimized hwnd ||
+                let expected = SplitGeometry.paneRect (SplitView.sideOf hwnd s).Value this.splitGap frame s
+                let actual = this.os.windowFromHwnd(hwnd).visibleBounds
+                abs(actual.x-expected.x)<=tolerance && abs(actual.y-expected.y)<=tolerance &&
+                abs(actual.width-expected.width)<=snap && abs(actual.height-expected.height)<=snap)
+        | _ -> true
+
+    /// Windows that never take their pane leave the split, with a word to the user.
+    member private this.checkSplitSettled() =
+        if splitPending && not isDestroyed.value then
+            let idle = FollowerPlacement.queue.isIdle(placementOwner)
+            if idle && this.panesSettled() then
+                splitPending <- false
+                splitSettleTimer.Stop()
+                // Placement restacks the apps' windows; ours, owned by nothing, are put back over them.
+                if not this.isEmpty then this.keepPanesBelowStrip(this.topWindow)
+            elif transitionClock.ElapsedMilliseconds>=splitDeadline then
+                // A window that keeps a size of its own, a terminal on its character grid, an app
+                // with a larger minimum, stays where it put itself: the split goes on, with no
+                // message. Ending it here, with a dialog, came up every so often for such apps.
+                splitPending <- false
+                splitSettleTimer.Stop()
+                if not this.isEmpty then this.keepPanesBelowStrip(this.topWindow)
+
+    /// One window fills the frame and the others line up under it, as a single layout has them.
+    member private this.collapseTo(target:IntPtr option) =
+        let frame = this.layoutFrame
+        splitMove <- None
+        liveResize <- false
+        splitPending <- false
+        splitSettleTimer.Stop()
+        let target =
+            match target with
+            | Some hwnd when this.windows.contains hwnd && isOpen hwnd -> Some hwnd
+            | _ -> this.lorder.list |> List.tryFind isOpen
+        target |> Option.iter(fun target ->
+            splitMerging <- true
+            let wp = {this.os.windowFromHwnd(target).placement with showCmd=ShowWindowCommands.SW_SHOWNORMAL}
+            placement.set(Some(frame,wp,frame))
+            this.windows.items.iter(fun window ->
+                FollowerPlacement.queue.submit(placementOwner,window,FollowerPlacement.alignFrameRequest window frame frame wp (if window=target then None else Some target)))
+            reconcilePlacementState <- true)
+
+    /// Moves to a layout and places the windows for it.
+    member private this.setLayout(next:GroupLayout, ?focus:IntPtr) =
+        let before = groupLayout
+        if next<>before then
+            groupLayout <- next
+            // A new empty pane opens out over the window first; the window takes its half after,
+            // under the pane, so no app is resized frame by frame.
+            match before,next with
+            | (GroupLayout.Single | Parked _),Split s when SplitView.hasEmpty s && SystemInformation.UIEffectsEnabled ->
+                emptyReveal <- true
+                let timer = new System.Windows.Forms.Timer(Interval=revealMs)
+                timer.Tick.Add(fun _ ->
+                    timer.Stop()
+                    timer.Dispose()
+                    if emptyReveal && not isDestroyed.value then
+                        emptyReveal <- false
+                        this.withUpdate(fun () -> this.applyLayout())
+                    else emptyReveal <- false)
+                timer.Start()
+            | _ -> ()
+            match before,next with
+            | Split s,GroupLayout.Single -> this.collapseTo(focus |> Option.orElse(SplitView.focusedWindow s))
+            | Split _,Parked _ -> this.collapseTo(focus)
+            // Only the focus moved between the panes: nothing needs placing, and placing every
+            // window again at each switch was work for nothing.
+            | Split a,Split b when {a with focused=b.focused}=b ->
+                this.setZorder(zorderCell.value)
+                this.keepPanesBelowStrip(this.topWindow)
+            | _,Split _ -> this.applyLayout()
+            | _ -> ()
+            // The same panes, only resized or focused differently: their tabs are as they were.
+            // Read again at every step of a divider drag, every tab's details, its name asked of
+            // the main thread among them, made each step slow and the steps pile up.
+            match before,next with
+            | Split a,Split b when {a with focused=b.focused;ratio=b.ratio}=b -> layoutChangedEvent.Trigger()
+            | _ -> this.refreshLayoutTabs()
+
+    /// Runs a command for the window on top, or for `current` when the caller knows better.
+    member this.execute(command:SplitCommand, ?current:IntPtr, ?keepFrame:bool) = this.withUpdate(fun () ->
+        if not this.isEmpty && not isDestroyed.value then
+            match command with
+            | ToggleFill -> this.toggleFill()
+            | _ ->
+                let current = defaultArg current this.topWindow
+                let wasSplit = this.isSplit
+                if not wasSplit && not(defaultArg keepFrame false) then this.saveTopWindowPlacement()
+                let next = SplitView.apply current command groupLayout
+                match next with
+                | Split s when not(SplitGeometry.fits this.splitGap (Dpi.scale SplitMetrics.minPane) this.layoutFrame s) ->
+                    // A ratio or axis that does not fit is ignored; a split that cannot start says so.
+                    if not wasSplit then Alert.show AlertKind.Warning (tr Strings.TabMenu.split) (tr Strings.TabMenu.splitFailed)
+                | _ ->
+                    let keep = match command with EndSplit keep -> keep | _ -> None
+                    (match command with EndSplit _ -> splitRestore <- None | _ -> ())
+                    this.setLayout(next,?focus=keep)
+                    let activate hwnd =
+                        if hwnd<>this.os.foreground.hwnd && this.windows.contains hwnd then this.tabActivate(Tab(hwnd),false)
+                    match next with
+                    | Split s -> SplitView.focusedWindow s |> Option.iter activate
+                    | _ -> keep |> Option.iter activate)
+
+    /// A dragged tab dropped into a pane beside the tab shown, joining the group first if it is
+    /// not a member. The frame is read before it joins: it comes put away off screen by its drag
+    /// and, activated by it, as the top window, which the frame was read from after. The split
+    /// was laid out off screen then, and the dropped window seemed to vanish.
+    member this.dropTab(hwnd:IntPtr, axis:SplitAxis, side:Side, partner:IntPtr) = this.withUpdate(fun () ->
+        if not this.isEmpty && not isDestroyed.value then
+            // The pair is the dropped tab and the window shown: a drag takes its tab out of the
+            // group, so the pane left fills the group and is the one shown when the tab comes back.
+            let top = this.topWindow
+            let partner = if top<>hwnd && this.windows.contains top then top else partner
+            // The frame comes from the partner only once it is the window shown, in place: a
+            // tab behind waits pane-sized, and a window still being placed is where it was.
+            let frame =
+                if this.isSplit then None
+                else
+                    if this.windows.contains partner && partner=this.topWindow && FollowerPlacement.queue.isWindowIdle(placementOwner,partner) then
+                        this.saveWindowPlacement partner
+                    placement.value
+            if not(this.windows.contains hwnd) then
+                this.addWindow(hwnd,false)
+                this.isManual <- true
+            frame |> Option.iter(fun saved -> placement.set(Some saved))
+            this.execute(DropInto(hwnd,axis,side),current=partner,keepFrame=frame.IsSome))
+
+    /// The keyboard's way in: the tab in front pairs with the next tab in the strip, wrapping
+    /// around; a lone tab opens an empty pane instead.
+    member this.splitWithNext(axis) =
+        if not this.isEmpty then
+            let top = this.topWindow
+            let order = this.lorder.list
+            match List.tryFindIndex ((=) top) order with
+            | Some index when order.Length>1 -> this.execute(SplitWith(order.[(index+1) % order.Length],axis))
+            | _ -> this.execute(NewEmptyPane axis)
+
+    /// A pane window coming to the front focuses its side; another tab parks the pair.
+    member private this.onActivated(hwnd) =
+        if this.windows.contains hwnd then this.setLayout(SplitView.onActivated hwnd groupLayout,focus=hwnd)
+
+    /// Losing a pane window ends the split; the other pane fills the frame.
+    member private this.onRemoved(hwnd) =
+        match groupLayout with
+        | Split s when SplitView.contains hwnd s ->
+            splitRestore <- None
+            let survivor =
+                SplitView.windows s |> List.tryFind(fun window -> window<>hwnd && this.windows.contains window && isOpen window)
+                |> Option.orElse(this.lorder.list |> List.tryFind(fun window -> window<>hwnd && isOpen window))
+            this.setLayout(GroupLayout.Single,?focus=survivor)
+        | Parked s when SplitView.contains hwnd s ->
+            groupLayout <- GroupLayout.Single
+            this.refreshLayoutTabs()
+        | _ -> ()
+
+    /// The split fills the work area, or goes back to the frame it had.
+    member private this.toggleFill() =
+        match groupLayout with
+        | Split s ->
+            splitMove <- None
+            let frame =
+                match splitRestore with
+                | Some restore ->
+                    splitRestore <- None
+                    restore
+                | None ->
+                    let current = this.layoutFrame
+                    splitRestore <- Some current
+                    SplitView.focusedWindow s |> Option.bind Mon.fromHwnd |> Option.map(fun monitor -> monitor.workRect) |> Option.defaultValue current
+            this.setFrame frame
+            this.applyLayout()
+        | _ -> ()
+
+    /// The frame follows a pane moved natively; a resize changes the frame or the ratio.
+    member private this.followPane(source,initial:Rect,startFrame:Rect,s:SplitLayout,actual:Rect) =
+        SplitView.sideOf source s |> Option.iter(fun side ->
+            if not(this.followSide(side,initial,startFrame,s,actual)) then this.leaveSplitNative source)
+
+    /// One pane, a window or the empty one, moved or sized from `initial`: a move carries the
+    /// whole frame, a resize changes the frame at an outer edge and the ratio at the inner one.
+    /// False when the layout cannot take the new size.
+    member private this.followSide(side,initial:Rect,startFrame:Rect,s:SplitLayout,actual:Rect) =
+        if actual.size=initial.size then
+            splitRestore <- None
+            this.setFrame(startFrame.move(actual.x-initial.x,actual.y-initial.y))
+            this.applyLayout()
+            true
+        else
+            let frame,ratio = SplitGeometry.resizePane side actual this.splitGap startFrame s
+            let next = {s with ratio=ratio}
+            if SplitGeometry.fits this.splitGap (Dpi.scale SplitMetrics.minPane) frame next then
+                splitRestore <- None
+                groupLayout <- Split next
+                this.setFrame frame
+                this.applyLayout()
+                true
+            else false
+
+    /// A pane went where the layout cannot follow: the group keeps that window's own frame.
+    member private this.leaveSplitNative(hwnd) =
+        groupLayout <- GroupLayout.Single
+        splitMove <- None
+        liveResize <- false
+        splitPending <- false
+        splitSettleTimer.Stop()
+        splitRestore <- None
+        this.windows.items.iter(fun window -> FollowerPlacement.queue.cancel(placementOwner,window))
+        this.setZorder(zorderCell.value.where((<>) hwnd).prepend hwnd)
+        this.refreshLayoutTabs()
+        this.saveTopWindowPlacement()
+        this.adjustChildWindows()
+
+    /// A rebuilt group takes over the old one's layout once its members have arrived.
+    member this.restoreLayout(next:GroupLayout, frame:Rect) = this.withUpdate(fun () ->
+        match SplitView.prune this.windows.contains next with
+        | GroupLayout.Single -> ()
+        | pruned ->
+            if not frame.isEmpty then this.setFrame frame
+            groupLayout <- pruned
+            (match pruned with Split _ -> this.applyLayout() | _ -> ())
+            this.refreshLayoutTabs())
+
     /// Where the group's windows are, for previews: nothing is saved for a group that has not
     /// been on screen since WindowTabs started, minimized from the start, say.
     member this.previewArea : Rect =
@@ -684,15 +1300,18 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member private this.isTop(hwnd) = zorderCell.value.where(isMinimized >> not).tryHead = Some(hwnd)
 
-    member private this.saveTopWindowPlacement() =
-        let window = this.os.windowFromHwnd(zorderCell.value.head)
+    member private this.saveTopWindowPlacement() = this.saveWindowPlacement zorderCell.value.head
+
+    /// The group's frame from one of its windows.
+    member private this.saveWindowPlacement(hwnd:IntPtr) =
+        let window = this.os.windowFromHwnd(hwnd)
         let dpi = Dpi.forMonitor window.hwnd
         if dpi <> Dpi.value() then
             Dpi.set dpi
             appearanceSnapshot <- logicalAppearance.scaled
             this.ts.setTabAppearance(appearanceSnapshot)
             geometryChangedEvent.Trigger()
-        if  window.isMinimized.not &&
+        if  not this.isSplit && not splitMerging && window.isMinimized.not &&
             this.os.isOnScreen(window.bounds)
             then
             let monitorBounds =
@@ -716,7 +1335,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             match requestedMinimizeStates.TryGetValue(hwnd) with
             | true,expected -> this.os.windowFromHwnd(hwnd).isMinimized<>expected && FollowerPlacement.isChangingMinimizeState placementOwner hwnd
             | _ -> false
-        if placement.value.IsSome && not changingMinimizeState then
+        if this.isSplit then this.applyLayout()
+        elif placement.value.IsSome && not changingMinimizeState then
             let bounds,wp,visible = placement.value.Value
             let below = zorderCell.value.tryHead |> Option.filter((<>) hwnd)
             let request = FollowerPlacement.alignFrameRequest hwnd bounds visible wp below
@@ -725,7 +1345,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             reconcilePlacementState <- true
             this.finishPlacementReconciliation()
 
-    member this.isPlacementIdle = FollowerPlacement.queue.isIdle(placementOwner) && not reconcileMinimizeState && not reconcilePlacementState
+    /// Minimizing or restoring, as Windows does it window by window.
+    member this.isChangingMinimizeState = reconcileMinimizeState || pendingMinimizeStates.Count>0
+
+    member this.isPlacementIdle = FollowerPlacement.queue.isIdle(placementOwner) && not reconcileMinimizeState && not reconcilePlacementState && not splitPending && not emptyReveal
                      
     member this.setTabColor(hwnd,color) =
         Services.program.setTabColorOverride(hwnd,color)
@@ -767,16 +1390,33 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         Cell.endUpdate()
         
 
-    member this.onEnterMoveSize() =
+    /// In a split the moved pane leads and the other follows; a single layout hides the followers.
+    member this.onEnterMoveSize(?source:IntPtr) =
         inMoveSize.set(true)
-        this.hideChildWindows()
+        match groupLayout with
+        | Split s ->
+            let source = defaultArg source this.os.foreground.hwnd
+            if SplitView.contains source s then
+                splitMove <- Some(source,this.os.windowFromHwnd(source).visibleBounds,this.layoutFrame)
+                this.beginLive()
+        | _ -> this.hideChildWindows()
         this.updateIsVisible()
 
     member this.onExitMoveSize() =
         inMoveSize.set(false)
+        // The final location notification may still be queued behind MOVESIZEEND.
+        splitMove |> Option.iter(fun (source,initial,frame) ->
+            match groupLayout with
+            | Split s ->
+                let window = this.os.windowFromHwnd(source)
+                if not window.isMaximized && not window.isMinimized then this.followPane(source,initial,frame,s,window.visibleBounds)
+            | _ -> ())
+        splitMove <- None
+        // Every window, the tabs behind included, goes back into place below.
+        liveResize <- false
         this.saveTopWindowPlacement()
         this.adjustChildWindows()
-        this.makeTopWindowForeground()
+        if this.windows.contains(this.os.foreground.hwnd) then this.makeTopWindowForeground()
         this.updateIsVisible()
 
     member this.main(hwnd, evt) =
@@ -850,11 +1490,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 then
                 this.setTabInfo hwnd
         | WinEvent.EVENT_SYSTEM_MOVESIZESTART ->
-            if this.isTop(hwnd) then
-                this.onEnterMoveSize()
+            if this.isTop(hwnd) || (this.splitLayout |> Option.exists(SplitView.contains hwnd)) then
+                this.onEnterMoveSize(hwnd)
 
         | WinEvent.EVENT_SYSTEM_MOVESIZEEND ->
-            if this.isTop(hwnd) then 
+            if this.isTop(hwnd) || (this.splitLayout |> Option.exists(SplitView.contains hwnd)) then
                 this.onExitMoveSize()
 
         //this is here to detect transitions between maximized and
@@ -863,7 +1503,29 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         //event when they loose focus, we don't want to automatically give them focus in this case
         //so make sure that the window HAD focus before reapplying it
         | WinEvent.EVENT_OBJECT_LOCATIONCHANGE ->
-            if this.isTop(hwnd) && inMoveSize.value.not then
+            match groupLayout with
+            | Split s ->
+                let window = this.os.windowFromHwnd(hwnd)
+                let pane = SplitView.contains hwnd s
+                if pane && window.isMaximized && (not splitPending || FollowerPlacement.queue.isIdle(placementOwner)) && not reconcileMinimizeState then
+                    // Native maximize of a pane fills the work area with the whole split.
+                    this.toggleFill()
+                else
+                    match splitMove with
+                    | Some(source,initial,frame) when hwnd=source -> this.followPane(source,initial,frame,s,window.visibleBounds)
+                    | None when pane && not splitPending && not reconcileMinimizeState && not window.isMinimized && FollowerPlacement.queue.isWindowIdle(placementOwner,hwnd) ->
+                        // The application moved or sized itself: take its frame while the layout still fits.
+                        // Not for a size a little off its pane: apps on a character grid round every
+                        // size they are given, and following that rounding resized both panes again
+                        // and again, a little smaller each time.
+                        let expected = SplitGeometry.paneRect (SplitView.sideOf hwnd s).Value this.splitGap this.layoutFrame s
+                        let actual = window.visibleBounds
+                        let tolerance = Dpi.scale SplitMetrics.tolerance
+                        let snap = Dpi.scale SplitMetrics.snap
+                        if abs(actual.x-expected.x)>tolerance || abs(actual.y-expected.y)>tolerance || abs(actual.width-expected.width)>snap || abs(actual.height-expected.height)>snap then
+                            this.followPane(hwnd,expected,this.layoutFrame,s,actual)
+                    | _ -> ()
+            | _ when this.isTop(hwnd) && inMoveSize.value.not ->
                 //you can miss EVENT_SYSTEM_MOVESIZESTART events
                 //when a window is created and is immediatly in move size, we subscribe
                 //to the event too late (Chrome tab dragging is prime example)
@@ -880,6 +1542,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                         this.makeTopWindowForeground()
                     this.foreground <- this.os.foreground.hwnd
                     isMaximizedExport.update()
+            | _ -> ()
         | WinEvent.EVENT_SYSTEM_FOREGROUND ->
             // Activated some other way (Alt+Tab, its own window), an owned tab can stay under the
             // others in the same way as one activated from the strip.
@@ -894,8 +1557,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if this.windows.contains(hwnd) then
                 this.saveTopWindowPlacement()
                 this.updateIsVisible()
+                // An app raised by a click comes over the divider and the empty pane, which are
+                // owned by nothing: its invisible resize border then took their edges.
+                this.keepPanesBelowStrip(this.topWindow)
             this.ts.refreshShadow()
         | WinEvent.EVENT_OBJECT_HIDE | WinEvent.EVENT_OBJECT_DESTROY ->
+            if evt=WinEvent.EVENT_OBJECT_DESTROY || not(isMinimized hwnd) then this.onRemoved(hwnd)
             this.reclaimLeftTab(hwnd)
             if lastActiveTab=Some hwnd then this.followClosedTab(this.os.foreground.hwnd)
         | WinEvent.EVENT_OBJECT_CLOAKED | WinEvent.EVENT_OBJECT_UNCLOAKED ->
@@ -961,6 +1628,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.removeWindow(hwnd) = this.withUpdate <| fun() ->
         inputOwnership.Remove hwnd |> ignore
         if not isDestroyed.value && this.windows.contains(hwnd) then
+            this.onRemoved(hwnd)
             this.reclaimLeftTab(hwnd)
             let foreground = this.os.foreground.hwnd
             let next = TabNavigation.closeTarget this.lorder.list isOpen hwnd foreground lastActiveTab opener (this.leftOnClose hwnd)
@@ -1049,6 +1717,19 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.destroy() =
         if isDestroyed.value.not then
             isDestroyed.set(true)
+            splitSettleTimer.Dispose()
+            splitGuardTimer.Dispose()
+            // The chrome's thread disposes its windows and ends; nothing here waits for it.
+            chromeInvoker |> Option.iter(fun invoker ->
+                let divider,pane = splitDivider,emptySplitPane
+                invoker.asyncInvoke(fun () ->
+                    divider |> Option.iter(fun window -> window.Dispose())
+                    pane |> Option.iter(fun window -> window.Dispose())
+                    System.Windows.Forms.Application.ExitThread()))
+            chromeInvoker <- None
+            splitDivider <- None
+            emptySplitPane <- None
+            this.setEmptyPaneHandle IntPtr.Zero
             placementCompletion |> Option.iter(fun subscription -> subscription.Dispose())
             placementCompletion <- None
             this.windows.items.iter(fun hwnd -> FollowerPlacement.queue.release(placementOwner,hwnd))
@@ -1117,11 +1798,42 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         // only once it is in front, as a refused activation leaves the strip with the real top window.
         if this.os.foreground.hwnd=hwnd then window.raise()
         if this.os.foreground.hwnd=hwnd then lastActiveTab <- Some hwnd
-        // Activation can be refused (foreground lock); keep the strip with the real top window.
-        this.inZorder(this.windows.items).tryHead |> Option.iter (fun top ->
-            if top <> hwnd then this.setTsOwner(this.os.windowFromHwnd(top)))
+        // The layout follows once the tab is in front: parking a split first re-placed every window
+        // while the tab chosen was still under them, and a tab behind showed for a moment. Active,
+        // or raised over the other tabs, the tab is the group's front window at once, in the same
+        // update as the layout: the strip follows the front window, and seeing the layout change
+        // first it went back to the pane, which the rising tab then covered.
+        let top = this.inZorder(this.windows.items).tryHead
+        let inFront = this.os.foreground.hwnd=hwnd || top=Some hwnd
+        this.withUpdate(fun () ->
+            if this.windows.contains(hwnd) then
+                this.onActivated(hwnd)
+                if inFront then this.setZorder(zorderCell.value.where((<>) hwnd).prepend hwnd))
+        if not inFront then
+            // Activation can be refused (foreground lock), and the strip then goes back to the real
+            // top window. Windows can also take a moment to raise it, so that is only decided once
+            // it has had the time: handed back at once, the strip went under the tab as it rose.
+            let timer = new System.Windows.Forms.Timer(Interval=300)
+            timer.Tick.Add(fun _ ->
+                timer.Stop()
+                timer.Dispose()
+                if not isDestroyed.value && this.os.foreground.hwnd<>hwnd then
+                    this.inZorder(this.windows.items).tryHead |> Option.iter(fun top ->
+                        if top<>hwnd then this.setTsOwner(this.os.windowFromHwnd(top))))
+            timer.Start()
 
     member this.onTabMoved(hwnd, index) = movedEvent.Trigger(hwnd, index)
+
+    /// The pair's tabs dragged into the other order swap the panes to match. Kept as they were,
+    /// the tabs were put back in pane order at the next click, undoing the drag.
+    member this.onTabsReordered() =
+        match SplitView.layoutOf groupLayout with
+        | Some({first=Occupied a;second=Occupied b}) ->
+            let order = this.lorder.list
+            match List.tryFindIndex ((=) a) order,List.tryFindIndex ((=) b) order with
+            | Some first,Some second when second<first -> this.execute Swap
+            | _ -> ()
+        | _ -> ()
 
     member x.exited = exitedEvent.Publish
     member this.bounds = boundsExport :> ICellOutput<_>

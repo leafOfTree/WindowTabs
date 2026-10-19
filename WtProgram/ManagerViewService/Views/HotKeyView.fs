@@ -4,7 +4,10 @@ open System.Windows.Forms
 type HotKeyView() =
     let panel,table = SettingsUi.page()
     // Setting id for each program hotkey, so a conflict can name the other action.
-    let actions = ["nextTab","next-tab";"prevTab","previous-tab";"searchTabs","search-tabs";"newTab","new-tab";"closeTab","close-tab";"numberLeader","number-leader"]
+    let actions = ["nextTab","next-tab";"prevTab","previous-tab";"searchTabs","search-tabs";"newTab","new-tab";"closeTab","close-tab";"numberLeader","number-leader"
+                   "splitSideBySide","split-side-by-side";"splitStacked","split-stacked";"splitEmptyRight","split-empty-right";"splitEmptyBelow","split-empty-below"
+                   "splitFocusOther","split-focus-other";"splitSwap","split-swap"
+                   "splitGrow","split-grow";"splitShrink","split-shrink";"splitEqualize","split-equalize";"splitEnd","split-end"]
     let hotKey key =
         let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=Services.program.getHotKey key)
         editor.Changed.Add(fun _ ->

@@ -83,6 +83,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
 
 ## Style
 
+- Documents committed to the repository (`docs/`, `README.md`, this file) are written in
+  English; user-visible text in other languages lives only in `Shared/Strings.fs`.
 - Match the surrounding F#: short `///` comments that say why, not what; no banner
   comments; existing helpers (`List2`, `Set2`, `Map2`, `Cell`) where the file uses them.
 - Commit subjects are imperative, sentence case, describe the user-visible effect and

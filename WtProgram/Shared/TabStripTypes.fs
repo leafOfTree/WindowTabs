@@ -10,6 +10,8 @@ and TabInfo = {
     iconBig: Icon
     preview: unit -> Img
     isRenamed: bool
+    /// The pane this tab shows in a split view, drawn as a badge; the text itself stays clean.
+    splitSide: (SplitAxis * Side) option
 }
 
 and TabDragInfo = {
@@ -17,6 +19,9 @@ and TabDragInfo = {
     tabOffset: Pt
     tabSize: Sz
     tabInfo: TabInfo
+    /// Where the tab sits over the window in the drag image, as the strip's alignment would
+    /// put a lone tab; the dropped window lands so that the tab stays under the pointer.
+    tabShift: int
     } with
     /// Keep the grabbed point proportional when entering a differently sized tab or DPI.
     member this.offsetIn(size:Sz) =
@@ -33,6 +38,8 @@ and TabPart =
     | TabBackground
     | TabIcon
     | TabClose
+    /// The button where the two tabs of a split view meet.
+    | TabSplit
 
 and TabDirection =
     | TabUp

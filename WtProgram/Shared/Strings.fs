@@ -22,7 +22,7 @@ module Strings =
         let center = { en="Center"; zh="居中"; ja="中央" }
         let right = { en="Right"; zh="右侧"; ja="右" }
         let never = { en="Never"; zh="从不"; ja="しない" }
-        let whenMaximized = { en="When maximized"; zh="最大化时"; ja="最大化時" }
+        let whenMaximized = { en="Maximized"; zh="最大化时"; ja="最大化時" }
         let always = { en="Always"; zh="始终"; ja="常に" }
         let selectedChoice (name:LocalizedText) = { en=name.en+"  ✓"; zh=name.zh+"  ✓"; ja=name.ja+"  ✓" }
         let operationFailed = { en="Operation failed"; zh="操作失败"; ja="操作に失敗しました" }
@@ -51,6 +51,27 @@ module Strings =
 
     /// Tab context menu.
     module TabMenu =
+        let split = { en="Split view"; zh="组内分屏"; ja="分割表示" }
+        let splitHorizontal = { en="Split side by side"; zh="左右分屏"; ja="左右に分割" }
+        let splitVertical = { en="Split top and bottom"; zh="上下分屏"; ja="上下に分割" }
+        let splitEmptyRight = { en="New empty pane on the right"; zh="在右侧新建空白区域"; ja="右側に空のペインを作成" }
+        let splitEmptyBelow = { en="New empty pane below"; zh="在下方新建空白区域"; ja="下側に空のペインを作成" }
+        let splitEmpty = { en="Drop a tab or window here"; zh="将标签或窗口拖到这里"; ja="ここにタブまたはウィンドウをドロップ" }
+        let splitChoose = { en="Choose a window…"; zh="选择窗口…"; ja="ウィンドウを選択…" }
+        let splitOr = { en="or"; zh="或"; ja="または" }
+        let splitSearch = { en="Type a title or app name to fill the pane"; zh="输入标题或应用名，放入这一侧"; ja="タイトルやアプリ名を入力してペインに配置" }
+        let splitShow = { en="Show split view"; zh="显示分屏"; ja="分割表示に戻す" }
+        let splitNoWindows = { en="No other windows"; zh="没有其他窗口"; ja="他のウィンドウはありません" }
+        let splitMerge = { en="End split view"; zh="结束分屏"; ja="分割表示を終了" }
+        let splitMakeStacked = { en="Switch to top and bottom"; zh="切换为上下"; ja="上下に切り替え" }
+        let splitMakeSideBySide = { en="Switch to side by side"; zh="切换为左右"; ja="左右に切り替え" }
+        let splitSwap = { en="Swap panes"; zh="交换两侧"; ja="ペインを入れ替え" }
+        let splitEqual = { en="Equal panes"; zh="恢复均分"; ja="均等に分割" }
+        let splitLess = { en="Shrink first pane"; zh="缩小左侧／上侧"; ja="左側／上側を縮小" }
+        let splitMore = { en="Grow first pane"; zh="扩大左侧／上侧"; ja="左側／上側を拡大" }
+        let splitFill = { en="Fill work area / restore split"; zh="分屏铺满／还原大小"; ja="作業領域に拡大／元に戻す" }
+        let splitRatio = { en="Split divider"; zh="分屏分隔条"; ja="分割境界" }
+        let splitFailed = { en="These windows could not fit the split layout. Split view has ended."; zh="窗口无法适应分屏尺寸，已退出分屏。"; ja="ウィンドウを分割領域に配置できないため、分割を終了しました。" }
         let position = { en="Tab position"; zh="标签位置"; ja="タブの位置" }
         let top = { en="Top"; zh="顶部"; ja="上部" }
         let showTabTitles = { en="Show tab titles"; zh="显示标签标题"; ja="タブのタイトルを表示" }
@@ -160,7 +181,7 @@ module Strings =
                               description={ en="Large icons in a row, or a list with full window titles."; zh="一排大图标，或显示完整窗口标题的列表。"; ja="大きなアイコンを横に並べるか、ウィンドウ タイトルを一覧で表示します。" }
                               keywords={ en="layout"; zh="布局"; ja="レイアウト" } }
         let groupWindowsInSwitcher = { caption={ en="Group windows in Alt+Tab"; zh="在 Alt+Tab 中按分组显示"; ja="Alt+Tab でグループをまとめる" }
-                                       description={ en="Each group appears as one item."; zh="每个分组只显示一项。"; ja="各グループを 1 項目として表示します。" }
+                                       description={ en="Each group appears as one item, with the icon its taskbar button has."; zh="每个分组只显示一项，图标与任务栏按钮相同。"; ja="各グループを、タスク バーのボタンと同じアイコンの 1 項目として表示します。" }
                                        keywords={ en="switcher"; zh="切换器"; ja="切り替え" } }
         let nextTab = { caption={ en="Switch to next tab"; zh="切换到下一个标签"; ja="次のタブに切り替え" }
                         description=none
@@ -181,6 +202,37 @@ module Strings =
                                        zh="关闭当前标签的窗口。"
                                        ja="前面のタブのウィンドウを閉じます。" }
                          keywords={ en="close window"; zh="关闭窗口"; ja="ウィンドウを閉じる" } }
+        let private splitWords = { en="split view pane"; zh="分屏 窗格"; ja="分割 ペイン" }
+        let splitSideBySide = { caption={ en="Split side by side with next tab"; zh="与下一个标签左右分屏"; ja="次のタブと左右に分割" }
+                                description={ en="A lone tab opens an empty pane instead."; zh="只有一个标签时改为新建空白区域。"; ja="タブが 1 つだけなら空のペインを開きます。" }
+                                keywords=splitWords }
+        let splitStacked = { caption={ en="Split top and bottom with next tab"; zh="与下一个标签上下分屏"; ja="次のタブと上下に分割" }
+                             description=none
+                             keywords=splitWords }
+        let splitEmptyRight = { caption={ en="New empty pane on the right"; zh="在右侧新建空白区域"; ja="右側に空のペインを作成" }
+                                description={ en="Drop a tab or window into it."; zh="之后把标签或窗口拖进去。"; ja="タブやウィンドウをそこにドロップします。" }
+                                keywords=splitWords }
+        let splitEmptyBelow = { caption={ en="New empty pane below"; zh="在下方新建空白区域"; ja="下側に空のペインを作成" }
+                                description=none
+                                keywords=splitWords }
+        let splitFocusOther = { caption={ en="Focus the other pane"; zh="焦点切到另一侧"; ja="もう一方のペインにフォーカス" }
+                                description={ en="Brings a parked pair back as well."; zh="配对被暂存时也会恢复显示。"; ja="待機中のペアも表示に戻します。" }
+                                keywords=splitWords }
+        let splitSwap = { caption={ en="Swap panes"; zh="交换两侧"; ja="ペインを入れ替え" }
+                          description=none
+                          keywords=splitWords }
+        let splitGrow = { caption={ en="Grow first pane"; zh="扩大左侧／上侧"; ja="左側／上側を拡大" }
+                          description=none
+                          keywords=splitWords }
+        let splitShrink = { caption={ en="Shrink first pane"; zh="缩小左侧／上侧"; ja="左側／上側を縮小" }
+                            description=none
+                            keywords=splitWords }
+        let splitEqualize = { caption={ en="Equal panes"; zh="恢复均分"; ja="均等に分割" }
+                              description=none
+                              keywords=splitWords }
+        let splitEnd = { caption={ en="End split view"; zh="结束分屏"; ja="分割表示を終了" }
+                         description={ en="The focused pane fills the group."; zh="焦点侧占满整个组。"; ja="フォーカス中のペインがグループ全体を占めます。" }
+                         keywords=splitWords }
         let switchTabsByNumber = { caption={ en="Switch tabs by number"; zh="按数字切换标签"; ja="番号でタブを切り替え" }
                                    description={ en="Hold a modifier key and press 1–9."; zh="按住修饰键再按 1–9。"; ja="修飾キーを押しながら 1～9 を押します。" }
                                    keywords={ en="digit"; zh="数字"; ja="数字" } }

@@ -28,6 +28,8 @@ type DragCapturedStateInfo = {
 
 type DragCapturedState(info:DragCapturedStateInfo) =
     let dragOutDistance = 20
+    member _.target = info.target
+    member _.targetHwnd = info.targetHwnd
     interface IDragState with
         member this.mouseMove(ptScreen) =
             let dragBounds = info.targetWindow.bounds.inflate(dragOutDistance, dragOutDistance)
@@ -38,9 +40,31 @@ type DragCapturedState(info:DragCapturedStateInfo) =
                 info.onDragOut(ptScreen)
         member this.dispose() = ()
 
+/// Where the pointer is: a strip joins the tab at once, a group's own windows (and the helper
+/// windows they own) only preview a pane, anything else floats.
+type DragHit = StripHit of IntPtr | LayoutHit of IntPtr | FreeHit
+
+module DragRouting =
+    let resolve (strips:Map2<IntPtr,IDragDropTarget>) (layouts:Map2<IntPtr,ILayoutDropTarget>) hit owner =
+        if strips.contains hit then StripHit hit
+        elif layouts.contains hit then LayoutHit hit
+        elif owner<>IntPtr.Zero && layouts.contains owner then LayoutHit owner
+        else FreeHit
+
+    /// The top-level window under a point, and its owner. The point lands on an app's child
+    /// window, a browser's page say, which no group knows: over such apps a dragged tab never
+    /// offered a pane.
+    let windowsAt (pt:Pt) =
+        let hit = WinUserApi.WindowFromPoint(pt.POINT)
+        let root = if hit=IntPtr.Zero then IntPtr.Zero else WinUserApi.GetAncestor(hit,GetAncestorConstants.GA_ROOT)
+        let owner = if root=IntPtr.Zero then IntPtr.Zero else WinUserApi.GetWindow(root,GetWindowConstants.GW_OWNER)
+        root,owner
+
 type DragFloatingStateInfo = {
     imageOffset : Pt
     targets: Map2<IntPtr, IDragDropTarget>
+    layoutTargets: Map2<IntPtr, ILayoutDropTarget>
+    data: obj
     animationWindow: AnimationWindow
     onDragIn: (IntPtr * Pt) -> unit
     }
@@ -48,19 +72,50 @@ type DragFloatingStateInfo = {
 type DragFloatingState(info:DragFloatingStateInfo) =
     let os = OS()
     let animationWindow = info.animationWindow
+    let mutable candidate : (IntPtr * ILayoutDropTarget) option = None
+    let clearCandidate() =
+        candidate |> Option.iter(fun (_,target) -> target.clearPreview())
+        candidate <- None
+    let float(ptScreen:Pt) =
+        animationWindow.setLocation(ptScreen.sub(info.imageOffset))
+        animationWindow.setIsVisible(true)
+    /// Drops into the pane under the pointer; false when there is none.
+    member this.commit(pt) =
+        match candidate with
+        | Some(_,target) ->
+            candidate <- None
+            target.commit(info.data,pt)
+        | None -> false
     interface IDragState with
         member this.mouseMove(ptScreen) =
-            let targetHwnd = os.windowAtPt(ptScreen).hwnd
-            if info.targets.tryFind(targetHwnd).IsSome then
+            let hit,owner = DragRouting.windowsAt ptScreen
+            match DragRouting.resolve info.targets info.layoutTargets hit owner with
+            | StripHit target ->
+                clearCandidate()
                 animationWindow.setIsVisible(false)
-                info.onDragIn(targetHwnd, ptScreen)
-            else
-                animationWindow.setLocation(ptScreen.sub(info.imageOffset))
-                animationWindow.setIsVisible(true)
-        member this.dispose() = animationWindow.setIsVisible(false)
+                info.onDragIn(target, ptScreen)
+            | LayoutHit key ->
+                match candidate with
+                | Some(previous,old) when previous<>key -> old.clearPreview()
+                | _ -> ()
+                let target = info.layoutTargets.find key
+                // The tab's image stays with the pointer over the highlighted pane.
+                if target.preview(info.data,ptScreen) then
+                    candidate <- Some(key,target)
+                    float ptScreen
+                else
+                    candidate <- None
+                    float ptScreen
+            | FreeHit ->
+                clearCandidate()
+                float ptScreen
+        member this.dispose() =
+            clearCandidate()
+            animationWindow.setIsVisible(false)
 
 type DragActionInfo = {
     targets : Map2<IntPtr, IDragDropTarget>
+    layoutTargets : Map2<IntPtr, ILayoutDropTarget>
     notifications: Set2<IDragDropNotification>
     initialHwnd : IntPtr
     image : unit -> Img
@@ -82,6 +137,7 @@ type DragAction(info:DragActionInfo) =
     let captureWindowCell = Cell.create(None:Option<IWindow>)
     let timer = new Timer()
     let animationWindowCell = Cell.create(None:Option<AnimationWindow>)
+    let mutable finished = false
 
     member this.setNextState(newState:obj) =
         let newState = unbox<IDragState>(newState)
@@ -90,37 +146,71 @@ type DragAction(info:DragActionInfo) =
 
     member this.captureWindow : Window = os.windowFromHwnd(captureWindowCell.value.Value.hwnd)
 
-    member this.captureEnded(ptScreen) =
+    member private this.release() =
         this.captureWindow.releaseCapture()
-        (captureWindowCell.value.Value :?>IDisposable).Dispose()
+        (captureWindowCell.value.Value :?> IDisposable).Dispose()
         timer.Dispose()
         dragStateCell.value.Value.dispose()
         animationWindowCell.value.iter <| fun window -> window.Dispose()
-        match dragStateCell.value.Value with
-        | :? DragDetectingState ->
-            info.onCancel()
-        | :? DragCapturedState ->
-            info.targets.values.iter <| fun target -> target.dragEnd()
-            info.notifications.items.iter <| fun n -> n.dragEnd()
-            info.onEnd()
-        | :? DragFloatingState ->
-            info.targets.values.iter <| fun target -> target.dragEnd()
-            info.notifications.items.iter <| fun n -> n.dragEnd()
-            info.onDrop(ptScreen)
-            info.onEnd()
-        | _ -> ()
+
+    member private this.notifyEnd() =
+        info.targets.values.iter <| fun target -> target.dragEnd()
+        info.notifications.items.iter <| fun n -> n.dragEnd()
+        info.onEnd()
+
+    /// A cancelled tab goes back to its strip; with that strip gone, it lands where the pointer is.
+    member private this.restoreSource(pt) =
+        match info.targets.tryFind(info.initialHwnd) with
+        | Some source when WinUserApi.IsWindow(info.initialHwnd) -> source.dragCancel(info.data)
+        | _ -> if WinUserApi.IsWindow(this.draggedHwnd) then info.onDrop(pt)
+
+    member private this.draggedHwnd =
+        match info.data with
+        | :? TabDragInfo as drag -> let (Tab hwnd) = drag.tab in hwnd
+        | _ -> IntPtr.Zero
+
+    /// Some pt: the button was released there; None: the drag is cancelled.
+    member private this.finish(drop:Pt option) =
+        if not finished then
+            finished <- true
+            match dragStateCell.value.Value,drop with
+            | :? DragDetectingState,_ ->
+                this.release()
+                info.onCancel()
+            | :? DragCapturedState,Some _ ->
+                this.release()
+                this.notifyEnd()
+            | :? DragCapturedState as captured,None ->
+                // Taken into another strip already: leave it again before going home.
+                if captured.targetHwnd<>info.initialHwnd then captured.target.dragExit()
+                this.release()
+                this.restoreSource(ptScreenCell.value)
+                this.notifyEnd()
+            | :? DragFloatingState as floating,Some pt ->
+                let committed = floating.commit(pt)
+                this.release()
+                if not committed then info.onDrop(pt)
+                this.notifyEnd()
+            | :? DragFloatingState,None ->
+                this.release()
+                this.restoreSource(ptScreenCell.value)
+                this.notifyEnd()
+            | _ -> this.release()
+
+    member this.captureEnded(ptScreen) = this.finish(Some ptScreen)
+
+    member this.cancel() = this.finish(None)
 
     member this.wndProc (msg:Win32Message) =
-        let ptScreen() =             
+        let ptScreen() =
             let pt = msg.lParam.location
             let ptScreen = this.captureWindow.ptToScreen(pt)
             ptScreenCell.set(ptScreen)
             ptScreen
         match msg.msg with
-        | WindowMessages.WM_MOUSEMOVE -> 
-            dragStateCell.value.Value.mouseMove(ptScreen())
-        | WindowMessages.WM_MOUSELEAVE
-        | WindowMessages.WM_LBUTTONUP -> 
+        | WindowMessages.WM_MOUSEMOVE ->
+            if not finished then dragStateCell.value.Value.mouseMove(ptScreen())
+        | WindowMessages.WM_LBUTTONUP ->
             this.captureEnded(ptScreen())
         | _ -> ()
         msg.def()
@@ -128,6 +218,8 @@ type DragAction(info:DragActionInfo) =
     member this.dragFloat() =
         this.setNextState <| DragFloatingState({
             targets = info.targets
+            layoutTargets = info.layoutTargets
+            data = info.data
             imageOffset = info.imageOffset.mulf(dragScale, dragScale)
             animationWindow = animationWindowCell.value.Value
             onDragIn = fun (targetHwnd, ptScreen) ->
@@ -143,20 +235,20 @@ type DragAction(info:DragActionInfo) =
                 target = target
                 targetHwnd = targetHwnd
                 targetWindow = targetWindow
-                onDragOut = fun(ptScreen) -> 
+                onDragOut = fun(ptScreen) ->
                     let targetHwnd = os.windowAtPt(ptScreen).hwnd
                     match info.targets.tryFind(targetHwnd) with
                     | Some(target) -> this.dragEnter(targetHwnd, ptScreen, false)
                     | None -> this.dragFloat()
             })
-        else 
+        else
             if isInitial then target.dragExit()
             this.dragFloat()
 
     member this.dragDetect() =
         this.setNextState <| DragDetectingState({
             initialPt = info.initialPt
-            onBegin = fun() ->  
+            onBegin = fun() ->
                 animationWindowCell.value <-
                     let animationWindow = AnimationWindow(os)
                     animationWindow.setAlpha(byte(0xAA))
@@ -177,7 +269,8 @@ type DragAction(info:DragActionInfo) =
         captureWindowCell.set(Some(os.createWindow this.wndProc 0 0))
         this.captureWindow.setCapture()
         timer.Interval <- 500
-        timer.Tick.Add <| fun _ -> if this.captureWindow.hasCapture.not then this.captureEnded(ptScreenCell.value)
+        // Capture taken away (another window, a system key) is not a drop.
+        timer.Tick.Add <| fun _ -> if this.captureWindow.hasCapture.not then this.cancel()
         timer.Start()
         this.dragDetect()
 
@@ -186,8 +279,14 @@ type DragDropController(parent:IDragDropParent) =
     let withLock = lock lockObj
     let Cell = CellScope(true, false)
     let targetsCell = Cell.create(Map2())
+    let layoutTargetsCell = Cell.create(Map2())
     let notificationsCell = Cell.create(Set2())
     let dragActionCell = Cell.create(None)
+    /// The thread that began the drag; a cancel from a hook thread goes there.
+    let mutable dragInvoker : Invoker option = None
+
+    /// Whether a drag over this window finds a group's panes.
+    member x.isLayoutTarget hwnd = layoutTargetsCell.value.contains hwnd
 
     interface IDragDrop with
         member x.registerNotification(notify) = withLock <| fun() ->
@@ -198,27 +297,41 @@ type DragDropController(parent:IDragDropParent) =
             targetsCell.map(fun targets -> targets.add hwnd target)
         member x.unregisterTarget(hwnd) = withLock <| fun() ->
             targetsCell.map(fun targets -> targets.remove hwnd)
+        member x.registerLayoutTarget((hwnd, target)) = withLock <| fun() ->
+            layoutTargetsCell.map(fun targets -> targets.add hwnd target)
+        member x.unregisterLayoutTarget(hwnd) = withLock <| fun() ->
+            layoutTargetsCell.map(fun targets -> targets.remove hwnd)
         member x.beginDrag((initialHwnd, image, imageOffset, initialPt, data)) = withLock <| fun() ->
-            if dragActionCell.value.IsNone then 
+            if dragActionCell.value.IsNone then
                 let dragAction = DragAction({
                     targets = targetsCell.value
+                    layoutTargets = layoutTargetsCell.value
                     notifications = notificationsCell.value
                     initialHwnd = initialHwnd
                     image = image
                     imageOffset = imageOffset
                     initialPt = initialPt
                     data = data
-                    onCancel = fun() -> 
-                        dragActionCell.set(None)
-                    onBegin = fun() -> 
+                    onCancel = fun() ->
+                        withLock(fun () ->
+                            dragActionCell.set(None)
+                            dragInvoker <- None)
+                    onBegin = fun() ->
                         parent.dragBegin()
                     onDrop = fun pt ->
                         parent.dragDrop(pt, data)
-                    onEnd = fun() ->    
+                    onEnd = fun() ->
                         parent.dragEnd()
-                        dragActionCell.set(None)
+                        withLock(fun () ->
+                            dragActionCell.set(None)
+                            dragInvoker <- None)
                 })
                 dragActionCell.set(Some(dragAction))
+                dragInvoker <- Some InvokerService.invoker
                 dragAction.start()
-            ()
-
+        member x.cancelDrag() = lock lockObj <| fun() ->
+            match dragActionCell.value,dragInvoker with
+            | Some action,Some invoker ->
+                invoker.asyncInvoke(fun () -> action.cancel())
+                true
+            | _ -> false

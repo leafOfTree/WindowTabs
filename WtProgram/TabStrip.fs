@@ -180,6 +180,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                     numberBadge = if numberBadgesCell.value then lorderCell.value.list |> List.tryFindIndex ((=) tab) |> Option.filter(fun i -> i<numberBadgeKeysCell.value.Length) |> Option.map(fun i -> string numberBadgeKeysCell.value.[i]) else None
                     bgColor = tabBgColor.value.tryFind(tab)
                     TabDisplayInfo.text = ti.text
+                    splitSide = ti.splitSide
                     icon = ti.iconSmall
                     textFont = if ti.isRenamed then renamedFont else normalFont
                     textBrush = SystemBrushes.MenuText
@@ -714,6 +715,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         tabInfoCell.value.tryFind(tab).def({
             text = ""
             isRenamed = false
+            splitSide = None
             iconSmall = System.Drawing.SystemIcons.Application
             iconBig = System.Drawing.SystemIcons.Application
             preview = fun() -> Img(Sz(1,1))
@@ -727,16 +729,27 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.tabLocation = this.ts.tabLocation
     
     /// The window capture is full size; release it here rather than waiting for the GC.
-    member this.dragImage (tab:Tab) : Img= 
-        if this.isVertical then this.ts.renderTab(tab) else this.horizontalDragImage(tab)
+    member this.dragImage (tab:Tab, shift:int) : Img=
+        if this.isVertical then this.ts.renderTab(tab) else this.horizontalDragImage tab shift
 
-    member private this.horizontalDragImage (tab:Tab) : Img=
+    /// Where a lone tab would sit over a window of this width under the strip's alignment,
+    /// so the drag image shows the tab where it will be after the drop.
+    member this.dragTabShift(tab:Tab, windowWidth:int) =
+        if this.isVertical then 0
+        else
+            let tabWidth = this.tabSprites.tryFind(fun (_,sprite) -> sprite.id=tab) |> Option.map(fun (_,sprite) -> sprite.size.width) |> Option.defaultValue 0
+            match this.getAlignment TabUp with
+            | TabCenter -> max 0 ((windowWidth-tabWidth)/2)
+            | TabRight -> max 0 (windowWidth-tabWidth-60)
+            | TabLeft -> 0
+
+    member private this.horizontalDragImage (tab:Tab) (shift:int) : Img=
         use bmpTab = this.tsBase(TabUp).renderTab(tab).bitmap
         use bmpHwnd = this.tabInfo(tab).preview().bitmap
         let bmpOverlay = Img(Sz(bmpHwnd.Width, bmpHwnd.Height + bmpTab.Height - this.contentOffset))
         try
             use gCapture = bmpOverlay.graphics
-            gCapture.DrawImage(bmpTab, Point.Empty)
+            gCapture.DrawImage(bmpTab, Point(max 0 (min shift (bmpHwnd.Width-bmpTab.Width)), 0))
             gCapture.DrawImage(bmpHwnd, new Point(0, this.size.height - this.contentOffset))
             bmpOverlay
         with _ ->

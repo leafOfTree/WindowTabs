@@ -78,51 +78,59 @@ module TaskbarProxies =
     /// A group with combined icons owns its windows, so they follow it between desktops.
     let ownsWindow (hwnd:IntPtr) = contains (WinUserApi.GetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT))
 
-/// A group's taskbar icon: the app's icon with the WindowTabs badge at the bottom right, as in
-/// the window switcher. Windows 11 draws an overlay icon at the top right instead. In a group
-/// of several apps the badge is the next app's icon instead, so the front app keeps its full size.
+/// A group's icon as its taskbar button shows it: the app's icon with the WindowTabs badge at the
+/// bottom right. In a group of several apps the badge is the next app's icon instead, so the front
+/// app keeps its full size. The window switcher draws a group the same way.
+module GroupIconImage =
+    let compose (size:int) (app:Bitmap) (other:Bitmap option) =
+        let canvas = new Bitmap(size,size,PixelFormat.Format32bppArgb)
+        use g = Graphics.FromImage(canvas)
+        g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
+        g.DrawImage(app,Rectangle(0,0,size,size))
+        match other with
+        | Some other ->
+            // A clear ring round the corner icon keeps it apart from the front app's. One
+            // pixel at taskbar size: a wider one read as a dark border on the taskbar.
+            let side = size*7/16
+            let gap = max 1 (size/32)
+            let corner = size-side
+            use ring = new Drawing2D.GraphicsPath()
+            // Half a pixel further out, so the ring's first column is cleared whole.
+            let x,span = float32(corner-gap)-0.5f,float32(side+2*gap)+0.5f
+            let d = span*0.4f
+            ring.AddArc(x,x,d,d,180.0f,90.0f)
+            ring.AddArc(x+span-d,x,d,d,270.0f,90.0f)
+            ring.AddArc(x+span-d,x+span-d,d,d,0.0f,90.0f)
+            ring.AddArc(x,x+span-d,d,d,90.0f,90.0f)
+            ring.CloseFigure()
+            use clear = new SolidBrush(Color.Transparent)
+            g.CompositingMode <- Drawing2D.CompositingMode.SourceCopy
+            g.FillPath(clear,ring)
+            g.CompositingMode <- Drawing2D.CompositingMode.SourceOver
+            g.DrawImage(other,Rectangle(corner,corner,side,side))
+        | None ->
+            use badgeIcon = Services.openIcon("Bemo.ico")
+            use badge = badgeIcon.ToBitmap()
+            // Leave more of the application visible, with the badge tucked into the right corner.
+            let side = size*7/12
+            // The badge's transparent margin otherwise keeps its visible edge inset.
+            let rightOffset = size/12
+            g.DrawImage(badge,Rectangle(size-side+rightOffset,size-side,side,side))
+        canvas
+
+/// A group's taskbar icon, drawn by GroupIconImage. Windows 11 draws an overlay icon at the top
+/// right instead.
 type TaskbarBadgedIcon(icon:Icon, ?stacked:Icon list) =
     let others = defaultArg stacked [] |> List.truncate TaskbarBadgedIcon.maxStacked
     // Some apps give a 256 pixel icon, which the Windows Alt+Tab drew across a group's whole tile.
     let size = min 64 (max 32 icon.Width)
     let handle =
-        use canvas = new Bitmap(size,size,PixelFormat.Format32bppArgb)
-        do
-            use g = Graphics.FromImage(canvas)
-            g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
-            use app = icon.ToBitmap()
-            g.DrawImage(app,Rectangle(0,0,size,size))
-            match others with
-            | other :: _ ->
-                // A clear ring round the corner icon keeps it apart from the front app's. One
-                // pixel at taskbar size: a wider one read as a dark border on the taskbar.
-                let side = size*7/16
-                let gap = max 1 (size/32)
-                let corner = size-side
-                use ring = new Drawing2D.GraphicsPath()
-                // Half a pixel further out, so the ring's first column is cleared whole.
-                let x,span = float32(corner-gap)-0.5f,float32(side+2*gap)+0.5f
-                let d = span*0.4f
-                ring.AddArc(x,x,d,d,180.0f,90.0f)
-                ring.AddArc(x+span-d,x,d,d,270.0f,90.0f)
-                ring.AddArc(x+span-d,x+span-d,d,d,0.0f,90.0f)
-                ring.AddArc(x,x+span-d,d,d,90.0f,90.0f)
-                ring.CloseFigure()
-                use clear = new SolidBrush(Color.Transparent)
-                g.CompositingMode <- Drawing2D.CompositingMode.SourceCopy
-                g.FillPath(clear,ring)
-                g.CompositingMode <- Drawing2D.CompositingMode.SourceOver
-                use image = other.ToBitmap()
-                g.DrawImage(image,Rectangle(corner,corner,side,side))
-            | [] ->
-                use badgeIcon = Services.openIcon("Bemo.ico")
-                use badge = badgeIcon.ToBitmap()
-                // Leave more of the application visible, with the badge tucked into the right corner.
-                let side = size*7/12
-                // The badge's transparent margin otherwise keeps its visible edge inset.
-                let rightOffset = size/12
-                g.DrawImage(badge,Rectangle(size-side+rightOffset,size-side,side,side))
-        canvas.GetHicon()
+        use app = icon.ToBitmap()
+        let other = others |> List.tryHead |> Option.map(fun other -> other.ToBitmap())
+        try
+            use canvas = GroupIconImage.compose size app other
+            canvas.GetHicon()
+        finally other |> Option.iter(fun image -> image.Dispose())
     let badged = Icon.FromHandle(handle)
     /// The other apps' icons shown: one, in the corner, which is all a taskbar icon has room for.
     static member maxStacked = 1
@@ -513,9 +521,9 @@ type TaskBarButton(info) as this =
     member _.ownsApplication(hwnd:IntPtr) = windows.ContainsKey(WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER))
 
     /// Peek must own only the application represented by that preview, rather than every tab.
-    member this.adoptWindow(hwnd:IntPtr) =
+    member this.adoptWindow(hwnd:IntPtr, follow:bool) =
         match tabWindowsCell.value.tryFind(TaskBarButton.key hwnd) with
-        | Some tab -> tab.adoptWindow hwnd
+        | Some tab -> tab.adoptWindow(hwnd,follow)
         | None ->
             // Discovery can announce a member before its preview joins the strip.
             if WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)<>this.window.hwnd then
@@ -620,7 +628,8 @@ and TaskbarTab(parent:TaskBarButton, config,size,key) =
     // Owned by the group's taskbar window, except while the group's thumbnails are up: see
     // TaskBarButton.releasePreviews.
 
-    member this.adoptWindow hwnd =
+    /// `follow`: the preview goes back just below its window if it is not there.
+    member this.adoptWindow(hwnd, follow:bool) =
         if WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)<>_window.hwnd then
             StartupTrace.measure "taskbar.owner" (fun () ->
                 WinUserApi.SetWindowLong(hwnd,WindowLongFieldOffset.GWL_HWNDPARENT,_window.hwnd) |> ignore
@@ -630,6 +639,15 @@ and TaskbarTab(parent:TaskBarButton, config,size,key) =
                 // goes just below the window, as an owner would be.
                 WinUserApi.SetWindowPos(_window.hwnd,hwnd,0,0,0,0,
                     SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore)
+        elif follow && WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_HWNDNEXT)<>_window.hwnd then
+            // Activating a window raises every window of the group's taskbar window with it, each
+            // just above its preview, in the previews' order. The group stacks its windows and
+            // leaves the previews behind, so the preview follows: else the next activation brought
+            // an old order back, a tab behind a split over a pane, and the first window of an app
+            // was not the one last used.
+            WinUserApi.SetWindowPos(_window.hwnd,hwnd,0,0,0,0,
+                SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE |||
+                SetWindowPosFlags.SWP_NOACTIVATE ||| SetWindowPosFlags.SWP_NOOWNERZORDER) |> ignore
         ownedWindow <- hwnd
 
     /// Destroying an owner also destroys its owned windows; a preview never owns their lifetime.
@@ -816,7 +834,10 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
                     let owner = WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)
                     let movedAway = adopted.Contains hwnd && owner<>IntPtr.Zero && TaskbarProxies.contains owner && not(taskbarButton.ownsApplication hwnd)
                     if not movedAway then
-                        taskbarButton.adoptWindow hwnd
+                        // Not while the group minimizes or restores: Windows restores the windows
+                        // one by one, by their previews' order, and previews moved to an order
+                        // passing by in the meantime swapped tabs behind as the group came back.
+                        taskbarButton.adoptWindow(hwnd,not this.wtGroup.isChangingMinimizeState && not(WinUserApi.IsIconic hwnd))
                         if adopted.Add hwnd then
                             this.os.windowFromHwnd(hwnd).parkIfMinimized()
                             this.wtGroup.prepareMinimizeAnchor hwnd

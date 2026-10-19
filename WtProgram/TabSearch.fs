@@ -162,11 +162,20 @@ module private TabSearchNative =
 /// switches. It remembers the chosen scope; Tab, or clicking the line under the box,
 /// switches between the group and all windows. Esc or clicking
 /// elsewhere closes it. Used once, then disposed.
-type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISettings) =
+/// pick: what a chosen window is for, switching to it unless given; within: an area on screen to
+/// open over instead of high on the active screen; prompt: the hint in the empty box; rows and
+/// width: how many rows show and how wide it is, in logical pixels.
+type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISettings,
+                   ?pick:IntPtr -> unit, ?within:Rectangle, ?prompt:string, ?rows:int, ?width:int) =
     let rowHeight = 44
-    let visibleRows = 9
+    let visibleRows = defaultArg rows 9
     let palette = SettingsColors.current()
-    let area = Screen.FromHandle(WinUserApi.GetForegroundWindow()).WorkingArea
+    let prompt = defaultArg prompt (tr Strings.TabSearch.prompt)
+    let pick = defaultArg pick (fun hwnd -> OS().windowFromHwnd(hwnd).setForegroundOrRestore(false))
+    let area =
+        match within with
+        | Some box -> Screen.FromRectangle(box).WorkingArea
+        | None -> Screen.FromHandle(WinUserApi.GetForegroundWindow()).WorkingArea
     let padding = Dpi.scale 12
     let radius = Dpi.scale 12
     let boxHeight = Dpi.scale 40
@@ -192,7 +201,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let scoped() = match scope with GroupTabs -> groupItems | AllTabs -> items
     let input = new TextBox(Font=SettingsUi.bodyFont(),BorderStyle=BorderStyle.None,Tag="search-input",
                             BackColor=palette.surface,ForeColor=palette.text,
-                            AccessibleName=tr Strings.TabSearch.prompt)
+                            AccessibleName=prompt)
     let searchBox = new SettingsSearchBox(input,Dock=DockStyle.Top,Height=boxHeight)
     /// Smaller than the segments' text, as key caps are.
     let keyFont = SettingsUi.font "Segoe UI" 8.5f FontStyle.Regular
@@ -280,7 +289,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     e.Graphics.DrawPath(border,outline) }
         // One size whatever is typed, so the box does not jump about while filtering.
         let rows = max 1 (min visibleRows items.Length)
-        let size = Size(min (Dpi.scale 640) (area.Width-Dpi.scale 32),padding*2+boxHeight+scopeHeight+rows*Dpi.scale rowHeight)
+        let size = Size(min (Dpi.scale (defaultArg width 640)) (area.Width-Dpi.scale 32),padding*2+boxHeight+scopeHeight+rows*Dpi.scale rowHeight)
         f.AutoScaleMode <- AutoScaleMode.None
         f.FormBorderStyle <- FormBorderStyle.None
         f.ShowInTaskbar <- false
@@ -291,8 +300,14 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         f.ForeColor <- palette.text
         f.Padding <- Padding(padding)
         f.ClientSize <- size
-        // High on the screen, where a search box is expected, rather than centred.
-        f.Location <- Point(area.Left+(area.Width-size.Width)/2,area.Top+area.Height/5)
+        // High on the screen, where a search box is expected, rather than centred; or centred
+        // over the area it was opened for, kept on the screen.
+        f.Location <-
+            match within with
+            | Some box ->
+                Point(max area.Left (min (area.Right-size.Width) (box.X+(box.Width-size.Width)/2)),
+                      max area.Top (min (area.Bottom-size.Height) (box.Y+(box.Height-size.Height)/2)))
+            | None -> Point(area.Left+(area.Width-size.Width)/2,area.Top+area.Height/5)
         // Docking runs from the last added: the box on top, then the scope, then the results.
         f.Controls.Add(list)
         f.Controls.Add(empty)
@@ -332,7 +347,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         if not closed then
             closed <- true
             items |> Array.tryFind(fun (item,_) -> obj.ReferenceEquals(item,target))
-            |> Option.iter(fun (_,entry) -> OS().windowFromHwnd(entry.hwnd).setForegroundOrRestore(false))
+            |> Option.iter(fun (_,entry) -> pick entry.hwnd)
             shadow |> Option.iter(fun item -> (item :> IDisposable).Dispose())
             shadow <- None
             form.Hide()
@@ -356,7 +371,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             list.SelectedItem <- shown.[max 0 (min (shown.Count-1) (current+delta))]
     do
         input.HandleCreated.Add(fun _ ->
-            TabSearchNative.SendMessage(input.Handle,TabSearchNative.EM_SETCUEBANNER,IntPtr(1),tr Strings.TabSearch.prompt) |> ignore)
+            TabSearchNative.SendMessage(input.Handle,TabSearchNative.EM_SETCUEBANNER,IntPtr(1),prompt) |> ignore)
         input.TextChanged.Add(fun _ -> apply())
         // Tab would otherwise move the focus; here it switches between the group and all tabs.
         input.PreviewKeyDown.Add(fun e -> if e.KeyCode=Keys.Tab then e.IsInputKey <- true)
