@@ -977,7 +977,7 @@ let main() =
                 pumpUntil "The pair did not exit" (fun () -> pair.isExited)
                 for hwnd in [hd;he] do OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),Sz(640,480)))
                 let mutable restored : WorkspaceRestoreResult option = None
-                sessions.restoreSession(false,fun result -> restored <- Some result)
+                sessions.restoreSession(false,ignore,fun result -> restored <- Some result)
                 pumpUntil "The session did not restore" (fun () -> restored.IsSome)
                 let groupOf hwnd = desktopApi.groups.list |> List.tryFind(fun group -> group.windows.contains((=) hwnd)) |> Option.map(fun group -> group :?> GroupInfo)
                 pumpUntil "The pair did not come back split from the session" (fun () ->
@@ -990,6 +990,31 @@ let main() =
                 groupOf hd |> Option.iter(fun info ->
                     onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
                     (info :> IGroup).destroy())
+            // A tab dragged out onto the desktop goes back to the size its window had before any group,
+            // not the group's, and a group's size that filled the screen gives way to a modest one.
+            do
+                use f = new Form(Text="Own size",ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-20000,-20000),Size=Drawing.Size(640,480))
+                let hwnd = f.Handle
+                let alone = desktopApi.createGroup(false) :?> GroupInfo
+                (alone :> IGroup).addWindow(hwnd,false)
+                pumpUntil "Own-size window did not group" (fun () -> nativeOrder alone=[hwnd])
+                check ((WindowOwnSize.read hwnd)=Some(OS().windowFromHwnd(hwnd).visibleBounds.size)) "A window joining a group did not keep its own size"
+                let own = (WindowOwnSize.read hwnd).Value
+                OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),Sz(1600,1000)))
+                let dropped (size:Sz) =
+                    OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),size))
+                    let data = {tab=Tab hwnd;tabSize=Sz(100,24);tabOffset=Pt(10,10);tabInfo=onGroup alone (fun group -> group.ts.tabInfo(Tab hwnd));tabShift=0}
+                    (desktop :> IDragDropParent).dragDrop((Pt(200,200),box data))
+                    pumpUntil "The dropped window was not placed" (fun () -> OS().windowFromHwnd(hwnd).placement.rcNormalPosition.size<>size)
+                    OS().windowFromHwnd(hwnd).placement.rcNormalPosition.size
+                check (dropped (Sz(1600,1000))=own) (sprintf "A tab dragged out did not go back to its own size: %A instead of %A" (OS().windowFromHwnd(hwnd).placement.rcNormalPosition.size) own)
+                let work = Screen.PrimaryScreen.WorkingArea
+                WinUserApi.RemoveProp(hwnd,"WindowTabs.OwnSize.v1.W") |> ignore
+                WinUserApi.RemoveProp(hwnd,"WindowTabs.OwnSize.v1.H") |> ignore
+                let modest = dropped (Sz(work.Width,work.Height))
+                check (modest.width<work.Width && modest.height<work.Height && modest.width>=work.Width/2) (sprintf "A screen-sized tab dragged out kept its size: %A in %A" modest work)
+                onGroup alone (fun group -> group.removeWindow hwnd)
+                (alone :> IGroup).destroy()
             printfn "PASS: real HWND grouping, duplicate add, reorder, cross-STA transfer, six cross-orientation drags, destroyed-window removal, ungrouping, taskbar recovery, taskbar icon rebuilds and the session's splits."
         finally
             let rest = desktopApi.groups.list |> List.map(fun g -> g :?> GroupInfo)

@@ -97,6 +97,7 @@
     <Compile Include="WindowDecorator.fs" />
     <Compile Include="OleDropTarget.fs" />
     <Compile Include="SplitViewChrome.fs" />
+    <Compile Include="Notice.fs" />
     <Compile Include="WindowGroup.fs" />
     <Compile Include="TabStripDecorator.fs" />
     <Compile Include="GroupPlugins\SuperBarPlugin.fs" />

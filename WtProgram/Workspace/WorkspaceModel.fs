@@ -499,14 +499,18 @@ type WorkspaceModel() as this =
                 if not resolved.isEmpty then
                     let mutable destination = used |> Seq.tryFind(fun (each,_) -> obj.ReferenceEquals(each,groupInfo)) |> Option.map snd
                     let successful = ResizeArray<WorkspaceWindow * IntPtr>()
-                    let placement = WorkspaceData.fitPlacement (Mon.all.map(fun mon -> mon.displayRect,mon.workRect).list) (groupInfo?placement)
+                    let monitors = Mon.all.map(fun mon -> mon.displayRect,mon.workRect).list
+                    let placement = WorkspaceData.fitPlacement monitors (groupInfo?placement)
                     resolved.iter(fun (saved,hwnd) ->
                         try
                             let window = os.windowFromHwnd(hwnd)
                             if window.isWindow then
                                 // Complete native placement before detaching from the old group.
                                 WinUserApi.ShowWindow(hwnd,ShowWindowCommands.SW_RESTORE) |> ignore
-                                window.setPlacement(placement)
+                                if not window.isMaximized then WindowOwnSize.saveIfNew hwnd window.visibleBounds.size
+                                // Kept on screen by its visible frame: the window frame sticks out of the
+                                // work area by its invisible border, which pulled every edge window in.
+                                window.setPlacement(WorkspaceData.fitPlacementOf monitors window.bounds window.visibleBounds (groupInfo?placement))
                                 if destination.IsNone then
                                     let next = Services.desktop.createGroup(Services.settings.getValue("combineIconsInTaskbar").cast<bool>())
                                     (groupInfo :?> WorkspaceGroup).tabLayout |> Option.iter(fun layout ->
@@ -594,13 +598,14 @@ type WorkspaceModel() as this =
         | _ -> None
 
     /// Brings the session back among the windows open, and, when `launch`, starts the apps of
-    /// the windows not found and tries those again.
-    member this.restoreSession(launch:bool, complete:WorkspaceRestoreResult -> unit) =
+    /// the windows not found and tries those again; `launching` is told how many.
+    member this.restoreSession(launch:bool, launching:int -> unit, complete:WorkspaceRestoreResult -> unit) =
         match this.loadSession() with
         | None -> ()
         | Some ws ->
             let first = this.restoreWorkspace ws
             if launch && not first.launchable.IsEmpty then
+                launching first.launchable.Length
                 WorkspaceLaunch.start first.launchable (fun failures -> complete (first.Then(this.retry first,failures)))
             else complete first
     

@@ -45,9 +45,15 @@ the tree's simplest case and keep their behaviour.
   over a pane, the pane lights up and the tab's image stays with the pointer. A group with one
   tab can do this too.
 - Drag a tab to the left, right, top or bottom edge of a group's window: a half-window preview
-  appears, and letting go splits the group. The preview changes no membership; only the drop
-  commits. Tabs of this group and of other groups on the same virtual desktop are offered the
-  edge at once.
+  appears, a clear tint with its edge drawn and a label in its middle saying what letting go
+  does (a new column or row for the group, a split of the pane, a filled empty pane), and
+  letting go splits the group. The preview changes no membership; only the drop commits. Tabs
+  of this group and of other groups on the same virtual desktop are offered the edge at once.
+  Pressing a tab behind the panes parks them; once its drag takes it out of the group, the
+  panes come back, so the drop aims at what is seen.
+- A tab dragged out onto the desktop becomes a window of its own at the size it had before it
+  first joined a group (`WindowOwnSize`, kept on the window), or, when that too fills most of
+  the screen, at three fifths of the work area: it came out as a second screenful before.
 - Splitting again: while split, the same ways apply to a pane. Split in group on a tab divides
   the pane of the tab shown; a new empty pane opens beside the focused pane; a tab dragged to
   a pane's edge splits that pane (as VS Code does), and within 18px of the group's own edge

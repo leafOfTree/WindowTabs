@@ -75,9 +75,11 @@ its tray menu and takes over. A split comes back after a restart as its windows 
 - A split comes back after an exit or restart as its windows regroup, at the frame it had;
   an empty pane does not, and a window closed meanwhile leaves its room to its neighbour.
   After a sign-in the windows are new, so that needs the session: with "Restore the last
-  session at start" on, groups, positions and splits are kept as the windows change and put
-  back once the first scan after a start finds no window from the last run. Saved
-  workspaces keep splits too. After a restart the windows stay at their pane
+  session after sign-in" on, groups, positions and splits are kept as the windows change and put
+  back once the first scan after a start finds no window from the last run, with a notice at
+  the top of the main monitor while it happens. Saved workspaces keep splits too. To try it
+  without signing out: exit WindowTabs, remove the `WindowTabs.*` window properties from
+  every window, move a pane away and start WindowTabs again. After a restart the windows stay at their pane
   rectangles, and the group takes the size of the window in front.
 - An app that keeps a size of its own stays where it put itself, within 40px of its pane, with
   no message.

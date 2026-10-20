@@ -337,13 +337,21 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
             let monitor = Mon.fromPoint windowPt
             let workspaceOffset = monitor.map(fun mon -> mon.workRect.location.sub(mon.displayRect.location)).def(Pt())
             let windowPt = windowPt.sub(workspaceOffset)
+            // A window of its own again goes back to the size it had before any group, else, at a
+            // group's size that fills most of the screen, to a modest one: the group's size was
+            // the screen's more often than not, and the tab came out as a second screenful.
+            let size =
+                let current = window.placement.rcNormalPosition.size
+                let own = WindowOwnSize.read hwnd |> Option.defaultValue current
+                match monitor with
+                | Some mon when own.width>mon.workRect.width*4/5 && own.height>mon.workRect.height*4/5 ->
+                    Sz(mon.workRect.width*3/5,mon.workRect.height*3/5)
+                | _ -> own
             window.setPlacement({
                 window.placement with
                     showCmd = ShowWindowCommands.SW_SHOWNORMAL
-                    rcNormalPosition = Rect(
-                        windowPt,
-                        window.placement.rcNormalPosition.size)
-            })  
+                    rcNormalPosition = Rect(windowPt,size)
+            })
             notify.dragDrop(hwnd)
             
         member x.dragEnd() = invoker.asyncInvoke <| fun() ->

@@ -145,6 +145,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// Nothing is written until the start has decided about the last session: the groups the
     /// first scan forms on its own came to be saved over it before it was restored.
     let mutable sessionReady = false
+    /// Windows is signing out: the session is written now, while the apps are still open, and not
+    /// again at exit, when some have closed already and would be missing from it.
+    let mutable sessionEnding = false
     /// Automatic groups of one app that have come to share a desktop are looked for at most once a second.
     let mergeSoon = lifetime.Own(new CoalescedAction(1000, fun () -> this.mergeAutoGroups()))
     let desktopRetry = lifetime.Own(new CoalescedAction(100, fun () ->
@@ -263,14 +266,25 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                     match sessions.loadSession() with
                     | None -> sessionReady <- true
                     | Some _ ->
-                        try
-                            sessions.restoreSession((mode="Apps"),fun result ->
+                        // Said on screen first, so a user leaves the windows alone while they move.
+                        Notice.hold (tr Strings.Session.restoring)
+                        let go = new System.Windows.Forms.Timer(Interval=50)
+                        go.Tick.Add(fun _ ->
+                            go.Stop()
+                            go.Dispose()
+                            try
+                                sessions.restoreSession((mode="Apps"),
+                                    (fun apps -> Notice.hold (tr (Strings.Session.launching apps))),
+                                    fun result ->
+                                        sessionReady <- true
+                                        sessionSoon.Request()
+                                        Notice.show (tr (Strings.Session.restored result.restored result.missing.Length))
+                                        Diagnostics.Trace.TraceInformation("Session restored: {0} windows, {1} not found, {2} failed",result.restored,result.missing.Length,result.failed.Length))
+                            with error ->
                                 sessionReady <- true
-                                sessionSoon.Request()
-                                Diagnostics.Trace.TraceInformation("Session restored: {0} windows, {1} not found, {2} failed",result.restored,result.missing.Length,result.failed.Length))
-                        with error ->
-                            sessionReady <- true
-                            Diagnostics.Trace.TraceWarning("Session restore failed: {0}",error.Message))
+                                Notice.hideNow()
+                                Diagnostics.Trace.TraceWarning("Session restore failed: {0}",error.Message))
+                        go.Start())
             timer.Start()
 
     member private this.appKey(hwnd:IntPtr) =
@@ -712,7 +726,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             sessionTimer.Stop()
             sessionSoon.Cancel()
             // From the layouts last read: the groups are about to go and cannot be asked.
-            if this.sessionMode<>"Off" && sessionReady then
+            if this.sessionMode<>"Off" && sessionReady && not sessionEnding then
                 try sessions.saveSessionNow() with error -> Diagnostics.Trace.TraceWarning("Session save failed: {0}",error.Message)
             settingsManager.Flush() |> ignore
             settleTimer.Stop()
@@ -848,7 +862,15 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             this.updateTaskSwitcher(Services.settings.getValue("replaceAltTab"))
             this.restoreSessionAtStart()
             sessionTimer.Tick.Add(fun _ -> this.saveSession())
-            sessionTimer.Start())
+            sessionTimer.Start()
+            Microsoft.Win32.SystemEvents.SessionEnding.Add(fun _ ->
+                if not sessionEnding then
+                    sessionEnding <- true
+                    if this.sessionMode<>"Off" && sessionReady then
+                        try
+                            sessions.saveSessionNow()
+                            settingsManager.Flush() |> ignore
+                        with error -> Diagnostics.Trace.TraceWarning("Session save failed: {0}",error.Message)))
 
     member this.run(plugins:List2<IPlugin>) =
         this.initializePlugins plugins

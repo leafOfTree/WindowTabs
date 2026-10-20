@@ -64,6 +64,21 @@ module WorkspaceData =
         if bounds=value.rcNormalPosition then value
         else { value with rcNormalPosition=bounds; ptMaxPosition=Pt(-1,-1);ptMinPosition=Pt(-1,-1) }
 
+    /// As fitPlacement, for a window whose frame (`bounds`) is larger than what shows
+    /// (`visible`) by an invisible border: only the visible part has to be on screen.
+    let fitPlacementOf (monitors:(Rect * Rect) list) (bounds:Rect) (visible:Rect) (value:OSWindowPlacement) =
+        if visible.size.isEmptyArea || bounds.size.isEmptyArea then fitPlacement monitors value
+        else
+            let left,top = visible.x-bounds.x,visible.y-bounds.y
+            let right,bottom = bounds.right-visible.right,bounds.bottom-visible.bottom
+            let frame = value.rcNormalPosition
+            let shown = Rect(Pt(frame.x+left,frame.y+top),Sz(frame.width-left-right,frame.height-top-bottom))
+            let fitted = fitPlacement monitors {value with rcNormalPosition=shown}
+            if fitted.rcNormalPosition=shown then value
+            else
+                let placed = fitted.rcNormalPosition
+                { fitted with rcNormalPosition=Rect(Pt(placed.x-left,placed.y-top),Sz(placed.width+left+right,placed.height+top+bottom)) }
+
     let placement (obj:JObject) =
         let point key fallback =
             match obj.[key] with

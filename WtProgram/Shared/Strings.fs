@@ -355,6 +355,33 @@ module Strings =
                               description={ en="Then restarts. App rules and workspaces can be kept."; zh="完成后重新启动，可保留应用规则和工作区。"; ja="その後再起動します。アプリのルールとワークスペースは残せます。" }
                               keywords={ en="factory"; zh="恢复默认 出厂"; ja="初期化" } }
 
+    /// What letting go of a dragged tab here would do, on the preview.
+    module Drop =
+        let fillEmpty = { en="Fill the empty pane"; zh="放入空白窗格"; ja="空のペインに配置" }
+        let columnLeft = { en="New column on the left"; zh="整组左侧新开一列"; ja="左に新しい列" }
+        let columnRight = { en="New column on the right"; zh="整组右侧新开一列"; ja="右に新しい列" }
+        let rowAbove = { en="New row above"; zh="整组上方新开一行"; ja="上に新しい行" }
+        let rowBelow = { en="New row below"; zh="整组下方新开一行"; ja="下に新しい行" }
+        let paneLeft = { en="Split this pane: left"; zh="拆分此窗格：左侧"; ja="このペインを分割: 左" }
+        let paneRight = { en="Split this pane: right"; zh="拆分此窗格：右侧"; ja="このペインを分割: 右" }
+        let paneAbove = { en="Split this pane: above"; zh="拆分此窗格：上方"; ja="このペインを分割: 上" }
+        let paneBelow = { en="Split this pane: below"; zh="拆分此窗格：下方"; ja="このペインを分割: 下" }
+        let windowLeft = { en="Split: left"; zh="分屏：左侧"; ja="分割: 左" }
+        let windowRight = { en="Split: right"; zh="分屏：右侧"; ja="分割: 右" }
+        let windowAbove = { en="Split: above"; zh="分屏：上方"; ja="分割: 上" }
+        let windowBelow = { en="Split: below"; zh="分屏：下方"; ja="分割: 下" }
+
+    module Session =
+        let restoring = { en="Restoring the last session…"; zh="正在恢复上次会话…"; ja="前回のセッションを復元しています…" }
+        let launching count =
+            { en=(if count=1 then "Starting an app for the last session…" else sprintf "Starting %d apps for the last session…" count)
+              zh=sprintf "正在为上次会话启动 %d 个应用…" count
+              ja=sprintf "前回のセッションのためにアプリを %d 個起動しています…" count }
+        let restored restored missing =
+            { en=(sprintf "Session restored: %d windows" restored)+(if missing=0 then "" else sprintf ", %d not found" missing)
+              zh=(sprintf "已恢复上次会话：%d 个窗口" restored)+(if missing=0 then "" else sprintf "，%d 个未找到" missing)
+              ja=(sprintf "前回のセッションを復元しました: %d 個のウィンドウ" restored)+(if missing=0 then "" else sprintf "、%d 個が見つかりません" missing) }
+
     module General =
         /// The choices of Restore the last session at start.
         let sessionOff = { en="Off"; zh="关闭"; ja="オフ" }
