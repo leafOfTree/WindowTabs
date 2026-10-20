@@ -216,6 +216,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let mutable emptyPaneHandles : IntPtr list = []
     /// The root split's divider, which the panes go just below.
     let mutable dividerHandle = IntPtr.Zero
+    /// Behind every pane, over the tabs behind them; read by the placement workers as what those go below.
+    let mutable splitBackdrop : SplitBackdrop option = None
+    let mutable backdropHandle = IntPtr.Zero
     /// What the chrome's thread was last told to show, for this thread to act on.
     let mutable emptyPaneShown = false
     let mutable dividerShown = false
@@ -732,20 +735,24 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             this.updateSplitChrome()
         | _ -> ()
 
-    /// A tab behind the panes found above any of them goes below the lowest.
+    /// A tab behind the panes found above any of them, or above the backdrop, goes below the backdrop.
     member private this.tabsBehindBelowPanes(panes:IntPtr list) =
         let lowest = panes |> List.sortByDescending(fun hwnd -> this.os.windowFromHwnd(hwnd).zorder) |> List.tryHead
         lowest |> Option.iter(fun lowest ->
+            let under = if backdropHandle<>IntPtr.Zero && WinUserApi.IsWindow backdropHandle then backdropHandle else lowest
             for hwnd in this.windows.items.list do
                 if not(List.contains hwnd panes) && not(isMinimized hwnd) && FollowerPlacement.queue.isWindowIdle(placementOwner,hwnd) &&
-                   panes |> List.exists(fun pane -> this.isAbove(hwnd,pane)) then
-                    FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.stackBelowRequest hwnd lowest))
+                   this.isAbove(hwnd,under) then
+                    FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.stackBelowRequest hwnd under))
 
-    /// Whether a tab behind the panes lies above any of them.
+    /// Whether a tab behind the panes lies above any of them or above the backdrop.
     member private this.tabBehindAbovePanes(s:SplitLayout) =
         let panes = SplitView.windows s |> List.filter(fun hwnd -> not(isMinimized hwnd))
+        let covers = if backdropHandle<>IntPtr.Zero && WinUserApi.IsWindow backdropHandle then backdropHandle::panes else panes
         this.windows.items.list |> List.exists(fun hwnd ->
-            not(List.contains hwnd panes) && not(isMinimized hwnd) && panes |> List.exists(fun pane -> this.isAbove(hwnd,pane)))
+            not(List.contains hwnd panes) && not(isMinimized hwnd) && covers |> List.exists(fun over -> this.isAbove(hwnd,over)))
+
+    member _.backdropHwnd = System.Threading.Volatile.Read(&backdropHandle)
 
     /// The pane window in focus, which the strip belongs to and the other pane waits under.
     member private this.paneFront(s:SplitLayout) =
@@ -918,6 +925,25 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                                 | _ -> ()
                     | None -> ignore
                 this.onChrome(fun () -> if not divider.IsDisposed then divider.update(path,branch,gap,splitFrame,strip,dividerVisible,place))
+            // The backdrop goes just below the lowest pane; the tabs behind go below it. A drop
+            // surface of the group's too, registered as the empty panes are.
+            let backdrop =
+                match splitBackdrop with
+                | Some backdrop -> backdrop
+                | None ->
+                    let backdrop = this.chrome.invoke(fun () ->
+                        Dpi.set dpi
+                        let backdrop = new SplitBackdrop()
+                        backdrop.Handle |> ignore
+                        backdrop)
+                    System.Threading.Volatile.Write(&backdropHandle,backdrop.Handle)
+                    splitBackdrop <- Some backdrop
+                    emptyPaneChangedEvent.Trigger(IntPtr.Zero,backdrop.Handle)
+                    backdrop
+            let lowestPane =
+                SplitView.windows s |> List.filter(fun hwnd -> this.windows.contains hwnd && not(isMinimized hwnd))
+                |> List.sortByDescending(fun hwnd -> this.os.windowFromHwnd(hwnd).zorder) |> List.tryHead |> Option.defaultValue IntPtr.Zero
+            this.onChrome(fun () -> if not backdrop.IsDisposed then backdrop.update(frame,lowestPane,visible))
             // One window per empty pane, by its place; panes filled or gone lose theirs.
             let empties = SplitGeometry.leafRects gap frame (SplitView.root s) [] |> List.filter(fun (_,pane,_) -> pane=Empty)
             for path in emptySplitPanes |> Map.toList |> List.map fst do
@@ -970,6 +996,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         | _ ->
             dividerShown <- false
             for KeyValue(_,divider) in splitDividers do this.onChrome(fun () -> if not divider.IsDisposed then divider.Hide())
+            splitBackdrop |> Option.iter(fun backdrop -> this.onChrome(fun () -> if not backdrop.IsDisposed then backdrop.Hide()))
             this.disposeEmptyPanes()
 
     /// Where an empty pane's window stands in the layout now.
@@ -1084,11 +1111,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             let host = match groupLayout with Split s -> SplitView.window (SplitView.host s) s |> Option.defaultValue IntPtr.Zero | _ -> IntPtr.Zero
             let hostChanged = host<>splitHost
             splitHost <- host
+            // The tabs behind go under the backdrop, once there is one, which is under every pane.
+            let behind = if backdropHandle<>IntPtr.Zero then backdropHandle else host
             for target in SplitView.plan groupLayout frame this.splitGap this.windows.items.list this.topWindow do
               if hostChanged && not liveResize && not(pane target.hwnd) && host<>IntPtr.Zero && not(isMinimized target.hwnd) &&
                  FollowerPlacement.queue.isWindowIdle(placementOwner,target.hwnd) &&
                  this.os.windowFromHwnd(target.hwnd).visibleBounds=target.rect then
-                FollowerPlacement.queue.submit(placementOwner,target.hwnd,FollowerPlacement.stackBelowRequest target.hwnd host)
+                FollowerPlacement.queue.submit(placementOwner,target.hwnd,FollowerPlacement.stackBelowRequest target.hwnd behind)
               else
                 // While dragging, the tabs behind are off screen until the drag ends, and a pane
                 // already in place is not asked again: each request moved and restacked windows
@@ -1103,6 +1132,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 let front = match groupLayout with Split s -> this.paneFront s | _ -> None
                 let below =
                     if pane target.hwnd && Some target.hwnd<>front then Some(front |> Option.defaultValue this.paneAnchor)
+                    elif not(pane target.hwnd) && target.below.IsSome then Some behind
                     else target.below
                 if wanted && not(isMinimized target.hwnd) && moving<>Some target.hwnd then
                     FollowerPlacement.queue.submit(placementOwner,target.hwnd,FollowerPlacement.alignFrameRequest target.hwnd target.rect target.rect wp below)
@@ -1801,15 +1831,19 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             chromeInvoker |> Option.iter(fun invoker ->
                 let dividers = splitDividers |> Map.toList |> List.map snd
                 let panes = emptySplitPanes |> Map.toList |> List.map(snd >> fst)
+                let backdrop = splitBackdrop
                 invoker.asyncInvoke(fun () ->
                     for window in dividers do window.Dispose()
                     for window in panes do window.Dispose()
+                    backdrop |> Option.iter(fun window -> window.Dispose())
                     System.Windows.Forms.Application.ExitThread()))
             chromeInvoker <- None
             splitDividers <- Map.empty
             emptySplitPanes <- Map.empty
-            let handles = emptyPaneHandles
+            splitBackdrop <- None
+            let handles = emptyPaneHandles@(if backdropHandle<>IntPtr.Zero then [backdropHandle] else [])
             System.Threading.Volatile.Write(&emptyPaneHandles,[])
+            System.Threading.Volatile.Write(&backdropHandle,IntPtr.Zero)
             for handle in handles do emptyPaneChangedEvent.Trigger(handle,IntPtr.Zero)
             placementCompletion |> Option.iter(fun subscription -> subscription.Dispose())
             placementCompletion <- None

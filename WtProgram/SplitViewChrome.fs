@@ -492,3 +492,19 @@ type EmptySplitPane(actions:EmptyPaneActions) =
             if not resizing && below<>IntPtr.Zero && window.prevZorder.hwnd<>below then
                 window.insertAfter(below)
         else this.Hide()
+
+/// A plain window the colour of the theme's surface, behind every pane and over the tabs behind
+/// them. An app that paints less than its frame, with a clear resize margin inside it as
+/// frameless Electron windows have, or one still catching up with a new size, shows this at
+/// the seam rather than whatever waits behind the panes.
+type SplitBackdrop() =
+    inherit SplitChromeForm()
+    member this.update(bounds:Rect, below:IntPtr, visible:bool) =
+        let surface = (SettingsColors.current()).surface
+        if this.BackColor.ToArgb()<>surface.ToArgb() then this.BackColor <- surface
+        if this.Bounds<>bounds.Rectangle then this.Bounds <- bounds.Rectangle
+        if visible then
+            if not this.Visible then this.Show()
+            let window = OS().windowFromHwnd(this.Handle)
+            if below<>IntPtr.Zero && window.prevZorder.hwnd<>below then window.insertAfter(below)
+        else this.Hide()

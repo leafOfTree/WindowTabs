@@ -270,7 +270,8 @@ no command of its own.
 | Exiting WindowTabs | Every member is visible natively again; the divider and the empty pane are released |
 | DPI or monitor changes | Logical sizes are scaled again for the monitor holding the group's frame |
 | A pane raised over the tabs by its own app, with no foreground change | A 200ms guard while split notices it and puts the tabs back over both panes |
-| A tab behind the panes above one of them | Put below the lowest pane once placement settles, and by the same guard: an app that keeps to its own grid is a little larger than the pane it waits under, and above another pane its edge showed at the seam |
+| A tab behind the panes above one of them | Put below the backdrop once placement settles, and by the same guard: an app that keeps to its own grid is a little larger than the pane it waits under, and above another pane its edge showed at the seam |
+| An app that paints less than its frame (a frameless Electron window's clear resize margin, about 4px inside the frame DWM reports), or one still catching up with a size | A backdrop window (`SplitBackdrop`) the colour of the theme's surface covers the group's frame just below the lowest pane and above the tabs behind, so the seam shows it rather than whatever waits behind |
 
 ## 7. Modules and threads
 

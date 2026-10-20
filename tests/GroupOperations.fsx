@@ -539,6 +539,11 @@ let main() =
                                 SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore
                             check (panes |> List.forall(fun pane -> z third < z pane)) "The test could not raise the tab behind over the panes"
                             pumpUntil(fun () -> panes |> List.forall(fun pane -> z third > z pane))
+                            // The backdrop lies between: under every pane, over the tabs behind.
+                            let backdrop = onGroup(fun group -> group.backdropHwnd)
+                            check (backdrop<>IntPtr.Zero && WinUserApi.IsWindowVisible backdrop) "No backdrop behind the panes"
+                            pumpUntil(fun () -> panes |> List.forall(fun pane -> z pane < z backdrop) && z backdrop < z third)
+                            check (OS().windowFromHwnd(backdrop).bounds=onGroup(fun group -> group.layoutFrame)) "The backdrop does not cover the group's frame"
                         onGroup(fun group -> group.removeWindow(third))
                         waitOperation()
                         onHelper(fun () -> forms.[2].Hide(); forms.[2].Pinned <- true; forms.[2].Bounds <- Rectangle(-20000,-20000,640,480))
