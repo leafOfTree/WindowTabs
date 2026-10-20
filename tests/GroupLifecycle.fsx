@@ -7,6 +7,7 @@ open System.IO
 open System.Threading
 open System.Windows.Forms
 open Bemo
+open Bemo.Json
 
 let check condition message = if not condition then failwith message
 /// Checks the state it saw rather than asking again, which can catch a later change.
@@ -943,7 +944,53 @@ let main() =
                     onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
                     (info :> IGroup).destroy()
                 pumpUntil "Drag groups did not exit" (fun () -> dragSource.isExited && dragTarget.isExited)
-            printfn "PASS: real HWND grouping, duplicate add, reorder, cross-STA transfer, six cross-orientation drags, destroyed-window removal, ungrouping, taskbar recovery and taskbar icon rebuilds."
+            // A split is kept with a workspace by the windows' places in the group, and the session,
+            // the same record written on its own, puts the groups and their splits back.
+            do
+                use d = new Form(Text="Pane D",ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-20000,-20000),Size=Drawing.Size(640,480))
+                use e = new Form(Text="Pane E",ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-20000,-20000),Size=Drawing.Size(640,480))
+                let hd,he = d.Handle,e.Handle
+                workspaceWindows <- List2([a;b;hd;he])
+                let pair = desktopApi.createGroup(false) :?> GroupInfo
+                for hwnd in [hd;he] do (pair :> IGroup).addWindow(hwnd,false)
+                pumpUntil "Pair did not form" (fun () -> nativeOrder pair=[hd;he])
+                let frame = Rect(Pt(100,100),Sz(900,700))
+                let tree = {axis=Stacked;ratio=0.3;first=Leaf(Occupied hd);second=Leaf(Occupied he)}
+                onGroup pair (fun group -> group.restoreLayout(Split {tree=tree;focused=[Second]},frame))
+                pumpUntil "The pair did not split" (fun () -> onGroup pair (fun group -> group.splitLayout.IsSome && group.isPlacementIdle))
+                let sessions = WorkspaceModel()
+                sessions.saveSession()
+                pumpUntil "The session was not written" (fun () -> match api.root.["session"] with :? JObject as saved -> (saved.["groups"] :? JArray) | _ -> false)
+                let savedPair =
+                    sessions.loadSession() |> Option.bind(fun ws ->
+                        ws.groups.list |> List.tryPick(fun group ->
+                            let group = group :?> WorkspaceGroup
+                            if group.windows.list |> List.exists(fun window -> (window :?> WorkspaceWindow).title="Pane D") then Some group else None))
+                check (savedPair |> Option.exists(fun group ->
+                        group.split |> Option.exists(fun split ->
+                            not split.parked && split.frame=frame && (split.panes |> List.map fst)=[0;1] &&
+                            (snd split.panes.[1]).levels=[Stacked,Second] && abs((snd split.panes.[0]).ratios.[0]-0.3)<0.001 && (snd split.panes.[1]).focused)))
+                      (sprintf "The session did not keep the pair's split: %A" (savedPair |> Option.map(fun group -> group.split)))
+                // Taken apart and put away, as a sign-in leaves them, the session puts them back split.
+                onGroup pair (fun group -> group.removeWindow hd; group.removeWindow he)
+                (pair :> IGroup).destroy()
+                pumpUntil "The pair did not exit" (fun () -> pair.isExited)
+                for hwnd in [hd;he] do OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),Sz(640,480)))
+                let mutable restored : WorkspaceRestoreResult option = None
+                sessions.restoreSession(false,fun result -> restored <- Some result)
+                pumpUntil "The session did not restore" (fun () -> restored.IsSome)
+                let groupOf hwnd = desktopApi.groups.list |> List.tryFind(fun group -> group.windows.contains((=) hwnd)) |> Option.map(fun group -> group :?> GroupInfo)
+                pumpUntil "The pair did not come back split from the session" (fun () ->
+                    match groupOf hd with
+                    | Some info ->
+                        onGroup info (fun group ->
+                            group.splitLayout |> Option.exists(fun s -> SplitView.windows s=[hd;he] && s.tree.axis=Stacked && abs(s.tree.ratio-0.3)<0.001) &&
+                            group.layoutFrame=frame)
+                    | None -> false)
+                groupOf hd |> Option.iter(fun info ->
+                    onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
+                    (info :> IGroup).destroy())
+            printfn "PASS: real HWND grouping, duplicate add, reorder, cross-STA transfer, six cross-orientation drags, destroyed-window removal, ungrouping, taskbar recovery, taskbar icon rebuilds and the session's splits."
         finally
             let rest = desktopApi.groups.list |> List.map(fun g -> g :?> GroupInfo)
             for info in List.distinct([source;target;combined] @ rest) do

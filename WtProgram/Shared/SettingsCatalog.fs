@@ -31,6 +31,7 @@ module SettingsCatalog =
         { id="theme"; page=AppearanceSettings; text=Strings.Settings.theme; binding=Choice("tabThemeMode",["system";"light";"dark"],"system") }
         { id="language"; page=GeneralSettings; text=Strings.Settings.language; binding=Choice("language",Localization.preferences,"system") }
         { id="launch-at-sign-in"; page=GeneralSettings; text=Strings.Settings.launchAtSignIn; binding=Toggle("runAtStartup",true,false) }
+        { id="restore-session"; page=GeneralSettings; text=Strings.Settings.restoreSession; binding=Choice("sessionRestore",["Off";"Windows";"Apps"],"Off") }
         { id="enable-tabs-for-new-apps"; page=ProgramSettings; text=Strings.Settings.enableTabsByDefault; binding=Toggle("enableTabbingByDefault",true,false) }
         { id="dim-inactive-groups"; page=GeneralSettings; text=Strings.Settings.dimInactiveGroups; binding=Toggle("hideInactiveTabs",true,false) }
         { id="tab-alignment"; page=GeneralSettings; text=Strings.Settings.tabAlignment; binding=Choice("alignment",["Left";"Center";"Right"],"Center") }
@@ -119,7 +120,7 @@ module SettingsCatalog =
     let appGroupingMatchTypes = [-1]
     let appGroupingMatchDefault = -1
     let appRuleKeys = appRulePathKeys @ ["disabledNumberShortcutPaths";"enabledNumberShortcutPaths";"appTabColors";"appGroupingRules";"appGroupingTargets"]
-    let workspaceKeys = ["workspaces";"workspaceSchemaVersion";"workspaceRecovery"]
+    let workspaceKeys = ["workspaces";"workspaceSchemaVersion";"workspaceRecovery";"session"]
     /// The settings a reset leaves: fresh-install toggles, the version (so the next start does
     /// not take the reset for an upgrade) and, unless cleared, app rules and saved workspaces.
     let resetRoot (current:JObject) clearAppRules clearWorkspaces =

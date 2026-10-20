@@ -149,6 +149,11 @@ module Strings =
         let launchAtSignIn = { caption={ en="Start with Windows"; zh="随 Windows 启动"; ja="Windows と同時に起動" }
                                description={ en="Runs in the system tray after you sign in."; zh="登录后在系统托盘中运行。"; ja="サインイン後にシステムトレイで実行します。" }
                                keywords={ en="startup autostart"; zh="开机启动 自启动"; ja="スタートアップ 自動起動" } }
+        let restoreSession = { caption={ en="Restore the last session after sign-in"; zh="登录后恢复上次会话"; ja="サインイン後に前回のセッションを復元" }
+                               description={ en="Groups, positions and splits come back among what is open, or the apps are launched too. Kept up as things change."
+                                             zh="按上次的分组、位置和分屏恢复已打开的内容，或连应用一起启动。记录随变化自动更新。"
+                                             ja="開いているものをグループ、位置、分割ごとに戻すか、アプリも起動します。記録は変化に合わせて更新されます。" }
+                               keywords={ en="session reboot"; zh="会话 重启"; ja="セッション 再起動" } }
         let enableTabsByDefault = { caption={ en="Use tabs for new apps"; zh="新应用自动启用标签"; ja="新しいアプリでタブを使う" }
                                     description={ en="Only apps first discovered after this change. Existing apps keep their tab setting."; zh="只影响此后首次出现的应用。已有应用保留原来的标签设置。"; ja="変更後に初めて検出するアプリに適用します。既存のアプリのタブ設定は維持します。" }
                                     keywords={ en=""; zh=""; ja="" } }
@@ -351,6 +356,10 @@ module Strings =
                               keywords={ en="factory"; zh="恢复默认 出厂"; ja="初期化" } }
 
     module General =
+        /// The choices of Restore the last session at start.
+        let sessionOff = { en="Off"; zh="关闭"; ja="オフ" }
+        let sessionWindows = { en="Open windows"; zh="已打开的窗口"; ja="開いているウィンドウ" }
+        let sessionApps = { en="Open windows, and start their apps"; zh="已打开的窗口，并启动缺少的应用"; ja="開いているウィンドウと、アプリの起動" }
         let settingsFile = { en="Settings file"; zh="设置文件"; ja="設定ファイル" }
         let openFolder = { en="Open folder"; zh="打开文件夹"; ja="フォルダーを開く" }
         let export = { en="Export…"; zh="导出…"; ja="エクスポート…" }
@@ -551,6 +560,7 @@ module Strings =
         let expectedList = { en=": expected a list."; zh="：应为列表。"; ja="：リストが必要です。" }
         let missingPlacement = { en="Missing placement."; zh="缺少窗口位置。"; ja="ウィンドウの配置がありません。" }
         let invalidTabLayout = { en="Invalid saved tab layout; the group will use current defaults."; zh="保存的标签布局无效；该分组将使用当前默认设置。"; ja="保存されたタブ配置が無効です。グループには現在の既定値を使用します。" }
+        let invalidSplit = { en="Invalid saved split view; the group will restore without it."; zh="保存的分屏无效；该分组恢复时不带分屏。"; ja="保存された分割表示が無効です。グループは分割なしで復元されます。" }
         let noValidWindows = { en="No valid windows in this group."; zh="此分组中没有有效窗口。"; ja="このグループに有効なウィンドウがありません。" }
         let unsupportedVersion = { en="Unsupported workspace version; saved workspaces will not be modified."
                                    zh="不支持此工作区版本；已保存的工作区不会被修改。"

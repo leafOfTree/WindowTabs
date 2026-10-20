@@ -135,6 +135,13 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let settleTimer = lifetime.Own(new System.Windows.Forms.Timer(Interval=1000))
     /// Groups are recorded a moment after they change, once for a burst of changes.
     let rememberSoon = lifetime.Own(new CoalescedAction(500, fun () -> this.rememberGroups()))
+    /// The session, written as the groups change and every so often as windows move, so a
+    /// sign-in finds the last state. A window carrying a group token at start means WindowTabs
+    /// alone restarted: the tokens put the groups back and the session is left alone.
+    let sessions = WorkspaceModel()
+    let sessionSoon = lifetime.Own(new CoalescedAction(3000, fun () -> this.saveSession()))
+    let sessionTimer = lifetime.Own(new System.Windows.Forms.Timer(Interval=120000))
+    let mutable tokensSeen = false
     /// Automatic groups of one app that have come to share a desktop are looked for at most once a second.
     let mergeSoon = lifetime.Own(new CoalescedAction(1000, fun () -> this.mergeAutoGroups()))
     let desktopRetry = lifetime.Own(new CoalescedAction(100, fun () ->
@@ -226,7 +233,33 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// A window that was in a group before WindowTabs restarted goes back to it, ahead of rules
     /// and auto grouping, so groups made by hand are kept; the first of its group starts it again.
     member this.restoredToken(hwnd:IntPtr) =
-        if groupedThisRun.Contains hwnd then None else WindowGroupToken.read hwnd
+        if groupedThisRun.Contains hwnd then None
+        else
+            let token = WindowGroupToken.read hwnd
+            if token.IsSome then tokensSeen <- true
+            token
+
+    member private this.sessionMode = string(Services.settings.getValue("sessionRestore"))
+
+    member private this.saveSession() =
+        if this.sessionMode<>"Off" && not inShutdown.value && not this.desktop.isDragging && initialDiscoveryComplete then
+            try sessions.saveSession() with error -> Diagnostics.Trace.TraceWarning("Session save failed: {0}",error.Message)
+
+    /// After a sign-in, once the first scan is done: no window has a group token, so the
+    /// session is what puts the groups, positions and splits back. A moment later, as apps
+    /// started with Windows still open their windows.
+    member private this.restoreSessionAtStart() =
+        let mode = this.sessionMode
+        if mode<>"Off" && not tokensSeen then
+            let timer = new System.Windows.Forms.Timer(Interval=4000)
+            timer.Tick.Add(fun _ ->
+                timer.Stop()
+                timer.Dispose()
+                if not inShutdown.value then
+                    try sessions.restoreSession((mode="Apps"),fun result ->
+                            Diagnostics.Trace.TraceInformation("Session restored: {0} windows, {1} not found, {2} failed",result.restored,result.missing.Length,result.failed.Length))
+                    with error -> Diagnostics.Trace.TraceWarning("Session restore failed: {0}",error.Message))
+            timer.Start()
 
     member private this.appKey(hwnd:IntPtr) =
         match appKeys.TryGetValue hwnd with
@@ -362,6 +395,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// Only groups made by hand, or restored from memory, are recorded; others change all the
     /// time (browser titles) and need no record.
     member private this.onGroupChanged(group:IGroup) =
+        sessionSoon.Request()
         match group with
         | :? GroupInfo as info when info.group.isManual || remembered |> List.exists(fun saved -> saved.id=info.group.groupToken) ->
             rememberSoon.Request()
@@ -663,6 +697,11 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             this.refresh()
 
         member x.shutdown() =
+            sessionTimer.Stop()
+            sessionSoon.Cancel()
+            // From the layouts last read: the groups are about to go and cannot be asked.
+            if this.sessionMode<>"Off" && initialDiscoveryComplete then
+                try sessions.saveSessionNow() with error -> Diagnostics.Trace.TraceWarning("Session save failed: {0}",error.Message)
             settingsManager.Flush() |> ignore
             settleTimer.Stop()
             rememberSoon.Cancel()
@@ -794,7 +833,10 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             settleTimer.Tick.Add(fun _ -> this.settleTick())
             if settling.Count>0 then settleTimer.Start()
             Services.desktop.groupChanged.Add this.onGroupChanged
-            this.updateTaskSwitcher(Services.settings.getValue("replaceAltTab")))
+            this.updateTaskSwitcher(Services.settings.getValue("replaceAltTab"))
+            this.restoreSessionAtStart()
+            sessionTimer.Tick.Add(fun _ -> this.saveSession())
+            sessionTimer.Start())
 
     member this.run(plugins:List2<IPlugin>) =
         this.initializePlugins plugins

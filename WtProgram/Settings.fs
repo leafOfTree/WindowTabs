@@ -158,6 +158,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         enabledNumberShortcutPaths = Set2(settingsJson.getStringArray("enabledNumberShortcutPaths").def(List2()))
                         numberLeaderKeys = settingsJson.getString("numberLeaderKeys").def(SettingsCatalog.textDefault "numberLeaderKeys") |> NumberLeaderKeys.normalize
                         numberHotKeyModifier = settingsJson.getString("numberHotKeyModifier").def(SettingsCatalog.choiceDefault "numberHotKeyModifier") |> SettingsCatalog.normalizeChoice "numberHotKeyModifier"
+                        sessionRestore = settingsJson.getString("sessionRestore").def(SettingsCatalog.choiceDefault "sessionRestore") |> SettingsCatalog.normalizeChoice "sessionRestore"
                         enableHoverActivate = settingsJson.getBool("enableHoverActivate").def(SettingsCatalog.toggleDefault "enableHoverActivate" hasExistingSettings)
                         // Older versions stored two toggles: minimalMode (every window) and autoHide (maximized only).
                         autoHideMode =
@@ -250,6 +251,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setStringArray("enabledNumberShortcutPaths", settings.enabledNumberShortcutPaths.items)
             settingsJson.setString("numberLeaderKeys",settings.numberLeaderKeys)
             settingsJson.setString("numberHotKeyModifier", settings.numberHotKeyModifier)
+            settingsJson.setString("sessionRestore", settings.sessionRestore)
             settingsJson.setBool("enableHoverActivate", settings.enableHoverActivate)
             settingsJson.setString("autoHideMode", settings.autoHideMode)
             settingsJson.setBool("showTabsOnSwitch", settings.showTabsOnSwitch)
@@ -308,7 +310,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             let api = x :> ISettings
             let value = if key="tabSearchScope" then box(SettingsCatalog.normalizeTabSearchScope (unbox value)) else value
             let value = if key="numberLeaderKeys" then box(NumberLeaderKeys.normalize (unbox value)) else value
-            let value = if key="alignment" || key="language" || key="autoHideMode" || key="switcherStyle" || key="numberHotKeyModifier" || key="tabColorStyle" || key="tabColorMode" || key="tabPosition" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
+            let value = if key="alignment" || key="language" || key="autoHideMode" || key="switcherStyle" || key="numberHotKeyModifier" || key="tabColorStyle" || key="tabColorMode" || key="tabPosition" || key="sessionRestore" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
             let value = if key="tabColumnWidth" then box(between SettingsCatalog.columnWidthRange (unbox<int> value)) else value
             match key with
             | "tabAppearance" ->

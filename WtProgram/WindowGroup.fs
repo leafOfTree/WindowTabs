@@ -1471,6 +1471,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 this.restoreLayout(layout,frame)
         | _ -> ()
 
+    /// The split as a workspace keeps it: parked or shown, its frame, and each pane window's place.
+    member this.savedSplit =
+        match groupLayout with
+        | GroupLayout.Single -> None
+        | Split _ | Parked _ -> Some((match groupLayout with Parked _ -> true | _ -> false),this.layoutFrame,SplitPersistence.entries groupLayout)
+
     /// A rebuilt group takes over the old one's layout once its members have arrived.
     member this.restoreLayout(next:GroupLayout, frame:Rect) = this.withUpdate(fun () ->
         match SplitView.prune this.windows.contains next with

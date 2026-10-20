@@ -124,6 +124,7 @@ and
     let mutable _windows  = System.Collections.Generic.List<Dynamic>()
     let removedEvent = Event<_>()
     member val tabLayout : GroupTabLayout option = None with get,set
+    member val split : SavedSplit option = None with get,set
 
     member this.addWindow(window) =
         _windows.Add(window)
@@ -159,6 +160,7 @@ and
         groupObj.setObject("placement", placementObj)
         groupObj.setObjectArray("windows", windowObjects)
         this.tabLayout |> Option.iter(fun layout -> groupObj.["tabLayout"] <- WorkspaceData.writeTabLayout layout)
+        this.split |> Option.iter(fun split -> groupObj.["split"] <- WorkspaceData.writeSplit split)
         groupObj
 
     static member deserialize(obj:JObject) =
@@ -168,6 +170,9 @@ and
         obj.getObjectArray("windows").Value.map(WorkspaceWindow.deserialize).iter(group.addWindow)
         match obj.["tabLayout"] with
         | :? JObject as layout -> group.tabLayout <- Some(WorkspaceData.tabLayout layout)
+        | _ -> ()
+        match obj.["split"] with
+        | :? JObject as split -> group.split <- (try Some(WorkspaceData.split split) with _ -> None)
         | _ -> ()
         group
 
@@ -394,6 +399,9 @@ type WorkspaceModel() as this =
     let mutable creating = false
     let mutable readOnly = false
     let mutable recovery : JToken option = None
+    /// Each group's tab layout and split as last read from its thread, by group token, so the
+    /// session can be written at exit without waiting on the groups.
+    let layouts = Dictionary<int,GroupTabLayout option * SavedSplit option>()
 
     do
         Observable.init(this)
@@ -415,7 +423,9 @@ type WorkspaceModel() as this =
         let nextNumber = this.workspaces.choose(fun(w) -> w.name.Replace("Workspace ", "").tryToInt()).maxBy 0 id + 1
         sprintf "Workspace %A" nextNumber
 
-    member private this.createWorkspace(complete:Workspace -> unit) =
+    /// The groups as they are. Their tab layouts and splits are read on their own threads
+    /// unless `fromCache`, which takes what was last read, for a save that cannot wait.
+    member private this.createWorkspace(fromCache:bool, complete:Workspace -> unit) =
         let zorder = os.windowZorders
         let groups = Services.desktop.groups.where(fun group -> not group.windows.isEmpty).enumerate.map <| fun (i, group) ->
             let windowsInZorder = group.windows.sortBy(zorder.find)
@@ -435,22 +445,39 @@ type WorkspaceModel() as this =
                 ww.zorder <- innerZorder.find(hwnd)
                 ww.matchType <- WorkspaceWindowTitleMatchType.ExactMatch
                 wsGroup.addWindow(ww)
-            group :?> GroupInfo,wsGroup
-            
+            // The split names its windows by their place in the list just saved.
+            let indexOf = Map2(group.windows.enumerate.map(fun (j,hwnd) -> hwnd,j))
+            let toSaved (parked:bool,frame:Rect,panes:(IntPtr * SavedPane) list) =
+                let panes = panes |> List.choose(fun (hwnd,pane) -> indexOf.tryFind hwnd |> Option.map(fun index -> index,pane))
+                if panes.Length>=2 then Some {parked=parked;frame=frame;panes=panes} else None
+            group :?> GroupInfo,wsGroup,toSaved
+
         let ws = Workspace(
             name = this.newWorkspaceName()
         )
 
         let mutable remaining = groups.count
         if remaining=0 then complete ws
+        elif fromCache then
+            groups.iter(fun (info,saved,_) ->
+                match layouts.TryGetValue info.group.groupToken with
+                | true,(layout,split) ->
+                    saved.tabLayout <- layout
+                    saved.split <- split
+                | _ -> ()
+                ws.addGroup(saved))
+            complete ws
         else
             // Group STAs read their own layout; saving never blocks them from reading settings.
-            groups.iter(fun (info,saved) ->
-                info.captureTabLayout(fun layout ->
-                    saved.tabLayout <- layout
+            groups.iter(fun (info,saved,toSaved) ->
+                info.captureLayout(fun captured ->
+                    captured |> Option.iter(fun (layout,split) ->
+                        saved.tabLayout <- Some layout
+                        saved.split <- split |> Option.bind toSaved
+                        layouts.[info.group.groupToken] <- (saved.tabLayout,saved.split))
                     remaining <- remaining-1
                     if remaining=0 then
-                        groups.iter(fun (_,group) -> ws.addGroup(group))
+                        groups.iter(fun (_,group,_) -> ws.addGroup(group))
                         complete ws))
 
     /// Restores saved groups of windows; a group already restored into (by an earlier try)
@@ -492,7 +519,25 @@ type WorkspaceModel() as this =
                                 restored <- restored+1
                             else lost saved
                         with ex -> errors.Add(fst (WorkspaceRestore.describe saved),ex.Message))
-                    try os.setZorder(WorkspaceRestore.zorder (List2(successful))) with ex -> errors.Add("",ex.Message)))
+                    try os.setZorder(WorkspaceRestore.zorder (List2(successful))) with ex -> errors.Add("",ex.Message)
+                    // The split comes back among the windows found, once they are all in the group,
+                    // moved with the placement when that was brought on screen.
+                    match destination,(groupInfo :?> WorkspaceGroup).split with
+                    | Some group,Some split when successful.Count>=2 ->
+                        let windows = (groupInfo?windows : List2<Dynamic>).list
+                        let byIndex =
+                            successful |> Seq.choose(fun (saved,hwnd) ->
+                                windows |> List.tryFindIndex(fun item -> obj.ReferenceEquals(item,saved)) |> Option.map(fun index -> index,hwnd))
+                            |> Map.ofSeq
+                        let panes = split.panes |> List.choose(fun (index,pane) -> byIndex.TryFind index |> Option.map(fun hwnd -> hwnd,pane))
+                        match SplitPersistence.rebuild panes with
+                        | GroupLayout.Single -> ()
+                        | layout ->
+                            let saved : OSWindowPlacement = groupInfo?placement
+                            let frame = split.frame.move(placement.rcNormalPosition.x-saved.rcNormalPosition.x,placement.rcNormalPosition.y-saved.rcNormalPosition.y)
+                            let info = group :?> GroupInfo
+                            info.invokeGroup(fun () -> info.group.restoreLayout(layout,frame))
+                    | _ -> ()))
         let pending =
             saved.list |> List.collect(fun (groupInfo,windows) ->
                 windows.list |> List.choose(fun item ->
@@ -522,12 +567,42 @@ type WorkspaceModel() as this =
         if not readOnly && not creating then
             creating <- true
             try
-                this.createWorkspace(fun ws ->
+                this.createWorkspace(false,fun ws ->
                     creating <- false
                     if not readOnly then this.addWorkspace(ws))
             with _ ->
                 creating <- false
                 reraise()
+
+    /// The windows as they are now, kept on their own as the session: written as the groups
+    /// change and brought back at the next start after a sign-in, when no window is left from
+    /// the last run. Apart from the saved workspaces, which are the user's.
+    member private this.writeSession(ws:Workspace) =
+        ws.name <- "Session"
+        let root = Services.settings.root
+        root.["session"] <- ws.serialize()
+        Services.settings.root <- root
+
+    member this.saveSession() = this.createWorkspace(false,this.writeSession)
+
+    /// Written at once from the layouts last read, for an exit that cannot wait on the groups.
+    member this.saveSessionNow() = this.createWorkspace(true,this.writeSession)
+
+    member this.loadSession() =
+        match Services.settings.root.["session"] with
+        | :? JObject as saved -> WorkspaceData.readOne saved |> Option.map Workspace.deserialize
+        | _ -> None
+
+    /// Brings the session back among the windows open, and, when `launch`, starts the apps of
+    /// the windows not found and tries those again.
+    member this.restoreSession(launch:bool, complete:WorkspaceRestoreResult -> unit) =
+        match this.loadSession() with
+        | None -> ()
+        | Some ws ->
+            let first = this.restoreWorkspace ws
+            if launch && not first.launchable.IsEmpty then
+                WorkspaceLaunch.start first.launchable (fun failures -> complete (first.Then(this.retry first,failures)))
+            else complete first
     
     member this.remove() =
         if not readOnly && this.selected <> null then
