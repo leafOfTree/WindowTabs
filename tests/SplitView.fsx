@@ -235,6 +235,19 @@ let main() =
     check (SplitView.emptyToClose (SplitView.layoutOf emptyAgain).Value=Some [First;Second]) "Esc did not pick the empty pane beside the focused one"
     check (SplitView.emptyToClose half=None) "Esc found an empty pane where there is none"
 
+    // What the windows remember of a split, and the layout they rebuild together.
+    let remembered = SplitPersistence.entries (Split nested)
+    check ((remembered |> List.map fst)=[a;b;c]) "Not every pane window remembers its place"
+    let placeOf hwnd = remembered |> List.find(fun (h,_) -> h=hwnd) |> snd
+    check ((placeOf c).levels=[SideBySide,Second;Stacked,Second] && (placeOf c).ratios=[0.5;0.5] && (placeOf c).focused && not (placeOf c).parked) "A nested pane remembered the wrong place"
+    check (SplitPersistence.rebuild remembered=Split nested) "The windows did not rebuild their layout"
+    check (SplitPersistence.rebuild (SplitPersistence.entries (Parked nested))=Parked nested) "Parked panes did not come back parked"
+    check (SplitPersistence.rebuild (remembered |> List.filter(fun (h,_) -> h<>b))=Split(pair (Occupied a) (Occupied c) SideBySide Second)) "A window gone did not leave its room to its neighbour"
+    check (SplitPersistence.rebuild (remembered |> List.filter(fun (h,_) -> h=c))=Single) "One window alone made a split"
+    check (SplitPersistence.rebuild (SplitPersistence.entries empty)=Single) "An empty pane came back from a restart"
+    let ratios = SplitPersistence.entries (apply a (SetRatio([Second],0.3)) (apply a (SetRatio([],0.7)) (Split nested)))
+    check (ratioAt [] (SplitPersistence.rebuild ratios)=0.7 && ratioAt [Second] (SplitPersistence.rebuild ratios)=0.3) "The ratios did not come back"
+
     // Placement plans
     let members = [c;a;d;b]
     let plan = SplitView.plan split frame gap members b

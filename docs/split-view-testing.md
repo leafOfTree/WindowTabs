@@ -39,7 +39,7 @@ dotnet build WindowTabs.sln
 ```
 
 Then run `WtProgram\bin\Debug\WindowTabs.exe`. Starting it asks a running copy to exit as from
-its tray menu and takes over. A split is not kept across an exit or restart.
+its tray menu and takes over. A split comes back after a restart as its windows regroup.
 
 1. Put two resizable windows in one group, two Explorer windows for example, and make the group
    large.
@@ -72,7 +72,8 @@ its tray menu and takes over. A split is not kept across an exit or restart.
 
 ## Known limits
 
-- A split is not kept across an exit or restart. After a restart the windows stay at their pane
+- A split comes back after an exit or restart as its windows regroup, at the frame it had;
+  an empty pane does not, and a window closed meanwhile leaves its room to its neighbour. After a restart the windows stay at their pane
   rectangles, and the group takes the size of the window in front.
 - An app that keeps a size of its own stays where it put itself, within 40px of its pane, with
   no message.

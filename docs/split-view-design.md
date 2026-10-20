@@ -267,7 +267,7 @@ no command of its own.
 | Minimize and restore | The whole group; both sides and the focused side come back |
 | An app's dialogs | Owner relationships are kept; focus handling never takes a dialog for a pane |
 | Changing how taskbar buttons combine (the group is rebuilt) | The layout is captured asynchronously and applied once the members have moved over; a missing member means a single window |
-| Exiting WindowTabs | Every member is visible natively again; the divider and the empty pane are released |
+| Exiting WindowTabs | Every member is visible natively again; the dividers and the empty panes are released. Each pane window keeps its place in the split on itself (`WindowSplitLayout`, window properties beside the group token: its path with the axis at each level, a ratio per split above, the frame, focus and parked), so the next start shows the split again as the windows regroup, growing as each arrives; a window closed meanwhile leaves its room to its neighbour, and empty panes are not kept |
 | DPI or monitor changes | Logical sizes are scaled again for the monitor holding the group's frame |
 | A pane raised over the tabs by its own app, with no foreground change | A 200ms guard while split notices it and puts the tabs back over both panes |
 | A tab behind the panes above one of them | Put below the backdrop once placement settles, and by the same guard: an app that keeps to its own grid is a little larger than the pane it waits under, and above another pane its edge showed at the seam |

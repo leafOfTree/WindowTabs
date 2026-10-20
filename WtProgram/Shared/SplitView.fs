@@ -401,7 +401,7 @@ module SplitView =
         if pane beside layout=Some Empty then Some beside else emptyPanes layout |> List.tryHead
 
     /// The focus goes to the pane again, or to the first pane with a window when it is gone.
-    let private refocus (tree:SplitTree) (focused:PanePath) =
+    let refocus (tree:SplitTree) (focused:PanePath) =
         let layout = {tree=tree;focused=focused}
         if (window focused layout).IsSome then layout
         else
@@ -620,3 +620,62 @@ module SplitView =
                 | None -> {hwnd=hwnd;rect=hostRect;below=hostHwnd})
         | Single | Parked _ ->
             members |> List.filter((<>) top) |> List.map(fun hwnd -> {hwnd=hwnd;rect=frame;below=Some top})
+
+/// What a pane window remembers of its split, kept on the window itself across restarts: the
+/// splits above it with the side taken at each and their ratios, and whether it was in focus.
+type SavedPane = {
+    levels: (SplitAxis * Side) list
+    ratios: float list
+    focused: bool
+    parked: bool
+}
+
+module SplitPersistence =
+    /// Each pane window's place in the layout.
+    let entries (layout:GroupLayout) =
+        match layout with
+        | Single -> []
+        | Split s | Parked s ->
+            let parked = match layout with Parked _ -> true | _ -> false
+            let branchAt depth (path:PanePath) =
+                match SplitTree.node (List.truncate depth path) (SplitView.root s) with
+                | Some(Branch branch) -> branch
+                | _ -> s.tree
+            SplitView.leaves s |> List.choose(fun (path,pane) ->
+                match pane with
+                | Occupied hwnd ->
+                    Some(hwnd,{ levels = path |> List.mapi(fun depth side -> (branchAt depth path).axis,side)
+                                ratios = path |> List.mapi(fun depth _ -> (branchAt depth path).ratio)
+                                focused = (path=s.focused)
+                                parked = parked })
+                | Empty -> None)
+
+    /// The layout the windows present remember together. Panes gone, the empty ones and the
+    /// windows closed since, leave their room to their neighbours; one pane is no split.
+    let rebuild (saved:(IntPtr * SavedPane) list) =
+        let rec build (entries:(IntPtr * (SplitAxis * Side) list * float list) list) =
+            match entries |> List.tryFind(fun (_,levels,_) -> levels.IsEmpty) with
+            | Some(hwnd,_,_) -> Some(Leaf(Occupied hwnd))
+            | None ->
+                match entries with
+                | [] -> None
+                | (_,(axis,_)::_,ratios)::_ ->
+                    let on side =
+                        entries |> List.choose(fun (hwnd,levels,ratios) ->
+                            match levels,ratios with
+                            | (_,taken)::rest,_::ratiosRest when taken=side -> Some(hwnd,rest,ratiosRest)
+                            | (_,taken)::rest,[] when taken=side -> Some(hwnd,rest,[])
+                            | _ -> None)
+                    let ratio = ratios |> List.tryHead |> Option.defaultValue 0.5
+                    match build (on First),build (on Second) with
+                    | Some first,Some second -> Some(Branch {axis=axis;ratio=SplitMetrics.clampRatio ratio;first=first;second=second})
+                    | Some only,None | None,Some only -> Some only
+                    | None,None -> None
+                | _ -> None
+        match build (saved |> List.map(fun (hwnd,pane) -> hwnd,pane.levels,pane.ratios)) with
+        | Some(Branch tree) ->
+            let layout = {tree=tree;focused=[]}
+            let focused = saved |> List.tryPick(fun (hwnd,pane) -> if pane.focused then SplitView.pathOf hwnd layout else None)
+            let layout = SplitView.refocus tree (defaultArg focused [])
+            if saved |> List.exists(fun (_,pane) -> pane.parked) then Parked layout else Split layout
+        | _ -> Single

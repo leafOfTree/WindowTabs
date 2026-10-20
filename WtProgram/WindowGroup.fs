@@ -145,6 +145,54 @@ module WindowTabLayout =
             let dock = match int((value >>> 9) &&& 3L) with 0 -> TabDockTop | 1 -> TabDockBottom | 2 -> TabDockLeft | _ -> TabDockRight
             Some {dock=dock;columnWidth=width;normalAlignment=alignment normal;insideAlignment=alignment inside}
 
+/// A pane window's place in its group's split view, kept on the window itself as the group
+/// token is, so a restarted WindowTabs shows the split again as the windows come back.
+/// Properties hold a pointer-sized value, so the place is spread over a few, each within 31
+/// bits for a 32-bit process: the path with its flags, a ratio per split above, and the frame.
+module WindowSplitLayout =
+    let private paneKey = "WindowTabs.Split.Pane.v1"
+    let private ratioKey depth = sprintf "WindowTabs.Split.Ratio.v1.%d" depth
+    let private frameKeys = ["WindowTabs.Split.Frame.v1.X";"WindowTabs.Split.Frame.v1.Y";"WindowTabs.Split.Frame.v1.W";"WindowTabs.Split.Frame.v1.H"]
+    let private marker = 0x40000000
+    /// Coordinates are kept positive; the frame is at most this far from the origin.
+    let private offset = 0x20000000
+    let maxDepth = 12
+    let private value hwnd key = int(WinUserApi.GetProp(hwnd,key).ToInt64() &&& 0x7FFFFFFFL)
+    let save hwnd (pane:SavedPane) (frame:Rect) =
+        if pane.levels.Length<=maxDepth && [frame.x;frame.y;frame.width;frame.height] |> List.forall(fun v -> abs v<offset) then
+            let levels =
+                pane.levels |> List.mapi(fun depth (axis,side) ->
+                    ((if axis=Stacked then 1 else 0) ||| (if side=Second then 2 else 0)) <<< (4+2*depth))
+                |> List.fold (|||) 0
+            let flags = (if pane.focused then 1<<<28 else 0) ||| (if pane.parked then 1<<<29 else 0)
+            WinUserApi.SetProp(hwnd,paneKey,IntPtr(marker ||| pane.levels.Length ||| levels ||| flags)) |> ignore
+            pane.ratios |> List.iteri(fun depth ratio ->
+                WinUserApi.SetProp(hwnd,ratioKey depth,IntPtr(marker ||| int(Math.Round(ratio*10000.0)))) |> ignore)
+            for key,v in List.zip frameKeys [frame.x;frame.y;frame.width;frame.height] do
+                WinUserApi.SetProp(hwnd,key,IntPtr(v+offset)) |> ignore
+    let clear hwnd =
+        if WinUserApi.IsWindow hwnd && value hwnd paneKey &&& marker <> 0 then
+            WinUserApi.RemoveProp(hwnd,paneKey) |> ignore
+            for depth in 0..maxDepth-1 do WinUserApi.RemoveProp(hwnd,ratioKey depth) |> ignore
+            for key in frameKeys do WinUserApi.RemoveProp(hwnd,key) |> ignore
+    let read hwnd =
+        let packed = value hwnd paneKey
+        if packed &&& marker = 0 then None
+        else
+            let depth = packed &&& 15
+            let levels =
+                [for level in 0..depth-1 ->
+                    let bits = (packed >>> (4+2*level)) &&& 3
+                    (if bits &&& 1 = 1 then Stacked else SideBySide),(if bits &&& 2 = 2 then Second else First)]
+            let ratios =
+                [for level in 0..depth-1 ->
+                    let stored = value hwnd (ratioKey level)
+                    if stored &&& marker = 0 then 0.5 else float(stored &&& 0xFFFF)/10000.0]
+            match frameKeys |> List.map(fun key -> value hwnd key-offset) with
+            | [x;y;w;h] when w>0 && h>0 && depth<=maxDepth ->
+                Some({levels=levels;ratios=ratios;focused=(packed &&& (1<<<28))<>0;parked=(packed &&& (1<<<29))<>0},Rect(Pt(x,y),Sz(w,h)))
+            | _ -> None
+
 /// Which group a window was in, kept on the window itself, so a restarted WindowTabs puts
 /// windows back together as they were, however they came to be grouped.
 module WindowGroupToken =
@@ -200,6 +248,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let mutable groupLayout : GroupLayout = GroupLayout.Single
     /// The frame before the split filled the work area, for the toggle back.
     let mutable splitRestore : Rect option = None
+    /// The split came from what the windows remembered before a restart: their places are left
+    /// as they are for a while, so a window still to arrive finds the layout it was saved with.
+    let mutable splitFromProps = false
+    let splitRestoreClock = Stopwatch()
     /// A pane window moved or sized natively: the window, its frame and the group's at the start.
     let mutable splitMove : (IntPtr * Rect * Rect * SplitTree) option = None
     let mutable splitPending = false
@@ -1140,6 +1192,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             splitPending <- true
             splitSettleTimer.Start()
             this.updateSplitChrome()
+            this.saveSplitProps()
         | Split _ -> ()
         | _ -> zorderCell.value.tail.iter(this.adjustWindowPlacement)
 
@@ -1247,10 +1300,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             match before,next with
             | Split a,Split b when SplitTree.sameShape (SplitView.root a) (SplitView.root b) -> layoutChangedEvent.Trigger()
             | _ -> this.refreshLayoutTabs()
+            this.saveSplitProps()
 
     /// Runs a command for the window on top, or for `current` when the caller knows better.
     member this.execute(command:SplitCommand, ?current:IntPtr, ?keepFrame:bool) = this.withUpdate(fun () ->
         if not this.isEmpty && not isDestroyed.value then
+            // A command is the user's: the layout is theirs now, not the restart's.
+            splitFromProps <- false
             match command with
             | ToggleFill -> this.toggleFill()
             | _ ->
@@ -1386,6 +1442,35 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         this.saveTopWindowPlacement()
         this.adjustChildWindows()
 
+    /// The split kept on its windows, saved as it changes and cleared as it ends. Not for a
+    /// few seconds after it was restored from them: the windows still to arrive were saved with
+    /// the whole layout, which a save of the part present would spoil.
+    member private this.saveSplitProps() =
+        if not(splitFromProps && splitRestoreClock.ElapsedMilliseconds<5000L) then
+            splitFromProps <- false
+            let entries = SplitPersistence.entries groupLayout
+            let frame = this.layoutFrame
+            for hwnd,pane in entries do WindowSplitLayout.save hwnd pane frame
+            let saved = entries |> List.map fst |> Set.ofList
+            for hwnd in this.windows.items.list do
+                if not(saved.Contains hwnd) then WindowSplitLayout.clear hwnd
+
+    /// A window arriving with a place in a split its windows remembered: the layout those present
+    /// remember together comes back, and grows as the rest arrive.
+    member private this.restoreSplitProps(hwnd) =
+        match WindowSplitLayout.read hwnd with
+        | Some(_,frame) when groupLayout=GroupLayout.Single || splitFromProps ->
+            let saved =
+                this.windows.items.list |> List.choose(fun member' ->
+                    WindowSplitLayout.read member' |> Option.filter(fun (_,at) -> at=frame) |> Option.map(fun (pane,_) -> member',pane))
+            match SplitPersistence.rebuild saved with
+            | GroupLayout.Single -> ()
+            | layout ->
+                splitFromProps <- true
+                splitRestoreClock.Restart()
+                this.restoreLayout(layout,frame)
+        | _ -> ()
+
     /// A rebuilt group takes over the old one's layout once its members have arrived.
     member this.restoreLayout(next:GroupLayout, frame:Rect) = this.withUpdate(fun () ->
         match SplitView.prune this.windows.contains next with
@@ -1430,6 +1515,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             let bounds = monitorBounds.def(window.bounds)
             let visible = monitorBounds.def(window.visibleBounds)
             placement.set(Some(bounds, window.placement, visible))
+            // Parked panes come back at the frame the group has now.
+            (match groupLayout with Parked _ -> this.saveSplitProps() | _ -> ())
             if enableSuperBar then this.prepareMinimizeAnchor window.hwnd
 
     member this.prepareMinimizeAnchor hwnd =
@@ -1722,6 +1809,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             lastActiveTab <- TabNavigation.rememberActive this.lorder.list isOpen lastActiveTab foreground
             StartupTrace.measure "group.add.placement" (fun () -> this.adjustWindowPlacement(hwnd))
             if hasSavedTabLayout then WindowTabLayout.save hwnd this.tabLayout
+            this.restoreSplitProps(hwnd)
             StartupTrace.measure "group.add.notify" (fun () -> addedEvent.Trigger(hwnd))
             // A visible window joining a minimized group restores it, as restoring any tab does,
             // so closing that window shows the previous tab instead of minimizing the group again.
@@ -1737,6 +1825,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         inputOwnership.Remove hwnd |> ignore
         if not isDestroyed.value && this.windows.contains(hwnd) then
             this.onRemoved(hwnd)
+            WindowSplitLayout.clear hwnd
             this.reclaimLeftTab(hwnd)
             let foreground = this.os.foreground.hwnd
             let next = TabNavigation.closeTarget this.lorder.list isOpen hwnd foreground lastActiveTab opener (this.leftOnClose hwnd)

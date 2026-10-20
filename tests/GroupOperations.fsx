@@ -548,6 +548,43 @@ let main() =
                         waitOperation()
                         onHelper(fun () -> forms.[2].Hide(); forms.[2].Pinned <- true; forms.[2].Bounds <- Rectangle(-20000,-20000,640,480))
                     waitSplit()
+                    // What the windows remember of their split comes back in another group, as after
+                    // a restart: the panes, the ratio and the frame, once both windows have arrived.
+                    do
+                        let frameBefore,before = onGroup(fun group -> group.layoutFrame,group.splitLayout.Value)
+                        onGroup(fun group -> group.execute(SetRatio([],0.6)))
+                        waitSplit()
+                        let shape = onGroup(fun group -> group.splitLayout.Value)
+                        let saved = [source;partner] |> List.map(fun hwnd -> hwnd,WindowSplitLayout.read hwnd)
+                        check (saved |> List.forall(fun (_,place) -> place |> Option.exists(fun (_,frame) -> frame=frameBefore))) (sprintf "The pane windows do not remember their split at its frame: %A" saved)
+                        // Taken apart, which clears the windows, and put on them again as a restart finds them.
+                        onGroup(fun group -> group.removeWindow source; group.removeWindow partner)
+                        waitOperation()
+                        for hwnd,place in saved do WindowSplitLayout.save hwnd (fst place.Value) (snd place.Value)
+                        let again = (desktop :> IDesktop).createGroup(false) :?> GroupInfo
+                        let onAgain action =
+                            let mutable result = None
+                            again.invokeGroup(fun () -> result <- Some(try Choice1Of2(action again.group) with e -> Choice2Of2 e))
+                            pumpUntil(fun () -> result.IsSome)
+                            match result.Value with Choice1Of2 value -> value | Choice2Of2 error -> raise error
+                        try
+                            onAgain(fun group -> group.addWindow(source,false))
+                            check (onAgain(fun group -> group.layout=GroupLayout.Single)) "One window alone brought a split back"
+                            onAgain(fun group -> group.addWindow(partner,false))
+                            pumpUntil(fun () -> onAgain(fun group -> group.splitLayout=Some shape))
+                            pumpUntil(fun () -> onAgain(fun group -> group.isPlacementIdle))
+                            check (onAgain(fun group -> group.layoutFrame)=frameBefore) (sprintf "The split did not come back at its frame: %A instead of %A" (onAgain(fun group -> group.layoutFrame)) frameBefore)
+                            for hwnd in [source;partner] do
+                                let wanted = (SplitGeometry.paneRect gap frameBefore shape (SplitView.pathOf hwnd shape).Value).Value
+                                check (OS().windowFromHwnd(hwnd).visibleBounds=wanted) (sprintf "A pane did not come back in place: %A instead of %A" (OS().windowFromHwnd(hwnd).visibleBounds) wanted)
+                        finally
+                            // Back to the group the rest of the suite uses, as it was.
+                            onAgain(fun group -> group.removeWindow source; group.removeWindow partner)
+                            (again :> IGroup).destroy()
+                        onGroup(fun group -> group.addWindow(source,false); group.addWindow(partner,false))
+                        waitOperation()
+                        onGroup(fun group -> group.restoreLayout(Split before,frameBefore))
+                        waitSplit()
                     // A pane its own app raises over the tabs, with no foreground change and no notice
                     // to the group, is put back under them.
                     do
