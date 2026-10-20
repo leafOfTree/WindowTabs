@@ -180,7 +180,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                     numberBadge = if numberBadgesCell.value then lorderCell.value.list |> List.tryFindIndex ((=) tab) |> Option.filter(fun i -> i<numberBadgeKeysCell.value.Length) |> Option.map(fun i -> string numberBadgeKeysCell.value.[i]) else None
                     bgColor = tabBgColor.value.tryFind(tab)
                     TabDisplayInfo.text = ti.text
-                    splitSide = ti.splitSide
+                    splitTrail = ti.splitTrail
                     icon = ti.iconSmall
                     textFont = if ti.isRenamed then renamedFont else normalFont
                     textBrush = SystemBrushes.MenuText
@@ -715,7 +715,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         tabInfoCell.value.tryFind(tab).def({
             text = ""
             isRenamed = false
-            splitSide = None
+            splitTrail = None
             iconSmall = System.Drawing.SystemIcons.Application
             iconBig = System.Drawing.SystemIcons.Application
             preview = fun() -> Img(Sz(1,1))

@@ -10,8 +10,9 @@ and TabInfo = {
     iconBig: Icon
     preview: unit -> Img
     isRenamed: bool
-    /// The pane this tab shows in a split view, drawn as a badge; the text itself stays clean.
-    splitSide: (SplitAxis * Side) option
+    /// The splits above this tab's pane, root first, with the side taken at each: the button on
+    /// the seam between two pane tabs shows the split that parts them; the text itself stays clean.
+    splitTrail: (SplitAxis * Side) list option
 }
 
 and TabDragInfo = {

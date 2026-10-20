@@ -600,7 +600,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         {
             text = this.tabName hwnd
             isRenamed = this.isRenamed hwnd
-            splitSide = SplitView.badge hwnd groupLayout
+            splitTrail = SplitView.trail hwnd groupLayout
             iconSmall = small
             iconBig = big
             preview = fun() ->
@@ -676,7 +676,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if isNew then this.refreshTabColor(hwnd)
         let info = this.getTabInfo(hwnd)
         let previous = this.ts.tabInfo(Tab(hwnd))
-        if isNew || info.text <> previous.text || info.isRenamed <> previous.isRenamed || info.splitSide <> previous.splitSide ||
+        if isNew || info.text <> previous.text || info.isRenamed <> previous.isRenamed || info.splitTrail <> previous.splitTrail ||
            not(obj.ReferenceEquals(info.iconSmall,previous.iconSmall)) ||
            not(obj.ReferenceEquals(info.iconBig,previous.iconBig)) then
             this.ts.setTabInfo(Tab(hwnd),info)

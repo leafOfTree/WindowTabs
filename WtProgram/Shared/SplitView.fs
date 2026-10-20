@@ -371,6 +371,26 @@ module SplitView =
     /// The pane windows in layout order, for keeping their tabs together.
     let paneOrder groupLayout = layoutOf groupLayout |> Option.map windows |> Option.defaultValue []
 
+    /// The splits from the root down to the pane: each one's axis and the side taken.
+    let trail hwnd groupLayout =
+        layoutOf groupLayout |> Option.bind(fun s ->
+            pathOf hwnd s |> Option.map(fun path ->
+                path |> List.mapi(fun depth side ->
+                    match SplitTree.node (List.truncate depth path) (root s) with
+                    | Some(Branch branch) -> branch.axis,side
+                    | _ -> s.tree.axis,side)))
+
+    /// The split that parts two panes: the deepest one holding both, with its axis.
+    let commonSplit a b (layout:SplitLayout) =
+        match pathOf a layout,pathOf b layout with
+        | Some x,Some y ->
+            let shared = Seq.zip x y |> Seq.takeWhile(fun (p,q) -> p=q) |> Seq.length
+            let path = List.truncate shared x
+            match SplitTree.node path (root layout) with
+            | Some(Branch branch) -> Some(path,branch.axis)
+            | _ -> None
+        | _ -> None
+
     let dropCommand hwnd = function
         | FillEmpty path -> FillPane(hwnd,path)
         | SplitAt(path,axis,side) -> DropInto(hwnd,path,axis,side)

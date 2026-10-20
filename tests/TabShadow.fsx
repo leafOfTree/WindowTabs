@@ -103,7 +103,7 @@ let main () =
         tabBorderColor=Color.FromArgb(168,168,168) }
     let info text : TabDisplayInfo = {
         tint=None; colorStyle="Stripe"; numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application
-        textFont=SystemFonts.MenuFont; textBrush=Brushes.Black; splitSide=None }
+        textFont=SystemFonts.MenuFont; textBrush=Brushes.Black; splitTrail=None }
     let ts : TabStripSprite<int> = {
         tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"]))
         lorder=List2([1;2]); zorder=List2([1;2]); size=Sz(420,28)
@@ -286,7 +286,7 @@ let main () =
     for h in [12;18;26] do
         use font = TabMetrics.font h FontStyle.Regular
         check (font.Height <= max h (SystemFonts.MenuFont.Height)) (sprintf "Text line does not fit a %dpx tab" h)
-        let info text : TabDisplayInfo = { tint=None; colorStyle="Stripe"; numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application; textFont=font; textBrush=Brushes.Black; splitSide=None }
+        let info text : TabDisplayInfo = { tint=None; colorStyle="Stripe"; numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application; textFont=font; textBrush=Brushes.Black; splitTrail=None }
         let strip = { ts with appearance={ appearance with tabHeight=h }; size=Sz(420,h+1)
                               tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"])) }
         for _,tab in strip.sprite.children.list do

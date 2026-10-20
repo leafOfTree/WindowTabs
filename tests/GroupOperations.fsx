@@ -342,11 +342,11 @@ let main() =
                         check (adjacent group partner source) "The pair's tabs did not end up next to each other")
                     waitOperation()
                     check (not(surfaces.isLayoutTarget emptyPane)) "A filled empty pane stayed a drop surface"
-                    check (onGroup(fun group -> group.ts.tabInfo(Tab(partner)).splitSide=Some(SideBySide,First) && group.ts.tabInfo(Tab(source)).splitSide=Some(SideBySide,Second))) "Pane tabs carry no badge"
+                    check (onGroup(fun group -> group.ts.tabInfo(Tab(partner)).splitTrail=Some [SideBySide,First] && group.ts.tabInfo(Tab(source)).splitTrail=Some [SideBySide,Second])) "Pane tabs carry no badge"
                     check (onGroup(fun group -> group.ts.tabInfo(Tab(partner)).text=group.tabName partner)) "The badge leaked into the tab's name"
                     onGroup(fun group -> group.execute(EndSplit(Some source)))
                     waitOperation()
-                    check (onGroup(fun group -> group.layout=GroupLayout.Single && group.ts.tabInfo(Tab(partner)).splitSide=None)) "Ending the split kept a badge"
+                    check (onGroup(fun group -> group.layout=GroupLayout.Single && group.ts.tabInfo(Tab(partner)).splitTrail=None)) "Ending the split kept a badge"
                     onGroup(fun group -> group.removeWindow(partner); group.execute(NewEmptyPane Stacked))
                     waitOperation()
                     check (onGroup(fun group -> group.windows.count=1 && group.splitLayout.Value.tree.second=Leaf Empty)) "A singleton could not create an empty pane"

@@ -273,8 +273,20 @@ type TabStripDecorator(group:WindowGroup) as this =
             if group.lorder.list.[index]<>hwnd then this.ts.moveTab(Tab(hwnd),index))
 
     /// The split's menu, from the button between its two tabs.
-    member private this.showSplitMenu(ptScreen:Pt) =
-        let items = SplitMenu.items group.layout (fun command -> group.execute command)
+    /// The menu of the split a seam button stands for, the one parting its tab from the pane tab
+    /// before it; without a button, the focused pane's split.
+    member private this.showSplitMenu(ptScreen:Pt, button:IntPtr option) =
+        let execute command = group.execute command
+        let items =
+            let parting =
+                button |> Option.bind(fun owner ->
+                    SplitView.layoutOf group.layout |> Option.bind(fun layout ->
+                        let panes = group.lorder.list |> List.filter(fun hwnd -> SplitView.contains hwnd layout)
+                        List.tryFindIndex ((=) owner) panes |> Option.filter(fun index -> index>0)
+                        |> Option.bind(fun index -> SplitView.commonSplit panes.[index-1] owner layout)))
+            match parting with
+            | Some(path,axis) -> SplitMenu.ofSplit axis (match group.layout with Parked _ -> true | _ -> false) (Some path) execute
+            | None -> SplitMenu.items group.layout execute
         if items.count>0 then
             contextMenu |> Option.iter(fun menu -> menu.Dispose())
             group.bb.write("contextMenuVisible", true)
@@ -642,7 +654,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             let ptScreen = os.windowFromHwnd(this.ts.hwnd).ptToScreen(pt)
             // The button between a split's tabs is not its tab: no activation, drag, rename or tab menu.
             if part=TabSplit then
-                if action=MouseDown && (btn=MouseLeft || btn=MouseRight) then this.showSplitMenu(ptScreen)
+                if action=MouseDown && (btn=MouseLeft || btn=MouseRight) then this.showSplitMenu(ptScreen,Some hwnd)
             else
             mouseEvent.Trigger(hwnd, btn, action, pt)
             match action with

@@ -271,11 +271,11 @@ let main() =
     let strip sides : TabStripSprite<int> =
         { tabs=Map2(List2([1..3] |> List.map(fun id -> id, {
               tint=None; colorStyle="Stripe"; numberBadge=None; bgColor=None; text=sprintf "Window %d" id; icon=SystemIcons.Application
-              textFont=font; textBrush=Brushes.Black; splitSide=Map.tryFind id sides })))
+              textFont=font; textBrush=Brushes.Black; splitTrail=Map.tryFind id sides })))
           lorder=List2([1;2;3]); zorder=List2([1;2;3]); size=Sz(630,Dpi.scale 28)
           slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false
           transparent=true; held=None; centerShift=0.0; dock=TabDockTop; scrollOffset=0; appearance=appearance; hover=None; captured=None }
-    let paired = strip (Map.ofList [1,(SideBySide,First);2,(SideBySide,Second)])
+    let paired = strip (Map.ofList [1,[SideBySide,First];2,[SideBySide,Second]])
     let seam = paired.tabLocation 2
     // Near the bottom edge, where the button sits clear of the icons; the middle of the seam stays the tabs'.
     let low = Pt(seam.x,Dpi.scale 28-Dpi.scale 5)
@@ -283,10 +283,16 @@ let main() =
     check (paired.tryHit low=Some(2,TabSplit)) "The seam between a split's tabs is not its button"
     check (paired.tryHit middle |> Option.forall(fun (_,part) -> part<>TabSplit)) "The split button covers the middle of the tabs"
     check ((strip Map.empty).tryHit low |> Option.forall(fun (_,part) -> part<>TabSplit)) "Unpaired tabs show a split button"
-    let apart = { (strip (Map.ofList [1,(SideBySide,First);3,(SideBySide,Second)])) with lorder=List2([1;2;3]) }
+    let apart = { (strip (Map.ofList [1,[SideBySide,First];3,[SideBySide,Second]])) with lorder=List2([1;2;3]) }
     check (apart.tryHit (Pt((apart.tabLocation 3).x,Dpi.scale 28-Dpi.scale 5)) |> Option.forall(fun (_,part) -> part<>TabSplit)) "Paired tabs that are apart show a split button"
-    let trio = strip (Map.ofList [1,(SideBySide,First);2,(Stacked,First);3,(Stacked,Second)])
+    // Three panes, two in the top row and one below: the button between the top row's tabs shows
+    // their side-by-side split, the one before the lower pane's tab the stacked split parting the rows.
+    let trio = strip (Map.ofList [1,[Stacked,First;SideBySide,First];2,[Stacked,First;SideBySide,Second];3,[Stacked,Second]])
     check (trio.tryHit (Pt((trio.tabLocation 2).x,Dpi.scale 28-Dpi.scale 5))=Some(2,TabSplit) && trio.tryHit (Pt((trio.tabLocation 3).x,Dpi.scale 28-Dpi.scale 5))=Some(3,TabSplit)) "Three panes' tabs do not have a button on each seam"
+    let seamAxis owner = trio.sprite.children.list |> List.pick(fun (_,sprite) -> match sprite with :? SplitJunctionSprite as junction when unbox<int> junction.owner=owner -> Some junction.axis | _ -> None)
+    check (seamAxis 2=SideBySide && seamAxis 3=Stacked) "The seam buttons do not show the split parting their tabs"
+    check (SplitView.trail c (Split nested)=Some [SideBySide,Second;Stacked,Second] && SplitView.trail a (Split nested)=Some [SideBySide,First] && SplitView.trail d (Split nested)=None) "Trails do not follow the splits down to the pane"
+    check (SplitView.commonSplit a c nested=Some([],SideBySide) && SplitView.commonSplit b c nested=Some([Second],Stacked) && SplitView.commonSplit a d nested=None) "The split parting two panes was not found"
     check (SplitMenu.items Single ignore).isEmpty "A single layout offers split commands"
     check ((SplitMenu.items (Parked half) ignore).count=(SplitMenu.items (Split half) ignore).count+2) "Parked panes do not offer to come back"
     printfn "PASS: split geometry, nested splits, native resizes, edge drops, commands, parking, removal, badges, placement plans and the seam buttons."

@@ -63,7 +63,10 @@ the tree's simplest case and keep their behaviour.
 - The panes' tabs stay next to each other in the strip in layout order (as in Brave), and a
   split button sits on each seam between them at the bottom of the strip. It marks the panes
   and opens the split menu: swap, equalize, toggle direction, end split, and "Show split" while
-  parked. Tab titles get no prefix; each pane tab carries a badge for its side of its own split.
+  parked. Tab titles get no prefix. The button between two pane tabs shows the split that parts
+  those two panes, the deepest one holding both (`SplitView.commonSplit`): in two rows of two,
+  the button between the top row's tabs shows side by side and the one between the rows
+  stacked, and its menu acts on that split.
   The focused pane keeps the selected tab style. While split, the group's front window is
   always the focused pane and the other panes are stacked just below it, so the tabs belong to
   the focused pane and stay over all of them. Dragging two neighbouring panes' tabs into the
@@ -272,7 +275,7 @@ no command of its own.
 
 - `Shared/SplitView.fs` (done): the types of section 3, `SplitMetrics`, `SplitGeometry` and the
   pure `SplitView` functions. It references no WinForms and is checked by `tests/SplitView.fsx`
-  with no native windows. It is compiled before `TabStripTypes.fs`, so that `TabInfo.splitSide`
+  with no native windows. It is compiled before `TabStripTypes.fs`, so that `TabInfo.splitTrail`
   can refer to `SplitAxis` and `Side`.
 - `SplitViewChrome.fs`: two kinds of helper window, `SplitDivider` (one per split, told its
   path with each update; drag, double-click to equalize, right-click menu for its own split;
@@ -302,8 +305,10 @@ no command of its own.
   placements that put it under another window; one that leads (`below=None`), the whole frame
   `collapseTo` gives the tab that parks the pair, stays, or the tab kept its pane's size whenever
   the worker had not started it before the order changed.
-- `TabStripDecorator.fs`: menu items only issue commands; the pane badge comes from
-  `TabInfo.splitSide`, which TabStrip draws while `TabInfo.text` stays clean; `refreshLayoutTabs`
+- `TabStripDecorator.fs`: menu items only issue commands; each pane tab carries
+  `TabInfo.splitTrail`, the splits above its pane with the side taken at each, from which the
+  strip finds the split parting two neighbouring tabs for the button on their seam, while
+  `TabInfo.text` stays clean; `refreshLayoutTabs`
   keeps the pair's tabs adjacent; it implements `ILayoutDropTarget` and registers the strip,
   every member and the empty pane as drop surfaces; `dragCancel` puts a cancelled tab back where
   it started.
@@ -359,8 +364,8 @@ together once the design had settled.
 6. **Nested splits** (done): the pair became a tree of splits addressed by path; `WindowGroup`
    keeps a divider per split and a window per empty pane, each looking its path up again by its
    window; drops split the pane under the pointer or, at the group's own edge, the whole group;
-   the strip puts a seam button between every two neighbouring pane tabs; five shortcuts came
-   for focus by direction and closing a pane.
+   the strip puts a seam button between every two neighbouring pane tabs, showing the split
+   that parts them; five shortcuts came for focus by direction and closing a pane.
 
 ## 9. Differences from the first version
 
