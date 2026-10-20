@@ -273,7 +273,7 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
             with get() =
                 let foregroundWindow = os.foreground
                 this.findGroupContainingHwnd(foregroundWindow.hwnd)
-        member x.adoptIntoPane(groupHwnd,hwnd,axis,side) = this.adoptIntoPane(groupHwnd,hwnd,axis,side)
+        member x.adoptIntoPane(groupHwnd,hwnd,path) = this.adoptIntoPane(groupHwnd,hwnd,path)
 
     /// A window moved and let go over a group's empty pane joins that pane, as a dropped tab would.
     member private this.dropNativeWindow(hwnd,initial:Rect,maximized) =
@@ -285,7 +285,7 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
                 let exposed = os.windowsInZorder.tryFind(fun w ->
                     w.hwnd<>hwnd && w.isVisible && not w.isMinimized && not(WindowCloaking.IsCloaked w.hwnd) && w.visibleBounds.containsPoint(pt))
                 exposed |> Option.iter(fun pane ->
-                    this.groups.tryFind(fun g -> not g.isExited && not g.isRetiring && g.group.emptyPaneHwnd=pane.hwnd) |> Option.iter(fun group ->
+                    this.groups.tryFind(fun g -> not g.isExited && not g.isRetiring && g.group.isEmptyPane pane.hwnd) |> Option.iter(fun group ->
                         let anchor = (group :> IGroup).windows.tryHead
                         let sameDesktop =
                             match anchor |> Option.bind VirtualDesktop.groupingDesktopId,VirtualDesktop.groupingDesktopId hwnd with
@@ -294,7 +294,7 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
                         if sameDesktop then
                             this.handToPane(group,hwnd,fun () ->
                                 match group.group.emptyPaneAt pt with
-                                | Some(axis,side,_) -> group.group.execute(DropInto(hwnd,axis,side))
+                                | Some(path,_) -> group.group.execute(FillPane(hwnd,path))
                                 | None -> ())))
 
     /// A window joins the group, leaving the group it was in, and `fill` runs on the group's
@@ -312,9 +312,9 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
                 group.invokeGroup finish
             | _ -> ()
 
-    member private this.adoptIntoPane(groupHwnd,hwnd,axis,side) =
+    member private this.adoptIntoPane(groupHwnd,hwnd,path) =
         this.groups.tryFind(fun g -> g.hwnd=groupHwnd) |> Option.iter(fun group ->
-            this.handToPane(group,hwnd,fun () -> group.group.execute(DropInto(hwnd,axis,side))))
+            this.handToPane(group,hwnd,fun () -> group.group.execute(FillPane(hwnd,path))))
 
     interface IDragDropParent with
         member x.dragBegin() = invoker.asyncInvoke <| fun() ->

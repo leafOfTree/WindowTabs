@@ -425,7 +425,7 @@ let main() =
             member _.groupRemoved = Event<IGroup>().Publish
             member _.groupChanged = Event<IGroup>().Publish
             member _.foregroundGroup = None
-            member _.adoptIntoPane(_,_,_,_) = () })
+            member _.adoptIntoPane(_,_,_) = () })
         // Closing a diagnostics page must not dispose the process-wide cached font.
         for _ in 1..3 do
             let disposableSupport = DiagnosticsView() :> ISettingsView

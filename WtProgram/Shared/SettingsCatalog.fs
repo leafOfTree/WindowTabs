@@ -55,10 +55,15 @@ module SettingsCatalog =
         { id="split-empty-right"; page=HotKeySettings; text=Strings.Settings.splitEmptyRight; binding=Shortcut("splitEmptyRight",0) }
         { id="split-empty-below"; page=HotKeySettings; text=Strings.Settings.splitEmptyBelow; binding=Shortcut("splitEmptyBelow",0) }
         { id="split-focus-other"; page=HotKeySettings; text=Strings.Settings.splitFocusOther; binding=Shortcut("splitFocusOther",0) }
+        { id="split-focus-left"; page=HotKeySettings; text=Strings.Settings.splitFocusLeft; binding=Shortcut("splitFocusLeft",0) }
+        { id="split-focus-right"; page=HotKeySettings; text=Strings.Settings.splitFocusRight; binding=Shortcut("splitFocusRight",0) }
+        { id="split-focus-up"; page=HotKeySettings; text=Strings.Settings.splitFocusUp; binding=Shortcut("splitFocusUp",0) }
+        { id="split-focus-down"; page=HotKeySettings; text=Strings.Settings.splitFocusDown; binding=Shortcut("splitFocusDown",0) }
         { id="split-swap"; page=HotKeySettings; text=Strings.Settings.splitSwap; binding=Shortcut("splitSwap",0) }
         { id="split-grow"; page=HotKeySettings; text=Strings.Settings.splitGrow; binding=Shortcut("splitGrow",0) }
         { id="split-shrink"; page=HotKeySettings; text=Strings.Settings.splitShrink; binding=Shortcut("splitShrink",0) }
         { id="split-equalize"; page=HotKeySettings; text=Strings.Settings.splitEqualize; binding=Shortcut("splitEqualize",0) }
+        { id="split-close-pane"; page=HotKeySettings; text=Strings.Settings.splitClosePane; binding=Shortcut("splitClosePane",0) }
         { id="split-end"; page=HotKeySettings; text=Strings.Settings.splitEnd; binding=Shortcut("splitEnd",0) }
         { id="switch-tabs-by-number"; page=HotKeySettings; text=Strings.Settings.switchTabsByNumber; binding=Toggle("enableCtrlNumberHotKey",true,true) }
         { id="number-shortcut"; page=HotKeySettings; text=Strings.Settings.numberShortcut; binding=Choice("numberHotKeyModifier",["Ctrl";"Alt"],"Ctrl") }

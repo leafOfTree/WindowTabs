@@ -8,8 +8,8 @@ known limits, and what to note when reporting a problem. The design is in
 
 | Suite | Desktop | Covers |
 | --- | --- | --- |
-| `SplitView` | none | The pure model: geometry and rounding, ratio limits, native resize conversion, edge drop zones, commands, parking and restoring, members going away, badges and pair order, placement plans and the pair's button |
-| `GroupOperations` | hidden | Native placement of a pair: empty panes, parking, a third tab shown again after a pane (with every thread-pool worker held, so its placement cannot win the race against the order change that used to cancel it), drops into panes and at edges from this group and from another, a dropped window put away off screen, swapping by reordering the pair's tabs, the focused pane leading the group, a pane raised over the tabs, the empty pane as a drop surface, drag routing over an app's child window |
+| `SplitView` | none | The pure model: geometry and rounding of one split and of a nested tree, ratio limits, native resize conversion at seams and at the group's edge, drop zones at the group's edge and at a pane's, commands by path, parking and restoring, members going away with their neighbour taking the room, badges and pane order, placement plans and the seam buttons |
+| `GroupOperations` | hidden | Native placement of the panes: empty panes, parking, a third tab shown again after a pane (with every thread-pool worker held, so its placement cannot win the race against the order change that used to cancel it), drops into panes and at edges from this group and from another, a third tab nested into a pane with a divider of its own and closed again, a dropped window put away off screen, swapping by reordering neighbouring tabs, the focused pane leading the group, a pane raised over the tabs, the empty pane as a drop surface, drag routing over an app's child window |
 | `TabInteraction`, `GroupLifecycle` | hidden | The strip, tab clicks and drags, and the taskbar previews that own grouped windows |
 | `SplitViewDesktop` | visible, opt-in | Real pointer input: the empty pane opening out, its frame colour, edge and divider drags with live following beside a slow app and beside another process, the tabs over both panes after clicks, quick switching between the panes, and leaving the split for a tab behind with the tabs never under it |
 
@@ -57,8 +57,11 @@ its tray menu and takes over. A split is not kept across an exit or restart.
    onto it; or use "Choose window…". Resize it by its edges, and close it with its close button,
    or with Esc while the tab beside it is active: that Esc does not reach the app.
 6. Drag a tab to the edges of a group's window, from this group and from another one: a preview
-   shows and letting go splits. While split, a third tab dropped on a side replaces it. Drag one
-   tab of the pair past the other in the strip: the panes swap.
+   shows and letting go splits. While split, drop a third tab at a pane's edge: that pane
+   splits again, with a divider of its own and a seam button between every two pane tabs; drop
+   it just inside the group's own edge instead and a new column or row spans the group. Drag
+   one pane's tab past its neighbour's in the strip: the panes swap. Close the nested pane from
+   the tab menu or with the shortcut: its neighbour takes the room.
 7. During a drag, press Esc, drag back into the strip, drag onto another group, and drag out to
    a window of its own.
 8. Minimize and restore the group, close or move away one shown window, change whether taskbar
@@ -69,7 +72,6 @@ its tray menu and takes over. A split is not kept across an exit or restart.
 
 ## Known limits
 
-- Two panes only; no nesting.
 - A split is not kept across an exit or restart. After a restart the windows stay at their pane
   rectangles, and the group takes the size of the window in front.
 - An app that keeps a size of its own stays where it put itself, within 40px of its pane, with

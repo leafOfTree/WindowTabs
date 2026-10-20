@@ -210,17 +210,32 @@ module Strings =
                              description=none
                              keywords=splitWords }
         let splitEmptyRight = { caption={ en="New empty pane on the right"; zh="在右侧新建空白区域"; ja="右側に空のペインを作成" }
-                                description={ en="Drop a tab or window into it."; zh="之后把标签或窗口拖进去。"; ja="タブやウィンドウをそこにドロップします。" }
+                                description={ en="Splits the focused pane again. Drop a tab or window into it."; zh="再拆一次焦点格，之后把标签或窗口拖进去。"; ja="フォーカス中のペインをさらに分割します。タブやウィンドウをそこにドロップします。" }
                                 keywords=splitWords }
         let splitEmptyBelow = { caption={ en="New empty pane below"; zh="在下方新建空白区域"; ja="下側に空のペインを作成" }
                                 description=none
                                 keywords=splitWords }
-        let splitFocusOther = { caption={ en="Focus the other pane"; zh="焦点切到另一侧"; ja="もう一方のペインにフォーカス" }
-                                description={ en="Brings a parked pair back as well."; zh="配对被暂存时也会恢复显示。"; ja="待機中のペアも表示に戻します。" }
+        let splitFocusOther = { caption={ en="Focus the next pane"; zh="焦点切到下一格"; ja="次のペインにフォーカス" }
+                                description={ en="Brings parked panes back as well."; zh="分屏被暂存时也会恢复显示。"; ja="待機中のペインも表示に戻します。" }
                                 keywords=splitWords }
+        let splitFocusLeft = { caption={ en="Focus the pane to the left"; zh="焦点切到左边的格"; ja="左のペインにフォーカス" }
+                               description=none
+                               keywords=splitWords }
+        let splitFocusRight = { caption={ en="Focus the pane to the right"; zh="焦点切到右边的格"; ja="右のペインにフォーカス" }
+                                description=none
+                                keywords=splitWords }
+        let splitFocusUp = { caption={ en="Focus the pane above"; zh="焦点切到上边的格"; ja="上のペインにフォーカス" }
+                             description=none
+                             keywords=splitWords }
+        let splitFocusDown = { caption={ en="Focus the pane below"; zh="焦点切到下边的格"; ja="下のペインにフォーカス" }
+                               description=none
+                               keywords=splitWords }
         let splitSwap = { caption={ en="Swap panes"; zh="交换两侧"; ja="ペインを入れ替え" }
-                          description=none
+                          description={ en="The focused pane and its neighbour change places."; zh="焦点格和它旁边的格互换位置。"; ja="フォーカス中のペインと隣のペインを入れ替えます。" }
                           keywords=splitWords }
+        let splitClosePane = { caption={ en="Close the focused pane"; zh="关闭焦点格"; ja="フォーカス中のペインを閉じる" }
+                               description={ en="Its neighbour takes the room; the window stays a tab."; zh="旁边的格补上空位，窗口仍保留为标签。"; ja="隣のペインがその場所を使い、ウィンドウはタブとして残ります。" }
+                               keywords=splitWords }
         let splitGrow = { caption={ en="Grow first pane"; zh="扩大左侧／上侧"; ja="左側／上側を拡大" }
                           description=none
                           keywords=splitWords }

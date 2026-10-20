@@ -3,25 +3,27 @@
 Status: rewritten on 2026-10-18 and kept current with the implementation. The first
 implementation (commit `cacad60`) showed that two windows side by side work on the existing
 placement queue, but its structure and its drag and drop needed redoing; this document is the
-basis of that rework. Scope: two panes side by side within one group, with the structure left
-open for keyboard control and for more panes later, which the first version does not implement.
-[Issue #48](https://github.com/leafOfTree/WindowTabs/issues/48).
+basis of that rework. Scope: a tree of panes within one group. The rework began with two panes
+and a model left open for more; since 2026-10-20 any pane can be split again, side by side or
+stacked, as in tmux and VS Code, with no fixed limit on their number: only the 120px minimum
+per pane. [Issue #48](https://github.com/leafOfTree/WindowTabs/issues/48).
 
 ## 1. Reference behaviour and choices
 
 | Behaviour | Edge / Brave / Chrome split view | tmux / Windows Terminal | This design |
 | --- | --- | --- | --- |
-| Panes | Always two | Any nested tree | Two; the model can grow into a tree |
-| What owns the split | A pair of tabs in one window | A tree inside one tab | One pair per group |
+| Panes | Always two | Any nested tree | Any nested tree |
+| What owns the split | A pair of tabs in one window | A tree inside one tab | One tree per group |
 | Another tab activated | It fills the window, the pair is parked; choosing either tab of the pair shows both again | Not applicable | The same (`Parked`) |
-| Ways in | "Add to split view" on a tab, dragging a tab to the page edge, an empty pane first | Shortcuts | Tab menu, edge drop, empty pane, shortcuts |
-| Divider | Drag to set the ratio; Edge's divider has a menu (swap, close) | Keyboard ratio, equalize, zoom | Drag, double-click to equalize, a menu on the pair's button, shortcuts |
-| Closing one side | The other fills the window and the split ends | The other fills | The same |
-| Focus | The side clicked takes focus | Arrow keys move between panes | Clicking; a "focus the other pane" shortcut |
+| Ways in | "Add to split view" on a tab, dragging a tab to the page edge, an empty pane first | Shortcuts | Tab menu, edge drop (the group's edge or a pane's), empty pane, shortcuts |
+| Divider | Drag to set the ratio; Edge's divider has a menu (swap, close) | Keyboard ratio, equalize, zoom | Drag, double-click to equalize, a menu on each seam button, shortcuts; one divider per split |
+| Closing one side | The other fills the window and the split ends | The other fills | The neighbour takes the room; the last other pane fills the group |
+| Focus | The side clicked takes focus | Arrow keys move between panes | Clicking; shortcuts for the next pane and for the pane in each direction |
 
-The browsers' "pair of tabs" model fits: two windows are enough for work such as writing code
-against a reference or copying files between folders, and all three browsers settled on it.
-More panes are left to a later extension of the model (section 3).
+The browsers' "pair of tabs" model was the starting point: two windows are enough for most work,
+such as writing code against a reference or copying files between folders. The tree came after,
+for a terminal or a chat beside the pair: each split divides one node in two, so two panes are
+the tree's simplest case and keep their behaviour.
 
 ## 2. What the user sees
 
@@ -46,28 +48,35 @@ More panes are left to a later extension of the model (section 3).
   appears, and letting go splits the group. The preview changes no membership; only the drop
   commits. Tabs of this group and of other groups on the same virtual desktop are offered the
   edge at once.
+- Splitting again: while split, the same ways apply to a pane. Split in group on a tab divides
+  the pane of the tab shown; a new empty pane opens beside the focused pane; a tab dragged to
+  a pane's edge splits that pane (as VS Code does), and within 18px of the group's own edge
+  (`outerZone`) a new column or row for the whole group. Panes parked by the dragged tab, which
+  its press activated, count as well: the drop brings them back with the new pane among them.
+  A pane window dropped elsewhere leaves its pane, whose neighbour takes the room. There is no
+  fixed number of panes; a split that would leave a pane under 120px is refused.
 - Shortcuts: split the shown tab side by side or stacked with the next tab in tab order, or open
   an empty pane when the group has a single tab.
 
 ### 2.2 While split
 
-- The pair's tabs stay next to each other in the strip (as in Brave), and a split button sits on
-  their seam at the bottom of the strip. It marks the pair and opens the split menu: swap,
-  equalize, toggle direction, end split, and "Show split" while parked. Tab titles get no
-  prefix. The focused side keeps the selected tab style. While split, the group's front window
-  is always the focused pane and the other pane is stacked just below it, so the tabs belong to
-  the focused pane and stay over both. Dragging the pair's tabs into the other order in the
-  strip swaps the panes (`onTabsReordered`) instead of being put back at the next click.
+- The panes' tabs stay next to each other in the strip in layout order (as in Brave), and a
+  split button sits on each seam between them at the bottom of the strip. It marks the panes
+  and opens the split menu: swap, equalize, toggle direction, end split, and "Show split" while
+  parked. Tab titles get no prefix; each pane tab carries a badge for its side of its own split.
+  The focused pane keeps the selected tab style. While split, the group's front window is
+  always the focused pane and the other panes are stacked just below it, so the tabs belong to
+  the focused pane and stay over all of them. Dragging two neighbouring panes' tabs into the
+  other order in the strip swaps those panes (`onTabsReordered`) instead of being put back at
+  the next click.
 - Clicking a shown tab only moves the focus. Clicking another tab C makes C fill the group and
-  parks the pair; choosing either tab of the pair again restores both sides, the direction, the
-  ratio and any empty pane. Shortcuts, tab search and taskbar activation follow the same rule.
-  A tab chosen from outside the pair comes to the front before the pair is parked, so no tab
+  parks the panes; choosing any pane's tab again restores the whole tree, the directions, the
+  ratios and any empty pane. Shortcuts, tab search and taskbar activation follow the same rule.
+  A tab chosen from outside the panes comes to the front before they are parked, so no tab
   behind shows over it while the windows are re-placed, and the strip stays over it.
-- Dragging a third tab onto a side replaces that side; dragging a shown tab to the other side
-  swaps the sides. While split, the edge zones offer only the two existing sides and never a
-  third pane.
-- Divider: drag to change the ratio, double-click to return to 50:50, right-click for the same
-  menu as the seam button. Its 4px bar shows only when hovered or dragged, and only the bar
+- Dividers: one per split, each dragged for its own ratio, double-clicked to return that split
+  to 50:50, right-clicked for the same menu as the seam button, acting on that split. The 4px
+  bar shows only when hovered or dragged, and only the bar
   takes the pointer. Either side of it the panes' own invisible resize borders take a press,
   and that pane resizes in its app's own loop, which paints at every step as a resize from
   outside does not; the other pane follows (`resizePane`). A wider band took that away, and
@@ -86,10 +95,12 @@ More panes are left to a later extension of the model (section 3).
 
 ### 2.3 Leaving the split, and failures
 
-- Closing or moving away either shown window ends the split, and the other side fills the group.
-  Closing a tab behind does not affect the layout.
-- A member closed or moved away while the pair is parked drops the parked pair. Starting a new
-  split or ending the split clears it too.
+- Closing or moving away a pane window, or closing its pane from the menu or by shortcut: its
+  neighbour in that split takes the room, and the focus if it was there; losing the last other
+  pane ends the split and the survivor fills the group. Closing a tab behind does not affect the
+  layout.
+- A member closed or moved away while the panes are parked leaves the parked tree without it.
+  Starting a new split or ending the split clears it too.
 - An app that does not fully accept the size it is given (a terminal rounding to its character
   grid, a larger minimum size): after two seconds the group stops waiting, and the split stays
   with no message. Only a window off its pane by more than 3px in position or 40px in size counts
@@ -104,31 +115,43 @@ More panes are left to a later extension of the model (section 3).
 ```fsharp
 type SplitAxis = SideBySide | Stacked
 type Side = First | Second
-type Pane = Empty | Occupied of IntPtr        // adding Split of SplitLayout later makes it a tree; not `Window`, which Win32 already uses
-type SplitLayout = { axis: SplitAxis; ratio: float; first: Pane; second: Pane; focused: Side }
+type Pane = Empty | Occupied of IntPtr        // not `Window`, which Win32 already uses
+type PanePath = Side list                     // a node named from the root: the side taken at each split; the root is []
+type SplitNode = Leaf of Pane | Branch of SplitTree
+and SplitTree = { axis: SplitAxis; ratio: float; first: SplitNode; second: SplitNode }
+type SplitLayout = { tree: SplitTree; focused: PanePath }
 type GroupLayout =
     | Single                                   // the existing behaviour
-    | Split of SplitLayout                     // both panes shown
-    | Parked of SplitLayout                    // another tab fills the group; the pair waits
+    | Split of SplitLayout                     // the panes shown
+    | Parked of SplitLayout                    // another tab fills the group; the panes wait
 ```
 
-Invariants: in `Split` and `Parked` at least one side is `Occupied`, the two sides are never the
-same HWND, and `focused` points at an `Occupied` side. The group's frame lives only in
-WindowGroup's existing `placement`; the layout keeps no copy of bounds or restore bounds. "Fill
-the work area / restore" is group-level state, `splitRestore`, at the same level as maximizing a
-single window.
+Invariants: the root is a split, so there are at least two panes; at least one is `Occupied`;
+no HWND is in two panes; and `focused` is the path of an `Occupied` pane (`refocus` puts it on
+the first one when its pane goes). A node is addressed by its path, so a node's path can change
+when a pane elsewhere goes and its neighbour moves up a level: the helper windows look their
+path up again by their window, and commands that name a pane are issued at the time they act.
+The group's frame lives only in WindowGroup's existing `placement`; the layout keeps no copy of
+bounds or restore bounds. "Fill the work area / restore" is group-level state, `splitRestore`,
+at the same level as maximizing a single window.
 
-Commands (menus, the divider, shortcuts and drag and drop only ever produce commands):
+Commands (menus, the dividers, shortcuts and drag and drop only ever produce commands):
 
 ```fsharp
 type SplitCommand =
-    | SplitWith of partner:IntPtr * SplitAxis        // the shown tab and a partner
-    | NewEmptyPane of SplitAxis
-    | DropInto of hwnd:IntPtr * SplitAxis * Side     // replaces that side; swaps if hwnd is the other side
-    | FocusSide of Side | FocusOther
-    | Swap | SetRatio of float | AdjustRatio of delta:float | Equalize
-    | ToggleAxis | EndSplit of keep:IntPtr option | ToggleFill
+    | SplitWith of partner:IntPtr * SplitAxis        // the shown tab's pane splits again for the partner, which leaves its own pane
+    | NewEmptyPane of SplitAxis                      // the shown tab's pane splits again, the new half empty
+    | DropInto of hwnd:IntPtr * PanePath * SplitAxis * Side   // the node makes room on that side; [] is the whole group
+    | FillPane of hwnd:IntPtr * PanePath             // an empty pane takes the window
+    | FocusPane of PanePath | FocusToward of PaneDirection | FocusOther
+    | Swap of PanePath option | Equalize of PanePath option | ToggleAxis of PanePath option   // a split, or the focused pane's
+    | SetRatio of PanePath * float | AdjustRatio of delta:float
+    | ClosePane of PanePath option                   // the pane goes; its neighbour takes the room
+    | EndSplit of keep:IntPtr option | ToggleFill
 ```
+
+`LayoutDrop = FillEmpty of PanePath | SplitAt of PanePath * SplitAxis * Side` is what a drop at
+a point means, turned into a command by `SplitView.dropCommand`.
 
 Events (WindowGroup translates OS events for the model): a window activated, a window removed,
 and a pane moved or resized natively.
@@ -143,13 +166,22 @@ Pure functions:
   rectangle and the tabs behind wait under the host pane (`SplitView.host`, the first occupied
   pane) at its rectangle. The host does not follow the focus, so moving between the panes moves
   none of them. Both modes go through the same `applyLayout`.
-- Geometry: `rectangles`, `ratioAt`, `fits`, `resizePane` and `edgeDrop`. Constants live in
-  `SplitMetrics`, in logical pixels: no gap between the panes, a 4px divider bar that is also
+- `SplitTree`: the tree alone, with `node`, `leaves` and `branches` by path, and the two edits
+  every command is made of: `insert`, which wraps a node in a new split, and `remove`, which
+  lets a pane's neighbour take their parent's place.
+- Geometry: `rectangles` for one split, `leafRects` and `seams` for the whole tree, `nodeRect`,
+  `ratioAt`, `fits`, `resizePane` and `dropAt` (`edgeDrop` for one rectangle). `resizePane`
+  takes the pane's rectangle when its native move or resize began and its rectangle now: a move
+  carries the frame; an edge moved is either the seam of the nearest split above the pane along
+  that axis, whose ratio follows, or the group's own edge, which moves with it while every split
+  on the way gives the room to the pane's side so the other side keeps its size. Constants live
+  in `SplitMetrics`, in logical pixels: no gap between the panes, a 4px divider bar that is also
   the band taking the pointer, panes at
   least 120px, ratios from 0.15 to 0.85, a 3px position tolerance, a 40px size tolerance for
-  apps on a character grid, a 2000ms wait for panes to settle, and edge drop zones 36px deep at
-  their ends that deepen to a fifth of the window (`edgeShare`) at the middle of each edge.
-  Where two zones overlap, the one the point is relatively deeper in wins.
+  apps on a character grid, a 2000ms wait for panes to settle, edge drop zones 36px deep at
+  their ends that deepen to a fifth of the window (`edgeShare`) at the middle of each edge, and
+  an 18px `outerZone` at the group's own edge where a drop splits the whole group rather than
+  the pane there. Where two zones overlap, the one the point is relatively deeper in wins.
 
 ## 4. Drag and drop
 
@@ -203,11 +235,13 @@ that no global hotkey is taken. The entries:
 | --- | --- | --- |
 | split-side-by-side | splitSideBySide | `splitWithNext SideBySide`: pair with the next tab in tab order, or `NewEmptyPane` for a single tab |
 | split-stacked | splitStacked | `splitWithNext Stacked` |
-| split-empty-right / split-empty-below | splitEmptyRight / splitEmptyBelow | `NewEmptyPane SideBySide` / `NewEmptyPane Stacked`: an empty pane beside the shown tab |
-| split-focus-other | splitFocusOther | `FocusOther` (restores a parked pair) |
-| split-swap | splitSwap | `Swap` |
-| split-grow / split-shrink | splitGrow / splitShrink | `AdjustRatio ±ratioStep` |
-| split-equalize | splitEqualize | `Equalize` |
+| split-empty-right / split-empty-below | splitEmptyRight / splitEmptyBelow | `NewEmptyPane SideBySide` / `NewEmptyPane Stacked`: the shown tab's pane splits again with an empty pane |
+| split-focus-other | splitFocusOther | `FocusOther`: the next pane in layout order (restores parked panes) |
+| split-focus-left / -right / -up / -down | splitFocusLeft … splitFocusDown | `FocusToward`: the nearest pane in that direction sharing most of the focused pane's edge |
+| split-swap | splitSwap | `Swap None`: the focused pane's split |
+| split-grow / split-shrink | splitGrow / splitShrink | `AdjustRatio ±ratioStep` on the focused pane's split |
+| split-equalize | splitEqualize | `Equalize None` |
+| split-close-pane | splitClosePane | `ClosePane None`: the focused pane goes, its neighbour takes the room, the window stays a tab |
 | split-end | splitEnd | `EndSplit None` |
 
 Wiring: `Program.hotKeyInfo` to `Services.desktop.foregroundGroup` to `IGroup.executeSplit` or
@@ -216,8 +250,7 @@ Wiring: `Program.hotKeyInfo` to `Services.desktop.foregroundGroup` to `IGroup.ex
 defaults; with the default 0, `HotKeyBindings.Register` only unbinds.
 
 tmux's `resize-pane -Z` (zoom) is the same as choosing another tab and coming back, so it gets
-no command of its own. Arrow-key style "move to the left/right pane" is `FocusOther` with two
-panes; a `FocusDirection` can come with the tree model.
+no command of its own.
 
 ## 6. Window behaviour
 
@@ -241,10 +274,12 @@ panes; a `FocusDirection` can come with the tree model.
   pure `SplitView` functions. It references no WinForms and is checked by `tests/SplitView.fsx`
   with no native windows. It is compiled before `TabStripTypes.fs`, so that `TabInfo.splitSide`
   can refer to `SplitAxis` and `Side`.
-- `SplitViewChrome.fs`: two helper windows, `SplitDivider` (drag, double-click to equalize,
-  right-click menu; per-pixel layered so its transparent band still takes the mouse) and
-  `EmptySplitPane` (dashed drop box, "Choose window…" button, close button, resizable edges,
-  opening animation). They only draw and turn mouse actions into commands, and hook nothing
+- `SplitViewChrome.fs`: two kinds of helper window, `SplitDivider` (one per split, told its
+  path with each update; drag, double-click to equalize, right-click menu for its own split;
+  per-pixel layered so its transparent band still takes the mouse) and `EmptySplitPane` (one
+  per empty pane; dashed drop box, "Choose window…" button, close button, resizable edges,
+  opening animation; it asks the group by its window, since its path can change while it
+  stays). They only draw and turn mouse actions into commands, and hook nothing
   globally. Both run on a UI thread of their own per group, owned by nothing: the strip is owned
   by an app window, which joins the group thread's input queue to that app's, so dragging from
   the group thread waited at every step for the app to repaint (beside a slow app the empty pane
@@ -321,6 +356,11 @@ together once the design had settled.
    TabInteraction and GroupLifecycle suites, the opt-in `SplitViewDesktop` suite on the real
    desktop, and trials with Explorer, editors, terminals and WebView2 apps; see
    [split-view-testing.md](split-view-testing.md).
+6. **Nested splits** (done): the pair became a tree of splits addressed by path; `WindowGroup`
+   keeps a divider per split and a window per empty pane, each looking its path up again by its
+   window; drops split the pane under the pointer or, at the group's own edge, the whole group;
+   the strip puts a seam button between every two neighbouring pane tabs; five shortcuts came
+   for focus by direction and closing a pane.
 
 ## 9. Differences from the first version
 

@@ -6,8 +6,10 @@ type HotKeyView() =
     // Setting id for each program hotkey, so a conflict can name the other action.
     let actions = ["nextTab","next-tab";"prevTab","previous-tab";"searchTabs","search-tabs";"newTab","new-tab";"closeTab","close-tab";"numberLeader","number-leader"
                    "splitSideBySide","split-side-by-side";"splitStacked","split-stacked";"splitEmptyRight","split-empty-right";"splitEmptyBelow","split-empty-below"
-                   "splitFocusOther","split-focus-other";"splitSwap","split-swap"
-                   "splitGrow","split-grow";"splitShrink","split-shrink";"splitEqualize","split-equalize";"splitEnd","split-end"]
+                   "splitFocusOther","split-focus-other";"splitFocusLeft","split-focus-left";"splitFocusRight","split-focus-right"
+                   "splitFocusUp","split-focus-up";"splitFocusDown","split-focus-down";"splitSwap","split-swap"
+                   "splitGrow","split-grow";"splitShrink","split-shrink";"splitEqualize","split-equalize"
+                   "splitClosePane","split-close-pane";"splitEnd","split-end"]
     let hotKey key =
         let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=Services.program.getHotKey key)
         editor.Changed.Add(fun _ ->

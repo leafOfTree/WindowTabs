@@ -30,7 +30,7 @@ type TabStripDecorator(group:WindowGroup) as this =
     let mutable contextMenu : ThemedContextMenu option = None
     let mutable layoutPreview : LayoutPreview option = None
     /// The pane the pointer is over during a drag, as the last preview found it.
-    let mutable layoutDrop : (SplitAxis * Side) option = None
+    let mutable layoutDrop : LayoutDrop option = None
     /// The tab on top when a drag began here, its tab and where in the strip it sat.
     let mutable dragPartner = IntPtr.Zero
     let mutable dragSource : IntPtr option = None
@@ -129,7 +129,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             Services.dragDrop.unregisterTarget(this.ts.hwnd)
             Services.dragDrop.unregisterLayoutTarget(this.ts.hwnd)
             group.windows.items.iter Services.dragDrop.unregisterLayoutTarget
-            if group.emptyPaneHwnd<>IntPtr.Zero then Services.dragDrop.unregisterLayoutTarget group.emptyPaneHwnd
+            group.emptyPaneHwnds |> List.iter Services.dragDrop.unregisterLayoutTarget
     
 
     member private this.tabSlide =
@@ -377,8 +377,8 @@ type TabStripDecorator(group:WindowGroup) as this =
             splitCommand Strings.TabMenu.splitHorizontal canSplit (SplitWith(hwnd,SideBySide)) top
             splitCommand Strings.TabMenu.splitVertical canSplit (SplitWith(hwnd,Stacked)) top
             CmiSeparator
-            splitCommand Strings.TabMenu.splitSwap split.IsSome Swap top
-            splitCommand Strings.TabMenu.splitEqual split.IsSome Equalize top
+            splitCommand Strings.TabMenu.splitSwap split.IsSome (Swap None) top
+            splitCommand Strings.TabMenu.splitEqual split.IsSome (Equalize None) top
             splitCommand Strings.TabMenu.splitLess split.IsSome (AdjustRatio(-SplitMetrics.ratioStep)) top
             splitCommand Strings.TabMenu.splitMore split.IsSome (AdjustRatio SplitMetrics.ratioStep) top
             splitCommand Strings.TabMenu.splitFill split.IsSome ToggleFill top
@@ -693,17 +693,18 @@ type TabStripDecorator(group:WindowGroup) as this =
             (match VirtualDesktop.groupingDesktopId hwnd,VirtualDesktop.groupingDesktopId group.topWindow with
              | Some a,Some b -> a=b
              | _ -> true)
+        // At the group's own edge the whole group splits; further in, the pane under the pointer.
+        // Panes parked by the drag's own tab, activated as it was pressed, count as well: the drop
+        // brings them back with the new pane among them.
         let edge() =
             group.bounds.value |> Option.bind(fun bounds ->
-                SplitGeometry.edgeDrop pt (Dpi.scale SplitMetrics.edgeZone) bounds group.splitLayout
-                |> Option.map(fun (axis,side) ->
-                    let shape = group.splitLayout |> Option.defaultValue {axis=axis;ratio=0.5;first=Occupied hwnd;second=Occupied hwnd;focused=First}
-                    (axis,side),SplitGeometry.paneRect side gap bounds shape))
+                SplitGeometry.dropAt pt (Dpi.scale SplitMetrics.edgeZone) (Dpi.scale SplitMetrics.outerZone) gap bounds (SplitView.layoutOf group.layout)
+                |> Option.map(fun ((path,axis,side),rect) -> SplitAt(path,axis,side),rect))
         let proposal =
             if not(WinUserApi.IsWindow hwnd) then None
             else
                 match group.emptyPaneAt(pt) with
-                | Some(axis,side,bounds) -> if sameDesktop() then Some((axis,side),bounds) else None
+                | Some(path,bounds) -> if sameDesktop() then Some(FillEmpty path,bounds) else None
                 | None when group.windows.count>0 && sameDesktop() -> edge()
                 | None -> None
         layoutDrop <- proposal |> Option.map fst
@@ -738,7 +739,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 let (Tab hwnd) = drag.tab
                 let dropped =
                     match layoutDrop with
-                    | Some(axis,side) when WinUserApi.IsWindow hwnd ->
+                    | Some drop when WinUserApi.IsWindow hwnd ->
                         let own = dragSource=Some hwnd || group.windows.contains hwnd
                         // The dragged tab went on top at mouse-down, so the tab shown before is its
                         // partner; a tab from another group, or a pane's own tab that was already in
@@ -750,7 +751,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                             elif dragPartner<>hwnd && group.windows.contains dragPartner then dragPartner
                             elif group.topWindow<>hwnd && group.windows.contains group.topWindow then group.topWindow
                             else group.lorder.list |> List.tryFind((<>) hwnd) |> Option.defaultValue hwnd
-                        group.dropTab(hwnd,axis,side,partner)
+                        group.dropTab(hwnd,drop,partner)
                         true
                     | _ -> false
                 this.resetLayoutDrop()

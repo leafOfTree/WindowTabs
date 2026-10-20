@@ -82,7 +82,7 @@ type DispatchedDesktop(inner:IDesktop, dispatcher:IDispatcher) =
         member _.groupRemoved = dispatcher.Send(fun () -> inner.groupRemoved)
         member _.groupChanged = dispatcher.Send(fun () -> inner.groupChanged)
         member _.foregroundGroup = dispatcher.Send(fun () -> inner.foregroundGroup)
-        member _.adoptIntoPane(group,hwnd,axis,side) = dispatcher.Post(fun () -> inner.adoptIntoPane(group,hwnd,axis,side))
+        member _.adoptIntoPane(group,hwnd,path) = dispatcher.Post(fun () -> inner.adoptIntoPane(group,hwnd,path))
 
 type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
     interface IProgram with

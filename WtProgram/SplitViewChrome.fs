@@ -22,19 +22,28 @@ type SplitChromeForm() =
 
 /// The split's own commands, shared by the button between the pair's tabs and the divider.
 module SplitMenu =
-    let items (layout:GroupLayout) (execute:SplitCommand -> unit) =
+    /// The commands for one split: the one at `at`, or the focused pane's own.
+    let ofSplit (axis:SplitAxis) (parked:bool) (at:PanePath option) (execute:SplitCommand -> unit) =
         let item text command = CmiRegular({text=tr text;image=None;flags=List2();click=fun () -> execute command})
+        let turn = if axis=SideBySide then Strings.TabMenu.splitMakeStacked else Strings.TabMenu.splitMakeSideBySide
+        List2([
+            // Parked panes come back first, as clicking any of their tabs would.
+            if parked then
+                yield item Strings.TabMenu.splitShow FocusOther
+                yield CmiSeparator
+            yield item Strings.TabMenu.splitSwap (Swap at)
+            yield item Strings.TabMenu.splitEqual (Equalize at)
+            yield item turn (ToggleAxis at)
+            yield CmiSeparator
+            yield item Strings.TabMenu.splitMerge (EndSplit None)])
+    let items (layout:GroupLayout) (execute:SplitCommand -> unit) =
         match layout with
         | Split s | Parked s ->
-            let axis = if s.axis=SideBySide then Strings.TabMenu.splitMakeStacked else Strings.TabMenu.splitMakeSideBySide
-            List2([
-                // A parked pair comes back first, as clicking either of its tabs would.
-                match layout with Parked _ -> yield item Strings.TabMenu.splitShow FocusOther; yield CmiSeparator | _ -> ()
-                yield item Strings.TabMenu.splitSwap Swap
-                yield item Strings.TabMenu.splitEqual Equalize
-                yield item axis ToggleAxis
-                yield CmiSeparator
-                yield item Strings.TabMenu.splitMerge (EndSplit None)])
+            let axis =
+                match SplitTree.node (SplitTree.parent s.focused) (SplitView.root s) with
+                | Some(Branch branch) -> branch.axis
+                | _ -> s.tree.axis
+            ofSplit axis (match layout with Parked _ -> true | _ -> false) None execute
         | Single -> List2()
 
 /// Lists windows for an empty pane to take. Registered by the program with the settings
@@ -50,7 +59,9 @@ type ISplitPanePicker =
 /// on the apps in the panes, whose input the strip's thread shares by owning the strip to them.
 type SplitDivider(execute:SplitCommand -> unit, live:bool -> unit) =
     inherit SplitChromeForm()
-    let mutable layout : SplitLayout option = None
+    /// The split this divider belongs to, where it is in the layout, and its own frame.
+    let mutable layout : SplitTree option = None
+    let mutable path : PanePath = []
     let mutable frame = Rect()
     let mutable gap = SplitMetrics.divider
     let mutable dragging = false
@@ -137,7 +148,7 @@ type SplitDivider(execute:SplitCommand -> unit, live:bool -> unit) =
             this.Capture <- false
             if wasDragging then
                 // The last ratio goes at once, whatever is still on its way.
-                pending |> Option.filter((<>) lastSent) |> Option.iter(fun ratio -> execute(SetRatio ratio))
+                pending |> Option.filter((<>) lastSent) |> Option.iter(fun ratio -> execute(SetRatio(path,ratio)))
                 pending <- None
                 inFlight <- false
                 lastSent <- nan
@@ -145,11 +156,11 @@ type SplitDivider(execute:SplitCommand -> unit, live:bool -> unit) =
             hovering <- this.ClientRectangle.Contains(this.PointToClient(Cursor.Position))
             this.render()
             if e.Button=MouseButtons.Right then this.showMenu())
-        this.DoubleClick.Add(fun _ -> execute Equalize)
+        this.DoubleClick.Add(fun _ -> execute(Equalize(Some path)))
     /// The menu runs the chosen item from a timer after closing and disposes itself then.
     member private this.showMenu() =
         menu |> Option.iter(fun previous -> previous.Dispose())
-        let items = SplitMenu.items (match layout with Some value -> Split value | None -> GroupLayout.Single) execute
+        let items = SplitMenu.ofSplit (layout |> Option.map(fun value -> value.axis) |> Option.defaultValue SideBySide) false (Some path) execute
         if items.count>0 then
             let created = new ThemedContextMenu(items,ignore)
             menu <- Some created
@@ -161,7 +172,7 @@ type SplitDivider(execute:SplitCommand -> unit, live:bool -> unit) =
             menu <- None
         base.Dispose(disposing)
     /// A band straddling the seam: the panes touch, so it lies over both of their edges.
-    member private this.band(value:SplitLayout) =
+    member private this.band(value:SplitTree) =
         let _,seam,_ = SplitGeometry.rectangles gap frame value
         let band = Dpi.scale SplitMetrics.dividerGrab
         if value.axis=SideBySide then Rectangle(seam.x+seam.width/2-band/2,seam.y,band,seam.height)
@@ -176,14 +187,16 @@ type SplitDivider(execute:SplitCommand -> unit, live:bool -> unit) =
             lastSent <- ratio
             inFlight <- true
             sent.Restart()
-            execute(SetRatio ratio)
+            execute(SetRatio(path,ratio))
         | _ -> ()
 
-    /// Kept just below `below`, the strip: over both panes' edges, under the tabs.
-    member this.update(value:SplitLayout, dividerGap:int, groupFrame:Rect, below:IntPtr, visible:bool, placePanes:float -> unit) =
+    /// Kept just below `below`, the strip: over both halves' edges, under the tabs. `splitFrame`
+    /// is the frame of this divider's own split, not the whole group's.
+    member this.update(at:PanePath, value:SplitTree, dividerGap:int, splitFrame:Rect, below:IntPtr, visible:bool, placePanes:float -> unit) =
         layout <- Some value
+        path <- at
         gap <- dividerGap
-        frame <- groupFrame
+        frame <- splitFrame
         place <- placePanes
         this.Cursor <- if value.axis=SideBySide then Cursors.VSplit else Cursors.HSplit
         // While dragged the bar stays with the pointer, and the next ratio goes only once the

@@ -227,7 +227,7 @@ let main() =
         pump 300
         waitOperation()
         let strip = onGroup(fun group -> group.ts.hwnd)
-        let paneOf () = onGroup(fun group -> group.emptyPaneHwnd)
+        let paneOf () = onGroup(fun group -> group.emptyPaneHwnds |> List.tryHead |> Option.defaultValue IntPtr.Zero)
 
         // An empty pane beside A: touching, below the strip, framed as Explorer is.
         let fullWidth = (visible ha).width
@@ -319,7 +319,7 @@ let main() =
         // B fills the pane; dragging B's outer edge natively, and then the divider.
         onGroup(fun group ->
             match group.splitLayout with
-            | Some s -> group.execute(DropInto(hb,s.axis,Second),current=ha)
+            | Some _ -> group.execute(FillPane(hb,[Second]),current=ha)
             | None -> failwith "The split ended")
         waitOperation()
         let meet () = near (visible ha).right (visible hb).left && near (visible ha).top (visible hb).top
@@ -331,8 +331,8 @@ let main() =
         travelled "window-outer-edge" ((visible hb).right-right.right) (-100)
         check (meet()) "After B's own resize the panes do not meet"
         let divider = onGroup(fun group ->
-            let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="splitDivider")
-            (field.GetValue(group) :?> SplitDivider option).Value.Handle)
+            let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="splitDividers")
+            (field.GetValue(group) :?> Map<PanePath,SplitDivider>).[[]].Handle)
         // At the seam only the bar takes the pointer; either side of it the panes' own resize
         // borders do, so a drag there runs in the app's own loop and paints at every step. A band
         // covering the borders took that away, and every drag at the seam trailed the pointer.
@@ -418,7 +418,7 @@ let main() =
         pump 500
         waitOperation()
         let s = onGroup(fun group -> group.splitLayout.Value)
-        check (s.first=Occupied hb) "The tab the empty pane was opened from is not in the left pane"
+        check (s.tree.first=Leaf(Occupied hb)) "The tab the empty pane was opened from is not in the left pane"
         let left = visible hb
         for hwnd in [ha;hc] do
             check (visible hwnd=left) (sprintf "A tab behind is not under the left pane: %A=%A left=%A" hwnd (visible hwnd) left)
@@ -485,7 +485,7 @@ let main() =
             settle()
             onOther(fun group -> group.execute(NewEmptyPane SideBySide,current=hx))
             settle()
-            let pane = onOther(fun group -> group.emptyPaneHwnd)
+            let pane = onOther(fun group -> group.emptyPaneHwnds |> List.tryHead |> Option.defaultValue IntPtr.Zero)
             check (pane<>IntPtr.Zero) "No empty pane beside the other process's window"
             let besideOther () = near (visible hx).right (bounds pane).left && near (visible hx).top (bounds pane).top
             check (besideOther()) (sprintf "The empty pane does not meet the other process's window: %A %A" (visible hx) (bounds pane))
@@ -499,8 +499,8 @@ let main() =
             // of it, or the drag takes the slow app's own edge instead.
             let taken = WinUserApi.WindowFromPoint grab
             let dividerHere = onOther(fun group ->
-                let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="splitDivider")
-                (field.GetValue(group) :?> SplitDivider option) |> Option.map(fun divider -> divider.Handle) |> Option.defaultValue IntPtr.Zero)
+                let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="splitDividers")
+                (field.GetValue(group) :?> Map<PanePath,SplitDivider>).TryFind [] |> Option.map(fun divider -> divider.Handle) |> Option.defaultValue IntPtr.Zero)
             check (zIndex pane < zIndex hx && (taken=pane || taken=dividerHere))
                   (sprintf "The empty pane's edge is under the other process's window: pane=%d other=%d, pointer on %A" (zIndex pane) (zIndex hx) taken)
             drag "cross-process-inner-edge" (rect.left+Dpi.scale 5) (rect.y+rect.height/2) (-160) 0 16 (fun () -> bounds pane) besideOther
@@ -519,13 +519,13 @@ let main() =
                 pumpUntil "The second process's window did not open" (fun () ->
                     hy <- Native.FindWindow(null,"Split External Two")
                     hy<>IntPtr.Zero && WinUserApi.IsWindowVisible(hy))
-                onOther(fun group -> group.dropTab(hy,SideBySide,Second,hx))
+                onOther(fun group -> group.dropTab(hy,FillEmpty [Second],hx))
                 settle()
                 let meet () = near (visible hx).right (visible hy).left && near (visible hx).top (visible hy).top
                 check (meet()) (sprintf "The second process's window did not take the pane: %A %A" (visible hx) (visible hy))
                 let divider = onOther(fun group ->
-                    let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="splitDivider")
-                    (field.GetValue(group) :?> SplitDivider option).Value.Handle)
+                    let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="splitDividers")
+                    (field.GetValue(group) :?> Map<PanePath,SplitDivider>).[[]].Handle)
                 let app = visible hy
                 click (app.x+app.width/2) (app.y+app.height/2)
                 settle()

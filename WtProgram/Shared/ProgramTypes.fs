@@ -170,8 +170,9 @@ type IDesktop =
     /// A group's windows, their titles, or whether it was made by hand changed. Main thread.
     abstract member groupChanged: IEvent<IGroup>
     abstract member foregroundGroup: IGroup option
-    /// Puts a window, grouped elsewhere or not at all, into a pane of the group whose strip is given.
-    abstract member adoptIntoPane: IntPtr * IntPtr * SplitAxis * Side -> unit
+    /// Puts a window, grouped elsewhere or not at all, into the empty pane at the path of the
+    /// group whose strip is given.
+    abstract member adoptIntoPane: IntPtr * IntPtr * PanePath -> unit
 
 type IPlugin =
     abstract member init: unit -> unit

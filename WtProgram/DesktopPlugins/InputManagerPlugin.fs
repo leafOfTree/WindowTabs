@@ -132,8 +132,7 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
         match this.foregroundGroup with
         | Some group ->
             let info = group.cast<GroupInfo>()
-            let pane = info.group.emptyPaneHwnd
-            if pane<>IntPtr.Zero && WinUserApi.IsWindowVisible pane then
+            if info.group.emptyPaneHwnds |> List.exists WinUserApi.IsWindowVisible then
                 info.invokeGroup(fun () -> info.group.closeEmptyPane())
                 true
             else false

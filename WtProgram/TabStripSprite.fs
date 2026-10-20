@@ -956,35 +956,36 @@ type TabStripSprite<'id> when 'id : equality = {
               if plainAt 1 then yield Pt(location.x + tab.size.width, y), foot false ]
         | _ -> []
 
-    /// The split button sits on the seam between a split view's two tabs while they are next to
-    /// each other; not while a tab is being dragged along the strip.
+    /// A split button sits on each seam between a split view's tabs while they are next to each
+    /// other; not while a tab is being dragged along the strip.
     member private this.junction =
         if this.slide.IsSome then []
         else
             let order = this.adjustedLorder.list
             let paired = order |> List.filter(fun tab -> (this.tabs.find tab).splitSide.IsSome)
-            match paired with
-            | [first;second] when List.findIndex ((=) second) order = List.findIndex ((=) first) order + 1 ->
-                let axis = fst (this.tabs.find first).splitSide.Value
-                let location = this.tabLocation first
-                let tab = this.tabSpriteOf first
-                let hover = this.hover |> Option.exists(fun (id,part) -> id=second && part=TabSplit)
-                let button side = { owner=box second; axis=axis; size=side; fill=this.appearance.tabActiveBgColor; ink=tab.textColor; hover=hover }
-                if this.isVertical then
-                    let height = max (Dpi.scale 14) (this.rowHeight*45/100)
-                    let side = Sz(height*3/2,height)
-                    let y = location.y+tab.size.height+(this.rowStep-this.rowHeight)/2-side.height/2
-                    let x = this.size.width-side.width-Dpi.scale (if this.scrollMaximum>0 then 22 else 12)
-                    if y>=0 && y+side.height<=this.size.height then [Pt(x,y),button side :> ISprite] else []
+            paired |> List.pairwise |> List.collect(fun (first,second) ->
+                if List.findIndex ((=) second) order <> List.findIndex ((=) first) order + 1 then []
                 else
-                    // Small and down at the tabs' bottom edge, clear of the icon beside the seam.
-                    let height = min (this.size.height-2) (max (Dpi.scale 11) (tab.size.height*38/100))
-                    let side = Sz(height*3/2,height)
-                    let seam = location.x+tab.size.width-int(this.tabOverlap/2.0)
-                    // The strip's own bottom row: tabs stop a pixel or two short of it.
-                    let y = this.size.height-side.height
-                    [Pt(seam-side.width/2,y),button side :> ISprite]
-            | _ -> []
+                    // The second tab's own side says which way its split runs.
+                    let axis = fst (this.tabs.find second).splitSide.Value
+                    let location = this.tabLocation first
+                    let tab = this.tabSpriteOf first
+                    let hover = this.hover |> Option.exists(fun (id,part) -> id=second && part=TabSplit)
+                    let button side = { owner=box second; axis=axis; size=side; fill=this.appearance.tabActiveBgColor; ink=tab.textColor; hover=hover }
+                    if this.isVertical then
+                        let height = max (Dpi.scale 14) (this.rowHeight*45/100)
+                        let side = Sz(height*3/2,height)
+                        let y = location.y+tab.size.height+(this.rowStep-this.rowHeight)/2-side.height/2
+                        let x = this.size.width-side.width-Dpi.scale (if this.scrollMaximum>0 then 22 else 12)
+                        if y>=0 && y+side.height<=this.size.height then [Pt(x,y),button side :> ISprite] else []
+                    else
+                        // Small and down at the tabs' bottom edge, clear of the icon beside the seam.
+                        let height = min (this.size.height-2) (max (Dpi.scale 11) (tab.size.height*38/100))
+                        let side = Sz(height*3/2,height)
+                        let seam = location.x+tab.size.width-int(this.tabOverlap/2.0)
+                        // The strip's own bottom row: tabs stop a pixel or two short of it.
+                        let y = this.size.height-side.height
+                        [Pt(seam-side.width/2,y),button side :> ISprite])
 
     member this.sprite =
         {
