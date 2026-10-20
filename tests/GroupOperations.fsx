@@ -17,6 +17,25 @@ module Timer =
     extern uint32 timeBeginPeriod(uint32 period)
 
 let check condition message = if not condition then failwith message
+/// Holds every thread-pool worker while `action` runs, so a placement it submits cannot start
+/// before the group thread has finished the operation that submitted it.
+let withPoolHeld (action:unit -> unit) =
+    let mutable maxWorkers,maxIo = 0,0
+    let mutable minWorkers,minIo = 0,0
+    ThreadPool.GetMaxThreads(&maxWorkers,&maxIo)
+    ThreadPool.GetMinThreads(&minWorkers,&minIo)
+    let held = Environment.ProcessorCount
+    use hold = new ManualResetEvent(false)
+    use started = new CountdownEvent(held)
+    check (ThreadPool.SetMinThreads(held,minIo) && ThreadPool.SetMaxThreads(held,maxIo)) "The thread pool could not be limited"
+    try
+        for _ in 1..held do ThreadPool.QueueUserWorkItem(fun _ -> started.Signal() |> ignore; hold.WaitOne() |> ignore) |> ignore
+        check (started.Wait(5000)) "The thread-pool workers did not all start"
+        action()
+    finally
+        hold.Set()
+        ThreadPool.SetMaxThreads(maxWorkers,maxIo) |> ignore
+        ThreadPool.SetMinThreads(minWorkers,minIo) |> ignore
 /// Each wait sleeps at least one timer tick; main shortens it to 1ms. At the default 15.6ms a
 /// sampled operation's half a dozen waits cost about 95ms and the suite ran past its timeout.
 /// Checks the state it saw: asking again after the loop can catch a later, transient change,
@@ -422,6 +441,36 @@ let main() =
                     onGroup(fun group -> group.tabActivate(Tab(SplitView.window First beforeThird |> Option.get),false))
                     waitSplit()
                     check (onGroup(fun group -> group.splitLayout=Some {beforeThird with focused=First})) "Returning to a split did not restore both panes and their ratio"
+                    // Back and forth between a pane and the third tab, which waits pane-sized under
+                    // the host pane while the split shows: shown again, it must fill the whole group.
+                    for delay in [0;80] do
+                        onHelper(fun () -> for form in forms |> List.take 3 do form.Delay <- delay)
+                        try
+                            for pane in [Second;First] do
+                                onGroup(fun group -> group.tabActivate(Tab(SplitView.window pane beforeThird |> Option.get),false))
+                                waitSplit()
+                                onGroup(fun group -> group.tabActivate(Tab(third),false))
+                                waitOperation()
+                                let parked = onGroup(fun group -> group.layout)
+                                check (parked=Parked {beforeThird with focused=pane}) (sprintf "Third tab shown again (delay %d) replaced a split member: %A" delay parked)
+                                check (OS().windowFromHwnd(third).visibleBounds=movedFrame) (sprintf "Third tab shown again (delay %d) kept the pane size: %A instead of %A" delay (OS().windowFromHwnd(third).visibleBounds) movedFrame)
+                                check ((onGroup(fun group -> group.layoutFrame))=movedFrame) (sprintf "Third tab shown again (delay %d) changed the group frame" delay)
+                            // Switched before the panes have been placed, the third tab still fills the group.
+                            onGroup(fun group -> group.tabActivate(Tab(SplitView.window First beforeThird |> Option.get),false))
+                            onGroup(fun group -> group.tabActivate(Tab(third),false))
+                            waitOperation()
+                            check (OS().windowFromHwnd(third).visibleBounds=movedFrame) (sprintf "Third tab shown at once (delay %d) kept the pane size: %A instead of %A" delay (OS().windowFromHwnd(third).visibleBounds) movedFrame)
+                        finally onHelper(fun () -> for form in forms |> List.take 3 do form.Delay <- 0)
+                    onGroup(fun group -> group.tabActivate(Tab(SplitView.window First beforeThird |> Option.get),false))
+                    waitSplit()
+                    // Shown again while no worker can start its placement before the group has put
+                    // it in front: that order change cancelled the placement, and the tab kept its
+                    // pane's size whenever the worker lost the race.
+                    withPoolHeld(fun () -> onGroup(fun group -> group.tabActivate(Tab(third),false)))
+                    waitOperation()
+                    check (OS().windowFromHwnd(third).visibleBounds=movedFrame) (sprintf "Third tab shown again with its placement delayed kept the pane size: %A instead of %A" (OS().windowFromHwnd(third).visibleBounds) movedFrame)
+                    onGroup(fun group -> group.tabActivate(Tab(SplitView.window First beforeThird |> Option.get),false))
+                    waitSplit()
                     onGroup(fun group -> group.minimizeAll())
                     pumpUntil(fun () -> handles |> List.take 3 |> List.forall(fun hwnd -> OS().windowFromHwnd(hwnd).isMinimized))
                     waitOperation()

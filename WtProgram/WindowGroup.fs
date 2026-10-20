@@ -537,9 +537,14 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             | _ -> newZorder
         if zorderCell.value.list <> newZorder.list then
             if not this.isSplit && newZorder.tryHead<>zorderCell.value.tryHead then
+                // In front now, the window no longer goes under another; a placement that leads
+                // stays: the frame a tab takes as the split parks behind it was cancelled here,
+                // whenever the worker had not started it yet, and the tab kept its pane's size.
                 newZorder.tryHead.iter(fun hwnd ->
                     FollowerPlacement.queue.cancel(placementOwner,hwnd,whenValue=(fun (_,request) ->
-                        match request with SetMinimized _ -> false | _ -> true)))
+                        match request with
+                        | SetMinimized _ | AlignWindow(_,_,None,_) -> false
+                        | _ -> true)))
             prevTop.set(zorderCell.value.tryHead)
             zorderCell.set(newZorder)
 

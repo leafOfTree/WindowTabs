@@ -263,6 +263,10 @@ panes; a `FocusDirection` can come with the tree model.
   (`applyLayout`). While split, the focused pane leads the group's order (`paneFront`), so its
   tab shows in front and the strip belongs to it. Settling is checked on the placement queue's
   Idle event, with a 100ms timer only as a fallback while DWM catches up, for at most 2 seconds.
+  When the order changes outside a split, the window coming to the front loses only the
+  placements that put it under another window; one that leads (`below=None`), the whole frame
+  `collapseTo` gives the tab that parks the pair, stays, or the tab kept its pane's size whenever
+  the worker had not started it before the order changed.
 - `TabStripDecorator.fs`: menu items only issue commands; the pane badge comes from
   `TabInfo.splitSide`, which TabStrip draws while `TabInfo.text` stays clean; `refreshLayoutTabs`
   keeps the pair's tabs adjacent; it implements `ILayoutDropTarget` and registers the strip,
@@ -278,6 +282,16 @@ panes; a `FocusDirection` can come with the tree model.
 - Threads: `preview` and `commit` are synchronous calls from the drag's source STA to the target
   group's STA, in the same direction as the existing `dragEnter`, as the architecture document
   allows. The main thread gains no waits on group threads.
+- Possible follow-up, not done: the WinEvent hooks of every member are registered from the group
+  thread and filtered by process and thread, so every event of the app's other windows on that
+  thread (child windows while a pane resizes, the cursor while the pointer moves over it) is
+  delivered to the group thread and dropped there. Delivered as sent messages, they go before
+  the group's own posted work: while both panes resized, each posted ratio waited about 20ms
+  behind them, which is why the divider now places the panes itself. Registering the hooks on a
+  thread of their own that forwards only the member's own events would free the group thread of
+  the rest. In ordinary use the thread is idle and the drops cost microseconds, so there is no
+  measured benefit yet; worth doing only against a reproducible delay, measured first by
+  counting the dropped events per second.
 
 ## 8. Stages
 

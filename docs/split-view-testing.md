@@ -9,7 +9,7 @@ known limits, and what to note when reporting a problem. The design is in
 | Suite | Desktop | Covers |
 | --- | --- | --- |
 | `SplitView` | none | The pure model: geometry and rounding, ratio limits, native resize conversion, edge drop zones, commands, parking and restoring, members going away, badges and pair order, placement plans and the pair's button |
-| `GroupOperations` | hidden | Native placement of a pair: empty panes, parking, drops into panes and at edges from this group and from another, a dropped window put away off screen, swapping by reordering the pair's tabs, the focused pane leading the group, a pane raised over the tabs, the empty pane as a drop surface, drag routing over an app's child window |
+| `GroupOperations` | hidden | Native placement of a pair: empty panes, parking, a third tab shown again after a pane (with every thread-pool worker held, so its placement cannot win the race against the order change that used to cancel it), drops into panes and at edges from this group and from another, a dropped window put away off screen, swapping by reordering the pair's tabs, the focused pane leading the group, a pane raised over the tabs, the empty pane as a drop surface, drag routing over an app's child window |
 | `TabInteraction`, `GroupLifecycle` | hidden | The strip, tab clicks and drags, and the taskbar previews that own grouped windows |
 | `SplitViewDesktop` | visible, opt-in | Real pointer input: the empty pane opening out, its frame colour, edge and divider drags with live following beside a slow app and beside another process, the tabs over both panes after clicks, quick switching between the panes, and leaving the split for a tab behind with the tabs never under it |
 
