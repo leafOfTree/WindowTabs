@@ -720,12 +720,32 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         match groupLayout with
         | Split s when not liveResize && not inMoveSize.value ->
             let front = this.paneFront s |> Option.defaultValue owner
-            for hwnd in SplitView.windows s do
-                if hwnd<>front && not(isMinimized hwnd) && FollowerPlacement.queue.isWindowIdle(placementOwner,hwnd) && this.isAbove(hwnd,front) then
+            let panes = SplitView.windows s |> List.filter(fun hwnd -> not(isMinimized hwnd))
+            for hwnd in panes do
+                if hwnd<>front && FollowerPlacement.queue.isWindowIdle(placementOwner,hwnd) && this.isAbove(hwnd,front) then
                     FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.stackBelowRequest hwnd front)
+            // The tabs behind go under every pane, not only the one they wait under: an app that
+            // keeps to its own grid is a little larger than that pane, and above another pane its
+            // edge showed through at the seam.
+            this.tabsBehindBelowPanes panes
             // The divider and the empty pane, owned by nothing, are put back under the strip too.
             this.updateSplitChrome()
         | _ -> ()
+
+    /// A tab behind the panes found above any of them goes below the lowest.
+    member private this.tabsBehindBelowPanes(panes:IntPtr list) =
+        let lowest = panes |> List.sortByDescending(fun hwnd -> this.os.windowFromHwnd(hwnd).zorder) |> List.tryHead
+        lowest |> Option.iter(fun lowest ->
+            for hwnd in this.windows.items.list do
+                if not(List.contains hwnd panes) && not(isMinimized hwnd) && FollowerPlacement.queue.isWindowIdle(placementOwner,hwnd) &&
+                   panes |> List.exists(fun pane -> this.isAbove(hwnd,pane)) then
+                    FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.stackBelowRequest hwnd lowest))
+
+    /// Whether a tab behind the panes lies above any of them.
+    member private this.tabBehindAbovePanes(s:SplitLayout) =
+        let panes = SplitView.windows s |> List.filter(fun hwnd -> not(isMinimized hwnd))
+        this.windows.items.list |> List.exists(fun hwnd ->
+            not(List.contains hwnd panes) && not(isMinimized hwnd) && panes |> List.exists(fun pane -> this.isAbove(hwnd,pane)))
 
     /// The pane window in focus, which the strip belongs to and the other pane waits under.
     member private this.paneFront(s:SplitLayout) =
@@ -749,10 +769,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             let covered() =
                 isVisibleCell.value &&
                 SplitView.windows s |> List.exists(fun hwnd -> not(isMinimized hwnd) && this.isAbove(hwnd,this.ts.hwnd))
-            if not liveResize && not inMoveSize.value && not reconcileMinimizeState && covered() then
+            let behindAbove() = isVisibleCell.value && this.tabBehindAbovePanes s
+            if not liveResize && not inMoveSize.value && not reconcileMinimizeState && (covered() || behindAbove()) then
                 this.withUpdate(fun () ->
                     this.saveZorder()
-                    if covered() && not this.isEmpty then this.setTsParent(this.topWindow))
+                    if covered() && not this.isEmpty then this.setTsParent(this.topWindow)
+                    elif behindAbove() && not this.isEmpty then this.keepPanesBelowStrip(this.topWindow))
         | _ -> splitGuardTimer.Stop()
 
     /// What the panes go just below: the divider, which lies over their edges, or else the strip.

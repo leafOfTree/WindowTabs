@@ -528,6 +528,17 @@ let main() =
                         onGroup(fun group -> group.execute(ClosePane(Some [Second;Second])))
                         waitSplit()
                         check (onGroup(fun group -> List.length(SplitView.windows group.splitLayout.Value)=2 && group.windows.count=3 && dividers group=1)) "Closing the nested pane did not give its room back"
+                        // A tab behind, raised over the panes by its own app, goes back under all of
+                        // them: a little larger than the pane it waits under, as an app on a character
+                        // grid is, it showed at the seam over the other pane.
+                        do
+                            let panes = onGroup(fun group -> SplitView.windows group.splitLayout.Value)
+                            let z hwnd = OS().windowFromHwnd(hwnd).zorder
+                            let strip = onGroup(fun group -> group.ts.hwnd)
+                            WinUserApi.SetWindowPos(third,strip,0,0,0,0,
+                                SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore
+                            check (panes |> List.forall(fun pane -> z third < z pane)) "The test could not raise the tab behind over the panes"
+                            pumpUntil(fun () -> panes |> List.forall(fun pane -> z third > z pane))
                         onGroup(fun group -> group.removeWindow(third))
                         waitOperation()
                         onHelper(fun () -> forms.[2].Hide(); forms.[2].Pinned <- true; forms.[2].Bounds <- Rectangle(-20000,-20000,640,480))

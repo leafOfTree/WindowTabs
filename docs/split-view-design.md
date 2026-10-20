@@ -270,6 +270,7 @@ no command of its own.
 | Exiting WindowTabs | Every member is visible natively again; the divider and the empty pane are released |
 | DPI or monitor changes | Logical sizes are scaled again for the monitor holding the group's frame |
 | A pane raised over the tabs by its own app, with no foreground change | A 200ms guard while split notices it and puts the tabs back over both panes |
+| A tab behind the panes above one of them | Put below the lowest pane once placement settles, and by the same guard: an app that keeps to its own grid is a little larger than the pane it waits under, and above another pane its edge showed at the seam |
 
 ## 7. Modules and threads
 
