@@ -142,6 +142,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let sessionSoon = lifetime.Own(new CoalescedAction(3000, fun () -> this.saveSession()))
     let sessionTimer = lifetime.Own(new System.Windows.Forms.Timer(Interval=120000))
     let mutable tokensSeen = false
+    /// Nothing is written until the start has decided about the last session: the groups the
+    /// first scan forms on its own came to be saved over it before it was restored.
+    let mutable sessionReady = false
     /// Automatic groups of one app that have come to share a desktop are looked for at most once a second.
     let mergeSoon = lifetime.Own(new CoalescedAction(1000, fun () -> this.mergeAutoGroups()))
     let desktopRetry = lifetime.Own(new CoalescedAction(100, fun () ->
@@ -242,23 +245,32 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     member private this.sessionMode = string(Services.settings.getValue("sessionRestore"))
 
     member private this.saveSession() =
-        if this.sessionMode<>"Off" && not inShutdown.value && not this.desktop.isDragging && initialDiscoveryComplete then
+        if this.sessionMode<>"Off" && sessionReady && not inShutdown.value && not this.desktop.isDragging then
             try sessions.saveSession() with error -> Diagnostics.Trace.TraceWarning("Session save failed: {0}",error.Message)
 
     /// After a sign-in, once the first scan is done: no window has a group token, so the
     /// session is what puts the groups, positions and splits back. A moment later, as apps
-    /// started with Windows still open their windows.
+    /// started with Windows still open their windows. Saving waits for it.
     member private this.restoreSessionAtStart() =
         let mode = this.sessionMode
-        if mode<>"Off" && not tokensSeen then
+        if mode="Off" || tokensSeen then sessionReady <- true
+        else
             let timer = new System.Windows.Forms.Timer(Interval=4000)
             timer.Tick.Add(fun _ ->
                 timer.Stop()
                 timer.Dispose()
                 if not inShutdown.value then
-                    try sessions.restoreSession((mode="Apps"),fun result ->
-                            Diagnostics.Trace.TraceInformation("Session restored: {0} windows, {1} not found, {2} failed",result.restored,result.missing.Length,result.failed.Length))
-                    with error -> Diagnostics.Trace.TraceWarning("Session restore failed: {0}",error.Message))
+                    match sessions.loadSession() with
+                    | None -> sessionReady <- true
+                    | Some _ ->
+                        try
+                            sessions.restoreSession((mode="Apps"),fun result ->
+                                sessionReady <- true
+                                sessionSoon.Request()
+                                Diagnostics.Trace.TraceInformation("Session restored: {0} windows, {1} not found, {2} failed",result.restored,result.missing.Length,result.failed.Length))
+                        with error ->
+                            sessionReady <- true
+                            Diagnostics.Trace.TraceWarning("Session restore failed: {0}",error.Message))
             timer.Start()
 
     member private this.appKey(hwnd:IntPtr) =
@@ -700,7 +712,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             sessionTimer.Stop()
             sessionSoon.Cancel()
             // From the layouts last read: the groups are about to go and cannot be asked.
-            if this.sessionMode<>"Off" && initialDiscoveryComplete then
+            if this.sessionMode<>"Off" && sessionReady then
                 try sessions.saveSessionNow() with error -> Diagnostics.Trace.TraceWarning("Session save failed: {0}",error.Message)
             settingsManager.Flush() |> ignore
             settleTimer.Stop()

@@ -40,12 +40,9 @@ module WorkspaceData =
         JObject(JProperty("position",position),JProperty("columnWidth",between SettingsCatalog.columnWidthRange layout.columnWidth),
                 JProperty("normalAlignment",alignment layout.normalAlignment),JProperty("insideAlignment",alignment layout.insideAlignment))
 
-    /// Normal placement uses workspace coordinates, including the taskbar offset.
-    let fitPlacement (monitors:(Rect * Rect) list) (value:OSWindowPlacement) =
-        let areas = monitors |> List.map(fun (display,work) ->
-            work.move(display.x-work.x,display.y-work.y))
-        let bounds = value.rcNormalPosition
-        if areas.IsEmpty || areas |> List.exists(fun area -> area.completlyContains bounds) then value
+    /// A rectangle kept inside one of the areas: the one it overlaps most, else the nearest.
+    let fitRect (areas:Rect list) (bounds:Rect) =
+        if areas.IsEmpty || areas |> List.exists(fun area -> area.completlyContains bounds) then bounds
         else
             let distance (area:Rect) =
                 let dx = max 0L (max (int64 area.left-int64 bounds.right) (int64 bounds.left-int64 area.right))
@@ -57,8 +54,15 @@ module WorkspaceData =
             let width,height = min bounds.width area.width,min bounds.height area.height
             let x = max area.left (min bounds.x (area.right-width))
             let y = max area.top (min bounds.y (area.bottom-height))
-            { value with rcNormalPosition=Rect(Pt(x,y),Sz(width,height))
-                         ptMaxPosition=Pt(-1,-1);ptMinPosition=Pt(-1,-1) }
+            Rect(Pt(x,y),Sz(width,height))
+
+    /// Normal placement uses workspace coordinates, including the taskbar offset.
+    let fitPlacement (monitors:(Rect * Rect) list) (value:OSWindowPlacement) =
+        let areas = monitors |> List.map(fun (display,work) ->
+            work.move(display.x-work.x,display.y-work.y))
+        let bounds = fitRect areas value.rcNormalPosition
+        if bounds=value.rcNormalPosition then value
+        else { value with rcNormalPosition=bounds; ptMaxPosition=Pt(-1,-1);ptMinPosition=Pt(-1,-1) }
 
     let placement (obj:JObject) =
         let point key fallback =

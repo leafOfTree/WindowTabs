@@ -520,8 +520,9 @@ type WorkspaceModel() as this =
                             else lost saved
                         with ex -> errors.Add(fst (WorkspaceRestore.describe saved),ex.Message))
                     try os.setZorder(WorkspaceRestore.zorder (List2(successful))) with ex -> errors.Add("",ex.Message)
-                    // The split comes back among the windows found, once they are all in the group,
-                    // moved with the placement when that was brought on screen.
+                    // The split comes back among the windows found, once they are all in the group, its
+                    // frame kept on screen on its own: the placement's correction allows for a window
+                    // frame that sticks out by its invisible border, which a visible frame does not.
                     match destination,(groupInfo :?> WorkspaceGroup).split with
                     | Some group,Some split when successful.Count>=2 ->
                         let windows = (groupInfo?windows : List2<Dynamic>).list
@@ -533,8 +534,7 @@ type WorkspaceModel() as this =
                         match SplitPersistence.rebuild panes with
                         | GroupLayout.Single -> ()
                         | layout ->
-                            let saved : OSWindowPlacement = groupInfo?placement
-                            let frame = split.frame.move(placement.rcNormalPosition.x-saved.rcNormalPosition.x,placement.rcNormalPosition.y-saved.rcNormalPosition.y)
+                            let frame = WorkspaceData.fitRect (Mon.all.map(fun mon -> mon.workRect).list) split.frame
                             let info = group :?> GroupInfo
                             info.invokeGroup(fun () -> info.group.restoreLayout(layout,frame))
                     | _ -> ()))
