@@ -51,8 +51,9 @@ module SplitMenu =
 type ISplitPanePicker =
     /// Opens below `anchor`, on screen; `choose` receives the window picked.
     abstract member show : owner:Control * anchor:Rectangle * windows:(IntPtr * string * string) list * choose:(IntPtr -> unit) -> unit
-    /// Opens over `within`, on screen, as for a group about to split.
-    abstract member showWithin : within:Rectangle * windows:(IntPtr * string * string) list * choose:(IntPtr -> unit) -> unit
+    /// Opens over `within`, on screen, as for a group about to split. With `empty`, a first row
+    /// of that name offers an empty pane instead of a window: choosing it gives IntPtr.Zero.
+    abstract member showWithin : within:Rectangle * windows:(IntPtr * string * string) list * empty:string option * choose:(IntPtr -> unit) -> unit
 
 /// The bar between the panes: dragged for the ratio, double-clicked to equalize, right-clicked
 /// for the split's menu. It only produces commands.

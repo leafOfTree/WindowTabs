@@ -58,6 +58,8 @@ module Strings =
         let splitPickRight = { en="Window on the right…"; zh="在右侧放入窗口…"; ja="右側にウィンドウを配置…" }
         let splitPickBelow = { en="Window below…"; zh="在下方放入窗口…"; ja="下側にウィンドウを配置…" }
         let splitPickLeft = { en="Window on the left…"; zh="在左侧放入窗口…"; ja="左側にウィンドウを配置…" }
+        /// The first row of that list: no window yet, an empty pane to put one in later.
+        let splitPickEmpty = { en="Empty pane (put a window in later)"; zh="空白窗格（之后再放入窗口）"; ja="空のペイン（後でウィンドウを配置）" }
         let splitEmpty = { en="Drop a tab or window here"; zh="将标签或窗口拖到这里"; ja="ここにタブまたはウィンドウをドロップ" }
         let splitChoose = { en="Choose a window…"; zh="选择窗口…"; ja="ウィンドウを選択…" }
         let splitOr = { en="or"; zh="或"; ja="または" }

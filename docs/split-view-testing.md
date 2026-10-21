@@ -54,7 +54,7 @@ its tray menu and takes over. A split comes back after a restart as its windows 
    resize beside a slow app.
 5. Right-click a tab, Split in group, and pick a window on the right, below or on the left: the
    list opens over the group and the window picked goes on that side of the tab; Esc changes
-   nothing. Then press the shortcut for a new empty pane on the right or below. It opens out
+   nothing. Its first row opens an empty pane on that side instead. Then press the shortcut for a new empty pane on the right or below. It opens out
    from the group's edge. Drop a tab of this group, a tab of another group, or a window dragged by its title bar
    onto it; or use "Choose window…". Resize it by its edges, and close it with its close button,
    or with Esc while the tab beside it is active: that Esc does not reach the app.

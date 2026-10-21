@@ -41,6 +41,9 @@ type SplitCommand =
     | SplitWith of partner:IntPtr * SplitAxis
     /// The current pane splits again, the new half empty.
     | NewEmptyPane of SplitAxis
+    /// The window's pane, or a single window, splits with an empty half on `side`, for a window
+    /// to be put in later.
+    | EmptyBeside of hwnd:IntPtr * SplitAxis * Side
     /// The node at `target`, a pane or a whole split, makes room on `side` for the window; the
     /// root is [] and a single window is split in two.
     | DropInto of hwnd:IntPtr * target:PanePath * SplitAxis * Side
@@ -527,6 +530,16 @@ module SplitView =
             match SplitTree.insert path axis Second Empty (root s) with
             | Branch tree -> Split {tree=tree;focused=path@[First]}
             | Leaf _ -> layout
+        | EmptyBeside(_,axis,side),(Single | Parked _) ->
+            let s = {axis=axis;ratio=0.5;first=Leaf Empty;second=Leaf Empty}
+            Split {tree=s |> SplitTree.withChild (Side.other side) (Leaf(Occupied current));focused=[Side.other side]}
+        | EmptyBeside(hwnd,axis,side),Split s ->
+            match pathOf hwnd s with
+            | Some path ->
+                match SplitTree.insert path axis side Empty (root s) with
+                | Branch tree -> Split {tree=tree;focused=path@[Side.other side]}
+                | Leaf _ -> layout
+            | None -> layout
         | DropInto(hwnd,_,axis,side),(Single | Parked _) ->
             // Beside the window shown; panes parked behind it are let go, as by any new split.
             if hwnd=current || hwnd=IntPtr.Zero then layout

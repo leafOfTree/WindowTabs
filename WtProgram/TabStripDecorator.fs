@@ -290,13 +290,12 @@ type TabStripDecorator(group:WindowGroup) as this =
     /// The split's menu, from the button between its two tabs.
     /// The menu of the split a seam button stands for, the one parting its tab from the pane tab
     /// before it; without a button, the focused pane's split.
-    /// The window list over the group; the window picked goes on `side` of the tab `beside`.
+    /// The window list over the group, an empty pane first; what is picked goes on `side` of
+    /// the tab `beside`.
     member private this.pickBeside(beside:IntPtr, entries, axis:SplitAxis, side:Side) =
-        match Services.tryGet<ISplitPanePicker>() with
-        | Some picker when not(List.isEmpty entries) ->
-            picker.showWithin(group.layoutFrame.Rectangle,entries,fun chosen -> group.placeBeside(beside,chosen,axis,side))
-        | Some _ -> Alert.show AlertKind.Info (tr Strings.TabMenu.split) (tr Strings.TabMenu.splitNoWindows)
-        | None -> ()
+        Services.tryGet<ISplitPanePicker>() |> Option.iter(fun picker ->
+            picker.showWithin(group.layoutFrame.Rectangle,entries,Some(tr Strings.TabMenu.splitPickEmpty),
+                              fun chosen -> group.placeBeside(beside,chosen,axis,side)))
 
     member private this.showSplitMenu(ptScreen:Pt, button:IntPtr option) =
         let execute command = group.execute command
