@@ -335,10 +335,41 @@ module Localization =
             ("Check Releases ↗", "التحقق من الإصدارات ↗");
             ("Crash log", "سجل الأعطال")
         ]
+    /// Additional longer strings whose English versions are used by settings pages.
+    let private extraArabicTranslations =
+        dict [
+            ("Icon files (*.ico, *.png, *.bmp, *.gif, *.exe, *.dll)|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|All files (*.*)|*.*", "ملفات الأيقونات (*.ico, *.png, *.jpg, *.bmp, *.gif, *.exe, *.dll)|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|كل الملفات (*.*)|*.*");
+            ("123456789", "123456789");
+            ("QWERTYUIOP", "QWERTYUIOP");
+            ("ASDFGHJKL;", "ASDFGHJKL;");
+            ("If the WindowTabs.exe folder has a settings file, WindowTabs uses it (portable mode); otherwise it uses the one in AppData. Older versions named it WindowTabsSettings.txt; it is now WindowTabsSettings.json, and an old .txt file is still read until the .json one exists.", "إذا وُجد ملف إعدادات بجوار WindowTabs.exe فسيستخدمه البرنامج (الوضع المحمول)، وإلا فسيستخدم الملف الموجود في AppData. كان اسمه في الإصدارات القديمة WindowTabsSettings.txt، وأصبح الآن WindowTabsSettings.json، وسيظل ملف .txt القديم يُقرأ حتى إنشاء ملف .json.");
+            ("Restore every setting to its default and restart WindowTabs? The current settings are saved first, so you can import them back.", "هل تريد استعادة جميع الإعدادات الافتراضية وإعادة تشغيل WindowTabs؟ سيتم حفظ الإعدادات الحالية أولًا، حتى تتمكن من استيرادها مرة أخرى.");
+            ("Change it for one group from the tab menu.", "غيّره لمجموعة واحدة من قائمة علامة التبويب.");
+            ("Add a group to put several apps together, or drag tabs onto each other: the groups show here", "أضف مجموعة لضم عدة تطبيقات معًا، أو اسحب علامات التبويب فوق بعضها؛ ستظهر المجموعات هنا");
+            ("Put windows of different apps into one named group. Apps added here always have tabs, leave the list above and don't use Auto-group. Windows you group by dragging tabs together show here too.", "ضع نوافذ تطبيقات مختلفة في مجموعة واحدة ذات اسم. التطبيقات المضافة هنا تستخدم علامات التبويب دائمًا، وتُزال من القائمة أعلاه ولا تستخدم التجميع التلقائي. كما تظهر هنا النوافذ التي تجمعها بسحب علامات التبويب فوق بعضها.");
+            ("Choose which apps get tabs. Auto-group puts the windows of an app into one group. Expand an app to see its windows.", "اختر التطبيقات التي تستخدم علامات التبويب. يجمع التجميع التلقائي نوافذ التطبيق الواحد في مجموعة واحدة. وسّع التطبيق لرؤية نوافذه.");
+            ("How to use\\n1  Group and position your windows, then click Save layout.\\n2  Select a workspace and click Restore selected.\\n3  To change an item's name or window title matching, double-click it, or point at it and click its edit button.\\nA window whose title has changed since it was saved is still matched by its app.\\nRestore uses open windows. If an app is not running, the result offers to launch it.", "طريقة الاستخدام\\n١  جمّع النوافذ واضبط مواضعها، ثم انقر «حفظ التخطيط».\\n٢  حدد مساحة عمل وانقر «استعادة المحدد».\\n٣  لتغيير اسم عنصر أو طريقة مطابقة عنوان نافذة، انقر عليه مرتين أو أشر إليه ثم انقر زر التحرير.\\nتظل النافذة التي تغير عنوانها منذ الحفظ مطابقةً باستخدام التطبيق الخاص بها.\\nتستخدم الاستعادة النوافذ المفتوحة. إذا لم يكن التطبيق قيد التشغيل، فستتيح لك النتيجة تشغيله.");
+
+        ]
+
     let private translateArabic (text:string) =
         match arabicTranslations.TryGetValue text with
         | true, translated -> translated
-        | _ -> text
+        | _ ->
+            match extraArabicTranslations.TryGetValue text with
+            | true, translated -> translated
+            | _ when text.StartsWith("Close all '") && text.EndsWith("' windows") ->
+                "إغلاق جميع نوافذ «" + text.Substring(11, text.Length - 19) + "»"
+            | _ when text.StartsWith("Used by ") -> "يستخدمه " + text.Substring(8)
+            | _ when text.StartsWith("Desktop ") -> "سطح المكتب " + text.Substring(8)
+            | _ when text.StartsWith("Group ") && text.Length > 6 -> "المجموعة " + text.Substring(6)
+            | _ when text.StartsWith("This group · ") -> "هذه المجموعة · " + text.Substring(13)
+            | _ when text.StartsWith("All windows · ") -> "كل النوافذ · " + text.Substring(14)
+            | _ when text.StartsWith("Launch ") && text.EndsWith(" apps and retry") ->
+                "تشغيل " + text.Substring(7, text.Length - 21) + " تطبيقات وإعادة المحاولة"
+            | _ when text.StartsWith("Launching ") && text.EndsWith(" apps…") ->
+                "جارٍ تشغيل " + text.Substring(10, text.Length - 16) + " تطبيقات…"
+            | _ -> text
 
     let languages = [| "en","English","EN"; "zh","中文","中"; "ja","日本語","日"; "ar","العربية","ع" |]
     /// Values of the language setting: "system" follows the Windows display language.
