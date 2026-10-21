@@ -93,8 +93,11 @@ module SplitMetrics =
     /// An edge's drop zone: this deep at its ends, and `edgeShare` of the frame at its middle.
     let edgeZone = 36
     let edgeShare = 0.2
-    /// Within this of the group's own edge a drop splits the whole group; further in, the pane there.
-    let outerZone = 18
+    /// Within this of the group's own edge a drop splits the whole group; further in, the pane
+    /// there. Like a pane's zone it deepens at the edge's middle, to `outerShare` of the frame
+    /// and at most twice this.
+    let outerZone = 36
+    let outerShare = 0.08
     let clampRatio ratio = max minRatio (min maxRatio ratio)
 
 module Side =
@@ -329,11 +332,20 @@ module SplitGeometry =
             match layout with
             | None -> edgeDrop pt edge frame |> Option.map(fun (axis,side) -> ([],axis,side),half frame axis side)
             | Some layout ->
-                let distances =
-                    [pt.x-frame.left,(SideBySide,First);frame.right-pt.x,(SideBySide,Second)
-                     pt.y-frame.top,(Stacked,First);frame.bottom-pt.y,(Stacked,Second)]
-                let nearest = distances |> List.minBy fst
-                if fst nearest<outer then
+                // The group's own zone is `outer` deep at an edge's ends and deeper at its middle,
+                // where a drop aims; the corners stay with the panes.
+                let reach across along =
+                    let deepest = min (2*outer) (max outer (int(float across*SplitMetrics.outerShare)))
+                    float outer+float(deepest-outer)*(1.0-abs(2.0*along-1.0))
+                let u = float(pt.x-frame.left)/float(max 1 frame.width)
+                let v = float(pt.y-frame.top)/float(max 1 frame.height)
+                let depths =
+                    [float(pt.x-frame.left)/reach frame.width v,(SideBySide,First)
+                     float(frame.right-pt.x)/reach frame.width v,(SideBySide,Second)
+                     float(pt.y-frame.top)/reach frame.height u,(Stacked,First)
+                     float(frame.bottom-pt.y)/reach frame.height u,(Stacked,Second)]
+                let nearest = depths |> List.minBy fst
+                if fst nearest<1.0 then
                     let axis,side = snd nearest
                     Some(([],axis,side),half frame axis side)
                 else

@@ -117,16 +117,20 @@ let main() =
     check (drop (Pt(frame.x-1,frame.y+300)) None=None) "A point outside the frame offered a pane"
     // Split: the group's own edge splits the whole group; further in, the pane under the point.
     check (drop (Pt(frame.x+5,frame.y+300)) (Some half)=Some([],SideBySide,First)) "The group's left edge did not offer a new first column"
-    check (drop (Pt(frame.x+outer+5,frame.y+300)) (Some half)=Some([First],SideBySide,First)) "Inside the group's edge the first pane did not split at its left"
+    // The group's zone is `outer` deep at an edge's ends and twice that at its middle; a pane's
+    // zone takes over further in, and at the corners.
+    check (drop (Pt(frame.x+2*outer-2,frame.y+300)) (Some half)=Some([],SideBySide,First)) "The middle of the group's left edge was not reachable from further in"
+    check (drop (Pt(frame.x+2*outer+8,frame.y+300)) (Some half)=Some([First],SideBySide,First)) "Inside the group's edge the first pane did not split at its left"
+    check (drop (Pt(frame.x+48,frame.y+45)) (Some half)=Some([First],Stacked,First)) "Near the group's corner its zone did not narrow to the pane's"
     check (drop (Pt(first.right-5,frame.y+300)) (Some half)=Some([First],SideBySide,Second)) "The first pane's inner edge did not split it"
     check (drop (Pt(second.left+5,frame.y+300)) (Some half)=Some([Second],SideBySide,First)) "The second pane's inner edge did not split it"
-    check (drop (Pt(second.x+second.width/2,frame.y+outer+5)) (Some half)=Some([Second],Stacked,First)) "The second pane's top did not split it above"
+    check (drop (Pt(second.x+second.width/2,frame.y+60)) (Some half)=Some([Second],Stacked,First)) "The second pane's top did not split it above"
     check (drop (Pt(second.x+second.width/2,frame.y+5)) (Some half)=Some([],Stacked,First)) "The group's top edge did not offer a new row"
     check (drop (Pt(first.x+first.width/2,first.y+first.height/2)) (Some half)=None) "A pane's centre offered a split"
     let dropRect pt layout = SplitGeometry.dropAt pt edge outer gap frame layout |> Option.map snd
     check (dropRect (Pt(frame.x+5,frame.y+300)) (Some half)=Some(Rect(frame.location,Sz((frame.width-gap)/2,frame.height)))) "A new column's preview is not the frame's left half"
     check (dropRect (Pt(second.left+5,frame.y+300)) (Some half)=Some(Rect(second.location,Sz((second.width-gap)/2,second.height)))) "A pane's preview is not its own half"
-    check (drop (Pt(cRect.x+cRect.width/2,cRect.bottom-outer-5)) (Some nested)=Some([Second;Second],Stacked,Second)) "A nested pane did not split at its own edge"
+    check (drop (Pt(cRect.x+cRect.width/2,cRect.bottom-50)) (Some nested)=Some([Second;Second],Stacked,Second)) "A nested pane did not split at its own edge"
 
     // Commands
     let apply = SplitView.apply

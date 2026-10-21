@@ -56,8 +56,8 @@ the tree's simplest case and keep their behaviour.
   the screen, at three fifths of the work area: it came out as a second screenful before.
 - Splitting again: while split, the same ways apply to a pane. Split in group on a tab divides
   the pane of the tab shown; a new empty pane opens beside the focused pane; a tab dragged to
-  a pane's edge splits that pane (as VS Code does), and within 18px of the group's own edge
-  (`outerZone`) a new column or row for the whole group. The preview names the window the drop
+  a pane's edge splits that pane (as VS Code does), and at the group's own edge (`outerZone`:
+  36px at an edge's ends, up to 72px at its middle) a new column or row for the whole group. The preview names the window the drop
   goes beside. With another tab shown over parked panes, the drop goes beside that window, the
   one in sight, and the parked panes are let go as by any new split; panes parked by the
   dragged tab's own press come back as the tab leaves the strip, so they are aimed at.
@@ -193,7 +193,8 @@ Pure functions:
   least 120px, ratios from 0.15 to 0.85, a 3px position tolerance, a 40px size tolerance for
   apps on a character grid, a 2000ms wait for panes to settle, edge drop zones 36px deep at
   their ends that deepen to a fifth of the window (`edgeShare`) at the middle of each edge, and
-  an 18px `outerZone` at the group's own edge where a drop splits the whole group rather than
+  an `outerZone` at the group's own edge, 36px at an edge's ends and 8% of the frame
+  (`outerShare`, at most 72px) at its middle, where a drop splits the whole group rather than
   the pane there. Where two zones overlap, the one the point is relatively deeper in wins.
 
 ## 4. Drag and drop
