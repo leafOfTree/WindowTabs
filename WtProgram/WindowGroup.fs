@@ -1306,51 +1306,74 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 abs(actual.width-expected.width)<=snap && abs(actual.height-expected.height)<=snap)
         | _ -> true
 
-    /// Windows that never take their pane leave the split, with a word to the user.
-    /// A window comes into the split: each window's image moves from where it is seen to its
-    /// pane, the one coming in sliding from its side and fading in, while the windows are placed
-    /// underneath. Not for a ratio, a swap or the focus, nor without the system's animations.
-    member private this.beginTransition(before:GroupLayout, next:GroupLayout, current:IntPtr) =
-        match next with
-        | Split s when SystemInformation.UIEffectsEnabled && not liveResize && not this.isEmpty ->
-            let frame = this.layoutFrame
-            let gap = this.splitGap
-            let paneOf (layout:SplitLayout) hwnd = SplitView.pathOf hwnd layout |> Option.bind(SplitGeometry.paneRect gap frame layout)
-            let was = match before with Split b -> SplitView.windows b | _ -> []
-            let windows = SplitView.windows s |> List.filter(fun hwnd -> this.windows.contains hwnd && not(isMinimized hwnd))
-            // With no split before, the window shown is where it was: it fills the frame.
-            let wasSplit = match before with Split _ -> true | _ -> false
-            let entering = windows |> List.filter(fun hwnd -> not(List.contains hwnd was) && (wasSplit || hwnd<>current))
-            if not entering.IsEmpty then
-                let moves =
+    /// The split changes: each window's image moves from where it was to its new place, one
+    /// coming in sliding from its side and fading in, one leaving the split fading where it was,
+    /// while the windows are placed underneath. A pane closed, the split ended, swapped, evened
+    /// out or turned all move so. Not while a divider is dragged, for the focus alone, for a
+    /// window that has gone (`gone`), nor without the system's animations.
+    member private this.beginTransition(before:GroupLayout, next:GroupLayout, current:IntPtr, ?focus:IntPtr, ?gone:IntPtr) =
+        let gone = defaultArg gone IntPtr.Zero
+        let shown hwnd = hwnd<>gone && this.windows.contains hwnd && isOpen hwnd && not(isMinimized hwnd)
+        let frame = this.layoutFrame
+        let gap = this.splitGap
+        let paneOf (layout:SplitLayout) hwnd = SplitView.pathOf hwnd layout |> Option.bind(SplitGeometry.paneRect gap frame layout)
+        let was = match before with Split b -> SplitView.windows b |> List.filter shown | _ -> []
+        // Where a window was: its pane, or the frame, which the window shown fills with no split.
+        let from hwnd = match before with Split b -> paneOf b hwnd |> Option.defaultValue frame | _ -> frame
+        let move hwnd from target fade =
+            let window = this.os.windowFromHwnd hwnd
+            let bounds,visible = window.bounds,window.visibleBounds
+            { hwnd=hwnd; from=from; target=target; fade=fade
+              border=Pt(visible.x-bounds.x,visible.y-bounds.y)
+              borderSize=Sz(bounds.width-visible.width,bounds.height-visible.height) }
+        let moves =
+            match before,next with
+            | _ when not SystemInformation.UIEffectsEnabled || liveResize || this.isEmpty -> []
+            | _,Split s ->
+                let wasSplit = match before with Split _ -> true | _ -> false
+                let windows = SplitView.windows s |> List.filter shown
+                let into =
                     windows |> List.choose(fun hwnd ->
                         paneOf s hwnd |> Option.map(fun target ->
-                            let window = this.os.windowFromHwnd hwnd
-                            let bounds,visible = window.bounds,window.visibleBounds
-                            let fadeIn = List.contains hwnd entering
-                            // In from its side: out past the split's edge by its own length.
-                            let slid () =
+                            if List.contains hwnd was || (not wasSplit && hwnd=current) then move hwnd (from hwnd) target NoFade
+                            else
+                                // In from its side: out past the split's edge by its own length.
                                 let path = (SplitView.pathOf hwnd s).Value
                                 let axis = match SplitTree.node (SplitTree.parent path) (SplitView.root s) with Some(Branch branch) -> branch.axis | _ -> s.tree.axis
                                 let sign = if List.last path=Second then 1 else -1
-                                if axis=SideBySide then target.move(sign*target.width,0) else target.move(0,sign*target.height)
-                            let from =
-                                if fadeIn then slid()
-                                else match before with Split b -> paneOf b hwnd |> Option.defaultValue target | _ -> frame
-                            { hwnd=hwnd; from=from; target=target; fadeIn=fadeIn
-                              border=Pt(visible.x-bounds.x,visible.y-bounds.y)
-                              borderSize=Sz(bounds.width-visible.width,bounds.height-visible.height) }))
-                splitTransition |> Option.iter(fun previous -> this.onChrome(fun () -> previous.close()))
-                let dpi = Dpi.value()
-                let transition,shown = this.chrome.invoke(fun () ->
-                    Dpi.set dpi
-                    let transition = new SplitTransition(frame,moves)
-                    transition,transition.start())
-                splitTransition <- if shown then Some transition else None
-                // The windows that were there wait while their images move; the one coming in
-                // goes to its pane at once, so its image shows it at its new size.
-                transitionHold <- if shown then windows |> List.filter(fun hwnd -> not(List.contains hwnd entering)) else []
-                if shown then
+                                let slid = if axis=SideBySide then target.move(sign*target.width,0) else target.move(0,sign*target.height)
+                                move hwnd slid target FadeIn))
+                let leaving = was |> List.filter(fun hwnd -> not(List.contains hwnd windows)) |> List.map(fun hwnd -> move hwnd (from hwnd) (from hwnd) FadeOut)
+                into @ leaving
+            // Ended: the window kept grows to the frame and the others fade where they were.
+            | Split b,GroupLayout.Single ->
+                match focus |> Option.orElse(SplitView.focusedWindow b) |> Option.filter shown with
+                | Some keep ->
+                    move keep (from keep) frame NoFade ::
+                    (was |> List.filter((<>) keep) |> List.map(fun hwnd -> move hwnd (from hwnd) (from hwnd) FadeOut))
+                | None -> []
+            | _ -> []
+        if moves |> List.exists(fun move -> move.fade<>NoFade || move.from<>move.target) then
+            splitTransition |> Option.iter(fun previous -> this.onChrome(fun () -> previous.close()))
+            splitTransition <- None
+            transitionHold <- []
+            let dpi = Dpi.value()
+            let transition,shown = this.chrome.invoke(fun () ->
+                Dpi.set dpi
+                let transition = new SplitTransition(frame,moves)
+                transition,transition.start())
+            match next with
+            | Split _ when shown ->
+                splitTransition <- Some transition
+                // A window made smaller, or leaving, waits while its image moves, so the image
+                // shrinks from what it showed rather than the window jumping to its new size; one
+                // made larger, or coming in, goes to its place at once, so its image shows it at
+                // its new size, cut to the rectangle while that grows.
+                transitionHold <-
+                    moves |> List.filter(fun move ->
+                        move.fade=FadeOut || (move.fade=NoFade && move.target.width<=move.from.width && move.target.height<=move.from.height))
+                    |> List.map(fun move -> move.hwnd)
+                if not transitionHold.IsEmpty then
                     let release = new System.Windows.Forms.Timer(Interval=SplitTransition.DurationMs)
                     release.Tick.Add(fun _ ->
                         release.Stop()
@@ -1359,7 +1382,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                             transitionHold <- []
                             if this.isSplit && not isDestroyed.value then this.withUpdate(fun () -> this.applyLayout()))
                     release.Start()
-        | _ -> ()
+            // Out of the split nothing waits for the windows: the images go once they have moved.
+            | _ when shown -> this.onChrome(fun () -> transition.settle())
+            | _ -> ()
 
     /// The windows are in place: the images close once their steps are done.
     member private this.settleTransition() =
@@ -1481,7 +1506,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 | _ ->
                     let keep = match command with EndSplit keep -> keep | _ -> None
                     (match command with EndSplit _ -> splitRestore <- None | _ -> ())
-                    this.beginTransition(groupLayout,next,current)
+                    // A divider dragged is already where the user put it.
+                    (match command with SetRatio _ -> () | _ -> this.beginTransition(groupLayout,next,current,?focus=keep))
                     this.setLayout(next,?focus=keep)
                     let activate hwnd =
                         if hwnd<>this.os.foreground.hwnd && this.windows.contains hwnd then this.tabActivate(Tab(hwnd),false)
@@ -1533,11 +1559,14 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         | Split s when SplitView.contains hwnd s ->
             splitRestore <- None
             match SplitView.onRemoved hwnd groupLayout with
-            | Split next -> this.setLayout(Split next)
+            | Split next ->
+                this.beginTransition(groupLayout,Split next,this.topWindow,gone=hwnd)
+                this.setLayout(Split next)
             | _ ->
                 let survivor =
                     SplitView.windows s |> List.tryFind(fun window -> window<>hwnd && this.windows.contains window && isOpen window)
                     |> Option.orElse(this.lorder.list |> List.tryFind(fun window -> window<>hwnd && isOpen window))
+                this.beginTransition(groupLayout,GroupLayout.Single,this.topWindow,?focus=survivor,gone=hwnd)
                 this.setLayout(GroupLayout.Single,?focus=survivor)
         | Parked s when SplitView.contains hwnd s ->
             groupLayout <- SplitView.onRemoved hwnd groupLayout

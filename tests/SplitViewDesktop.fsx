@@ -459,8 +459,19 @@ let main() =
             printfn "METRIC split-transition cover-gone-after=%A" gone
             check gone.IsSome "The cover over a new split stayed after its windows were in place"
             waitOperation()
-            onGroup(fun group -> group.execute(EndSplit None))
+            // Panes changing places move over smoothly too, and so does the window kept when the
+            // split ends, growing to the whole group while the other fades.
+            onGroup(fun group -> group.execute(Swap None))
+            check (covers()) "No cover moved the panes as they swapped"
+            check (timeUntil 3000 (fun () -> not(covers()))).IsSome "The cover over swapped panes stayed"
             waitOperation()
+            onGroup(fun group -> group.execute(EndSplit(Some ha)))
+            check (covers()) "No cover moved the window kept as the split ended"
+            let ended = timeUntil 3000 (fun () -> not(covers()))
+            printfn "METRIC split-end-transition cover-gone-after=%A" ended
+            check ended.IsSome "The cover over an ended split stayed"
+            waitOperation()
+            check (visible ha=frame) (sprintf "The window kept did not fill the group after the split ended: %A of %A" (visible ha) frame)
         onHelper(fun () -> a.Grid <- 17)
         onGroup(fun group -> group.execute(SplitWith(hc,SideBySide),current=ha))
         pump 3000

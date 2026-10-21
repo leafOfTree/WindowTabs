@@ -40,7 +40,14 @@ the tree's simplest case and keep their behaviour.
   Moved step by step instead, apps laid themselves out again at every step, and slow ones
   jerked. Without the system's animations, or where a window has no thumbnail (no desktop
   composition, as on the tests' hidden desktop), there is no cover and the windows are placed
-  as before. A ratio, a swap or the focus do not animate.
+  as before. Any other change that moves the panes moves them the same way: a pane closed or
+  its window gone, its neighbour growing into the room; panes swapped, evened out, made larger
+  or smaller, or turned; a window leaving the split, fading where it was; the split ended, the
+  window kept growing to the whole group while the others fade. A window made smaller or
+  leaving waits for its image as above; one made larger goes to its place at once, its image cut
+  to the rectangle while that grows. Out of the split nothing waits for the windows, so that
+  cover goes as soon as its steps are done. A divider dragged, a pane resized at its own edge, a
+  tab parking the split and the focus alone do not animate.
 - Right-click tab B while A is shown, then Split in group, then side by side or stacked. A takes
   the left or top pane, B the right or bottom one, focus goes to B, and the ratio is 50:50.
   Both items are disabled on the tab that is shown.

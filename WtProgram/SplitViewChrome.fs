@@ -495,13 +495,16 @@ type EmptySplitPane(actions:EmptyPaneActions) =
                 window.insertAfter(below)
         else this.Hide()
 
-/// One window's way while a split starts, on screen: from where it is seen to its pane, its
-/// visible frame `border` in from its outer one on each side, fading in when it comes from
-/// outside the split.
-type SplitMove = { hwnd:IntPtr; from:Rect; target:Rect; fadeIn:bool; border:Pt; borderSize:Sz }
+/// Whether a window comes into the split, leaves it, or stays.
+type SplitFade = FadeIn | FadeOut | NoFade
 
-/// A split starting moves its windows smoothly rather than at once: over the group, live images
-/// of them (DWM thumbnails) go from where they were to their panes with an ease-out, while the
+/// One window's way while a split changes, on screen: from where it is seen to its place, its
+/// visible frame `border` in from its outer one, fading in when it comes from outside the split
+/// and out when it leaves.
+type SplitMove = { hwnd:IntPtr; from:Rect; target:Rect; fade:SplitFade; border:Pt; borderSize:Sz }
+
+/// A split changing moves its windows smoothly rather than at once: over the group, live images
+/// of them (DWM thumbnails) go from where they were to their places with an ease-out, while the
 /// windows themselves are placed underneath. Moved step by step instead, apps laid themselves
 /// out again at every step, and slow ones jerked. Each image shows its window 1:1 from the top
 /// left, cut to its rectangle, so nothing is stretched; where a window is smaller than its
@@ -537,7 +540,11 @@ type SplitTransition(frame:Rect, moves:SplitMove list) =
                              DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_OPACITY ||| DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_VISIBLE
             props.rcDestination <- RECT.FromRectangle(Rectangle(left-frame.left,top-frame.top,width,height))
             props.rcSource <- RECT.FromRectangle(Rectangle(move.border.x,move.border.y,width,height))
-            props.opacity <- byte(if move.fadeIn then int(Math.Round(255.0*eased)) else 255)
+            props.opacity <-
+                match move.fade with
+                | FadeIn -> byte(Math.Round(255.0*eased))
+                | FadeOut -> byte(Math.Round(255.0*(1.0-eased)))
+                | NoFade -> 255uy
             props.fVisible <- if width>0 && height>0 then 1 else 0
             DwmApi.DwmUpdateThumbnailProperties(thumb,&props) |> ignore
     /// How long the images take to move, in milliseconds.
@@ -549,12 +556,17 @@ type SplitTransition(frame:Rect, moves:SplitMove list) =
         // Layered, as a click goes through only a layered window: all but opaque.
         this.Opacity <- 0.999
         this.Bounds <- frame.Rectangle
-        thumbs <- moves |> List.choose(fun move ->
+        // Registered later, an image draws over those before: the ones leaving go under, the
+        // ones coming in over the rest.
+        let order move = match move.fade with FadeOut -> 0 | NoFade -> 1 | FadeIn -> 2
+        thumbs <- moves |> List.sortBy order |> List.choose(fun move ->
             let mutable thumb = IntPtr.Zero
             if DwmApi.DwmRegisterThumbnail(this.Handle,move.hwnd,&thumb)=0 then Some(move,thumb) else None)
-        // Without an image of every window, as with no desktop composition, there is nothing
-        // to move: the windows are placed as they always were, with no blank cover over them.
-        if thumbs.Length<moves.Length then
+        // Without an image of every window that stays, as with no desktop composition, there is
+        // nothing to move: the windows are placed as they always were, with no blank cover over
+        // them. One leaving can go without its fade.
+        let shown move = thumbs |> List.exists(fun (each,_) -> each.hwnd=move.hwnd)
+        if moves |> List.exists(fun move -> move.fade<>FadeOut && not(shown move)) then
             this.close()
             false
         else
