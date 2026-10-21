@@ -338,7 +338,7 @@ module Localization =
     /// Additional longer strings whose English versions are used by settings pages.
     let private extraArabicTranslations =
         dict [
-            ("Icon files (*.ico, *.png, *.bmp, *.gif, *.exe, *.dll)|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|All files (*.*)|*.*", "ملفات الأيقونات (*.ico, *.png, *.jpg, *.bmp, *.gif, *.exe, *.dll)|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|كل الملفات (*.*)|*.*");
+            ("Icon files (*.ico, *.png, *.jpg, *.bmp, *.gif, *.exe, *.dll)|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|All files (*.*)|*.*", "ملفات الأيقونات (*.ico, *.png, *.jpg, *.bmp, *.gif, *.exe, *.dll)|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|كل الملفات (*.*)|*.*");
             ("123456789", "123456789");
             ("QWERTYUIOP", "QWERTYUIOP");
             ("ASDFGHJKL;", "ASDFGHJKL;");
@@ -359,14 +359,14 @@ module Localization =
             match extraArabicTranslations.TryGetValue text with
             | true, translated -> translated
             | _ when text.StartsWith("Close all '") && text.EndsWith("' windows") ->
-                "إغلاق جميع نوافذ «" + text.Substring(11, text.Length - 19) + "»"
+                "إغلاق جميع نوافذ «" + text.Substring(11, text.Length - 20) + "»"
             | _ when text.StartsWith("Used by ") -> "يستخدمه " + text.Substring(8)
             | _ when text.StartsWith("Desktop ") -> "سطح المكتب " + text.Substring(8)
             | _ when text.StartsWith("Group ") && text.Length > 6 -> "المجموعة " + text.Substring(6)
             | _ when text.StartsWith("This group · ") -> "هذه المجموعة · " + text.Substring(13)
             | _ when text.StartsWith("All windows · ") -> "كل النوافذ · " + text.Substring(14)
             | _ when text.StartsWith("Launch ") && text.EndsWith(" apps and retry") ->
-                "تشغيل " + text.Substring(7, text.Length - 21) + " تطبيقات وإعادة المحاولة"
+                "تشغيل " + text.Substring(7, text.Length - 22) + " تطبيقات وإعادة المحاولة"
             | _ when text.StartsWith("Launching ") && text.EndsWith(" apps…") ->
                 "جارٍ تشغيل " + text.Substring(10, text.Length - 16) + " تطبيقات…"
             | _ -> text
