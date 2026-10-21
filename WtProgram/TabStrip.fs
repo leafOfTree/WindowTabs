@@ -734,11 +734,20 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.dragImage (tab:Tab, tabX:int, landing:Sz) : Img=
         if this.isVertical then this.ts.renderTab(tab) else this.horizontalDragImage tab tabX landing
 
-    /// Where the tab sits over the window in the drag image, from its place over the window it lands as.
-    member this.dragTabX(tab:Tab, shift:int, landing:Sz) =
+    /// Where the tab sits over the window shown small in the drag image, as the strip's alignment
+    /// places a lone tab over that width. Scaled with the window from where it sits over the
+    /// full width, a tab drawn at full size sat off the middle.
+    member this.dragTabX(tab:Tab, landing:Sz) =
         let tabWidth = this.tabSprites.tryFind(fun (_,sprite) -> sprite.id=tab) |> Option.map(fun (_,sprite) -> sprite.size.width) |> Option.defaultValue 0
+        let width = int(float landing.width*DragImage.windowScale)
         if this.isVertical then 0
-        else max 0 (min (int(float shift*DragImage.windowScale)) (int(float landing.width*DragImage.windowScale)-tabWidth))
+        else
+            let x =
+                match this.getAlignment TabUp with
+                | TabCenter -> (width-tabWidth)/2
+                | TabRight -> width-tabWidth-int(60.0*DragImage.windowScale)
+                | TabLeft -> 0
+            max 0 (min x (width-tabWidth))
 
     /// How a lone tab sits over its window once dropped: vertical strips keep it at the start.
     member this.dragAlignment = if this.isVertical then TabLeft else this.getAlignment TabUp
@@ -754,7 +763,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         try
             use gCapture = bmpOverlay.graphics
             gCapture.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBilinear
-            gCapture.DrawImage(bmpHwnd, Rectangle(0, top, width, height))
+            use fade = new Imaging.ImageAttributes()
+            fade.SetColorMatrix(Imaging.ColorMatrix(Matrix33=DragImage.windowOpacity))
+            gCapture.DrawImage(bmpHwnd, Rectangle(0, top, width, height), 0, 0, bmpHwnd.Width, bmpHwnd.Height, GraphicsUnit.Pixel, fade)
             gCapture.DrawImage(bmpTab, Point(tabX, 0))
             bmpOverlay
         with _ ->

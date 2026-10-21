@@ -335,12 +335,14 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
                 else
                     let bounds,visible = window.bounds,window.visibleBounds
                     visible.location.sub(bounds.location),Sz(bounds.width-visible.width,bounds.height-visible.height)
-            // The monitor under the pointer decides: the window's own size from before any group,
-            // or a modest one in place of a group's that filled the screen.
+            // The monitor under the pointer decides: the size the group had, or a modest one in
+            // place of a group's that filled the screen. A maximized window fills it.
             let monitor = DragOutPlacement.monitorAt pt
             let size =
-                let own = WindowOwnSize.read hwnd |> Option.defaultValue window.visibleBounds.size
-                monitor |> Option.map(fun mon -> DragOutPlacement.size own mon.workRect) |> Option.defaultValue own
+                let current =
+                    if window.isMaximized then monitor |> Option.map(fun mon -> mon.workRect.size) |> Option.defaultValue window.visibleBounds.size
+                    else window.visibleBounds.size
+                monitor |> Option.map(fun mon -> DragOutPlacement.size current (WindowOwnSize.read hwnd) mon.workRect) |> Option.defaultValue current
             // The tab stays under the pointer at the width the window lands at: placed with the
             // shift of the group's width, a window made smaller came out hundreds of pixels to
             // one side, at times off the screen. Then all of it in the work area.

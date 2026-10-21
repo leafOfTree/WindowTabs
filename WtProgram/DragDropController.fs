@@ -385,7 +385,8 @@ type DragAction(info:DragActionInfo) =
             onBegin = fun() ->
                 animationWindowCell.value <-
                     let animationWindow = AnimationWindow(os)
-                    animationWindow.setAlpha(byte(0xAA))
+                    // The image carries its own see-through window; the tab on it stays solid.
+                    animationWindow.setAlpha(byte(0xFF))
                     // The image comes drawn at the size it shows: its window small, its tab readable.
                     try animationWindow.setImage(info.image())
                     with _ -> ()

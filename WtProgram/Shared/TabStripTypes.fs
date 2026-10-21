@@ -42,6 +42,8 @@ and TabDragInfo = {
 /// the tab stays readable over a window shown small.
 and DragImage =
     static member windowScale = 0.5
+    /// The window shows a little of what lies under it; the tab is solid, to stay readable.
+    static member windowOpacity = 0.85f
 
 and TabStripPlacment = {
     showInside: bool

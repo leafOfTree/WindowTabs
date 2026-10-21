@@ -692,13 +692,13 @@ type TabStripDecorator(group:WindowGroup) as this =
                         let window = os.windowFromHwnd(hwnd)
                         let landing =
                             DragOutPlacement.monitorAt ptScreen
-                            |> Option.map(fun mon -> DragOutPlacement.size (WindowOwnSize.read hwnd |> Option.defaultValue window.visibleBounds.size) mon.workRect)
+                            |> Option.map(fun mon -> DragOutPlacement.size window.visibleBounds.size (WindowOwnSize.read hwnd) mon.workRect)
                             |> Option.defaultValue window.visibleBounds.size
                         let info = { tab = tab; tabOffset = dragOffset; tabSize=sprite.size; tabInfo = this.ts.tabInfo(tab); tabShift = 0; tabAlignment = this.ts.dragAlignment }
                         let shift = info.shiftFor landing.width
                         // The tab at full size over its window shown small: the pointer keeps the
                         // point of the tab it pressed.
-                        let tabX = this.ts.dragTabX(tab,shift,landing)
+                        let tabX = this.ts.dragTabX(tab,landing)
                         let dragImage = fun() -> this.ts.dragImage(tab,tabX,landing)
                         let dragInfo = box({ info with tabShift = shift })
                         Services.dragDrop.beginDrag(this.ts.hwnd, dragImage, dragOffset.add(Pt(tabX,0)), ptScreen, dragInfo)

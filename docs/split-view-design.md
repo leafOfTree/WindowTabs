@@ -47,10 +47,12 @@ the tree's simplest case and keep their behaviour.
 - Drag a tab to the left, right, top or bottom edge of a group's window: a half-window preview
   appears, a clear tint with its edge drawn, and just left of the tab in the dragged image,
   level with it, a label that follows the pointer and says what letting go does: which window
-  it goes beside and on which side, a new column or row for the group, or a filled empty pane.
-  Over the place itself the label covered what it named, away from where the eye is. The
-  dragged image shows the window at half the size it would land at and the tab at full size
-  (`DragImage.windowScale`), so the tab stays readable. Letting go splits the group. The
+  it goes beside and on which side, a new column or row for the group, or a filled empty pane;
+  anywhere no split is offered it says the tab comes out as a new window. Over the place itself
+  the label covered what it named, away from where the eye is. The dragged image shows the
+  window at half the size it would land at (`DragImage.windowScale`), a little see-through
+  (`DragImage.windowOpacity`), and the tab solid and at full size, placed over that half-size
+  window as the strip places a lone tab, so it stays readable. Letting go splits the group. The
   preview changes no membership; only the drop commits. Tabs
   of this group and of other groups on the same virtual desktop alike are offered the edge once
   the pointer has rested in its zone for 100ms, within 6px (`LayoutDwell`); from then on the
@@ -58,10 +60,15 @@ the tree's simplest case and keep their behaviour.
   window on its way elsewhere, or let go over one where no free desktop was left, split it at
   once before; let go before the preview shows, it comes out as a window of its own. An empty
   pane takes a drop at once. Pressing a tab behind the panes parks them; once its drag takes
-  it out of the group, the panes come back, so the drop aims at what is seen.
-- A tab dragged out onto the desktop becomes a window of its own at the size it had before it
-  first joined a group (`WindowOwnSize`, kept on the window), or, when that too fills most of
-  the screen, at three fifths of the work area: it came out as a second screenful before. The
+  it out of the group, the panes come back, so the drop aims at what is seen. A tab held in one
+  strip moves to another group's strip in sight under the pointer: strips of groups at the top
+  of the screen lie over one another, and the first strip crossed kept the tab across its whole
+  width, so it joined a group out of sight.
+- A tab dragged out onto the desktop becomes a window of its own at the size its group has
+  now. Where that fills most of the screen, a maximized group's say, it takes the size it had
+  before it first joined a group (`WindowOwnSize`, kept on the window) if that is modest, else
+  three fifths of the work area: it came out as a second screenful before. The own size alone,
+  read once at joining, brought back a size the group had long left. The
   monitor under the pointer decides (`DragOutPlacement`); the window lands with its tab under the
   pointer at that size, as the strip's alignment places a lone tab, wholly inside the work area,
   and the drag image shows it at that size. It comes in front, active: its old group took the

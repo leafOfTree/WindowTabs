@@ -991,8 +991,8 @@ let main() =
                 groupOf hd |> Option.iter(fun info ->
                     onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
                     (info :> IGroup).destroy())
-            // A tab dragged out onto the desktop goes back to the size its window had before any group,
-            // not the group's, and a group's size that filled the screen gives way to a modest one.
+            // A tab dragged out onto the desktop keeps the size the group had; a group's size that
+            // filled the screen gives way to the window's own from before any group, or a modest one.
             do
                 use f = new Form(Text="Own size",ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-20000,-20000),Size=Drawing.Size(640,480))
                 let hwnd = f.Handle
@@ -1001,9 +1001,6 @@ let main() =
                 pumpUntil "Own-size window did not group" (fun () -> nativeOrder alone=[hwnd])
                 check ((WindowOwnSize.read hwnd)=Some(OS().windowFromHwnd(hwnd).visibleBounds.size)) "A window joining a group did not keep its own size"
                 let own = (WindowOwnSize.read hwnd).Value
-                OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),Sz(1600,1000)))
-                let dropped (size:Sz) =
-                    OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),size))
                 let work = Screen.PrimaryScreen.WorkingArea
                 let workRect = Rect(Pt(work.X,work.Y),Sz(work.Width,work.Height))
                 let tabSize = Sz(100,24)
@@ -1013,12 +1010,19 @@ let main() =
                     // The image's shift, as the strip computed it for the group's width.
                     let data = {centred with tabShift=centred.shiftFor size.width}
                     (desktop :> IDragDropParent).dragDrop((pt,box data))
-                    pumpUntil "The dropped window was not placed" (fun () -> OS().windowFromHwnd(hwnd).placement.rcNormalPosition.size<>size)
+                    pumpUntil "The dropped window was not placed" (fun () -> OS().windowFromHwnd(hwnd).placement.rcNormalPosition.x<> -20000)
                     // Shown, as the program shows a dropped window, so its frame can be read.
                     OS().windowFromHwnd(hwnd).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE)
                     OS().windowFromHwnd(hwnd).visibleBounds
                 let dropped (size:Sz) = (dropAt (Pt(work.X+200,work.Y+200)) size).size
-                check (dropped (Sz(1600,1000))=own) (sprintf "A tab dragged out did not go back to its own size: %A instead of %A" (OS().windowFromHwnd(hwnd).visibleBounds.size) own)
+                // Resized since it joined, the group's size is what comes out; read once at joining,
+                // the window's own size brought back a size the group had long left.
+                let modestGroup = Sz(work.Width/2,work.Height/2)
+                OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),modestGroup))
+                let groupVisible = OS().windowFromHwnd(hwnd).visibleBounds.size
+                let landed = dropped modestGroup
+                check (landed=groupVisible) (sprintf "A tab dragged out of a modest group did not keep the group's size: %dx%d instead of %dx%d" landed.width landed.height groupVisible.width groupVisible.height)
+                check (dropped (Sz(work.Width,work.Height))=own) (sprintf "A tab dragged out of a screen-sized group did not go back to its own size: %A instead of %A" (OS().windowFromHwnd(hwnd).visibleBounds.size) own)
                 WinUserApi.RemoveProp(hwnd,"WindowTabs.OwnSize.v1.W") |> ignore
                 WinUserApi.RemoveProp(hwnd,"WindowTabs.OwnSize.v1.H") |> ignore
                 let modest = dropped (Sz(work.Width,work.Height))
