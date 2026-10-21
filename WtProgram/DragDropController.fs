@@ -96,61 +96,6 @@ module LayoutDwell =
                 Some {s with shown=ready},ready
             | _ -> Some {key=key;anchor=pt;since=now;shown=false},false
 
-/// What letting go does, left of the tab in the dragged image and following it: the window it
-/// goes to and which side of it. Over the place itself it covered what it named.
-type private DropLabel() =
-    inherit Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual)
-    let mutable drawn : string option = None
-    let mutable font : System.Drawing.Font option = None
-    override _.ShowWithoutActivation = true
-    override _.CreateParams =
-        let cp = base.CreateParams
-        // Not activated, out of the taskbar, the pointer through it, over the dragged image.
-        cp.ExStyle <- cp.ExStyle ||| 0x08000000 ||| 0x80 ||| 0x20 ||| 0x8 ||| WindowsExtendedStyles.WS_EX_LAYERED
-        cp
-    member private this.labelFont =
-        match font with
-        | Some value -> value
-        | None ->
-            let value = new System.Drawing.Font("Segoe UI",float32(Dpi.value())/float32(Dpi.system())*10.5f,System.Drawing.FontStyle.Bold)
-            font <- Some value
-            value
-    /// Left of the tab in the image, level with it; right of it where the screen ends first.
-    member this.showAt(tab:Rect, text:string) =
-        if drawn<>Some text then
-            drawn <- Some text
-            let palette = SettingsColors.current()
-            let measured = TextRenderer.MeasureText(text,this.labelFont,System.Drawing.Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPrefix)
-            let width,height = measured.Width+2*Dpi.scale 12,measured.Height+Dpi.scale 12
-            this.Size <- System.Drawing.Size(width,height)
-            use bitmap = new System.Drawing.Bitmap(width,height,System.Drawing.Imaging.PixelFormat.Format32bppArgb)
-            use g = System.Drawing.Graphics.FromImage(bitmap)
-            g.SmoothingMode <- System.Drawing.Drawing2D.SmoothingMode.AntiAlias
-            use outline = MenuShape.outline width height
-            use fill = new System.Drawing.SolidBrush(palette.surface)
-            g.FillPath(fill,outline)
-            use border = new System.Drawing.Pen(palette.accent,float32(max 1 (Dpi.scale 1)))
-            g.DrawPath(border,outline)
-            TextRenderer.DrawText(g,text,this.labelFont,System.Drawing.Rectangle(0,0,width,height),palette.text,TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix)
-            Win32Helper.UpdateLayeredWindow(this.Handle,this.Location,bitmap,255uy)
-        let gap = Dpi.scale 8
-        let y = tab.y+(tab.height-this.Height)/2
-        let left = Pt(tab.left-gap-this.Width,y)
-        let at =
-            match Mon.fromPoint(Pt(tab.left,tab.y+tab.height/2)) with
-            | Some mon ->
-                let work = mon.workRect
-                let at = if left.x<work.left then Pt(tab.right+gap,y) else left
-                Pt(max work.left (min at.x (work.right-this.Width)),max work.top (min at.y (work.bottom-this.Height)))
-            | None -> left
-        if this.Location<>at.Point then this.Location <- at.Point
-        if not this.Visible then this.Show()
-    override this.Dispose(disposing) =
-        if disposing then
-            font |> Option.iter(fun value -> value.Dispose())
-            font <- None
-        base.Dispose(disposing)
-
 type DragFloatingStateInfo = {
     imageOffset : Pt
     targets: Map2<IntPtr, IDragDropTarget>
@@ -169,28 +114,12 @@ type DragFloatingState(info:DragFloatingStateInfo) =
     /// The window and point last aimed at, for the pointer resting with no move to report.
     let mutable aimed : (IntPtr * ILayoutDropTarget * Pt) option = None
     let restTimer = new Timer(Interval=25)
-    let mutable label : DropLabel option = None
-    let mutable labelText : string option = None
-    /// The tab in the image, at full size where the pointer holds it.
-    let tabAt (pt:Pt) =
-        match info.data with
-        | :? TabDragInfo as drag -> Rect(pt.sub(drag.tabOffset),drag.tabSize)
-        | _ -> Rect(pt,Sz())
-    let showLabel (pt:Pt) =
-        match labelText with
-        | Some text when text<>"" ->
-            if label.IsNone then label <- Some(new DropLabel())
-            label.Value.showAt(tabAt pt,text)
-        | _ -> label |> Option.iter(fun window -> window.Hide())
     let clearCandidate() =
         candidate |> Option.iter(fun (_,target) -> target.clearPreview())
         candidate <- None
-        labelText <- None
-        label |> Option.iter(fun window -> window.Hide())
     let float(ptScreen:Pt) =
         animationWindow.setLocation(ptScreen.sub(info.imageOffset))
         animationWindow.setIsVisible(true)
-        showLabel ptScreen
     /// The preview for the pointer at `pt` over `key`, once it may show.
     let previewAt (key:IntPtr) (target:ILayoutDropTarget) (pt:Pt) (aim:LayoutAim) =
         match candidate with
@@ -198,22 +127,16 @@ type DragFloatingState(info:DragFloatingStateInfo) =
         | _ -> ()
         let state,show = LayoutDwell.step clock.ElapsedMilliseconds (Dpi.scale LayoutDwell.restRadius) pt key aim dwell
         dwell <- state
-        // The tab's image stays with the pointer over the highlighted pane, what letting go does beside it.
-        match (if show then target.preview(info.data,pt) else None) with
-        | Some text ->
-            candidate <- Some(key,target)
-            labelText <- Some text
-        | None ->
+        // The tab's image stays with the pointer over the highlighted pane.
+        if show && target.preview(info.data,pt) then candidate <- Some(key,target)
+        else
             if candidate.IsSome then target.clearPreview()
             candidate <- None
-            labelText <- Some(tr Strings.Drop.newWindow)
         aimed <- (if aim=SplitAim && not show then Some(key,target,pt) else None)
         if aimed.IsSome then restTimer.Start() else restTimer.Stop()
     do restTimer.Tick.Add(fun _ ->
         match aimed with
-        | Some(key,target,pt) ->
-            previewAt key target pt SplitAim
-            showLabel pt
+        | Some(key,target,pt) -> previewAt key target pt SplitAim
         | None -> restTimer.Stop())
     /// Drops into the pane under the pointer; false when there is none.
     member this.commit(pt) =
@@ -247,14 +170,10 @@ type DragFloatingState(info:DragFloatingStateInfo) =
                 dwell <- None
                 aimed <- None
                 restTimer.Stop()
-                // Every place says what letting go there does: here, a window of its own.
-                labelText <- Some(tr Strings.Drop.newWindow)
                 float ptScreen
         member this.dispose() =
             restTimer.Dispose()
             clearCandidate()
-            label |> Option.iter(fun window -> window.Dispose())
-            label <- None
             animationWindow.setIsVisible(false)
 
 type DragActionInfo = {

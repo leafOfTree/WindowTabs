@@ -5,9 +5,8 @@ open System.Windows.Forms
 open System.Diagnostics
 open Bemo.Win32.Forms
 
-/// Where a dragged tab would go: a clear tint over that place, its edge drawn. What letting go
-/// does is said beside the dragged tab, where the eye is. Per-pixel layered, so the tint is
-/// see-through; the pointer passes through it to the window beneath.
+/// Where a dragged tab would go: a clear tint over that place, its edge drawn. Per-pixel
+/// layered, so the tint is see-through; the pointer passes through it to the window beneath.
 type private LayoutPreview() =
     inherit Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual)
     let mutable drawn : Rectangle option = None
@@ -765,38 +764,13 @@ type TabStripDecorator(group:WindowGroup) as this =
 
     member private this.showProposal(proposal:(LayoutDrop * Rect) option) =
         match proposal with
-        | Some(drop,bounds) ->
+        | Some(_,bounds) ->
             if layoutPreview.IsNone then layoutPreview <- Some(new LayoutPreview())
-            let preview = layoutPreview.Value
-            // What letting go here does: a new column or row for the whole group at its edge,
-            // a place beside the window under the pointer, named, or an empty pane filled.
-            let name hwnd =
-                let text = group.ts.tabInfo(Tab hwnd).text
-                if text.Length>40 then text.Substring(0,39).TrimEnd()+"…" else text
-            let beside axis side hwnd =
-                match axis,side with
-                | SideBySide,First -> Strings.Drop.leftOf(name hwnd)
-                | SideBySide,Second -> Strings.Drop.rightOf(name hwnd)
-                | Stacked,First -> Strings.Drop.above(name hwnd)
-                | Stacked,Second -> Strings.Drop.below(name hwnd)
-            let label =
-                match drop with
-                | FillEmpty _ -> Strings.Drop.fillEmpty
-                | SplitAt([],SideBySide,First) when group.splitLayout.IsSome -> Strings.Drop.columnLeft
-                | SplitAt([],SideBySide,Second) when group.splitLayout.IsSome -> Strings.Drop.columnRight
-                | SplitAt([],Stacked,First) when group.splitLayout.IsSome -> Strings.Drop.rowAbove
-                | SplitAt([],Stacked,Second) when group.splitLayout.IsSome -> Strings.Drop.rowBelow
-                | SplitAt(path,axis,side) ->
-                    // A drop at an empty pane's edge fills it rather than splitting it.
-                    match group.splitLayout |> Option.map(SplitView.pane path) with
-                    | None -> beside axis side group.topWindow
-                    | Some(Some(Occupied hwnd)) -> beside axis side hwnd
-                    | Some _ -> Strings.Drop.fillEmpty
-            preview.showAt(bounds.Rectangle,{new IWin32Window with member _.Handle=this.ts.hwnd})
-            Some(tr label)
+            layoutPreview.Value.showAt(bounds.Rectangle,{new IWin32Window with member _.Handle=this.ts.hwnd})
+            true
         | None ->
             layoutPreview |> Option.iter(fun window -> window.Hide())
-            None
+            false
 
     member private this.resetLayoutDrop() =
         layoutDrop <- None
@@ -826,7 +800,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             else this.invokeSync(fun () -> this.aimLayout(data,pt))
 
         member this.preview(data,pt) =
-            if not(WinUserApi.IsWindow(this.ts.hwnd)) then None
+            if not(WinUserApi.IsWindow(this.ts.hwnd)) then false
             else this.invokeSync(fun () -> this.previewLayout(data,pt))
 
         member this.clearPreview() =

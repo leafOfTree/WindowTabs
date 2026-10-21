@@ -45,11 +45,8 @@ the tree's simplest case and keep their behaviour.
   over a pane, the pane lights up and the tab's image stays with the pointer. A group with one
   tab can do this too.
 - Drag a tab to the left, right, top or bottom edge of a group's window: a half-window preview
-  appears, a clear tint with its edge drawn, and just left of the tab in the dragged image,
-  level with it, a label that follows the pointer and says what letting go does: which window
-  it goes beside and on which side, a new column or row for the group, or a filled empty pane;
-  anywhere no split is offered it says the tab comes out as a new window. Over the place itself
-  the label covered what it named, away from where the eye is. The dragged image shows the
+  appears, a clear tint with its edge drawn. No words go with it: the place lit up says what
+  letting go does, and a label beside the dragged tab added little to it. The dragged image shows the
   window at half the size it would land at (`DragImage.windowScale`), a little see-through
   (`DragImage.windowOpacity`), and the tab solid and at full size, placed over that half-size
   window as the strip places a lone tab, so it stays readable. Letting go splits the group. The
@@ -81,8 +78,8 @@ the tree's simplest case and keep their behaviour.
 - Splitting again: while split, the same ways apply to a pane. Split in group on a tab divides
   the pane of the tab shown; a new empty pane opens beside the focused pane; a tab dragged to
   a pane's edge splits that pane (as VS Code does), and at the group's own edge (`outerZone`:
-  36px at an edge's ends, up to 72px at its middle) a new column or row for the whole group. The preview names the window the drop
-  goes beside. With another tab shown over parked panes, the drop goes beside that window, the
+  36px at an edge's ends, up to 72px at its middle) a new column or row for the whole group.
+  With another tab shown over parked panes, the drop goes beside that window, the
   one in sight, and the parked panes are let go as by any new split; panes parked by the
   dragged tab's own press come back as the tab leaves the strip, so they are aimed at.
   A pane window dropped elsewhere leaves its pane, whose neighbour takes the room. There is no

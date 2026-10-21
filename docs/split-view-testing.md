@@ -57,7 +57,7 @@ its tray menu and takes over. A split comes back after a restart as its windows 
    onto it; or use "Choose window…". Resize it by its edges, and close it with its close button,
    or with Esc while the tab beside it is active: that Esc does not reach the app.
 6. Drag a tab to the edges of a group's window, from this group and from another one, and rest
-   there a moment: a preview names the window the drop goes beside and letting go splits. Let
+   there a moment: a preview lights up the half the tab would take and letting go splits. Let
    go on the way instead, before the preview shows: the tab comes out as a window of its own,
    in front. With a third tab shown over
    the pair, the drop goes beside that tab, not the parked panes, and the pair is let go.

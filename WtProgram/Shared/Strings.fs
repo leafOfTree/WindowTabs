@@ -356,21 +356,6 @@ module Strings =
                               keywords={ en="factory"; zh="恢复默认 出厂"; ja="初期化" } }
 
     /// What letting go of a dragged tab here would do, on the preview.
-    module Drop =
-        let fillEmpty = { en="Fill the empty pane"; zh="放入空白窗格"; ja="空のペインに配置" }
-        /// Let go here, the tab comes out as a window of its own.
-        let newWindow = { en="New window"; zh="新窗口"; ja="新しいウィンドウ" }
-        let columnLeft = { en="New column on the left"; zh="整组左侧新开一列"; ja="左に新しい列" }
-        let columnRight = { en="New column on the right"; zh="整组右侧新开一列"; ja="右に新しい列" }
-        let rowAbove = { en="New row above"; zh="整组上方新开一行"; ja="上に新しい行" }
-        let rowBelow = { en="New row below"; zh="整组下方新开一行"; ja="下に新しい行" }
-        /// Beside the named window, the one shown or the pane under the pointer; without a name,
-        /// the split alone.
-        let leftOf name = if name="" then { en="Split: left"; zh="分屏：左侧"; ja="分割: 左" } else { en=sprintf "Left of %s" name; zh=sprintf "放到 %s 的左侧" name; ja=sprintf "%s の左に" name }
-        let rightOf name = if name="" then { en="Split: right"; zh="分屏：右侧"; ja="分割: 右" } else { en=sprintf "Right of %s" name; zh=sprintf "放到 %s 的右侧" name; ja=sprintf "%s の右に" name }
-        let above name = if name="" then { en="Split: above"; zh="分屏：上方"; ja="分割: 上" } else { en=sprintf "Above %s" name; zh=sprintf "放到 %s 的上方" name; ja=sprintf "%s の上に" name }
-        let below name = if name="" then { en="Split: below"; zh="分屏：下方"; ja="分割: 下" } else { en=sprintf "Below %s" name; zh=sprintf "放到 %s 的下方" name; ja=sprintf "%s の下に" name }
-
     module Session =
         let restoring = { en="Restoring the last session…"; zh="正在恢复上次会话…"; ja="前回のセッションを復元しています…" }
         let launching count =

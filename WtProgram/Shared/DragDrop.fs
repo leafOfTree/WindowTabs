@@ -30,9 +30,8 @@ type ILayoutDropTarget =
     abstract member nearTabs : Pt -> IntPtr option
     /// What a drop here would do, shown nowhere.
     abstract member aim : obj * Pt -> LayoutAim
-    /// Shows the place a drop here takes and gives what letting go does, to show by the dragged
-    /// tab; None when a drop here takes nothing.
-    abstract member preview : obj * Pt -> string option
+    /// Shows the place a drop here takes; false when a drop here takes nothing.
+    abstract member preview : obj * Pt -> bool
     abstract member clearPreview : unit -> unit
     /// False when nothing was dropped: the drag then ends as one let go anywhere else.
     abstract member commit : obj * Pt -> bool
