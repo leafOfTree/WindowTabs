@@ -24,6 +24,11 @@ type DragDetectingState(info:DragDetectingStateInfo) =
 type DragHit = StripHit of IntPtr | LayoutHit of IntPtr | FreeHit
 
 module DragRouting =
+    /// Around a strip's tabs, in logical pixels, a dragged tab counts as in the strip: joining
+    /// it there and leaving it only beyond. Just below another group's tabs, over its title
+    /// bar, a tab carried to join them was offered that window's top edge instead.
+    let stripMargin = 24
+
     let resolve (strips:Map2<IntPtr,IDragDropTarget>) (layouts:Map2<IntPtr,ILayoutDropTarget>) hit owner =
         if strips.contains hit then StripHit hit
         elif layouts.contains hit then LayoutHit hit
@@ -54,7 +59,7 @@ type DragCapturedStateInfo = {
     }
 
 type DragCapturedState(info:DragCapturedStateInfo) =
-    let dragOutDistance = 20
+    let dragOutDistance = Dpi.scale DragRouting.stripMargin
     member _.target = info.target
     member _.targetHwnd = info.targetHwnd
     interface IDragState with
@@ -220,18 +225,23 @@ type DragFloatingState(info:DragFloatingStateInfo) =
     interface IDragState with
         member this.mouseMove(ptScreen) =
             let hit,owner = DragRouting.windowsAt ptScreen
-            match DragRouting.resolve info.targets info.layoutTargets hit owner with
-            | StripHit target ->
+            let joinStrip strip =
                 clearCandidate()
                 dwell <- None
                 aimed <- None
                 restTimer.Stop()
                 animationWindow.setIsVisible(false)
-                info.onDragIn(target, ptScreen)
+                info.onDragIn(strip, ptScreen)
+            match DragRouting.resolve info.targets info.layoutTargets hit owner with
+            | StripHit target -> joinStrip target
             | LayoutHit key ->
                 let target = info.layoutTargets.find key
-                previewAt key target ptScreen (target.aim(info.data,ptScreen))
-                float ptScreen
+                // Over a group's window near its tabs, the tab goes with them.
+                match target.nearTabs ptScreen with
+                | Some strip when info.targets.contains strip -> joinStrip strip
+                | _ ->
+                    previewAt key target ptScreen (target.aim(info.data,ptScreen))
+                    float ptScreen
             | FreeHit ->
                 clearCandidate()
                 dwell <- None

@@ -63,7 +63,10 @@ the tree's simplest case and keep their behaviour.
   it out of the group, the panes come back, so the drop aims at what is seen. A tab held in one
   strip moves to another group's strip in sight under the pointer: strips of groups at the top
   of the screen lie over one another, and the first strip crossed kept the tab across its whole
-  width, so it joined a group out of sight.
+  width, so it joined a group out of sight. Within 24px of a group's tabs in sight
+  (`DragRouting.stripMargin`) a tab counts as in their strip, joining it there and leaving it
+  only beyond: just below another group's tabs, over its title bar, a tab carried to join them
+  was offered that window's top edge instead.
 - A tab dragged out onto the desktop becomes a window of its own at the size its group has
   now. Where a side spans most of the screen, a maximized group's or the height of one snapped
   to half the screen, the whole window is scaled down, its proportions kept, until that side

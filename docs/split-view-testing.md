@@ -89,8 +89,6 @@ its tray menu and takes over. A split comes back after a restart as its windows 
   no message.
 - Panes keep their native title bars and borders. With the tabs inside the title bars at the top
   of the screen, the tabs span the group and may cover the left pane's caption buttons.
-- A tab rested just below another group's strip is offered that window's top edge: let go
-  then and the group splits instead of taking the tab.
 - During a drag the group may extend partly outside the work area; letting go does not push it
   back.
 

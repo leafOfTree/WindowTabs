@@ -802,7 +802,25 @@ type TabStripDecorator(group:WindowGroup) as this =
         layoutDrop <- None
         layoutPreview |> Option.iter(fun window -> window.Hide())
 
+    /// The strip, when the point lies within `DragRouting.stripMargin` of its tabs in sight.
+    member private this.nearTabs(pt:Pt) =
+        let sprites = this.ts.tabSprites.list
+        if sprites.IsEmpty || not this.ts.visible || not(WinUserApi.IsWindowVisible this.ts.hwnd) then None
+        else
+            let strip = os.windowFromHwnd(this.ts.hwnd)
+            let rects = sprites |> List.map(fun (location:Pt,sprite) -> Rect(strip.ptToScreen(location),sprite.size))
+            let margin = Dpi.scale DragRouting.stripMargin
+            let left = (rects |> List.map(fun r -> r.left) |> List.min)-margin
+            let top = (rects |> List.map(fun r -> r.top) |> List.min)-margin
+            let right = (rects |> List.map(fun r -> r.right) |> List.max)+margin
+            let bottom = (rects |> List.map(fun r -> r.bottom) |> List.max)+margin
+            if pt.x>=left && pt.x<right && pt.y>=top && pt.y<bottom then Some this.ts.hwnd else None
+
     interface ILayoutDropTarget with
+        member this.nearTabs(pt) =
+            if not(WinUserApi.IsWindow(this.ts.hwnd)) then None
+            else this.invokeSync(fun () -> this.nearTabs(pt))
+
         member this.aim(data,pt) =
             if not(WinUserApi.IsWindow(this.ts.hwnd)) then NoAim
             else this.invokeSync(fun () -> this.aimLayout(data,pt))

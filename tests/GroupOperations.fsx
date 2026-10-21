@@ -107,6 +107,7 @@ let main() =
             member _.dragExit() = ()
             member _.dragCancel _ = ()}
     let surface = {new ILayoutDropTarget with
+                    member _.nearTabs _ = None
                     member _.aim(_,_) = SplitAim
                     member _.preview(_,_) = Some ""
                     member _.clearPreview() = ()
@@ -681,6 +682,16 @@ let main() =
                         let top = onGroup(fun group -> group.topWindow)
                         onHelper(fun () -> forms |> List.find(fun form -> form.Handle=top) |> fun form -> form.Text <- "Shown pane")
                         pumpUntil(fun () -> onGroup(fun group -> group.ts.tabInfo(Tab top).text="Shown pane"))
+                    // Just below a group's tabs, over its title bar, a tab is taken into the strip:
+                    // it was offered that window's top edge, and let go there, split the group.
+                    onGroup(fun group ->
+                        let decorator = decoratorOf group
+                        let strip = OS().windowFromHwnd(group.ts.hwnd)
+                        let first = group.ts.tabSprites.list |> List.head |> fun (location,sprite) -> Rect(strip.ptToScreen(location),sprite.size)
+                        let below = Pt(first.x+first.width/2,first.bottom+Dpi.scale 10)
+                        let away = Pt(first.x+first.width/2,first.bottom+Dpi.scale 60)
+                        check (decorator.nearTabs below=Some group.ts.hwnd) (sprintf "A point just below a group's tabs was not taken as its strip: %A below %A" below first)
+                        check (decorator.nearTabs away=None) (sprintf "A point well below a group's tabs was taken as its strip: %A below %A" away first))
                     let shown = onGroup(fun group ->
                         let decorator = decoratorOf group
                         // What letting go does names the window the drop goes beside, the one shown.

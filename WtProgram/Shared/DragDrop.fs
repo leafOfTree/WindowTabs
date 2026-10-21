@@ -25,6 +25,9 @@ type LayoutAim = NoAim | SplitAim | FillAim
 
 /// A group's windows as a drop surface: the preview changes nothing, only the drop commits.
 type ILayoutDropTarget =
+    /// The group's strip when the point lies in the margin around its tabs in sight: a tab
+    /// carried there is meant to go with those tabs.
+    abstract member nearTabs : Pt -> IntPtr option
     /// What a drop here would do, shown nowhere.
     abstract member aim : obj * Pt -> LayoutAim
     /// Shows the place a drop here takes and gives what letting go does, to show by the dragged
