@@ -60,7 +60,9 @@ the tree's simplest case and keep their behaviour.
   the screen, at three fifths of the work area: it came out as a second screenful before. The
   monitor under the pointer decides (`DragOutPlacement`); the window lands with its tab under the
   pointer at that size, as the strip's alignment places a lone tab, wholly inside the work area,
-  and the drag image shows it at that size.
+  and the drag image shows it at that size. It comes in front, active: its old group took the
+  foreground as the tab left it, to show panes the tab had parked, and the window landed under
+  them.
 - Splitting again: while split, the same ways apply to a pane. Split in group on a tab divides
   the pane of the tab shown; a new empty pane opens beside the focused pane; a tab dragged to
   a pane's edge splits that pane (as VS Code does), and at the group's own edge (`outerZone`:

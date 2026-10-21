@@ -1034,6 +1034,19 @@ let main() =
                 for corner in [Pt(work.Right-5,work.Bottom-5);Pt(work.X+5,work.Bottom-5);Pt(work.Right-5,work.Y+5)] do
                     let at = dropAt corner (Sz(work.Width,work.Height))
                     check (DragOutPlacement.fit workRect at=at) (sprintf "A tab dropped at %A landed outside the work area: %A in %A" corner at work)
+                // Let go, the window comes in front of what lay over it: its old group took the
+                // foreground as the tab left it, showing the panes the tab had parked, and the window
+                // landed under them.
+                do
+                    use cover = new Form(Text="Cover",ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(work.X,work.Y),Size=Drawing.Size(work.Width,work.Height))
+                    cover.Show()
+                    OS().windowFromHwnd(cover.Handle).insertAfter(WindowHandleTypes.HWND_TOP)
+                    let isAbove (upper:IntPtr) (lower:IntPtr) =
+                        let rec walk (current:IntPtr) = current<>IntPtr.Zero && (current=upper || walk (WinUserApi.GetWindow(current,GetWindowConstants.GW_HWNDPREV)))
+                        walk (WinUserApi.GetWindow(lower,GetWindowConstants.GW_HWNDPREV))
+                    check (isAbove cover.Handle hwnd) "The test could not put a window over the one it drops"
+                    dropAt mid (Sz(work.Width,work.Height)) |> ignore
+                    pumpUntil "The dropped window did not come in front" (fun () -> isAbove hwnd cover.Handle)
                 onGroup alone (fun group -> group.removeWindow hwnd)
                 (alone :> IGroup).destroy()
             printfn "PASS: real HWND grouping, duplicate add, reorder, cross-STA transfer, six cross-orientation drags, destroyed-window removal, ungrouping, taskbar recovery, taskbar icon rebuilds and the session's splits."

@@ -355,6 +355,11 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
                     showCmd = ShowWindowCommands.SW_SHOWNORMAL
                     rcNormalPosition = Rect(windowPt,Sz(visible.width+borderSize.width,visible.height+borderSize.height))
             })
+            // The window let go is the one in hand: in front and active. Its old group took the
+            // foreground as the tab left it, to show the panes the tab had parked, and the window
+            // landed under them.
+            window.setForeground(true)
+            window.raise()
             notify.dragDrop(hwnd)
             
         member x.dragEnd() = invoker.asyncInvoke <| fun() ->
