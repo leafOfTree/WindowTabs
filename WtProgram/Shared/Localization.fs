@@ -361,6 +361,20 @@ module Localization =
             | _ when text.StartsWith("Close all '") && text.EndsWith("' windows") ->
                 "إغلاق جميع نوافذ «" + text.Substring(11, text.Length - 20) + "»"
             | _ when text.StartsWith("Used by ") -> "يستخدمه " + text.Substring(8)
+            | _ when text.StartsWith("Edit ") -> "تحرير " + text.Substring(5)
+            | _ when text.StartsWith("Switch tabs by number in ") ->
+                "التبديل بين علامات التبويب بالأرقام في " + text.Substring("Switch tabs by number in ".Length)
+            | _ when text.StartsWith("Scan failed: ") -> "فشل الفحص: " + text.Substring("Scan failed: ".Length)
+            | _ when text.EndsWith("  ✓") ->
+                let baseText = text.Substring(0, text.Length - 3)
+                match arabicTranslations.TryGetValue baseText with
+                | true, translated -> translated + "  ✓"
+                | _ -> text
+            | _ when text.EndsWith("*") ->
+                let baseText = text.Substring(0, text.Length - 1)
+                match arabicTranslations.TryGetValue baseText with
+                | true, translated -> translated + "*"
+                | _ -> text
             | _ when text.StartsWith("Desktop ") -> "سطح المكتب " + text.Substring(8)
             | _ when text.StartsWith("Group ") && text.Length > 6 -> "المجموعة " + text.Substring(6)
             | _ when text.StartsWith("This group · ") -> "هذه المجموعة · " + text.Substring(13)
