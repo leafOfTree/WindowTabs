@@ -56,8 +56,10 @@ its tray menu and takes over. A split comes back after a restart as its windows 
    edge. Drop a tab of this group, a tab of another group, or a window dragged by its title bar
    onto it; or use "Choose window…". Resize it by its edges, and close it with its close button,
    or with Esc while the tab beside it is active: that Esc does not reach the app.
-6. Drag a tab to the edges of a group's window, from this group and from another one: a preview
-   names the window the drop goes beside and letting go splits. With a third tab shown over
+6. Drag a tab to the edges of a group's window, from this group and from another one, and rest
+   there a moment: a preview names the window the drop goes beside and letting go splits. Let
+   go on the way instead, before the preview shows: the tab comes out as a window of its own,
+   in front. With a third tab shown over
    the pair, the drop goes beside that tab, not the parked panes, and the pair is let go.
    While split, drop a third tab at a pane's edge: that pane
    splits again, with a divider of its own and a seam button between every two pane tabs; drop
@@ -87,8 +89,8 @@ its tray menu and takes over. A split comes back after a restart as its windows 
   no message.
 - Panes keep their native title bars and borders. With the tabs inside the title bars at the top
   of the screen, the tabs span the group and may cover the left pane's caption buttons.
-- A tab from another group is offered an edge at once: let go just below another group's strip
-  and the group splits instead of taking the tab.
+- A tab rested just below another group's strip is offered that window's top edge: let go
+  then and the group splits instead of taking the tab.
 - During a drag the group may extend partly outside the work area; letting go does not push it
   back.
 

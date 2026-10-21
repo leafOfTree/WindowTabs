@@ -48,9 +48,13 @@ the tree's simplest case and keep their behaviour.
   appears, a clear tint with its edge drawn and a label in its middle saying what letting go
   does (a new column or row for the group, a split of the pane, a filled empty pane), and
   letting go splits the group. The preview changes no membership; only the drop commits. Tabs
-  of this group and of other groups on the same virtual desktop are offered the edge at once.
-  Pressing a tab behind the panes parks them; once its drag takes it out of the group, the
-  panes come back, so the drop aims at what is seen.
+  of this group and of other groups on the same virtual desktop alike are offered the edge once
+  the pointer has rested in its zone for 350ms, within 6px (`LayoutDwell`); from then on the
+  preview follows the pointer over that window until it leaves the zones. A tab carried over a
+  window on its way elsewhere, or let go over one where no free desktop was left, split it at
+  once before; let go before the preview shows, it comes out as a window of its own. An empty
+  pane takes a drop at once. Pressing a tab behind the panes parks them; once its drag takes
+  it out of the group, the panes come back, so the drop aims at what is seen.
 - A tab dragged out onto the desktop becomes a window of its own at the size it had before it
   first joined a group (`WindowOwnSize`, kept on the window), or, when that too fills most of
   the screen, at three fifths of the work area: it came out as a second screenful before. The

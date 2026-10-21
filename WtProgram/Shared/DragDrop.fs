@@ -19,8 +19,14 @@ type IDragDropTarget =
     /// The source takes a cancelled drag's tab back where it started.
     abstract member dragCancel : obj -> unit
 
+/// What a drop at a point would do to a group's windows: nothing, split a window or pane, or
+/// fill an empty pane.
+type LayoutAim = NoAim | SplitAim | FillAim
+
 /// A group's windows as a drop surface: the preview changes nothing, only the drop commits.
 type ILayoutDropTarget =
+    /// What a drop here would do, shown nowhere.
+    abstract member aim : obj * Pt -> LayoutAim
     abstract member preview : obj * Pt -> bool
     abstract member clearPreview : unit -> unit
     /// False when nothing was dropped: the drag then ends as one let go anywhere else.

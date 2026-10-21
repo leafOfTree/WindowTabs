@@ -33,7 +33,7 @@ let withPoolHeld (action:unit -> unit) =
         check (started.Wait(5000)) "The thread-pool workers did not all start"
         action()
     finally
-        hold.Set()
+        hold.Set() |> ignore
         ThreadPool.SetMaxThreads(maxWorkers,maxIo) |> ignore
         ThreadPool.SetMinThreads(minWorkers,minIo) |> ignore
 /// Each wait sleeps at least one timer tick; main shortens it to 1ms. At the default 15.6ms a
@@ -107,6 +107,7 @@ let main() =
             member _.dragExit() = ()
             member _.dragCancel _ = ()}
     let surface = {new ILayoutDropTarget with
+                    member _.aim(_,_) = SplitAim
                     member _.preview(_,_) = true
                     member _.clearPreview() = ()
                     member _.commit(_,_) = true}
@@ -117,6 +118,29 @@ let main() =
     check (DragRouting.resolve strips surfaces (IntPtr 9) (IntPtr 1)=LayoutHit(IntPtr 1)) "A helper window owned by the strip did not offer its group's panes"
     check (DragRouting.resolve strips surfaces (IntPtr 9) (IntPtr 8)=FreeHit) "An unrelated window took the drag"
     check (DragRouting.resolve strips surfaces IntPtr.Zero IntPtr.Zero=FreeHit) "The desktop took the drag"
+    // A split is offered once the pointer rests in a drop zone, not as it passes: let go on the
+    // way, the tab comes out as a window of its own. An empty pane takes a drop at once.
+    do
+        let w,v = IntPtr 2,IntPtr 3
+        let rest = LayoutDwell.restMs
+        let step now pt key aim state = LayoutDwell.step now 6 pt key aim state
+        let s0,shown0 = step 0L (Pt(100,100)) w SplitAim None
+        check (not shown0) "A split was offered as soon as the pointer reached a drop zone"
+        let s1,shown1 = step (rest-1L) (Pt(104,103)) w SplitAim s0
+        check (not shown1) "A split was offered before the pointer had rested"
+        let s2,shown2 = step rest (Pt(103,104)) w SplitAim s1
+        check shown2 "A pointer resting in a drop zone was not offered the split"
+        let _,shown3 = step (rest+10L) (Pt(300,140)) w SplitAim s2
+        check shown3 "Once offered, the split did not follow the pointer over the same window"
+        let _,moving = step rest (Pt(130,100)) w SplitAim s0
+        check (not moving) "A pointer moving through a drop zone was offered the split"
+        let _,other = step (rest*3L) (Pt(100,100)) v SplitAim s2
+        check (not other) "Another window's split was offered without resting over it"
+        let left,shownLeft = step (rest+20L) (Pt(500,300)) w NoAim s2
+        check (left.IsNone && not shownLeft) "Leaving the drop zones kept the split offered"
+        let _,again = step (rest+30L) (Pt(100,100)) w SplitAim left
+        check (not again) "Coming back into a drop zone offered the split without resting again"
+        check (snd (step 0L (Pt(100,100)) w FillAim None)) "An empty pane did not take the drop at once"
     // The pointer over an app's child window, a browser's page say, is over the group's window.
     do
         use app = new Form(Text="Routing app",ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,

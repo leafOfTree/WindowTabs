@@ -60,6 +60,29 @@ module DragRouting =
         let owner = if root=IntPtr.Zero then IntPtr.Zero else WinUserApi.GetWindow(root,GetWindowConstants.GW_OWNER)
         root,owner
 
+/// Whether a split may be offered yet: a tab carried over a window on its way to somewhere
+/// else, or let go over one where there was no free desktop left, split it at once. A split
+/// is offered once the pointer has rested in a window's drop zone; from then on the preview
+/// follows it over that window until it leaves the zones. An empty pane takes a drop at once.
+type LayoutDwell = { key: IntPtr; anchor: Pt; since: int64; shown: bool }
+
+module LayoutDwell =
+    let restMs = 350L
+    /// How far the pointer may wander while resting, in logical pixels.
+    let restRadius = 6
+    /// The state after the pointer at `pt` over the window `key`, and whether the preview shows.
+    let step (now:int64) (radius:int) (pt:Pt) (key:IntPtr) (aim:LayoutAim) (state:LayoutDwell option) =
+        match aim with
+        | NoAim -> None,false
+        | FillAim -> None,true
+        | SplitAim ->
+            match state with
+            | Some s when s.key=key && s.shown -> Some s,true
+            | Some s when s.key=key && abs(pt.x-s.anchor.x)<=radius && abs(pt.y-s.anchor.y)<=radius ->
+                let ready = now-s.since>=restMs
+                Some {s with shown=ready},ready
+            | _ -> Some {key=key;anchor=pt;since=now;shown=false},false
+
 type DragFloatingStateInfo = {
     imageOffset : Pt
     targets: Map2<IntPtr, IDragDropTarget>
@@ -72,13 +95,36 @@ type DragFloatingStateInfo = {
 type DragFloatingState(info:DragFloatingStateInfo) =
     let os = OS()
     let animationWindow = info.animationWindow
+    let clock = Diagnostics.Stopwatch.StartNew()
     let mutable candidate : (IntPtr * ILayoutDropTarget) option = None
+    let mutable dwell : LayoutDwell option = None
+    /// The window and point last aimed at, for the pointer resting with no move to report.
+    let mutable aimed : (IntPtr * ILayoutDropTarget * Pt) option = None
+    let restTimer = new Timer(Interval=50)
     let clearCandidate() =
         candidate |> Option.iter(fun (_,target) -> target.clearPreview())
         candidate <- None
     let float(ptScreen:Pt) =
         animationWindow.setLocation(ptScreen.sub(info.imageOffset))
         animationWindow.setIsVisible(true)
+    /// The preview for the pointer at `pt` over `key`, once it may show.
+    let previewAt (key:IntPtr) (target:ILayoutDropTarget) (pt:Pt) (aim:LayoutAim) =
+        match candidate with
+        | Some(previous,old) when previous<>key -> old.clearPreview()
+        | _ -> ()
+        let state,show = LayoutDwell.step clock.ElapsedMilliseconds (Dpi.scale LayoutDwell.restRadius) pt key aim dwell
+        dwell <- state
+        // The tab's image stays with the pointer over the highlighted pane.
+        if show && target.preview(info.data,pt) then candidate <- Some(key,target)
+        else
+            if candidate.IsSome then target.clearPreview()
+            candidate <- None
+        aimed <- (if aim=SplitAim && not show then Some(key,target,pt) else None)
+        if aimed.IsSome then restTimer.Start() else restTimer.Stop()
+    do restTimer.Tick.Add(fun _ ->
+        match aimed with
+        | Some(key,target,pt) -> previewAt key target pt SplitAim
+        | None -> restTimer.Stop())
     /// Drops into the pane under the pointer; false when there is none.
     member this.commit(pt) =
         match candidate with
@@ -92,24 +138,23 @@ type DragFloatingState(info:DragFloatingStateInfo) =
             match DragRouting.resolve info.targets info.layoutTargets hit owner with
             | StripHit target ->
                 clearCandidate()
+                dwell <- None
+                aimed <- None
+                restTimer.Stop()
                 animationWindow.setIsVisible(false)
                 info.onDragIn(target, ptScreen)
             | LayoutHit key ->
-                match candidate with
-                | Some(previous,old) when previous<>key -> old.clearPreview()
-                | _ -> ()
                 let target = info.layoutTargets.find key
-                // The tab's image stays with the pointer over the highlighted pane.
-                if target.preview(info.data,ptScreen) then
-                    candidate <- Some(key,target)
-                    float ptScreen
-                else
-                    candidate <- None
-                    float ptScreen
+                previewAt key target ptScreen (target.aim(info.data,ptScreen))
+                float ptScreen
             | FreeHit ->
                 clearCandidate()
+                dwell <- None
+                aimed <- None
+                restTimer.Stop()
                 float ptScreen
         member this.dispose() =
+            restTimer.Dispose()
             clearCandidate()
             animationWindow.setIsVisible(false)
 

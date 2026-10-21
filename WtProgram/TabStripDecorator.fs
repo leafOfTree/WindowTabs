@@ -746,8 +746,24 @@ type TabStripDecorator(group:WindowGroup) as this =
         member x.windowMsg(msg) = 
             ()
             
+    /// What a drag at this point would do, shown nowhere: an empty pane, or one at an empty
+    /// pane's edge, is filled; anything else splits.
+    member private this.aimLayout(data:obj,pt:Pt) =
+        match this.layoutProposal(data,pt) with
+        | None -> NoAim
+        | Some(FillEmpty _,_) -> FillAim
+        | Some(SplitAt(path,_,_),_) ->
+            match group.splitLayout |> Option.bind(SplitView.pane path) with
+            | Some Empty -> FillAim
+            | _ -> SplitAim
+
     /// Finds the pane a drag at this point would take and shows it.
     member private this.previewLayout(data:obj,pt:Pt) =
+        let proposal = this.layoutProposal(data,pt)
+        layoutDrop <- proposal |> Option.map fst
+        this.showProposal proposal
+
+    member private this.layoutProposal(data:obj,pt:Pt) =
         let drag = unbox<TabDragInfo> data
         let (Tab hwnd) = drag.tab
         // A tab of this group, still in it or taken out by this drag, may split the group; a tab
@@ -768,14 +784,14 @@ type TabStripDecorator(group:WindowGroup) as this =
             group.bounds.value |> Option.bind(fun bounds ->
                 SplitGeometry.dropAt pt (Dpi.scale SplitMetrics.edgeZone) (Dpi.scale SplitMetrics.outerZone) gap bounds group.splitLayout
                 |> Option.map(fun ((path,axis,side),rect) -> SplitAt(path,axis,side),rect))
-        let proposal =
-            if not(WinUserApi.IsWindow hwnd) then None
-            else
-                match group.emptyPaneAt(pt) with
-                | Some(path,bounds) -> if sameDesktop() then Some(FillEmpty path,bounds) else None
-                | None when group.windows.count>0 && sameDesktop() -> edge()
-                | None -> None
-        layoutDrop <- proposal |> Option.map fst
+        if not(WinUserApi.IsWindow hwnd) then None
+        else
+            match group.emptyPaneAt(pt) with
+            | Some(path,bounds) -> if sameDesktop() then Some(FillEmpty path,bounds) else None
+            | None when group.windows.count>0 && sameDesktop() -> edge()
+            | None -> None
+
+    member private this.showProposal(proposal:(LayoutDrop * Rect) option) =
         match proposal with
         | Some(drop,bounds) ->
             if layoutPreview.IsNone then layoutPreview <- Some(new LayoutPreview())
@@ -815,6 +831,10 @@ type TabStripDecorator(group:WindowGroup) as this =
         layoutPreview |> Option.iter(fun window -> window.Hide())
 
     interface ILayoutDropTarget with
+        member this.aim(data,pt) =
+            if not(WinUserApi.IsWindow(this.ts.hwnd)) then NoAim
+            else this.invokeSync(fun () -> this.aimLayout(data,pt))
+
         member this.preview(data,pt) =
             if not(WinUserApi.IsWindow(this.ts.hwnd)) then false
             else this.invokeSync(fun () -> this.previewLayout(data,pt))
