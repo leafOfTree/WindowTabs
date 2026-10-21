@@ -201,7 +201,7 @@ type DragFloatingState(info:DragFloatingStateInfo) =
         | None ->
             if candidate.IsSome then target.clearPreview()
             candidate <- None
-            labelText <- None
+            labelText <- Some(tr Strings.Drop.newWindow)
         aimed <- (if aim=SplitAim && not show then Some(key,target,pt) else None)
         if aimed.IsSome then restTimer.Start() else restTimer.Stop()
     do restTimer.Tick.Add(fun _ ->
@@ -237,6 +237,8 @@ type DragFloatingState(info:DragFloatingStateInfo) =
                 dwell <- None
                 aimed <- None
                 restTimer.Stop()
+                // Every place says what letting go there does: here, a window of its own.
+                labelText <- Some(tr Strings.Drop.newWindow)
                 float ptScreen
         member this.dispose() =
             restTimer.Dispose()

@@ -358,6 +358,8 @@ module Strings =
     /// What letting go of a dragged tab here would do, on the preview.
     module Drop =
         let fillEmpty = { en="Fill the empty pane"; zh="放入空白窗格"; ja="空のペインに配置" }
+        /// Let go here, the tab comes out as a window of its own.
+        let newWindow = { en="New window"; zh="新窗口"; ja="新しいウィンドウ" }
         let columnLeft = { en="New column on the left"; zh="整组左侧新开一列"; ja="左に新しい列" }
         let columnRight = { en="New column on the right"; zh="整组右侧新开一列"; ja="右に新しい列" }
         let rowAbove = { en="New row above"; zh="整组上方新开一行"; ja="上に新しい行" }
