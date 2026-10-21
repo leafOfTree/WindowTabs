@@ -326,6 +326,8 @@ module Localization =
             ("Copy the report, to paste into an issue", "نسخ التقرير للصقه في بلاغ مشكلة");
             ("Include window details: each window's program, class and whether it gets tabs. Never titles.", "تضمين تفاصيل النوافذ: برنامج كل نافذة وفئتها وما إذا كانت تستخدم علامات تبويب. لا يتضمن العناوين أبدًا.");
             ("Refresh the report", "تحديث التقرير");
+            ("Launch the app and retry", "تشغيل التطبيق وإعادة المحاولة");
+            ("Launching the app…", "جارٍ تشغيل التطبيق…");
             ("Report copied.", "تم نسخ التقرير.");
             ("Report refreshed.", "تم تحديث التقرير.");
             ("Troubleshooting report", "تقرير استكشاف الأخطاء وإصلاحها");
