@@ -360,6 +360,19 @@ module Localization =
             | true, translated -> translated
             | _ when text.StartsWith("Close all '") && text.EndsWith("' windows") ->
                 "إغلاق جميع نوافذ «" + text.Substring(11, text.Length - 20) + "»"
+            | _ when text.StartsWith("Unable to save settings to ") ->
+                text.Replace("Unable to save settings to ", "تعذّر حفظ الإعدادات في ")
+                    .Replace("Your changes remain in memory and will be retried on the next edit or exit.", "ستظل تغييراتك في الذاكرة وستتم إعادة المحاولة عند التعديل التالي أو عند الخروج.")
+            | _ when text.StartsWith("Error loading settings.") ->
+                text.Replace("Error loading settings.", "حدث خطأ أثناء تحميل الإعدادات.")
+                    .Replace("Fix or remove the file ", "أصلح الملف أو احذفه ")
+                    .Replace("Details: ", "التفاصيل: ")
+            | _ when text.StartsWith("Settings were reset. WindowTabs will now restart.") ->
+                text.Replace("Settings were reset. WindowTabs will now restart.", "تمت إعادة تعيين الإعدادات. سيُعاد تشغيل WindowTabs الآن.")
+                    .Replace("Your previous settings were saved to:", "تم حفظ الإعدادات السابقة في:")
+            | _ when text.StartsWith("Settings imported. WindowTabs will now restart to apply them.") ->
+                text.Replace("Settings imported. WindowTabs will now restart to apply them.", "تم استيراد الإعدادات. سيُعاد تشغيل WindowTabs لتطبيقها.")
+                    .Replace("Your previous settings were saved to:", "تم حفظ الإعدادات السابقة في:")
             | _ when text.StartsWith("Used by ") -> "يستخدمه " + text.Substring(8)
             | _ when text.StartsWith("Edit ") -> "تحرير " + text.Substring(5)
             | _ when text.StartsWith("Switch tabs by number in ") ->
