@@ -83,8 +83,8 @@ module LayoutDwell =
                 Some {s with shown=ready},ready
             | _ -> Some {key=key;anchor=pt;since=now;shown=false},false
 
-/// What letting go does, beside the dragged tab's image and following the pointer: the window
-/// it goes to and which side of it. Over the place itself it covered what it named.
+/// What letting go does, left of the tab in the dragged image and following it: the window it
+/// goes to and which side of it. Over the place itself it covered what it named.
 type private DropLabel() =
     inherit Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual)
     let mutable drawn : string option = None
@@ -102,8 +102,8 @@ type private DropLabel() =
             let value = new System.Drawing.Font("Segoe UI",float32(Dpi.value())/float32(Dpi.system())*10.5f,System.Drawing.FontStyle.Bold)
             font <- Some value
             value
-    /// Below and to the right of the pointer, by the tab in the image, kept on the screen.
-    member this.showAt(pt:Pt, text:string) =
+    /// Left of the tab in the image, level with it; right of it where the screen ends first.
+    member this.showAt(tab:Rect, text:string) =
         if drawn<>Some text then
             drawn <- Some text
             let palette = SettingsColors.current()
@@ -120,13 +120,16 @@ type private DropLabel() =
             g.DrawPath(border,outline)
             TextRenderer.DrawText(g,text,this.labelFont,System.Drawing.Rectangle(0,0,width,height),palette.text,TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix)
             Win32Helper.UpdateLayeredWindow(this.Handle,this.Location,bitmap,255uy)
-        let at = Pt(pt.x+Dpi.scale 18,pt.y+Dpi.scale 22)
+        let gap = Dpi.scale 8
+        let y = tab.y+(tab.height-this.Height)/2
+        let left = Pt(tab.left-gap-this.Width,y)
         let at =
-            match Mon.fromPoint pt with
+            match Mon.fromPoint(Pt(tab.left,tab.y+tab.height/2)) with
             | Some mon ->
                 let work = mon.workRect
+                let at = if left.x<work.left then Pt(tab.right+gap,y) else left
                 Pt(max work.left (min at.x (work.right-this.Width)),max work.top (min at.y (work.bottom-this.Height)))
-            | None -> at
+            | None -> left
         if this.Location<>at.Point then this.Location <- at.Point
         if not this.Visible then this.Show()
     override this.Dispose(disposing) =
@@ -155,11 +158,16 @@ type DragFloatingState(info:DragFloatingStateInfo) =
     let restTimer = new Timer(Interval=25)
     let mutable label : DropLabel option = None
     let mutable labelText : string option = None
+    /// The tab in the image, at full size where the pointer holds it.
+    let tabAt (pt:Pt) =
+        match info.data with
+        | :? TabDragInfo as drag -> Rect(pt.sub(drag.tabOffset),drag.tabSize)
+        | _ -> Rect(pt,Sz())
     let showLabel (pt:Pt) =
         match labelText with
         | Some text when text<>"" ->
             if label.IsNone then label <- Some(new DropLabel())
-            label.Value.showAt(pt,text)
+            label.Value.showAt(tabAt pt,text)
         | _ -> label |> Option.iter(fun window -> window.Hide())
     let clearCandidate() =
         candidate |> Option.iter(fun (_,target) -> target.clearPreview())
@@ -246,7 +254,6 @@ type DragActionInfo = {
 
 type DragAction(info:DragActionInfo) =
     let os = OS()
-    let dragScale = 0.5
     let Cell = CellScope(true, false)
     let ptScreenCell = Cell.create(info.initialPt)
     let dragStateCell = Cell.create(None:Option<IDragState>)
@@ -336,7 +343,7 @@ type DragAction(info:DragActionInfo) =
             targets = info.targets
             layoutTargets = info.layoutTargets
             data = info.data
-            imageOffset = info.imageOffset.mulf(dragScale, dragScale)
+            imageOffset = info.imageOffset
             animationWindow = animationWindowCell.value.Value
             onDragIn = fun (targetHwnd, ptScreen) ->
                 this.dragEnter(targetHwnd, ptScreen, false)
@@ -368,10 +375,8 @@ type DragAction(info:DragActionInfo) =
                 animationWindowCell.value <-
                     let animationWindow = AnimationWindow(os)
                     animationWindow.setAlpha(byte(0xAA))
-                    try
-                        //this may fail if the image coming back is too small
-                        use full = info.image().bitmap
-                        animationWindow.setImage(full.img.scale(dragScale))
+                    // The image comes drawn at the size it shows: its window small, its tab readable.
+                    try animationWindow.setImage(info.image())
                     with _ -> ()
                     Some(animationWindow)
                 info.targets.values.iter <| fun target -> target.dragBegin()

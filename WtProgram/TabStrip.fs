@@ -729,25 +729,33 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.tabLocation = this.ts.tabLocation
     
     /// The window capture is full size; release it here rather than waiting for the GC. The
-    /// window is drawn at the size it lands at when dropped on the desktop, the tab over it
-    /// where the strip will put it.
-    member this.dragImage (tab:Tab, shift:int, landing:Sz) : Img=
-        if this.isVertical then this.ts.renderTab(tab) else this.horizontalDragImage tab shift landing
+    /// window is drawn at `DragImage.windowScale` of the size it lands at on the desktop, the tab
+    /// at full size at `tabX` over it, where the strip will put it.
+    member this.dragImage (tab:Tab, tabX:int, landing:Sz) : Img=
+        if this.isVertical then this.ts.renderTab(tab) else this.horizontalDragImage tab tabX landing
+
+    /// Where the tab sits over the window in the drag image, from its place over the window it lands as.
+    member this.dragTabX(tab:Tab, shift:int, landing:Sz) =
+        let tabWidth = this.tabSprites.tryFind(fun (_,sprite) -> sprite.id=tab) |> Option.map(fun (_,sprite) -> sprite.size.width) |> Option.defaultValue 0
+        if this.isVertical then 0
+        else max 0 (min (int(float shift*DragImage.windowScale)) (int(float landing.width*DragImage.windowScale)-tabWidth))
 
     /// How a lone tab sits over its window once dropped: vertical strips keep it at the start.
     member this.dragAlignment = if this.isVertical then TabLeft else this.getAlignment TabUp
 
-    member private this.horizontalDragImage (tab:Tab) (shift:int) (landing:Sz) : Img=
+    member private this.horizontalDragImage (tab:Tab) (tabX:int) (landing:Sz) : Img=
         use bmpTab = this.tsBase(TabUp).renderTab(tab).bitmap
         use bmpHwnd = this.tabInfo(tab).preview().bitmap
-        let width = if landing.width>0 then landing.width else bmpHwnd.Width
-        let height = if landing.height>0 then landing.height else bmpHwnd.Height
-        let bmpOverlay = Img(Sz(width, height + bmpTab.Height - this.contentOffset))
+        let scaled value = max 1 (int(float value*DragImage.windowScale))
+        let width = scaled (if landing.width>0 then landing.width else bmpHwnd.Width)
+        let height = scaled (if landing.height>0 then landing.height else bmpHwnd.Height)
+        let top = bmpTab.Height - this.contentOffset
+        let bmpOverlay = Img(Sz(max width (tabX+bmpTab.Width), height + top))
         try
             use gCapture = bmpOverlay.graphics
             gCapture.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBilinear
-            gCapture.DrawImage(bmpTab, Point(max 0 (min shift (width-bmpTab.Width)), 0))
-            gCapture.DrawImage(bmpHwnd, Rectangle(0, this.size.height - this.contentOffset, width, height))
+            gCapture.DrawImage(bmpHwnd, Rectangle(0, top, width, height))
+            gCapture.DrawImage(bmpTab, Point(tabX, 0))
             bmpOverlay
         with _ ->
             bmpOverlay.bitmap.Dispose()

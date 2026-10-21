@@ -38,6 +38,11 @@ and TabDragInfo = {
             int(Math.Round(float(between (0,max 1 source) offset)*float target/float(max 1 source)))
         Pt(fit this.tabOffset.x this.tabSize.width size.width,fit this.tabOffset.y this.tabSize.height size.height)
 
+/// The image a dragged tab carries: its window at this scale, the tab itself at full size, so
+/// the tab stays readable over a window shown small.
+and DragImage =
+    static member windowScale = 0.5
+
 and TabStripPlacment = {
     showInside: bool
     bounds: Rect
