@@ -208,18 +208,21 @@ module WindowOwnSize =
 
 /// Where a tab dragged out onto the desktop puts its window. Sizes are of the visible frame.
 module DragOutPlacement =
-    /// The window's size now, as the group had it, maximized or not: kept unless it fills most
-    /// of the screen, as a maximized group does. Then its own size from before any group, if
-    /// that is modest, else three fifths of the screen. Its own size alone was read once, when
-    /// it first joined, and a group resized since came out at that old size.
+    /// The window's size now, as the group had it, maximized or not, one side at a time: a side
+    /// that spans most of the screen takes the window's own length from before any group, if
+    /// that is modest, else three fifths of the screen. Its own size alone was read once, when it
+    /// first joined, and a group resized since came out at that old size; judged as a whole, a
+    /// group snapped to half the screen came out the screen's full height, pushed up to its top.
     let size (current:Sz) (own:Sz option) (work:Rect) =
-        let large (size:Sz) = size.width>work.width*4/5 && size.height>work.height*4/5
-        let fit (size:Sz) = Sz(min size.width work.width,min size.height work.height)
-        if not(large current) then fit current
-        else
-            match own with
-            | Some own when not(large own) -> fit own
-            | _ -> Sz(work.width*3/5,work.height*3/5)
+        let side now (own:int option) whole =
+            let large length = length>whole*4/5
+            if not(large now) then min now whole
+            else
+                match own with
+                | Some own when own>0 && not(large own) -> own
+                | _ -> whole*3/5
+        Sz(side current.width (own |> Option.map(fun own -> own.width)) work.width,
+           side current.height (own |> Option.map(fun own -> own.height)) work.height)
     /// The monitor a drop at this point lands on: the one under it, else the nearest.
     let monitorAt (pt:Pt) =
         Mon.fromPoint pt |> Option.orElse(Mon.fromHMonitor(WinUserApi.MonitorFromPoint(pt.POINT,MonitorFlags.MONITOR_DEFAULTTONEAREST)))

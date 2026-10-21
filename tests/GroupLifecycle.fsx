@@ -1023,6 +1023,16 @@ let main() =
                 let landed = dropped modestGroup
                 check (landed=groupVisible) (sprintf "A tab dragged out of a modest group did not keep the group's size: %dx%d instead of %dx%d" landed.width landed.height groupVisible.width groupVisible.height)
                 check (dropped (Sz(work.Width,work.Height))=own) (sprintf "A tab dragged out of a screen-sized group did not go back to its own size: %A instead of %A" (OS().windowFromHwnd(hwnd).visibleBounds.size) own)
+                // A group snapped to half the screen keeps its width and gives up only its height:
+                // judged as a whole it was not screen-sized, and came out the screen's full height,
+                // pushed up to its top.
+                do
+                    let half = Sz(work.Width/2,work.Height)
+                    OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),half))
+                    let halfVisible = OS().windowFromHwnd(hwnd).visibleBounds.size
+                    let landed = dropAt (Pt(work.X+work.Width/2,work.Y+work.Height/2)) half
+                    check (landed.width=halfVisible.width && landed.height=own.height && landed.top>work.Y)
+                          (sprintf "A tab dragged out of a half-screen group did not keep its width and give up its height: %A, %dx%d" landed landed.width landed.height)
                 WinUserApi.RemoveProp(hwnd,"WindowTabs.OwnSize.v1.W") |> ignore
                 WinUserApi.RemoveProp(hwnd,"WindowTabs.OwnSize.v1.H") |> ignore
                 let modest = dropped (Sz(work.Width,work.Height))
