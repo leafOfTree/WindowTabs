@@ -54,8 +54,10 @@ module Strings =
         let split = { en="Split view"; zh="组内分屏"; ja="分割表示" }
         let splitHorizontal = { en="Split side by side"; zh="左右分屏"; ja="左右に分割" }
         let splitVertical = { en="Split top and bottom"; zh="上下分屏"; ja="上下に分割" }
-        let splitEmptyRight = { en="New empty pane on the right"; zh="在右侧新建空白区域"; ja="右側に空のペインを作成" }
-        let splitEmptyBelow = { en="New empty pane below"; zh="在下方新建空白区域"; ja="下側に空のペインを作成" }
+        /// A window chosen from a list goes on that side of the tab.
+        let splitPickRight = { en="Window on the right…"; zh="在右侧放入窗口…"; ja="右側にウィンドウを配置…" }
+        let splitPickBelow = { en="Window below…"; zh="在下方放入窗口…"; ja="下側にウィンドウを配置…" }
+        let splitPickLeft = { en="Window on the left…"; zh="在左侧放入窗口…"; ja="左側にウィンドウを配置…" }
         let splitEmpty = { en="Drop a tab or window here"; zh="将标签或窗口拖到这里"; ja="ここにタブまたはウィンドウをドロップ" }
         let splitChoose = { en="Choose a window…"; zh="选择窗口…"; ja="ウィンドウを選択…" }
         let splitOr = { en="or"; zh="或"; ja="または" }

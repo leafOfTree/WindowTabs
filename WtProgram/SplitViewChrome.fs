@@ -46,11 +46,13 @@ module SplitMenu =
             ofSplit axis (match layout with Parked _ -> true | _ -> false) None execute
         | Single -> List2()
 
-/// Lists windows for an empty pane to take. Registered by the program with the settings
-/// window's drop-down; the picker builds its controls on the calling thread.
+/// Lists windows for a pane to take. Registered by the program with the settings window's
+/// drop-down; the picker builds its controls on the calling thread.
 type ISplitPanePicker =
     /// Opens below `anchor`, on screen; `choose` receives the window picked.
     abstract member show : owner:Control * anchor:Rectangle * windows:(IntPtr * string * string) list * choose:(IntPtr -> unit) -> unit
+    /// Opens over `within`, on screen, as for a group about to split.
+    abstract member showWithin : within:Rectangle * windows:(IntPtr * string * string) list * choose:(IntPtr -> unit) -> unit
 
 /// The bar between the panes: dragged for the ratio, double-clicked to equalize, right-clicked
 /// for the split's menu. It only produces commands.

@@ -1136,6 +1136,26 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             else Services.desktop.adoptIntoPane(this.ts.hwnd,hwnd,path)
         | _ -> ()
 
+    /// A window chosen from the list to go on one side of the tab `beside`: that tab's pane splits
+    /// to take it, or, with no split, the tab and the window share the group. A tab of this
+    /// group goes straight in; any other window is handed over by the desktop first. Chosen
+    /// first, the window needs no empty pane to wait in.
+    member this.placeBeside(beside:IntPtr, chosen:IntPtr, axis:SplitAxis, side:Side) =
+        if this.windows.contains beside && chosen<>beside && WinUserApi.IsWindow chosen && not isDestroyed.value then
+            let path =
+                match groupLayout with
+                | Split s -> SplitView.pathOf beside s |> Option.defaultValue []
+                | _ -> []
+            // Beside the tab asked for: with no split, it is the one shown, which the drop pairs with.
+            if not this.isSplit && this.topWindow<>beside then this.tabActivate(Tab beside,false)
+            let drop = SplitAt(path,axis,side)
+            if this.windows.contains chosen then this.dropTab(chosen,drop,beside)
+            else Services.desktop.adoptBeside(this.ts.hwnd,chosen,drop,beside)
+
+    /// What the list for a split offers: every window on this desktop but the tab it goes beside.
+    member this.splitCandidates(beside:IntPtr) =
+        Services.program.paneCandidates() |> List.filter(fun (hwnd,_,_) -> hwnd<>beside)
+
     /// For the strip, once it has moved: the empty panes depend on where the tabs are.
     member this.refreshSplitChrome() = if this.isSplit && not isDestroyed.value then this.updateSplitChrome()
 

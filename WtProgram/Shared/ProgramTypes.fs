@@ -175,6 +175,9 @@ type IDesktop =
     /// Puts a window, grouped elsewhere or not at all, into the empty pane at the path of the
     /// group whose strip is given.
     abstract member adoptIntoPane: IntPtr * IntPtr * PanePath -> unit
+    /// Puts a window, grouped elsewhere or not at all, beside the partner tab of the group whose
+    /// strip is given, as the drop says.
+    abstract member adoptBeside: IntPtr * IntPtr * LayoutDrop * IntPtr -> unit
 
 type IPlugin =
     abstract member init: unit -> unit

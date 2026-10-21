@@ -278,6 +278,9 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
                 let foregroundWindow = os.foreground
                 this.findGroupContainingHwnd(foregroundWindow.hwnd)
         member x.adoptIntoPane(groupHwnd,hwnd,path) = this.adoptIntoPane(groupHwnd,hwnd,path)
+        member x.adoptBeside(groupHwnd,hwnd,drop,partner) =
+            this.groups.tryFind(fun g -> g.hwnd=groupHwnd) |> Option.iter(fun group ->
+                this.handToPane(group,hwnd,fun () -> group.group.dropTab(hwnd,drop,partner)))
 
     /// A window moved and let go over a group's empty pane joins that pane, as a dropped tab would.
     member private this.dropNativeWindow(hwnd,initial:Rect,maximized) =

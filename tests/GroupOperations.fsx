@@ -673,6 +673,18 @@ let main() =
                     waitOperation()
                     check (onGroup(fun group -> group.layout=GroupLayout.Single && group.windows.count=2)) "Merging lost a member"
                     check (handles |> List.take 2 |> List.forall(fun hwnd -> OS().windowFromHwnd(hwnd).visibleBounds=mergedFrame)) "Merging did not restore the full group bounds"
+                    // A window chosen from the list goes on the side asked for, beside the tab the
+                    // menu was opened on, with no empty pane waiting for it.
+                    do
+                        let shown = onGroup(fun group -> group.topWindow)
+                        let other = handles |> List.take 2 |> List.find((<>) shown)
+                        onGroup(fun group -> group.placeBeside(shown,other,SideBySide,First))
+                        waitSplit()
+                        check (onGroup(fun group -> group.splitLayout |> Option.exists(fun s -> s.tree.axis=SideBySide && s.tree.first=Leaf(Occupied other) && s.tree.second=Leaf(Occupied shown))))
+                              (sprintf "A window chosen to go on the left did not take the left of the tab: %A" (onGroup(fun group -> group.layout)))
+                        check (onGroup(fun group -> group.emptyPaneHwnds.IsEmpty)) "Choosing a window first left an empty pane"
+                        onGroup(fun group -> group.execute(EndSplit(Some shown)))
+                        waitOperation()
                     let dragOf (group:WindowGroup) hwnd = box {tab=Tab(hwnd);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(source));tabShift=0;tabAlignment=TabLeft}
                     // A tab from another group splits at an edge too, beside the tab shown.
                     let foreign = handles.[2]

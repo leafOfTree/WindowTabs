@@ -290,6 +290,14 @@ type TabStripDecorator(group:WindowGroup) as this =
     /// The split's menu, from the button between its two tabs.
     /// The menu of the split a seam button stands for, the one parting its tab from the pane tab
     /// before it; without a button, the focused pane's split.
+    /// The window list over the group; the window picked goes on `side` of the tab `beside`.
+    member private this.pickBeside(beside:IntPtr, entries, axis:SplitAxis, side:Side) =
+        match Services.tryGet<ISplitPanePicker>() with
+        | Some picker when not(List.isEmpty entries) ->
+            picker.showWithin(group.layoutFrame.Rectangle,entries,fun chosen -> group.placeBeside(beside,chosen,axis,side))
+        | Some _ -> Alert.show AlertKind.Info (tr Strings.TabMenu.split) (tr Strings.TabMenu.splitNoWindows)
+        | None -> ()
+
     member private this.showSplitMenu(ptScreen:Pt, button:IntPtr option) =
         let execute command = group.execute command
         let items =
@@ -397,9 +405,15 @@ type TabStripDecorator(group:WindowGroup) as this =
         let split = group.splitLayout
         let canSplit = split.IsSome || (group.windows.count>1 && hwnd<>group.topWindow)
         let top = group.topWindow
+        // A window is chosen first and goes straight beside the clicked tab, so no empty pane
+        // waits for one: the list opens over the group, and Esc leaves things as they were.
+        let candidates = lazy(group.splitCandidates hwnd)
+        let pickItem text axis side =
+            CmiRegular({text=tr text;image=None;flags=List2();click=fun () -> this.pickBeside(hwnd,candidates.Force(),axis,side)})
         let splitMenu = CmiPopUp({text=tr Strings.TabMenu.split;image=None;items=List2([
-            splitCommand Strings.TabMenu.splitEmptyRight split.IsNone (NewEmptyPane SideBySide) hwnd
-            splitCommand Strings.TabMenu.splitEmptyBelow split.IsNone (NewEmptyPane Stacked) hwnd
+            pickItem Strings.TabMenu.splitPickRight SideBySide Second
+            pickItem Strings.TabMenu.splitPickBelow Stacked Second
+            pickItem Strings.TabMenu.splitPickLeft SideBySide First
             CmiSeparator
             splitCommand Strings.TabMenu.splitHorizontal canSplit (SplitWith(hwnd,SideBySide)) top
             splitCommand Strings.TabMenu.splitVertical canSplit (SplitWith(hwnd,Stacked)) top

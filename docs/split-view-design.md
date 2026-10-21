@@ -32,7 +32,13 @@ the tree's simplest case and keep their behaviour.
 - Right-click tab B while A is shown, then Split in group, then side by side or stacked. A takes
   the left or top pane, B the right or bottom one, focus goes to B, and the ratio is 50:50.
   Both items are disabled on the tab that is shown.
-- Right-click any tab, then a new empty pane on the right or below. The empty pane has a 1px
+- Right-click any tab, then Split in group, then a window on the right, below or on the left:
+  the searchable window list below opens over the group first, and the window picked goes on
+  that side of the clicked tab, its pane split when the group is split already
+  (`WindowGroup.placeBeside`; a window from elsewhere is handed over through
+  `IDesktop.adoptBeside`). Esc leaves the group as it was. Chosen first, the window needs no
+  empty pane to wait in, so the menu no longer opens one.
+- The new empty pane on the right or below, from its shortcuts. The empty pane has a 1px
   frame in Explorer's colours, a dashed drop box, an "or" line and a "Choose window…" button,
   and a close button at the top right that ends the empty split; Esc does the same while a tab
   of its group is the active window, and goes no further than that. It opens out from the group's
