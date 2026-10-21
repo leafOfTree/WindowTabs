@@ -683,6 +683,17 @@ let main() =
                         check (onGroup(fun group -> group.splitLayout |> Option.exists(fun s -> s.tree.axis=SideBySide && s.tree.first=Leaf(Occupied other) && s.tree.second=Leaf(Occupied shown))))
                               (sprintf "A window chosen to go on the left did not take the left of the tab: %A" (onGroup(fun group -> group.layout)))
                         check (onGroup(fun group -> group.emptyPaneHwnds.IsEmpty)) "Choosing a window first left an empty pane"
+                        // The images moving the windows into the split go once they are in place:
+                        // left over the group, topmost, they would hide the panes and take no clicks.
+                        let frame = onGroup(fun group -> group.layoutFrame)
+                        let pid = Diagnostics.Process.GetCurrentProcess().Id
+                        let overlay () =
+                            OS().windowsInZorder.list |> List.exists(fun window ->
+                                let mutable owner = 0
+                                WinUserApi.GetWindowThreadProcessId(window.hwnd,&owner) |> ignore
+                                owner=pid && window.isVisible && window.bounds=frame &&
+                                (WinUserApi.GetWindowLong(window.hwnd,WindowLongFieldOffset.GWL_EXSTYLE).ToInt64() &&& int64 WindowsExtendedStyles.WS_EX_TOPMOST)<>0L)
+                        pumpUntil(fun () -> not(overlay()))
                         onGroup(fun group -> group.execute(EndSplit(Some shown)))
                         waitOperation()
                     // A window with a least size of its own gets a pane at least that size, the
@@ -904,8 +915,17 @@ let main() =
                                 cell.GetType().GetMethod("set").Invoke(cell,[|box (Some(top.bounds,top.placement,top.visibleBounds))|]) |> ignore
                                 invoke "updatePlacements" group [||] |> ignore)
                             check (entered.Wait(10000)) "Follower placement did not enter its stacking-correction phase"
+                            let topmost () =
+                                let pid = Diagnostics.Process.GetCurrentProcess().Id
+                                OS().windowsInZorder.list |> List.filter(fun window ->
+                                    let mutable owner = 0
+                                    WinUserApi.GetWindowThreadProcessId(window.hwnd,&owner) |> ignore
+                                    owner=pid && window.isVisible &&
+                                    (WinUserApi.GetWindowLong(window.hwnd,WindowLongFieldOffset.GWL_EXSTYLE).ToInt64() &&& int64 WindowsExtendedStyles.WS_EX_TOPMOST)<>0L)
+                                |> List.map(fun window -> window.hwnd,window.bounds)
                             check (OS().windowFromHwnd(follower).zorder < OS().windowFromHwnd(source).zorder)
-                                  "Placement fixture did not temporarily raise the follower"
+                                  (sprintf "Placement fixture did not temporarily raise the follower: follower %d source %d, our topmost windows %A, foreground %A"
+                                       (OS().windowFromHwnd(follower).zorder) (OS().windowFromHwnd(source).zorder) (topmost()) (WinUserApi.GetForegroundWindow()))
                             onGroup(fun group -> invoke "handleWindowEvent" group [|box follower;box WinEvent.EVENT_OBJECT_REORDER|] |> ignore)
                             check (onGroup(fun group -> group.topWindow=source && group.ts.zorder.head=Tab(source)))
                                   "A placement reorder changed the selected tab before completion"

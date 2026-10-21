@@ -29,6 +29,18 @@ the tree's simplest case and keep their behaviour.
 
 ### 2.1 Entering a split
 
+- However a window comes into a split, it moves in rather than appearing: for 220ms
+  (`SplitTransition.DurationMs`) a cover over the group, topmost and click-through, shows live
+  DWM thumbnails of the panes' windows moving from where they were to their panes with an
+  ease-out, the one coming in sliding from its side and fading in. Each image shows its window
+  1:1 from the top left, cut to its rectangle, so nothing is stretched. The window coming in is
+  placed at once, so its image shows it at its new size; the windows already there wait until
+  the images have moved (`transitionHold`), so theirs shrink smoothly from what they showed
+  rather than jumping. The cover goes once the windows are in place, or 600ms after its steps.
+  Moved step by step instead, apps laid themselves out again at every step, and slow ones
+  jerked. Without the system's animations, or where a window has no thumbnail (no desktop
+  composition, as on the tests' hidden desktop), there is no cover and the windows are placed
+  as before. A ratio, a swap or the focus do not animate.
 - Right-click tab B while A is shown, then Split in group, then side by side or stacked. A takes
   the left or top pane, B the right or bottom one, focus goes to B, and the ratio is 50:50.
   Both items are disabled on the tab that is shown.

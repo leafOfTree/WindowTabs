@@ -495,6 +495,97 @@ type EmptySplitPane(actions:EmptyPaneActions) =
                 window.insertAfter(below)
         else this.Hide()
 
+/// One window's way while a split starts, on screen: from where it is seen to its pane, its
+/// visible frame `border` in from its outer one on each side, fading in when it comes from
+/// outside the split.
+type SplitMove = { hwnd:IntPtr; from:Rect; target:Rect; fadeIn:bool; border:Pt; borderSize:Sz }
+
+/// A split starting moves its windows smoothly rather than at once: over the group, live images
+/// of them (DWM thumbnails) go from where they were to their panes with an ease-out, while the
+/// windows themselves are placed underneath. Moved step by step instead, apps laid themselves
+/// out again at every step, and slow ones jerked. Each image shows its window 1:1 from the top
+/// left, cut to its rectangle, so nothing is stretched; where a window is smaller than its
+/// rectangle for a moment, the theme's surface shows, as behind the panes. It closes once the
+/// group says the windows are in place, or after a while.
+type SplitTransition(frame:Rect, moves:SplitMove list) =
+    inherit SplitChromeForm()
+    let durationMs = float SplitTransition.DurationMs
+    /// How long the last step waits for the windows to be in place.
+    let holdMs = 600.0
+    let clock = Diagnostics.Stopwatch()
+    let mutable thumbs : (SplitMove * IntPtr) list = []
+    let mutable timer : Timer option = None
+    let mutable settled = false
+    let mutable closed = false
+    override _.CreateParams =
+        let cp = base.CreateParams
+        // Over the apps for its moment; the pointer goes through to them.
+        cp.ExStyle <- cp.ExStyle ||| WindowsExtendedStyles.WS_EX_TOPMOST ||| WindowsExtendedStyles.WS_EX_TRANSPARENT
+        cp
+    member private this.place(t:float) =
+        let eased = 1.0-(1.0-t)*(1.0-t)*(1.0-t)
+        let between (a:int) (b:int) = a+int(Math.Round(float(b-a)*eased))
+        for move,thumb in thumbs do
+            let left,top = between move.from.left move.target.left,between move.from.top move.target.top
+            let right,bottom = between move.from.right move.target.right,between move.from.bottom move.target.bottom
+            // Never more of the window than it has: its visible size now.
+            let source = OS().windowFromHwnd(move.hwnd).bounds
+            let width = max 0 (min (right-left) (source.width-move.borderSize.width))
+            let height = max 0 (min (bottom-top) (source.height-move.borderSize.height))
+            let mutable props = DWM_THUMBNAIL_PROPERTIES()
+            props.dwFlags <- DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_RECTDESTINATION ||| DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_RECTSOURCE |||
+                             DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_OPACITY ||| DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_VISIBLE
+            props.rcDestination <- RECT.FromRectangle(Rectangle(left-frame.left,top-frame.top,width,height))
+            props.rcSource <- RECT.FromRectangle(Rectangle(move.border.x,move.border.y,width,height))
+            props.opacity <- byte(if move.fadeIn then int(Math.Round(255.0*eased)) else 255)
+            props.fVisible <- if width>0 && height>0 then 1 else 0
+            DwmApi.DwmUpdateThumbnailProperties(thumb,&props) |> ignore
+    /// How long the images take to move, in milliseconds.
+    static member DurationMs = 220
+    /// Shown with every image at its start, so the first frame looks as the windows did. False
+    /// when there was nothing to show.
+    member this.start() : bool =
+        this.BackColor <- (SettingsColors.current()).surface
+        // Layered, as a click goes through only a layered window: all but opaque.
+        this.Opacity <- 0.999
+        this.Bounds <- frame.Rectangle
+        thumbs <- moves |> List.choose(fun move ->
+            let mutable thumb = IntPtr.Zero
+            if DwmApi.DwmRegisterThumbnail(this.Handle,move.hwnd,&thumb)=0 then Some(move,thumb) else None)
+        // Without an image of every window, as with no desktop composition, there is nothing
+        // to move: the windows are placed as they always were, with no blank cover over them.
+        if thumbs.Length<moves.Length then
+            this.close()
+            false
+        else
+            this.place 0.0
+            this.Show()
+            clock.Restart()
+            let tick = new Timer(Interval=15)
+            tick.Tick.Add(fun _ ->
+                let elapsed = clock.Elapsed.TotalMilliseconds
+                if elapsed<durationMs then this.place(elapsed/durationMs)
+                else
+                    this.place 1.0
+                    if settled || elapsed>=durationMs+holdMs then this.close())
+            timer <- Some tick
+            tick.Start()
+            true
+    /// The windows are in place: it closes once its own steps are done.
+    member this.settle() =
+        settled <- true
+        if not closed && clock.Elapsed.TotalMilliseconds>=durationMs then this.close()
+    member this.close() =
+        if not closed then
+            closed <- true
+            timer |> Option.iter(fun tick -> tick.Stop(); tick.Dispose())
+            timer <- None
+            for _,thumb in thumbs do DwmApi.DwmUnregisterThumbnail(thumb) |> ignore
+            thumbs <- []
+            this.Hide()
+            // Not inside its own timer's tick.
+            this.BeginInvoke(Action(fun () -> this.Dispose())) |> ignore
+
 /// A plain window the colour of the theme's surface, behind every pane and over the tabs behind
 /// them. An app that paints less than its frame, with a clear resize margin inside it as
 /// frameless Electron windows have, or one still catching up with a new size, shows this at

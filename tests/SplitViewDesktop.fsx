@@ -442,6 +442,25 @@ let main() =
         // no message, and the panes do not shrink step by step chasing its rounding.
         onGroup(fun group -> group.execute(EndSplit None))
         waitOperation()
+        // A window coming into a split moves in smoothly: for a moment a cover over the group
+        // moves the windows' images to their panes, and goes once the windows are in place.
+        do
+            let frame = onGroup(fun group -> group.layoutFrame)
+            let pid = Process.GetCurrentProcess().Id
+            let covers () =
+                os.windowsInZorder.list |> List.exists(fun window ->
+                    let mutable owner = 0
+                    WinUserApi.GetWindowThreadProcessId(window.hwnd,&owner) |> ignore
+                    owner=pid && window.isVisible && window.bounds=frame &&
+                    (WinUserApi.GetWindowLong(window.hwnd,WindowLongFieldOffset.GWL_EXSTYLE).ToInt64() &&& int64 WindowsExtendedStyles.WS_EX_TOPMOST)<>0L)
+            onGroup(fun group -> group.execute(SplitWith(hc,SideBySide),current=ha))
+            check (covers()) "No cover moved the windows into the new split"
+            let gone = timeUntil 3000 (fun () -> not(covers()))
+            printfn "METRIC split-transition cover-gone-after=%A" gone
+            check gone.IsSome "The cover over a new split stayed after its windows were in place"
+            waitOperation()
+            onGroup(fun group -> group.execute(EndSplit None))
+            waitOperation()
         onHelper(fun () -> a.Grid <- 17)
         onGroup(fun group -> group.execute(SplitWith(hc,SideBySide),current=ha))
         pump 3000

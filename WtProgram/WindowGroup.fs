@@ -300,6 +300,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// The least size of each pane's window, read once per command: asking a window is a call
     /// into its process.
     let mutable paneLeastCache : Map<IntPtr,Sz> = Map.empty
+    /// The images moving the windows of a split just started, until they are in place.
+    let mutable splitTransition : SplitTransition option = None
+    /// Windows already in the split before it changed: placed once the images have moved, so
+    /// their image shrinks smoothly from what they showed rather than jumping to their new size.
+    let mutable transitionHold : IntPtr list = []
     /// The empty panes' handles, read by the desktop thread to recognize a native drop on one.
     let mutable emptyPaneHandles : IntPtr list = []
     /// The root split's divider, which the panes go just below.
@@ -1259,7 +1264,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     if pane target.hwnd && Some target.hwnd<>front then Some(front |> Option.defaultValue this.paneAnchor)
                     elif not(pane target.hwnd) && target.below.IsSome then Some behind
                     else target.below
-                if wanted && not(isMinimized target.hwnd) && moving<>Some target.hwnd then
+                if wanted && not(isMinimized target.hwnd) && moving<>Some target.hwnd && not(List.contains target.hwnd transitionHold) then
                     FollowerPlacement.queue.submit(placementOwner,target.hwnd,FollowerPlacement.alignFrameRequest target.hwnd target.rect target.rect wp below)
             if not splitPending then splitDeadline <- transitionClock.ElapsedMilliseconds+int64 SplitMetrics.settleMs
             splitPending <- true
@@ -1302,10 +1307,70 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         | _ -> true
 
     /// Windows that never take their pane leave the split, with a word to the user.
+    /// A window comes into the split: each window's image moves from where it is seen to its
+    /// pane, the one coming in sliding from its side and fading in, while the windows are placed
+    /// underneath. Not for a ratio, a swap or the focus, nor without the system's animations.
+    member private this.beginTransition(before:GroupLayout, next:GroupLayout, current:IntPtr) =
+        match next with
+        | Split s when SystemInformation.UIEffectsEnabled && not liveResize && not this.isEmpty ->
+            let frame = this.layoutFrame
+            let gap = this.splitGap
+            let paneOf (layout:SplitLayout) hwnd = SplitView.pathOf hwnd layout |> Option.bind(SplitGeometry.paneRect gap frame layout)
+            let was = match before with Split b -> SplitView.windows b | _ -> []
+            let windows = SplitView.windows s |> List.filter(fun hwnd -> this.windows.contains hwnd && not(isMinimized hwnd))
+            // With no split before, the window shown is where it was: it fills the frame.
+            let wasSplit = match before with Split _ -> true | _ -> false
+            let entering = windows |> List.filter(fun hwnd -> not(List.contains hwnd was) && (wasSplit || hwnd<>current))
+            if not entering.IsEmpty then
+                let moves =
+                    windows |> List.choose(fun hwnd ->
+                        paneOf s hwnd |> Option.map(fun target ->
+                            let window = this.os.windowFromHwnd hwnd
+                            let bounds,visible = window.bounds,window.visibleBounds
+                            let fadeIn = List.contains hwnd entering
+                            // In from its side: out past the split's edge by its own length.
+                            let slid () =
+                                let path = (SplitView.pathOf hwnd s).Value
+                                let axis = match SplitTree.node (SplitTree.parent path) (SplitView.root s) with Some(Branch branch) -> branch.axis | _ -> s.tree.axis
+                                let sign = if List.last path=Second then 1 else -1
+                                if axis=SideBySide then target.move(sign*target.width,0) else target.move(0,sign*target.height)
+                            let from =
+                                if fadeIn then slid()
+                                else match before with Split b -> paneOf b hwnd |> Option.defaultValue target | _ -> frame
+                            { hwnd=hwnd; from=from; target=target; fadeIn=fadeIn
+                              border=Pt(visible.x-bounds.x,visible.y-bounds.y)
+                              borderSize=Sz(bounds.width-visible.width,bounds.height-visible.height) }))
+                splitTransition |> Option.iter(fun previous -> this.onChrome(fun () -> previous.close()))
+                let dpi = Dpi.value()
+                let transition,shown = this.chrome.invoke(fun () ->
+                    Dpi.set dpi
+                    let transition = new SplitTransition(frame,moves)
+                    transition,transition.start())
+                splitTransition <- if shown then Some transition else None
+                // The windows that were there wait while their images move; the one coming in
+                // goes to its pane at once, so its image shows it at its new size.
+                transitionHold <- if shown then windows |> List.filter(fun hwnd -> not(List.contains hwnd entering)) else []
+                if shown then
+                    let release = new System.Windows.Forms.Timer(Interval=SplitTransition.DurationMs)
+                    release.Tick.Add(fun _ ->
+                        release.Stop()
+                        release.Dispose()
+                        if not transitionHold.IsEmpty then
+                            transitionHold <- []
+                            if this.isSplit && not isDestroyed.value then this.withUpdate(fun () -> this.applyLayout()))
+                    release.Start()
+        | _ -> ()
+
+    /// The windows are in place: the images close once their steps are done.
+    member private this.settleTransition() =
+        splitTransition |> Option.iter(fun transition -> this.onChrome(fun () -> transition.settle()))
+        splitTransition <- None
+
     member private this.checkSplitSettled() =
         if splitPending && not isDestroyed.value then
             let idle = FollowerPlacement.queue.isIdle(placementOwner)
             if idle && this.panesSettled() then
+                this.settleTransition()
                 splitPending <- false
                 splitSettleTimer.Stop()
                 // Placement restacks the apps' windows; ours, owned by nothing, are put back over them.
@@ -1314,6 +1379,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 // A window that keeps a size of its own, a terminal on its character grid, an app
                 // with a larger minimum, stays where it put itself: the split goes on, with no
                 // message. Ending it here, with a dialog, came up every so often for such apps.
+                this.settleTransition()
                 splitPending <- false
                 splitSettleTimer.Stop()
                 if not this.isEmpty then this.keepPanesBelowStrip(this.topWindow)
@@ -1342,6 +1408,14 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         let before = groupLayout
         if next<>before then
             groupLayout <- next
+            // Out of the split, the images of its start go at once: left until their wait ran
+            // out, they stayed over the group, topmost, in the way of what came next.
+            match next with
+            | Split _ -> ()
+            | _ ->
+                splitTransition |> Option.iter(fun transition -> this.onChrome(fun () -> transition.close()))
+                splitTransition <- None
+                transitionHold <- []
             // A new empty pane opens out over the window first; the window takes its half after,
             // under the pane, so no app is resized frame by frame.
             match before,next with
@@ -1407,6 +1481,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 | _ ->
                     let keep = match command with EndSplit keep -> keep | _ -> None
                     (match command with EndSplit _ -> splitRestore <- None | _ -> ())
+                    this.beginTransition(groupLayout,next,current)
                     this.setLayout(next,?focus=keep)
                     let activate hwnd =
                         if hwnd<>this.os.foreground.hwnd && this.windows.contains hwnd then this.tabActivate(Tab(hwnd),false)
@@ -2021,12 +2096,15 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 let dividers = splitDividers |> Map.toList |> List.map(snd >> fst)
                 let panes = emptySplitPanes |> Map.toList |> List.map(snd >> fst)
                 let backdrop = splitBackdrop
+                let transition = splitTransition
                 invoker.asyncInvoke(fun () ->
+                    transition |> Option.iter(fun window -> window.close(); window.Dispose())
                     for window in dividers do window.Dispose()
                     for window in panes do window.Dispose()
                     backdrop |> Option.iter(fun window -> window.Dispose())
                     System.Windows.Forms.Application.ExitThread()))
             chromeInvoker <- None
+            splitTransition <- None
             splitDividers <- Map.empty
             emptySplitPanes <- Map.empty
             splitBackdrop <- None
