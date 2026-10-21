@@ -332,7 +332,7 @@ let main() =
         check (meet()) "After B's own resize the panes do not meet"
         let divider = onGroup(fun group ->
             let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="splitDividers")
-            (field.GetValue(group) :?> Map<PanePath,SplitDivider>).[[]].Handle)
+            snd (field.GetValue(group) :?> Map<PanePath,SplitDivider * IntPtr>).[[]])
         // At the seam only the bar takes the pointer; either side of it the panes' own resize
         // borders do, so a drag there runs in the app's own loop and paints at every step. A band
         // covering the borders took that away, and every drag at the seam trailed the pointer.
@@ -500,7 +500,7 @@ let main() =
             let taken = WinUserApi.WindowFromPoint grab
             let dividerHere = onOther(fun group ->
                 let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="splitDividers")
-                (field.GetValue(group) :?> Map<PanePath,SplitDivider>).TryFind [] |> Option.map(fun divider -> divider.Handle) |> Option.defaultValue IntPtr.Zero)
+                (field.GetValue(group) :?> Map<PanePath,SplitDivider * IntPtr>).TryFind [] |> Option.map snd |> Option.defaultValue IntPtr.Zero)
             check (zIndex pane < zIndex hx && (taken=pane || taken=dividerHere))
                   (sprintf "The empty pane's edge is under the other process's window: pane=%d other=%d, pointer on %A" (zIndex pane) (zIndex hx) taken)
             drag "cross-process-inner-edge" (rect.left+Dpi.scale 5) (rect.y+rect.height/2) (-160) 0 16 (fun () -> bounds pane) besideOther
@@ -525,7 +525,7 @@ let main() =
                 check (meet()) (sprintf "The second process's window did not take the pane: %A %A" (visible hx) (visible hy))
                 let divider = onOther(fun group ->
                     let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="splitDividers")
-                    (field.GetValue(group) :?> Map<PanePath,SplitDivider>).[[]].Handle)
+                    snd (field.GetValue(group) :?> Map<PanePath,SplitDivider * IntPtr>).[[]])
                 let app = visible hy
                 click (app.x+app.width/2) (app.y+app.height/2)
                 settle()

@@ -341,10 +341,11 @@ let main() =
                 check (attempts>=2 && not(onGroup fixture (fun _ -> plugin.isAwaitingDesktopPlacement)))
                       "Successful desktop placement retained a retry timer"
                 let failedStart = attempts
+                let secondHandle = second.Handle
                 onGroup fixture (fun group ->
                     placeSucceeded <- false
-                    group.removeWindow second.Handle
-                    group.addWindow(second.Handle,false))
+                    group.removeWindow secondHandle
+                    group.addWindow(secondHandle,false))
                 pumpUntil "Failed placement did not reach its attempt limit" (fun () ->
                     attempts-failedStart=3 && not(onGroup fixture (fun _ -> plugin.isAwaitingDesktopPlacement)))
                 onGroup fixture (fun _ ->

@@ -511,7 +511,7 @@ let main() =
                     do
                         let dividers (group:WindowGroup) =
                             let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="splitDividers")
-                            (field.GetValue(group) :?> Map<PanePath,SplitDivider>).Count
+                            (field.GetValue(group) :?> Map<PanePath,SplitDivider * IntPtr>).Count
                         onHelper(fun () -> forms.[2].Pinned <- false; forms.[2].Show())
                         onGroup(fun group -> group.addWindow(third,false))
                         waitOperation()

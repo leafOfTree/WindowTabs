@@ -26,6 +26,10 @@ hosts are excluded. HTML, Cobertura and a text summary are generated under
 `tests/coverage/<run-id>/report`. F# sequence points, branches and generated code
 mean that line percentages and AltCover's sequence-point percentages differ.
 
+With `WINDOWTABS_CHECK_THREADS=1` set, the suites and the app refuse a control touched
+from a thread not its own, as WinForms does under a debugger; the suites pass with it, and a
+run with it finds what a debugging session would stop at.
+
 Each suite is still a standalone STA executable, not an individual test-case
 runner. `tests/Debug/test-results.jsonl` records suite attempts and exit codes.
 Process failures are not retried. A zero exit code also requires the final

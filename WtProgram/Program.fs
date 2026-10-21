@@ -898,6 +898,9 @@ module Bootstrap =
                 0
             else
                 Application.EnableVisualStyles()
+                // As under a debugger: WinForms then refuses a control touched from a thread not its
+                // own, so a run outside the debugger can find what the debugger would stop at.
+                if Environment.GetEnvironmentVariable("WINDOWTABS_CHECK_THREADS")="1" then Control.CheckForIllegalCrossThreadCalls <- true
                 use lifetime = new LifetimeScope(fun error -> logger.log "Shutdown" error)
                 let program = StartupTrace.measure "program.initialize" (fun () -> Program(lifetime))
                 program.claimRunAtStartup()

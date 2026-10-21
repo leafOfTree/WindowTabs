@@ -275,7 +275,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// Looks, while split, for a pane raised over the tabs with no notice to the group.
     let splitGuardTimer = new System.Windows.Forms.Timer(Interval=200)
     /// One divider per split and one window per empty pane, by their place in the layout.
-    let mutable splitDividers : Map<PanePath,SplitDivider> = Map.empty
+    let mutable splitDividers : Map<PanePath,SplitDivider * IntPtr> = Map.empty
     let mutable emptySplitPanes : Map<PanePath,EmptySplitPane * IntPtr> = Map.empty
     /// The empty panes' handles, read by the desktop thread to recognize a native drop on one.
     let mutable emptyPaneHandles : IntPtr list = []
@@ -951,25 +951,26 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             // One divider per split, by its place; splits gone lose theirs. The root's stays for
             // the next split, as the panes are placed just below it.
             let seams = SplitGeometry.seams gap frame (SplitView.root s) []
-            for KeyValue(path,divider) in splitDividers do
+            for KeyValue(path,(divider,_)) in splitDividers do
                 if not path.IsEmpty && not(seams |> List.exists(fun (at,_,_,_) -> at=path)) then
                     splitDividers <- splitDividers.Remove path
                     this.onChrome(fun () -> divider.Dispose())
             let execute command = this.fromChrome(fun () -> this.execute command)
             let live active = this.fromChrome(fun () -> if active then this.beginLive() else this.endLive())
             for path,branch,splitFrame,_ in seams do
+                // A handle is read on its window's own thread: read from here, the control refuses
+                // under a debugger, as the thread is not its own.
                 let divider =
                     match splitDividers.TryFind path with
-                    | Some divider -> divider
+                    | Some(divider,_) -> divider
                     | None ->
-                        let divider = this.chrome.invoke(fun () ->
+                        let divider,handle = this.chrome.invoke(fun () ->
                             Dpi.set dpi
                             let divider = new SplitDivider(execute,live)
                             divider.initialize()
-                            divider.Handle |> ignore
-                            divider)
-                        if path.IsEmpty then System.Threading.Volatile.Write(&dividerHandle,divider.Handle)
-                        splitDividers <- splitDividers.Add(path,divider)
+                            divider,divider.Handle)
+                        if path.IsEmpty then System.Threading.Volatile.Write(&dividerHandle,handle)
+                        splitDividers <- splitDividers.Add(path,(divider,handle))
                         divider
                 // While a divider is dragged it places the panes of its split itself, straight into
                 // the placement queue from its own thread. Sent through this thread, a ratio waited
@@ -996,14 +997,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 match splitBackdrop with
                 | Some backdrop -> backdrop
                 | None ->
-                    let backdrop = this.chrome.invoke(fun () ->
+                    let backdrop,handle = this.chrome.invoke(fun () ->
                         Dpi.set dpi
                         let backdrop = new SplitBackdrop()
-                        backdrop.Handle |> ignore
-                        backdrop)
-                    System.Threading.Volatile.Write(&backdropHandle,backdrop.Handle)
+                        backdrop,backdrop.Handle)
+                    System.Threading.Volatile.Write(&backdropHandle,handle)
                     splitBackdrop <- Some backdrop
-                    emptyPaneChangedEvent.Trigger(IntPtr.Zero,backdrop.Handle)
+                    emptyPaneChangedEvent.Trigger(IntPtr.Zero,handle)
                     backdrop
             let lowestPane =
                 SplitView.windows s |> List.filter(fun hwnd -> this.windows.contains hwnd && not(isMinimized hwnd))
@@ -1030,21 +1030,20 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                             resizeStarted = (fun () -> this.fromChrome(fun () -> at() |> Option.iter this.beginEmptyPaneResize))
                             resized = (fun bounds -> this.fromChrome(fun () -> this.resizeEmptyPane bounds))
                             resizeEnded = (fun () -> this.fromChrome(fun () -> this.endEmptyPaneResize())) }
-                        let pane = this.chrome.invoke(fun () ->
+                        let pane,handle = this.chrome.invoke(fun () ->
                             Dpi.set dpi
                             let pane = new EmptySplitPane(actions)
                             pane.initialize()
-                            pane.Handle |> ignore
-                            pane)
+                            pane,pane.Handle)
                         created.Value <- Some pane
-                        emptySplitPanes <- emptySplitPanes.Add(path,(pane,pane.Handle))
-                        this.addEmptyPaneHandle pane.Handle
+                        emptySplitPanes <- emptySplitPanes.Add(path,(pane,handle))
+                        this.addEmptyPaneHandle handle
                         pane
                 // Below the strip and its split's divider, so tabs shown inside the title bars cover
                 // its top as they do a window's. Its own drag keeps it on screen while the move-size
                 // puts the rest away.
                 let below =
-                    if dividerVisible then splitDividers.TryFind(SplitTree.parent path) |> Option.map(fun divider -> divider.Handle) |> Option.defaultValue strip
+                    if dividerVisible then splitDividers.TryFind(SplitTree.parent path) |> Option.map snd |> Option.defaultValue strip
                     else strip
                 // A sliver at its split's edge on its side, to open out from: from the right or the
                 // bottom for a second pane, the left or the top for a first.
@@ -1060,7 +1059,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 this.onChrome(fun () -> if not pane.IsDisposed then pane.update(rect,below,shown,from))
         | _ ->
             dividerShown <- false
-            for KeyValue(_,divider) in splitDividers do this.onChrome(fun () -> if not divider.IsDisposed then divider.Hide())
+            for KeyValue(_,(divider,_)) in splitDividers do this.onChrome(fun () -> if not divider.IsDisposed then divider.Hide())
             splitBackdrop |> Option.iter(fun backdrop -> this.onChrome(fun () -> if not backdrop.IsDisposed then backdrop.Hide()))
             this.disposeEmptyPanes()
 
@@ -1939,7 +1938,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             splitGuardTimer.Dispose()
             // The chrome's thread disposes its windows and ends; nothing here waits for it.
             chromeInvoker |> Option.iter(fun invoker ->
-                let dividers = splitDividers |> Map.toList |> List.map snd
+                let dividers = splitDividers |> Map.toList |> List.map(snd >> fst)
                 let panes = emptySplitPanes |> Map.toList |> List.map(snd >> fst)
                 let backdrop = splitBackdrop
                 invoker.asyncInvoke(fun () ->
