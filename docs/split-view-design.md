@@ -84,7 +84,9 @@ the tree's simplest case and keep their behaviour.
   parks the panes; choosing any pane's tab again restores the whole tree, the directions, the
   ratios and any empty pane. Shortcuts, tab search and taskbar activation follow the same rule.
   A tab chosen from outside the panes comes to the front before they are parked, so no tab
-  behind shows over it while the windows are re-placed, and the strip stays over it.
+  behind shows over it while the windows are re-placed, and the strip stays over it. A window
+  joining with the focus, as a tab dragged onto the strip has from its drag, parks the panes
+  the same way: placed as a tab behind, it waited under the panes with the focus.
 - Dividers: one per split, each dragged for its own ratio, double-clicked to return that split
   to 50:50, right-clicked for the same menu as the seam button, acting on that split. The 4px
   bar shows only when hovered or dragged, and only the bar

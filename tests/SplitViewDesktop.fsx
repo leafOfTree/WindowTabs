@@ -567,6 +567,35 @@ let main() =
                     check (caught |> Option.exists(fun ms -> ms<150.0)) (sprintf "Dragged fast, the divider reached the pointer only after %A ms" caught)
                     settle()
                     check (meet()) "After a fast divider drag the panes do not meet"
+                // A window joining with the focus, as a tab dragged here has from its drag, from
+                // outside the panes parks them and fills the group, as choosing its tab does. Placed
+                // as a tab behind, it waited under the panes with the focus.
+                do
+                    onGroup(fun group -> group.removeWindow hc)
+                    settle()
+                    // Below the panes, where nothing of either group lies, so the click reaches it.
+                    let spot = Rect(Pt(frame.X,frame.Bottom+10),Sz(300,140))
+                    let joining = os.windowFromHwnd(hc)
+                    joining.showWindow(ShowWindowCommands.SW_SHOWNORMAL)
+                    joining.move(spot)
+                    joining.raise()
+                    pump 100
+                    click (spot.x+spot.width/2) (spot.y+spot.height/2)
+                    pumpUntil (sprintf "The joining window did not take the focus: visible=%b minimized=%b at %A z=%d, foreground %A" (WinUserApi.IsWindowVisible hc) joining.isMinimized (visible hc) (zIndex hc) (WinUserApi.GetForegroundWindow()))
+                        (fun () -> WinUserApi.GetForegroundWindow()=hc)
+                    let otherFrame = onOther(fun group -> group.layoutFrame)
+                    (other :> IGroup).addWindow(hc,false)
+                    pumpUntil "The joining window did not join" (fun () -> onOther(fun group -> group.windows.contains hc))
+                    settle()
+                    check (onOther(fun group -> (match group.layout with Parked _ -> true | _ -> false) && group.topWindow=hc))
+                          (sprintf "A window joining with the focus did not park the panes: %A" (onOther(fun group -> group.layout)))
+                    check (visible hc=otherFrame && zIndex hc < zIndex hx && zIndex hc < zIndex hy)
+                          (sprintf "The joining window is not shown over the panes at the group's frame: %A, frame %A" (visible hc) otherFrame)
+                    onOther(fun group -> group.removeWindow hc)
+                    settle()
+                    onOther(fun group -> group.execute FocusOther)
+                    settle()
+                    check (meet()) "The panes did not come back after the joined window left"
                 onOther(fun group -> group.removeWindow hy)
                 settle()
             finally

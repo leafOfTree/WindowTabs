@@ -1827,6 +1827,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if foreground=hwnd then
                 opener <- lastActiveTab |> Option.filter(fun owner -> owner<>hwnd && this.windows.contains(owner) && isOpen owner) |> Option.map(fun owner -> hwnd,owner)
             lastActiveTab <- TabNavigation.rememberActive this.lorder.list isOpen lastActiveTab foreground
+            // Joining with the focus, as a tab dragged here has from its drag, a window from outside
+            // the panes parks them, as choosing it does: placed as a tab behind, it waited under the
+            // panes with the focus. A pane coming back with its place saved is put among them.
+            if foreground=hwnd && this.isSplit && (WindowSplitLayout.read hwnd).IsNone then
+                this.onActivated(hwnd)
+                this.setZorder(zorderCell.value.where((<>) hwnd).prepend hwnd)
             StartupTrace.measure "group.add.placement" (fun () -> this.adjustWindowPlacement(hwnd))
             if hasSavedTabLayout then WindowTabLayout.save hwnd this.tabLayout
             this.restoreSplitProps(hwnd)
