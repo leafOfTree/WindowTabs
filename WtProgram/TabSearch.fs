@@ -186,12 +186,9 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let items =
         tabs |> List.map(fun entry ->
             let item = TreeListItem(entry.title,Values=[|"";TabSearch.source entry|])
-            // A row for no window, such as the empty pane a split may take, shows a plus.
-            if entry.hwnd=IntPtr.Zero then item.Glyph <- AddGlyph
-            else
-                match ImgHelper.windowIcon (OS().windowFromHwnd entry.hwnd) with
-                | Some icon -> item.Icon <- icon
-                | None -> item.Glyph <- WindowGlyph
+            match ImgHelper.windowIcon (OS().windowFromHwnd entry.hwnd) with
+            | Some icon -> item.Icon <- icon
+            | None -> item.Glyph <- WindowGlyph
             item,entry) |> Array.ofList
     let groupItems = items |> Array.filter(fun (_,entry) -> List.contains entry.hwnd group)
     let preferred =

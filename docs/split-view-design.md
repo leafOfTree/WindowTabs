@@ -37,9 +37,7 @@ the tree's simplest case and keep their behaviour.
   that side of the clicked tab, its pane split when the group is split already
   (`WindowGroup.placeBeside`; a window from elsewhere is handed over through
   `IDesktop.adoptBeside`). Esc leaves the group as it was. Chosen first, the window needs no
-  empty pane to wait in, so the menu no longer opens one; the list's first row, set apart by a
-  divider, still offers one on that side, the left too (`EmptyBeside`), for a window to be put
-  in later. Enter with nothing typed takes the first window, not that row.
+  empty pane to wait in, so the menu no longer opens one.
 - The new empty pane on the right or below, from its shortcuts. The empty pane has a 1px
   frame in Explorer's colours, a dashed drop box, an "or" line and a "Choose window…" button,
   and a close button at the top right that ends the empty split; Esc does the same while a tab

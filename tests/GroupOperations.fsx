@@ -685,15 +685,6 @@ let main() =
                         check (onGroup(fun group -> group.emptyPaneHwnds.IsEmpty)) "Choosing a window first left an empty pane"
                         onGroup(fun group -> group.execute(EndSplit(Some shown)))
                         waitOperation()
-                        // The list's empty pane, chosen instead of a window, opens on the side asked
-                        // for, the left too, for a window to be put in later.
-                        onGroup(fun group -> group.placeBeside(shown,IntPtr.Zero,SideBySide,First))
-                        waitSplit()
-                        check (onGroup(fun group -> group.splitLayout |> Option.exists(fun s -> s.tree.first=Leaf Empty && s.tree.second=Leaf(Occupied shown))))
-                              (sprintf "An empty pane chosen for the left did not open there: %A" (onGroup(fun group -> group.layout)))
-                        pumpUntil(fun () -> onGroup(fun group -> not group.emptyPaneHwnds.IsEmpty))
-                        onGroup(fun group -> group.execute(EndSplit(Some shown)))
-                        waitOperation()
                     let dragOf (group:WindowGroup) hwnd = box {tab=Tab(hwnd);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(source));tabShift=0;tabAlignment=TabLeft}
                     // A tab from another group splits at an edge too, beside the tab shown.
                     let foreign = handles.[2]

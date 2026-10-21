@@ -7,7 +7,7 @@ open System.Windows.Forms
 /// sorted by app and then title with a divider between apps; type to filter, and Enter or a
 /// click puts the window there.
 type SplitPanePicker() =
-    let open' (within:Rectangle) windows (empty:string option) choose =
+    let open' (within:Rectangle) windows choose =
         let key (text:string) = text.ToLowerInvariant()
         let sorted =
             windows
@@ -18,12 +18,6 @@ type SplitPanePicker() =
         let apps = sorted |> List.map(fun entry -> key entry.program) |> List.distinct
         let entries = sorted |> List.mapi(fun index entry ->
                         { entry with group=List.findIndex ((=) (key entry.program)) apps; recency=index })
-        // The empty pane first, a group of its own so a divider sets it apart from the windows;
-        // used least recently of all, so Enter with nothing typed still takes the first window.
-        let entries =
-            match empty with
-            | Some name -> { TabSearch.create IntPtr.Zero name name "" with group= -1; recency=Int32.MaxValue }::entries
-            | None -> entries
         // Half the screen wide and most of its height, so most windows can be picked without
         // scrolling; the box and scope line above the rows take about two rows.
         let area = Screen.FromRectangle(within).WorkingArea
@@ -33,5 +27,5 @@ type SplitPanePicker() =
                                    rows=rows,width=width)
         search.Show()
     interface ISplitPanePicker with
-        member _.show(owner,_,windows,choose) = open' (owner.RectangleToScreen(owner.ClientRectangle)) windows None choose
-        member _.showWithin(within,windows,empty,choose) = open' within windows empty choose
+        member _.show(owner,_,windows,choose) = open' (owner.RectangleToScreen(owner.ClientRectangle)) windows choose
+        member _.showWithin(within,windows,choose) = open' within windows choose

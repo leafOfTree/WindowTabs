@@ -1140,21 +1140,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// to take it, or, with no split, the tab and the window share the group. A tab of this
     /// group goes straight in; any other window is handed over by the desktop first. Chosen
     /// first, the window needs no empty pane to wait in.
-    /// No window chosen (IntPtr.Zero) leaves an empty pane there, for a window to be put in later.
     member this.placeBeside(beside:IntPtr, chosen:IntPtr, axis:SplitAxis, side:Side) =
-        let empty = chosen=IntPtr.Zero
-        if this.windows.contains beside && chosen<>beside && (empty || WinUserApi.IsWindow chosen) && not isDestroyed.value then
+        if this.windows.contains beside && chosen<>beside && WinUserApi.IsWindow chosen && not isDestroyed.value then
             let path =
                 match groupLayout with
                 | Split s -> SplitView.pathOf beside s |> Option.defaultValue []
                 | _ -> []
             // Beside the tab asked for: with no split, it is the one shown, which the drop pairs with.
             if not this.isSplit && this.topWindow<>beside then this.tabActivate(Tab beside,false)
-            if empty then this.execute(EmptyBeside(beside,axis,side),current=beside)
-            else
-                let drop = SplitAt(path,axis,side)
-                if this.windows.contains chosen then this.dropTab(chosen,drop,beside)
-                else Services.desktop.adoptBeside(this.ts.hwnd,chosen,drop,beside)
+            let drop = SplitAt(path,axis,side)
+            if this.windows.contains chosen then this.dropTab(chosen,drop,beside)
+            else Services.desktop.adoptBeside(this.ts.hwnd,chosen,drop,beside)
 
     /// What the list for a split offers: every window on this desktop but the tab it goes beside.
     member this.splitCandidates(beside:IntPtr) =

@@ -213,11 +213,6 @@ let main() =
     check (apply c (FillPane(c,[Second])) (Parked(pair (Occupied a) Empty SideBySide First))=Split(pair (Occupied a) (Occupied c) SideBySide Second)) "Filling while parked did not show the panes"
     check (apply c (SplitWith(d,Stacked)) parked=Split(pair (Occupied c) (Occupied d) Stacked Second)) "A new split while parked did not discard the parked panes"
     check (apply c (NewEmptyPane SideBySide) parked=Split(pair (Occupied c) Empty SideBySide First)) "An empty pane while parked did not discard the parked panes"
-    // An empty pane on any side of a window, chosen in place of one from the list.
-    check (apply c (EmptyBeside(c,SideBySide,First)) Single=Split(pair Empty (Occupied c) SideBySide Second)) "An empty pane on the left of a single window did not open there"
-    check (apply b (EmptyBeside(b,Stacked,Second)) split=Split {tree={half.tree with second=Branch {axis=Stacked;ratio=0.5;first=occupied b;second=Leaf Empty}};focused=[Second;First]})
-          "An empty pane below a pane did not split that pane"
-    check (apply c (EmptyBeside(c,SideBySide,Second)) split=split) "An empty pane beside a window outside the panes changed them"
     check (apply c (DropInto(d,[],SideBySide,First)) parked=Split {tree={axis=SideBySide;ratio=0.5;first=occupied d;second=occupied c};focused=[First]}) "A drop beside the window shown while parked did not split it and let the parked panes go"
     check (apply c (DropInto(d,[Second],Stacked,Second)) parked=Split {tree={axis=Stacked;ratio=0.5;first=occupied c;second=occupied d};focused=[Second]}) "A drop while parked aimed at a parked pane"
     check (apply c (Swap None) parked=Parked(pair (Occupied b) (Occupied a) SideBySide First)) "Swap while parked did not stay parked"
