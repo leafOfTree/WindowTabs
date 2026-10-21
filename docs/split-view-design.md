@@ -70,7 +70,8 @@ the tree's simplest case and keep their behaviour.
   over a pane, the pane lights up and the tab's image stays with the pointer. A group with one
   tab can do this too.
 - Drag a tab to the left, right, top or bottom edge of a group's window: a half-window preview
-  appears, a clear tint with its edge drawn. No words go with it: the place lit up says what
+  fades in, a clear tint with its edge drawn, glides to the next place as the aim moves and fades
+  out when it goes (120ms each). No words go with it: the place lit up says what
   letting go does, and a label beside the dragged tab added little to it. The dragged image shows the
   window at half the size it would land at (`DragImage.windowScale`), a little see-through
   (`DragImage.windowOpacity`), and the tab solid and at full size, placed over that half-size

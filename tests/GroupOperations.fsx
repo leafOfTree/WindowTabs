@@ -539,6 +539,23 @@ let main() =
                         check (group.splitLayout.Value.tree.first=Leaf(Occupied partner)) "Dragging a pane to the opposite edge did not swap it")
                     waitSplit()
                     waitOperation()
+                    // The drop preview fades out rather than vanishing, and is gone once it has.
+                    do
+                        let previewShown () = onGroup(fun group ->
+                            let decorator = decoratorOf group
+                            let field = decorator.GetType().GetFields(flags) |> Array.find(fun field -> field.Name="layoutPreview")
+                            match field.GetValue(decorator) with
+                            | null -> false
+                            | value -> (value.GetType().GetProperty("Value").GetValue(value) :?> Form).Visible)
+                        onGroup(fun group ->
+                            let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft}
+                            let frame = group.layoutFrame
+                            check ((decoratorOf group).preview(drag,Pt(frame.left+2,frame.y+frame.height/2))) "A drop preview did not show")
+                        check (previewShown()) "A drop preview was not visible"
+                        onGroup(fun group -> (decoratorOf group).clearPreview())
+                        if SystemInformation.UIEffectsEnabled then check (previewShown()) "The drop preview vanished at once rather than fading out"
+                        pumpUntil(fun () -> not(previewShown()))
+                        check (not(previewShown())) "The drop preview stayed after its fade"
                     // A third tab dropped at a pane's edge splits that pane again: three panes at their
                     // rectangles, a divider per split, the tabs in layout order; closed, the pane gives
                     // its room back to its neighbour.

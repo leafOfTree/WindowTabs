@@ -7,29 +7,86 @@ open Bemo.Win32.Forms
 
 /// Where a dragged tab would go: a clear tint over that place, its edge drawn. Per-pixel
 /// layered, so the tint is see-through; the pointer passes through it to the window beneath.
+/// It fades in, glides to a new place as the aim moves, and fades out, rather than jumping.
 type private LayoutPreview() =
     inherit Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual)
-    let mutable drawn : Rectangle option = None
+    /// How long a fade or a glide takes, in milliseconds.
+    let durationMs = 120.0
+    let clock = Stopwatch()
+    let ticker = new Timer(Interval=15)
+    /// Where it is drawn and how opaque; where it goes and how opaque it ends, and from where.
+    let mutable shown,alpha = Rectangle.Empty,0.0
+    let mutable fromRect,fromAlpha = Rectangle.Empty,0.0
+    let mutable toRect,toAlpha = Rectangle.Empty,0.0
+    let mutable drawn : (Rectangle * byte) option = None
+    let mutable ticking = false
     override _.ShowWithoutActivation = true
     override _.CreateParams =
         let cp = base.CreateParams
         cp.ExStyle <- cp.ExStyle ||| 0x08000000 ||| 0x80 ||| 0x20 ||| WindowsExtendedStyles.WS_EX_LAYERED
         cp
-    /// Shows the place; drawn again only when it changed.
-    member this.showAt(bounds:Rectangle, owner:IWin32Window) =
-        if this.Bounds<>bounds then this.Bounds <- bounds
-        if not this.Visible then this.Show(owner)
-        if drawn<>Some bounds && bounds.Width>0 && bounds.Height>0 then
-            drawn <- Some bounds
+    member private this.draw() =
+        let opacity = byte(Math.Round(255.0*alpha))
+        if alpha<=0.0 then
+            ticker.Stop()
+            drawn <- None
+            this.Hide()
+        elif drawn<>Some(shown,opacity) && shown.Width>0 && shown.Height>0 then
+            drawn <- Some(shown,opacity)
             let accent = SettingsColors.current().accent
-            use bitmap = new Bitmap(bounds.Width,bounds.Height,Imaging.PixelFormat.Format32bppArgb)
+            use bitmap = new Bitmap(shown.Width,shown.Height,Imaging.PixelFormat.Format32bppArgb)
             use g = Graphics.FromImage(bitmap)
             use tint = new SolidBrush(Color.FromArgb(70,int accent.R,int accent.G,int accent.B))
-            g.FillRectangle(tint,0,0,bounds.Width,bounds.Height)
+            g.FillRectangle(tint,0,0,shown.Width,shown.Height)
             let edge = max 2 (Dpi.scale 2)
             use pen = new Pen(Color.FromArgb(230,int accent.R,int accent.G,int accent.B),float32 edge)
-            g.DrawRectangle(pen,float32 edge/2.0f,float32 edge/2.0f,float32(bounds.Width-edge),float32(bounds.Height-edge))
-            Win32Helper.UpdateLayeredWindow(this.Handle,this.Location,bitmap,255uy)
+            g.DrawRectangle(pen,float32 edge/2.0f,float32 edge/2.0f,float32(shown.Width-edge),float32(shown.Height-edge))
+            Win32Helper.UpdateLayeredWindow(this.Handle,shown.Location,bitmap,opacity)
+    member private this.step() =
+        let t = min 1.0 (clock.Elapsed.TotalMilliseconds/durationMs)
+        let eased = 1.0-(1.0-t)*(1.0-t)*(1.0-t)
+        let between (a:int) (b:int) = a+int(Math.Round(float(b-a)*eased))
+        shown <- Rectangle.FromLTRB(between fromRect.Left toRect.Left,between fromRect.Top toRect.Top,
+                                    between fromRect.Right toRect.Right,between fromRect.Bottom toRect.Bottom)
+        alpha <- fromAlpha+(toAlpha-fromAlpha)*eased
+        if t>=1.0 then ticker.Stop()
+        this.draw()
+    /// From where it is now to `target` at `opacity`; at once without the system's animations.
+    member private this.animate(target:Rectangle, opacity:float) =
+        if target<>toRect || opacity<>toAlpha then
+            fromRect <- shown
+            fromAlpha <- alpha
+            toRect <- target
+            toAlpha <- opacity
+            if SystemInformation.UIEffectsEnabled then
+                // Hooked up here: a handler naming the form from its constructor made every
+                // member check it was built, those the base constructor calls among them.
+                if not ticking then
+                    ticking <- true
+                    ticker.Tick.Add(fun _ -> this.step())
+                clock.Restart()
+                ticker.Start()
+                this.step()
+            else
+                shown <- target
+                alpha <- opacity
+                this.draw()
+    /// Shows the place: from nothing it fades in there; shown elsewhere, it glides over.
+    member this.showAt(bounds:Rectangle, owner:IWin32Window) =
+        if not this.Visible then
+            shown <- bounds
+            alpha <- 0.0
+            toAlpha <- 0.0
+            drawn <- None
+            this.Bounds <- bounds
+            this.Show(owner)
+        this.animate(bounds,1.0)
+    /// Fades out where it is.
+    member this.fadeOut() =
+        if this.Visible then this.animate(shown,0.0)
+    override this.Dispose(disposing) =
+        if disposing then ticker.Dispose()
+        base.Dispose(disposing)
 
 type TabStripDecorator(group:WindowGroup) as this =
     let os = OS()
@@ -783,12 +840,12 @@ type TabStripDecorator(group:WindowGroup) as this =
             layoutPreview.Value.showAt(bounds.Rectangle,{new IWin32Window with member _.Handle=this.ts.hwnd})
             true
         | None ->
-            layoutPreview |> Option.iter(fun window -> window.Hide())
+            layoutPreview |> Option.iter(fun window -> window.fadeOut())
             false
 
     member private this.resetLayoutDrop() =
         layoutDrop <- None
-        layoutPreview |> Option.iter(fun window -> window.Hide())
+        layoutPreview |> Option.iter(fun window -> window.fadeOut())
 
     /// The strip, when the point lies within `DragRouting.stripMargin` of its tabs in sight.
     member private this.nearTabs(pt:Pt) =
