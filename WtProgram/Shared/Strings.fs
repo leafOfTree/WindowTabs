@@ -362,14 +362,12 @@ module Strings =
         let columnRight = { en="New column on the right"; zh="整组右侧新开一列"; ja="右に新しい列" }
         let rowAbove = { en="New row above"; zh="整组上方新开一行"; ja="上に新しい行" }
         let rowBelow = { en="New row below"; zh="整组下方新开一行"; ja="下に新しい行" }
-        let paneLeft = { en="Split this pane: left"; zh="拆分此窗格：左侧"; ja="このペインを分割: 左" }
-        let paneRight = { en="Split this pane: right"; zh="拆分此窗格：右侧"; ja="このペインを分割: 右" }
-        let paneAbove = { en="Split this pane: above"; zh="拆分此窗格：上方"; ja="このペインを分割: 上" }
-        let paneBelow = { en="Split this pane: below"; zh="拆分此窗格：下方"; ja="このペインを分割: 下" }
-        let windowLeft = { en="Split: left"; zh="分屏：左侧"; ja="分割: 左" }
-        let windowRight = { en="Split: right"; zh="分屏：右侧"; ja="分割: 右" }
-        let windowAbove = { en="Split: above"; zh="分屏：上方"; ja="分割: 上" }
-        let windowBelow = { en="Split: below"; zh="分屏：下方"; ja="分割: 下" }
+        /// Beside the named window, the one shown or the pane under the pointer; without a name,
+        /// the split alone.
+        let leftOf name = if name="" then { en="Split: left"; zh="分屏：左侧"; ja="分割: 左" } else { en=sprintf "Left of %s" name; zh=sprintf "放到 %s 的左侧" name; ja=sprintf "%s の左に" name }
+        let rightOf name = if name="" then { en="Split: right"; zh="分屏：右侧"; ja="分割: 右" } else { en=sprintf "Right of %s" name; zh=sprintf "放到 %s 的右侧" name; ja=sprintf "%s の右に" name }
+        let above name = if name="" then { en="Split: above"; zh="分屏：上方"; ja="分割: 上" } else { en=sprintf "Above %s" name; zh=sprintf "放到 %s 的上方" name; ja=sprintf "%s の上に" name }
+        let below name = if name="" then { en="Split: below"; zh="分屏：下方"; ja="分割: 下" } else { en=sprintf "Below %s" name; zh=sprintf "放到 %s 的下方" name; ja=sprintf "%s の下に" name }
 
     module Session =
         let restoring = { en="Restoring the last session…"; zh="正在恢复上次会话…"; ja="前回のセッションを復元しています…" }

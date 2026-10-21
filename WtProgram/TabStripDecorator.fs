@@ -753,11 +753,12 @@ type TabStripDecorator(group:WindowGroup) as this =
              | Some a,Some b -> a=b
              | _ -> true)
         // At the group's own edge the whole group splits; further in, the pane under the pointer.
-        // Panes parked by the drag's own tab, activated as it was pressed, count as well: the drop
-        // brings them back with the new pane among them.
+        // Panes parked behind the tab shown are out of sight and not aimed at: the drop goes
+        // beside the window shown. (Panes parked by the drag's own tab came back as it left
+        // the strip.)
         let edge() =
             group.bounds.value |> Option.bind(fun bounds ->
-                SplitGeometry.dropAt pt (Dpi.scale SplitMetrics.edgeZone) (Dpi.scale SplitMetrics.outerZone) gap bounds (SplitView.layoutOf group.layout)
+                SplitGeometry.dropAt pt (Dpi.scale SplitMetrics.edgeZone) (Dpi.scale SplitMetrics.outerZone) gap bounds group.splitLayout
                 |> Option.map(fun ((path,axis,side),rect) -> SplitAt(path,axis,side),rect))
         let proposal =
             if not(WinUserApi.IsWindow hwnd) then None
@@ -772,18 +773,29 @@ type TabStripDecorator(group:WindowGroup) as this =
             if layoutPreview.IsNone then layoutPreview <- Some(new LayoutPreview())
             let preview = layoutPreview.Value
             // What letting go here does: a new column or row for the whole group at its edge,
-            // a pane split at the pane's, a split of a single window, or an empty pane filled.
+            // a place beside the window under the pointer, named, or an empty pane filled.
+            let name hwnd =
+                let text = group.ts.tabInfo(Tab hwnd).text
+                if text.Length>40 then text.Substring(0,39).TrimEnd()+"…" else text
+            let beside axis side hwnd =
+                match axis,side with
+                | SideBySide,First -> Strings.Drop.leftOf(name hwnd)
+                | SideBySide,Second -> Strings.Drop.rightOf(name hwnd)
+                | Stacked,First -> Strings.Drop.above(name hwnd)
+                | Stacked,Second -> Strings.Drop.below(name hwnd)
             let label =
                 match drop with
                 | FillEmpty _ -> Strings.Drop.fillEmpty
-                | SplitAt([],SideBySide,First) -> if group.splitLayout.IsSome then Strings.Drop.columnLeft else Strings.Drop.windowLeft
-                | SplitAt([],SideBySide,Second) -> if group.splitLayout.IsSome then Strings.Drop.columnRight else Strings.Drop.windowRight
-                | SplitAt([],Stacked,First) -> if group.splitLayout.IsSome then Strings.Drop.rowAbove else Strings.Drop.windowAbove
-                | SplitAt([],Stacked,Second) -> if group.splitLayout.IsSome then Strings.Drop.rowBelow else Strings.Drop.windowBelow
-                | SplitAt(_,SideBySide,First) -> Strings.Drop.paneLeft
-                | SplitAt(_,SideBySide,Second) -> Strings.Drop.paneRight
-                | SplitAt(_,Stacked,First) -> Strings.Drop.paneAbove
-                | SplitAt(_,Stacked,Second) -> Strings.Drop.paneBelow
+                | SplitAt([],SideBySide,First) when group.splitLayout.IsSome -> Strings.Drop.columnLeft
+                | SplitAt([],SideBySide,Second) when group.splitLayout.IsSome -> Strings.Drop.columnRight
+                | SplitAt([],Stacked,First) when group.splitLayout.IsSome -> Strings.Drop.rowAbove
+                | SplitAt([],Stacked,Second) when group.splitLayout.IsSome -> Strings.Drop.rowBelow
+                | SplitAt(path,axis,side) ->
+                    // A drop at an empty pane's edge fills it rather than splitting it.
+                    match group.splitLayout |> Option.map(SplitView.pane path) with
+                    | None -> beside axis side group.topWindow
+                    | Some(Some(Occupied hwnd)) -> beside axis side hwnd
+                    | Some _ -> Strings.Drop.fillEmpty
             preview.showAt(bounds.Rectangle,tr label,{new IWin32Window with member _.Handle=this.ts.hwnd})
             true
         | None ->

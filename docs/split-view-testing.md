@@ -57,7 +57,9 @@ its tray menu and takes over. A split comes back after a restart as its windows 
    onto it; or use "Choose window…". Resize it by its edges, and close it with its close button,
    or with Esc while the tab beside it is active: that Esc does not reach the app.
 6. Drag a tab to the edges of a group's window, from this group and from another one: a preview
-   shows and letting go splits. While split, drop a third tab at a pane's edge: that pane
+   names the window the drop goes beside and letting go splits. With a third tab shown over
+   the pair, the drop goes beside that tab, not the parked panes, and the pair is let go.
+   While split, drop a third tab at a pane's edge: that pane
    splits again, with a divider of its own and a seam button between every two pane tabs; drop
    it just inside the group's own edge instead and a new column or row spans the group. Drag
    one pane's tab past its neighbour's in the strip: the panes swap. Close the nested pane from

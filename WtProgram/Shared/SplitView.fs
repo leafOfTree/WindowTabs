@@ -515,13 +515,14 @@ module SplitView =
             match SplitTree.insert path axis Second Empty (root s) with
             | Branch tree -> Split {tree=tree;focused=path@[First]}
             | Leaf _ -> layout
-        | DropInto(hwnd,_,axis,side),Single ->
+        | DropInto(hwnd,_,axis,side),(Single | Parked _) ->
+            // Beside the window shown; panes parked behind it are let go, as by any new split.
             if hwnd=current || hwnd=IntPtr.Zero then layout
             else
                 let s = {axis=axis;ratio=0.5;first=Leaf Empty;second=Leaf Empty}
                 let tree = s |> SplitTree.withChild side (Leaf(Occupied hwnd)) |> SplitTree.withChild (Side.other side) (Leaf(Occupied current))
                 Split {tree=tree;focused=[side]}
-        | DropInto(hwnd,target,axis,side),(Split s | Parked s) ->
+        | DropInto(hwnd,target,axis,side),Split s ->
             if hwnd=IntPtr.Zero then layout
             else
                 match SplitTree.node target (root s) with
@@ -549,7 +550,7 @@ module SplitView =
                     | Leaf _ -> layout
         | FillPane(hwnd,target),(Split s | Parked s) ->
             match pane target s with
-            | Some Empty -> apply current (DropInto(hwnd,target,s.tree.axis,First)) layout
+            | Some Empty -> apply current (DropInto(hwnd,target,s.tree.axis,First)) (Split s)
             | _ -> layout
         | FocusPane path,(Split s | Parked s) -> if (window path s).IsSome then Split {s with focused=path} else layout
         | FocusToward direction,Split s -> (match toward direction s with Some path -> Split {s with focused=path} | None -> layout)

@@ -655,6 +655,31 @@ let main() =
                     waitSplit()
                     check (onGroup(fun group -> group.splitLayout |> Option.exists(fun s -> s.tree.axis=SideBySide && s.tree.first=Leaf(Occupied shown) && s.tree.second=Leaf(Occupied foreign))))
                           (sprintf "A tab from another group did not take the edge's pane beside the tab shown: %A, shown %A, foreign %A" (onGroup(fun group -> group.layout)) shown foreign)
+                    // With a tab behind chosen over the panes, a drop aims at that tab, the one shown,
+                    // not at the panes parked out of sight: it splits the window shown and lets the
+                    // parked panes go.
+                    do
+                        let behind = onGroup(fun group -> group.windows.items.list |> List.find(fun hwnd -> hwnd<>shown && hwnd<>foreign))
+                        onGroup(fun group -> group.tabActivate(Tab(behind),false))
+                        waitOperation()
+                        check (onGroup(fun group -> (match group.layout with Parked _ -> true | _ -> false) && group.topWindow=behind)) "Choosing the tab behind did not park the panes"
+                        let fourth = handles.[3]
+                        onHelper(fun () -> forms.[3].Pinned <- false; forms.[3].Show())
+                        let leftPoint = onGroup(fun group -> let frame = group.layoutFrame in Pt(frame.left+2,frame.y+frame.height/2))
+                        check (onGroup(fun group -> (decoratorOf group).preview(dragOf group fourth,leftPoint))) "The window shown over parked panes was not offered an edge"
+                        check (onGroup(fun group -> (decoratorOf group).commit(dragOf group fourth,leftPoint))) "A drop beside the window shown over parked panes was refused"
+                        waitSplit()
+                        check (onGroup(fun group -> group.splitLayout |> Option.exists(fun s -> s.tree.first=Leaf(Occupied fourth) && s.tree.second=Leaf(Occupied behind))))
+                              (sprintf "The drop did not split the window shown, letting the parked panes go: %A" (onGroup(fun group -> group.layout)))
+                        onGroup(fun group -> group.execute(EndSplit None); group.removeWindow fourth)
+                        waitOperation()
+                        onHelper(fun () -> forms.[3].Hide(); forms.[3].Pinned <- true; forms.[3].Bounds <- Rectangle(-20000,-20000,640,480))
+                        // The split of the tab shown with the other group's tab again, as the next steps expect.
+                        onGroup(fun group -> group.tabActivate(Tab(shown),false))
+                        waitOperation()
+                        onGroup(fun group -> group.dropTab(foreign,SplitAt([],SideBySide,Second),shown))
+                        waitSplit()
+                        check (onGroup(fun group -> group.splitLayout |> Option.exists(fun s -> s.tree.first=Leaf(Occupied shown) && s.tree.second=Leaf(Occupied foreign)))) "The split did not come back as it was"
                     // A tab behind chosen right after a swap, while the panes are still moving, fills
                     // the group's frame. It waited at the host pane's rectangle, and the change of front
                     // window dropped its placement as it would a stale follower's: it stayed pane-sized,

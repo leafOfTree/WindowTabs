@@ -57,8 +57,10 @@ the tree's simplest case and keep their behaviour.
 - Splitting again: while split, the same ways apply to a pane. Split in group on a tab divides
   the pane of the tab shown; a new empty pane opens beside the focused pane; a tab dragged to
   a pane's edge splits that pane (as VS Code does), and within 18px of the group's own edge
-  (`outerZone`) a new column or row for the whole group. Panes parked by the dragged tab, which
-  its press activated, count as well: the drop brings them back with the new pane among them.
+  (`outerZone`) a new column or row for the whole group. The preview names the window the drop
+  goes beside. With another tab shown over parked panes, the drop goes beside that window, the
+  one in sight, and the parked panes are let go as by any new split; panes parked by the
+  dragged tab's own press come back as the tab leaves the strip, so they are aimed at.
   A pane window dropped elsewhere leaves its pane, whose neighbour takes the room. There is no
   fixed number of panes; a split that would leave a pane under 120px is refused.
 - Shortcuts: split the shown tab side by side or stacked with the next tab in tab order, or open
