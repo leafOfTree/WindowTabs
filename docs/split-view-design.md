@@ -45,11 +45,13 @@ the tree's simplest case and keep their behaviour.
   over a pane, the pane lights up and the tab's image stays with the pointer. A group with one
   tab can do this too.
 - Drag a tab to the left, right, top or bottom edge of a group's window: a half-window preview
-  appears, a clear tint with its edge drawn and a label in its middle saying what letting go
-  does (a new column or row for the group, a split of the pane, a filled empty pane), and
-  letting go splits the group. The preview changes no membership; only the drop commits. Tabs
+  appears, a clear tint with its edge drawn, and beside the dragged tab's image a label that
+  follows the pointer and says what letting go does: which window it goes beside and on which
+  side, a new column or row for the group, or a filled empty pane. Over the place itself the
+  label covered what it named, away from where the eye is. Letting go splits the group. The
+  preview changes no membership; only the drop commits. Tabs
   of this group and of other groups on the same virtual desktop alike are offered the edge once
-  the pointer has rested in its zone for 350ms, within 6px (`LayoutDwell`); from then on the
+  the pointer has rested in its zone for 100ms, within 6px (`LayoutDwell`); from then on the
   preview follows the pointer over that window until it leaves the zones. A tab carried over a
   window on its way elsewhere, or let go over one where no free desktop was left, split it at
   once before; let go before the preview shows, it comes out as a window of its own. An empty

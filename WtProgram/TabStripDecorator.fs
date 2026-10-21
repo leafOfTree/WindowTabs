@@ -5,63 +5,32 @@ open System.Windows.Forms
 open System.Diagnostics
 open Bemo.Win32.Forms
 
-/// Where a dragged tab would go: a clear tint over that place, its edge drawn, and in its middle
-/// a label saying what letting go does. Per-pixel layered, so the tint is see-through while
-/// the label is not; the pointer passes through it to the window beneath.
+/// Where a dragged tab would go: a clear tint over that place, its edge drawn. What letting go
+/// does is said beside the dragged tab, where the eye is. Per-pixel layered, so the tint is
+/// see-through; the pointer passes through it to the window beneath.
 type private LayoutPreview() =
     inherit Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual)
-    let mutable label = ""
-    let mutable drawn : (Rectangle * string) option = None
-    let mutable font : Font option = None
+    let mutable drawn : Rectangle option = None
     override _.ShowWithoutActivation = true
     override _.CreateParams =
         let cp = base.CreateParams
         cp.ExStyle <- cp.ExStyle ||| 0x08000000 ||| 0x80 ||| 0x20 ||| WindowsExtendedStyles.WS_EX_LAYERED
         cp
-    member private this.labelFont =
-        match font with
-        | Some value -> value
-        | None ->
-            let value = new Font("Segoe UI",float32(Dpi.value())/float32(Dpi.system())*11.0f,FontStyle.Bold)
-            font <- Some value
-            value
-    /// Shows the place with its label; drawn again only when either changed.
-    member this.showAt(bounds:Rectangle, text:string, owner:IWin32Window) =
-        label <- text
+    /// Shows the place; drawn again only when it changed.
+    member this.showAt(bounds:Rectangle, owner:IWin32Window) =
         if this.Bounds<>bounds then this.Bounds <- bounds
         if not this.Visible then this.Show(owner)
-        if drawn<>Some(bounds,text) && bounds.Width>0 && bounds.Height>0 then
-            drawn <- Some(bounds,text)
-            let palette = SettingsColors.current()
+        if drawn<>Some bounds && bounds.Width>0 && bounds.Height>0 then
+            drawn <- Some bounds
+            let accent = SettingsColors.current().accent
             use bitmap = new Bitmap(bounds.Width,bounds.Height,Imaging.PixelFormat.Format32bppArgb)
             use g = Graphics.FromImage(bitmap)
-            g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-            let accent = palette.accent
             use tint = new SolidBrush(Color.FromArgb(70,int accent.R,int accent.G,int accent.B))
             g.FillRectangle(tint,0,0,bounds.Width,bounds.Height)
             let edge = max 2 (Dpi.scale 2)
             use pen = new Pen(Color.FromArgb(230,int accent.R,int accent.G,int accent.B),float32 edge)
             g.DrawRectangle(pen,float32 edge/2.0f,float32 edge/2.0f,float32(bounds.Width-edge),float32(bounds.Height-edge))
-            if text<>"" then
-                let size = TextRenderer.MeasureText(g,text,this.labelFont,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPrefix)
-                let padding = Dpi.scale 14
-                let pill = Rectangle((bounds.Width-size.Width)/2-padding,(bounds.Height-size.Height)/2-Dpi.scale 8,size.Width+2*padding,size.Height+Dpi.scale 16)
-                if pill.Width<bounds.Width && pill.Height<bounds.Height then
-                    use outline = MenuShape.outline pill.Width pill.Height
-                    let state = g.Save()
-                    g.TranslateTransform(float32 pill.X,float32 pill.Y)
-                    use fill = new SolidBrush(palette.surface)
-                    g.FillPath(fill,outline)
-                    use border = new Pen(accent,float32(max 1 (Dpi.scale 1)))
-                    g.DrawPath(border,outline)
-                    g.Restore(state)
-                    TextRenderer.DrawText(g,text,this.labelFont,pill,palette.text,TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix)
             Win32Helper.UpdateLayeredWindow(this.Handle,this.Location,bitmap,255uy)
-    override this.Dispose(disposing) =
-        if disposing then
-            font |> Option.iter(fun value -> value.Dispose())
-            font <- None
-        base.Dispose(disposing)
 
 type TabStripDecorator(group:WindowGroup) as this =
     let os = OS()
@@ -820,11 +789,11 @@ type TabStripDecorator(group:WindowGroup) as this =
                     | None -> beside axis side group.topWindow
                     | Some(Some(Occupied hwnd)) -> beside axis side hwnd
                     | Some _ -> Strings.Drop.fillEmpty
-            preview.showAt(bounds.Rectangle,tr label,{new IWin32Window with member _.Handle=this.ts.hwnd})
-            true
+            preview.showAt(bounds.Rectangle,{new IWin32Window with member _.Handle=this.ts.hwnd})
+            Some(tr label)
         | None ->
             layoutPreview |> Option.iter(fun window -> window.Hide())
-            false
+            None
 
     member private this.resetLayoutDrop() =
         layoutDrop <- None
@@ -836,7 +805,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             else this.invokeSync(fun () -> this.aimLayout(data,pt))
 
         member this.preview(data,pt) =
-            if not(WinUserApi.IsWindow(this.ts.hwnd)) then false
+            if not(WinUserApi.IsWindow(this.ts.hwnd)) then None
             else this.invokeSync(fun () -> this.previewLayout(data,pt))
 
         member this.clearPreview() =

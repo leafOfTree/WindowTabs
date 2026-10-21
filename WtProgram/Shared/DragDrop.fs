@@ -27,7 +27,9 @@ type LayoutAim = NoAim | SplitAim | FillAim
 type ILayoutDropTarget =
     /// What a drop here would do, shown nowhere.
     abstract member aim : obj * Pt -> LayoutAim
-    abstract member preview : obj * Pt -> bool
+    /// Shows the place a drop here takes and gives what letting go does, to show by the dragged
+    /// tab; None when a drop here takes nothing.
+    abstract member preview : obj * Pt -> string option
     abstract member clearPreview : unit -> unit
     /// False when nothing was dropped: the drag then ends as one let go anywhere else.
     abstract member commit : obj * Pt -> bool

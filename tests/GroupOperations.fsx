@@ -108,7 +108,7 @@ let main() =
             member _.dragCancel _ = ()}
     let surface = {new ILayoutDropTarget with
                     member _.aim(_,_) = SplitAim
-                    member _.preview(_,_) = true
+                    member _.preview(_,_) = Some ""
                     member _.clearPreview() = ()
                     member _.commit(_,_) = true}
     let strips = Map2(List2([IntPtr 1,strip]))
@@ -356,10 +356,10 @@ let main() =
                         let point = Pt(a.x+a.width/2,a.y+a.height/2)
                         let decorator = decoratorOf group
                         let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft}
-                        check (decorator.preview(drag,point)) "The centre of an empty pane rejected a tab"
+                        check (decorator.preview(drag,point)).IsSome "The centre of an empty pane rejected a tab"
                         decorator.clearPreview()
                         check (group.splitLayout=Some s) "Cancelling an empty-pane preview changed the layout"
-                        check (decorator.preview(drag,point)) "The empty pane could not be targeted again"
+                        check (decorator.preview(drag,point)).IsSome "The empty pane could not be targeted again"
                         check (decorator.commit(drag,point)) "A previewed pane took no drop"
                         decorator.clearPreview()
                         check (sides group=(Leaf(Occupied partner),Leaf(Occupied source))) "Dropping did not fill the empty pane"
@@ -520,10 +520,10 @@ let main() =
                         let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft}
                         let frame = group.layoutFrame
                         let point = Pt(frame.left+2,frame.y+frame.height/2)
-                        check (decorator.preview(drag,point)) "Own edge did not accept a split preview"
+                        check (decorator.preview(drag,point)).IsSome "Own edge did not accept a split preview"
                         decorator.clearPreview()
                         check (group.splitLayout=Some before && group.lorder.list=order) "Cancelling a preview changed layout or membership"
-                        check (decorator.preview(drag,point)) "Repeated split preview failed"
+                        check (decorator.preview(drag,point)).IsSome "Repeated split preview failed"
                         check (decorator.commit(drag,point)) "A previewed pane took no drop"
                         decorator.clearPreview()
                         check (group.splitLayout.Value.tree.first=Leaf(Occupied partner)) "Dragging a pane to the opposite edge did not swap it")
@@ -668,12 +668,20 @@ let main() =
                     let foreign = handles.[2]
                     onHelper(fun () -> forms.[2].Pinned <- false; forms.[2].Show())
                     let edgePoint = onGroup(fun group -> let frame = group.layoutFrame in Pt(frame.right-2,frame.y+frame.height/2))
+                    do
+                        let top = onGroup(fun group -> group.topWindow)
+                        onHelper(fun () -> forms |> List.find(fun form -> form.Handle=top) |> fun form -> form.Text <- "Shown pane")
+                        pumpUntil(fun () -> onGroup(fun group -> group.ts.tabInfo(Tab top).text="Shown pane"))
                     let shown = onGroup(fun group ->
                         let decorator = decoratorOf group
-                        check (decorator.preview(dragOf group foreign,edgePoint)) "A tab from another group was not offered an edge"
+                        // What letting go does names the window the drop goes beside, the one shown.
+                        let label = decorator.preview(dragOf group foreign,edgePoint)
+                        let shownName = group.ts.tabInfo(Tab group.topWindow).text
+                        check (label |> Option.exists(fun text -> shownName<>"" && text.Contains(shownName)))
+                              (sprintf "A tab from another group was not offered an edge beside the window shown: %A, shown %A" label shownName)
                         decorator.clearPreview()
                         check (group.layout=GroupLayout.Single) "Cancelling another group's edge preview changed the layout"
-                        check (decorator.preview(dragOf group foreign,edgePoint)) "Another group's edge could not be targeted again"
+                        check (decorator.preview(dragOf group foreign,edgePoint)).IsSome "Another group's edge could not be targeted again"
                         group.topWindow)
                     check (onGroup(fun group -> (decoratorOf group).commit(dragOf group foreign,edgePoint))) "A tab from another group was not dropped at an edge"
                     waitSplit()
@@ -690,7 +698,7 @@ let main() =
                         let fourth = handles.[3]
                         onHelper(fun () -> forms.[3].Pinned <- false; forms.[3].Show())
                         let leftPoint = onGroup(fun group -> let frame = group.layoutFrame in Pt(frame.left+2,frame.y+frame.height/2))
-                        check (onGroup(fun group -> (decoratorOf group).preview(dragOf group fourth,leftPoint))) "The window shown over parked panes was not offered an edge"
+                        check (onGroup(fun group -> (decoratorOf group).preview(dragOf group fourth,leftPoint))).IsSome "The window shown over parked panes was not offered an edge"
                         check (onGroup(fun group -> (decoratorOf group).commit(dragOf group fourth,leftPoint))) "A drop beside the window shown over parked panes was refused"
                         waitSplit()
                         check (onGroup(fun group -> group.splitLayout |> Option.exists(fun s -> s.tree.first=Leaf(Occupied fourth) && s.tree.second=Leaf(Occupied behind))))
