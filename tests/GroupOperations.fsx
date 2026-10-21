@@ -331,7 +331,7 @@ let main() =
                         let a = paneRect group First
                         let point = Pt(a.x+a.width/2,a.y+a.height/2)
                         let decorator = decoratorOf group
-                        let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0}
+                        let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft}
                         check (decorator.preview(drag,point)) "The centre of an empty pane rejected a tab"
                         decorator.clearPreview()
                         check (group.splitLayout=Some s) "Cancelling an empty-pane preview changed the layout"
@@ -493,7 +493,7 @@ let main() =
                         let decorator = decoratorOf group
                         let before = group.splitLayout.Value
                         let order = group.lorder.list
-                        let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0}
+                        let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft}
                         let frame = group.layoutFrame
                         let point = Pt(frame.left+2,frame.y+frame.height/2)
                         check (decorator.preview(drag,point)) "Own edge did not accept a split preview"
@@ -639,7 +639,7 @@ let main() =
                     waitOperation()
                     check (onGroup(fun group -> group.layout=GroupLayout.Single && group.windows.count=2)) "Merging lost a member"
                     check (handles |> List.take 2 |> List.forall(fun hwnd -> OS().windowFromHwnd(hwnd).visibleBounds=mergedFrame)) "Merging did not restore the full group bounds"
-                    let dragOf (group:WindowGroup) hwnd = box {tab=Tab(hwnd);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(source));tabShift=0}
+                    let dragOf (group:WindowGroup) hwnd = box {tab=Tab(hwnd);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(source));tabShift=0;tabAlignment=TabLeft}
                     // A tab from another group splits at an edge too, beside the tab shown.
                     let foreign = handles.[2]
                     onHelper(fun () -> forms.[2].Pinned <- false; forms.[2].Show())

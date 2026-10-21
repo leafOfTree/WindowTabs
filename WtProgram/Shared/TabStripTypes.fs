@@ -23,7 +23,15 @@ and TabDragInfo = {
     /// Where the tab sits over the window in the drag image, as the strip's alignment would
     /// put a lone tab; the dropped window lands so that the tab stays under the pointer.
     tabShift: int
+    /// The strip's alignment, which places a lone tab again over whatever width the window lands at.
+    tabAlignment: TabAlignment
     } with
+    /// Where a lone tab sits over a window of this width.
+    member this.shiftFor(windowWidth:int) =
+        match this.tabAlignment with
+        | TabCenter -> max 0 ((windowWidth-this.tabSize.width)/2)
+        | TabRight -> max 0 (windowWidth-this.tabSize.width-60)
+        | TabLeft -> 0
     /// Keep the grabbed point proportional when entering a differently sized tab or DPI.
     member this.offsetIn(size:Sz) =
         let fit offset source target =

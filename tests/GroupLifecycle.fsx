@@ -920,7 +920,7 @@ let main() =
                     group.ts.setPlacement({bounds=Rect(Pt(-20000,-20000),size);showInside=false})
                     let tab = Tab b
                     let _,sprite = group.ts.tabSprites.pick(fun (location,sprite) -> if sprite.id=tab then Some(location,sprite) else None)
-                    let data = {tab=tab;tabSize=sprite.size;tabOffset=Pt(sprite.size.width/2,sprite.size.height/2);tabInfo=group.ts.tabInfo tab;tabShift=0}
+                    let data = {tab=tab;tabSize=sprite.size;tabOffset=Pt(sprite.size.width/2,sprite.size.height/2);tabInfo=group.ts.tabInfo tab;tabShift=0;tabAlignment=TabLeft}
                     let proportional = {data with tabSize=Sz(200,32);tabOffset=Pt(100,16)}
                     check (proportional.offsetIn(Sz(300,48))=Pt(150,24)) "Cross-DPI drag lost its grabbed point"
                     check (proportional.offsetIn(Sz(120,64))=Pt(60,32)) "Cross-orientation drag lost its grabbed point"
@@ -1004,16 +1004,36 @@ let main() =
                 OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),Sz(1600,1000)))
                 let dropped (size:Sz) =
                     OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),size))
-                    let data = {tab=Tab hwnd;tabSize=Sz(100,24);tabOffset=Pt(10,10);tabInfo=onGroup alone (fun group -> group.ts.tabInfo(Tab hwnd));tabShift=0}
-                    (desktop :> IDragDropParent).dragDrop((Pt(200,200),box data))
-                    pumpUntil "The dropped window was not placed" (fun () -> OS().windowFromHwnd(hwnd).placement.rcNormalPosition.size<>size)
-                    OS().windowFromHwnd(hwnd).placement.rcNormalPosition.size
-                check (dropped (Sz(1600,1000))=own) (sprintf "A tab dragged out did not go back to its own size: %A instead of %A" (OS().windowFromHwnd(hwnd).placement.rcNormalPosition.size) own)
                 let work = Screen.PrimaryScreen.WorkingArea
+                let workRect = Rect(Pt(work.X,work.Y),Sz(work.Width,work.Height))
+                let tabSize = Sz(100,24)
+                let centred = {tab=Tab hwnd;tabSize=tabSize;tabOffset=Pt(10,10);tabInfo=onGroup alone (fun group -> group.ts.tabInfo(Tab hwnd));tabShift=0;tabAlignment=TabCenter}
+                let dropAt (pt:Pt) (size:Sz) =
+                    OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),size))
+                    // The image's shift, as the strip computed it for the group's width.
+                    let data = {centred with tabShift=centred.shiftFor size.width}
+                    (desktop :> IDragDropParent).dragDrop((pt,box data))
+                    pumpUntil "The dropped window was not placed" (fun () -> OS().windowFromHwnd(hwnd).placement.rcNormalPosition.size<>size)
+                    // Shown, as the program shows a dropped window, so its frame can be read.
+                    OS().windowFromHwnd(hwnd).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE)
+                    OS().windowFromHwnd(hwnd).visibleBounds
+                let dropped (size:Sz) = (dropAt (Pt(work.X+200,work.Y+200)) size).size
+                check (dropped (Sz(1600,1000))=own) (sprintf "A tab dragged out did not go back to its own size: %A instead of %A" (OS().windowFromHwnd(hwnd).visibleBounds.size) own)
                 WinUserApi.RemoveProp(hwnd,"WindowTabs.OwnSize.v1.W") |> ignore
                 WinUserApi.RemoveProp(hwnd,"WindowTabs.OwnSize.v1.H") |> ignore
                 let modest = dropped (Sz(work.Width,work.Height))
                 check (modest.width<work.Width && modest.height<work.Height && modest.width>=work.Width/2) (sprintf "A screen-sized tab dragged out kept its size: %A in %A" modest work)
+                // Made smaller, the window lands with its centred tab still under the pointer: placed
+                // by the group's width, it came out hundreds of pixels to the left. Dropped near the
+                // work area's edges, it stays wholly inside it.
+                let mid = Pt(work.X+work.Width/2,work.Y+work.Height/3)
+                let landed = dropAt mid (Sz(work.Width,work.Height))
+                let tabLeft = mid.x-centred.tabOffset.x
+                let expectedLeft = tabLeft-centred.shiftFor landed.width+(desktop.GetType().GetProperty("windowOffset",Reflection.BindingFlags.Instance|||Reflection.BindingFlags.NonPublic).GetValue(desktop) :?> Pt).x
+                check (abs(landed.x-expectedLeft)<=2) (sprintf "A smaller dropped window did not keep its tab under the pointer: left %d, expected %d" landed.x expectedLeft)
+                for corner in [Pt(work.Right-5,work.Bottom-5);Pt(work.X+5,work.Bottom-5);Pt(work.Right-5,work.Y+5)] do
+                    let at = dropAt corner (Sz(work.Width,work.Height))
+                    check (DragOutPlacement.fit workRect at=at) (sprintf "A tab dropped at %A landed outside the work area: %A in %A" corner at work)
                 onGroup alone (fun group -> group.removeWindow hwnd)
                 (alone :> IGroup).destroy()
             printfn "PASS: real HWND grouping, duplicate add, reorder, cross-STA transfer, six cross-orientation drags, destroyed-window removal, ungrouping, taskbar recovery, taskbar icon rebuilds and the session's splits."

@@ -328,29 +328,32 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
             let dragInfo = unbox<TabDragInfo>(data)
             let (Tab(hwnd)) = dragInfo.tab
             let window = os.windowFromHwnd(hwnd)
-            // Tabs sit on the visible frame, so step back over the invisible resize border too.
-            // A maximized or minimized window's frame says nothing about its restored one.
-            let frameOffset =
-                if window.isMaximized || window.isMinimized then Pt()
-                else window.visibleBounds.location.sub(window.bounds.location)
-            let windowPt = pt.sub(dragInfo.tabOffset).sub(Pt(dragInfo.tabShift,0)).add(this.windowOffset).sub(frameOffset)
-            let monitor = Mon.fromPoint windowPt
-            let workspaceOffset = monitor.map(fun mon -> mon.workRect.location.sub(mon.displayRect.location)).def(Pt())
-            let windowPt = windowPt.sub(workspaceOffset)
-            // A window of its own again goes back to the size it had before any group, else, at a
-            // group's size that fills most of the screen, to a modest one: the group's size was
-            // the screen's more often than not, and the tab came out as a second screenful.
+            // Tabs sit on the visible frame; the invisible resize borders go around it. A maximized
+            // or minimized window's frame says nothing about its restored one.
+            let borderLeftTop,borderSize =
+                if window.isMaximized || window.isMinimized then Pt(),Sz()
+                else
+                    let bounds,visible = window.bounds,window.visibleBounds
+                    visible.location.sub(bounds.location),Sz(bounds.width-visible.width,bounds.height-visible.height)
+            // The monitor under the pointer decides: the window's own size from before any group,
+            // or a modest one in place of a group's that filled the screen.
+            let monitor = DragOutPlacement.monitorAt pt
             let size =
-                let current = window.placement.rcNormalPosition.size
-                let own = WindowOwnSize.read hwnd |> Option.defaultValue current
-                match monitor with
-                | Some mon when own.width>mon.workRect.width*4/5 && own.height>mon.workRect.height*4/5 ->
-                    Sz(mon.workRect.width*3/5,mon.workRect.height*3/5)
-                | _ -> own
+                let own = WindowOwnSize.read hwnd |> Option.defaultValue window.visibleBounds.size
+                monitor |> Option.map(fun mon -> DragOutPlacement.size own mon.workRect) |> Option.defaultValue own
+            // The tab stays under the pointer at the width the window lands at: placed with the
+            // shift of the group's width, a window made smaller came out hundreds of pixels to
+            // one side, at times off the screen. Then all of it in the work area.
+            let visiblePt = pt.sub(dragInfo.tabOffset).sub(Pt(dragInfo.shiftFor size.width,0)).add(this.windowOffset)
+            let visible =
+                let frame = Rect(visiblePt,size)
+                monitor |> Option.map(fun mon -> DragOutPlacement.fit mon.workRect frame) |> Option.defaultValue frame
+            let workspaceOffset = monitor.map(fun mon -> mon.workRect.location.sub(mon.displayRect.location)).def(Pt())
+            let windowPt = visible.location.sub(borderLeftTop).sub(workspaceOffset)
             window.setPlacement({
                 window.placement with
                     showCmd = ShowWindowCommands.SW_SHOWNORMAL
-                    rcNormalPosition = Rect(windowPt,size)
+                    rcNormalPosition = Rect(windowPt,Sz(visible.width+borderSize.width,visible.height+borderSize.height))
             })
             notify.dragDrop(hwnd)
             

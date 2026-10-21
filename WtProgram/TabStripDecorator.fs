@@ -717,10 +717,18 @@ type TabStripDecorator(group:WindowGroup) as this =
                     group.tabActivate(tab, false)
                     if part <> TabClose then
                         let dragOffset = pt.sub(this.ts.tabLocation tab)
-                        let shift = this.ts.dragTabShift(tab,os.windowFromHwnd(hwnd).visibleBounds.width)
-                        let dragImage = fun() -> this.ts.dragImage(tab,shift)
                         let _,sprite = this.ts.tabSprites.pick(fun (location,sprite) -> if sprite.id=tab then Some(location,sprite) else None)
-                        let dragInfo = box({ tab = tab; tabOffset = dragOffset; tabSize=sprite.size; tabInfo = this.ts.tabInfo(tab); tabShift = shift })
+                        // The image shows the window at the size it lands at on this monitor, and the
+                        // tab where the strip will put it over that width.
+                        let window = os.windowFromHwnd(hwnd)
+                        let landing =
+                            DragOutPlacement.monitorAt ptScreen
+                            |> Option.map(fun mon -> DragOutPlacement.size (WindowOwnSize.read hwnd |> Option.defaultValue window.visibleBounds.size) mon.workRect)
+                            |> Option.defaultValue window.visibleBounds.size
+                        let info = { tab = tab; tabOffset = dragOffset; tabSize=sprite.size; tabInfo = this.ts.tabInfo(tab); tabShift = 0; tabAlignment = this.ts.dragAlignment }
+                        let shift = info.shiftFor landing.width
+                        let dragImage = fun() -> this.ts.dragImage(tab,shift,landing)
+                        let dragInfo = box({ info with tabShift = shift })
                         Services.dragDrop.beginDrag(this.ts.hwnd, dragImage, dragOffset.add(Pt(shift,0)), ptScreen, dragInfo)
                 | MouseMiddle ->
                     group.tabActivate(tab, false)

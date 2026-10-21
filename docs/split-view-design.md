@@ -53,7 +53,10 @@ the tree's simplest case and keep their behaviour.
   panes come back, so the drop aims at what is seen.
 - A tab dragged out onto the desktop becomes a window of its own at the size it had before it
   first joined a group (`WindowOwnSize`, kept on the window), or, when that too fills most of
-  the screen, at three fifths of the work area: it came out as a second screenful before.
+  the screen, at three fifths of the work area: it came out as a second screenful before. The
+  monitor under the pointer decides (`DragOutPlacement`); the window lands with its tab under the
+  pointer at that size, as the strip's alignment places a lone tab, wholly inside the work area,
+  and the drag image shows it at that size.
 - Splitting again: while split, the same ways apply to a pane. Split in group on a tab divides
   the pane of the tab shown; a new empty pane opens beside the focused pane; a tab dragged to
   a pane's edge splits that pane (as VS Code does), and at the group's own edge (`outerZone`:

@@ -206,6 +206,21 @@ module WindowOwnSize =
             WinUserApi.SetProp(hwnd,fst keys,IntPtr(size.width)) |> ignore
             WinUserApi.SetProp(hwnd,snd keys,IntPtr(size.height)) |> ignore
 
+/// Where a tab dragged out onto the desktop puts its window. Sizes are of the visible frame.
+module DragOutPlacement =
+    /// The window's own size from before any group, else its size now; one that fills most of
+    /// the screen, as a group's often does, gives way to three fifths of it.
+    let size (own:Sz) (work:Rect) =
+        if own.width>work.width*4/5 && own.height>work.height*4/5 then Sz(work.width*3/5,work.height*3/5)
+        else Sz(min own.width work.width,min own.height work.height)
+    /// The monitor a drop at this point lands on: the one under it, else the nearest.
+    let monitorAt (pt:Pt) =
+        Mon.fromPoint pt |> Option.orElse(Mon.fromHMonitor(WinUserApi.MonitorFromPoint(pt.POINT,MonitorFlags.MONITOR_DEFAULTTONEAREST)))
+    /// The frame moved as little as needed to lie wholly in the work area.
+    let fit (work:Rect) (frame:Rect) =
+        let width,height = min frame.width work.width,min frame.height work.height
+        Rect(Pt(max work.left (min frame.x (work.right-width)),max work.top (min frame.y (work.bottom-height))),Sz(width,height))
+
 /// Which group a window was in, kept on the window itself, so a restarted WindowTabs puts
 /// windows back together as they were, however they came to be grouped.
 module WindowGroupToken =
