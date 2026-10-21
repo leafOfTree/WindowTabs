@@ -19,27 +19,6 @@ type DragDetectingState(info:DragDetectingStateInfo) =
                 info.onBegin()
         member this.dispose() = ()
 
-type DragCapturedStateInfo = {
-    target : IDragDropTarget
-    targetHwnd : IntPtr
-    targetWindow : Window
-    onDragOut : Pt -> unit
-    }
-
-type DragCapturedState(info:DragCapturedStateInfo) =
-    let dragOutDistance = 20
-    member _.target = info.target
-    member _.targetHwnd = info.targetHwnd
-    interface IDragState with
-        member this.mouseMove(ptScreen) =
-            let dragBounds = info.targetWindow.bounds.inflate(dragOutDistance, dragOutDistance)
-            if dragBounds.containsPoint(ptScreen) then
-                info.target.dragMove(info.targetWindow.ptToClient(ptScreen))
-            else
-                info.target.dragExit()
-                info.onDragOut(ptScreen)
-        member this.dispose() = ()
-
 /// Where the pointer is: a strip joins the tab at once, a group's own windows (and the helper
 /// windows they own) only preview a pane, anything else floats.
 type DragHit = StripHit of IntPtr | LayoutHit of IntPtr | FreeHit
@@ -51,6 +30,12 @@ module DragRouting =
         elif owner<>IntPtr.Zero && layouts.contains owner then LayoutHit owner
         else FreeHit
 
+    /// Whether a tab held in one strip moves to the strip under the pointer: strips of groups
+    /// at the top of the screen lie over one another, and the first one the tab crossed kept it
+    /// while the pointer was anywhere in its width, over another group's tabs in sight too.
+    let movesToStrip (strips:Map2<IntPtr,IDragDropTarget>) (current:IntPtr) (hit:IntPtr) =
+        hit<>IntPtr.Zero && hit<>current && strips.contains hit
+
     /// The top-level window under a point, and its owner. The point lands on an app's child
     /// window, a browser's page say, which no group knows: over such apps a dragged tab never
     /// offered a pane.
@@ -59,6 +44,29 @@ module DragRouting =
         let root = if hit=IntPtr.Zero then IntPtr.Zero else WinUserApi.GetAncestor(hit,GetAncestorConstants.GA_ROOT)
         let owner = if root=IntPtr.Zero then IntPtr.Zero else WinUserApi.GetWindow(root,GetWindowConstants.GW_OWNER)
         root,owner
+
+type DragCapturedStateInfo = {
+    target : IDragDropTarget
+    targetHwnd : IntPtr
+    targetWindow : Window
+    targets : Map2<IntPtr, IDragDropTarget>
+    onDragOut : Pt -> unit
+    }
+
+type DragCapturedState(info:DragCapturedStateInfo) =
+    let dragOutDistance = 20
+    member _.target = info.target
+    member _.targetHwnd = info.targetHwnd
+    interface IDragState with
+        member this.mouseMove(ptScreen) =
+            let dragBounds = info.targetWindow.bounds.inflate(dragOutDistance, dragOutDistance)
+            let hit,_ = DragRouting.windowsAt ptScreen
+            if dragBounds.containsPoint(ptScreen) && not(DragRouting.movesToStrip info.targets info.targetHwnd hit) then
+                info.target.dragMove(info.targetWindow.ptToClient(ptScreen))
+            else
+                info.target.dragExit()
+                info.onDragOut(ptScreen)
+        member this.dispose() = ()
 
 /// Whether a split may be offered yet: a tab carried over a window on its way to somewhere
 /// else, or let go over one where there was no free desktop left, split it at once. A split
@@ -358,8 +366,9 @@ type DragAction(info:DragActionInfo) =
                 target = target
                 targetHwnd = targetHwnd
                 targetWindow = targetWindow
+                targets = info.targets
                 onDragOut = fun(ptScreen) ->
-                    let targetHwnd = os.windowAtPt(ptScreen).hwnd
+                    let targetHwnd,_ = DragRouting.windowsAt ptScreen
                     match info.targets.tryFind(targetHwnd) with
                     | Some(target) -> this.dragEnter(targetHwnd, ptScreen, false)
                     | None -> this.dragFloat()

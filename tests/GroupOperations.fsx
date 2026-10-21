@@ -118,6 +118,15 @@ let main() =
     check (DragRouting.resolve strips surfaces (IntPtr 9) (IntPtr 1)=LayoutHit(IntPtr 1)) "A helper window owned by the strip did not offer its group's panes"
     check (DragRouting.resolve strips surfaces (IntPtr 9) (IntPtr 8)=FreeHit) "An unrelated window took the drag"
     check (DragRouting.resolve strips surfaces IntPtr.Zero IntPtr.Zero=FreeHit) "The desktop took the drag"
+    // A tab held in one strip goes to another group's strip in sight under the pointer, though
+    // still within the first strip's width: strips at the top of the screen lie over one another,
+    // and the first one crossed kept the tab, which then joined a group out of sight.
+    do
+        let twoStrips = Map2(List2([IntPtr 1,strip;IntPtr 3,strip]))
+        check (DragRouting.movesToStrip twoStrips (IntPtr 1) (IntPtr 3)) "A tab held in one strip did not move to another group's strip under the pointer"
+        check (not(DragRouting.movesToStrip twoStrips (IntPtr 1) (IntPtr 1))) "A tab left the strip it is in"
+        check (not(DragRouting.movesToStrip twoStrips (IntPtr 1) (IntPtr 9))) "A tab left its strip for a window that is no strip"
+        check (not(DragRouting.movesToStrip twoStrips (IntPtr 1) IntPtr.Zero)) "A tab left its strip for nothing"
     // A split is offered once the pointer rests in a drop zone, not as it passes: let go on the
     // way, the tab comes out as a window of its own. An empty pane takes a drop at once.
     do
