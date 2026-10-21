@@ -65,11 +65,10 @@ the tree's simplest case and keep their behaviour.
   of the screen lie over one another, and the first strip crossed kept the tab across its whole
   width, so it joined a group out of sight.
 - A tab dragged out onto the desktop becomes a window of its own at the size its group has
-  now, one side at a time: a side that spans most of the screen, both for a maximized group, the
-  height alone for one snapped to half the screen, takes its length from before the window first
-  joined a group (`WindowOwnSize`, kept on the window) if that is modest, else three fifths of
-  the work area: it came out as a second screenful before, and judged as a whole a half-screen
-  group came out the screen's full height, pushed up to its top. The own size alone,
+  now. Where a side spans most of the screen, a maximized group's or the height of one snapped
+  to half the screen, the whole window is scaled down, its proportions kept, until that side
+  spans three fifths of the work area: it came out as a second screenful before, and sized side
+  by side, or at its size before any group, it came out of proportion with what was dragged. The own size alone,
   read once at joining, brought back a size the group had long left. The
   monitor under the pointer decides (`DragOutPlacement`); the window lands with its tab under the
   pointer at that size, as the strip's alignment places a lone tab, wholly inside the work area,

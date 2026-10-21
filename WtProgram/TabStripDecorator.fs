@@ -692,7 +692,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                         let window = os.windowFromHwnd(hwnd)
                         let landing =
                             DragOutPlacement.monitorAt ptScreen
-                            |> Option.map(fun mon -> DragOutPlacement.size window.visibleBounds.size (WindowOwnSize.read hwnd) mon.workRect)
+                            |> Option.map(fun mon -> DragOutPlacement.size window.visibleBounds.size mon.workRect)
                             |> Option.defaultValue window.visibleBounds.size
                         let info = { tab = tab; tabOffset = dragOffset; tabSize=sprite.size; tabInfo = this.ts.tabInfo(tab); tabShift = 0; tabAlignment = this.ts.dragAlignment }
                         let shift = info.shiftFor landing.width

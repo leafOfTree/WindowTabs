@@ -991,8 +991,8 @@ let main() =
                 groupOf hd |> Option.iter(fun info ->
                     onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
                     (info :> IGroup).destroy())
-            // A tab dragged out onto the desktop keeps the size the group had; a group's size that
-            // filled the screen gives way to the window's own from before any group, or a modest one.
+            // A tab dragged out onto the desktop keeps the size the group had; where a side spans most
+            // of the screen, the whole window is scaled down with its proportions kept.
             do
                 use f = new Form(Text="Own size",ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-20000,-20000),Size=Drawing.Size(640,480))
                 let hwnd = f.Handle
@@ -1000,7 +1000,6 @@ let main() =
                 (alone :> IGroup).addWindow(hwnd,false)
                 pumpUntil "Own-size window did not group" (fun () -> nativeOrder alone=[hwnd])
                 check ((WindowOwnSize.read hwnd)=Some(OS().windowFromHwnd(hwnd).visibleBounds.size)) "A window joining a group did not keep its own size"
-                let own = (WindowOwnSize.read hwnd).Value
                 let work = Screen.PrimaryScreen.WorkingArea
                 let workRect = Rect(Pt(work.X,work.Y),Sz(work.Width,work.Height))
                 let tabSize = Sz(100,24)
@@ -1022,21 +1021,18 @@ let main() =
                 let groupVisible = OS().windowFromHwnd(hwnd).visibleBounds.size
                 let landed = dropped modestGroup
                 check (landed=groupVisible) (sprintf "A tab dragged out of a modest group did not keep the group's size: %dx%d instead of %dx%d" landed.width landed.height groupVisible.width groupVisible.height)
-                check (dropped (Sz(work.Width,work.Height))=own) (sprintf "A tab dragged out of a screen-sized group did not go back to its own size: %A instead of %A" (OS().windowFromHwnd(hwnd).visibleBounds.size) own)
-                // A group snapped to half the screen keeps its width and gives up only its height:
-                // judged as a whole it was not screen-sized, and came out the screen's full height,
-                // pushed up to its top.
-                do
-                    let half = Sz(work.Width/2,work.Height)
-                    OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),half))
-                    let halfVisible = OS().windowFromHwnd(hwnd).visibleBounds.size
-                    let landed = dropAt (Pt(work.X+work.Width/2,work.Y+work.Height/2)) half
-                    check (landed.width=halfVisible.width && landed.height=own.height && landed.top>work.Y)
-                          (sprintf "A tab dragged out of a half-screen group did not keep its width and give up its height: %A, %dx%d" landed landed.width landed.height)
-                WinUserApi.RemoveProp(hwnd,"WindowTabs.OwnSize.v1.W") |> ignore
-                WinUserApi.RemoveProp(hwnd,"WindowTabs.OwnSize.v1.H") |> ignore
-                let modest = dropped (Sz(work.Width,work.Height))
-                check (modest.width<work.Width && modest.height<work.Height && modest.width>=work.Width/2) (sprintf "A screen-sized tab dragged out kept its size: %A in %A" modest work)
+                // Screen-sized, maximized or snapped to half the screen, the window comes out scaled
+                // as a whole, its widest share of the screen at three fifths. Taken side by side, a
+                // half-screen group came out squashed; judged whole without scaling, it came out the
+                // screen's full height, pushed up to its top.
+                for group in [Sz(work.Width,work.Height);Sz(work.Width/2,work.Height)] do
+                    OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),group))
+                    let before = OS().windowFromHwnd(hwnd).visibleBounds.size
+                    let landed = dropAt (Pt(work.X+work.Width/2,work.Y+work.Height/2)) group
+                    let ratio (size:Sz) = float size.width/float size.height
+                    let share = max (float landed.width/float work.Width) (float landed.height/float work.Height)
+                    check (abs(ratio landed.size-ratio before)<0.01 && abs(share-0.6)<0.01 && landed.top>work.Y)
+                          (sprintf "A tab dragged out of a %dx%d group did not keep its proportions at three fifths of the screen: %A, %dx%d" before.width before.height landed landed.width landed.height)
                 // Made smaller, the window lands with its centred tab still under the pointer: placed
                 // by the group's width, it came out hundreds of pixels to the left. Dropped near the
                 // work area's edges, it stays wholly inside it.
