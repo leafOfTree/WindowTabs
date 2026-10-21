@@ -685,6 +685,38 @@ let main() =
                         check (onGroup(fun group -> group.emptyPaneHwnds.IsEmpty)) "Choosing a window first left an empty pane"
                         onGroup(fun group -> group.execute(EndSplit(Some shown)))
                         waitOperation()
+                    // A window with a least size of its own gets a pane at least that size, the
+                    // ratio moved for it: in a narrower pane it kept its size and lay over the pane
+                    // beside it. With no room for it, the split is refused.
+                    do
+                        let shown = onGroup(fun group -> group.topWindow)
+                        let other = handles |> List.take 2 |> List.find((<>) shown)
+                        let form = forms |> List.find(fun form -> onHelper(fun () -> form.Handle)=other)
+                        let frame = onGroup(fun group -> group.layoutFrame)
+                        let wide = frame.width*3/5
+                        // Said, not shown: a message box would wait on the group's thread.
+                        let alerts = ref []
+                        Alert.install(fun _ _ message -> lock alerts (fun () -> alerts.Value <- message::alerts.Value))
+                        onHelper(fun () -> form.MinimumSize <- Size(wide,100))
+                        try
+                            onGroup(fun group -> group.execute(SplitWith(other,SideBySide),current=shown))
+                            waitSplit()
+                            let s = onGroup(fun group -> group.splitLayout)
+                            check s.IsSome "A window with a least size that fits beside the other was refused a split"
+                            let pane = (SplitGeometry.paneRect (Dpi.scale SplitMetrics.gap) frame s.Value (SplitView.pathOf other s.Value).Value).Value
+                            let visibleLeast = wide-(OS().windowFromHwnd(other).bounds.width-OS().windowFromHwnd(other).visibleBounds.width)
+                            check (pane.width>=visibleLeast) (sprintf "A window's pane was narrower than its least width: %d of %d" pane.width visibleLeast)
+                            onGroup(fun group -> group.execute(EndSplit(Some shown)))
+                            waitOperation()
+                            onHelper(fun () -> form.MinimumSize <- Size(frame.width-Dpi.scale 60,100))
+                            onGroup(fun group -> group.execute(SplitWith(other,SideBySide),current=shown))
+                            waitOperation()
+                            check (onGroup(fun group -> group.splitLayout.IsNone)) "A split with no room for a window's least width was not refused"
+                            check (lock alerts (fun () -> alerts.Value)=[tr Strings.TabMenu.splitFailed]) (sprintf "A refused split did not say so once: %A" alerts.Value)
+                        finally
+                            onHelper(fun () -> form.MinimumSize <- Size(0,0))
+                            onGroup(fun group -> if group.splitLayout.IsSome then group.execute(EndSplit(Some shown)))
+                            waitOperation()
                     let dragOf (group:WindowGroup) hwnd = box {tab=Tab(hwnd);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(source));tabShift=0;tabAlignment=TabLeft}
                     // A tab from another group splits at an edge too, beside the tab shown.
                     let foreign = handles.[2]

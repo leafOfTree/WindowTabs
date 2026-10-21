@@ -216,6 +216,43 @@ module SplitGeometry =
     let fits gap minimum (frame:Rect) (tree:SplitTree) =
         leafRects gap frame (Branch tree) [] |> List.forall(fun (_,_,rect) -> rect.width>=minimum && rect.height>=minimum)
 
+    /// Every pane at least the size its window lets itself be sized to.
+    let fitsPanes gap (least:Pane -> Sz) (frame:Rect) (tree:SplitTree) =
+        leafRects gap frame (Branch tree) [] |> List.forall(fun (_,pane,rect) ->
+            let size = least pane
+            rect.width>=size.width && rect.height>=size.height)
+
+    /// The least a node can be: a pane's own; a split's halves added along its axis with the
+    /// seam between them, and the larger across it.
+    let rec leastSize gap (least:Pane -> Sz) (node:SplitNode) =
+        match node with
+        | Leaf pane -> least pane
+        | Branch branch ->
+            let a,b = leastSize gap least branch.first,leastSize gap least branch.second
+            if branch.axis=SideBySide then Sz(a.width+gap+b.width,max a.height b.height)
+            else Sz(max a.width b.width,a.height+gap+b.height)
+
+    /// Each split's ratio moved as little as it takes for both halves to keep their least size,
+    /// where the split has room for both; where it has not, the ratio stays. An app with a
+    /// least size of its own, a terminal's 600px say, kept it in a narrower pane and lay over
+    /// the pane beside it.
+    let rec fitToPanes gap (least:Pane -> Sz) (frame:Rect) (tree:SplitTree) : SplitTree =
+        let along (size:Sz) = if tree.axis=SideBySide then size.width else size.height
+        let length = along frame.size-gap
+        let a,b = along(leastSize gap least tree.first),along(leastSize gap least tree.second)
+        let ratio =
+            if length<=1 || a+b>length then tree.ratio
+            else
+                // The first half, as `rectangles` takes it from the ratio, kept from a to length-b;
+                // the ratio for that many pixels lands mid-pixel, clear of rounding.
+                let current = max 1 (min (length-1) (int(float length*tree.ratio)))
+                let wanted = max 1 (min (length-1) (max a (min (length-b) current)))
+                if wanted=current then tree.ratio else (float wanted+0.5)/float length
+        let fitted = {tree with ratio=ratio}
+        let first,_,second = rectangles gap frame fitted
+        let inside (rect:Rect) node = match node with Branch branch -> Branch(fitToPanes gap least rect branch) | leaf -> leaf
+        {fitted with first=inside first fitted.first; second=inside second fitted.second}
+
     /// The frame and tree after a pane was moved or sized natively from `expected`, its rectangle
     /// when that began. Moved, it carries the whole frame. Sized, each edge that moved is either
     /// the group's own, which moves with it, or the seam of the nearest split it borders, whose

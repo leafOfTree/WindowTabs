@@ -161,6 +161,22 @@ namespace Bemo
             return icon;
         }
 
+        /// <summary>
+        /// The smallest size the window lets itself be sized to, its invisible borders included;
+        /// an empty size when it does not answer in time.
+        /// </summary>
+        public static Size GetMinTrackSize(IntPtr handle)
+        {
+            var info = new MINMAXINFO();
+            info.ptMaxTrackSize = new SIZE(int.MaxValue, int.MaxValue);
+            IntPtr result;
+            // Foreign windows can be busy or hung. Never block the group on one.
+            if (WinUserApi.SendMessageTimeout(handle, WindowMessages.WM_GETMINMAXINFO, IntPtr.Zero, ref info,
+                SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 100, out result) == IntPtr.Zero)
+                return Size.Empty;
+            return new Size(Math.Max(0, info.ptMinTrackSize.cx), Math.Max(0, info.ptMinTrackSize.cy));
+        }
+
         public static IntPtr GetWindowIcon(IntPtr handle, int iconType)
         {
             bool small = iconType != IconTypeCodes.ICON_BIG;

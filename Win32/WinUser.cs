@@ -2742,6 +2742,8 @@ namespace Bemo
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         public static extern IntPtr SendMessageTimeout(IntPtr hWnd, int message, IntPtr wParam, IntPtr lParam, int flags, int timeout, IntPtr result);
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        public static extern IntPtr SendMessageTimeout(IntPtr hWnd, int message, IntPtr wParam, ref MINMAXINFO minMaxInfo, int flags, int timeout, out IntPtr result);
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
         public static extern IntPtr SendMessageTimeout(IntPtr hWnd, int message, int wParam, StringBuilder buffer, int flags, int timeout, out IntPtr result);
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
 		public static extern IntPtr SendMessage(IntPtr hWnd, int message, IntPtr wParam, StringBuilder lParam);

@@ -89,7 +89,11 @@ the tree's simplest case and keep their behaviour.
   one in sight, and the parked panes are let go as by any new split; panes parked by the
   dragged tab's own press come back as the tab leaves the strip, so they are aimed at.
   A pane window dropped elsewhere leaves its pane, whose neighbour takes the room. There is no
-  fixed number of panes; a split that would leave a pane under 120px is refused.
+  fixed number of panes. Each pane is at least 120px and at least what its window lets itself
+  be sized to (its `WM_GETMINMAXINFO` least track size, read with a 100ms timeout, less the
+  invisible borders): every command's ratios move as little as that takes
+  (`SplitGeometry.fitToPanes`), and a split with no room for it is refused. A terminal of 600px
+  at least, put in a 400px pane, kept its width and lay over the pane beside it.
 - Shortcuts: split the shown tab side by side or stacked with the next tab in tab order, or open
   an empty pane when the group has a single tab.
 

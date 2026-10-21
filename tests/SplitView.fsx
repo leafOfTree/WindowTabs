@@ -38,6 +38,22 @@ let main() =
     check (a1.width>=1 && b1.width>=1) "A tiny frame produced an empty pane"
     check (SplitGeometry.fits gap SplitMetrics.minPane frame half.tree) "A 1000px frame did not fit two 120px panes"
     check (not(SplitGeometry.fits gap SplitMetrics.minPane (Rect(Pt(),Sz(200,600))) half.tree)) "A 200px frame claimed to fit two 120px panes"
+    // A window's own least size: the ratio moves as little as it takes, or stays where both
+    // halves cannot fit; the least size of a split adds up along it and takes the larger across.
+    do
+        let least wide = function Occupied hwnd when hwnd=a -> Sz(wide,100) | _ -> Sz(120,120)
+        let fitted = SplitGeometry.fitToPanes gap (least 600) frame half.tree
+        let first,_,_ = SplitGeometry.rectangles gap frame fitted
+        check (first.width=600 && SplitGeometry.fitsPanes gap (least 600) frame fitted) (sprintf "A pane was not widened to its window's least width: %d" first.width)
+        check (not(SplitGeometry.fitsPanes gap (least 600) frame half.tree)) "An even split claimed to fit a 600px window in a 497px pane"
+        check (SplitGeometry.fitToPanes gap (least 400) frame half.tree=half.tree) "A pane already wide enough had its ratio moved"
+        check (SplitGeometry.fitToPanes gap (least 900) frame half.tree=half.tree) "A split with no room for both halves had its ratio moved"
+        let rightSide = {half.tree with first=occupied b;second=occupied a}
+        let _,_,second = SplitGeometry.rectangles gap frame (SplitGeometry.fitToPanes gap (least 600) frame rightSide)
+        check (second.width>=600) (sprintf "A second pane was not widened to its window's least width: %d" second.width)
+        let stacked = Branch {axis=Stacked;ratio=0.5;first=occupied a;second=occupied c}
+        check (SplitGeometry.leastSize gap (least 600) stacked=Sz(600,100+gap+120)) "A stacked split's least size did not take the wider pane and add the heights"
+        check (SplitGeometry.leastSize gap (least 600) (Branch {half.tree with second=stacked})=Sz(600+gap+600,100+gap+120)) "A nested split's least size was wrong"
     check (SplitGeometry.ratioAt (Pt(frame.x+497,0)) gap frame half.tree=0.5) "The divider's own position did not read back as 0.5"
     check (SplitGeometry.ratioAt (Pt(frame.x,0)) gap frame half.tree=SplitMetrics.minRatio) "Dragging the divider off the left edge went below the minimum ratio"
     check (SplitGeometry.ratioAt (Pt(frame.right+50,0)) gap frame half.tree=SplitMetrics.maxRatio) "Dragging the divider off the right edge went above the maximum ratio"

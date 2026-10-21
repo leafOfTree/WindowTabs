@@ -297,6 +297,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// One divider per split and one window per empty pane, by their place in the layout.
     let mutable splitDividers : Map<PanePath,SplitDivider * IntPtr> = Map.empty
     let mutable emptySplitPanes : Map<PanePath,EmptySplitPane * IntPtr> = Map.empty
+    /// The least size of each pane's window, read once per command: asking a window is a call
+    /// into its process.
+    let mutable paneLeastCache : Map<IntPtr,Sz> = Map.empty
     /// The empty panes' handles, read by the desktop thread to recognize a native drop on one.
     let mutable emptyPaneHandles : IntPtr list = []
     /// The root split's divider, which the panes go just below.
@@ -915,6 +918,24 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member _.isSplitFilled = splitRestore.IsSome
     member private this.isSplit = match groupLayout with Split _ -> true | _ -> false
     member private this.splitGap = Dpi.scale SplitMetrics.gap
+
+    /// The least a pane may be: what its window lets itself be sized to, less the invisible
+    /// borders round it, and never under `SplitMetrics.minPane`.
+    member private this.paneLeast(pane:Pane) : Sz =
+        let floor = Dpi.scale SplitMetrics.minPane
+        match pane with
+        | Empty -> Sz(floor,floor)
+        | Occupied hwnd ->
+            match paneLeastCache.TryFind hwnd with
+            | Some size -> size
+            | None ->
+                let track = Win32Helper.GetMinTrackSize(hwnd)
+                let window = this.os.windowFromHwnd(hwnd)
+                let bounds,visible = window.bounds,window.visibleBounds
+                let size = Sz(max floor (track.Width-max 0 (bounds.width-visible.width)),
+                              max floor (track.Height-max 0 (bounds.height-visible.height)))
+                paneLeastCache <- paneLeastCache.Add(hwnd,size)
+                size
     /// The whole group's frame: what the panes divide and what one tab fills.
     member this.layoutFrame : Rect = placement.value |> Option.map(fun (_,_,visible) -> visible) |> Option.defaultValue this.placementBounds
 
@@ -1365,9 +1386,22 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 let current = defaultArg current this.topWindow
                 let wasSplit = this.isSplit
                 if not wasSplit && not(defaultArg keepFrame false) then this.saveTopWindowPlacement()
-                let next = SplitView.apply current command groupLayout
+                // Each pane gets at least the size its window lets itself be sized to, the ratios
+                // moved as far as that takes.
+                paneLeastCache <- Map.empty
+                let least = this.paneLeast
+                let frame = this.layoutFrame
+                let fitsAll (tree:SplitTree) =
+                    SplitGeometry.fits this.splitGap (Dpi.scale SplitMetrics.minPane) frame tree &&
+                    SplitGeometry.fitsPanes this.splitGap least frame tree
+                let next =
+                    match SplitView.apply current command groupLayout with
+                    | Split s -> Split {s with tree=SplitGeometry.fitToPanes this.splitGap least frame s.tree}
+                    | other -> other
+                // A layout that no longer fits, the group made smaller since, still takes commands.
+                let fitsNow = match groupLayout with Split s -> fitsAll s.tree | _ -> true
                 match next with
-                | Split s when not(SplitGeometry.fits this.splitGap (Dpi.scale SplitMetrics.minPane) this.layoutFrame s.tree) ->
+                | Split s when fitsNow && not(fitsAll s.tree) ->
                     // A ratio or axis that does not fit is ignored; a split that cannot start says so.
                     if not wasSplit then Alert.show AlertKind.Warning (tr Strings.TabMenu.split) (tr Strings.TabMenu.splitFailed)
                 | _ ->
