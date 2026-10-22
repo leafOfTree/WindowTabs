@@ -7,6 +7,7 @@ open System.IO
 open System.Threading
 open System.Windows.Forms
 open Bemo
+open Bemo.Json
 
 let check condition message = if not condition then failwith message
 /// Checks the state it saw rather than asking again, which can catch a later change.
@@ -85,7 +86,8 @@ let main() =
             member _.newTab _ = ()
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
-            member _.llMouse = mouse.Publish})
+            member _.llMouse = mouse.Publish
+            member _.paneCandidates() = []})
         let desktop = Desktop({new IDesktopNotification with
                                 member _.dragDrop _ = ()
                                 member _.dragEnd() = ()}, api, InvokerService.invoker :> IDispatcher,
@@ -339,10 +341,11 @@ let main() =
                 check (attempts>=2 && not(onGroup fixture (fun _ -> plugin.isAwaitingDesktopPlacement)))
                       "Successful desktop placement retained a retry timer"
                 let failedStart = attempts
+                let secondHandle = second.Handle
                 onGroup fixture (fun group ->
                     placeSucceeded <- false
-                    group.removeWindow second.Handle
-                    group.addWindow(second.Handle,false))
+                    group.removeWindow secondHandle
+                    group.addWindow(secondHandle,false))
                 pumpUntil "Failed placement did not reach its attempt limit" (fun () ->
                     attempts-failedStart=3 && not(onGroup fixture (fun _ -> plugin.isAwaitingDesktopPlacement)))
                 onGroup fixture (fun _ ->
@@ -423,6 +426,13 @@ let main() =
                 releaseSource.Set() |> ignore
                 pumpUntil "Source exit discarded a staged transfer" (fun () ->
                     oldGroup.isExited && nativeOrder newGroup=[d;e;a;b;c] && WinUserApi.IsWindow c)
+                // A window gone before it could attach is reported so, on the group's thread: a
+                // rebuilt group waits for every transfer to be settled before it restores its split.
+                let outcome = ref None
+                newGroup.addAfterDetaching(oldGroup,IntPtr 0x5555,afterAdd=(fun added -> outcome.Value <- Some added))
+                pumpUntil "A transfer of a window that is gone was never reported" (fun () -> outcome.Value.IsSome)
+                check (outcome.Value=Some false && nativeOrder newGroup=[d;e;a;b;c] && not((newGroup :> IGroup).windows.contains((=) (IntPtr 0x5555))))
+                      "A transfer of a window that is gone was reported as added or kept as a member"
             finally
                 releaseSource.Set() |> ignore
                 for fixture in [oldGroup;newGroup] do
@@ -592,6 +602,23 @@ let main() =
             pumpUntil "A reordered follower swallowed move-end and left the strip hidden" (fun () ->
                 onGroup combined (fun group -> group.ts.visible))
             check (nativeOrder combined = tabsBeforeMove) "Moving a combined group changed its tab positions"
+            // Activating a window raises every window of the group's taskbar window, each just above
+            // its preview, in the previews' order. The group stacks its windows without their owners;
+            // previews left behind brought an old order back at the next activation, a tab behind
+            // a split over a pane.
+            for hwnd in [a;b;d] do WinUserApi.ShowWindow(hwnd,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
+            let stacked = onGroup combined (fun group -> group.zorder.value.list) |> List.rev
+            OS().windowFromHwnd(stacked.Head).insertAfter(WindowHandleTypes.HWND_TOP)
+            for above,hwnd in List.pairwise stacked do OS().windowFromHwnd(hwnd).insertAfter(above)
+            onGroup combined (fun group -> group.main(stacked.Head,WinEvent.EVENT_OBJECT_REORDER))
+            pumpUntil "A preview stayed where its window was before it was stacked" (fun () ->
+                [a;b;d] |> List.forall(fun hwnd -> WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_HWNDNEXT)=owner hwnd))
+            let raised = stacked.[1]
+            WinUserApi.SetWindowPos(raised,WindowHandleTypes.HWND_TOP,0,0,0,0,
+                SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore
+            let rank hwnd = OS().windowFromHwnd(hwnd).zorder
+            check (rank raised < rank stacked.[0] && rank stacked.[0] < rank stacked.[2])
+                  (sprintf "Raising a tab reordered the others: %A" ([a;b;d] |> List.sortBy rank))
             // Exercise the group hooks as well as the worker: no mouse move events
             // or later tab click are available to repair keyboard snapping.
             let keyboardSource = OS().windowFromHwnd(a)
@@ -900,7 +927,7 @@ let main() =
                     group.ts.setPlacement({bounds=Rect(Pt(-20000,-20000),size);showInside=false})
                     let tab = Tab b
                     let _,sprite = group.ts.tabSprites.pick(fun (location,sprite) -> if sprite.id=tab then Some(location,sprite) else None)
-                    let data = {tab=tab;tabSize=sprite.size;tabOffset=Pt(sprite.size.width/2,sprite.size.height/2);tabInfo=group.ts.tabInfo tab}
+                    let data = {tab=tab;tabSize=sprite.size;tabOffset=Pt(sprite.size.width/2,sprite.size.height/2);tabInfo=group.ts.tabInfo tab;tabShift=0;tabAlignment=TabLeft}
                     let proportional = {data with tabSize=Sz(200,32);tabOffset=Pt(100,16)}
                     check (proportional.offsetIn(Sz(300,48))=Pt(150,24)) "Cross-DPI drag lost its grabbed point"
                     check (proportional.offsetIn(Sz(120,64))=Pt(60,32)) "Cross-orientation drag lost its grabbed point"
@@ -925,7 +952,167 @@ let main() =
                     onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
                     (info :> IGroup).destroy()
                 pumpUntil "Drag groups did not exit" (fun () -> dragSource.isExited && dragTarget.isExited)
-            printfn "PASS: real HWND grouping, duplicate add, reorder, cross-STA transfer, six cross-orientation drags, destroyed-window removal, ungrouping, taskbar recovery and taskbar icon rebuilds."
+            // A split is kept with a workspace by the windows' places in the group, and the session,
+            // the same record written on its own, puts the groups and their splits back.
+            do
+                use d = new Form(Text="Pane D",ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-20000,-20000),Size=Drawing.Size(640,480))
+                use e = new Form(Text="Pane E",ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-20000,-20000),Size=Drawing.Size(640,480))
+                let hd,he = d.Handle,e.Handle
+                workspaceWindows <- List2([a;b;hd;he])
+                let pair = desktopApi.createGroup(false) :?> GroupInfo
+                for hwnd in [hd;he] do (pair :> IGroup).addWindow(hwnd,false)
+                pumpUntil "Pair did not form" (fun () -> nativeOrder pair=[hd;he])
+                let frame = Rect(Pt(100,100),Sz(900,700))
+                let tree = {axis=Stacked;ratio=0.3;first=Leaf(Occupied hd);second=Leaf(Occupied he)}
+                onGroup pair (fun group -> group.restoreLayout(Split {tree=tree;focused=[Second]},frame))
+                pumpUntil "The pair did not split" (fun () -> onGroup pair (fun group -> group.splitLayout.IsSome && group.isPlacementIdle))
+                let sessions = WorkspaceModel()
+                sessions.saveSession()
+                pumpUntil "The session was not written" (fun () -> match api.root.["session"] with :? JObject as saved -> (saved.["groups"] :? JArray) | _ -> false)
+                let savedPair =
+                    sessions.loadSession() |> Option.bind(fun ws ->
+                        ws.groups.list |> List.tryPick(fun group ->
+                            let group = group :?> WorkspaceGroup
+                            if group.windows.list |> List.exists(fun window -> (window :?> WorkspaceWindow).title="Pane D") then Some group else None))
+                check (savedPair |> Option.exists(fun group ->
+                        group.split |> Option.exists(fun split ->
+                            not split.parked && split.frame=frame && (split.panes |> List.map fst)=[0;1] &&
+                            (snd split.panes.[1]).levels=[Stacked,Second] && abs((snd split.panes.[0]).ratios.[0]-0.3)<0.001 && (snd split.panes.[1]).focused)))
+                      (sprintf "The session did not keep the pair's split: %A" (savedPair |> Option.map(fun group -> group.split)))
+                // A save that cannot wait on the groups takes the split last read, by window: with
+                // the group's list changed since, the panes went to the wrong places by index.
+                do
+                    onGroup pair (fun group -> group.removeWindow hd)
+                    pumpUntil "The pane did not leave the pair" (fun () -> (pair :> IGroup).windows.list=[he])
+                    (pair :> IGroup).addWindow(hd,false)
+                    pumpUntil "The pair's list did not change order" (fun () -> (pair :> IGroup).windows.list=[he;hd])
+                    sessions.saveSessionNow()
+                    let cachedPair =
+                        sessions.loadSession() |> Option.bind(fun ws ->
+                            ws.groups.list |> List.tryPick(fun group ->
+                                let group = group :?> WorkspaceGroup
+                                if group.windows.list |> List.exists(fun window -> (window :?> WorkspaceWindow).title="Pane D") then Some group else None))
+                    let titleAt (group:WorkspaceGroup) index = (group.windows.list.[index] :?> WorkspaceWindow).title
+                    check (cachedPair |> Option.exists(fun group ->
+                            group.split |> Option.exists(fun split ->
+                                split.panes |> List.exists(fun (index,pane) -> pane.levels=[Stacked,First] && titleAt group index="Pane D") &&
+                                split.panes |> List.exists(fun (index,pane) -> pane.levels=[Stacked,Second] && titleAt group index="Pane E"))))
+                          (sprintf "A session written from the cache named the panes by stale places: %A" (cachedPair |> Option.map(fun group -> group.split,group.windows.list |> List.map(fun window -> (window :?> WorkspaceWindow).title))))
+                // Taken apart and put away, as a sign-in leaves them, the session puts them back split.
+                onGroup pair (fun group -> group.removeWindow hd; group.removeWindow he)
+                (pair :> IGroup).destroy()
+                pumpUntil "The pair did not exit" (fun () -> pair.isExited)
+                for hwnd in [hd;he] do OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),Sz(640,480)))
+                let mutable restored : WorkspaceRestoreResult option = None
+                sessions.restoreSession(false,ignore,fun result -> restored <- Some result)
+                pumpUntil "The session did not restore" (fun () -> restored.IsSome)
+                let groupOf hwnd = desktopApi.groups.list |> List.tryFind(fun group -> group.windows.contains((=) hwnd)) |> Option.map(fun group -> group :?> GroupInfo)
+                // The frame comes back fitted to a work area, as a restore keeps it on screen: on a
+                // small screen, a single one of 768 lines say, that is not the frame saved.
+                let fitted = WorkspaceData.fitRect (Mon.all.map(fun mon -> mon.workRect).list) frame
+                pumpUntil "The pair did not come back split from the session" (fun () ->
+                    match groupOf hd with
+                    | Some info ->
+                        onGroup info (fun group ->
+                            group.splitLayout |> Option.exists(fun s -> SplitView.windows s=[hd;he] && s.tree.axis=Stacked && abs(s.tree.ratio-0.3)<0.001) &&
+                            group.layoutFrame=fitted)
+                    | None -> false)
+                groupOf hd |> Option.iter(fun info ->
+                    onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
+                    (info :> IGroup).destroy())
+                pumpUntil "The restored pair did not exit" (fun () -> (groupOf hd).IsNone && (groupOf he).IsNone)
+                // One pane open and the other found only on a later try, after its app started:
+                // the split is rebuilt once both are there. Rebuilt from each try's own windows,
+                // neither try had two of them, and the pair came back as plain tabs.
+                do
+                    for hwnd in [hd;he] do OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),Sz(640,480)))
+                    // Only the first pane is open: the other is not among the windows at all, as
+                    // any window of its app would stand in for it by the title-free pass.
+                    workspaceWindows <- List2([hd])
+                    let mutable first : WorkspaceRestoreResult option = None
+                    sessions.restoreSession(false,ignore,fun result -> first <- Some result)
+                    pumpUntil "The session did not restore its first try" (fun () -> first.IsSome && (groupOf hd).IsSome)
+                    check (first.Value.pending |> List.exists(fun (_,window) -> window.title="Pane E") && (groupOf he).IsNone)
+                          (sprintf "The first try did not leave the other pane pending: %A" (first.Value.pending |> List.map(fun (_,window) -> window.title)))
+                    workspaceWindows <- List2([he])
+                    let again = sessions.retry first.Value
+                    check (again.restored>=1) (sprintf "The later try did not find the other pane: %A" again.missing)
+                    pumpUntil "The pair did not come back split over two tries" (fun () ->
+                        match groupOf hd with
+                        | Some info -> onGroup info (fun group -> group.splitLayout |> Option.exists(fun s -> SplitView.windows s=[hd;he] && s.tree.axis=Stacked))
+                        | None -> false)
+                    workspaceWindows <- List2([a;b;hd;he])
+                    groupOf hd |> Option.iter(fun info ->
+                        onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
+                        (info :> IGroup).destroy())
+            // A tab dragged out onto the desktop keeps the size the group had; where a side spans most
+            // of the screen, the whole window is scaled down with its proportions kept.
+            do
+                use f = new Form(Text="Own size",ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-20000,-20000),Size=Drawing.Size(640,480))
+                let hwnd = f.Handle
+                let alone = desktopApi.createGroup(false) :?> GroupInfo
+                (alone :> IGroup).addWindow(hwnd,false)
+                pumpUntil "Own-size window did not group" (fun () -> nativeOrder alone=[hwnd])
+                let work = Screen.PrimaryScreen.WorkingArea
+                let workRect = Rect(Pt(work.X,work.Y),Sz(work.Width,work.Height))
+                let tabSize = Sz(100,24)
+                let centred = {tab=Tab hwnd;tabSize=tabSize;tabOffset=Pt(10,10);tabInfo=onGroup alone (fun group -> group.ts.tabInfo(Tab hwnd));tabShift=0;tabAlignment=TabCenter}
+                let dropAt (pt:Pt) (size:Sz) =
+                    OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),size))
+                    // The image's shift, as the strip computed it for the group's width.
+                    let data = {centred with tabShift=centred.shiftFor size.width}
+                    (desktop :> IDragDropParent).dragDrop((pt,box data))
+                    pumpUntil "The dropped window was not placed" (fun () -> OS().windowFromHwnd(hwnd).placement.rcNormalPosition.x<> -20000)
+                    // Shown, as the program shows a dropped window, so its frame can be read.
+                    OS().windowFromHwnd(hwnd).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE)
+                    OS().windowFromHwnd(hwnd).visibleBounds
+                let dropped (size:Sz) = (dropAt (Pt(work.X+200,work.Y+200)) size).size
+                // Resized since it joined, the group's size is what comes out; read once at joining,
+                // the window's own size brought back a size the group had long left.
+                let modestGroup = Sz(work.Width/2,work.Height/2)
+                OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),modestGroup))
+                let groupVisible = OS().windowFromHwnd(hwnd).visibleBounds.size
+                let landed = dropped modestGroup
+                check (landed=groupVisible) (sprintf "A tab dragged out of a modest group did not keep the group's size: %dx%d instead of %dx%d" landed.width landed.height groupVisible.width groupVisible.height)
+                // Screen-sized, maximized or snapped to half the screen, the window comes out scaled
+                // as a whole, its widest share of the screen at three fifths. Taken side by side, a
+                // half-screen group came out squashed; judged whole without scaling, it came out the
+                // screen's full height, pushed up to its top.
+                for group in [Sz(work.Width,work.Height);Sz(work.Width/2,work.Height)] do
+                    OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),group))
+                    let before = OS().windowFromHwnd(hwnd).visibleBounds.size
+                    let landed = dropAt (Pt(work.X+work.Width/2,work.Y+work.Height/2)) group
+                    let ratio (size:Sz) = float size.width/float size.height
+                    let share = max (float landed.width/float work.Width) (float landed.height/float work.Height)
+                    check (abs(ratio landed.size-ratio before)<0.01 && abs(share-0.6)<0.01 && landed.top>work.Y)
+                          (sprintf "A tab dragged out of a %dx%d group did not keep its proportions at three fifths of the screen: %A, %dx%d" before.width before.height landed landed.width landed.height)
+                // Made smaller, the window lands with its centred tab still under the pointer: placed
+                // by the group's width, it came out hundreds of pixels to the left. Dropped near the
+                // work area's edges, it stays wholly inside it.
+                let mid = Pt(work.X+work.Width/2,work.Y+work.Height/3)
+                let landed = dropAt mid (Sz(work.Width,work.Height))
+                let tabLeft = mid.x-centred.tabOffset.x
+                let expectedLeft = tabLeft-centred.shiftFor landed.width+(desktop.GetType().GetProperty("windowOffset",Reflection.BindingFlags.Instance|||Reflection.BindingFlags.NonPublic).GetValue(desktop) :?> Pt).x
+                check (abs(landed.x-expectedLeft)<=2) (sprintf "A smaller dropped window did not keep its tab under the pointer: left %d, expected %d" landed.x expectedLeft)
+                for corner in [Pt(work.Right-5,work.Bottom-5);Pt(work.X+5,work.Bottom-5);Pt(work.Right-5,work.Y+5)] do
+                    let at = dropAt corner (Sz(work.Width,work.Height))
+                    check (DragOutPlacement.fit workRect at=at) (sprintf "A tab dropped at %A landed outside the work area: %A in %A" corner at work)
+                // Let go, the window comes in front of what lay over it: its old group took the
+                // foreground as the tab left it, showing the panes the tab had parked, and the window
+                // landed under them.
+                do
+                    use cover = new Form(Text="Cover",ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(work.X,work.Y),Size=Drawing.Size(work.Width,work.Height))
+                    cover.Show()
+                    OS().windowFromHwnd(cover.Handle).insertAfter(WindowHandleTypes.HWND_TOP)
+                    let isAbove (upper:IntPtr) (lower:IntPtr) =
+                        let rec walk (current:IntPtr) = current<>IntPtr.Zero && (current=upper || walk (WinUserApi.GetWindow(current,GetWindowConstants.GW_HWNDPREV)))
+                        walk (WinUserApi.GetWindow(lower,GetWindowConstants.GW_HWNDPREV))
+                    check (isAbove cover.Handle hwnd) "The test could not put a window over the one it drops"
+                    dropAt mid (Sz(work.Width,work.Height)) |> ignore
+                    pumpUntil "The dropped window did not come in front" (fun () -> isAbove hwnd cover.Handle)
+                onGroup alone (fun group -> group.removeWindow hwnd)
+                (alone :> IGroup).destroy()
+            printfn "PASS: real HWND grouping, duplicate add, reorder, cross-STA transfer, six cross-orientation drags, destroyed-window removal, ungrouping, taskbar recovery, taskbar icon rebuilds and the session's splits."
         finally
             let rest = desktopApi.groups.list |> List.map(fun g -> g :?> GroupInfo)
             for info in List.distinct([source;target;combined] @ rest) do

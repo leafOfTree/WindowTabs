@@ -39,6 +39,34 @@ let main() =
     try
         use settings = new Settings(true,saveDelay=0)
         let api = settings :> ISettings
+        // The topmost cover leaves live tabs visible and follows their native geometry.
+        do
+            let frame = Rect(Pt(-1200,100),Sz(600,400))
+            use strip = new Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,
+                                 StartPosition=FormStartPosition.Manual)
+            strip.Bounds <- Rectangle(-1100,100,300,30)
+            strip.Show()
+            use cover = new SplitTransition(frame,[],durationMs=5000,strip=strip.Handle)
+            check (cover.start()) "Transition fixture did not start"
+            try
+                let clearAt (x:int) (y:int) = not(cover.Bounds.Contains(Point(frame.x+x,frame.y+y)))
+                check (clearAt 150 15 && not(clearAt 150 100)) "Transition covered the top tabs or cut away the app"
+                for bounds,x,y in [Rectangle(-1200,130,90,300),40,100; Rectangle(-690,130,90,300),550,100] do
+                    strip.Bounds <- bounds
+                    let watch = Diagnostics.Stopwatch.StartNew()
+                    while not(clearAt x y) && watch.ElapsedMilliseconds<1500L do
+                        Application.DoEvents()
+                        Threading.Thread.Sleep(5)
+                    check (clearAt x y && not(clearAt 150 15)) "Transition did not follow the strip to its side dock"
+                strip.Hide()
+                let watch = Diagnostics.Stopwatch.StartNew()
+                while clearAt 550 100 && watch.ElapsedMilliseconds<1500L do
+                    Application.DoEvents()
+                    Threading.Thread.Sleep(5)
+                check (not(clearAt 550 100)) "A hidden strip left a hole in the transition"
+            finally
+                cover.close()
+                Application.DoEvents()
         use sideFull = new Bitmap(220,120)
         use sideBar = new Bitmap(4,120)
         for y in 0..119 do
@@ -328,6 +356,20 @@ let main() =
                 check (not repeat && held.handle(WindowMessages.WM_KEYDOWN,vk,None)=(true,None)) "Held leader key leaked or activated twice after switching focus"
             check (held.handle(WindowMessages.WM_KEYUP,vk,None)=(true,None)) "Leader selection release leaked"
             check (held.handle(WindowMessages.WM_KEYDOWN,vk,None)=(false,None)) "A fresh press remained captured after release"
+        // Esc beside an empty pane closes it and goes no further, its release and its repeats
+        // with it; with a modifier held, or with no empty pane, it passes through.
+        do
+            let escape = EmptyPaneEscape()
+            let closed = ref 0
+            let pane present () = (if present then closed.Value <- closed.Value+1); present
+            let down,up = WindowMessages.WM_KEYDOWN,WindowMessages.WM_KEYUP
+            check (escape.handle(down,0x1B,false,pane true) && closed.Value=1) "Esc beside an empty pane did not close it"
+            check (escape.handle(down,0x1B,false,pane true) && closed.Value=1) "A held Esc closed again or reached the app"
+            check (escape.handle(up,0x1B,false,pane true)) "The release of the Esc that closed an empty pane reached the app"
+            check (not(escape.handle(down,0x1B,false,pane false)) && not(escape.handle(up,0x1B,false,pane false))) "Esc with no empty pane was taken"
+            check (not(escape.handle(down,0x1B,true,pane true)) && closed.Value=1) "Esc with a modifier closed an empty pane"
+            check (not(escape.handle(up,0x1B,true,pane true))) "The release of an Esc let through was taken"
+            check (not(escape.handle(down,0x41,false,pane true)) && closed.Value=1) "Another key closed an empty pane"
         check (NumberLeaderKeys.tryNormalize "asdfghjkl;"=Some "ASDFGHJKL;") "Home-row keys did not normalize"
         for value in ["";"AA";"aA";"A A";"ä¸­æ–‡";"!"] do
             check ((NumberLeaderKeys.tryNormalize value).IsNone) "Invalid or duplicate selection keys were accepted"
@@ -376,6 +418,9 @@ let main() =
                 strip.dimmed <- true
                 let dimmedSprite = snd strip.tabSprites.head
                 check (frames strip>brightFrames) "Dimming an inactive group did not repaint it"
+                let dimmedFrames = frames strip
+                for _ in 1..10 do strip.dimmed <- true
+                check (frames strip=dimmedFrames) "Repeated inactive notifications repainted the whole strip"
                 if not SystemInformation.HighContrast then
                     let dim = pixels()
                     check (dim.Length=bright.Length && Array.forall2(fun (a:Color) (b:Color) -> a.A=b.A) dim bright) "Inactive group became transparent"
@@ -385,6 +430,8 @@ let main() =
                 strip.dimmed <- false
                 check ((snd strip.tabSprites.head).fillColor=originalFill) "Reactivating a group did not restore its colours"
                 let selectionFrames = frames strip
+                for _ in 1..10 do strip.dimmed <- false
+                check (frames strip=selectionFrames) "Switching within an active group repainted unchanged dimming"
                 let order = strip.zorder
                 strip.setTabBgColor(order.head,None)
                 strip.zorder <- List2(order.list)

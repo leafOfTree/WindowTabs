@@ -286,7 +286,7 @@ type AppearanceView(?settings:ISettings) =
             use font = TabMetrics.font appearance.tabHeight FontStyle.Regular
             let info index (caption:string) : TabDisplayInfo = {
                 tint=(if settings.getValue("tabColorMode") :?> string = "Off" then None else Some((Theme.tabPalette (Theme.darkBar appearance.tabNormalBgColor)).[index])); colorStyle=settings.getValue("tabColorStyle") :?> string; numberBadge=None; bgColor=None; text=caption; icon=SystemIcons.Application
-                textFont=font; textBrush=SystemBrushes.MenuText }
+                textFont=font; textBrush=SystemBrushes.MenuText; splitTrail=None }
             let ts : TabStripSprite<int> = {
                 tabs=Map2(List2([1,info 1 (tr Strings.Settings.tabActiveBgColor.caption);2,info 2 (tr Strings.Settings.tabHighlightBgColor.caption);3,info 4 (tr Strings.Settings.tabNormalBgColor.caption)]))
                 lorder=List2([1;2;3]);zorder=List2([1;2;3]);size=Sz(tabs.Width,tabs.Height)

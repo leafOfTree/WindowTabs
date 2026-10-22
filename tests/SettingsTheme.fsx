@@ -100,7 +100,7 @@ let main() =
             let count = 6
             let info index : TabDisplayInfo =
                 { tint=Some palette.[Theme.tabAllocationOrder.[index]]; colorStyle="Fill"; numberBadge=None; bgColor=None
-                  text="Tab"; icon=SystemIcons.Application; textFont=font; textBrush=SystemBrushes.MenuText }
+                  text="Tab"; icon=SystemIcons.Application; textFont=font; textBrush=SystemBrushes.MenuText; splitTrail=None }
             let ids = [0..count-1]
             let strip : TabStripSprite<int> = {
                 tabs=Map2(List2(ids |> List.map(fun i -> i,info i))); lorder=List2(ids); zorder=List2(ids); size=Sz(900,27)
@@ -424,7 +424,9 @@ let main() =
             member _.groupExited = Event<IGroup>().Publish
             member _.groupRemoved = Event<IGroup>().Publish
             member _.groupChanged = Event<IGroup>().Publish
-            member _.foregroundGroup = None })
+            member _.foregroundGroup = None
+            member _.adoptIntoPane(_,_,_) = ()
+            member _.adoptBeside(_,_,_,_) = () })
         // Closing a diagnostics page must not dispose the process-wide cached font.
         for _ in 1..3 do
             let disposableSupport = DiagnosticsView() :> ISettingsView
@@ -529,7 +531,7 @@ let main() =
                             member _.hovered = hovered.Publish
                             member _.clicked = clicked.Publish}
                         let handles = [for index in 1..count -> IntPtr(index)]
-                        let action = TaskSwitchAction(List2(handles |> List.map(fun hwnd -> TaskWindowItem(hwnd,false))),
+                        let action = TaskSwitchAction(List2(handles |> List.map(fun hwnd -> TaskWindowItem(hwnd,None))),
                                                       style,backward=backward,view=view)
                         try
                             let expected = if count=0 then None elif backward then Some(count-1) else Some(1%count)
@@ -556,9 +558,9 @@ let main() =
             let windows = [ for title in ["Inbox - Mail";"Project plan.docx - Word";"WindowTabs - Visual Studio"] ->
                               new Form(Text=title,StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false) ]
             try
-                let items count = List2([ for index in 0..count-1 -> TaskWindowItem(windows.[index%windows.Length].Handle,index=1) ])
-                let plain = TaskSwitchIconView(List2([TaskWindowItem(windows.Head.Handle,false)]))
-                let grouped = TaskSwitchIconView(List2([TaskWindowItem(windows.Head.Handle,true)]))
+                let items count = List2([ for index in 0..count-1 -> TaskWindowItem(windows.[index%windows.Length].Handle,(if index=1 then Some(GroupOfApps []) else None)) ])
+                let plain = TaskSwitchIconView(List2([TaskWindowItem(windows.Head.Handle,None)]))
+                let grouped = TaskSwitchIconView(List2([TaskWindowItem(windows.Head.Handle,Some(GroupOfApps []))]))
                 try
                     use before = plain.Render()
                     use after = grouped.Render()
@@ -571,6 +573,18 @@ let main() =
                 finally
                     (plain :> ITaskSwitchView).hide()
                     (grouped :> ITaskSwitchView).hide()
+                // A group with another app's tab shows that app's icon after the front one, as its
+                // taskbar button does, not the WindowTabs badge.
+                let mixed = TaskSwitchIconView(List2([TaskWindowItem(windows.Head.Handle,Some(GroupOfApps [windows.[1].Handle]))]))
+                let badged = TaskSwitchIconView(List2([TaskWindowItem(windows.Head.Handle,Some(GroupOfApps []))]))
+                try
+                    use corner = mixed.Render()
+                    use badge = badged.Render()
+                    let differs = seq { for y in 0..corner.Height-1 do for x in 0..corner.Width-1 -> corner.GetPixel(x,y)<>badge.GetPixel(x,y) }
+                    check (Seq.exists id differs) "A group of two apps shows the WindowTabs badge in Alt+Tab instead of the other app's icon"
+                finally
+                    (mixed :> ITaskSwitchView).hide()
+                    (badged :> ITaskSwitchView).hide()
                 let three = TaskSwitchIconView(items 3)
                 let crowd = TaskSwitchIconView(items 60)
                 do

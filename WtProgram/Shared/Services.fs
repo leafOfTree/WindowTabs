@@ -24,6 +24,16 @@ type ServiceProvider() =
     member this.registerLocal(service:'a) = 
         ServiceProvider.localServices.Add(typeof<'a>, service)
 
+    /// None for a service nobody registered, such as an optional one in a test host.
+    member this.tryGet<'a>() : 'a option =
+        let t = typeof<'a>
+        match ServiceProvider.localServices.TryGetValue(t) with
+        | true,service -> Some(unbox<'a> service)
+        | _ ->
+            match services.TryGetValue(t) with
+            | true,service -> Some(unbox<'a> service)
+            | _ -> None
+
     member this.get<'a>() =
         let t = typeof<'a>
         let service = 
@@ -72,6 +82,8 @@ type DispatchedDesktop(inner:IDesktop, dispatcher:IDispatcher) =
         member _.groupRemoved = dispatcher.Send(fun () -> inner.groupRemoved)
         member _.groupChanged = dispatcher.Send(fun () -> inner.groupChanged)
         member _.foregroundGroup = dispatcher.Send(fun () -> inner.foregroundGroup)
+        member _.adoptIntoPane(group,hwnd,path) = dispatcher.Post(fun () -> inner.adoptIntoPane(group,hwnd,path))
+        member _.adoptBeside(group,hwnd,drop,partner) = dispatcher.Post(fun () -> inner.adoptBeside(group,hwnd,drop,partner))
 
 type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
     interface IProgram with
@@ -103,6 +115,7 @@ type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
         member _.suspendTabMonitoring() = dispatcher.Send(fun () -> inner.suspendTabMonitoring())
         member _.resumeTabMonitoring() = dispatcher.Send(fun () -> inner.resumeTabMonitoring())
         member _.llMouse = dispatcher.Send(fun () -> inner.llMouse)
+        member _.paneCandidates() = dispatcher.Send(fun () -> inner.paneCandidates())
 
 type DispatchedFilterService(inner:IFilterService, dispatcher:IDispatcher) =
     interface IFilterService with

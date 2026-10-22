@@ -65,8 +65,9 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
                 windowsCell.map <| fun l -> l.where((<>) hwnd)
 
     member this.invokeGroup = invoker.asyncInvoke
-    /// Complete on the main STA, including when the group exits before its queued read.
-    member this.captureTabLayout(callback:GroupTabLayout option -> unit) =
+    /// The group's tab layout and its split, read on the group's thread. Complete on the main
+    /// STA, including when the group exits before its queued read.
+    member this.captureLayout(callback:(GroupTabLayout * (bool * Rect * (IntPtr * SavedPane) list) option) option -> unit) =
         let mutable completed = false
         let mutable subscription : IDisposable option = None
         let complete result =
@@ -77,8 +78,11 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
         subscription <- Some(_group.exited.Subscribe(fun () -> desktopDispatcher.Post(fun () -> complete None)))
         if this.isExited then complete None
         else this.invokeGroup(fun () ->
-            let layout = _group.tabLayout
+            let layout = _group.tabLayout,_group.savedSplit
             desktopDispatcher.Post(fun () -> complete (Some layout)))
+
+    member this.captureTabLayout(callback:GroupTabLayout option -> unit) =
+        this.captureLayout(fun captured -> callback (captured |> Option.map fst))
 
     member this.isSuperBarEnabled = enableSuperBar
     /// The group's tab menu chose whether to combine its taskbar icons, so the setting leaves it alone. Main thread only.
@@ -110,7 +114,9 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
             windowsCell.map(fun windows -> windows.where((<>)hwnd))
         this.invokeGroup <| fun() -> this.group.removeWindow(hwnd)
     /// Stage main-thread membership, then attach only after the source STA has finished cleanup.
-    member this.addAfterDetaching(source:GroupInfo, hwnd:IntPtr) =
+    /// `afterAdd` runs on the group's thread once the window is a member, or with false once
+    /// it is known it will not be: gone meanwhile, or taken back.
+    member this.addAfterDetaching(source:GroupInfo, hwnd:IntPtr, ?afterAdd:bool -> unit) =
         if not(windowsCell.value.contains((=)hwnd)) then windowsCell.map(fun windows -> windows.append hwnd)
         let token = obj()
         stagedAdds.[hwnd] <- token
@@ -124,9 +130,11 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
                 | true,current when obj.ReferenceEquals(current,token) ->
                     stagedAdds.Remove hwnd |> ignore
                     this.invokeGroup(fun () ->
-                        if not this.isExited && WinUserApi.IsWindow hwnd then this.group.addWindow(hwnd,false)
-                        else desktopDispatcher.Post(fun () -> windowsCell.map(fun windows -> windows.where((<>)hwnd))))
-                | _ -> ()
+                        let added = not this.isExited && WinUserApi.IsWindow hwnd
+                        if added then this.group.addWindow(hwnd,false)
+                        else desktopDispatcher.Post(fun () -> windowsCell.map(fun windows -> windows.where((<>)hwnd)))
+                        afterAdd |> Option.iter(fun action -> action added))
+                | _ -> afterAdd |> Option.iter(fun action -> this.invokeGroup(fun () -> action false))
         subscription <- Some(source.exited.Subscribe(fun () -> desktopDispatcher.Post attach))
         if source.isExited then attach()
         else source.invokeGroup(fun () ->
@@ -143,6 +151,8 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
         member x.addWindow(hwnd, delay) = this.addWindow(hwnd, delay)
         member x.removeWindow hwnd = this.removeWindow hwnd
         member x.switchWindow(next,force) = this.switchWindow(next, force)
+        member x.executeSplit command = this.invokeGroup <| fun() -> this.group.execute command
+        member x.pickPane(axis,side) = this.invokeGroup <| fun() -> this.group.requestPick(axis,side)
         
 type IDesktopNotification =
     abstract member dragDrop : IntPtr -> unit
@@ -158,11 +168,26 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
     let removedEvent = Event<_>()
     let changedEvent = Event<_>()
     let _dd = DragDropController(this :> IDragDropParent) :> IDragDrop
-    
-    do 
+    /// A window being moved by its own title bar: the window, its frame and whether it was maximized.
+    let mutable nativeMove : (IntPtr * Rect * bool) option = None
+
+    do
         Services.register(_dd)
         Services.register(DispatchedDesktop(this :> IDesktop, dispatcher) :> IDesktop)
         settings.notifyValue "combineIconsInTaskbar" (fun value -> this.combineTaskbarIcons(unbox value)) |> ignore
+        // Windows dragged by their title bar can be let go over a group's empty pane.
+        os.setSingleWinEvent WinEvent.EVENT_SYSTEM_MOVESIZESTART (fun hwnd ->
+            nativeMove <-
+                if WinUserApi.IsWindow hwnd && WinUserApi.GetAsyncKeyState(VirtualKeyCodes.VK_LBUTTON)<0s then
+                    let window = os.windowFromHwnd(hwnd)
+                    Some(hwnd,window.visibleBounds,window.isMaximized)
+                else None) |> ignore
+        os.setSingleWinEvent WinEvent.EVENT_SYSTEM_MOVESIZEEND (fun hwnd ->
+            match nativeMove with
+            | Some(source,initial,maximized) when source=hwnd ->
+                nativeMove <- None
+                this.dropNativeWindow(hwnd,initial,maximized)
+            | _ -> nativeMove <- None) |> ignore
 
     member private this.groups : List2<GroupInfo> = groupCell.value.items
     member _.retainedGroupCount = groupCell.value.count
@@ -201,6 +226,8 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
         old.isRetiring <- true
         old.invokeGroup <| fun() ->
             let choices = old.group.menuChoices
+            let layout = old.group.layout
+            let frame = old.group.layoutFrame
             dispatcher.Post <| fun() ->
                 let group = old.cast<IGroup>()
                 let enableSuperBar = wanted()
@@ -213,8 +240,17 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
                         newGroup.awaitsGroupingDesktop <- old.awaitsGroupingDesktop
                         newGroup.group.groupToken <- old.group.groupToken
                         newGroup.invokeGroup(fun() -> newGroup.group.applyMenuChoices choices)
+                        // The split comes back once every window has arrived or is known not to:
+                        // waiting for the old count, a window gone meanwhile kept it from ever coming.
+                        let remaining = ref group.windows.count
+                        let attached _ =
+                            remaining.Value <- remaining.Value-1
+                            if remaining.Value=0 then
+                                match layout with
+                                | GroupLayout.Single -> ()
+                                | _ -> newGroup.group.restoreLayout(layout,frame)
                         group.windows.iter <| fun hwnd ->
-                            newGroup.addAfterDetaching(old,hwnd))
+                            newGroup.addAfterDetaching(old,hwnd,afterAdd=attached))
 
     member this.restartGroup(groupHwnd, enableSuperBar) =
         this.groups.tryFind(fun g -> g.hwnd = groupHwnd && not g.isRetiring && g.isSuperBarEnabled <> enableSuperBar)
@@ -241,6 +277,51 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
             with get() =
                 let foregroundWindow = os.foreground
                 this.findGroupContainingHwnd(foregroundWindow.hwnd)
+        member x.adoptIntoPane(groupHwnd,hwnd,path) = this.adoptIntoPane(groupHwnd,hwnd,path)
+        member x.adoptBeside(groupHwnd,hwnd,drop,partner) =
+            this.groups.tryFind(fun g -> g.hwnd=groupHwnd) |> Option.iter(fun group ->
+                this.handToPane(group,hwnd,fun () -> group.group.dropTab(hwnd,drop,partner)))
+
+    /// A window moved and let go over a group's empty pane joins that pane, as a dropped tab would.
+    member private this.dropNativeWindow(hwnd,initial:Rect,maximized) =
+        if WinUserApi.IsWindow hwnd then
+            let actual = os.windowFromHwnd(hwnd).visibleBounds
+            let pt = System.Windows.Forms.Cursor.Position.Pt
+            // A resize or a cancelled move must not become a pane drop.
+            if (maximized || actual.size=initial.size) && actual.location<>initial.location && WinUserApi.GetAsyncKeyState(VirtualKeyCodes.VK_ESCAPE)>=0s then
+                let exposed = os.windowsInZorder.tryFind(fun w ->
+                    w.hwnd<>hwnd && w.isVisible && not w.isMinimized && not(WindowCloaking.IsCloaked w.hwnd) && w.visibleBounds.containsPoint(pt))
+                exposed |> Option.iter(fun pane ->
+                    this.groups.tryFind(fun g -> not g.isExited && not g.isRetiring && g.group.isEmptyPane pane.hwnd) |> Option.iter(fun group ->
+                        let anchor = (group :> IGroup).windows.tryHead
+                        let sameDesktop =
+                            match anchor |> Option.bind VirtualDesktop.groupingDesktopId,VirtualDesktop.groupingDesktopId hwnd with
+                            | Some a,Some b -> a=b
+                            | _ -> false
+                        if sameDesktop then
+                            this.handToPane(group,hwnd,fun () ->
+                                match group.group.emptyPaneAt pt with
+                                | Some(path,_) -> group.group.execute(FillPane(hwnd,path))
+                                | None -> ())))
+
+    /// A window joins the group, leaving the group it was in, and `fill` runs on the group's
+    /// thread once it is a member. A window of the group itself only needs the fill.
+    member private this.handToPane(group:GroupInfo,hwnd,fill:unit -> unit) =
+        if WinUserApi.IsWindow hwnd && not group.isExited && not group.isRetiring then
+            let finish() =
+                group.group.isManual <- true
+                fill()
+            match this.groups.tryFind(fun source -> (source :> IGroup).windows.contains((=) hwnd)) with
+            | Some source when source.hwnd=group.hwnd -> group.invokeGroup finish
+            | Some source when not source.isRetiring -> group.addAfterDetaching(source,hwnd,afterAdd=(fun added -> if added then finish()))
+            | None when Services.filter.isTabbableWindow hwnd ->
+                (group :> IGroup).addWindow(hwnd,false)
+                group.invokeGroup finish
+            | _ -> ()
+
+    member private this.adoptIntoPane(groupHwnd,hwnd,path) =
+        this.groups.tryFind(fun g -> g.hwnd=groupHwnd) |> Option.iter(fun group ->
+            this.handToPane(group,hwnd,fun () -> group.group.execute(FillPane(hwnd,path))))
 
     interface IDragDropParent with
         member x.dragBegin() = invoker.asyncInvoke <| fun() ->
@@ -250,22 +331,40 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
             let dragInfo = unbox<TabDragInfo>(data)
             let (Tab(hwnd)) = dragInfo.tab
             let window = os.windowFromHwnd(hwnd)
-            // Tabs sit on the visible frame, so step back over the invisible resize border too.
-            // A maximized or minimized window's frame says nothing about its restored one.
-            let frameOffset =
-                if window.isMaximized || window.isMinimized then Pt()
-                else window.visibleBounds.location.sub(window.bounds.location)
-            let windowPt = pt.sub(dragInfo.tabOffset).add(this.windowOffset).sub(frameOffset)
-            let monitor = Mon.fromPoint windowPt
+            // Tabs sit on the visible frame; the invisible resize borders go around it. A maximized
+            // or minimized window's frame says nothing about its restored one.
+            let borderLeftTop,borderSize =
+                if window.isMaximized || window.isMinimized then Pt(),Sz()
+                else
+                    let bounds,visible = window.bounds,window.visibleBounds
+                    visible.location.sub(bounds.location),Sz(bounds.width-visible.width,bounds.height-visible.height)
+            // The monitor under the pointer decides: the size the group had, scaled down as a whole
+            // where it spans most of the screen. A maximized window fills it.
+            let monitor = DragOutPlacement.monitorAt pt
+            let size =
+                let current =
+                    if window.isMaximized then monitor |> Option.map(fun mon -> mon.workRect.size) |> Option.defaultValue window.visibleBounds.size
+                    else window.visibleBounds.size
+                monitor |> Option.map(fun mon -> DragOutPlacement.size current mon.workRect) |> Option.defaultValue current
+            // The tab stays under the pointer at the width the window lands at: placed with the
+            // shift of the group's width, a window made smaller came out hundreds of pixels to
+            // one side, at times off the screen. Then all of it in the work area.
+            let visiblePt = pt.sub(dragInfo.tabOffset).sub(Pt(dragInfo.shiftFor size.width,0)).add(this.windowOffset)
+            let visible =
+                let frame = Rect(visiblePt,size)
+                monitor |> Option.map(fun mon -> DragOutPlacement.fit mon.workRect frame) |> Option.defaultValue frame
             let workspaceOffset = monitor.map(fun mon -> mon.workRect.location.sub(mon.displayRect.location)).def(Pt())
-            let windowPt = windowPt.sub(workspaceOffset)
+            let windowPt = visible.location.sub(borderLeftTop).sub(workspaceOffset)
             window.setPlacement({
                 window.placement with
                     showCmd = ShowWindowCommands.SW_SHOWNORMAL
-                    rcNormalPosition = Rect(
-                        windowPt,
-                        window.placement.rcNormalPosition.size)
-            })  
+                    rcNormalPosition = Rect(windowPt,Sz(visible.width+borderSize.width,visible.height+borderSize.height))
+            })
+            // The window let go is the one in hand: in front and active. Its old group took the
+            // foreground as the tab left it, to show the panes the tab had parked, and the window
+            // landed under them.
+            window.setForeground(true)
+            window.raise()
             notify.dragDrop(hwnd)
             
         member x.dragEnd() = invoker.asyncInvoke <| fun() ->

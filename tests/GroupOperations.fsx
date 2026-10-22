@@ -17,6 +17,25 @@ module Timer =
     extern uint32 timeBeginPeriod(uint32 period)
 
 let check condition message = if not condition then failwith message
+/// Holds every thread-pool worker while `action` runs, so a placement it submits cannot start
+/// before the group thread has finished the operation that submitted it.
+let withPoolHeld (action:unit -> unit) =
+    let mutable maxWorkers,maxIo = 0,0
+    let mutable minWorkers,minIo = 0,0
+    ThreadPool.GetMaxThreads(&maxWorkers,&maxIo)
+    ThreadPool.GetMinThreads(&minWorkers,&minIo)
+    let held = Environment.ProcessorCount
+    use hold = new ManualResetEvent(false)
+    use started = new CountdownEvent(held)
+    check (ThreadPool.SetMinThreads(held,minIo) && ThreadPool.SetMaxThreads(held,maxIo)) "The thread pool could not be limited"
+    try
+        for _ in 1..held do ThreadPool.QueueUserWorkItem(fun _ -> started.Signal() |> ignore; hold.WaitOne() |> ignore) |> ignore
+        check (started.Wait(5000)) "The thread-pool workers did not all start"
+        action()
+    finally
+        hold.Set() |> ignore
+        ThreadPool.SetMaxThreads(maxWorkers,maxIo) |> ignore
+        ThreadPool.SetMinThreads(minWorkers,minIo) |> ignore
 /// Each wait sleeps at least one timer tick; main shortens it to 1ms. At the default 15.6ms a
 /// sampled operation's half a dozen waits cost about 95ms and the suite ran past its timeout.
 /// Checks the state it saw: asking again after the loop can catch a later, transient change,
@@ -35,10 +54,12 @@ type HelperWindow() =
     inherit Form(ShowInTaskbar=false, StartPosition=FormStartPosition.Manual,
                  Location=Point(-20000,-20000), Size=Size(640,480))
     let mutable changes = 0
+    let mutable pinned = true
     let mutable delay = 0
     let mutable iconDelay = 0
     let mutable positionPause : (ManualResetEventSlim * ManualResetEventSlim) option = None
     member _.Changes = Volatile.Read(&changes)
+    member _.Pinned with set value = pinned <- value
     member _.Delay with set value = delay <- value
     member _.IconDelay with set value = iconDelay <- value
     member _.HoldNextPositionChanged(entered,resume) = positionPause <- Some(entered,resume)
@@ -55,10 +76,10 @@ type HelperWindow() =
             position.flags <- position.flags ||| SetWindowPosFlags.SWP_NOACTIVATE
             // Keep maximize tests off screen; measure native synchronization,
             // not full-screen painting or the compositor's transition.
-            if position.IsMove && (position.x > -10000 || position.y > -10000) then
+            if pinned && position.IsMove && (position.x > -10000 || position.y > -10000) then
                 position.x <- -20000
                 position.y <- -20000
-            if position.IsSize then
+            if pinned && position.IsSize then
                 position.cx <- min position.cx 660
                 position.cy <- min position.cy 500
             Marshal.StructureToPtr(position,message.LParam,false)
@@ -74,7 +95,80 @@ type HelperWindow() =
         // DPI drops, pins MinimumSize to the clamped size, so it no longer takes the group's size.
         if message.Msg <> 0x2E0 then base.WndProc(&message)
 
+/// Whether a drop surface shows a place for the drag at the point, asked as a rested pointer is.
+let previewed (target:ILayoutDropTarget) (data:obj,pt:Pt) =
+    match target.probe(data,pt,true) with
+    | Aimed(_,shown) -> shown
+    | NearStrip _ -> false
+
 let main() =
+    // A pointer over a strip joins; over a group's window or a helper window owned by its
+    // strip it previews a pane; anywhere else it floats.
+    let strip =
+        {new IDragDropTarget with
+            member _.dragBegin() = ()
+            member _.dragEnd() = ()
+            member _.dragEnter _ _ = true
+            member _.dragMove _ = ()
+            member _.dragExit() = ()
+            member _.dragCancel _ = ()}
+    let surface = {new ILayoutDropTarget with
+                    member _.probe(_,_,_) = Aimed(SplitAim,true)
+                    member _.clearPreview() = ()
+                    member _.commit(_,_) = true}
+    let strips = Map2(List2([IntPtr 1,strip]))
+    let surfaces = Map2(List2([IntPtr 1,surface;IntPtr 2,surface]))
+    check (DragRouting.resolve strips surfaces (IntPtr 1) IntPtr.Zero=StripHit(IntPtr 1)) "The strip itself did not join the dragged tab"
+    check (DragRouting.resolve strips surfaces (IntPtr 2) IntPtr.Zero=LayoutHit(IntPtr 2)) "A group window did not offer a pane"
+    check (DragRouting.resolve strips surfaces (IntPtr 9) (IntPtr 1)=LayoutHit(IntPtr 1)) "A helper window owned by the strip did not offer its group's panes"
+    check (DragRouting.resolve strips surfaces (IntPtr 9) (IntPtr 8)=FreeHit) "An unrelated window took the drag"
+    check (DragRouting.resolve strips surfaces IntPtr.Zero IntPtr.Zero=FreeHit) "The desktop took the drag"
+    // A tab held in one strip goes to another group's strip in sight under the pointer, though
+    // still within the first strip's width: strips at the top of the screen lie over one another,
+    // and the first one crossed kept the tab, which then joined a group out of sight.
+    do
+        let twoStrips = Map2(List2([IntPtr 1,strip;IntPtr 3,strip]))
+        check (DragRouting.movesToStrip twoStrips (IntPtr 1) (IntPtr 3)) "A tab held in one strip did not move to another group's strip under the pointer"
+        check (not(DragRouting.movesToStrip twoStrips (IntPtr 1) (IntPtr 1))) "A tab left the strip it is in"
+        check (not(DragRouting.movesToStrip twoStrips (IntPtr 1) (IntPtr 9))) "A tab left its strip for a window that is no strip"
+        check (not(DragRouting.movesToStrip twoStrips (IntPtr 1) IntPtr.Zero)) "A tab left its strip for nothing"
+    // A split is offered once the pointer rests in a drop zone, not as it passes: let go on the
+    // way, the tab comes out as a window of its own. An empty pane takes a drop at once.
+    do
+        let w,v = IntPtr 2,IntPtr 3
+        let rest = LayoutDwell.restMs
+        let step now pt key aim state = LayoutDwell.step now 6 pt key aim state
+        let s0,shown0 = step 0L (Pt(100,100)) w SplitAim None
+        check (not shown0) "A split was offered as soon as the pointer reached a drop zone"
+        let s1,shown1 = step (rest-1L) (Pt(104,103)) w SplitAim s0
+        check (not shown1) "A split was offered before the pointer had rested"
+        let s2,shown2 = step rest (Pt(103,104)) w SplitAim s1
+        check shown2 "A pointer resting in a drop zone was not offered the split"
+        let _,shown3 = step (rest+10L) (Pt(300,140)) w SplitAim s2
+        check shown3 "Once offered, the split did not follow the pointer over the same window"
+        let _,moving = step rest (Pt(130,100)) w SplitAim s0
+        check (not moving) "A pointer moving through a drop zone was offered the split"
+        let _,other = step (rest*3L) (Pt(100,100)) v SplitAim s2
+        check (not other) "Another window's split was offered without resting over it"
+        let left,shownLeft = step (rest+20L) (Pt(500,300)) w NoAim s2
+        check (left.IsNone && not shownLeft) "Leaving the drop zones kept the split offered"
+        let _,again = step (rest+30L) (Pt(100,100)) w SplitAim left
+        check (not again) "Coming back into a drop zone offered the split without resting again"
+        check (snd (step 0L (Pt(100,100)) w FillAim None)) "An empty pane did not take the drop at once"
+    // The pointer over an app's child window, a browser's page say, is over the group's window.
+    do
+        use app = new Form(Text="Routing app",ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,
+                           FormBorderStyle=FormBorderStyle.None,Location=Point(120,120),Size=Size(320,240))
+        use page = new Panel(Dock=DockStyle.Fill)
+        app.Controls.Add(page)
+        app.Show()
+        for _ in 1..5 do Application.DoEvents()
+        let centre = Pt(280,240)
+        check (WinUserApi.WindowFromPoint(centre.POINT)=page.Handle) "The routing fixture's child window is not under the pointer"
+        let hit,owner = DragRouting.windowsAt centre
+        check (hit=app.Handle) (sprintf "A drag over an app's child window found %A, not its window %A" hit app.Handle)
+        let appSurfaces = Map2(List2([app.Handle,surface]))
+        check (DragRouting.resolve strips appSurfaces hit owner=LayoutHit app.Handle) "A drag over an app's child window did not offer a pane"
     // Lasts until the test process exits.
     Timer.timeBeginPeriod 1u |> ignore
     // Hold a native-like call in flight, then replace its queued successors and
@@ -143,6 +237,7 @@ let main() =
         let mouse = Event<int * IntPtr>()
         let newTabRequests = Collections.Concurrent.ConcurrentQueue<IntPtr>()
         let names = Collections.Concurrent.ConcurrentDictionary<IntPtr,string>()
+        let nameReads = ref 0
         Services.register<IProgram>({new IProgram with
             member _.version = "test"
             member _.isFirstRun = false
@@ -153,7 +248,9 @@ let main() =
                 match name with
                 | Some name -> names.[hwnd] <- name
                 | None -> names.TryRemove(hwnd) |> ignore
-            member _.getWindowNameOverride hwnd = match names.TryGetValue(hwnd) with | true,name -> Some name | _ -> None
+            member _.getWindowNameOverride hwnd =
+                Threading.Interlocked.Increment(&nameReads.contents) |> ignore
+                match names.TryGetValue(hwnd) with | true,name -> Some name | _ -> None
             member _.getTabColorOverride _ = None
             member _.setTabColorOverride _ = ()
             member _.getTabColor(_,_) = None
@@ -171,7 +268,8 @@ let main() =
             member _.newTab hwnd = newTabRequests.Enqueue(hwnd)
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
-            member _.llMouse = mouse.Publish})
+            member _.llMouse = mouse.Publish
+            member _.paneCandidates() = []})
         Services.register<IFilterService>({new IFilterService with
             member _.isAppWindow _ = false
             member _.isAppWindowStyle _ = false
@@ -239,6 +337,618 @@ let main() =
                     if not((info :> IGroup).windows.contains ((=) hwnd)) then (info :> IGroup).addWindow(hwnd,false)
                 pumpUntil(fun () -> onGroup(fun group -> group.windows.count=count))
                 if count=2 then
+                    waitOperation()
+                    let source = onGroup(fun group -> group.topWindow)
+                    onHelper(fun () -> for form in forms |> List.take 2 do form.Pinned <- false; form.Show())
+                    onHelper(fun () -> OS().windowFromHwnd(source).move(Rect(Pt(60,60),Sz(900,600))))
+                    pumpUntil(fun () -> onGroup(fun group -> group.placementBounds.width>=890 && group.isPlacementIdle))
+                    let partner = handles |> List.take 2 |> List.find((<>) source)
+                    let gap = Dpi.scale SplitMetrics.gap
+                    let paneRect (group:WindowGroup) side = (SplitGeometry.paneRect gap group.layoutFrame group.splitLayout.Value [side]).Value
+                    let pair first second axis focused = {tree={axis=axis;ratio=0.5;first=Leaf first;second=Leaf second};focused=[focused]}
+                    let sides (group:WindowGroup) = let s = group.splitLayout.Value in s.tree.first,s.tree.second
+                    let emptyPaneOf (group:WindowGroup) = group.emptyPaneHwnds |> List.tryHead |> Option.defaultValue IntPtr.Zero
+                    let decoratorOf (group:WindowGroup) =
+                        typeof<TabStrip>.GetFields(flags) |> Array.find(fun field -> field.FieldType=typeof<ITabStripMonitor>)
+                        |> fun field -> field.GetValue(group.ts) :?> ILayoutDropTarget
+                    let adjacent (group:WindowGroup) first second = group.lorder.list |> List.pairwise |> List.exists((=) (first,second))
+                    onGroup(fun group -> group.execute(NewEmptyPane SideBySide))
+                    waitOperation()
+                    check (onGroup(fun group -> group.splitLayout=Some(pair (Occupied source) Empty SideBySide First))) "A tab could not open an empty pane beside itself"
+                    // Owned by nothing, the empty pane is a drop surface of its own while it is there.
+                    let emptyPane = onGroup emptyPaneOf
+                    let surfaces = Services.get<IDragDrop>() :?> DragDropController
+                    check (emptyPane<>IntPtr.Zero && surfaces.isLayoutTarget emptyPane) "A tab dragged over the empty pane found no drop surface"
+                    onGroup(fun group -> group.tabActivate(Tab(partner),false))
+                    waitOperation()
+                    check (onGroup(fun group -> match group.layout with Parked s -> s.tree.second=Leaf Empty | _ -> false)) "Selecting an unrelated tab did not park the empty split"
+                    check (OS().windowFromHwnd(partner).visibleBounds=onGroup(fun group -> group.layoutFrame)) "The unrelated tab did not fill the frame"
+                    onGroup(fun group -> group.tabActivate(Tab(source),false))
+                    waitOperation()
+                    onGroup(fun group ->
+                        group.execute(Swap None)
+                        let s = group.splitLayout.Value
+                        check (s.tree.first=Leaf Empty && s.tree.second=Leaf(Occupied source)) "Swapping lost the empty pane"
+                        let a = paneRect group First
+                        let point = Pt(a.x+a.width/2,a.y+a.height/2)
+                        let decorator = decoratorOf group
+                        let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft}
+                        check (previewed decorator (drag,point)) "The centre of an empty pane rejected a tab"
+                        decorator.clearPreview()
+                        check (group.splitLayout=Some s) "Cancelling an empty-pane preview changed the layout"
+                        check (previewed decorator (drag,point)) "The empty pane could not be targeted again"
+                        check (decorator.commit(drag,point)) "A previewed pane took no drop"
+                        decorator.clearPreview()
+                        check (sides group=(Leaf(Occupied partner),Leaf(Occupied source))) "Dropping did not fill the empty pane"
+                        check (adjacent group partner source) "The pair's tabs did not end up next to each other")
+                    waitOperation()
+                    check (not(surfaces.isLayoutTarget emptyPane)) "A filled empty pane stayed a drop surface"
+                    // A window that moved to another group is that group's drop surface: the old
+                    // group's removal, which can run late, leaves the new registration alone.
+                    do
+                        let hwnd = IntPtr 0x7777
+                        let later = {new ILayoutDropTarget with
+                                        member _.probe(_,_,_) = Aimed(NoAim,false)
+                                        member _.clearPreview() = ()
+                                        member _.commit(_,_) = false}
+                        let api = surfaces :> IDragDrop
+                        api.registerLayoutTarget(hwnd,surface)
+                        api.registerLayoutTarget(hwnd,later)
+                        api.unregisterLayoutTarget(hwnd,surface)
+                        check (surfaces.isLayoutTarget hwnd) "The old group's removal took the window's drop surface from its new group"
+                        api.unregisterLayoutTarget(hwnd,later)
+                        check (not(surfaces.isLayoutTarget hwnd)) "The new group's removal left the window a drop surface"
+                    check (onGroup(fun group -> group.ts.tabInfo(Tab(partner)).splitTrail=Some [SideBySide,First] && group.ts.tabInfo(Tab(source)).splitTrail=Some [SideBySide,Second])) "Pane tabs carry no badge"
+                    check (onGroup(fun group -> group.ts.tabInfo(Tab(partner)).text=group.tabName partner)) "The badge leaked into the tab's name"
+                    onGroup(fun group -> group.execute(EndSplit(Some source)))
+                    waitOperation()
+                    check (onGroup(fun group -> group.layout=GroupLayout.Single && group.ts.tabInfo(Tab(partner)).splitTrail=None)) "Ending the split kept a badge"
+                    onGroup(fun group -> group.removeWindow(partner); group.execute(NewEmptyPane Stacked))
+                    waitOperation()
+                    check (onGroup(fun group -> group.windows.count=1 && group.splitLayout.Value.tree.second=Leaf Empty)) "A singleton could not create an empty pane"
+                    // Esc beside the empty pane closes it, as its close button does.
+                    onGroup(fun group -> group.closeEmptyPane())
+                    waitOperation()
+                    check (onGroup(fun group -> group.layout=GroupLayout.Single && group.emptyPaneHwnds.IsEmpty)) "Closing an empty pane left the split"
+                    onGroup(fun group -> group.execute(NewEmptyPane Stacked))
+                    waitOperation()
+                    onGroup(fun group ->
+                        group.addWindow(partner,false)
+                        group.execute(FillPane(partner,[Second])))
+                    waitOperation()
+                    check (onGroup(fun group -> sides group=(Leaf(Occupied source),Leaf(Occupied partner)))) "A joining window did not fill the empty pane"
+                    // Once filled, there is no empty pane for Esc to close.
+                    onGroup(fun group -> group.closeEmptyPane())
+                    check (onGroup(fun group -> group.splitLayout.Value.tree.second=Leaf(Occupied partner))) "Esc ended a split with no empty pane"
+                    onGroup(fun group -> group.execute(EndSplit(Some source)))
+                    waitOperation()
+                    onGroup(fun group -> group.execute(SplitWith(partner,SideBySide)))
+                    pumpUntil(fun () -> onGroup(fun group -> group.isPlacementIdle && group.splitLayout.IsSome))
+                    let waitSplit() =
+                        let placed () = onGroup(fun group ->
+                            match group.splitLayout with
+                            | Some s ->
+                                SplitView.windows s |> List.forall(fun hwnd ->
+                                    OS().windowFromHwnd(hwnd).visibleBounds=(SplitGeometry.paneRect gap group.layoutFrame s (SplitView.pathOf hwnd s).Value).Value)
+                            | None -> failwith "Split layout unexpectedly ended")
+                        try pumpUntil placed
+                        with _ ->
+                            let report = onGroup(fun group ->
+                                let s = group.splitLayout.Value
+                                SplitView.windows s |> List.map(fun hwnd ->
+                                    sprintf "%A actual=%A wanted=%A" hwnd (OS().windowFromHwnd(hwnd).visibleBounds) ((SplitGeometry.paneRect gap group.layoutFrame s (SplitView.pathOf hwnd s).Value).Value))
+                                |> String.concat "; ")
+                            failwithf "The panes did not reach their places: %s" report
+                    waitSplit()
+                    check (onGroup(fun group -> adjacent group source partner)) "Splitting did not bring the pair's tabs together"
+                    // The divider's band is centred on the seam and covers both panes' invisible resize
+                    // borders, so a press near the seam drags the divider and never a pane's own edge.
+                    do
+                        let divider = onGroup(fun group ->
+                            let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="splitDividers")
+                            snd (field.GetValue(group) :?> Map<PanePath,SplitDivider * IntPtr>).[[]])
+                        let seam = (onGroup(fun group -> paneRect group First)).right
+                        let band() = OS().windowFromHwnd(divider).bounds
+                        pumpUntil(fun () -> (band()).width=Dpi.scale SplitMetrics.dividerGrab)
+                        let border = Dpi.scale 6
+                        check ((band()).left<=seam-border && (band()).right>=seam+border)
+                              (sprintf "The divider's band %A leaves a pane's resize border bare at the seam %d" (band()) seam)
+                    let firstFrame = onGroup(fun group -> group.layoutFrame)
+                    onHelper(fun () -> OS().windowFromHwnd(source).showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED))
+                    pumpUntil(fun () -> onGroup(fun group -> group.isSplitFilled))
+                    waitOperation()
+                    waitSplit()
+                    let filled = onGroup(fun group -> group.layoutFrame)
+                    check (filled=Mon.fromHwnd(source).Value.workRect) "Native maximize did not fill the split work area"
+                    onHelper(fun () -> OS().windowFromHwnd(source).showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED))
+                    pumpUntil(fun () -> onGroup(fun group -> not group.isSplitFilled))
+                    waitOperation()
+                    waitSplit()
+                    check (onGroup(fun group -> group.layoutFrame=firstFrame)) "A second maximize did not restore the split size"
+                    onGroup(fun group -> group.execute ToggleFill)
+                    waitOperation()
+                    waitSplit()
+                    onGroup(fun group -> invoke "handleWindowEvent" group [|box source;box WinEvent.EVENT_SYSTEM_MOVESIZESTART|] |> ignore)
+                    onHelper(fun () ->
+                        let window = OS().windowFromHwnd(source)
+                        window.move(window.bounds.move(12,48)))
+                    pumpUntil(fun () -> onGroup(fun group -> group.layoutFrame=filled.move(12,48)))
+                    onGroup(fun group -> invoke "handleWindowEvent" group [|box source;box WinEvent.EVENT_SYSTEM_MOVESIZEEND|] |> ignore)
+                    waitOperation()
+                    waitSplit()
+                    check (onGroup(fun group -> group.layoutFrame=filled.move(12,48))) "Moving a work-area-sized split snapped it back to the top"
+                    onGroup(fun group -> group.restoreLayout(group.layout,firstFrame))
+                    waitOperation()
+                    waitSplit()
+                    onGroup(fun group -> invoke "handleWindowEvent" group [|box source;box WinEvent.EVENT_SYSTEM_MOVESIZESTART|] |> ignore)
+                    onHelper(fun () ->
+                        let window = OS().windowFromHwnd(source)
+                        window.move(window.bounds.move(12,8)))
+                    pumpUntil(fun () -> onGroup(fun group -> group.layoutFrame=firstFrame.move(12,8)))
+                    onGroup(fun group -> invoke "handleWindowEvent" group [|box source;box WinEvent.EVENT_SYSTEM_MOVESIZEEND|] |> ignore)
+                    waitSplit()
+                    let movedFrame = onGroup(fun group -> group.layoutFrame)
+                    for hwnd in [source;partner;source] do
+                        onGroup(fun group -> group.foreground <- hwnd)
+                        waitSplit()
+                        check ((onGroup(fun group -> group.layoutFrame))=movedFrame) "Selecting a pane changed the group frame"
+                    onGroup(fun group -> group.execute(SetRatio([],0.6)))
+                    waitSplit()
+                    onGroup(fun group -> group.execute(Swap None))
+                    waitSplit()
+                    check ((onGroup(fun group -> group.splitLayout.Value.tree.first))=Leaf(Occupied partner)) "Swap did not exchange panes"
+                    onGroup(fun group -> group.execute(SplitWith(partner,Stacked)))
+                    waitSplit()
+                    check ((onGroup(fun group -> group.splitLayout.Value.tree.axis))=Stacked) "Splitting with an existing pane did not change the axis"
+                    let third = handles.[2]
+                    onHelper(fun () -> forms.[2].Pinned <- false; forms.[2].Show())
+                    onGroup(fun group -> group.addWindow(third,false))
+                    waitSplit()
+                    let beforeThird = onGroup(fun group -> group.splitLayout.Value)
+                    // Parking the panes and bringing them back reads no tab again: their places
+                    // are the same either way, and reading every tab held the strip back.
+                    let readsBefore = nameReads.Value
+                    onGroup(fun group -> group.tabActivate(Tab(third),false))
+                    waitOperation()
+                    check (onGroup(fun group -> group.layout=Parked beforeThird)) "Third tab replaced a split member"
+                    check (OS().windowFromHwnd(third).visibleBounds=movedFrame) "Third tab did not occupy the whole group"
+                    check (onGroup(fun group -> group.ts.zorder.head=Tab third)) "The strip did not show the tab chosen over the panes as the one in front"
+                    onGroup(fun group -> group.tabActivate(Tab(SplitView.window [First] beforeThird |> Option.get),false))
+                    waitSplit()
+                    check (onGroup(fun group -> group.splitLayout=Some {beforeThird with focused=[First]})) "Returning to a split did not restore both panes and their ratio"
+                    check (nameReads.Value=readsBefore) (sprintf "Parking the panes and bringing them back read the tabs again: %d reads" (nameReads.Value-readsBefore))
+                    // A fourth tab chosen over the parked panes, then the third again, and the third
+                    // dragged out: the fourth comes back, not the panes' focused window, which the
+                    // park stacked just under the third as it did every other tab.
+                    do
+                        let fourth = handles.[3]
+                        onHelper(fun () -> forms.[3].Pinned <- false; forms.[3].Show())
+                        onGroup(fun group -> group.addWindow(fourth,false))
+                        waitOperation()
+                        onGroup(fun group -> group.tabActivate(Tab(fourth),false))
+                        waitOperation()
+                        onGroup(fun group -> group.tabActivate(Tab(third),false))
+                        waitOperation()
+                        check (onGroup(fun group -> group.topWindow=third && (match group.layout with Parked _ -> true | _ -> false))) "The third tab did not show over the parked panes"
+                        onGroup(fun group ->
+                            group.removeWindow third
+                            OS().windowFromHwnd(third).hideOffScreen(None)
+                            group.showTabBefore third)
+                        waitOperation()
+                        check (onGroup(fun group -> group.topWindow=fourth && (match group.layout with Parked _ -> true | _ -> false))) (sprintf "Dragging the shown tab out did not bring back the tab shown before it: top %A, fourth %A, layout %A" (onGroup(fun group -> group.topWindow)) fourth (onGroup(fun group -> group.layout)))
+                        onGroup(fun group -> group.addWindow(third,false))
+                        waitOperation()
+                        onGroup(fun group -> group.removeWindow fourth)
+                        waitOperation()
+                        onHelper(fun () -> forms.[3].Hide(); forms.[3].Pinned <- true; forms.[3].Bounds <- Rectangle(-20000,-20000,640,480))
+                        onGroup(fun group -> group.tabActivate(Tab(third),false))
+                        waitOperation()
+                    // Back and forth between a pane and the third tab, which waits pane-sized under
+                    // the host pane while the split shows: shown again, it must fill the whole group.
+                    for delay in [0;80] do
+                        onHelper(fun () -> for form in forms |> List.take 3 do form.Delay <- delay)
+                        try
+                            for pane in [Second;First] do
+                                onGroup(fun group -> group.tabActivate(Tab(SplitView.window [pane] beforeThird |> Option.get),false))
+                                waitSplit()
+                                onGroup(fun group -> group.tabActivate(Tab(third),false))
+                                waitOperation()
+                                let parked = onGroup(fun group -> group.layout)
+                                check (parked=Parked {beforeThird with focused=[pane]}) (sprintf "Third tab shown again (delay %d) replaced a split member: %A" delay parked)
+                                check (OS().windowFromHwnd(third).visibleBounds=movedFrame) (sprintf "Third tab shown again (delay %d) kept the pane size: %A instead of %A" delay (OS().windowFromHwnd(third).visibleBounds) movedFrame)
+                                check ((onGroup(fun group -> group.layoutFrame))=movedFrame) (sprintf "Third tab shown again (delay %d) changed the group frame" delay)
+                            // Switched before the panes have been placed, the third tab still fills the group.
+                            onGroup(fun group -> group.tabActivate(Tab(SplitView.window [First] beforeThird |> Option.get),false))
+                            onGroup(fun group -> group.tabActivate(Tab(third),false))
+                            waitOperation()
+                            check (OS().windowFromHwnd(third).visibleBounds=movedFrame) (sprintf "Third tab shown at once (delay %d) kept the pane size: %A instead of %A" delay (OS().windowFromHwnd(third).visibleBounds) movedFrame)
+                        finally onHelper(fun () -> for form in forms |> List.take 3 do form.Delay <- 0)
+                    onGroup(fun group -> group.tabActivate(Tab(SplitView.window [First] beforeThird |> Option.get),false))
+                    waitSplit()
+                    // Shown again while no worker can start its placement before the group has put
+                    // it in front: that order change cancelled the placement, and the tab kept its
+                    // pane's size whenever the worker lost the race.
+                    withPoolHeld(fun () -> onGroup(fun group -> group.tabActivate(Tab(third),false)))
+                    waitOperation()
+                    check (OS().windowFromHwnd(third).visibleBounds=movedFrame) (sprintf "Third tab shown again with its placement delayed kept the pane size: %A instead of %A" (OS().windowFromHwnd(third).visibleBounds) movedFrame)
+                    onGroup(fun group -> group.tabActivate(Tab(SplitView.window [First] beforeThird |> Option.get),false))
+                    waitSplit()
+                    onGroup(fun group -> group.minimizeAll())
+                    pumpUntil(fun () -> handles |> List.take 3 |> List.forall(fun hwnd -> OS().windowFromHwnd(hwnd).isMinimized))
+                    waitOperation()
+                    onGroup(fun group -> group.restoreAll())
+                    waitOperation()
+                    waitSplit()
+                    onGroup(fun group -> group.removeWindow(third))
+                    waitOperation()
+                    check (onGroup(fun group -> group.splitLayout.IsSome && group.windows.count=2)) "Removing an unrelated tab ended the split"
+                    onHelper(fun () -> forms.[2].Hide(); forms.[2].Pinned <- true; forms.[2].Bounds <- Rectangle(-20000,-20000,640,480))
+                    onGroup(fun group ->
+                        group.execute(ToggleAxis None)
+                        group.execute(DropInto(partner,[],SideBySide,Second)))
+                    waitSplit()
+                    check (onGroup(fun group -> group.splitLayout.Value.tree.axis=SideBySide && group.splitLayout.Value.tree.second=Leaf(Occupied partner))) "Dropping a pane on the other side did not move it there"
+                    onGroup(fun group ->
+                        let decorator = decoratorOf group
+                        let before = group.splitLayout.Value
+                        let order = group.lorder.list
+                        let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft}
+                        let frame = group.layoutFrame
+                        let point = Pt(frame.left+2,frame.y+frame.height/2)
+                        check (previewed decorator (drag,point)) "Own edge did not accept a split preview"
+                        decorator.clearPreview()
+                        check (group.splitLayout=Some before && group.lorder.list=order) "Cancelling a preview changed layout or membership"
+                        check (previewed decorator (drag,point)) "Repeated split preview failed"
+                        check (decorator.commit(drag,point)) "A previewed pane took no drop"
+                        decorator.clearPreview()
+                        check (group.splitLayout.Value.tree.first=Leaf(Occupied partner)) "Dragging a pane to the opposite edge did not swap it")
+                    waitSplit()
+                    waitOperation()
+                    // The drop preview fades out rather than vanishing, and is gone once it has.
+                    do
+                        let previewShown () = onGroup(fun group ->
+                            let decorator = decoratorOf group
+                            let field = decorator.GetType().GetFields(flags) |> Array.find(fun field -> field.Name="layoutPreview")
+                            match field.GetValue(decorator) with
+                            | null -> false
+                            | value -> (value.GetType().GetProperty("Value").GetValue(value) :?> Form).Visible)
+                        onGroup(fun group ->
+                            let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft}
+                            let frame = group.layoutFrame
+                            check (previewed (decoratorOf group) (drag,Pt(frame.left+2,frame.y+frame.height/2))) "A drop preview did not show")
+                        check (previewShown()) "A drop preview was not visible"
+                        onGroup(fun group -> (decoratorOf group).clearPreview())
+                        if SystemInformation.UIEffectsEnabled then check (previewShown()) "The drop preview vanished at once rather than fading out"
+                        pumpUntil(fun () -> not(previewShown()))
+                        check (not(previewShown())) "The drop preview stayed after its fade"
+                    // A third tab dropped at a pane's edge splits that pane again: three panes at their
+                    // rectangles, a divider per split, the tabs in layout order; closed, the pane gives
+                    // its room back to its neighbour.
+                    do
+                        let dividers (group:WindowGroup) =
+                            let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="splitDividers")
+                            (field.GetValue(group) :?> Map<PanePath,SplitDivider * IntPtr>).Count
+                        onHelper(fun () -> forms.[2].Pinned <- false; forms.[2].Show())
+                        onGroup(fun group -> group.addWindow(third,false))
+                        waitOperation()
+                        let shown = onGroup(fun group -> group.topWindow)
+                        onGroup(fun group -> group.dropTab(third,SplitAt([Second],Stacked,Second),shown))
+                        waitSplit()
+                        let s,order = onGroup(fun group -> group.splitLayout.Value,group.lorder.list)
+                        check (SplitView.pathOf third s=Some [Second;Second] && List.length(SplitView.windows s)=3) (sprintf "The third tab did not take the lower half of the second pane: %A" s)
+                        check (onGroup dividers=2) "A nested split did not get a divider of its own"
+                        check (SplitView.windows s |> List.pairwise |> List.forall(fun (a,b) -> List.findIndex ((=) b) order=List.findIndex ((=) a) order+1)) (sprintf "The panes' tabs are not next to each other in layout order: %A" order)
+                        let lower = OS().windowFromHwnd(third).visibleBounds
+                        let upper = OS().windowFromHwnd((SplitView.window [Second;First] s).Value).visibleBounds
+                        check (lower.top>upper.top && lower.x=upper.x && lower.width=upper.width) (sprintf "The nested panes are not one above the other: %A %A" upper lower)
+                        onGroup(fun group -> group.execute(ClosePane(Some [Second;Second])))
+                        waitSplit()
+                        check (onGroup(fun group -> List.length(SplitView.windows group.splitLayout.Value)=2 && group.windows.count=3 && dividers group=1)) "Closing the nested pane did not give its room back"
+                        // A tab behind, raised over the panes by its own app, goes back under all of
+                        // them: a little larger than the pane it waits under, as an app on a character
+                        // grid is, it showed at the seam over the other pane.
+                        do
+                            let panes = onGroup(fun group -> SplitView.windows group.splitLayout.Value)
+                            let z hwnd = OS().windowFromHwnd(hwnd).zorder
+                            let strip = onGroup(fun group -> group.ts.hwnd)
+                            WinUserApi.SetWindowPos(third,strip,0,0,0,0,
+                                SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore
+                            check (panes |> List.forall(fun pane -> z third < z pane)) "The test could not raise the tab behind over the panes"
+                            pumpUntil(fun () -> panes |> List.forall(fun pane -> z third > z pane))
+                            // The backdrop lies between: under every pane, over the tabs behind.
+                            let backdrop = onGroup(fun group -> group.backdropHwnd)
+                            check (backdrop<>IntPtr.Zero && WinUserApi.IsWindowVisible backdrop) "No backdrop behind the panes"
+                            pumpUntil(fun () -> panes |> List.forall(fun pane -> z pane < z backdrop) && z backdrop < z third)
+                            check (OS().windowFromHwnd(backdrop).bounds=onGroup(fun group -> group.layoutFrame)) "The backdrop does not cover the group's frame"
+                        onGroup(fun group -> group.removeWindow(third))
+                        waitOperation()
+                        onHelper(fun () -> forms.[2].Hide(); forms.[2].Pinned <- true; forms.[2].Bounds <- Rectangle(-20000,-20000,640,480))
+                    waitSplit()
+                    // What the windows remember of their split comes back in another group, as after
+                    // a restart: the panes, the ratio and the frame, once both windows have arrived.
+                    do
+                        let frameBefore,before = onGroup(fun group -> group.layoutFrame,group.splitLayout.Value)
+                        onGroup(fun group -> group.execute(SetRatio([],0.6)))
+                        waitSplit()
+                        let shape = onGroup(fun group -> group.splitLayout.Value)
+                        let saved = [source;partner] |> List.map(fun hwnd -> hwnd,WindowSplitLayout.read hwnd)
+                        check (saved |> List.forall(fun (_,place) -> place |> Option.exists(fun (_,frame) -> frame=frameBefore))) (sprintf "The pane windows do not remember their split at its frame: %A" saved)
+                        // Taken apart, which clears the windows, and put on them again as a restart finds them.
+                        onGroup(fun group -> group.removeWindow source; group.removeWindow partner)
+                        waitOperation()
+                        for hwnd,place in saved do WindowSplitLayout.save hwnd (fst place.Value) (snd place.Value)
+                        let again = (desktop :> IDesktop).createGroup(false) :?> GroupInfo
+                        let onAgain action =
+                            let mutable result = None
+                            again.invokeGroup(fun () -> result <- Some(try Choice1Of2(action again.group) with e -> Choice2Of2 e))
+                            pumpUntil(fun () -> result.IsSome)
+                            match result.Value with Choice1Of2 value -> value | Choice2Of2 error -> raise error
+                        try
+                            onAgain(fun group -> group.addWindow(source,false))
+                            check (onAgain(fun group -> group.layout=GroupLayout.Single)) "One window alone brought a split back"
+                            onAgain(fun group -> group.addWindow(partner,false))
+                            pumpUntil(fun () -> onAgain(fun group -> group.splitLayout=Some shape))
+                            pumpUntil(fun () -> onAgain(fun group -> group.isPlacementIdle))
+                            check (onAgain(fun group -> group.layoutFrame)=frameBefore) (sprintf "The split did not come back at its frame: %A instead of %A" (onAgain(fun group -> group.layoutFrame)) frameBefore)
+                            for hwnd in [source;partner] do
+                                let wanted = (SplitGeometry.paneRect gap frameBefore shape (SplitView.pathOf hwnd shape).Value).Value
+                                check (OS().windowFromHwnd(hwnd).visibleBounds=wanted) (sprintf "A pane did not come back in place: %A instead of %A" (OS().windowFromHwnd(hwnd).visibleBounds) wanted)
+                        finally
+                            // Back to the group the rest of the suite uses, as it was.
+                            onAgain(fun group -> group.removeWindow source; group.removeWindow partner)
+                            (again :> IGroup).destroy()
+                        onGroup(fun group -> group.addWindow(source,false); group.addWindow(partner,false))
+                        waitOperation()
+                        onGroup(fun group -> group.restoreLayout(Split before,frameBefore))
+                        waitSplit()
+                    // A pane its own app raises over the tabs, with no foreground change and no notice
+                    // to the group, is put back under them.
+                    do
+                        let strip,top,panes = onGroup(fun group -> group.ts.hwnd,group.topWindow,SplitView.windows group.splitLayout.Value)
+                        let raised = panes |> List.find((<>) top)
+                        let z hwnd = OS().windowFromHwnd(hwnd).zorder
+                        // Just over the tabs, as an app raising itself lands at the top.
+                        let over = WinUserApi.GetWindow(strip,GetWindowConstants.GW_HWNDPREV)
+                        let moved = WinUserApi.SetWindowPos(raised,over,0,0,0,0,
+                                        SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOACTIVATE)
+                        check (z raised < z strip) (sprintf "The test could not raise a pane over the tabs: moved %A, pane %d, strip %d, top %d, strip topmost %b, owner %A, raised %A"
+                                                        moved (z raised) (z strip) (z top) (OS().windowFromHwnd(strip).isTopMost) (WinUserApi.GetWindow(strip,GetWindowConstants.GW_OWNER)) raised)
+                        let clock = Stopwatch.StartNew()
+                        pumpUntil(fun () -> panes |> List.forall(fun hwnd -> z strip < z hwnd))
+                        printfn "METRIC raised-pane-covered-tabs=%dms" clock.ElapsedMilliseconds
+                    // The pane in focus leads the group whichever pane its app or a click raised last:
+                    // its tab shows in front and the strip belongs to it. Led by the other pane, the
+                    // focus showed on the wrong tab and the focused app covered the tabs.
+                    for side in [First;Second;First] do
+                        onGroup(fun group -> group.execute(FocusPane [side]))
+                        waitOperation()
+                        let strip,focused,other = onGroup(fun group ->
+                            let s = group.splitLayout.Value
+                            group.ts.hwnd,(SplitView.window [side] s).Value,(SplitView.window [Side.other side] s).Value)
+                        // The other pane, raised over both as its app may, without a foreground change.
+                        let over = WinUserApi.GetWindow(strip,GetWindowConstants.GW_HWNDPREV)
+                        WinUserApi.SetWindowPos(other,over,0,0,0,0,
+                            SetWindowPosFlags.SWP_NOMOVE ||| SetWindowPosFlags.SWP_NOSIZE ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore
+                        let z hwnd = OS().windowFromHwnd(hwnd).zorder
+                        pumpUntil(fun () -> z strip < z focused && z strip < z other)
+                        onGroup(fun group -> group.main(group.topWindow,WinEvent.EVENT_OBJECT_REORDER))
+                        waitOperation()
+                        let top,owner,shareable = onGroup(fun group -> group.topWindow,WinUserApi.GetWindow(group.ts.hwnd,GetWindowConstants.GW_OWNER),group.canShareInput focused)
+                        check (top=focused && (owner=focused || not shareable))
+                              (sprintf "The %A pane in focus does not lead the group: top %A, strip owner %A, focused %A" side top owner focused)
+                    // The pair's tabs dragged into the other order swap the panes; a click after does
+                    // not put the tabs back.
+                    do
+                        let first,second = onGroup(fun group -> let s = group.splitLayout.Value in (SplitView.window [First] s).Value,(SplitView.window [Second] s).Value)
+                        onGroup(fun group ->
+                            group.ts.moveTab(Tab(second),group.lorder.list |> List.findIndex((=) first))
+                            group.onTabsReordered())
+                        waitSplit()
+                        onGroup(fun group -> group.tabActivate(Tab(first),false))
+                        waitOperation()
+                        let s,order = onGroup(fun group -> group.splitLayout.Value,group.lorder.list)
+                        check (s.tree.first=Leaf(Occupied second) && s.tree.second=Leaf(Occupied first)
+                               && List.findIndex((=) second) order < List.findIndex((=) first) order)
+                              (sprintf "Dragging the pair's tabs into the other order did not swap the panes: %A, tabs %A" s order)
+                    let mergedFrame = onGroup(fun group -> group.layoutFrame)
+                    onGroup(fun group -> group.execute(EndSplit(Some source)))
+                    waitOperation()
+                    check (onGroup(fun group -> group.layout=GroupLayout.Single && group.windows.count=2)) "Merging lost a member"
+                    check (handles |> List.take 2 |> List.forall(fun hwnd -> OS().windowFromHwnd(hwnd).visibleBounds=mergedFrame)) "Merging did not restore the full group bounds"
+                    // A window chosen from the list goes on the side asked for, beside the tab the
+                    // menu was opened on, with no empty pane waiting for it.
+                    do
+                        let shown = onGroup(fun group -> group.topWindow)
+                        let other = handles |> List.take 2 |> List.find((<>) shown)
+                        onGroup(fun group -> group.placeBeside(shown,other,SideBySide,First))
+                        waitSplit()
+                        check (onGroup(fun group -> group.splitLayout |> Option.exists(fun s -> s.tree.axis=SideBySide && s.tree.first=Leaf(Occupied other) && s.tree.second=Leaf(Occupied shown))))
+                              (sprintf "A window chosen to go on the left did not take the left of the tab: %A" (onGroup(fun group -> group.layout)))
+                        check (onGroup(fun group -> group.emptyPaneHwnds.IsEmpty)) "Choosing a window first left an empty pane"
+                        // The images moving the windows into the split go once they are in place:
+                        // left over the group, topmost, they would hide the panes and take no clicks.
+                        let frame = onGroup(fun group -> group.layoutFrame)
+                        let pid = Diagnostics.Process.GetCurrentProcess().Id
+                        // With the tab strip cut out of it the cover is most of the frame, not all of it.
+                        let overlay () =
+                            OS().windowsInZorder.list |> List.exists(fun window ->
+                                let mutable owner = 0
+                                WinUserApi.GetWindowThreadProcessId(window.hwnd,&owner) |> ignore
+                                let bounds = window.bounds
+                                owner=pid && window.isVisible && frame.completlyContains bounds &&
+                                int64 bounds.width*int64 bounds.height*2L>int64 frame.width*int64 frame.height &&
+                                (WinUserApi.GetWindowLong(window.hwnd,WindowLongFieldOffset.GWL_EXSTYLE).ToInt64() &&& int64 WindowsExtendedStyles.WS_EX_TOPMOST)<>0L)
+                        pumpUntil(fun () -> not(overlay()))
+                        onGroup(fun group -> group.execute(EndSplit(Some shown)))
+                        waitOperation()
+                        // Above, as the menu offers too: the window chosen takes the top pane.
+                        onGroup(fun group -> group.placeBeside(shown,other,Stacked,First))
+                        waitSplit()
+                        check (onGroup(fun group -> group.splitLayout |> Option.exists(fun s -> s.tree.axis=Stacked && s.tree.first=Leaf(Occupied other) && s.tree.second=Leaf(Occupied shown))))
+                              (sprintf "A window chosen to go above did not take the top of the tab: %A" (onGroup(fun group -> group.layout)))
+                        pumpUntil(fun () -> not(overlay()))
+                        onGroup(fun group -> group.execute(EndSplit(Some shown)))
+                        waitOperation()
+                    // A window with a least size of its own gets a pane at least that size, the
+                    // ratio moved for it: in a narrower pane it kept its size and lay over the pane
+                    // beside it. With no room for it, the split is refused.
+                    do
+                        let shown = onGroup(fun group -> group.topWindow)
+                        let other = handles |> List.take 2 |> List.find((<>) shown)
+                        let form = forms |> List.find(fun form -> onHelper(fun () -> form.Handle)=other)
+                        let frame = onGroup(fun group -> group.layoutFrame)
+                        let wide = frame.width*3/5
+                        // Said, not shown: a message box would wait on the group's thread.
+                        let alerts = ref []
+                        Alert.install(fun _ _ message -> lock alerts (fun () -> alerts.Value <- message::alerts.Value))
+                        onHelper(fun () -> form.MinimumSize <- Size(wide,100))
+                        try
+                            onGroup(fun group -> group.execute(SplitWith(other,SideBySide),current=shown))
+                            waitSplit()
+                            let s = onGroup(fun group -> group.splitLayout)
+                            check s.IsSome "A window with a least size that fits beside the other was refused a split"
+                            let pane = (SplitGeometry.paneRect (Dpi.scale SplitMetrics.gap) frame s.Value (SplitView.pathOf other s.Value).Value).Value
+                            let visibleLeast = wide-(OS().windowFromHwnd(other).bounds.width-OS().windowFromHwnd(other).visibleBounds.width)
+                            check (pane.width>=visibleLeast) (sprintf "A window's pane was narrower than its least width: %d of %d" pane.width visibleLeast)
+                            // A divider's ratio keeps the least sizes read before: asked again at every
+                            // step of a drag, each pane's app held the group thread up to the timeout.
+                            let cacheOf (group:WindowGroup) =
+                                (typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="paneLeastCache")).GetValue(group) :?> Map<IntPtr,Sz>
+                            let cached = onGroup cacheOf
+                            // Smaller, so the window takes any pane: read again, the cache would change.
+                            onHelper(fun () -> form.MinimumSize <- Size(wide-40,100))
+                            onGroup(fun group -> group.execute(SetRatio([],0.45)))
+                            waitSplit()
+                            check (onGroup cacheOf=cached) "A divider's ratio asked every pane for its least size again"
+                            onGroup(fun group -> group.execute(EndSplit(Some shown)))
+                            waitOperation()
+                            onHelper(fun () -> form.MinimumSize <- Size(frame.width-Dpi.scale 60,100))
+                            onGroup(fun group -> group.execute(SplitWith(other,SideBySide),current=shown))
+                            waitOperation()
+                            check (onGroup(fun group -> group.splitLayout.IsNone)) "A split with no room for a window's least width was not refused"
+                            check (lock alerts (fun () -> alerts.Value)=[tr Strings.TabMenu.splitFailed]) (sprintf "A refused split did not say so once: %A" alerts.Value)
+                        finally
+                            onHelper(fun () -> form.MinimumSize <- Size(0,0))
+                            onGroup(fun group -> if group.splitLayout.IsSome then group.execute(EndSplit(Some shown)))
+                            waitOperation()
+                    let dragOf (group:WindowGroup) hwnd = box {tab=Tab(hwnd);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(source));tabShift=0;tabAlignment=TabLeft}
+                    // A tab from another group splits at an edge too, beside the tab shown.
+                    let foreign = handles.[2]
+                    onHelper(fun () -> forms.[2].Pinned <- false; forms.[2].Show())
+                    let edgePoint = onGroup(fun group -> let frame = group.layoutFrame in Pt(frame.right-2,frame.y+frame.height/2))
+                    // Just below a group's tabs, over its title bar, a tab is taken into the strip:
+                    // it was offered that window's top edge, and let go there, split the group.
+                    onGroup(fun group ->
+                        let decorator = decoratorOf group
+                        let strip = OS().windowFromHwnd(group.ts.hwnd)
+                        let first = group.ts.tabSprites.list |> List.head |> fun (location,sprite) -> Rect(strip.ptToScreen(location),sprite.size)
+                        let below = Pt(first.x+first.width/2,first.bottom+Dpi.scale 10)
+                        let away = Pt(first.x+first.width/2,first.bottom+Dpi.scale 60)
+                        // The row runs the group's whole width: at its far end, beside the tabs, too.
+                        let frame = group.layoutFrame
+                        let along = Pt(frame.right-Dpi.scale 10,first.y+first.height/2)
+                        let near pt = match decorator.probe(dragOf group foreign,pt,false) with NearStrip strip -> Some strip | Aimed _ -> None
+                        check (near below=Some group.ts.hwnd) (sprintf "A point just below a group's tabs was not taken as its strip: %A below %A" below first)
+                        check (near along=Some group.ts.hwnd) (sprintf "A point at the far end of a group's row of tabs was not taken as its strip: %A beside %A in %A" along first frame)
+                        check (near away=None) (sprintf "A point well below a group's tabs was taken as its strip: %A below %A" away first))
+                    let shown = onGroup(fun group ->
+                        let decorator = decoratorOf group
+                        check (previewed decorator (dragOf group foreign,edgePoint)) "A tab from another group was not offered an edge"
+                        decorator.clearPreview()
+                        check (group.layout=GroupLayout.Single) "Cancelling another group's edge preview changed the layout"
+                        check (previewed decorator (dragOf group foreign,edgePoint)) "Another group's edge could not be targeted again"
+                        group.topWindow)
+                    check (onGroup(fun group -> (decoratorOf group).commit(dragOf group foreign,edgePoint))) "A tab from another group was not dropped at an edge"
+                    waitSplit()
+                    check (onGroup(fun group -> group.splitLayout |> Option.exists(fun s -> s.tree.axis=SideBySide && s.tree.first=Leaf(Occupied shown) && s.tree.second=Leaf(Occupied foreign))))
+                          (sprintf "A tab from another group did not take the edge's pane beside the tab shown: %A, shown %A, foreign %A" (onGroup(fun group -> group.layout)) shown foreign)
+                    // With a tab behind chosen over the panes, a drop aims at that tab, the one shown,
+                    // not at the panes parked out of sight: it splits the window shown and lets the
+                    // parked panes go.
+                    do
+                        let behind = onGroup(fun group -> group.windows.items.list |> List.find(fun hwnd -> hwnd<>shown && hwnd<>foreign))
+                        onGroup(fun group -> group.tabActivate(Tab(behind),false))
+                        waitOperation()
+                        check (onGroup(fun group -> (match group.layout with Parked _ -> true | _ -> false) && group.topWindow=behind)) "Choosing the tab behind did not park the panes"
+                        let fourth = handles.[3]
+                        onHelper(fun () -> forms.[3].Pinned <- false; forms.[3].Show())
+                        let leftPoint = onGroup(fun group -> let frame = group.layoutFrame in Pt(frame.left+2,frame.y+frame.height/2))
+                        check (onGroup(fun group -> previewed (decoratorOf group) (dragOf group fourth,leftPoint))) "The window shown over parked panes was not offered an edge"
+                        check (onGroup(fun group -> (decoratorOf group).commit(dragOf group fourth,leftPoint))) "A drop beside the window shown over parked panes was refused"
+                        waitSplit()
+                        check (onGroup(fun group -> group.splitLayout |> Option.exists(fun s -> s.tree.first=Leaf(Occupied fourth) && s.tree.second=Leaf(Occupied behind))))
+                              (sprintf "The drop did not split the window shown, letting the parked panes go: %A" (onGroup(fun group -> group.layout)))
+                        onGroup(fun group -> group.execute(EndSplit None); group.removeWindow fourth)
+                        waitOperation()
+                        onHelper(fun () -> forms.[3].Hide(); forms.[3].Pinned <- true; forms.[3].Bounds <- Rectangle(-20000,-20000,640,480))
+                        // The split of the tab shown with the other group's tab again, as the next steps expect.
+                        onGroup(fun group -> group.tabActivate(Tab(shown),false))
+                        waitOperation()
+                        onGroup(fun group -> group.dropTab(foreign,SplitAt([],SideBySide,Second),shown))
+                        waitSplit()
+                        check (onGroup(fun group -> group.splitLayout |> Option.exists(fun s -> s.tree.first=Leaf(Occupied shown) && s.tree.second=Leaf(Occupied foreign)))) "The split did not come back as it was"
+                    // A tab behind chosen right after a swap, while the panes are still moving, fills
+                    // the group's frame. It waited at the host pane's rectangle, and the change of front
+                    // window dropped its placement as it would a stale follower's: it stayed pane-sized,
+                    // and the group took that for its frame.
+                    do
+                        let frameBefore = onGroup(fun group -> group.layoutFrame)
+                        // Slow to place, as a browser and an editor are, so the swap is still under way.
+                        onHelper(fun () -> for form in forms |> List.take 3 do form.Delay <- 80)
+                        try
+                            // Swapping the sides by dragging a pane's tab to the other edge: the tab
+                            // leaves the strip, which takes its window out of the group, so the other
+                            // pane fills the group; dropped, it joins again and splits the group anew.
+                            for round in 1..3 do
+                                let left = onGroup(fun group -> (SplitView.window [First] group.splitLayout.Value).Value)
+                                let other = onGroup(fun group -> (SplitView.window [Second] group.splitLayout.Value).Value)
+                                onGroup(fun group ->
+                                    group.removeWindow left
+                                    OS().windowFromHwnd(left).hideOffScreen(None))
+                                for _ in 1..40 do (Application.DoEvents(); Thread.Sleep(1))
+                                // Dropped at once, while the other pane is still filling the group, and
+                                // named with the tab behind as its partner, as the strip did when the
+                                // dragged tab was the one in front.
+                                onGroup(fun group -> group.dropTab(left,SplitAt([],SideBySide,Second),partner))
+                                waitOperation()
+                                let frame,s = onGroup(fun group -> group.layoutFrame,group.splitLayout)
+                                check (frame=frameBefore) (sprintf "Swap %d by drag changed the group's frame from %A to %A" round frameBefore frame)
+                                check (s |> Option.exists(fun s -> s.tree.first=Leaf(Occupied other) && s.tree.second=Leaf(Occupied left)))
+                                      (sprintf "Swap %d by drag did not pair the dropped tab with the pane shown: %A" round s)
+                            onGroup(fun group -> group.tabActivate(Tab(partner),false))
+                            waitOperation()
+                        finally onHelper(fun () -> for form in forms |> List.take 3 do form.Delay <- 0)
+                        let frameAfter,shown = onGroup(fun group -> group.layoutFrame),OS().windowFromHwnd(partner).visibleBounds
+                        check (frameAfter=frameBefore && shown=frameBefore)
+                              (sprintf "A tab behind chosen after swaps did not fill the group: frame %A then %A, tab at %A" frameBefore frameAfter shown)
+                        onGroup(fun group -> group.tabActivate(Tab(source),false))
+                        waitSplit()
+                    onGroup(fun group -> group.execute(EndSplit(Some source)))
+                    waitOperation()
+                    onGroup(fun group -> group.removeWindow foreign)
+                    // A tab dragged here joins put away off screen, and on top, as the window the drag
+                    // activated. The split takes its frame from the tab shown, which it pairs with:
+                    // taken from the top window, it was laid out off screen and that window vanished.
+                    do
+                        let frameBefore = onGroup(fun group -> group.layoutFrame)
+                        let away = OS().windowFromHwnd(foreign)
+                        away.hideOffScreen(None)
+                        for hwnd in onGroup(fun group -> group.windows.items.list) do OS().windowFromHwnd(hwnd).insertAfter(foreign)
+                        check (OS().isOnScreen away.bounds) "The test put the joining window wholly off screen"
+                        onGroup(fun group -> group.dropTab(foreign,SplitAt([],SideBySide,Second),shown))
+                        waitSplit()
+                        check (onGroup(fun group -> group.layoutFrame)=frameBefore)
+                              (sprintf "A dropped tab's split was laid out at %A, not over the group at %A" (onGroup(fun group -> group.layoutFrame)) frameBefore)
+                        onGroup(fun group -> group.execute(EndSplit(Some source)))
+                        waitOperation()
+                        onGroup(fun group -> group.removeWindow foreign)
+                    onHelper(fun () -> forms.[2].Hide(); forms.[2].Pinned <- true; forms.[2].Bounds <- Rectangle(-20000,-20000,640,480))
+                    waitOperation()
+                    onHelper(fun () ->
+                        for form in forms |> List.take 2 do
+                            form.Pinned <- true
+                            form.Hide()
+                            form.Bounds <- Rectangle(-20000,-20000,640,480))
                     for _ in 1..5 do
                         onHelper(fun () -> OS().windowFromHwnd(handles.Head).showWindow(ShowWindowCommands.SW_SHOWMINNOACTIVE))
                         pumpUntil(fun () -> handles |> List.take count |> List.forall(fun hwnd -> OS().windowFromHwnd(hwnd).isMinimized))
@@ -313,8 +1023,17 @@ let main() =
                                 cell.GetType().GetMethod("set").Invoke(cell,[|box (Some(top.bounds,top.placement,top.visibleBounds))|]) |> ignore
                                 invoke "updatePlacements" group [||] |> ignore)
                             check (entered.Wait(10000)) "Follower placement did not enter its stacking-correction phase"
+                            let topmost () =
+                                let pid = Diagnostics.Process.GetCurrentProcess().Id
+                                OS().windowsInZorder.list |> List.filter(fun window ->
+                                    let mutable owner = 0
+                                    WinUserApi.GetWindowThreadProcessId(window.hwnd,&owner) |> ignore
+                                    owner=pid && window.isVisible &&
+                                    (WinUserApi.GetWindowLong(window.hwnd,WindowLongFieldOffset.GWL_EXSTYLE).ToInt64() &&& int64 WindowsExtendedStyles.WS_EX_TOPMOST)<>0L)
+                                |> List.map(fun window -> window.hwnd,window.bounds)
                             check (OS().windowFromHwnd(follower).zorder < OS().windowFromHwnd(source).zorder)
-                                  "Placement fixture did not temporarily raise the follower"
+                                  (sprintf "Placement fixture did not temporarily raise the follower: follower %d source %d, our topmost windows %A, foreground %A"
+                                       (OS().windowFromHwnd(follower).zorder) (OS().windowFromHwnd(source).zorder) (topmost()) (WinUserApi.GetForegroundWindow()))
                             onGroup(fun group -> invoke "handleWindowEvent" group [|box follower;box WinEvent.EVENT_OBJECT_REORDER|] |> ignore)
                             check (onGroup(fun group -> group.topWindow=source && group.ts.zorder.head=Tab(source)))
                                   "A placement reorder changed the selected tab before completion"

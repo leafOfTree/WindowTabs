@@ -205,6 +205,56 @@ type CloseButtonSprite = {
             bitmap
         member this.children = List2()
 
+/// Where the two tabs of a split view meet: it marks them as a pair and opens the split's menu.
+/// Two panes side by side or one above the other, in the tabs' text colour.
+type SplitJunctionSprite = {
+    /// The tab the button answers for, boxed: the strip is generic over its tab ids.
+    owner: obj
+    axis: SplitAxis
+    size: Sz
+    fill: Color
+    ink: Color
+    hover: bool
+    }
+    with
+    interface ISpriteHitTest with
+        member this.containsPoint(pt) =
+            pt.x>=0 && pt.y>=0 && pt.x<this.size.width && pt.y<this.size.height
+    interface ISprite with
+        member this.image =
+            let bitmap = Img(this.size)
+            use g = bitmap.graphics
+            g.SmoothingMode <- SmoothingMode.AntiAlias
+            let w,h = float32 this.size.width,float32 this.size.height
+            let radius = min (h/2.0f) (float32(Dpi.scale 6))
+            use outline = new GraphicsPath()
+            let d = radius*2.0f
+            outline.AddArc(0.5f,0.5f,d,d,180.0f,90.0f)
+            outline.AddArc(w-d-0.5f,0.5f,d,d,270.0f,90.0f)
+            outline.AddArc(w-d-0.5f,h-d-0.5f,d,d,0.0f,90.0f)
+            outline.AddArc(0.5f,h-d-0.5f,d,d,90.0f,90.0f)
+            outline.CloseFigure()
+            use fill = new SolidBrush(this.fill)
+            g.FillPath(fill,outline)
+            let c = this.ink
+            use border = new Pen(Color.FromArgb((if this.hover then 200 else 110),int c.R,int c.G,int c.B),1.0f)
+            g.DrawPath(border,outline)
+            // Two panes: their sizes follow the button so the glyph reads at any tab height.
+            let inset = h*0.28f
+            let gap = max 1.0f (h*0.08f)
+            use pane = new SolidBrush(Color.FromArgb((if this.hover then 235 else 170),int c.R,int c.G,int c.B))
+            let left,top,right,bottom = (w-(h-2.0f*inset)*1.5f)/2.0f,inset,(w+(h-2.0f*inset)*1.5f)/2.0f,h-inset
+            if this.axis=SideBySide then
+                let half = (right-left-gap)/2.0f
+                g.FillRectangle(pane,left,top,half,bottom-top)
+                g.FillRectangle(pane,left+half+gap,top,half,bottom-top)
+            else
+                let half = (bottom-top-gap)/2.0f
+                g.FillRectangle(pane,left,top,right-left,half)
+                g.FillRectangle(pane,left,top+half+gap,right-left,half)
+            bitmap
+        member this.children = List2()
+
 type TabDisplayInfo = {
     tint: Color option
     colorStyle: string
@@ -214,6 +264,8 @@ type TabDisplayInfo = {
     textFont: Font
     textBrush: Brush
     icon: Icon
+    /// The tab's pane in a split view; the pair gets a button where the two tabs meet.
+    splitTrail: (SplitAxis * Side) list option
     }
     
 type TabSprite<'id> = {
@@ -904,15 +956,50 @@ type TabStripSprite<'id> when 'id : equality = {
               if plainAt 1 then yield Pt(location.x + tab.size.width, y), foot false ]
         | _ -> []
 
+    /// A split button sits on each seam between a split view's tabs while they are next to each
+    /// other; not while a tab is being dragged along the strip.
+    member private this.junction =
+        if this.slide.IsSome then []
+        else
+            let order = this.adjustedLorder.list
+            let paired = order |> List.filter(fun tab -> (this.tabs.find tab).splitTrail.IsSome)
+            paired |> List.pairwise |> List.collect(fun (first,second) ->
+                // The split that parts the two panes: the deepest one both are in, where their
+                // trails first take different sides.
+                let parting =
+                    Seq.zip (this.tabs.find first).splitTrail.Value (this.tabs.find second).splitTrail.Value
+                    |> Seq.tryFind(fun (a,b) -> a<>b) |> Option.map(fst >> fst)
+                match parting with
+                | Some axis when List.findIndex ((=) second) order = List.findIndex ((=) first) order + 1 ->
+                    let location = this.tabLocation first
+                    let tab = this.tabSpriteOf first
+                    let hover = this.hover |> Option.exists(fun (id,part) -> id=second && part=TabSplit)
+                    let button side = { owner=box second; axis=axis; size=side; fill=this.appearance.tabActiveBgColor; ink=tab.textColor; hover=hover }
+                    if this.isVertical then
+                        let height = max (Dpi.scale 14) (this.rowHeight*45/100)
+                        let side = Sz(height*3/2,height)
+                        let y = location.y+tab.size.height+(this.rowStep-this.rowHeight)/2-side.height/2
+                        let x = this.size.width-side.width-Dpi.scale (if this.scrollMaximum>0 then 22 else 12)
+                        if y>=0 && y+side.height<=this.size.height then [Pt(x,y),button side :> ISprite] else []
+                    else
+                        // Small and down at the tabs' bottom edge, clear of the icon beside the seam.
+                        let height = min (this.size.height-2) (max (Dpi.scale 11) (tab.size.height*38/100))
+                        let side = Sz(height*3/2,height)
+                        let seam = location.x+tab.size.width-int(this.tabOverlap/2.0)
+                        // The strip's own bottom row: tabs stop a pixel or two short of it.
+                        let y = this.size.height-side.height
+                        [Pt(seam-side.width/2,y),button side :> ISprite]
+                | _ -> [])
+
     member this.sprite =
         {
             new ISprite with
             member x.image = this.bgImage
-            // The feet come first so they are drawn over the tabs they reach into.
+            // The split button and the feet come first so they are drawn over the tabs.
             member x.children =
                 let tabs = this.tabSprites.list |> List.filter(fun (location,tab) ->
                     not this.isVertical || (location.y<this.size.height && location.y+tab.size.height>0))
-                List2(this.feet @ (tabs |> List.map(fun (location,tab) -> location,tab :> ISprite)))
+                List2(this.junction @ this.feet @ (tabs |> List.map(fun (location,tab) -> location,tab :> ISprite)))
         }
 
     member this.renderTab tab = this.tabSprite(tab).render
@@ -1006,8 +1093,11 @@ type TabStripSprite<'id> when 'id : equality = {
                         fillSegment ink x markWidth true true
         image
 
-    member this.tryHit pt = 
+    member this.tryHit pt =
         let path = if Rect(Pt(),this.size).containsPoint(pt) then this.sprite.hit(pt) else List2()
+        match path.tryHead with
+        | Some(:? SplitJunctionSprite as junction) -> Some(unbox<'id> junction.owner,TabSplit)
+        | _ ->
         maybe {
             let! tab = path.tryPick <| fun sprite ->
                 match sprite with

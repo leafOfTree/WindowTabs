@@ -36,7 +36,7 @@ let run (measure:string -> int -> (int -> unit) -> JObject) iterations =
                     let tab = Tab(IntPtr(100+id))
                     strip.addTab(tab)
                     strip.setTabInfo(tab,{
-                        text=sprintf "Window %d" id;isRenamed=false
+                        text=sprintf "Window %d" id;isRenamed=false;splitTrail=None
                         iconSmall=SystemIcons.Application;iconBig=SystemIcons.Application
                         preview=fun () -> Img(Sz(1,1)) })
                 let size = Dpi.scaleSize(Sz(1050,28))

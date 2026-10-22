@@ -2,6 +2,10 @@ namespace Bemo
 open System
 open Bemo.Json
 
+/// A group's split view as a workspace keeps it: each pane window by its place in the group's
+/// window list with what it remembers of the split, and the frame the panes divide.
+type SavedSplit = { parked: bool; frame: Rect; panes: (int * SavedPane) list }
+
 module WorkspaceData =
     let version = 3
     /// Drops an entry that is harmless rather than damaged, without a warning.
@@ -36,12 +40,9 @@ module WorkspaceData =
         JObject(JProperty("position",position),JProperty("columnWidth",between SettingsCatalog.columnWidthRange layout.columnWidth),
                 JProperty("normalAlignment",alignment layout.normalAlignment),JProperty("insideAlignment",alignment layout.insideAlignment))
 
-    /// Normal placement uses workspace coordinates, including the taskbar offset.
-    let fitPlacement (monitors:(Rect * Rect) list) (value:OSWindowPlacement) =
-        let areas = monitors |> List.map(fun (display,work) ->
-            work.move(display.x-work.x,display.y-work.y))
-        let bounds = value.rcNormalPosition
-        if areas.IsEmpty || areas |> List.exists(fun area -> area.completlyContains bounds) then value
+    /// A rectangle kept inside one of the areas: the one it overlaps most, else the nearest.
+    let fitRect (areas:Rect list) (bounds:Rect) =
+        if areas.IsEmpty || areas |> List.exists(fun area -> area.completlyContains bounds) then bounds
         else
             let distance (area:Rect) =
                 let dx = max 0L (max (int64 area.left-int64 bounds.right) (int64 bounds.left-int64 area.right))
@@ -53,8 +54,30 @@ module WorkspaceData =
             let width,height = min bounds.width area.width,min bounds.height area.height
             let x = max area.left (min bounds.x (area.right-width))
             let y = max area.top (min bounds.y (area.bottom-height))
-            { value with rcNormalPosition=Rect(Pt(x,y),Sz(width,height))
-                         ptMaxPosition=Pt(-1,-1);ptMinPosition=Pt(-1,-1) }
+            Rect(Pt(x,y),Sz(width,height))
+
+    /// Normal placement uses workspace coordinates, including the taskbar offset.
+    let fitPlacement (monitors:(Rect * Rect) list) (value:OSWindowPlacement) =
+        let areas = monitors |> List.map(fun (display,work) ->
+            work.move(display.x-work.x,display.y-work.y))
+        let bounds = fitRect areas value.rcNormalPosition
+        if bounds=value.rcNormalPosition then value
+        else { value with rcNormalPosition=bounds; ptMaxPosition=Pt(-1,-1);ptMinPosition=Pt(-1,-1) }
+
+    /// As fitPlacement, for a window whose frame (`bounds`) is larger than what shows
+    /// (`visible`) by an invisible border: only the visible part has to be on screen.
+    let fitPlacementOf (monitors:(Rect * Rect) list) (bounds:Rect) (visible:Rect) (value:OSWindowPlacement) =
+        if visible.size.isEmptyArea || bounds.size.isEmptyArea then fitPlacement monitors value
+        else
+            let left,top = visible.x-bounds.x,visible.y-bounds.y
+            let right,bottom = bounds.right-visible.right,bounds.bottom-visible.bottom
+            let frame = value.rcNormalPosition
+            let shown = Rect(Pt(frame.x+left,frame.y+top),Sz(frame.width-left-right,frame.height-top-bottom))
+            let fitted = fitPlacement monitors {value with rcNormalPosition=shown}
+            if fitted.rcNormalPosition=shown then value
+            else
+                let placed = fitted.rcNormalPosition
+                { fitted with rcNormalPosition=Rect(Pt(placed.x-left,placed.y-top),Sz(placed.width+left+right,placed.height+top+bottom)) }
 
     let placement (obj:JObject) =
         let point key fallback =
@@ -73,6 +96,51 @@ module WorkspaceData =
                 JProperty("ptMinPosition",point value.ptMinPosition),
                 JProperty("rcNormalPosition",JObject(JProperty("x",value.rcNormalPosition.x),JProperty("y",value.rcNormalPosition.y),
                                                      JProperty("width",value.rcNormalPosition.width),JProperty("height",value.rcNormalPosition.height))))
+    /// A pane's levels as letters: L and R for the sides of a side-by-side split, T and B of a stacked one.
+    let split (obj:JObject) : SavedSplit =
+        let frame =
+            match obj.["frame"] with
+            | :? JObject as f -> Rect(Pt(number f "x" 0,number f "y" 0),Sz(number f "width" 0,number f "height" 0))
+            | _ -> invalidArg "frame" "Missing frame."
+        if frame.width<=0 || frame.height<=0 || frame.width>100000 || frame.height>100000 then invalidArg "frame" "Invalid frame."
+        let parked = match obj.["parked"] with null -> false | value -> value.Value<bool>()
+        let panes =
+            match obj.["panes"] with
+            | :? JArray as panes ->
+                panes |> Seq.map(fun pane ->
+                    match pane with
+                    | :? JObject as pane ->
+                        let levels =
+                            match pane.["levels"] with
+                            | :? JArray as levels ->
+                                levels |> Seq.map(fun level ->
+                                    match level.Value<string>() with
+                                    | "L" -> SideBySide,First | "R" -> SideBySide,Second
+                                    | "T" -> Stacked,First | "B" -> Stacked,Second
+                                    | other -> invalidArg "levels" ("Unknown level: "+other)) |> List.ofSeq
+                            | _ -> invalidArg "levels" "Missing levels."
+                        let ratios =
+                            match pane.["ratios"] with
+                            | :? JArray as ratios -> ratios |> Seq.map(fun ratio -> SplitMetrics.clampRatio(ratio.Value<float>())) |> List.ofSeq
+                            | _ -> levels |> List.map(fun _ -> 0.5)
+                        let focused = match pane.["focused"] with null -> false | value -> value.Value<bool>()
+                        number pane "window" -1,{levels=levels;ratios=ratios;focused=focused;parked=parked}
+                    | _ -> invalidArg "panes" "Expected an object.") |> List.ofSeq
+            | _ -> invalidArg "panes" "Missing panes."
+        if panes.Length<2 || panes |> List.exists(fun (index,_) -> index<0) then invalidArg "panes" "A split needs two panes."
+        { parked=parked; frame=frame; panes=panes }
+
+    let writeSplit (split:SavedSplit) =
+        let level = function
+            | SideBySide,First -> "L" | SideBySide,Second -> "R"
+            | Stacked,First -> "T" | Stacked,Second -> "B"
+        JObject(JProperty("parked",split.parked),
+                JProperty("frame",JObject(JProperty("x",split.frame.x),JProperty("y",split.frame.y),
+                                          JProperty("width",split.frame.width),JProperty("height",split.frame.height))),
+                JProperty("panes",JArray(split.panes |> List.map(fun (index,pane) ->
+                    JObject(JProperty("window",index),JProperty("levels",JArray(pane.levels |> List.map(level >> box))),
+                            JProperty("ratios",JArray(pane.ratios |> List.map box)),JProperty("focused",pane.focused)) :> obj))))
+
     /// Validate each entry independently. Callers retain the original JSON if anything is rejected.
     let read (root:JObject) =
         let warnings = ResizeArray<string>()
@@ -121,6 +189,14 @@ module WorkspaceData =
             with _ ->
                 warnings.Add(tr Strings.Workspaces.invalidTabLayout)
                 obj.Remove("tabLayout") |> ignore
+            try
+                match obj.["split"] with
+                | null -> ()
+                | :? JObject as saved -> obj.["split"] <- writeSplit (split saved)
+                | _ -> invalidArg "split" (tr Strings.Workspaces.invalidSplit)
+            with _ ->
+                warnings.Add(tr Strings.Workspaces.invalidSplit)
+                obj.Remove("split") |> ignore
             obj
         let workspace (obj:JObject) =
             let groups = collect "Group" obj.["groups"] group
@@ -134,3 +210,10 @@ module WorkspaceData =
                 let result = collect "Workspace" root.["workspaces"] workspace
                 result,List.ofSeq warnings,false
         with ex -> [],[ex.Message],true
+
+    /// One workspace kept on its own, the session, checked as the saved list is.
+    let readOne (obj:JObject) =
+        let root = JObject(JProperty("workspaceSchemaVersion",version),JProperty("workspaces",JArray(obj.DeepClone())))
+        match read root with
+        | [workspace],_,false -> Some workspace
+        | _ -> None

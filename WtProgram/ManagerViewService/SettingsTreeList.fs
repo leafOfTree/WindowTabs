@@ -51,7 +51,8 @@ type TreeListItem(text:string) =
     member val Glyph = NoGlyph with get,set
     /// Draws a divider above the row, to set it apart from the rows before.
     member val SeparatorAbove = false with get,set
-    /// Said on hover over the row's icon or glyph, for a row whose icon stands in for a name.
+    /// Said on hover over the row's icon or glyph, for a row whose icon stands in for a name. The
+    /// icon only explains; it does not light up as a button would.
     member val IconTip = "" with get,set
     /// Per text column, (start,length) runs of its text to mark, such as search matches.
     member val Highlights : (int * int) list[] = [||] with get,set
@@ -72,6 +73,8 @@ type TreeListItem(text:string) =
     member val ChipAdd = false with get,set
     /// Chips drawn muted, with grey icons, for a row whose items are turned off.
     member val ChipsDimmed = false with get,set
+    /// Chips laid out this many to a line, all one width, filling it; 0 sizes each to its text.
+    member val ChipColumns = 0 with get,set
     member val AlwaysShowActions = false with get,set
     member _.Children = children :> IReadOnlyList<TreeListItem>
     member this.Add(child:TreeListItem) = child.Parent <- this; children.Add(child); child
@@ -105,7 +108,6 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     let mutable hoveredChip : (TreeListItem * int) option = None
     let mutable hoveredChipAdd : TreeListItem = null
     /// The row whose icon, which says something on hover, is under the pointer.
-    let mutable hoveredIcon : TreeListItem = null
     /// Where each shown row starts, below the header and before scrolling, and where the last
     /// ends; rows with chips grow a line for each line of chips. Kept for one set of rows at
     /// one width.
@@ -345,6 +347,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         let left = if item.Text="" then bounds.X else bounds.X+nameWidth+Dpi.scale 12
         let right = max (left+height) bounds.Right
         let widthOf (chip:TreeListChip) =
+            if item.ChipColumns>0 then max height ((right-left-(item.ChipColumns-1)*gap)/item.ChipColumns) else
             let iconWidth = if isNull chip.Icon then 0 else icon+Dpi.scale 5
             let closeWidth = if chip.Removable then Dpi.scale 4+close+Dpi.scale 2 else pad
             min (right-left) (pad+iconWidth+min (Dpi.scale 160) (measure chip.Text+Dpi.scale 4)+closeWidth)
@@ -573,14 +576,6 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         if not same then
             hoveredChip <- chip
             this.Invalidate()
-        let icon =
-            match this.rowAt e.Y with
-            | Some(index,(item,level)) when item.IconTip<>"" &&
-                                            (let box,_ = this.nameLayout(item,level,this.rowTop index) in Rectangle.Inflate(box,Dpi.scale 4,Dpi.scale 4).Contains(e.Location)) -> item
-            | _ -> null
-        if not (Object.ReferenceEquals(icon,hoveredIcon)) then
-            hoveredIcon <- icon
-            this.Invalidate()
         let add = this.chipAddAt e.Location |> Option.toObj
         if not (Object.ReferenceEquals(add,hoveredChipAdd)) then
             hoveredChipAdd <- add
@@ -630,7 +625,6 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         hoveredAction <- -1
         hoveredChip <- None
         hoveredChipAdd <- null
-        hoveredIcon <- null
         tooltipText <- ""
         tooltip.Hide()
         this.Invalidate()
@@ -718,15 +712,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         g.InterpolationMode <- InterpolationMode.HighQualityBicubic
                         g.DrawImage(item.Icon,iconBox)
                     elif not hidesIcon && item.Glyph<>NoGlyph then
-                        // An icon that says something on hover lights up as the row buttons do.
-                        let pointed = Object.ReferenceEquals(item,hoveredIcon)
-                        if pointed then
-                            let button = Rectangle.Inflate(iconBox,(Dpi.scale 24-iconBox.Width)/2,(Dpi.scale 24-iconBox.Height)/2)
-                            use shape = SettingsShapes.rounded (RectangleF(float32 button.X,float32 button.Y,float32 button.Width,float32 button.Height)) (float32(Dpi.scale 4))
-                            use fill = new SolidBrush(if SystemInformation.HighContrast then SystemColors.Highlight else Color.FromArgb(36,p.text))
-                            g.FillPath(fill,shape)
-                        let color = if pointed && SystemInformation.HighContrast then SystemColors.HighlightText elif pointed then text else p.muted
-                        SettingsTreeList.drawGlyph(g,item.Glyph,iconBox,color)
+                        SettingsTreeList.drawGlyph(g,item.Glyph,iconBox,p.muted)
                     if not editing then
                         let nameBounds,laid,add,_ = if item.Chips.IsEmpty && not item.ChipAdd then bounds,[],None,1 else this.chipLayout(item,level,top)
                         this.drawHighlights(g,item.Text,item.highlights 0,nameBounds,flags,p)

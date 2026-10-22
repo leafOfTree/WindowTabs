@@ -124,6 +124,7 @@ and
     let mutable _windows  = System.Collections.Generic.List<Dynamic>()
     let removedEvent = Event<_>()
     member val tabLayout : GroupTabLayout option = None with get,set
+    member val split : SavedSplit option = None with get,set
 
     member this.addWindow(window) =
         _windows.Add(window)
@@ -159,6 +160,7 @@ and
         groupObj.setObject("placement", placementObj)
         groupObj.setObjectArray("windows", windowObjects)
         this.tabLayout |> Option.iter(fun layout -> groupObj.["tabLayout"] <- WorkspaceData.writeTabLayout layout)
+        this.split |> Option.iter(fun split -> groupObj.["split"] <- WorkspaceData.writeSplit split)
         groupObj
 
     static member deserialize(obj:JObject) =
@@ -168,6 +170,9 @@ and
         obj.getObjectArray("windows").Value.map(WorkspaceWindow.deserialize).iter(group.addWindow)
         match obj.["tabLayout"] with
         | :? JObject as layout -> group.tabLayout <- Some(WorkspaceData.tabLayout layout)
+        | _ -> ()
+        match obj.["split"] with
+        | :? JObject as split -> group.split <- (try Some(WorkspaceData.split split) with _ -> None)
         | _ -> ()
         group
 
@@ -330,11 +335,14 @@ type WorkspaceRestoreResult = {
     pending:(Dynamic*WorkspaceWindow) list
     /// Where each saved group went, so another try adds to the same group.
     groups:(Dynamic*IGroup) list
+    /// The window found for each saved window so far, so a split whose panes arrive over
+    /// several tries, one open and one started, is rebuilt once they are all there.
+    placed:(Dynamic*IntPtr) list
     /// Apps of windows not found that are not running and can be started.
     launchable:string list }
     with
     static member Of(workspace,restored,missing,failed) =
-        { workspace=workspace; restored=restored; missing=missing; failed=failed; pending=[]; groups=[]; launchable=[] }
+        { workspace=workspace; restored=restored; missing=missing; failed=failed; pending=[]; groups=[]; placed=[]; launchable=[] }
     /// A second try after starting apps: everything restored so far counts, what is still
     /// missing is what the second try did not find, and apps that would not start count as failed.
     member first.Then(second:WorkspaceRestoreResult,launchFailures) =
@@ -394,6 +402,11 @@ type WorkspaceModel() as this =
     let mutable creating = false
     let mutable readOnly = false
     let mutable recovery : JToken option = None
+    /// Each group's tab layout and split as last read from its thread, by group token, so the
+    /// session can be written at exit without waiting on the groups. The split names its windows
+    /// by handle: by their places in the list read then, it named the wrong windows once a tab
+    /// had closed or moved since.
+    let layouts = Dictionary<int,GroupTabLayout option * (bool * Rect * (IntPtr * SavedPane) list) option>()
 
     do
         Observable.init(this)
@@ -415,7 +428,9 @@ type WorkspaceModel() as this =
         let nextNumber = this.workspaces.choose(fun(w) -> w.name.Replace("Workspace ", "").tryToInt()).maxBy 0 id + 1
         sprintf "Workspace %A" nextNumber
 
-    member private this.createWorkspace(complete:Workspace -> unit) =
+    /// The groups as they are. Their tab layouts and splits are read on their own threads
+    /// unless `fromCache`, which takes what was last read, for a save that cannot wait.
+    member private this.createWorkspace(fromCache:bool, complete:Workspace -> unit) =
         let zorder = os.windowZorders
         let groups = Services.desktop.groups.where(fun group -> not group.windows.isEmpty).enumerate.map <| fun (i, group) ->
             let windowsInZorder = group.windows.sortBy(zorder.find)
@@ -435,30 +450,48 @@ type WorkspaceModel() as this =
                 ww.zorder <- innerZorder.find(hwnd)
                 ww.matchType <- WorkspaceWindowTitleMatchType.ExactMatch
                 wsGroup.addWindow(ww)
-            group :?> GroupInfo,wsGroup
-            
+            // The split names its windows by their place in the list just saved.
+            let indexOf = Map2(group.windows.enumerate.map(fun (j,hwnd) -> hwnd,j))
+            let toSaved (parked:bool,frame:Rect,panes:(IntPtr * SavedPane) list) =
+                let panes = panes |> List.choose(fun (hwnd,pane) -> indexOf.tryFind hwnd |> Option.map(fun index -> index,pane))
+                if panes.Length>=2 then Some {parked=parked;frame=frame;panes=panes} else None
+            group :?> GroupInfo,wsGroup,toSaved
+
         let ws = Workspace(
             name = this.newWorkspaceName()
         )
 
         let mutable remaining = groups.count
         if remaining=0 then complete ws
+        elif fromCache then
+            groups.iter(fun (info,saved,toSaved) ->
+                match layouts.TryGetValue info.group.groupToken with
+                | true,(layout,split) ->
+                    saved.tabLayout <- layout
+                    saved.split <- split |> Option.bind toSaved
+                | _ -> ()
+                ws.addGroup(saved))
+            complete ws
         else
             // Group STAs read their own layout; saving never blocks them from reading settings.
-            groups.iter(fun (info,saved) ->
-                info.captureTabLayout(fun layout ->
-                    saved.tabLayout <- layout
+            groups.iter(fun (info,saved,toSaved) ->
+                info.captureLayout(fun captured ->
+                    captured |> Option.iter(fun (layout,split) ->
+                        saved.tabLayout <- Some layout
+                        saved.split <- split |> Option.bind toSaved
+                        layouts.[info.group.groupToken] <- (saved.tabLayout,split))
                     remaining <- remaining-1
                     if remaining=0 then
-                        groups.iter(fun (_,group) -> ws.addGroup(group))
+                        groups.iter(fun (_,group,_) -> ws.addGroup(group))
                         complete ws))
 
     /// Restores saved groups of windows; a group already restored into (by an earlier try)
     /// takes the windows found now.
-    member private this.restoreInto(name:string, saved:List2<Dynamic * List2<Dynamic>>, existing:(Dynamic*IGroup) list) =
+    member private this.restoreInto(name:string, saved:List2<Dynamic * List2<Dynamic>>, existing:(Dynamic*IGroup) list, placedBefore:(Dynamic*IntPtr) list) =
         let resolver = WindowResolver()
         let errors = ResizeArray<string*string>()
         let mutable restored = 0
+        let placedAll = ResizeArray<Dynamic*IntPtr>(placedBefore)
         let missing = ResizeArray<string*string>()
         let notFound = HashSet<obj>(HashIdentity.Reference)
         let lost (item:Dynamic) =
@@ -472,14 +505,17 @@ type WorkspaceModel() as this =
                 if not resolved.isEmpty then
                     let mutable destination = used |> Seq.tryFind(fun (each,_) -> obj.ReferenceEquals(each,groupInfo)) |> Option.map snd
                     let successful = ResizeArray<WorkspaceWindow * IntPtr>()
-                    let placement = WorkspaceData.fitPlacement (Mon.all.map(fun mon -> mon.displayRect,mon.workRect).list) (groupInfo?placement)
+                    let monitors = Mon.all.map(fun mon -> mon.displayRect,mon.workRect).list
+                    let placement = WorkspaceData.fitPlacement monitors (groupInfo?placement)
                     resolved.iter(fun (saved,hwnd) ->
                         try
                             let window = os.windowFromHwnd(hwnd)
                             if window.isWindow then
                                 // Complete native placement before detaching from the old group.
                                 WinUserApi.ShowWindow(hwnd,ShowWindowCommands.SW_RESTORE) |> ignore
-                                window.setPlacement(placement)
+                                // Kept on screen by its visible frame: the window frame sticks out of the
+                                // work area by its invisible border, which pulled every edge window in.
+                                window.setPlacement(WorkspaceData.fitPlacementOf monitors window.bounds window.visibleBounds (groupInfo?placement))
                                 if destination.IsNone then
                                     let next = Services.desktop.createGroup(Services.settings.getValue("combineIconsInTaskbar").cast<bool>())
                                     (groupInfo :?> WorkspaceGroup).tabLayout |> Option.iter(fun layout ->
@@ -492,7 +528,30 @@ type WorkspaceModel() as this =
                                 restored <- restored+1
                             else lost saved
                         with ex -> errors.Add(fst (WorkspaceRestore.describe saved),ex.Message))
-                    try os.setZorder(WorkspaceRestore.zorder (List2(successful))) with ex -> errors.Add("",ex.Message)))
+                    try os.setZorder(WorkspaceRestore.zorder (List2(successful))) with ex -> errors.Add("",ex.Message)
+                    // The split comes back among the windows found, those of an earlier try too,
+                    // once they are all in the group, its frame kept on screen on its own: the
+                    // placement's correction allows for a window frame that sticks out by its
+                    // invisible border, which a visible frame does not.
+                    let windows = (groupInfo?windows : List2<Dynamic>).list
+                    let found = successful |> Seq.map(fun (saved,hwnd) -> saved :> Dynamic,hwnd) |> List.ofSeq
+                    placedAll.AddRange found
+                    let present =
+                        (placedBefore |> List.filter(fun (saved,_) -> windows |> List.exists(fun item -> obj.ReferenceEquals(item,saved)))) @ found
+                    match destination,(groupInfo :?> WorkspaceGroup).split with
+                    | Some group,Some split when present.Length>=2 ->
+                        let byIndex =
+                            present |> List.choose(fun (saved,hwnd) ->
+                                windows |> List.tryFindIndex(fun item -> obj.ReferenceEquals(item,saved)) |> Option.map(fun index -> index,hwnd))
+                            |> Map.ofList
+                        let panes = split.panes |> List.choose(fun (index,pane) -> byIndex.TryFind index |> Option.map(fun hwnd -> hwnd,pane))
+                        match SplitPersistence.rebuild panes with
+                        | GroupLayout.Single -> ()
+                        | layout ->
+                            let frame = WorkspaceData.fitRect (Mon.all.map(fun mon -> mon.workRect).list) split.frame
+                            let info = group :?> GroupInfo
+                            info.invokeGroup(fun () -> info.group.restoreLayout(layout,frame))
+                    | _ -> ()))
         let pending =
             saved.list |> List.collect(fun (groupInfo,windows) ->
                 windows.list |> List.choose(fun item ->
@@ -502,15 +561,16 @@ type WorkspaceModel() as this =
         let openPaths = Services.program.appWindows.choose(fun hwnd -> try Some(os.windowFromHwnd(hwnd).pid.processPath) with _ -> None).list
         { workspace=name; restored=restored; missing=List.ofSeq missing; failed=List.ofSeq errors; pending=pending
           groups=List.ofSeq used
+          placed=List.ofSeq placedAll
           launchable=WorkspaceRestore.launchable openPaths File.Exists (pending |> List.map(fun (_,window) -> window.processPath)) }
 
     member private this.restoreWorkspace(workspace:Workspace) =
-        this.restoreInto(workspace.name,workspace.children.map(fun groupInfo -> groupInfo,(groupInfo?windows : List2<Dynamic>)),[])
+        this.restoreInto(workspace.name,workspace.children.map(fun groupInfo -> groupInfo,(groupInfo?windows : List2<Dynamic>)),[],[])
 
     /// Tries the windows an earlier restore did not find again, after their apps have started.
     member this.retry(result:WorkspaceRestoreResult) =
         let saved = result.pending |> List.groupBy fst |> List.map(fun (groupInfo,windows) -> groupInfo,List2(windows |> List.map(fun (_,window) -> window :> Dynamic)))
-        this.restoreInto(result.workspace,List2(saved),result.groups)
+        this.restoreInto(result.workspace,List2(saved),result.groups,result.placed)
 
     member this.addWorkspace(ws:Workspace) =
         ws.cast<IWorkspaceNode>().removed.Add <| fun() -> this.onWorkspaceRemoved(ws)
@@ -522,12 +582,43 @@ type WorkspaceModel() as this =
         if not readOnly && not creating then
             creating <- true
             try
-                this.createWorkspace(fun ws ->
+                this.createWorkspace(false,fun ws ->
                     creating <- false
                     if not readOnly then this.addWorkspace(ws))
             with _ ->
                 creating <- false
                 reraise()
+
+    /// The windows as they are now, kept on their own as the session: written as the groups
+    /// change and brought back at the next start after a sign-in, when no window is left from
+    /// the last run. Apart from the saved workspaces, which are the user's.
+    member private this.writeSession(ws:Workspace) =
+        ws.name <- "Session"
+        let root = Services.settings.root
+        root.["session"] <- ws.serialize()
+        Services.settings.root <- root
+
+    member this.saveSession() = this.createWorkspace(false,this.writeSession)
+
+    /// Written at once from the layouts last read, for an exit that cannot wait on the groups.
+    member this.saveSessionNow() = this.createWorkspace(true,this.writeSession)
+
+    member this.loadSession() =
+        match Services.settings.root.["session"] with
+        | :? JObject as saved -> WorkspaceData.readOne saved |> Option.map Workspace.deserialize
+        | _ -> None
+
+    /// Brings the session back among the windows open, and, when `launch`, starts the apps of
+    /// the windows not found and tries those again; `launching` is told how many.
+    member this.restoreSession(launch:bool, launching:int -> unit, complete:WorkspaceRestoreResult -> unit) =
+        match this.loadSession() with
+        | None -> ()
+        | Some ws ->
+            let first = this.restoreWorkspace ws
+            if launch && not first.launchable.IsEmpty then
+                launching first.launchable.Length
+                WorkspaceLaunch.start first.launchable (fun failures -> complete (first.Then(this.retry first,failures)))
+            else complete first
     
     member this.remove() =
         if not readOnly && this.selected <> null then

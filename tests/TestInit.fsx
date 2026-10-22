@@ -13,6 +13,9 @@ printfn "TEST_APPLICATION_ASSEMBLY=%s" typeof<Bemo.WindowGroup>.Assembly.Locatio
 Bemo.ThemeService.moveSystemEventsOffMainThread()
 // Initialize visual styles before Application.Run initializes WinForms DPI state.
 Application.EnableVisualStyles()
+// The same opt-in as Bootstrap.main: fail where a debugger would stop at a control
+// touched from a thread not its own.
+if Environment.GetEnvironmentVariable("WINDOWTABS_CHECK_THREADS")="1" then Control.CheckForIllegalCrossThreadCalls <- true
 
 /// ToolStrip dropdowns install a hosted WH_GETMESSAGE hook when MessageLoop is
 /// false. DoEvents alone does not establish a WinForms message loop; that hook

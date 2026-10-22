@@ -383,6 +383,11 @@ file writes. Events contain phase names and durations rather than window titles
 or executable paths. The isolated comparison host is documented in
 `tests/StartupPerf/README.md`.
 
+`WINDOWTABS_CHECK_THREADS=1` makes WinForms refuse a control touched from a thread not
+its own, as it does under a debugger, in the app and in the test hosts. The suites pass
+with it set; a run with it finds what a debugging session would stop at, such as a helper
+window's handle read on the group thread instead of the chrome thread that owns it.
+
 App grouping rules map each executable to one persistent target group ID and name,
 with an enabled flag. Paths ignore case; titles do not participate. Older exports
 normalize title rows into the first application mapping per executable. The main

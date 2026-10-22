@@ -203,8 +203,10 @@ let main() =
         (capped :> IDisposable).Dispose()
         WinUserApi.DestroyIcon(hugeHandle) |> ignore
         check (width = 64) (sprintf "A 256 pixel app icon made a %d pixel taskbar icon" width)
-    // A group of several apps keeps the front app's icon whole and shows the next app's icon in
-    // the bottom right corner, set apart by a one pixel clear ring.
+    // A group of several apps keeps the main app's icon at its full size, the other apps small
+    // along the bottom right, the last at the right edge, each after the first behind the one
+    // before with about a third showing, one clear ring round the row, so every app in
+    // the group can be told. One in the corner showed only the second.
     do
         use blue = new Bitmap(32,32)
         do
@@ -215,16 +217,29 @@ let main() =
         let stacked = new TaskbarBadgedIcon(app,[other])
         use pixels = stacked.icon.ToBitmap()
         let isOther (c:Color) = c.A=255uy && c.B>190uy && c.R<10uy && c.G<10uy
-        check (pixels.Width=32 && isAppColour(pixels.GetPixel(2,2)) && isAppColour(pixels.GetPixel(29,2)) && isAppColour(pixels.GetPixel(2,29)))
-            "The front app's icon is not shown at full size"
-        check (isOther(pixels.GetPixel(25,25)) && isOther(pixels.GetPixel(30,30)) && isAppColour(pixels.GetPixel(16,16))) "The other app's icon is not in the bottom right corner"
-        check (pixels.GetPixel(17,26).A=0uy && pixels.GetPixel(26,17).A=0uy) "No clear ring parts the corner icon from the front one"
-        check (isAppColour(pixels.GetPixel(16,26)) && isAppColour(pixels.GetPixel(26,16)) && isOther(pixels.GetPixel(20,20))) "The ring round the corner icon is wider than a pixel"
-        // Further apps add nothing: the corner holds one icon and the front one stays clear.
-        let more = new TaskbarBadgedIcon(app,[other;other;other])
+        // Two apps: the other one 14 pixels square in the corner, a clear ring round it.
+        check (pixels.Width=32 && [4,4;28,4;4,28;12,12;28,12] |> List.forall(fun (x,y) -> isAppColour(pixels.GetPixel(x,y))))
+            "The main app's icon is not at its full size"
+        check (isOther(pixels.GetPixel(24,24)) && isOther(pixels.GetPixel(30,30))) "The other app's icon is not at the bottom right"
+        // An icon drawn on nothing sits on a plate of its own: the main icon does not show through it.
+        do
+            use clear = new Bitmap(32,32)
+            let clearHandle = clear.GetHicon()
+            use seeThrough = Icon.FromHandle(clearHandle)
+            let plated = new TaskbarBadgedIcon(app,[seeThrough])
+            use platedPixels = plated.icon.ToBitmap()
+            let under = platedPixels.GetPixel(24,24)
+            check (under.A=255uy && not(isAppColour under)) (sprintf "A see-through app icon in the corner had no plate under it: %A" under)
+            (plated :> IDisposable).Dispose()
+            WinUserApi.DestroyIcon(clearHandle) |> ignore
+        check (pixels.GetPixel(17,25).A=0uy && pixels.GetPixel(25,17).A=0uy) "No clear ring parts the other app's icon from the main one"
+        // Four apps: three along the bottom right, the first whole and each after it showing a third.
+        let more = new TaskbarBadgedIcon(app,[other;other;other;other])
         use morePixels = more.icon.ToBitmap()
-        check (more.stacked.Length = TaskbarBadgedIcon.maxStacked) "More app icons were kept than the taskbar icon shows"
-        check (isAppColour(morePixels.GetPixel(16,22)) && isAppColour(morePixels.GetPixel(22,16))) "Further apps covered the front app's icon"
+        check (more.stacked.Length=3 && more.stacked.Length=TaskbarBadgedIcon.maxStacked) "The taskbar icon did not keep three other apps"
+        check (isAppColour(morePixels.GetPixel(4,25)) && isAppColour(morePixels.GetPixel(16,10))) "The other apps covered more than the bottom right of the main app's icon"
+        check ([9;20;24;29] |> List.forall(fun x -> isOther(morePixels.GetPixel(x,25))) && morePixels.GetPixel(7,25).A=0uy && morePixels.GetPixel(25,17).A=0uy)
+              "The other apps do not line up along the bottom right with one ring round the row"
         (more :> IDisposable).Dispose()
         (stacked :> IDisposable).Dispose()
         WinUserApi.DestroyIcon(blueHandle) |> ignore

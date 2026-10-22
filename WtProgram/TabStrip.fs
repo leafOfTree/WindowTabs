@@ -26,7 +26,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let foregroundCell = Cell.create(None:Tab option)
     let prevForegroundCell = Cell.create(None)
     let sizeCell = Bemo.Cell<Sz>(Cell, Sz.empty, (=))
-    let dimmedCell = Cell.create(false)
+    let dimmedCell = Bemo.Cell<bool>(Cell, false, (=))
     // Position is presentation state, not an input to pixel rendering.
     let mutable location = Pt.empty
     let mutable renderedFrames = 0L
@@ -180,6 +180,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                     numberBadge = if numberBadgesCell.value then lorderCell.value.list |> List.tryFindIndex ((=) tab) |> Option.filter(fun i -> i<numberBadgeKeysCell.value.Length) |> Option.map(fun i -> string numberBadgeKeysCell.value.[i]) else None
                     bgColor = tabBgColor.value.tryFind(tab)
                     TabDisplayInfo.text = ti.text
+                    splitTrail = ti.splitTrail
                     icon = ti.iconSmall
                     textFont = if ti.isRenamed then renamedFont else normalFont
                     textBrush = SystemBrushes.MenuText
@@ -384,7 +385,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     // Used by native performance/regression hosts to verify that unchanged
     // hover and movement do not regenerate pixels; not a user-facing setting.
     member internal _.renderCount = renderedFrames
-    
+
     member private this.update() =
         if not this.visible then this.hideTitle()
         let target = if this.isShrunk then 0.0 else 1.0
@@ -714,6 +715,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         tabInfoCell.value.tryFind(tab).def({
             text = ""
             isRenamed = false
+            splitTrail = None
             iconSmall = System.Drawing.SystemIcons.Application
             iconBig = System.Drawing.SystemIcons.Application
             preview = fun() -> Img(Sz(1,1))
@@ -726,22 +728,71 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             
     member this.tabLocation = this.ts.tabLocation
     
-    /// The window capture is full size; release it here rather than waiting for the GC.
-    member this.dragImage (tab:Tab) : Img= 
-        if this.isVertical then this.ts.renderTab(tab) else this.horizontalDragImage(tab)
+    /// The window capture is full size; release it here rather than waiting for the GC. The
+    /// window is drawn at `DragImage.windowScale` of the size it lands at on the desktop, the tab
+    /// at full size at `tabX` over it, where the strip will put it.
+    /// The window's picture takes a while to print, so the image comes back with the tab alone
+    /// and `later` gets the whole picture, the same size, from another thread a moment after:
+    /// printed first, a large window held the drag at its start.
+    member this.dragImage (tab:Tab, tabX:int, landing:Sz, later:Img -> unit) : Img=
+        if this.isVertical then this.ts.renderTab(tab) else this.horizontalDragImage tab tabX landing later
 
-    member private this.horizontalDragImage (tab:Tab) : Img=
-        use bmpTab = this.tsBase(TabUp).renderTab(tab).bitmap
-        use bmpHwnd = this.tabInfo(tab).preview().bitmap
-        let bmpOverlay = Img(Sz(bmpHwnd.Width, bmpHwnd.Height + bmpTab.Height - this.contentOffset))
-        try
-            use gCapture = bmpOverlay.graphics
-            gCapture.DrawImage(bmpTab, Point.Empty)
-            gCapture.DrawImage(bmpHwnd, new Point(0, this.size.height - this.contentOffset))
-            bmpOverlay
-        with _ ->
-            bmpOverlay.bitmap.Dispose()
-            reraise()
+    /// Where the tab sits over the window shown small in the drag image, as the strip's alignment
+    /// places a lone tab over that width. Scaled with the window from where it sits over the
+    /// full width, a tab drawn at full size sat off the middle.
+    member this.dragTabX(tab:Tab, landing:Sz) =
+        let tabWidth = this.tabSprites.tryFind(fun (_,sprite) -> sprite.id=tab) |> Option.map(fun (_,sprite) -> sprite.size.width) |> Option.defaultValue 0
+        let width = int(float landing.width*DragImage.windowScale)
+        if this.isVertical then 0
+        else
+            let x =
+                match this.getAlignment TabUp with
+                | TabCenter -> (width-tabWidth)/2
+                | TabRight -> width-tabWidth-int(60.0*DragImage.windowScale)
+                | TabLeft -> 0
+            max 0 (min x (width-tabWidth))
+
+    /// How a lone tab sits over its window once dropped: vertical strips keep it at the start.
+    member this.dragAlignment = if this.isVertical then TabLeft else this.getAlignment TabUp
+
+    member private this.horizontalDragImage (tab:Tab) (tabX:int) (landing:Sz) (later:Img -> unit) : Img=
+        let bmpTab = this.tsBase(TabUp).renderTab(tab).bitmap
+        let top = bmpTab.Height - this.contentOffset
+        let scaled value = max 1 (int(float value*DragImage.windowScale))
+        let compose (bmpHwnd:Bitmap option) =
+            let width = scaled (if landing.width>0 then landing.width else bmpHwnd |> Option.map(fun b -> b.Width) |> Option.defaultValue 1)
+            let height = scaled (if landing.height>0 then landing.height else bmpHwnd |> Option.map(fun b -> b.Height) |> Option.defaultValue 1)
+            let bmpOverlay = Img(Sz(max width (tabX+bmpTab.Width), height + top))
+            try
+                use gCapture = bmpOverlay.graphics
+                gCapture.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBilinear
+                bmpHwnd |> Option.iter(fun bmpHwnd ->
+                    use fade = new Imaging.ImageAttributes()
+                    fade.SetColorMatrix(Imaging.ColorMatrix(Matrix33=DragImage.windowOpacity))
+                    gCapture.DrawImage(bmpHwnd, Rectangle(0, top, width, height), 0, 0, bmpHwnd.Width, bmpHwnd.Height, GraphicsUnit.Pixel, fade))
+                gCapture.DrawImage(bmpTab, Point(tabX, 0))
+                bmpOverlay
+            with _ ->
+                bmpOverlay.bitmap.Dispose()
+                reraise()
+        let (Tab hwnd) = tab
+        let preview = this.tabInfo(tab).preview
+        // A minimized window's picture is its icon, drawn from the strip's own state: here.
+        if _os.windowFromHwnd(hwnd).isMinimized || landing.width<=0 || landing.height<=0 then
+            try
+                use bmpHwnd = preview().bitmap
+                compose (Some bmpHwnd)
+            finally bmpTab.Dispose()
+        else
+            let first = compose None
+            Threading.ThreadPool.QueueUserWorkItem(fun _ ->
+                try
+                    try
+                        use bmpHwnd = preview().bitmap
+                        later (compose (Some bmpHwnd))
+                    with _ -> ()
+                finally bmpTab.Dispose()) |> ignore
+            first
 
     member this.setTabBgColor((tab, color)) =
         if tabBgColor.value.tryFind(tab) <> color then

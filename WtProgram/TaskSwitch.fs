@@ -94,7 +94,15 @@ type ITaskSwitchGroup =
 type ITaskSwitchDesktop =
     abstract member groups : List2<ITaskSwitchGroup>
 
-type TaskWindowItem = TaskWindowItem of IntPtr * bool
+/// How a group listed as one item draws its icon: as its taskbar button does.
+type TaskWindowGroup =
+    /// The front app's icon with a window of each other app's lined up after it, or the
+    /// WindowTabs badge when every tab is of one app.
+    | GroupOfApps of others:IntPtr list
+    /// The picture the user chose for the group's taskbar button.
+    | GroupPicture of path:string
+
+type TaskWindowItem = TaskWindowItem of IntPtr * TaskWindowGroup option
 
     
 /// What the Alt+Tab logic needs from either switcher style.
@@ -146,12 +154,36 @@ module private TaskWindowIcons =
         | null -> fromWindow()
         | icon -> Some icon
 
+    /// An item's icon at the given size; a group's is drawn as its taskbar button's.
+    let item (TaskWindowItem(hwnd,group)) (size:int) : Bitmap option =
+        let window = OS().windowFromHwnd(hwnd)
+        let apps others =
+            large window size |> Option.map(fun front ->
+                use front = front
+                let images = others |> List.truncate(GroupIconImage.maxApps-1) |> List.choose(fun hwnd -> large (OS().windowFromHwnd(hwnd)) size)
+                try GroupIconImage.compose size front images
+                finally images |> List.iter(fun image -> image.Dispose()))
+        match group with
+        | None -> large window size
+        | Some(GroupOfApps others) -> apps others
+        | Some(GroupPicture path) ->
+            match GroupIconFile.load path with
+            | Some icon ->
+                use icon = icon
+                use picture = icon.ToBitmap()
+                let bitmap = new Bitmap(size,size,Imaging.PixelFormat.Format32bppArgb)
+                use g = Graphics.FromImage(bitmap)
+                g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
+                g.DrawImage(picture,Rectangle(0,0,size,size))
+                Some bitmap
+            | None -> apps []
+
 module private TaskWindowItems =
-    let create (TaskWindowItem(hwnd,isGroup)) =
+    let create (TaskWindowItem(hwnd,_) as item) =
         let window = OS().windowFromHwnd(hwnd)
         // Fetched at the size the list draws it in screen pixels; scaled up from 32 it blurs.
         let size = Dpi.scale 32
-        match TaskWindowIcons.large window size with
+        match TaskWindowIcons.item item size with
         | Some icon ->
             let image =
                 if icon.Width = size && icon.Height = size then Img(icon)
@@ -159,11 +191,6 @@ module private TaskWindowItems =
                     let resized = Img(icon).resize(Sz(size,size))
                     icon.Dispose()
                     resized
-            if isGroup then
-                use badgeIcon = Services.openIcon("Bemo.ico")
-                use badge = Img(badgeIcon.ToBitmap()).resize(Sz(size/2,size/2)).bitmap
-                use g = image.graphics
-                g.DrawImage(badge, Point(size-badge.Width,size-badge.Height))
             TreeListItem(window.text,Icon=image.bitmap)
         | None -> TreeListItem(window.text,Glyph=WindowGlyph)
 
@@ -340,9 +367,8 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
     let titleHeight = Dpi.scale 36
     let radius = Dpi.scale 12
     let items =
-        windows.list |> List.map(fun (TaskWindowItem(hwnd,isGroup)) ->
-            let window = OS().windowFromHwnd(hwnd)
-            window.text,TaskWindowIcons.large window iconSize,isGroup) |> Array.ofList
+        windows.list |> List.map(fun (TaskWindowItem(hwnd,_) as item) ->
+            OS().windowFromHwnd(hwnd).text,TaskWindowIcons.item item iconSize) |> Array.ofList
     let area = Screen.FromHandle(WinUserApi.GetForegroundWindow()).WorkingArea
     let columns = max 1 (min items.Length ((area.Width*9/10-padding*2+gap)/(cell+gap)))
     let rows = max 1 ((items.Length+columns-1)/columns)
@@ -350,9 +376,6 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
     let width = max (Dpi.scale 360) (columns*cell+(columns-1)*gap+padding*2)
     let height = padding+rows*cell+(rows-1)*gap+titleHeight+padding/2
     let titleFont = SettingsUi.font "Segoe UI" 11.0f FontStyle.Regular
-    let badge =
-        use icon = Services.openIcon("Bemo.ico")
-        new Bitmap(icon.ToBitmap(),Size(Dpi.scale 24,Dpi.scale 24))
     let mutable selected = 0
     let mutable closed = false
     let mutable shadow : TaskSwitchShadow option = None
@@ -406,7 +429,7 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
         use outline = SettingsShapes.rounded (SettingsShapes.outlineRect width height) (float32 radius)
         use border = new Pen(p.border)
         g.DrawPath(border,outline)
-        items |> Array.iteri(fun index (_,icon,isGroup) ->
+        items |> Array.iteri(fun index (_,icon) ->
             let bounds = cellBounds index
             if index=selected then
                 use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X,float32 bounds.Y,float32 bounds.Width,float32 bounds.Height)) (float32(Dpi.scale 10))
@@ -417,11 +440,9 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
             | Some image -> g.DrawImage(image,iconBounds)
             | None ->
                 use pen = new Pen(p.text,float32(Dpi.scale 2))
-                g.DrawRectangle(pen,Rectangle.Inflate(iconBounds,-Dpi.scale 8,-Dpi.scale 12))
-            // A tab group shows the WindowTabs badge on its icon.
-            if isGroup then g.DrawImage(badge,iconBounds.Right-badge.Width+Dpi.scale 4,iconBounds.Bottom-badge.Height))
+                g.DrawRectangle(pen,Rectangle.Inflate(iconBounds,-Dpi.scale 8,-Dpi.scale 12)))
         if items.Length>0 then
-            let title,_,_ = items.[max 0 (min (items.Length-1) selected)]
+            let title,_ = items.[max 0 (min (items.Length-1) selected)]
             let bottom = padding+rows*cell+(rows-1)*gap
             TextRenderer.DrawText(g,title,titleFont,Rectangle(padding,bottom,width-padding*2,titleHeight),
                                   (if highContrast then SystemColors.WindowText else p.text),p.surface,
@@ -459,9 +480,8 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
             shadow |> Option.iter(fun item -> (item :> IDisposable).Dispose())
             form.Hide()
             form.Dispose()
-            badge.Dispose()
             if not (isNull frame) then frame.Dispose()
-            for _,icon,_ in items do icon |> Option.iter(fun image -> image.Dispose())
+            for _,icon in items do icon |> Option.iter(fun image -> image.Dispose())
         member this.select index =
             selected <- index
             if form.IsHandleCreated then this.present()
@@ -602,23 +622,33 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop) as this=
         )
         let groupWindowsInSwitcher = settings.settings.groupWindowsInSwitcher
         if groupWindowsInSwitcher then
-            let hwndToGroup =
-                let zorder  = 
-                    let zorders = Map2(windowsInZorder.enumerate.map(fun(i,w) -> w.hwnd,i))
-                    fun hwnd ->
-                        zorders.tryFind(hwnd).def(Int32.MaxValue)
-                Map2(desktop.groups.where(fun g -> g.windows.count > 1).collect(fun g -> 
-                    let windows = g.windows.items.sortBy(zorder)
-                    List2([(windows.head, (true, g))]).appendList(windows.tail.map(fun hwnd -> (hwnd, (false, g))))
-                    ))
+            let zorder =
+                let zorders = Map2(windowsInZorder.enumerate.map(fun(i,w) -> w.hwnd,i))
+                fun hwnd -> zorders.tryFind(hwnd).def(Int32.MaxValue)
+            /// As the group's taskbar button shows it: the picture chosen for it, else the front
+            /// app's icon with the other apps' lined up after it.
+            let icon (windows:IntPtr list) =
+                let front = List.head windows
+                // Only a group with a button of its own has a picture; its windows belong to its previews.
+                let picture = if TaskbarProxies.ownsWindow front then (try Services.program.groupIcon front with _ -> None) else None
+                match picture with
+                | Some path -> GroupPicture path
+                | None ->
+                    let app hwnd = try AppIdentity.key(os.windowFromHwnd(hwnd).pid.processPath) with _ -> ""
+                    let frontApp = app front
+                    GroupOfApps(List.tail windows |> List.filter(fun hwnd -> app hwnd<>frontApp) |> List.distinctBy app)
+            let fronts,behind =
+                let groups = desktop.groups.where(fun g -> g.windows.count > 1).map(fun g -> g.windows.items.sortBy(zorder).list).list
+                Map.ofList(groups |> List.map(fun windows -> List.head windows,windows)),
+                Set.ofList(groups |> List.collect List.tail)
             windowsInZorder.map(fun w ->
-                let hwnd = w.hwnd
-                match hwndToGroup.tryFind hwnd with
-                | Some(isTop, group) -> if isTop then Some(TaskWindowItem(hwnd, true)) else None
-                | None -> Some(TaskWindowItem(hwnd, false))
+                match Map.tryFind w.hwnd fronts with
+                | Some windows -> Some(TaskWindowItem(w.hwnd,Some(icon windows)))
+                | None when behind.Contains w.hwnd -> None
+                | None -> Some(TaskWindowItem(w.hwnd,None))
             ).choose(id)
         else
-            windowsInZorder.map(fun w -> TaskWindowItem(w.hwnd, false))
+            windowsInZorder.map(fun w -> TaskWindowItem(w.hwnd,None))
 
     interface IDisposable with
         member this.Dispose() = hook.Dispose()

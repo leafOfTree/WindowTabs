@@ -31,6 +31,7 @@ module SettingsCatalog =
         { id="theme"; page=AppearanceSettings; text=Strings.Settings.theme; binding=Choice("tabThemeMode",["system";"light";"dark"],"system") }
         { id="language"; page=GeneralSettings; text=Strings.Settings.language; binding=Choice("language",Localization.preferences,"system") }
         { id="launch-at-sign-in"; page=GeneralSettings; text=Strings.Settings.launchAtSignIn; binding=Toggle("runAtStartup",true,false) }
+        { id="restore-session"; page=GeneralSettings; text=Strings.Settings.restoreSession; binding=Choice("sessionRestore",["Off";"Windows";"Apps"],"Off") }
         { id="enable-tabs-for-new-apps"; page=ProgramSettings; text=Strings.Settings.enableTabsByDefault; binding=Toggle("enableTabbingByDefault",true,false) }
         { id="dim-inactive-groups"; page=GeneralSettings; text=Strings.Settings.dimInactiveGroups; binding=Toggle("hideInactiveTabs",true,false) }
         { id="tab-alignment"; page=GeneralSettings; text=Strings.Settings.tabAlignment; binding=Choice("alignment",["Left";"Center";"Right"],"Center") }
@@ -49,6 +50,13 @@ module SettingsCatalog =
         { id="new-tab"; page=HotKeySettings; text=Strings.Settings.newTab; binding=Shortcut("newTab",1614) }
         // Ctrl+Alt+W beside New tab's Ctrl+Alt+N; Ctrl+W alone belongs to the apps.
         { id="close-tab"; page=HotKeySettings; text=Strings.Settings.closeTab; binding=Shortcut("closeTab",1623) }
+        // Split view keys ship unbound: nothing global is taken until the user picks a key.
+        { id="split-pick-right"; page=HotKeySettings; text=Strings.Settings.splitPickRight; binding=Shortcut("splitPickRight",0) }
+        { id="split-pick-below"; page=HotKeySettings; text=Strings.Settings.splitPickBelow; binding=Shortcut("splitPickBelow",0) }
+        { id="split-focus-left"; page=HotKeySettings; text=Strings.Settings.splitFocusLeft; binding=Shortcut("splitFocusLeft",0) }
+        { id="split-focus-right"; page=HotKeySettings; text=Strings.Settings.splitFocusRight; binding=Shortcut("splitFocusRight",0) }
+        { id="split-focus-up"; page=HotKeySettings; text=Strings.Settings.splitFocusUp; binding=Shortcut("splitFocusUp",0) }
+        { id="split-focus-down"; page=HotKeySettings; text=Strings.Settings.splitFocusDown; binding=Shortcut("splitFocusDown",0) }
         { id="switch-tabs-by-number"; page=HotKeySettings; text=Strings.Settings.switchTabsByNumber; binding=Toggle("enableCtrlNumberHotKey",true,true) }
         { id="number-shortcut"; page=HotKeySettings; text=Strings.Settings.numberShortcut; binding=Choice("numberHotKeyModifier",["Ctrl";"Alt"],"Ctrl") }
         { id="enable-number-leader"; page=HotKeySettings; text=Strings.Settings.enableNumberLeader; binding=Toggle("enableNumberLeader",false,false) }
@@ -103,7 +111,7 @@ module SettingsCatalog =
     let appGroupingMatchTypes = [-1]
     let appGroupingMatchDefault = -1
     let appRuleKeys = appRulePathKeys @ ["disabledNumberShortcutPaths";"enabledNumberShortcutPaths";"appTabColors";"appGroupingRules";"appGroupingTargets"]
-    let workspaceKeys = ["workspaces";"workspaceSchemaVersion";"workspaceRecovery"]
+    let workspaceKeys = ["workspaces";"workspaceSchemaVersion";"workspaceRecovery";"session"]
     /// The settings a reset leaves: fresh-install toggles, the version (so the next start does
     /// not take the reset for an upgrade) and, unless cleared, app rules and saved workspaces.
     let resetRoot (current:JObject) clearAppRules clearWorkspaces =

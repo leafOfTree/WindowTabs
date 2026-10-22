@@ -22,7 +22,7 @@ module Strings =
         let center = { en="Center"; zh="居中"; ja="中央"; ar="الوسط" }
         let right = { en="Right"; zh="右侧"; ja="右"; ar="يمين" }
         let never = { en="Never"; zh="从不"; ja="しない"; ar="أبدًا" }
-        let whenMaximized = { en="When maximized"; zh="最大化时"; ja="最大化時"; ar="عند التكبير" }
+        let whenMaximized = { en="Maximized"; zh="最大化时"; ja="最大化時"; ar="عند التكبير" }
         let always = { en="Always"; zh="始终"; ja="常に"; ar="دائمًا" }
         let selectedChoice (name:LocalizedText) = { en=name.en+"  ✓"; zh=name.zh+"  ✓"; ja=name.ja+"  ✓"; ar=name.ar+"  ✓" }
         let operationFailed = { en="Operation failed"; zh="操作失败"; ja="操作に失敗しました"; ar="فشلت العملية" }
@@ -54,6 +54,25 @@ module Strings =
 
     /// Tab context menu.
     module TabMenu =
+        let split = { en="Split view"; zh="组内分屏"; ja="分割表示"; ar="العرض المقسّم" }
+        /// A window chosen from a list goes on that side of the tab.
+        let splitPickRight = { en="Window on the right…"; zh="在右侧放入窗口…"; ja="右側にウィンドウを配置…"; ar="نافذة على اليمين…" }
+        let splitPickBelow = { en="Window below…"; zh="在下方放入窗口…"; ja="下側にウィンドウを配置…"; ar="نافذة في الأسفل…" }
+        let splitPickLeft = { en="Window on the left…"; zh="在左侧放入窗口…"; ja="左側にウィンドウを配置…"; ar="نافذة على اليسار…" }
+        let splitPickAbove = { en="Window above…"; zh="在上方放入窗口…"; ja="上側にウィンドウを配置…"; ar="نافذة في الأعلى…" }
+        let splitEmpty = { en="Drop a tab or window here"; zh="将标签或窗口拖到这里"; ja="ここにタブまたはウィンドウをドロップ"; ar="أفلت علامة تبويب أو نافذة هنا" }
+        let splitChoose = { en="Choose a window…"; zh="选择窗口…"; ja="ウィンドウを選択…"; ar="اختر نافذة…" }
+        let splitOr = { en="or"; zh="或"; ja="または"; ar="أو" }
+        let splitSearch = { en="Type a title or app name to fill the pane"; zh="输入标题或应用名，放入这一侧"; ja="タイトルやアプリ名を入力してペインに配置"; ar="اكتب عنوانًا أو اسم تطبيق لملء الجزء" }
+        let splitShow = { en="Show split view"; zh="显示分屏"; ja="分割表示に戻す"; ar="إظهار العرض المقسّم" }
+        let splitNoWindows = { en="No other windows"; zh="没有其他窗口"; ja="他のウィンドウはありません"; ar="لا توجد نوافذ أخرى" }
+        let splitMerge = { en="End split view"; zh="结束分屏"; ja="分割表示を終了"; ar="إنهاء العرض المقسّم" }
+        let splitMakeStacked = { en="Switch to top and bottom"; zh="切换为上下"; ja="上下に切り替え"; ar="التبديل إلى أعلى وأسفل" }
+        let splitMakeSideBySide = { en="Switch to side by side"; zh="切换为左右"; ja="左右に切り替え"; ar="التبديل إلى جنبًا إلى جنب" }
+        let splitSwap = { en="Swap panes"; zh="交换两侧"; ja="ペインを入れ替え"; ar="تبديل الأجزاء" }
+        let splitEqual = { en="Equal panes"; zh="恢复均分"; ja="均等に分割"; ar="أجزاء متساوية" }
+        let splitRatio = { en="Split divider"; zh="分屏分隔条"; ja="分割境界"; ar="فاصل التقسيم" }
+        let splitFailed = { en="These windows could not fit the split layout. Split view has ended."; zh="窗口无法适应分屏尺寸，已退出分屏。"; ja="ウィンドウを分割領域に配置できないため、分割を終了しました。"; ar="تعذّر احتواء هذه النوافذ في تخطيط التقسيم. انتهى العرض المقسّم." }
         let position = { en="Tab position"; zh="标签位置"; ja="タブの位置"; ar="موضع علامات التبويب" }
         let top = { en="Top"; zh="顶部"; ja="上部"; ar="أعلى" }
         let showTabTitles = { en="Show tab titles"; zh="显示标签标题"; ja="タブのタイトルを表示"; ar="إظهار عناوين علامات التبويب" }
@@ -132,6 +151,12 @@ module Strings =
         let launchAtSignIn = { caption={ en="Start with Windows"; zh="随 Windows 启动"; ja="Windows と同時に起動"; ar="التشغيل مع Windows" }
                                description={ en="Runs in the system tray after you sign in."; zh="登录后在系统托盘中运行。"; ja="サインイン後にシステムトレイで実行します。"; ar="يعمل في منطقة الإعلام بعد تسجيل الدخول." }
                                keywords={ en="startup autostart"; zh="开机启动 自启动"; ja="スタートアップ 自動起動"; ar="بدء التشغيل التشغيل التلقائي" } }
+        let restoreSession = { caption={ en="Restore the last session after sign-in"; zh="登录后恢复上次会话"; ja="サインイン後に前回のセッションを復元"; ar="استعادة الجلسة الأخيرة بعد تسجيل الدخول" }
+                               description={ en="Puts open windows back into the groups, positions and split views they had, optionally launching missing apps first."
+                                             zh="把已打开的窗口放回原来的分组、位置和分屏，可选先启动缺少的应用。"
+                                             ja="開いているウィンドウを元のグループ、位置、分割表示に戻します。足りないアプリを先に起動することもできます。"
+                                             ar="يعيد النوافذ المفتوحة إلى مجموعاتها ومواضعها وعروضها المقسّمة السابقة، مع تشغيل التطبيقات الناقصة أولًا اختياريًا." }
+                               keywords={ en="session reboot"; zh="会话 重启"; ja="セッション 再起動"; ar="جلسة إعادة التشغيل" } }
         let enableTabsByDefault = { caption={ en="Use tabs for new apps"; zh="新应用自动启用标签"; ja="新しいアプリでタブを使う"; ar="استخدام علامات التبويب للتطبيقات الجديدة" }
                                     description={ en="Only apps first discovered after this change. Existing apps keep their tab setting."; zh="只影响此后首次出现的应用。已有应用保留原来的标签设置。"; ja="変更後に初めて検出するアプリに適用します。既存のアプリのタブ設定は維持します。"; ar="ينطبق ذلك على التطبيقات التي يكتشفها البرنامج لأول مرة بعد هذا التغيير فقط. وتحتفظ التطبيقات الموجودة بإعداد علامات التبويب الحالي." }
                                     keywords={ en=""; zh=""; ja=""; ar="" } }
@@ -164,7 +189,7 @@ module Strings =
                               description={ en="Large icons in a row, or a list with full window titles."; zh="一排大图标，或显示完整窗口标题的列表。"; ja="大きなアイコンを横に並べるか、ウィンドウ タイトルを一覧で表示します。"; ar="أيقونات كبيرة في صف، أو قائمة تعرض عناوين النوافذ كاملة." }
                               keywords={ en="layout"; zh="布局"; ja="レイアウト"; ar="التخطيط" } }
         let groupWindowsInSwitcher = { caption={ en="Group windows in Alt+Tab"; zh="在 Alt+Tab 中按分组显示"; ja="Alt+Tab でグループをまとめる"; ar="تجميع النوافذ في Alt+Tab" }
-                                       description={ en="Each group appears as one item."; zh="每个分组只显示一项。"; ja="各グループを 1 項目として表示します。"; ar="تظهر كل مجموعة كعنصر واحد." }
+                                       description={ en="Each group appears as one item, with the icon its taskbar button has."; zh="每个分组只显示一项，图标与任务栏按钮相同。"; ja="各グループを、タスク バーのボタンと同じアイコンの 1 項目として表示します。"; ar="تظهر كل مجموعة كعنصر واحد بالأيقونة نفسها التي يحملها زر شريط المهام." }
                                        keywords={ en="switcher"; zh="切换器"; ja="切り替え"; ar="المبدّل" } }
         let nextTab = { caption={ en="Switch to next tab"; zh="切换到下一个标签"; ja="次のタブに切り替え"; ar="الانتقال إلى علامة التبويب التالية" }
                         description=none
@@ -187,6 +212,25 @@ module Strings =
                                        ja="前面のタブのウィンドウを閉じます。"
                                        ar="يغلق نافذة علامة التبويب الأمامية." }
                          keywords={ en="close window"; zh="关闭窗口"; ja="ウィンドウを閉じる"; ar="إغلاق النافذة" } }
+        let private splitWords = { en="split view pane"; zh="分屏 窗格"; ja="分割 ペイン"; ar="عرض مقسّم جزء" }
+        let splitPickRight = { caption={ en="Window on the right…"; zh="在右侧放入窗口…"; ja="右側にウィンドウを配置…"; ar="نافذة على اليمين…" }
+                               description={ en="Lists the windows to put beside the tab in front."; zh="列出可放到当前标签旁边的窗口。"; ja="前面のタブの隣に置くウィンドウを一覧表示します。"; ar="يعرض النوافذ التي يمكن وضعها بجانب علامة التبويب الأمامية." }
+                               keywords=splitWords }
+        let splitPickBelow = { caption={ en="Window below…"; zh="在下方放入窗口…"; ja="下側にウィンドウを配置…"; ar="نافذة في الأسفل…" }
+                               description=none
+                               keywords=splitWords }
+        let splitFocusLeft = { caption={ en="Focus the pane to the left"; zh="焦点切到左边的格"; ja="左のペインにフォーカス"; ar="التركيز على الجزء الأيسر" }
+                               description=none
+                               keywords=splitWords }
+        let splitFocusRight = { caption={ en="Focus the pane to the right"; zh="焦点切到右边的格"; ja="右のペインにフォーカス"; ar="التركيز على الجزء الأيمن" }
+                                description=none
+                                keywords=splitWords }
+        let splitFocusUp = { caption={ en="Focus the pane above"; zh="焦点切到上边的格"; ja="上のペインにフォーカス"; ar="التركيز على الجزء الأعلى" }
+                             description=none
+                             keywords=splitWords }
+        let splitFocusDown = { caption={ en="Focus the pane below"; zh="焦点切到下边的格"; ja="下のペインにフォーカス"; ar="التركيز على الجزء الأسفل" }
+                               description=none
+                               keywords=splitWords }
         let switchTabsByNumber = { caption={ en="Switch tabs by number"; zh="按数字切换标签"; ja="番号でタブを切り替え"; ar="التبديل بين علامات التبويب باستخدام الأرقام" }
                                    description={ en="Hold a modifier key and press 1–9."; zh="按住修饰键再按 1–9。"; ja="修飾キーを押しながら 1～9 を押します。"; ar="اضغط باستمرار على مفتاح تعديل ثم اضغط على رقم من 1 إلى 9." }
                                    keywords={ en="digit"; zh="数字"; ja="数字"; ar="رقم" } }
@@ -295,7 +339,25 @@ module Strings =
                               description={ en="Then restarts. App rules and workspaces can be kept."; zh="完成后重新启动，可保留应用规则和工作区。"; ja="その後再起動します。アプリのルールとワークスペースは残せます。"; ar="ثم يُعاد تشغيل البرنامج. يمكن الاحتفاظ بقواعد التطبيقات ومساحات العمل." }
                               keywords={ en="factory"; zh="恢复默认 出厂"; ja="初期化"; ar="إعدادات المصنع" } }
 
+    /// What letting go of a dragged tab here would do, on the preview.
+    module Session =
+        let restoring = { en="Restoring the last session…"; zh="正在恢复上次会话…"; ja="前回のセッションを復元しています…"; ar="جارٍ استعادة الجلسة الأخيرة…" }
+        let launching count =
+            { en=(if count=1 then "Starting an app for the last session…" else sprintf "Starting %d apps for the last session…" count)
+              zh=sprintf "正在为上次会话启动 %d 个应用…" count
+              ja=sprintf "前回のセッションのためにアプリを %d 個起動しています…" count
+              ar=sprintf "جارٍ تشغيل %d من التطبيقات للجلسة الأخيرة…" count }
+        let restored restored missing =
+            { en=(sprintf "Session restored: %d windows" restored)+(if missing=0 then "" else sprintf ", %d not found" missing)
+              zh=(sprintf "已恢复上次会话：%d 个窗口" restored)+(if missing=0 then "" else sprintf "，%d 个未找到" missing)
+              ja=(sprintf "前回のセッションを復元しました: %d 個のウィンドウ" restored)+(if missing=0 then "" else sprintf "、%d 個が見つかりません" missing)
+              ar=(sprintf "تمت استعادة الجلسة: %d نافذة" restored)+(if missing=0 then "" else sprintf "، %d غير موجودة" missing) }
+
     module General =
+        /// The choices of Restore the last session at start.
+        let sessionOff = { en="Off"; zh="关闭"; ja="オフ"; ar="إيقاف" }
+        let sessionWindows = { en="Open windows only"; zh="仅已打开的窗口"; ja="開いているウィンドウのみ"; ar="النوافذ المفتوحة فقط" }
+        let sessionApps = { en="Open windows, and start their apps"; zh="已打开的窗口，并启动缺少的应用"; ja="開いているウィンドウと、アプリの起動"; ar="النوافذ المفتوحة، مع تشغيل تطبيقاتها" }
         let settingsFile = { en="Settings file"; zh="设置文件"; ja="設定ファイル"; ar="ملف الإعدادات" }
         let openFolder = { en="Open folder"; zh="打开文件夹"; ja="フォルダーを開く"; ar="فتح المجلد" }
         let export = { en="Export…"; zh="导出…"; ja="エクスポート…"; ar="تصدير…" }
@@ -392,6 +454,7 @@ module Strings =
     module Shortcuts =
         let keyboard = { en="Keyboard"; zh="键盘"; ja="キーボード"; ar="لوحة المفاتيح" }
         let mouse = { en="Mouse"; zh="鼠标"; ja="マウス"; ar="الفأرة" }
+        let splitView = { en="Split view"; zh="分屏"; ja="分割表示"; ar="العرض المقسّم" }
         let keyboardNote = { en="Click a shortcut, then press the new combination. Esc cancels."
                              zh="点击快捷键后按下新的组合键。按 Esc 取消。"
                              ja="ショートカットをクリックして、新しいキーの組み合わせを押します。Esc でキャンセルします。"
@@ -509,6 +572,7 @@ module Strings =
         let expectedList = { en=": expected a list."; zh="：应为列表。"; ja="：リストが必要です。"; ar=": كان متوقعًا وجود قائمة." }
         let missingPlacement = { en="Missing placement."; zh="缺少窗口位置。"; ja="ウィンドウの配置がありません。"; ar="موضع النافذة مفقود." }
         let invalidTabLayout = { en="Invalid saved tab layout; the group will use current defaults."; zh="保存的标签布局无效；该分组将使用当前默认设置。"; ja="保存されたタブ配置が無効です。グループには現在の既定値を使用します。"; ar="تخطيط علامات التبويب المحفوظ غير صالح؛ ستستخدم المجموعة الإعدادات الافتراضية الحالية." }
+        let invalidSplit = { en="Invalid saved split view; the group will restore without it."; zh="保存的分屏无效；该分组恢复时不带分屏。"; ja="保存された分割表示が無効です。グループは分割なしで復元されます。"; ar="العرض المقسّم المحفوظ غير صالح؛ ستتم استعادة المجموعة بدونه." }
         let noValidWindows = { en="No valid windows in this group."; zh="此分组中没有有效窗口。"; ja="このグループに有効なウィンドウがありません。"; ar="لا توجد نوافذ صالحة في هذه المجموعة." }
         let unsupportedVersion = { en="Unsupported workspace version; saved workspaces will not be modified."
                                    zh="不支持此工作区版本；已保存的工作区不会被修改。"

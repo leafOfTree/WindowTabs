@@ -238,7 +238,7 @@ type AppGroupingRulesView() as this =
             // be renamed) would leave less room for; its icon says on hover what it is.
             Services.program.handMadeGroups() |> List.iteri(fun index (id,members) ->
                 let row = TreeListItem("",Tag=HandMadeNode id,Glyph=TabsGlyph,SeparatorAbove=(index=0),IconTip=tr Strings.AppRules.handMadeGroups,
-                                       Checks=[|None;None|],Actions=Some [NoGlyph;UngroupGlyph],AlwaysShowActions=true)
+                                       Checks=[|None;None|],Actions=Some [NoGlyph;UngroupGlyph],AlwaysShowActions=true,ChipColumns=3)
                 row.Chips <- members |> List.map(fun (app,title,hwnd) ->
                     // An open window's own icon; a closed one's app icon in grey, as another of its
                     // windows shows it, else from where the app last ran or the settings know it to

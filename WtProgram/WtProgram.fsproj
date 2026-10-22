@@ -50,6 +50,7 @@
     <Compile Include="Shared\BackgroundWork.fs" />
     <Compile Include="Shared\Cell.fs" />
     <Compile Include="Shared\Drawing.fs" />
+    <Compile Include="Shared\SplitView.fs" />
     <Compile Include="Shared\Sprite.fs" />
     <Compile Include="Shared\TabStripTypes.fs" />
     <Compile Include="Shared\Dpi.fs" />
@@ -95,6 +96,8 @@
     <Compile Include="Settings.fs" />
     <Compile Include="WindowDecorator.fs" />
     <Compile Include="OleDropTarget.fs" />
+    <Compile Include="SplitViewChrome.fs" />
+    <Compile Include="Notice.fs" />
     <Compile Include="WindowGroup.fs" />
     <Compile Include="TabStripDecorator.fs" />
     <Compile Include="GroupPlugins\SuperBarPlugin.fs" />
@@ -129,6 +132,7 @@
     <Compile Include="DesktopPlugins\ExceptionHandlerPlugin.fs" />
     <Compile Include="TaskSwitch.fs" />
     <Compile Include="TabSearch.fs" />
+    <Compile Include="SplitPanePicker.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

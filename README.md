@@ -58,9 +58,16 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
 - **App rules:** choose which running apps get tabs and which group automatically.
   Under **Groups across apps**, create named groups so windows of different apps join
   one group. Groups made by dragging tabs are remembered and listed there too.
+- **Split view:** show two or more of a group's windows side by side or stacked, as in a
+  browser or editor. Right-click a tab → **Split view** and pick a window for each side, or
+  drag a tab to a window's edge. Drag the bar between the panes to resize them, right-click
+  it to swap, equalize, switch direction or end the split. Shortcuts for a window on the right
+  or below and for moving the focus between panes are under **Settings → Shortcuts**, unset by
+  default.
 - **Workspaces:** save groups and window positions, then restore them onto open windows;
   apps that are not running can be launched and their windows restored.
-- **Taskbar:** optionally combine each group into one taskbar button.
+- **Taskbar:** optionally combine each group into one taskbar button, which shows every
+  app in the group.
 - **Languages:** English, 中文, 日本語.
 
 <a href="docs/images/settings.png"><img src="docs/images/settings.png" width="600" alt="WindowTabs settings" /></a>
