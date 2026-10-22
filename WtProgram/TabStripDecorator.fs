@@ -850,19 +850,28 @@ type TabStripDecorator(group:WindowGroup) as this =
         layoutDrop <- None
         layoutPreview |> Option.iter(fun window -> window.fadeOut())
 
-    /// The strip, when the point lies within `DragRouting.stripMargin` of its tabs in sight.
+    /// The strip, when the point lies within `DragRouting.stripMargin` of its row of tabs in
+    /// sight. The row runs the group's whole width (a column of tabs its whole height): a tab
+    /// carried to the top of the window joins the group anywhere along it, and the window's
+    /// top edge offers a split only below that. Around the tabs alone, the rest of the row
+    /// offered the edge, and a tab meant for the group split it.
     member private this.nearTabs(pt:Pt) =
         let sprites = this.ts.tabSprites.list
-        if sprites.IsEmpty || not this.ts.visible || not(WinUserApi.IsWindowVisible this.ts.hwnd) then None
-        else
+        match group.bounds.value with
+        | Some frame when not sprites.IsEmpty && this.ts.visible && WinUserApi.IsWindowVisible this.ts.hwnd ->
             let strip = os.windowFromHwnd(this.ts.hwnd)
             let rects = sprites |> List.map(fun (location:Pt,sprite) -> Rect(strip.ptToScreen(location),sprite.size))
             let margin = Dpi.scale DragRouting.stripMargin
-            let left = (rects |> List.map(fun r -> r.left) |> List.min)-margin
-            let top = (rects |> List.map(fun r -> r.top) |> List.min)-margin
-            let right = (rects |> List.map(fun r -> r.right) |> List.max)+margin
-            let bottom = (rects |> List.map(fun r -> r.bottom) |> List.max)+margin
+            let tabsLeft,tabsRight = (rects |> List.map(fun r -> r.left) |> List.min),(rects |> List.map(fun r -> r.right) |> List.max)
+            let tabsTop,tabsBottom = (rects |> List.map(fun r -> r.top) |> List.min),(rects |> List.map(fun r -> r.bottom) |> List.max)
+            let left,right =
+                if this.ts.isVertical then tabsLeft-margin,tabsRight+margin
+                else (min frame.left tabsLeft)-margin,(max frame.right tabsRight)+margin
+            let top,bottom =
+                if this.ts.isVertical then (min frame.top tabsTop)-margin,(max frame.bottom tabsBottom)+margin
+                else tabsTop-margin,tabsBottom+margin
             if pt.x>=left && pt.x<right && pt.y>=top && pt.y<bottom then Some this.ts.hwnd else None
+        | _ -> None
 
     interface ILayoutDropTarget with
         member this.nearTabs(pt) =

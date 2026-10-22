@@ -793,7 +793,11 @@ let main() =
                         let first = group.ts.tabSprites.list |> List.head |> fun (location,sprite) -> Rect(strip.ptToScreen(location),sprite.size)
                         let below = Pt(first.x+first.width/2,first.bottom+Dpi.scale 10)
                         let away = Pt(first.x+first.width/2,first.bottom+Dpi.scale 60)
+                        // The row runs the group's whole width: at its far end, beside the tabs, too.
+                        let frame = group.layoutFrame
+                        let along = Pt(frame.right-Dpi.scale 10,first.y+first.height/2)
                         check (decorator.nearTabs below=Some group.ts.hwnd) (sprintf "A point just below a group's tabs was not taken as its strip: %A below %A" below first)
+                        check (decorator.nearTabs along=Some group.ts.hwnd) (sprintf "A point at the far end of a group's row of tabs was not taken as its strip: %A beside %A in %A" along first frame)
                         check (decorator.nearTabs away=None) (sprintf "A point well below a group's tabs was taken as its strip: %A below %A" away first))
                     let shown = onGroup(fun group ->
                         let decorator = decoratorOf group

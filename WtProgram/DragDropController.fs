@@ -24,9 +24,9 @@ type DragDetectingState(info:DragDetectingStateInfo) =
 type DragHit = StripHit of IntPtr | LayoutHit of IntPtr | FreeHit
 
 module DragRouting =
-    /// Around a strip's tabs, in logical pixels, a dragged tab counts as in the strip: joining
-    /// it there and leaving it only beyond. Just below another group's tabs, over its title
-    /// bar, a tab carried to join them was offered that window's top edge instead.
+    /// Around a strip's row of tabs, in logical pixels, a dragged tab counts as in the strip:
+    /// joining it there and leaving it only beyond. Just below another group's tabs, over its
+    /// title bar, a tab carried to join them was offered that window's top edge instead.
     let stripMargin = 24
 
     let resolve (strips:Map2<IntPtr,IDragDropTarget>) (layouts:Map2<IntPtr,ILayoutDropTarget>) hit owner =
