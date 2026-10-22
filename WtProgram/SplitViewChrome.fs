@@ -529,6 +529,7 @@ type SplitTransition(frame:Rect, moves:SplitMove list, ?durationMs:int) =
     let mutable thumbs : (SplitMove * IntPtr) list = []
     let mutable timer : Timer option = None
     let mutable settled = false
+    let mutable closing = false
     let mutable closed = false
     override _.CreateParams =
         let cp = base.CreateParams
@@ -560,8 +561,11 @@ type SplitTransition(frame:Rect, moves:SplitMove list, ?durationMs:int) =
             DwmApi.DwmUpdateThumbnailProperties(thumb,&props) |> ignore
     /// How long the images take to move, in milliseconds.
     static member DurationMs = 220
-    /// For a tab clicked over the panes, or a pane's tab clicked to bring them back.
-    static member ClickMs = 80
+    /// For a tab clicked over the panes, or a pane's tab clicked to bring them back: no steps.
+    static member ClickMs = 0
+    /// How long the images stay once the windows are placed: an app paints its new size a
+    /// moment after it is given, and the cover gone before that showed the window half painted.
+    static member HoldAfterMs = 80
     /// Shown with every image at its start, so the first frame looks as the windows did. False
     /// when there was nothing to show.
     member this.start() : bool =
@@ -592,14 +596,26 @@ type SplitTransition(frame:Rect, moves:SplitMove list, ?durationMs:int) =
                 if elapsed<durationMs then this.place(elapsed/durationMs)
                 else
                     this.place 1.0
-                    if settled || elapsed>=durationMs+holdMs then this.close())
+                    if settled then this.closeSoon()
+                    elif elapsed>=durationMs+holdMs then this.close())
             timer <- Some tick
             tick.Start()
             true
-    /// The windows are in place: it closes once its own steps are done.
+    /// The windows are in place: it closes once its own steps are done, and a moment more.
     member this.settle() =
         settled <- true
-        if not closed && clock.Elapsed.TotalMilliseconds>=durationMs then this.close()
+        if not closed && clock.Elapsed.TotalMilliseconds>=durationMs then this.closeSoon()
+    /// The images are live, so staying a moment over windows already placed shows nothing;
+    /// going at once showed a window not yet painted at its new size.
+    member private this.closeSoon() =
+        if not closed && not closing then
+            closing <- true
+            let wait = new Timer(Interval=SplitTransition.HoldAfterMs)
+            wait.Tick.Add(fun _ ->
+                wait.Stop()
+                wait.Dispose()
+                this.close())
+            wait.Start()
     member this.close() =
         if not closed then
             closed <- true

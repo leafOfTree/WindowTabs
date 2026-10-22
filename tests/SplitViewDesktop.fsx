@@ -479,19 +479,24 @@ let main() =
             waitOperation()
             onGroup(fun group -> group.transitionsPaused <- false; group.execute(EndSplit(Some ha)))
             waitOperation()
-            // A tab clicked over the panes parks them with no cover, and the panes come back the
-            // same way: the windows are placed at once.
+            // A tab clicked over the panes parks them under a cover with no steps, and the panes
+            // come back the same way: placed with no cover, the tab rose pane-sized with the
+            // desktop showing round it. The cover is counted rather than looked for: it can come
+            // and go within the placement of two small windows.
             onGroup(fun group -> group.execute(SplitWith(hc,SideBySide),current=ha))
             waitOperation()
             let coversShown () = onGroup(fun group -> (typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="coversShown")).GetValue(group) :?> int)
             let before = coversShown()
             onGroup(fun group -> group.tabActivate(Tab hb,false))
+            check (coversShown()>before) "No cover hid the tab clicked over the panes"
+            check (timeUntil 3000 (fun () -> not(covers()))).IsSome "The cover over a parked split stayed"
             waitOperation()
-            check (coversShown()=before) "A cover came up for the tab clicked over the panes"
             check (onGroup(fun group -> match group.layout with Parked _ -> true | _ -> false) && visible hb=frame) "The tab clicked over the panes did not park them and fill the group"
+            let before = coversShown()
             onGroup(fun group -> group.tabActivate(Tab ha,false))
+            check (coversShown()>before) "No cover hid the panes coming back from behind the tab"
+            check (timeUntil 3000 (fun () -> not(covers()))).IsSome "The cover over the panes coming back stayed"
             waitOperation()
-            check (coversShown()=before) "A cover came up for the panes coming back from behind the tab"
             check (onGroup(fun group -> group.splitLayout.IsSome)) "The panes did not come back"
             onGroup(fun group -> group.execute(EndSplit(Some ha)))
             waitOperation()
