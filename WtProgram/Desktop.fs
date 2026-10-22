@@ -114,7 +114,9 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
             windowsCell.map(fun windows -> windows.where((<>)hwnd))
         this.invokeGroup <| fun() -> this.group.removeWindow(hwnd)
     /// Stage main-thread membership, then attach only after the source STA has finished cleanup.
-    member this.addAfterDetaching(source:GroupInfo, hwnd:IntPtr, ?afterAdd:unit -> unit) =
+    /// `afterAdd` runs on the group's thread once the window is a member, or with false once
+    /// it is known it will not be: gone meanwhile, or taken back.
+    member this.addAfterDetaching(source:GroupInfo, hwnd:IntPtr, ?afterAdd:bool -> unit) =
         if not(windowsCell.value.contains((=)hwnd)) then windowsCell.map(fun windows -> windows.append hwnd)
         let token = obj()
         stagedAdds.[hwnd] <- token
@@ -128,11 +130,11 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
                 | true,current when obj.ReferenceEquals(current,token) ->
                     stagedAdds.Remove hwnd |> ignore
                     this.invokeGroup(fun () ->
-                        if not this.isExited && WinUserApi.IsWindow hwnd then
-                            this.group.addWindow(hwnd,false)
-                            afterAdd |> Option.iter(fun action -> action())
-                        else desktopDispatcher.Post(fun () -> windowsCell.map(fun windows -> windows.where((<>)hwnd))))
-                | _ -> ()
+                        let added = not this.isExited && WinUserApi.IsWindow hwnd
+                        if added then this.group.addWindow(hwnd,false)
+                        else desktopDispatcher.Post(fun () -> windowsCell.map(fun windows -> windows.where((<>)hwnd)))
+                        afterAdd |> Option.iter(fun action -> action added))
+                | _ -> afterAdd |> Option.iter(fun action -> this.invokeGroup(fun () -> action false))
         subscription <- Some(source.exited.Subscribe(fun () -> desktopDispatcher.Post attach))
         if source.isExited then attach()
         else source.invokeGroup(fun () ->
@@ -237,20 +239,18 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
                         newGroup.ruleGroupId <- old.ruleGroupId
                         newGroup.awaitsGroupingDesktop <- old.awaitsGroupingDesktop
                         newGroup.group.groupToken <- old.group.groupToken
-                        let expectedCount = group.windows.count
-                        newGroup.invokeGroup(fun() ->
-                            newGroup.group.applyMenuChoices choices
-                            match layout with
-                            | GroupLayout.Single -> ()
-                            | _ ->
-                                let mutable subscription : IDisposable option = None
-                                subscription <- Some(newGroup.group.added.Subscribe(fun _ ->
-                                    if newGroup.group.windows.count=expectedCount then
-                                        subscription |> Option.iter(fun value -> value.Dispose())
-                                        newGroup.group.restoreLayout(layout,frame)))
-                                newGroup.group.exited.Add(fun () -> subscription |> Option.iter(fun value -> value.Dispose())))
+                        newGroup.invokeGroup(fun() -> newGroup.group.applyMenuChoices choices)
+                        // The split comes back once every window has arrived or is known not to:
+                        // waiting for the old count, a window gone meanwhile kept it from ever coming.
+                        let remaining = ref group.windows.count
+                        let attached _ =
+                            remaining.Value <- remaining.Value-1
+                            if remaining.Value=0 then
+                                match layout with
+                                | GroupLayout.Single -> ()
+                                | _ -> newGroup.group.restoreLayout(layout,frame)
                         group.windows.iter <| fun hwnd ->
-                            newGroup.addAfterDetaching(old,hwnd))
+                            newGroup.addAfterDetaching(old,hwnd,afterAdd=attached))
 
     member this.restartGroup(groupHwnd, enableSuperBar) =
         this.groups.tryFind(fun g -> g.hwnd = groupHwnd && not g.isRetiring && g.isSuperBarEnabled <> enableSuperBar)
@@ -313,7 +313,7 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
                 fill()
             match this.groups.tryFind(fun source -> (source :> IGroup).windows.contains((=) hwnd)) with
             | Some source when source.hwnd=group.hwnd -> group.invokeGroup finish
-            | Some source when not source.isRetiring -> group.addAfterDetaching(source,hwnd,afterAdd=finish)
+            | Some source when not source.isRetiring -> group.addAfterDetaching(source,hwnd,afterAdd=(fun added -> if added then finish()))
             | None when Services.filter.isTabbableWindow hwnd ->
                 (group :> IGroup).addWindow(hwnd,false)
                 group.invokeGroup finish

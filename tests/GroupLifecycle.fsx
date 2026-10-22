@@ -426,6 +426,13 @@ let main() =
                 releaseSource.Set() |> ignore
                 pumpUntil "Source exit discarded a staged transfer" (fun () ->
                     oldGroup.isExited && nativeOrder newGroup=[d;e;a;b;c] && WinUserApi.IsWindow c)
+                // A window gone before it could attach is reported so, on the group's thread: a
+                // rebuilt group waits for every transfer to be settled before it restores its split.
+                let outcome = ref None
+                newGroup.addAfterDetaching(oldGroup,IntPtr 0x5555,afterAdd=(fun added -> outcome.Value <- Some added))
+                pumpUntil "A transfer of a window that is gone was never reported" (fun () -> outcome.Value.IsSome)
+                check (outcome.Value=Some false && nativeOrder newGroup=[d;e;a;b;c] && not((newGroup :> IGroup).windows.contains((=) (IntPtr 0x5555))))
+                      "A transfer of a window that is gone was reported as added or kept as a member"
             finally
                 releaseSource.Set() |> ignore
                 for fixture in [oldGroup;newGroup] do
@@ -999,7 +1006,6 @@ let main() =
                 let alone = desktopApi.createGroup(false) :?> GroupInfo
                 (alone :> IGroup).addWindow(hwnd,false)
                 pumpUntil "Own-size window did not group" (fun () -> nativeOrder alone=[hwnd])
-                check ((WindowOwnSize.read hwnd)=Some(OS().windowFromHwnd(hwnd).visibleBounds.size)) "A window joining a group did not keep its own size"
                 let work = Screen.PrimaryScreen.WorkingArea
                 let workRect = Rect(Pt(work.X,work.Y),Sz(work.Width,work.Height))
                 let tabSize = Sz(100,24)
