@@ -333,17 +333,18 @@ let main() =
         let divider = onGroup(fun group ->
             let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="splitDividers")
             snd (field.GetValue(group) :?> Map<PanePath,SplitDivider * IntPtr>).[[]])
-        // At the seam only the bar takes the pointer; either side of it the panes' own resize
-        // borders do, so a drag there runs in the app's own loop and paints at every step. A band
-        // covering the borders took that away, and every drag at the seam trailed the pointer.
+        // The band takes the pointer across its whole width, and it covers both panes' invisible
+        // resize borders at the seam, so a press near the seam never starts a pane's own resize.
         do
             let band = bounds divider
             let y = band.y+band.height/2
-            let onBar = [band.left..band.right-1] |> List.filter(fun x -> WinUserApi.WindowFromPoint(POINT(x,y))<>divider)
-            let beside = [band.left-3;band.right+2] |> List.filter(fun x -> WinUserApi.WindowFromPoint(POINT(x,y))=divider)
-            printfn "METRIC divider-band band=%A" band
-            check (onBar.IsEmpty && beside.IsEmpty)
-                  (sprintf "The divider's band is not the bar alone: bar missed at %A, taken beside it at %A" onBar beside)
+            let missed = [band.left..band.right-1] |> List.filter(fun x -> WinUserApi.WindowFromPoint(POINT(x,y))<>divider)
+            let seam = (visible ha).right
+            let border = Dpi.scale 7
+            printfn "METRIC divider-band band=%A seam=%d" band seam
+            check missed.IsEmpty (sprintf "The divider's band does not take the pointer across its width: missed at %A" missed)
+            check (band.left<=seam-border && band.right>=seam+border)
+                  (sprintf "The divider's band %A leaves a pane's resize border bare at the seam %d" band seam)
         let band = bounds divider
         let seam = (visible ha).right
         drag "divider" (band.x+band.width/2) (band.y+band.height/2) 150 0 15 (fun () -> visible ha) meet

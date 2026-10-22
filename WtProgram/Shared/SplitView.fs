@@ -75,11 +75,11 @@ module SplitMetrics =
     let gap = 0
     /// The divider's bar, drawn at the seam.
     let divider = 4
-    /// The band that takes the pointer: the bar itself. Either side of it the panes' own
-    /// invisible resize borders take a press, and that pane resizes in its app's own loop, which
-    /// paints at every step as a resize from outside does not; the other pane follows. A wider
-    /// band took that away, and every drag at the seam trailed the pointer.
-    let dividerGrab = 4
+    /// The band that takes the pointer, centred on the seam: wide enough to cover both panes'
+    /// invisible resize borders (7px each at 100%), so a press near the seam always drags the
+    /// divider and never starts a pane's own resize, which went on in that app's loop with the
+    /// other pane following and could not be told apart from the divider by eye.
+    let dividerGrab = 20
     let minPane = 120
     let minRatio = 0.15
     let maxRatio = 0.85

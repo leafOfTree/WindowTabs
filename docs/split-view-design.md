@@ -154,11 +154,12 @@ the tree's simplest case and keep their behaviour.
   the same way: placed as a tab behind, it waited under the panes with the focus.
 - Dividers: one per split, each dragged for its own ratio, double-clicked to return that split
   to 50:50, right-clicked for the same menu as the seam button, acting on that split. The 4px
-  bar shows only when hovered or dragged, and only the bar
-  takes the pointer. Either side of it the panes' own invisible resize borders take a press,
-  and that pane resizes in its app's own loop, which paints at every step as a resize from
-  outside does not; the other pane follows (`resizePane`). A wider band took that away, and
-  every drag at the seam trailed the pointer.
+  bar shows only when hovered or dragged, inside a 20px band (`dividerGrab`) that takes the
+  pointer and covers both panes' invisible resize borders at the seam: a press near the seam
+  always drags the divider. With the band no wider than the bar, a press a few pixels off it
+  started a pane's own resize, which the other pane followed (`resizePane`); that was kept for
+  a while as the smoother drag, but it could not be told apart from the divider by eye, and the
+  divider's drag has since been made to keep up with the pointer.
   While dragged, the bar follows the pointer itself and places the panes itself, straight into
   the placement queue from its own thread, which keeps only the newest request for a window.
   Sent through the group's thread, a ratio waited behind the storm of WinEvents the apps raise
@@ -253,8 +254,8 @@ Pure functions:
   carries the frame; an edge moved is either the seam of the nearest split above the pane along
   that axis, whose ratio follows, or the group's own edge, which moves with it while every split
   on the way gives the room to the pane's side so the other side keeps its size. Constants live
-  in `SplitMetrics`, in logical pixels: no gap between the panes, a 4px divider bar that is also
-  the band taking the pointer, panes at
+  in `SplitMetrics`, in logical pixels: no gap between the panes, a 4px divider bar inside a
+  20px band that takes the pointer, panes at
   least 120px, ratios from 0.15 to 0.85, a 3px position tolerance, a 40px size tolerance for
   apps on a character grid, a 2000ms wait for panes to settle, edge drop zones 36px deep at
   their ends that deepen to a fifth of the window (`edgeShare`) at the middle of each edge, and

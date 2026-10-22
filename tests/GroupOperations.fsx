@@ -441,6 +441,18 @@ let main() =
                             failwithf "The panes did not reach their places: %s" report
                     waitSplit()
                     check (onGroup(fun group -> adjacent group source partner)) "Splitting did not bring the pair's tabs together"
+                    // The divider's band is centred on the seam and covers both panes' invisible resize
+                    // borders, so a press near the seam drags the divider and never a pane's own edge.
+                    do
+                        let divider = onGroup(fun group ->
+                            let field = typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="splitDividers")
+                            snd (field.GetValue(group) :?> Map<PanePath,SplitDivider * IntPtr>).[[]])
+                        let seam = (onGroup(fun group -> paneRect group First)).right
+                        let band() = OS().windowFromHwnd(divider).bounds
+                        pumpUntil(fun () -> (band()).width=Dpi.scale SplitMetrics.dividerGrab)
+                        let border = Dpi.scale 7
+                        check ((band()).left<=seam-border && (band()).right>=seam+border)
+                              (sprintf "The divider's band %A leaves a pane's resize border bare at the seam %d" (band()) seam)
                     let firstFrame = onGroup(fun group -> group.layoutFrame)
                     onHelper(fun () -> OS().windowFromHwnd(source).showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED))
                     pumpUntil(fun () -> onGroup(fun group -> group.isSplitFilled))

@@ -49,9 +49,8 @@ its tray menu and takes over. A split comes back after a restart as its windows 
    group and the pair is parked. Click either tab of the pair: both panes, the direction and the
    ratio come back. While switching, the row of tabs stays steady and no other tab shows.
 4. Drag the divider, double-click it to equalize, and right-click it for swap, equalize, toggle
-   direction and end split. Press just beside the bar instead and the pane in front resizes in
-   its own loop, painting at every step, while the other pane follows: the smoothest way to
-   resize beside a slow app.
+   direction and end split. A press a few pixels either side of the bar drags the divider too,
+   never a pane's own border.
 5. Right-click a tab, Split in group, and pick a window on the right, on the left, above or below: the
    list opens over the group and the window picked goes on that side of the tab; Esc changes
    nothing. The shortcut for a window on the right or below opens the same list for the tab in
