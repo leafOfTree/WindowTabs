@@ -832,12 +832,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                    this.isAbove(hwnd,under) then
                     FollowerPlacement.queue.submit(placementOwner,hwnd,FollowerPlacement.stackBelowRequest hwnd under))
 
-    /// Whether a tab behind the panes lies above any of them or above the backdrop.
-    member private this.tabBehindAbovePanes(s:SplitLayout) =
-        let panes = SplitView.windows s |> List.filter(fun hwnd -> not(isMinimized hwnd))
-        let covers = if backdropHandle<>IntPtr.Zero && WinUserApi.IsWindow backdropHandle then backdropHandle::panes else panes
-        this.windows.items.list |> List.exists(fun hwnd ->
-            not(List.contains hwnd panes) && not(isMinimized hwnd) && covers |> List.exists(fun over -> this.isAbove(hwnd,over)))
+    /// Where each of the handles stands in the z-order, from the top down: one walk for them
+    /// all. Walked once per pair instead, the guard's every tick cost a group of many tabs
+    /// thousands of steps. A handle not met, gone or never shown, has no rank.
+    member private this.zorderRanks(handles:IntPtr list) =
+        let wanted = Set.ofList handles
+        let rec walk (current:IntPtr) rank (found:Map<IntPtr,int>) =
+            if current=IntPtr.Zero || found.Count=wanted.Count then found
+            else
+                let found = if wanted.Contains current then found.Add(current,rank) else found
+                walk (WinUserApi.GetWindow(current,GetWindowConstants.GW_HWNDNEXT)) (rank+1) found
+        walk (WinUserApi.GetTopWindow(IntPtr.Zero)) 0 Map.empty
 
     member _.backdropHwnd = System.Threading.Volatile.Read(&backdropHandle)
 
@@ -860,15 +865,20 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.guardSplitStrip() =
         match groupLayout with
         | Split s when not isDestroyed.value ->
-            let covered() =
-                isVisibleCell.value &&
-                SplitView.windows s |> List.exists(fun hwnd -> not(isMinimized hwnd) && this.isAbove(hwnd,this.ts.hwnd))
-            let behindAbove() = isVisibleCell.value && this.tabBehindAbovePanes s
-            if not liveResize && not inMoveSize.value && not reconcileMinimizeState && (covered() || behindAbove()) then
-                this.withUpdate(fun () ->
-                    this.saveZorder()
-                    if covered() && not this.isEmpty then this.setTsParent(this.topWindow)
-                    elif behindAbove() && not this.isEmpty then this.keepPanesBelowStrip(this.topWindow))
+            if isVisibleCell.value && not liveResize && not inMoveSize.value && not reconcileMinimizeState then
+                let panes = SplitView.windows s |> List.filter(fun hwnd -> not(isMinimized hwnd))
+                let behind = this.windows.items.list |> List.filter(fun hwnd -> not(List.contains hwnd panes) && not(isMinimized hwnd))
+                let covers = if backdropHandle<>IntPtr.Zero && WinUserApi.IsWindow backdropHandle then backdropHandle::panes else panes
+                let ranks = this.zorderRanks(this.ts.hwnd::behind@covers)
+                let above a b = match ranks.TryFind a,ranks.TryFind b with Some x,Some y -> x<y | _ -> false
+                // A pane over the tabs, or a tab behind the panes over any of them or the backdrop.
+                let covered = panes |> List.exists(fun hwnd -> above hwnd this.ts.hwnd)
+                let behindAbove = behind |> List.exists(fun hwnd -> covers |> List.exists(fun over -> above hwnd over))
+                if covered || behindAbove then
+                    this.withUpdate(fun () ->
+                        this.saveZorder()
+                        if covered && not this.isEmpty then this.setTsParent(this.topWindow)
+                        elif behindAbove && not this.isEmpty then this.keepPanesBelowStrip(this.topWindow))
         | _ -> splitGuardTimer.Stop()
 
     /// What the panes go just below: the divider, which lies over their edges, or else the strip.
