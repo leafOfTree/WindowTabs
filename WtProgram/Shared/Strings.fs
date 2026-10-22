@@ -148,9 +148,9 @@ module Strings =
                                description={ en="Runs in the system tray after you sign in."; zh="登录后在系统托盘中运行。"; ja="サインイン後にシステムトレイで実行します。" }
                                keywords={ en="startup autostart"; zh="开机启动 自启动"; ja="スタートアップ 自動起動" } }
         let restoreSession = { caption={ en="Restore the last session after sign-in"; zh="登录后恢复上次会话"; ja="サインイン後に前回のセッションを復元" }
-                               description={ en="Groups, positions and splits come back among what is open, or the apps are launched too. Kept up as things change."
-                                             zh="按上次的分组、位置和分屏恢复已打开的内容，或连应用一起启动。记录随变化自动更新。"
-                                             ja="開いているものをグループ、位置、分割ごとに戻すか、アプリも起動します。記録は変化に合わせて更新されます。" }
+                               description={ en="A few seconds after sign-in, the windows that are open go back into the groups, positions and split views they had at sign-out. Choose to launch their apps as well, and apps whose windows are missing are opened first. A notice at the top of the screen says when it is done."
+                                             zh="登录几秒后，把已打开的窗口放回注销时的分组、位置和分屏。选\"并启动缺少的应用\"时，会先启动窗口还没出现的应用。恢复完成后屏幕顶部会有提示。"
+                                             ja="サインインの数秒後、開いているウィンドウをサインアウト時のグループ、位置、分割表示に戻します。「アプリの起動」を選ぶと、ウィンドウのないアプリを先に起動します。完了すると画面上部に通知が出ます。" }
                                keywords={ en="session reboot"; zh="会话 重启"; ja="セッション 再起動" } }
         let enableTabsByDefault = { caption={ en="Use tabs for new apps"; zh="新应用自动启用标签"; ja="新しいアプリでタブを使う" }
                                     description={ en="Only apps first discovered after this change. Existing apps keep their tab setting."; zh="只影响此后首次出现的应用。已有应用保留原来的标签设置。"; ja="変更後に初めて検出するアプリに適用します。既存のアプリのタブ設定は維持します。" }
@@ -362,7 +362,7 @@ module Strings =
     module General =
         /// The choices of Restore the last session at start.
         let sessionOff = { en="Off"; zh="关闭"; ja="オフ" }
-        let sessionWindows = { en="Open windows"; zh="已打开的窗口"; ja="開いているウィンドウ" }
+        let sessionWindows = { en="Open windows only"; zh="仅已打开的窗口"; ja="開いているウィンドウのみ" }
         let sessionApps = { en="Open windows, and start their apps"; zh="已打开的窗口，并启动缺少的应用"; ja="開いているウィンドウと、アプリの起動" }
         let settingsFile = { en="Settings file"; zh="设置文件"; ja="設定ファイル" }
         let openFolder = { en="Open folder"; zh="打开文件夹"; ja="フォルダーを開く" }
