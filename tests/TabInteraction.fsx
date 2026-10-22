@@ -390,6 +390,9 @@ let main() =
                 strip.dimmed <- true
                 let dimmedSprite = snd strip.tabSprites.head
                 check (frames strip>brightFrames) "Dimming an inactive group did not repaint it"
+                let dimmedFrames = frames strip
+                for _ in 1..10 do strip.dimmed <- true
+                check (frames strip=dimmedFrames) "Repeated inactive notifications repainted the whole strip"
                 if not SystemInformation.HighContrast then
                     let dim = pixels()
                     check (dim.Length=bright.Length && Array.forall2(fun (a:Color) (b:Color) -> a.A=b.A) dim bright) "Inactive group became transparent"
@@ -399,6 +402,8 @@ let main() =
                 strip.dimmed <- false
                 check ((snd strip.tabSprites.head).fillColor=originalFill) "Reactivating a group did not restore its colours"
                 let selectionFrames = frames strip
+                for _ in 1..10 do strip.dimmed <- false
+                check (frames strip=selectionFrames) "Switching within an active group repainted unchanged dimming"
                 let order = strip.zorder
                 strip.setTabBgColor(order.head,None)
                 strip.zorder <- List2(order.list)

@@ -26,7 +26,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let foregroundCell = Cell.create(None:Tab option)
     let prevForegroundCell = Cell.create(None)
     let sizeCell = Bemo.Cell<Sz>(Cell, Sz.empty, (=))
-    let dimmedCell = Cell.create(false)
+    let dimmedCell = Bemo.Cell<bool>(Cell, false, (=))
     // Position is presentation state, not an input to pixel rendering.
     let mutable location = Pt.empty
     let mutable renderedFrames = 0L
@@ -385,7 +385,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     // Used by native performance/regression hosts to verify that unchanged
     // hover and movement do not regenerate pixels; not a user-facing setting.
     member internal _.renderCount = renderedFrames
-    
+
     member private this.update() =
         if not this.visible then this.hideTitle()
         let target = if this.isShrunk then 0.0 else 1.0
