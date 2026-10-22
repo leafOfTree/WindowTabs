@@ -479,6 +479,23 @@ let main() =
             waitOperation()
             onGroup(fun group -> group.transitionsPaused <- false; group.execute(EndSplit(Some ha)))
             waitOperation()
+            // A tab clicked over the panes parks them under a cover too, growing from behind them
+            // to the whole group, and the panes come back the same way: placed at once, the tab
+            // rose pane-sized with the desktop showing round it.
+            onGroup(fun group -> group.execute(SplitWith(hc,SideBySide),current=ha))
+            waitOperation()
+            onGroup(fun group -> group.tabActivate(Tab hb,false))
+            check (covers()) "No cover moved the tab clicked over the panes"
+            check (timeUntil 3000 (fun () -> not(covers()))).IsSome "The cover over a parked split stayed"
+            waitOperation()
+            check (onGroup(fun group -> match group.layout with Parked _ -> true | _ -> false) && visible hb=frame) "The tab clicked over the panes did not park them and fill the group"
+            onGroup(fun group -> group.tabActivate(Tab ha,false))
+            check (covers()) "No cover brought the panes back from behind the tab"
+            check (timeUntil 3000 (fun () -> not(covers()))).IsSome "The cover over the panes coming back stayed"
+            waitOperation()
+            check (onGroup(fun group -> group.splitLayout.IsSome)) "The panes did not come back"
+            onGroup(fun group -> group.execute(EndSplit(Some ha)))
+            waitOperation()
         onHelper(fun () -> a.Grid <- 17)
         onGroup(fun group -> group.execute(SplitWith(hc,SideBySide),current=ha))
         pump 3000
