@@ -117,6 +117,9 @@ type TabStripDecorator(group:WindowGroup) as this =
     let mutable dragPartner = IntPtr.Zero
     let mutable dragSource : IntPtr option = None
     let mutable dragStartIndex : int option = None
+    /// Whether the press that began the drag parked the panes: shown before it, they come back
+    /// as the tab leaves; parked earlier, the tab shown before the dragged one comes back instead.
+    let mutable dragParked = false
 
     do this.init()
 
@@ -760,6 +763,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                     dragPartner <- group.topWindow
                     dragSource <- Some hwnd
                     dragStartIndex <- group.lorder.list |> List.tryFindIndex ((=) hwnd)
+                    dragParked <- (match group.layout with Split _ -> true | _ -> false)
                     group.tabActivate(tab, false)
                     if part <> TabClose then
                         let dragOffset = pt.sub(this.ts.tabLocation tab)
@@ -970,9 +974,16 @@ type TabStripDecorator(group:WindowGroup) as this =
                         let window = os.windowFromHwnd(hwnd)
                         group.removeWindow(hwnd)
                         window.hideOffScreen(None)
-                        // Pressing the tab parked the panes behind it; out on its drag, it is no
-                        // longer the tab shown, so the panes come back and a drop can aim at them.
-                        (match group.layout with Parked _ -> group.execute FocusOther | _ -> ())
+                        // Out on its drag, the tab is no longer the one shown. Panes its press
+                        // parked come back, so a drop can aim at them; panes parked before it, by
+                        // another tab chosen over them, stay parked, and the tab shown before this
+                        // one comes back: brought back, their focused pane took the place of the
+                        // tab the user had left for this one.
+                        (match group.layout with
+                         | Parked _ when dragParked -> group.execute FocusOther
+                         | Parked _ -> group.showTabBefore hwnd
+                         | _ -> ())
+                        dragParked <- false
                         joinedByDrag <- false
                 | None -> ()
                 this.updateTsSlide()

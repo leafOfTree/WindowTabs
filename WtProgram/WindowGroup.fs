@@ -2103,6 +2103,16 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if followedClose |> Option.exists(fun (closed,_) -> closed=hwnd) then followedClose <- None
             else next |> Option.iter(fun target -> this.tabActivate(Tab(target),false))
 
+    /// The tab shown before `hwnd`, the one the foreground left for it, comes to the front, once
+    /// `hwnd` has left the group by a drag. Nothing else is known to have been shown: a tab
+    /// chosen over parked panes stacked every other tab under it in no particular order, so the
+    /// window on top then was any of them.
+    member this.showTabBefore(hwnd:IntPtr) =
+        match leftTab with
+        | Some(left,next,_) when next=hwnd && left<>hwnd && this.windows.contains left && isOpen left && not(isMinimized left) ->
+            this.tabActivate(Tab left,false)
+        | _ -> ()
+
     /// The foreground left this tab just before it closed or minimized: it is still the active tab.
     member private this.reclaimLeftTab(hwnd) =
         if lastActiveTab<>Some hwnd && (not(isOpen hwnd) || isMinimized hwnd) &&

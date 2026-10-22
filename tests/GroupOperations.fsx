@@ -505,6 +505,32 @@ let main() =
                     waitSplit()
                     check (onGroup(fun group -> group.splitLayout=Some {beforeThird with focused=[First]})) "Returning to a split did not restore both panes and their ratio"
                     check (nameReads.Value=readsBefore) (sprintf "Parking the panes and bringing them back read the tabs again: %d reads" (nameReads.Value-readsBefore))
+                    // A fourth tab chosen over the parked panes, then the third again, and the third
+                    // dragged out: the fourth comes back, not the panes' focused window, which the
+                    // park stacked just under the third as it did every other tab.
+                    do
+                        let fourth = handles.[3]
+                        onHelper(fun () -> forms.[3].Pinned <- false; forms.[3].Show())
+                        onGroup(fun group -> group.addWindow(fourth,false))
+                        waitOperation()
+                        onGroup(fun group -> group.tabActivate(Tab(fourth),false))
+                        waitOperation()
+                        onGroup(fun group -> group.tabActivate(Tab(third),false))
+                        waitOperation()
+                        check (onGroup(fun group -> group.topWindow=third && (match group.layout with Parked _ -> true | _ -> false))) "The third tab did not show over the parked panes"
+                        onGroup(fun group ->
+                            group.removeWindow third
+                            OS().windowFromHwnd(third).hideOffScreen(None)
+                            group.showTabBefore third)
+                        waitOperation()
+                        check (onGroup(fun group -> group.topWindow=fourth && (match group.layout with Parked _ -> true | _ -> false))) (sprintf "Dragging the shown tab out did not bring back the tab shown before it: top %A, fourth %A, layout %A" (onGroup(fun group -> group.topWindow)) fourth (onGroup(fun group -> group.layout)))
+                        onGroup(fun group -> group.addWindow(third,false))
+                        waitOperation()
+                        onGroup(fun group -> group.removeWindow fourth)
+                        waitOperation()
+                        onHelper(fun () -> forms.[3].Hide(); forms.[3].Pinned <- true; forms.[3].Bounds <- Rectangle(-20000,-20000,640,480))
+                        onGroup(fun group -> group.tabActivate(Tab(third),false))
+                        waitOperation()
                     // Back and forth between a pane and the third tab, which waits pane-sized under
                     // the host pane while the split shows: shown again, it must fill the whole group.
                     for delay in [0;80] do
