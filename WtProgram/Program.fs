@@ -247,8 +247,10 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
     member private this.sessionMode = string(Services.settings.getValue("sessionRestore"))
 
+    /// Not once Windows is signing out: the session was written then, with every app still
+    /// open, and a save after it, as the apps close one by one, would leave their windows out.
     member private this.saveSession() =
-        if this.sessionMode<>"Off" && sessionReady && not inShutdown.value && not this.desktop.isDragging then
+        if this.sessionMode<>"Off" && sessionReady && not sessionEnding && not inShutdown.value && not this.desktop.isDragging then
             try sessions.saveSession() with error -> Diagnostics.Trace.TraceWarning("Session save failed: {0}",error.Message)
 
     /// After a sign-in, once the first scan is done: no window has a group token, so the
@@ -874,6 +876,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             Microsoft.Win32.SystemEvents.SessionEnding.Add(fun _ ->
                 if not sessionEnding then
                     sessionEnding <- true
+                    sessionTimer.Stop()
+                    sessionSoon.Cancel()
                     if this.sessionMode<>"Off" && sessionReady then
                         try
                             sessions.saveSessionNow()
