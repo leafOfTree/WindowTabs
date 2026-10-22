@@ -237,6 +237,7 @@ let main() =
         let mouse = Event<int * IntPtr>()
         let newTabRequests = Collections.Concurrent.ConcurrentQueue<IntPtr>()
         let names = Collections.Concurrent.ConcurrentDictionary<IntPtr,string>()
+        let nameReads = ref 0
         Services.register<IProgram>({new IProgram with
             member _.version = "test"
             member _.isFirstRun = false
@@ -247,7 +248,9 @@ let main() =
                 match name with
                 | Some name -> names.[hwnd] <- name
                 | None -> names.TryRemove(hwnd) |> ignore
-            member _.getWindowNameOverride hwnd = match names.TryGetValue(hwnd) with | true,name -> Some name | _ -> None
+            member _.getWindowNameOverride hwnd =
+                Threading.Interlocked.Increment(&nameReads.contents) |> ignore
+                match names.TryGetValue(hwnd) with | true,name -> Some name | _ -> None
             member _.getTabColorOverride _ = None
             member _.setTabColorOverride _ = ()
             member _.getTabColor(_,_) = None
@@ -490,13 +493,18 @@ let main() =
                     onGroup(fun group -> group.addWindow(third,false))
                     waitSplit()
                     let beforeThird = onGroup(fun group -> group.splitLayout.Value)
+                    // Parking the panes and bringing them back reads no tab again: their places
+                    // are the same either way, and reading every tab held the strip back.
+                    let readsBefore = nameReads.Value
                     onGroup(fun group -> group.tabActivate(Tab(third),false))
                     waitOperation()
                     check (onGroup(fun group -> group.layout=Parked beforeThird)) "Third tab replaced a split member"
                     check (OS().windowFromHwnd(third).visibleBounds=movedFrame) "Third tab did not occupy the whole group"
+                    check (onGroup(fun group -> group.ts.zorder.head=Tab third)) "The strip did not show the tab chosen over the panes as the one in front"
                     onGroup(fun group -> group.tabActivate(Tab(SplitView.window [First] beforeThird |> Option.get),false))
                     waitSplit()
                     check (onGroup(fun group -> group.splitLayout=Some {beforeThird with focused=[First]})) "Returning to a split did not restore both panes and their ratio"
+                    check (nameReads.Value=readsBefore) (sprintf "Parking the panes and bringing them back read the tabs again: %d reads" (nameReads.Value-readsBefore))
                     // Back and forth between a pane and the third tab, which waits pane-sized under
                     // the host pane while the split shows: shown again, it must fill the whole group.
                     for delay in [0;80] do

@@ -1502,8 +1502,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             // The same panes, only resized or focused differently: their tabs are as they were.
             // Read again at every step of a divider drag, every tab's details, its name asked of
             // the main thread among them, made each step slow and the steps pile up.
+            // Parked and shown again alike: a tab's place in the panes is the same either way, and
+            // reading every tab again at each such switch held the strip back a fifth of a second.
             match before,next with
             | Split a,Split b when SplitTree.sameShape (SplitView.root a) (SplitView.root b) -> layoutChangedEvent.Trigger()
+            | (Split a | Parked a),(Split b | Parked b) when SplitTree.sameShape (SplitView.root a) (SplitView.root b) ->
+                this.updateSplitChrome()
+                layoutChangedEvent.Trigger()
             | _ -> this.refreshLayoutTabs()
             this.saveSplitProps()
 
@@ -2287,6 +2292,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         // first it went back to the pane, which the rising tab then covered.
         let top = this.inZorder(this.windows.items).tryHead
         let inFront = this.os.foreground.hwnd=hwnd || top=Some hwnd
+        // The strip shows the tab as the one in front now, before the layout follows: told only
+        // when the update below ended, the tab behind stayed lit for as long as the layout took,
+        // a fifth of a second when a split parked or came back, and two tabs looked chosen.
+        if inFront && this.windows.contains(hwnd) then
+            this.ts.zorder <- zorderCell.value.where((<>) hwnd).prepend(hwnd).map(Tab)
         this.withUpdate(fun () ->
             if this.windows.contains(hwnd) then
                 this.onActivated(hwnd)
