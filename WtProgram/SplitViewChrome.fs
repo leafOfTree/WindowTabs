@@ -515,13 +515,14 @@ type SplitMove = { hwnd:IntPtr; from:Rect; target:Rect; fade:SplitFade; border:P
 /// left, cut to its rectangle, so nothing is stretched; where a window is smaller than its
 /// rectangle for a moment, the theme's surface shows, as behind the panes. It closes once the
 /// group says the windows are in place, or after a while.
-/// `instant`: no steps, the images at their places from the first frame and the ones leaving
-/// kept under the rest, so the cover only hides the windows being placed; a tab clicked over
-/// the panes felt slow with the images moving.
-type SplitTransition(frame:Rect, moves:SplitMove list, ?instant:bool) =
+/// `durationMs`: how long the images take, `DurationMs` unless given; a tab clicked over the
+/// panes switches in a fraction of that (`ClickMs`), as it felt slow at the full length. With
+/// no time at all the images stand at their places from the first frame, the ones leaving kept
+/// under the rest, so the cover only hides the windows being placed.
+type SplitTransition(frame:Rect, moves:SplitMove list, ?durationMs:int) =
     inherit SplitChromeForm()
-    let instant = defaultArg instant false
-    let durationMs = if instant then 0.0 else float SplitTransition.DurationMs
+    let durationMs = float(defaultArg durationMs SplitTransition.DurationMs)
+    let instant = durationMs<=0.0
     /// How long the last step waits for the windows to be in place.
     let holdMs = 600.0
     let clock = Diagnostics.Stopwatch()
@@ -559,6 +560,8 @@ type SplitTransition(frame:Rect, moves:SplitMove list, ?instant:bool) =
             DwmApi.DwmUpdateThumbnailProperties(thumb,&props) |> ignore
     /// How long the images take to move, in milliseconds.
     static member DurationMs = 220
+    /// For a tab clicked over the panes, or a pane's tab clicked to bring them back.
+    static member ClickMs = 80
     /// Shown with every image at its start, so the first frame looks as the windows did. False
     /// when there was nothing to show.
     member this.start() : bool =

@@ -1330,7 +1330,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// at once, a tab behind rose pane-sized with the desktop showing round it. Not while a
     /// divider is dragged, for the focus alone, for a window that has gone (`gone`), nor
     /// without the system's animations.
-    member private this.beginTransition(before:GroupLayout, next:GroupLayout, current:IntPtr, ?focus:IntPtr, ?gone:IntPtr, ?instant:bool) =
+    member private this.beginTransition(before:GroupLayout, next:GroupLayout, current:IntPtr, ?focus:IntPtr, ?gone:IntPtr, ?durationMs:int) =
         let gone = defaultArg gone IntPtr.Zero
         let shown hwnd = hwnd<>gone && this.windows.contains hwnd && isOpen hwnd && not(isMinimized hwnd)
         let frame = this.layoutFrame
@@ -1388,7 +1388,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             let dpi = Dpi.value()
             let transition,shown = this.chrome.invoke(fun () ->
                 Dpi.set dpi
-                let transition = new SplitTransition(frame,moves,instant=defaultArg instant false)
+                let transition = new SplitTransition(frame,moves,?durationMs=durationMs)
                 transition,transition.start())
             if shown then coversShown <- coversShown+1
             match next with
@@ -1400,7 +1400,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 // its new size, cut to the rectangle while that grows.
                 // Nothing waits when the images do not move.
                 transitionHold <-
-                    if defaultArg instant false then []
+                    if defaultArg durationMs SplitTransition.DurationMs<=0 then []
                     else
                         moves |> List.filter(fun move ->
                             move.fade=FadeOut || (move.fade=NoFade && move.target.width<=move.from.width && move.target.height<=move.from.height))
@@ -1408,6 +1408,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 // One timer, started afresh: a timer per transition let an earlier one, still
                 // running, place the windows a later transition was holding.
                 transitionRelease.Stop()
+                transitionRelease.Interval <- max 1 (defaultArg durationMs SplitTransition.DurationMs)
                 if not transitionHold.IsEmpty then transitionRelease.Start()
             // Out of the split nothing waits for the windows: the images go once they have
             // moved and the windows are placed.
@@ -1585,7 +1586,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.onActivated(hwnd) =
         if this.windows.contains hwnd then
             let next = SplitView.onActivated hwnd groupLayout
-            if next<>groupLayout && not coverAhead then this.beginTransition(groupLayout,next,hwnd,focus=hwnd,instant=true)
+            if next<>groupLayout && not coverAhead then this.beginTransition(groupLayout,next,hwnd,focus=hwnd,durationMs=SplitTransition.ClickMs)
             coverAhead <- false
             this.setLayout(next,focus=hwnd)
 
@@ -2239,7 +2240,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if this.windows.contains(hwnd) then
             let next = SplitView.onActivated hwnd groupLayout
             if next<>groupLayout then
-                this.beginTransition(groupLayout,next,hwnd,focus=hwnd,instant=true)
+                this.beginTransition(groupLayout,next,hwnd,focus=hwnd,durationMs=SplitTransition.ClickMs)
                 coverAhead <- true
         // The strip is owned by the top window and only follows a new top window once the
         // foreground event comes back through the group. Until then the activated window
