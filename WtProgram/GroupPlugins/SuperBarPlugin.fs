@@ -79,36 +79,19 @@ module TaskbarProxies =
     let ownsWindow (hwnd:IntPtr) = contains (WinUserApi.GetWindowLong(hwnd, WindowLongFieldOffset.GWL_HWNDPARENT))
 
 /// A group's icon as its taskbar button shows it: the app's icon with the WindowTabs badge at the
-/// bottom right. In a group of several apps the badge is the next app's icon instead, so the front
-/// app keeps its full size. The window switcher draws a group the same way.
+/// bottom right. In a group of several apps the other apps line up small along the bottom right
+/// instead, the main app keeping its full size; one in the corner showed only the second. The
+/// window switcher draws a group the same way.
 module GroupIconImage =
-    let compose (size:int) (app:Bitmap) (other:Bitmap option) =
+    /// The most apps one icon shows.
+    let maxApps = 4
+    let compose (size:int) (app:Bitmap) (others:Bitmap list) =
         let canvas = new Bitmap(size,size,PixelFormat.Format32bppArgb)
         use g = Graphics.FromImage(canvas)
         g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
-        g.DrawImage(app,Rectangle(0,0,size,size))
-        match other with
-        | Some other ->
-            // A clear ring round the corner icon keeps it apart from the front app's. One
-            // pixel at taskbar size: a wider one read as a dark border on the taskbar.
-            let side = size*7/16
-            let gap = max 1 (size/32)
-            let corner = size-side
-            use ring = new Drawing2D.GraphicsPath()
-            // Half a pixel further out, so the ring's first column is cleared whole.
-            let x,span = float32(corner-gap)-0.5f,float32(side+2*gap)+0.5f
-            let d = span*0.4f
-            ring.AddArc(x,x,d,d,180.0f,90.0f)
-            ring.AddArc(x+span-d,x,d,d,270.0f,90.0f)
-            ring.AddArc(x+span-d,x+span-d,d,d,0.0f,90.0f)
-            ring.AddArc(x,x+span-d,d,d,90.0f,90.0f)
-            ring.CloseFigure()
-            use clear = new SolidBrush(Color.Transparent)
-            g.CompositingMode <- Drawing2D.CompositingMode.SourceCopy
-            g.FillPath(clear,ring)
-            g.CompositingMode <- Drawing2D.CompositingMode.SourceOver
-            g.DrawImage(other,Rectangle(corner,corner,side,side))
-        | None ->
+        match List.truncate (maxApps-1) others with
+        | [] ->
+            g.DrawImage(app,Rectangle(0,0,size,size))
             use badgeIcon = Services.openIcon("Bemo.ico")
             use badge = badgeIcon.ToBitmap()
             // Leave more of the application visible, with the badge tucked into the right corner.
@@ -116,6 +99,36 @@ module GroupIconImage =
             // The badge's transparent margin otherwise keeps its visible edge inset.
             let rightOffset = size/12
             g.DrawImage(badge,Rectangle(size-side+rightOffset,size-side,side,side))
+        | rest ->
+            g.DrawImage(app,Rectangle(0,0,size,size))
+            // The other apps sit small along the bottom, the last at the right edge: the first of
+            // them whole, each after it behind the one before with about a third showing, so
+            // every app in the group can be told while the main one keeps its full size.
+            let side = size*7/16
+            let step = (side+2)/3
+            let top = size-side
+            let left = size-side-(rest.Length-1)*step
+            // One clear ring round the whole row keeps it apart from the main app's icon; a ring
+            // round each one cut dark seams between them. One pixel at taskbar size: a wider
+            // one read as a dark border on the taskbar.
+            let gap = max 1 (size/32)
+            use clear = new SolidBrush(Color.Transparent)
+            use path = new Drawing2D.GraphicsPath()
+            // Half a pixel further out, so the ring's first column and row are cleared whole.
+            let x,y = float32(left-gap)-0.5f,float32(top-gap)-0.5f
+            let width,height = float32(size-left+2*gap)+0.5f,float32(side+2*gap)+0.5f
+            let d = height*0.4f
+            path.AddArc(x,y,d,d,180.0f,90.0f)
+            path.AddArc(x+width-d,y,d,d,270.0f,90.0f)
+            path.AddArc(x+width-d,y+height-d,d,d,0.0f,90.0f)
+            path.AddArc(x,y+height-d,d,d,90.0f,90.0f)
+            path.CloseFigure()
+            g.CompositingMode <- Drawing2D.CompositingMode.SourceCopy
+            g.FillPath(clear,path)
+            g.CompositingMode <- Drawing2D.CompositingMode.SourceOver
+            // From the back: each one draws itself over the ones after it.
+            rest |> List.indexed |> List.rev |> List.iter(fun (index,icon) ->
+                g.DrawImage(icon,Rectangle(left+index*step,top,side,side)))
         canvas
 
 /// A group's taskbar icon, drawn by GroupIconImage. Windows 11 draws an overlay icon at the top
@@ -126,14 +139,14 @@ type TaskbarBadgedIcon(icon:Icon, ?stacked:Icon list) =
     let size = min 64 (max 32 icon.Width)
     let handle =
         use app = icon.ToBitmap()
-        let other = others |> List.tryHead |> Option.map(fun other -> other.ToBitmap())
+        let images = others |> List.map(fun other -> other.ToBitmap())
         try
-            use canvas = GroupIconImage.compose size app other
+            use canvas = GroupIconImage.compose size app images
             canvas.GetHicon()
-        finally other |> Option.iter(fun image -> image.Dispose())
+        finally images |> List.iter(fun image -> image.Dispose())
     let badged = Icon.FromHandle(handle)
-    /// The other apps' icons shown: one, in the corner, which is all a taskbar icon has room for.
-    static member maxStacked = 1
+    /// The other apps' icons shown along the bottom right.
+    static member maxStacked = GroupIconImage.maxApps-1
     member _.source = icon
     member _.stacked = others
     member _.icon = badged

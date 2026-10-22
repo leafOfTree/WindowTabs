@@ -96,9 +96,9 @@ type ITaskSwitchDesktop =
 
 /// How a group listed as one item draws its icon: as its taskbar button does.
 type TaskWindowGroup =
-    /// The front app's icon with the next app's in the corner, or the WindowTabs badge when
-    /// every tab is of one app.
-    | GroupOfApps of corner:IntPtr option
+    /// The front app's icon with a window of each other app's lined up after it, or the
+    /// WindowTabs badge when every tab is of one app.
+    | GroupOfApps of others:IntPtr list
     /// The picture the user chose for the group's taskbar button.
     | GroupPicture of path:string
 
@@ -157,15 +157,15 @@ module private TaskWindowIcons =
     /// An item's icon at the given size; a group's is drawn as its taskbar button's.
     let item (TaskWindowItem(hwnd,group)) (size:int) : Bitmap option =
         let window = OS().windowFromHwnd(hwnd)
-        let apps corner =
+        let apps others =
             large window size |> Option.map(fun front ->
                 use front = front
-                let other = corner |> Option.bind(fun hwnd -> large (OS().windowFromHwnd(hwnd)) size)
-                try GroupIconImage.compose size front other
-                finally other |> Option.iter(fun image -> image.Dispose()))
+                let images = others |> List.truncate(GroupIconImage.maxApps-1) |> List.choose(fun hwnd -> large (OS().windowFromHwnd(hwnd)) size)
+                try GroupIconImage.compose size front images
+                finally images |> List.iter(fun image -> image.Dispose()))
         match group with
         | None -> large window size
-        | Some(GroupOfApps corner) -> apps corner
+        | Some(GroupOfApps others) -> apps others
         | Some(GroupPicture path) ->
             match GroupIconFile.load path with
             | Some icon ->
@@ -176,7 +176,7 @@ module private TaskWindowIcons =
                 g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
                 g.DrawImage(picture,Rectangle(0,0,size,size))
                 Some bitmap
-            | None -> apps None
+            | None -> apps []
 
 module private TaskWindowItems =
     let create (TaskWindowItem(hwnd,_) as item) =
@@ -626,7 +626,7 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop) as this=
                 let zorders = Map2(windowsInZorder.enumerate.map(fun(i,w) -> w.hwnd,i))
                 fun hwnd -> zorders.tryFind(hwnd).def(Int32.MaxValue)
             /// As the group's taskbar button shows it: the picture chosen for it, else the front
-            /// app's icon with the next app's in the corner.
+            /// app's icon with the other apps' lined up after it.
             let icon (windows:IntPtr list) =
                 let front = List.head windows
                 // Only a group with a button of its own has a picture; its windows belong to its previews.
@@ -636,7 +636,7 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop) as this=
                 | None ->
                     let app hwnd = try AppIdentity.key(os.windowFromHwnd(hwnd).pid.processPath) with _ -> ""
                     let frontApp = app front
-                    GroupOfApps(List.tail windows |> List.tryFind(fun hwnd -> app hwnd<>frontApp))
+                    GroupOfApps(List.tail windows |> List.filter(fun hwnd -> app hwnd<>frontApp) |> List.distinctBy app)
             let fronts,behind =
                 let groups = desktop.groups.where(fun g -> g.windows.count > 1).map(fun g -> g.windows.items.sortBy(zorder).list).list
                 Map.ofList(groups |> List.map(fun windows -> List.head windows,windows)),

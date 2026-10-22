@@ -558,9 +558,9 @@ let main() =
             let windows = [ for title in ["Inbox - Mail";"Project plan.docx - Word";"WindowTabs - Visual Studio"] ->
                               new Form(Text=title,StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false) ]
             try
-                let items count = List2([ for index in 0..count-1 -> TaskWindowItem(windows.[index%windows.Length].Handle,(if index=1 then Some(GroupOfApps None) else None)) ])
+                let items count = List2([ for index in 0..count-1 -> TaskWindowItem(windows.[index%windows.Length].Handle,(if index=1 then Some(GroupOfApps []) else None)) ])
                 let plain = TaskSwitchIconView(List2([TaskWindowItem(windows.Head.Handle,None)]))
-                let grouped = TaskSwitchIconView(List2([TaskWindowItem(windows.Head.Handle,Some(GroupOfApps None))]))
+                let grouped = TaskSwitchIconView(List2([TaskWindowItem(windows.Head.Handle,Some(GroupOfApps []))]))
                 try
                     use before = plain.Render()
                     use after = grouped.Render()
@@ -573,10 +573,10 @@ let main() =
                 finally
                     (plain :> ITaskSwitchView).hide()
                     (grouped :> ITaskSwitchView).hide()
-                // A group with another app's tab shows that app's icon in the corner, as its
+                // A group with another app's tab shows that app's icon after the front one, as its
                 // taskbar button does, not the WindowTabs badge.
-                let mixed = TaskSwitchIconView(List2([TaskWindowItem(windows.Head.Handle,Some(GroupOfApps(Some windows.[1].Handle)))]))
-                let badged = TaskSwitchIconView(List2([TaskWindowItem(windows.Head.Handle,Some(GroupOfApps None))]))
+                let mixed = TaskSwitchIconView(List2([TaskWindowItem(windows.Head.Handle,Some(GroupOfApps [windows.[1].Handle]))]))
+                let badged = TaskSwitchIconView(List2([TaskWindowItem(windows.Head.Handle,Some(GroupOfApps []))]))
                 try
                     use corner = mixed.Render()
                     use badge = badged.Render()
