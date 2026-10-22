@@ -522,7 +522,7 @@ type SplitMove = { hwnd:IntPtr; from:Rect; target:Rect; fade:SplitFade; border:P
 /// `crossFade`: the whole cover, images and all, fades out over the windows underneath and
 /// goes on its own: for a plain switch between tabs, the window shown fades into the one
 /// coming up, so an app that paints its background first when uncovered shows no blank.
-type SplitTransition(frame:Rect, moves:SplitMove list, ?durationMs:int, ?crossFade:bool) =
+type SplitTransition(frame:Rect, moves:SplitMove list, ?durationMs:int, ?crossFade:bool, ?strip:IntPtr) =
     inherit SplitChromeForm()
     let durationMs = float(defaultArg durationMs SplitTransition.DurationMs)
     let crossFade = defaultArg crossFade false
@@ -535,12 +535,24 @@ type SplitTransition(frame:Rect, moves:SplitMove list, ?durationMs:int, ?crossFa
     let mutable settled = false
     let mutable closing = false
     let mutable closed = false
+    let mutable viewport = frame.Rectangle
     override _.CreateParams =
         let cp = base.CreateParams
         // Over the apps for its moment; the pointer goes through to them.
         cp.ExStyle <- cp.ExStyle ||| WindowsExtendedStyles.WS_EX_TOPMOST ||| WindowsExtendedStyles.WS_EX_TRANSPARENT
         cp
     member private this.place(t:float) =
+        // Keep both the cover HWND and its DWM destinations outside the live tabs.
+        strip |> Option.iter(fun hwnd ->
+            let bounds =
+                if WinUserApi.IsWindow hwnd && WinUserApi.IsWindowVisible hwnd then
+                    let bounds = OS().windowFromHwnd(hwnd).bounds.Rectangle
+                    Rectangle.Intersect(frame.Rectangle,bounds)
+                else Rectangle.Empty
+            let next = SplitTransition.contentBounds(frame.Rectangle,bounds)
+            if viewport<>next then
+                viewport <- next
+                this.Bounds <- viewport)
         let eased = 1.0-(1.0-t)*(1.0-t)*(1.0-t)
         // Layered still at the end, so a click goes through to the last.
         if crossFade then this.Opacity <- max 0.01 (0.999*(1.0-eased))
@@ -552,19 +564,30 @@ type SplitTransition(frame:Rect, moves:SplitMove list, ?durationMs:int, ?crossFa
             let source = OS().windowFromHwnd(move.hwnd).bounds
             let width = max 0 (min (right-left) (source.width-move.borderSize.width))
             let height = max 0 (min (bottom-top) (source.height-move.borderSize.height))
+            let shown = Rectangle.Intersect(viewport,Rectangle(left,top,width,height))
             let mutable props = DWM_THUMBNAIL_PROPERTIES()
             props.dwFlags <- DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_RECTDESTINATION ||| DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_RECTSOURCE |||
                              DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_OPACITY ||| DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_VISIBLE
-            props.rcDestination <- RECT.FromRectangle(Rectangle(left-frame.left,top-frame.top,width,height))
-            props.rcSource <- RECT.FromRectangle(Rectangle(move.border.x,move.border.y,width,height))
+            props.rcDestination <- RECT.FromRectangle(Rectangle(shown.X-viewport.X,shown.Y-viewport.Y,shown.Width,shown.Height))
+            props.rcSource <- RECT.FromRectangle(Rectangle(move.border.x+shown.X-left,move.border.y+shown.Y-top,shown.Width,shown.Height))
             props.opacity <-
                 match move.fade with
                 | _ when instant -> 255uy
                 | FadeIn -> byte(Math.Round(255.0*eased))
                 | FadeOut -> byte(Math.Round(255.0*(1.0-eased)))
                 | NoFade -> 255uy
-            props.fVisible <- if width>0 && height>0 then 1 else 0
+            props.fVisible <- if shown.Width>0 && shown.Height>0 then 1 else 0
             DwmApi.DwmUpdateThumbnailProperties(thumb,&props) |> ignore
+    /// A rectangular content viewport keeps DWM thumbnails out of the strip's whole edge.
+    static member contentBounds(frame:Rectangle, strip:Rectangle) =
+        let overlap = Rectangle.Intersect(frame,strip)
+        if overlap.Width<=0 || overlap.Height<=0 then frame
+        else
+            [ Rectangle.FromLTRB(frame.Left,overlap.Bottom,frame.Right,frame.Bottom)
+              Rectangle.FromLTRB(overlap.Right,frame.Top,frame.Right,frame.Bottom)
+              Rectangle.FromLTRB(frame.Left,frame.Top,overlap.Left,frame.Bottom)
+              Rectangle.FromLTRB(frame.Left,frame.Top,frame.Right,overlap.Top) ]
+            |> List.maxBy(fun bounds -> int64 bounds.Width*int64 bounds.Height)
     /// How long the images take to move, in milliseconds.
     static member DurationMs = 220
     /// For a tab clicked over the panes, or a pane's tab clicked to bring them back: no steps.

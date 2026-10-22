@@ -1386,9 +1386,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             transitionHold <- []
             transitionIntoSplit <- (match next with Split _ -> true | _ -> false)
             let dpi = Dpi.value()
+            let strip = this.ts.hwnd
             let transition,shown = this.chrome.invoke(fun () ->
                 Dpi.set dpi
-                let transition = new SplitTransition(frame,moves,?durationMs=durationMs)
+                let transition = new SplitTransition(frame,moves,?durationMs=durationMs,strip=strip)
                 transition,transition.start())
             if shown then coversShown <- coversShown+1
             match next with
@@ -2249,10 +2250,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                          border=Pt(visible.x-bounds.x,visible.y-bounds.y)
                          borderSize=Sz(bounds.width-visible.width,bounds.height-visible.height) }
             let dpi = Dpi.value()
+            let strip = this.ts.hwnd
             let shownNow =
                 this.chrome.invoke(fun () ->
                     Dpi.set dpi
-                    let fade = new SplitTransition(frame,[move],durationMs=SplitTransition.CrossFadeMs,crossFade=true)
+                    let fade = new SplitTransition(frame,[move],durationMs=SplitTransition.CrossFadeMs,crossFade=true,strip=strip)
                     fade.start())
             if shownNow then coversShown <- coversShown+1
 

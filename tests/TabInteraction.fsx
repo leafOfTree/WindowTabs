@@ -39,6 +39,34 @@ let main() =
     try
         use settings = new Settings(true,saveDelay=0)
         let api = settings :> ISettings
+        // The topmost cover leaves live tabs visible and follows their native geometry.
+        do
+            let frame = Rect(Pt(-1200,100),Sz(600,400))
+            use strip = new Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,
+                                 StartPosition=FormStartPosition.Manual)
+            strip.Bounds <- Rectangle(-1100,100,300,30)
+            strip.Show()
+            use cover = new SplitTransition(frame,[],durationMs=5000,strip=strip.Handle)
+            check (cover.start()) "Transition fixture did not start"
+            try
+                let clearAt (x:int) (y:int) = not(cover.Bounds.Contains(Point(frame.x+x,frame.y+y)))
+                check (clearAt 150 15 && not(clearAt 150 100)) "Transition covered the top tabs or cut away the app"
+                for bounds,x,y in [Rectangle(-1200,130,90,300),40,100; Rectangle(-690,130,90,300),550,100] do
+                    strip.Bounds <- bounds
+                    let watch = Diagnostics.Stopwatch.StartNew()
+                    while not(clearAt x y) && watch.ElapsedMilliseconds<1500L do
+                        Application.DoEvents()
+                        Threading.Thread.Sleep(5)
+                    check (clearAt x y && not(clearAt 150 15)) "Transition did not follow the strip to its side dock"
+                strip.Hide()
+                let watch = Diagnostics.Stopwatch.StartNew()
+                while clearAt 550 100 && watch.ElapsedMilliseconds<1500L do
+                    Application.DoEvents()
+                    Threading.Thread.Sleep(5)
+                check (not(clearAt 550 100)) "A hidden strip left a hole in the transition"
+            finally
+                cover.close()
+                Application.DoEvents()
         use sideFull = new Bitmap(220,120)
         use sideBar = new Bitmap(4,120)
         for y in 0..119 do

@@ -58,6 +58,10 @@ the tree's simplest case and keep their behaviour.
   an app that stops painting while covered, as Chromium ones do, paints its background first
   when it comes up, and that blank showed for a tenth of a second. A divider dragged, a pane
   resized at its own edge, a tab dragged and the focus alone do not animate.
+  Every transition keeps its native window and DWM thumbnail destinations in the content
+  rectangle below the live tabs (or beside a side dock). Both source and destination are
+  cropped by the same amount, preserving 1:1 pixels. This follows the strip while placement
+  settles instead of relying on a region cutout in a full-frame topmost cover.
 - Right-click any tab, then Split in group, then a window on the right, on the left, above or below:
   the searchable window list below opens over the group first, and the window picked goes on
   that side of the clicked tab, its pane split when the group is split already
