@@ -400,8 +400,10 @@ type WorkspaceModel() as this =
     let mutable readOnly = false
     let mutable recovery : JToken option = None
     /// Each group's tab layout and split as last read from its thread, by group token, so the
-    /// session can be written at exit without waiting on the groups.
-    let layouts = Dictionary<int,GroupTabLayout option * SavedSplit option>()
+    /// session can be written at exit without waiting on the groups. The split names its windows
+    /// by handle: by their places in the list read then, it named the wrong windows once a tab
+    /// had closed or moved since.
+    let layouts = Dictionary<int,GroupTabLayout option * (bool * Rect * (IntPtr * SavedPane) list) option>()
 
     do
         Observable.init(this)
@@ -459,11 +461,11 @@ type WorkspaceModel() as this =
         let mutable remaining = groups.count
         if remaining=0 then complete ws
         elif fromCache then
-            groups.iter(fun (info,saved,_) ->
+            groups.iter(fun (info,saved,toSaved) ->
                 match layouts.TryGetValue info.group.groupToken with
                 | true,(layout,split) ->
                     saved.tabLayout <- layout
-                    saved.split <- split
+                    saved.split <- split |> Option.bind toSaved
                 | _ -> ()
                 ws.addGroup(saved))
             complete ws
@@ -474,7 +476,7 @@ type WorkspaceModel() as this =
                     captured |> Option.iter(fun (layout,split) ->
                         saved.tabLayout <- Some layout
                         saved.split <- split |> Option.bind toSaved
-                        layouts.[info.group.groupToken] <- (saved.tabLayout,saved.split))
+                        layouts.[info.group.groupToken] <- (saved.tabLayout,split))
                     remaining <- remaining-1
                     if remaining=0 then
                         groups.iter(fun (_,group,_) -> ws.addGroup(group))

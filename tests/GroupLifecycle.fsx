@@ -979,6 +979,25 @@ let main() =
                             not split.parked && split.frame=frame && (split.panes |> List.map fst)=[0;1] &&
                             (snd split.panes.[1]).levels=[Stacked,Second] && abs((snd split.panes.[0]).ratios.[0]-0.3)<0.001 && (snd split.panes.[1]).focused)))
                       (sprintf "The session did not keep the pair's split: %A" (savedPair |> Option.map(fun group -> group.split)))
+                // A save that cannot wait on the groups takes the split last read, by window: with
+                // the group's list changed since, the panes went to the wrong places by index.
+                do
+                    onGroup pair (fun group -> group.removeWindow hd)
+                    pumpUntil "The pane did not leave the pair" (fun () -> (pair :> IGroup).windows.list=[he])
+                    (pair :> IGroup).addWindow(hd,false)
+                    pumpUntil "The pair's list did not change order" (fun () -> (pair :> IGroup).windows.list=[he;hd])
+                    sessions.saveSessionNow()
+                    let cachedPair =
+                        sessions.loadSession() |> Option.bind(fun ws ->
+                            ws.groups.list |> List.tryPick(fun group ->
+                                let group = group :?> WorkspaceGroup
+                                if group.windows.list |> List.exists(fun window -> (window :?> WorkspaceWindow).title="Pane D") then Some group else None))
+                    let titleAt (group:WorkspaceGroup) index = (group.windows.list.[index] :?> WorkspaceWindow).title
+                    check (cachedPair |> Option.exists(fun group ->
+                            group.split |> Option.exists(fun split ->
+                                split.panes |> List.exists(fun (index,pane) -> pane.levels=[Stacked,First] && titleAt group index="Pane D") &&
+                                split.panes |> List.exists(fun (index,pane) -> pane.levels=[Stacked,Second] && titleAt group index="Pane E"))))
+                          (sprintf "A session written from the cache named the panes by stale places: %A" (cachedPair |> Option.map(fun group -> group.split,group.windows.list |> List.map(fun window -> (window :?> WorkspaceWindow).title))))
                 // Taken apart and put away, as a sign-in leaves them, the session puts them back split.
                 onGroup pair (fun group -> group.removeWindow hd; group.removeWindow he)
                 (pair :> IGroup).destroy()
