@@ -95,6 +95,12 @@ type HelperWindow() =
         // DPI drops, pins MinimumSize to the clamped size, so it no longer takes the group's size.
         if message.Msg <> 0x2E0 then base.WndProc(&message)
 
+/// Whether a drop surface shows a place for the drag at the point, asked as a rested pointer is.
+let previewed (target:ILayoutDropTarget) (data:obj,pt:Pt) =
+    match target.probe(data,pt,true) with
+    | Aimed(_,shown) -> shown
+    | NearStrip _ -> false
+
 let main() =
     // A pointer over a strip joins; over a group's window or a helper window owned by its
     // strip it previews a pane; anywhere else it floats.
@@ -107,9 +113,7 @@ let main() =
             member _.dragExit() = ()
             member _.dragCancel _ = ()}
     let surface = {new ILayoutDropTarget with
-                    member _.nearTabs _ = None
-                    member _.aim(_,_) = SplitAim
-                    member _.preview(_,_) = true
+                    member _.probe(_,_,_) = Aimed(SplitAim,true)
                     member _.clearPreview() = ()
                     member _.commit(_,_) = true}
     let strips = Map2(List2([IntPtr 1,strip]))
@@ -366,10 +370,10 @@ let main() =
                         let point = Pt(a.x+a.width/2,a.y+a.height/2)
                         let decorator = decoratorOf group
                         let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft}
-                        check (decorator.preview(drag,point)) "The centre of an empty pane rejected a tab"
+                        check (previewed decorator (drag,point)) "The centre of an empty pane rejected a tab"
                         decorator.clearPreview()
                         check (group.splitLayout=Some s) "Cancelling an empty-pane preview changed the layout"
-                        check (decorator.preview(drag,point)) "The empty pane could not be targeted again"
+                        check (previewed decorator (drag,point)) "The empty pane could not be targeted again"
                         check (decorator.commit(drag,point)) "A previewed pane took no drop"
                         decorator.clearPreview()
                         check (sides group=(Leaf(Occupied partner),Leaf(Occupied source))) "Dropping did not fill the empty pane"
@@ -381,9 +385,7 @@ let main() =
                     do
                         let hwnd = IntPtr 0x7777
                         let later = {new ILayoutDropTarget with
-                                        member _.nearTabs _ = None
-                                        member _.aim(_,_) = NoAim
-                                        member _.preview(_,_) = false
+                                        member _.probe(_,_,_) = Aimed(NoAim,false)
                                         member _.clearPreview() = ()
                                         member _.commit(_,_) = false}
                         let api = surfaces :> IDragDrop
@@ -547,10 +549,10 @@ let main() =
                         let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft}
                         let frame = group.layoutFrame
                         let point = Pt(frame.left+2,frame.y+frame.height/2)
-                        check (decorator.preview(drag,point)) "Own edge did not accept a split preview"
+                        check (previewed decorator (drag,point)) "Own edge did not accept a split preview"
                         decorator.clearPreview()
                         check (group.splitLayout=Some before && group.lorder.list=order) "Cancelling a preview changed layout or membership"
-                        check (decorator.preview(drag,point)) "Repeated split preview failed"
+                        check (previewed decorator (drag,point)) "Repeated split preview failed"
                         check (decorator.commit(drag,point)) "A previewed pane took no drop"
                         decorator.clearPreview()
                         check (group.splitLayout.Value.tree.first=Leaf(Occupied partner)) "Dragging a pane to the opposite edge did not swap it")
@@ -567,7 +569,7 @@ let main() =
                         onGroup(fun group ->
                             let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft}
                             let frame = group.layoutFrame
-                            check ((decoratorOf group).preview(drag,Pt(frame.left+2,frame.y+frame.height/2))) "A drop preview did not show")
+                            check (previewed (decoratorOf group) (drag,Pt(frame.left+2,frame.y+frame.height/2))) "A drop preview did not show")
                         check (previewShown()) "A drop preview was not visible"
                         onGroup(fun group -> (decoratorOf group).clearPreview())
                         if SystemInformation.UIEffectsEnabled then check (previewShown()) "The drop preview vanished at once rather than fading out"
@@ -796,15 +798,16 @@ let main() =
                         // The row runs the group's whole width: at its far end, beside the tabs, too.
                         let frame = group.layoutFrame
                         let along = Pt(frame.right-Dpi.scale 10,first.y+first.height/2)
-                        check (decorator.nearTabs below=Some group.ts.hwnd) (sprintf "A point just below a group's tabs was not taken as its strip: %A below %A" below first)
-                        check (decorator.nearTabs along=Some group.ts.hwnd) (sprintf "A point at the far end of a group's row of tabs was not taken as its strip: %A beside %A in %A" along first frame)
-                        check (decorator.nearTabs away=None) (sprintf "A point well below a group's tabs was taken as its strip: %A below %A" away first))
+                        let near pt = match decorator.probe(dragOf group foreign,pt,false) with NearStrip strip -> Some strip | Aimed _ -> None
+                        check (near below=Some group.ts.hwnd) (sprintf "A point just below a group's tabs was not taken as its strip: %A below %A" below first)
+                        check (near along=Some group.ts.hwnd) (sprintf "A point at the far end of a group's row of tabs was not taken as its strip: %A beside %A in %A" along first frame)
+                        check (near away=None) (sprintf "A point well below a group's tabs was taken as its strip: %A below %A" away first))
                     let shown = onGroup(fun group ->
                         let decorator = decoratorOf group
-                        check (decorator.preview(dragOf group foreign,edgePoint)) "A tab from another group was not offered an edge"
+                        check (previewed decorator (dragOf group foreign,edgePoint)) "A tab from another group was not offered an edge"
                         decorator.clearPreview()
                         check (group.layout=GroupLayout.Single) "Cancelling another group's edge preview changed the layout"
-                        check (decorator.preview(dragOf group foreign,edgePoint)) "Another group's edge could not be targeted again"
+                        check (previewed decorator (dragOf group foreign,edgePoint)) "Another group's edge could not be targeted again"
                         group.topWindow)
                     check (onGroup(fun group -> (decoratorOf group).commit(dragOf group foreign,edgePoint))) "A tab from another group was not dropped at an edge"
                     waitSplit()
@@ -821,7 +824,7 @@ let main() =
                         let fourth = handles.[3]
                         onHelper(fun () -> forms.[3].Pinned <- false; forms.[3].Show())
                         let leftPoint = onGroup(fun group -> let frame = group.layoutFrame in Pt(frame.left+2,frame.y+frame.height/2))
-                        check (onGroup(fun group -> (decoratorOf group).preview(dragOf group fourth,leftPoint))) "The window shown over parked panes was not offered an edge"
+                        check (onGroup(fun group -> previewed (decoratorOf group) (dragOf group fourth,leftPoint))) "The window shown over parked panes was not offered an edge"
                         check (onGroup(fun group -> (decoratorOf group).commit(dragOf group fourth,leftPoint))) "A drop beside the window shown over parked panes was refused"
                         waitSplit()
                         check (onGroup(fun group -> group.splitLayout |> Option.exists(fun s -> s.tree.first=Leaf(Occupied fourth) && s.tree.second=Leaf(Occupied behind))))

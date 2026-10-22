@@ -273,11 +273,15 @@ coverage), and **only the windows themselves get a new kind of drop target**.
   Hit-testing takes the top-level window under the pointer (`DragRouting.windowsAt`), since the
   pointer is often over an app's child window such as a browser page, then one dictionary
   lookup, with the window's owner as a second chance for helper windows the strip owns.
-- `ILayoutDropTarget`: `preview(data, pt) : bool`, `clearPreview()` and
+- `ILayoutDropTarget`: `probe(data, pt, show) : LayoutProbe`, `clearPreview()` and
   `commit(data, pt) : bool`. In `DragFloatingState.mouseMove`, a hit on a strip goes through the
-  existing `dragEnter`; a hit on a window goes to `preview`, which shows the half-window or
-  empty-pane preview; leaving clears it. Letting go over a window calls `commit`, which returns
-  false when no pane was offered so the drop then ends as one anywhere else.
+  existing `dragEnter`; a hit on a window goes to `probe`, one call per pointer move, which
+  answers the strip to join when the point lies near its tabs, or else what a drop would do
+  and, when the dwell says so or for an empty pane at once, shows the half-window or
+  empty-pane preview; leaving clears it. Asked the strip, the aim and the preview in three
+  calls, the drag waited on the group's thread three times a move. Letting go over a window
+  calls `commit`, which returns false when no pane was offered so the drop then ends as one
+  anywhere else.
 - A dropped tab joins and takes its pane through `WindowGroup.dropTab`. A tab dragged from
   elsewhere arrives put away off screen by its drag and, activated by it, as the top window, so
   the group's frame is read from the tab shown before the dropped tab joins; read afterwards,
@@ -288,7 +292,7 @@ coverage), and **only the windows themselves get a new kind of drop target**.
   takes Esc during a drag, with no polling of key state. Losing capture cancels rather than
   commits.
 - A tab from another group joins the group it is dropped on and pairs with the tab shown there.
-  Into an empty pane it goes through that pane's registration to `preview`, and `Desktop` hands
+  Into an empty pane it goes through that pane's registration to `probe`, and `Desktop` hands
   it over between groups (the first version's `addAfterDetaching(afterAdd)`).
 - Native windows dragged onto an empty pane: the first version put a pair of global WinEvent
   hooks on every empty pane and polled the mouse buttons. Instead, `Desktop`'s existing
@@ -387,7 +391,7 @@ no command of its own.
 - `Desktop.fs`: the MOVESIZE hooks recognise a window dragged by its title bar onto an empty pane
   and hand it over (including `addAfterDetaching` between groups); a rebuilt group receives a
   snapshot of the layout.
-- Threads: `preview` and `commit` are synchronous calls from the drag's source STA to the target
+- Threads: `probe` and `commit` are synchronous calls from the drag's source STA to the target
   group's STA, in the same direction as the existing `dragEnter`, as the architecture document
   allows. The main thread gains no waits on group threads.
 - Possible follow-up, not done: the WinEvent hooks of every member are registered from the group

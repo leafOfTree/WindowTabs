@@ -791,22 +791,28 @@ type TabStripDecorator(group:WindowGroup) as this =
         member x.windowMsg(msg) = 
             ()
             
-    /// What a drag at this point would do, shown nowhere: an empty pane, or one at an empty
-    /// pane's edge, is filled; anything else splits.
-    member private this.aimLayout(data:obj,pt:Pt) =
-        match this.layoutProposal(data,pt) with
-        | None -> NoAim
-        | Some(FillEmpty _,_) -> FillAim
-        | Some(SplitAt(path,_,_),_) ->
-            match group.splitLayout |> Option.bind(SplitView.pane path) with
-            | Some Empty -> FillAim
-            | _ -> SplitAim
-
-    /// Finds the pane a drag at this point would take and shows it.
-    member private this.previewLayout(data:obj,pt:Pt) =
-        let proposal = this.layoutProposal(data,pt)
-        layoutDrop <- proposal |> Option.map fst
-        this.showProposal proposal
+    /// What a drag at this point meets, on this thread: the strip's row first; else what a drop
+    /// would do (an empty pane, or one at an empty pane's edge, is filled; anything else
+    /// splits), the place shown when `show` says so or at once for an empty pane.
+    member private this.probeLayout(data:obj,pt:Pt,show:bool) =
+        match this.nearTabs pt with
+        | Some strip -> NearStrip strip
+        | None ->
+            let proposal = this.layoutProposal(data,pt)
+            let aim =
+                match proposal with
+                | None -> NoAim
+                | Some(FillEmpty _,_) -> FillAim
+                | Some(SplitAt(path,_,_),_) ->
+                    match group.splitLayout |> Option.bind(SplitView.pane path) with
+                    | Some Empty -> FillAim
+                    | _ -> SplitAim
+            let shown =
+                if aim=FillAim || (aim=SplitAim && show) then
+                    layoutDrop <- proposal |> Option.map fst
+                    this.showProposal proposal
+                else false
+            Aimed(aim,shown)
 
     member private this.layoutProposal(data:obj,pt:Pt) =
         let drag = unbox<TabDragInfo> data
@@ -874,17 +880,9 @@ type TabStripDecorator(group:WindowGroup) as this =
         | _ -> None
 
     interface ILayoutDropTarget with
-        member this.nearTabs(pt) =
-            if not(WinUserApi.IsWindow(this.ts.hwnd)) then None
-            else this.invokeSync(fun () -> this.nearTabs(pt))
-
-        member this.aim(data,pt) =
-            if not(WinUserApi.IsWindow(this.ts.hwnd)) then NoAim
-            else this.invokeSync(fun () -> this.aimLayout(data,pt))
-
-        member this.preview(data,pt) =
-            if not(WinUserApi.IsWindow(this.ts.hwnd)) then false
-            else this.invokeSync(fun () -> this.previewLayout(data,pt))
+        member this.probe(data,pt,show) =
+            if not(WinUserApi.IsWindow(this.ts.hwnd)) then Aimed(NoAim,false)
+            else this.invokeSync(fun () -> this.probeLayout(data,pt,show))
 
         member this.clearPreview() =
             if WinUserApi.IsWindow(this.ts.hwnd) then this.invokeSync(fun () -> this.resetLayoutDrop())

@@ -83,6 +83,12 @@ module LayoutDwell =
     let restMs = 100L
     /// How far the pointer may wander while resting, in logical pixels.
     let restRadius = 6
+    /// Whether a split over `key` would show now: offered already, or rested long enough.
+    let ready (now:int64) (radius:int) (pt:Pt) (key:IntPtr) (state:LayoutDwell option) =
+        match state with
+        | Some s when s.key=key && s.shown -> true
+        | Some s when s.key=key && abs(pt.x-s.anchor.x)<=radius && abs(pt.y-s.anchor.y)<=radius -> now-s.since>=restMs
+        | _ -> false
     /// The state after the pointer at `pt` over the window `key`, and whether the preview shows.
     let step (now:int64) (radius:int) (pt:Pt) (key:IntPtr) (aim:LayoutAim) (state:LayoutDwell option) =
         match aim with
@@ -120,23 +126,29 @@ type DragFloatingState(info:DragFloatingStateInfo) =
     let float(ptScreen:Pt) =
         animationWindow.setLocation(ptScreen.sub(info.imageOffset))
         animationWindow.setIsVisible(true)
-    /// The preview for the pointer at `pt` over `key`, once it may show.
-    let previewAt (key:IntPtr) (target:ILayoutDropTarget) (pt:Pt) (aim:LayoutAim) =
+    /// The preview for the pointer at `pt` over `key`, once it may show: one call to the group
+    /// for what is there. The strip to join instead, when the point lies near its tabs.
+    let previewAt (key:IntPtr) (target:ILayoutDropTarget) (pt:Pt) : IntPtr option =
         match candidate with
         | Some(previous,old) when previous<>key -> old.clearPreview()
         | _ -> ()
-        let state,show = LayoutDwell.step clock.ElapsedMilliseconds (Dpi.scale LayoutDwell.restRadius) pt key aim dwell
-        dwell <- state
-        // The tab's image stays with the pointer over the highlighted pane.
-        if show && target.preview(info.data,pt) then candidate <- Some(key,target)
-        else
-            if candidate.IsSome then target.clearPreview()
-            candidate <- None
-        aimed <- (if aim=SplitAim && not show then Some(key,target,pt) else None)
-        if aimed.IsSome then restTimer.Start() else restTimer.Stop()
+        let now,radius = clock.ElapsedMilliseconds,Dpi.scale LayoutDwell.restRadius
+        match target.probe(info.data,pt,LayoutDwell.ready now radius pt key dwell) with
+        | NearStrip strip -> Some strip
+        | Aimed(aim,shown) ->
+            let state,show = LayoutDwell.step now radius pt key aim dwell
+            dwell <- state
+            // The tab's image stays with the pointer over the highlighted pane.
+            if show && shown then candidate <- Some(key,target)
+            else
+                if candidate.IsSome then target.clearPreview()
+                candidate <- None
+            aimed <- (if aim=SplitAim && not show then Some(key,target,pt) else None)
+            if aimed.IsSome then restTimer.Start() else restTimer.Stop()
+            None
     do restTimer.Tick.Add(fun _ ->
         match aimed with
-        | Some(key,target,pt) -> previewAt key target pt SplitAim
+        | Some(key,target,pt) -> previewAt key target pt |> ignore
         | None -> restTimer.Stop())
     /// Drops into the pane under the pointer; false when there is none.
     member this.commit(pt) =
@@ -160,11 +172,9 @@ type DragFloatingState(info:DragFloatingStateInfo) =
             | LayoutHit key ->
                 let target = info.layoutTargets.find key
                 // Over a group's window near its tabs, the tab goes with them.
-                match target.nearTabs ptScreen with
+                match previewAt key target ptScreen with
                 | Some strip when info.targets.contains strip -> joinStrip strip
-                | _ ->
-                    previewAt key target ptScreen (target.aim(info.data,ptScreen))
-                    float ptScreen
+                | _ -> float ptScreen
             | FreeHit ->
                 clearCandidate()
                 dwell <- None

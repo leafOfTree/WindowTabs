@@ -23,15 +23,17 @@ type IDragDropTarget =
 /// fill an empty pane.
 type LayoutAim = NoAim | SplitAim | FillAim
 
+/// What a point over a group's window meets: the margin around its strip's tabs in sight, where
+/// a carried tab is meant to go with those tabs, or a drop surface, with what a drop there would
+/// do and whether the place is shown.
+type LayoutProbe = NearStrip of IntPtr | Aimed of LayoutAim * shown:bool
+
 /// A group's windows as a drop surface: the preview changes nothing, only the drop commits.
 type ILayoutDropTarget =
-    /// The group's strip when the point lies in the margin around its tabs in sight: a tab
-    /// carried there is meant to go with those tabs.
-    abstract member nearTabs : Pt -> IntPtr option
-    /// What a drop here would do, shown nowhere.
-    abstract member aim : obj * Pt -> LayoutAim
-    /// Shows the place a drop here takes; false when a drop here takes nothing.
-    abstract member preview : obj * Pt -> bool
+    /// One call per pointer move: the strip when the point lies near its tabs; else what a drop
+    /// here would do, shown when `show` says so, or at once for an empty pane. Asked the strip,
+    /// the aim and the preview in three calls, the drag waited on the group three times a move.
+    abstract member probe : obj * Pt * show:bool -> LayoutProbe
     abstract member clearPreview : unit -> unit
     /// False when nothing was dropped: the drag then ends as one let go anywhere else.
     abstract member commit : obj * Pt -> bool
