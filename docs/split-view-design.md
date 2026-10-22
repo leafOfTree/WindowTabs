@@ -46,12 +46,11 @@ the tree's simplest case and keep their behaviour.
   window kept growing to the whole group while the others fade. A window made smaller or
   leaving waits for its image as above; one made larger goes to its place at once, its image cut
   to the rectangle while that grows. Out of the split nothing waits for the windows, so that
-  cover goes once its steps are done and the windows are placed. A tab clicked over the panes
-  grows from behind them to the whole group while they fade, and the panes come back from
-  behind it shrinking into place while it fades, in 80ms (`SplitTransition.ClickMs`), the cover
-  up before the window is activated: placed with no cover, the tab rose pane-sized with the
-  desktop showing round it, and at the full 220ms the switch felt slow. A divider dragged, a
-  pane resized at its own edge, a tab dragged and the focus alone do not animate.
+  cover goes once its steps are done and the windows are placed. A tab clicked over the panes,
+  and a pane's tab clicked to bring them back, place the windows at once with no cover: the
+  cover was tried there, with steps and without, and the switch still showed a flash, so the
+  cover now stays with the split's own commands. A divider dragged, a pane resized at its own
+  edge, a tab dragged and the focus alone do not animate.
 - Right-click any tab, then Split in group, then a window on the right, on the left, above or below:
   the searchable window list below opens over the group first, and the window picked goes on
   that side of the clicked tab, its pane split when the group is split already
