@@ -731,11 +731,14 @@ let main() =
                         // left over the group, topmost, they would hide the panes and take no clicks.
                         let frame = onGroup(fun group -> group.layoutFrame)
                         let pid = Diagnostics.Process.GetCurrentProcess().Id
+                        // With the tab strip cut out of it the cover is most of the frame, not all of it.
                         let overlay () =
                             OS().windowsInZorder.list |> List.exists(fun window ->
                                 let mutable owner = 0
                                 WinUserApi.GetWindowThreadProcessId(window.hwnd,&owner) |> ignore
-                                owner=pid && window.isVisible && window.bounds=frame &&
+                                let bounds = window.bounds
+                                owner=pid && window.isVisible && frame.completlyContains bounds &&
+                                int64 bounds.width*int64 bounds.height*2L>int64 frame.width*int64 frame.height &&
                                 (WinUserApi.GetWindowLong(window.hwnd,WindowLongFieldOffset.GWL_EXSTYLE).ToInt64() &&& int64 WindowsExtendedStyles.WS_EX_TOPMOST)<>0L)
                         pumpUntil(fun () -> not(overlay()))
                         onGroup(fun group -> group.execute(EndSplit(Some shown)))

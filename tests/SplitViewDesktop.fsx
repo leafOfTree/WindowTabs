@@ -447,11 +447,15 @@ let main() =
         do
             let frame = onGroup(fun group -> group.layoutFrame)
             let pid = Process.GetCurrentProcess().Id
+            // The cover lies over the group with the tab strip cut out of it: inside the frame and
+            // most of it, not the whole frame once the tabs sit inside the window.
             let covers () =
                 os.windowsInZorder.list |> List.exists(fun window ->
                     let mutable owner = 0
                     WinUserApi.GetWindowThreadProcessId(window.hwnd,&owner) |> ignore
-                    owner=pid && window.isVisible && window.bounds=frame &&
+                    let bounds = window.bounds
+                    owner=pid && window.isVisible && frame.completlyContains bounds &&
+                    int64 bounds.width*int64 bounds.height*2L>int64 frame.width*int64 frame.height &&
                     (WinUserApi.GetWindowLong(window.hwnd,WindowLongFieldOffset.GWL_EXSTYLE).ToInt64() &&& int64 WindowsExtendedStyles.WS_EX_TOPMOST)<>0L)
             onGroup(fun group -> group.execute(SplitWith(hc,SideBySide),current=ha))
             check (covers()) "No cover moved the windows into the new split"
