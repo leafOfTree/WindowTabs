@@ -69,9 +69,6 @@ module Strings =
         let splitMakeSideBySide = { en="Switch to side by side"; zh="切换为左右"; ja="左右に切り替え" }
         let splitSwap = { en="Swap panes"; zh="交换两侧"; ja="ペインを入れ替え" }
         let splitEqual = { en="Equal panes"; zh="恢复均分"; ja="均等に分割" }
-        let splitLess = { en="Shrink first pane"; zh="缩小左侧／上侧"; ja="左側／上側を縮小" }
-        let splitMore = { en="Grow first pane"; zh="扩大左侧／上侧"; ja="左側／上側を拡大" }
-        let splitFill = { en="Fill work area / restore split"; zh="分屏铺满／还原大小"; ja="作業領域に拡大／元に戻す" }
         let splitRatio = { en="Split divider"; zh="分屏分隔条"; ja="分割境界" }
         let splitFailed = { en="These windows could not fit the split layout. Split view has ended."; zh="窗口无法适应分屏尺寸，已退出分屏。"; ja="ウィンドウを分割領域に配置できないため、分割を終了しました。" }
         let position = { en="Tab position"; zh="标签位置"; ja="タブの位置" }

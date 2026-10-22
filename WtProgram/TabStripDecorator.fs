@@ -477,9 +477,6 @@ type TabStripDecorator(group:WindowGroup) as this =
             CmiSeparator
             splitCommand Strings.TabMenu.splitSwap split.IsSome (Swap None) top
             splitCommand Strings.TabMenu.splitEqual split.IsSome (Equalize None) top
-            splitCommand Strings.TabMenu.splitLess split.IsSome (AdjustRatio(-SplitMetrics.ratioStep)) top
-            splitCommand Strings.TabMenu.splitMore split.IsSome (AdjustRatio SplitMetrics.ratioStep) top
-            splitCommand Strings.TabMenu.splitFill split.IsSome ToggleFill top
             splitCommand Strings.TabMenu.splitMerge split.IsSome (EndSplit(Some hwnd)) top
         ])})
 

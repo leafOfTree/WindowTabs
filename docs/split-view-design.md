@@ -324,7 +324,7 @@ no command of its own.
 | Dragging the strip or either shown window's title bar | The whole group moves by the same offset and keeps its ratio; the offset comes from the source window's starting rectangle and the group's starting frame |
 | Resizing a shown window by its native edge | An outer edge changes the group's frame, an inner edge the ratio (`resizePane`); the split ends only when the panes no longer fit |
 | An app resizing itself (a terminal keeping to its character grid) | Recomputed the same way; nothing is judged while the placement queue is busy |
-| An app's native maximize | The whole group fills the work area and keeps both panes; maximizing again or the menu's fill/restore goes back to the previous frame |
+| An app's native maximize | The whole group fills the work area and keeps both panes; maximizing again goes back to the previous frame |
 | Windows Snap, exclusive full screen | Back to a single window, keeping the tabs and the group's frame |
 | Minimize and restore | The whole group; both sides and the focused side come back |
 | An app's dialogs | Owner relationships are kept; focus handling never takes a dialog for a pane |
