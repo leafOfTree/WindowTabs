@@ -335,11 +335,14 @@ type WorkspaceRestoreResult = {
     pending:(Dynamic*WorkspaceWindow) list
     /// Where each saved group went, so another try adds to the same group.
     groups:(Dynamic*IGroup) list
+    /// The window found for each saved window so far, so a split whose panes arrive over
+    /// several tries, one open and one started, is rebuilt once they are all there.
+    placed:(Dynamic*IntPtr) list
     /// Apps of windows not found that are not running and can be started.
     launchable:string list }
     with
     static member Of(workspace,restored,missing,failed) =
-        { workspace=workspace; restored=restored; missing=missing; failed=failed; pending=[]; groups=[]; launchable=[] }
+        { workspace=workspace; restored=restored; missing=missing; failed=failed; pending=[]; groups=[]; placed=[]; launchable=[] }
     /// A second try after starting apps: everything restored so far counts, what is still
     /// missing is what the second try did not find, and apps that would not start count as failed.
     member first.Then(second:WorkspaceRestoreResult,launchFailures) =
@@ -484,10 +487,11 @@ type WorkspaceModel() as this =
 
     /// Restores saved groups of windows; a group already restored into (by an earlier try)
     /// takes the windows found now.
-    member private this.restoreInto(name:string, saved:List2<Dynamic * List2<Dynamic>>, existing:(Dynamic*IGroup) list) =
+    member private this.restoreInto(name:string, saved:List2<Dynamic * List2<Dynamic>>, existing:(Dynamic*IGroup) list, placedBefore:(Dynamic*IntPtr) list) =
         let resolver = WindowResolver()
         let errors = ResizeArray<string*string>()
         let mutable restored = 0
+        let placedAll = ResizeArray<Dynamic*IntPtr>(placedBefore)
         let missing = ResizeArray<string*string>()
         let notFound = HashSet<obj>(HashIdentity.Reference)
         let lost (item:Dynamic) =
@@ -525,16 +529,21 @@ type WorkspaceModel() as this =
                             else lost saved
                         with ex -> errors.Add(fst (WorkspaceRestore.describe saved),ex.Message))
                     try os.setZorder(WorkspaceRestore.zorder (List2(successful))) with ex -> errors.Add("",ex.Message)
-                    // The split comes back among the windows found, once they are all in the group, its
-                    // frame kept on screen on its own: the placement's correction allows for a window
-                    // frame that sticks out by its invisible border, which a visible frame does not.
+                    // The split comes back among the windows found, those of an earlier try too,
+                    // once they are all in the group, its frame kept on screen on its own: the
+                    // placement's correction allows for a window frame that sticks out by its
+                    // invisible border, which a visible frame does not.
+                    let windows = (groupInfo?windows : List2<Dynamic>).list
+                    let found = successful |> Seq.map(fun (saved,hwnd) -> saved :> Dynamic,hwnd) |> List.ofSeq
+                    placedAll.AddRange found
+                    let present =
+                        (placedBefore |> List.filter(fun (saved,_) -> windows |> List.exists(fun item -> obj.ReferenceEquals(item,saved)))) @ found
                     match destination,(groupInfo :?> WorkspaceGroup).split with
-                    | Some group,Some split when successful.Count>=2 ->
-                        let windows = (groupInfo?windows : List2<Dynamic>).list
+                    | Some group,Some split when present.Length>=2 ->
                         let byIndex =
-                            successful |> Seq.choose(fun (saved,hwnd) ->
+                            present |> List.choose(fun (saved,hwnd) ->
                                 windows |> List.tryFindIndex(fun item -> obj.ReferenceEquals(item,saved)) |> Option.map(fun index -> index,hwnd))
-                            |> Map.ofSeq
+                            |> Map.ofList
                         let panes = split.panes |> List.choose(fun (index,pane) -> byIndex.TryFind index |> Option.map(fun hwnd -> hwnd,pane))
                         match SplitPersistence.rebuild panes with
                         | GroupLayout.Single -> ()
@@ -552,15 +561,16 @@ type WorkspaceModel() as this =
         let openPaths = Services.program.appWindows.choose(fun hwnd -> try Some(os.windowFromHwnd(hwnd).pid.processPath) with _ -> None).list
         { workspace=name; restored=restored; missing=List.ofSeq missing; failed=List.ofSeq errors; pending=pending
           groups=List.ofSeq used
+          placed=List.ofSeq placedAll
           launchable=WorkspaceRestore.launchable openPaths File.Exists (pending |> List.map(fun (_,window) -> window.processPath)) }
 
     member private this.restoreWorkspace(workspace:Workspace) =
-        this.restoreInto(workspace.name,workspace.children.map(fun groupInfo -> groupInfo,(groupInfo?windows : List2<Dynamic>)),[])
+        this.restoreInto(workspace.name,workspace.children.map(fun groupInfo -> groupInfo,(groupInfo?windows : List2<Dynamic>)),[],[])
 
     /// Tries the windows an earlier restore did not find again, after their apps have started.
     member this.retry(result:WorkspaceRestoreResult) =
         let saved = result.pending |> List.groupBy fst |> List.map(fun (groupInfo,windows) -> groupInfo,List2(windows |> List.map(fun (_,window) -> window :> Dynamic)))
-        this.restoreInto(result.workspace,List2(saved),result.groups)
+        this.restoreInto(result.workspace,List2(saved),result.groups,result.placed)
 
     member this.addWorkspace(ws:Workspace) =
         ws.cast<IWorkspaceNode>().removed.Add <| fun() -> this.onWorkspaceRemoved(ws)

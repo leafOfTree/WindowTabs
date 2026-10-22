@@ -1017,6 +1017,31 @@ let main() =
                 groupOf hd |> Option.iter(fun info ->
                     onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
                     (info :> IGroup).destroy())
+                pumpUntil "The restored pair did not exit" (fun () -> (groupOf hd).IsNone && (groupOf he).IsNone)
+                // One pane open and the other found only on a later try, after its app started:
+                // the split is rebuilt once both are there. Rebuilt from each try's own windows,
+                // neither try had two of them, and the pair came back as plain tabs.
+                do
+                    for hwnd in [hd;he] do OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),Sz(640,480)))
+                    // Only the first pane is open: the other is not among the windows at all, as
+                    // any window of its app would stand in for it by the title-free pass.
+                    workspaceWindows <- List2([hd])
+                    let mutable first : WorkspaceRestoreResult option = None
+                    sessions.restoreSession(false,ignore,fun result -> first <- Some result)
+                    pumpUntil "The session did not restore its first try" (fun () -> first.IsSome && (groupOf hd).IsSome)
+                    check (first.Value.pending |> List.exists(fun (_,window) -> window.title="Pane E") && (groupOf he).IsNone)
+                          (sprintf "The first try did not leave the other pane pending: %A" (first.Value.pending |> List.map(fun (_,window) -> window.title)))
+                    workspaceWindows <- List2([he])
+                    let again = sessions.retry first.Value
+                    check (again.restored>=1) (sprintf "The later try did not find the other pane: %A" again.missing)
+                    pumpUntil "The pair did not come back split over two tries" (fun () ->
+                        match groupOf hd with
+                        | Some info -> onGroup info (fun group -> group.splitLayout |> Option.exists(fun s -> SplitView.windows s=[hd;he] && s.tree.axis=Stacked))
+                        | None -> false)
+                    workspaceWindows <- List2([a;b;hd;he])
+                    groupOf hd |> Option.iter(fun info ->
+                        onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
+                        (info :> IGroup).destroy())
             // A tab dragged out onto the desktop keeps the size the group had; where a side spans most
             // of the screen, the whole window is scaled down with its proportions kept.
             do
