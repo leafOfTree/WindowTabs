@@ -1007,12 +1007,15 @@ let main() =
                 sessions.restoreSession(false,ignore,fun result -> restored <- Some result)
                 pumpUntil "The session did not restore" (fun () -> restored.IsSome)
                 let groupOf hwnd = desktopApi.groups.list |> List.tryFind(fun group -> group.windows.contains((=) hwnd)) |> Option.map(fun group -> group :?> GroupInfo)
+                // The frame comes back fitted to a work area, as a restore keeps it on screen: on a
+                // small screen, a single one of 768 lines say, that is not the frame saved.
+                let fitted = WorkspaceData.fitRect (Mon.all.map(fun mon -> mon.workRect).list) frame
                 pumpUntil "The pair did not come back split from the session" (fun () ->
                     match groupOf hd with
                     | Some info ->
                         onGroup info (fun group ->
                             group.splitLayout |> Option.exists(fun s -> SplitView.windows s=[hd;he] && s.tree.axis=Stacked && abs(s.tree.ratio-0.3)<0.001) &&
-                            group.layoutFrame=frame)
+                            group.layoutFrame=fitted)
                     | None -> false)
                 groupOf hd |> Option.iter(fun info ->
                     onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
