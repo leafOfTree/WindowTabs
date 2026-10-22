@@ -256,6 +256,11 @@ module SplitGeometry =
     /// ratio follows.
     let resizePane (path:PanePath) (expected:Rect) (actual:Rect) gap (frame:Rect) (tree:SplitTree) =
         if actual.size=expected.size then frame.move(actual.x-expected.x,actual.y-expected.y),tree
+        // Both of a pair of opposite edges moved at once, as a snap (Win+Left, Win+Right) does
+        // and no drag at an edge or corner can: the whole group takes the pane's new rectangle,
+        // the panes keeping their shares. Read as one edge moving the frame and the other the
+        // seam, a snap left the other pane its old size, off the screen.
+        elif (actual.left<>expected.left && actual.right<>expected.right) || (actual.top<>expected.top && actual.bottom<>expected.bottom) then actual,tree
         else
             // The nearest split above the pane whose seam lies on this edge: the pane is on the
             // far side of a split along the edge's axis.

@@ -96,6 +96,11 @@ let main() =
     let moved = Rect(Pt(first.x+30,first.y+20),first.size)
     let frame5,tree5 = SplitGeometry.resizePane [First] first moved gap frame half.tree
     check (frame5=frame.move(30,20) && tree5=half.tree) "Moving a pane did not carry the frame"
+    // Both opposite edges moved at once, as a snap does: the whole group takes the pane's new
+    // rectangle with the shares kept, rather than one edge moving the frame and the other the seam.
+    let snapped = Rect(Pt(frame.x-300,frame.y-40),Sz(frame.width/2,frame.height+80))
+    let frame6,tree6 = SplitGeometry.resizePane [First] first snapped gap frame half.tree
+    check (frame6=snapped && tree6=half.tree) (sprintf "A snapped pane did not carry the whole group with its shares kept: %A %A" frame6 tree6)
     // c's top edge is the nested seam; its left edge is the root's seam; its bottom the frame's.
     let cRect = rectOf [Second;Second]
     let cTaller = Rect(Pt(cRect.x,cRect.y-50),Sz(cRect.width,cRect.height+50))

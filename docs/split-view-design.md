@@ -333,6 +333,7 @@ no command of its own.
 | Resizing a shown window by its native edge | An outer edge changes the group's frame, an inner edge the ratio (`resizePane`); the split ends only when the panes no longer fit |
 | An app resizing itself (a terminal keeping to its character grid) | Recomputed the same way; nothing is judged while the placement queue is busy |
 | An app's native maximize | The whole group fills the work area and keeps both panes; maximizing again goes back to the previous frame |
+| A pane snapped with Win+Left or Win+Right | Both of a pair of opposite edges move at once, which no drag at an edge does: the whole group takes the pane's new rectangle and the panes keep their shares (`SplitGeometry.resizePane`). Read as one edge moving the frame and the other the seam, a snap sent the other pane off the screen |
 | Windows Snap, exclusive full screen | Back to a single window, keeping the tabs and the group's frame |
 | Minimize and restore | The whole group; both sides and the focused side come back |
 | An app's dialogs | Owner relationships are kept; focus handling never takes a dialog for a pane |
