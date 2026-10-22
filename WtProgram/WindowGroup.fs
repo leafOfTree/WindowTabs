@@ -305,6 +305,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// Windows already in the split before it changed: placed once the images have moved, so
     /// their image shrinks smoothly from what they showed rather than jumping to their new size.
     let mutable transitionHold : IntPtr list = []
+    /// Places the held windows once the images have moved.
+    let transitionRelease = new System.Windows.Forms.Timer(Interval=SplitTransition.DurationMs)
     /// The empty panes' handles, read by the desktop thread to recognize a native drop on one.
     let mutable emptyPaneHandles : IntPtr list = []
     /// The root split's divider, which the panes go just below.
@@ -459,6 +461,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         _ts := Some(ts)
         splitSettleTimer.Tick.Add(fun _ -> this.checkSplitSettled())
         splitGuardTimer.Tick.Add(fun _ -> this.guardSplitStrip())
+        transitionRelease.Tick.Add(fun _ ->
+            transitionRelease.Stop()
+            if not transitionHold.IsEmpty then
+                transitionHold <- []
+                if this.isSplit && not isDestroyed.value then this.withUpdate(fun () -> this.applyLayout()))
         placementCompletion <- Some(FollowerPlacement.queue.Idle.Subscribe(fun owner ->
             if obj.ReferenceEquals(owner,placementOwner) then
                 invoker.asyncInvoke(fun () -> this.finishPlacementReconciliation())))
@@ -1373,15 +1380,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     moves |> List.filter(fun move ->
                         move.fade=FadeOut || (move.fade=NoFade && move.target.width<=move.from.width && move.target.height<=move.from.height))
                     |> List.map(fun move -> move.hwnd)
-                if not transitionHold.IsEmpty then
-                    let release = new System.Windows.Forms.Timer(Interval=SplitTransition.DurationMs)
-                    release.Tick.Add(fun _ ->
-                        release.Stop()
-                        release.Dispose()
-                        if not transitionHold.IsEmpty then
-                            transitionHold <- []
-                            if this.isSplit && not isDestroyed.value then this.withUpdate(fun () -> this.applyLayout()))
-                    release.Start()
+                // One timer, started afresh: a timer per transition let an earlier one, still
+                // running, place the windows a later transition was holding.
+                transitionRelease.Stop()
+                if not transitionHold.IsEmpty then transitionRelease.Start()
             // Out of the split nothing waits for the windows: the images go once they have moved.
             | _ when shown -> this.onChrome(fun () -> transition.settle())
             | _ -> ()
@@ -2120,6 +2122,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             isDestroyed.set(true)
             splitSettleTimer.Dispose()
             splitGuardTimer.Dispose()
+            transitionRelease.Dispose()
             // The chrome's thread disposes its windows and ends; nothing here waits for it.
             chromeInvoker |> Option.iter(fun invoker ->
                 let dividers = splitDividers |> Map.toList |> List.map(snd >> fst)
