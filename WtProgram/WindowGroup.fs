@@ -294,6 +294,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let mutable transitionHold : IntPtr list = []
     /// Places the held windows once the images have moved.
     let transitionRelease = new System.Windows.Forms.Timer(Interval=SplitTransition.DurationMs)
+    /// While a tab is dragged, the layout changes at once: the panes a dragged tab had parked
+    /// came back with a transition, started on the thread the drag runs on, and the drag paused.
+    let mutable dragPause = false
     /// The empty panes' handles, read by the desktop thread to recognize a native drop on one.
     let mutable emptyPaneHandles : IntPtr list = []
     /// The root split's divider, which the panes go just below.
@@ -922,6 +925,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.placementBounds : Rect = placement.value.map(fun(bounds,_,_) -> bounds).def(Rect())
 
     member _.layout = groupLayout
+    /// Set by the strip for the length of a tab drag, on this thread.
+    member _.transitionsPaused with get() = dragPause and set(value) = dragPause <- value
     member this.splitLayout = match groupLayout with Split s -> Some s | _ -> None
     member _.layoutChanged = layoutChangedEvent.Publish
     member _.isSplitFilled = splitRestore.IsSome
@@ -1328,7 +1333,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
               borderSize=Sz(bounds.width-visible.width,bounds.height-visible.height) }
         let moves =
             match before,next with
-            | _ when not SystemInformation.UIEffectsEnabled || liveResize || this.isEmpty -> []
+            | _ when not SystemInformation.UIEffectsEnabled || liveResize || dragPause || this.isEmpty -> []
             | _,Split s ->
                 let wasSplit = match before with Split _ -> true | _ -> false
                 let windows = SplitView.windows s |> List.filter shown

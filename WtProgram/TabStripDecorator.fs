@@ -908,6 +908,8 @@ type TabStripDecorator(group:WindowGroup) as this =
                             elif dragPartner<>hwnd && group.windows.contains dragPartner then dragPartner
                             elif group.topWindow<>hwnd && group.windows.contains group.topWindow then group.topWindow
                             else group.lorder.list |> List.tryFind((<>) hwnd) |> Option.defaultValue hwnd
+                        // Let go: the drop's own transition plays.
+                        group.transitionsPaused <- false
                         group.dropTab(hwnd,drop,partner)
                         true
                     | _ -> false
@@ -919,6 +921,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             this.invokeAsync <| fun() ->
                 isDraggingCell.value <- true
                 this.ts.transparent <- false
+                group.transitionsPaused <- true
                 if WinUserApi.IsWindow this.ts.hwnd then
                     if layoutPreview.IsNone then layoutPreview <- Some(new LayoutPreview())
                     layoutPreview.Value.prepare()
@@ -988,6 +991,7 @@ type TabStripDecorator(group:WindowGroup) as this =
 
         member this.dragEnd() =
             this.invokeAsync <| fun() ->
+                group.transitionsPaused <- false
                 dragSource <- None
                 dragStartIndex <- None
                 this.ts.dragScrollPoint <- None

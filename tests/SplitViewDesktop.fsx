@@ -472,6 +472,13 @@ let main() =
             check ended.IsSome "The cover over an ended split stayed"
             waitOperation()
             check (visible ha=frame) (sprintf "The window kept did not fill the group after the split ended: %A of %A" (visible ha) frame)
+            // While a tab is dragged the layout changes at once, with no cover: the transition's
+            // start, on the thread the drag runs on, paused the drag.
+            onGroup(fun group -> group.transitionsPaused <- true; group.execute(SplitWith(hc,SideBySide),current=ha))
+            check (not(covers())) "A split started during a tab drag put a cover over the group"
+            waitOperation()
+            onGroup(fun group -> group.transitionsPaused <- false; group.execute(EndSplit(Some ha)))
+            waitOperation()
         onHelper(fun () -> a.Grid <- 17)
         onGroup(fun group -> group.execute(SplitWith(hc,SideBySide),current=ha))
         pump 3000
