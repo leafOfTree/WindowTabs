@@ -19,7 +19,7 @@ module Strings =
         let left = { en="Left"; zh="左侧"; ja="左"; ar="يسار" }
         let top = { en="Top"; zh="靠上"; ja="上"; ar="أعلى" }
         let bottom = { en="Bottom"; zh="靠下"; ja="下"; ar="أسفل" }
-        let center = { en="Center"; zh="居中"; ja="中央"; ar="توسيط" }
+        let center = { en="Center"; zh="居中"; ja="中央"; ar="الوسط" }
         let right = { en="Right"; zh="右侧"; ja="右"; ar="يمين" }
         let never = { en="Never"; zh="从不"; ja="しない"; ar="أبدًا" }
         let whenMaximized = { en="When maximized"; zh="最大化时"; ja="最大化時"; ar="عند التكبير" }
@@ -71,7 +71,7 @@ module Strings =
                                  zh="图标文件 (*.ico, *.png, *.jpg, *.bmp, *.gif, *.exe, *.dll)|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|所有文件 (*.*)|*.*"
                                  ja="アイコン ファイル (*.ico, *.png, *.jpg, *.bmp, *.gif, *.exe, *.dll)|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|すべてのファイル (*.*)|*.*"
                                  ar="ملفات الأيقونات (*.ico, *.png, *.jpg, *.bmp, *.gif, *.exe, *.dll)|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|كل الملفات (*.*)|*.*" }
-        let numberShortcut = { en="Switch by number"; zh="数字键切换"; ja="番号で切り替え"; ar="التبديل باستخدام الرقم" }
+        let numberShortcut = { en="Switch by number"; zh="数字键切换"; ja="番号で切り替え"; ar="التبديل بالأرقام" }
         let enableTabs = { en="Enable tabs"; zh="启用标签"; ja="タブを有効にする"; ar="تمكين علامات التبويب" }
         let autoGroupWindows = { en="Auto-group windows"; zh="自动分组"; ja="ウィンドウを自動グループ化"; ar="تجميع النوافذ تلقائيًا" }
         let close = { en="Close"; zh="关闭"; ja="閉じる"; ar="إغلاق" }
@@ -98,14 +98,14 @@ module Strings =
         let sidebar = { en="Sidebar"; zh="侧边栏"; ja="サイドバー"; ar="الشريط الجانبي" }
         let searchResults = { en="Search results"; zh="搜索结果"; ja="検索結果"; ar="نتائج البحث" }
         let noMatches = { en="No matching settings."; zh="没有找到匹配的设置。"; ja="一致する設定はありません。"; ar="لا توجد إعدادات مطابقة." }
-        let followWindows = { en="Follow Windows"; zh="跟随系统"; ja="Windows に従う"; ar="اتباع إعدادات Windows" }
+        let followWindows = { en="Follow Windows"; zh="跟随系统"; ja="Windows に従う"; ar="حسب Windows" }
         let howToUse = { en="How to use"; zh="使用说明"; ja="使い方"; ar="طريقة الاستخدام" }
-        let pageScroll = { en="Page scroll"; zh="页面滚动条"; ja="ページのスクロールバー"; ar="تمرير الصفحة" }
+        let pageScroll = { en="Page scroll"; zh="页面滚动条"; ja="ページのスクロールバー"; ar="شريط تمرير الصفحة" }
 
     module Pages =
         let general = { en="General"; zh="常规"; ja="全般"; ar="عام" }
         let appearance = { en="Appearance"; zh="外观"; ja="外観"; ar="المظهر" }
-        let shortcuts = { en="Shortcuts"; zh="快捷键"; ja="ショートカット"; ar="اختصارات" }
+        let shortcuts = { en="Shortcuts"; zh="快捷键"; ja="ショートカット"; ar="الاختصارات" }
         let appRules = { en="App rules"; zh="应用规则"; ja="アプリのルール"; ar="قواعد التطبيقات" }
         let workspaces = { en="Workspaces"; zh="工作区"; ja="ワークスペース"; ar="مساحات العمل" }
         let diagnostics = { en="Support"; zh="支持"; ja="サポート"; ar="الدعم" }
@@ -127,7 +127,7 @@ module Strings =
                       description={ en="System follows your Windows app mode."; zh="“跟随系统”与 Windows 的应用模式保持一致。"; ja="「システム」は Windows のアプリ モードに合わせます。"; ar="يتبع خيار النظام وضع التطبيقات في Windows." }
                       keywords={ en="dark mode"; zh="暗色 深色模式"; ja="ダークモード"; ar="الوضع الداكن" } }
         let language = { caption={ en="Language"; zh="语言"; ja="言語"; ar="اللغة" }
-                         description={ en="Follow Windows uses your Windows display language."; zh="“跟随系统”使用 Windows 的显示语言。"; ja="「Windows に従う」では Windows の表示言語を使います。"; ar="يستخدم خيار اتباع Windows لغة العرض المحددة في Windows." }
+                         description={ en="Follow Windows uses your Windows display language."; zh="“跟随系统”使用 Windows 的显示语言。"; ja="「Windows に従う」では Windows の表示言語を使います。"; ar="يستخدم خيار «حسب Windows» لغة العرض في Windows." }
                          keywords={ en="locale"; zh="界面语言"; ja="表示言語"; ar="الإعدادات المحلية" } }
         let launchAtSignIn = { caption={ en="Start with Windows"; zh="随 Windows 启动"; ja="Windows と同時に起動"; ar="التشغيل مع Windows" }
                                description={ en="Runs in the system tray after you sign in."; zh="登录后在系统托盘中运行。"; ja="サインイン後にシステムトレイで実行します。"; ar="يعمل في منطقة الإعلام بعد تسجيل الدخول." }
@@ -136,10 +136,10 @@ module Strings =
                                     description={ en="Only apps first discovered after this change. Existing apps keep their tab setting."; zh="只影响此后首次出现的应用。已有应用保留原来的标签设置。"; ja="変更後に初めて検出するアプリに適用します。既存のアプリのタブ設定は維持します。"; ar="ينطبق ذلك على التطبيقات التي يكتشفها البرنامج لأول مرة بعد هذا التغيير فقط. وتحتفظ التطبيقات الموجودة بإعداد علامات التبويب الحالي." }
                                     keywords={ en=""; zh=""; ja=""; ar="" } }
         let dimInactiveGroups = { caption={ en="Dim tabs in inactive groups"; zh="淡化非活动分组的标签"; ja="非アクティブなグループのタブの色を薄くする"; ar="تخفيف لون علامات التبويب في المجموعات غير النشطة" }
-                                  description={ en="Make the active group easier to spot."; zh="让当前活动的分组更容易辨认。"; ja="アクティブなグループを見分けやすくします。"; ar="لتسهيل تمييز المجموعة النشطة." }
-                                  keywords={ en="fade"; zh="变暗"; ja="薄く 暗く"; ar="تلاشي" } }
+                                  description={ en="Make the active group easier to spot."; zh="让当前活动的分组更容易辨认。"; ja="アクティブなグループを見分けやすくします。"; ar="يسهّل تمييز المجموعة النشطة." }
+                                  keywords={ en="fade"; zh="变暗"; ja="薄く 暗く"; ar="تعتيم" } }
         let autoHide = { caption={ en="Auto-hide tabs"; zh="自动隐藏标签"; ja="タブを自動的に隠す"; ar="إخفاء علامات التبويب تلقائيًا" }
-                         description={ en="Show a thin strip until hover."; zh="只显示细栏，悬停展开。"; ja="細いバーだけ表示し、ホバーで展開します。"; ar="إظهار شريط رفيع حتى تمرير المؤشر فوقه." }
+                         description={ en="Show a thin strip until hover."; zh="只显示细栏，悬停展开。"; ja="細いバーだけ表示し、ホバーで展開します。"; ar="يبقى شريط رفيع فقط حتى تمرّر المؤشر فوقه." }
                          keywords={ en="collapse"; zh="收起"; ja="折りたたみ"; ar="طيّ" } }
         let showTabsOnSwitch = { caption={ en="Show tabs briefly after switching"; zh="切换后短暂显示标签"; ja="切り替え後にタブを一時的に表示"; ar="إظهار علامات التبويب لفترة وجيزة بعد التبديل" }
                                  description={ en="For about a second, so you can see where you are."; zh="显示约一秒，方便确认当前位置。"; ja="約 1 秒間表示して、今いる位置を確認できます。"; ar="لمدة ثانية تقريبًا لتتمكن من معرفة موضعك." }
@@ -147,7 +147,7 @@ module Strings =
         let tabPosition = { caption={ en="Position tabs"; zh="放置标签"; ja="タブを配置"; ar="موضع علامات التبويب" }
                             description=none
                             keywords={ en="vertical horizontal sidebar left right"; zh="垂直 横向 侧栏 左 右"; ja="縦 横 サイドバー 左 右"; ar="رأسي أفقي شريط جانبي يسار يمين" } }
-        let tabColumnWidthHint = { en="For left/right tabs. Drag a column edge to resize one group, down to an icon rail."; zh="用于左／右标签。拖动侧栏边缘可单独调整分组宽度，最窄可只显示图标。"; ja="左・右のタブ用です。列の端をドラッグしてグループの幅を変更できます。最小幅ではアイコンのみを表示します。"; ar="للعلامات الجانبية اليمنى أو اليسرى. اسحب حافة العمود لتغيير عرض مجموعة واحدة، حتى يصبح شريطًا للأيقونات فقط." }
+        let tabColumnWidthHint = { en="For left/right tabs. Drag a column edge to resize one group, down to an icon rail."; zh="用于左／右标签。拖动侧栏边缘可单独调整分组宽度，最窄可只显示图标。"; ja="左・右のタブ用です。列の端をドラッグしてグループの幅を変更できます。最小幅ではアイコンのみを表示します。"; ar="لعلامات التبويب على اليسار أو اليمين. اسحب حافة العمود لتغيير عرض مجموعة واحدة، حتى لا يبقى منها إلا شريط أيقونات." }
         let tabColumnWidth = { caption={ en="Vertical tab width"; zh="垂直标签宽度"; ja="縦タブ幅"; ar="عرض علامات التبويب الرأسية" }
                                description=none
                                keywords={ en="vertical sidebar width size"; zh="垂直 侧栏 宽度 大小"; ja="縦 サイドバー 幅 サイズ"; ar="رأسي شريط جانبي عرض حجم" } }
@@ -158,34 +158,34 @@ module Strings =
                                     description=none
                                     keywords={ en="merge"; zh="合并"; ja="結合"; ar="دمج" } }
         let replaceAltTab = { caption={ en="Use WindowTabs for Alt+Tab"; zh="使用 WindowTabs 窗口切换器"; ja="Alt+Tab に WindowTabs を使う"; ar="استخدام WindowTabs عند الضغط على Alt+Tab" }
-                              description={ en="Replaces the Windows switcher."; zh="替换 Windows 自带的窗口切换器。"; ja="Windows 標準のウィンドウ切り替えを置き換えます。"; ar="يستبدل أداة التبديل بين النوافذ في Windows." }
+                              description={ en="Replaces the Windows switcher."; zh="替换 Windows 自带的窗口切换器。"; ja="Windows 標準のウィンドウ切り替えを置き換えます。"; ar="يحل محل مبدّل النوافذ في Windows." }
                               keywords={ en="task switcher"; zh="任务切换"; ja="タスク切り替え"; ar="مبدّل المهام" } }
-        let switcherStyle = { caption={ en="Switcher style"; zh="切换器样式"; ja="スイッチャーの表示"; ar="نمط أداة التبديل" }
+        let switcherStyle = { caption={ en="Switcher style"; zh="切换器样式"; ja="スイッチャーの表示"; ar="نمط المبدّل" }
                               description={ en="Large icons in a row, or a list with full window titles."; zh="一排大图标，或显示完整窗口标题的列表。"; ja="大きなアイコンを横に並べるか、ウィンドウ タイトルを一覧で表示します。"; ar="أيقونات كبيرة في صف، أو قائمة تعرض عناوين النوافذ كاملة." }
                               keywords={ en="layout"; zh="布局"; ja="レイアウト"; ar="التخطيط" } }
         let groupWindowsInSwitcher = { caption={ en="Group windows in Alt+Tab"; zh="在 Alt+Tab 中按分组显示"; ja="Alt+Tab でグループをまとめる"; ar="تجميع النوافذ في Alt+Tab" }
                                        description={ en="Each group appears as one item."; zh="每个分组只显示一项。"; ja="各グループを 1 項目として表示します。"; ar="تظهر كل مجموعة كعنصر واحد." }
-                                       keywords={ en="switcher"; zh="切换器"; ja="切り替え"; ar="أداة التبديل" } }
+                                       keywords={ en="switcher"; zh="切换器"; ja="切り替え"; ar="المبدّل" } }
         let nextTab = { caption={ en="Switch to next tab"; zh="切换到下一个标签"; ja="次のタブに切り替え"; ar="الانتقال إلى علامة التبويب التالية" }
                         description=none
                         keywords=hotkeyWords }
         let previousTab = { caption={ en="Switch to previous tab"; zh="切换到上一个标签"; ja="前のタブに切り替え"; ar="الانتقال إلى علامة التبويب السابقة" }
                             description=none
                             keywords=hotkeyWords }
-        let searchTabs = { caption={ en="Switch windows"; zh="切换窗口"; ja="ウィンドウを切り替え"; ar="تبديل النوافذ" }
+        let searchTabs = { caption={ en="Switch windows"; zh="切换窗口"; ja="ウィンドウを切り替え"; ar="التبديل بين النوافذ" }
                            description={ en="Switch to a window by title or app name."; zh="按标题或应用名查找并切换窗口。"; ja="タイトルやアプリ名でウィンドウを探して切り替えます。"; ar="الانتقال إلى نافذة باستخدام عنوانها أو اسم التطبيق." }
                            keywords={ en="find"; zh="查找"; ja="検索"; ar="بحث" } }
         let newTab = { caption={ en="New tab"; zh="新建标签"; ja="新しいタブ"; ar="علامة تبويب جديدة" }
                        description={ en="Starts the current tab's app again."
                                      zh="再次启动当前标签的应用。"
                                      ja="現在のタブのアプリをもう一度起動します。"
-                                     ar="يشغّل التطبيق الخاص بعلامة التبويب الحالية مرة أخرى." }
+                                     ar="يشغّل نسخة جديدة من تطبيق علامة التبويب الحالية." }
                        keywords={ en="new window"; zh="新建窗口"; ja="新しいウィンドウ"; ar="نافذة جديدة" } }
         let closeTab = { caption={ en="Close tab"; zh="关闭标签"; ja="タブを閉じる"; ar="إغلاق علامة التبويب" }
                          description={ en="Closes the window of the tab in front."
                                        zh="关闭当前标签的窗口。"
                                        ja="前面のタブのウィンドウを閉じます。"
-                                       ar="يغلق النافذة الخاصة بعلامة التبويب الحالية." }
+                                       ar="يغلق نافذة علامة التبويب الأمامية." }
                          keywords={ en="close window"; zh="关闭窗口"; ja="ウィンドウを閉じる"; ar="إغلاق النافذة" } }
         let switchTabsByNumber = { caption={ en="Switch tabs by number"; zh="按数字切换标签"; ja="番号でタブを切り替え"; ar="التبديل بين علامات التبويب باستخدام الأرقام" }
                                    description={ en="Hold a modifier key and press 1–9."; zh="按住修饰键再按 1–9。"; ja="修飾キーを押しながら 1～9 を押します。"; ar="اضغط باستمرار على مفتاح تعديل ثم اضغط على رقم من 1 إلى 9." }
@@ -193,25 +193,25 @@ module Strings =
         let numberShortcut = { caption={ en="Modifier key for 1–9"; zh="数字键搭配的修饰键"; ja="1～9 と組み合わせるキー"; ar="مفتاح التعديل للأرقام من 1 إلى 9" }
                                description=none
                                keywords={ en="number"; zh="数字"; ja="番号"; ar="رقم" } }
-        let enableNumberLeader = { caption={ en="Switch tabs with a leader key"; zh="用引导键切换标签"; ja="リーダーキーでタブを切り替え"; ar="التبديل باستخدام مفتاح تمهيدي" }; description={ en="Press the leader, then a selection key. Esc cancels."; zh="先按引导键，再按选择键。Esc 取消。"; ja="リーダーキーの後、選択キーを押します。Esc で解除。"; ar="اضغط المفتاح التمهيدي ثم مفتاح الاختيار. يلغي Esc العملية." }; keywords=none }
+        let enableNumberLeader = { caption={ en="Switch tabs with a leader key"; zh="用引导键切换标签"; ja="リーダーキーでタブを切り替え"; ar="التبديل بين علامات التبويب بمفتاح تمهيدي" }; description={ en="Press the leader, then a selection key. Esc cancels."; zh="先按引导键，再按选择键。Esc 取消。"; ja="リーダーキーの後、選択キーを押します。Esc で解除。"; ar="اضغط المفتاح التمهيدي ثم مفتاح الاختيار. اضغط Esc للإلغاء." }; keywords=none }
         let leaderKeys = { caption={en="Selection keys";zh="选择键";ja="選択キー";ar="مفاتيح الاختيار"}; description={en="Use unique letters or digits, in tab order.";zh="按标签顺序，使用不重复的字母或数字。";ja="タブ順に、重複しない英字または数字を指定します。";ar="استخدم أحرفًا أو أرقامًا غير مكررة حسب ترتيب علامات التبويب."}; keywords={en="leader keys letters home row";zh="引导键 字母 主键区";ja="リーダーキー 英字 ホームポジション";ar="مفتاح تمهيدي أحرف الصف الأوسط"} }
         let leaderKeyPresets = [| {en="123456789";zh="123456789";ja="123456789";ar="123456789"}; {en="QWERTYUIOP";zh="QWERTYUIOP";ja="QWERTYUIOP";ar="QWERTYUIOP"}; {en="ASDFGHJKL;";zh="ASDFGHJKL;";ja="ASDFGHJKL;";ar="ASDFGHJKL;"} |]
-        let invalidLeaderKeys = {en="Use at least one unique letter, digit or unshifted punctuation key.";zh="请使用至少一个不重复的字母、数字或无需 Shift 的标点键。";ja="重複しない英字、数字、Shift 不要の記号を 1 つ以上指定してください。";ar="استخدم حرفًا أو رقمًا أو مفتاح ترقيم غير مكرر واحدًا على الأقل دون Shift."}
+        let invalidLeaderKeys = {en="Use at least one unique letter, digit or unshifted punctuation key.";zh="请使用至少一个不重复的字母、数字或无需 Shift 的标点键。";ja="重複しない英字、数字、Shift 不要の記号を 1 つ以上指定してください。";ar="استخدم حرفًا أو رقمًا أو علامة ترقيم واحدة على الأقل، غير مكررة ولا تحتاج إلى Shift."}
         let numberLeader = { caption={ en="Tab selection leader"; zh="标签选择引导键"; ja="タブ選択のリーダーキー"; ar="المفتاح التمهيدي لاختيار علامة التبويب" }; description=none; keywords=none }
         let tabColors = { en="Color"; zh="颜色"; ja="色"; ar="اللون" }
         let customTabColor = { en="Custom…"; zh="自定义…"; ja="カスタム…"; ar="مخصص…" }
         let clearTabColor = { en="Clear color"; zh="清除颜色"; ja="色を解除"; ar="مسح اللون" }
-        let rememberTabColor = { en="Remember color for current app"; zh="为当前应用记住颜色"; ja="現在のアプリの色を記憶"; ar="تذكّر لون التطبيق الحالي" }
+        let rememberTabColor = { en="Remember color for current app"; zh="为当前应用记住颜色"; ja="現在のアプリの色を記憶"; ar="تذكّر اللون للتطبيق الحالي" }
         let tabColorNames = [|
             { en="Grey";zh="灰色";ja="グレー";ar="رمادي" }; { en="Blue";zh="蓝色";ja="青";ar="أزرق" }
             { en="Red";zh="红色";ja="赤";ar="أحمر" }; { en="Yellow";zh="黄色";ja="黄";ar="أصفر" }
             { en="Green";zh="绿色";ja="緑";ar="أخضر" }; { en="Pink";zh="粉色";ja="ピンク";ar="وردي" }
             { en="Purple";zh="紫色";ja="紫";ar="أرجواني" }; { en="Cyan";zh="青色";ja="シアン";ar="سماوي" }
-            { en="Orange";zh="橙色";ja="オレンジ";ar="برتقالي" }; { en="Lavender";zh="薰衣草色";ja="ラベンダー";ar="لافندر" }
+            { en="Orange";zh="橙色";ja="オレンジ";ar="برتقالي" }; { en="Lavender";zh="薰衣草色";ja="ラベンダー";ar="خزامي" }
             { en="Olive";zh="橄榄色";ja="オリーブ";ar="زيتي" }; { en="Rose";zh="玫红色";ja="ローズ";ar="وردي داكن" }
             { en="Lime";zh="青柠色";ja="ライム";ar="ليموني" }; { en="Navy";zh="藏青色";ja="ネイビー";ar="كحلي" }
             { en="Teal";zh="蓝绿色";ja="ティール";ar="أزرق مخضر" }; { en="Coral";zh="珊瑚色";ja="コーラル";ar="مرجاني" } |]
-        let tabColorMode = { caption={ en="Tab color coding"; zh="标签着色"; ja="タブの色分け"; ar="ترميز علامات التبويب بالألوان" }
+        let tabColorMode = { caption={ en="Tab color coding"; zh="标签着色"; ja="タブの色分け"; ar="تلوين علامات التبويب" }
                              description={ en="Auto-assign colors by window or app."
                                            zh="按窗口或应用自动分配颜色。"
                                            ja="ウィンドウ・アプリ別に色を自動で割り当てます。"
@@ -224,7 +224,7 @@ module Strings =
                                  zh="可在标签菜单中为单个标签选色。它优先于这里的设置，关闭时也有效。"
                                  ja="タブメニューでタブごとに色を選べます。こちらの設定より優先され、オフでも表示されます。"
                                  ar="غيّر لون علامة تبويب واحدة من قائمتها. تكون الأولوية لهذا اللون ويظهر حتى عند إيقاف هذا الخيار." }
-        let tabColorStyle = { caption={ en="Show colors as"; zh="着色方式"; ja="色の付け方"; ar="عرض الألوان على شكل" }
+        let tabColorStyle = { caption={ en="Show colors as"; zh="着色方式"; ja="色の付け方"; ar="طريقة عرض الألوان" }
                               description=none
                               keywords={ en="stripe fill"; zh="色条 填充"; ja="ライン 塗りつぶし"; ar="شريط تعبئة" } }
         let stripe = { en="Stripe"; zh="色条"; ja="色のライン"; ar="شريط" }
@@ -243,7 +243,7 @@ module Strings =
                             description={ en="Works anywhere over a grouped window. Over the tab bar, Shift isn't needed."
                                           zh="在分组窗口的任意位置均可使用；在标签栏上滚动时无需按 Shift。"
                                           ja="グループ化されたウィンドウ上ならどこでも使えます。タブバー上では Shift は不要です。"
-                                          ar="يعمل في أي مكان فوق نافذة مجمّعة. لا تحتاج إلى Shift فوق شريط علامات التبويب." }
+                                          ar="يعمل في أي مكان فوق نافذة مجمّعة. وفوق شريط علامات التبويب لا حاجة إلى Shift." }
                             keywords={ en="wheel"; zh="滚轮"; ja="ホイール"; ar="عجلة التمرير" } }
         let ctrlScroll = { caption={ en="Move tabs with Ctrl + scroll"; zh="用 Ctrl + 滚轮移动标签"; ja="Ctrl + スクロールでタブを移動"; ar="تحريك علامات التبويب باستخدام Ctrl والتمرير" }
                            description={ en="Over the tab bar, moves the current tab left or right."
@@ -251,7 +251,7 @@ module Strings =
                                          ja="タブバー上で、現在のタブを左右に移動します。"
                                          ar="فوق شريط علامات التبويب، ينقل علامة التبويب الحالية إلى اليسار أو اليمين." }
                            keywords={ en="wheel reorder"; zh="滚轮 排序"; ja="ホイール 並べ替え"; ar="عجلة التمرير لإعادة الترتيب" } }
-        let middleClickClose = { caption={ en="Middle-click closes a tab"; zh="按下滚轮关闭标签"; ja="中クリックでタブを閉じる"; ar="النقر الأوسط يغلق علامة تبويب" }
+        let middleClickClose = { caption={ en="Middle-click closes a tab"; zh="按下滚轮关闭标签"; ja="中クリックでタブを閉じる"; ar="الإغلاق بالنقر الأوسط" }
                                  description={ en="Press the wheel on a tab to close its window."
                                                zh="在标签上按下滚轮，关闭它的窗口。"
                                                ja="タブ上でホイールを押すと、そのウィンドウを閉じます。"
@@ -263,7 +263,7 @@ module Strings =
         let tabHighlightBgColor = { caption={ en="Hovered tab"; zh="悬停标签"; ja="ホバー中のタブ"; ar="علامة التبويب التي يشير إليها المؤشر" }; description=none; keywords=colorWords }
         let tabStyle = { caption={ en="Tab style"; zh="标签样式"; ja="タブのスタイル"; ar="نمط علامة التبويب" }
                          description={ en="How the active tab stands out from the rest."; zh="活动标签以何种方式与其他标签区分。"; ja="アクティブなタブをほかのタブとどう見分けるかを選びます。"; ar="كيفية تمييز علامة التبويب النشطة عن البقية." }
-                         keywords={ en="shape folder pill"; zh="形状 文件夹 胶囊"; ja="形 フォルダー ピル"; ar="الشكل مجلد كبسولة" } }
+                         keywords={ en="shape folder pill"; zh="形状 文件夹 胶囊"; ja="形 フォルダー ピル"; ar="شكل مجلد كبسولة" } }
         let tabHeightHint = { en="Left/right tabs have a minimum height of 32 px."; zh="左／右标签的实际高度最低为 32px。"; ja="左・右のタブの最小高さは 32px です。"; ar="يبلغ الحد الأدنى لارتفاع علامات التبويب الجانبية 32 بكسل." }
         let tabHeight = { caption={ en="Tab height"; zh="标签高度"; ja="タブの高さ"; ar="ارتفاع علامة التبويب" }; description=none; keywords=sizeWords }
         let tabMaxWidth = { caption={ en="Maximum tab width"; zh="标签最大宽度"; ja="タブの最大幅"; ar="أقصى عرض لعلامة التبويب" }; description=none; keywords=sizeWords }
@@ -292,7 +292,7 @@ module Strings =
                                description={ en="Export all settings to a file, or import them and restart."; zh="将所有设置导出为文件，或从文件导入并重新启动。"; ja="すべての設定をファイルにエクスポートするか、インポートして再起動します。"; ar="تصدير جميع الإعدادات إلى ملف، أو استيرادها ثم إعادة التشغيل." }
                                keywords={ en="export import"; zh="导出 导入"; ja="エクスポート インポート"; ar="تصدير استيراد" } }
         let settingsReset = { caption={ en="Reset to defaults"; zh="恢复默认设置"; ja="既定値に戻す"; ar="إعادة التعيين إلى الإعدادات الافتراضية" }
-                              description={ en="Then restarts. App rules and workspaces can be kept."; zh="完成后重新启动，可保留应用规则和工作区。"; ja="その後再起動します。アプリのルールとワークスペースは残せます。"; ar="ثم يعاد التشغيل. يمكن الاحتفاظ بقواعد التطبيقات ومساحات العمل." }
+                              description={ en="Then restarts. App rules and workspaces can be kept."; zh="完成后重新启动，可保留应用规则和工作区。"; ja="その後再起動します。アプリのルールとワークスペースは残せます。"; ar="ثم يُعاد تشغيل البرنامج. يمكن الاحتفاظ بقواعد التطبيقات ومساحات العمل." }
                               keywords={ en="factory"; zh="恢复默认 出厂"; ja="初期化"; ar="إعدادات المصنع" } }
 
     module General =
@@ -311,7 +311,7 @@ module Strings =
         let resetMessage = { en="Restore every setting to its default and restart WindowTabs? The current settings are saved first, so you can import them back."
                              zh="将所有设置恢复为默认值并重新启动 WindowTabs？当前设置会先保存下来，之后可以再导入。"
                              ja="すべての設定を既定値に戻して WindowTabs を再起動しますか？現在の設定は先に保存されるので、後でインポートして戻せます。"
-                             ar="هل تريد استعادة جميع الإعدادات الافتراضية وإعادة تشغيل WindowTabs؟ سيتم حفظ الإعدادات الحالية أولًا، حتى تتمكن من استيرادها مرة أخرى." }
+                             ar="هل تريد إعادة جميع الإعدادات إلى قيمها الافتراضية وإعادة تشغيل WindowTabs؟ ستُحفظ الإعدادات الحالية أولًا لتتمكن من استيرادها لاحقًا." }
         let resetAlsoClear = { en="Also clear:"; zh="同时清除："; ja="次も消去する："; ar="مسح أيضًا:"}
         let resetRestarting path =
             { en=sprintf "Settings were reset. WindowTabs will now restart.\n\nYour previous settings were saved to:\n%s" path
@@ -354,7 +354,7 @@ module Strings =
         let colorsByCoding = { en="Set automatically while Tab color coding is By window or By app with Fill."
                                zh="标签着色为“按窗口”或“按应用”且选择“填充”时，这里自动配置。"
                                ja="タブの色分けが「ウィンドウ別」または「アプリ別」で「塗りつぶし」のときは、ここは自動で設定されます。"
-                               ar="يُضبط تلقائيًا عندما يكون ترميز الألوان حسب النافذة أو التطبيق مع خيار التعبئة." }
+                               ar="يُضبط تلقائيًا عندما يكون «تلوين علامات التبويب» على «حسب النافذة» أو «حسب التطبيق» مع «تعبئة»." }
         let textAdjusted = { en="Text color is adjusted on some tabs to stay readable."; zh="部分标签上的文字颜色已调整，以保持清晰。"; ja="一部のタブでは、読みやすさのため文字の色を調整しています。"; ar="يُعدّل لون النص في بعض علامات التبويب ليظل مقروءًا." }
         /// A colour preset whose colours the user has changed.
         let editedPreset name = { en=sprintf "%s*" name; zh=sprintf "%s*" name; ja=sprintf "%s*" name; ar=sprintf "%s*" name }
@@ -395,12 +395,12 @@ module Strings =
         let keyboardNote = { en="Click a shortcut, then press the new combination. Esc cancels."
                              zh="点击快捷键后按下新的组合键。按 Esc 取消。"
                              ja="ショートカットをクリックして、新しいキーの組み合わせを押します。Esc でキャンセルします。"
-                             ar="انقر فوق اختصار ثم اضغط مجموعة المفاتيح الجديدة. يلغي Esc العملية." }
+                             ar="انقر اختصارًا ثم اضغط مجموعة المفاتيح الجديدة. اضغط Esc للإلغاء." }
         let restoreDefaults = { en="Restore default shortcuts"; zh="恢复默认快捷键"; ja="既定のショートカットに戻す"; ar="استعادة الاختصارات الافتراضية" }
         let inUse = { en="Shortcut already in use"; zh="快捷键已被占用"; ja="ショートカットは使用中です"; ar="الاختصار مستخدم بالفعل" }
         let usedBy name = { en=sprintf "Used by %s" name; zh=sprintf "已用于“%s”" name; ja=sprintf "「%s」で使用中" name; ar=sprintf "يستخدمه «%s»" name }
         // Shortcut field messages are kept short to fit.
-        let alreadySet = { en="Already set"; zh="已是当前快捷键"; ja="設定済み"; ar="تم تعيينه بالفعل" }
+        let alreadySet = { en="Already set"; zh="已是当前快捷键"; ja="設定済み"; ar="هذا هو الاختصار الحالي" }
         let includeCtrlOrAlt = { en="Include Ctrl or Alt"; zh="需要包含 Ctrl 或 Alt"; ja="Ctrl か Alt が必要です"; ar="يجب أن يتضمن Ctrl أو Alt" }
         let pressShortcut = { en="Press a shortcut…"; zh="按下组合键…"; ja="キーを押してください…"; ar="اضغط اختصارًا…" }
         let notSet = { en="Not set"; zh="未设置"; ja="未設定"; ar="غير معيّن" }
@@ -487,7 +487,7 @@ module Strings =
         let restoreTitle = { en="Workspace restore"; zh="恢复工作区"; ja="ワークスペースの復元"; ar="استعادة مساحة العمل" }
         /// The result counts windows in three states, each with its mark.
         let restoredState = { en="Restored"; zh="已恢复"; ja="復元済み"; ar="تمت الاستعادة" }
-        let notFoundState = { en="Not found"; zh="未找到"; ja="見つからない"; ar="لم يتم العثور عليه" }
+        let notFoundState = { en="Not found"; zh="未找到"; ja="見つからない"; ar="غير موجود" }
         let failedState = { en="Failed"; zh="失败"; ja="失敗"; ar="فشل" }
         /// Windows are matched by app when their title changed, so one not found is closed.
         let notFoundHint = { en="These windows are closed, or their app is not running."; zh="这些窗口已关闭，或其应用未运行。"; ja="これらのウィンドウは閉じられているか、アプリが起動していません。"; ar="هذه النوافذ مغلقة أو أن التطبيق الخاص بها لا يعمل." }
