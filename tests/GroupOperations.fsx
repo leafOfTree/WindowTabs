@@ -764,7 +764,8 @@ let main() =
                             let cacheOf (group:WindowGroup) =
                                 (typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="paneLeastCache")).GetValue(group) :?> Map<IntPtr,Sz>
                             let cached = onGroup cacheOf
-                            onHelper(fun () -> form.MinimumSize <- Size(wide+40,100))
+                            // Smaller, so the window takes any pane: read again, the cache would change.
+                            onHelper(fun () -> form.MinimumSize <- Size(wide-40,100))
                             onGroup(fun group -> group.execute(SetRatio([],0.45)))
                             waitSplit()
                             check (onGroup cacheOf=cached) "A divider's ratio asked every pane for its least size again"
