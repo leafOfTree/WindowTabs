@@ -15,7 +15,7 @@ per pane. [Issue #48](https://github.com/leafOfTree/WindowTabs/issues/48).
 | Panes | Always two | Any nested tree | Any nested tree |
 | What owns the split | A pair of tabs in one window | A tree inside one tab | One tree per group |
 | Another tab activated | It fills the window, the pair is parked; choosing either tab of the pair shows both again | Not applicable | The same (`Parked`) |
-| Ways in | "Add to split view" on a tab, dragging a tab to the page edge, an empty pane first | Shortcuts | Tab menu, edge drop (the group's edge or a pane's), empty pane, shortcuts |
+| Ways in | "Add to split view" on a tab, dragging a tab to the page edge, an empty pane first | Shortcuts | Tab menu with a window list, edge drop (the group's edge or a pane's), shortcuts |
 | Divider | Drag to set the ratio; Edge's divider has a menu (swap, close) | Keyboard ratio, equalize, zoom | Drag, double-click to equalize, a menu on each seam button, shortcuts; one divider per split |
 | Closing one side | The other fills the window and the split ends | The other fills | The neighbour takes the room; the last other pane fills the group |
 | Focus | The side clicked takes focus | Arrow keys move between panes | Clicking; shortcuts for the next pane and for the pane in each direction |
@@ -71,18 +71,15 @@ the tree's simplest case and keep their behaviour.
   with the divider menu's items for the focused pane's split: swap, equalize, switch direction
   and end split (`SplitMenu.items`), so both menus read alike; with no split they are left out
   rather than greyed.
-- The new empty pane on the right or below, from its shortcuts. The empty pane has a 1px
-  frame in Explorer's colours, a dashed drop box, an "or" line and a "Choose window…" button,
-  and a close button at the top right that ends the empty split; Esc does the same while a tab
-  of its group is the active window, and goes no further than that. It opens out from the group's
-  edge with a short animation before the window beside it shrinks, and its edges resize it as a
-  window's do. It accepts this group's tabs, other groups' tabs and native windows dragged by
-  their title bar. "Choose window…" opens a searchable list of the windows on this desktop,
-  sorted by app with system apps last, each row with its icon (injected through
-  `ISplitPanePicker`, implemented by `SplitPanePicker` on the tab search box); a window chosen
-  there is handed over by the desktop thread (`IDesktop.adoptIntoPane`). While a dragged tab is
-  over a pane, the pane lights up and the tab's image stays with the pointer. A group with one
-  tab can do this too.
+- The empty pane, a place for a window to come later, has no way in any more: the window list
+  comes first, and the shortcuts that opened one went with the cut to six keys (section 5). What
+  it was stays in the model (`Empty`, `NewEmptyPane`, `FillPane`), in `EmptySplitPane` and in
+  the drop handling, covered by the suites through the model, for an entry that brings it back:
+  a 1px frame in Explorer's colours, a dashed drop box, an "or" line and a "Choose window…"
+  button, a close button that closes it (Esc does the same while a tab of its group is the active
+  window, and goes no further), an opening animation from the group's edge, edges that resize it
+  as a window's do, and drops of this group's tabs, other groups' tabs and native windows dragged
+  by their title bar, the last handed over by the desktop thread (`IDesktop.adoptIntoPane`).
 - Drag a tab to the left, right, top or bottom edge of a group's window: a half-window preview
   fades in, a clear tint with its edge drawn, glides to the next place as the aim moves and fades
   out when it goes (120ms each). No words go with it: the place lit up says what
@@ -119,7 +116,7 @@ the tree's simplest case and keep their behaviour.
   foreground as the tab left it, to show panes the tab had parked, and the window landed under
   them.
 - Splitting again: while split, the same ways apply to a pane. Split in group on a tab divides
-  that tab's pane; a new empty pane opens beside the focused pane; a tab dragged to
+  that tab's pane; a tab dragged to
   a pane's edge splits that pane (as VS Code does), and at the group's own edge (`outerZone`:
   36px at an edge's ends, up to 72px at its middle) a new column or row for the whole group.
   With another tab shown over parked panes, the drop goes beside that window, the
@@ -131,8 +128,8 @@ the tree's simplest case and keep their behaviour.
   invisible borders): every command's ratios move as little as that takes
   (`SplitGeometry.fitToPanes`), and a split with no room for it is refused. A terminal of 600px
   at least, put in a 400px pane, kept its width and lay over the pane beside it.
-- Shortcuts: split the shown tab side by side or stacked with the next tab in tab order, or open
-  an empty pane when the group has a single tab.
+- Shortcuts: a window on the right or below opens the same list for the tab in front
+  (section 5).
 
 ### 2.2 While split
 
