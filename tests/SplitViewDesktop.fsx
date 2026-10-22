@@ -484,13 +484,18 @@ let main() =
             // rose pane-sized with the desktop showing round it.
             onGroup(fun group -> group.execute(SplitWith(hc,SideBySide),current=ha))
             waitOperation()
+            // With no steps the cover can come and go within the placement of two small windows,
+            // so it is counted rather than looked for.
+            let coversShown () = onGroup(fun group -> (typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="coversShown")).GetValue(group) :?> int)
+            let before = coversShown()
             onGroup(fun group -> group.tabActivate(Tab hb,false))
-            check (covers()) "No cover moved the tab clicked over the panes"
+            check (coversShown()>before) "No cover hid the tab clicked over the panes"
             check (timeUntil 3000 (fun () -> not(covers()))).IsSome "The cover over a parked split stayed"
             waitOperation()
             check (onGroup(fun group -> match group.layout with Parked _ -> true | _ -> false) && visible hb=frame) "The tab clicked over the panes did not park them and fill the group"
+            let before = coversShown()
             onGroup(fun group -> group.tabActivate(Tab ha,false))
-            check (covers()) "No cover brought the panes back from behind the tab"
+            check (coversShown()>before) "No cover hid the panes coming back from behind the tab"
             check (timeUntil 3000 (fun () -> not(covers()))).IsSome "The cover over the panes coming back stayed"
             waitOperation()
             check (onGroup(fun group -> group.splitLayout.IsSome)) "The panes did not come back"

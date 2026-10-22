@@ -300,6 +300,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// Whether the images moving now lead into a split; out of one, they stay until the windows
     /// are placed.
     let mutable transitionIntoSplit = false
+    /// A tab click put the cover up before activating its window; the layout change that
+    /// follows needs no second one.
+    let mutable coverAhead = false
+    /// How many covers have been shown: a cover with no steps can come and go within a few
+    /// milliseconds, too quick for a test to see it on screen.
+    let mutable coversShown = 0
     /// The empty panes' handles, read by the desktop thread to recognize a native drop on one.
     let mutable emptyPaneHandles : IntPtr list = []
     /// The root split's divider, which the panes go just below.
@@ -1384,6 +1390,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 Dpi.set dpi
                 let transition = new SplitTransition(frame,moves,instant=defaultArg instant false)
                 transition,transition.start())
+            if shown then coversShown <- coversShown+1
             match next with
             | Split _ when shown ->
                 splitTransition <- Some transition
@@ -1578,7 +1585,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.onActivated(hwnd) =
         if this.windows.contains hwnd then
             let next = SplitView.onActivated hwnd groupLayout
-            if next<>groupLayout then this.beginTransition(groupLayout,next,hwnd,focus=hwnd,instant=true)
+            if next<>groupLayout && not coverAhead then this.beginTransition(groupLayout,next,hwnd,focus=hwnd,instant=true)
+            coverAhead <- false
             this.setLayout(next,focus=hwnd)
 
     /// Losing a pane window: its neighbour takes its room, and the last other pane fills the frame.
@@ -2225,6 +2233,14 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         
     member this.tabActivate(Tab(hwnd), force) =
         let window = this.os.windowFromHwnd(hwnd)
+        // The cover goes up before the window comes to the front: raised first, a parked pane
+        // showed at the group's size over the tab shown for a frame, and a tab clicked over the
+        // panes rose pane-sized among them, before the layout followed.
+        if this.windows.contains(hwnd) then
+            let next = SplitView.onActivated hwnd groupLayout
+            if next<>groupLayout then
+                this.beginTransition(groupLayout,next,hwnd,focus=hwnd,instant=true)
+                coverAhead <- true
         // The strip is owned by the top window and only follows a new top window once the
         // foreground event comes back through the group. Until then the activated window
         // covers it, which flashes whenever the tabs sit inside the title bar. Owned windows
