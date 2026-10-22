@@ -193,19 +193,6 @@ module WindowSplitLayout =
                 Some({levels=levels;ratios=ratios;focused=(packed &&& (1<<<28))<>0;parked=(packed &&& (1<<<29))<>0},Rect(Pt(x,y),Sz(w,h)))
             | _ -> None
 
-/// The size a window had of its own before it first took a group's, kept on the window: a tab
-/// dragged out of a group goes back to it rather than keeping the group's, often the screen's.
-module WindowOwnSize =
-    let private keys = "WindowTabs.OwnSize.v1.W","WindowTabs.OwnSize.v1.H"
-    let read hwnd =
-        let width,height = int(WinUserApi.GetProp(hwnd,fst keys).ToInt64()),int(WinUserApi.GetProp(hwnd,snd keys).ToInt64())
-        if width>0 && height>0 then Some(Sz(width,height)) else None
-    /// Only the first time: a window moved between groups has a group's size already.
-    let saveIfNew hwnd (size:Sz) =
-        if size.width>0 && size.height>0 && (read hwnd).IsNone then
-            WinUserApi.SetProp(hwnd,fst keys,IntPtr(size.width)) |> ignore
-            WinUserApi.SetProp(hwnd,snd keys,IntPtr(size.height)) |> ignore
-
 /// Where a tab dragged out onto the desktop puts its window. Sizes are of the visible frame.
 module DragOutPlacement =
     /// The window's size now, as the group had it, maximized or not; where a side spans most of
@@ -1969,8 +1956,6 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             let window = this.os.windowFromHwnd(hwnd)                
             let window = this.os.windowFromHwnd(hwnd)
             if this.windows.isEmpty && not hasSavedTabLayout then WindowTabLayout.read hwnd |> Option.iter this.applyTabLayout
-            // Its own size, before the group's: what a tab dragged out goes back to.
-            if not window.isMinimized && not window.isMaximized then WindowOwnSize.saveIfNew hwnd window.visibleBounds.size
             this.setWindows(this.windows.add hwnd)
             WindowGroupToken.save hwnd this.groupToken
             FollowerPlacement.queue.claim(placementOwner,hwnd)

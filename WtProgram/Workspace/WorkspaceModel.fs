@@ -507,7 +507,6 @@ type WorkspaceModel() as this =
                             if window.isWindow then
                                 // Complete native placement before detaching from the old group.
                                 WinUserApi.ShowWindow(hwnd,ShowWindowCommands.SW_RESTORE) |> ignore
-                                if not window.isMaximized then WindowOwnSize.saveIfNew hwnd window.visibleBounds.size
                                 // Kept on screen by its visible frame: the window frame sticks out of the
                                 // work area by its invisible border, which pulled every edge window in.
                                 window.setPlacement(WorkspaceData.fitPlacementOf monitors window.bounds window.visibleBounds (groupInfo?placement))
