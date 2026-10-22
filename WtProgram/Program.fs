@@ -140,6 +140,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let sessionSoon = lifetime.Own(new CoalescedAction(3000, fun () -> this.saveSession()))
     let sessionTimer = lifetime.Own(new System.Windows.Forms.Timer(Interval=120000))
     let mutable tokensSeen = false
+    /// Each group's members as last seen, so a title change alone writes no session.
+    let sessionMembers = Dictionary<IntPtr,IntPtr list>()
     /// Nothing is written until the start has decided about the last session: the groups the
     /// first scan forms on its own came to be saved over it before it was restored.
     let mutable sessionReady = false
@@ -419,7 +421,14 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// Only groups made by hand, or restored from memory, are recorded; others change all the
     /// time (browser titles) and need no record.
     member private this.onGroupChanged(group:IGroup) =
-        sessionSoon.Request()
+        // Only membership: a group changes at every title too, and the session was written to
+        // disk every few seconds while a browser's title ran. The timer picks up the rest.
+        let members = group.windows.list
+        match sessionMembers.TryGetValue group.hwnd with
+        | true,known when known=members -> ()
+        | _ ->
+            sessionMembers.[group.hwnd] <- members
+            sessionSoon.Request()
         match group with
         | :? GroupInfo as info when info.group.isManual || remembered |> List.exists(fun saved -> saved.id=info.group.groupToken) ->
             rememberSoon.Request()
@@ -857,6 +866,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             settleTimer.Tick.Add(fun _ -> this.settleTick())
             if settling.Count>0 then settleTimer.Start()
             Services.desktop.groupChanged.Add this.onGroupChanged
+            Services.desktop.groupExited.Add(fun group -> if sessionMembers.Remove group.hwnd then sessionSoon.Request())
             this.updateTaskSwitcher(Services.settings.getValue("replaceAltTab"))
             this.restoreSessionAtStart()
             sessionTimer.Tick.Add(fun _ -> this.saveSession())
