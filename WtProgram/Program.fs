@@ -95,19 +95,13 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         ("closeTab", fun () ->
             let hwnd = WinUserApi.GetForegroundWindow()
             if this.isInGroup hwnd then os.windowFromHwnd(hwnd).close())
-        ("splitSideBySide", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.splitWithNext SideBySide))
-        ("splitStacked", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.splitWithNext Stacked))
-        ("splitEmptyRight", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(NewEmptyPane SideBySide)))
-        ("splitEmptyBelow", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(NewEmptyPane Stacked)))
-        ("splitFocusOther", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit FocusOther))
+        // A window chosen from a list goes beside the tab in front, as from the tab menu.
+        ("splitPickRight", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.pickPane(SideBySide,Second)))
+        ("splitPickBelow", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.pickPane(Stacked,Second)))
         ("splitFocusLeft", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneLeft)))
         ("splitFocusRight", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneRight)))
         ("splitFocusUp", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneUp)))
         ("splitFocusDown", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneDown)))
-        ("splitSwap", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(Swap None)))
-        ("splitEqualize", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(Equalize None)))
-        ("splitClosePane", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(ClosePane None)))
-        ("splitEnd", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(EndSplit None)))
         ]))
         
     let hotKeyManager = lifetime.Own(new HotKeyManager())

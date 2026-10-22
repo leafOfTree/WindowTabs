@@ -206,21 +206,12 @@ module Strings =
                                        ja="前面のタブのウィンドウを閉じます。" }
                          keywords={ en="close window"; zh="关闭窗口"; ja="ウィンドウを閉じる" } }
         let private splitWords = { en="split view pane"; zh="分屏 窗格"; ja="分割 ペイン" }
-        let splitSideBySide = { caption={ en="Split side by side with next tab"; zh="与下一个标签左右分屏"; ja="次のタブと左右に分割" }
-                                description={ en="A lone tab opens an empty pane instead."; zh="只有一个标签时改为新建空白区域。"; ja="タブが 1 つだけなら空のペインを開きます。" }
-                                keywords=splitWords }
-        let splitStacked = { caption={ en="Split top and bottom with next tab"; zh="与下一个标签上下分屏"; ja="次のタブと上下に分割" }
-                             description=none
-                             keywords=splitWords }
-        let splitEmptyRight = { caption={ en="New empty pane on the right"; zh="在右侧新建空白区域"; ja="右側に空のペインを作成" }
-                                description={ en="Splits the focused pane again. Drop a tab or window into it."; zh="再拆一次焦点格，之后把标签或窗口拖进去。"; ja="フォーカス中のペインをさらに分割します。タブやウィンドウをそこにドロップします。" }
-                                keywords=splitWords }
-        let splitEmptyBelow = { caption={ en="New empty pane below"; zh="在下方新建空白区域"; ja="下側に空のペインを作成" }
-                                description=none
-                                keywords=splitWords }
-        let splitFocusOther = { caption={ en="Focus the next pane"; zh="焦点切到下一格"; ja="次のペインにフォーカス" }
-                                description={ en="Brings parked panes back as well."; zh="分屏被暂存时也会恢复显示。"; ja="待機中のペインも表示に戻します。" }
-                                keywords=splitWords }
+        let splitPickRight = { caption={ en="Window on the right…"; zh="在右侧放入窗口…"; ja="右側にウィンドウを配置…" }
+                               description={ en="Opens the list of windows to put beside the tab in front, with an empty pane first."; zh="打开窗口列表，选中的放到当前标签右边；第一项是空白窗格。"; ja="前面のタブの隣に置くウィンドウの一覧を開きます。先頭は空のペインです。" }
+                               keywords=splitWords }
+        let splitPickBelow = { caption={ en="Window below…"; zh="在下方放入窗口…"; ja="下側にウィンドウを配置…" }
+                               description=none
+                               keywords=splitWords }
         let splitFocusLeft = { caption={ en="Focus the pane to the left"; zh="焦点切到左边的格"; ja="左のペインにフォーカス" }
                                description=none
                                keywords=splitWords }
@@ -233,18 +224,6 @@ module Strings =
         let splitFocusDown = { caption={ en="Focus the pane below"; zh="焦点切到下边的格"; ja="下のペインにフォーカス" }
                                description=none
                                keywords=splitWords }
-        let splitSwap = { caption={ en="Swap panes"; zh="交换两侧"; ja="ペインを入れ替え" }
-                          description={ en="The focused pane and its neighbour change places."; zh="焦点格和它旁边的格互换位置。"; ja="フォーカス中のペインと隣のペインを入れ替えます。" }
-                          keywords=splitWords }
-        let splitClosePane = { caption={ en="Close the focused pane"; zh="关闭焦点格"; ja="フォーカス中のペインを閉じる" }
-                               description={ en="Its neighbour takes the room; the window stays a tab."; zh="旁边的格补上空位，窗口仍保留为标签。"; ja="隣のペインがその場所を使い、ウィンドウはタブとして残ります。" }
-                               keywords=splitWords }
-        let splitEqualize = { caption={ en="Equal panes"; zh="恢复均分"; ja="均等に分割" }
-                              description=none
-                              keywords=splitWords }
-        let splitEnd = { caption={ en="End split view"; zh="结束分屏"; ja="分割表示を終了" }
-                         description={ en="The focused pane fills the group."; zh="焦点侧占满整个组。"; ja="フォーカス中のペインがグループ全体を占めます。" }
-                         keywords=splitWords }
         let switchTabsByNumber = { caption={ en="Switch tabs by number"; zh="按数字切换标签"; ja="番号でタブを切り替え" }
                                    description={ en="Hold a modifier key and press 1–9."; zh="按住修饰键再按 1–9。"; ja="修飾キーを押しながら 1～9 を押します。" }
                                    keywords={ en="digit"; zh="数字"; ja="数字" } }
@@ -454,6 +433,7 @@ module Strings =
     module Shortcuts =
         let keyboard = { en="Keyboard"; zh="键盘"; ja="キーボード" }
         let mouse = { en="Mouse"; zh="鼠标"; ja="マウス" }
+        let splitView = { en="Split view"; zh="分屏"; ja="分割表示" }
         let keyboardNote = { en="Click a shortcut, then press the new combination. Esc cancels."
                              zh="点击快捷键后按下新的组合键。按 Esc 取消。"
                              ja="ショートカットをクリックして、新しいキーの組み合わせを押します。Esc でキャンセルします。" }

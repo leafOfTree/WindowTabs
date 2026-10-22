@@ -330,6 +330,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// A pane, the empty pane or the divider is being dragged: only the panes follow, live.
     let mutable liveResize = false
     let layoutChangedEvent = Event<unit>()
+    let pickRequestedEvent = Event<SplitAxis * Side>()
     /// An empty pane's window gone (first) or made (second): a drop surface of its own, owned by nothing.
     let emptyPaneChangedEvent = Event<IntPtr * IntPtr>()
     let windowsCell = Cell.create(Set2())
@@ -1578,15 +1579,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             frame |> Option.iter(fun saved -> placement.set(Some saved))
             this.execute(SplitView.dropCommand hwnd drop,current=partner,keepFrame=frame.IsSome))
 
-    /// The keyboard's way in: the tab in front pairs with the next tab in the strip, wrapping
-    /// around; a lone tab opens an empty pane instead.
-    member this.splitWithNext(axis) =
-        if not this.isEmpty then
-            let top = this.topWindow
-            let order = this.lorder.list
-            match List.tryFindIndex ((=) top) order with
-            | Some index when order.Length>1 -> this.execute(SplitWith(order.[(index+1) % order.Length],axis))
-            | _ -> this.execute(NewEmptyPane axis)
+    /// A shortcut asks for the list of windows to put beside the tab in front: the strip shows
+    /// it, as it does for the tab menu.
+    member this.requestPick(axis:SplitAxis, side:Side) =
+        if not this.isEmpty && not isDestroyed.value then pickRequestedEvent.Trigger(axis,side)
+    member _.pickRequested = pickRequestedEvent.Publish
 
     /// A pane window coming to the front focuses its side; another tab parks the pair.
     /// A tab clicked over the panes, or a pane's tab clicked to bring them back: the cover with

@@ -319,20 +319,20 @@ Shortcuts and menus share `SplitCommand`. Shortcuts use the existing `hotKeyInfo
 `SettingsCatalog.Shortcut`, act on the foreground group, and are all unbound (0) by default so
 that no global hotkey is taken. The entries:
 
+Six keys, in a card of their own on the Shortcuts page: two ways in, which open the tab
+menu's window list (an empty pane first in it) for the tab in front, and the focus by
+direction. The rest of the commands (the other two sides, swap, equalize, closing a pane,
+ending the split) are on the tab menu, the seam buttons and the dividers; a dozen split
+entries once crowded the page, and the next tab's shortcut already walks the panes in order.
+
 | Setting id | hotKeys key | Command |
 | --- | --- | --- |
-| split-side-by-side | splitSideBySide | `splitWithNext SideBySide`: pair with the next tab in tab order, or `NewEmptyPane` for a single tab |
-| split-stacked | splitStacked | `splitWithNext Stacked` |
-| split-empty-right / split-empty-below | splitEmptyRight / splitEmptyBelow | `NewEmptyPane SideBySide` / `NewEmptyPane Stacked`: the shown tab's pane splits again with an empty pane |
-| split-focus-other | splitFocusOther | `FocusOther`: the next pane in layout order (restores parked panes) |
+| split-pick-right / split-pick-below | splitPickRight / splitPickBelow | `IGroup.pickPane`: the strip's window list for the tab in front; the window chosen goes on that side (`placeBeside`) |
 | split-focus-left / -right / -up / -down | splitFocusLeft … splitFocusDown | `FocusToward`: the nearest pane in that direction sharing most of the focused pane's edge |
-| split-swap | splitSwap | `Swap None`: the focused pane's split |
-| split-equalize | splitEqualize | `Equalize None` |
-| split-close-pane | splitClosePane | `ClosePane None`: the focused pane goes, its neighbour takes the room, the window stays a tab |
-| split-end | splitEnd | `EndSplit None` |
 
 Wiring: `Program.hotKeyInfo` to `Services.desktop.foregroundGroup` to `IGroup.executeSplit` or
-`splitWithNext` (`GroupInfo` passes them to the group's STA). The settings page's
+`pickPane` (`GroupInfo` passes them to the group's STA; `pickPane` raises the group's
+`pickRequested`, which the strip answers with the list). The settings page's
 `HotKeyView.actions` lists the same keys, with the existing conflict checks and reset to
 defaults; with the default 0, `HotKeyBindings.Register` only unbinds.
 
@@ -452,7 +452,8 @@ together once the design had settled.
    keeps a divider per split and a window per empty pane, each looking its path up again by its
    window; drops split the pane under the pointer or, at the group's own edge, the whole group;
    the strip puts a seam button between every two neighbouring pane tabs, showing the split
-   that parts them; five shortcuts came for focus by direction and closing a pane.
+   that parts them; shortcuts came for focus by direction, and the Shortcuts page was then
+   cut back to six split keys in a card of their own (section 5).
 
 ## 9. Differences from the first version
 

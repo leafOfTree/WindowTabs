@@ -152,7 +152,7 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
         member x.removeWindow hwnd = this.removeWindow hwnd
         member x.switchWindow(next,force) = this.switchWindow(next, force)
         member x.executeSplit command = this.invokeGroup <| fun() -> this.group.execute command
-        member x.splitWithNext axis = this.invokeGroup <| fun() -> this.group.splitWithNext axis
+        member x.pickPane(axis,side) = this.invokeGroup <| fun() -> this.group.requestPick(axis,side)
         
 type IDesktopNotification =
     abstract member dragDrop : IntPtr -> unit

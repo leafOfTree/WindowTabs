@@ -156,8 +156,8 @@ type IGroup =
     abstract member switchWindow: bool * bool -> unit
     /// Split-view commands from outside the group, such as program hotkeys.
     abstract member executeSplit: SplitCommand -> unit
-    /// Splits the tab in front with the next tab, or opens an empty pane beside a lone tab.
-    abstract member splitWithNext: SplitAxis -> unit
+    /// Lists the windows to put on that side of the tab in front, as the tab menu does.
+    abstract member pickPane: SplitAxis * Side -> unit
     abstract member windows: List2<IntPtr>
     abstract member destroy: unit -> unit
 

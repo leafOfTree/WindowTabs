@@ -61,8 +61,9 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
 - **Split view:** show two or more of a group's windows side by side or stacked, as in a
   browser or editor. Right-click a tab → **Split view** and pick a window for each side, or
   drag a tab to a window's edge. Drag the bar between the panes to resize them, right-click
-  it to swap, equalize, switch direction or end the split. Shortcuts for every split command
-  are under **Settings → Shortcuts**, unset by default.
+  it to swap, equalize, switch direction or end the split. Shortcuts for a window on the right
+  or below and for moving the focus between panes are under **Settings → Shortcuts**, unset by
+  default.
 - **Workspaces:** save groups and window positions, then restore them onto open windows;
   apps that are not running can be launched and their windows restored.
 - **Taskbar:** optionally combine each group into one taskbar button, which shows every

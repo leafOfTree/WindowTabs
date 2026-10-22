@@ -133,6 +133,10 @@ type TabStripDecorator(group:WindowGroup) as this =
         group.added.Add(fun hwnd -> Services.dragDrop.registerLayoutTarget(hwnd, this:>ILayoutDropTarget))
         group.removed.Add(fun hwnd -> Services.dragDrop.unregisterLayoutTarget(hwnd, this:>ILayoutDropTarget))
         // The empty pane is owned by nothing, so it is found by its own window.
+        // A shortcut's window list, beside the tab in front, as the tab menu's.
+        group.pickRequested.Add(fun (axis,side) ->
+            let top = group.topWindow
+            this.pickBeside(top,group.splitCandidates top,axis,side))
         group.emptyPaneChanged.Add(fun (previous,current) ->
             if previous<>IntPtr.Zero then Services.dragDrop.unregisterLayoutTarget(previous, this:>ILayoutDropTarget)
             if current<>IntPtr.Zero then Services.dragDrop.registerLayoutTarget(current, this:>ILayoutDropTarget))
