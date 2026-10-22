@@ -22,7 +22,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
   a later build), so build without exiting first. Starting any copy asks the running one to
   exit as from its tray menu and takes over.
 - New suites must be added to the `$Suites` default in `tests/Run-Tests.ps1`, start
-  with `TestInit.run main`, and reference the app as `#r "Debug/WindowTabs.exe"`.
+  with `TestInit.run main`, and reference the app as `#r "Debug/WindowTabs.exe"`. A suite
+  that moves the real pointer, such as `SplitViewDesktop`, goes in the `ValidateSet` only
+  and runs on request with `-VisibleDesktop` (see [docs/testing.md](docs/testing.md)).
 - Desktop E2E (`tests/Run-DesktopE2E.ps1`) drives real input and takes over the
   desktop; only run it when asked. See [docs/desktop-e2e.md](docs/desktop-e2e.md).
 - CI (`.github/workflows/build.yml`) runs Release checks and three regression
