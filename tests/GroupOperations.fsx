@@ -759,6 +759,15 @@ let main() =
                             let pane = (SplitGeometry.paneRect (Dpi.scale SplitMetrics.gap) frame s.Value (SplitView.pathOf other s.Value).Value).Value
                             let visibleLeast = wide-(OS().windowFromHwnd(other).bounds.width-OS().windowFromHwnd(other).visibleBounds.width)
                             check (pane.width>=visibleLeast) (sprintf "A window's pane was narrower than its least width: %d of %d" pane.width visibleLeast)
+                            // A divider's ratio keeps the least sizes read before: asked again at every
+                            // step of a drag, each pane's app held the group thread up to the timeout.
+                            let cacheOf (group:WindowGroup) =
+                                (typeof<WindowGroup>.GetFields(flags) |> Array.find(fun field -> field.Name="paneLeastCache")).GetValue(group) :?> Map<IntPtr,Sz>
+                            let cached = onGroup cacheOf
+                            onHelper(fun () -> form.MinimumSize <- Size(wide+40,100))
+                            onGroup(fun group -> group.execute(SetRatio([],0.45)))
+                            waitSplit()
+                            check (onGroup cacheOf=cached) "A divider's ratio asked every pane for its least size again"
                             onGroup(fun group -> group.execute(EndSplit(Some shown)))
                             waitOperation()
                             onHelper(fun () -> form.MinimumSize <- Size(frame.width-Dpi.scale 60,100))

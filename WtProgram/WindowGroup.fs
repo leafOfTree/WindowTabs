@@ -1488,8 +1488,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 let wasSplit = this.isSplit
                 if not wasSplit && not(defaultArg keepFrame false) then this.saveTopWindowPlacement()
                 // Each pane gets at least the size its window lets itself be sized to, the ratios
-                // moved as far as that takes.
-                paneLeastCache <- Map.empty
+                // moved as far as that takes. Asked again at every step of a divider drag, each
+                // pane's app, busy resizing, held the group thread up to the timeout per step.
+                (match command with SetRatio _ -> () | _ -> paneLeastCache <- Map.empty)
                 let least = this.paneLeast
                 let frame = this.layoutFrame
                 let fitsAll (tree:SplitTree) =
