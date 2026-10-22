@@ -126,9 +126,27 @@ module GroupIconImage =
             g.CompositingMode <- Drawing2D.CompositingMode.SourceCopy
             g.FillPath(clear,path)
             g.CompositingMode <- Drawing2D.CompositingMode.SourceOver
-            // From the back: each one draws itself over the ones after it.
+            // From the back: each one draws itself over the ones after it, on a plate of its
+            // own, so an icon drawn on nothing, as some apps' are, neither shows the one behind
+            // through it nor fades into the taskbar.
+            // The taskbar's own shade, which follows the system's theme, not the tabs' setting.
+            let plate = if ThemeService.systemIsDark() then Color.FromArgb(56,56,56) else Color.FromArgb(232,232,232)
+            use plateBrush = new SolidBrush(plate)
             rest |> List.indexed |> List.rev |> List.iter(fun (index,icon) ->
-                g.DrawImage(icon,Rectangle(left+index*step,top,side,side)))
+                let box = Rectangle(left+index*step,top,side,side)
+                let radius = max 2 (side/6)
+                use shape = new Drawing2D.GraphicsPath()
+                let d = float32(radius*2)
+                let x,y,w,h = float32 box.X,float32 box.Y,float32 box.Width,float32 box.Height
+                shape.AddArc(x,y,d,d,180.0f,90.0f)
+                shape.AddArc(x+w-d,y,d,d,270.0f,90.0f)
+                shape.AddArc(x+w-d,y+h-d,d,d,0.0f,90.0f)
+                shape.AddArc(x,y+h-d,d,d,90.0f,90.0f)
+                shape.CloseFigure()
+                g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+                g.FillPath(plateBrush,shape)
+                g.SmoothingMode <- Drawing2D.SmoothingMode.None
+                g.DrawImage(icon,box))
         canvas
 
 /// A group's taskbar icon, drawn by GroupIconImage. Windows 11 draws an overlay icon at the top
