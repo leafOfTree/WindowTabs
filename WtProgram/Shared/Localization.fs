@@ -18,12 +18,19 @@ module Localization =
     let current() =
         let code = if preference="system" then CultureInfo.CurrentUICulture.TwoLetterISOLanguageName else preference
         if languages |> Array.exists (fun (c,_,_) -> c=code) then code else "en"
-    let tr (text:LocalizedText) =
+    /// The text in the current language as written, for values that are parsed or saved.
+    let plain (text:LocalizedText) =
         match current() with
         | "zh" -> text.zh
         | "ja" -> text.ja
         | "ar" -> text.ar
         | _ -> text.en
+    /// GDI and the standard controls read text left to right unless told otherwise, which puts the
+    /// words of an Arabic sentence around a Latin word, and its final full stop, in the wrong order.
+    /// A right-to-left embedding keeps each text in reading order without mirroring the layout.
+    let tr (text:LocalizedText) =
+        let value = plain text
+        if current()="ar" && value<>"" then "\u202B"+value+"\u202C" else value
     /// Every translation of a text, for search.
     let all (text:LocalizedText) = [text.en; text.zh; text.ja; text.ar]
 

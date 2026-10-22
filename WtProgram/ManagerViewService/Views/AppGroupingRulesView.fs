@@ -160,7 +160,7 @@ type GroupingApplicationMenu() as this =
             if index>=0 && index<shown.Length then picked.Trigger(shown.[index])
             elif index=shown.Length then
                 use dialog = new OpenFileDialog(Title=tr Strings.AppRules.application,
-                                               Filter=tr Strings.AppRules.applicationFiles,CheckFileExists=true)
+                                               Filter=Localization.plain Strings.AppRules.applicationFiles,CheckFileExists=true)
                 if dialog.ShowDialog(owner)=DialogResult.OK then picked.Trigger(dialog.FileName))
         choice <- Some next
         dropDown <- next.CreateDropDown() |> Option.map(fun window ->
@@ -449,7 +449,7 @@ type AppGroupingRulesView() as this =
                 tree.Focus() |> ignore)
         addGroup.Click.Add(fun _ ->
             // Short and numbered from the start: Group 1, Group 2, the first number not taken.
-            let named number = tr (Strings.AppRules.newGroup number)
+            let named number = Localization.plain (Strings.AppRules.newGroup number)
             let taken number = groups |> List.exists(fun group -> String.Equals(group.name,named number,StringComparison.OrdinalIgnoreCase))
             let target = Seq.initInfinite ((+) 1) |> Seq.find(taken >> not) |> named
             let group : AppGroupingTarget = {id=Guid.NewGuid().ToString("N");name=target}
