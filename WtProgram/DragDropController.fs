@@ -181,7 +181,7 @@ type DragActionInfo = {
     layoutTargets : Map2<IntPtr, ILayoutDropTarget>
     notifications: Set2<IDragDropNotification>
     initialHwnd : IntPtr
-    image : unit -> Img
+    image : (Img -> unit) -> Img
     imageOffset : Pt
     initialPt : Pt
     data: obj
@@ -316,8 +316,16 @@ type DragAction(info:DragActionInfo) =
                     let animationWindow = AnimationWindow(os)
                     // The image carries its own see-through window; the tab on it stays solid.
                     animationWindow.setAlpha(byte(0xFF))
-                    // The image comes drawn at the size it shows: its window small, its tab readable.
-                    try animationWindow.setImage(info.image())
+                    // The image comes drawn at the size it shows: its window small, its tab
+                    // readable. The window's picture may follow a moment later, from another
+                    // thread: printed before the drag could start, a large window held it up.
+                    let invoker = InvokerService.invoker
+                    let later (image:Img) =
+                        invoker.asyncInvoke(fun () ->
+                            match animationWindowCell.value with
+                            | Some window when not finished -> window.setImage image
+                            | _ -> image.bitmap.Dispose())
+                    try animationWindow.setImage(info.image later)
                     with _ -> ()
                     Some(animationWindow)
                 info.targets.values.iter <| fun target -> target.dragBegin()

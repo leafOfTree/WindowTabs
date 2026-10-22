@@ -772,7 +772,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                         // The tab at full size over its window shown small: the pointer keeps the
                         // point of the tab it pressed.
                         let tabX = this.ts.dragTabX(tab,landing)
-                        let dragImage = fun() -> this.ts.dragImage(tab,tabX,landing)
+                        let dragImage = fun later -> this.ts.dragImage(tab,tabX,landing,later)
                         let dragInfo = box({ info with tabShift = shift })
                         Services.dragDrop.beginDrag(this.ts.hwnd, dragImage, dragOffset.add(Pt(tabX,0)), ptScreen, dragInfo)
                 | MouseMiddle ->

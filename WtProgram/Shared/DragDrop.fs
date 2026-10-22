@@ -46,6 +46,8 @@ type IDragDrop =
     /// Only this target's registration goes: a window that moved to another group is that
     /// group's now, and the old group's late removal must not take it from the new one.
     abstract member unregisterLayoutTarget : (IntPtr * ILayoutDropTarget) -> unit
-    abstract member beginDrag : (IntPtr * (unit -> Img) * Pt * Pt * obj) -> unit
+    /// The image function gives the image to show now and may hand a finished one, the same
+    /// size, to the function it is given, from any thread, a moment later.
+    abstract member beginDrag : (IntPtr * ((Img -> unit) -> Img) * Pt * Pt * obj) -> unit
     /// Ends the drag in progress without dropping; true if there was one.
     abstract member cancelDrag : unit -> bool

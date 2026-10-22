@@ -75,7 +75,9 @@ the tree's simplest case and keep their behaviour.
   letting go does, and a label beside the dragged tab added little to it. The dragged image shows the
   window at half the size it would land at (`DragImage.windowScale`), a little see-through
   (`DragImage.windowOpacity`), and the tab solid and at full size, placed over that half-size
-  window as the strip places a lone tab, so it stays readable. Letting go splits the group. The
+  window as the strip places a lone tab, so it stays readable. The window's picture is printed
+  on a worker thread and slots in a moment after the drag starts, under the tab shown at once:
+  printed first, a large window held the drag up as it began. Letting go splits the group. The
   preview changes no membership; only the drop commits. Tabs
   of this group and of other groups on the same virtual desktop alike are offered the edge once
   the pointer has rested in its zone for 100ms, within 6px (`LayoutDwell`); from then on the
