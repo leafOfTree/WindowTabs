@@ -320,8 +320,7 @@ Shortcuts and menus share `SplitCommand`. Shortcuts use the existing `hotKeyInfo
 that no global hotkey is taken. The entries:
 
 Six keys, in a card of their own on the Shortcuts page: two ways in, which open the tab
-menu's window list (an empty pane first in it) for the tab in front, and the focus by
-direction. The rest of the commands (the other two sides, swap, equalize, closing a pane,
+menu's window list for the tab in front, and the focus by direction. The rest of the commands (the other two sides, swap, equalize, closing a pane,
 ending the split) are on the tab menu, the seam buttons and the dividers; a dozen split
 entries once crowded the page, and the next tab's shortcut already walks the panes in order.
 

@@ -214,7 +214,7 @@ module Strings =
                          keywords={ en="close window"; zh="关闭窗口"; ja="ウィンドウを閉じる"; ar="إغلاق النافذة" } }
         let private splitWords = { en="split view pane"; zh="分屏 窗格"; ja="分割 ペイン"; ar="عرض مقسّم جزء" }
         let splitPickRight = { caption={ en="Window on the right…"; zh="在右侧放入窗口…"; ja="右側にウィンドウを配置…"; ar="نافذة على اليمين…" }
-                               description={ en="Opens the list of windows to put beside the tab in front, with an empty pane first."; zh="打开窗口列表，选中的放到当前标签右边；第一项是空白窗格。"; ja="前面のタブの隣に置くウィンドウの一覧を開きます。先頭は空のペインです。"; ar="يفتح قائمة النوافذ لوضع إحداها بجانب علامة التبويب الأمامية، وأولها جزء فارغ." }
+                               description={ en="Lists the windows to put beside the tab in front."; zh="列出可放到当前标签旁边的窗口。"; ja="前面のタブの隣に置くウィンドウを一覧表示します。"; ar="يعرض النوافذ التي يمكن وضعها بجانب علامة التبويب الأمامية." }
                                keywords=splitWords }
         let splitPickBelow = { caption={ en="Window below…"; zh="在下方放入窗口…"; ja="下側にウィンドウを配置…"; ar="نافذة في الأسفل…" }
                                description=none

@@ -54,11 +54,8 @@ its tray menu and takes over. A split comes back after a restart as its windows 
    resize beside a slow app.
 5. Right-click a tab, Split in group, and pick a window on the right, on the left, above or below: the
    list opens over the group and the window picked goes on that side of the tab; Esc changes
-   nothing. Then press the shortcut for a window on the right and choose the empty pane at the
-   top of the list. It opens out
-   from the group's edge. Drop a tab of this group, a tab of another group, or a window dragged by its title bar
-   onto it; or use "Choose window…". Resize it by its edges, and close it with its close button,
-   or with Esc while the tab beside it is active: that Esc does not reach the app.
+   nothing. The shortcut for a window on the right or below opens the same list for the tab in
+   front.
 6. Drag a tab to the edges of a group's window, from this group and from another one, and rest
    there a moment: a preview lights up the half the tab would take and letting go splits. Let
    go on the way instead, before the preview shows: the tab comes out as a window of its own,
