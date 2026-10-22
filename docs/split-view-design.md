@@ -46,11 +46,12 @@ the tree's simplest case and keep their behaviour.
   window kept growing to the whole group while the others fade. A window made smaller or
   leaving waits for its image as above; one made larger goes to its place at once, its image cut
   to the rectangle while that grows. Out of the split nothing waits for the windows, so that
-  cover goes once its steps are done and the windows are placed. A tab clicked over the panes
-  parks them the same way, growing from behind them to the whole group while they fade, and
-  the panes come back from behind it shrinking into place while it fades: placed at once, the
-  tab rose pane-sized with the desktop showing round it. A divider dragged, a pane resized at
-  its own edge, a tab dragged and the focus alone do not animate.
+  cover goes once its steps are done and the windows are placed. A tab clicked over the panes,
+  and the panes coming back from behind it, get the cover with no steps (`instant`): the images
+  stand at their places from the first frame, the ones leaving kept under the rest, so the
+  cover only hides the windows being placed. Placed with no cover, the tab rose pane-sized with
+  the desktop showing round it; moved with the images, the switch felt slow. A divider dragged,
+  a pane resized at its own edge, a tab dragged and the focus alone do not animate.
 - Right-click any tab, then Split in group, then a window on the right, on the left, above or below:
   the searchable window list below opens over the group first, and the window picked goes on
   that side of the clicked tab, its pane split when the group is split already

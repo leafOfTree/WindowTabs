@@ -1324,7 +1324,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// at once, a tab behind rose pane-sized with the desktop showing round it. Not while a
     /// divider is dragged, for the focus alone, for a window that has gone (`gone`), nor
     /// without the system's animations.
-    member private this.beginTransition(before:GroupLayout, next:GroupLayout, current:IntPtr, ?focus:IntPtr, ?gone:IntPtr) =
+    member private this.beginTransition(before:GroupLayout, next:GroupLayout, current:IntPtr, ?focus:IntPtr, ?gone:IntPtr, ?instant:bool) =
         let gone = defaultArg gone IntPtr.Zero
         let shown hwnd = hwnd<>gone && this.windows.contains hwnd && isOpen hwnd && not(isMinimized hwnd)
         let frame = this.layoutFrame
@@ -1382,7 +1382,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             let dpi = Dpi.value()
             let transition,shown = this.chrome.invoke(fun () ->
                 Dpi.set dpi
-                let transition = new SplitTransition(frame,moves)
+                let transition = new SplitTransition(frame,moves,instant=defaultArg instant false)
                 transition,transition.start())
             match next with
             | Split _ when shown ->
@@ -1391,10 +1391,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 // shrinks from what it showed rather than the window jumping to its new size; one
                 // made larger, or coming in, goes to its place at once, so its image shows it at
                 // its new size, cut to the rectangle while that grows.
+                // Nothing waits when the images do not move.
                 transitionHold <-
-                    moves |> List.filter(fun move ->
-                        move.fade=FadeOut || (move.fade=NoFade && move.target.width<=move.from.width && move.target.height<=move.from.height))
-                    |> List.map(fun move -> move.hwnd)
+                    if defaultArg instant false then []
+                    else
+                        moves |> List.filter(fun move ->
+                            move.fade=FadeOut || (move.fade=NoFade && move.target.width<=move.from.width && move.target.height<=move.from.height))
+                        |> List.map(fun move -> move.hwnd)
                 // One timer, started afresh: a timer per transition let an earlier one, still
                 // running, place the windows a later transition was holding.
                 transitionRelease.Stop()
@@ -1575,7 +1578,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.onActivated(hwnd) =
         if this.windows.contains hwnd then
             let next = SplitView.onActivated hwnd groupLayout
-            if next<>groupLayout then this.beginTransition(groupLayout,next,hwnd,focus=hwnd)
+            if next<>groupLayout then this.beginTransition(groupLayout,next,hwnd,focus=hwnd,instant=true)
             this.setLayout(next,focus=hwnd)
 
     /// Losing a pane window: its neighbour takes its room, and the last other pane fills the frame.

@@ -515,9 +515,13 @@ type SplitMove = { hwnd:IntPtr; from:Rect; target:Rect; fade:SplitFade; border:P
 /// left, cut to its rectangle, so nothing is stretched; where a window is smaller than its
 /// rectangle for a moment, the theme's surface shows, as behind the panes. It closes once the
 /// group says the windows are in place, or after a while.
-type SplitTransition(frame:Rect, moves:SplitMove list) =
+/// `instant`: no steps, the images at their places from the first frame and the ones leaving
+/// kept under the rest, so the cover only hides the windows being placed; a tab clicked over
+/// the panes felt slow with the images moving.
+type SplitTransition(frame:Rect, moves:SplitMove list, ?instant:bool) =
     inherit SplitChromeForm()
-    let durationMs = float SplitTransition.DurationMs
+    let instant = defaultArg instant false
+    let durationMs = if instant then 0.0 else float SplitTransition.DurationMs
     /// How long the last step waits for the windows to be in place.
     let holdMs = 600.0
     let clock = Diagnostics.Stopwatch()
@@ -547,6 +551,7 @@ type SplitTransition(frame:Rect, moves:SplitMove list) =
             props.rcSource <- RECT.FromRectangle(Rectangle(move.border.x,move.border.y,width,height))
             props.opacity <-
                 match move.fade with
+                | _ when instant -> 255uy
                 | FadeIn -> byte(Math.Round(255.0*eased))
                 | FadeOut -> byte(Math.Round(255.0*(1.0-eased)))
                 | NoFade -> 255uy
