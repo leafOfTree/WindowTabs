@@ -148,9 +148,9 @@ module Strings =
                                description={ en="Runs in the system tray after you sign in."; zh="登录后在系统托盘中运行。"; ja="サインイン後にシステムトレイで実行します。" }
                                keywords={ en="startup autostart"; zh="开机启动 自启动"; ja="スタートアップ 自動起動" } }
         let restoreSession = { caption={ en="Restore the last session after sign-in"; zh="登录后恢复上次会话"; ja="サインイン後に前回のセッションを復元" }
-                               description={ en="A few seconds after sign-in, the windows that are open go back into the groups, positions and split views they had at sign-out. Choose to launch their apps as well, and apps whose windows are missing are opened first. A notice at the top of the screen says when it is done."
-                                             zh="登录几秒后，把已打开的窗口放回注销时的分组、位置和分屏。选\"并启动缺少的应用\"时，会先启动窗口还没出现的应用。恢复完成后屏幕顶部会有提示。"
-                                             ja="サインインの数秒後、開いているウィンドウをサインアウト時のグループ、位置、分割表示に戻します。「アプリの起動」を選ぶと、ウィンドウのないアプリを先に起動します。完了すると画面上部に通知が出ます。" }
+                               description={ en="Puts open windows back into the groups, positions and split views they had, optionally launching missing apps first."
+                                             zh="把已打开的窗口放回原来的分组、位置和分屏，可选先启动缺少的应用。"
+                                             ja="開いているウィンドウを元のグループ、位置、分割表示に戻します。足りないアプリを先に起動することもできます。" }
                                keywords={ en="session reboot"; zh="会话 重启"; ja="セッション 再起動" } }
         let enableTabsByDefault = { caption={ en="Use tabs for new apps"; zh="新应用自动启用标签"; ja="新しいアプリでタブを使う" }
                                     description={ en="Only apps first discovered after this change. Existing apps keep their tab setting."; zh="只影响此后首次出现的应用。已有应用保留原来的标签设置。"; ja="変更後に初めて検出するアプリに適用します。既存のアプリのタブ設定は維持します。" }
