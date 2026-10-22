@@ -443,9 +443,12 @@ let main() =
     let fileIcon = Win32Helper.GetFileIcon(unicodeExe)
     check (AppIcons.HasOwnIcon unicodeExe && not (AppIcons.IsGenericIcon fileIcon)) "File icon lost for a non-ASCII path"
     WinUserApi.DestroyIcon(fileIcon) |> ignore
-    for code,expected in ["en","Close";"zh","关闭";"ja","閉じる"] do
+    for code,expected in ["en","Close";"zh","关闭";"ja","閉じる";"ar","إغلاق"] do
         Localization.setPreference code
-        check (tr Strings.TabMenu.close=expected) ("Language override ignored: "+code)
+        check (Localization.plain Strings.TabMenu.close=expected) ("Language override ignored: "+code)
+    // Arabic is shown inside a right-to-left embedding; parsed and saved values stay unmarked.
+    check (tr Strings.TabMenu.close="\u202Bإغلاق\u202C") "Arabic text must read right to left"
+    check ((Localization.plain Strings.TabMenu.taskbarIconFiles).EndsWith("|*.*")) "File filter must not carry direction marks"
     Localization.setPreference "fr"
     check (tr Strings.TabMenu.close="Close") "Unsupported language must fall back to English"
     Localization.setPreference "system"
@@ -458,6 +461,7 @@ let main() =
     check partial.IsEmpty ("Settings text with a missing translation: " + String.concat " | " partial)
     check (SettingsCatalog.all |> List.forall(fun item -> item.text.caption.en<>"")) "Setting without a caption"
     check (SettingsCatalog.all |> List.exists(fun item -> SettingsCatalog.matches "テーマ" item)) "Settings search ignores Japanese"
+    check (SettingsCatalog.all |> List.exists(fun item -> SettingsCatalog.matches "السمة" item)) "Settings search ignores Arabic"
     let found query = SettingsCatalog.all |> List.filter (SettingsCatalog.matches query) |> List.map(fun item -> item.id)
     for query in ["autostart";"自启动";"スタートアップ";"runAtStartup"] do
         check (List.contains "launch-at-sign-in" (found query)) ("Search keyword missed: "+query)

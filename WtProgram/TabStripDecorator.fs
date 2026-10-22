@@ -333,7 +333,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 image = None
                 flags = List2()
                 click = fun() ->
-                    use dialog = new OpenFileDialog(Title=tr Strings.TabMenu.changeTaskbarIcon,Filter=tr Strings.TabMenu.taskbarIconFiles,CheckFileExists=true)
+                    use dialog = new OpenFileDialog(Title=tr Strings.TabMenu.changeTaskbarIcon,Filter=Localization.plain Strings.TabMenu.taskbarIconFiles,CheckFileExists=true)
                     let owner = {new IWin32Window with member _.Handle=group.hwnd}
                     if dialog.ShowDialog(owner)=DialogResult.OK then Services.program.setGroupIcon(hwnd,Some dialog.FileName)
             })
