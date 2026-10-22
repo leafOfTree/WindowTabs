@@ -519,9 +519,13 @@ type SplitMove = { hwnd:IntPtr; from:Rect; target:Rect; fade:SplitFade; border:P
 /// panes switches in a fraction of that (`ClickMs`), as it felt slow at the full length. With
 /// no time at all the images stand at their places from the first frame, the ones leaving kept
 /// under the rest, so the cover only hides the windows being placed.
-type SplitTransition(frame:Rect, moves:SplitMove list, ?durationMs:int) =
+/// `crossFade`: the whole cover, images and all, fades out over the windows underneath and
+/// goes on its own: for a plain switch between tabs, the window shown fades into the one
+/// coming up, so an app that paints its background first when uncovered shows no blank.
+type SplitTransition(frame:Rect, moves:SplitMove list, ?durationMs:int, ?crossFade:bool) =
     inherit SplitChromeForm()
     let durationMs = float(defaultArg durationMs SplitTransition.DurationMs)
+    let crossFade = defaultArg crossFade false
     let instant = durationMs<=0.0
     /// How long the last step waits for the windows to be in place.
     let holdMs = 600.0
@@ -538,6 +542,8 @@ type SplitTransition(frame:Rect, moves:SplitMove list, ?durationMs:int) =
         cp
     member private this.place(t:float) =
         let eased = 1.0-(1.0-t)*(1.0-t)*(1.0-t)
+        // Layered still at the end, so a click goes through to the last.
+        if crossFade then this.Opacity <- max 0.01 (0.999*(1.0-eased))
         let between (a:int) (b:int) = a+int(Math.Round(float(b-a)*eased))
         for move,thumb in thumbs do
             let left,top = between move.from.left move.target.left,between move.from.top move.target.top
@@ -563,6 +569,8 @@ type SplitTransition(frame:Rect, moves:SplitMove list, ?durationMs:int) =
     static member DurationMs = 220
     /// For a tab clicked over the panes, or a pane's tab clicked to bring them back: no steps.
     static member ClickMs = 0
+    /// For a plain switch between tabs: how long the window shown takes to fade into the next.
+    static member CrossFadeMs = 120
     /// How long the images stay once the windows are placed: an app paints its new size a
     /// moment after it is given, and the cover gone before that showed the window half painted.
     static member HoldAfterMs = 80
@@ -596,7 +604,8 @@ type SplitTransition(frame:Rect, moves:SplitMove list, ?durationMs:int) =
                 if elapsed<durationMs then this.place(elapsed/durationMs)
                 else
                     this.place 1.0
-                    if settled then this.closeSoon()
+                    if crossFade then this.close()
+                    elif settled then this.closeSoon()
                     elif elapsed>=durationMs+holdMs then this.close())
             timer <- Some tick
             tick.Start()

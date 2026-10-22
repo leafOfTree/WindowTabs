@@ -498,6 +498,19 @@ let main() =
             check (timeUntil 3000 (fun () -> not(covers()))).IsSome "The cover over the panes coming back stayed"
             waitOperation()
             check (onGroup(fun group -> group.splitLayout.IsSome)) "The panes did not come back"
+            // With no split, a switch to another tab fades the window shown into the next.
+            onGroup(fun group -> group.execute(EndSplit(Some ha)))
+            waitOperation()
+            let before = coversShown()
+            onGroup(fun group -> group.tabActivate(Tab hb,false))
+            check (coversShown()>before) "A switch between tabs did not fade one into the other"
+            check (timeUntil 2000 (fun () -> not(covers()))).IsSome "The fade between tabs stayed"
+            waitOperation()
+            check (onGroup(fun group -> group.topWindow=hb && group.splitLayout.IsNone)) "The switch between tabs did not bring the tab up"
+            onGroup(fun group -> group.tabActivate(Tab ha,false))
+            waitOperation()
+            onGroup(fun group -> group.execute(SplitWith(hc,SideBySide),current=ha))
+            waitOperation()
             onGroup(fun group -> group.execute(EndSplit(Some ha)))
             waitOperation()
         onHelper(fun () -> a.Grid <- 17)

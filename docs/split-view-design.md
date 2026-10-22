@@ -53,8 +53,11 @@ the tree's simplest case and keep their behaviour.
   steps (`ClickMs`), up before the window is activated: the images stand at their places from
   the first frame, the ones leaving kept under the rest, so the cover only hides the windows
   being placed. Placed with no cover, the tab rose pane-sized with the desktop showing round
-  it; moved with the images, the switch felt slow. A divider dragged, a pane resized at its own
-  edge, a tab dragged and the focus alone do not animate.
+  it; moved with the images, the switch felt slow. With no split at all, a click on another tab
+  fades the window shown out over the one coming up in 120ms (`SplitTransition.CrossFadeMs`):
+  an app that stops painting while covered, as Chromium ones do, paints its background first
+  when it comes up, and that blank showed for a tenth of a second. A divider dragged, a pane
+  resized at its own edge, a tab dragged and the focus alone do not animate.
 - Right-click any tab, then Split in group, then a window on the right, on the left, above or below:
   the searchable window list below opens over the group first, and the window picked goes on
   that side of the clicked tab, its pane split when the group is split already

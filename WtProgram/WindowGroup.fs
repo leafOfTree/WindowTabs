@@ -2234,6 +2234,28 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             FollowerPlacement.queue.submit(placementOwner,hwnd,request)
         this.watchMinimizeCompletion()
         
+    /// A plain switch to another tab, with no split shown: the window shown fades out over the
+    /// one coming up (`SplitTransition.CrossFadeMs`). An app that stops painting while covered,
+    /// as Chromium ones do, paints its background first when it comes up, and that blank showed
+    /// for a tenth of a second. The image is of the window shown, live, cut to the group's frame.
+    member private this.crossFadeTo(hwnd:IntPtr) =
+        let shown = this.topWindow
+        if SystemInformation.UIEffectsEnabled && not dragPause && not this.isSplit && shown<>hwnd &&
+           this.windows.contains shown && isOpen shown && not(isMinimized shown) && not(isMinimized hwnd) && isVisibleCell.value then
+            let frame = this.layoutFrame
+            let window = this.os.windowFromHwnd shown
+            let bounds,visible = window.bounds,window.visibleBounds
+            let move = { hwnd=shown; from=frame; target=frame; fade=NoFade
+                         border=Pt(visible.x-bounds.x,visible.y-bounds.y)
+                         borderSize=Sz(bounds.width-visible.width,bounds.height-visible.height) }
+            let dpi = Dpi.value()
+            let shownNow =
+                this.chrome.invoke(fun () ->
+                    Dpi.set dpi
+                    let fade = new SplitTransition(frame,[move],durationMs=SplitTransition.CrossFadeMs,crossFade=true)
+                    fade.start())
+            if shownNow then coversShown <- coversShown+1
+
     member this.tabActivate(Tab(hwnd), force) =
         let window = this.os.windowFromHwnd(hwnd)
         // The cover goes up before the window comes to the front: raised first, a parked pane
@@ -2244,6 +2266,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if next<>groupLayout then
                 this.beginTransition(groupLayout,next,hwnd,focus=hwnd,durationMs=SplitTransition.ClickMs)
                 coverAhead <- true
+            elif groupLayout=GroupLayout.Single then this.crossFadeTo hwnd
         // The strip is owned by the top window and only follows a new top window once the
         // foreground event comes back through the group. Until then the activated window
         // covers it, which flashes whenever the tabs sit inside the title bar. Owned windows
