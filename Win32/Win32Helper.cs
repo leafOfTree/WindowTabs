@@ -519,6 +519,63 @@ namespace Bemo
             WinUserApi.FlashWindowEx(ref fInfo);
         }
     }
+    /// <summary>
+    /// A per-pixel layered window's picture kept between frames: drawn once per size into a
+    /// memory DC, so each frame only moves the window and sets its opacity. Drawn again at every
+    /// frame of a fade, a window the size of a pane cost a few milliseconds each time.
+    /// </summary>
+    public sealed class LayeredSurface : IDisposable
+    {
+        IntPtr dc;
+        IntPtr bitmap;
+        IntPtr original;
+        Size size;
+
+        public Size Size { get { return size; } }
+
+        public void Render(Bitmap picture)
+        {
+            Release();
+            dc = WinGdiApi.CreateCompatibleDC(IntPtr.Zero);
+            bitmap = picture.GetHbitmap(Color.FromArgb(0));
+            original = WinGdiApi.SelectObject(dc, bitmap);
+            size = picture.Size;
+        }
+
+        public void Update(IntPtr hwnd, Point location, byte alpha)
+        {
+            if (dc == IntPtr.Zero) return;
+            BLENDFUNCTION blend = new BLENDFUNCTION();
+            blend.BlendOp = AlphaChannelFlags.AC_SRC_OVER;
+            blend.BlendFlags = 0;
+            blend.AlphaFormat = AlphaChannelFlags.AC_SRC_ALPHA;
+            blend.SourceConstantAlpha = alpha;
+            POINT srcLocation = new POINT();
+            POINT dstLocation = POINT.FromPoint(location);
+            SIZE dstSize = SIZE.FromSize(size);
+            WinUserApi.UpdateLayeredWindow(hwnd, IntPtr.Zero, ref dstLocation, ref dstSize, dc, ref srcLocation, 0, ref blend, UpdateLayeredWindowFlags.ULW_ALPHA);
+        }
+
+        void Release()
+        {
+            if (dc != IntPtr.Zero)
+            {
+                WinGdiApi.SelectObject(dc, original);
+                WinGdiApi.DeleteObject(bitmap);
+                WinGdiApi.DeleteDC(dc);
+                dc = IntPtr.Zero;
+                bitmap = IntPtr.Zero;
+                original = IntPtr.Zero;
+                size = Size.Empty;
+            }
+        }
+
+        public void Dispose()
+        {
+            Release();
+        }
+    }
+
     public static class ResourceExtractor
     {
         public static void ExtractResourceToFile(string resourceName, string filename)

@@ -20,6 +20,9 @@ type private LayoutPreview() =
     let mutable toRect,toAlpha = Rectangle.Empty,0.0
     let mutable drawn : (Rectangle * byte) option = None
     let mutable ticking = false
+    /// The picture, drawn once per size: drawn again at every frame of the fade, a pane's worth
+    /// of pixels held up the strip's thread, and the drag with it, as the preview came on.
+    let surface = new LayeredSurface()
     override _.ShowWithoutActivation = true
     override _.CreateParams =
         let cp = base.CreateParams
@@ -33,15 +36,17 @@ type private LayoutPreview() =
             this.Hide()
         elif drawn<>Some(shown,opacity) && shown.Width>0 && shown.Height>0 then
             drawn <- Some(shown,opacity)
-            let accent = SettingsColors.current().accent
-            use bitmap = new Bitmap(shown.Width,shown.Height,Imaging.PixelFormat.Format32bppArgb)
-            use g = Graphics.FromImage(bitmap)
-            use tint = new SolidBrush(Color.FromArgb(70,int accent.R,int accent.G,int accent.B))
-            g.FillRectangle(tint,0,0,shown.Width,shown.Height)
-            let edge = max 2 (Dpi.scale 2)
-            use pen = new Pen(Color.FromArgb(230,int accent.R,int accent.G,int accent.B),float32 edge)
-            g.DrawRectangle(pen,float32 edge/2.0f,float32 edge/2.0f,float32(shown.Width-edge),float32(shown.Height-edge))
-            Win32Helper.UpdateLayeredWindow(this.Handle,shown.Location,bitmap,opacity)
+            if surface.Size<>shown.Size then
+                let accent = SettingsColors.current().accent
+                use bitmap = new Bitmap(shown.Width,shown.Height,Imaging.PixelFormat.Format32bppArgb)
+                use g = Graphics.FromImage(bitmap)
+                use tint = new SolidBrush(Color.FromArgb(70,int accent.R,int accent.G,int accent.B))
+                g.FillRectangle(tint,0,0,shown.Width,shown.Height)
+                let edge = max 2 (Dpi.scale 2)
+                use pen = new Pen(Color.FromArgb(230,int accent.R,int accent.G,int accent.B),float32 edge)
+                g.DrawRectangle(pen,float32 edge/2.0f,float32 edge/2.0f,float32(shown.Width-edge),float32(shown.Height-edge))
+                surface.Render bitmap
+            surface.Update(this.Handle,shown.Location,opacity)
     member private this.step() =
         let t = min 1.0 (clock.Elapsed.TotalMilliseconds/durationMs)
         let eased = 1.0-(1.0-t)*(1.0-t)*(1.0-t)
@@ -84,8 +89,13 @@ type private LayoutPreview() =
     /// Fades out where it is.
     member this.fadeOut() =
         if this.Visible then this.animate(shown,0.0)
+    /// Makes the window ahead of its first show, as a drag begins, so the first place offered
+    /// comes on without the pause of creating it.
+    member this.prepare() = this.Handle |> ignore
     override this.Dispose(disposing) =
-        if disposing then ticker.Dispose()
+        if disposing then
+            ticker.Dispose()
+            surface.Dispose()
         base.Dispose(disposing)
 
 type TabStripDecorator(group:WindowGroup) as this =
@@ -897,9 +907,12 @@ type TabStripDecorator(group:WindowGroup) as this =
 
     interface IDragDropTarget with
         member this.dragBegin() =
-            this.invokeAsync <| fun() -> 
+            this.invokeAsync <| fun() ->
                 isDraggingCell.value <- true
                 this.ts.transparent <- false
+                if WinUserApi.IsWindow this.ts.hwnd then
+                    if layoutPreview.IsNone then layoutPreview <- Some(new LayoutPreview())
+                    layoutPreview.Value.prepare()
                 
         member this.dragEnter dragInfo pt =
             this.invokeSync <| fun() -> 
