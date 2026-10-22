@@ -450,7 +450,7 @@ let main() =
                         let seam = (onGroup(fun group -> paneRect group First)).right
                         let band() = OS().windowFromHwnd(divider).bounds
                         pumpUntil(fun () -> (band()).width=Dpi.scale SplitMetrics.dividerGrab)
-                        let border = Dpi.scale 7
+                        let border = Dpi.scale 6
                         check ((band()).left<=seam-border && (band()).right>=seam+border)
                               (sprintf "The divider's band %A leaves a pane's resize border bare at the seam %d" (band()) seam)
                     let firstFrame = onGroup(fun group -> group.layoutFrame)

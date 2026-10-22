@@ -154,9 +154,10 @@ the tree's simplest case and keep their behaviour.
   the same way: placed as a tab behind, it waited under the panes with the focus.
 - Dividers: one per split, each dragged for its own ratio, double-clicked to return that split
   to 50:50, right-clicked for the same menu as the seam button, acting on that split. The 4px
-  bar shows only when hovered or dragged, inside a 20px band (`dividerGrab`) that takes the
-  pointer and covers both panes' invisible resize borders at the seam: a press near the seam
-  always drags the divider. With the band no wider than the bar, a press a few pixels off it
+  bar shows only when hovered or dragged, inside a 14px band (`dividerGrab`) that takes the
+  pointer and just covers both panes' invisible resize borders at the seam: a press near the
+  seam always drags the divider, and no more of a pane than that, a scroll bar at the seam say,
+  is covered. With the band no wider than the bar, a press a few pixels off it
   started a pane's own resize, which the other pane followed (`resizePane`); that was kept for
   a while as the smoother drag, but it could not be told apart from the divider by eye, and the
   divider's drag has since been made to keep up with the pointer.
@@ -255,7 +256,7 @@ Pure functions:
   that axis, whose ratio follows, or the group's own edge, which moves with it while every split
   on the way gives the room to the pane's side so the other side keeps its size. Constants live
   in `SplitMetrics`, in logical pixels: no gap between the panes, a 4px divider bar inside a
-  20px band that takes the pointer, panes at
+  14px band that takes the pointer, panes at
   least 120px, ratios from 0.15 to 0.85, a 3px position tolerance, a 40px size tolerance for
   apps on a character grid, a 2000ms wait for panes to settle, edge drop zones 36px deep at
   their ends that deepen to a fifth of the window (`edgeShare`) at the middle of each edge, and

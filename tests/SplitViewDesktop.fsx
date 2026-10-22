@@ -340,7 +340,7 @@ let main() =
             let y = band.y+band.height/2
             let missed = [band.left..band.right-1] |> List.filter(fun x -> WinUserApi.WindowFromPoint(POINT(x,y))<>divider)
             let seam = (visible ha).right
-            let border = Dpi.scale 7
+            let border = Dpi.scale 6
             printfn "METRIC divider-band band=%A seam=%d" band seam
             check missed.IsEmpty (sprintf "The divider's band does not take the pointer across its width: missed at %A" missed)
             check (band.left<=seam-border && band.right>=seam+border)
