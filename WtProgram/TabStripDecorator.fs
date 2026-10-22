@@ -456,28 +456,23 @@ type TabStripDecorator(group:WindowGroup) as this =
                 flags = grayed(this.sortedTabs() = group.lorder.list)
             })
 
-        // The clicked tab leads an empty pane; splitting with it pairs it with the tab on top.
-        let splitCommand text enabled command current =
-            CmiRegular({text=tr text;image=None;flags=grayed(not enabled);click=fun () -> group.execute(command,current=current)})
-        let split = group.splitLayout
-        let canSplit = split.IsSome || (group.windows.count>1 && hwnd<>group.topWindow)
         let top = group.topWindow
         // A window is chosen first and goes straight beside the clicked tab, so no empty pane
         // waits for one: the list opens over the group, and Esc leaves things as they were.
         let candidates = lazy(group.splitCandidates hwnd)
         let pickItem text axis side =
             CmiRegular({text=tr text;image=None;flags=List2();click=fun () -> this.pickBeside(hwnd,candidates.Force(),axis,side)})
+        // In a split, the same commands as a divider's menu, the direction switched by one item
+        // as there; with none, they would all be greyed out, so they are left out.
+        let splitItems = SplitMenu.items group.layout (fun command -> group.execute(command,current=top))
         let splitMenu = CmiPopUp({text=tr Strings.TabMenu.split;image=None;items=List2([
-            pickItem Strings.TabMenu.splitPickRight SideBySide Second
-            pickItem Strings.TabMenu.splitPickBelow Stacked Second
-            pickItem Strings.TabMenu.splitPickLeft SideBySide First
-            CmiSeparator
-            splitCommand Strings.TabMenu.splitHorizontal canSplit (SplitWith(hwnd,SideBySide)) top
-            splitCommand Strings.TabMenu.splitVertical canSplit (SplitWith(hwnd,Stacked)) top
-            CmiSeparator
-            splitCommand Strings.TabMenu.splitSwap split.IsSome (Swap None) top
-            splitCommand Strings.TabMenu.splitEqual split.IsSome (Equalize None) top
-            splitCommand Strings.TabMenu.splitMerge split.IsSome (EndSplit(Some hwnd)) top
+            yield pickItem Strings.TabMenu.splitPickRight SideBySide Second
+            yield pickItem Strings.TabMenu.splitPickLeft SideBySide First
+            yield pickItem Strings.TabMenu.splitPickAbove Stacked First
+            yield pickItem Strings.TabMenu.splitPickBelow Stacked Second
+            if splitItems.count>0 then
+                yield CmiSeparator
+                yield! splitItems.list
         ])})
 
         let combineIconsInTaskbar =

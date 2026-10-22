@@ -713,6 +713,14 @@ let main() =
                         pumpUntil(fun () -> not(overlay()))
                         onGroup(fun group -> group.execute(EndSplit(Some shown)))
                         waitOperation()
+                        // Above, as the menu offers too: the window chosen takes the top pane.
+                        onGroup(fun group -> group.placeBeside(shown,other,Stacked,First))
+                        waitSplit()
+                        check (onGroup(fun group -> group.splitLayout |> Option.exists(fun s -> s.tree.axis=Stacked && s.tree.first=Leaf(Occupied other) && s.tree.second=Leaf(Occupied shown))))
+                              (sprintf "A window chosen to go above did not take the top of the tab: %A" (onGroup(fun group -> group.layout)))
+                        pumpUntil(fun () -> not(overlay()))
+                        onGroup(fun group -> group.execute(EndSplit(Some shown)))
+                        waitOperation()
                     // A window with a least size of its own gets a pane at least that size, the
                     // ratio moved for it: in a narrower pane it kept its size and lay over the pane
                     // beside it. With no room for it, the split is refused.

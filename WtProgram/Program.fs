@@ -105,8 +105,6 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         ("splitFocusUp", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneUp)))
         ("splitFocusDown", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneDown)))
         ("splitSwap", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(Swap None)))
-        ("splitGrow", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(AdjustRatio SplitMetrics.ratioStep)))
-        ("splitShrink", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(AdjustRatio(-SplitMetrics.ratioStep))))
         ("splitEqualize", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(Equalize None)))
         ("splitClosePane", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(ClosePane None)))
         ("splitEnd", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(EndSplit None)))

@@ -48,15 +48,15 @@ the tree's simplest case and keep their behaviour.
   to the rectangle while that grows. Out of the split nothing waits for the windows, so that
   cover goes as soon as its steps are done. A divider dragged, a pane resized at its own edge, a
   tab parking the split and the focus alone do not animate.
-- Right-click tab B while A is shown, then Split in group, then side by side or stacked. A takes
-  the left or top pane, B the right or bottom one, focus goes to B, and the ratio is 50:50.
-  Both items are disabled on the tab that is shown.
-- Right-click any tab, then Split in group, then a window on the right, below or on the left:
+- Right-click any tab, then Split in group, then a window on the right, on the left, above or below:
   the searchable window list below opens over the group first, and the window picked goes on
   that side of the clicked tab, its pane split when the group is split already
   (`WindowGroup.placeBeside`; a window from elsewhere is handed over through
   `IDesktop.adoptBeside`). Esc leaves the group as it was. Chosen first, the window needs no
-  empty pane to wait in, so the menu no longer opens one.
+  empty pane to wait in, so the menu no longer opens one. While split, the same menu goes on
+  with the divider menu's items for the focused pane's split: swap, equalize, switch direction
+  and end split (`SplitMenu.items`), so both menus read alike; with no split they are left out
+  rather than greyed.
 - The new empty pane on the right or below, from its shortcuts. The empty pane has a 1px
   frame in Explorer's colours, a dashed drop box, an "or" line and a "Choose window…" button,
   and a close button at the top right that ends the empty split; Esc does the same while a tab
@@ -102,7 +102,7 @@ the tree's simplest case and keep their behaviour.
   foreground as the tab left it, to show panes the tab had parked, and the window landed under
   them.
 - Splitting again: while split, the same ways apply to a pane. Split in group on a tab divides
-  the pane of the tab shown; a new empty pane opens beside the focused pane; a tab dragged to
+  that tab's pane; a new empty pane opens beside the focused pane; a tab dragged to
   a pane's edge splits that pane (as VS Code does), and at the group's own edge (`outerZone`:
   36px at an edge's ends, up to 72px at its middle) a new column or row for the whole group.
   With another tab shown over parked panes, the drop goes beside that window, the
@@ -209,7 +209,7 @@ type SplitCommand =
     | FillPane of hwnd:IntPtr * PanePath             // an empty pane takes the window
     | FocusPane of PanePath | FocusToward of PaneDirection | FocusOther
     | Swap of PanePath option | Equalize of PanePath option | ToggleAxis of PanePath option   // a split, or the focused pane's
-    | SetRatio of PanePath * float | AdjustRatio of delta:float
+    | SetRatio of PanePath * float
     | ClosePane of PanePath option                   // the pane goes; its neighbour takes the room
     | EndSplit of keep:IntPtr option | ToggleFill
 ```
@@ -304,7 +304,6 @@ that no global hotkey is taken. The entries:
 | split-focus-other | splitFocusOther | `FocusOther`: the next pane in layout order (restores parked panes) |
 | split-focus-left / -right / -up / -down | splitFocusLeft … splitFocusDown | `FocusToward`: the nearest pane in that direction sharing most of the focused pane's edge |
 | split-swap | splitSwap | `Swap None`: the focused pane's split |
-| split-grow / split-shrink | splitGrow / splitShrink | `AdjustRatio ±ratioStep` on the focused pane's split |
 | split-equalize | splitEqualize | `Equalize None` |
 | split-close-pane | splitClosePane | `ClosePane None`: the focused pane goes, its neighbour takes the room, the window stays a tab |
 | split-end | splitEnd | `EndSplit None` |

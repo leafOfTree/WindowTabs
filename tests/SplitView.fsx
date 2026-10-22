@@ -201,8 +201,6 @@ let main() =
     check (apply a (Swap(Some [Second])) (Split nested)=Split {tree={nested.tree with second=Branch {axis=Stacked;ratio=0.5;first=occupied c;second=occupied b}};focused=[Second;First]}) "Swapping a nested split did not turn it about"
     check (apply a (SetRatio([],0.95)) split=Split {tree={half.tree with ratio=SplitMetrics.maxRatio};focused=[Second]}) "SetRatio was not clamped"
     check (ratioAt [Second] (apply a (SetRatio([Second],0.3)) (Split nested))=0.3 && ratioAt [] (apply a (SetRatio([Second],0.3)) (Split nested))=0.5) "SetRatio did not reach the nested split alone"
-    check (apply a (AdjustRatio -0.5) split=Split {tree={half.tree with ratio=SplitMetrics.minRatio};focused=[Second]}) "AdjustRatio was not clamped"
-    check (abs(ratioAt [Second] (apply a (AdjustRatio 0.1) (Split nested))-0.6)<1e-9 && ratioAt [] (apply a (AdjustRatio 0.1) (Split nested))=0.5) "AdjustRatio did not act on the focused pane's own split"
     check (apply a (Equalize None) (apply a (SetRatio([],0.7)) split)=split) "Equalize did not restore 0.5"
     check (apply a (ToggleAxis None) split=Split {tree={half.tree with axis=Stacked};focused=[Second]}) "ToggleAxis did not flip the axis"
     check (apply a (ToggleAxis(Some [Second])) (Split nested)=Split {nested with tree={nested.tree with second=Branch {axis=SideBySide;ratio=0.5;first=occupied b;second=occupied c}}}) "ToggleAxis did not turn the nested split"

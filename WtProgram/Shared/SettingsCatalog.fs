@@ -61,8 +61,6 @@ module SettingsCatalog =
         { id="split-focus-up"; page=HotKeySettings; text=Strings.Settings.splitFocusUp; binding=Shortcut("splitFocusUp",0) }
         { id="split-focus-down"; page=HotKeySettings; text=Strings.Settings.splitFocusDown; binding=Shortcut("splitFocusDown",0) }
         { id="split-swap"; page=HotKeySettings; text=Strings.Settings.splitSwap; binding=Shortcut("splitSwap",0) }
-        { id="split-grow"; page=HotKeySettings; text=Strings.Settings.splitGrow; binding=Shortcut("splitGrow",0) }
-        { id="split-shrink"; page=HotKeySettings; text=Strings.Settings.splitShrink; binding=Shortcut("splitShrink",0) }
         { id="split-equalize"; page=HotKeySettings; text=Strings.Settings.splitEqualize; binding=Shortcut("splitEqualize",0) }
         { id="split-close-pane"; page=HotKeySettings; text=Strings.Settings.splitClosePane; binding=Shortcut("splitClosePane",0) }
         { id="split-end"; page=HotKeySettings; text=Strings.Settings.splitEnd; binding=Shortcut("splitEnd",0) }

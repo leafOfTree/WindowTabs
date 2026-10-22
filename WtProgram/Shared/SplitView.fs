@@ -53,8 +53,6 @@ type SplitCommand =
     /// The two halves of a split change places: the one named, or the focused pane's.
     | Swap of PanePath option
     | SetRatio of PanePath * float
-    /// The split the focused pane is in.
-    | AdjustRatio of float
     | Equalize of PanePath option
     | ToggleAxis of PanePath option
     /// The pane, or the focused one, goes and its neighbour takes its room; the window stays a tab.
@@ -85,7 +83,6 @@ module SplitMetrics =
     let minPane = 120
     let minRatio = 0.15
     let maxRatio = 0.85
-    let ratioStep = 0.05
     let tolerance = 3
     /// How far an app's own size may stay off its pane, as apps on a character grid round it.
     let snap = 40
@@ -613,7 +610,6 @@ module SplitView =
         | FocusOther,Parked s -> Split s
         | Swap path,_ -> mapTree (fun s -> swapAt (branchOf path s) s) layout
         | SetRatio(path,ratio),_ -> mapTree (mapBranch path (fun branch -> {branch with ratio=SplitMetrics.clampRatio ratio})) layout
-        | AdjustRatio delta,_ -> mapTree (fun s -> mapBranch (SplitTree.parent s.focused) (fun branch -> {branch with ratio=SplitMetrics.clampRatio(branch.ratio+delta)}) s) layout
         | Equalize path,_ -> mapTree (fun s -> mapBranch (branchOf path s) (fun branch -> {branch with ratio=0.5}) s) layout
         | ToggleAxis path,_ -> mapTree (fun s -> mapBranch (branchOf path s) (fun branch -> {branch with axis=(if branch.axis=SideBySide then Stacked else SideBySide)}) s) layout
         | ClosePane path,(Split s | Parked s) ->

@@ -52,12 +52,11 @@ module Strings =
     /// Tab context menu.
     module TabMenu =
         let split = { en="Split view"; zh="组内分屏"; ja="分割表示" }
-        let splitHorizontal = { en="Split side by side"; zh="左右分屏"; ja="左右に分割" }
-        let splitVertical = { en="Split top and bottom"; zh="上下分屏"; ja="上下に分割" }
         /// A window chosen from a list goes on that side of the tab.
         let splitPickRight = { en="Window on the right…"; zh="在右侧放入窗口…"; ja="右側にウィンドウを配置…" }
         let splitPickBelow = { en="Window below…"; zh="在下方放入窗口…"; ja="下側にウィンドウを配置…" }
         let splitPickLeft = { en="Window on the left…"; zh="在左侧放入窗口…"; ja="左側にウィンドウを配置…" }
+        let splitPickAbove = { en="Window above…"; zh="在上方放入窗口…"; ja="上側にウィンドウを配置…" }
         let splitEmpty = { en="Drop a tab or window here"; zh="将标签或窗口拖到这里"; ja="ここにタブまたはウィンドウをドロップ" }
         let splitChoose = { en="Choose a window…"; zh="选择窗口…"; ja="ウィンドウを選択…" }
         let splitOr = { en="or"; zh="或"; ja="または" }
@@ -240,12 +239,6 @@ module Strings =
         let splitClosePane = { caption={ en="Close the focused pane"; zh="关闭焦点格"; ja="フォーカス中のペインを閉じる" }
                                description={ en="Its neighbour takes the room; the window stays a tab."; zh="旁边的格补上空位，窗口仍保留为标签。"; ja="隣のペインがその場所を使い、ウィンドウはタブとして残ります。" }
                                keywords=splitWords }
-        let splitGrow = { caption={ en="Grow first pane"; zh="扩大左侧／上侧"; ja="左側／上側を拡大" }
-                          description=none
-                          keywords=splitWords }
-        let splitShrink = { caption={ en="Shrink first pane"; zh="缩小左侧／上侧"; ja="左側／上側を縮小" }
-                            description=none
-                            keywords=splitWords }
         let splitEqualize = { caption={ en="Equal panes"; zh="恢复均分"; ja="均等に分割" }
                               description=none
                               keywords=splitWords }

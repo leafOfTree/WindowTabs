@@ -43,8 +43,8 @@ its tray menu and takes over. A split comes back after a restart as its windows 
 
 1. Put two resizable windows in one group, two Explorer windows for example, and make the group
    large.
-2. With A shown, right-click tab B and choose Split in group, side by side or stacked. The pair's
-   tabs sit together with a split button on their seam, and their titles carry no prefix.
+2. With A shown, right-click tab A and choose Split in group, then Window on the right, and pick
+   B. The pair's tabs sit together with a split button on their seam, and their titles carry no prefix.
 3. Click each pane: the focused pane's tab shows as selected. Click a third tab: it fills the
    group and the pair is parked. Click either tab of the pair: both panes, the direction and the
    ratio come back. While switching, the row of tabs stays steady and no other tab shows.
@@ -52,7 +52,7 @@ its tray menu and takes over. A split comes back after a restart as its windows 
    direction and end split. Press just beside the bar instead and the pane in front resizes in
    its own loop, painting at every step, while the other pane follows: the smoothest way to
    resize beside a slow app.
-5. Right-click a tab, Split in group, and pick a window on the right, below or on the left: the
+5. Right-click a tab, Split in group, and pick a window on the right, on the left, above or below: the
    list opens over the group and the window picked goes on that side of the tab; Esc changes
    nothing. Then press the shortcut for a new empty pane on the right or below. It opens out
    from the group's edge. Drop a tab of this group, a tab of another group, or a window dragged by its title bar

@@ -8,7 +8,7 @@ type HotKeyView() =
                    "splitSideBySide","split-side-by-side";"splitStacked","split-stacked";"splitEmptyRight","split-empty-right";"splitEmptyBelow","split-empty-below"
                    "splitFocusOther","split-focus-other";"splitFocusLeft","split-focus-left";"splitFocusRight","split-focus-right"
                    "splitFocusUp","split-focus-up";"splitFocusDown","split-focus-down";"splitSwap","split-swap"
-                   "splitGrow","split-grow";"splitShrink","split-shrink";"splitEqualize","split-equalize"
+                   "splitEqualize","split-equalize"
                    "splitClosePane","split-close-pane";"splitEnd","split-end"]
     let hotKey key =
         let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=Services.program.getHotKey key)
