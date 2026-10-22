@@ -43,7 +43,9 @@ type IDragDrop =
     abstract member unregisterTarget : IntPtr -> unit
     /// The windows (and helper windows' owner) a group answers for as a drop surface.
     abstract member registerLayoutTarget : (IntPtr * ILayoutDropTarget) -> unit
-    abstract member unregisterLayoutTarget : IntPtr -> unit
+    /// Only this target's registration goes: a window that moved to another group is that
+    /// group's now, and the old group's late removal must not take it from the new one.
+    abstract member unregisterLayoutTarget : (IntPtr * ILayoutDropTarget) -> unit
     abstract member beginDrag : (IntPtr * (unit -> Img) * Pt * Pt * obj) -> unit
     /// Ends the drag in progress without dropping; true if there was one.
     abstract member cancelDrag : unit -> bool

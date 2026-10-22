@@ -261,7 +261,9 @@ The plan: **the strip keeps its existing join-at-once model** (as in Chrome, a t
 another group's strip joins it at once and leaves again when dragged off; this path has test
 coverage), and **only the windows themselves get a new kind of drop target**.
 
-- `IDragDrop` gains `registerLayoutTarget(hwnd, target)`. TabStripDecorator registers the strip,
+- `IDragDrop` gains `registerLayoutTarget(hwnd, target)` and `unregisterLayoutTarget(hwnd, target)`,
+  which removes only that target's registration: a window that moved to another group is that
+  group's surface, and the old group's late removal leaves it. TabStripDecorator registers the strip,
   every member HWND and the empty pane's window as drop surfaces, and keeps the registrations in
   step with membership. The empty pane runs on a thread of its own with no owner, so it is
   registered by its own window as it appears and removed as it goes (`emptyPaneChanged`).

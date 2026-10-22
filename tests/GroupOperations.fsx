@@ -376,6 +376,23 @@ let main() =
                         check (adjacent group partner source) "The pair's tabs did not end up next to each other")
                     waitOperation()
                     check (not(surfaces.isLayoutTarget emptyPane)) "A filled empty pane stayed a drop surface"
+                    // A window that moved to another group is that group's drop surface: the old
+                    // group's removal, which can run late, leaves the new registration alone.
+                    do
+                        let hwnd = IntPtr 0x7777
+                        let later = {new ILayoutDropTarget with
+                                        member _.nearTabs _ = None
+                                        member _.aim(_,_) = NoAim
+                                        member _.preview(_,_) = false
+                                        member _.clearPreview() = ()
+                                        member _.commit(_,_) = false}
+                        let api = surfaces :> IDragDrop
+                        api.registerLayoutTarget(hwnd,surface)
+                        api.registerLayoutTarget(hwnd,later)
+                        api.unregisterLayoutTarget(hwnd,surface)
+                        check (surfaces.isLayoutTarget hwnd) "The old group's removal took the window's drop surface from its new group"
+                        api.unregisterLayoutTarget(hwnd,later)
+                        check (not(surfaces.isLayoutTarget hwnd)) "The new group's removal left the window a drop surface"
                     check (onGroup(fun group -> group.ts.tabInfo(Tab(partner)).splitTrail=Some [SideBySide,First] && group.ts.tabInfo(Tab(source)).splitTrail=Some [SideBySide,Second])) "Pane tabs carry no badge"
                     check (onGroup(fun group -> group.ts.tabInfo(Tab(partner)).text=group.tabName partner)) "The badge leaked into the tab's name"
                     onGroup(fun group -> group.execute(EndSplit(Some source)))

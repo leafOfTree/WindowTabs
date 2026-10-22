@@ -361,8 +361,11 @@ type DragDropController(parent:IDragDropParent) =
             targetsCell.map(fun targets -> targets.remove hwnd)
         member x.registerLayoutTarget((hwnd, target)) = withLock <| fun() ->
             layoutTargetsCell.map(fun targets -> targets.add hwnd target)
-        member x.unregisterLayoutTarget(hwnd) = withLock <| fun() ->
-            layoutTargetsCell.map(fun targets -> targets.remove hwnd)
+        member x.unregisterLayoutTarget((hwnd, target)) = withLock <| fun() ->
+            layoutTargetsCell.map(fun targets ->
+                match targets.tryFind hwnd with
+                | Some registered when obj.ReferenceEquals(registered,target) -> targets.remove hwnd
+                | _ -> targets)
         member x.beginDrag((initialHwnd, image, imageOffset, initialPt, data)) = withLock <| fun() ->
             if dragActionCell.value.IsNone then
                 let dragAction = DragAction({

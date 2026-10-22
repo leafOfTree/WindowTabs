@@ -121,10 +121,10 @@ type TabStripDecorator(group:WindowGroup) as this =
         Services.dragDrop.registerLayoutTarget(this.ts.hwnd, this:>ILayoutDropTarget)
         group.windows.items.iter(fun hwnd -> Services.dragDrop.registerLayoutTarget(hwnd, this:>ILayoutDropTarget))
         group.added.Add(fun hwnd -> Services.dragDrop.registerLayoutTarget(hwnd, this:>ILayoutDropTarget))
-        group.removed.Add(fun hwnd -> Services.dragDrop.unregisterLayoutTarget hwnd)
+        group.removed.Add(fun hwnd -> Services.dragDrop.unregisterLayoutTarget(hwnd, this:>ILayoutDropTarget))
         // The empty pane is owned by nothing, so it is found by its own window.
         group.emptyPaneChanged.Add(fun (previous,current) ->
-            if previous<>IntPtr.Zero then Services.dragDrop.unregisterLayoutTarget previous
+            if previous<>IntPtr.Zero then Services.dragDrop.unregisterLayoutTarget(previous, this:>ILayoutDropTarget)
             if current<>IntPtr.Zero then Services.dragDrop.registerLayoutTarget(current, this:>ILayoutDropTarget))
 
         dropTarget.set(Some(new OleDropTarget(this.ts)))
@@ -199,9 +199,10 @@ type TabStripDecorator(group:WindowGroup) as this =
             widthSubscription.Dispose()
             geometrySubscription.Dispose()
             Services.dragDrop.unregisterTarget(this.ts.hwnd)
-            Services.dragDrop.unregisterLayoutTarget(this.ts.hwnd)
-            group.windows.items.iter Services.dragDrop.unregisterLayoutTarget
-            group.emptyPaneHwnds |> List.iter Services.dragDrop.unregisterLayoutTarget
+            let unregister hwnd = Services.dragDrop.unregisterLayoutTarget(hwnd, this:>ILayoutDropTarget)
+            unregister this.ts.hwnd
+            group.windows.items.iter unregister
+            group.emptyPaneHwnds |> List.iter unregister
     
 
     member private this.tabSlide =
