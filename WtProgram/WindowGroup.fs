@@ -1064,7 +1064,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                         let created : EmptySplitPane option ref = ref None
                         let at() = created.Value |> Option.bind this.emptyPanePath
                         let actions = {
-                            candidates = (fun () -> this.paneCandidates())
+                            candidates = (fun () -> Services.program.paneCandidates())
                             choose = (fun hwnd -> this.fromChrome(fun () -> at() |> Option.iter(fun path -> this.fillEmptyPane(path,hwnd))))
                             close = (fun () -> this.fromChrome(fun () -> at() |> Option.iter(fun path -> this.execute(ClosePane(Some path)))))
                             resizeStarted = (fun () -> this.fromChrome(fun () -> at() |> Option.iter this.beginEmptyPaneResize))
@@ -1096,7 +1096,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                             | SideBySide,First -> Rect(rect.location,Sz(1,rect.height))
                             | Stacked,Second -> Rect(Pt(rect.x,rect.bottom-1),Sz(rect.width,1))
                             | Stacked,First -> Rect(rect.location,Sz(rect.width,1)))
-                this.onChrome(fun () -> if not pane.IsDisposed then pane.update(rect,below,shown,from))
+                let occupied = SplitView.windows s
+                this.onChrome(fun () -> if not pane.IsDisposed then pane.update(rect,below,shown,from,occupied))
         | _ ->
             dividerShown <- false
             for KeyValue(_,(divider,_)) in splitDividers do this.onChrome(fun () -> if not divider.IsDisposed then divider.Hide())
@@ -1141,11 +1142,6 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             inMoveSize.set(false)
             this.endLive()
             this.updateIsVisible()
-
-    /// What the empty pane's list offers: every window on this desktop but the panes' own.
-    member private this.paneCandidates() =
-        let occupied = match groupLayout with Split s -> SplitView.windows s | _ -> []
-        Services.program.paneCandidates() |> List.filter(fun (hwnd,_,_) -> not(List.contains hwnd occupied))
 
     /// A window chosen from the empty pane's list: a tab of this group goes straight in, any
     /// other window is handed over by the desktop first.

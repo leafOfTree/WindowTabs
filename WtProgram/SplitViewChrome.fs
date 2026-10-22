@@ -223,7 +223,8 @@ type private PanePart = PaneClose | PanePick
 
 /// What an empty pane asks of its group.
 type EmptyPaneActions = {
-    /// Windows the drop-down offers: handle, tab name and program.
+    /// Windows the drop-down offers: handle, tab name and program. Called on the pane's thread,
+    /// so it must not read the group's state; the pane leaves out the panes' own windows itself.
     candidates: unit -> (IntPtr * string * string) list
     choose: IntPtr -> unit
     close: unit -> unit
@@ -239,6 +240,8 @@ type EmptyPaneActions = {
 type EmptySplitPane(actions:EmptyPaneActions) =
     inherit SplitChromeForm()
     let candidates,choose,close = actions.candidates,actions.choose,actions.close
+    /// The panes' own windows, told with each update: the group's layout stays on its thread.
+    let mutable occupied : IntPtr list = []
     let mutable menu : ThemedContextMenu option = None
     let mutable hintFont : Font option = None
     let mutable bodyFont : Font option = None
@@ -361,7 +364,7 @@ type EmptySplitPane(actions:EmptyPaneActions) =
     /// The settings window's drop-down with each window's icon; without it, or with nothing to
     /// offer, a plain menu says so.
     member private this.showPicker() =
-        let entries = candidates()
+        let entries = candidates() |> List.filter(fun (hwnd,_,_) -> not(List.contains hwnd occupied))
         let anchor = this.RectangleToScreen(this.pickBox)
         match Services.tryGet<ISplitPanePicker>() with
         | Some picker when not entries.IsEmpty -> picker.show(this,anchor,entries,choose)
@@ -476,8 +479,10 @@ type EmptySplitPane(actions:EmptyPaneActions) =
                 this.Opacity <- eased)
         fade <- Some timer
         timer.Start()
-    /// `from`: where it opens out from the first time it shows, a sliver at the group's edge.
-    member this.update(bounds:Rect, below:IntPtr, visible:bool, from:Rect option) =
+    /// `from`: where it opens out from the first time it shows, a sliver at the group's edge;
+    /// `panes`: the windows in the split, which its list leaves out.
+    member this.update(bounds:Rect, below:IntPtr, visible:bool, from:Rect option, panes:IntPtr list) =
+        occupied <- panes
         let surface = (SettingsColors.current()).surface
         if this.BackColor.ToArgb()<>surface.ToArgb() then this.BackColor <- surface
         goal <- bounds.Rectangle
