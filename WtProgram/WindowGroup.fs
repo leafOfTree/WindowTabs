@@ -283,6 +283,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let splitGuardTimer = new System.Windows.Forms.Timer(Interval=200)
     /// Looks, while the strip is owned by nothing, for its window raised over it with no notice.
     let stripGuardTimer = new System.Windows.Forms.Timer(Interval=100)
+    /// Told of every change in the order of top-level windows while the strip is owned by nothing.
+    let mutable reorderHook : IDisposable option = None
     /// One divider per split and one window per empty pane, by their place in the layout.
     let mutable splitDividers : Map<PanePath,SplitDivider * IntPtr> = Map.empty
     let mutable emptySplitPanes : Map<PanePath,EmptySplitPane * IntPtr> = Map.empty
@@ -798,8 +800,22 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         StartupTrace.measure "group.owner" (fun () ->
             strip.setOwner(if shared then owner else this.os.nullWindow))
         // Windows raises an owned strip with its window; one owned by nothing is watched instead.
-        if not shared && owner.hwnd<>IntPtr.Zero && not isDestroyed.value then stripGuardTimer.Start()
-        else stripGuardTimer.Stop()
+        // An app can raise itself again a moment after it is activated, as Chromium browsers do,
+        // and a title bar click says nothing to the group: Windows reports every change in the
+        // order of top-level windows on the desktop window, and the strip goes back at each.
+        // The timer is for a report missed.
+        if not shared && owner.hwnd<>IntPtr.Zero && not isDestroyed.value then
+            stripGuardTimer.Start()
+            if reorderHook.IsNone then
+                let desktop = WinUserApi.GetDesktopWindow()
+                reorderHook <- Some(this.os.setSingleWinEvent WinEvent.EVENT_OBJECT_REORDER (fun hwnd ->
+                    if hwnd=desktop then this.guardUnownedStrip()))
+        else this.stopStripGuard()
+
+    member private this.stopStripGuard() =
+        stripGuardTimer.Stop()
+        reorderHook |> Option.iter(fun hook -> hook.Dispose())
+        reorderHook <- None
 
     /// A strip owned by nothing goes back just above the window, if the window has come over it.
     /// Done in the same step as whatever raised the window, the tabs do not flash.
@@ -814,7 +830,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// under it until another window was activated. A title bar click says nothing at all, so
     /// the order is looked at every so often.
     member private this.guardUnownedStrip() =
-        if isDestroyed.value || this.isEmpty then stripGuardTimer.Stop()
+        if isDestroyed.value || this.isEmpty then this.stopStripGuard()
         elif isVisibleCell.value && not liveResize && not inMoveSize.value && not reconcileMinimizeState then
             this.liftUnownedStrip this.topWindow
 
@@ -2205,6 +2221,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             isDestroyed.set(true)
             splitSettleTimer.Dispose()
             splitGuardTimer.Dispose()
+            this.stopStripGuard()
             stripGuardTimer.Dispose()
             transitionRelease.Dispose()
             // The chrome's thread disposes its windows and ends; nothing here waits for it.

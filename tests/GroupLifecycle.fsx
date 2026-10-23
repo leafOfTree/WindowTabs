@@ -352,8 +352,9 @@ let main() =
                 // Maximized, or its title bar clicked, a window already in front rises over the strip
                 // with no change of foreground; the strip goes back over it. The strip is put just
                 // under the window, where that leaves it.
+                // The group sees that change of order and may put the strip back before this
+                // thread can look, so only where it ends up is checked.
                 OS().windowFromHwnd(strip).insertAfter(isolated.Handle)
-                check (rank isolated.Handle<rank strip) "The test could not put the isolated strip under its window"
                 pumpUntil "An isolated window raised over its strip kept its tabs under it" (fun () -> rank strip<rank isolated.Handle)
                 // A click on its tab raises the window and puts the strip back over it in the same
                 // step, read here before the group's thread could do anything else: the tabs did
