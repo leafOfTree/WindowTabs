@@ -6,8 +6,8 @@ param([ValidateRange(1, 3600)][int]$TimeoutSeconds = 120, [switch]$Coverage,
       [switch]$NoRetry,
       # Run the suites on the current desktop instead of a hidden one, to watch them.
       [switch]$VisibleDesktop,
-      [ValidateSet('Reliability', 'Architecture', 'SplitView', 'StartupGrouping', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon', 'GroupLifecycle', 'GroupOperations', 'PopupRendering', 'TabInteraction', 'TaskbarPreview', 'PrintWindowProbe', 'SplitViewDesktop')]
-      [string[]]$Suites = @('Reliability', 'Architecture', 'SplitView', 'StartupGrouping', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon', 'GroupLifecycle', 'GroupOperations', 'PopupRendering', 'TabInteraction', 'TaskbarPreview', 'PrintWindowProbe'))
+      [ValidateSet('Reliability', 'Architecture', 'SplitView', 'StartupGrouping', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon', 'GroupLifecycle', 'GroupOperations', 'CommandPalette', 'PopupRendering', 'TabInteraction', 'TaskbarPreview', 'PrintWindowProbe', 'SplitViewDesktop')]
+      [string[]]$Suites = @('Reliability', 'Architecture', 'SplitView', 'StartupGrouping', 'DpiLayout', 'SettingsTheme', 'SettingsEditors', 'TabShadow', 'WindowIcon', 'GroupLifecycle', 'GroupOperations', 'CommandPalette', 'PopupRendering', 'TabInteraction', 'TaskbarPreview', 'PrintWindowProbe'))
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw 'The .NET SDK (dotnet) is required.' }
