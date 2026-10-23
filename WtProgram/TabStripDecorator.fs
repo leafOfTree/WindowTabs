@@ -500,7 +500,18 @@ type TabStripDecorator(group:WindowGroup) as this =
                 click = fun() -> Services.desktop.restartGroup(group.hwnd, group.isSuperBarEnabled.not)
                 flags = checkedFlag(group.isSuperBarEnabled)
             })
-        
+        // A tick alone read as combined while each window kept its own button (#84).
+        let combineBlockedItem =
+            if not group.isSuperBarEnabled then None
+            else
+                TaskbarCombineStates.tryGet group.hwnd |> Option.filter TaskbarCombineStates.isBlocked |> Option.map(fun state ->
+                    let text =
+                        match state with
+                        | DifferentPermissions -> Strings.TabMenu.combineBlockedPermissions
+                        | DesktopUnknown -> Strings.TabMenu.combineBlockedDesktop
+                        | _ -> Strings.TabMenu.combineBlockedPlacement
+                    CmiRegular({text=tr text;image=None;flags=grayed true;click=ignore}))
+
         // Only a group with combined icons has a taskbar button of its own to change.
         let customIcon = if group.isSuperBarEnabled then Services.program.groupIcon hwnd else None
         let changeIconItem =
@@ -652,6 +663,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(CmiSeparator)
             Some(sortTabsItem)
             Some(combineIconsInTaskbar)
+            combineBlockedItem
             (if group.isSuperBarEnabled then Some(changeIconItem) else None)
             (if customIcon.IsSome then Some(restoreIconItem) else None)
             Some(CmiSeparator)

@@ -82,6 +82,19 @@ module Strings =
         let restoreTabName = { en="Reset name"; zh="重置名称"; ja="名前をリセット"; ar="إعادة تعيين الاسم" }
         let sortTabs = { en="Sort by app and title"; zh="按应用和标题排序"; ja="アプリとタイトル順に並べ替え"; ar="ترتيب حسب التطبيق والعنوان" }
         let combineTaskbarIcons = { en="Combine taskbar icons"; zh="合并任务栏图标"; ja="タスクバーアイコンをまとめる"; ar="دمج أيقونات شريط المهام" }
+        /// Shown greyed out under "Combine taskbar icons" while the group's windows keep their own buttons.
+        let combineBlockedPermissions = { en="Not combined: WindowTabs and these windows run with different rights (one as administrator)"
+                                          zh="未合并：WindowTabs 与这些窗口的权限不同（其中一方以管理员身份运行）"
+                                          ja="まとめられていません: WindowTabs とこれらのウィンドウの権限が異なります (一方が管理者として実行中)"
+                                          ar="لم يتم الدمج: يعمل WindowTabs وهذه النوافذ بصلاحيات مختلفة (أحدهما كمسؤول)" }
+        let combineBlockedDesktop = { en="Not combined: Windows has not told which virtual desktop these windows are on"
+                                      zh="未合并：Windows 未提供这些窗口所在的虚拟桌面"
+                                      ja="まとめられていません: これらのウィンドウがどの仮想デスクトップにあるか Windows から取得できません"
+                                      ar="لم يتم الدمج: لم يُحدّد Windows سطح المكتب الافتراضي الذي توجد عليه هذه النوافذ" }
+        let combineBlockedPlacement = { en="Not combined: Windows did not let the taskbar button move to this virtual desktop"
+                                        zh="未合并：Windows 未允许将任务栏按钮移到此虚拟桌面"
+                                        ja="まとめられていません: Windows がタスクバー ボタンをこの仮想デスクトップへ移動できませんでした"
+                                        ar="لم يتم الدمج: لم يسمح Windows بنقل زر شريط المهام إلى سطح المكتب الافتراضي هذا" }
         /// For the group's own taskbar button, shown while its icons are combined.
         let changeTaskbarIcon = { en="Change taskbar icon…"; zh="更换任务栏图标…"; ja="タスクバーアイコンを変更…"; ar="تغيير أيقونة شريط المهام…" }
         let restoreTaskbarIcon = { en="Restore taskbar icon"; zh="恢复默认任务栏图标"; ja="タスクバーアイコンを元に戻す"; ar="استعادة أيقونة شريط المهام" }

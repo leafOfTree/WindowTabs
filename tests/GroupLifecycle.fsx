@@ -284,6 +284,8 @@ let main() =
             let owner hwnd = WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)
             pumpUntil "Compatible input queues did not combine taskbar ownership" (fun () ->
                 permissionHandles |> List.forall TaskbarProxies.ownsWindow)
+            let stateOf (group:GroupInfo) = TaskbarCombineStates.tryGet (group :> IGroup).hwnd
+            check (stateOf permissionProbe=Some Combined) "A combined group did not report itself combined"
             let cloakTarget = onGroup permissionProbe (fun group -> group.topWindow)
             let mutable cloak = 1
             check (DwmApi.DwmSetWindowAttribute(cloakTarget,13,&cloak,4)=0) "Could not cloak input-isolation fixture"
@@ -298,6 +300,8 @@ let main() =
             onGroup permissionProbe (fun _ -> compatible <- false;permissionPlugin.onZorderChanged())
             check (permissionHandles |> List.forall(fun hwnd -> owner hwnd=IntPtr.Zero)) "Incompatible input queues retained taskbar proxy owners"
             check (nativeOrder permissionProbe=permissionHandles) "Taskbar input isolation changed tab membership"
+            // #84: the tab menu and the diagnostics report say why the windows keep their buttons.
+            check (stateOf permissionProbe=Some DifferentPermissions) "Incompatible permissions were not reported as the reason"
             let changes = onGroup permissionProbe (fun _ -> permissionPlugin.taskbarVisibilityChanges)
             onGroup permissionProbe (fun _ -> for _ in 1..100 do permissionPlugin.onZorderChanged())
             check (onGroup permissionProbe (fun _ -> permissionPlugin.taskbarVisibilityChanges)=changes)
@@ -307,6 +311,7 @@ let main() =
         finally
             (permissionProbe :> IGroup).destroy()
             pumpUntil "Permission probe did not exit" (fun () -> permissionProbe.isExited)
+        check ((TaskbarCombineStates.tryGet (permissionProbe :> IGroup).hwnd).IsNone) "An exited group kept its taskbar state"
         check (permissionHandles |> List.forall(fun hwnd -> WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)=IntPtr.Zero)) "Taskbar isolation probe left an owner after shutdown"
         check (permissionHandles |> List.map(fun hwnd -> WinUserApi.GetWindowLong(hwnd,WindowLongFieldOffset.GWL_EXSTYLE)) = permissionStyles)
               "Taskbar exit registration changed the application's original window styles"
@@ -331,10 +336,12 @@ let main() =
                 check (attempts=0 && (handles |> List.forall(fun hwnd -> not(TaskbarProxies.ownsWindow hwnd))))
                       "Unknown desktop attempted placement or adopted an application"
                 check (not(onGroup fixture (fun _ -> plugin.isAwaitingDesktopPlacement))) "Unknown desktop started an automatic retry loop"
+                check (onGroup fixture (fun _ -> plugin.combineState)=DesktopUnknown) "An unknown desktop was not reported as the reason"
                 onGroup fixture (fun _ -> knownDesktop <- Some desk1;plugin.onZorderChanged())
                 check (attempts=1 && (handles |> List.forall(fun hwnd -> not(TaskbarProxies.ownsWindow hwnd))))
                       "Failed desktop placement adopted an application"
                 check (onGroup fixture (fun _ -> plugin.isAwaitingDesktopPlacement)) "Failed placement was marked complete"
+                check (onGroup fixture (fun _ -> plugin.combineState)=PlacementFailed) "A failed placement was not reported as the reason"
                 onGroup fixture (fun _ -> placeSucceeded <- true)
                 pumpUntil "Failed placement did not retry and resume combining" (fun () ->
                     handles |> List.forall TaskbarProxies.ownsWindow)
@@ -356,6 +363,7 @@ let main() =
                 check (attempts-failedStart=3 && not(onGroup fixture (fun _ -> plugin.isAwaitingDesktopPlacement)))
                       "Title/focus/z-order refresh restarted exhausted placement retries"
                 check (handles |> List.forall(fun hwnd -> not(TaskbarProxies.ownsWindow hwnd))) "Exhausted retries retained native owners"
+                check (onGroup fixture (fun _ -> plugin.combineState)=PlacementFailed) "Exhausted retries were not reported as the reason"
                 onGroup fixture (fun _ -> knownDesktop <- Some desk2;placeSucceeded <- true;plugin.onZorderChanged())
                 check (attempts-failedStart=4 && (handles |> List.forall TaskbarProxies.ownsWindow))
                       "A changed confirmed desktop did not resume combining"
