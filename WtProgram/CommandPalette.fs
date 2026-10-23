@@ -47,9 +47,10 @@ module CommandPalette =
     let private askNumber (item:SettingDefinition) =
         let low,high = SettingsCatalog.range item.id
         Ask { kind=NumberQuestion(low,high)
+              live=true
               prompt=tr (Strings.TabSearch.numberPrompt low high)
               value=string (Services.settings.getValue item.id :?> int)
-              hint=tr (Strings.TabSearch.numberPrompt low high)+". "+tr Strings.TabSearch.valueHint
+              hint=tr (Strings.TabSearch.numberPrompt low high)
               accept=fun typed ->
                   match Int32.TryParse typed with
                   | true,value when value>=low && value<=high -> Services.settings.setValue(item.id,box value); None
@@ -57,9 +58,10 @@ module CommandPalette =
     /// A text setting typed in the box, checked as the Shortcuts page checks it.
     let private askText (item:SettingDefinition) key =
         Ask { kind=TextQuestion
+              live=true
               prompt=tr item.text.caption
               value=Services.settings.getValue key :?> string
-              hint=tr item.text.description+"  "+tr Strings.TabSearch.valueHint
+              hint=tr item.text.description
               accept=fun typed ->
                   match NumberLeaderKeys.tryNormalize typed with
                   | Some keys -> Services.settings.setValue(key,box keys); None

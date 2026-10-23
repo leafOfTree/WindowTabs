@@ -644,6 +644,11 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         text.TextChanged.Add(fun _ ->
             match asking with
             | Some(question,Some _) -> asking <- Some(question,None); showNote()
+            | _ -> ()
+            // Saved as typed or stepped with − and +, as the settings pages save: a value not yet
+            // one is left alone, and Enter says why.
+            match asking with
+            | Some(question,_) when question.live -> question.accept (text.Text.Trim()) |> ignore
             | _ -> ())
         input.ReadOnly <- true
         setPrompt()

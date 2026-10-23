@@ -928,7 +928,7 @@ let main() =
     pump 100
     // A value asked for: the box holds it now, a refusal says why, a value taken closes the box.
     let mutable typed = ""
-    let question = { kind=TextQuestion; prompt="A word"; value="12"; hint="Enter sets it"; accept=fun text -> if text="ok" then (typed <- text; None) else Some "Not that" }
+    let question = { kind=TextQuestion; live=false; prompt="A word"; value="12"; hint="Enter sets it"; accept=fun text -> if text="ok" then (typed <- text; None) else Some "Not that" }
     let askingPage = { commandsPage with choose=fun _ -> Ask question }
     let asked = TabSearchForm([mail;notes],[],pages=[askingPage],scope=ActionScope)
     asked.Query <- "close"
@@ -955,6 +955,22 @@ let main() =
     check (numbered.Caret=5) "Esc did not put the caret back at the end of the search"
     numbered.Close()
     pump 100
+    // A size is saved as it changes, as the settings pages save it; Esc only goes back.
+    let applied = ResizeArray<string>()
+    let saveSize (text:string) = match Int32.TryParse text with | true,v when v>=12 && v<=120 -> applied.Add text; None | _ -> Some "no"
+    let livePage = { commandsPage with choose=fun _ -> Ask { kind=NumberQuestion(12,120); live=true; prompt=""; value="30"; hint=""; accept=saveSize } }
+    let live = TabSearchForm([mail;notes],[],pages=[livePage],scope=ActionScope)
+    live.Query <- "close"
+    live.Accept()
+    live.Answered <- "45"
+    check (applied.Count>0 && applied.[applied.Count-1]="45") "A size was not saved as it was typed"
+    live.Back()
+    check (applied.[applied.Count-1]="45" && live.Depth=0) "Esc undid a size saved as it was typed"
+    live.Accept()
+    live.Answered <- "50"
+    live.Close()
+    pump 100
+    check (applied.[applied.Count-1]="50") "Closing undid a size saved as it was typed"
     // The command line: what each form asks for, and the pipe a running copy takes them over.
     check (CommandLine.parse [||]=Start && CommandLine.parse [|"--restart"|]=Restart) "A plain or restarting start was not read"
     check (CommandLine.parse [|"--command";"next-tab"|]=RunCommand("next-tab",None)) "A command by id was not read"

@@ -12,7 +12,9 @@ type CommandOutcome =
     | Ask of CommandQuestion
 /// What to type: its kind, which picks the box it is typed in; what is accepted, said beside the
 /// box; the value it holds now; and taking what was typed: None when it is set, else why not.
-and CommandQuestion = { kind:QuestionKind; prompt:string; value:string; hint:string; accept:string -> string option }
+and CommandQuestion = { kind:QuestionKind; prompt:string; value:string; hint:string; accept:string -> string option
+                        /// Saved as it is typed, as the settings pages save, and seen at once.
+                        live:bool }
 and QuestionKind =
     /// A whole number in a range, typed in the settings pages' number box with its − and +.
     | NumberQuestion of low:int * high:int

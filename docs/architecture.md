@@ -345,9 +345,10 @@ front, with their shortcuts beside them), then the settings by page, leaving out
 shortcut entries, which are commands already; a setting that is on or off shows a switch and
 is turned in place by its toggle command, the palette staying up; a choice shows what it is set
 to and, chosen, lists its values by the catalog's `choiceLabels`, the current one ticked, and
-sets the one picked; a size or the leader keys asks for a value (`Ask`): the box holds the value
-now, selected, Enter checks it as the settings page does and sets it, and a refusal is said
-under the box; a colour shows as a dot with its value and opens the system colour box, edited by
+sets the one picked; a size or the leader keys asks for a value (`Ask`) in the settings pages' own
+box under the line naming it: the box holds the value now, selected, a valid value is saved as
+it is typed (`live`), as the settings pages save, Enter closes the palette, Esc goes back
+keeping what was saved, and a value Enter cannot take is explained under the box; a colour shows as a dot with its value and opens the system colour box, edited by
 `PaletteEditing` as the Appearance page edits it; a page opens the settings window. The tab
 colour command offers what the tab menu does, with `AppTabColors` shared between them. Sizes and
 the tab style are read and written by key (`SettingsCatalog.geometryNumbers`), so the palette
