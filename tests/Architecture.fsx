@@ -743,9 +743,12 @@ let main() =
     // Grouping: groups by last use, each in tab order; the active tab is the least recent.
     let zorder hwnd = if hwnd=editor.hwnd then 0 elif hwnd=notes.hwnd then 1 else 2
     let arranged = TabSearch.arrange zorder editor.hwnd [[mail;notes];[];[editor]]
-    check (arranged |> List.map(fun entry -> entry.hwnd) = [editor.hwnd;mail.hwnd;notes.hwnd]) "Tabs were not listed group by group in tab order"
-    check (arranged |> List.map(fun entry -> entry.group) = [0;1;1]) "Groups were not numbered from the most recently used"
-    check (arranged |> List.map(fun entry -> entry.recency) = [2;1;0]) "The active tab was not treated as the least recent"
+    check (arranged |> List.map(fun entry -> entry.hwnd) = [mail.hwnd;notes.hwnd;editor.hwnd]) "Tabs were not listed group by group in tab order, the active one last"
+    check (arranged |> List.map(fun entry -> entry.group) = [1;1;0]) "Groups were not numbered from the most recently used"
+    check (arranged |> List.map(fun entry -> entry.recency) = [1;0;2]) "The active tab was not treated as the least recent"
+    // The window in front goes last even inside its group, and the first row is what Enter takes.
+    let inGroup = TabSearch.arrange zorder notes.hwnd [[mail;notes;editor]]
+    check (inGroup |> List.map(fun entry -> entry.hwnd) = [mail.hwnd;editor.hwnd;notes.hwnd]) "The active tab was not listed last in its group"
     // Scope: a group of two or more tabs is searched first; Tab switches to every tab and back.
     let grouped = TabSearchForm([mail;notes;editor],[mail.hwnd;editor.hwnd])
     check (grouped.Scope=GroupTabs && grouped.Results=[mail;editor]) "Tab search did not start in the active group"

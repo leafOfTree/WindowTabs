@@ -127,11 +127,17 @@ module TabSearch =
         let used (entry:TabSearchEntry) = if entry.hwnd=active then Int32.MaxValue else zorder entry.hwnd
         let recency =
             groups |> List.concat |> List.sortBy used |> List.mapi(fun index entry -> entry.hwnd,index) |> Map.ofList
-        groups
-        |> List.filter(List.isEmpty >> not)
-        |> List.sortBy(fun tabs -> tabs |> List.map(fun entry -> zorder entry.hwnd) |> List.min)
-        |> List.mapi(fun group tabs -> tabs |> List.map(fun entry -> { entry with group=group; recency=recency.[entry.hwnd] }))
-        |> List.concat
+        let listed =
+            groups
+            |> List.filter(List.isEmpty >> not)
+            |> List.sortBy(fun tabs -> tabs |> List.map(fun entry -> zorder entry.hwnd) |> List.min)
+            |> List.mapi(fun group tabs -> tabs |> List.map(fun entry -> { entry with group=group; recency=recency.[entry.hwnd] }))
+            |> List.concat
+        // The window in front last: it is where the search was opened from, seldom where it is
+        // going, and the first row is then the one Enter switches to. Still listed, to be found
+        // by name and given a key.
+        let current,others = listed |> List.partition(fun entry -> entry.hwnd=active)
+        others @ current
 
     /// Every group's tabs and switchable windows without tabs, each listed once.
     let tabs nameOverride (active:IntPtr) (groups:IntPtr list list) =
