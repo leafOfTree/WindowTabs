@@ -124,6 +124,11 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// Windows is signing out: the session is written now, while the apps are still open, and not
     /// again at exit, when some have closed already and would be missing from it.
     let mutable sessionEnding = false
+    /// What the command line that started this copy asked for, done once the first scan is over.
+    let mutable startupRequest : CommandLineRequest option = None
+    /// Programs started together from the command line: the windows they open in the next
+    /// while go into one group, made at the first.
+    let mutable launched : (string list * DateTime * GroupInfo option ref) list = []
     /// Automatic groups of one app that have come to share a desktop are looked for at most once a second.
     let mergeSoon = lifetime.Own(new CoalescedAction(1000, fun () -> this.mergeAutoGroups()))
     let desktopRetry = lifetime.Own(new CoalescedAction(100, fun () ->
@@ -234,7 +239,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// started with Windows still open their windows. Saving waits for it.
     member private this.restoreSessionAtStart() =
         let mode = this.sessionMode
-        if mode="Off" || tokensSeen then sessionReady <- true
+        // A workspace asked for on the command line takes the session's place.
+        let workspaceAsked = match startupRequest with Some(RestoreWorkspace _) -> true | _ -> false
+        if mode="Off" || tokensSeen || workspaceAsked then sessionReady <- true
         else
             let timer = new System.Windows.Forms.Timer(Interval=4000)
             timer.Tick.Add(fun _ ->
@@ -563,9 +570,60 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             gi.windows.iter <| fun hwnd ->
                 if this.isTabbableWindow(os.windowFromHwnd(hwnd)).not then gi.removeWindow hwnd
 
+    /// A window of a program started with others from the command line joins their group, for a
+    /// minute after the start; the first of them makes the group, by hand.
+    member this.tryLaunched(window:Window) =
+        if launched.IsEmpty then None
+        else
+            let now = DateTime.UtcNow
+            launched <- launched |> List.filter(fun (_,since,_) -> now-since<TimeSpan.FromSeconds 60.0)
+            let path = window.pid.processPath
+            launched
+            |> List.tryFind(fun (paths,_,_) -> paths |> List.exists(fun each -> AppIdentity.same each path))
+            |> Option.map(fun (_,_,holder) ->
+                match holder.Value with
+                | Some group when not group.isExited && not group.isRetiring -> Some(group :> IGroup)
+                | _ ->
+                    let group = Services.desktop.createGroup(Services.settings.getValue("combineIconsInTaskbar").cast<bool>()) :?> GroupInfo
+                    group.group.isManual <- true
+                    holder.Value <- Some group
+                    Some(group :> IGroup))
+
+    /// Starts the programs; the windows they open go into one group.
+    member this.launchGroup(paths:string list) =
+        launched <- (paths,DateTime.UtcNow,ref None)::launched
+        WorkspaceLaunch.start paths (fun failures -> for name,reason in failures do Notice.error name reason)
+
+    /// What a command line asks for, done here; what the console is told, or why not.
+    member this.execute(request:CommandLineRequest) : Result<string,string> =
+        match request with
+        | RunCommand(id,choice) ->
+            match Commands.find id with
+            | None -> Result.Error (tr (Strings.CommandLine.unknownCommand id))
+            | Some command ->
+                match command.run (WinUserApi.GetForegroundWindow()) with
+                | Done -> Result.Ok ""
+                | Choose options ->
+                    match choice with
+                    | None -> this.showChoices(tr command.text.caption,options); Result.Ok ""
+                    | Some wanted ->
+                        match options |> List.tryFind(fun option -> String.Equals(option.label,wanted,StringComparison.CurrentCultureIgnoreCase)) with
+                        | Some option -> option.run() |> ignore; Result.Ok ""
+                        | None -> Result.Error (tr (Strings.CommandLine.noSuchChoice wanted (options |> List.map(fun option -> option.label))))
+        | RestoreWorkspace name ->
+            if this.workspaceSummaries() |> List.exists(fun (saved,_) -> saved=name) then this.restoreWorkspaceNamed name; Result.Ok ""
+            else Result.Error (tr (Strings.CommandLine.noSuchWorkspace name))
+        | StartGroup paths -> this.launchGroup paths; Result.Ok ""
+        | ListCommands -> Result.Ok (CommandLine.listing())
+        | Start | Restart | Help | Invalid _ -> Result.Ok (CommandLine.usage())
+
+    /// Done once the first scan is over, as the windows are in their groups by then.
+    member this.queueRequest(request:CommandLineRequest) = startupRequest <- Some request
+
     member this.findGroupForWindow(window:Window) : IGroup option =
         let handlers = List2([
             this.tryDropped
+            this.tryLaunched
             this.tryRestoredGroup
             this.tryGroupingRule
             this.tryAutoGroup
@@ -953,6 +1011,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             Services.desktop.groupExited.Add(fun group -> if sessionMembers.Remove group.hwnd then sessionSoon.Request())
             this.updateTaskSwitcher(Services.settings.getValue("replaceAltTab"))
             this.restoreSessionAtStart()
+            startupRequest |> Option.iter(fun request -> this.execute request |> ignore)
+            // Later command lines reach this copy here; each is done on the main thread.
+            lifetime.Own(new CommandServer(CommandPipe.name,fun argv -> dispatcher.Send(fun () -> this.execute (CommandLine.parse argv)))) |> ignore
             sessionTimer.Tick.Add(fun _ -> this.saveSession())
             sessionTimer.Start()
             Microsoft.Win32.SystemEvents.SessionEnding.Add(fun _ ->
@@ -978,13 +1039,30 @@ module Bootstrap =
         Application.SetCompatibleTextRenderingDefault(false)
         use logger = new ExceptionHandlerPlugin()
         (logger :> IPlugin).init()
+        let request = CommandLine.parse argv
         try
+            match request with
+            | Help | Invalid _ ->
+                ConsoleOutput.write (CommandLine.usage())
+                (match request with Invalid _ -> 2 | _ -> 0)
+            | ListCommands ->
+                ConsoleOutput.write (CommandLine.listing())
+                0
+            | _ ->
             use instance = new SingleInstance("BemoSoftware.WindowTabs")
             // Starting WindowTabs again replaces the running copy, whichever build or folder either
             // came from: the running one exits as from its tray menu, and this one takes over.
             use replaceRequest = new Threading.EventWaitHandle(false,Threading.EventResetMode.AutoReset,"BemoSoftware.WindowTabs.Replace")
             // A restart (after importing settings) waits for the previous instance to exit.
-            let wait = if Array.contains "--restart" argv then 10000 else 0
+            let wait = if request=Restart then 10000 else 0
+            // A command line with something to do goes to the running copy, which stays.
+            let forwarded = match request with RunCommand _ | RestoreWorkspace _ | StartGroup _ -> true | _ -> false
+            if forwarded && not (instance.TryAcquire(0)) then
+                match CommandPipe.send CommandPipe.name argv 3000 with
+                | Some(Result.Ok text) -> (if text<>"" then ConsoleOutput.write text); 0
+                | Some(Result.Error text) -> ConsoleOutput.write text; 1
+                | None -> ConsoleOutput.write (tr Strings.CommandLine.notListening); 1
+            else
             // Only a copy that does not exit in time is reported as already running.
             let acquired = instance.TryAcquire(wait) || (replaceRequest.Set() && instance.TryAcquire(15000))
             if not acquired then
@@ -997,6 +1075,7 @@ module Bootstrap =
                 if Environment.GetEnvironmentVariable("WINDOWTABS_CHECK_THREADS")="1" then Control.CheckForIllegalCrossThreadCalls <- true
                 use lifetime = new LifetimeScope(fun error -> logger.log "Shutdown" error)
                 let program = StartupTrace.measure "program.initialize" (fun () -> Program(lifetime))
+                if forwarded then program.queueRequest request
                 program.claimRunAtStartup()
                 // Its own request was taken by the instance it replaced, or none was made.
                 replaceRequest.Reset() |> ignore

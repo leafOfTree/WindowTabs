@@ -623,6 +623,19 @@ module Strings =
                                description={ en="Groups any window that was missed."; zh="把漏掉的窗口加入分组。"; ja="見落とされたウィンドウをグループに入れます。"; ar="يضيف أي نافذة فاتها البرنامج إلى مجموعة." }
                                keywords={ en="rescan refresh reload"; zh="刷新 重新加载"; ja="更新 再読み込み"; ar="تحديث إعادة تحميل" } }
 
+    /// Written to the console a command line was given from.
+    module CommandLine =
+        let usage = { en="WindowTabs [--command <id> [choice]] [--workspace <name>] [--group <program>...] [--commands] [--help]\n\n  --command <id> [choice]   Runs a command in the running WindowTabs; the choice names the option to take.\n  --workspace <name>        Restores a saved workspace.\n  --group <program>...      Starts the programs and puts the windows they open into one group.\n  --commands                Lists the commands and their ids.\n\nWithout arguments, starts WindowTabs, replacing a running copy."
+                      zh="WindowTabs [--command <id> [选项]] [--workspace <名称>] [--group <程序>...] [--commands] [--help]\n\n  --command <id> [选项]     在运行中的 WindowTabs 里执行命令；选项指明要选的那一项。\n  --workspace <名称>        恢复已保存的工作区。\n  --group <程序>...         启动这些程序，并把它们打开的窗口编成一个分组。\n  --commands                列出所有命令及其 id。\n\n不带参数时启动 WindowTabs，并替换正在运行的副本。"
+                      ja="WindowTabs [--command <id> [選択肢]] [--workspace <名前>] [--group <プログラム>...] [--commands] [--help]\n\n  --command <id> [選択肢]   実行中の WindowTabs でコマンドを実行します。選択肢は選ぶ項目を指定します。\n  --workspace <名前>        保存済みのワークスペースを復元します。\n  --group <プログラム>...   プログラムを起動し、開いたウィンドウを 1 つのグループにまとめます。\n  --commands                コマンドとその id を一覧表示します。\n\n引数なしでは WindowTabs を起動し、実行中のコピーを置き換えます。"
+                      ar="WindowTabs [--command <id> [خيار]] [--workspace <اسم>] [--group <برنامج>...] [--commands] [--help]\n\n  --command <id> [خيار]     يشغّل أمرًا في WindowTabs العامل؛ ويسمّي الخيار العنصر المراد اختياره.\n  --workspace <اسم>         يستعيد مساحة عمل محفوظة.\n  --group <برنامج>...       يشغّل البرامج ويضع النوافذ التي تفتحها في مجموعة واحدة.\n  --commands                يعرض الأوامر ومعرّفاتها.\n\nبدون وسائط، يبدأ WindowTabs ويحل محل النسخة العاملة." }
+        let unknownCommand id = { en=sprintf "No command is called %s. --commands lists them." id; zh=sprintf "没有名为 %s 的命令。--commands 可列出全部命令。" id; ja=sprintf "%s というコマンドはありません。--commands で一覧表示できます。" id; ar=sprintf "لا يوجد أمر باسم %s. يعرض --commands الأوامر." id }
+        let noSuchChoice wanted (choices:string list) =
+            let listed = System.String.Join(", ",choices)
+            { en=sprintf "No choice is called %s. The choices are: %s" wanted listed; zh=sprintf "没有名为 %s 的选项。可选：%s" wanted listed; ja=sprintf "%s という選択肢はありません。選択肢: %s" wanted listed; ar=sprintf "لا يوجد خيار باسم %s. الخيارات: %s" wanted listed }
+        let noSuchWorkspace name = { en=sprintf "No workspace is called %s." name; zh=sprintf "没有名为 %s 的工作区。" name; ja=sprintf "%s というワークスペースはありません。" name; ar=sprintf "لا توجد مساحة عمل باسم %s." name }
+        let notListening = { en="WindowTabs is running but does not take command lines; start it again first."; zh="WindowTabs 正在运行，但不接收命令行；请先重新启动它。"; ja="WindowTabs は実行中ですが、コマンド ラインを受け付けません。先に起動し直してください。"; ar="WindowTabs يعمل لكنه لا يقبل سطور الأوامر؛ أعد تشغيله أولًا." }
+
     /// The tab search box.
     module TabSearch =
         let prompt = { en="Type a title or app name to switch windows"; zh="输入标题或应用名，切换窗口"; ja="タイトルやアプリ名を入力してウィンドウを切り替え"; ar="اكتب عنوانًا أو اسم تطبيق للتبديل بين النوافذ" }

@@ -353,6 +353,15 @@ scan start the group; moving it to another group goes through `addAfterDetaching
 toggles (tabs, auto-grouping and number switching for the app of the window in front) and the
 workspace choices (restore by name, delete) are commands as well.
 
+The command line (`CommandLine.parse`) asks for a command by id, a workspace by name, or
+programs to start into one group. A start that finds a copy running sends its arguments to it
+over a named pipe (`CommandPipe`, per sign-in session; `CommandServer` listens in the running
+copy and answers on the main thread) and prints the reply to the console it was started from
+(`ConsoleOutput`); without a running copy it starts one, which does the request once its first
+scan is over, a workspace asked for taking the session restore's place. Programs started
+together are matched by executable name for a minute: the first window to appear makes a group
+by hand (`tryLaunched`, ahead of the remembered groups and the rules) and the rest join it.
+
 With nothing typed the list keeps that group order. Once a query is typed the
 matches are listed best first, without group separators, and the first one is the
 initial choice. Word-start matches rank above word-internal matches, then earlier

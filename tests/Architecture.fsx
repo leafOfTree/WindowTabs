@@ -811,6 +811,22 @@ let main() =
     check (back.Depth=0 && back.Query="rest" && back.Scope=CommandScope) "Esc did not go back to the search"
     back.Close()
     pump 100
+    // The command line: what each form asks for, and the pipe a running copy takes them over.
+    check (CommandLine.parse [||]=Start && CommandLine.parse [|"--restart"|]=Restart) "A plain or restarting start was not read"
+    check (CommandLine.parse [|"--command";"next-tab"|]=RunCommand("next-tab",None)) "A command by id was not read"
+    check (CommandLine.parse [|"-c";"tab-color";"Sky";"blue"|]=RunCommand("tab-color",Some "Sky blue")) "A command's choice was not read whole"
+    check (CommandLine.parse [|"--workspace";"Dev";"work"|]=RestoreWorkspace "Dev work") "A workspace name with a space was not read whole"
+    check (CommandLine.parse [|"--group";"a.exe";"b.exe"|]=StartGroup ["a.exe";"b.exe"]) "The programs of a group were not read"
+    check (CommandLine.parse [|"--commands"|]=ListCommands && CommandLine.parse [|"--help"|]=Help) "The listing and help were not read"
+    check ((match CommandLine.parse [|"--bogus"|] with Invalid _ -> true | _ -> false) && (match CommandLine.parse [|"--group"|] with Invalid _ -> true | _ -> false)) "An unknown or incomplete command line was accepted"
+    check (CommandLine.listing().Contains "command-palette") "The listing left out the palette"
+    let pipe = "BemoSoftware.WindowTabs.Test."+Guid.NewGuid().ToString("N")
+    do
+        use server = new CommandServer(pipe,fun argv -> if argv.Length=0 then Result.Error "nothing" else Result.Ok(String.Join("+",argv)))
+        check (CommandPipe.send pipe [|"--command";"next-tab"|] 3000=Some(Result.Ok "--command+next-tab")) "The pipe did not carry a command line and its reply"
+        check (CommandPipe.send pipe [||] 3000=Some(Result.Error "nothing")) "The pipe did not carry a refusal"
+        check (CommandPipe.send pipe [|"again"|] 3000=Some(Result.Ok "again")) "The pipe did not take a second command line"
+    check (CommandPipe.send (pipe+".gone") [|"x"|] 200).IsNone "Sending to no listener did not say so"
     // Alt+Enter sets the chosen command's shortcut in place, refusing a key another holds.
     let mutable assigned = 0
     let bindable = { commandsPage with shortcut=fun entry -> if entry.hwnd=IntPtr 1 then Some { current=1623; usedBy=(fun code -> if code=3623 then Some "Next tab" else None); set=(fun code -> assigned <- code; code<>1616) } else None }

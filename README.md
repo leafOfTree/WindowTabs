@@ -74,6 +74,28 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
 
 <a href="docs/images/settings.png"><img src="docs/images/settings.png" width="600" alt="WindowTabs settings" /></a>
 
+## Command palette and command line
+
+**Ctrl + Alt + P** opens the command palette: type a command's name and press Enter.
+Tab goes round the windows, the commands, the settings and the saved workspaces, and
+`>` typed first lists the commands. Every tab menu action, split view command, workspace
+and setting that is on or off is there, with its shortcut beside it; Alt + Enter on a
+command sets one, as **Settings → Shortcuts** does.
+
+The same commands run from a command line, in the running WindowTabs:
+
+```bash
+WindowTabs.exe --command next-tab
+WindowTabs.exe --command tab-color Blue
+WindowTabs.exe --workspace "Project A"
+WindowTabs.exe --group "C:\Program Files\App\app.exe" notepad.exe
+WindowTabs.exe --commands
+```
+
+`--group` starts the programs and puts the windows they open into one group, and
+`--workspace` restores a saved workspace; either also starts WindowTabs when it is not
+running. `--commands` lists every command with its id.
+
 ## Settings and updates
 
 Settings save automatically to `%AppData%\WindowTabs\WindowTabsSettings.json`.
