@@ -38,6 +38,10 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let taskSwitchCell = Cell.create(None)
     let mutable initialDiscoveryComplete = false
     let tabSearchCell = Cell.create(None:TabSearchForm option)
+    /// What was typed when each box last closed, the window search's and the palette's, offered
+    /// again, selected, the next time it opens.
+    let mutable lastWindowQuery = ""
+    let mutable lastPaletteQuery = ""
     let isTabMonitoringSuspendedCell = Cell.create(0)
     let llMouseEvent = Event<_>()
 
@@ -759,7 +763,11 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 let pages = [CommandPalette.actionsPage active
                              CommandPalette.workspacesPage (this.workspaceSummaries()) this.restoreWorkspaceNamed]
                 TabSearchForm([],[],settings=(settingsManager :> ISettings),pages=pages,scope=wanted,windows=false)
-        search.Ended.Add(fun () -> tabSearchCell.set(None))
+        let isWindows = scope.IsNone
+        search.Query <- if isWindows then lastWindowQuery else lastPaletteQuery
+        search.Ended.Add(fun () ->
+            if isWindows then lastWindowQuery <- search.BaseQuery else lastPaletteQuery <- search.BaseQuery
+            tabSearchCell.set(None))
         tabSearchCell.set(Some(search))
         search
 

@@ -37,8 +37,28 @@ module CommandPalette =
                     | Toggle(key,_,_) -> Commands.find ("toggle-"+item.id) |> Option.map(fun command -> ASwitch(item,key,command))
                     | _ -> Some(ASetting item)))
         commands @ settings
+    /// How an action is remembered among the recent ones: a command's id, or a setting's.
+    let private recentKey action =
+        match action with
+        | ACommand command -> command.id
+        | ASwitch(_,_,command) -> command.id
+        | ASetting item -> "setting:"+item.id
+    let private recentLimit = 8
+    /// The actions chosen last from the palette, the latest first, kept in the settings file.
+    let recent() =
+        match Services.settings.root.["recentActions"] with
+        | :? Bemo.Json.JArray as items -> items |> Seq.choose(fun item -> match item with :? Bemo.Json.JValue as value -> Some(string value) | _ -> None) |> List.ofSeq
+        | _ -> []
+    let remember (key:string) =
+        let next = key :: (recent() |> List.filter((<>) key)) |> List.truncate recentLimit
+        let root = Services.settings.root
+        root.["recentActions"] <- Bemo.Json.JArray(next |> List.map box |> Array.ofList)
+        Services.settings.root <- root
     let actionsPage (active:IntPtr) =
         let listed = actions() |> Array.ofList
+        // The recent ones first while nothing is typed, and ahead of equal matches after.
+        let recents = recent()
+        let rank action = match List.tryFindIndex ((=) (recentKey action)) recents with Some index -> index | None -> recentLimit
         let action (chosen:TabSearchEntry) = listed.[int chosen.hwnd-1]
         // Each row's right end as last worked out: a shortcut's text reads the settings file,
         // too slow for every row at every keystroke. Forgotten for a setting as it turns.
@@ -53,8 +73,13 @@ module CommandPalette =
           noMatches=tr Strings.TabSearch.noActions; glyph=NoGlyph
           entries=listed |> Array.mapi(fun index action ->
                       let text = text action
-                      row index (tr text.caption) [text.caption;text.keywords;text.description] (extra action) (group action)) |> List.ofArray
+                      let recency = rank action
+                      { row index (tr text.caption) [text.caption;text.keywords;text.description] (extra action)
+                            (if recency<recentLimit then -1 else group action)
+                        with recency=recency*listed.Length+index })
+                  |> Array.sortBy(fun entry -> entry.recency) |> List.ofArray
           choose=(fun chosen ->
+              remember (recentKey (action chosen))
               match action chosen with
               | ACommand command -> command.run active
               | ASwitch(_,_,command) -> command.run active |> ignore; asides.Remove chosen.hwnd |> ignore; Stay

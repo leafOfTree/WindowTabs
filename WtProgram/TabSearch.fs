@@ -716,13 +716,18 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         form.Deactivate.Add(fun _ -> if not hiding then finish None)
         apply()
 
-    member _.Show() = present()
+    /// Shown with its search, if one was set, all selected, so typing starts a new one.
+    member _.Show() =
+        present()
+        input.SelectAll()
     /// Closes without switching.
     member _.Close() = finish None
     member _.Ended = ended.Publish
     member _.IsClosed = closed
     /// The typed search; setting it filters as typing does.
     member _.Query with get() = input.Text and set(value:string) = input.Text <- value
+    /// The search typed on the scope's rows, under any command's choices: the one to offer again.
+    member _.BaseQuery = match List.tryLast choices with Some(_,_,_,query) -> query | None -> input.Text
     member _.Scope = scope
     /// Goes to a scope, as Tab does when it comes round to it.
     member _.SetScope target = setScope target

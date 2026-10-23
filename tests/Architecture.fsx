@@ -461,6 +461,13 @@ let main() =
         // What a typed word matched, said under a command as under a settings search result.
         check (SettingsCatalog.evidence "switcher" Strings.Settings.groupWindowsInSwitcher "General" []=["switcher"]) "A keyword match is not named under the row"
         check (SettingsCatalog.evidence "group" Strings.Settings.groupWindowsInSwitcher "General" []=[]) "A match the name shows is repeated under the row"
+        // Recent actions: the latest first, each once, a few kept.
+        for key in ["a";"b";"a";"c";"d";"e";"f";"g";"h";"i"] do CommandPalette.remember key
+        check (CommandPalette.recent()=["i";"h";"g";"f";"e";"d";"c";"a"]) "Recent actions were not kept latest first, each once, eight at most"
+        let page = CommandPalette.actionsPage IntPtr.Zero
+        CommandPalette.remember "exit"
+        let reordered = CommandPalette.actionsPage IntPtr.Zero
+        check (page.entries.Head.title<>reordered.entries.Head.title && reordered.entries.Head.title=tr Strings.Commands.exit.caption) "A recent action was not listed first"
         api.setValue("replaceAltTab",box false)
         (Commands.find "toggle-use-windowtabs-for-alt-tab").Value.run IntPtr.Zero |> ignore
         check (api.getValue("replaceAltTab") :?> bool) "A toggle command must turn the setting on"
@@ -841,6 +848,7 @@ let main() =
     let back = TabSearchForm([mail;notes],[],pages=[commandsPage],scope=ActionScope)
     back.Query <- "rest"
     back.Accept()
+    check (back.BaseQuery="rest") "The search under a command's choices was not the one to offer again"
     back.Back()
     check (back.Depth=0 && back.Query="rest" && back.Scope=ActionScope) "Esc did not go back to the search"
     back.Close()
