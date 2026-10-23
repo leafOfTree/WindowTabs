@@ -30,3 +30,6 @@ type ManagerViewService() =
 
         member x.show(view) =
             (getForm()).showView(view)
+
+        member x.showSetting id =
+            (getForm()).showSetting(id)

@@ -260,7 +260,7 @@ let main() =
             member _.resumeTabMonitoring() = ()
             member _.llMouse = mouse.Publish
             member _.paneCandidates() = []
-            member _.toggleSearch() = ()
+            member _.toggleSearch _ = ()
             member _.saveWorkspace() = ()
             member _.restoreWorkspace() = ()})
         let desktop = Desktop({new IDesktopNotification with
@@ -437,9 +437,9 @@ let main() =
         check (Commands.find "toggle-use-windowtabs-for-alt-tab" |> Option.exists(fun command -> command.category=SettingsCommands)) "Every on/off setting must be a command"
         check (Commands.categoryOf "splitSwap"=Some SplitCommands && Commands.categoryOf "saveWorkspace"=Some WorkspaceCommands) "Shortcut cards must follow the commands' categories"
         api.setValue("replaceAltTab",box false)
-        (Commands.find "toggle-use-windowtabs-for-alt-tab").Value.run() |> ignore
+        (Commands.find "toggle-use-windowtabs-for-alt-tab").Value.run IntPtr.Zero |> ignore
         check (api.getValue("replaceAltTab") :?> bool) "A toggle command must turn the setting on"
-        (Commands.find "toggle-use-windowtabs-for-alt-tab").Value.run() |> ignore
+        (Commands.find "toggle-use-windowtabs-for-alt-tab").Value.run IntPtr.Zero |> ignore
         check (not (api.getValue("replaceAltTab") :?> bool)) "A toggle command must turn the setting off again"
         let renamed = api.root.DeepClone() :?> Bemo.Json.JObject
         renamed.["tabColorMode"] <- Bemo.Json.JValue("Rainbow")
@@ -754,5 +754,41 @@ let main() =
     picked.Accept()
     pump 100
     check picked.IsClosed "Accepting a match did not close the tab search"
+    // The palette: pages beside the windows, > for the commands, and a command's choices in place.
+    let mutable ran = []
+    let option name = { label=name; detail=""; run=fun () -> ran <- name::ran; Done }
+    let commandsPage =
+        { scope=CommandScope; caption="Commands"; prompt="cmd"; noMatches="none"; glyph=NoGlyph
+          entries=[ { TabSearch.create (IntPtr 1) "Close tab" "Close tab" "Ctrl+Alt+W" with recency=0 }
+                    { TabSearch.create (IntPtr 2) "Restore workspace" "Restore workspace" "" with recency=1 } ]
+          choose=fun entry -> if entry.hwnd=IntPtr 1 then (ran <- "close"::ran; Done) else Choose [option "Work";option "Home"] }
+    let palette = TabSearchForm([mail;notes;editor],[mail.hwnd;editor.hwnd],pages=[commandsPage])
+    check (palette.Scope=GroupTabs) "The palette did not open on the group"
+    palette.SwitchScope()
+    palette.SwitchScope()
+    check (palette.Scope=CommandScope && palette.Results.Length=2) "Tab did not reach the commands page"
+    palette.SwitchScope()
+    check (palette.Scope=GroupTabs) "Tab did not come round to the group"
+    palette.Query <- ">clo"
+    check (palette.Scope=CommandScope && palette.Query="clo" && palette.Results.Length=1) "> did not list the commands"
+    palette.Accept()
+    pump 100
+    check (ran=["close"] && palette.IsClosed) "Accepting a command did not run it and close"
+    let chooser = TabSearchForm([mail;notes],[],pages=[commandsPage],scope=CommandScope)
+    check (chooser.Scope=CommandScope) "The palette did not open on the scope asked for"
+    chooser.Query <- "restore"
+    chooser.Accept()
+    check (not chooser.IsClosed && chooser.Depth=1 && chooser.Query="" && chooser.Results.Length=2) "A command's choices were not shown in place"
+    chooser.Query <- "ho"
+    chooser.Accept()
+    pump 100
+    check (ran=["Home";"close"] && chooser.IsClosed) "Choosing did not run the choice"
+    let back = TabSearchForm([mail;notes],[],pages=[commandsPage],scope=CommandScope)
+    back.Query <- "rest"
+    back.Accept()
+    back.Back()
+    check (back.Depth=0 && back.Query="rest" && back.Scope=CommandScope) "Esc did not go back to the search"
+    back.Close()
+    pump 100
     printfn "PASS: atomic/deferred saves, failure retry and backup recovery, subscriptions, temporary state, coalesced scans, dispatch, group cleanup, popup disposal and tab search."
 TestInit.run main

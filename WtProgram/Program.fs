@@ -652,20 +652,48 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
     member this.foregroundGroup = this.desktop.foregroundGroup
 
-    /// Opens the tab search, or closes it when it is already open.
-    member this.toggleTabSearch() =
+    /// Opens the palette on a scope, the windows when none is asked for, or closes it when it is
+    /// open on that scope already; open on another scope, it goes there instead.
+    member this.togglePalette(scope:PaletteScope option) =
         match tabSearchCell.value with
-        | Some search -> search.Close()
-        | None ->
-            let nameOverride hwnd = windowNameOverride.tryFind(hwnd).bind(id)
-            // The desktop keeps each group's windows in tab order.
-            let groups = this.desktop.groups.list |> List.map(fun group -> group.windows.list)
-            let group = this.desktop.foregroundGroup |> Option.map(fun group -> group.windows.list) |> Option.defaultValue []
-            let search = TabSearchForm(TabSearch.tabs nameOverride (WinUserApi.GetForegroundWindow()) groups,group,
-                                      settings=(settingsManager :> ISettings))
-            search.Ended.Add(fun () -> tabSearchCell.set(None))
-            tabSearchCell.set(Some(search))
-            search.Show()
+        | Some search when (match scope with
+                            | None -> search.Scope=GroupTabs || search.Scope=AllTabs
+                            | Some wanted -> search.Scope=wanted) -> search.Close()
+        | Some search -> scope |> Option.iter search.SetScope
+        | None -> (this.openPalette(scope) : TabSearchForm).Show()
+
+    /// The palette over the window in front, built but not shown.
+    member private this.openPalette(scope:PaletteScope option) : TabSearchForm =
+        let active = WinUserApi.GetForegroundWindow()
+        let nameOverride hwnd = windowNameOverride.tryFind(hwnd).bind(id)
+        // The desktop keeps each group's windows in tab order.
+        let groups = this.desktop.groups.list |> List.map(fun group -> group.windows.list)
+        let group = this.desktop.foregroundGroup |> Option.map(fun group -> group.windows.list) |> Option.defaultValue []
+        let pages = [CommandPalette.commandsPage active
+                     CommandPalette.settingsPage()
+                     CommandPalette.workspacesPage (this.workspaceSummaries()) this.restoreWorkspaceNamed]
+        let search = TabSearchForm(TabSearch.tabs nameOverride active groups,group,
+                                  settings=(settingsManager :> ISettings),pages=pages,?scope=scope)
+        search.Ended.Add(fun () -> tabSearchCell.set(None))
+        tabSearchCell.set(Some(search))
+        search
+
+    /// A command's choices, from a hotkey: the palette opens on them.
+    member this.showChoices(caption:string, options:CommandChoice list) =
+        let search =
+            match tabSearchCell.value with
+            | Some search -> search
+            | None ->
+                let search = this.openPalette(Some CommandScope)
+                search.Show()
+                search
+        search.ShowChoices(caption,options)
+
+    /// Each saved workspace's name and how many windows it holds.
+    member private this.workspaceSummaries() : (string * int) list =
+        let workspaces : WorkspaceModel = this.readWorkspaces()
+        workspaces.workspaces.list |> List.map(fun (ws:Workspace) ->
+            ws.name,ws.groups.list |> List.sumBy(fun group -> group.cast<WorkspaceGroup>().windows.count))
 
     /// The saved workspaces as Settings last wrote them, which an open Settings page may have changed.
     member private this.readWorkspaces() =
@@ -693,10 +721,10 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 Notice.error title (tr (Strings.Notices.saveFailed error.Message))
                 Diagnostics.Trace.TraceWarning("Workspace save failed: {0}",error.Message)
 
-    /// Brings back the workspace last saved or restored, with the result on screen rather than in a dialog.
-    member this.restoreWorkspace() =
+    /// Brings a workspace back, with the result on screen rather than in a dialog.
+    member private this.restoreWith (chosen:WorkspaceModel -> Workspace option) (restore:WorkspaceModel -> WorkspaceRestoreResult option) =
         let workspaces = this.readWorkspaces()
-        match workspaces.lastUsed with
+        match chosen workspaces with
         | None -> Notice.show (tr Strings.Pages.workspaces) (tr Strings.Workspaces.noneSaved)
         | Some ws ->
             // Said first, and painted before the windows move, so a user leaves them alone meanwhile.
@@ -706,11 +734,20 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 go.Stop()
                 go.Dispose()
                 try
-                    workspaces.restoreLast() |> Option.iter(fun result -> this.noticeRestored result.workspace result)
+                    restore workspaces |> Option.iter(fun result -> this.noticeRestored result.workspace result)
                 with error ->
                     Notice.error ws.name (tr (Strings.Notices.restoreFailed error.Message))
                     Diagnostics.Trace.TraceWarning("Workspace restore failed: {0}",error.Message))
             go.Start()
+
+    /// Brings back the workspace last saved or restored.
+    member this.restoreWorkspace() =
+        this.restoreWith (fun workspaces -> workspaces.lastUsed) (fun workspaces -> workspaces.restoreLast())
+
+    /// Brings back the workspace of that name, as choosing it in the palette does.
+    member this.restoreWorkspaceNamed(name:string) =
+        this.restoreWith (fun workspaces -> workspaces.workspaces.tryFind(fun ws -> ws.name=name))
+                         (fun workspaces -> workspaces.restoreNamed name)
 
     /// A shortcut another program already holds stays unregistered, without a message at every
     /// start; choosing it again in Settings says it is in use.
@@ -721,9 +758,11 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 let shortcut = HotKeyShortcut(HotKeyControlCode=int16(shortcut))
                 hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags, shortcut.RegisterHotKeyVirtualKeyCode) (this.runCommand command) |> ignore)
 
-    /// A command from its hotkey. A choice it leaves is for the palette to show.
+    /// A command from its hotkey, for the window in front; a choice it leaves opens the palette.
     member this.runCommand (command:Command) () =
-        command.run() |> ignore
+        match command.run (WinUserApi.GetForegroundWindow()) with
+        | Done -> ()
+        | Choose options -> this.showChoices(tr command.text.caption,options)
 
    
     member this.hwndZorders() : Map2<IntPtr, int>= Map2(os.windowsInZorder.enumerate.map(fun(i,w) -> w.hwnd,i))
@@ -871,7 +910,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             |> List.filter(fun entry -> entry.desktop="")
             |> List.map(fun entry -> entry.hwnd,entry.title,entry.program)
 
-        member x.toggleSearch() = this.toggleTabSearch()
+        member x.toggleSearch scope = this.togglePalette scope
         member x.saveWorkspace() = this.saveWorkspace()
         member x.restoreWorkspace() = this.restoreWorkspace()
 

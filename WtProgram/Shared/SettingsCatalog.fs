@@ -47,6 +47,8 @@ module SettingsCatalog =
         { id="next-tab"; page=HotKeySettings; text=Strings.Settings.nextTab; binding=Shortcut("nextTab",3623) }
         { id="previous-tab"; page=HotKeySettings; text=Strings.Settings.previousTab; binding=Shortcut("prevTab",3621) }
         { id="search-tabs"; page=HotKeySettings; text=Strings.Settings.searchTabs; binding=Shortcut("searchTabs",1620) }
+        // Ctrl+Alt+P, beside the window search's Ctrl+Alt+T.
+        { id="command-palette"; page=HotKeySettings; text=Strings.Settings.commandPalette; binding=Shortcut("commandPalette",1616) }
         { id="new-tab"; page=HotKeySettings; text=Strings.Settings.newTab; binding=Shortcut("newTab",1614) }
         // Ctrl+Alt+W beside New tab's Ctrl+Alt+N; Ctrl+W alone belongs to the apps.
         { id="close-tab"; page=HotKeySettings; text=Strings.Settings.closeTab; binding=Shortcut("closeTab",1623) }

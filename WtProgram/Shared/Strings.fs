@@ -214,6 +214,12 @@ module Strings =
         let searchTabs = { caption={ en="Switch windows"; zh="切换窗口"; ja="ウィンドウを切り替え"; ar="التبديل بين النوافذ" }
                            description={ en="Switch to a window by title or app name."; zh="按标题或应用名查找并切换窗口。"; ja="タイトルやアプリ名でウィンドウを探して切り替えます。"; ar="الانتقال إلى نافذة باستخدام عنوانها أو اسم التطبيق." }
                            keywords={ en="find"; zh="查找"; ja="検索"; ar="بحث" } }
+        let commandPalette = { caption={ en="Command palette"; zh="命令面板"; ja="コマンドパレット"; ar="لوحة الأوامر" }
+                               description={ en="Run any command by name; Tab switches to windows, settings and workspaces."
+                                             zh="按名称运行任意命令；Tab 切换到窗口、设置和工作区。"
+                                             ja="名前でコマンドを実行します。Tab でウィンドウ、設定、ワークスペースに切り替えます。"
+                                             ar="شغّل أي أمر باسمه؛ ويبدّل Tab إلى النوافذ والإعدادات ومساحات العمل." }
+                               keywords={ en="actions search everywhere"; zh="动作 全局搜索"; ja="アクション 検索"; ar="إجراءات بحث شامل" } }
         let newTab = { caption={ en="New tab"; zh="新建标签"; ja="新しいタブ"; ar="علامة تبويب جديدة" }
                        description={ en="Starts the current tab's app again."
                                      zh="再次启动当前标签的应用。"
@@ -569,6 +575,21 @@ module Strings =
         let otherDesktop = { en="Another desktop"; zh="其他桌面"; ja="別のデスクトップ"; ar="سطح مكتب آخر" }
         let groupTabs count = { en=sprintf "This group · %d" count; zh=sprintf "当前分组 · %d" count; ja=sprintf "このグループ · %d" count; ar=sprintf "هذه المجموعة · %d" count }
         let allTabs count = { en=sprintf "All windows · %d" count; zh=sprintf "全局窗口 · %d" count; ja=sprintf "すべてのウィンドウ · %d" count; ar=sprintf "كل النوافذ · %d" count }
+        /// The palette's other pages, beside the windows.
+        let commands = { en="Commands"; zh="命令"; ja="コマンド"; ar="الأوامر" }
+        let settings = { en="Settings"; zh="设置"; ja="設定"; ar="الإعدادات" }
+        let commandPrompt = { en="Type a command name; > also lists commands"; zh="输入命令名；输入 > 也可列出命令"; ja="コマンド名を入力。> でもコマンドを一覧表示"; ar="اكتب اسم أمر؛ ويعرض > الأوامر أيضًا" }
+        let settingPrompt = { en="Type a setting name to open it"; zh="输入设置名称，打开该设置"; ja="設定名を入力して開く"; ar="اكتب اسم إعداد لفتحه" }
+        let workspacePrompt = { en="Type a workspace name to restore it"; zh="输入工作区名称，恢复该工作区"; ja="ワークスペース名を入力して復元"; ar="اكتب اسم مساحة عمل لاستعادتها" }
+        let choicePrompt = { en="Choose, or type to filter"; zh="选择一项，或输入以筛选"; ja="選択するか、入力して絞り込み"; ar="اختر، أو اكتب للتصفية" }
+        let noCommands = { en="No matching commands."; zh="没有匹配的命令。"; ja="一致するコマンドはありません。"; ar="لا توجد أوامر مطابقة." }
+        let noWorkspaces = { en="No workspace saved yet."; zh="尚未保存任何工作区。"; ja="保存されたワークスペースはまだありません。"; ar="لم يتم حفظ أي مساحة عمل بعد." }
+        let noChoices = { en="No matching choices."; zh="没有匹配的选项。"; ja="一致する項目はありません。"; ar="لا توجد خيارات مطابقة." }
+        /// Beside a workspace: how many windows it holds.
+        let windows count = { en=sprintf "%d windows" count; zh=sprintf "%d 个窗口" count; ja=sprintf "%d 個のウィンドウ" count; ar=sprintf "%d نوافذ" count }
+        /// Beside a setting that is on or off.
+        let on = { en="On"; zh="开"; ja="オン"; ar="مفعّل" }
+        let off = { en="Off"; zh="关"; ja="オフ"; ar="معطّل" }
 
     module AppRules =
         let addApplication = { en="Add application"; zh="添加应用"; ja="アプリを追加"; ar="إضافة تطبيق" }

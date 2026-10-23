@@ -617,6 +617,12 @@ type WorkspaceModel() as this =
             this.markUsed ws
             this.restoreWorkspace ws)
 
+    /// What restoring the workspace of that name did, or None when there is none.
+    member this.restoreNamed(name:string) =
+        this.workspaces.tryFind(fun ws -> ws.name=name) |> Option.map(fun ws ->
+            this.markUsed ws
+            this.restoreWorkspace ws)
+
     /// The windows as they are now, kept on their own as the session: written as the groups
     /// change and brought back at the next start after a sign-in, when no window is left from
     /// the last run. Apart from the saved workspaces, which are the user's.

@@ -108,6 +108,16 @@ type IPropEditor =
 type IManagerView =
     abstract member show : unit -> unit
     abstract member show : SettingsViewType -> unit
+    /// Opens the window on the page of a setting, scrolled to it, as choosing it in the search does.
+    abstract member showSetting : string -> unit
+
+/// Which rows the palette lists: the active group's tabs, every window, or one of its pages.
+type PaletteScope =
+    | GroupTabs
+    | AllTabs
+    | CommandScope
+    | SettingScope
+    | WorkspaceScope
 
 type IProgram =
     abstract member version : string
@@ -148,8 +158,9 @@ type IProgram =
     abstract member llMouse : IEvent<int32 * IntPtr>
     /// Windows an empty pane can take, on this desktop: handle, tab name and program.
     abstract member paneCandidates : unit -> (IntPtr * string * string) list
-    /// Opens the search box, or closes it when open. Posted to the UI thread.
-    abstract member toggleSearch : unit -> unit
+    /// Opens the palette on a scope, the windows when none is given, or closes it when it is
+    /// open on that scope already; open on another, it switches. Posted to the UI thread.
+    abstract member toggleSearch : PaletteScope option -> unit
     /// Saves the windows as a new workspace, as the Save layout button does. Posted to the UI thread.
     abstract member saveWorkspace : unit -> unit
     /// Brings back the workspace last saved or restored. Posted to the UI thread.

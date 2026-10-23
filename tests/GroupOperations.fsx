@@ -270,7 +270,7 @@ let main() =
             member _.resumeTabMonitoring() = ()
             member _.llMouse = mouse.Publish
             member _.paneCandidates() = []
-            member _.toggleSearch() = ()
+            member _.toggleSearch _ = ()
             member _.saveWorkspace() = ()
             member _.restoreWorkspace() = ()})
         Services.register<IFilterService>({new IFilterService with

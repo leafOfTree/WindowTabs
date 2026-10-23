@@ -48,6 +48,8 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
             SettingsPageRegistration(DiagnosticsSettings,tr Strings.Pages.diagnostics,fun () -> DiagnosticsView() :> ISettingsView) ]
     let mutable activePage = pages.Head.key
     let mutable suppressSearch = false
+    /// Goes to a setting as a search result does; set once the search is built.
+    let mutable navigate : SettingDefinition -> unit = ignore
     let themedPages = Collections.Generic.HashSet<SettingsViewType>()
     let form = new SettingsWindow(Text=tr Strings.SettingsWindow.title,AccessibleName=tr Strings.SettingsWindow.title,Font=SettingsUi.bodyFont())
     do SettingsUi.hideCaptionText form
@@ -297,14 +299,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 resultsFrame.Visible <- matches.Length>0
                 if matches.Length>0 then results.SelectedIndex <- 0
                 showSearch()
-        let navigateResult() =
-            searchResults.Hide()
-            let selected = results.SelectedIndex
-            if selected>=0 && selected<matches.Length then
-                let item = matches.[selected]
-                suppressSearch <- true
-                search.Clear()
-                suppressSearch <- false
+        let navigateTo (item:SettingDefinition) =
                 // The language picker lives in the sidebar footer, not on a page.
                 if item.id="language" then
                     languageChoice.Select()
@@ -331,6 +326,16 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                         control.Select()
                         SettingsUi.flash control
                     | None -> page.control.SelectNextControl(null,true,true,true,false) |> ignore
+        navigate <- navigateTo
+        let navigateResult() =
+            searchResults.Hide()
+            let selected = results.SelectedIndex
+            if selected>=0 && selected<matches.Length then
+                let item = matches.[selected]
+                suppressSearch <- true
+                search.Clear()
+                suppressSearch <- false
+                navigateTo item
         results.MouseClick.Add(fun e ->
             if e.Button=MouseButtons.Left && results.IndexFromPoint(e.Location)>=0 then navigateResult())
         results.MouseMove.Add(fun e ->
@@ -399,5 +404,11 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         if form.WindowState=FormWindowState.Minimized then form.WindowState <- FormWindowState.Normal
         form.Show()
         form.Activate()
+    /// The window on a setting's page, scrolled to the setting and lit, as from the search.
+    member _.showSetting(id) =
+        if form.WindowState=FormWindowState.Minimized then form.WindowState <- FormWindowState.Normal
+        form.Show()
+        form.Activate()
+        SettingsCatalog.all |> List.tryFind(fun item -> item.id=id) |> Option.iter navigate
     member _.window = form :> Form
     member _.activeView = activePage

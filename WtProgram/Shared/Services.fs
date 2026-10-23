@@ -116,7 +116,7 @@ type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
         member _.resumeTabMonitoring() = dispatcher.Send(fun () -> inner.resumeTabMonitoring())
         member _.llMouse = dispatcher.Send(fun () -> inner.llMouse)
         member _.paneCandidates() = dispatcher.Send(fun () -> inner.paneCandidates())
-        member _.toggleSearch() = dispatcher.Post(fun () -> inner.toggleSearch())
+        member _.toggleSearch scope = dispatcher.Post(fun () -> inner.toggleSearch scope)
         member _.saveWorkspace() = dispatcher.Post(fun () -> inner.saveWorkspace())
         member _.restoreWorkspace() = dispatcher.Post(fun () -> inner.restoreWorkspace())
 
@@ -136,6 +136,7 @@ type DispatchedManagerView(inner:IManagerView, dispatcher:IDispatcher) =
     interface IManagerView with
         member _.show() = dispatcher.Send(fun () -> inner.show())
         member _.show(view:SettingsViewType) = dispatcher.Send(fun () -> inner.show(view))
+        member _.showSetting id = dispatcher.Send(fun () -> inner.showSetting id)
 
 type WtServiceProvider() =
     inherit ServiceProvider()

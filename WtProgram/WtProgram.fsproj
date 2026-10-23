@@ -133,6 +133,7 @@
     <Compile Include="DesktopPlugins\ExceptionHandlerPlugin.fs" />
     <Compile Include="TaskSwitch.fs" />
     <Compile Include="TabSearch.fs" />
+    <Compile Include="CommandPalette.fs" />
     <Compile Include="SplitPanePicker.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

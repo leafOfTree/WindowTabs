@@ -147,30 +147,43 @@ module TabSearch =
         |> List.map(List.map os.windowFromHwnd >> List.filter(fun window -> not (String.IsNullOrEmpty window.text)) >> List.map (entry nameOverride))
         |> arrange (fun hwnd -> zorder.TryFind hwnd |> Option.defaultValue Int32.MaxValue) active
 
-/// Which tabs the search lists.
-type TabSearchScope =
-    /// The tabs of the active window's group.
-    | GroupTabs
-    | AllTabs
+/// A page of the palette beside the windows: what it lists, with a glyph for its rows, and what
+/// choosing a row does. Its entries carry a number of their own in place of a window handle.
+type PalettePage = {
+    scope:PaletteScope
+    /// On the line under the box, where Tab brings it.
+    caption:string
+    /// The hint in the empty box.
+    prompt:string
+    /// Said when nothing matches.
+    noMatches:string
+    glyph:TreeListGlyph
+    entries:TabSearchEntry list
+    choose:TabSearchEntry -> CommandOutcome }
 
 module private TabSearchNative =
     let EM_SETCUEBANNER = 0x1501
     [<DllImport("user32.dll", CharSet=CharSet.Unicode)>]
     extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, string lParam)
 
-/// A search box over the tabs, in the switcher's look: type to filter, then Enter or a click
-/// switches. It remembers the chosen scope; Tab, or clicking the line under the box,
-/// switches between the group and all windows. Esc or clicking
+/// The palette: a search box in the switcher's look over the tabs and, when given, pages of
+/// commands and the like. Type to filter, then Enter or a click switches to the window or runs
+/// the command. It remembers the chosen window scope; Tab, or clicking the line under the box,
+/// goes round the group, all windows and the pages, and > lists the commands. A command that
+/// leaves a choice shows it in place, with Esc or Backspace the way back. Esc or clicking
 /// elsewhere closes it. Used once, then disposed.
 /// pick: what a chosen window is for, switching to it unless given; within: an area on screen to
 /// open over instead of high on the active screen; prompt: the hint in the empty box; rows and
-/// width: how many rows show and how wide it is, in logical pixels.
+/// width: how many rows show and how wide it is, in logical pixels; scope: the one to open on.
 type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISettings,
-                   ?pick:IntPtr -> unit, ?within:Rectangle, ?prompt:string, ?rows:int, ?width:int) =
+                   ?pick:IntPtr -> unit, ?within:Rectangle, ?prompt:string, ?rows:int, ?width:int,
+                   ?pages:PalettePage list, ?scope:PaletteScope) =
     let rowHeight = 44
     let visibleRows = defaultArg rows 9
     let palette = SettingsColors.current()
-    let prompt = defaultArg prompt (tr Strings.TabSearch.prompt)
+    let windowPrompt = defaultArg prompt (tr Strings.TabSearch.prompt)
+    let pages = defaultArg pages []
+    let requested = scope
     let pick = defaultArg pick (fun hwnd -> OS().windowFromHwnd(hwnd).setForegroundOrRestore(false))
     let area =
         match within with
@@ -191,17 +204,43 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             | None -> item.Glyph <- WindowGlyph
             item,entry) |> Array.ofList
     let groupItems = items |> Array.filter(fun (_,entry) -> List.contains entry.hwnd group)
+    let pageItems =
+        pages |> List.map(fun page ->
+            page.scope,
+            page.entries |> List.map(fun entry -> TreeListItem(entry.title,Values=[|"";TabSearch.source entry|],Glyph=page.glyph),entry) |> Array.ofList)
+        |> Map.ofList
     let preferred =
         settings |> Option.map(fun api -> api.getValue("tabSearchScope") :?> string)
         |> Option.defaultValue SettingsCatalog.tabSearchScopeDefault
         |> SettingsCatalog.normalizeTabSearchScope
-    let mutable scope = if groupItems.Length>1 && preferred<>"All" then GroupTabs else AllTabs
     /// Only when the group is worth searching on its own and is not every tab.
     let canSwitchScope = groupItems.Length>1 && groupItems.Length<items.Length
-    let scoped() = match scope with GroupTabs -> groupItems | AllTabs -> items
+    let initialWindowScope = if groupItems.Length>1 && preferred<>"All" then GroupTabs else AllTabs
+    /// In Tab order: the group and every window, or the one of them there is, then the pages.
+    let scopes = (if canSwitchScope then [GroupTabs;AllTabs] else [initialWindowScope]) @ [for page in pages -> page.scope]
+    let mutable scope =
+        match requested with
+        | Some wanted when List.contains wanted scopes -> wanted
+        | _ -> initialWindowScope
+    /// The choices a command left, over the scope's rows while they are up: the command's name,
+    /// the rows, what choosing one does, and the search typed before, for the way back.
+    let mutable choices : (string * (TreeListItem * TabSearchEntry)[] * (TabSearchEntry -> CommandOutcome) * string) list = []
+    let rowsOf target = match target with GroupTabs -> groupItems | AllTabs -> items | other -> pageItems.[other]
+    let scoped() = match choices with (_,rows,_,_)::_ -> rows | [] -> rowsOf scope
+    let page() = pages |> List.tryFind(fun page -> page.scope=scope)
+    let currentPrompt() =
+        match choices,page() with
+        | _::_,_ -> tr Strings.TabSearch.choicePrompt
+        | [],Some page -> page.prompt
+        | [],None -> windowPrompt
+    let currentEmpty() =
+        match choices,page() with
+        | _::_,_ -> tr Strings.TabSearch.noChoices
+        | [],Some page -> page.noMatches
+        | [],None -> tr Strings.TabSearch.noMatches
     let input = new TextBox(Font=SettingsUi.bodyFont(),BorderStyle=BorderStyle.None,Tag="search-input",
                             BackColor=palette.surface,ForeColor=palette.text,
-                            AccessibleName=prompt)
+                            AccessibleName=windowPrompt)
     let searchBox = new SettingsSearchBox(input,Dock=DockStyle.Top,Height=boxHeight)
     /// Smaller than the segments' text, as key caps are.
     let keyFont = SettingsUi.font "Segoe UI" 8.5f FontStyle.Regular
@@ -209,25 +248,32 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         match target with
         | GroupTabs -> tr (Strings.TabSearch.groupTabs groupItems.Length)
         | AllTabs -> tr (Strings.TabSearch.allTabs items.Length)
-    /// One switch for the scope: the listed tabs' segment is filled, the other is where Tab or a
-    /// click goes, and the key cap beside it names the key. A single segment when there is no choice.
+        | other -> pages |> List.tryFind(fun page -> page.scope=other) |> Option.map(fun page -> page.caption) |> Option.defaultValue ""
+    /// Shorter than the segments, and raised by its bottom edge below.
+    let keyCap x (label:string) =
+        let keyHeight = Dpi.scale 20
+        Rectangle(x,(scopeHeight-keyHeight)/2-Dpi.scale 1,
+                  TextRenderer.MeasureText(label,keyFont,Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 14,keyHeight)
+    /// One switch for the scope: the listed rows' segment is filled, the others are where Tab or a
+    /// click goes, and the key cap beside them names the key. A single segment when there is no choice.
     let segments() =
         let height = scopeHeight-Dpi.scale 8
         let top = (scopeHeight-height)/2
         let width text = TextRenderer.MeasureText(text,SettingsUi.bodyFont(),Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 24
-        let choices = if canSwitchScope then [GroupTabs;AllTabs] else [scope]
         let inset = Dpi.scale 2
         let placed,right =
-            choices |> List.mapFold(fun x target ->
+            scopes |> List.mapFold(fun x target ->
                 let bounds = Rectangle(x,top+inset,width (caption target),height-inset*2)
                 (target,bounds),bounds.Right) inset
         let outline = Rectangle(0,top,right+inset,height)
-        // Shorter than the segments, and raised by its bottom edge below.
-        let keyHeight = Dpi.scale 20
-        let key = Rectangle(outline.Right+Dpi.scale 12,(scopeHeight-keyHeight)/2-Dpi.scale 1,
-                            TextRenderer.MeasureText("Tab",keyFont,Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 14,keyHeight)
-        placed,outline,(if canSwitchScope then Some key else None)
-    let mutable hovered : TabSearchScope option = None
+        let key = keyCap (outline.Right+Dpi.scale 12) "Tab"
+        placed,outline,(if scopes.Length>1 then Some key else None)
+    /// The way back from a command's choices: its name, and the key that returns.
+    let breadcrumb() =
+        let text = match choices with (caption,_,_,_)::_ -> "‹  "+caption | [] -> ""
+        let width = TextRenderer.MeasureText(text,SettingsUi.bodyFont(),Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 8
+        Rectangle(Dpi.scale 2,0,width,scopeHeight),keyCap (width+Dpi.scale 12) "Esc"
+    let mutable hovered : PaletteScope option = None
     let scopeLine =
         { new Panel(Dock=DockStyle.Top,Height=scopeHeight,BackColor=palette.surface) with
             override this.OnPaint(e) =
@@ -238,23 +284,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 let rounded (bounds:Rectangle) radius =
                     SettingsShapes.rounded (RectangleF(float32 bounds.X+0.5f,float32 bounds.Y+0.5f,float32 bounds.Width-1.0f,float32 bounds.Height-1.0f)) (float32(Dpi.scale radius))
                 let centred = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter
-                let placed,outline,key = segments()
-                use frame = rounded outline 8
-                use border = new Pen(p.border)
-                g.DrawPath(border,frame)
-                for target,bounds in placed do
-                    let current = target=scope
-                    if current then
-                        use shape = rounded bounds 6
-                        use fill = new SolidBrush(if SystemInformation.HighContrast then SystemColors.Highlight else p.selection)
-                        g.FillPath(fill,shape)
-                    let color =
-                        if current && SystemInformation.HighContrast then SystemColors.HighlightText
-                        elif current || hovered=Some target then p.text
-                        else p.muted
-                    TextRenderer.DrawText(g,caption target,SettingsUi.bodyFont(),bounds,color,centred)
                 // A key, not another segment: an outline on the surface with a thicker bottom edge.
-                key |> Option.iter(fun cap ->
+                let drawKey (cap:Rectangle) (label:string) =
                     let edge = if SystemInformation.HighContrast then SystemColors.WindowText else Color.FromArgb(140,p.muted)
                     use base' = rounded (Rectangle(cap.X,cap.Y+Dpi.scale 2,cap.Width,cap.Height)) 5
                     use edgeFill = new SolidBrush(edge)
@@ -264,7 +295,30 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     use outline = new Pen(edge)
                     g.FillPath(faceFill,face)
                     g.DrawPath(outline,face)
-                    TextRenderer.DrawText(g,"Tab",keyFont,cap,p.muted,centred)) }
+                    TextRenderer.DrawText(g,label,keyFont,cap,p.muted,centred)
+                match choices with
+                | (caption,_,_,_)::_ ->
+                    let bounds,key = breadcrumb()
+                    TextRenderer.DrawText(g,"‹  "+caption,SettingsUi.bodyFont(),bounds,p.text,
+                                          TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
+                    drawKey key "Esc"
+                | [] ->
+                    let placed,outline,key = segments()
+                    use frame = rounded outline 8
+                    use border = new Pen(p.border)
+                    g.DrawPath(border,frame)
+                    for target,bounds in placed do
+                        let current = target=scope
+                        if current then
+                            use shape = rounded bounds 6
+                            use fill = new SolidBrush(if SystemInformation.HighContrast then SystemColors.Highlight else p.selection)
+                            g.FillPath(fill,shape)
+                        let color =
+                            if current && SystemInformation.HighContrast then SystemColors.HighlightText
+                            elif current || hovered=Some target then p.text
+                            else p.muted
+                        TextRenderer.DrawText(g,caption target,SettingsUi.bodyFont(),bounds,color,centred)
+                    key |> Option.iter(fun cap -> drawKey cap "Tab") }
     let programColumn = TreeListColumn("",160,TextColumn,RightAligned=true)
     let list = new SettingsTreeList([TreeListColumn("",0,TextColumn);programColumn],
                                     ShowHeader=false,ShowExpanders=false,ExpandOnDoubleClick=false,
@@ -287,9 +341,13 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     use outline = SettingsShapes.rounded (SettingsShapes.outlineRect this.ClientSize.Width this.ClientSize.Height) (float32 radius)
                     use border = new Pen((SettingsColors.current()).border)
                     e.Graphics.DrawPath(border,outline) }
-        // One size whatever is typed, so the box does not jump about while filtering.
-        let rows = max 1 (min visibleRows items.Length)
-        let size = Size(min (Dpi.scale (defaultArg width 640)) (area.Width-Dpi.scale 32),padding*2+boxHeight+scopeHeight+rows*Dpi.scale rowHeight)
+        // One size whatever is typed or listed, so the box does not jump about while filtering.
+        let longest = scopes |> List.map(fun target -> (rowsOf target).Length) |> List.max
+        let rows = max 1 (min visibleRows longest)
+        // Wide enough for every scope's segment and the key beside them.
+        let _,outline,key = segments()
+        let segmentsWidth = (match key with Some cap -> cap.Right | None -> outline.Right)+padding*2
+        let size = Size(min (max (Dpi.scale (defaultArg width 640)) segmentsWidth) (area.Width-Dpi.scale 32),padding*2+boxHeight+scopeHeight+rows*Dpi.scale rowHeight)
         f.AutoScaleMode <- AutoScaleMode.None
         f.FormBorderStyle <- FormBorderStyle.None
         f.ShowInTaskbar <- false
@@ -316,7 +374,10 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 size.Width,float32 size.Height)) (float32 radius)
         f.Region <- new Region(shape)
         f
-    let entryOf (item:TreeListItem) = items |> Array.pick(fun (row,entry) -> if obj.ReferenceEquals(row,item) then Some entry else None)
+    let entryOf (item:TreeListItem) = scoped() |> Array.pick(fun (row,entry) -> if obj.ReferenceEquals(row,item) then Some entry else None)
+    let setPrompt() =
+        if input.IsHandleCreated then
+            TabSearchNative.SendMessage(input.Handle,TabSearchNative.EM_SETCUEBANNER,IntPtr(1),currentPrompt()) |> ignore
     let apply() =
         // In their groups while nothing is typed; then the best matches first, and the groups,
         // no longer together, lose their dividers.
@@ -340,14 +401,15 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             |> Option.map fst
         list.SelectedItem <- Option.toObj chosen
         chosen |> Option.iter list.EnsureVisible
+        empty.Text <- currentEmpty()
         list.Visible <- shown.Length>0
         empty.Visible <- shown.Length=0
-    let finish (target:TreeListItem) =
+    /// Closes, switching to the window chosen, if one was.
+    let finish (chosen:IntPtr option) =
         // Switching away deactivates the box, which asks to close again: once is enough.
         if not closed then
             closed <- true
-            items |> Array.tryFind(fun (item,_) -> obj.ReferenceEquals(item,target))
-            |> Option.iter(fun (_,entry) -> pick entry.hwnd)
+            chosen |> Option.iter pick
             shadow |> Option.iter(fun item -> (item :> IDisposable).Dispose())
             shadow <- None
             form.Hide()
@@ -357,41 +419,93 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 form.Dispose()
                 ImgHelper.disposeItems (Array.map fst items)
             if form.IsHandleCreated then form.BeginInvoke(Action dispose) |> ignore else dispose()
-    let setScope target =
-        if canSwitchScope && target<>scope then
-            scope <- target
-            settings |> Option.iter(fun api -> api.setValue("tabSearchScope",box(if target=AllTabs then "All" else "Group")))
+    /// The choices a command left take the rows' place, under its name, until one is chosen or
+    /// Esc goes back.
+    let push (caption:string) (options:CommandChoice list) =
+        let rows =
+            options |> List.mapi(fun index option ->
+                let entry = { TabSearch.create (IntPtr(index+1)) option.label option.label option.detail with recency=index }
+                TreeListItem(option.label,Values=[|"";option.detail|]),entry)
+            |> Array.ofList
+        let run (entry:TabSearchEntry) = options.[int entry.hwnd-1].run()
+        choices <- (caption,rows,run,input.Text)::choices
+        input.Text <- ""
+        setPrompt()
+        scopeLine.Invalidate()
+        apply()
+    let pop() =
+        match choices with
+        | (_,_,_,query)::rest ->
+            choices <- rest
+            input.Text <- query
+            setPrompt()
             scopeLine.Invalidate()
             apply()
-    let switchScope() = setScope (match scope with GroupTabs -> AllTabs | AllTabs -> GroupTabs)
+        | [] -> ()
+    let outcome caption (result:CommandOutcome) =
+        match result with
+        | Done -> finish None
+        | Choose options -> push caption options
+    /// Enter or a click on a row: switches to the window, or runs the command and shows what it
+    /// leaves to choose.
+    let activate (target:TreeListItem) =
+        if not closed && not (isNull target) then
+            scoped() |> Array.tryFind(fun (row,_) -> obj.ReferenceEquals(row,target)) |> Option.iter(fun (_,entry) ->
+                match choices,page() with
+                | (_,_,choose,_)::_,_ -> outcome entry.title (choose entry)
+                | [],Some page -> outcome entry.title (page.choose entry)
+                | [],None -> finish (Some entry.hwnd))
+    let setScope target =
+        if target<>scope && List.contains target scopes then
+            scope <- target
+            if canSwitchScope && (target=GroupTabs || target=AllTabs) then
+                settings |> Option.iter(fun api -> api.setValue("tabSearchScope",box(if target=AllTabs then "All" else "Group")))
+            scopeLine.Invalidate()
+            setPrompt()
+            apply()
+    /// Tab goes round the scopes; Shift+Tab the other way. Not while a command's choices are up.
+    let cycle delta =
+        if choices.IsEmpty && scopes.Length>1 then
+            let index = List.findIndex ((=) scope) scopes
+            setScope scopes.[(index+delta+scopes.Length)%scopes.Length]
+    let switchScope() = cycle 1
     let move delta =
         let shown = list.Roots
         if shown.Count>0 then
             let current = shown.IndexOf(list.SelectedItem)
             list.SelectedItem <- shown.[max 0 (min (shown.Count-1) (current+delta))]
     do
-        input.HandleCreated.Add(fun _ ->
-            TabSearchNative.SendMessage(input.Handle,TabSearchNative.EM_SETCUEBANNER,IntPtr(1),prompt) |> ignore)
-        input.TextChanged.Add(fun _ -> apply())
-        // Tab would otherwise move the focus; here it switches between the group and all tabs.
+        input.HandleCreated.Add(fun _ -> setPrompt())
+        input.TextChanged.Add(fun _ ->
+            // As in editors: > at the start lists the commands, and goes.
+            if choices.IsEmpty && input.Text.StartsWith ">" && pages |> List.exists(fun page -> page.scope=CommandScope) then
+                let rest = input.Text.Substring(1).TrimStart()
+                setScope CommandScope
+                input.Text <- rest
+                input.SelectionStart <- rest.Length
+            else apply())
+        // Tab would otherwise move the focus; here it goes round the scopes.
         input.PreviewKeyDown.Add(fun e -> if e.KeyCode=Keys.Tab then e.IsInputKey <- true)
-        // A segment picks its scope; the key cap switches, as the key does.
+        // A segment picks its scope; the key cap switches, as the key does. Under a command's
+        // choices the line is the way back.
         let pointed (point:Point) =
             let placed,_,key = segments()
             match placed |> List.tryFind(fun (_,bounds) -> bounds.Contains point) with
             | Some(target,_) -> Some target
-            | None when key |> Option.exists(fun cap -> cap.Contains point) -> Some(match scope with GroupTabs -> AllTabs | AllTabs -> GroupTabs)
+            | None when key |> Option.exists(fun cap -> cap.Contains point) ->
+                let index = List.findIndex ((=) scope) scopes
+                Some scopes.[(index+1)%scopes.Length]
             | None -> None
         scopeLine.MouseMove.Add(fun e ->
-            let target = if canSwitchScope then pointed e.Location else None
-            scopeLine.Cursor <- if target.IsSome then Cursors.Hand else Cursors.Default
+            let target = if choices.IsEmpty && scopes.Length>1 then pointed e.Location else None
+            scopeLine.Cursor <- if target.IsSome || not choices.IsEmpty then Cursors.Hand else Cursors.Default
             if target<>hovered then
                 hovered <- target
                 scopeLine.Invalidate())
         scopeLine.MouseLeave.Add(fun _ -> if hovered.IsSome then hovered <- None; scopeLine.Invalidate())
         scopeLine.MouseClick.Add(fun e ->
             if e.Button=MouseButtons.Left then
-                pointed e.Location |> Option.iter setScope
+                if choices.IsEmpty then pointed e.Location |> Option.iter setScope else pop()
                 input.Focus() |> ignore)
         input.KeyDown.Add(fun e ->
             let handled =
@@ -400,26 +514,27 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 | Keys.Up -> move -1; true
                 | Keys.PageDown -> move visibleRows; true
                 | Keys.PageUp -> move -visibleRows; true
-                | Keys.Enter -> (if not (isNull list.SelectedItem) then finish list.SelectedItem); true
-                | Keys.Escape -> finish null; true
-                | Keys.Tab -> switchScope(); true
+                | Keys.Enter -> activate list.SelectedItem; true
+                | Keys.Escape -> (if choices.IsEmpty then finish None else pop()); true
+                | Keys.Back when input.Text="" && not choices.IsEmpty -> pop(); true
+                | Keys.Tab -> cycle (if e.Shift then -1 else 1); true
                 | _ -> false
             if handled then
                 e.Handled <- true
                 // No beep for Enter and Esc in a single-line box.
                 e.SuppressKeyPress <- true)
         // Clicking a row focuses the list; keep the keys working there and go back to typing.
-        list.KeyDown.Add(fun e -> if e.KeyCode=Keys.Escape then finish null)
-        list.PreviewKeyDown.Add(fun e -> if e.KeyCode=Keys.Tab then (e.IsInputKey <- true; switchScope()))
+        list.KeyDown.Add(fun e -> if e.KeyCode=Keys.Escape then (if choices.IsEmpty then finish None else pop()))
+        list.PreviewKeyDown.Add(fun e -> if e.KeyCode=Keys.Tab then (e.IsInputKey <- true; cycle (if e.Shift then -1 else 1)))
         list.KeyPress.Add(fun e ->
             if not (Char.IsControl e.KeyChar) then
                 input.Focus() |> ignore
                 input.AppendText(string e.KeyChar)
                 e.Handled <- true)
-        list.ItemActivated.Add finish
+        list.ItemActivated.Add activate
         list.MouseClick.Add(fun e ->
-            if e.Button=MouseButtons.Left then list.ItemAt(e.Location) |> Option.iter finish)
-        form.Deactivate.Add(fun _ -> finish null)
+            if e.Button=MouseButtons.Left then list.ItemAt(e.Location) |> Option.iter activate)
+        form.Deactivate.Add(fun _ -> finish None)
         apply()
 
     member _.Show() =
@@ -432,18 +547,26 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         form.Activate()
         input.Focus() |> ignore
     /// Closes without switching.
-    member _.Close() = finish null
+    member _.Close() = finish None
     member _.Ended = ended.Publish
     member _.IsClosed = closed
     /// The typed search; setting it filters as typing does.
     member _.Query with get() = input.Text and set(value:string) = input.Text <- value
     member _.Scope = scope
-    /// Switches between the group and all tabs, as Tab does.
+    /// Goes to a scope, as Tab does when it comes round to it.
+    member _.SetScope target = setScope target
+    /// Goes round the scopes, as Tab does.
     member _.SwitchScope() = switchScope()
-    /// The tabs the search shows, in order.
+    /// The rows the search shows, in order.
     member _.Results = list.Roots |> Seq.map entryOf |> List.ofSeq
     member _.Selected =
-        items |> Array.tryFind(fun (item,_) -> obj.ReferenceEquals(item,list.SelectedItem)) |> Option.map snd
+        scoped() |> Array.tryFind(fun (item,_) -> obj.ReferenceEquals(item,list.SelectedItem)) |> Option.map snd
     member _.SelectNext() = move 1
-    /// Switches to the chosen window, as Enter does.
-    member _.Accept() = if not (isNull list.SelectedItem) then finish list.SelectedItem
+    /// Switches to the chosen window, or runs the chosen row, as Enter does.
+    member _.Accept() = activate list.SelectedItem
+    /// Shows a command's choices, as a command chosen here does, under its name.
+    member _.ShowChoices(caption:string, options:CommandChoice list) = push caption options
+    /// How many choices deep the box is; 0 on a scope's rows.
+    member _.Depth = choices.Length
+    /// Back from a command's choices, as Esc goes.
+    member _.Back() = pop()
