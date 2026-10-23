@@ -168,7 +168,7 @@ module Commands =
             match groupOf hwnd with
             | Some source ->
                 Services.desktop.groups.list
-                |> List.filter(fun target -> target.hwnd<>source.hwnd && target.windows.count>0 && live target)
+                |> List.filter(fun target -> not (obj.ReferenceEquals(target,source)) && target.windows.count>0 && live target)
                 |> List.map(fun target ->
                     choice (tabName target.windows.head) (tr (Strings.TabSearch.windows target.windows.count)) (fun () ->
                         match target,source with
@@ -188,7 +188,8 @@ module Commands =
                 choice (tr text) "" (fun () -> onGroup (fun g -> g.run(SetAutoHide mode)) hwnd) ])
         plain "combine-group-taskbar-icons" Strings.Commands.combineGroupIcons GroupCommands hasGroup (onGroup(fun g ->
             match g with
-            | :? GroupInfo as info -> Services.desktop.restartGroup(g.hwnd,not info.isSuperBarEnabled)
+            // From the group's thread, as its tab menu does: a group just rebuilt has no strip yet.
+            | :? GroupInfo as info -> info.invokeGroup(fun () -> Services.desktop.restartGroup(info.group.hwnd,not info.isSuperBarEnabled))
             | _ -> ()))
         // Only a group with combined icons has a taskbar button of its own to change.
         plain "change-group-icon" Strings.Commands.changeGroupIcon GroupCommands combinesIcons (fun hwnd ->

@@ -993,7 +993,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         choices.alignments |> List.iter this.ts.setAlignment
         choices.autoHideMode |> Option.iter(fun mode -> this.bb.write("autoHideMode", mode))
 
-    member this.hwnd = this.ts.hwnd
+    /// Zero until the tab strip is attached, a moment after the group is listed on the desktop.
+    member this.hwnd = match _ts.Value with Some (ts:TabStrip) -> ts.hwnd | None -> IntPtr.Zero
 
     member private this.os : OS = _os
        
