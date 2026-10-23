@@ -113,9 +113,10 @@ type DiagnosticsView() =
                                 | SettingsFile.WorkingDirectory -> "working directory"))
         | _ -> ()
         // Whether each group's taskbar icons are combined, and if not why: a group's windows can
-        // keep their own buttons while its tab menu shows combining on.
+        // keep their own buttons while its tab menu shows combining on. A group of one window has
+        // nothing to combine.
         result.["taskbarGroups"] <-
-            JArray(groups.list |> List.map(fun group ->
+            JArray(groups.list |> List.filter(fun group -> group.windows.count>1) |> List.map(fun group ->
                 let state =
                     match TaskbarCombineStates.tryGet group.hwnd with
                     | Some Combined -> "combined"
