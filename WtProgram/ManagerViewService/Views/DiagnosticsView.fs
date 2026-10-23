@@ -112,6 +112,20 @@ type DiagnosticsView() =
                                 | SettingsFile.AppData -> "AppData"
                                 | SettingsFile.WorkingDirectory -> "working directory"))
         | _ -> ()
+        // Whether each group's taskbar icons are combined, and if not why: a group's windows can
+        // keep their own buttons while its tab menu shows combining on. A group of one window has
+        // nothing to combine.
+        result.["taskbarGroups"] <-
+            JArray(groups.list |> List.filter(fun group -> group.windows.count>1) |> List.map(fun group ->
+                let state =
+                    match TaskbarCombineStates.tryGet group.hwnd with
+                    | Some Combined -> "combined"
+                    | Some SingleWindow -> "single window"
+                    | Some DifferentPermissions -> "not combined: different permissions"
+                    | Some DesktopUnknown -> "not combined: virtual desktop unknown"
+                    | Some PlacementFailed -> "not combined: placement on the virtual desktop failed"
+                    | None -> "off"
+                JObject(JProperty("windows",group.windows.count),JProperty("taskbar",state)) |> box) |> List.toArray)
         // The longest part, and optional, comes last.
         if includeWindows.Checked then result.["windows"] <- windowDetails()
         result

@@ -99,11 +99,17 @@ selection manually accepted. Cross-integrity taskbar combining remains unavailab
      both select text continuously and use a combined taskbar button. Activation,
      previews, close, minimize/restore and virtual desktop membership remain correct.
 
-2. **P2 — Explain the current fallback in settings and the group menu.**
+2. **P2 — Explain the current fallback in settings and the group menu.** Partly done:
+   the group's tab menu shows the reason under **Combine taskbar icons**, and the
+   diagnostics report lists each group's taskbar state. The settings page and when
+   combining resumes are not explained yet.
    - [ ] Show a concise reason when combining is requested but permissions require
      individual buttons. Preserve the saved preference and explain when it resumes.
-   - [ ] Add the text through `Strings.fs` in English, Chinese and Japanese; verify
-     light, dark and high contrast appearance.
+     Done for the group menu; the preference is kept. Not yet on the settings page,
+     and the text does not say when combining resumes.
+   - [x] Add the text through `Strings.fs` in English, Chinese and Japanese (Arabic
+     too).
+   - [ ] Verify the menu note in light, dark and high contrast appearance.
    - [ ] Acceptance: users can distinguish an enabled preference from an effective
      fallback without having to inspect process permissions or diagnostic logs.
 

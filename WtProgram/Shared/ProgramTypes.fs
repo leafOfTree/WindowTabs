@@ -149,6 +149,27 @@ type IProgram =
     /// Windows an empty pane can take, on this desktop: handle, tab name and program.
     abstract member paneCandidates : unit -> (IntPtr * string * string) list
 
+/// Whether a group set to combine its taskbar icons has its one button, and if not, why its
+/// windows keep their own: else the setting looked on while nothing was combined.
+type TaskbarCombineState =
+    | Combined
+    | SingleWindow
+    /// WindowTabs and a window run with different rights, such as one as administrator.
+    | DifferentPermissions
+    /// Windows has not told which virtual desktop the windows are on.
+    | DesktopUnknown
+    /// Windows did not let the group's button move to the windows' virtual desktop.
+    | PlacementFailed
+
+/// Each group's state by its strip's handle, written on the group's thread and read from any.
+module TaskbarCombineStates =
+    let private states = Collections.Concurrent.ConcurrentDictionary<IntPtr,TaskbarCombineState>()
+    let set (group:IntPtr) state = states.[group] <- state
+    let tryGet (group:IntPtr) = match states.TryGetValue group with | true,state -> Some state | _ -> None
+    let remove (group:IntPtr) = states.TryRemove(group) |> ignore
+    /// Not combined although the group should be, for a reason the user can act on.
+    let isBlocked = function DifferentPermissions | DesktopUnknown | PlacementFailed -> true | Combined | SingleWindow -> false
+
 type IGroup =
     abstract member hwnd : IntPtr
     abstract member addWindow: IntPtr * bool -> unit

@@ -241,6 +241,12 @@ type WorkspaceView() as this =
         if not this.wm.isReadOnly then this.list.RowActions <- [EditGlyph;DeleteGlyph]
         loaded <- true
         this.reload()
+        // A workspace saved by shortcut meanwhile shows here, and is not lost at this page's next save.
+        let saved = WorkspaceModel.saved.Subscribe(fun source ->
+            if not (obj.ReferenceEquals(source,this.wm)) then
+                this.wm.loadSettings()
+                this.reload())
+        panel.Disposed.Add(fun _ -> saved.Dispose())
         panel
 
     /// Rebuilds the rows from the model in the order saved, keeping expansion and selection.

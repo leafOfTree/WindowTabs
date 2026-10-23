@@ -102,6 +102,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         ("splitFocusRight", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneRight)))
         ("splitFocusUp", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneUp)))
         ("splitFocusDown", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneDown)))
+        ("saveWorkspace", fun () -> this.saveWorkspace())
+        ("restoreWorkspace", fun () -> this.restoreWorkspace())
         ]))
         
     let hotKeyManager = lifetime.Own(new HotKeyManager())
@@ -263,22 +265,23 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                     | None -> sessionReady <- true
                     | Some _ ->
                         // Said on screen first, so a user leaves the windows alone while they move.
-                        Notice.hold (tr Strings.Session.restoring)
+                        let title = tr Strings.Notices.lastSession
+                        Notice.hold title (tr Strings.Notices.restoring)
                         let go = new System.Windows.Forms.Timer(Interval=50)
                         go.Tick.Add(fun _ ->
                             go.Stop()
                             go.Dispose()
                             try
                                 sessions.restoreSession((mode="Apps"),
-                                    (fun apps -> Notice.hold (tr (Strings.Session.launching apps))),
+                                    (fun apps -> Notice.hold title (tr (Strings.Notices.launching apps))),
                                     fun result ->
                                         sessionReady <- true
                                         sessionSoon.Request()
-                                        Notice.show (tr (Strings.Session.restored result.restored result.missing.Length))
+                                        this.noticeRestored title result
                                         Diagnostics.Trace.TraceInformation("Session restored: {0} windows, {1} not found, {2} failed",result.restored,result.missing.Length,result.failed.Length))
                             with error ->
                                 sessionReady <- true
-                                Notice.hideNow()
+                                Notice.error title (tr (Strings.Notices.restoreFailed error.Message))
                                 Diagnostics.Trace.TraceWarning("Session restore failed: {0}",error.Message))
                         go.Start())
             timer.Start()
@@ -683,6 +686,51 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             search.Ended.Add(fun () -> tabSearchCell.set(None))
             tabSearchCell.set(Some(search))
             search.Show()
+
+    /// The saved workspaces as Settings last wrote them, which an open Settings page may have changed.
+    member private this.readWorkspaces() =
+        let workspaces = WorkspaceModel()
+        workspaces.loadSettings()
+        workspaces
+
+    /// What a restore did; windows left out keep it up longer, to be read.
+    member private this.noticeRestored title (result:WorkspaceRestoreResult) =
+        let message = tr (Strings.Notices.restored result.restored result.missing.Length)
+        if result.missing.IsEmpty && result.failed.IsEmpty then Notice.show title message
+        else Notice.remind title message
+
+    /// As Save layout in Settings, said on screen since nothing else shows it.
+    member this.saveWorkspace() =
+        let workspaces = this.readWorkspaces()
+        let title = tr Strings.Pages.workspaces
+        if workspaces.isReadOnly then Notice.error title (tr Strings.Workspaces.unsupportedVersion)
+        else
+            try
+                workspaces.create(fun ws ->
+                    let windows = ws.groups.list |> List.sumBy(fun group -> group.cast<WorkspaceGroup>().windows.count)
+                    Notice.show ws.name (tr (Strings.Notices.saved windows)))
+            with error ->
+                Notice.error title (tr (Strings.Notices.saveFailed error.Message))
+                Diagnostics.Trace.TraceWarning("Workspace save failed: {0}",error.Message)
+
+    /// Brings back the workspace last saved or restored, with the result on screen rather than in a dialog.
+    member this.restoreWorkspace() =
+        let workspaces = this.readWorkspaces()
+        match workspaces.lastUsed with
+        | None -> Notice.show (tr Strings.Pages.workspaces) (tr Strings.Workspaces.noneSaved)
+        | Some ws ->
+            // Said first, and painted before the windows move, so a user leaves them alone meanwhile.
+            Notice.hold ws.name (tr Strings.Notices.restoring)
+            let go = new System.Windows.Forms.Timer(Interval=50)
+            go.Tick.Add(fun _ ->
+                go.Stop()
+                go.Dispose()
+                try
+                    workspaces.restoreLast() |> Option.iter(fun result -> this.noticeRestored result.workspace result)
+                with error ->
+                    Notice.error ws.name (tr (Strings.Notices.restoreFailed error.Message))
+                    Diagnostics.Trace.TraceWarning("Workspace restore failed: {0}",error.Message))
+            go.Start()
 
     /// A shortcut another program already holds stays unregistered, without a message at every
     /// start; choosing it again in Settings says it is in use.

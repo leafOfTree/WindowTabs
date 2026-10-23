@@ -395,6 +395,13 @@ let main() =
         let restore = form.Controls.Find("restore-shortcuts",true).[0]
         Application.DoEvents()
         let next = view.control.Controls.Find("next-tab",true).[0] :?> SettingsShortcutInput
+        // #82: the workspace shortcuts were in the catalog but not on the page.
+        for item in SettingsCatalog.all do
+            match item.binding with
+            | Shortcut _ ->
+                assertTrue (view.control.Controls.Find(item.id,true) |> Array.exists(fun control -> control :? SettingsShortcutInput))
+                      (sprintf "The shortcut %s has no editor on the Shortcuts page" item.id)
+            | _ -> ()
         let previous = view.control.Controls.Find("previous-tab",true).[0] :?> SettingsShortcutInput
         // Shortcut boxes start from the other editors' width and grow only for longer shortcuts.
         do

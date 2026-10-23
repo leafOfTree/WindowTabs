@@ -57,6 +57,9 @@ module SettingsCatalog =
         { id="split-focus-right"; page=HotKeySettings; text=Strings.Settings.splitFocusRight; binding=Shortcut("splitFocusRight",0) }
         { id="split-focus-up"; page=HotKeySettings; text=Strings.Settings.splitFocusUp; binding=Shortcut("splitFocusUp",0) }
         { id="split-focus-down"; page=HotKeySettings; text=Strings.Settings.splitFocusDown; binding=Shortcut("splitFocusDown",0) }
+        // Unbound too, for the same reason.
+        { id="save-workspace"; page=HotKeySettings; text=Strings.Settings.saveWorkspace; binding=Shortcut("saveWorkspace",0) }
+        { id="restore-workspace"; page=HotKeySettings; text=Strings.Settings.restoreWorkspace; binding=Shortcut("restoreWorkspace",0) }
         { id="switch-tabs-by-number"; page=HotKeySettings; text=Strings.Settings.switchTabsByNumber; binding=Toggle("enableCtrlNumberHotKey",true,true) }
         { id="number-shortcut"; page=HotKeySettings; text=Strings.Settings.numberShortcut; binding=Choice("numberHotKeyModifier",["Ctrl";"Alt"],"Ctrl") }
         { id="enable-number-leader"; page=HotKeySettings; text=Strings.Settings.enableNumberLeader; binding=Toggle("enableNumberLeader",false,false) }

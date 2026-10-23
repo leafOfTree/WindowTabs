@@ -82,6 +82,19 @@ module Strings =
         let restoreTabName = { en="Reset name"; zh="重置名称"; ja="名前をリセット"; ar="إعادة تعيين الاسم" }
         let sortTabs = { en="Sort by app and title"; zh="按应用和标题排序"; ja="アプリとタイトル順に並べ替え"; ar="ترتيب حسب التطبيق والعنوان" }
         let combineTaskbarIcons = { en="Combine taskbar icons"; zh="合并任务栏图标"; ja="タスクバーアイコンをまとめる"; ar="دمج أيقونات شريط المهام" }
+        /// Shown greyed out under "Combine taskbar icons" while the group's windows keep their own buttons.
+        let combineBlockedPermissions = { en="Not combined: WindowTabs and these windows run with different rights (one as administrator)"
+                                          zh="未合并：WindowTabs 与这些窗口的权限不同（其中一方以管理员身份运行）"
+                                          ja="まとめられていません: WindowTabs とこれらのウィンドウの権限が異なります (一方が管理者として実行中)"
+                                          ar="لم يتم الدمج: يعمل WindowTabs وهذه النوافذ بصلاحيات مختلفة (أحدهما كمسؤول)" }
+        let combineBlockedDesktop = { en="Not combined: Windows has not told which virtual desktop these windows are on"
+                                      zh="未合并：Windows 未提供这些窗口所在的虚拟桌面"
+                                      ja="まとめられていません: これらのウィンドウがどの仮想デスクトップにあるか Windows から取得できません"
+                                      ar="لم يتم الدمج: لم يُحدّد Windows سطح المكتب الافتراضي الذي توجد عليه هذه النوافذ" }
+        let combineBlockedPlacement = { en="Not combined: Windows did not let the taskbar button move to this virtual desktop"
+                                        zh="未合并：Windows 未允许将任务栏按钮移到此虚拟桌面"
+                                        ja="まとめられていません: Windows がタスクバー ボタンをこの仮想デスクトップへ移動できませんでした"
+                                        ar="لم يتم الدمج: لم يسمح Windows بنقل زر شريط المهام إلى سطح المكتب الافتراضي هذا" }
         /// For the group's own taskbar button, shown while its icons are combined.
         let changeTaskbarIcon = { en="Change taskbar icon…"; zh="更换任务栏图标…"; ja="タスクバーアイコンを変更…"; ar="تغيير أيقونة شريط المهام…" }
         let restoreTaskbarIcon = { en="Restore taskbar icon"; zh="恢复默认任务栏图标"; ja="タスクバーアイコンを元に戻す"; ar="استعادة أيقونة شريط المهام" }
@@ -152,10 +165,11 @@ module Strings =
                                description={ en="Runs in the system tray after you sign in."; zh="登录后在系统托盘中运行。"; ja="サインイン後にシステムトレイで実行します。"; ar="يعمل في منطقة الإعلام بعد تسجيل الدخول." }
                                keywords={ en="startup autostart"; zh="开机启动 自启动"; ja="スタートアップ 自動起動"; ar="بدء التشغيل التشغيل التلقائي" } }
         let restoreSession = { caption={ en="Restore the last session after sign-in"; zh="登录后恢复上次会话"; ja="サインイン後に前回のセッションを復元"; ar="استعادة الجلسة الأخيرة بعد تسجيل الدخول" }
-                               description={ en="Puts open windows back into the groups, positions and split views they had, optionally launching missing apps first."
-                                             zh="把已打开的窗口放回原来的分组、位置和分屏，可选先启动缺少的应用。"
-                                             ja="開いているウィンドウを元のグループ、位置、分割表示に戻します。足りないアプリを先に起動することもできます。"
-                                             ar="يعيد النوافذ المفتوحة إلى مجموعاتها ومواضعها وعروضها المقسّمة السابقة، مع تشغيل التطبيقات الناقصة أولًا اختياريًا." }
+                               // One line beside the choice, which says whether apps are started.
+                               description={ en="Puts windows back into their groups, places and splits."
+                                             zh="将窗口放回原来的分组、位置和分屏。"
+                                             ja="ウィンドウを元のグループ、位置、分割に戻します。"
+                                             ar="يعيد النوافذ إلى مجموعاتها ومواضعها وتقسيماتها." }
                                keywords={ en="session reboot"; zh="会话 重启"; ja="セッション 再起動"; ar="جلسة إعادة التشغيل" } }
         let enableTabsByDefault = { caption={ en="Use tabs for new apps"; zh="新应用自动启用标签"; ja="新しいアプリでタブを使う"; ar="استخدام علامات التبويب للتطبيقات الجديدة" }
                                     description={ en="Only apps first discovered after this change. Existing apps keep their tab setting."; zh="只影响此后首次出现的应用。已有应用保留原来的标签设置。"; ja="変更後に初めて検出するアプリに適用します。既存のアプリのタブ設定は維持します。"; ar="ينطبق ذلك على التطبيقات التي يكتشفها البرنامج لأول مرة بعد هذا التغيير فقط. وتحتفظ التطبيقات الموجودة بإعداد علامات التبويب الحالي." }
@@ -212,6 +226,19 @@ module Strings =
                                        ja="前面のタブのウィンドウを閉じます。"
                                        ar="يغلق نافذة علامة التبويب الأمامية." }
                          keywords={ en="close window"; zh="关闭窗口"; ja="ウィンドウを閉じる"; ar="إغلاق النافذة" } }
+        let private workspaceWords = { en="workspace layout"; zh="工作区 布局"; ja="ワークスペース 配置"; ar="مساحة العمل التخطيط" }
+        let saveWorkspace = { caption={ en="Save workspace"; zh="保存工作区"; ja="ワークスペースを保存"; ar="حفظ مساحة العمل" }
+                              description={ en="Saves the windows as they are as a new workspace, as Save layout does."
+                                            zh="将当前窗口保存为新的工作区，与“保存布局”相同。"
+                                            ja="現在のウィンドウを新しいワークスペースとして保存します（「配置を保存」と同じ）。"
+                                            ar="يحفظ النوافذ بحالتها الحالية كمساحة عمل جديدة، كما يفعل «حفظ التخطيط»." }
+                              keywords=workspaceWords }
+        let restoreWorkspace = { caption={ en="Restore workspace"; zh="恢复工作区"; ja="ワークスペースを復元"; ar="استعادة مساحة العمل" }
+                                 description={ en="Restores the workspace last saved or restored."
+                                               zh="恢复最近一次保存或恢复的工作区。"
+                                               ja="最後に保存または復元したワークスペースを復元します。"
+                                               ar="يستعيد آخر مساحة عمل تم حفظها أو استعادتها." }
+                                 keywords=workspaceWords }
         let private splitWords = { en="split view pane"; zh="分屏 窗格"; ja="分割 ペイン"; ar="عرض مقسّم جزء" }
         let splitPickRight = { caption={ en="Window on the right…"; zh="在右侧放入窗口…"; ja="右側にウィンドウを配置…"; ar="نافذة على اليمين…" }
                                description={ en="Lists the windows to put beside the tab in front."; zh="列出可放到当前标签旁边的窗口。"; ja="前面のタブの隣に置くウィンドウを一覧表示します。"; ar="يعرض النوافذ التي يمكن وضعها بجانب علامة التبويب الأمامية." }
@@ -340,24 +367,38 @@ module Strings =
                               keywords={ en="factory"; zh="恢复默认 出厂"; ja="初期化"; ar="إعدادات المصنع" } }
 
     /// What letting go of a dragged tab here would do, on the preview.
-    module Session =
-        let restoring = { en="Restoring the last session…"; zh="正在恢复上次会话…"; ja="前回のセッションを復元しています…"; ar="جارٍ استعادة الجلسة الأخيرة…" }
+    /// Notices: a bold title naming what is restored or saved (the last session, or a workspace
+    /// by its name), and below it what is happening to it.
+    module Notices =
+        let lastSession = { en="Last session"; zh="上次会话"; ja="前回のセッション"; ar="الجلسة الأخيرة" }
+        let restoring = { en="Restoring…"; zh="正在恢复…"; ja="復元しています…"; ar="جارٍ الاستعادة…" }
         let launching count =
-            { en=(if count=1 then "Starting an app for the last session…" else sprintf "Starting %d apps for the last session…" count)
-              zh=sprintf "正在为上次会话启动 %d 个应用…" count
-              ja=sprintf "前回のセッションのためにアプリを %d 個起動しています…" count
-              ar=sprintf "جارٍ تشغيل %d من التطبيقات للجلسة الأخيرة…" count }
+            { en=(if count=1 then "Starting an app…" else sprintf "Starting %d apps…" count)
+              zh=sprintf "正在启动 %d 个应用…" count
+              ja=sprintf "アプリを %d 個起動しています…" count
+              ar=sprintf "جارٍ تشغيل %d من التطبيقات…" count }
         let restored restored missing =
-            { en=(sprintf "Session restored: %d windows" restored)+(if missing=0 then "" else sprintf ", %d not found" missing)
-              zh=(sprintf "已恢复上次会话：%d 个窗口" restored)+(if missing=0 then "" else sprintf "，%d 个未找到" missing)
-              ja=(sprintf "前回のセッションを復元しました: %d 個のウィンドウ" restored)+(if missing=0 then "" else sprintf "、%d 個が見つかりません" missing)
-              ar=(sprintf "تمت استعادة الجلسة: %d نافذة" restored)+(if missing=0 then "" else sprintf "، %d غير موجودة" missing) }
+            { en=(if restored=1 then "Restored 1 window" else sprintf "Restored %d windows" restored)+(if missing=0 then "" else sprintf ", %d not found" missing)
+              zh=(sprintf "已恢复 %d 个窗口" restored)+(if missing=0 then "" else sprintf "，%d 个未找到" missing)
+              ja=(sprintf "%d 個のウィンドウを復元しました" restored)+(if missing=0 then "" else sprintf "（%d 個は見つかりません）" missing)
+              ar=(sprintf "تمت استعادة %d نافذة" restored)+(if missing=0 then "" else sprintf "، %d غير موجودة" missing) }
+        /// An error notice, with the reason the system gave.
+        let restoreFailed reason =
+            { en=sprintf "Could not restore. %s" reason; zh=sprintf "恢复失败。%s" reason; ja=sprintf "復元できませんでした。%s" reason; ar=sprintf "تعذّرت الاستعادة. %s" reason }
+        let saveFailed reason =
+            { en=sprintf "Could not save. %s" reason; zh=sprintf "保存失败。%s" reason; ja=sprintf "保存できませんでした。%s" reason; ar=sprintf "تعذّر الحفظ. %s" reason }
+        let saved windows =
+            { en=(if windows=1 then "Saved with 1 window" else sprintf "Saved with %d windows" windows)
+              zh=sprintf "已保存，共 %d 个窗口" windows
+              ja=sprintf "保存しました（ウィンドウ %d 個）" windows
+              ar=sprintf "تم الحفظ (%d نافذة)" windows }
 
     module General =
         /// The choices of Restore the last session at start.
         let sessionOff = { en="Off"; zh="关闭"; ja="オフ"; ar="إيقاف" }
-        let sessionWindows = { en="Open windows only"; zh="仅已打开的窗口"; ja="開いているウィンドウのみ"; ar="النوافذ المفتوحة فقط" }
-        let sessionApps = { en="Open windows, and start their apps"; zh="已打开的窗口，并启动缺少的应用"; ja="開いているウィンドウと、アプリの起動"; ar="النوافذ المفتوحة، مع تشغيل تطبيقاتها" }
+        /// Short, so the choice leaves its row's description room for one line.
+        let sessionWindows = { en="Windows only"; zh="仅窗口"; ja="ウィンドウのみ"; ar="النوافذ فقط" }
+        let sessionApps = { en="Windows and missing apps"; zh="窗口和缺少的应用"; ja="ウィンドウと不足アプリ"; ar="النوافذ والتطبيقات الناقصة" }
         let settingsFile = { en="Settings file"; zh="设置文件"; ja="設定ファイル"; ar="ملف الإعدادات" }
         let openFolder = { en="Open folder"; zh="打开文件夹"; ja="フォルダーを開く"; ar="فتح المجلد" }
         let export = { en="Export…"; zh="导出…"; ja="エクスポート…"; ar="تصدير…" }
@@ -564,6 +605,7 @@ module Strings =
               zh=sprintf "正在启动 %d 个应用…" count
               ja=sprintf "%d 個のアプリを起動中…" count
               ar=(if count=1 then "جارٍ تشغيل التطبيق…" else sprintf "جارٍ تشغيل التطبيقات (%d)…" count) }
+        let noneSaved = { en="No workspace saved yet"; zh="尚未保存任何工作区"; ja="保存されたワークスペースはまだありません"; ar="لم يتم حفظ أي مساحة عمل بعد" }
         let invalidSetting = { en="Invalid workspace setting"; zh="工作区设置无效"; ja="ワークスペースの設定が無効です"; ar="إعداد مساحة العمل غير صالح" }
         let dataWarnings = { en="Workspace data"; zh="工作区数据"; ja="ワークスペースのデータ"; ar="بيانات مساحة العمل" }
         let titleInvalid = { en="Window title is missing or exceeds 4,096 characters."; zh="窗口标题缺失或超过 4,096 个字符。"; ja="ウィンドウのタイトルがないか、4,096 文字を超えています。"; ar="عنوان النافذة مفقود أو يتجاوز 4096 حرفًا." }

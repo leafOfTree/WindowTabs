@@ -791,6 +791,7 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
     let mutable desktopSubscription : IDisposable option = None
     let mutable disposed = false
     let mutable exitCleanedUp = false
+    let mutable currentCombineState = SingleWindow
 
     new() = SuperBarPlugin(fun hwnd -> Services.get<WindowGroup>().canShareInput hwnd)
 
@@ -832,6 +833,12 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
 
     member _.taskbarVisibilityChanges = taskbarVisibility.changeCount
     member _.isAwaitingDesktopPlacement = placementRetry.Enabled
+    member _.combineState = currentCombineState
+
+    /// The tab menu and the diagnostics report say why the group's windows keep their own buttons.
+    member private this.setCombineState state =
+        currentCombineState <- state
+        TaskbarCombineStates.set this.ts.hwnd state
 
     /// A window without a taskbar button is on no virtual desktop and shows on all of them;
     /// a window the taskbar window owns follows that window's desktop instead.
@@ -910,11 +917,16 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
             let desktop = placementDesktop
             placementAttempts.Observe(memberSet,desktop,this.canCombine)
             if not this.canCombine || (desktop.IsNone && placedOwner=IntPtr.Zero) then
+                this.setCombineState(
+                    if members.count<=1 then SingleWindow
+                    elif not this.canCombine then DifferentPermissions
+                    else DesktopUnknown)
                 this.clearTaskbarButton()
                 members.iter(fun hwnd -> this.showInTaskbar(hwnd,true))
                 // The asynchronous desktop query publishes completion; no timer polls an unknown answer.
                 placementRetry.Stop()
             elif placedOwner=IntPtr.Zero && not(placementAttempts.TryBegin()) then
+                this.setCombineState PlacementFailed
                 members.iter(fun hwnd -> this.showInTaskbar(hwnd,true))
                 this.retryPlacement()
             elif members.isEmpty.not then
@@ -1003,10 +1015,12 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
                     active |> Option.iter button.markActive
 
                 if this.adopt desktop then
+                    this.setCombineState Combined
                     placementRetry.Stop()
                     placementAttempts.Succeeded()
                     members.iter(fun hwnd -> this.showInTaskbar(hwnd,false))
                 else
+                    this.setCombineState PlacementFailed
                     // Keep each application's desktop and button until the proxy is safely placed.
                     this.clearTaskbarButton()
                     members.iter(fun hwnd -> this.showInTaskbar(hwnd,true))
@@ -1146,6 +1160,7 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
         if not exitCleanedUp then
             exitCleanedUp <- true
             disposed <- true
+            TaskbarCombineStates.remove this.ts.hwnd
             desktopSubscription |> Option.iter(fun subscription -> subscription.Dispose())
             desktopSubscription <- None
             iconSubscription |> Option.iter(fun subscription -> subscription.Dispose())

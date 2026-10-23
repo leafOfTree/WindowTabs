@@ -65,7 +65,9 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
   or below and for moving the focus between panes are under **Settings → Shortcuts**, unset by
   default.
 - **Workspaces:** save groups and window positions, then restore them onto open windows;
-  apps that are not running can be launched and their windows restored.
+  apps that are not running can be launched and their windows restored. Shortcuts to save
+  one and to restore the last saved or restored one are under **Settings → Shortcuts**,
+  unset by default.
 - **Taskbar:** optionally combine each group into one taskbar button, which shows every
   app in the group.
 - **Languages:** English, 中文, 日本語.
@@ -86,7 +88,9 @@ To update, exit WindowTabs from the tray and replace the exe. Settings are kept.
 - **Odd behavior after upgrading?** **Settings → Support → Reset to defaults**
   (your old settings are backed up first).
 - **Run as administrator?** Not needed and not recommended. Windows blocks some
-  input between admin and normal windows.
+  input between admin and normal windows, and groups of normal windows keep a
+  taskbar button each even with **Combine taskbar icons** on; the group's tab menu
+  says why.
 - **Dropping files on a tab does nothing?** Windows blocks dragging from an app into
   one running as administrator.
 
