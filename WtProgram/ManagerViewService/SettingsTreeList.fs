@@ -783,14 +783,17 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         else
                             // The note right after the name, which gives way to it when room is short.
                             // Measured as drawn, with the padding the text is drawn with.
-                            let measure (value:string) = TextRenderer.MeasureText(g,value,this.Font,Size(Int32.MaxValue,rowHeight),flags).Width
+                            let measureIn (font:Font) (value:string) = TextRenderer.MeasureText(g,value,font,Size(Int32.MaxValue,rowHeight),flags).Width
+                            let measure = measureIn this.Font
+                            // A step smaller than the name, so the name leads.
+                            let suffixFont = SettingsUi.font this.Font.FontFamily.Name (this.Font.SizeInPoints*0.86f) FontStyle.Regular
                             let gap = Dpi.scale 6
-                            let suffixWidth = measure item.Suffix
+                            let suffixWidth = measureIn suffixFont item.Suffix
                             let nameWidth = min (measure item.Text+Dpi.scale 2) (max 0 (nameBounds.Width-suffixWidth-gap))
                             this.drawMarked(g,item.Text,item.highlights 0,Rectangle(nameBounds.X,nameBounds.Y,max 1 nameWidth,nameBounds.Height),flags,this.Font,text,p)
                             let left = nameBounds.X+nameWidth+gap
                             let muted = if isSelected && SystemInformation.HighContrast then SystemColors.HighlightText else p.muted
-                            TextRenderer.DrawText(g,item.Suffix,this.Font,Rectangle(left,nameBounds.Y,max 1 (nameBounds.Right-left),nameBounds.Height),muted,flags)
+                            TextRenderer.DrawText(g,item.Suffix,suffixFont,Rectangle(left,nameBounds.Y,max 1 (nameBounds.Right-left),nameBounds.Height),muted,flags)
                         // Chips: a shade of the text over the row, so they show on any highlight.
                         let chipFill = if SystemInformation.HighContrast then SystemColors.Window else Color.FromArgb(26,p.text)
                         for chipIndex,box,closeBox in laid do
