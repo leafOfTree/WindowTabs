@@ -97,6 +97,13 @@ module SettingsCatalog =
         { id="settings-reset"; page=DiagnosticsSettings; text=Strings.Settings.settingsReset; binding=Navigation }
     ]
     let find id = all |> List.find(fun item -> item.id=id)
+    /// The tab sizes, kept in the appearance's geometry: each read and written as the Appearance
+    /// page shows it. The gap between tabs is shown positive and stored as a negative overlap.
+    let geometryNumbers : (string * (TabGeometry -> int) * (int -> TabGeometry -> TabGeometry)) list = [
+        "tabHeight",(fun g -> g.height),(fun v g -> {g with height=v})
+        "tabMaxWidth",(fun g -> g.maxWidth),(fun v g -> {g with maxWidth=v})
+        "tabOverlap",(fun g -> -g.overlap),(fun v g -> {g with overlap= -v})
+        "tabIndentNormal",(fun g -> g.indentNormal),(fun v g -> {g with indentNormal=v}) ]
     /// The tab alignment's names: along the top, or down a side.
     let alignmentLabels vertical =
         if vertical then [Strings.Common.top;Strings.Common.center;Strings.Common.bottom]

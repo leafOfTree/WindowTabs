@@ -24,7 +24,8 @@ module CommandPalette =
         | ASwitch of SettingDefinition * string * Command
         /// A setting with a few values, with its key and values: chosen in place from a list.
         | AChoice of SettingDefinition * string * string list
-        /// Any other setting, a number, a colour or a page, opened in the settings window.
+        /// Any other setting: a size or the leader keys, typed in the box; a colour, picked in the
+        /// colour box; a page, opened in the settings window.
         | ASetting of SettingDefinition
     /// A choice setting's values with what each is called, the alignment's after the tabs' side.
     let private choiceOptions (item:SettingDefinition) (values:string list) =
@@ -36,6 +37,37 @@ module CommandPalette =
     let private choiceNow (item:SettingDefinition) key values =
         let current = Services.settings.getValue key :?> string
         choiceOptions item values |> List.tryFind(fun (value,_) -> value=current) |> Option.map snd |> Option.defaultValue ""
+    /// A colour setting of the look in use, light or dark, as the Appearance page edits it.
+    let private colorField id = PaletteEditing.colorFields |> List.find(fun (key,_,_) -> key=id)
+    let private colorNow id =
+        let _,read,_ = colorField id
+        read (PaletteEditing.activePalette (ThemeService.currentIsDark()) Services.settings.appearance)
+    let private hex (color:Drawing.Color) = sprintf "#%02X%02X%02X" color.R color.G color.B
+    /// A size typed in the box: a whole number in the setting's range.
+    let private askNumber (item:SettingDefinition) =
+        let low,high = SettingsCatalog.range item.id
+        Ask { prompt=tr (Strings.TabSearch.numberPrompt low high)
+              value=string (Services.settings.getValue item.id :?> int)
+              hint=tr Strings.TabSearch.valueHint
+              accept=fun typed ->
+                  match Int32.TryParse typed with
+                  | true,value when value>=low && value<=high -> Services.settings.setValue(item.id,box value); None
+                  | _ -> Some(tr (Strings.TabSearch.numberRefused low high)) }
+    /// A text setting typed in the box, checked as the Shortcuts page checks it.
+    let private askText (item:SettingDefinition) key =
+        Ask { prompt=tr item.text.caption
+              value=Services.settings.getValue key :?> string
+              hint=tr item.text.description+"  "+tr Strings.TabSearch.valueHint
+              accept=fun typed ->
+                  match NumberLeaderKeys.tryNormalize typed with
+                  | Some keys -> Services.settings.setValue(key,box keys); None
+                  | None -> Some(tr Strings.Settings.invalidLeaderKeys) }
+    /// A colour picked in the system's colour box, for the look in use.
+    let private pickColor id =
+        use dialog = new Windows.Forms.ColorDialog(FullOpen=true,Color=colorNow id)
+        if dialog.ShowDialog()=Windows.Forms.DialogResult.OK then
+            let _,_,write = colorField id
+            Services.settings.updateAppearance(PaletteEditing.edit (ThemeService.currentIsDark()) (write dialog.Color))
     /// The commands in their categories, then the settings by page: a setting that is on or off
     /// as a switch, turned in place; the settings catalog's shortcut entries are commands already.
     let private actions() =
@@ -102,7 +134,13 @@ module CommandPalette =
                   Choose [ for value,label in choiceOptions item values ->
                              { label=label; detail=(if value=current then "✓" else ""); swatch=None
                                run=fun () -> Services.settings.setValue(key,box value); Done } ]
-              | ASetting item -> Services.managerView.showSetting item.id; Done)
+              // A size or the leader keys typed in the box, a colour picked; a page opened.
+              | ASetting item ->
+                  match item.binding with
+                  | Number _ -> askNumber item
+                  | Text(key,_) when key="numberLeaderKeys" -> askText item key
+                  | Colour -> pickColor item.id; Done
+                  | _ -> Services.managerView.showSetting item.id; Done)
           shortcut=(fun chosen ->
               match action chosen with
               | ACommand command | ASwitch(_,_,command) -> assignment command
@@ -114,15 +152,24 @@ module CommandPalette =
               | _ ->
                   let aside =
                       match action chosen with
-                      | ACommand command -> { detail=shortcutText command; switch=None }
-                      | ASwitch(_,key,command) -> { detail=shortcutText command; switch=Some(Services.settings.getValue key :?> bool) }
-                      | AChoice(item,key,values) -> { detail=choiceNow item key values; switch=None }
-                      | ASetting item -> { detail=tr (SettingsCatalog.searchContext item); switch=None }
+                      | ACommand command -> { detail=shortcutText command; switch=None; swatch=None }
+                      | ASwitch(_,key,command) -> { detail=shortcutText command; switch=Some(Services.settings.getValue key :?> bool); swatch=None }
+                      | AChoice(item,key,values) -> { detail=choiceNow item key values; switch=None; swatch=None }
+                      | ASetting item ->
+                          match item.binding with
+                          | Number _ -> { detail=string (Services.settings.getValue item.id :?> int); switch=None; swatch=None }
+                          | Text(key,_) -> { detail=Services.settings.getValue key :?> string; switch=None; swatch=None }
+                          | Colour -> let color = colorNow item.id in { detail=hex color; switch=None; swatch=Some color }
+                          | _ -> { detail=tr (SettingsCatalog.searchContext item); switch=None; swatch=None }
                   asides.[chosen.hwnd] <- aside
                   aside)
-          // A command acts on the window in front, which the palette stands clear of; a setting
-          // turned or opened leaves the palette where it is.
-          concealed=fun chosen -> match action chosen with ACommand _ -> true | _ -> false }
+          // A command acts on the window in front, which the palette stands clear of, as it does
+          // for the colour box; a setting turned or typed leaves the palette where it is.
+          concealed=fun chosen ->
+              match action chosen with
+              | ACommand _ -> true
+              | ASetting item -> item.binding=Colour
+              | _ -> false }
     /// The saved workspaces by name, with how many windows each holds; chosen, one is restored.
     let workspacesPage (workspaces:(string * int) list) (restore:string -> unit) =
         let names = workspaces |> List.map fst |> Array.ofList
@@ -132,5 +179,5 @@ module CommandPalette =
           choose=(fun chosen -> restore names.[int chosen.hwnd-1]; Done)
           shortcut=(fun _ -> None)
           dimmed=(fun _ -> false)
-          aside=(fun _ chosen -> { detail=tr (Strings.TabSearch.windows (snd workspaces.[int chosen.hwnd-1])); switch=None })
+          aside=(fun _ chosen -> { detail=tr (Strings.TabSearch.windows (snd workspaces.[int chosen.hwnd-1])); switch=None; swatch=None })
           concealed=fun _ -> true }

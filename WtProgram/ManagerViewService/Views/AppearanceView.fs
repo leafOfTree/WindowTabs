@@ -75,44 +75,17 @@ type AppearanceView(?settings:ISettings) =
     let tabStyle = SettingsUi.choice (SettingsBindings.labels "tabStyle")
     let resetColorsButton = new SettingsResetButton(tr Strings.Appearance.resetColors,Name="reset-colors")
     let resetLayoutButton = new SettingsResetButton(tr Strings.Appearance.resetTabLayout,Name="reset-tab-layout")
-    let paletteForProfile (s:AppearancePreferences) = if editingDark then s.darkPalette else s.lightPalette
-    let customForProfile (s:AppearancePreferences) = if editingDark then s.darkCustomPalette else s.lightCustomPalette
-    let activePalette (s:AppearancePreferences) =
-        if s.useCustomColors then paletteForProfile s
-        elif editingDark then Theme.darkPalette else Theme.lightPalette
-    let setActive palette (s:AppearancePreferences) =
-        if editingDark then {s with darkPalette=palette;useCustomColors=true}
-        else {s with lightPalette=palette;useCustomColors=true}
-    let setCustom palette (s:AppearancePreferences) =
-        if editingDark then {s with darkCustomPalette=palette} else {s with lightCustomPalette=palette}
-    let values (p:TabPalette) =
-        [p.tabTextColor;p.tabActiveBgColor;p.tabHighlightBgColor;p.tabNormalBgColor;p.tabBorderColor;p.tabFlashBgColor]
-        |> List.map(fun c -> c.ToArgb())
-    let original index = (ThemePresets.palettes editingDark).[index]
-    let editKey index = (if editingDark then "dark:" else "light:")+ThemePresets.keys.[index]
-    /// A preset as the user left it: its own colours with their edits.
-    let presetPalette (s:AppearancePreferences) index = s.presetEdits.TryFind(editKey index) |> Option.defaultValue (original index)
-    let setPreset key (s:AppearancePreferences) = if editingDark then {s with darkPreset=key} else {s with lightPreset=key}
-    /// The chosen entry: Some preset, or None for Custom. Settings from before the choice was
-    /// stored are matched by their colours.
-    let selection (s:AppearancePreferences) =
-        match if editingDark then s.darkPreset else s.lightPreset with
-        | key when key=ThemePresets.customKey -> None
-        | key when Array.contains key ThemePresets.keys -> Some(Array.findIndex ((=) key) ThemePresets.keys)
-        | _ -> ThemePresets.palettes editingDark |> Array.tryFindIndex(fun candidate -> values candidate=values (activePalette s))
-    /// A colour edit changes the chosen entry: the preset keeps it as its own edit, or Custom
-    /// takes it. An edit back to a preset's own colours is no longer an edit.
-    let editPalette change =
-        update(fun s ->
-            let current = activePalette s
-            let next = change current |> Theme.followSeparator (selection s |> Option.map original) current
-            if values next=values current then s
-            else
-                match selection s with
-                | None -> s |> setActive next |> setCustom next |> setPreset ThemePresets.customKey
-                | Some index ->
-                    let edits = if values next=values (original index) then s.presetEdits.Remove(editKey index) else s.presetEdits.Add(editKey index,next)
-                    {(setActive next s) with presetEdits=edits} |> setPreset ThemePresets.keys.[index])
+    // The light or dark look being edited, by the same rules the command palette edits colours.
+    let customForProfile s = PaletteEditing.customForProfile editingDark s
+    let activePalette s = PaletteEditing.activePalette editingDark s
+    let setActive palette s = PaletteEditing.setActive editingDark palette s
+    let values p = PaletteEditing.values p
+    let original index = PaletteEditing.original editingDark index
+    let editKey index = PaletteEditing.editKey editingDark index
+    let presetPalette s index = PaletteEditing.presetPalette editingDark s index
+    let setPreset key s = PaletteEditing.setPreset editingDark key s
+    let selection s = PaletteEditing.selection editingDark s
+    let editPalette change = update(PaletteEditing.edit editingDark change)
     let choosePreset index = update(fun s -> s |> setActive (presetPalette s index) |> setPreset ThemePresets.keys.[index])
     let chooseCustom() = update(fun s -> s |> setActive (customForProfile s) |> setPreset ThemePresets.customKey)
     /// The chosen preset's own colours again; from Custom, the Default preset.
@@ -127,19 +100,8 @@ type AppearanceView(?settings:ISettings) =
         preview.TabBounds(ThemeService.currentAppearance().scaled.tabHeight)
     /// What the rest of the preview is drawn from besides its size, so it is redrawn only when one changes.
     let mutable previewFrame = None
-    let colorFields : (string * (TabPalette -> Color) * (Color -> TabPalette -> TabPalette)) list = [
-        "tabTextColor",(fun p -> p.tabTextColor),(fun v p -> {p with tabTextColor=v})
-        "tabActiveBgColor",(fun p -> p.tabActiveBgColor),(fun v p -> {p with tabActiveBgColor=v})
-        "tabHighlightBgColor",(fun p -> p.tabHighlightBgColor),(fun v p -> {p with tabHighlightBgColor=v})
-        "tabNormalBgColor",(fun p -> p.tabNormalBgColor),(fun v p -> {p with tabNormalBgColor=v}) ]
-    // The separator follows the text and inactive tab colours, and a flashing tab is rare and
-    // brief: neither earns a row of its own. Each palette still carries both.
-    let colors = colorFields |> List.map(fun (key,get,set) -> key,get,set,(new SettingsColorInput(Font=SettingsUi.bodyFont()) :> IPropEditor))
-    let dimensionFields : (string * (TabGeometry -> int) * (int -> TabGeometry -> TabGeometry)) list = [
-        "tabHeight",(fun g -> g.height),(fun v g -> {g with height=v})
-        "tabMaxWidth",(fun g -> g.maxWidth),(fun v g -> {g with maxWidth=v})
-        "tabOverlap",(fun g -> -g.overlap),(fun v g -> {g with overlap= -v})
-        "tabIndentNormal",(fun g -> g.indentNormal),(fun v g -> {g with indentNormal=v}) ]
+    let colors = PaletteEditing.colorFields |> List.map(fun (key,get,set) -> key,get,set,(new SettingsColorInput(Font=SettingsUi.bodyFont()) :> IPropEditor))
+    let dimensionFields = SettingsCatalog.geometryNumbers
 
     let low,high = SettingsCatalog.columnWidthRange
     let columnWidth = new SettingsNumberInput(Minimum=decimal low,Maximum=decimal high,Font=SettingsUi.bodyFont())

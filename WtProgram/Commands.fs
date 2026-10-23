@@ -8,6 +8,11 @@ type CommandOutcome =
     | Done
     | Choose of CommandChoice list
     | Stay
+    /// A value to type, such as a size.
+    | Ask of CommandQuestion
+/// What to type: the hint in the box, the value it holds now, a line saying what is accepted, and
+/// taking what was typed: None when it is set, else why it is not.
+and CommandQuestion = { prompt:string; value:string; hint:string; accept:string -> string option }
 /// One further step: its name, a detail beside it, a colour to show for it where it is one,
 /// and what choosing it does.
 and CommandChoice = { label:string; detail:string; swatch:Drawing.Color option; run:unit -> CommandOutcome }
@@ -104,11 +109,29 @@ module Commands =
         // The tab menu's commands for the tab in front.
         plain "rename-tab" Strings.Commands.renameTab TabCommands hasGroup (onTab(fun g hwnd -> g.run(RenameTab hwnd)))
         plain "reset-tab-name" Strings.Commands.resetTabName TabCommands hasGroup (onTab(fun g hwnd -> g.run(ResetTabName hwnd)))
+        // As the tab menu's Color: the palette, a colour of one's own, remembering the colour for
+        // the app, and none.
         choosing "tab-color" Strings.Commands.tabColor TabCommands hasGroup (fun hwnd ->
+            let path = processPath hwnd
+            let current = groupOf hwnd |> Option.bind(fun g -> Services.program.getTabColor(hwnd,g.windows.list))
+            let remembered = AppTabColors.remembered path
+            let setColor color =
+                onTab (fun g hwnd -> g.run(SetTabColor(hwnd,Some color))) hwnd
+                AppTabColors.chosen path color
             [ for index in Theme.tabColorOrder do
-                yield { choice (tr Strings.Settings.tabColorNames.[index]) "" (fun () -> onTab (fun g hwnd -> g.run(SetTabColor(hwnd,Some(PaletteColor index)))) hwnd)
+                yield { choice (tr Strings.Settings.tabColorNames.[index]) (if current=Some(PaletteColor index) then "✓" else "") (fun () -> setColor (PaletteColor index))
                         with swatch=Some(tabColour index) }
-              yield choice (tr Strings.Settings.clearTabColor) "" (fun () -> onTab (fun g hwnd -> g.run(SetTabColor(hwnd,None))) hwnd) ])
+              yield choice (tr Strings.Settings.customTabColor) "" (fun () ->
+                  let dark = Theme.darkBar (ThemeService.currentAppearance().tabNormalBgColor)
+                  use dialog = new System.Windows.Forms.ColorDialog(FullOpen=true,Color=(current |> Option.map(Theme.tabColor dark) |> Option.defaultValue Drawing.Color.SteelBlue))
+                  if dialog.ShowDialog()=System.Windows.Forms.DialogResult.OK then setColor (CustomColor dialog.Color))
+              // Off with nothing to remember, as the tab menu greys it.
+              if remembered || current.IsSome then
+                  yield choice (tr Strings.Settings.rememberTabColor) (if remembered then "✓" else "") (fun () ->
+                      AppTabColors.save path (if remembered then None else current))
+              yield choice (tr Strings.Settings.clearTabColor) "" (fun () ->
+                  AppTabColors.save path None
+                  onTab (fun g hwnd -> g.run(SetTabColor(hwnd,None))) hwnd) ])
         plain "move-tab-left" Strings.Commands.moveTabLeft TabCommands hasGroup (onTab(fun g hwnd -> g.run(MoveTab(hwnd,-1))))
         plain "move-tab-right" Strings.Commands.moveTabRight TabCommands hasGroup (onTab(fun g hwnd -> g.run(MoveTab(hwnd,1))))
         plain "sort-tabs" Strings.Commands.sortTabs TabCommands hasGroup (onGroup(fun g -> g.run SortTabs))

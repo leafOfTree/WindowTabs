@@ -483,6 +483,49 @@ let main() =
             check (api.getValue "sessionRestore" :?> string="Windows") "Choosing a value in the palette did not set it"
             api.setValue("sessionRestore",box "Off")
         | _ -> failwith "A choice setting did not list its values"
+        // Sizes are read and written by key as the Appearance page shows them, kept in range.
+        api.setValue("tabHeight",box 30)
+        check (api.appearance.geometry.height=30 && api.getValue "tabHeight" :?> int=30) "A tab size could not be set by its key"
+        api.setValue("tabOverlap",box 4)
+        check (api.appearance.geometry.overlap= -4 && api.getValue "tabOverlap" :?> int=4) "The gap between tabs was not stored as a negative overlap"
+        api.setValue("tabHeight",box 5000)
+        check (api.getValue "tabHeight" :?> int=snd (SettingsCatalog.range "tabHeight")) "A size out of range was kept"
+        // The palette asks for a size, refuses what is not one, and sets what is.
+        let entryOf (page:PalettePage) caption = page.entries |> List.find(fun entry -> entry.title=tr caption)
+        let sizes = CommandPalette.actionsPage IntPtr.Zero
+        let height = entryOf sizes Strings.Settings.tabHeight.caption
+        check ((sizes.aside "" height).detail=string (api.getValue "tabHeight" :?> int)) "A size's row did not show its value"
+        match sizes.choose height with
+        | Ask question ->
+            check (question.value=string (api.getValue "tabHeight" :?> int)) "The box did not hold the size it has now"
+            check (question.accept "tall").IsSome "A size that is not a number was taken"
+            check (question.accept "9999").IsSome "A size out of range was taken"
+            check ((question.accept "28").IsNone && api.getValue "tabHeight" :?> int=28) "A size typed in the palette was not set"
+        | _ -> failwith "A size did not ask for a value"
+        match sizes.choose (entryOf sizes Strings.Settings.leaderKeys.caption) with
+        | Ask question ->
+            check (question.accept "aa").IsSome "Repeated leader keys were taken"
+            check ((question.accept "asdf").IsNone && api.getValue "numberLeaderKeys" :?> string="ASDF") "Leader keys typed in the palette were not set"
+            api.setValue("numberLeaderKeys",box "123456789")
+        | _ -> failwith "The leader keys did not ask for a value"
+        // A colour setting shows its colour, as a dot and by its value.
+        let textColor = sizes.aside "" (entryOf sizes Strings.Settings.tabTextColor.caption)
+        check (textColor.swatch.IsSome && textColor.detail.StartsWith "#") "A colour setting's row did not show its colour"
+        // The tab menu's colour list in full: the palette, one of one's own, and none.
+        match (Commands.find "tab-color").Value.run IntPtr.Zero with
+        | Choose options ->
+            let labels = options |> List.map(fun option -> option.label)
+            check (List.contains (tr Strings.Settings.customTabColor) labels && List.last labels=tr Strings.Settings.clearTabColor) "The tab colour list left out Custom or Clear"
+        | _ -> failwith "The tab colour command did not list colours"
+        // A colour remembered for an app follows the colour chosen for its tabs, and only then.
+        let app = @"C:\Apps\PaletteProbe.exe"
+        AppTabColors.chosen app (PaletteColor 3)
+        check (not (AppTabColors.remembered app)) "Choosing a colour remembered it for an app that keeps none"
+        AppTabColors.save app (Some(PaletteColor 2))
+        AppTabColors.chosen @"D:\Other\paletteprobe.exe" (PaletteColor 5)
+        check ((api.getValue "appTabColors" :?> Map<string,string>) |> Map.exists(fun path value -> AppIdentity.same path app && value=Theme.formatTabColor (PaletteColor 5))) "A remembered app colour did not follow the colour chosen"
+        AppTabColors.save app None
+        check (not (AppTabColors.remembered app)) "An app colour was not forgotten"
         // What a typed word matched, said under a command as under a settings search result.
         check (SettingsCatalog.evidence "switcher" Strings.Settings.groupWindowsInSwitcher "General" []=["switcher"]) "A keyword match is not named under the row"
         check (SettingsCatalog.evidence "group" Strings.Settings.groupWindowsInSwitcher "General" []=[]) "A match the name shows is repeated under the row"
@@ -828,7 +871,7 @@ let main() =
           choose=(fun entry -> if entry.hwnd=IntPtr 1 then (ran <- "close"::ran; Done) else Choose [option "Work";option "Home"])
           shortcut=(fun _ -> None)
           dimmed=(fun _ -> false)
-          aside=(fun _ entry -> { detail=entry.program; switch=None })
+          aside=(fun _ entry -> { detail=entry.program; switch=None; swatch=None })
           concealed=fun _ -> true }
     let palette = TabSearchForm([mail;notes;editor],[mail.hwnd;editor.hwnd],pages=[commandsPage])
     check (palette.Scope=GroupTabs) "The palette did not open on the group"
@@ -859,7 +902,7 @@ let main() =
     pump 100
     // A setting turned in place: the palette stays up and its switch shows the new state.
     let mutable lamp = false
-    let switchPage = { commandsPage with choose=(fun _ -> lamp <- not lamp; Stay); aside=(fun _ _ -> { detail=""; switch=Some lamp }); concealed=fun _ -> false }
+    let switchPage = { commandsPage with choose=(fun _ -> lamp <- not lamp; Stay); aside=(fun _ _ -> { detail=""; switch=Some lamp; swatch=None }); concealed=fun _ -> false }
     let switched = TabSearchForm([mail;notes],[],pages=[switchPage],scope=ActionScope)
     switched.Query <- "clo"
     switched.Accept()
@@ -883,6 +926,22 @@ let main() =
     check (back.Depth=0 && back.Query="rest" && back.Scope=ActionScope) "Esc did not go back to the search"
     back.Close()
     pump 100
+    // A value asked for: the box holds it now, a refusal says why, a value taken closes the box.
+    let mutable typed = ""
+    let question = { prompt="A number"; value="12"; hint="Enter sets it"; accept=fun text -> if text="ok" then (typed <- text; None) else Some "Not that" }
+    let askingPage = { commandsPage with choose=fun _ -> Ask question }
+    let asked = TabSearchForm([mail;notes],[],pages=[askingPage],scope=ActionScope)
+    asked.Query <- "close"
+    asked.Accept()
+    check (asked.Depth=1 && asked.Query="12" && asked.Message="Enter sets it") "A value asked for was not shown in the box"
+    asked.Query <- "no"
+    asked.Answer()
+    check (not asked.IsClosed && asked.Message="Not that") "A refused value did not say why"
+    asked.Query <- "ok"
+    check (asked.Message="Enter sets it") "Typing again did not put the hint back"
+    asked.Answer()
+    pump 100
+    check (typed="ok" && asked.IsClosed) "A value taken did not close the box"
     // The command line: what each form asks for, and the pipe a running copy takes them over.
     check (CommandLine.parse [||]=Start && CommandLine.parse [|"--restart"|]=Restart) "A plain or restarting start was not read"
     check (CommandLine.parse [|"--command";"next-tab"|]=RunCommand("next-tab",None)) "A command by id was not read"

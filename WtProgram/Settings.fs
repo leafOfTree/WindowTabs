@@ -319,6 +319,9 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             | "tabThemeMode" -> api.updateAppearance(fun s -> {s with mode=ThemeMode.parse (value :?> string)})
             // Kept with the tab sizes in the appearance; by its key too, as the palette sets choices.
             | "tabStyle" -> api.updateAppearance(fun s -> {s with geometry={s.geometry with style=TabStyle.parse (value :?> string)}})
+            | key when SettingsCatalog.geometryNumbers |> List.exists(fun (name,_,_) -> name=key) ->
+                let _,_,write = SettingsCatalog.geometryNumbers |> List.find(fun (name,_,_) -> name=key)
+                api.updateAppearance(fun s -> {s with geometry=write (SettingsCatalog.normalizeNumber key (unbox<int> value)) s.geometry})
             | "tabUseCustomColors" -> api.updateAppearance(fun s -> {s with useCustomColors=unbox value})
             | "tabLightColors" | "tabDarkColors" ->
                 let palette = match value with :? TabPalette as p -> p | _ -> TabPalette.fromAppearance (value :?> TabAppearanceInfo)
@@ -334,6 +337,9 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             | "tabAppearance" -> box(TabPalette.compose appearance.geometry appearance.legacyPalette)
             | "tabThemeMode" -> box(ThemeMode.serialize appearance.mode)
             | "tabStyle" -> box(TabStyle.serialize appearance.geometry.style)
+            | key when SettingsCatalog.geometryNumbers |> List.exists(fun (name,_,_) -> name=key) ->
+                let _,read,_ = SettingsCatalog.geometryNumbers |> List.find(fun (name,_,_) -> name=key)
+                box(read appearance.geometry)
             | "tabUseCustomColors" -> box appearance.useCustomColors
             | "tabLightColors" -> box(TabPalette.compose appearance.geometry appearance.lightPalette)
             | "tabDarkColors" -> box(TabPalette.compose appearance.geometry appearance.darkPalette)

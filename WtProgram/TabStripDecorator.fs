@@ -551,18 +551,13 @@ type TabStripDecorator(group:WindowGroup) as this =
                 click = fun() ->
                     this.beginRename(hwnd)
             })
-        let colors() = Services.settings.getValue("appTabColors") :?> Map<string,string>
-        let sameApp path = AppIdentity.same path processPath
-        let remembered = colors() |> Map.exists(fun path _ -> sameApp path)
+        let remembered = AppTabColors.remembered processPath
         let currentColor = group.tabColor hwnd
         let dark = Theme.darkBar group.tabAppearance.tabNormalBgColor
-        let saveAppColor color =
-            let others = colors() |> Map.filter(fun path _ -> not (sameApp path))
-            let next = match color with Some value -> others.Add(processPath,Theme.formatTabColor value) | None -> others
-            Services.settings.setValue("appTabColors",box next)
+        let saveAppColor color = AppTabColors.save processPath color
         let choose color =
             group.setTabColor(hwnd,Some color)
-            if remembered then saveAppColor (Some color)
+            AppTabColors.chosen processPath color
         let colorItems =
             let palette = Theme.tabPalette dark
             Theme.tabColorOrder |> List.map(fun index ->

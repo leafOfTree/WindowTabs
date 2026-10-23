@@ -607,6 +607,14 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             | Some command ->
                 match command.run (WinUserApi.GetForegroundWindow()) with
                 | Done | Stay -> Result.Ok ""
+                // The value on the command line, as typed in the palette.
+                | Ask question ->
+                    match choice with
+                    | None -> this.showQuestion(tr command.text.caption,question); Result.Ok ""
+                    | Some value ->
+                        match question.accept value with
+                        | None -> Result.Ok ""
+                        | Some reason -> Result.Error reason
                 | Choose options ->
                     match choice with
                     | None -> this.showChoices(tr command.text.caption,options); Result.Ok ""
@@ -772,15 +780,18 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         search
 
     /// A command's choices, from a hotkey: the palette opens on them.
-    member this.showChoices(caption:string, options:CommandChoice list) =
-        let search =
-            match tabSearchCell.value with
-            | Some search -> search
-            | None ->
-                let search = this.openPalette(Some ActionScope)
-                search.Show()
-                search
-        search.ShowChoices(caption,options)
+    member this.showChoices(caption:string, options:CommandChoice list) = this.paletteOpen().ShowChoices(caption,options)
+
+    /// A value a command asks for, from a hotkey: the palette opens on it.
+    member this.showQuestion(caption:string, question:CommandQuestion) = this.paletteOpen().Ask(caption,question)
+
+    member private this.paletteOpen() : TabSearchForm =
+        match tabSearchCell.value with
+        | Some search -> search
+        | None ->
+            let search = this.openPalette(Some ActionScope)
+            search.Show()
+            search
 
     /// Each saved workspace's name and how many windows it holds.
     member private this.workspaceSummaries() : (string * int) list =
@@ -876,6 +887,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         match command.run (WinUserApi.GetForegroundWindow()) with
         | Done | Stay -> ()
         | Choose options -> this.showChoices(tr command.text.caption,options)
+        | Ask question -> this.showQuestion(tr command.text.caption,question)
 
    
     member this.hwndZorders() : Map2<IntPtr, int>= Map2(os.windowsInZorder.enumerate.map(fun(i,w) -> w.hwnd,i))

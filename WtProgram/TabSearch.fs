@@ -192,8 +192,9 @@ type PalettePage = {
     concealed:TabSearchEntry -> bool }
 
 /// The right end of a page's row: its detail, such as a shortcut or a page; or a switch, for a
-/// setting that is on or off.
-and PaletteAside = { detail:string; switch:bool option }
+/// setting that is on or off. And a colour, for a row that stands for one, shown as a dot before
+/// its name.
+and PaletteAside = { detail:string; switch:bool option; swatch:Color option }
 
 module private TabSearchNative =
     let EM_SETCUEBANNER = 0x1501
@@ -269,19 +270,24 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     /// The choices a command left, over the scope's rows while they are up: the command's name,
     /// the rows, what choosing one does, and the search typed before, for the way back.
     let mutable choices : (string * (TreeListItem * TabSearchEntry)[] * (TabSearchEntry -> CommandOutcome) * string) list = []
+    /// A value asked for, on top of the choices with no rows of its own, with why the last one
+    /// typed was not taken.
+    let mutable asking : (CommandQuestion * string option) option = None
     let rowsOf target = match target with GroupTabs -> groupItems | AllTabs -> items | other -> pageItems.[other]
     let scoped() = match choices with (_,rows,_,_)::_ -> rows | [] -> rowsOf scope
     let page() = pages |> List.tryFind(fun page -> page.scope=scope)
     let currentPrompt() =
-        match choices,page() with
-        | _::_,_ -> tr Strings.TabSearch.choicePrompt
-        | [],Some page -> page.prompt
-        | [],None -> windowPrompt
+        match asking,choices,page() with
+        | Some(question,_),_,_ -> question.prompt
+        | None,_::_,_ -> tr Strings.TabSearch.choicePrompt
+        | None,[],Some page -> page.prompt
+        | None,[],None -> windowPrompt
     let currentEmpty() =
-        match choices,page() with
-        | _::_,_ -> tr Strings.TabSearch.noChoices
-        | [],Some page -> page.noMatches
-        | [],None -> tr Strings.TabSearch.noMatches
+        match asking,choices,page() with
+        | Some(question,error),_,_ -> error |> Option.defaultValue question.hint
+        | None,_::_,_ -> tr Strings.TabSearch.noChoices
+        | None,[],Some page -> page.noMatches
+        | None,[],None -> tr Strings.TabSearch.noMatches
     let input = new TextBox(Font=SettingsUi.bodyFont(),BorderStyle=BorderStyle.None,Tag="search-input",
                             BackColor=palette.surface,ForeColor=palette.text,
                             AccessibleName=windowPrompt)
@@ -473,10 +479,10 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             | [],None ->
                 // A window's key before its program.
                 match windowShortcutText entry,TabSearch.source entry with
-                | "",detail -> { detail=detail; switch=None }
-                | key,"" -> { detail=key; switch=None }
-                | key,detail -> { detail=key+"   "+detail; switch=None }
-            | _ -> { detail=TabSearch.source entry; switch=None }
+                | "",detail -> { detail=detail; switch=None; swatch=None }
+                | key,"" -> { detail=key; switch=None; swatch=None }
+                | key,detail -> { detail=key+"   "+detail; switch=None; swatch=None }
+            | _ -> { detail=TabSearch.source entry; switch=None; swatch=None }
         let text (aside:PaletteAside) = aside.detail
         let asides = shown |> Array.map(fun (_,entry) -> aside entry)
         // Titles reclaim the fixed app column's spare space, including after filtering.
@@ -496,6 +502,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             let aside = asides.[index]
             item.Values.[1] <- text aside
             item.Switch <- aside.switch
+            if aside.swatch.IsSome then item.Swatch <- aside.swatch
             item.Highlights <- [| TabSearch.highlights input.Text entry.title; TabSearch.highlights input.Text item.Values.[1] |])
         list.Roots.Clear()
         list.Roots.AddRange(Array.map fst shown)
@@ -550,7 +557,17 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         scopeLine.Invalidate()
         footer.Invalidate()
         apply()
+    /// A value to type takes the rows' place, under the name of what asked, the value it holds
+    /// now in the box, selected; Enter offers what is typed, and Esc goes back.
+    let ask (caption:string) (question:CommandQuestion) =
+        push caption []
+        asking <- Some(question,None)
+        input.Text <- question.value
+        input.SelectAll()
+        setPrompt()
+        apply()
     let pop() =
+        asking <- None
         match choices with
         | (_,_,_,query)::rest ->
             choices <- rest
@@ -588,9 +605,22 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         | Choose options ->
             back()
             push caption options
+        | Ask question ->
+            back()
+            ask caption question
         | Stay ->
             back()
             apply()
+    /// Enter while a value is asked for: taken, the box closes; refused, it says why.
+    let answer() =
+        match asking with
+        | Some(question,_) ->
+            match question.accept (input.Text.Trim()) with
+            | None -> finish None
+            | Some reason ->
+                asking <- Some(question,Some reason)
+                apply()
+        | None -> ()
     /// Enter or a click on a row: switches to the window, or runs the command and shows what it
     /// leaves to choose. A dimmed row does nothing.
     let activate (target:TreeListItem) =
@@ -671,7 +701,12 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 setScope ActionScope
                 input.Text <- rest
                 input.SelectionStart <- rest.Length
-            else apply())
+            else
+                // Typing again puts the hint back in place of why the last value was refused.
+                match asking with
+                | Some(question,Some _) -> asking <- Some(question,None)
+                | _ -> ()
+                apply())
         // Tab would otherwise move the focus; here it goes round the scopes.
         input.PreviewKeyDown.Add(fun e -> if e.KeyCode=Keys.Tab then e.IsInputKey <- true)
         // A segment picks its scope; the key cap switches, as the key does. Under a command's
@@ -703,6 +738,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 | Keys.PageDown -> move visibleRows; true
                 | Keys.PageUp -> move -visibleRows; true
                 | Keys.Enter when e.Alt -> beginAssign(); true
+                | Keys.Enter when asking.IsSome -> answer(); true
                 | Keys.Enter -> activate list.SelectedItem; true
                 | Keys.Escape -> (if choices.IsEmpty then finish None else pop()); true
                 | Keys.Back when input.Text="" && not choices.IsEmpty -> pop(); true
@@ -761,6 +797,12 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     member _.HasWindows = windows
     /// Back from a command's choices, as Esc goes.
     member _.Back() = pop()
+    /// Asks for a value, as a command chosen here does, under its name.
+    member _.Ask(caption:string, question:CommandQuestion) = ask caption question
+    /// Offers what is typed for the value asked, as Enter does.
+    member _.Answer() = answer()
+    /// What the box says under it: the hint, why a value was refused, or that nothing matches.
+    member _.Message = currentEmpty()
     /// Starts recording a shortcut for the chosen row, as Alt+Enter does.
     member _.BeginAssign() = beginAssign()
     /// The box recording a shortcut, while one is.

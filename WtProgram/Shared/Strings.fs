@@ -670,6 +670,10 @@ module Strings =
         let noActions = { en="No matching commands or settings."; zh="没有匹配的命令或设置。"; ja="一致するコマンドや設定はありません。"; ar="لا توجد أوامر أو إعدادات مطابقة." }
         let noWorkspaces = { en="No workspace saved yet."; zh="尚未保存任何工作区。"; ja="保存されたワークスペースはまだありません。"; ar="لم يتم حفظ أي مساحة عمل بعد." }
         let noChoices = { en="No matching choices."; zh="没有匹配的选项。"; ja="一致する項目はありません。"; ar="لا توجد خيارات مطابقة." }
+        /// Asking for a size: the hint in the box, the line under it, and why a value is refused.
+        let numberPrompt low high = { en=sprintf "A number from %d to %d" low high; zh=sprintf "输入 %d 到 %d 之间的数字" low high; ja=sprintf "%d～%d の数値" low high; ar=sprintf "رقم من %d إلى %d" low high }
+        let valueHint = { en="Enter sets it; Esc goes back."; zh="按 Enter 设置；按 Esc 返回。"; ja="Enter で設定、Esc で戻ります。"; ar="اضغط Enter للتعيين، وEsc للرجوع." }
+        let numberRefused low high = { en=sprintf "Type a whole number from %d to %d." low high; zh=sprintf "请输入 %d 到 %d 之间的整数。" low high; ja=sprintf "%d～%d の整数を入力してください。" low high; ar=sprintf "اكتب عددًا صحيحًا من %d إلى %d." low high }
         /// Beside the Alt+Enter key cap on the commands page.
         let setShortcut = { en="Set shortcut"; zh="设置快捷键"; ja="ショートカットを設定"; ar="تعيين اختصار" }
         /// Beside a workspace: how many windows it holds.
