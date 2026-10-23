@@ -193,8 +193,9 @@ type SettingsNumberInput() as this =
     member _.TextBox = text
     member _.ValueChanged = changed.Publish
 
-/// Keys as the app shows them wherever it names one: a thin rounded outline round each key, with
-/// nothing filled in, so a key reads apart from the buttons and fields around it.
+/// Keys the palette names (Tab, Esc, Alt + Enter): a thin rounded outline round each key, with
+/// nothing filled in, so a key reads apart from the buttons and segments around it. The
+/// Shortcuts page's chips are values to edit, and keep their filled look.
 module KeyCaps =
     /// The outline round one key.
     let outline (g:Graphics) (bounds:Rectangle) (p:SettingsPalette) =
@@ -208,24 +209,32 @@ module KeyCaps =
         g.SmoothingMode <- smoothing
     /// The keys of a shortcut written as "Alt+Enter", each in a cap of its own.
     let keys (shortcut:string) = shortcut.Split([|'+'|],StringSplitOptions.RemoveEmptyEntries) |> List.ofArray
-    let private gap() = Dpi.scale 3
     let private capWidth (font:Font) height (key:string) =
         max height (TextRenderer.MeasureText(key,font,Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 10)
-    /// How wide the caps of a shortcut are, side by side.
+    /// The room between two caps, where a + joins them.
+    let private joinWidth (font:Font) = TextRenderer.MeasureText("+",font,Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 8
+    /// How wide the caps of a shortcut are, side by side with a + between them.
     let width (font:Font) height shortcut =
         let caps = keys shortcut
-        (caps |> List.sumBy (capWidth font height))+gap()*(max 0 (caps.Length-1))
-    /// The caps of a shortcut, from a point, their names in the muted colour; their width.
+        (caps |> List.sumBy (capWidth font height))+joinWidth font*(max 0 (caps.Length-1))
+    /// The caps of a shortcut, from a point, a + between them and their names in the muted
+    /// colour; their width.
     let draw (g:Graphics) (font:Font) (x:int) (y:int) height (shortcut:string) (p:SettingsPalette) =
         let centred = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter
         let ink = if SystemInformation.HighContrast then SystemColors.WindowText else p.muted
+        let join = joinWidth font
         let right =
-            keys shortcut |> List.fold(fun left key ->
+            keys shortcut |> List.fold(fun (left,first) key ->
+                let left =
+                    if first then left
+                    else
+                        TextRenderer.DrawText(g,"+",font,Rectangle(left,y,join,height),ink,centred)
+                        left+join
                 let bounds = Rectangle(left,y,capWidth font height key,height)
                 outline g bounds p
                 TextRenderer.DrawText(g,key,font,bounds,ink,centred)
-                bounds.Right+gap()) x
-        right-gap()-x
+                bounds.Right,false) (x,true) |> fst
+        right-x
 
 /// Click (or Enter/Space) to record, press the combination, Esc to cancel.
 /// The × button, or Backspace/Delete while recording, removes the shortcut (0).
@@ -351,7 +360,11 @@ type SettingsShortcutInput() as this =
             let top = (this.Height-height)/2
             labels |> List.fold(fun x label ->
                 let bounds = Rectangle(x,top,capWidth label,height)
-                KeyCaps.outline g bounds p
+                use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X+0.5f,float32 bounds.Y+0.5f,float32 bounds.Width-1.0f,float32 bounds.Height-1.0f)) (float32(Dpi.scale 4))
+                use fill = new SolidBrush(p.selection)
+                use border = new Pen(p.border)
+                g.FillPath(fill,shape)
+                g.DrawPath(border,shape)
                 // Centred by its ink, not its advance: a symbol such as ] sits to one side of
                 // the space the font gives it, and looked off centre in its cap.
                 // A tall symbol (a bracket or a slash) is centred by its ink up and down too: it
