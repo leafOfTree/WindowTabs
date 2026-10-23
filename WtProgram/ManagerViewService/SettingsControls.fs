@@ -18,6 +18,12 @@ type SettingsSearchBox(search:TextBox) as this =
         search.TextChanged.Add(fun _ -> this.PerformLayout(); this.Invalidate())
         search.Enter.Add(fun _ -> this.Invalidate())
         search.Leave.Add(fun _ -> this.Invalidate())
+    /// The box's outline while it does not have the keys: plainer than the accent, and still seen
+    /// on a surface the box's own colour, as the palette's is.
+    static member Outline() =
+        if SystemInformation.HighContrast then (SettingsColors.current()).border
+        elif ThemeService.currentIsDark() then Color.FromRGB(0x4A4A48)
+        else Color.FromRGB(0xD6D6D3)
     override this.OnMouseDown(e) =
         base.OnMouseDown(e)
         if e.Button=MouseButtons.Left then
@@ -34,8 +40,7 @@ type SettingsSearchBox(search:TextBox) as this =
                 if SystemInformation.HighContrast then p.border
                 elif search.Focused && ThemeService.currentIsDark() then Color.FromRGB(0x777773)
                 elif search.Focused then p.accent
-                elif ThemeService.currentIsDark() then Color.FromRGB(0x4A4A48)
-                else Color.FromRGB(0xD6D6D3)
+                else SettingsSearchBox.Outline()
             use pen = new Pen(border,if search.Focused && not (ThemeService.currentIsDark()) then float32(Dpi.scaleF 1.5) else 1.0f)
             e.Graphics.FillPath(fill,path)
             e.Graphics.DrawPath(pen,path)

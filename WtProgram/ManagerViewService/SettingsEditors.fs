@@ -104,6 +104,8 @@ type SettingsInputFrame() as this =
     /// What shows round the rounded corners, when the field sits on something other than its
     /// parent's colour, such as a selected list row.
     member val Surroundings = Color.Empty with get,set
+    /// The outline, when the usual one would not show, as on a surface the field's own colour.
+    member val Border = Color.Empty with get,set
     /// Fills the field and its text with the usual field colour, over the given surroundings.
     member this.PlaceOn(surroundings:Color) =
         let field = (SettingsColors.current()).surface
@@ -130,7 +132,7 @@ type SettingsInputFrame() as this =
             let radius = if pill then float32 this.Height/2.0f else float32(Dpi.scale 8)
             use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) radius
             use fill = new SolidBrush(this.BackColor)
-            use border = new Pen(p.border)
+            use border = new Pen(if this.Border.IsEmpty then p.border else this.Border)
             e.Graphics.FillPath(fill,shape)
             e.Graphics.DrawPath(border,shape)
 

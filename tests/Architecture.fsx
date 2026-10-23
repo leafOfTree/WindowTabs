@@ -974,6 +974,7 @@ let main() =
     colored.Query <- "close"
     colored.Accept()
     check (colored.AskBox |> Option.exists(fun box -> box :? SettingsColorInput) && colored.Answered="#202020") "A colour was not asked for in the settings pages' colour box"
+    check (colored.AskBox |> Option.exists(fun box -> box.Border=SettingsSearchBox.Outline())) "The palette's value box was not outlined as the search box is"
     colored.Close()
     pump 100
     // On screen, the picker opens with the box, and taking the keys does not close the palette.

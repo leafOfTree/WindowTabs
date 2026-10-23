@@ -391,7 +391,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let asideWidths = Collections.Generic.Dictionary<string,int>()
     let list = new SettingsTreeList([TreeListColumn("",0,TextColumn);programColumn],
                                     ShowHeader=false,ShowExpanders=false,ExpandOnDoubleClick=false,
-                                    RowHeight=rowHeight,IconSize=TabSearchMetrics.iconSize,TabStop=false,Dock=DockStyle.Fill,
+                                    RowHeight=rowHeight,IconSize=TabSearchMetrics.iconSize,TabStop=false,Dock=DockStyle.Fill,KeepScrollRoom=true,
                                     BackColor=palette.surface,ForeColor=palette.text)
     let empty = new Label(Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleCenter,Visible=false,
                           Font=SettingsUi.bodyFont(),BackColor=palette.surface,ForeColor=palette.muted,
@@ -622,6 +622,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 color.PickerClosed.Add(fun _ -> if not closed && form.Visible then form.Activate())
                 (color :> SettingsInputFrame),color.TextBox
         frame.PlaceOn(palette.surface)
+        // On the palette's surface, the field's own colour: outlined as the search box is.
+        frame.Border <- SettingsSearchBox.Outline()
         text.ForeColor <- palette.text
         let gap = Dpi.scale 8
         frame.Location <- Point(Dpi.scale 4,gap)

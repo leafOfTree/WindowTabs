@@ -153,6 +153,9 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     /// Said in the muted colour while the list has no rows: what would be listed, and how.
     member val EmptyText = "" with get,set
     member val IconSize = 16 with get,set
+    /// Leaves the scroll bar's room empty when there is nothing to scroll, so a list whose rows
+    /// come and go as a search is typed keeps its right edge where it was.
+    member val KeepScrollRoom = false with get,set
     member val ShowHeader = true with get,set
     member val ShowExpanders = true with get,set
     /// When false, double-clicking a row raises ItemActivated instead of expanding it; the
@@ -183,7 +186,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member private this.viewport = max 1 (this.ClientSize.Height-this.headerHeight)
     /// The height that shows the header and every visible row without scrolling.
     member this.ContentHeight = this.headerHeight+this.rowsHeight
-    member private this.contentWidth = this.ClientSize.Width-(if scroll.Visible then scroll.Width else 0)
+    member private this.contentWidth = this.ClientSize.Width-(if scroll.Visible || this.KeepScrollRoom then scroll.Width else 0)
 
     member private this.tops =
         let key = (box rows,this.contentWidth,this.rowHeight)
@@ -525,23 +528,28 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         else
             let pieces = flags &&& ~~~(TextFormatFlags.EndEllipsis ||| TextFormatFlags.HorizontalCenter) ||| TextFormatFlags.NoPadding
             let width (part:string) = TextRenderer.MeasureText(g,part,font,Size(Int32.MaxValue,bounds.Height),pieces).Width
+            // The padding DrawText puts each side of a whole text: the pieces start after it, where
+            // the text stood before anything matched, so typing does not move it.
+            let pad =
+                let padded = TextRenderer.MeasureText(g,text,font,Size(Int32.MaxValue,bounds.Height),flags &&& ~~~TextFormatFlags.EndEllipsis).Width
+                max 0 ((padded-width text)/2)
+            let room = max 1 (bounds.Width-pad*2)
             // Cut where an ellipsis still fits, since the pieces cannot be shortened as a whole.
             let text =
-                if width text<=bounds.Width then text
+                if width text<=room then text
                 else
                     let rec fit fits tooLong =
                         if tooLong-fits<=1 then fits
                         else
                             let middle = (fits+tooLong)/2
-                            if width (text.Substring(0,middle)+"…")<=bounds.Width then fit middle tooLong else fit fits middle
+                            if width (text.Substring(0,middle)+"…")<=room then fit middle tooLong else fit fits middle
                     text.Substring(0,fit 0 text.Length).TrimEnd()+"…"
             let marked = if SystemInformation.HighContrast then SystemColors.Highlight else p.accent
             let inRun i = runs |> List.exists(fun (start,length) -> i>=start && i<start+length)
             let state = g.Save()
             g.SetClip(bounds,CombineMode.Intersect)
             try
-                // The padding DrawText adds before a text, so the pieces sit where the whole would.
-                let mutable x = bounds.Left+Dpi.scale 1
+                let mutable x = bounds.Left+pad
                 let mutable start = 0
                 while start<text.Length do
                     let active = inRun start

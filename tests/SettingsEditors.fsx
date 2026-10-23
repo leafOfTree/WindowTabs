@@ -572,6 +572,29 @@ let main() =
         rows.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
         image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","palette-rows.png"))
         rowsForm.Close()
+    // A name with a match lit up starts where it does without one: typing must not move it.
+    do
+        use rowsForm = new Form(ClientSize=Size(400,80),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false)
+        let rows = new SettingsTreeList([TreeListColumn("",0,TextColumn)],ShowHeader=false,ShowExpanders=false,RowHeight=36,Dock=DockStyle.Fill,Font=SettingsUi.bodyFont())
+        let plain = TreeListItem("Rename tab")
+        let lit = TreeListItem("Rename tab",Highlights=[|[0,2]|])
+        rows.Roots.AddRange([plain;lit])
+        rows.Rebuild()
+        rowsForm.Controls.Add(rows)
+        SettingsUi.apply rowsForm
+        rowsForm.Show()
+        Application.DoEvents()
+        use image = new Bitmap(rowsForm.ClientSize.Width,rowsForm.ClientSize.Height)
+        rows.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+        let background = image.GetPixel(image.Width-2,10).ToArgb()
+        let firstInk y0 =
+            seq { for x in 0..image.Width/2 do
+                    for y in y0+4..y0+30 do
+                        if image.GetPixel(x,y).ToArgb()<>background then yield x }
+            |> Seq.tryHead |> Option.defaultValue -1
+        let plainLeft,litLeft = firstInk 0,firstInk 36
+        assertTrue (plainLeft>0 && abs(plainLeft-litLeft)<=1) (sprintf "A lit match moved its name: %d against %d" litLeft plainLeft)
+        rowsForm.Close()
     // SettingsTreeList: expansion, keyboard navigation, check boxes and selection events.
     let treeList = new SettingsTreeList([TreeListColumn("Name",0,TextColumn);TreeListColumn("On",80,CheckColumn)])
     treeList.Size <- Size(400,300)
