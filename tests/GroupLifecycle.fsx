@@ -19,6 +19,10 @@ let pumpUntil description predicate =
         Thread.Sleep(5)
         satisfied <- predicate()
     check satisfied description
+/// As pumpUntil, with the state seen at the timeout in the message, for a wait that fails only now and then.
+let pumpUntilShowing description (state:unit -> string) predicate =
+    try pumpUntil description predicate
+    with _ -> failwithf "%s: %s" description (state())
 
 let main() =
     // Explorer windows 1 and 3 are on desktop 1, window 4 on desktop 2; window 5's desktop is unknown.
@@ -765,7 +769,13 @@ let main() =
             checkStripOwner combined
             for _ in 1..3 do
                 keyboardSource.showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED)
-                pumpUntil "Combined followers did not maximize" (fun () ->
+                let followerState() =
+                    let window hwnd =
+                        let w = OS().windowFromHwnd(hwnd)
+                        sprintf "%d maximized=%b minimized=%b bounds=%A" (hwnd.ToInt64()) w.isMaximized w.isMinimized w.bounds
+                    sprintf "placement idle=%b; %s" (onGroup combined (fun group -> group.isPlacementIdle))
+                        ([a;b;d] |> List.map window |> String.concat "; ")
+                pumpUntilShowing "Combined followers did not maximize" followerState (fun () ->
                     onGroup combined (fun group -> group.isPlacementIdle) &&
                     [a;b;d] |> List.forall (fun hwnd -> OS().windowFromHwnd(hwnd).isMaximized))
                 check ([b;d] |> List.forall(fun hwnd -> keyboardSource.zorder<OS().windowFromHwnd(hwnd).zorder)) "Maximizing several owned followers covered the originating tab"
