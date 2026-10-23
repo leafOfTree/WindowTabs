@@ -223,9 +223,11 @@ type OS()=
         WinUserApi.EndDeferWindowPos(!hdswp).ignore
 
 
-    member this.setWinEventHook(min:WinEvent, max:WinEvent, proc, pid, tid) =
+    /// Only events about windows themselves, unless `anyObject`.
+    member this.setWinEventHook(min:WinEvent, max:WinEvent, proc, pid, tid, ?anyObject:bool) =
+        let anyObject = defaultArg anyObject false
         let proc hWinEventHook event hwnd idObject idChild dwEventThread dwmsEventTime =
-            if idObject = IntPtr.Zero then
+            if anyObject || idObject = IntPtr.Zero then
                 proc hWinEventHook event hwnd idObject idChild dwEventThread dwmsEventTime
 
         let del = WINEVENTPROC(proc)
@@ -256,6 +258,13 @@ type OS()=
         let proc hWinEventHook _ hwnd idObject idChild dwEventThread dwmsEventTime =
             proc(hwnd)
         this.setWinEventHook(event, event, proc, 0, 0)
+
+    /// Any change in the order of top-level windows. Windows reports it on the desktop window, as
+    /// a change to its client area's children, which the window-only filter would drop.
+    member this.setTopLevelOrderEvent (proc:unit -> unit) =
+        let desktop = WinUserApi.GetDesktopWindow()
+        let proc _ _ hwnd _ _ _ _ = if hwnd=desktop then proc()
+        this.setWinEventHook(WinEvent.EVENT_OBJECT_REORDER, WinEvent.EVENT_OBJECT_REORDER, proc, 0, 0, anyObject=true)
 
 and
     Window(hwnd:nativeint, os:OS) =

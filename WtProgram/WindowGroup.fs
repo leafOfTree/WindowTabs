@@ -279,12 +279,15 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// Collapsing to one window: the top window's bounds are not the frame until placement ends.
     let mutable splitMerging = false
     let splitSettleTimer = new System.Windows.Forms.Timer(Interval=100)
-    /// Looks, while split, for a pane raised over the tabs with no notice to the group.
-    let splitGuardTimer = new System.Windows.Forms.Timer(Interval=200)
-    /// Looks, while the strip is owned by nothing, for its window raised over it with no notice.
-    let stripGuardTimer = new System.Windows.Forms.Timer(Interval=200)
-    /// Told of every change in the order of top-level windows while the strip is owned by nothing.
+    /// Told of every change in the order of top-level windows, while split or while the strip is
+    /// owned by nothing: a window raised over the tabs gives the group no other notice.
     let mutable reorderHook : IDisposable option = None
+    /// Looks, while split, for a pane raised over the tabs; once for a burst of order changes,
+    /// a split's own transitions making many.
+    let mutable splitGuardSoon : CoalescedAction option = None
+    /// When the strip owned by nothing was last put back over its window, on transitionClock.
+    let mutable lastStripLift = Int64.MinValue/2L
+    let mutable stripLiftSoon : CoalescedAction option = None
     /// One divider per split and one window per empty pane, by their place in the layout.
     let mutable splitDividers : Map<PanePath,SplitDivider * IntPtr> = Map.empty
     let mutable emptySplitPanes : Map<PanePath,EmptySplitPane * IntPtr> = Map.empty
@@ -466,8 +469,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.init(ts:TabStrip) =
         _ts := Some(ts)
         splitSettleTimer.Tick.Add(fun _ -> this.checkSplitSettled())
-        splitGuardTimer.Tick.Add(fun _ -> this.guardSplitStrip())
-        stripGuardTimer.Tick.Add(fun _ -> this.guardUnownedStrip())
+        splitGuardSoon <- Some(new CoalescedAction(30,fun () -> this.guardSplitStrip()))
+        stripLiftSoon <- Some(new CoalescedAction(30,fun () -> if not isDestroyed.value then this.guardUnownedStrip()))
         transitionRelease.Tick.Add(fun _ ->
             transitionRelease.Stop()
             if not transitionHold.IsEmpty then
@@ -800,39 +803,56 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         StartupTrace.measure "group.owner" (fun () ->
             strip.setOwner(if shared then owner else this.os.nullWindow))
         // Windows raises an owned strip with its window; one owned by nothing is watched instead.
-        // An app can raise itself again a moment after it is activated, as Chromium browsers do,
-        // and a title bar click says nothing to the group: Windows reports every change in the
-        // order of top-level windows on the desktop window, and the strip goes back at each.
-        // The timer is for a report missed.
-        if not shared && owner.hwnd<>IntPtr.Zero && not isDestroyed.value then
-            stripGuardTimer.Start()
-            if reorderHook.IsNone then
-                let desktop = WinUserApi.GetDesktopWindow()
-                reorderHook <- Some(this.os.setSingleWinEvent WinEvent.EVENT_OBJECT_REORDER (fun hwnd ->
-                    if hwnd=desktop then this.guardUnownedStrip()))
-        else this.stopStripGuard()
+        this.watchOrder()
 
-    member private this.stopStripGuard() =
-        stripGuardTimer.Stop()
+    /// Whether the tabs can be covered with no notice to the group: by a pane while split, or
+    /// by the window itself when the strip is owned by nothing.
+    member private this.needsOrderWatch =
+        not isDestroyed.value && not this.isEmpty &&
+        (this.isSplit || this.os.windowFromHwnd(this.ts.hwnd).parent.hwnd=IntPtr.Zero)
+
+    /// Windows reports every change in the order of top-level windows on the desktop window: an
+    /// app raising itself again a moment after it is activated, as Chromium browsers do, or a
+    /// title bar click. Listened to only while it matters, in place of looking every so often.
+    member private this.watchOrder() =
+        if not this.needsOrderWatch then this.unwatchOrder()
+        elif reorderHook.IsNone then
+            reorderHook <- Some(this.os.setTopLevelOrderEvent(fun () -> this.onOrderChanged()))
+
+    member private this.unwatchOrder() =
         reorderHook |> Option.iter(fun hook -> hook.Dispose())
         reorderHook <- None
+
+    /// Not unhooked from inside its own report: setTsOwner and destroy unhook it once not needed.
+    member private this.onOrderChanged() =
+        if this.needsOrderWatch then
+            if this.isSplit then splitGuardSoon |> Option.iter(fun soon -> soon.Request())
+            else this.guardUnownedStrip()
 
     /// A strip owned by nothing goes back just above the window, if the window has come over it.
     /// Done in the same step as whatever raised the window, the tabs do not flash.
     member private this.liftUnownedStrip(hwnd:IntPtr) =
         let strip = this.os.windowFromHwnd(this.ts.hwnd)
-        if strip.parent.hwnd=IntPtr.Zero && this.windows.contains hwnd && not(isMinimized hwnd) && not this.isSplit && this.isAbove(hwnd,strip.hwnd) then
+        // Its place is just above the window, which is all that is asked: hidden windows of every
+        // app lie between, and a strip left far below, a hundred and more of them, was out of
+        // reach of a walk up from it.
+        if strip.parent.hwnd=IntPtr.Zero && this.windows.contains hwnd && not(isMinimized hwnd) && not this.isSplit then
             let previous = this.os.windowFromHwnd(hwnd).prevZorder
-            if previous.hwnd<>strip.hwnd then strip.insertAfter(previous)
+            if previous.hwnd<>strip.hwnd then
+                lastStripLift <- transitionClock.ElapsedMilliseconds
+                strip.insertAfter(previous)
 
     /// A window already in front raises itself over a strip it does not own when it is maximized
     /// or its title bar is clicked, with no foreground change to tell the group: its tabs went
-    /// under it until another window was activated. A title bar click says nothing at all, so
-    /// the order is looked at every so often.
+    /// under it until another window was activated.
+    /// Each move of the strip is itself a change of order reported back here: against a window
+    /// that keeps itself over everything, the two would take turns for good. Reported again too
+    /// soon after the last move, the strip goes back once that time is up instead.
     member private this.guardUnownedStrip() =
-        if isDestroyed.value || this.isEmpty then this.stopStripGuard()
-        elif isVisibleCell.value && not liveResize && not inMoveSize.value && not reconcileMinimizeState then
-            this.liftUnownedStrip this.topWindow
+        if isVisibleCell.value && not liveResize && not inMoveSize.value && not reconcileMinimizeState then
+            if transitionClock.ElapsedMilliseconds-lastStripLift<30L then
+                stripLiftSoon |> Option.iter(fun soon -> soon.Request())
+            else this.liftUnownedStrip this.topWindow
 
     /// Permission checks stay off the placement hot path and expire with group membership.
     member this.canShareInput hwnd =
@@ -938,7 +958,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                         this.saveZorder()
                         if covered && not this.isEmpty then this.setTsParent(this.topWindow)
                         elif behindAbove && not this.isEmpty then this.keepPanesBelowStrip(this.topWindow))
-        | _ -> splitGuardTimer.Stop()
+        | _ -> this.watchOrder()
 
     /// What the panes go just below: the divider, which lies over their edges, or else the strip.
     member private this.paneAnchor =
@@ -1050,7 +1070,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.updateSplitChrome() =
         match groupLayout with
         | Split s ->
-            splitGuardTimer.Start()
+            this.watchOrder()
             let strip,gap,frame = this.ts.hwnd,this.splitGap,this.layoutFrame
             let visible =
                 SplitView.windows s |> List.forall(fun hwnd -> this.windows.contains hwnd && not(isMinimized hwnd || WindowCloaking.IsCloaked hwnd)) &&
@@ -2220,9 +2240,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if isDestroyed.value.not then
             isDestroyed.set(true)
             splitSettleTimer.Dispose()
-            splitGuardTimer.Dispose()
-            this.stopStripGuard()
-            stripGuardTimer.Dispose()
+            this.unwatchOrder()
+            for soon in [splitGuardSoon;stripLiftSoon] do soon |> Option.iter(fun soon -> (soon :> IDisposable).Dispose())
             transitionRelease.Dispose()
             // The chrome's thread disposes its windows and ends; nothing here waits for it.
             chromeInvoker |> Option.iter(fun invoker ->
