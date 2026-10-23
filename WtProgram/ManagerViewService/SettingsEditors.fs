@@ -427,10 +427,10 @@ type SettingsColorPicker() as this =
     let mutable pending = false
     let timer = new Timer(Interval=50)
     let swatchTips = new ToolTip()
-    /// Quick colours for tabs: the greys the dark and light looks are made of, from black to
-    /// white, named by their codes; then the tab menu's own colours, by name.
+    /// Quick colours for tabs: greys from black to white in even steps, far enough apart to tell
+    /// at a glance as text colours, named by their codes; then the tab menu's own colours, by name.
     let greys =
-        [0x000000;0x202020;0x343434;0x454545;0xCCCCCC;0xE4E4E4;0xF3F3F3;0xFFFFFF]
+        [0x000000;0x242424;0x494949;0x6D6D6D;0x929292;0xB6B6B6;0xDBDBDB;0xFFFFFF]
         |> List.map(fun rgb -> Color.FromRGB rgb,sprintf "#%06X" rgb)
     let tabColors =
         Theme.tabColorOrder |> List.truncate 8 |> List.map(fun index ->

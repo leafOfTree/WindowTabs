@@ -289,6 +289,7 @@ type AppearanceView(?settings:ISettings) =
                 let index = preset.SelectedIndex
                 if index<ThemePresets.names.Length then choosePreset index else chooseCustom())
         codingNote.MaximumSize <- Size(Dpi.scale 700,0)
+        SettingsUi.notice codingNote
         SettingsUi.add table codingNote
         let colorsCard = new SettingsCard()
         SettingsUi.add table colorsCard
@@ -297,6 +298,7 @@ type AppearanceView(?settings:ISettings) =
                 yield SettingsUi.settingRowControl colorsCard key editor.control ]
         colorsSection <- [resetColorsButton;preset;colorsCard]
         contrastNote.MaximumSize <- Size(Dpi.scale 700,0)
+        SettingsUi.notice contrastNote
         SettingsUi.add table contrastNote
         SettingsUi.add table contrastComparison
         resetColorsButton.Click.Add(fun _ -> resetColors())

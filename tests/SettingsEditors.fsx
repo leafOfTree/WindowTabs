@@ -224,6 +224,13 @@ let main() =
         let codingNote = view.control.Controls.Find("colors-by-coding",true).[0]
         assertTrue (preset.Parent.Visible && not preset.Visible && not (backgroundRows.Head.Parent.Visible)) "Tab colours lost its heading, or kept its presets and colours, while automatic colours fill every tab"
         assertTrue (codingNote.Visible && codingNote.Text=tr Strings.Appearance.colorsByCoding) "Tab colours does not say why its colours are not offered"
+        // Marked as the app's own word by a bar down its left side.
+        do
+            use image = new Bitmap(codingNote.Width,codingNote.Height)
+            codingNote.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+            image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "notice-%A.png" mode))
+            assertTrue (image.GetPixel(1,image.Height/2).ToArgb()=(SettingsColors.current()).accent.ToArgb() && codingNote.Padding.Left>=Dpi.scale 8)
+                       "A notice has no bar down its left side"
         assertTrue (not note.Visible) "Filled tabs, white by design, still explain an adjustment"
         assertTrue (comparison.Samples.IsEmpty && not comparison.Visible) "Filled tabs list a sample for every adjusted colour"
         (comboNamed "tab-color-mode").SelectedIndex <- 0
@@ -251,8 +258,9 @@ let main() =
             let swatches = picker.Controls |> Seq.cast<Control> |> Seq.choose(function :? Button as button -> Some button | _ -> None) |> Seq.toArray
             // The greys the looks are made of, then the tab menu's own colours.
             assertTrue (swatches.Length=16) "Picker is missing its quick colours"
-            assertTrue (swatches.[3].BackColor.ToArgb()=Theme.dark.tabNormalBgColor.ToArgb() && swatches.[4].BackColor.ToArgb()=Theme.light.tabNormalBgColor.ToArgb())
-                       "The picker's greys are not the looks' own"
+            // Greys from black to white in even steps, each well apart from the next.
+            let greys = swatches.[0..7] |> Array.map(fun swatch -> int swatch.BackColor.R)
+            assertTrue (greys.[0]=0 && greys.[7]=255 && (greys |> Array.pairwise |> Array.forall(fun (a,b) -> b-a>=30))) "The picker's greys are too close to tell apart"
             assertTrue (swatches.[8].BackColor.ToArgb()=(Theme.tabPalette false).[List.head Theme.tabColorOrder].ToArgb()) "The picker's colours are not the tab menu's"
             do
                 use image = new Bitmap(picker.Width,picker.Height)

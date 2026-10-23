@@ -168,6 +168,15 @@ module SettingsUi =
         label.Margin <- Padding(0,(if table.RowCount=0 then 0 else Dpi.scale 24),0,Dpi.scale 4)
         add table label
 
+    /// Marks a label as something the app says about the settings, such as a colour it adjusted:
+    /// a bar down its left side in the accent colour, the text set in from it.
+    let notice (label:Label) =
+        label.Padding <- Padding(Dpi.scale 10,Dpi.scale 2,0,Dpi.scale 2)
+        label.Paint.Add(fun e ->
+            let p = SettingsColors.current()
+            use bar = new SolidBrush(if SystemInformation.HighContrast then SystemColors.Highlight else p.accent)
+            e.Graphics.FillRectangle(bar,Rectangle(0,0,Dpi.scale 3,label.Height)))
+
     let note (table:TableLayoutPanel) caption =
         let label = new Label(Text=caption,AutoSize=true,Tag="muted")
         label.Margin <- Padding(0,0,0,Dpi.scale 12)
