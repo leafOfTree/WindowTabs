@@ -269,9 +269,9 @@ static partial class DesktopE2E
             get { var parameters=base.CreateParams; if(!ForceTaskbar) parameters.ExStyle &= ~0x40000; return parameters; }
         }
     }
-    static Form NewHelper(Point position, bool appWindow=false)
+    static Form NewHelper(Point position, bool appWindow=false, string title="WindowTabs E2E fixture")
     {
-        var helper=new NativeTaskbarForm { ForceTaskbar=appWindow,Text="WindowTabs E2E fixture",StartPosition=FormStartPosition.Manual,
+        var helper=new NativeTaskbarForm { ForceTaskbar=appWindow,Text=title,StartPosition=FormStartPosition.Manual,
             Location=position,Size=new Size(560,150),BackColor=Color.LightBlue };
         helper.Menu=new MainMenu(new[]{new MenuItem("&File",new[]{new MenuItem("&Test")})});
         Forms.Add(helper); helper.Show(); ShowWindow(helper.Handle,4);
@@ -324,7 +324,11 @@ static partial class DesktopE2E
                     Forms.RemoveAll(f=>f.IsDisposed);
                     await Until("Random close left stale strip ownership",()=>!IsWindow(closing) && order.Contains(GetWindow(strip,4)));
                     await ReadOrder(strip,2,order);
-                    var replacement=NewHelper(new Point(area.Left+60,area.Top+530));
+                    // A title of its own: once a replacement is dragged into the group, the group made
+                    // by hand is remembered with its title, and the next window opened with the same
+                    // program and title goes straight back into it, as designed, never showing a
+                    // strip of its own to be dragged. Every soak with two of these actions failed so.
+                    var replacement=NewHelper(new Point(area.Left+60,area.Top+530),title:"WindowTabs E2E replacement "+randomActionCount);
                     var expected=order.Concat(new[]{replacement.Handle}).ToArray();
                     await Until("Replacement helper was not discovered",()=>Strips().Count==2,15000);
                     var source=Strips().Single(h=>GetWindow(h,4)==replacement.Handle);
