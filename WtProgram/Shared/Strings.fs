@@ -215,10 +215,10 @@ module Strings =
                            description={ en="Switch to a window by title or app name."; zh="按标题或应用名查找并切换窗口。"; ja="タイトルやアプリ名でウィンドウを探して切り替えます。"; ar="الانتقال إلى نافذة باستخدام عنوانها أو اسم التطبيق." }
                            keywords={ en="find"; zh="查找"; ja="検索"; ar="بحث" } }
         let commandPalette = { caption={ en="Command palette"; zh="命令面板"; ja="コマンドパレット"; ar="لوحة الأوامر" }
-                               description={ en="Run any command by name; Tab switches to windows, settings and workspaces."
-                                             zh="按名称运行任意命令；Tab 切换到窗口、设置和工作区。"
-                                             ja="名前でコマンドを実行します。Tab でウィンドウ、設定、ワークスペースに切り替えます。"
-                                             ar="شغّل أي أمر باسمه؛ ويبدّل Tab إلى النوافذ والإعدادات ومساحات العمل." }
+                               description={ en="Run any command or setting by name; Tab switches to windows and workspaces."
+                                             zh="按名称运行任意命令或设置；Tab 切换到窗口和工作区。"
+                                             ja="名前でコマンドや設定を実行します。Tab でウィンドウ、ワークスペースに切り替えます。"
+                                             ar="شغّل أي أمر أو إعداد باسمه؛ ويبدّل Tab إلى النوافذ ومساحات العمل." }
                                keywords={ en="actions search everywhere"; zh="动作 全局搜索"; ja="アクション 検索"; ar="إجراءات بحث شامل" } }
         let newTab = { caption={ en="New tab"; zh="新建标签"; ja="新しいタブ"; ar="علامة تبويب جديدة" }
                        description={ en="Starts the current tab's app again."
@@ -562,8 +562,6 @@ module Strings =
                                               ar="يتنقل بين الأجزاء بالتناوب، ويعيد الأجزاء المخفية." }
                                 keywords=splitWords }
         let private tabWords = { en="tab"; zh="标签"; ja="タブ"; ar="علامة تبويب" }
-        /// The tab commands' category, under each in the palette; the others use their cards' names.
-        let tabs = { en="Tabs"; zh="标签"; ja="タブ"; ar="علامات التبويب" }
         let renameTab = { caption={ en="Rename tab"; zh="重命名标签"; ja="タブの名前を変更"; ar="إعادة تسمية علامة التبويب" }
                           description={ en="Edits the name on the tab; an empty name brings the window's own back."
                                         zh="在标签上编辑名称；留空则恢复窗口自己的标题。"
@@ -660,13 +658,11 @@ module Strings =
         let groupTabs count = { en=sprintf "This group · %d" count; zh=sprintf "当前分组 · %d" count; ja=sprintf "このグループ · %d" count; ar=sprintf "هذه المجموعة · %d" count }
         let allTabs count = { en=sprintf "All windows · %d" count; zh=sprintf "全局窗口 · %d" count; ja=sprintf "すべてのウィンドウ · %d" count; ar=sprintf "كل النوافذ · %d" count }
         /// The palette's other pages, beside the windows.
-        let commands = { en="Commands"; zh="命令"; ja="コマンド"; ar="الأوامر" }
-        let settings = { en="Settings"; zh="设置"; ja="設定"; ar="الإعدادات" }
-        let commandPrompt = { en="Type a command name; > also lists commands"; zh="输入命令名；输入 > 也可列出命令"; ja="コマンド名を入力。> でもコマンドを一覧表示"; ar="اكتب اسم أمر؛ ويعرض > الأوامر أيضًا" }
-        let settingPrompt = { en="Type a setting name to open it"; zh="输入设置名称，打开该设置"; ja="設定名を入力して開く"; ar="اكتب اسم إعداد لفتحه" }
+        let actions = { en="Actions"; zh="操作"; ja="アクション"; ar="الإجراءات" }
+        let actionPrompt = { en="Type a command or setting; > also lists them"; zh="输入命令或设置名；输入 > 也可列出"; ja="コマンドや設定名を入力。> でも一覧表示"; ar="اكتب أمرًا أو إعدادًا؛ ويعرضها > أيضًا" }
         let workspacePrompt = { en="Type a workspace name to restore it"; zh="输入工作区名称，恢复该工作区"; ja="ワークスペース名を入力して復元"; ar="اكتب اسم مساحة عمل لاستعادتها" }
         let choicePrompt = { en="Choose, or type to filter"; zh="选择一项，或输入以筛选"; ja="選択するか、入力して絞り込み"; ar="اختر، أو اكتب للتصفية" }
-        let noCommands = { en="No matching commands."; zh="没有匹配的命令。"; ja="一致するコマンドはありません。"; ar="لا توجد أوامر مطابقة." }
+        let noActions = { en="No matching commands or settings."; zh="没有匹配的命令或设置。"; ja="一致するコマンドや設定はありません。"; ar="لا توجد أوامر أو إعدادات مطابقة." }
         let noWorkspaces = { en="No workspace saved yet."; zh="尚未保存任何工作区。"; ja="保存されたワークスペースはまだありません。"; ar="لم يتم حفظ أي مساحة عمل بعد." }
         let noChoices = { en="No matching choices."; zh="没有匹配的选项。"; ja="一致する項目はありません。"; ar="لا توجد خيارات مطابقة." }
         /// Beside the Alt+Enter key cap on the commands page.

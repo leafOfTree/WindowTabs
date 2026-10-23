@@ -90,7 +90,7 @@ module Commands =
         fromCatalog "next-tab" TabCommands hasGroup (onGroup(fun g -> g.switchWindow(true,false)))
         fromCatalog "previous-tab" TabCommands hasGroup (onGroup(fun g -> g.switchWindow(false,false)))
         fromCatalog "search-tabs" TabCommands always (fun _ -> Services.program.toggleSearch None)
-        fromCatalog "command-palette" TabCommands always (fun _ -> Services.program.toggleSearch (Some CommandScope))
+        fromCatalog "command-palette" TabCommands always (fun _ -> Services.program.toggleSearch (Some ActionScope))
         fromCatalog "new-tab" TabCommands hasGroup (fun hwnd -> Services.program.newTab hwnd)
         // As the tab menu's Close: the window of the tab in front, and only a tab's.
         fromCatalog "close-tab" TabCommands hasGroup (fun hwnd -> if hasGroup hwnd then OS().windowFromHwnd(hwnd).close())

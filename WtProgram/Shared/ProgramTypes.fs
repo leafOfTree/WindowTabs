@@ -115,8 +115,8 @@ type IManagerView =
 type PaletteScope =
     | GroupTabs
     | AllTabs
-    | CommandScope
-    | SettingScope
+    /// The commands and the settings, as one list.
+    | ActionScope
     | WorkspaceScope
 
 type IProgram =

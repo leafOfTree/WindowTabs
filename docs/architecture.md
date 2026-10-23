@@ -331,13 +331,14 @@ inside a group. Falling back to global when no searchable group exists does not
 overwrite the preferred scope.
 
 The same box is the command palette (`Ctrl+Alt+P` by default): Tab goes round the window
-scopes and its pages, the commands (`Commands.all`, those listed, dimmed when they can do
-nothing for the window that was in front, with their shortcuts beside them), the settings
-(a setting that is on or off shows a switch and is turned in place by its toggle command, the
-palette staying up; any other opens the settings window on it) and the saved workspaces
-(restoring the one chosen); `>` typed first lists the commands. A typed word a row's name
-does not show is explained at the row's right end, before its detail: the keyword or the piece
-of the description it matched, in the accent colour as the settings search shows matches. A command that leaves a choice (`Choose`) shows its options in place under the
+scopes and its pages, the actions and the saved workspaces (restoring the one chosen); `>`
+typed first lists the actions. The actions page is one list: the commands (`Commands.all`,
+those listed, in their categories, dimmed when they can do nothing for the window that was in
+front, with their shortcuts beside them), then the settings by page, leaving out the catalog's
+shortcut entries, which are commands already; a setting that is on or off shows a switch and
+is turned in place by its toggle command, the palette staying up, and any other opens the
+settings window on it. Rows are found by their caption, keywords and description in every
+language, and matches are drawn in the accent colour, as the settings search shows them. A command that leaves a choice (`Choose`) shows its options in place under the
 command's name, with Esc or Backspace the way back; a hotkey for such a command opens the
 palette on them. Commands take the window that was in front when they were asked for, since
 the palette is in front itself by then. The pages are built in `CommandPalette` and given to

@@ -781,29 +781,29 @@ let main() =
     let mutable ran = []
     let option name = { label=name; detail=""; run=fun () -> ran <- name::ran; Done }
     let commandsPage =
-        { scope=CommandScope; caption="Commands"; prompt="cmd"; noMatches="none"; glyph=NoGlyph
+        { scope=ActionScope; caption="Actions"; prompt="cmd"; noMatches="none"; glyph=NoGlyph
           entries=[ { TabSearch.create (IntPtr 1) "Close tab" "Close tab" "Ctrl+Alt+W" with recency=0 }
                     { TabSearch.create (IntPtr 2) "Restore workspace" "Restore workspace" "" with recency=1 } ]
           choose=(fun entry -> if entry.hwnd=IntPtr 1 then (ran <- "close"::ran; Done) else Choose [option "Work";option "Home"])
           shortcut=(fun _ -> None)
           dimmed=(fun _ -> false)
-          aside=(fun _ entry -> { explained=""; detail=entry.program; switch=None })
-          concealed=true }
+          aside=(fun _ entry -> { detail=entry.program; switch=None })
+          concealed=fun _ -> true }
     let palette = TabSearchForm([mail;notes;editor],[mail.hwnd;editor.hwnd],pages=[commandsPage])
     check (palette.Scope=GroupTabs) "The palette did not open on the group"
     palette.SwitchScope()
     palette.SwitchScope()
-    check (palette.Scope=CommandScope && palette.Results.Length=2) "Tab did not reach the commands page"
+    check (palette.Scope=ActionScope && palette.Results.Length=2) "Tab did not reach the actions page"
     palette.SwitchScope()
     check (palette.Scope=GroupTabs) "Tab did not come round to the group"
     palette.Query <- ">clo"
-    check (palette.Scope=CommandScope && palette.Query="clo" && palette.Results.Length=1) "> did not list the commands"
+    check (palette.Scope=ActionScope && palette.Query="clo" && palette.Results.Length=1) "> did not list the commands"
     palette.Accept()
     pump 100
     check (ran=["close"] && palette.IsClosed) "Accepting a command did not run it and close"
     // A command that cannot act now is listed dimmed and does nothing when chosen.
     let dimmedPage = { commandsPage with dimmed=fun entry -> entry.hwnd=IntPtr 1 }
-    let greyed = TabSearchForm([mail;notes],[],pages=[dimmedPage],scope=CommandScope)
+    let greyed = TabSearchForm([mail;notes],[],pages=[dimmedPage],scope=ActionScope)
     greyed.Query <- "clo"
     greyed.Accept()
     check (ran=["close"] && not greyed.IsClosed && greyed.Results.Length=1) "A dimmed command ran, or was left out"
@@ -811,15 +811,15 @@ let main() =
     pump 100
     // A setting turned in place: the palette stays up and its switch shows the new state.
     let mutable lamp = false
-    let switchPage = { commandsPage with choose=(fun _ -> lamp <- not lamp; Stay); aside=(fun _ _ -> { explained=""; detail=""; switch=Some lamp }); concealed=false }
-    let switched = TabSearchForm([mail;notes],[],pages=[switchPage],scope=CommandScope)
+    let switchPage = { commandsPage with choose=(fun _ -> lamp <- not lamp; Stay); aside=(fun _ _ -> { detail=""; switch=Some lamp }); concealed=fun _ -> false }
+    let switched = TabSearchForm([mail;notes],[],pages=[switchPage],scope=ActionScope)
     switched.Query <- "clo"
     switched.Accept()
     check (lamp && not switched.IsClosed && switched.Depth=0) "Turning a setting in place closed the palette"
     switched.Close()
     pump 100
-    let chooser = TabSearchForm([mail;notes],[],pages=[commandsPage],scope=CommandScope)
-    check (chooser.Scope=CommandScope) "The palette did not open on the scope asked for"
+    let chooser = TabSearchForm([mail;notes],[],pages=[commandsPage],scope=ActionScope)
+    check (chooser.Scope=ActionScope) "The palette did not open on the scope asked for"
     chooser.Query <- "restore"
     chooser.Accept()
     check (not chooser.IsClosed && chooser.Depth=1 && chooser.Query="" && chooser.Results.Length=2) "A command's choices were not shown in place"
@@ -827,11 +827,11 @@ let main() =
     chooser.Accept()
     pump 100
     check (ran=["Home";"close"] && chooser.IsClosed) "Choosing did not run the choice"
-    let back = TabSearchForm([mail;notes],[],pages=[commandsPage],scope=CommandScope)
+    let back = TabSearchForm([mail;notes],[],pages=[commandsPage],scope=ActionScope)
     back.Query <- "rest"
     back.Accept()
     back.Back()
-    check (back.Depth=0 && back.Query="rest" && back.Scope=CommandScope) "Esc did not go back to the search"
+    check (back.Depth=0 && back.Query="rest" && back.Scope=ActionScope) "Esc did not go back to the search"
     back.Close()
     pump 100
     // The command line: what each form asks for, and the pipe a running copy takes them over.
@@ -853,7 +853,7 @@ let main() =
     // Alt+Enter sets the chosen command's shortcut in place, refusing a key another holds.
     let mutable assigned = 0
     let bindable = { commandsPage with shortcut=fun entry -> if entry.hwnd=IntPtr 1 then Some { current=1623; usedBy=(fun code -> if code=3623 then Some "Next tab" else None); set=(fun code -> assigned <- code; code<>1616) } else None }
-    let recorder = TabSearchForm([mail;notes],[],pages=[bindable],scope=CommandScope)
+    let recorder = TabSearchForm([mail;notes],[],pages=[bindable],scope=ActionScope)
     recorder.Query <- "close"
     recorder.BeginAssign()
     let editor = match recorder.ShortcutEditor with Some editor -> editor | None -> failwith "Alt+Enter did not open a shortcut box on the command"
@@ -881,7 +881,7 @@ let main() =
     check recorder.ShortcutEditor.IsNone "Esc did not leave the shortcut box"
     recorder.Close()
     pump 100
-    let unlisted = TabSearchForm([mail;notes],[],pages=[bindable],scope=CommandScope)
+    let unlisted = TabSearchForm([mail;notes],[],pages=[bindable],scope=ActionScope)
     unlisted.Query <- "restore"
     unlisted.BeginAssign()
     check unlisted.ShortcutEditor.IsNone "Alt+Enter opened a shortcut box on a row that takes none"

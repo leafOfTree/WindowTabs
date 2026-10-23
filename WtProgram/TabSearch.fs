@@ -169,16 +169,15 @@ type PalettePage = {
     /// A row listed in the muted colour that does nothing now, such as a tab command with no
     /// tab in front: there to be found, and to be given a key.
     dimmed:TabSearchEntry -> bool
-    /// The right end of a row for what is typed, read again after every change.
+    /// The right end of a row, read again after every change, as a switch may have turned.
     aside:string -> TabSearchEntry -> PaletteAside
     /// Whether the palette goes out of sight while a row's command runs, so the window it acts
     /// on is in front: not for a setting turned on or off, which the palette stays up to show.
-    concealed:bool }
+    concealed:TabSearchEntry -> bool }
 
-/// The right end of a page's row: what the typed words matched that the name does not show,
-/// such as a keyword or a piece of a description; then the row's own detail, a shortcut or a
-/// page; or a switch, for a setting that is on or off.
-and PaletteAside = { explained:string; detail:string; switch:bool option }
+/// The right end of a page's row: its detail, such as a shortcut or a page; or a switch, for a
+/// setting that is on or off.
+and PaletteAside = { detail:string; switch:bool option }
 
 module private TabSearchNative =
     let EM_SETCUEBANNER = 0x1501
@@ -188,7 +187,7 @@ module private TabSearchNative =
 /// The palette: a search box in the switcher's look over the tabs and, when given, pages of
 /// commands and the like. Type to filter, then Enter or a click switches to the window or runs
 /// the command. It remembers the chosen window scope; Tab, or clicking the line under the box,
-/// goes round the group, all windows and the pages, and > lists the commands. A command that
+/// goes round the group, all windows and the pages, and > lists the actions. A command that
 /// leaves a choice shows it in place, with Esc or Backspace the way back. Esc or clicking
 /// elsewhere closes it. Used once, then disposed.
 /// pick: what a chosen window is for, switching to it unless given; within: an area on screen to
@@ -438,17 +437,12 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let apply() =
         // In their groups while nothing is typed; then the best matches first.
         let shown = TabSearch.shown input.Text (List.ofArray (scoped())) |> Array.ofList
-        // At the right: what a typed word matched that the name does not show, then the row's own
-        // detail (the program, a shortcut) or its switch.
+        // At the right: the row's own detail (the program, a shortcut) or its switch.
         let aside (entry:TabSearchEntry) : PaletteAside =
             match choices,page() with
             | [],Some page -> page.aside input.Text entry
-            | _ -> { explained=""; detail=TabSearch.source entry; switch=None }
-        let text (aside:PaletteAside) =
-            match aside.explained,aside.detail with
-            | "",detail -> detail
-            | why,"" -> why
-            | why,detail -> why+"   "+detail
+            | _ -> { detail=TabSearch.source entry; switch=None }
+        let text (aside:PaletteAside) = aside.detail
         let asides = shown |> Array.map(fun (_,entry) -> aside entry)
         // Titles reclaim the fixed app column's spare space, including after filtering.
         let programWidth =
@@ -543,8 +537,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         form.Hide()
     /// Runs a row's command with the palette out of the way; what it leaves to choose brings
     /// the palette back.
-    let outcome caption (run:unit -> CommandOutcome) =
-        let concealed = page() |> Option.forall(fun page -> page.concealed)
+    let outcome caption (concealed:bool) (run:unit -> CommandOutcome) =
         if concealed then conceal()
         let back() = if concealed then hiding <- false; present()
         match (try run() with error -> back(); raise error) with
@@ -561,8 +554,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         if not closed && not (isNull target) && not target.Dimmed then
             scoped() |> Array.tryFind(fun (row,_) -> obj.ReferenceEquals(row,target)) |> Option.iter(fun (_,entry) ->
                 match choices,page() with
-                | (_,_,choose,_)::_,_ -> outcome entry.title (fun () -> choose entry)
-                | [],Some page -> outcome entry.title (fun () -> page.choose entry)
+                | (_,_,choose,_)::_,_ -> outcome entry.title true (fun () -> choose entry)
+                | [],Some page -> outcome entry.title (page.concealed entry) (fun () -> page.choose entry)
                 | [],None -> finish (Some entry.hwnd))
     /// Alt+Enter: the chosen row's shortcut is recorded in a box over the row, as on the
     /// Shortcuts page, with the same refusals; Esc or a click elsewhere leaves it as it was.
@@ -625,9 +618,9 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         input.HandleCreated.Add(fun _ -> setPrompt())
         input.TextChanged.Add(fun _ ->
             // As in editors: > at the start lists the commands, and goes.
-            if choices.IsEmpty && input.Text.StartsWith ">" && pages |> List.exists(fun page -> page.scope=CommandScope) then
+            if choices.IsEmpty && input.Text.StartsWith ">" && pages |> List.exists(fun page -> page.scope=ActionScope) then
                 let rest = input.Text.Substring(1).TrimStart()
-                setScope CommandScope
+                setScope ActionScope
                 input.Text <- rest
                 input.SelectionStart <- rest.Length
             else apply())

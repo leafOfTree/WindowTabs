@@ -727,8 +727,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         // The desktop keeps each group's windows in tab order.
         let groups = this.desktop.groups.list |> List.map(fun group -> group.windows.list)
         let group = this.desktop.foregroundGroup |> Option.map(fun group -> group.windows.list) |> Option.defaultValue []
-        let pages = [CommandPalette.commandsPage active
-                     CommandPalette.settingsPage()
+        let pages = [CommandPalette.actionsPage active
                      CommandPalette.workspacesPage (this.workspaceSummaries()) this.restoreWorkspaceNamed]
         let search = TabSearchForm(TabSearch.tabs nameOverride active groups,group,
                                   settings=(settingsManager :> ISettings),pages=pages,?scope=scope)
@@ -742,7 +741,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             match tabSearchCell.value with
             | Some search -> search
             | None ->
-                let search = this.openPalette(Some CommandScope)
+                let search = this.openPalette(Some ActionScope)
                 search.Show()
                 search
         search.ShowChoices(caption,options)
