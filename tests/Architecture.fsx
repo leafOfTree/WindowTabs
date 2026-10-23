@@ -891,8 +891,9 @@ let main() =
     check (bare.Scope=ActionScope) "The command palette offered the windows"
     bare.Close()
     pump 100
-    palette.Query <- ">clo"
-    check (palette.Scope=ActionScope && palette.Query="clo" && palette.Results.Length=1) "> did not list the commands"
+    palette.SetScope ActionScope
+    palette.Query <- "clo"
+    check (palette.Scope=ActionScope && palette.Results.Length=1) "Typing did not filter the actions"
     palette.Accept()
     pump 100
     check (ran=["close"] && palette.IsClosed) "Accepting a command did not run it and close"

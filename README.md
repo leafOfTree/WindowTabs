@@ -77,8 +77,7 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
 ## Command palette and command line
 
 **Ctrl + Alt + P** opens the command palette: type a command's name and press Enter.
-Tab goes round the actions and the saved workspaces, and `>` typed first lists the
-actions. Every tab menu action, split view command, workspace command and setting is there,
+Tab goes round the actions and the saved workspaces. Every tab menu action, split view command, workspace command and setting is there,
 with its shortcut beside it: a setting that is on or off shows a switch and is turned in
 place, any other opens the settings window on it. Alt + Enter on an action sets its
 shortcut, as **Settings → Shortcuts** does. The window search (**Ctrl + Alt + T**) is a box

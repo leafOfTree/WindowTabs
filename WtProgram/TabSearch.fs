@@ -205,7 +205,7 @@ module private TabSearchNative =
 /// A search box in the switcher's look: over the tabs, where Enter or a click switches to the
 /// window, or, as the command palette, over pages of commands and the like, where it runs the
 /// command. Type to filter. It remembers the chosen window scope; Tab, or clicking the line
-/// under the box, goes round the scopes, and > lists the actions. A command that leaves a
+/// under the box, goes round the scopes. A command that leaves a
 /// choice shows it in place, with Esc or Backspace the way back. Esc or clicking elsewhere
 /// closes it. Used once, then disposed.
 /// pick: what a chosen window is for, switching to it unless given; within: an area on screen to
@@ -745,14 +745,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             list.SelectedItem <- shown.[max 0 (min (shown.Count-1) (current+delta))]
     do
         input.HandleCreated.Add(fun _ -> setPrompt())
-        input.TextChanged.Add(fun _ ->
-            // As in editors: > at the start lists the commands, and goes.
-            if choices.IsEmpty && input.Text.StartsWith ">" && pages |> List.exists(fun page -> page.scope=ActionScope) then
-                let rest = input.Text.Substring(1).TrimStart()
-                setScope ActionScope
-                input.Text <- rest
-                input.SelectionStart <- rest.Length
-            else apply())
+        input.TextChanged.Add(fun _ -> apply())
         // Tab would otherwise move the focus; here it goes round the scopes.
         input.PreviewKeyDown.Add(fun e -> if e.KeyCode=Keys.Tab then e.IsInputKey <- true)
         // A segment picks its scope; the key cap switches, as the key does. Under a command's
