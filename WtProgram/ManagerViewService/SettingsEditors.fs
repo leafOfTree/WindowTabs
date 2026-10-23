@@ -425,12 +425,20 @@ type SettingsColorPicker() as this =
     let mutable pending = false
     let timer = new Timer(Interval=50)
     let swatchTips = new ToolTip()
-    let colors = [|Color.Black;Color.White;Color.Gray;Color.Red;Color.Orange;Color.Yellow;Color.Green;Color.Blue|]
-    let swatches = colors |> Array.mapi(fun index color ->
-        let button = new Button(BackColor=color,FlatStyle=FlatStyle.Flat,UseVisualStyleBackColor=false,TabIndex=index,AccessibleName=tr Strings.Appearance.quickColorNames.[index])
+    /// Quick colours for tabs: the greys the dark and light looks are made of, from black to
+    /// white, named by their codes; then the tab menu's own colours, by name.
+    let greys =
+        [0x000000;0x202020;0x343434;0x454545;0xCCCCCC;0xE4E4E4;0xF3F3F3;0xFFFFFF]
+        |> List.map(fun rgb -> Color.FromRGB rgb,sprintf "#%06X" rgb)
+    let tabColors =
+        Theme.tabColorOrder |> List.truncate 8 |> List.map(fun index ->
+            (Theme.tabPalette false).[index],tr Strings.Settings.tabColorNames.[index])
+    let colors = Array.ofList (greys @ tabColors)
+    let swatches = colors |> Array.mapi(fun index (color,name) ->
+        let button = new Button(BackColor=color,FlatStyle=FlatStyle.Flat,UseVisualStyleBackColor=false,TabIndex=index,AccessibleName=name)
         button.FlatAppearance.MouseOverBackColor <- color
         button.FlatAppearance.MouseDownBackColor <- color
-        swatchTips.SetToolTip(button,tr Strings.Appearance.quickColorNames.[index])
+        swatchTips.SetToolTip(button,name)
         button.Click.Add(fun _ ->
             timer.Stop()
             this.Color <- color
@@ -440,8 +448,10 @@ type SettingsColorPicker() as this =
         this.Controls.Add(button)
         button)
     let applySwatchTheme() = for button in swatches do button.FlatAppearance.BorderColor <- (SettingsColors.current()).muted
-    let svRect() = Rectangle(Dpi.scale 6,Dpi.scale 6,this.Width-Dpi.scale 12,this.Height-Dpi.scale 74)
-    let hueRect() = Rectangle(Dpi.scale 6,this.Height-Dpi.scale 60,this.Width-Dpi.scale 12,Dpi.scale 20)
+    /// Two rows of quick colours under the hue bar, eight to a row.
+    let perRow = 8
+    let svRect() = Rectangle(Dpi.scale 6,Dpi.scale 6,this.Width-Dpi.scale 12,this.Height-Dpi.scale 102)
+    let hueRect() = Rectangle(Dpi.scale 6,this.Height-Dpi.scale 88,this.Width-Dpi.scale 12,Dpi.scale 20)
     let flush() =
         if pending then pending <- false; changed.Trigger(SettingsHsv.color hue saturation brightness)
     let changeAt (point:Point) =
@@ -455,7 +465,7 @@ type SettingsColorPicker() as this =
             hue <- 359.99*clamp(float(point.X-rect.X)/float(max 1 (rect.Width-1)))
         if drag<>0 then pending <- true; this.Invalidate()
     do
-        this.Size <- Size(Dpi.scale 238,Dpi.scale 238)
+        this.Size <- Size(Dpi.scale 238,Dpi.scale 266)
         this.TabStop <- true
         this.AccessibleName <- tr Strings.Appearance.pickerHelp
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
@@ -463,10 +473,11 @@ type SettingsColorPicker() as this =
         this.Disposed.Add(fun _ -> timer.Dispose(); swatchTips.Dispose())
         let layoutSwatches() =
             let hue,gap = hueRect(),Dpi.scale 5
-            // Gaps sit only between swatches, so the row spans the hue bar exactly.
-            let edge index = hue.Left+index*(hue.Width+gap)/swatches.Length
+            // Gaps sit only between swatches, so each row spans the hue bar exactly.
+            let edge index = hue.Left+index*(hue.Width+gap)/perRow
             swatches |> Array.iteri(fun index button ->
-                button.SetBounds(edge index,this.Height-Dpi.scale 28,edge(index+1)-gap-edge index,Dpi.scale 22))
+                let column,row = index%perRow,index/perRow
+                button.SetBounds(edge column,this.Height-Dpi.scale 56+row*Dpi.scale 28,edge(column+1)-gap-edge column,Dpi.scale 22))
         this.SizeChanged.Add(fun _ -> layoutSwatches())
         layoutSwatches()
         applySwatchTheme()

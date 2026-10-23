@@ -249,8 +249,16 @@ let main() =
             let picker = (popup.Items.[0] :?> ToolStripControlHost).Control :?> SettingsColorPicker
             let other = if mode=DarkTheme then preferences.lightPalette else preferences.darkPalette
             let swatches = picker.Controls |> Seq.cast<Control> |> Seq.choose(function :? Button as button -> Some button | _ -> None) |> Seq.toArray
-            assertTrue (swatches.Length=8) "Picker is missing common colour shortcuts"
-            for index,expected in [0,Color.Black;1,Color.White] do
+            // The greys the looks are made of, then the tab menu's own colours.
+            assertTrue (swatches.Length=16) "Picker is missing its quick colours"
+            assertTrue (swatches.[3].BackColor.ToArgb()=Theme.dark.tabNormalBgColor.ToArgb() && swatches.[4].BackColor.ToArgb()=Theme.light.tabNormalBgColor.ToArgb())
+                       "The picker's greys are not the looks' own"
+            assertTrue (swatches.[8].BackColor.ToArgb()=(Theme.tabPalette false).[List.head Theme.tabColorOrder].ToArgb()) "The picker's colours are not the tab menu's"
+            do
+                use image = new Bitmap(picker.Width,picker.Height)
+                picker.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "color-picker-%A.png" mode))
+            for index,expected in [0,Color.Black;7,Color.White] do
                 swatches.[index].Focus() |> ignore
                 swatches.[index].PerformClick()
                 Application.DoEvents()

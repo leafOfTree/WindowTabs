@@ -487,15 +487,6 @@ module Strings =
                { en="Amber"; zh="琥珀橙"; ja="アンバー"; ar="كهرماني" }
                Settings.tabColorNames.[11]
                Settings.tabColorNames.[6] |]
-        let quickColorNames = [|
-            { en="Black"; zh="黑色"; ja="黒"; ar="أسود" }
-            { en="White"; zh="白色"; ja="白"; ar="أبيض" }
-            { en="Gray"; zh="灰色"; ja="グレー"; ar="رمادي" }
-            { en="Red"; zh="红色"; ja="赤"; ar="أحمر" }
-            { en="Orange"; zh="橙色"; ja="オレンジ"; ar="برتقالي" }
-            { en="Yellow"; zh="黄色"; ja="黄"; ar="أصفر" }
-            { en="Green"; zh="绿色"; ja="緑"; ar="أخضر" }
-            { en="Blue"; zh="蓝色"; ja="青"; ar="أزرق" } |]
         let pickerHelp = { en="Color picker: arrow keys adjust saturation and brightness; Shift + arrow keys adjust hue"
                            zh="颜色选择器：方向键调整饱和度和亮度；Shift + 方向键调整色相"
                            ja="色の選択：方向キーで彩度と明るさを調整し、Shift + 方向キーで色相を調整します"
