@@ -570,6 +570,19 @@ module Strings =
         let tabColor = { caption={ en="Tab color…"; zh="标签颜色…"; ja="タブの色…"; ar="لون علامة التبويب…" }
                          description={ en="A color of the palette for the tab in front, or none."; zh="为当前标签选一种调色板颜色，或清除。"; ja="前面のタブにパレットの色を付けるか、解除します。"; ar="لون من اللوحة لعلامة التبويب الأمامية، أو لا شيء." }
                          keywords={ en="colour"; zh="颜色 着色"; ja="色 カラー"; ar="لون" } }
+        let private colorWords = { en="colour color"; zh="颜色 着色"; ja="色 カラー"; ar="لون" }
+        let customTabColor = { caption={ en="Custom tab color…"; zh="自定义标签颜色…"; ja="タブの色をカスタム…"; ar="لون مخصص لعلامة التبويب…" }
+                               description={ en="A color of your own for the tab in front."; zh="为当前标签选择自定义颜色。"; ja="前面のタブに好きな色を付けます。"; ar="لون من اختيارك لعلامة التبويب الأمامية." }
+                               keywords=colorWords }
+        let rememberTabColor = { caption={ en="Remember tab color for this app"; zh="为此应用记住标签颜色"; ja="このアプリのタブの色を記憶"; ar="تذكّر لون علامة التبويب لهذا التطبيق" }
+                                 description={ en="New windows of the app take the tab's color; again, and the app forgets it."
+                                               zh="此应用的新窗口沿用该标签颜色；再执行一次则忘记。"
+                                               ja="アプリの新しいウィンドウにもこの色を使います。もう一度実行すると忘れます。"
+                                               ar="تأخذ نوافذ التطبيق الجديدة لون علامة التبويب؛ ومرة أخرى ينساه التطبيق." }
+                                 keywords=colorWords }
+        let clearTabColor = { caption={ en="Clear tab color"; zh="清除标签颜色"; ja="タブの色を解除"; ar="مسح لون علامة التبويب" }
+                              description={ en="No color on the tab in front, nor kept for its app."; zh="清除当前标签的颜色，并取消为其应用记住的颜色。"; ja="前面のタブの色と、そのアプリに記憶した色を解除します。"; ar="لا لون لعلامة التبويب الأمامية، ولا لون محفوظ لتطبيقها." }
+                              keywords=colorWords }
         let moveTabLeft = { caption={ en="Move tab left"; zh="向左移动标签"; ja="タブを左へ移動"; ar="نقل علامة التبويب إلى اليسار" }
                             description={ en="One place; up, with tabs at the side."; zh="移动一格；标签在侧边时为向上。"; ja="1 つ分。タブが横にあるときは上へ。"; ar="موضعًا واحدًا؛ إلى الأعلى عندما تكون علامات التبويب على الجانب." }
                             keywords={ en="reorder up"; zh="排序 上移"; ja="並べ替え 上"; ar="ترتيب أعلى" } }

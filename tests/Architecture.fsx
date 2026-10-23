@@ -529,6 +529,10 @@ let main() =
         | Choose options ->
             let labels = options |> List.map(fun option -> option.label)
             check (List.contains (tr Strings.Settings.customTabColor) labels && List.last labels=tr Strings.Settings.clearTabColor) "The tab colour list left out Custom or Clear"
+            // Each found by name among the actions too, not only inside Tab color….
+            let actions = CommandPalette.actionsPage IntPtr.Zero
+            for caption in [Strings.Commands.customTabColor;Strings.Commands.rememberTabColor;Strings.Commands.clearTabColor] do
+                check (actions.entries |> List.exists(fun entry -> entry.title=tr caption.caption && TabSearch.matches "color" entry)) (sprintf "%s is not an action of its own" (tr caption.caption))
         | _ -> failwith "The tab colour command did not list colours"
         // A colour remembered for an app follows the colour chosen for its tabs, and only then.
         let app = @"C:\Apps\PaletteProbe.exe"

@@ -78,6 +78,29 @@ module Commands =
     let private hasApp hwnd = hwnd<>IntPtr.Zero && processPath hwnd<>""
     /// A group still at work, not one on its way out.
     let private live (group:IGroup) = match group with :? GroupInfo as info -> not info.isExited && not info.isRetiring | _ -> true
+    /// The tab's colour now, picked or given by its app.
+    let private currentTabColor hwnd = groupOf hwnd |> Option.bind(fun g -> Services.program.getTabColor(hwnd,g.windows.list))
+    /// A colour for the tab, and for its app too while the app remembers one.
+    let private setTabColor hwnd color =
+        onTab (fun g hwnd -> g.run(SetTabColor(hwnd,Some color))) hwnd
+        AppTabColors.chosen (processPath hwnd) color
+    /// A colour of one's own, picked in the system's colour box as the tab menu does.
+    let private customTabColor hwnd =
+        let dark = Theme.darkBar (ThemeService.currentAppearance().tabNormalBgColor)
+        let initial = currentTabColor hwnd |> Option.map(Theme.tabColor dark) |> Option.defaultValue Drawing.Color.SteelBlue
+        use dialog = new System.Windows.Forms.ColorDialog(FullOpen=true,Color=initial)
+        if dialog.ShowDialog()=System.Windows.Forms.DialogResult.OK then setTabColor hwnd (CustomColor dialog.Color)
+    /// Something to remember or forget: a colour on the tab, or one the app keeps.
+    let private canRememberTabColor hwnd =
+        hasGroup hwnd && (AppTabColors.remembered (processPath hwnd) || (currentTabColor hwnd).IsSome)
+    /// Remembers the tab's colour for its app, or forgets the app's.
+    let private rememberTabColor hwnd =
+        let path = processPath hwnd
+        AppTabColors.save path (if AppTabColors.remembered path then None else currentTabColor hwnd)
+    /// No colour on the tab, nor for its app.
+    let private clearTabColor hwnd =
+        AppTabColors.save (processPath hwnd) None
+        onTab (fun g hwnd -> g.run(SetTabColor(hwnd,None))) hwnd
     let private combinesIcons hwnd =
         groupOf hwnd |> Option.exists(fun group -> match group with :? GroupInfo as info -> info.isSuperBarEnabled | _ -> false)
     let private tabName hwnd =
@@ -118,28 +141,21 @@ module Commands =
         plain "rename-tab" Strings.Commands.renameTab TabCommands hasGroup (onTab(fun g hwnd -> g.run(RenameTab hwnd)))
         plain "reset-tab-name" Strings.Commands.resetTabName TabCommands hasGroup (onTab(fun g hwnd -> g.run(ResetTabName hwnd)))
         // As the tab menu's Color: the palette, a colour of one's own, remembering the colour for
-        // the app, and none.
+        // the app, and none. The last three are actions of their own too, to be found by name.
         choosing "tab-color" Strings.Commands.tabColor TabCommands hasGroup (fun hwnd ->
-            let path = processPath hwnd
-            let current = groupOf hwnd |> Option.bind(fun g -> Services.program.getTabColor(hwnd,g.windows.list))
-            let remembered = AppTabColors.remembered path
-            let setColor color =
-                onTab (fun g hwnd -> g.run(SetTabColor(hwnd,Some color))) hwnd
-                AppTabColors.chosen path color
+            let current = currentTabColor hwnd
+            let remembered = AppTabColors.remembered (processPath hwnd)
             [ for index in Theme.tabColorOrder do
-                yield { choice (tr Strings.Settings.tabColorNames.[index]) (if current=Some(PaletteColor index) then "✓" else "") (fun () -> setColor (PaletteColor index))
+                yield { choice (tr Strings.Settings.tabColorNames.[index]) (if current=Some(PaletteColor index) then "✓" else "") (fun () -> setTabColor hwnd (PaletteColor index))
                         with swatch=Some(tabColour index) }
-              yield choice (tr Strings.Settings.customTabColor) "" (fun () ->
-                  let dark = Theme.darkBar (ThemeService.currentAppearance().tabNormalBgColor)
-                  use dialog = new System.Windows.Forms.ColorDialog(FullOpen=true,Color=(current |> Option.map(Theme.tabColor dark) |> Option.defaultValue Drawing.Color.SteelBlue))
-                  if dialog.ShowDialog()=System.Windows.Forms.DialogResult.OK then setColor (CustomColor dialog.Color))
+              yield choice (tr Strings.Settings.customTabColor) "" (fun () -> customTabColor hwnd)
               // Off with nothing to remember, as the tab menu greys it.
-              if remembered || current.IsSome then
-                  yield choice (tr Strings.Settings.rememberTabColor) (if remembered then "✓" else "") (fun () ->
-                      AppTabColors.save path (if remembered then None else current))
-              yield choice (tr Strings.Settings.clearTabColor) "" (fun () ->
-                  AppTabColors.save path None
-                  onTab (fun g hwnd -> g.run(SetTabColor(hwnd,None))) hwnd) ])
+              if canRememberTabColor hwnd then
+                  yield choice (tr Strings.Settings.rememberTabColor) (if remembered then "✓" else "") (fun () -> rememberTabColor hwnd)
+              yield choice (tr Strings.Settings.clearTabColor) "" (fun () -> clearTabColor hwnd) ])
+        plain "custom-tab-color" Strings.Commands.customTabColor TabCommands hasGroup customTabColor
+        plain "remember-tab-color" Strings.Commands.rememberTabColor TabCommands canRememberTabColor rememberTabColor
+        plain "clear-tab-color" Strings.Commands.clearTabColor TabCommands hasGroup clearTabColor
         plain "move-tab-left" Strings.Commands.moveTabLeft TabCommands hasGroup (onTab(fun g hwnd -> g.run(MoveTab(hwnd,-1))))
         plain "move-tab-right" Strings.Commands.moveTabRight TabCommands hasGroup (onTab(fun g hwnd -> g.run(MoveTab(hwnd,1))))
         plain "sort-tabs" Strings.Commands.sortTabs TabCommands hasGroup (onGroup(fun g -> g.run SortTabs))
