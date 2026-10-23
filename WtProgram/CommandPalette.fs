@@ -9,11 +9,11 @@ module CommandPalette =
         (texts |> List.collect Localization.all) @ extra |> List.filter((<>) "") |> List.distinct |> List.map(fun text -> text.ToLowerInvariant())
     let private row index title detail texts extra group =
         { hwnd=IntPtr(index+1); title=title; program=detail; keywords=words texts extra; group=group; recency=index; desktop="" }
-    /// The commands that can run for the window in front, in their categories, each with its
-    /// shortcut beside it or, for a setting that is on or off, its state.
+    /// Every command, in its category, with its shortcut beside it or, for a setting that is on
+    /// or off, its state; the ones that can do nothing for the window in front are dimmed.
     let commands (active:IntPtr) =
         Commands.all
-        |> List.filter(fun command -> command.listed && command.enabled active)
+        |> List.filter(fun command -> command.listed)
         |> List.mapi(fun index command ->
             let detail =
                 match Commands.toggleKey command with
@@ -33,7 +33,8 @@ module CommandPalette =
           noMatches=tr Strings.TabSearch.noCommands; glyph=NoGlyph
           entries=listed |> Array.map snd |> List.ofArray
           choose=(fun chosen -> (fst listed.[int chosen.hwnd-1]).run active)
-          shortcut=fun chosen -> assignment (fst listed.[int chosen.hwnd-1]) }
+          shortcut=(fun chosen -> assignment (fst listed.[int chosen.hwnd-1]))
+          dimmed=fun chosen -> not ((fst listed.[int chosen.hwnd-1]).enabled active) }
     /// Every setting by name, with its page beside it; chosen, the settings window opens on it.
     let settingsPage() =
         let pages = [GeneralSettings;AppearanceSettings;HotKeySettings;ProgramSettings;LayoutSettings;DiagnosticsSettings]
@@ -44,7 +45,8 @@ module CommandPalette =
                       row index (tr item.text.caption) (tr (SettingsCatalog.searchContext item)) [item.text.caption;item.text.keywords]
                           [SettingsCatalog.storageKey item] (List.findIndex ((=) item.page) pages)) |> List.ofArray
           choose=(fun chosen -> Services.managerView.showSetting items.[int chosen.hwnd-1].id; Done)
-          shortcut=fun _ -> None }
+          shortcut=(fun _ -> None)
+          dimmed=fun _ -> false }
     /// The saved workspaces by name, with how many windows each holds; chosen, one is restored.
     let workspacesPage (workspaces:(string * int) list) (restore:string -> unit) =
         let names = workspaces |> List.map fst |> Array.ofList
@@ -52,4 +54,5 @@ module CommandPalette =
           noMatches=tr Strings.TabSearch.noWorkspaces; glyph=WorkspaceGlyph
           entries=workspaces |> List.mapi(fun index (name,count) -> row index name (tr (Strings.TabSearch.windows count)) [] [name] 0)
           choose=(fun chosen -> restore names.[int chosen.hwnd-1]; Done)
-          shortcut=fun _ -> None }
+          shortcut=(fun _ -> None)
+          dimmed=fun _ -> false }

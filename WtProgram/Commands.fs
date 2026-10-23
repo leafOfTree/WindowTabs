@@ -59,6 +59,8 @@ module Commands =
     let private hasApp hwnd = hwnd<>IntPtr.Zero && processPath hwnd<>""
     /// A group still at work, not one on its way out.
     let private live (group:IGroup) = match group with :? GroupInfo as info -> not info.isExited && not info.isRetiring | _ -> true
+    let private combinesIcons hwnd =
+        groupOf hwnd |> Option.exists(fun group -> match group with :? GroupInfo as info -> info.isSuperBarEnabled | _ -> false)
     let private tabName hwnd =
         Services.program.getWindowNameOverride hwnd |> Option.defaultValue (try OS().windowFromHwnd(hwnd).text with _ -> "")
     /// The saved workspaces as last written, each with how many windows it holds.
@@ -109,6 +111,7 @@ module Commands =
         plain "move-tab-right" Strings.Commands.moveTabRight TabCommands hasGroup (onTab(fun g hwnd -> g.run(MoveTab(hwnd,1))))
         plain "sort-tabs" Strings.Commands.sortTabs TabCommands hasGroup (onGroup(fun g -> g.run SortTabs))
         plain "close-other-tabs" Strings.Commands.closeOtherTabs TabCommands hasGroup (onTab(fun g hwnd -> g.run(CloseOtherTabs hwnd)))
+        plain "close-app-tabs" Strings.Commands.closeAppTabs TabCommands hasGroup (onTab(fun g hwnd -> g.run(CloseAppTabs hwnd)))
         plain "close-all-tabs" Strings.Commands.closeAllTabs TabCommands hasGroup (onGroup(fun g -> g.run CloseAllTabs))
         plain "detach-tab" Strings.Commands.detachTab TabCommands (fun hwnd -> groupOf hwnd |> Option.exists(fun g -> g.windows.count>1))
               (fun hwnd -> Services.program.detachTab hwnd)
@@ -138,6 +141,12 @@ module Commands =
             match g with
             | :? GroupInfo as info -> Services.desktop.restartGroup(g.hwnd,not info.isSuperBarEnabled)
             | _ -> ()))
+        // Only a group with combined icons has a taskbar button of its own to change.
+        plain "change-group-icon" Strings.Commands.changeGroupIcon GroupCommands combinesIcons (fun hwnd ->
+            use dialog = new System.Windows.Forms.OpenFileDialog(Title=tr Strings.TabMenu.changeTaskbarIcon,
+                                                                 Filter=Localization.plain Strings.TabMenu.taskbarIconFiles,CheckFileExists=true)
+            if dialog.ShowDialog()=System.Windows.Forms.DialogResult.OK then Services.program.setGroupIcon(hwnd,Some dialog.FileName))
+        plain "restore-group-icon" Strings.Commands.restoreGroupIcon GroupCommands combinesIcons (fun hwnd -> Services.program.setGroupIcon(hwnd,None))
         plain "tabs-for-app" Strings.Commands.tabsForApp GroupCommands hasApp (fun hwnd ->
             let path = processPath hwnd
             Services.filter.setIsTabbingEnabledForProcess path (not (Services.filter.getIsTabbingEnabledForProcess path)))
@@ -150,6 +159,8 @@ module Commands =
         // A window chosen from a list goes beside the tab in front, as from the tab menu.
         fromCatalog "split-pick-right" SplitCommands hasGroup (onGroup(fun g -> g.pickPane(SideBySide,Second)))
         fromCatalog "split-pick-below" SplitCommands hasGroup (onGroup(fun g -> g.pickPane(Stacked,Second)))
+        fromCatalog "split-pick-left" SplitCommands hasGroup (onGroup(fun g -> g.pickPane(SideBySide,First)))
+        fromCatalog "split-pick-above" SplitCommands hasGroup (onGroup(fun g -> g.pickPane(Stacked,First)))
         fromCatalog "split-focus-left" SplitCommands hasGroup (onGroup(fun g -> g.executeSplit(FocusToward PaneLeft)))
         fromCatalog "split-focus-right" SplitCommands hasGroup (onGroup(fun g -> g.executeSplit(FocusToward PaneRight)))
         fromCatalog "split-focus-up" SplitCommands hasGroup (onGroup(fun g -> g.executeSplit(FocusToward PaneUp)))

@@ -252,6 +252,12 @@ module Strings =
         let splitPickBelow = { caption={ en="Window below…"; zh="在下方放入窗口…"; ja="下側にウィンドウを配置…"; ar="نافذة في الأسفل…" }
                                description=none
                                keywords=splitWords }
+        let splitPickLeft = { caption={ en="Window on the left…"; zh="在左侧放入窗口…"; ja="左側にウィンドウを配置…"; ar="نافذة على اليسار…" }
+                              description=none
+                              keywords=splitWords }
+        let splitPickAbove = { caption={ en="Window above…"; zh="在上方放入窗口…"; ja="上側にウィンドウを配置…"; ar="نافذة في الأعلى…" }
+                               description=none
+                               keywords=splitWords }
         let splitFocusLeft = { caption={ en="Focus the pane to the left"; zh="焦点切到左边的格"; ja="左のペインにフォーカス"; ar="التركيز على الجزء الأيسر" }
                                description=none
                                keywords=splitWords }
@@ -578,6 +584,12 @@ module Strings =
         let closeOtherTabs = { caption={ en="Close other tabs"; zh="关闭其他标签"; ja="他のタブを閉じる"; ar="إغلاق علامات التبويب الأخرى" }
                                description={ en="Closes every other window of the group."; zh="关闭分组中的其他窗口。"; ja="グループの他のウィンドウをすべて閉じます。"; ar="يغلق كل النوافذ الأخرى في المجموعة." }
                                keywords=tabWords }
+        let closeAppTabs = { caption={ en="Close all tabs of this app"; zh="关闭此应用的全部标签"; ja="このアプリのタブをすべて閉じる"; ar="إغلاق جميع علامات تبويب هذا التطبيق" }
+                             description={ en="Every window of the group from the app of the tab in front."; zh="分组中属于当前标签所在应用的所有窗口。"; ja="グループ内で、前面のタブのアプリのウィンドウをすべて。"; ar="كل نوافذ المجموعة من تطبيق علامة التبويب الأمامية." }
+                             keywords=tabWords }
+        let private iconNote = { en="For a group with combined taskbar icons."; zh="用于已合并任务栏图标的分组。"; ja="タスクバーアイコンをまとめたグループ用。"; ar="لمجموعة دُمجت أيقونات شريط المهام لها." }
+        let changeGroupIcon = { caption=TabMenu.changeTaskbarIcon; description=iconNote; keywords={ en="picture image"; zh="图片 图像"; ja="画像 ピクチャ"; ar="صورة" } }
+        let restoreGroupIcon = { caption=TabMenu.restoreTaskbarIcon; description=iconNote; keywords={ en="default picture"; zh="默认 图片"; ja="既定 画像"; ar="افتراضي صورة" } }
         let closeAllTabs = { caption={ en="Close all tabs"; zh="关闭全部标签"; ja="すべてのタブを閉じる"; ar="إغلاق جميع علامات التبويب" }
                              description={ en="Closes every window of the group."; zh="关闭分组中的所有窗口。"; ja="グループのウィンドウをすべて閉じます。"; ar="يغلق كل نوافذ المجموعة." }
                              keywords=tabWords }

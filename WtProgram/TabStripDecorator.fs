@@ -148,6 +148,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 group.isIconOnly <- false
                 try this.beginRename(hwnd) with _ -> ()
             | CloseOtherTabs hwnd -> this.onCloseOtherWindows hwnd
+            | CloseAppTabs hwnd -> this.onCloseAllExeWindows (os.windowFromHwnd(hwnd).pid.exeName)
             | CloseAllTabs -> this.onCloseAllWindows()
             | SortTabs -> this.sortTabs()
             | _ -> ())

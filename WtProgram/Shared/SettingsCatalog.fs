@@ -55,6 +55,8 @@ module SettingsCatalog =
         // Split view keys ship unbound: nothing global is taken until the user picks a key.
         { id="split-pick-right"; page=HotKeySettings; text=Strings.Settings.splitPickRight; binding=Shortcut("splitPickRight",0) }
         { id="split-pick-below"; page=HotKeySettings; text=Strings.Settings.splitPickBelow; binding=Shortcut("splitPickBelow",0) }
+        { id="split-pick-left"; page=HotKeySettings; text=Strings.Settings.splitPickLeft; binding=Shortcut("splitPickLeft",0) }
+        { id="split-pick-above"; page=HotKeySettings; text=Strings.Settings.splitPickAbove; binding=Shortcut("splitPickAbove",0) }
         { id="split-focus-left"; page=HotKeySettings; text=Strings.Settings.splitFocusLeft; binding=Shortcut("splitFocusLeft",0) }
         { id="split-focus-right"; page=HotKeySettings; text=Strings.Settings.splitFocusRight; binding=Shortcut("splitFocusRight",0) }
         { id="split-focus-up"; page=HotKeySettings; text=Strings.Settings.splitFocusUp; binding=Shortcut("splitFocusUp",0) }

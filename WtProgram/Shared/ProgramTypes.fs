@@ -197,6 +197,8 @@ type GroupCommand =
     | RenameTab of IntPtr
     | ResetTabName of IntPtr
     | CloseOtherTabs of IntPtr
+    /// Every tab of the window's program.
+    | CloseAppTabs of IntPtr
     | CloseAllTabs
     | SortTabs
     /// By that many places along the strip, backwards when negative.

@@ -165,7 +165,10 @@ type PalettePage = {
     entries:TabSearchEntry list
     choose:TabSearchEntry -> CommandOutcome
     /// For a row that can be given a shortcut with Alt+Enter.
-    shortcut:TabSearchEntry -> ShortcutAssignment option }
+    shortcut:TabSearchEntry -> ShortcutAssignment option
+    /// A row listed in the muted colour that does nothing now, such as a tab command with no
+    /// tab in front: there to be found, and to be given a key.
+    dimmed:TabSearchEntry -> bool }
 
 module private TabSearchNative =
     let EM_SETCUEBANNER = 0x1501
@@ -201,6 +204,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let scopeHeight = Dpi.scale 34
     let ended = Event<unit>()
     let mutable closed = false
+    /// Out of sight while a command runs, so the window it acts on is in front: not closed.
+    let mutable hiding = false
     let mutable shadow : TaskSwitchShadow option = None
     let items =
         tabs |> List.map(fun entry ->
@@ -213,7 +218,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let pageItems =
         pages |> List.map(fun page ->
             page.scope,
-            page.entries |> List.map(fun entry -> TreeListItem(entry.title,Values=[|"";TabSearch.source entry|],Glyph=page.glyph),entry) |> Array.ofList)
+            page.entries |> List.map(fun entry -> TreeListItem(entry.title,Values=[|"";TabSearch.source entry|],Glyph=page.glyph,Dimmed=page.dimmed entry),entry) |> Array.ofList)
         |> Map.ofList
     let preferred =
         settings |> Option.map(fun api -> api.getValue("tabSearchScope") :?> string)
@@ -474,18 +479,42 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             scopeLine.Invalidate()
             apply()
         | [] -> ()
-    let outcome caption (result:CommandOutcome) =
-        match result with
+    /// On screen and in front, with the keys in the box.
+    let present() =
+        // Built while hidden, like the switcher's, so it cannot delay the first paint.
+        if shadow.IsNone && not SystemInformation.HighContrast then shadow <- Some(new TaskSwitchShadow(form))
+        form.Show()
+        form.Refresh()
+        shadow |> Option.iter(fun item -> item.Show())
+        OS().windowFromHwnd(form.Handle).setForegroundOrRestore(true)
+        form.Activate()
+        input.Focus() |> ignore
+    /// Out of sight, the window it was opened over back in front, while a command runs: one
+    /// that puts up a box of its own, such as renaming a tab, would lose it to the palette
+    /// going away after.
+    let conceal() =
+        hiding <- true
+        shadow |> Option.iter(fun item -> (item :> IDisposable).Dispose())
+        shadow <- None
+        form.Hide()
+    /// Runs a row's command with the palette out of the way; what it leaves to choose brings
+    /// the palette back.
+    let outcome caption (run:unit -> CommandOutcome) =
+        conceal()
+        match (try run() with error -> hiding <- false; present(); raise error) with
         | Done -> finish None
-        | Choose options -> push caption options
+        | Choose options ->
+            hiding <- false
+            present()
+            push caption options
     /// Enter or a click on a row: switches to the window, or runs the command and shows what it
-    /// leaves to choose.
+    /// leaves to choose. A dimmed row does nothing.
     let activate (target:TreeListItem) =
-        if not closed && not (isNull target) then
+        if not closed && not (isNull target) && not target.Dimmed then
             scoped() |> Array.tryFind(fun (row,_) -> obj.ReferenceEquals(row,target)) |> Option.iter(fun (_,entry) ->
                 match choices,page() with
-                | (_,_,choose,_)::_,_ -> outcome entry.title (choose entry)
-                | [],Some page -> outcome entry.title (page.choose entry)
+                | (_,_,choose,_)::_,_ -> outcome entry.title (fun () -> choose entry)
+                | [],Some page -> outcome entry.title (fun () -> page.choose entry)
                 | [],None -> finish (Some entry.hwnd))
     /// Alt+Enter: the chosen row's shortcut is recorded in a box over the row, as on the
     /// Shortcuts page, with the same refusals; Esc or a click elsewhere leaves it as it was.
@@ -607,18 +636,11 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         list.ItemActivated.Add activate
         list.MouseClick.Add(fun e ->
             if e.Button=MouseButtons.Left then list.ItemAt(e.Location) |> Option.iter activate)
-        form.Deactivate.Add(fun _ -> finish None)
+        // Going out of the way for a command is no closing.
+        form.Deactivate.Add(fun _ -> if not hiding then finish None)
         apply()
 
-    member _.Show() =
-        // Built while hidden, like the switcher's, so it cannot delay the first paint.
-        if not SystemInformation.HighContrast then shadow <- Some(new TaskSwitchShadow(form))
-        form.Show()
-        form.Refresh()
-        shadow |> Option.iter(fun item -> item.Show())
-        OS().windowFromHwnd(form.Handle).setForegroundOrRestore(true)
-        form.Activate()
-        input.Focus() |> ignore
+    member _.Show() = present()
     /// Closes without switching.
     member _.Close() = finish None
     member _.Ended = ended.Publish

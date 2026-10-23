@@ -1669,7 +1669,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             // The tabs' direction in view, as the tab menu's alignment items set.
             | SetTabAlignment alignment -> this.ts.setAlignment((if this.ts.isVertical then TabUp else this.ts.direction),alignment)
             | SetAutoHide mode -> this.bb.write("autoHideMode",mode)
-            | RenameTab _ | CloseOtherTabs _ | CloseAllTabs | SortTabs -> commandRequestedEvent.Trigger(command)
+            | RenameTab _ | CloseOtherTabs _ | CloseAppTabs _ | CloseAllTabs | SortTabs -> commandRequestedEvent.Trigger(command)
     member _.commandRequested = commandRequestedEvent.Publish
 
     /// A pane window coming to the front focuses its side; another tab parks the pair.

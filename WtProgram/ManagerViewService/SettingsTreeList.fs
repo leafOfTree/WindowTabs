@@ -51,6 +51,8 @@ type TreeListItem(text:string) =
     member val Glyph = NoGlyph with get,set
     /// Draws a divider above the row, to set it apart from the rows before.
     member val SeparatorAbove = false with get,set
+    /// Shown in the muted colour, for a row that is listed but cannot be taken now.
+    member val Dimmed = false with get,set
     /// Said on hover over the row's icon or glyph, for a row whose icon stands in for a name. The
     /// icon only explains; it does not light up as a button would.
     member val IconTip = "" with get,set
@@ -697,7 +699,10 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                 g.SmoothingMode <- SmoothingMode.None
                 g.DrawLine(divider,Dpi.scale 10,top,this.contentWidth-Dpi.scale 10,top)
                 g.SmoothingMode <- SmoothingMode.AntiAlias
-            let text = if isSelected && SystemInformation.HighContrast then SystemColors.HighlightText else p.text
+            let text =
+                if item.Dimmed then (if SystemInformation.HighContrast then SystemColors.GrayText else p.muted)
+                elif isSelected && SystemInformation.HighContrast then SystemColors.HighlightText
+                else p.text
             for column in 0..columns.Length-1 do
                 let cell = bounds.[column]
                 match columns.[column].Kind with

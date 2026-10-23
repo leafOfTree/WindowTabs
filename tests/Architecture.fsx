@@ -782,7 +782,8 @@ let main() =
           entries=[ { TabSearch.create (IntPtr 1) "Close tab" "Close tab" "Ctrl+Alt+W" with recency=0 }
                     { TabSearch.create (IntPtr 2) "Restore workspace" "Restore workspace" "" with recency=1 } ]
           choose=(fun entry -> if entry.hwnd=IntPtr 1 then (ran <- "close"::ran; Done) else Choose [option "Work";option "Home"])
-          shortcut=fun _ -> None }
+          shortcut=(fun _ -> None)
+          dimmed=fun _ -> false }
     let palette = TabSearchForm([mail;notes;editor],[mail.hwnd;editor.hwnd],pages=[commandsPage])
     check (palette.Scope=GroupTabs) "The palette did not open on the group"
     palette.SwitchScope()
@@ -795,6 +796,14 @@ let main() =
     palette.Accept()
     pump 100
     check (ran=["close"] && palette.IsClosed) "Accepting a command did not run it and close"
+    // A command that cannot act now is listed dimmed and does nothing when chosen.
+    let dimmedPage = { commandsPage with dimmed=fun entry -> entry.hwnd=IntPtr 1 }
+    let greyed = TabSearchForm([mail;notes],[],pages=[dimmedPage],scope=CommandScope)
+    greyed.Query <- "clo"
+    greyed.Accept()
+    check (ran=["close"] && not greyed.IsClosed && greyed.Results.Length=1) "A dimmed command ran, or was left out"
+    greyed.Close()
+    pump 100
     let chooser = TabSearchForm([mail;notes],[],pages=[commandsPage],scope=CommandScope)
     check (chooser.Scope=CommandScope) "The palette did not open on the scope asked for"
     chooser.Query <- "restore"
