@@ -592,6 +592,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         | (_,_,_,query)::rest ->
             choices <- rest
             input.Text <- query
+            // Back at the end of what was typed, to carry on typing.
+            input.Select(query.Length,0)
             setPrompt()
             scopeLine.Invalidate()
             footer.Invalidate()
@@ -861,6 +863,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     member _.Answer() = answer()
     /// What the box says under it: the hint, why a value was refused, or that nothing matches.
     member _.Message = if asking.IsSome then askNote.Text else currentEmpty()
+    /// Where the caret is in the search, and how much is selected after it.
+    member _.Caret = input.SelectionStart+input.SelectionLength
     /// The value typed in the box asked for, as typed there.
     member _.Answered
         with get() = match askBox with Some(_,text) -> text.Text | None -> ""

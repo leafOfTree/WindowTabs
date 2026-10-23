@@ -952,6 +952,7 @@ let main() =
     check (numbered.AskBox |> Option.exists(fun box -> box :? SettingsNumberInput && (box :?> SettingsNumberInput).Value=30M)) "A number was not asked for in the settings pages' number box"
     numbered.Back()
     check (numbered.Depth=0 && numbered.AskBox.IsNone && numbered.Query="close") "Esc did not take the number box away"
+    check (numbered.Caret=5) "Esc did not put the caret back at the end of the search"
     numbered.Close()
     pump 100
     // The command line: what each form asks for, and the pipe a running copy takes them over.
