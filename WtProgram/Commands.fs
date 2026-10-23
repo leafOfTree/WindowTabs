@@ -111,6 +111,8 @@ module Commands =
         model.loadSettings()
         model,model.workspaces.list |> List.map(fun (ws:Workspace) ->
             ws,ws.groups.list |> List.sumBy(fun group -> group.cast<WorkspaceGroup>().windows.count))
+    /// Something to restore or delete.
+    let private anyWorkspace (_:IntPtr) = not (snd (workspaces())).IsEmpty
     let private pageId page =
         match page with
         | GeneralSettings -> "general"
@@ -223,10 +225,10 @@ module Commands =
         fromCatalog "split-end" SplitCommands hasGroup (onGroup(fun g -> g.executeSplit(EndSplit None)))
         fromCatalog "save-workspace" WorkspaceCommands always (fun _ -> Services.program.saveWorkspace())
         fromCatalog "restore-workspace" WorkspaceCommands always (fun _ -> Services.program.restoreWorkspace())
-        choosing "restore-workspace-named" Strings.Commands.restoreWorkspaceNamed WorkspaceCommands always (fun _ ->
+        choosing "restore-workspace-named" Strings.Commands.restoreWorkspaceNamed WorkspaceCommands anyWorkspace (fun _ ->
             snd (workspaces()) |> List.map(fun (ws,count) ->
                 choice ws.name (tr (Strings.TabSearch.windows count)) (fun () -> Services.program.restoreWorkspaceNamed ws.name)))
-        choosing "delete-workspace" Strings.Commands.deleteWorkspace WorkspaceCommands always (fun _ ->
+        choosing "delete-workspace" Strings.Commands.deleteWorkspace WorkspaceCommands anyWorkspace (fun _ ->
             let model,saved = workspaces()
             saved |> List.map(fun (ws,count) ->
                 choice ws.name (tr (Strings.TabSearch.windows count)) (fun () ->
