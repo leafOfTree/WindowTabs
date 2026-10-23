@@ -403,6 +403,9 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                             UseMnemonic=false,TextAlign=ContentAlignment.TopLeft)
     /// The box the value is typed in, and its text.
     let mutable askBox : (SettingsInputFrame * TextBox) option = None
+    /// The colour box, while a colour is asked for: its picker is a popup the palette must not
+    /// close for.
+    let mutable colorBox : SettingsColorInput option = None
     let form =
         let f =
             { new Form() with
@@ -482,7 +485,11 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 width
         let programWidth =
             asides |> Array.fold(fun width aside ->
-                let switch = if aside.switch.IsSome then Dpi.scale 44 elif aside.dropdown then Dpi.scale 18 else 0
+                let switch =
+                    if aside.switch.IsSome then Dpi.scale 44
+                    elif aside.dropdown then Dpi.scale 18
+                    elif aside.swatch.IsSome then Dpi.scale 22
+                    else 0
                 max width (switch+measure (text aside))) 0
         programColumn.Width <- max 48 (min 300 (int(Math.Ceiling(float programWidth/Dpi.currentFactor()))+16))
         shown |> Array.iteri(fun index (item,entry) ->
@@ -491,7 +498,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             item.Switch <- aside.switch
             item.Suffix <- aside.shortcut
             item.Dropdown <- aside.dropdown
-            if aside.swatch.IsSome then item.Swatch <- aside.swatch
+            // A colour setting's value: its dot before its code at the right, as the settings pages show it.
+            item.ValueSwatch <- aside.swatch
             item.Highlights <- [| TabSearch.highlights input.Text entry.title; TabSearch.highlights input.Text item.Values.[1] |])
         list.Roots.Clear()
         list.Roots.AddRange(Array.map fst shown)
@@ -563,6 +571,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             askPanel.Controls.Remove(box)
             box.Dispose())
         askBox <- None
+        colorBox <- None
         input.ReadOnly <- false
         askPanel.Visible <- false
     let pop() =
@@ -605,6 +614,13 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             | TextQuestion ->
                 let text = new TextBox(Font=SettingsUi.bodyFont(),Text=question.value)
                 (new SettingsTextInput(text,Width=Dpi.scale SettingsShapes.editorWidth) :> SettingsInputFrame),text
+            | ColorQuestion ->
+                let color = new SettingsColorInput(Font=SettingsUi.bodyFont())
+                (color :> IPropEditor).value <- box (try ColorTranslator.FromHtml question.value with _ -> Color.White)
+                colorBox <- Some color
+                // Back to the palette once a colour is picked, so a click elsewhere still closes it.
+                color.PickerClosed.Add(fun _ -> if not closed && form.Visible then form.Activate())
+                (color :> SettingsInputFrame),color.TextBox
         frame.PlaceOn(palette.surface)
         text.ForeColor <- palette.text
         let gap = Dpi.scale 8
@@ -638,6 +654,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         askPanel.BringToFront()
         text.Focus() |> ignore
         text.SelectAll()
+        // A colour opens on its picker, as a click on its dot does on the settings pages.
+        if form.Visible then colorBox |> Option.iter(fun color -> color.OpenPicker())
     /// On screen and in front, with the keys in the box.
     let present() =
         // Built while hidden, like the switcher's, so it cannot delay the first paint.
@@ -801,7 +819,10 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         list.MouseClick.Add(fun e ->
             if e.Button=MouseButtons.Left then list.ItemAt(e.Location) |> Option.iter activate)
         // Going out of the way for a command is no closing.
-        form.Deactivate.Add(fun _ -> if not hiding then finish None)
+        // The colour picker's popup takes the keys from the palette without leaving it.
+        form.Deactivate.Add(fun _ ->
+            let picking = colorBox |> Option.exists(fun color -> color.PickerOpen)
+            if not hiding && not picking then finish None)
         apply()
 
     /// Shown with its search, if one was set, all selected, so typing starts a new one.

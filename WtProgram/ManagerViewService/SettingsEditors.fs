@@ -593,13 +593,7 @@ type SettingsColorInput() as this =
         swatch.Click.Add(fun _ ->
             if suppressClick then suppressClick <- false
             elif popup.Visible then popup.Close()
-            else
-                commitText()
-                picker.Color <- color
-                picker.ApplyTheme()
-                popup.BackColor <- (SettingsColors.current()).surface
-                popup.Show(swatch,Point(0,swatch.Height+Dpi.scale 8))
-                picker.Focus() |> ignore)
+            else this.OpenPicker())
         picker.Changed.Add(commit)
         picker.KeyDown.Add(fun e ->
             if e.KeyCode=Keys.Escape || e.KeyCode=Keys.Enter then
@@ -612,6 +606,18 @@ type SettingsColorInput() as this =
         text.LostFocus.Add(fun _ -> commitText())
         SettingsPopupLifetime.own this popup false
         text.Text <- "#FFFFFF"
+    /// The colour picker under the dot, as a click on the dot opens it.
+    member this.OpenPicker() =
+        commitText()
+        picker.Color <- color
+        picker.ApplyTheme()
+        popup.BackColor <- (SettingsColors.current()).surface
+        popup.Show(swatch,Point(0,swatch.Height+Dpi.scale 8))
+        picker.Focus() |> ignore
+    member _.PickerOpen = popup.Visible
+    member _.PickerClosed = popup.Closed
+    /// The hex code's box, for a host that acts on what is typed, as the palette does.
+    member _.TextBox = text
     override this.ApplyTheme() =
         base.ApplyTheme()
         swatch.Invalidate()

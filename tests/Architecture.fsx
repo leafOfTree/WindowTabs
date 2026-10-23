@@ -515,6 +515,15 @@ let main() =
         // A colour setting shows its colour, as a dot and by its value.
         let textColor = sizes.aside "" (entryOf sizes Strings.Settings.tabTextColor.caption)
         check (textColor.swatch.IsSome && textColor.detail.StartsWith "#") "A colour setting's row did not show its colour"
+        // A colour is picked in the settings pages' colour box, and saved as it changes.
+        match sizes.choose (entryOf sizes Strings.Settings.tabTextColor.caption) with
+        | Ask question ->
+            check (question.kind=ColorQuestion && question.live && question.value.StartsWith "#") "A colour was not asked for in the colour box"
+            check (question.accept "nope").IsSome "A colour that is not one was taken"
+            check (question.accept "#123456").IsNone "A colour typed in the palette was not taken"
+            let dark = ThemeService.currentIsDark()
+            check ((PaletteEditing.activePalette dark api.appearance).tabTextColor.ToArgb()=Drawing.Color.FromArgb(0x12,0x34,0x56).ToArgb()) "A colour picked in the palette was not set"
+        | _ -> failwith "A colour setting did not ask for a colour"
         // The tab menu's colour list in full: the palette, one of one's own, and none.
         match (Commands.find "tab-color").Value.run IntPtr.Zero with
         | Choose options ->
@@ -959,6 +968,25 @@ let main() =
     check (numbered.Depth=0 && numbered.AskBox.IsNone && numbered.Query="close") "Esc did not take the number box away"
     check (numbered.Caret=5) "Esc did not put the caret back at the end of the search"
     numbered.Close()
+    pump 100
+    let colorPage = { commandsPage with choose=fun _ -> Ask { question with kind=ColorQuestion; value="#202020" } }
+    let colored = TabSearchForm([mail;notes],[],pages=[colorPage],scope=ActionScope)
+    colored.Query <- "close"
+    colored.Accept()
+    check (colored.AskBox |> Option.exists(fun box -> box :? SettingsColorInput) && colored.Answered="#202020") "A colour was not asked for in the settings pages' colour box"
+    colored.Close()
+    pump 100
+    // On screen, the picker opens with the box, and taking the keys does not close the palette.
+    let shownColor = TabSearchForm([mail;notes],[],pages=[colorPage],scope=ActionScope)
+    shownColor.Show()
+    pump 100
+    shownColor.Query <- "close"
+    shownColor.Accept()
+    pump 300
+    let picker = shownColor.AskBox |> Option.map(fun box -> box :?> SettingsColorInput)
+    check (picker |> Option.exists(fun box -> box.PickerOpen)) "The colour picker did not open with the colour box"
+    check (not shownColor.IsClosed) "The colour picker closed the palette"
+    shownColor.Close()
     pump 100
     // A size is saved as it changes, as the settings pages save it; Esc only goes back.
     let applied = ResizeArray<string>()

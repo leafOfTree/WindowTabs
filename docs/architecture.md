@@ -348,8 +348,10 @@ to and, chosen, lists its values by the catalog's `choiceLabels`, the current on
 sets the one picked; a size or the leader keys asks for a value (`Ask`) in the settings pages' own
 box under the line naming it: the box holds the value now, selected, a valid value is saved as
 it is typed (`live`), as the settings pages save, Enter closes the palette, Esc goes back
-keeping what was saved, and a value Enter cannot take is explained under the box; a colour shows as a dot with its value and opens the system colour box, edited by
-`PaletteEditing` as the Appearance page edits it; a page opens the settings window. The tab
+keeping what was saved, and a value Enter cannot take is explained under the box; a colour shows its dot before its code at the right and is asked for
+in the settings pages' colour box (`SettingsColorInput`) with its picker open, the palette kept
+up while the picker has the keys, and saved as it changes through `PaletteEditing`, as the
+Appearance page edits it; a page opens the settings window. The tab
 colour command offers what the tab menu does, with `AppTabColors` shared between them. Sizes and
 the tab style are read and written by key (`SettingsCatalog.geometryNumbers`), so the palette
 and the command line set them as any other setting. Rows are found by their caption, keywords and description in every

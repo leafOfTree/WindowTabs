@@ -546,13 +546,14 @@ let main() =
         form.Close()
     // Palette rows: a shortcut just after the name, a value with its drop-down arrow, a switch.
     do
-        use rowsForm = new Form(ClientSize=Size(560,160),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false)
+        use rowsForm = new Form(ClientSize=Size(560,200),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false)
         let rows = new SettingsTreeList([TreeListColumn("",0,TextColumn);TreeListColumn("",160,TextColumn,RightAligned=true)],
                                         ShowHeader=false,ShowExpanders=false,RowHeight=36,Dock=DockStyle.Fill,Font=SettingsUi.bodyFont())
         let renamed = TreeListItem("Rename tab",Values=[|"";""|],Suffix="Ctrl+Alt+R")
         let session = TreeListItem("Restore the last session after sign-in",Values=[|"";"Windows only"|],Dropdown=true)
         let lamp = TreeListItem("Dim tabs in inactive groups",Values=[|"";""|],Switch=Some true,Suffix="Ctrl+Alt+D")
-        rows.Roots.AddRange([renamed;session;lamp])
+        let textColor = TreeListItem("Tab text",Values=[|"";"#FFFFFF"|],ValueSwatch=Some Color.White)
+        rows.Roots.AddRange([renamed;session;lamp;textColor])
         rows.Rebuild()
         rows.SelectedItem <- session
         rowsForm.Controls.Add(rows)

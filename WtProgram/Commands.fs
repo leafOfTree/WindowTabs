@@ -19,6 +19,8 @@ and QuestionKind =
     /// A whole number in a range, typed in the settings pages' number box with its − and +.
     | NumberQuestion of low:int * high:int
     | TextQuestion
+    /// A colour as #RRGGBB, in the settings pages' colour box, its picker open.
+    | ColorQuestion
 /// One further step: its name, a detail beside it, a colour to show for it where it is one,
 /// and what choosing it does.
 and CommandChoice = { label:string; detail:string; swatch:Drawing.Color option; run:unit -> CommandOutcome }

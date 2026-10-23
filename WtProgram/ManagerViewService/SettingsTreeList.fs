@@ -59,6 +59,8 @@ type TreeListItem(text:string) =
     member val Suffix = "" with get,set
     /// A down arrow after the last column's text, for a value picked from a list, as drop-downs show.
     member val Dropdown = false with get,set
+    /// A colour dot just before the last column's text, for a value that is a colour.
+    member val ValueSwatch : Color option = None with get,set
     /// A colour shown as a dot where the icon goes, for a row that stands for one.
     member val Swatch : Color option = None with get,set
     /// Said on hover over the row's icon or glyph, for a row whose icon stands in for a name. The
@@ -878,6 +880,14 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         else bounds
                     let color = if isSelected then text else p.muted
                     this.drawMarked(g,item.value column,item.highlights column,bounds,flags,this.Font,color,p)
+                    // The colour's dot before its code, with a faint rim, as the settings pages' colour box draws it.
+                    if column=columns.Length-1 && item.ValueSwatch.IsSome then
+                        let side = Dpi.scale 16
+                        let dot = Rectangle(bounds.Left-side-Dpi.scale 4,top+(rowHeight-side)/2,side,side)
+                        use fill = new SolidBrush(item.ValueSwatch.Value)
+                        g.FillEllipse(fill,dot)
+                        use rim = new Pen(Color.FromArgb(65,p.text))
+                        g.DrawEllipse(rim,dot)
                     if reserve>0 && item.Switch.IsSome then
                         SettingsTreeList.drawSwitch(g,Rectangle(cell.Right-Dpi.scale 8-switchWidth,top+(rowHeight-switchHeight)/2,switchWidth,switchHeight),item.Switch.Value,p)
                     elif reserve>0 then
