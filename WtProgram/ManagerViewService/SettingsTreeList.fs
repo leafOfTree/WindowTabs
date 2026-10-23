@@ -55,6 +55,10 @@ type TreeListItem(text:string) =
     member val Dimmed = false with get,set
     /// A switch at the row's right end, on or off, for a setting the row stands for.
     member val Switch : bool option = None with get,set
+    /// A note just after the name, in the muted colour, such as the row's shortcut.
+    member val Suffix = "" with get,set
+    /// A down arrow after the last column's text, for a value picked from a list, as drop-downs show.
+    member val Dropdown = false with get,set
     /// A colour shown as a dot where the icon goes, for a row that stands for one.
     member val Swatch : Color option = None with get,set
     /// Said on hover over the row's icon or glyph, for a row whose icon stands in for a name. The
@@ -775,7 +779,18 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         g.DrawEllipse(edge,dot)
                     if not editing then
                         let nameBounds,laid,add,_ = if item.Chips.IsEmpty && not item.ChipAdd then bounds,[],None,1 else this.chipLayout(item,level,top)
-                        this.drawMarked(g,item.Text,item.highlights 0,nameBounds,flags,this.Font,text,p)
+                        if item.Suffix="" then this.drawMarked(g,item.Text,item.highlights 0,nameBounds,flags,this.Font,text,p)
+                        else
+                            // The note right after the name, which gives way to it when room is short.
+                            // Measured as drawn, with the padding the text is drawn with.
+                            let measure (value:string) = TextRenderer.MeasureText(g,value,this.Font,Size(Int32.MaxValue,rowHeight),flags).Width
+                            let gap = Dpi.scale 6
+                            let suffixWidth = measure item.Suffix
+                            let nameWidth = min (measure item.Text+Dpi.scale 2) (max 0 (nameBounds.Width-suffixWidth-gap))
+                            this.drawMarked(g,item.Text,item.highlights 0,Rectangle(nameBounds.X,nameBounds.Y,max 1 nameWidth,nameBounds.Height),flags,this.Font,text,p)
+                            let left = nameBounds.X+nameWidth+gap
+                            let muted = if isSelected && SystemInformation.HighContrast then SystemColors.HighlightText else p.muted
+                            TextRenderer.DrawText(g,item.Suffix,this.Font,Rectangle(left,nameBounds.Y,max 1 (nameBounds.Right-left),nameBounds.Height),muted,flags)
                         // Chips: a shade of the text over the row, so they show on any highlight.
                         let chipFill = if SystemInformation.HighContrast then SystemColors.Window else Color.FromArgb(26,p.text)
                         for chipIndex,box,closeBox in laid do
@@ -845,7 +860,12 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                     // The row's switch, if any, takes the right end of the last column; the text
                     // sits before it.
                     let switchWidth,switchHeight = Dpi.scale 36,Dpi.scale 18
-                    let reserve = if column=columns.Length-1 && item.Switch.IsSome then switchWidth+Dpi.scale 8 else 0
+                    let arrowWidth = Dpi.scale 10
+                    let reserve =
+                        if column<>columns.Length-1 then 0
+                        elif item.Switch.IsSome then switchWidth+Dpi.scale 8
+                        elif item.Dropdown then arrowWidth+Dpi.scale 8
+                        else 0
                     let bounds = Rectangle(cell.X+Dpi.scale 8,top,max 1 (cell.Width-Dpi.scale 16-reserve),rowHeight)
                     // Move text and its match highlights together, preserving ellipsis clipping.
                     let bounds =
@@ -855,9 +875,14 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         else bounds
                     let color = if isSelected then text else p.muted
                     this.drawMarked(g,item.value column,item.highlights column,bounds,flags,this.Font,color,p)
-                    if reserve>0 then
-                        let isOn = item.Switch.Value
-                        SettingsTreeList.drawSwitch(g,Rectangle(cell.Right-Dpi.scale 8-switchWidth,top+(rowHeight-switchHeight)/2,switchWidth,switchHeight),isOn,p)
+                    if reserve>0 && item.Switch.IsSome then
+                        SettingsTreeList.drawSwitch(g,Rectangle(cell.Right-Dpi.scale 8-switchWidth,top+(rowHeight-switchHeight)/2,switchWidth,switchHeight),item.Switch.Value,p)
+                    elif reserve>0 then
+                        // A chevron as the settings pages' drop-downs draw theirs.
+                        let cx,cy = float32(cell.Right-Dpi.scale 8-arrowWidth/2),float32(top+rowHeight/2)
+                        let s = float32(Dpi.scale 4)
+                        use pen = new Pen((if isSelected && SystemInformation.HighContrast then SystemColors.HighlightText else p.muted),1.5f)
+                        g.DrawLines(pen,[|PointF(cx-s,cy-s/2.0f);PointF(cx,cy+s/2.0f);PointF(cx+s,cy-s/2.0f)|])
                 | CheckColumn ->
                     match item.check column with
                     | Some isChecked ->

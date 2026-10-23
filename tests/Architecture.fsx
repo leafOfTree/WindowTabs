@@ -475,6 +475,10 @@ let main() =
         let session = CommandPalette.actionsPage IntPtr.Zero
         let sessionEntry = session.entries |> List.find(fun entry -> entry.title=tr Strings.Settings.restoreSession.caption)
         check ((session.aside "" sessionEntry).detail=tr Strings.General.sessionOff) "A choice's row did not show what it is set to"
+        check ((session.aside "" sessionEntry).dropdown) "A choice's value did not show the drop-down arrow"
+        // A command's shortcut goes just after its name, not at the right.
+        let exitEntry = session.entries |> List.find(fun entry -> entry.title=tr Strings.Commands.exit.caption)
+        check ((session.aside "" exitEntry).detail="" && not (session.aside "" exitEntry).dropdown) "A command's shortcut was put at the right end"
         match session.choose sessionEntry with
         | Choose options ->
             check (options |> List.map(fun option -> option.label)=[tr Strings.General.sessionOff;tr Strings.General.sessionWindows;tr Strings.General.sessionApps]) "A choice's values were not listed by name"
@@ -871,7 +875,7 @@ let main() =
           choose=(fun entry -> if entry.hwnd=IntPtr 1 then (ran <- "close"::ran; Done) else Choose [option "Work";option "Home"])
           shortcut=(fun _ -> None)
           dimmed=(fun _ -> false)
-          aside=(fun _ entry -> { detail=entry.program; switch=None; swatch=None })
+          aside=(fun _ entry -> { detail=entry.program; switch=None; swatch=None; shortcut=""; dropdown=false })
           concealed=fun _ -> true }
     let palette = TabSearchForm([mail;notes;editor],[mail.hwnd;editor.hwnd],pages=[commandsPage])
     check (palette.Scope=GroupTabs) "The palette did not open on the group"
@@ -902,7 +906,7 @@ let main() =
     pump 100
     // A setting turned in place: the palette stays up and its switch shows the new state.
     let mutable lamp = false
-    let switchPage = { commandsPage with choose=(fun _ -> lamp <- not lamp; Stay); aside=(fun _ _ -> { detail=""; switch=Some lamp; swatch=None }); concealed=fun _ -> false }
+    let switchPage = { commandsPage with choose=(fun _ -> lamp <- not lamp; Stay); aside=(fun _ _ -> { detail=""; switch=Some lamp; swatch=None; shortcut=""; dropdown=false }); concealed=fun _ -> false }
     let switched = TabSearchForm([mail;notes],[],pages=[switchPage],scope=ActionScope)
     switched.Query <- "clo"
     switched.Accept()

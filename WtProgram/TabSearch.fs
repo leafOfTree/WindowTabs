@@ -191,10 +191,11 @@ type PalettePage = {
     /// on is in front: not for a setting turned on or off, which the palette stays up to show.
     concealed:TabSearchEntry -> bool }
 
-/// The right end of a page's row: its detail, such as a shortcut or a page; or a switch, for a
-/// setting that is on or off. And a colour, for a row that stands for one, shown as a dot before
-/// its name.
-and PaletteAside = { detail:string; switch:bool option; swatch:Color option }
+/// What a page's row shows besides its name: at the right, its detail, such as a value or a
+/// page, with a down arrow when the value is picked from a list, or a switch, for a setting that
+/// is on or off; just after the name, in the muted colour, its shortcut, as editors list theirs;
+/// and a colour, for a row that stands for one, shown as a dot before the name.
+and PaletteAside = { detail:string; switch:bool option; swatch:Color option; shortcut:string; dropdown:bool }
 
 module private TabSearchNative =
     let EM_SETCUEBANNER = 0x1501
@@ -465,10 +466,10 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             | [],None ->
                 // A window's key before its program.
                 match windowShortcutText entry,TabSearch.source entry with
-                | "",detail -> { detail=detail; switch=None; swatch=None }
-                | key,"" -> { detail=key; switch=None; swatch=None }
-                | key,detail -> { detail=key+"   "+detail; switch=None; swatch=None }
-            | _ -> { detail=TabSearch.source entry; switch=None; swatch=None }
+                | "",detail -> { detail=detail; switch=None; swatch=None; shortcut=""; dropdown=false }
+                | key,"" -> { detail=""; switch=None; swatch=None; shortcut=key; dropdown=false }
+                | key,detail -> { detail=detail; switch=None; swatch=None; shortcut=key; dropdown=false }
+            | _ -> { detail=TabSearch.source entry; switch=None; swatch=None; shortcut=""; dropdown=false }
         let text (aside:PaletteAside) = aside.detail
         let asides = shown |> Array.map(fun (_,entry) -> aside entry)
         // Titles reclaim the fixed app column's spare space, including after filtering.
@@ -481,13 +482,15 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 width
         let programWidth =
             asides |> Array.fold(fun width aside ->
-                let switch = if aside.switch.IsSome then Dpi.scale 44 else 0
+                let switch = if aside.switch.IsSome then Dpi.scale 44 elif aside.dropdown then Dpi.scale 18 else 0
                 max width (switch+measure (text aside))) 0
         programColumn.Width <- max 48 (min 300 (int(Math.Ceiling(float programWidth/Dpi.currentFactor()))+16))
         shown |> Array.iteri(fun index (item,entry) ->
             let aside = asides.[index]
             item.Values.[1] <- text aside
             item.Switch <- aside.switch
+            item.Suffix <- aside.shortcut
+            item.Dropdown <- aside.dropdown
             if aside.swatch.IsSome then item.Swatch <- aside.swatch
             item.Highlights <- [| TabSearch.highlights input.Text entry.title; TabSearch.highlights input.Text item.Values.[1] |])
         list.Roots.Clear()

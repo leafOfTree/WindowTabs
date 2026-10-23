@@ -544,6 +544,25 @@ let main() =
             assertTrue (changes>=4 && not samples.[samples.Count-1]) (sprintf "A found setting did not blink twice and clear: %d changes" changes)
         hotKeys.["nextTab"] <- 3623
         form.Close()
+    // Palette rows: a shortcut just after the name, a value with its drop-down arrow, a switch.
+    do
+        use rowsForm = new Form(ClientSize=Size(560,160),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false)
+        let rows = new SettingsTreeList([TreeListColumn("",0,TextColumn);TreeListColumn("",160,TextColumn,RightAligned=true)],
+                                        ShowHeader=false,ShowExpanders=false,RowHeight=36,Dock=DockStyle.Fill,Font=SettingsUi.bodyFont())
+        let renamed = TreeListItem("Rename tab",Values=[|"";""|],Suffix="Ctrl+Alt+R")
+        let session = TreeListItem("Restore the last session after sign-in",Values=[|"";"Windows only"|],Dropdown=true)
+        let lamp = TreeListItem("Dim tabs in inactive groups",Values=[|"";""|],Switch=Some true,Suffix="Ctrl+Alt+D")
+        rows.Roots.AddRange([renamed;session;lamp])
+        rows.Rebuild()
+        rows.SelectedItem <- session
+        rowsForm.Controls.Add(rows)
+        SettingsUi.apply rowsForm
+        rowsForm.Show()
+        Application.DoEvents()
+        use image = new Bitmap(rowsForm.ClientSize.Width,rowsForm.ClientSize.Height)
+        rows.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+        image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","palette-rows.png"))
+        rowsForm.Close()
     // SettingsTreeList: expansion, keyboard navigation, check boxes and selection events.
     let treeList = new SettingsTreeList([TreeListColumn("Name",0,TextColumn);TreeListColumn("On",80,CheckColumn)])
     treeList.Size <- Size(400,300)
