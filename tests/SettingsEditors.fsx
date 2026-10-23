@@ -571,7 +571,8 @@ let main() =
         let textColor = TreeListItem("Tab text",Values=[|"";"#FFFFFF"|],ValueSwatch=Some Color.White)
         rows.Roots.AddRange([renamed;session;lamp;textColor])
         rows.Rebuild()
-        rows.SelectedItem <- session
+        // Chosen: a row with a shortcut, which lightens on the highlight.
+        rows.SelectedItem <- lamp
         rowsForm.Controls.Add(rows)
         SettingsUi.apply rowsForm
         rowsForm.Show()
