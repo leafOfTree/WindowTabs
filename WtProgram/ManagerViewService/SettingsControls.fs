@@ -1064,12 +1064,15 @@ module SettingsPopupLifetime =
                     if not popup.IsDisposed then popup.Dispose())
                 timer.Start())
 
-/// How long a search result's highlight holds, then fades: shared by setting rows and by the
-/// controls that draw their own highlight.
+/// A search result's highlight: two blinks, then a fade, so the eye is drawn to the row rather
+/// than left with a steady tint. Shared by setting rows and by the controls that draw their own.
 module SettingsFlash =
-    let hold,fade = 1500.0,1200.0
-    /// Highlight strength from 1 down to 0, after the given milliseconds.
-    let strength (elapsed:float) = if elapsed <= hold then 1.0 else max 0.0 (1.0-(elapsed-hold)/fade)
+    let hold,fade = 900.0,600.0
+    /// Highlight strength, 1 or 0 through the blinks and then from 1 down to 0, after the given
+    /// milliseconds.
+    let strength (elapsed:float) =
+        if elapsed <= hold then (if elapsed>350.0 && elapsed<550.0 then 0.0 else 1.0)
+        else max 0.0 (1.0-(elapsed-hold)/fade)
 
 type SettingsCombo(items:string[]) as this =
     inherit Button()

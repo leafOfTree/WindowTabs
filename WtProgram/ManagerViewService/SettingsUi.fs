@@ -111,12 +111,16 @@ module SettingsUi =
             let mix (a:Color) (b:Color) (t:float) =
                 let channel (x:byte) (y:byte) = int(Math.Round(float x+(float y-float x)*t))
                 Color.FromArgb(channel a.R b.R,channel a.G b.G,channel a.B b.B)
-            let clock = Diagnostics.Stopwatch.StartNew()
+            let clock = Diagnostics.Stopwatch()
             let timer = new Timer(Interval=16)
+            // The editors paint their own backgrounds in the row's colour, so they follow the tint.
+            let repaint() = if not row.IsDisposed then row.Invalidate(true)
             let finish restore =
                 timer.Stop()
                 timer.Dispose()
-                if restore then for item,color in targets do if not item.IsDisposed then item.BackColor <- color
+                if restore then
+                    for item,color in targets do if not item.IsDisposed then item.BackColor <- color
+                    repaint()
             timer.Tick.Add(fun _ ->
                 let p = palette()
                 // A theme change repaints everything with the new colours; leave those alone.
@@ -126,8 +130,18 @@ module SettingsUi =
                     if elapsed >= SettingsFlash.hold+SettingsFlash.fade then finish true
                     else
                         let strength = 0.22*SettingsFlash.strength elapsed
-                        for item,color in targets do item.BackColor <- mix color p.accent strength)
-            timer.Start())
+                        for item,color in targets do item.BackColor <- mix color p.accent strength
+                        repaint())
+            // From the row's next paint: opened from the palette, the window is not on screen
+            // yet, and a flash before that would be over before it is seen.
+            let mutable painted : PaintEventHandler = null
+            painted <- PaintEventHandler(fun _ _ ->
+                row.Paint.RemoveHandler painted
+                if not row.IsDisposed then
+                    clock.Start()
+                    timer.Start())
+            row.Paint.AddHandler painted
+            row.Invalidate())
 
     let button caption =
         let button = new SettingsActionButton(Text=caption, AutoSize=true, MinimumSize=Size(Dpi.scale 76,Dpi.scale 30))
