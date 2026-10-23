@@ -1059,6 +1059,8 @@ let main() =
     press editor Keys.Enter
     press editor (Keys.Control ||| Keys.Alt ||| Keys.K)
     check (assigned=SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.K) && recorder.ShortcutEditor.IsNone) "A free key was not set and the box left"
+    // The key shows beside the name, where shortcuts are, not cut short at the right end.
+    check (recorder.RowNotes |> List.exists(fun (suffix,right) -> suffix="Ctrl+Alt+K" && right<>"Ctrl+Alt+K")) "A key set in the palette was not shown beside the name"
     recorder.BeginAssign()
     let again = recorder.ShortcutEditor.Value
     press again Keys.Escape

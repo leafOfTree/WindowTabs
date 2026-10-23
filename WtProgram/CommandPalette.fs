@@ -155,9 +155,15 @@ module CommandPalette =
                   | Text(key,_) when key="numberLeaderKeys" -> askText item key
                   | Colour -> askColor item
                   | _ -> Services.managerView.showSetting item.id; Done)
+          // A key set here is shown from then on: the row's right end, kept, is worked out again.
           shortcut=(fun chosen ->
               match action chosen with
-              | ACommand command | ASwitch(_,_,command) -> assignment command
+              | ACommand command | ASwitch(_,_,command) ->
+                  assignment command |> Option.map(fun given ->
+                      { given with set=fun code ->
+                                       let taken = given.set code
+                                       if taken then asides.Remove chosen.hwnd |> ignore
+                                       taken })
               | AChoice _ | ASetting _ -> None)
           dimmed=(fun chosen -> match action chosen with ACommand command -> not (command.enabled active) | _ -> false)
           aside=(fun _ chosen ->

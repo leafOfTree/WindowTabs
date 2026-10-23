@@ -736,7 +736,9 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                         | Some name -> editor.Reject(previous,tr (Strings.Shortcuts.usedBy name))
                         | None when not (assignment.set editor.Shortcut) -> editor.Reject(previous,tr Strings.Shortcuts.inUse)
                         | None ->
-                            target.Values.[1] <- SettingsShortcut.text editor.Shortcut
+                            // Beside the name, where a row's shortcut is shown; the page lists
+                            // it afresh from now on.
+                            target.Suffix <- SettingsShortcut.text editor.Shortcut
                             list.Invalidate()
                             endAssign())
                     // Esc while recording stops it in the box's own key handling; the key's release
@@ -848,6 +850,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     member _.SwitchScope() = switchScope()
     /// The rows the search shows, in order.
     member _.Results = list.Roots |> Seq.map entryOf |> List.ofSeq
+    /// What each shown row has beside its name, and at its right end.
+    member _.RowNotes = list.Roots |> Seq.map(fun item -> item.Suffix,item.value 1) |> List.ofSeq
     member _.Selected =
         scoped() |> Array.tryFind(fun (item,_) -> obj.ReferenceEquals(item,list.SelectedItem)) |> Option.map snd
     member _.SelectNext() = move 1
