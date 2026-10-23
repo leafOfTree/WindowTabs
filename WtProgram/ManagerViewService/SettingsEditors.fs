@@ -254,12 +254,19 @@ type SettingsShortcutInput() as this =
     let messageTimer = new Timer(Interval=2500)
     let clearMessage() = messageTimer.Stop(); message <- None
     let showMessage error text = message <- Some(text,error); messageTimer.Stop(); messageTimer.Start(); this.Invalidate()
-    let stopRecording() = if recording then recording <- false; focusCue <- false; this.Invalidate()
+    /// Recording or not, with the app's own global shortcuts standing aside meanwhile, so the keys
+    /// pressed reach the box rather than run what they are bound to.
+    let setRecording value =
+        if value<>recording then
+            recording <- value
+            if value then ShortcutRecording.start() else ShortcutRecording.stop()
+    let stopRecording() = if recording then setRecording false; focusCue <- false; this.Invalidate()
     /// The × shows while the pointer is on the box, or it has the keyboard focus, so it takes no
     /// room the rest of the time.
     let canClear() = shortcut<>0 && not recording && message.IsNone && (hovering || this.Focused)
     let commit next =
-        recording <- false
+        // The keys come back before the new one is taken, so a key held elsewhere is still refused.
+        setRecording false
         focusCue <- false
         if next<>shortcut then
             this.Shortcut <- next
@@ -290,7 +297,8 @@ type SettingsShortcutInput() as this =
         this.SetStyle(ControlStyles.Selectable ||| ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer,true)
         this.AccessibleRole <- AccessibleRole.HotkeyField
         messageTimer.Tick.Add(fun _ -> clearMessage(); this.Invalidate())
-        this.Disposed.Add(fun _ -> messageTimer.Dispose())
+        // Closed while recording, as the palette's box can be: the keys come back all the same.
+        this.Disposed.Add(fun _ -> setRecording false; messageTimer.Dispose())
     member _.Shortcut
         with get() = shortcut
         and set(value) =
@@ -309,7 +317,7 @@ type SettingsShortcutInput() as this =
     member this.Reject(previous,reason) = this.Shortcut <- previous; showMessage true reason
     member this.StartRecording() =
         clearMessage()
-        recording <- true
+        setRecording true
         if not this.Focused then this.Focus() |> ignore
         this.Invalidate()
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); hovering <- true; this.Invalidate()

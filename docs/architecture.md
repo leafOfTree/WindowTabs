@@ -320,7 +320,10 @@ before constructing services. `LifetimeScope` owns resources immediately and rel
 them in reverse order, continuing when one cleanup fails. OLE drop targets revoke
 registration before the native HWND is destroyed and balance `OleInitialize`.
 Hotkeys reserve a new native registration before releasing the old one. A conflict
-preserves the working shortcut and does not persist the rejected value.
+preserves the working shortcut and does not persist the rejected value. While any shortcut box
+records (`ShortcutRecording`), every hotkey is released, as Windows would otherwise hand a
+registered key to the program before the box saw it and run its command; they are registered
+again as the last recording ends, before the recorded key is taken.
 
 Window search includes grouped tabs and switchable application windows without
 tabs, keeping each HWND only once. Ungrouped windows act as individual entries in

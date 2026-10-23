@@ -147,6 +147,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         lifetime.Own({new IDisposable with
             member _.Dispose() = tabSearchCell.value.iter(fun search -> search.Close())}) |> ignore
         this.registerHotKeys()
+        // While a shortcut is recorded, the keys go to the box rather than to what they run.
+        lifetime.Own(ShortcutRecording.Changed.Subscribe(fun recording ->
+            if recording then hotKeyManager.suspend() else hotKeyManager.resume())) |> ignore
         lifetime.Own(Services.settings.notifyValue "enableNumberLeader" (fun value ->
             if unbox<bool> value then
                 if not ((this :> IProgram).setHotKey "numberLeader" ((this :> IProgram).getHotKey "numberLeader")) then

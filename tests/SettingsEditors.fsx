@@ -496,8 +496,10 @@ let main() =
         | _ -> failwith "Number modifier is not a choice"
         next.StartRecording()
         assertTrue (command next Keys.A && next.IsRecording && next.Shortcut=3623) "Plain key is refused while recording"
+        assertTrue (ShortcutRecording.isActive()) "Recording did not set the app's own keys aside"
         command next Keys.Escape |> ignore
         assertTrue (not next.IsRecording && next.Shortcut=3623) "Esc cancels recording"
+        assertTrue (not (ShortcutRecording.isActive())) "Cancelling a recording did not give the keys back"
         next.StartRecording()
         command next (Keys.Control ||| Keys.OemCloseBrackets) |> ignore
         let expected = SettingsShortcut.encode (Keys.Control ||| Keys.OemCloseBrackets)

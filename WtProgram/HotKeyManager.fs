@@ -6,6 +6,7 @@ open System.Collections.Generic
 type HotKeyBindings(register:int * int * int -> bool, unregister:int -> unit) =
     let bindings = Dictionary<string,int * int * int * (unit -> unit)>()
     let mutable nextId = 1
+    let mutable suspended = false
     member _.Register name (modifiers,key) handler =
         let old = match bindings.TryGetValue(name) with true,value -> Some value | _ -> None
         match old with
@@ -25,8 +26,21 @@ type HotKeyBindings(register:int * int * int -> bool, unregister:int -> unit) =
                 true
             else false
     member _.Invoke id =
-        bindings.Values |> Seq.tryFind(fun (registered,_,_,_) -> registered=id)
-        |> Option.iter(fun (_,_,_,handler) -> handler())
+        if not suspended then
+            bindings.Values |> Seq.tryFind(fun (registered,_,_,_) -> registered=id)
+            |> Option.iter(fun (_,_,_,handler) -> handler())
+    /// Lets every key go while a shortcut is being recorded, keeping what each is bound to.
+    member _.Suspend() =
+        if not suspended then
+            suspended <- true
+            for id,_,_,_ in bindings.Values do unregister id
+    /// Takes the keys back once recording ends. One another program took meanwhile stays unbound,
+    /// as at start.
+    member _.Resume() =
+        if suspended then
+            suspended <- false
+            for id,modifiers,key,_ in List.ofSeq bindings.Values do register(id,modifiers,key) |> ignore
+    member _.IsSuspended = suspended
     member _.Unregister name =
         match bindings.TryGetValue(name) with
         | true,(id,_,_,_) -> unregister id; bindings.Remove(name) |> ignore
@@ -48,6 +62,8 @@ type HotKeyManager() =
     do dispatch <- bindings.Invoke
     member _.register name chord handler = bindings.Register name chord handler
     member _.unregister name = bindings.Unregister name
+    member _.suspend() = bindings.Suspend()
+    member _.resume() = bindings.Resume()
     interface IDisposable with
         member _.Dispose() =
             (bindings :> IDisposable).Dispose()

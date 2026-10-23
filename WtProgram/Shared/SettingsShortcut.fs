@@ -2,6 +2,23 @@
 open System
 open System.Windows.Forms
 
+/// While a shortcut is being recorded, the app's own global shortcuts stand aside: Windows hands
+/// a registered key to its owner before any window sees it, so the box never got the key, and
+/// the command bound to it ran instead. Main thread only, where the boxes and the hotkeys live.
+module ShortcutRecording =
+    let private count = ref 0
+    let private changed = Event<bool>()
+    /// True as the first recording starts, false as the last one ends.
+    let Changed = changed.Publish
+    let isActive() = count.Value>0
+    let start() =
+        count.Value <- count.Value+1
+        if count.Value=1 then changed.Trigger true
+    let stop() =
+        if count.Value>0 then
+            count.Value <- count.Value-1
+            if count.Value=0 then changed.Trigger false
+
 /// Shortcuts use the hotkey control's encoding: virtual key in the low byte,
 /// HOTKEYF_* modifier flags in the high byte.
 module SettingsShortcut =
