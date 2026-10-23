@@ -202,6 +202,20 @@ let main () =
                     check (active.fillColor=Color.Blue) "A fill changed the colour of the active tab"
                     check (inactive.fillColor=Theme.tabShade 0.12 0.6 Color.Blue) "An inactive filled tab is not a darker, quieter shade of its colour"
                     check (hovered.fillColor=Theme.tabShade 0.06 0.75 Color.Blue) "Hovering a filled tab gives no feedback"
+                    // Raised, the active tab sits on the colour's own bar, as its neighbours are,
+                    // so a coloured strip does not break to the plain bar round it.
+                    if style<>JoinedTabs then
+                        check (active.barColor=inactive.fillColor) "A raised filled tab sits on the plain bar"
+                        check (inactive.separatorColor<>appearance.tabBorderColor) "The plain bar's separator cuts a coloured bar"
+                        use image = (active :> ISprite).render.bitmap
+                        let corner = image.GetPixel(0,image.Height/2)
+                        check (corner.ToArgb()=inactive.fillColor.ToArgb()) (sprintf "A raised filled tab's slot is %A, not its colour's bar" corner)
+                        // Four tabs, the third in front, as the screenshot of a coloured strip had them.
+                        let strip = { tinted with size=Sz(760,tinted.size.height)
+                                                  lorder=List2([1;2;3;4]); zorder=List2([3;1;2;4])
+                                                  tabs=Map2(List2([ for index in 1..4 -> index,{info (sprintf "Tab %d" index) with tint=Some Color.Blue;colorStyle="Fill"} ])) }
+                        use whole = strip.sprite.render.bitmap
+                        whole.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "filled-strip-%A.png" style))
                     check (TextContrast.luminance inactive.fillColor<TextContrast.luminance hovered.fillColor &&
                            TextContrast.luminance hovered.fillColor<TextContrast.luminance active.fillColor) "The active filled tab is not the brightest"
                     // The text gives way instead, chosen for the colour whatever the text setting says:

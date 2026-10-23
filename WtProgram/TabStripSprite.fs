@@ -358,6 +358,22 @@ type TabSprite<'id> = {
                 else Theme.tabShade 0.12 0.6 tint
             | _ -> basis
 
+    /// What a raised tab sits on in its slot: the bar, in the shade a filled tab's colour has when
+    /// not raised, so a strip of coloured tabs reads as one coloured bar with the active tab on it
+    /// rather than breaking to the plain bar round it.
+    member this.barColor =
+        match this.tint with
+        | Some tint when this.displayInfo.colorStyle="Fill" && this.displayInfo.bgColor.IsNone -> Theme.tabShade 0.12 0.6 tint
+        | _ -> this.appearance.tabNormalBgColor
+
+    /// The hairline between two plain tabs. On a filled colour it is drawn from the tab's own text
+    /// and fill, as the plain bar's follows its text and bar colours: the bar's grey cut a coloured
+    /// bar in two.
+    member this.separatorColor =
+        match this.tint with
+        | Some _ when this.displayInfo.colorStyle="Fill" && this.displayInfo.bgColor.IsNone -> Theme.blend 0.25 this.textColor this.fillColor
+        | _ -> this.appearance.tabBorderColor
+
     /// Quiet inactive titles and close buttons on every tab style, while preserving readable
     /// contrast. Hover, capture, attention and high contrast keep the full text colour.
     member this.textColor =
@@ -457,8 +473,8 @@ type TabSprite<'id> = {
     /// A raised tab the bar's own colour, as in high contrast, is outlined so it still shows. One
     /// only as light or dark as the bar, a deep tab colour on a dark bar, stands out by its colour.
     member private this.needsOutline =
-        TextContrast.ratio this.fillColor this.appearance.tabNormalBgColor < 1.25 &&
-        Theme.OkLab.distance this.fillColor this.appearance.tabNormalBgColor < 0.1
+        TextContrast.ratio this.fillColor this.barColor < 1.25 &&
+        Theme.OkLab.distance this.fillColor this.barColor < 0.1
 
     // The inset exists because GDI+ puts pixel centres on integer coordinates
     // once antialiasing is on, so column k spans k-0.5 to k+0.5, and a fill run
@@ -567,7 +583,7 @@ type TabSprite<'id> = {
                 use background = new SolidBrush(this.fillColor)
                 g.FillPath(background, path)
             | FolderTabs | PillTabs ->
-                use bar = new SolidBrush(if this.isRaised then this.appearance.tabNormalBgColor else this.fillColor)
+                use bar = new SolidBrush(if this.isRaised then this.barColor else this.fillColor)
                 g.FillPath(bar, path)
                 if this.isRaised then
                     use raised = this.raisedShape -0.5f
@@ -610,7 +626,7 @@ type TabSprite<'id> = {
             if this.showLeftSeparator then
                 let inset = float32 this.size.height * 0.28f
                 let x = 0.0f
-                use pen = new Pen(this.appearance.tabBorderColor, 1.0f)
+                use pen = new Pen(this.separatorColor, 1.0f)
                 do g.DrawLine(pen, x, inset, x, float32 this.size.height - inset)
             if this.onlyIcon.not then
                 //the text can't be drawn as a separate bitmap because clearcase fonts
