@@ -734,7 +734,27 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 // The desktop keeps each group's windows in tab order.
                 let groups = this.desktop.groups.list |> List.map(fun group -> group.windows.list)
                 let group = this.desktop.foregroundGroup |> Option.map(fun group -> group.windows.list) |> Option.defaultValue []
-                TabSearchForm(TabSearch.tabs nameOverride active groups,group,settings=(settingsManager :> ISettings))
+                // Alt+Enter on a window gives it a key, kept by its program and name.
+                let windowShortcut (entry:TabSearchEntry) =
+                    let path = try os.windowFromHwnd(entry.hwnd).pid.processPath with _ -> ""
+                    if path="" then None
+                    else
+                        let saved() : WindowShortcut list = this.windowShortcuts()
+                        let current() = WindowShortcuts.find (saved()) path entry.title |> Option.map(fun s -> s.code) |> Option.defaultValue 0
+                        Some { current=current()
+                               usedBy=fun code ->
+                                   if code=0 then None
+                                   else
+                                       match Commands.holder (this :> IProgram).getHotKey "" code with
+                                       | Some command -> Some(tr command.text.caption)
+                                       | None ->
+                                           saved() |> List.tryFind(fun other -> other.code=code && not (AppIdentity.same other.path path && other.title=entry.title))
+                                           |> Option.map(fun other -> other.title)
+                               set=fun code -> (this :> IProgram).setWindowShortcut { path=path; title=entry.title; code=code } }
+                TabSearchForm(TabSearch.tabs nameOverride active groups,group,settings=(settingsManager :> ISettings),
+                              windowShortcut=windowShortcut,windowShortcutText=(fun entry ->
+                                  let path = try os.windowFromHwnd(entry.hwnd).pid.processPath with _ -> ""
+                                  WindowShortcuts.find (this.windowShortcuts()) path entry.title |> Option.map(fun s -> SettingsShortcut.text s.code) |> Option.defaultValue ""))
             | Some wanted ->
                 let pages = [CommandPalette.actionsPage active
                              CommandPalette.workspacesPage (this.workspaceSummaries()) this.restoreWorkspaceNamed]
@@ -822,6 +842,26 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 let shortcut = if key="numberLeader" && not settingsManager.settings.enableNumberLeader then 0 else this.cast<IProgram>().getHotKey(key)
                 let shortcut = HotKeyShortcut(HotKeyControlCode=int16(shortcut))
                 hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags, shortcut.RegisterHotKeyVirtualKeyCode) (this.runCommand command) |> ignore)
+        for shortcut in this.windowShortcuts() do this.registerWindowShortcut shortcut |> ignore
+
+    member private this.windowShortcuts() : WindowShortcut list = WindowShortcuts.read (Services.settings.root.["windowShortcuts"])
+
+    member private this.registerWindowShortcut(shortcut:WindowShortcut) =
+        let chord = HotKeyShortcut(HotKeyControlCode=int16 shortcut.code)
+        hotKeyManager.register (WindowShortcuts.key shortcut) (chord.RegisterHotKeyModifierFlags,chord.RegisterHotKeyVirtualKeyCode) (fun () -> this.switchToWindow shortcut)
+
+    /// The window a key names comes to the front; with none of its program open, the program starts.
+    member private this.switchToWindow(shortcut:WindowShortcut) =
+        let nameOverride hwnd = windowNameOverride.tryFind(hwnd).bind(id)
+        let windows =
+            os.windowsInZorder.list
+            |> List.filter(fun window -> window.isAltTabWindow || this.isInGroup window.hwnd)
+            |> List.map(fun window -> window.hwnd,(try window.pid.processPath with _ -> ""),(nameOverride window.hwnd |> Option.defaultValue window.text))
+        match WindowShortcuts.target windows shortcut with
+        | Some hwnd -> os.windowFromHwnd(hwnd).setForegroundOrRestore(false)
+        | None ->
+            try Process.Start(ProcessStartInfo(shortcut.path,UseShellExecute=true)) |> ignore
+            with error -> Notice.error (IO.Path.GetFileName shortcut.path) error.Message
 
     /// A command from its hotkey, for the window in front; a choice it leaves opens the palette.
     member this.runCommand (command:Command) () =
@@ -979,6 +1019,15 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         member x.saveWorkspace() = this.saveWorkspace()
         member x.restoreWorkspace() = this.restoreWorkspace()
         member x.restoreWorkspaceNamed name = this.restoreWorkspaceNamed name
+        member x.windowShortcuts() = this.windowShortcuts()
+        member x.setWindowShortcut shortcut =
+            let registered = shortcut.code=0 || this.registerWindowShortcut shortcut
+            if registered then
+                if shortcut.code=0 then hotKeyManager.unregister (WindowShortcuts.key shortcut)
+                let root = Services.settings.root
+                root.["windowShortcuts"] <- WindowShortcuts.write (WindowShortcuts.set (this.windowShortcuts()) shortcut)
+                Services.settings.root <- root
+            registered
 
         // As a tab dragged out onto the desktop: marked as dropped, it starts a group by hand when
         // the next scan finds it on its own.

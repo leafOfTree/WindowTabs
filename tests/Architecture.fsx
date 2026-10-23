@@ -264,7 +264,9 @@ let main() =
             member _.saveWorkspace() = ()
             member _.restoreWorkspace() = ()
             member _.restoreWorkspaceNamed _ = ()
-            member _.detachTab _ = ()})
+            member _.detachTab _ = ()
+            member _.windowShortcuts() = []
+            member _.setWindowShortcut _ = true})
         let desktop = Desktop({new IDesktopNotification with
                                 member _.dragDrop _ = ()
                                 member _.dragEnd() = ()},api,dispatcher)
@@ -895,6 +897,24 @@ let main() =
     unlisted.BeginAssign()
     check unlisted.ShortcutEditor.IsNone "Alt+Enter opened a shortcut box on a row that takes none"
     unlisted.Close()
+    pump 100
+    // A window's key: kept by program and name, found among the windows open, else the program starts.
+    let chrome : WindowShortcut = { path = @"C:\Apps\chrome.exe"; title="Inbox"; code=1616 }
+    let kept = WindowShortcuts.read (WindowShortcuts.write [chrome])
+    check (kept=[chrome]) "A window's key did not survive the settings file"
+    check (WindowShortcuts.set [chrome] { chrome with code=0 }=[] && (WindowShortcuts.set [chrome] { chrome with code=1620 }).Head.code=1620) "Setting or clearing a window's key did not replace it"
+    let open' = [IntPtr 1,@"D:\Other\CHROME.EXE","News";IntPtr 2,@"D:\Other\chrome.exe","Inbox";IntPtr 3,@"C:\Apps\notepad.exe","Inbox"]
+    check (WindowShortcuts.target open' chrome=Some(IntPtr 2)) "The window with the name was not chosen"
+    check (WindowShortcuts.target open' { chrome with title="Gone" }=Some(IntPtr 1)) "The program's most recent window was not chosen"
+    check (WindowShortcuts.target open' { chrome with path="word.exe" }).IsNone "A window of another program was chosen"
+    let mutable givenKey = 0
+    let keyed = TabSearchForm([mail;notes],[],windowShortcut=(fun entry -> if entry.hwnd=mail.hwnd then Some { current=0; usedBy=(fun _ -> None); set=(fun code -> givenKey <- code; true) } else None))
+    keyed.Query <- "inbox"
+    keyed.BeginAssign()
+    let keyEditor = match keyed.ShortcutEditor with Some editor -> editor | None -> failwith "Alt+Enter did not open a shortcut box on a window"
+    press keyEditor (Keys.Control ||| Keys.Alt ||| Keys.M)
+    check (givenKey=SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.M) && keyed.ShortcutEditor.IsNone) "A window's key was not set from the search box"
+    keyed.Close()
     pump 100
     printfn "PASS: atomic/deferred saves, failure retry and backup recovery, subscriptions, temporary state, coalesced scans, dispatch, group cleanup, popup disposal and tab search."
 TestInit.run main

@@ -199,10 +199,14 @@ module private TabSearchNative =
 /// windows, or in their place with windows false; scope: the one to open on.
 type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISettings,
                    ?pick:IntPtr -> unit, ?within:Rectangle, ?prompt:string, ?rows:int, ?width:int,
-                   ?pages:PalettePage list, ?scope:PaletteScope, ?windows:bool) =
+                   ?pages:PalettePage list, ?scope:PaletteScope, ?windows:bool,
+                   ?windowShortcut:TabSearchEntry -> ShortcutAssignment option, ?windowShortcutText:TabSearchEntry -> string) =
     let rowHeight = 44
     let visibleRows = defaultArg rows 9
     let windows = defaultArg windows true
+    /// Alt+Enter on a window: the key given to it, when the box is told how; and the key it has.
+    let windowShortcut = defaultArg windowShortcut (fun _ -> None)
+    let windowShortcutText = defaultArg windowShortcutText (fun _ -> "")
     let palette = SettingsColors.current()
     let windowPrompt = defaultArg prompt (tr Strings.TabSearch.prompt)
     let pages = defaultArg pages []
@@ -302,7 +306,10 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         Rectangle(Dpi.scale 2,0,width,scopeHeight),keyCap (width+Dpi.scale 12) "Esc"
     /// Whether the rows in view can be given shortcuts, said at the line's right end.
     let canAssign() =
-        choices.IsEmpty && (page() |> Option.exists(fun page -> page.entries |> List.exists(fun entry -> (page.shortcut entry).IsSome)))
+        choices.IsEmpty &&
+        (match page() with
+         | Some page -> page.entries |> List.exists(fun entry -> (page.shortcut entry).IsSome)
+         | None -> scoped() |> Array.exists(fun (_,entry) -> (windowShortcut entry).IsSome))
     /// The shortcut editor over the chosen row while one is being set, with its row.
     let mutable assigning : (TreeListItem * SettingsShortcutInput) option = None
     let mutable hovered : PaletteScope option = None
@@ -352,7 +359,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                         TextRenderer.DrawText(g,caption target,SettingsUi.bodyFont(),bounds,color,centred)
                     key |> Option.iter(fun cap -> drawKey cap "Tab") }
     /// Under the rows, at the right: the key that sets a row's shortcut, named, as editors put it.
-    let footerHeight = if pages.IsEmpty then 0 else Dpi.scale 28
+    let footerHeight = if pages.IsEmpty && (tabs |> List.forall(fun entry -> (windowShortcut entry).IsNone)) then 0 else Dpi.scale 28
     let footer =
         { new Panel(Dock=DockStyle.Bottom,Height=footerHeight,BackColor=palette.surface) with
             override this.OnPaint(e) =
@@ -450,6 +457,12 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         let aside (entry:TabSearchEntry) : PaletteAside =
             match choices,page() with
             | [],Some page -> page.aside input.Text entry
+            | [],None ->
+                // A window's key before its program.
+                match windowShortcutText entry,TabSearch.source entry with
+                | "",detail -> { detail=detail; switch=None }
+                | key,"" -> { detail=key; switch=None }
+                | key,detail -> { detail=key+"   "+detail; switch=None }
             | _ -> { detail=TabSearch.source entry; switch=None }
         let text (aside:PaletteAside) = aside.detail
         let asides = shown |> Array.map(fun (_,entry) -> aside entry)
@@ -581,7 +594,9 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             let target = list.SelectedItem
             if not (isNull target) then
                 scoped() |> Array.tryFind(fun (row,_) -> obj.ReferenceEquals(row,target))
-                |> Option.bind(fun (_,entry) -> page() |> Option.bind(fun page -> page.shortcut entry |> Option.map(fun assignment -> entry,assignment)))
+                |> Option.bind(fun (_,entry) ->
+                    let assignment = match page() with Some page -> page.shortcut entry | None -> windowShortcut entry
+                    assignment |> Option.map(fun assignment -> entry,assignment))
                 |> Option.iter(fun (entry,assignment) ->
                     let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=assignment.current,
                                                            BackColor=palette.surface,ForeColor=palette.text)

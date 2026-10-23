@@ -333,7 +333,11 @@ overwrite the preferred scope.
 The same form is the command palette (`Ctrl+Alt+P` by default), opened with pages in place
 of the window scopes (`windows=false`): Tab goes round the actions and the saved workspaces
 (restoring the one chosen); `>` typed first lists the actions. Each key closes its own box or
-puts it up in the other's place. The actions page is one list: the commands (`Commands.all`,
+puts it up in the other's place. Alt+Enter on a window in the search gives it a key
+(`WindowShortcut`, kept by program path and name in `windowShortcuts`, registered as
+`window:<app>|<name>`): pressed, it brings the program's window with that name to the front,
+else its most recent window, and starts the program when none is open; the Shortcuts page
+lists them in a card of their own. The actions page is one list: the commands (`Commands.all`,
 those listed, in their categories, dimmed when they can do nothing for the window that was in
 front, with their shortcuts beside them), then the settings by page, leaving out the catalog's
 shortcut entries, which are commands already; a setting that is on or off shows a switch and

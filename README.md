@@ -35,7 +35,7 @@ the top edge to show them, or set **Auto-hide tabs** to **Never**.
 | --- | --- |
 | Next / previous tab | Ctrl + Alt + → / ← |
 | Tab 1–9 | Ctrl + 1–9 (or Alt) |
-| Search tabs | Ctrl + Alt + T |
+| Search tabs | Ctrl + Alt + T; Alt + Enter on a window gives it a key of its own |
 | New window of the current app | Ctrl + Alt + N |
 | Switch tabs with the mouse | Scroll over the tab bar, or Shift + scroll over the window |
 | Move the current tab | Ctrl + scroll over the tab bar |

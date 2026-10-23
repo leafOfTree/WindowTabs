@@ -121,6 +121,8 @@ type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
         member _.restoreWorkspace() = dispatcher.Post(fun () -> inner.restoreWorkspace())
         member _.restoreWorkspaceNamed name = dispatcher.Post(fun () -> inner.restoreWorkspaceNamed name)
         member _.detachTab hwnd = dispatcher.Post(fun () -> inner.detachTab hwnd)
+        member _.windowShortcuts() = dispatcher.Send(fun () -> inner.windowShortcuts())
+        member _.setWindowShortcut shortcut = dispatcher.Send(fun () -> inner.setWindowShortcut shortcut)
 
 type DispatchedFilterService(inner:IFilterService, dispatcher:IDispatcher) =
     interface IFilterService with

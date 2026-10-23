@@ -169,6 +169,11 @@ type IProgram =
     abstract member restoreWorkspaceNamed : string -> unit
     /// Takes a tab out of its group into a group of its own, as dragging it out does.
     abstract member detachTab : IntPtr -> unit
+    /// The keys given to windows from the search box.
+    abstract member windowShortcuts : unit -> WindowShortcut list
+    /// Gives a window its key, or with a code of 0 takes it away; false when another program
+    /// holds the key.
+    abstract member setWindowShortcut : WindowShortcut -> bool
 
 /// Whether a group set to combine its taskbar icons has its one button, and if not, why its
 /// windows keep their own: else the setting looked on while nothing was combined.
