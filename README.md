@@ -88,7 +88,9 @@ To update, exit WindowTabs from the tray and replace the exe. Settings are kept.
 - **Odd behavior after upgrading?** **Settings → Support → Reset to defaults**
   (your old settings are backed up first).
 - **Run as administrator?** Not needed and not recommended. Windows blocks some
-  input between admin and normal windows.
+  input between admin and normal windows, and groups of normal windows keep a
+  taskbar button each even with **Combine taskbar icons** on; the group's tab menu
+  says why.
 - **Dropping files on a tab does nothing?** Windows blocks dragging from an app into
   one running as administrator.
 
