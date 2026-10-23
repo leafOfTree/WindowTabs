@@ -56,10 +56,19 @@ module TabSearch =
 
     let matches query entry = (score query entry).IsSome
 
-    /// How well an entry matches, best first: match quality, earlier positions, a window on the
-    /// desktop in view, then recency. None when it does not match.
+    /// 0 for a row named just what was typed, 1 for one whose name starts with it: the whole name
+    /// of a command finds that command before a longer one, or a description, that mentions it.
+    let private named (query:string) (entry:TabSearchEntry) =
+        let typed = query.Trim()
+        if typed="" then 2
+        elif entry.title.Equals(typed,StringComparison.CurrentCultureIgnoreCase) then 0
+        elif entry.title.StartsWith(typed,StringComparison.CurrentCultureIgnoreCase) then 1
+        else 2
+
+    /// How well an entry matches, best first: its name, match quality, earlier positions, a window
+    /// on the desktop in view, then recency. None when it does not match.
     let order query (entry:TabSearchEntry) =
-        rank query entry |> Option.map(fun (quality,position) -> -quality,position,(if entry.desktop="" then 0 else 1),entry.recency)
+        rank query entry |> Option.map(fun (quality,position) -> named query entry,-quality,position,(if entry.desktop="" then 0 else 1),entry.recency)
 
     /// The best match. With nothing typed that is the previous tab, so Enter goes back to it as
     /// Alt+Tab does.
