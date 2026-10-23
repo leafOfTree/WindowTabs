@@ -673,6 +673,7 @@ module Strings =
         let choicePrompt = { en="Choose, or type to filter"; zh="选择一项，或输入以筛选"; ja="選択するか、入力して絞り込み"; ar="اختر، أو اكتب للتصفية" }
         let noActions = { en="No matching commands or settings."; zh="没有匹配的命令或设置。"; ja="一致するコマンドや設定はありません。"; ar="لا توجد أوامر أو إعدادات مطابقة." }
         let noWorkspaces = { en="No workspace saved yet."; zh="尚未保存任何工作区。"; ja="保存されたワークスペースはまだありません。"; ar="لم يتم حفظ أي مساحة عمل بعد." }
+        let noMatchingWorkspaces = { en="No matching workspaces."; zh="没有匹配的工作区。"; ja="一致するワークスペースはありません。"; ar="لا توجد مساحات عمل مطابقة." }
         let noChoices = { en="No matching choices."; zh="没有匹配的选项。"; ja="一致する項目はありません。"; ar="لا توجد خيارات مطابقة." }
         /// Asking for a size: the hint in the box, the line under it, and why a value is refused.
         let numberPrompt low high = { en=sprintf "A number from %d to %d" low high; zh=sprintf "输入 %d 到 %d 之间的数字" low high; ja=sprintf "%d～%d の数値" low high; ar=sprintf "رقم من %d إلى %d" low high }

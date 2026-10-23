@@ -882,7 +882,7 @@ let main() =
     let mutable ran = []
     let option name = { label=name; detail=""; swatch=None; run=fun () -> ran <- name::ran; Done }
     let commandsPage =
-        { scope=ActionScope; caption="Actions"; prompt="cmd"; noMatches="none"; glyph=NoGlyph
+        { scope=ActionScope; caption="Actions"; prompt="cmd"; noMatches="none"; noEntries="empty"; glyph=NoGlyph
           entries=[ { TabSearch.create (IntPtr 1) "Close tab" "Close tab" "Ctrl+Alt+W" with recency=0 }
                     { TabSearch.create (IntPtr 2) "Restore workspace" "Restore workspace" "" with recency=1 } ]
           choose=(fun entry -> if entry.hwnd=IntPtr 1 then (ran <- "close"::ran; Done) else Choose [option "Work";option "Home"])
@@ -972,6 +972,19 @@ let main() =
     check (numbered.Depth=0 && numbered.AskBox.IsNone && numbered.Query="close") "Esc did not take the number box away"
     check (numbered.Caret=5) "Esc did not put the caret back at the end of the search"
     numbered.Close()
+    pump 100
+    // A search that finds nothing says so; a page with nothing in it says that instead.
+    let searched = TabSearchForm([mail;notes],[],pages=[commandsPage],scope=ActionScope)
+    searched.Query <- "zzz"
+    check (searched.Message="none") "A search that found nothing did not say so"
+    searched.Close()
+    pump 100
+    let emptyPage = { commandsPage with entries=[] }
+    let nothing = TabSearchForm([mail;notes],[],pages=[emptyPage],scope=ActionScope)
+    check (nothing.Message="empty") "A page with nothing in it did not say so"
+    nothing.Query <- "ee"
+    check (nothing.Message="none") "A search on an empty page did not say it found nothing"
+    nothing.Close()
     pump 100
     let colorPage = { commandsPage with choose=fun _ -> Ask { question with kind=ColorQuestion; value="#202020" } }
     let colored = TabSearchForm([mail;notes],[],pages=[colorPage],scope=ActionScope)

@@ -129,7 +129,7 @@ module CommandPalette =
         let text action = match action with ACommand command -> command.text | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item -> item.text
         let extra action = match action with ACommand command -> [command.id] | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item -> [SettingsCatalog.storageKey item]
         { scope=ActionScope; caption=tr Strings.TabSearch.actions; prompt=tr Strings.TabSearch.actionPrompt
-          noMatches=tr Strings.TabSearch.noActions; glyph=NoGlyph
+          noMatches=tr Strings.TabSearch.noActions; noEntries=tr Strings.TabSearch.noActions; glyph=NoGlyph
           entries=listed |> Array.mapi(fun index action ->
                       let text = text action
                       let recency = rank action
@@ -184,7 +184,7 @@ module CommandPalette =
     let workspacesPage (workspaces:(string * int) list) (restore:string -> unit) =
         let names = workspaces |> List.map fst |> Array.ofList
         { scope=WorkspaceScope; caption=tr Strings.Pages.workspaces; prompt=tr Strings.TabSearch.workspacePrompt
-          noMatches=tr Strings.TabSearch.noWorkspaces; glyph=WorkspaceGlyph
+          noMatches=tr Strings.TabSearch.noMatchingWorkspaces; noEntries=tr Strings.TabSearch.noWorkspaces; glyph=WorkspaceGlyph
           entries=workspaces |> List.mapi(fun index (name,_) -> row index name [] [name] 0)
           choose=(fun chosen -> restore names.[int chosen.hwnd-1]; Done)
           shortcut=(fun _ -> None)

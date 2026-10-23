@@ -175,8 +175,10 @@ type PalettePage = {
     caption:string
     /// The hint in the empty box.
     prompt:string
-    /// Said when nothing matches.
+    /// Said when what is typed matches nothing.
     noMatches:string
+    /// Said when the page has nothing to list, nothing typed, such as before any workspace is saved.
+    noEntries:string
     glyph:TreeListGlyph
     entries:TabSearchEntry list
     choose:TabSearchEntry -> CommandOutcome
@@ -283,11 +285,11 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         | None,_::_,_ -> tr Strings.TabSearch.choicePrompt
         | None,[],Some page -> page.prompt
         | None,[],None -> windowPrompt
-    let currentEmpty() =
+    let currentEmpty (query:string) =
         match asking,choices,page() with
         | Some(question,error),_,_ -> error |> Option.defaultValue question.hint
         | None,_::_,_ -> tr Strings.TabSearch.noChoices
-        | None,[],Some page -> page.noMatches
+        | None,[],Some page -> if page.entries.IsEmpty && String.IsNullOrWhiteSpace query then page.noEntries else page.noMatches
         | None,[],None -> tr Strings.TabSearch.noMatches
     let input = new TextBox(Font=SettingsUi.bodyFont(),BorderStyle=BorderStyle.None,Tag="search-input",
                             BackColor=palette.surface,ForeColor=palette.text,
@@ -510,7 +512,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             |> Option.map fst
         list.SelectedItem <- Option.toObj chosen
         chosen |> Option.iter list.EnsureVisible
-        empty.Text <- currentEmpty()
+        empty.Text <- currentEmpty input.Text
         // A value being typed has the place of the rows to itself.
         list.Visible <- shown.Length>0 && asking.IsNone
         empty.Visible <- shown.Length=0 && asking.IsNone
@@ -864,7 +866,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     /// Offers what is typed for the value asked, as Enter does.
     member _.Answer() = answer()
     /// What the box says under it: the hint, why a value was refused, or that nothing matches.
-    member _.Message = if asking.IsSome then askNote.Text else currentEmpty()
+    member _.Message = if asking.IsSome then askNote.Text else currentEmpty input.Text
     /// Where the caret is in the search, and how much is selected after it.
     member _.Caret = input.SelectionStart+input.SelectionLength
     /// The value typed in the box asked for, as typed there.
