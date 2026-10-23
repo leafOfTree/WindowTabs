@@ -500,13 +500,14 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         let rows =
             options |> List.mapi(fun index option ->
                 let entry = { TabSearch.create (IntPtr(index+1)) option.label option.label option.detail with recency=index }
-                TreeListItem(option.label,Values=[|"";option.detail|]),entry)
+                TreeListItem(option.label,Values=[|"";option.detail|],Swatch=option.swatch),entry)
             |> Array.ofList
         let run (entry:TabSearchEntry) = options.[int entry.hwnd-1].run()
         choices <- (caption,rows,run,input.Text)::choices
         input.Text <- ""
         setPrompt()
         scopeLine.Invalidate()
+        footer.Invalidate()
         apply()
     let pop() =
         match choices with
@@ -515,6 +516,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             input.Text <- query
             setPrompt()
             scopeLine.Invalidate()
+            footer.Invalidate()
             apply()
         | [] -> ()
     /// On screen and in front, with the keys in the box.
@@ -601,6 +603,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             if canSwitchScope && (target=GroupTabs || target=AllTabs) then
                 settings |> Option.iter(fun api -> api.setValue("tabSearchScope",box(if target=AllTabs then "All" else "Group")))
             scopeLine.Invalidate()
+            footer.Invalidate()
             setPrompt()
             apply()
     /// Tab goes round the scopes; Shift+Tab the other way. Not while a command's choices are up.

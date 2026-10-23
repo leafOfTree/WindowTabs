@@ -779,7 +779,7 @@ let main() =
     check picked.IsClosed "Accepting a match did not close the tab search"
     // The palette: pages beside the windows, > for the commands, and a command's choices in place.
     let mutable ran = []
-    let option name = { label=name; detail=""; run=fun () -> ran <- name::ran; Done }
+    let option name = { label=name; detail=""; swatch=None; run=fun () -> ran <- name::ran; Done }
     let commandsPage =
         { scope=ActionScope; caption="Actions"; prompt="cmd"; noMatches="none"; glyph=NoGlyph
           entries=[ { TabSearch.create (IntPtr 1) "Close tab" "Close tab" "Ctrl+Alt+W" with recency=0 }

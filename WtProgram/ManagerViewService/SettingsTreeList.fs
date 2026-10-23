@@ -55,6 +55,8 @@ type TreeListItem(text:string) =
     member val Dimmed = false with get,set
     /// A switch at the row's right end, on or off, for a setting the row stands for.
     member val Switch : bool option = None with get,set
+    /// A colour shown as a dot where the icon goes, for a row that stands for one.
+    member val Swatch : Color option = None with get,set
     /// Said on hover over the row's icon or glyph, for a row whose icon stands in for a name. The
     /// icon only explains; it does not light up as a button would.
     member val IconTip = "" with get,set
@@ -338,7 +340,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         let size = Dpi.scale this.IconSize
         let left = cell.X+this.textLeft level
         let iconBox = Rectangle(left,top+(this.rowHeight-size)/2,size,size)
-        let x = if not (isNull item.Icon) || item.Glyph<>NoGlyph then left+size+Dpi.scale 8 else left
+        let x = if not (isNull item.Icon) || item.Glyph<>NoGlyph || item.Swatch.IsSome then left+size+Dpi.scale 8 else left
         iconBox,Rectangle(x,top,max 1 (cell.Right-Dpi.scale 8-x),this.rowHeight)
 
     /// Where a row's name ends and its chips go: the name keeps at most a quarter of the cell, and
@@ -763,6 +765,14 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         g.DrawImage(item.Icon,iconBox)
                     elif not hidesIcon && item.Glyph<>NoGlyph then
                         SettingsTreeList.drawGlyph(g,item.Glyph,iconBox,p.muted)
+                    elif not hidesIcon && item.Swatch.IsSome then
+                        // A dot as the tab menu shows its colours, with a hairline so a pale one shows on a pale surface.
+                        let side = max 4 (iconBox.Width*2/3)
+                        let dot = Rectangle(iconBox.X+(iconBox.Width-side)/2,iconBox.Y+(iconBox.Height-side)/2,side,side)
+                        use fill = new SolidBrush(item.Swatch.Value)
+                        g.FillEllipse(fill,dot)
+                        use edge = new Pen(Color.FromArgb(60,p.text))
+                        g.DrawEllipse(edge,dot)
                     if not editing then
                         let nameBounds,laid,add,_ = if item.Chips.IsEmpty && not item.ChipAdd then bounds,[],None,1 else this.chipLayout(item,level,top)
                         this.drawMarked(g,item.Text,item.highlights 0,nameBounds,flags,this.Font,text,p)

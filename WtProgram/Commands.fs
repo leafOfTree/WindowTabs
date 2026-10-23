@@ -8,8 +8,9 @@ type CommandOutcome =
     | Done
     | Choose of CommandChoice list
     | Stay
-/// One further step: its name, a detail beside it, and what choosing it does.
-and CommandChoice = { label:string; detail:string; run:unit -> CommandOutcome }
+/// One further step: its name, a detail beside it, a colour to show for it where it is one,
+/// and what choosing it does.
+and CommandChoice = { label:string; detail:string; swatch:Drawing.Color option; run:unit -> CommandOutcome }
 
 type CommandCategory =
     | TabCommands
@@ -55,7 +56,10 @@ module Commands =
     /// A command that leaves a choice: what it offers for the window, each doing its part.
     let private choosing id text category enabled (options:IntPtr -> CommandChoice list) =
         { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; run=fun hwnd -> Choose(options hwnd) }
-    let private choice label detail action = { label=label; detail=detail; run=fun () -> action(); Done }
+    let private choice label detail action = { label=label; detail=detail; swatch=None; run=fun () -> action(); Done }
+    /// A colour of the tab palette, as it shows on the bars of the current look.
+    let private tabColour index =
+        Theme.tabColor (Theme.darkBar (ThemeService.currentAppearance().tabNormalBgColor)) (PaletteColor index)
     let private onTab (action:IGroup -> IntPtr -> unit) hwnd = groupOf hwnd |> Option.iter(fun group -> action group hwnd)
     let private processPath (hwnd:IntPtr) = try OS().windowFromHwnd(hwnd).pid.processPath with _ -> ""
     let private hasApp hwnd = hwnd<>IntPtr.Zero && processPath hwnd<>""
@@ -102,7 +106,8 @@ module Commands =
         plain "reset-tab-name" Strings.Commands.resetTabName TabCommands hasGroup (onTab(fun g hwnd -> g.run(ResetTabName hwnd)))
         choosing "tab-color" Strings.Commands.tabColor TabCommands hasGroup (fun hwnd ->
             [ for index in Theme.tabColorOrder do
-                yield choice (tr Strings.Settings.tabColorNames.[index]) "" (fun () -> onTab (fun g hwnd -> g.run(SetTabColor(hwnd,Some(PaletteColor index)))) hwnd)
+                yield { choice (tr Strings.Settings.tabColorNames.[index]) "" (fun () -> onTab (fun g hwnd -> g.run(SetTabColor(hwnd,Some(PaletteColor index)))) hwnd)
+                        with swatch=Some(tabColour index) }
               yield choice (tr Strings.Settings.clearTabColor) "" (fun () -> onTab (fun g hwnd -> g.run(SetTabColor(hwnd,None))) hwnd) ])
         plain "move-tab-left" Strings.Commands.moveTabLeft TabCommands hasGroup (onTab(fun g hwnd -> g.run(MoveTab(hwnd,-1))))
         plain "move-tab-right" Strings.Commands.moveTabRight TabCommands hasGroup (onTab(fun g hwnd -> g.run(MoveTab(hwnd,1))))
