@@ -801,9 +801,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             match inputOwnership.TryGetValue hwnd with
             | true,compatible -> compatible
             | _ ->
-                let compatible = WindowInputOwnership.CanShareWithCurrentProcess hwnd
+                let compatible = this.shareInput hwnd
                 inputOwnership.[hwnd] <- compatible
                 compatible
+
+    /// Whether a window's input may be linked with this process's; a suite stands in for one
+    /// running with other rights.
+    member val shareInput : IntPtr -> bool = WindowInputOwnership.CanShareWithCurrentProcess with get,set
 
     member private this.setTsParent(parentHwnd) =
         let strip = this.os.windowFromHwnd(this.ts.hwnd)
@@ -1990,6 +1994,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if this.windows.contains(hwnd) then
                 this.saveTopWindowPlacement()
                 this.updateIsVisible()
+                // A strip owned by nothing, as when the window runs with other rights, is not
+                // raised with its window: a group of one window has no order change to move it, and
+                // it stayed under the windows its window came over, its tabs hidden behind theirs.
+                let strip = this.os.windowFromHwnd(this.ts.hwnd)
+                if not this.isEmpty && strip.parent.hwnd=IntPtr.Zero then this.setTsParent(this.topWindow)
                 // An app raised by a click comes over the divider and the empty pane, which are
                 // owned by nothing: its invisible resize border then took their edges.
                 this.keepPanesBelowStrip(this.topWindow)

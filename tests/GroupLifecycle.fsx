@@ -316,6 +316,43 @@ let main() =
         check (permissionHandles |> List.map(fun hwnd -> WinUserApi.GetWindowLong(hwnd,WindowLongFieldOffset.GWL_EXSTYLE)) = permissionStyles)
               "Taskbar exit registration changed the application's original window styles"
 
+        // A window running with other rights leaves its strip owned by nothing, so Windows does
+        // not raise the strip with it. Activated over another window, the window's tabs came up
+        // with it rather than staying under the window it came over.
+        do
+            use isolated = new Form(Text="Isolated tab",ShowInTaskbar=false)
+            use cover = new Form(Text="Covering window",ShowInTaskbar=false,StartPosition=FormStartPosition.Manual)
+            let fixture = desktopApi.createGroup(false) :?> GroupInfo
+            onGroup fixture (fun group -> group.shareInput <- (fun _ -> false))
+            try
+                isolated.Show()
+                (fixture :> IGroup).addWindow(isolated.Handle,false)
+                pumpUntil "The isolated window did not join its group" (fun () -> nativeOrder fixture=[isolated.Handle])
+                let strip = onGroup fixture (fun group -> group.ts.hwnd)
+                check (WinUserApi.GetWindow(strip,GetWindowConstants.GW_OWNER)=IntPtr.Zero) "A strip took an owner whose input it may not share"
+                cover.Bounds <- isolated.Bounds
+                cover.Show()
+                // The group places its strip as the window joins; the cover goes on top after that.
+                let settle = Diagnostics.Stopwatch.StartNew()
+                while settle.ElapsedMilliseconds<500L do
+                    Application.DoEvents()
+                    Thread.Sleep(10)
+                OS().windowFromHwnd(cover.Handle).insertAfter(WindowHandleTypes.HWND_TOP)
+                // Left behind as the strip of a window that went under another.
+                OS().windowFromHwnd(strip).insertAfter(cover.Handle)
+                let rank hwnd = OS().windowFromHwnd(hwnd).zorder
+                check (rank cover.Handle<rank strip)
+                      (sprintf "The test could not put a window over the isolated strip: cover %d, strip %d, window %d, strip topmost %b"
+                          (rank cover.Handle) (rank strip) (rank isolated.Handle)
+                          (WinUserApi.GetWindowLong(strip,WindowLongFieldOffset.GWL_EXSTYLE).ToInt64() &&& 8L <> 0L))
+                OS().windowFromHwnd(isolated.Handle).insertAfter(WindowHandleTypes.HWND_TOP)
+                onGroup fixture (fun group -> group.main(isolated.Handle,WinEvent.EVENT_SYSTEM_FOREGROUND))
+                pumpUntil (sprintf "An isolated window came to the front without its tabs: strip %d, window %d, cover %d" (rank strip) (rank isolated.Handle) (rank cover.Handle)) (fun () ->
+                    rank strip<rank isolated.Handle && rank strip<rank cover.Handle)
+            finally
+                (fixture :> IGroup).destroy()
+                pumpUntil "Isolated fixture did not exit" (fun () -> fixture.isExited)
+
         // Placement failure keeps real windows independent; a later successful attempt may combine them.
         do
             use first = new Form(ShowInTaskbar=false)
