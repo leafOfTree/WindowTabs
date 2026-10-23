@@ -10,9 +10,13 @@ type CommandOutcome =
     | Stay
     /// A value to type, such as a size.
     | Ask of CommandQuestion
-/// What to type: the hint in the box, the value it holds now, a line saying what is accepted, and
-/// taking what was typed: None when it is set, else why it is not.
-and CommandQuestion = { prompt:string; value:string; hint:string; accept:string -> string option }
+/// What to type: its kind, which picks the box it is typed in; what is accepted, said beside the
+/// box; the value it holds now; and taking what was typed: None when it is set, else why not.
+and CommandQuestion = { kind:QuestionKind; prompt:string; value:string; hint:string; accept:string -> string option }
+and QuestionKind =
+    /// A whole number in a range, typed in the settings pages' number box with its − and +.
+    | NumberQuestion of low:int * high:int
+    | TextQuestion
 /// One further step: its name, a detail beside it, a colour to show for it where it is one,
 /// and what choosing it does.
 and CommandChoice = { label:string; detail:string; swatch:Drawing.Color option; run:unit -> CommandOutcome }

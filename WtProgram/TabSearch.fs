@@ -417,6 +417,13 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let empty = new Label(Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleCenter,Visible=false,
                           Font=SettingsUi.bodyFont(),BackColor=palette.surface,ForeColor=palette.muted,
                           Text=tr Strings.TabSearch.noMatches)
+    /// Where a value is typed, under the line naming what asks for it: the settings pages' box,
+    /// with what is accepted under it, or why the last value was not.
+    let askPanel = new Panel(Dock=DockStyle.Fill,Visible=false,BackColor=palette.surface)
+    let askNote = new Label(AutoSize=false,Font=SettingsUi.bodyFont(),BackColor=palette.surface,ForeColor=palette.muted,
+                            UseMnemonic=false,TextAlign=ContentAlignment.TopLeft)
+    /// The box the value is typed in, and its text.
+    let mutable askBox : (SettingsInputFrame * TextBox) option = None
     let form =
         let f =
             { new Form() with
@@ -459,6 +466,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         // Docking runs from the last added: the box on top, then the scope, then the results.
         f.Controls.Add(list)
         f.Controls.Add(empty)
+        f.Controls.Add(askPanel)
         f.Controls.Add(footer)
         f.Controls.Add(scopeLine)
         f.Controls.Add(searchBox)
@@ -514,8 +522,9 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         list.SelectedItem <- Option.toObj chosen
         chosen |> Option.iter list.EnsureVisible
         empty.Text <- currentEmpty()
-        list.Visible <- shown.Length>0
-        empty.Visible <- shown.Length=0
+        // A value being typed has the place of the rows to itself.
+        list.Visible <- shown.Length>0 && asking.IsNone
+        empty.Visible <- shown.Length=0 && asking.IsNone
     /// Takes the shortcut editor off its row and gives the keys back to the box.
     let endAssign() =
         match assigning with
@@ -557,17 +566,28 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         scopeLine.Invalidate()
         footer.Invalidate()
         apply()
-    /// A value to type takes the rows' place, under the name of what asked, the value it holds
-    /// now in the box, selected; Enter offers what is typed, and Esc goes back.
-    let ask (caption:string) (question:CommandQuestion) =
-        push caption []
-        asking <- Some(question,None)
-        input.Text <- question.value
-        input.SelectAll()
-        setPrompt()
-        apply()
+    /// The line under the value's box: what is accepted, or in the error colour why it was not.
+    let showNote() =
+        match asking with
+        | Some(question,error) ->
+            askNote.Text <- error |> Option.defaultValue question.hint
+            askNote.ForeColor <-
+                if error.IsNone then palette.muted
+                elif SystemInformation.HighContrast then SystemColors.WindowText
+                elif ThemeService.currentIsDark() then Color.FromRGB(0xFF99A4) else Color.FromRGB(0xC42B1C)
+        | None -> ()
+    /// Takes the value's box away and gives the keys back to the search.
+    let endAsk() =
+        askBox |> Option.iter(fun (box,_) ->
+            askPanel.Controls.Remove(box)
+            box.Dispose())
+        askBox <- None
+        input.ReadOnly <- false
+        askPanel.Visible <- false
     let pop() =
         asking <- None
+        endAsk()
+        if not closed then input.Focus() |> ignore
         match choices with
         | (_,_,_,query)::rest ->
             choices <- rest
@@ -577,6 +597,59 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             footer.Invalidate()
             apply()
         | [] -> ()
+    /// Enter while a value is asked for: taken, the palette closes; refused, it says why.
+    let answer() =
+        match asking,askBox with
+        | Some(question,_),Some(_,text) ->
+            match question.accept (text.Text.Trim()) with
+            | None -> finish None
+            | Some reason ->
+                asking <- Some(question,Some reason)
+                showNote()
+        | _ -> ()
+    /// A value to type: under the name of what asked, the settings pages' box holding the value
+    /// it has now, selected, with what is accepted under it. Enter offers what is typed, Esc goes
+    /// back, and the search is read only meanwhile.
+    let ask (caption:string) (question:CommandQuestion) =
+        push caption []
+        asking <- Some(question,None)
+        let frame,text =
+            match question.kind with
+            | NumberQuestion(low,high) ->
+                let number = new SettingsNumberInput(Minimum=decimal low,Maximum=decimal high,Font=SettingsUi.bodyFont())
+                number.Value <- (match Decimal.TryParse question.value with | true,value -> value | _ -> decimal low)
+                (number :> SettingsInputFrame),number.TextBox
+            | TextQuestion ->
+                let text = new TextBox(Font=SettingsUi.bodyFont(),Text=question.value)
+                (new SettingsTextInput(text,Width=Dpi.scale SettingsShapes.editorWidth) :> SettingsInputFrame),text
+        frame.PlaceOn(palette.surface)
+        text.ForeColor <- palette.text
+        let gap = Dpi.scale 8
+        frame.Location <- Point(Dpi.scale 4,gap)
+        askNote.Bounds <- Rectangle(Dpi.scale 6,frame.Bottom+gap,max 1 (askPanel.ClientSize.Width-Dpi.scale 12),askNote.Font.Height*3)
+        askNote.Anchor <- AnchorStyles.Left ||| AnchorStyles.Top ||| AnchorStyles.Right
+        askPanel.Controls.Add(frame)
+        if not (askPanel.Controls.Contains askNote) then askPanel.Controls.Add(askNote)
+        askBox <- Some(frame,text)
+        showNote()
+        // After the number box's own handling, which keeps the value in range.
+        text.KeyDown.Add(fun e ->
+            match e.KeyCode with
+            | Keys.Enter -> answer(); e.Handled <- true; e.SuppressKeyPress <- true
+            | Keys.Escape -> pop(); e.Handled <- true; e.SuppressKeyPress <- true
+            | _ -> ())
+        // Typing again puts the hint back in place of why the last value was refused.
+        text.TextChanged.Add(fun _ ->
+            match asking with
+            | Some(question,Some _) -> asking <- Some(question,None); showNote()
+            | _ -> ())
+        input.ReadOnly <- true
+        setPrompt()
+        apply()
+        askPanel.Visible <- true
+        askPanel.BringToFront()
+        text.Focus() |> ignore
+        text.SelectAll()
     /// On screen and in front, with the keys in the box.
     let present() =
         // Built while hidden, like the switcher's, so it cannot delay the first paint.
@@ -611,16 +684,6 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         | Stay ->
             back()
             apply()
-    /// Enter while a value is asked for: taken, the box closes; refused, it says why.
-    let answer() =
-        match asking with
-        | Some(question,_) ->
-            match question.accept (input.Text.Trim()) with
-            | None -> finish None
-            | Some reason ->
-                asking <- Some(question,Some reason)
-                apply()
-        | None -> ()
     /// Enter or a click on a row: switches to the window, or runs the command and shows what it
     /// leaves to choose. A dimmed row does nothing.
     let activate (target:TreeListItem) =
@@ -701,12 +764,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 setScope ActionScope
                 input.Text <- rest
                 input.SelectionStart <- rest.Length
-            else
-                // Typing again puts the hint back in place of why the last value was refused.
-                match asking with
-                | Some(question,Some _) -> asking <- Some(question,None)
-                | _ -> ()
-                apply())
+            else apply())
         // Tab would otherwise move the focus; here it goes round the scopes.
         input.PreviewKeyDown.Add(fun e -> if e.KeyCode=Keys.Tab then e.IsInputKey <- true)
         // A segment picks its scope; the key cap switches, as the key does. Under a command's
@@ -802,7 +860,13 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     /// Offers what is typed for the value asked, as Enter does.
     member _.Answer() = answer()
     /// What the box says under it: the hint, why a value was refused, or that nothing matches.
-    member _.Message = currentEmpty()
+    member _.Message = if asking.IsSome then askNote.Text else currentEmpty()
+    /// The value typed in the box asked for, as typed there.
+    member _.Answered
+        with get() = match askBox with Some(_,text) -> text.Text | None -> ""
+        and set(value:string) = askBox |> Option.iter(fun (_,text) -> text.Text <- value)
+    /// Whether the box a value is typed in is up, and of which kind.
+    member _.AskBox = askBox |> Option.map fst
     /// Starts recording a shortcut for the chosen row, as Alt+Enter does.
     member _.BeginAssign() = beginAssign()
     /// The box recording a shortcut, while one is.

@@ -928,20 +928,32 @@ let main() =
     pump 100
     // A value asked for: the box holds it now, a refusal says why, a value taken closes the box.
     let mutable typed = ""
-    let question = { prompt="A number"; value="12"; hint="Enter sets it"; accept=fun text -> if text="ok" then (typed <- text; None) else Some "Not that" }
+    let question = { kind=TextQuestion; prompt="A word"; value="12"; hint="Enter sets it"; accept=fun text -> if text="ok" then (typed <- text; None) else Some "Not that" }
     let askingPage = { commandsPage with choose=fun _ -> Ask question }
     let asked = TabSearchForm([mail;notes],[],pages=[askingPage],scope=ActionScope)
     asked.Query <- "close"
     asked.Accept()
-    check (asked.Depth=1 && asked.Query="12" && asked.Message="Enter sets it") "A value asked for was not shown in the box"
-    asked.Query <- "no"
+    // In a box of its own under the line naming it, as on the settings pages, not in the search.
+    check (asked.Depth=1 && asked.Query="" && asked.Answered="12" && asked.Message="Enter sets it") "A value asked for was not shown in its box"
+    check (asked.AskBox |> Option.exists(fun box -> box :? SettingsTextInput)) "A text was not asked for in the settings pages' text box"
+    asked.Answered <- "no"
     asked.Answer()
     check (not asked.IsClosed && asked.Message="Not that") "A refused value did not say why"
-    asked.Query <- "ok"
+    asked.Answered <- "ok"
     check (asked.Message="Enter sets it") "Typing again did not put the hint back"
     asked.Answer()
     pump 100
     check (typed="ok" && asked.IsClosed) "A value taken did not close the box"
+    // A number in the settings pages' number box, its − and + beside it, back with Esc.
+    let numberPage = { commandsPage with choose=fun _ -> Ask { question with kind=NumberQuestion(12,120); value="30" } }
+    let numbered = TabSearchForm([mail;notes],[],pages=[numberPage],scope=ActionScope)
+    numbered.Query <- "close"
+    numbered.Accept()
+    check (numbered.AskBox |> Option.exists(fun box -> box :? SettingsNumberInput && (box :?> SettingsNumberInput).Value=30M)) "A number was not asked for in the settings pages' number box"
+    numbered.Back()
+    check (numbered.Depth=0 && numbered.AskBox.IsNone && numbered.Query="close") "Esc did not take the number box away"
+    numbered.Close()
+    pump 100
     // The command line: what each form asks for, and the pipe a running copy takes them over.
     check (CommandLine.parse [||]=Start && CommandLine.parse [|"--restart"|]=Restart) "A plain or restarting start was not read"
     check (CommandLine.parse [|"--command";"next-tab"|]=RunCommand("next-tab",None)) "A command by id was not read"

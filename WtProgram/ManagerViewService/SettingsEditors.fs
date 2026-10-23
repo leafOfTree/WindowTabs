@@ -189,6 +189,8 @@ type SettingsNumberInput() as this =
     member _.Minimum with get() = minimum and set(v) = minimum <- v
     member _.Maximum with get() = maximum and set(v) = maximum <- v
     member _.Value with get() = value and set(v) = setValue v
+    /// The box typed in, for a host that acts on its keys, as the palette does on Enter.
+    member _.TextBox = text
     member _.ValueChanged = changed.Publish
 
 /// Click (or Enter/Space) to record, press the combination, Esc to cancel.
