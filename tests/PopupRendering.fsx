@@ -131,11 +131,13 @@ let main() =
         // The notice comes to rest at the bottom right of the work area, where Windows shows its
         // own notifications, whole once it has slid in; a failure takes it away at once.
         use notice = new NoticeWindow()
-        notice.show("Workspace 1","Saved with 2 windows",false)
-        let clock = Diagnostics.Stopwatch.StartNew()
-        while clock.ElapsedMilliseconds<600L do
-            Application.DoEvents()
-            Threading.Thread.Sleep(10)
+        notice.show("Workspace 1","Saved with 2 windows",Info)
+        let pumpFor (milliseconds:int64) =
+            let clock = Diagnostics.Stopwatch.StartNew()
+            while clock.ElapsedMilliseconds<milliseconds do
+                Application.DoEvents()
+                Threading.Thread.Sleep(10)
+        pumpFor 600L
         let area = Screen.PrimaryScreen.WorkingArea
         check (notice.Visible && notice.Opacity=1.0) (sprintf "The notice did not finish coming in: opacity %f" notice.Opacity)
         check (notice.Right<=area.Right && area.Right-notice.Right<=Dpi.scale 24 && notice.Bottom<=area.Bottom && area.Bottom-notice.Bottom<=Dpi.scale 24)
@@ -143,11 +145,33 @@ let main() =
         // Its size is fixed, whatever the text, so one notice replacing another does not jump.
         let fixedSize = Size(Dpi.scale NoticeWindow.size.Width,Dpi.scale NoticeWindow.size.Height)
         check (notice.Size=fixedSize) (sprintf "A short notice is not the fixed size: %A" notice.Size)
-        notice.show(String.replicate 4 "A long title ",String.replicate 12 "A much longer notice that has to wrap ",true)
+        notice.show(String.replicate 4 "A long title ",String.replicate 12 "A much longer notice that has to wrap ",Progress)
         Application.DoEvents()
         check (notice.Size=fixedSize) (sprintf "A long notice changed the notice's size: %A" notice.Size)
+        // How long each kind stays: an error until it is closed, as work in progress until replaced.
+        for kind,stays in [Info,Some 4000;Reminder,Some 8000;Error,None;Progress,None] do
+            notice.show("Workspace 1","Message",kind)
+            check (notice.staysFor=stays && notice.isCountingDown=stays.IsSome)
+                  (sprintf "A %A notice stays %A, counting down %b" kind notice.staysFor notice.isCountingDown)
+        // Under the pointer it does not go; it counts again from the start once the pointer leaves.
+        notice.show("Workspace 1","Saved with 2 windows",Info)
+        let raise name (args:EventArgs) =
+            typeof<Control>.GetMethod(name,Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).Invoke(notice,[|box args|]) |> ignore
+        raise "OnMouseEnter" EventArgs.Empty
+        check (not notice.isCountingDown) "A notice under the pointer kept counting down"
+        raise "OnMouseLeave" EventArgs.Empty
+        check notice.isCountingDown "A notice did not count down again once the pointer left"
+        // Its close button takes an error away, which would otherwise stay.
+        notice.show("Workspace 1","Could not restore.",Error)
+        pumpFor 300L
+        raise "OnMouseEnter" EventArgs.Empty
+        let close = notice.closeBounds
+        let centre = Point(close.X+close.Width/2,close.Y+close.Height/2)
+        raise "OnMouseUp" (new MouseEventArgs(MouseButtons.Left,1,centre.X,centre.Y,0))
+        pumpFor 400L
+        check (not notice.Visible) "The close button did not take the notice away"
         notice.hideNow()
         check (not notice.Visible) "A notice taken away at once stayed visible"
-        printfn "PASS: dark/light popup themes before visibility, composited HWNDs, repeated show/hide rendering and the notice's place."
+        printfn "PASS: dark/light popup themes before visibility, composited HWNDs, repeated show/hide rendering and the notice's place, kinds and close button."
     finally Environment.CurrentDirectory <- original
 TestInit.run main

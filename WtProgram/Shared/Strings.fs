@@ -382,6 +382,11 @@ module Strings =
               zh=(sprintf "已恢复 %d 个窗口" restored)+(if missing=0 then "" else sprintf "，%d 个未找到" missing)
               ja=(sprintf "%d 個のウィンドウを復元しました" restored)+(if missing=0 then "" else sprintf "（%d 個は見つかりません）" missing)
               ar=(sprintf "تمت استعادة %d نافذة" restored)+(if missing=0 then "" else sprintf "، %d غير موجودة" missing) }
+        /// An error notice, with the reason the system gave.
+        let restoreFailed reason =
+            { en=sprintf "Could not restore. %s" reason; zh=sprintf "恢复失败。%s" reason; ja=sprintf "復元できませんでした。%s" reason; ar=sprintf "تعذّرت الاستعادة. %s" reason }
+        let saveFailed reason =
+            { en=sprintf "Could not save. %s" reason; zh=sprintf "保存失败。%s" reason; ja=sprintf "保存できませんでした。%s" reason; ar=sprintf "تعذّر الحفظ. %s" reason }
         let saved windows =
             { en=(if windows=1 then "Saved with 1 window" else sprintf "Saved with %d windows" windows)
               zh=sprintf "已保存，共 %d 个窗口" windows

@@ -277,11 +277,11 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                     fun result ->
                                         sessionReady <- true
                                         sessionSoon.Request()
-                                        Notice.show title (tr (Strings.Notices.restored result.restored result.missing.Length))
+                                        this.noticeRestored title result
                                         Diagnostics.Trace.TraceInformation("Session restored: {0} windows, {1} not found, {2} failed",result.restored,result.missing.Length,result.failed.Length))
                             with error ->
                                 sessionReady <- true
-                                Notice.hideNow()
+                                Notice.error title (tr (Strings.Notices.restoreFailed error.Message))
                                 Diagnostics.Trace.TraceWarning("Session restore failed: {0}",error.Message))
                         go.Start())
             timer.Start()
@@ -693,14 +693,25 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         workspaces.loadSettings()
         workspaces
 
+    /// What a restore did; windows left out keep it up longer, to be read.
+    member private this.noticeRestored title (result:WorkspaceRestoreResult) =
+        let message = tr (Strings.Notices.restored result.restored result.missing.Length)
+        if result.missing.IsEmpty && result.failed.IsEmpty then Notice.show title message
+        else Notice.remind title message
+
     /// As Save layout in Settings, said on screen since nothing else shows it.
     member this.saveWorkspace() =
         let workspaces = this.readWorkspaces()
-        if workspaces.isReadOnly then Notice.show (tr Strings.Pages.workspaces) (tr Strings.Workspaces.unsupportedVersion)
+        let title = tr Strings.Pages.workspaces
+        if workspaces.isReadOnly then Notice.error title (tr Strings.Workspaces.unsupportedVersion)
         else
-            workspaces.create(fun ws ->
-                let windows = ws.groups.list |> List.sumBy(fun group -> group.cast<WorkspaceGroup>().windows.count)
-                Notice.show ws.name (tr (Strings.Notices.saved windows)))
+            try
+                workspaces.create(fun ws ->
+                    let windows = ws.groups.list |> List.sumBy(fun group -> group.cast<WorkspaceGroup>().windows.count)
+                    Notice.show ws.name (tr (Strings.Notices.saved windows)))
+            with error ->
+                Notice.error title (tr (Strings.Notices.saveFailed error.Message))
+                Diagnostics.Trace.TraceWarning("Workspace save failed: {0}",error.Message)
 
     /// Brings back the workspace last saved or restored, with the result on screen rather than in a dialog.
     member this.restoreWorkspace() =
@@ -715,10 +726,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 go.Stop()
                 go.Dispose()
                 try
-                    workspaces.restoreLast() |> Option.iter(fun result ->
-                        Notice.show result.workspace (tr (Strings.Notices.restored result.restored result.missing.Length)))
+                    workspaces.restoreLast() |> Option.iter(fun result -> this.noticeRestored result.workspace result)
                 with error ->
-                    Notice.hideNow()
+                    Notice.error ws.name (tr (Strings.Notices.restoreFailed error.Message))
                     Diagnostics.Trace.TraceWarning("Workspace restore failed: {0}",error.Message))
             go.Start()
 
