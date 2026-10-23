@@ -802,14 +802,9 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                             let nameWidth = min (measure item.Text+Dpi.scale 2) (max 0 (nameBounds.Width-suffixWidth-gap))
                             this.drawMarked(g,item.Text,item.highlights 0,Rectangle(nameBounds.X,nameBounds.Y,max 1 nameWidth,nameBounds.Height),flags,this.Font,text,p)
                             let left = nameBounds.X+nameWidth+gap
-                            // On the chosen row, half way to the name's colour: the muted grey sank
-                            // into the highlight, and the full colour would compete with the name.
-                            let muted =
-                                if isSelected && SystemInformation.HighContrast then SystemColors.HighlightText
-                                elif isSelected then
-                                    let half (a:byte) (b:byte) = (int a+int b)/2
-                                    Color.FromArgb(half p.muted.R text.R,half p.muted.G text.G,half p.muted.B text.B)
-                                else p.muted
+                            // On the chosen row in the name's own colour, as the value at its right
+                            // end is: the muted grey sank into the highlight. Smaller, it still leads less.
+                            let muted = if isSelected then text else p.muted
                             TextRenderer.DrawText(g,item.Suffix,suffixFont,Rectangle(left,nameBounds.Y,max 1 (nameBounds.Right-left),nameBounds.Height),muted,flags)
                         // Chips: a shade of the text over the row, so they show on any highlight.
                         let chipFill = if SystemInformation.HighContrast then SystemColors.Window else Color.FromArgb(26,p.text)
