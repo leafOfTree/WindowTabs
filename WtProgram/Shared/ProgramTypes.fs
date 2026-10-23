@@ -165,6 +165,10 @@ type IProgram =
     abstract member saveWorkspace : unit -> unit
     /// Brings back the workspace last saved or restored. Posted to the UI thread.
     abstract member restoreWorkspace : unit -> unit
+    /// Brings back the workspace of that name. Posted to the UI thread.
+    abstract member restoreWorkspaceNamed : string -> unit
+    /// Takes a tab out of its group into a group of its own, as dragging it out does.
+    abstract member detachTab : IntPtr -> unit
 
 /// Whether a group set to combine its taskbar icons has its one button, and if not, why its
 /// windows keep their own: else the setting looked on while nothing was combined.
@@ -187,8 +191,27 @@ module TaskbarCombineStates =
     /// Not combined although the group should be, for a reason the user can act on.
     let isBlocked = function DifferentPermissions | DesktopUnknown | PlacementFailed -> true | Combined | SingleWindow -> false
 
+/// What the tab menu does, asked for from outside the group, such as from the palette or a
+/// hotkey; the window is the tab's, where one is needed.
+type GroupCommand =
+    | RenameTab of IntPtr
+    | ResetTabName of IntPtr
+    | CloseOtherTabs of IntPtr
+    | CloseAllTabs
+    | SortTabs
+    /// By that many places along the strip, backwards when negative.
+    | MoveTab of IntPtr * int
+    | SetTabColor of IntPtr * TabColorChoice option
+    | ToggleIconsOnly
+    | SetTabDock of TabDock
+    | SetTabAlignment of Bemo.TabAlignment
+    /// "Never", "Maximized" or "Always", for this group.
+    | SetAutoHide of string
+
 type IGroup =
     abstract member hwnd : IntPtr
+    /// A tab menu command, run on the group's thread.
+    abstract member run : GroupCommand -> unit
     abstract member addWindow: IntPtr * bool -> unit
     abstract member removeWindow: IntPtr -> unit
     abstract member switchWindow: bool * bool -> unit

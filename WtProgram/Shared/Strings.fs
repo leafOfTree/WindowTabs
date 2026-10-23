@@ -503,6 +503,7 @@ module Strings =
         let mouse = { en="Mouse"; zh="鼠标"; ja="マウス"; ar="الفأرة" }
         let splitView = { en="Split view"; zh="分屏"; ja="分割表示"; ar="العرض المقسّم" }
         /// Cards for the commands that turn settings on or off and open pages, and the app's own.
+        let group = { en="Group"; zh="分组"; ja="グループ"; ar="المجموعة" }
         let settingsCommands = { en="Settings"; zh="设置"; ja="設定"; ar="الإعدادات" }
         let appCommands = { en="WindowTabs"; zh="WindowTabs"; ja="WindowTabs"; ar="WindowTabs" }
         let keyboardNote = { en="Click a shortcut, then press the new combination. Esc cancels. The command palette sets one too: Alt+Enter on a command."
@@ -554,6 +555,59 @@ module Strings =
                                               ja="ペインを順に巡ります。しまわれたペインは元に戻します。"
                                               ar="يتنقل بين الأجزاء بالتناوب، ويعيد الأجزاء المخفية." }
                                 keywords=splitWords }
+        let private tabWords = { en="tab"; zh="标签"; ja="タブ"; ar="علامة تبويب" }
+        let renameTab = { caption={ en="Rename tab"; zh="重命名标签"; ja="タブの名前を変更"; ar="إعادة تسمية علامة التبويب" }
+                          description={ en="Edits the name on the tab; an empty name brings the window's own back."
+                                        zh="在标签上编辑名称；留空则恢复窗口自己的标题。"
+                                        ja="タブ上で名前を編集します。空にするとウィンドウ自身のタイトルに戻ります。"
+                                        ar="يحرر الاسم على علامة التبويب؛ ويعيد الاسم الفارغ عنوان النافذة نفسها." }
+                          keywords=tabWords }
+        let resetTabName = { caption={ en="Reset tab name"; zh="重置标签名称"; ja="タブ名をリセット"; ar="إعادة تعيين اسم علامة التبويب" }
+                             description={ en="The tab follows the window's title again."; zh="标签重新跟随窗口标题。"; ja="タブはウィンドウのタイトルに再び従います。"; ar="تتبع علامة التبويب عنوان النافذة من جديد." }
+                             keywords=tabWords }
+        let tabColor = { caption={ en="Tab color…"; zh="标签颜色…"; ja="タブの色…"; ar="لون علامة التبويب…" }
+                         description={ en="A color of the palette for the tab in front, or none."; zh="为当前标签选一种调色板颜色，或清除。"; ja="前面のタブにパレットの色を付けるか、解除します。"; ar="لون من اللوحة لعلامة التبويب الأمامية، أو لا شيء." }
+                         keywords={ en="colour"; zh="颜色 着色"; ja="色 カラー"; ar="لون" } }
+        let moveTabLeft = { caption={ en="Move tab left"; zh="向左移动标签"; ja="タブを左へ移動"; ar="نقل علامة التبويب إلى اليسار" }
+                            description={ en="One place; up, with tabs at the side."; zh="移动一格；标签在侧边时为向上。"; ja="1 つ分。タブが横にあるときは上へ。"; ar="موضعًا واحدًا؛ إلى الأعلى عندما تكون علامات التبويب على الجانب." }
+                            keywords={ en="reorder up"; zh="排序 上移"; ja="並べ替え 上"; ar="ترتيب أعلى" } }
+        let moveTabRight = { caption={ en="Move tab right"; zh="向右移动标签"; ja="タブを右へ移動"; ar="نقل علامة التبويب إلى اليمين" }
+                             description={ en="One place; down, with tabs at the side."; zh="移动一格；标签在侧边时为向下。"; ja="1 つ分。タブが横にあるときは下へ。"; ar="موضعًا واحدًا؛ إلى الأسفل عندما تكون علامات التبويب على الجانب." }
+                             keywords={ en="reorder down"; zh="排序 下移"; ja="並べ替え 下"; ar="ترتيب أسفل" } }
+        let sortTabs = { caption=TabMenu.sortTabs; description=none; keywords={ en="order"; zh="排序"; ja="並べ替え"; ar="ترتيب" } }
+        let closeOtherTabs = { caption={ en="Close other tabs"; zh="关闭其他标签"; ja="他のタブを閉じる"; ar="إغلاق علامات التبويب الأخرى" }
+                               description={ en="Closes every other window of the group."; zh="关闭分组中的其他窗口。"; ja="グループの他のウィンドウをすべて閉じます。"; ar="يغلق كل النوافذ الأخرى في المجموعة." }
+                               keywords=tabWords }
+        let closeAllTabs = { caption={ en="Close all tabs"; zh="关闭全部标签"; ja="すべてのタブを閉じる"; ar="إغلاق جميع علامات التبويب" }
+                             description={ en="Closes every window of the group."; zh="关闭分组中的所有窗口。"; ja="グループのウィンドウをすべて閉じます。"; ar="يغلق كل نوافذ المجموعة." }
+                             keywords=tabWords }
+        let detachTab = { caption={ en="Move tab to a new group"; zh="拆出到新分组"; ja="タブを新しいグループへ"; ar="نقل علامة التبويب إلى مجموعة جديدة" }
+                          description={ en="Takes the tab out on its own, as dragging it to the desktop does."; zh="把标签单独拆出来，与拖到桌面上相同。"; ja="タブを単独で取り出します。デスクトップへドラッグするのと同じです。"; ar="يخرج علامة التبويب وحدها، كما يفعل سحبها إلى سطح المكتب." }
+                          keywords={ en="detach split ungroup"; zh="分离 取消分组"; ja="分離 グループ解除"; ar="فصل إلغاء التجميع" } }
+        let moveTabToGroup = { caption={ en="Move tab to group…"; zh="移动标签到分组…"; ja="タブをグループへ移動…"; ar="نقل علامة التبويب إلى مجموعة…" }
+                               description={ en="Lists the other groups by their first tab."; zh="按各分组的第一个标签列出其他分组。"; ja="他のグループを先頭のタブで一覧表示します。"; ar="يعرض المجموعات الأخرى بعلامة التبويب الأولى لكل منها." }
+                               keywords={ en="join"; zh="加入 合并"; ja="参加 結合"; ar="انضمام" } }
+        let private groupNote = { en="For this group; the setting is for new groups."; zh="只对当前分组有效；设置项针对新分组。"; ja="このグループのみ。設定は新しいグループに適用されます。"; ar="لهذه المجموعة؛ أما الإعداد فللمجموعات الجديدة." }
+        let iconsOnly = { caption=TabMenu.showIconsOnly; description={ en="Again, and the titles come back."; zh="再次执行则恢复标题。"; ja="もう一度実行するとタイトルが戻ります。"; ar="مرة أخرى، وتعود العناوين." }; keywords={ en="titles compact"; zh="标题 紧凑"; ja="タイトル コンパクト"; ar="عناوين مضغوط" } }
+        let groupTabPosition = { caption={ en="Tab position…"; zh="标签位置…"; ja="タブの位置…"; ar="موضع علامات التبويب…" }; description=groupNote; keywords={ en="top left right side"; zh="顶部 左侧 右侧"; ja="上 左 右"; ar="أعلى يسار يمين" } }
+        let groupTabAlignment = { caption={ en="Align tabs…"; zh="对齐标签…"; ja="タブを揃える…"; ar="محاذاة علامات التبويب…" }; description=groupNote; keywords={ en="alignment center"; zh="对齐 居中"; ja="配置 中央"; ar="محاذاة وسط" } }
+        let groupAutoHide = { caption={ en="Auto-hide tabs…"; zh="自动隐藏标签…"; ja="タブを自動的に隠す…"; ar="إخفاء علامات التبويب تلقائيًا…" }; description=groupNote; keywords={ en="collapse"; zh="收起"; ja="折りたたみ"; ar="طيّ" } }
+        let combineGroupIcons = { caption=TabMenu.combineTaskbarIcons; description=groupNote; keywords={ en="merge taskbar"; zh="合并 任务栏"; ja="結合 タスクバー"; ar="دمج شريط المهام" } }
+        let tabsForApp = { caption={ en="Tabs for this app"; zh="此应用启用标签"; ja="このアプリのタブ"; ar="علامات التبويب لهذا التطبيق" }
+                           description={ en="Turns tabs on or off for the app of the window in front."; zh="为当前窗口所属的应用开启或关闭标签。"; ja="前面のウィンドウのアプリでタブをオン／オフにします。"; ar="يشغّل علامات التبويب أو يوقفها لتطبيق النافذة الأمامية." }
+                           keywords={ en="enable disable application"; zh="启用 禁用 应用"; ja="有効 無効 アプリ"; ar="تمكين تعطيل تطبيق" } }
+        let autoGroupApp = { caption={ en="Auto-group this app"; zh="自动分组此应用"; ja="このアプリを自動グループ化"; ar="تجميع هذا التطبيق تلقائيًا" }
+                             description={ en="On or off for the app of the window in front."; zh="为当前窗口所属的应用开启或关闭。"; ja="前面のウィンドウのアプリでオン／オフにします。"; ar="تشغيل أو إيقاف لتطبيق النافذة الأمامية." }
+                             keywords={ en="application grouping"; zh="应用 分组"; ja="アプリ グループ化"; ar="تطبيق تجميع" } }
+        let numberShortcutForApp = { caption={ en="Switch by number in this app"; zh="此应用用数字键切换"; ja="このアプリで番号切り替え"; ar="التبديل بالأرقام في هذا التطبيق" }
+                                     description={ en="On or off for the app of the window in front."; zh="为当前窗口所属的应用开启或关闭。"; ja="前面のウィンドウのアプリでオン／オフにします。"; ar="تشغيل أو إيقاف لتطبيق النافذة الأمامية." }
+                                     keywords={ en="digit application"; zh="数字 应用"; ja="数字 アプリ"; ar="رقم تطبيق" } }
+        let restoreWorkspaceNamed = { caption={ en="Restore workspace…"; zh="恢复工作区…"; ja="ワークスペースを復元…"; ar="استعادة مساحة عمل…" }
+                                      description={ en="Lists the saved workspaces."; zh="列出已保存的工作区。"; ja="保存済みのワークスペースを一覧表示します。"; ar="يعرض مساحات العمل المحفوظة." }
+                                      keywords={ en="layout"; zh="布局"; ja="配置"; ar="تخطيط" } }
+        let deleteWorkspace = { caption={ en="Delete workspace…"; zh="删除工作区…"; ja="ワークスペースを削除…"; ar="حذف مساحة عمل…" }
+                                description={ en="Lists the saved workspaces; the one chosen is forgotten."; zh="列出已保存的工作区；选中的会被删除。"; ja="保存済みのワークスペースを一覧表示し、選んだものを削除します。"; ar="يعرض مساحات العمل المحفوظة؛ وتُنسى المختارة." }
+                                keywords={ en="remove layout"; zh="移除 布局"; ja="削除 配置"; ar="إزالة تخطيط" } }
         let openSettings = { caption={ en="Open settings"; zh="打开设置"; ja="設定を開く"; ar="فتح الإعدادات" }
                              description=none
                              keywords={ en="preferences options"; zh="偏好 选项"; ja="環境設定 オプション"; ar="التفضيلات الخيارات" } }

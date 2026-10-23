@@ -913,6 +913,16 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         member x.toggleSearch scope = this.togglePalette scope
         member x.saveWorkspace() = this.saveWorkspace()
         member x.restoreWorkspace() = this.restoreWorkspace()
+        member x.restoreWorkspaceNamed name = this.restoreWorkspaceNamed name
+
+        // As a tab dragged out onto the desktop: marked as dropped, it starts a group by hand when
+        // the next scan finds it on its own.
+        member x.detachTab hwnd =
+            this.desktop.groups.tryFind(fun group -> group.windows.contains((=)hwnd)) |> Option.iter(fun group ->
+                if group.windows.count>1 then
+                    isDroppedAndAwaitingGrouping.map(fun s -> s.add hwnd)
+                    group.removeWindow hwnd
+                    refreshQueue.RequestAll())
 
     interface IDesktopNotification with
         member x.dragDrop(hwnd) =

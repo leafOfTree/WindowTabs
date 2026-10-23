@@ -344,6 +344,15 @@ or program holds); every listed command can take one, kept under the catalog's k
 catalog names the command and under its id otherwise, and the Shortcuts page lists them all by
 category.
 
+The tab menu's actions are commands too. `IGroup.run` takes a `GroupCommand` (rename, reset
+name, close others or all, sort, move a tab, a tab's colour, icons only, dock, alignment, the
+group's auto-hide) onto the group's thread: what the group keeps it does itself, and what the
+strip owns it asks of the decorator through `commandRequested`, as a pick is asked. Taking a tab
+out into a group of its own marks it as dropped, as a drag to the desktop does, and lets the next
+scan start the group; moving it to another group goes through `addAfterDetaching`. The app
+toggles (tabs, auto-grouping and number switching for the app of the window in front) and the
+workspace choices (restore by name, delete) are commands as well.
+
 With nothing typed the list keeps that group order. Once a query is typed the
 matches are listed best first, without group separators, and the first one is the
 initial choice. Word-start matches rank above word-internal matches, then earlier

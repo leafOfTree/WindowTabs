@@ -119,7 +119,9 @@ let main() =
         member _.paneCandidates() = []
         member _.toggleSearch _ = ()
         member _.saveWorkspace() = ()
-        member _.restoreWorkspace() = ()})
+        member _.restoreWorkspace() = ()
+        member _.restoreWorkspaceNamed _ = ()
+        member _.detachTab _ = ()})
     Services.register<IFilterService>({new IFilterService with
         member _.isAppWindow _ = false
         member _.isAppWindowStyle _ = false

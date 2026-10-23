@@ -140,6 +140,17 @@ type TabStripDecorator(group:WindowGroup) as this =
         group.pickRequested.Add(fun (axis,side) ->
             let top = group.topWindow
             this.pickBeside(top,group.splitCandidates top,axis,side))
+        // The tab menu's commands the strip does, asked for by the palette or a hotkey.
+        group.commandRequested.Add(fun command ->
+            match command with
+            | RenameTab hwnd when group.windows.contains hwnd ->
+                // The name is edited on the tab, which a hidden strip has not drawn.
+                group.isIconOnly <- false
+                try this.beginRename(hwnd) with _ -> ()
+            | CloseOtherTabs hwnd -> this.onCloseOtherWindows hwnd
+            | CloseAllTabs -> this.onCloseAllWindows()
+            | SortTabs -> this.sortTabs()
+            | _ -> ())
         group.emptyPaneChanged.Add(fun (previous,current) ->
             if previous<>IntPtr.Zero then Services.dragDrop.unregisterLayoutTarget(previous, this:>ILayoutDropTarget)
             if current<>IntPtr.Zero then Services.dragDrop.registerLayoutTarget(current, this:>ILayoutDropTarget))

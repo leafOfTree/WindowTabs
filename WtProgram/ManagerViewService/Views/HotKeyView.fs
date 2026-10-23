@@ -147,7 +147,9 @@ type HotKeyView() =
         for _,editor in editors do editor.Changed.Add(fun _ -> updateRestore())
         restore.Click.Add(fun _ -> restoreDefaults(); updateRestore())
         updateRestore()
-        // The split view's keys in a card of their own: among the tabs' they were hard to tell apart.
+        // The group's and the split view's keys in cards of their own: among the tabs' they were
+        // hard to tell apart.
+        rows (SettingsUi.sectionCard table (tr Strings.Shortcuts.group)) GroupCommands []
         rows (SettingsUi.sectionCard table (tr Strings.Shortcuts.splitView)) SplitCommands []
         rows (SettingsUi.sectionCard table (tr Strings.Pages.workspaces)) WorkspaceCommands []
         // Commands that turn settings on or off and open pages, then the app's own: unbound

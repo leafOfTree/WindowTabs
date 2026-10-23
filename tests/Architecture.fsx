@@ -262,7 +262,9 @@ let main() =
             member _.paneCandidates() = []
             member _.toggleSearch _ = ()
             member _.saveWorkspace() = ()
-            member _.restoreWorkspace() = ()})
+            member _.restoreWorkspace() = ()
+            member _.restoreWorkspaceNamed _ = ()
+            member _.detachTab _ = ()})
         let desktop = Desktop({new IDesktopNotification with
                                 member _.dragDrop _ = ()
                                 member _.dragEnd() = ()},api,dispatcher)
@@ -285,6 +287,19 @@ let main() =
         onGroup(fun group -> group.ts.setAlignment(TabUp,TabRight))
         api.setValue("alignment",box "Center")
         check (positions()=(TabRight,TabCenter)) "Alignment update lost the per-direction menu override"
+        // The tab menu's commands reach the group from outside, as the palette asks for them.
+        (live :> IGroup).run(SetTabAlignment TabLeft)
+        check (positions()=(TabLeft,TabCenter)) "A group command did not set the tabs' alignment"
+        (live :> IGroup).run ToggleIconsOnly
+        check (onGroup(fun group -> group.isIconOnly)) "A group command did not switch to icons only"
+        (live :> IGroup).run ToggleIconsOnly
+        check (not (onGroup(fun group -> group.isIconOnly))) "A group command did not bring the titles back"
+        (live :> IGroup).run(SetTabDock TabDockLeft)
+        check (onGroup(fun group -> group.ts.dock)=TabDockLeft) "A group command did not move the tabs to the side"
+        (live :> IGroup).run(SetTabDock TabDockTop)
+        check (onGroup(fun group -> group.ts.dock)=TabDockTop) "A group command did not move the tabs back to the top"
+        check (Commands.find "rename-tab" |> Option.exists(fun command -> command.category=TabCommands && command.shortcut=Some "rename-tab")) "The tab menu's rename must be a command"
+        check (Commands.find "group-tab-position" |> Option.exists(fun command -> match command.run IntPtr.Zero with Choose options -> options.Length=3 | Done -> false)) "Tab position must offer its three places"
 
         let numeric = NumericTabHotKeyPlugin()
         // The OS can already focus B while the delayed foreground event still

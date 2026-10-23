@@ -338,6 +338,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let mutable liveResize = false
     let layoutChangedEvent = Event<unit>()
     let pickRequestedEvent = Event<SplitAxis * Side>()
+    let commandRequestedEvent = Event<GroupCommand>()
     /// An empty pane's window gone (first) or made (second): a drop surface of its own, owned by nothing.
     let emptyPaneChangedEvent = Event<IntPtr * IntPtr>()
     let windowsCell = Cell.create(Set2())
@@ -1648,6 +1649,28 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.requestPick(axis:SplitAxis, side:Side) =
         if not this.isEmpty && not isDestroyed.value then pickRequestedEvent.Trigger(axis,side)
     member _.pickRequested = pickRequestedEvent.Publish
+
+    /// A tab menu command from outside: what the group itself keeps is done here; what the strip
+    /// owns (renaming, closing, sorting) is asked of it, as a pick is.
+    member this.run(command:GroupCommand) =
+        if not isDestroyed.value then
+            match command with
+            | ResetTabName hwnd -> if this.windows.contains hwnd then this.setTabName(hwnd,None)
+            | SetTabColor(hwnd,color) -> if this.windows.contains hwnd then this.setTabColor(hwnd,color)
+            | MoveTab(hwnd,places) ->
+                let order = this.lorder.list
+                match List.tryFindIndex ((=) hwnd) order with
+                | Some index ->
+                    let target = max 0 (min (order.Length-1) (index+places))
+                    if target<>index then this.ts.moveTab(Tab(hwnd),target)
+                | None -> ()
+            | ToggleIconsOnly -> this.isIconOnly <- not this.isIconOnly
+            | SetTabDock dock -> this.ts.dock <- dock
+            // The tabs' direction in view, as the tab menu's alignment items set.
+            | SetTabAlignment alignment -> this.ts.setAlignment((if this.ts.isVertical then TabUp else this.ts.direction),alignment)
+            | SetAutoHide mode -> this.bb.write("autoHideMode",mode)
+            | RenameTab _ | CloseOtherTabs _ | CloseAllTabs | SortTabs -> commandRequestedEvent.Trigger(command)
+    member _.commandRequested = commandRequestedEvent.Publish
 
     /// A pane window coming to the front focuses its side; another tab parks the pair.
     /// A tab clicked over the panes, or a pane's tab clicked to bring them back: the cover with

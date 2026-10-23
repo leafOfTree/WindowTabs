@@ -119,6 +119,8 @@ type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
         member _.toggleSearch scope = dispatcher.Post(fun () -> inner.toggleSearch scope)
         member _.saveWorkspace() = dispatcher.Post(fun () -> inner.saveWorkspace())
         member _.restoreWorkspace() = dispatcher.Post(fun () -> inner.restoreWorkspace())
+        member _.restoreWorkspaceNamed name = dispatcher.Post(fun () -> inner.restoreWorkspaceNamed name)
+        member _.detachTab hwnd = dispatcher.Post(fun () -> inner.detachTab hwnd)
 
 type DispatchedFilterService(inner:IFilterService, dispatcher:IDispatcher) =
     interface IFilterService with
