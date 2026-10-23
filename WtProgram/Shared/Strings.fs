@@ -225,6 +225,19 @@ module Strings =
                                        ja="前面のタブのウィンドウを閉じます。"
                                        ar="يغلق نافذة علامة التبويب الأمامية." }
                          keywords={ en="close window"; zh="关闭窗口"; ja="ウィンドウを閉じる"; ar="إغلاق النافذة" } }
+        let private workspaceWords = { en="workspace layout"; zh="工作区 布局"; ja="ワークスペース 配置"; ar="مساحة العمل التخطيط" }
+        let saveWorkspace = { caption={ en="Save workspace"; zh="保存工作区"; ja="ワークスペースを保存"; ar="حفظ مساحة العمل" }
+                              description={ en="Saves the windows as they are as a new workspace, as Save layout does."
+                                            zh="将当前窗口保存为新的工作区，与“保存布局”相同。"
+                                            ja="現在のウィンドウを新しいワークスペースとして保存します（「配置を保存」と同じ）。"
+                                            ar="يحفظ النوافذ بحالتها الحالية كمساحة عمل جديدة، كما يفعل «حفظ التخطيط»." }
+                              keywords=workspaceWords }
+        let restoreWorkspace = { caption={ en="Restore workspace"; zh="恢复工作区"; ja="ワークスペースを復元"; ar="استعادة مساحة العمل" }
+                                 description={ en="Restores the workspace last saved or restored."
+                                               zh="恢复最近一次保存或恢复的工作区。"
+                                               ja="最後に保存または復元したワークスペースを復元します。"
+                                               ar="يستعيد آخر مساحة عمل تم حفظها أو استعادتها." }
+                                 keywords=workspaceWords }
         let private splitWords = { en="split view pane"; zh="分屏 窗格"; ja="分割 ペイン"; ar="عرض مقسّم جزء" }
         let splitPickRight = { caption={ en="Window on the right…"; zh="在右侧放入窗口…"; ja="右側にウィンドウを配置…"; ar="نافذة على اليمين…" }
                                description={ en="Lists the windows to put beside the tab in front."; zh="列出可放到当前标签旁边的窗口。"; ja="前面のタブの隣に置くウィンドウを一覧表示します。"; ar="يعرض النوافذ التي يمكن وضعها بجانب علامة التبويب الأمامية." }
@@ -577,6 +590,20 @@ module Strings =
               zh=sprintf "正在启动 %d 个应用…" count
               ja=sprintf "%d 個のアプリを起動中…" count
               ar=(if count=1 then "جارٍ تشغيل التطبيق…" else sprintf "جارٍ تشغيل التطبيقات (%d)…" count) }
+        /// Shown at the top of the screen after a workspace shortcut.
+        let savedNotice name windows =
+            { en=sprintf "Saved %s: %d windows" name windows
+              zh=sprintf "已保存 %s：%d 个窗口" name windows
+              ja=sprintf "%s を保存しました: %d 個のウィンドウ" name windows
+              ar=sprintf "تم حفظ %s: %d نافذة" name windows }
+        let restoringNotice name =
+            { en=sprintf "Restoring %s…" name; zh=sprintf "正在恢复 %s…" name; ja=sprintf "%s を復元しています…" name; ar=sprintf "جارٍ استعادة %s…" name }
+        let restoredNotice name restored missing =
+            { en=(sprintf "Restored %s: %d windows" name restored)+(if missing=0 then "" else sprintf ", %d not found" missing)
+              zh=(sprintf "已恢复 %s：%d 个窗口" name restored)+(if missing=0 then "" else sprintf "，%d 个未找到" missing)
+              ja=(sprintf "%s を復元しました: %d 個のウィンドウ" name restored)+(if missing=0 then "" else sprintf "、%d 個が見つかりません" missing)
+              ar=(sprintf "تمت استعادة %s: %d نافذة" name restored)+(if missing=0 then "" else sprintf "، %d غير موجودة" missing) }
+        let noneSaved = { en="No workspace saved yet"; zh="尚未保存任何工作区"; ja="保存されたワークスペースはまだありません"; ar="لم يتم حفظ أي مساحة عمل بعد" }
         let invalidSetting = { en="Invalid workspace setting"; zh="工作区设置无效"; ja="ワークスペースの設定が無効です"; ar="إعداد مساحة العمل غير صالح" }
         let dataWarnings = { en="Workspace data"; zh="工作区数据"; ja="ワークスペースのデータ"; ar="بيانات مساحة العمل" }
         let titleInvalid = { en="Window title is missing or exceeds 4,096 characters."; zh="窗口标题缺失或超过 4,096 个字符。"; ja="ウィンドウのタイトルがないか、4,096 文字を超えています。"; ar="عنوان النافذة مفقود أو يتجاوز 4096 حرفًا." }

@@ -768,6 +768,14 @@ let main() =
             reloaded.selected <- reloaded.workspaces.head
             let result = reloaded.restore()
             check (result |> Option.exists(fun result -> result.restored=2 && result.missing.IsEmpty)) (sprintf "Workspace restore result miscounted: %A" result)
+            // #82: the restore shortcut brings back the workspace last saved or restored, and the
+            // newest one when that one is gone or renamed.
+            check (reloaded.lastUsed |> Option.exists(fun ws -> ws.name=saved.name)) "A restored workspace was not the one the shortcut restores"
+            let root = api.root
+            root.setString("lastWorkspace","No such workspace")
+            api.root <- root
+            check (reloaded.lastUsed |> Option.exists(fun ws -> obj.ReferenceEquals(ws,List.last reloaded.workspaces.list)))
+                  "A renamed last workspace left the restore shortcut with nothing to restore"
             let restoredGroup hwnd =
                 match desktopApi.groups.list |> List.filter(fun group -> group.windows.contains((=)hwnd)) with
                 | [group] -> Some(group :?> GroupInfo)

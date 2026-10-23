@@ -65,7 +65,9 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
   or below and for moving the focus between panes are under **Settings → Shortcuts**, unset by
   default.
 - **Workspaces:** save groups and window positions, then restore them onto open windows;
-  apps that are not running can be launched and their windows restored.
+  apps that are not running can be launched and their windows restored. Shortcuts to save
+  one and to restore the last saved or restored one are under **Settings → Shortcuts**,
+  unset by default.
 - **Taskbar:** optionally combine each group into one taskbar button, which shows every
   app in the group.
 - **Languages:** English, 中文, 日本語.

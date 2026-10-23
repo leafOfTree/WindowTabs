@@ -102,6 +102,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         ("splitFocusRight", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneRight)))
         ("splitFocusUp", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneUp)))
         ("splitFocusDown", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneDown)))
+        ("saveWorkspace", fun () -> this.saveWorkspace())
+        ("restoreWorkspace", fun () -> this.restoreWorkspace())
         ]))
         
     let hotKeyManager = lifetime.Own(new HotKeyManager())
@@ -683,6 +685,41 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             search.Ended.Add(fun () -> tabSearchCell.set(None))
             tabSearchCell.set(Some(search))
             search.Show()
+
+    /// The saved workspaces as Settings last wrote them, which an open Settings page may have changed.
+    member private this.readWorkspaces() =
+        let workspaces = WorkspaceModel()
+        workspaces.loadSettings()
+        workspaces
+
+    /// As Save layout in Settings, said on screen since nothing else shows it.
+    member this.saveWorkspace() =
+        let workspaces = this.readWorkspaces()
+        if workspaces.isReadOnly then Notice.show (tr Strings.Workspaces.unsupportedVersion)
+        else
+            workspaces.create(fun ws ->
+                let windows = ws.groups.list |> List.sumBy(fun group -> group.cast<WorkspaceGroup>().windows.count)
+                Notice.show (tr (Strings.Workspaces.savedNotice ws.name windows)))
+
+    /// Brings back the workspace last saved or restored, with the result on screen rather than in a dialog.
+    member this.restoreWorkspace() =
+        let workspaces = this.readWorkspaces()
+        match workspaces.lastUsed with
+        | None -> Notice.show (tr Strings.Workspaces.noneSaved)
+        | Some ws ->
+            // Said first, and painted before the windows move, so a user leaves them alone meanwhile.
+            Notice.hold (tr (Strings.Workspaces.restoringNotice ws.name))
+            let go = new System.Windows.Forms.Timer(Interval=50)
+            go.Tick.Add(fun _ ->
+                go.Stop()
+                go.Dispose()
+                try
+                    workspaces.restoreLast() |> Option.iter(fun result ->
+                        Notice.show (tr (Strings.Workspaces.restoredNotice result.workspace result.restored result.missing.Length)))
+                with error ->
+                    Notice.hideNow()
+                    Diagnostics.Trace.TraceWarning("Workspace restore failed: {0}",error.Message))
+            go.Start()
 
     /// A shortcut another program already holds stays unregistered, without a message at every
     /// start; choosing it again in Settings says it is in use.

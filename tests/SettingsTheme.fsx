@@ -922,6 +922,15 @@ let main() =
         check ((tree.Roots |> Seq.map(fun row -> row.Tag) |> Seq.toList)=(workspaces.wm.workspaces.list |> List.map box))
               "Workspace rows are not in the order saved"
         check (not(isNull tree.SelectedItem) && obj.ReferenceEquals(tree.SelectedItem,Seq.last tree.Roots)) "A newly saved workspace was not the last row, selected"
+        // #82: a workspace saved by shortcut, through a model of its own, shows on the open page,
+        // so the page's next save keeps it.
+        let byShortcut = WorkspaceModel()
+        byShortcut.loadSettings()
+        let mutable shortcutSaved = None
+        byShortcut.create(fun ws -> shortcutSaved <- Some ws.name)
+        check (shortcutSaved.IsSome && tree.Roots.Count=byShortcut.workspaces.length &&
+               (tree.Roots |> Seq.last).Text=shortcutSaved.Value)
+              "A workspace saved by shortcut did not show on the open Workspaces page"
         // Opened again, the saved workspaces start collapsed with none selected.
         let reopened = WorkspaceView()
         use reopenedHost = new Panel(Size=Size(900,600))
@@ -931,7 +940,7 @@ let main() =
         let kind (button:Button) = (button :?> SettingsActionButton).Kind
         check (kind reopened.restoreButton=SettingsButtonKind.Primary && kind reopened.newButton<>SettingsButtonKind.Primary)
               "Save and Restore look alike"
-        for _ in 1..2 do
+        for _ in 1..3 do
             workspaces.wm.selected <- box (workspaces.wm.workspaces.list |> List.last)
             workspaces.wm.remove()
         recoveryForm.Close()

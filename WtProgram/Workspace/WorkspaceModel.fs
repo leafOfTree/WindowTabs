@@ -407,9 +407,14 @@ type WorkspaceModel() as this =
     /// by handle: by their places in the list read then, it named the wrong windows once a tab
     /// had closed or moved since.
     let layouts = Dictionary<int,GroupTabLayout option * (bool * Rect * (IntPtr * SavedPane) list) option>()
+    /// A shortcut saves through a model of its own, so an open Settings page reads the list again.
+    static let savedEvt = Event<WorkspaceModel>()
 
     do
         Observable.init(this)
+
+    /// The saved workspaces changed; the model that wrote them is given.
+    static member saved = savedEvt.Publish
 
     member this.workspaces =  _workspaces.list
     member _.isReadOnly = readOnly
@@ -575,19 +580,42 @@ type WorkspaceModel() as this =
     member this.addWorkspace(ws:Workspace) =
         ws.cast<IWorkspaceNode>().removed.Add <| fun() -> this.onWorkspaceRemoved(ws)
         _workspaces.Add(ws)
-        this.saveSettings() 
-        workspaceAddedEvt.Trigger(ws) 
+        this.saveSettings()
+        // Reading the list again after a shortcut's save is no new workspace to open up.
+        if not loading then workspaceAddedEvt.Trigger(ws)
          
-    member this.create() =
+    /// `added` is told the workspace once it is saved.
+    member this.create(?added:Workspace -> unit) =
         if not readOnly && not creating then
             creating <- true
             try
                 this.createWorkspace(false,fun ws ->
                     creating <- false
-                    if not readOnly then this.addWorkspace(ws))
+                    if not readOnly then
+                        this.addWorkspace(ws)
+                        this.markUsed ws
+                        added |> Option.iter(fun f -> f ws))
             with _ ->
                 creating <- false
                 reraise()
+
+    /// The restore shortcut brings back the workspace last saved or restored, by its name.
+    member private this.markUsed(ws:Workspace) =
+        let root = Services.settings.root
+        root.setString("lastWorkspace",ws.name)
+        Services.settings.root <- root
+
+    /// The workspace last saved or restored; the newest one when that one is gone or renamed.
+    member this.lastUsed : Workspace option =
+        let name = Services.settings.root.getString("lastWorkspace")
+        let named = name |> Option.bind(fun name -> this.workspaces.tryFind(fun ws -> ws.name=name))
+        named |> Option.orElse(List.tryLast this.workspaces.list)
+
+    /// What restoring the last used workspace did, or None when none is saved.
+    member this.restoreLast() =
+        this.lastUsed |> Option.map(fun ws ->
+            this.markUsed ws
+            this.restoreWorkspace ws)
 
     /// The windows as they are now, kept on their own as the session: written as the groups
     /// change and brought back at the next start after a sign-in, when no window is left from
@@ -632,7 +660,10 @@ type WorkspaceModel() as this =
 
     /// What was restored, or None when no workspace is selected.
     member this.restore() =
-        if this.canRestore then Some(this.restoreWorkspace(this.selected :?> Workspace))
+        if this.canRestore then
+            let ws = this.selected :?> Workspace
+            this.markUsed ws
+            Some(this.restoreWorkspace ws)
         else None
 
     /// The selected node's edit fields, or None when it cannot be edited.
@@ -668,6 +699,7 @@ type WorkspaceModel() as this =
             root.setInt32("workspaceSchemaVersion",WorkspaceData.version)
             recovery |> Option.iter(fun data -> root.["workspaceRecovery"] <- data.DeepClone())
             Services.settings.root <- root
+            savedEvt.Trigger this
 
 
     member this.onWorkspaceRemoved(ws) =
