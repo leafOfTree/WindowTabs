@@ -3,11 +3,11 @@ open System.Windows.Forms
 
 type HotKeyView() =
     let panel,table = SettingsUi.page()
-    // Setting id for each program hotkey, so a conflict can name the other action.
-    let actions = ["nextTab","next-tab";"prevTab","previous-tab";"searchTabs","search-tabs";"newTab","new-tab";"closeTab","close-tab";"numberLeader","number-leader"
-                   "splitPickRight","split-pick-right";"splitPickBelow","split-pick-below"
-                   "splitFocusLeft","split-focus-left";"splitFocusRight","split-focus-right";"splitFocusUp","split-focus-up";"splitFocusDown","split-focus-down"]
+    // Setting id for each program hotkey, so a conflict can name the other action. Read from the
+    // catalog: a list of its own here left new shortcuts off the page.
+    let actions = SettingsCatalog.all |> List.choose(fun item -> match item.binding with Shortcut(key,_) -> Some(key,item.id) | _ -> None)
     let isSplit (key:string) = key.StartsWith "split"
+    let isWorkspace (key:string) = key.EndsWith "Workspace"
     let hotKey key =
         let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=Services.program.getHotKey key)
         editor.Changed.Add(fun _ ->
@@ -38,7 +38,7 @@ type HotKeyView() =
         SettingsUi.add table keyboard
         SettingsUi.note keyboard (tr Strings.Shortcuts.keyboardNote)
         for (key,editor),(_,id) in List.zip editors actions do
-            if key<>"numberLeader" && not(isSplit key) then SettingsUi.settingRow keyboard id editor
+            if key<>"numberLeader" && not(isSplit key) && not(isWorkspace key) then SettingsUi.settingRow keyboard id editor
         // Rows inset under a toggle and collapsed while it is off.
         let dependOn (toggle:SettingsToggle) (rows:SettingsRow list) =
             for row in rows do SettingsUi.indentDependentRow row
@@ -149,6 +149,9 @@ type HotKeyView() =
         let split = SettingsUi.sectionCard table (tr Strings.Shortcuts.splitView)
         for (key,editor),(_,id) in List.zip editors actions do
             if isSplit key then SettingsUi.settingRow split id editor
+        let workspaces = SettingsUi.sectionCard table (tr Strings.Pages.workspaces)
+        for (key,editor),(_,id) in List.zip editors actions do
+            if isWorkspace key then SettingsUi.settingRow workspaces id editor
         let pointer = SettingsUi.sectionCard table (tr Strings.Shortcuts.mouse)
         SettingsBindings.toggleRow pointer "activate-on-hover"
         SettingsBindings.toggleRow pointer "shift-scroll"
