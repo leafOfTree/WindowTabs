@@ -6,8 +6,9 @@ type HotKeyView() =
     // Setting id for each program hotkey, so a conflict can name the other action. Read from the
     // catalog: a list of its own here left new shortcuts off the page.
     let actions = SettingsCatalog.all |> List.choose(fun item -> match item.binding with Shortcut(key,_) -> Some(key,item.id) | _ -> None)
-    let isSplit (key:string) = key.StartsWith "split"
-    let isWorkspace (key:string) = key.EndsWith "Workspace"
+    // Cards follow the commands' categories, so a new command lands on the right one.
+    let isSplit key = Commands.categoryOf key=Some SplitCommands
+    let isWorkspace key = Commands.categoryOf key=Some WorkspaceCommands
     let hotKey key =
         let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=Services.program.getHotKey key)
         editor.Changed.Add(fun _ ->

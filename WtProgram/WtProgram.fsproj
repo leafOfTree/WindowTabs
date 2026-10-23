@@ -107,6 +107,7 @@
     <Compile Include="Desktop.fs" />
     <Compile Include="Workspace\WorkspaceData.fs" />
     <Compile Include="Workspace\WorkspaceModel.fs" />
+    <Compile Include="Commands.fs" />
     <Compile Include="ManagerViewService\ThemeBinding.fs" />
     <Compile Include="ManagerViewService\SettingsStyle.fs" />
     <Compile Include="ManagerViewService\SettingsControls.fs" />

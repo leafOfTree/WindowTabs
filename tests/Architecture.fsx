@@ -259,7 +259,10 @@ let main() =
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
             member _.llMouse = mouse.Publish
-            member _.paneCandidates() = []})
+            member _.paneCandidates() = []
+            member _.toggleSearch() = ()
+            member _.saveWorkspace() = ()
+            member _.restoreWorkspace() = ()})
         let desktop = Desktop({new IDesktopNotification with
                                 member _.dragDrop _ = ()
                                 member _.dragEnd() = ()},api,dispatcher)
@@ -414,6 +417,30 @@ let main() =
         let activeOnly = {basis with tabActiveBgColor=System.Drawing.Color.Red}
         check ((Theme.followSeparator (Some basis) basis activeOnly).tabBorderColor.ToArgb()=basis.tabBorderColor.ToArgb()) "Separator changed with an unrelated color"
         check (SettingsCatalog.all |> List.forall(fun item -> item.id<>"tabBorderColor" && item.id<>"tabFlashBgColor")) "Search still offers separator or flashing tab colors"
+        // Every action is a command: the hotkeys, the palette and the command line share the list.
+        let commands = Commands.all
+        check (commands |> List.map(fun command -> command.id) |> List.distinct |> List.length = commands.Length) "Command ids must be unique"
+        check (commands |> List.forall(fun command -> command.id<>"" && command.id=command.id.ToLowerInvariant() && not (command.id.Contains " "))) "Command ids must be kebab-case"
+        check (commands |> List.forall(fun command -> Localization.all command.text.caption |> List.forall(fun text -> text<>""))) "Every command needs a caption in every language"
+        for item in SettingsCatalog.all do
+            match item.binding with
+            | Shortcut(key,_) ->
+                match Commands.byShortcut key with
+                | Some command -> check (command.id=item.id) (sprintf "Shortcut %s belongs to command %s, not %s" key command.id item.id)
+                | None -> failwithf "Shortcut %s in the catalog has no command" key
+            | _ -> ()
+        for command in commands do
+            match command.shortcut with
+            | Some key -> check (SettingsCatalog.all |> List.exists(fun item -> item.binding=Shortcut(key,SettingsCatalog.shortcutDefault key))) (sprintf "Command %s has a shortcut key the catalog does not list" command.id)
+            | None -> check command.listed (sprintf "Command %s is neither in the palette nor on a key" command.id)
+        check (Commands.find "exit" |> Option.exists(fun command -> command.category=AppCommands && command.shortcut.IsNone)) "Exit must be a command without a shortcut key"
+        check (Commands.find "toggle-use-windowtabs-for-alt-tab" |> Option.exists(fun command -> command.category=SettingsCommands)) "Every on/off setting must be a command"
+        check (Commands.categoryOf "splitSwap"=Some SplitCommands && Commands.categoryOf "saveWorkspace"=Some WorkspaceCommands) "Shortcut cards must follow the commands' categories"
+        api.setValue("replaceAltTab",box false)
+        (Commands.find "toggle-use-windowtabs-for-alt-tab").Value.run() |> ignore
+        check (api.getValue("replaceAltTab") :?> bool) "A toggle command must turn the setting on"
+        (Commands.find "toggle-use-windowtabs-for-alt-tab").Value.run() |> ignore
+        check (not (api.getValue("replaceAltTab") :?> bool)) "A toggle command must turn the setting off again"
         let renamed = api.root.DeepClone() :?> Bemo.Json.JObject
         renamed.["tabColorMode"] <- Bemo.Json.JValue("Rainbow")
         let current = api.root

@@ -36,7 +36,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
 
 - `WtProgram/WtProgram.fsproj` lists every source file in compile order. F# needs a
   file to come after everything it uses; add new files to the list at the right spot.
-- `Program.fs`: entry point, window discovery, program hotkeys (`hotKeyInfo`).
+- `Program.fs`: entry point, window discovery, hotkey registration.
+- `Commands.fs`: every named action, with its text, category and shortcut key; hotkeys,
+  the palette and the command line all run commands from this one list.
 - `Desktop.fs`, `WindowGroup.fs`, `TabStrip*.fs`: groups and the tab strip.
 - `TaskSwitch.fs`: the Alt+Tab replacement (icon and list styles).
 - `TabSearch.fs`: the tab search box.

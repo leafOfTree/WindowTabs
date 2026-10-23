@@ -57,6 +57,12 @@ module SettingsCatalog =
         { id="split-focus-right"; page=HotKeySettings; text=Strings.Settings.splitFocusRight; binding=Shortcut("splitFocusRight",0) }
         { id="split-focus-up"; page=HotKeySettings; text=Strings.Settings.splitFocusUp; binding=Shortcut("splitFocusUp",0) }
         { id="split-focus-down"; page=HotKeySettings; text=Strings.Settings.splitFocusDown; binding=Shortcut("splitFocusDown",0) }
+        { id="split-focus-other"; page=HotKeySettings; text=Strings.Commands.splitFocusOther; binding=Shortcut("splitFocusOther",0) }
+        { id="split-swap"; page=HotKeySettings; text=Strings.Commands.splitSwap; binding=Shortcut("splitSwap",0) }
+        { id="split-equalize"; page=HotKeySettings; text=Strings.Commands.splitEqualize; binding=Shortcut("splitEqualize",0) }
+        { id="split-turn"; page=HotKeySettings; text=Strings.Commands.splitTurn; binding=Shortcut("splitTurn",0) }
+        { id="split-close-pane"; page=HotKeySettings; text=Strings.Commands.splitClosePane; binding=Shortcut("splitClosePane",0) }
+        { id="split-end"; page=HotKeySettings; text=Strings.Commands.splitEnd; binding=Shortcut("splitEnd",0) }
         // Unbound too, for the same reason.
         { id="save-workspace"; page=HotKeySettings; text=Strings.Settings.saveWorkspace; binding=Shortcut("saveWorkspace",0) }
         { id="restore-workspace"; page=HotKeySettings; text=Strings.Settings.restoreWorkspace; binding=Shortcut("restoreWorkspace",0) }

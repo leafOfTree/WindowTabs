@@ -116,6 +116,9 @@ type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
         member _.resumeTabMonitoring() = dispatcher.Send(fun () -> inner.resumeTabMonitoring())
         member _.llMouse = dispatcher.Send(fun () -> inner.llMouse)
         member _.paneCandidates() = dispatcher.Send(fun () -> inner.paneCandidates())
+        member _.toggleSearch() = dispatcher.Post(fun () -> inner.toggleSearch())
+        member _.saveWorkspace() = dispatcher.Post(fun () -> inner.saveWorkspace())
+        member _.restoreWorkspace() = dispatcher.Post(fun () -> inner.restoreWorkspace())
 
 type DispatchedFilterService(inner:IFilterService, dispatcher:IDispatcher) =
     interface IFilterService with

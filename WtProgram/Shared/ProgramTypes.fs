@@ -148,6 +148,12 @@ type IProgram =
     abstract member llMouse : IEvent<int32 * IntPtr>
     /// Windows an empty pane can take, on this desktop: handle, tab name and program.
     abstract member paneCandidates : unit -> (IntPtr * string * string) list
+    /// Opens the search box, or closes it when open. Posted to the UI thread.
+    abstract member toggleSearch : unit -> unit
+    /// Saves the windows as a new workspace, as the Save layout button does. Posted to the UI thread.
+    abstract member saveWorkspace : unit -> unit
+    /// Brings back the workspace last saved or restored. Posted to the UI thread.
+    abstract member restoreWorkspace : unit -> unit
 
 /// Whether a group set to combine its taskbar icons has its one button, and if not, why its
 /// windows keep their own: else the setting looked on while nothing was combined.

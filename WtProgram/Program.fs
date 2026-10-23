@@ -84,28 +84,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             | _ -> ())
 
 
-    // Default shortcuts live in SettingsCatalog; this maps each hotkey to its action.
-    let hotKeyInfo = Map2(List2([
-        ("prevTab", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.switchWindow(false, false)))
-        ("nextTab", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.switchWindow(true, false)))
-        ("searchTabs", fun () -> this.toggleTabSearch())
-        ("numberLeader", fun () -> if settingsManager.settings.enableNumberLeader then NumberLeaderRequest.toggle.Trigger())
-        ("newTab", fun () -> this.openNewTab(WinUserApi.GetForegroundWindow()))
-        // As the tab menu's Close: the window of the tab in front, and only a tab's.
-        ("closeTab", fun () ->
-            let hwnd = WinUserApi.GetForegroundWindow()
-            if this.isInGroup hwnd then os.windowFromHwnd(hwnd).close())
-        // A window chosen from a list goes beside the tab in front, as from the tab menu.
-        ("splitPickRight", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.pickPane(SideBySide,Second)))
-        ("splitPickBelow", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.pickPane(Stacked,Second)))
-        ("splitFocusLeft", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneLeft)))
-        ("splitFocusRight", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneRight)))
-        ("splitFocusUp", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneUp)))
-        ("splitFocusDown", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneDown)))
-        ("saveWorkspace", fun () -> this.saveWorkspace())
-        ("restoreWorkspace", fun () -> this.restoreWorkspace())
-        ]))
-        
+    // Each hotkey runs the command its shortcut key belongs to; the commands and their default
+    // shortcuts live in Commands and SettingsCatalog.
     let hotKeyManager = lifetime.Own(new HotKeyManager())
     // Native events can pump during startup, before the filter is registered in run.
     // The initial full refresh processes those windows once the services are ready.
@@ -735,10 +715,15 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// A shortcut another program already holds stays unregistered, without a message at every
     /// start; choosing it again in Settings says it is in use.
     member this.registerHotKeys() =
-        hotKeyInfo.items.iter <| fun(key,action) ->
-            let shortcut = if key="numberLeader" && not settingsManager.settings.enableNumberLeader then 0 else this.cast<IProgram>().getHotKey(key)
-            let shortcut = HotKeyShortcut(HotKeyControlCode=int16(shortcut))
-            hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags, shortcut.RegisterHotKeyVirtualKeyCode) action |> ignore
+        for command in Commands.all do
+            command.shortcut |> Option.iter(fun key ->
+                let shortcut = if key="numberLeader" && not settingsManager.settings.enableNumberLeader then 0 else this.cast<IProgram>().getHotKey(key)
+                let shortcut = HotKeyShortcut(HotKeyControlCode=int16(shortcut))
+                hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags, shortcut.RegisterHotKeyVirtualKeyCode) (this.runCommand command) |> ignore)
+
+    /// A command from its hotkey. A choice it leaves is for the palette to show.
+    member this.runCommand (command:Command) () =
+        command.run() |> ignore
 
    
     member this.hwndZorders() : Map2<IntPtr, int>= Map2(os.windowsInZorder.enumerate.map(fun(i,w) -> w.hwnd,i))
@@ -865,13 +850,15 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             (settingsManager :> ISettings).hotKey key |> Option.defaultValue (SettingsCatalog.shortcutDefault key)
 
         member x.setHotKey key value =
-            let action = hotKeyInfo.find(key)
-            let shortcut = HotKeyShortcut(HotKeyControlCode=int16(value))
-            let registered = hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags,shortcut.RegisterHotKeyVirtualKeyCode) action
-            if registered then
-                (settingsManager :> ISettings).setHotKey key value
-                if key="numberLeader" && not settingsManager.settings.enableNumberLeader then hotKeyManager.unregister key
-            registered
+            match Commands.byShortcut key with
+            | None -> false
+            | Some command ->
+                let shortcut = HotKeyShortcut(HotKeyControlCode=int16(value))
+                let registered = hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags,shortcut.RegisterHotKeyVirtualKeyCode) (this.runCommand command)
+                if registered then
+                    (settingsManager :> ISettings).setHotKey key value
+                    if key="numberLeader" && not settingsManager.settings.enableNumberLeader then hotKeyManager.unregister key
+                registered
 
         member x.newTab hwnd = this.openNewTab hwnd
 
@@ -883,6 +870,10 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             TabSearch.tabs nameOverride (WinUserApi.GetForegroundWindow()) groups
             |> List.filter(fun entry -> entry.desktop="")
             |> List.map(fun entry -> entry.hwnd,entry.title,entry.program)
+
+        member x.toggleSearch() = this.toggleTabSearch()
+        member x.saveWorkspace() = this.saveWorkspace()
+        member x.restoreWorkspace() = this.restoreWorkspace()
 
     interface IDesktopNotification with
         member x.dragDrop(hwnd) =

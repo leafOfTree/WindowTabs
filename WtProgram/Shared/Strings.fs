@@ -509,6 +509,57 @@ module Strings =
         let pressShortcut = { en="Press a shortcut…"; zh="按下组合键…"; ja="キーを押してください…"; ar="اضغط اختصارًا…" }
         let notSet = { en="Not set"; zh="未设置"; ja="未設定"; ar="غير معيّن" }
 
+    /// Commands run by name, from the palette or the command line, that no setting names already.
+    module Commands =
+        let private splitWords = { en="split view pane"; zh="分屏 窗格"; ja="分割 ペイン"; ar="عرض مقسّم جزء" }
+        let splitSwap = { caption={ en="Swap panes"; zh="交换两侧"; ja="ペインを入れ替え"; ar="تبديل الأجزاء" }
+                          description={ en="The two halves of the focused pane's split change places."
+                                        zh="当前格所在分屏的两侧互换位置。"
+                                        ja="フォーカスしているペインの分割の両側を入れ替えます。"
+                                        ar="يتبادل نصفا التقسيم الذي يحتوي على الجزء المركّز مكانيهما." }
+                          keywords=splitWords }
+        let splitEqualize = { caption={ en="Equal panes"; zh="恢复均分"; ja="均等に分割"; ar="أجزاء متساوية" }
+                              description={ en="Gives both halves of the focused pane's split the same room."
+                                            zh="让当前格所在分屏的两侧占同样的空间。"
+                                            ja="フォーカスしているペインの分割の両側を同じ広さにします。"
+                                            ar="يمنح نصفي التقسيم الذي يحتوي على الجزء المركّز المساحة نفسها." }
+                              keywords=splitWords }
+        let splitTurn = { caption={ en="Turn the split"; zh="切换分屏方向"; ja="分割の向きを切り替え"; ar="تدوير التقسيم" }
+                          description={ en="Side by side becomes top and bottom, and back."
+                                        zh="左右变为上下，再按一次变回。"
+                                        ja="左右を上下に、またその逆に切り替えます。"
+                                        ar="يتحول العرض جنبًا إلى جنب إلى أعلى وأسفل، والعكس." }
+                          keywords=splitWords }
+        let splitClosePane = { caption={ en="Close the pane"; zh="关闭当前格"; ja="ペインを閉じる"; ar="إغلاق الجزء" }
+                               description={ en="The focused pane leaves the split and its neighbour takes its room; the window stays a tab."
+                                             zh="当前格退出分屏，空间让给相邻的格；窗口仍保留为标签。"
+                                             ja="フォーカスしているペインを分割から外し、隣のペインがその場所を使います。ウィンドウはタブとして残ります。"
+                                             ar="يغادر الجزء المركّز التقسيم ويأخذ جاره مكانه؛ وتبقى النافذة علامة تبويب." }
+                               keywords=splitWords }
+        let splitEnd = { caption={ en="End split view"; zh="结束分屏"; ja="分割表示を終了"; ar="إنهاء العرض المقسّم" }
+                         description={ en="Every window becomes a tab again."; zh="所有窗口恢复为标签。"; ja="すべてのウィンドウをタブに戻します。"; ar="تعود كل نافذة إلى علامة تبويب." }
+                         keywords=splitWords }
+        let splitFocusOther = { caption={ en="Focus the next pane"; zh="焦点切到下一个格"; ja="次のペインにフォーカス"; ar="التركيز على الجزء التالي" }
+                                description={ en="Around the panes in turn; brings parked panes back."
+                                              zh="按顺序在各格之间轮换；已收起的格会重新显示。"
+                                              ja="ペインを順に巡ります。しまわれたペインは元に戻します。"
+                                              ar="يتنقل بين الأجزاء بالتناوب، ويعيد الأجزاء المخفية." }
+                                keywords=splitWords }
+        let openSettings = { caption={ en="Open settings"; zh="打开设置"; ja="設定を開く"; ar="فتح الإعدادات" }
+                             description=none
+                             keywords={ en="preferences options"; zh="偏好 选项"; ja="環境設定 オプション"; ar="التفضيلات الخيارات" } }
+        /// One settings page by name, as "Settings: General".
+        let settingsPage (page:LocalizedText) =
+            { caption={ en="Settings: "+page.en; zh="设置："+page.zh; ja="設定: "+page.ja; ar="الإعدادات: "+page.ar }
+              description=none
+              keywords={ en="open page"; zh="打开 页面"; ja="開く ページ"; ar="فتح صفحة" } }
+        let exit = { caption=Tray.exit
+                     description={ en="Every window gets its own frame back."; zh="所有窗口恢复各自的边框。"; ja="すべてのウィンドウが元の枠に戻ります。"; ar="تستعيد كل نافذة إطارها الخاص." }
+                     keywords={ en="quit close"; zh="退出 关闭"; ja="終了"; ar="إنهاء إغلاق" } }
+        let refreshWindows = { caption={ en="Look for windows again"; zh="重新扫描窗口"; ja="ウィンドウを再スキャン"; ar="إعادة فحص النوافذ" }
+                               description={ en="Groups any window that was missed."; zh="把漏掉的窗口加入分组。"; ja="見落とされたウィンドウをグループに入れます。"; ar="يضيف أي نافذة فاتها البرنامج إلى مجموعة." }
+                               keywords={ en="rescan refresh reload"; zh="刷新 重新加载"; ja="更新 再読み込み"; ar="تحديث إعادة تحميل" } }
+
     /// The tab search box.
     module TabSearch =
         let prompt = { en="Type a title or app name to switch windows"; zh="输入标题或应用名，切换窗口"; ja="タイトルやアプリ名を入力してウィンドウを切り替え"; ar="اكتب عنوانًا أو اسم تطبيق للتبديل بين النوافذ" }

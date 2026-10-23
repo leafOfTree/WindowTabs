@@ -314,21 +314,23 @@ coverage), and **only the windows themselves get a new kind of drop target**.
 
 ## 5. Keyboard
 
-Shortcuts and menus share `SplitCommand`. Shortcuts use the existing `hotKeyInfo` and
-`SettingsCatalog.Shortcut`, act on the foreground group, and are all unbound (0) by default so
-that no global hotkey is taken. The entries:
+Shortcuts and menus share `SplitCommand`. Shortcuts are commands in `Commands.fs` with a
+`SettingsCatalog.Shortcut` entry each, act on the foreground group, and are all unbound (0) by
+default so that no global hotkey is taken. The entries:
 
-Six keys, in a card of their own on the Shortcuts page: two ways in, which open the tab
-menu's window list for the tab in front, and the focus by direction. The rest of the commands (the other two sides, swap, equalize, closing a pane,
-ending the split) are on the tab menu, the seam buttons and the dividers; a dozen split
-entries once crowded the page, and the next tab's shortcut already walks the panes in order.
+Twelve keys, in a card of their own on the Shortcuts page: two ways in, which open the tab
+menu's window list for the tab in front, the focus by direction or in turn, and the split's own
+commands (swap, equalize, turn, close a pane, end the split), which the palette also runs by name.
 
 | Setting id | hotKeys key | Command |
 | --- | --- | --- |
 | split-pick-right / split-pick-below | splitPickRight / splitPickBelow | `IGroup.pickPane`: the strip's window list for the tab in front; the window chosen goes on that side (`placeBeside`) |
 | split-focus-left / -right / -up / -down | splitFocusLeft … splitFocusDown | `FocusToward`: the nearest pane in that direction sharing most of the focused pane's edge |
+| split-focus-other | splitFocusOther | `FocusOther` |
+| split-swap / split-equalize / split-turn | splitSwap / splitEqualize / splitTurn | `Swap None` / `Equalize None` / `ToggleAxis None` on the focused pane's split |
+| split-close-pane / split-end | splitClosePane / splitEnd | `ClosePane None` / `EndSplit None` |
 
-Wiring: `Program.hotKeyInfo` to `Services.desktop.foregroundGroup` to `IGroup.executeSplit` or
+Wiring: `Commands` to `Services.desktop.foregroundGroup` to `IGroup.executeSplit` or
 `pickPane` (`GroupInfo` passes them to the group's STA; `pickPane` raises the group's
 `pickRequested`, which the strip answers with the list). The settings page's
 `HotKeyView.actions` lists the same keys, with the existing conflict checks and reset to
@@ -439,9 +441,9 @@ together once the design had settled.
    `InputManagerPlugin`'s low-level keyboard hook, losing capture cancels too, and the source
    strip puts the tab back with `dragCancel`; native windows dropped onto an empty pane are
    recognised by `Desktop`'s MOVESIZE hooks.
-4. **Keyboard** (done): eight `Shortcut` entries in `SettingsCatalog`, unbound by default, with
-   their text in `Strings.Settings` in three languages; `hotKeyInfo` reaches the foreground
-   group through `IGroup.executeSplit` and `splitWithNext`; `HotKeyView` lists the editors.
+4. **Keyboard** (done): `Shortcut` entries in `SettingsCatalog`, unbound by default, with
+   their text in `Strings` in every language; the commands in `Commands.fs` reach the foreground
+   group through `IGroup.executeSplit` and `pickPane`; `HotKeyView` lists the editors.
 5. **Verification** (done, ongoing as issues come up): the SplitView, GroupOperations,
    TabInteraction and GroupLifecycle suites, the opt-in `SplitViewDesktop` suite on the real
    desktop, and trials with Explorer, editors, terminals and WebView2 apps; see

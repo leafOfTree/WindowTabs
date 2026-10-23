@@ -269,7 +269,10 @@ let main() =
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
             member _.llMouse = mouse.Publish
-            member _.paneCandidates() = []})
+            member _.paneCandidates() = []
+            member _.toggleSearch() = ()
+            member _.saveWorkspace() = ()
+            member _.restoreWorkspace() = ()})
         Services.register<IFilterService>({new IFilterService with
             member _.isAppWindow _ = false
             member _.isAppWindowStyle _ = false
