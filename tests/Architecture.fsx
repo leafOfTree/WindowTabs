@@ -869,6 +869,7 @@ let main() =
     recorder.BeginAssign()
     let editor = match recorder.ShortcutEditor with Some editor -> editor | None -> failwith "Alt+Enter did not open a shortcut box on the command"
     check (editor.IsRecording && editor.Shortcut=1623) "The shortcut box did not start recording the current shortcut"
+    check (editor.Surroundings=(SettingsColors.current()).selection) "The shortcut box's corners did not take the chosen row's colour"
     let press (control:Control) (keys:Keys) =
         let mutable msg = Message()
         let processKey = control.GetType().GetMethod("ProcessCmdKey",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)

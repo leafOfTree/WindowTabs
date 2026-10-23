@@ -121,27 +121,24 @@ module SettingsUi =
                 if restore then
                     for item,color in targets do if not item.IsDisposed then item.BackColor <- color
                     repaint()
+            /// On screen: opened from the palette, the window is not up yet, and a blink before
+            /// that would be over before it is seen. The clock runs only from then.
+            let shown() =
+                row.Visible && (match row.FindForm() with null -> false | form -> form.Visible && form.WindowState<>FormWindowState.Minimized)
             timer.Tick.Add(fun _ ->
                 let p = palette()
                 // A theme change repaints everything with the new colours; leave those alone.
                 if row.IsDisposed || p.background<>start.background || p.accent<>start.accent then finish false
+                elif not clock.IsRunning && not (shown()) then ()
                 else
+                    clock.Start()
                     let elapsed = clock.Elapsed.TotalMilliseconds
                     if elapsed >= SettingsFlash.hold+SettingsFlash.fade then finish true
                     else
                         let strength = 0.22*SettingsFlash.strength elapsed
                         for item,color in targets do item.BackColor <- mix color p.accent strength
                         repaint())
-            // From the row's next paint: opened from the palette, the window is not on screen
-            // yet, and a flash before that would be over before it is seen.
-            let mutable painted : PaintEventHandler = null
-            painted <- PaintEventHandler(fun _ _ ->
-                row.Paint.RemoveHandler painted
-                if not row.IsDisposed then
-                    clock.Start()
-                    timer.Start())
-            row.Paint.AddHandler painted
-            row.Invalidate())
+            timer.Start())
 
     let button caption =
         let button = new SettingsActionButton(Text=caption, AutoSize=true, MinimumSize=Size(Dpi.scale 76,Dpi.scale 30))

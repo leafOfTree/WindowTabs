@@ -525,6 +525,23 @@ let main() =
         hotKeys.["prevTab"] <- 3621
         Application.DoEvents()
         paints form "The shortcuts page"
+        // A setting found by search blinks: its row's labels go to the tint, back, and to it again.
+        if mode=DarkTheme then
+            let rec labelOf (control:Control) =
+                if control :? Label && control.Text=(tr Strings.Settings.previousTab.caption) then Some control
+                else control.Controls |> Seq.cast<Control> |> Seq.tryPick labelOf
+            let label = (labelOf view.control).Value
+            let resting = label.BackColor
+            SettingsUi.flash previous
+            let clock = Diagnostics.Stopwatch.StartNew()
+            let samples = ResizeArray<bool>()
+            while clock.ElapsedMilliseconds<1800L do
+                Application.DoEvents()
+                samples.Add(label.BackColor<>resting)
+                Threading.Thread.Sleep(10)
+            let changes = samples |> Seq.pairwise |> Seq.filter(fun (a,b) -> a<>b) |> Seq.length
+            printfn "Flash: %d samples, %d changes, tinted %d" samples.Count changes (samples |> Seq.filter id |> Seq.length)
+            assertTrue (changes>=4 && not samples.[samples.Count-1]) (sprintf "A found setting did not blink twice and clear: %d changes" changes)
         hotKeys.["nextTab"] <- 3623
         form.Close()
     // SettingsTreeList: expansion, keyboard navigation, check boxes and selection events.

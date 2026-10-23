@@ -598,11 +598,10 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     let assignment = match page() with Some page -> page.shortcut entry | None -> windowShortcut entry
                     assignment |> Option.map(fun assignment -> entry,assignment))
                 |> Option.iter(fun (entry,assignment) ->
-                    // On the chosen row, so its corners outside the rounded outline take the row's
-                    // highlight, not the surface, which showed as dark corners.
-                    let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=assignment.current,
-                                                           BackColor=(if SystemInformation.HighContrast then SystemColors.Highlight else palette.selection),
-                                                           ForeColor=palette.text)
+                    let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=assignment.current,ForeColor=palette.text)
+                    // On the chosen row: round its corners the row's highlight shows, not the
+                    // list's surface, which showed as dark corners.
+                    editor.PlaceOn(if SystemInformation.HighContrast then SystemColors.Highlight else palette.selection)
                     let place() =
                         match list.RowBounds target with
                         | Some bounds ->
