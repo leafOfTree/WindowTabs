@@ -76,10 +76,13 @@ module TabSearch =
         | "",desktop -> desktop
         | program,desktop -> program+" · "+desktop
 
-    /// Where the typed terms appear in a text, as (start,length) runs to highlight.
+    /// Where the typed terms appear in a text, as (start,length) runs to highlight. The terms
+    /// typed as one phrase light up as one where the text has them so, space and all.
     let highlights (query:string) (text:string) =
+        let terms = query.Split([|' ';'\t'|],StringSplitOptions.RemoveEmptyEntries) |> List.ofArray
+        let phrase = String.Join(" ",terms)
         let found =
-            query.Split([|' ';'\t'|],StringSplitOptions.RemoveEmptyEntries)
+            (if terms.Length>1 then phrase::terms else terms)
             |> Seq.collect(fun term ->
                 Seq.unfold(fun start ->
                     match text.IndexOf(term,start,StringComparison.OrdinalIgnoreCase) with
@@ -379,6 +382,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                                           (if SystemInformation.HighContrast then SystemColors.WindowText else p.accent),
                                           TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter) }
     let programColumn = TreeListColumn("",160,TextColumn,RightAligned=true)
+    /// Each right-end text's width, measured once: the rows are measured again at every keystroke.
+    let asideWidths = Collections.Generic.Dictionary<string,int>()
     let list = new SettingsTreeList([TreeListColumn("",0,TextColumn);programColumn],
                                     ShowHeader=false,ShowExpanders=false,ExpandOnDoubleClick=false,
                                     RowHeight=rowHeight,IconSize=24,TabStop=false,Dock=DockStyle.Fill,
@@ -449,11 +454,17 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         let text (aside:PaletteAside) = aside.detail
         let asides = shown |> Array.map(fun (_,entry) -> aside entry)
         // Titles reclaim the fixed app column's spare space, including after filtering.
+        let measure (value:string) =
+            match asideWidths.TryGetValue value with
+            | true,width -> width
+            | _ ->
+                let width = TextRenderer.MeasureText(value,list.Font,Size(Int32.MaxValue,Dpi.scale rowHeight),TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine).Width
+                asideWidths.[value] <- width
+                width
         let programWidth =
             asides |> Array.fold(fun width aside ->
                 let switch = if aside.switch.IsSome then Dpi.scale 44 else 0
-                max width (switch+TextRenderer.MeasureText(text aside,list.Font,Size(Int32.MaxValue,Dpi.scale rowHeight),
-                                     TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine).Width)) 0
+                max width (switch+measure (text aside))) 0
         programColumn.Width <- max 48 (min 300 (int(Math.Ceiling(float programWidth/Dpi.currentFactor()))+16))
         shown |> Array.iteri(fun index (item,entry) ->
             let aside = asides.[index]

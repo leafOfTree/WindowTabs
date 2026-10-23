@@ -690,6 +690,8 @@ let main() =
     check (TabSearch.highlights "md read" "README.md - Code" = [0,4;7,2]) "Search terms were not highlighted where they appear"
     check (TabSearch.highlights "o" "Foo" = [1,2]) "Adjacent matches were not merged"
     check (TabSearch.highlights "ab bc" "xabcx" = [1,3]) "Overlapping matches were not merged"
+    check (TabSearch.highlights "window on" "Window on the right" = [0,9]) "A phrase typed with a space was not lit up whole"
+    check (TabSearch.highlights "on  the" "On the on" = [0,6;7,2]) "A phrase's terms were not also lit up on their own"
     check (TabSearch.highlights "" "Foo" = [] && TabSearch.highlights "zz" "Foo" = []) "Text was highlighted without a match"
     // Choosing: word-start quality, earlier positions, then recency.
     check (TabSearch.quality "set" "windowtabs settings" = 2) "A match at a word start was not ranked best"

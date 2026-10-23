@@ -40,6 +40,9 @@ module CommandPalette =
     let actionsPage (active:IntPtr) =
         let listed = actions() |> Array.ofList
         let action (chosen:TabSearchEntry) = listed.[int chosen.hwnd-1]
+        // Each row's right end as last worked out: a shortcut's text reads the settings file,
+        // too slow for every row at every keystroke. Forgotten for a setting as it turns.
+        let asides = Collections.Generic.Dictionary<IntPtr,PaletteAside>()
         let group action =
             match action with
             | ACommand command -> List.findIndex ((=) command.category) Commands.categories
@@ -54,7 +57,7 @@ module CommandPalette =
           choose=(fun chosen ->
               match action chosen with
               | ACommand command -> command.run active
-              | ASwitch(_,_,command) -> command.run active |> ignore; Stay
+              | ASwitch(_,_,command) -> command.run active |> ignore; asides.Remove chosen.hwnd |> ignore; Stay
               | ASetting item -> Services.managerView.showSetting item.id; Done)
           shortcut=(fun chosen ->
               match action chosen with
@@ -62,10 +65,16 @@ module CommandPalette =
               | ASetting _ -> None)
           dimmed=(fun chosen -> match action chosen with ACommand command -> not (command.enabled active) | _ -> false)
           aside=(fun _ chosen ->
-              match action chosen with
-              | ACommand command -> { detail=shortcutText command; switch=None }
-              | ASwitch(_,key,command) -> { detail=shortcutText command; switch=Some(Services.settings.getValue key :?> bool) }
-              | ASetting item -> { detail=tr (SettingsCatalog.searchContext item); switch=None })
+              match asides.TryGetValue chosen.hwnd with
+              | true,aside -> aside
+              | _ ->
+                  let aside =
+                      match action chosen with
+                      | ACommand command -> { detail=shortcutText command; switch=None }
+                      | ASwitch(_,key,command) -> { detail=shortcutText command; switch=Some(Services.settings.getValue key :?> bool) }
+                      | ASetting item -> { detail=tr (SettingsCatalog.searchContext item); switch=None }
+                  asides.[chosen.hwnd] <- aside
+                  aside)
           // A command acts on the window in front, which the palette stands clear of; a setting
           // turned or opened leaves the palette where it is.
           concealed=fun chosen -> match action chosen with ACommand _ -> true | _ -> false }
