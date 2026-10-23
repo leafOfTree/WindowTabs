@@ -458,6 +458,31 @@ let main() =
         check (Commands.holder (fun _ -> 77) "nextTab" 0).IsNone "Clearing a shortcut must not be refused for a holder"
         check (Commands.find "toggle-use-windowtabs-for-alt-tab" |> Option.exists(fun command -> command.category=SettingsCommands)) "Every on/off setting must be a command"
         check (Commands.categoryOf "splitSwap"=Some SplitCommands && Commands.categoryOf "saveWorkspace"=Some WorkspaceCommands) "Shortcut cards must follow the commands' categories"
+        // A choice's labels live beside its values, one per value in every language, for the
+        // settings pages and the palette alike.
+        for item in SettingsCatalog.all do
+            match item.binding with
+            | Choice(_,values,_) ->
+                let labels = SettingsCatalog.choiceLabels item.id
+                check (labels.Length=values.Length) (sprintf "The choice %s has %d labels for %d values" item.id labels.Length values.Length)
+                check (labels |> List.forall(fun label -> Localization.all label |> List.forall((<>) ""))) (sprintf "A label of the choice %s is missing a language" item.id)
+            | _ -> ()
+        // Tab style is kept in the appearance, and by its key too.
+        api.setValue("tabStyle",box "folder")
+        check (api.getValue "tabStyle" :?> string="folder" && api.appearance.geometry.style=FolderTabs) "The tab style could not be set by its key"
+        api.setValue("tabStyle",box "joined")
+        // The palette lists a choice's values and sets the one chosen, without the settings window.
+        let session = CommandPalette.actionsPage IntPtr.Zero
+        let sessionEntry = session.entries |> List.find(fun entry -> entry.title=tr Strings.Settings.restoreSession.caption)
+        check ((session.aside "" sessionEntry).detail=tr Strings.General.sessionOff) "A choice's row did not show what it is set to"
+        match session.choose sessionEntry with
+        | Choose options ->
+            check (options |> List.map(fun option -> option.label)=[tr Strings.General.sessionOff;tr Strings.General.sessionWindows;tr Strings.General.sessionApps]) "A choice's values were not listed by name"
+            check (options.Head.detail="✓") "The value a choice has now was not ticked"
+            options.[1].run() |> ignore
+            check (api.getValue "sessionRestore" :?> string="Windows") "Choosing a value in the palette did not set it"
+            api.setValue("sessionRestore",box "Off")
+        | _ -> failwith "A choice setting did not list its values"
         // What a typed word matched, said under a command as under a settings search result.
         check (SettingsCatalog.evidence "switcher" Strings.Settings.groupWindowsInSwitcher "General" []=["switcher"]) "A keyword match is not named under the row"
         check (SettingsCatalog.evidence "group" Strings.Settings.groupWindowsInSwitcher "General" []=[]) "A match the name shows is repeated under the row"

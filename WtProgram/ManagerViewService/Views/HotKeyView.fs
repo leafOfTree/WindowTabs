@@ -62,7 +62,6 @@ type HotKeyView() =
         // Off, an app switched on from the tab menu still uses a key: only then is the key chosen
         // on its own row.
         let numericChoice = SettingsBindings.choiceRow keyboard "number-shortcut"
-                                [|tr Strings.Settings.numberShortcutCtrl;tr Strings.Settings.numberShortcutAlt|]
         let numericRow = numericChoice.Parent :?> SettingsRow
         SettingsUi.indentDependentRow numericRow
         let updateNumeric() =

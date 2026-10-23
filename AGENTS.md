@@ -58,8 +58,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
   way round (except group creation). A new service method needs a line in its adapter.
 - **Text.** Every user-visible string is a `LocalizedText` in `Shared/Strings.fs` with
   `en`, `zh` and `ja` filled in, shown with `tr`. Never hard-code UI text.
-- **Settings.** Captions, defaults, ranges, choices and shortcut defaults live in
-  `Shared/SettingsCatalog.fs`; search, editors and reset all read from there.
+- **Settings.** Captions, defaults, ranges, choices with their labels (`choiceLabels`) and
+  shortcut defaults live in `Shared/SettingsCatalog.fs`; search, editors, the command palette
+  and reset all read from there.
   Shortcuts use the hotkey-control encoding: virtual key in the low byte, `HOTKEYF_*`
   flags (Shift 1, Ctrl 2, Alt 4, Ext 8) in the high byte.
 - **DPI.** Write sizes in logical pixels and scale at the point of use with

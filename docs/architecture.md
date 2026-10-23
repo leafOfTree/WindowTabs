@@ -343,8 +343,10 @@ lists them in a card of their own. The actions page is one list: the commands (`
 those listed, in their categories, dimmed when they can do nothing for the window that was in
 front, with their shortcuts beside them), then the settings by page, leaving out the catalog's
 shortcut entries, which are commands already; a setting that is on or off shows a switch and
-is turned in place by its toggle command, the palette staying up, and any other opens the
-settings window on it. Rows are found by their caption, keywords and description in every
+is turned in place by its toggle command, the palette staying up; a choice shows what it is set
+to and, chosen, lists its values by the catalog's `choiceLabels`, the current one ticked, and
+sets the one picked; any other (a number, a colour, text or a page) opens the settings window
+on it. Rows are found by their caption, keywords and description in every
 language, and matches are drawn in the accent colour, as the settings search shows them. A command that leaves a choice (`Choose`) shows its options in place under the
 command's name, with Esc or Backspace the way back; a hotkey for such a command opens the
 palette on them. Commands take the window that was in front when they were asked for, since

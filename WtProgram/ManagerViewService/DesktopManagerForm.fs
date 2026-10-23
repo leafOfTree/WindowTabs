@@ -63,8 +63,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
     // Each language names itself, so the list stays readable whatever is selected.
     let languageChoice =
         let languages = Array.ofList Localization.preferences
-        let choice = SettingsUi.choice [| yield tr Strings.SettingsWindow.followWindows
-                                          for _,name,_ in Localization.languages -> name |]
+        let choice = SettingsUi.choice (SettingsBindings.labels "language")
         choice.Name <- "language"
         choice.AccessibleName <- tr Strings.Settings.language.caption
         choice.Size <- Size(Dpi.scale 56,Dpi.scale 28)

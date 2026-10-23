@@ -72,7 +72,7 @@ type AppearanceView(?settings:ISettings) =
     let mutable editingDark = ThemeService.currentIsDark()
     let update = settings.updateAppearance
     let preset = SettingsUi.choice (Array.append (ThemePresets.names |> Array.map tr) [|tr Strings.Appearance.custom|])
-    let tabStyle = SettingsUi.choice (Strings.Appearance.tabStyles |> Array.map tr)
+    let tabStyle = SettingsUi.choice (SettingsBindings.labels "tabStyle")
     let resetColorsButton = new SettingsResetButton(tr Strings.Appearance.resetColors,Name="reset-colors")
     let resetLayoutButton = new SettingsResetButton(tr Strings.Appearance.resetTabLayout,Name="reset-tab-layout")
     let paletteForProfile (s:AppearancePreferences) = if editingDark then s.darkPalette else s.lightPalette
@@ -300,8 +300,8 @@ type AppearanceView(?settings:ISettings) =
         SettingsUi.settingRow styleCard "tabStyle" tabStyle
         // Which tabs get a color and how it shows, side by side in one row. Search still finds
         // each list by its own setting.
-        let colorMode = SettingsBindings.choice "tab-color-mode" [|tr Strings.Settings.colorsOff;tr Strings.Settings.byWindow;tr Strings.Settings.byApp|]
-        let colorStyle = SettingsBindings.choice "tab-color-style" [|tr Strings.Settings.fill;tr Strings.Settings.stripe|]
+        let colorMode = SettingsBindings.choice "tab-color-mode"
+        let colorStyle = SettingsBindings.choice "tab-color-style"
         let coloring = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
                                            Margin=Padding.Empty,Padding=Padding.Empty)
         colorMode.Margin <- Padding.Empty

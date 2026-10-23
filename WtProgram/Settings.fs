@@ -317,6 +317,8 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                 let appearance = value :?> TabAppearanceInfo
                 api.updateAppearance(fun s -> {s with geometry=TabGeometry.fromAppearance appearance;legacyPalette=TabPalette.fromAppearance appearance})
             | "tabThemeMode" -> api.updateAppearance(fun s -> {s with mode=ThemeMode.parse (value :?> string)})
+            // Kept with the tab sizes in the appearance; by its key too, as the palette sets choices.
+            | "tabStyle" -> api.updateAppearance(fun s -> {s with geometry={s.geometry with style=TabStyle.parse (value :?> string)}})
             | "tabUseCustomColors" -> api.updateAppearance(fun s -> {s with useCustomColors=unbox value})
             | "tabLightColors" | "tabDarkColors" ->
                 let palette = match value with :? TabPalette as p -> p | _ -> TabPalette.fromAppearance (value :?> TabAppearanceInfo)
@@ -331,6 +333,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             match key with
             | "tabAppearance" -> box(TabPalette.compose appearance.geometry appearance.legacyPalette)
             | "tabThemeMode" -> box(ThemeMode.serialize appearance.mode)
+            | "tabStyle" -> box(TabStyle.serialize appearance.geometry.style)
             | "tabUseCustomColors" -> box appearance.useCustomColors
             | "tabLightColors" -> box(TabPalette.compose appearance.geometry appearance.lightPalette)
             | "tabDarkColors" -> box(TabPalette.compose appearance.geometry appearance.darkPalette)

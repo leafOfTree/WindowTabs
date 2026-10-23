@@ -7,23 +7,17 @@ type GeneralView() =
     do
         let startup = SettingsUi.sectionCard table (tr Strings.General.startup)
         SettingsBindings.toggleRow startup "launch-at-sign-in"
-        SettingsBindings.choiceRow startup "restore-session"
-            [|tr Strings.General.sessionOff;tr Strings.General.sessionWindows;tr Strings.General.sessionApps|] |> ignore
+        SettingsBindings.choiceRow startup "restore-session" |> ignore
         let behaviour = SettingsUi.sectionCard table (tr Strings.General.tabBehavior)
         SettingsBindings.toggleRow behaviour "dim-inactive-groups"
         let position = SettingsBindings.choiceRow behaviour "tab-position"
-                           [|tr Strings.TabMenu.top;tr Strings.Common.left;tr Strings.Common.right|]
         let alignment = SettingsBindings.choiceRow behaviour "tab-alignment"
-                            [|tr Strings.Common.left;tr Strings.Common.center;tr Strings.Common.right|]
         let updateAlignmentLabels() =
-            let vertical = position.SelectedIndex > 0
-            alignment.SetItemText(0,tr (if vertical then Strings.Common.top else Strings.Common.left))
-            alignment.SetItemText(2,tr (if vertical then Strings.Common.bottom else Strings.Common.right))
+            SettingsCatalog.alignmentLabels (position.SelectedIndex > 0) |> List.iteri(fun index label -> alignment.SetItemText(index,tr label))
             alignment.FitToItems()
         updateAlignmentLabels()
         position.SelectedIndexChanged.Add(fun _ -> updateAlignmentLabels())
         let autoHide = SettingsBindings.choiceRow behaviour "auto-hide-tabs"
-                           [|tr Strings.Common.never;tr Strings.Common.whenMaximized;tr Strings.Common.always|]
         let showOnSwitch = SettingsUi.settingRowControl behaviour "show-tabs-on-switch" (SettingsBindings.settingToggle "showTabsOnSwitch")
         SettingsUi.indentDependentRow showOnSwitch
         // Index 0 is Never: nothing is hidden, so there is nothing to show.
@@ -38,7 +32,6 @@ type GeneralView() =
         let grouped = SettingsBindings.settingToggle "groupWindowsInSwitcher"
         SettingsUi.settingRow switcher "use-windowtabs-for-alt-tab" enabled
         let style = SettingsBindings.choiceRow switcher "switcher-style"
-                        [|tr Strings.Appearance.switcherHorizontal;tr Strings.Appearance.switcherVertical|]
         let groupedRow = SettingsUi.settingRowControl switcher "group-windows-in-the-switcher" grouped
         // Both only matter while WindowTabs handles Alt+Tab.
         let dependents = [style.Parent :?> SettingsRow;groupedRow]

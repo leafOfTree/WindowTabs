@@ -22,8 +22,20 @@ module CommandPalette =
         | ACommand of Command
         /// A setting that is on or off, with its key and the command that turns it.
         | ASwitch of SettingDefinition * string * Command
-        /// Any other setting, opened in the settings window.
+        /// A setting with a few values, with its key and values: chosen in place from a list.
+        | AChoice of SettingDefinition * string * string list
+        /// Any other setting, a number, a colour or a page, opened in the settings window.
         | ASetting of SettingDefinition
+    /// A choice setting's values with what each is called, the alignment's after the tabs' side.
+    let private choiceOptions (item:SettingDefinition) (values:string list) =
+        let labels =
+            if item.id="tab-alignment" then SettingsCatalog.alignmentLabels (Services.settings.getValue "tabPosition" :?> string<>"Horizontal")
+            else SettingsCatalog.choiceLabels item.id
+        List.zip values (labels |> List.map tr)
+    /// What a choice setting is set to now, by name.
+    let private choiceNow (item:SettingDefinition) key values =
+        let current = Services.settings.getValue key :?> string
+        choiceOptions item values |> List.tryFind(fun (value,_) -> value=current) |> Option.map snd |> Option.defaultValue ""
     /// The commands in their categories, then the settings by page: a setting that is on or off
     /// as a switch, turned in place; the settings catalog's shortcut entries are commands already.
     let private actions() =
@@ -35,6 +47,7 @@ module CommandPalette =
                     match item.binding with
                     | Shortcut _ -> None
                     | Toggle(key,_,_) -> Commands.find ("toggle-"+item.id) |> Option.map(fun command -> ASwitch(item,key,command))
+                    | Choice(key,values,_) -> Some(AChoice(item,key,values))
                     | _ -> Some(ASetting item)))
         commands @ settings
     /// How an action is remembered among the recent ones: a command's id, or a setting's.
@@ -42,7 +55,7 @@ module CommandPalette =
         match action with
         | ACommand command -> command.id
         | ASwitch(_,_,command) -> command.id
-        | ASetting item -> "setting:"+item.id
+        | AChoice(item,_,_) | ASetting item -> "setting:"+item.id
     let private recentLimit = 8
     /// The actions chosen last from the palette, the latest first, kept in the settings file.
     let recent() =
@@ -66,9 +79,9 @@ module CommandPalette =
         let group action =
             match action with
             | ACommand command -> List.findIndex ((=) command.category) Commands.categories
-            | ASwitch(item,_,_) | ASetting item -> Commands.categories.Length+(match item.page with GeneralSettings -> 0 | AppearanceSettings -> 1 | HotKeySettings -> 2 | ProgramSettings -> 3 | LayoutSettings -> 4 | DiagnosticsSettings -> 5)
-        let text action = match action with ACommand command -> command.text | ASwitch(item,_,_) | ASetting item -> item.text
-        let extra action = match action with ACommand command -> [command.id] | ASwitch(item,_,_) | ASetting item -> [SettingsCatalog.storageKey item]
+            | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item -> Commands.categories.Length+(match item.page with GeneralSettings -> 0 | AppearanceSettings -> 1 | HotKeySettings -> 2 | ProgramSettings -> 3 | LayoutSettings -> 4 | DiagnosticsSettings -> 5)
+        let text action = match action with ACommand command -> command.text | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item -> item.text
+        let extra action = match action with ACommand command -> [command.id] | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item -> [SettingsCatalog.storageKey item]
         { scope=ActionScope; caption=tr Strings.TabSearch.actions; prompt=tr Strings.TabSearch.actionPrompt
           noMatches=tr Strings.TabSearch.noActions; glyph=NoGlyph
           entries=listed |> Array.mapi(fun index action ->
@@ -83,11 +96,17 @@ module CommandPalette =
               match action chosen with
               | ACommand command -> command.run active
               | ASwitch(_,_,command) -> command.run active |> ignore; asides.Remove chosen.hwnd |> ignore; Stay
+              // Its values to pick from, the one it has now ticked.
+              | AChoice(item,key,values) ->
+                  let current = Services.settings.getValue key :?> string
+                  Choose [ for value,label in choiceOptions item values ->
+                             { label=label; detail=(if value=current then "✓" else ""); swatch=None
+                               run=fun () -> Services.settings.setValue(key,box value); Done } ]
               | ASetting item -> Services.managerView.showSetting item.id; Done)
           shortcut=(fun chosen ->
               match action chosen with
               | ACommand command | ASwitch(_,_,command) -> assignment command
-              | ASetting _ -> None)
+              | AChoice _ | ASetting _ -> None)
           dimmed=(fun chosen -> match action chosen with ACommand command -> not (command.enabled active) | _ -> false)
           aside=(fun _ chosen ->
               match asides.TryGetValue chosen.hwnd with
@@ -97,6 +116,7 @@ module CommandPalette =
                       match action chosen with
                       | ACommand command -> { detail=shortcutText command; switch=None }
                       | ASwitch(_,key,command) -> { detail=shortcutText command; switch=Some(Services.settings.getValue key :?> bool) }
+                      | AChoice(item,key,values) -> { detail=choiceNow item key values; switch=None }
                       | ASetting item -> { detail=tr (SettingsCatalog.searchContext item); switch=None }
                   asides.[chosen.hwnd] <- aside
                   aside)

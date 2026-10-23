@@ -97,6 +97,28 @@ module SettingsCatalog =
         { id="settings-reset"; page=DiagnosticsSettings; text=Strings.Settings.settingsReset; binding=Navigation }
     ]
     let find id = all |> List.find(fun item -> item.id=id)
+    /// The tab alignment's names: along the top, or down a side.
+    let alignmentLabels vertical =
+        if vertical then [Strings.Common.top;Strings.Common.center;Strings.Common.bottom]
+        else [Strings.Common.left;Strings.Common.center;Strings.Common.right]
+    /// What each value of a Choice setting is called, in the order of its values: the settings
+    /// pages and the palette both show these.
+    let choiceLabels id =
+        match id with
+        | "tab-color-mode" -> [Strings.Settings.colorsOff;Strings.Settings.byWindow;Strings.Settings.byApp]
+        | "tab-color-style" -> [Strings.Settings.fill;Strings.Settings.stripe]
+        | "theme" -> [Strings.Appearance.system;Strings.Appearance.light;Strings.Appearance.dark]
+        | "language" ->
+            Strings.SettingsWindow.followWindows ::
+                [for _,name,_ in Localization.languages -> { en=name; zh=name; ja=name; ar=name }]
+        | "restore-session" -> [Strings.General.sessionOff;Strings.General.sessionWindows;Strings.General.sessionApps]
+        | "tab-alignment" -> alignmentLabels false
+        | "tab-position" -> [Strings.TabMenu.top;Strings.Common.left;Strings.Common.right]
+        | "auto-hide-tabs" -> [Strings.Common.never;Strings.Common.whenMaximized;Strings.Common.always]
+        | "switcher-style" -> [Strings.Appearance.switcherHorizontal;Strings.Appearance.switcherVertical]
+        | "number-shortcut" -> [Strings.Settings.numberShortcutCtrl;Strings.Settings.numberShortcutAlt]
+        | "tabStyle" -> List.ofArray Strings.Appearance.tabStyles
+        | other -> invalidArg "id" (sprintf "No labels for the choice %s" other)
     /// Shown from an (i) button beside the caption.
     let help id =
         if id="tabHeight" then Some Strings.Settings.tabHeightHint
