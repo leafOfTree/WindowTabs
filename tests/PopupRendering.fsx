@@ -128,6 +128,20 @@ let main() =
                 popup.Close()
                 Application.DoEvents()
             owner.Close()
-        printfn "PASS: dark/light popup themes before visibility, composited HWNDs and repeated show/hide rendering."
+        // The notice comes to rest at the bottom right of the work area, where Windows shows its
+        // own notifications, whole once it has slid in; a failure takes it away at once.
+        use notice = new NoticeWindow()
+        notice.show("Saved “Workspace 1” with 2 windows",false)
+        let clock = Diagnostics.Stopwatch.StartNew()
+        while clock.ElapsedMilliseconds<600L do
+            Application.DoEvents()
+            Threading.Thread.Sleep(10)
+        let area = Screen.PrimaryScreen.WorkingArea
+        check (notice.Visible && notice.Opacity=1.0) (sprintf "The notice did not finish coming in: opacity %f" notice.Opacity)
+        check (notice.Right<=area.Right && area.Right-notice.Right<=Dpi.scale 24 && notice.Bottom<=area.Bottom && area.Bottom-notice.Bottom<=Dpi.scale 24)
+              (sprintf "The notice is not at the bottom right of the work area: %A in %A" notice.Bounds area)
+        notice.hideNow()
+        check (not notice.Visible) "A notice taken away at once stayed visible"
+        printfn "PASS: dark/light popup themes before visibility, composited HWNDs, repeated show/hide rendering and the notice's place."
     finally Environment.CurrentDirectory <- original
 TestInit.run main
