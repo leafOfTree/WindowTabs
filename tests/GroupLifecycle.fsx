@@ -349,6 +349,12 @@ let main() =
                 onGroup fixture (fun group -> group.main(isolated.Handle,WinEvent.EVENT_SYSTEM_FOREGROUND))
                 pumpUntil (sprintf "An isolated window came to the front without its tabs: strip %d, window %d, cover %d" (rank strip) (rank isolated.Handle) (rank cover.Handle)) (fun () ->
                     rank strip<rank isolated.Handle && rank strip<rank cover.Handle)
+                // Maximized, or its title bar clicked, a window already in front rises over the strip
+                // with no change of foreground; the strip goes back over it. The strip is put just
+                // under the window, where that leaves it.
+                OS().windowFromHwnd(strip).insertAfter(isolated.Handle)
+                check (rank isolated.Handle<rank strip) "The test could not put the isolated strip under its window"
+                pumpUntil "An isolated window raised over its strip kept its tabs under it" (fun () -> rank strip<rank isolated.Handle)
             finally
                 (fixture :> IGroup).destroy()
                 pumpUntil "Isolated fixture did not exit" (fun () -> fixture.isExited)

@@ -281,6 +281,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let splitSettleTimer = new System.Windows.Forms.Timer(Interval=100)
     /// Looks, while split, for a pane raised over the tabs with no notice to the group.
     let splitGuardTimer = new System.Windows.Forms.Timer(Interval=200)
+    /// Looks, while the strip is owned by nothing, for its window raised over it with no notice.
+    let stripGuardTimer = new System.Windows.Forms.Timer(Interval=200)
     /// One divider per split and one window per empty pane, by their place in the layout.
     let mutable splitDividers : Map<PanePath,SplitDivider * IntPtr> = Map.empty
     let mutable emptySplitPanes : Map<PanePath,EmptySplitPane * IntPtr> = Map.empty
@@ -463,6 +465,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         _ts := Some(ts)
         splitSettleTimer.Tick.Add(fun _ -> this.checkSplitSettled())
         splitGuardTimer.Tick.Add(fun _ -> this.guardSplitStrip())
+        stripGuardTimer.Tick.Add(fun _ -> this.guardUnownedStrip())
         transitionRelease.Tick.Add(fun _ ->
             transitionRelease.Stop()
             if not transitionHold.IsEmpty then
@@ -791,8 +794,22 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member private this.setTsOwner(owner:Window) =
         let strip = this.os.windowFromHwnd(this.ts.hwnd)
+        let shared = this.canShareInput owner.hwnd
         StartupTrace.measure "group.owner" (fun () ->
-            strip.setOwner(if this.canShareInput owner.hwnd then owner else this.os.nullWindow))
+            strip.setOwner(if shared then owner else this.os.nullWindow))
+        // Windows raises an owned strip with its window; one owned by nothing is watched instead.
+        if not shared && owner.hwnd<>IntPtr.Zero && not isDestroyed.value then stripGuardTimer.Start()
+        else stripGuardTimer.Stop()
+
+    /// A window already in front raises itself over a strip it does not own when it is maximized
+    /// or its title bar is clicked, with no foreground change to tell the group: its tabs went
+    /// under it until another window was activated. The strip goes back just above it.
+    member private this.guardUnownedStrip() =
+        if isDestroyed.value || this.isEmpty then stripGuardTimer.Stop()
+        elif isVisibleCell.value && not this.isSplit && not liveResize && not inMoveSize.value && not reconcileMinimizeState then
+            let top = this.topWindow
+            if not(isMinimized top) && this.isAbove(top,this.ts.hwnd) then
+                this.withUpdate(fun () -> this.setTsParent(top))
 
     /// Permission checks stay off the placement hot path and expire with group membership.
     member this.canShareInput hwnd =
@@ -2179,6 +2196,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             isDestroyed.set(true)
             splitSettleTimer.Dispose()
             splitGuardTimer.Dispose()
+            stripGuardTimer.Dispose()
             transitionRelease.Dispose()
             // The chrome's thread disposes its windows and ends; nothing here waits for it.
             chromeInvoker |> Option.iter(fun invoker ->
