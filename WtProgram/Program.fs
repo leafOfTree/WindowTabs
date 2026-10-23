@@ -265,18 +265,19 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                     | None -> sessionReady <- true
                     | Some _ ->
                         // Said on screen first, so a user leaves the windows alone while they move.
-                        Notice.hold (tr Strings.Session.restoring)
+                        let title = tr Strings.Notices.lastSession
+                        Notice.hold title (tr Strings.Notices.restoring)
                         let go = new System.Windows.Forms.Timer(Interval=50)
                         go.Tick.Add(fun _ ->
                             go.Stop()
                             go.Dispose()
                             try
                                 sessions.restoreSession((mode="Apps"),
-                                    (fun apps -> Notice.hold (tr (Strings.Session.launching apps))),
+                                    (fun apps -> Notice.hold title (tr (Strings.Notices.launching apps))),
                                     fun result ->
                                         sessionReady <- true
                                         sessionSoon.Request()
-                                        Notice.show (tr (Strings.Session.restored result.restored result.missing.Length))
+                                        Notice.show title (tr (Strings.Notices.restored result.restored result.missing.Length))
                                         Diagnostics.Trace.TraceInformation("Session restored: {0} windows, {1} not found, {2} failed",result.restored,result.missing.Length,result.failed.Length))
                             with error ->
                                 sessionReady <- true
@@ -695,27 +696,27 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// As Save layout in Settings, said on screen since nothing else shows it.
     member this.saveWorkspace() =
         let workspaces = this.readWorkspaces()
-        if workspaces.isReadOnly then Notice.show (tr Strings.Workspaces.unsupportedVersion)
+        if workspaces.isReadOnly then Notice.show (tr Strings.Pages.workspaces) (tr Strings.Workspaces.unsupportedVersion)
         else
             workspaces.create(fun ws ->
                 let windows = ws.groups.list |> List.sumBy(fun group -> group.cast<WorkspaceGroup>().windows.count)
-                Notice.show (tr (Strings.Workspaces.savedNotice ws.name windows)))
+                Notice.show ws.name (tr (Strings.Notices.saved windows)))
 
     /// Brings back the workspace last saved or restored, with the result on screen rather than in a dialog.
     member this.restoreWorkspace() =
         let workspaces = this.readWorkspaces()
         match workspaces.lastUsed with
-        | None -> Notice.show (tr Strings.Workspaces.noneSaved)
+        | None -> Notice.show (tr Strings.Pages.workspaces) (tr Strings.Workspaces.noneSaved)
         | Some ws ->
             // Said first, and painted before the windows move, so a user leaves them alone meanwhile.
-            Notice.hold (tr (Strings.Workspaces.restoringNotice ws.name))
+            Notice.hold ws.name (tr Strings.Notices.restoring)
             let go = new System.Windows.Forms.Timer(Interval=50)
             go.Tick.Add(fun _ ->
                 go.Stop()
                 go.Dispose()
                 try
                     workspaces.restoreLast() |> Option.iter(fun result ->
-                        Notice.show (tr (Strings.Workspaces.restoredNotice result.workspace result.restored result.missing.Length)))
+                        Notice.show result.workspace (tr (Strings.Notices.restored result.restored result.missing.Length)))
                 with error ->
                     Notice.hideNow()
                     Diagnostics.Trace.TraceWarning("Workspace restore failed: {0}",error.Message))

@@ -131,7 +131,7 @@ let main() =
         // The notice comes to rest at the bottom right of the work area, where Windows shows its
         // own notifications, whole once it has slid in; a failure takes it away at once.
         use notice = new NoticeWindow()
-        notice.show("Saved “Workspace 1” with 2 windows",false)
+        notice.show("Workspace 1","Saved with 2 windows",false)
         let clock = Diagnostics.Stopwatch.StartNew()
         while clock.ElapsedMilliseconds<600L do
             Application.DoEvents()
@@ -140,6 +140,12 @@ let main() =
         check (notice.Visible && notice.Opacity=1.0) (sprintf "The notice did not finish coming in: opacity %f" notice.Opacity)
         check (notice.Right<=area.Right && area.Right-notice.Right<=Dpi.scale 24 && notice.Bottom<=area.Bottom && area.Bottom-notice.Bottom<=Dpi.scale 24)
               (sprintf "The notice is not at the bottom right of the work area: %A in %A" notice.Bounds area)
+        // Its size is fixed, whatever the text, so one notice replacing another does not jump.
+        let fixedSize = Size(Dpi.scale NoticeWindow.size.Width,Dpi.scale NoticeWindow.size.Height)
+        check (notice.Size=fixedSize) (sprintf "A short notice is not the fixed size: %A" notice.Size)
+        notice.show(String.replicate 4 "A long title ",String.replicate 12 "A much longer notice that has to wrap ",true)
+        Application.DoEvents()
+        check (notice.Size=fixedSize) (sprintf "A long notice changed the notice's size: %A" notice.Size)
         notice.hideNow()
         check (not notice.Visible) "A notice taken away at once stayed visible"
         printfn "PASS: dark/light popup themes before visibility, composited HWNDs, repeated show/hide rendering and the notice's place."

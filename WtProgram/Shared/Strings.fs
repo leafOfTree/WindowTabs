@@ -367,18 +367,26 @@ module Strings =
                               keywords={ en="factory"; zh="恢复默认 出厂"; ja="初期化"; ar="إعدادات المصنع" } }
 
     /// What letting go of a dragged tab here would do, on the preview.
-    module Session =
-        let restoring = { en="Restoring the last session…"; zh="正在恢复上次会话…"; ja="前回のセッションを復元しています…"; ar="جارٍ استعادة الجلسة الأخيرة…" }
+    /// Notices: a bold title naming what is restored or saved (the last session, or a workspace
+    /// by its name), and below it what is happening to it.
+    module Notices =
+        let lastSession = { en="Last session"; zh="上次会话"; ja="前回のセッション"; ar="الجلسة الأخيرة" }
+        let restoring = { en="Restoring…"; zh="正在恢复…"; ja="復元しています…"; ar="جارٍ الاستعادة…" }
         let launching count =
-            { en=(if count=1 then "Starting an app for the last session…" else sprintf "Starting %d apps for the last session…" count)
-              zh=sprintf "正在为上次会话启动 %d 个应用…" count
-              ja=sprintf "前回のセッションのためにアプリを %d 個起動しています…" count
-              ar=sprintf "جارٍ تشغيل %d من التطبيقات للجلسة الأخيرة…" count }
+            { en=(if count=1 then "Starting an app…" else sprintf "Starting %d apps…" count)
+              zh=sprintf "正在启动 %d 个应用…" count
+              ja=sprintf "アプリを %d 個起動しています…" count
+              ar=sprintf "جارٍ تشغيل %d من التطبيقات…" count }
         let restored restored missing =
-            { en=(sprintf "Session restored: %d windows" restored)+(if missing=0 then "" else sprintf ", %d not found" missing)
-              zh=(sprintf "已恢复上次会话：%d 个窗口" restored)+(if missing=0 then "" else sprintf "，%d 个未找到" missing)
-              ja=(sprintf "前回のセッションを復元しました: %d 個のウィンドウ" restored)+(if missing=0 then "" else sprintf "、%d 個が見つかりません" missing)
-              ar=(sprintf "تمت استعادة الجلسة: %d نافذة" restored)+(if missing=0 then "" else sprintf "، %d غير موجودة" missing) }
+            { en=(if restored=1 then "Restored 1 window" else sprintf "Restored %d windows" restored)+(if missing=0 then "" else sprintf ", %d not found" missing)
+              zh=(sprintf "已恢复 %d 个窗口" restored)+(if missing=0 then "" else sprintf "，%d 个未找到" missing)
+              ja=(sprintf "%d 個のウィンドウを復元しました" restored)+(if missing=0 then "" else sprintf "（%d 個は見つかりません）" missing)
+              ar=(sprintf "تمت استعادة %d نافذة" restored)+(if missing=0 then "" else sprintf "، %d غير موجودة" missing) }
+        let saved windows =
+            { en=(if windows=1 then "Saved with 1 window" else sprintf "Saved with %d windows" windows)
+              zh=sprintf "已保存，共 %d 个窗口" windows
+              ja=sprintf "保存しました（ウィンドウ %d 個）" windows
+              ar=sprintf "تم الحفظ (%d نافذة)" windows }
 
     module General =
         /// The choices of Restore the last session at start.
@@ -592,20 +600,6 @@ module Strings =
               zh=sprintf "正在启动 %d 个应用…" count
               ja=sprintf "%d 個のアプリを起動中…" count
               ar=(if count=1 then "جارٍ تشغيل التطبيق…" else sprintf "جارٍ تشغيل التطبيقات (%d)…" count) }
-        /// Shown in a notice after a workspace shortcut. The name is quoted, and no count follows
-        /// it after a colon: "Workspace 3: 5 windows" read as a time.
-        let savedNotice name windows =
-            { en=(if windows=1 then sprintf "Saved “%s” with 1 window" name else sprintf "Saved “%s” with %d windows" name windows)
-              zh=sprintf "已保存“%s”，共 %d 个窗口" name windows
-              ja=sprintf "「%s」を保存しました（ウィンドウ %d 個）" name windows
-              ar=sprintf "تم حفظ «%s» (%d نافذة)" name windows }
-        let restoringNotice name =
-            { en=sprintf "Restoring “%s”…" name; zh=sprintf "正在恢复“%s”…" name; ja=sprintf "「%s」を復元しています…" name; ar=sprintf "جارٍ استعادة «%s»…" name }
-        let restoredNotice name restored missing =
-            { en=(if restored=1 then sprintf "Restored 1 window of “%s”" name else sprintf "Restored %d windows of “%s”" restored name)+(if missing=0 then "" else sprintf ", %d not found" missing)
-              zh=(sprintf "已恢复“%s”的 %d 个窗口" name restored)+(if missing=0 then "" else sprintf "，%d 个未找到" missing)
-              ja=(sprintf "「%s」のウィンドウを %d 個復元しました" name restored)+(if missing=0 then "" else sprintf "（%d 個は見つかりません）" missing)
-              ar=(sprintf "تمت استعادة %d نافذة من «%s»" restored name)+(if missing=0 then "" else sprintf "، %d غير موجودة" missing) }
         let noneSaved = { en="No workspace saved yet"; zh="尚未保存任何工作区"; ja="保存されたワークスペースはまだありません"; ar="لم يتم حفظ أي مساحة عمل بعد" }
         let invalidSetting = { en="Invalid workspace setting"; zh="工作区设置无效"; ja="ワークスペースの設定が無効です"; ar="إعداد مساحة العمل غير صالح" }
         let dataWarnings = { en="Workspace data"; zh="工作区数据"; ja="ワークスペースのデータ"; ar="بيانات مساحة العمل" }

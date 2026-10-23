@@ -3,14 +3,19 @@ open System
 open System.Drawing
 open System.Windows.Forms
 
-/// A line of text at the bottom right of the main monitor, where Windows shows its own
-/// notifications, in the theme's colours, over everything and taking no focus: what WindowTabs is
-/// doing to the windows just now, so a user does not pull at them meanwhile. One at a time; it
-/// slides in, and out again on its own after a while.
+/// A card at the bottom right of the main monitor, where Windows shows its own notifications, in
+/// the theme's colours, over everything and taking no focus: what WindowTabs is doing to the
+/// windows just now, so a user does not pull at them meanwhile. One at a time; it slides in, and
+/// out again on its own after a while. Its size is fixed, as an IDE's notifications are, so one
+/// replacing another does not jump: the app's icon, a bold title, and the message below it in up
+/// to two lines.
 type NoticeWindow() =
     inherit Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,TopMost=true)
+    let mutable title = ""
     let mutable text = ""
     let mutable font : Font option = None
+    let mutable titleFont : Font option = None
+    let mutable icon : Icon option = None
     let hide = new Timer(Interval=4000)
     let animation = new Timer(Interval=15)
     let clock = Diagnostics.Stopwatch()
@@ -70,21 +75,41 @@ type NoticeWindow() =
             let value = new Font("Segoe UI",10.5f*scale)
             font <- Some value
             value
+    member private this.boldFont =
+        match titleFont with
+        | Some value -> value
+        | None ->
+            let value = new Font(this.textFont,FontStyle.Bold)
+            titleFont <- Some value
+            value
+    /// Logical pixels: a title and two lines of message.
+    static member size = Size(360,80)
+    member private this.padding = Dpi.scale 16
+    member private this.iconSide = Dpi.scale 24
+    /// The app's icon, at the size it is drawn; none if it cannot be read.
+    member private this.appIcon =
+        match icon with
+        | Some _ -> icon
+        | None ->
+            icon <- (try
+                        use source = Services.openIcon(ThemeService.appIconName)
+                        Some(new Icon(source,Size(this.iconSide,this.iconSide)))
+                     with _ -> None)
+            icon
     member private this.reshape() =
         if this.Width>0 && this.Height>0 then
             use outline = MenuShape.outline this.Width this.Height
             let previous = this.Region
             this.Region <- new Region(outline)
             if not(isNull previous) then previous.Dispose()
-    /// Shows the text at the bottom right of the main monitor's work area; a later call replaces it.
-    /// `stay` keeps it until the next call, else it goes after a few seconds.
-    member this.show(message:string, stay:bool) =
+    /// Shows the title and message at the bottom right of the main monitor's work area; a later
+    /// call replaces them. `stay` keeps it until the next call, else it goes after a few seconds.
+    member this.show(heading:string, message:string, stay:bool) =
+        title <- heading
         text <- message
         let palette = SettingsColors.current()
         this.BackColor <- palette.surface
-        let size = TextRenderer.MeasureText(text,this.textFont,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPrefix)
-        let padding = Dpi.scale 18
-        let bounds = Size(size.Width+2*padding,size.Height+Dpi.scale 16)
+        let bounds = Size(Dpi.scale NoticeWindow.size.Width,Dpi.scale NoticeWindow.size.Height)
         let area = Screen.PrimaryScreen.WorkingArea
         let margin = Dpi.scale 12
         target <- Rectangle(area.Right-margin-bounds.Width,area.Bottom-margin-bounds.Height,bounds.Width,bounds.Height)
@@ -121,14 +146,34 @@ type NoticeWindow() =
         use pen = new Pen(palette.border)
         g.DrawPath(pen,outline)
         g.Restore(state)
-        TextRenderer.DrawText(g,text,this.textFont,this.ClientRectangle,palette.text,
-            TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix)
+        let padding = this.padding
+        let iconSide = this.iconSide
+        this.appIcon |> Option.iter(fun icon ->
+            g.DrawIcon(icon,Rectangle(padding,(this.Height-iconSide)/2,iconSide,iconSide)))
+        // Wrapped text cannot be centred by its flags, so the title and message are measured and
+        // centred together; the title keeps to one line and the message to two, then an ellipsis.
+        let left = padding+iconSide+Dpi.scale 12
+        let width = this.Width-left-padding
+        let flags = TextFormatFlags.Left ||| TextFormatFlags.WordBreak ||| TextFormatFlags.EndEllipsis ||| TextFormatFlags.NoPrefix
+        let lineHeight = TextRenderer.MeasureText("Xg",this.textFont,Size.Empty,TextFormatFlags.NoPrefix).Height
+        let titleHeight = TextRenderer.MeasureText("Xg",this.boldFont,Size.Empty,TextFormatFlags.NoPrefix).Height
+        let gap = Dpi.scale 2
+        let measured = TextRenderer.MeasureText(text,this.textFont,Size(width,Int32.MaxValue),flags).Height
+        let bodyHeight = min measured (2*lineHeight)
+        let top = (this.Height-(titleHeight+gap+bodyHeight))/2
+        TextRenderer.DrawText(g,title,this.boldFont,Rectangle(left,top,width,titleHeight),palette.text,
+            TextFormatFlags.Left ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis ||| TextFormatFlags.NoPrefix)
+        TextRenderer.DrawText(g,text,this.textFont,Rectangle(left,top+titleHeight+gap,width,bodyHeight),palette.text,flags)
     override this.Dispose(disposing) =
         if disposing then
             hide.Dispose()
             animation.Dispose()
+            icon |> Option.iter(fun value -> value.Dispose())
+            icon <- None
             font |> Option.iter(fun value -> value.Dispose())
             font <- None
+            titleFont |> Option.iter(fun value -> value.Dispose())
+            titleFont <- None
             this.Region |> Option.ofObj |> Option.iter(fun region -> region.Dispose())
         base.Dispose(disposing)
 
@@ -144,7 +189,7 @@ module Notice =
             value
     /// A notice that cannot be shown is no reason to stop what it was about.
     let private attempt action = try action() with error -> Diagnostics.Trace.TraceWarning("Notice failed: {0}",error.Message)
-    let show (message:string) = attempt (fun () -> (current()).show(message,false))
+    let show (title:string) (message:string) = attempt (fun () -> (current()).show(title,message,false))
     /// Stays until the next notice.
-    let hold (message:string) = attempt (fun () -> (current()).show(message,true))
+    let hold (title:string) (message:string) = attempt (fun () -> (current()).show(title,message,true))
     let hideNow() = attempt (fun () -> window |> Option.iter(fun value -> if not value.IsDisposed then value.hideNow()))
