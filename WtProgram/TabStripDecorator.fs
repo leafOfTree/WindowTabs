@@ -510,7 +510,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                         | DifferentPermissions -> Strings.TabMenu.combineBlockedPermissions
                         | DesktopUnknown -> Strings.TabMenu.combineBlockedDesktop
                         | _ -> Strings.TabMenu.combineBlockedPlacement
-                    CmiRegular({text=tr text;image=None;flags=grayed true;click=ignore}))
+                    CmiNote(tr text))
 
         // Only a group with combined icons has a taskbar button of its own to change.
         let customIcon = if group.isSuperBarEnabled then Services.program.groupIcon hwnd else None

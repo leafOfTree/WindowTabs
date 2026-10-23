@@ -38,12 +38,16 @@ type ThemeMenuRenderer(p:SettingsPalette) =
         e.Graphics.SmoothingMode <- smoothing
     override _.OnRenderMenuItemBackground(e) =
         fill e.Graphics (if e.Item.Selected && e.Item.Enabled then p.selection else p.surface) (Rectangle(Point.Empty,e.Item.Size))
+    /// Marks a note's item, drawn inset under the item it is about.
+    static member noteTag = box "note"
+    static member noteInset = Dpi.scale 14
     override _.OnRenderItemText(e) =
-        e.TextColor <- textColor e.Item
+        let isNote = obj.ReferenceEquals(e.Item.Tag,ThemeMenuRenderer.noteTag)
+        e.TextColor <- if isNote && not SystemInformation.HighContrast then p.muted else textColor e.Item
         // Keep the shortcut column fixed while bringing every label closer to its glyph.
         if e.TextFormat &&& TextFormatFlags.Right = enum<TextFormatFlags>(0) then
             let r = e.TextRectangle
-            let inset = Dpi.scale 6
+            let inset = Dpi.scale 6 - (if isNote then ThemeMenuRenderer.noteInset else 0)
             e.TextRectangle <- Rectangle(r.X-inset,r.Y,r.Width+inset,r.Height)
         base.OnRenderItemText(e)
     override _.OnRenderArrow(e) =
@@ -152,12 +156,17 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
             | CmiSection text ->
                 target.Add(new ToolStripSeparator(Text=text,AccessibleName=text,Font=sectionFont,AutoSize=false,
                                                    Height=sectionFont.Height+Dpi.scale 8,Margin=Padding.Empty)) |> ignore
+            | CmiNote text ->
+                // Smaller and inset, under the item it is about; the right padding keeps room for the inset.
+                let note = new ToolStripMenuItem(text,Font=sectionFont,Enabled=false,Tag=ThemeMenuRenderer.noteTag,
+                                                 Padding=Padding(0,0,ThemeMenuRenderer.noteInset,0))
+                target.Add(note) |> ignore
             | _ ->
                 let text,image,flags,children,click =
                     match item with
                     | CmiRegular value -> value.text,value.image,value.flags.list,[],Some value.click
                     | CmiPopUp value -> value.text,value.image,[],value.items.list,None
-                    | CmiSeparator | CmiSection _ -> failwith "Unexpected separator"
+                    | CmiSeparator | CmiSection _ | CmiNote _ -> failwith "Unexpected separator"
                 let parts = text.Split([|'\t'|],2)
                 let entry = new ToolStripMenuItem(parts.[0])
                 target.Add(entry) |> ignore
