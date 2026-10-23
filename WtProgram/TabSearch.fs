@@ -299,11 +299,10 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         | GroupTabs -> tr (Strings.TabSearch.groupTabs groupItems.Length)
         | AllTabs -> tr (Strings.TabSearch.allTabs items.Length)
         | other -> pages |> List.tryFind(fun page -> page.scope=other) |> Option.map(fun page -> page.caption) |> Option.defaultValue ""
-    /// Shorter than the segments, and raised by its bottom edge below.
+    /// Where a key's caps go: shorter than the segments, and in the middle of the line.
+    let keyHeight() = Dpi.scale 20
     let keyCap x (label:string) =
-        let keyHeight = Dpi.scale 20
-        Rectangle(x,(scopeHeight-keyHeight)/2-Dpi.scale 1,
-                  TextRenderer.MeasureText(label,keyFont,Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 14,keyHeight)
+        Rectangle(x,(scopeHeight-keyHeight())/2,KeyCaps.width keyFont (keyHeight()) label,keyHeight())
     /// One switch for the scope: the listed rows' segment is filled, the others are where Tab or a
     /// click goes, and the key cap beside them names the key. A single segment when there is no choice.
     let segments() =
@@ -342,18 +341,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 let rounded (bounds:Rectangle) radius =
                     SettingsShapes.rounded (RectangleF(float32 bounds.X+0.5f,float32 bounds.Y+0.5f,float32 bounds.Width-1.0f,float32 bounds.Height-1.0f)) (float32(Dpi.scale radius))
                 let centred = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter
-                // A key, not another segment: an outline on the surface with a thicker bottom edge.
-                let drawKey (cap:Rectangle) (label:string) =
-                    let edge = if SystemInformation.HighContrast then SystemColors.WindowText else Color.FromArgb(140,p.muted)
-                    use base' = rounded (Rectangle(cap.X,cap.Y+Dpi.scale 2,cap.Width,cap.Height)) 5
-                    use edgeFill = new SolidBrush(edge)
-                    g.FillPath(edgeFill,base')
-                    use face = rounded cap 5
-                    use faceFill = new SolidBrush(p.surface)
-                    use outline = new Pen(edge)
-                    g.FillPath(faceFill,face)
-                    g.DrawPath(outline,face)
-                    TextRenderer.DrawText(g,label,keyFont,cap,p.muted,centred)
+                // A key, not another segment: its outline alone, as keys are shown everywhere.
+                let drawKey (cap:Rectangle) (label:string) = KeyCaps.draw g keyFont cap.X cap.Y cap.Height label p |> ignore
                 match choices with
                 | (caption,_,_,_)::_ ->
                     let bounds,key = breadcrumb()
@@ -389,22 +378,11 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
                     let label = tr Strings.TabSearch.setShortcut
                     let labelWidth = TextRenderer.MeasureText(label,keyFont,Size.Empty,TextFormatFlags.NoPadding).Width
-                    let cap = keyCap 0 "Alt+Enter"
-                    let cap = Rectangle(this.ClientSize.Width-Dpi.scale 4-cap.Width,(this.ClientSize.Height-cap.Height)/2,cap.Width,cap.Height)
-                    let edge = if SystemInformation.HighContrast then SystemColors.WindowText else Color.FromArgb(140,p.muted)
-                    let rounded (bounds:Rectangle) radius =
-                        SettingsShapes.rounded (RectangleF(float32 bounds.X+0.5f,float32 bounds.Y+0.5f,float32 bounds.Width-1.0f,float32 bounds.Height-1.0f)) (float32(Dpi.scale radius))
-                    use base' = rounded (Rectangle(cap.X,cap.Y+Dpi.scale 2,cap.Width,cap.Height)) 5
-                    use edgeFill = new SolidBrush(edge)
-                    g.FillPath(edgeFill,base')
-                    use face = rounded cap 5
-                    use faceFill = new SolidBrush(p.surface)
-                    use outline = new Pen(edge)
-                    g.FillPath(faceFill,face)
-                    g.DrawPath(outline,face)
-                    let centred = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter
-                    TextRenderer.DrawText(g,"Alt+Enter",keyFont,cap,p.muted,centred)
-                    TextRenderer.DrawText(g,label,keyFont,Rectangle(cap.Left-Dpi.scale 8-labelWidth,0,labelWidth+Dpi.scale 4,this.ClientSize.Height),
+                    let height = keyHeight()
+                    let width = KeyCaps.width keyFont height "Alt+Enter"
+                    let left = this.ClientSize.Width-Dpi.scale 4-width
+                    KeyCaps.draw g keyFont left ((this.ClientSize.Height-height)/2) height "Alt+Enter" p |> ignore
+                    TextRenderer.DrawText(g,label,keyFont,Rectangle(left-Dpi.scale 8-labelWidth,0,labelWidth+Dpi.scale 4,this.ClientSize.Height),
                                           (if SystemInformation.HighContrast then SystemColors.WindowText else p.accent),
                                           TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter) }
     let programColumn = TreeListColumn("",160,TextColumn,RightAligned=true)
