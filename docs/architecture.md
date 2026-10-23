@@ -330,9 +330,10 @@ values retain the group default, while a saved global choice opens globally even
 inside a group. Falling back to global when no searchable group exists does not
 overwrite the preferred scope.
 
-The same box is the command palette (`Ctrl+Alt+P` by default): Tab goes round the window
-scopes and its pages, the actions and the saved workspaces (restoring the one chosen); `>`
-typed first lists the actions. The actions page is one list: the commands (`Commands.all`,
+The same form is the command palette (`Ctrl+Alt+P` by default), opened with pages in place
+of the window scopes (`windows=false`): Tab goes round the actions and the saved workspaces
+(restoring the one chosen); `>` typed first lists the actions. Each key closes its own box or
+puts it up in the other's place. The actions page is one list: the commands (`Commands.all`,
 those listed, in their categories, dimmed when they can do nothing for the window that was in
 front, with their shortcuts beside them), then the settings by page, leaving out the catalog's
 shortcut entries, which are commands already; a setting that is on or off shows a switch and

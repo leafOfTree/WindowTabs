@@ -215,10 +215,10 @@ module Strings =
                            description={ en="Switch to a window by title or app name."; zh="按标题或应用名查找并切换窗口。"; ja="タイトルやアプリ名でウィンドウを探して切り替えます。"; ar="الانتقال إلى نافذة باستخدام عنوانها أو اسم التطبيق." }
                            keywords={ en="find"; zh="查找"; ja="検索"; ar="بحث" } }
         let commandPalette = { caption={ en="Command palette"; zh="命令面板"; ja="コマンドパレット"; ar="لوحة الأوامر" }
-                               description={ en="Run any command or setting by name; Tab switches to windows and workspaces."
-                                             zh="按名称运行任意命令或设置；Tab 切换到窗口和工作区。"
-                                             ja="名前でコマンドや設定を実行します。Tab でウィンドウ、ワークスペースに切り替えます。"
-                                             ar="شغّل أي أمر أو إعداد باسمه؛ ويبدّل Tab إلى النوافذ ومساحات العمل." }
+                               description={ en="Run any command or setting by name; Tab switches to the workspaces."
+                                             zh="按名称运行任意命令或设置；Tab 切换到工作区。"
+                                             ja="名前でコマンドや設定を実行します。Tab でワークスペースに切り替えます。"
+                                             ar="شغّل أي أمر أو إعداد باسمه؛ ويبدّل Tab إلى مساحات العمل." }
                                keywords={ en="actions search everywhere"; zh="动作 全局搜索"; ja="アクション 検索"; ar="إجراءات بحث شامل" } }
         let newTab = { caption={ en="New tab"; zh="新建标签"; ja="新しいタブ"; ar="علامة تبويب جديدة" }
                        description={ en="Starts the current tab's app again."

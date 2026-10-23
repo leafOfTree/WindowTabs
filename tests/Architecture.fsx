@@ -796,6 +796,13 @@ let main() =
     check (palette.Scope=ActionScope && palette.Results.Length=2) "Tab did not reach the actions page"
     palette.SwitchScope()
     check (palette.Scope=GroupTabs) "Tab did not come round to the group"
+    // The command palette: the pages alone, no windows among its scopes.
+    let bare = TabSearchForm([],[],pages=[commandsPage],windows=false)
+    check (bare.Scope=ActionScope && not bare.HasWindows && bare.Results.Length=2) "The command palette did not open on its page alone"
+    bare.SwitchScope()
+    check (bare.Scope=ActionScope) "The command palette offered the windows"
+    bare.Close()
+    pump 100
     palette.Query <- ">clo"
     check (palette.Scope=ActionScope && palette.Query="clo" && palette.Results.Length=1) "> did not list the commands"
     palette.Accept()

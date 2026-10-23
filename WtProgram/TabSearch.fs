@@ -184,20 +184,22 @@ module private TabSearchNative =
     [<DllImport("user32.dll", CharSet=CharSet.Unicode)>]
     extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, string lParam)
 
-/// The palette: a search box in the switcher's look over the tabs and, when given, pages of
-/// commands and the like. Type to filter, then Enter or a click switches to the window or runs
-/// the command. It remembers the chosen window scope; Tab, or clicking the line under the box,
-/// goes round the group, all windows and the pages, and > lists the actions. A command that
-/// leaves a choice shows it in place, with Esc or Backspace the way back. Esc or clicking
-/// elsewhere closes it. Used once, then disposed.
+/// A search box in the switcher's look: over the tabs, where Enter or a click switches to the
+/// window, or, as the command palette, over pages of commands and the like, where it runs the
+/// command. Type to filter. It remembers the chosen window scope; Tab, or clicking the line
+/// under the box, goes round the scopes, and > lists the actions. A command that leaves a
+/// choice shows it in place, with Esc or Backspace the way back. Esc or clicking elsewhere
+/// closes it. Used once, then disposed.
 /// pick: what a chosen window is for, switching to it unless given; within: an area on screen to
 /// open over instead of high on the active screen; prompt: the hint in the empty box; rows and
-/// width: how many rows show and how wide it is, in logical pixels; scope: the one to open on.
+/// width: how many rows show and how wide it is, in logical pixels; pages: the pages beside the
+/// windows, or in their place with windows false; scope: the one to open on.
 type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISettings,
                    ?pick:IntPtr -> unit, ?within:Rectangle, ?prompt:string, ?rows:int, ?width:int,
-                   ?pages:PalettePage list, ?scope:PaletteScope) =
+                   ?pages:PalettePage list, ?scope:PaletteScope, ?windows:bool) =
     let rowHeight = 44
     let visibleRows = defaultArg rows 9
+    let windows = defaultArg windows true
     let palette = SettingsColors.current()
     let windowPrompt = defaultArg prompt (tr Strings.TabSearch.prompt)
     let pages = defaultArg pages []
@@ -236,12 +238,14 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     /// Only when the group is worth searching on its own and is not every tab.
     let canSwitchScope = groupItems.Length>1 && groupItems.Length<items.Length
     let initialWindowScope = if groupItems.Length>1 && preferred<>"All" then GroupTabs else AllTabs
-    /// In Tab order: the group and every window, or the one of them there is, then the pages.
-    let scopes = (if canSwitchScope then [GroupTabs;AllTabs] else [initialWindowScope]) @ [for page in pages -> page.scope]
+    /// In Tab order: the group and every window, or the one of them there is, then the pages;
+    /// the pages alone for the command palette.
+    let scopes =
+        (if not windows then [] elif canSwitchScope then [GroupTabs;AllTabs] else [initialWindowScope]) @ [for page in pages -> page.scope]
     let mutable scope =
         match requested with
         | Some wanted when List.contains wanted scopes -> wanted
-        | _ -> initialWindowScope
+        | _ -> if windows then initialWindowScope else List.head scopes
     /// The choices a command left, over the scope's rows while they are up: the command's name,
     /// the rows, what choosing one does, and the search typed before, for the way back.
     let mutable choices : (string * (TreeListItem * TabSearchEntry)[] * (TabSearchEntry -> CommandOutcome) * string) list = []
@@ -707,6 +711,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     member _.ShowChoices(caption:string, options:CommandChoice list) = push caption options
     /// How many choices deep the box is; 0 on a scope's rows.
     member _.Depth = choices.Length
+    /// Whether the windows are among its scopes: the window search, rather than the command palette.
+    member _.HasWindows = windows
     /// Back from a command's choices, as Esc goes.
     member _.Back() = pop()
     /// Starts recording a shortcut for the chosen row, as Alt+Enter does.

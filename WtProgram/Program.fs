@@ -714,23 +714,31 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// open on that scope already; open on another scope, it goes there instead.
     member this.togglePalette(scope:PaletteScope option) =
         match tabSearchCell.value with
-        | Some search when (match scope with
-                            | None -> search.Scope=GroupTabs || search.Scope=AllTabs
-                            | Some wanted -> search.Scope=wanted) -> search.Close()
+        // The window search and the command palette are two boxes: the key of the one open closes
+        // it, the other's puts its box up instead.
+        | Some search when search.HasWindows<>scope.IsNone ->
+            search.Close()
+            (this.openPalette(scope) : TabSearchForm).Show()
+        | Some search when (match scope with None -> true | Some wanted -> search.Scope=wanted) -> search.Close()
         | Some search -> scope |> Option.iter search.SetScope
         | None -> (this.openPalette(scope) : TabSearchForm).Show()
 
-    /// The palette over the window in front, built but not shown.
+    /// The box over the window in front, built but not shown: the window search for no scope,
+    /// else the command palette on that scope.
     member private this.openPalette(scope:PaletteScope option) : TabSearchForm =
         let active = WinUserApi.GetForegroundWindow()
-        let nameOverride hwnd = windowNameOverride.tryFind(hwnd).bind(id)
-        // The desktop keeps each group's windows in tab order.
-        let groups = this.desktop.groups.list |> List.map(fun group -> group.windows.list)
-        let group = this.desktop.foregroundGroup |> Option.map(fun group -> group.windows.list) |> Option.defaultValue []
-        let pages = [CommandPalette.actionsPage active
-                     CommandPalette.workspacesPage (this.workspaceSummaries()) this.restoreWorkspaceNamed]
-        let search = TabSearchForm(TabSearch.tabs nameOverride active groups,group,
-                                  settings=(settingsManager :> ISettings),pages=pages,?scope=scope)
+        let search =
+            match scope with
+            | None ->
+                let nameOverride hwnd = windowNameOverride.tryFind(hwnd).bind(id)
+                // The desktop keeps each group's windows in tab order.
+                let groups = this.desktop.groups.list |> List.map(fun group -> group.windows.list)
+                let group = this.desktop.foregroundGroup |> Option.map(fun group -> group.windows.list) |> Option.defaultValue []
+                TabSearchForm(TabSearch.tabs nameOverride active groups,group,settings=(settingsManager :> ISettings))
+            | Some wanted ->
+                let pages = [CommandPalette.actionsPage active
+                             CommandPalette.workspacesPage (this.workspaceSummaries()) this.restoreWorkspaceNamed]
+                TabSearchForm([],[],settings=(settingsManager :> ISettings),pages=pages,scope=wanted,windows=false)
         search.Ended.Add(fun () -> tabSearchCell.set(None))
         tabSearchCell.set(Some(search))
         search
