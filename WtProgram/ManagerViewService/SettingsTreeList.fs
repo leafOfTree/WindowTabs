@@ -483,27 +483,40 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         | NoGlyph -> ()
         g.Restore(state)
 
-    /// Tints the runs of a text drawn with these flags in these bounds, before the text goes on
-    /// top. Runs cut off by the ellipsis are left out; high contrast underlines instead.
-    member private this.drawHighlights(g:Graphics, text:string, runs:(int * int) list, bounds:Rectangle, flags:TextFormatFlags, p:SettingsPalette) =
-        if not runs.IsEmpty && text<>"" then
-            let measure (part:string) = TextRenderer.MeasureText(g,part,this.Font,Size(Int32.MaxValue,bounds.Height),flags ||| TextFormatFlags.NoPadding).Width
-            // The padding DrawText adds before the text.
-            let pad = (TextRenderer.MeasureText(g,text,this.Font,Size(Int32.MaxValue,bounds.Height),flags).Width-measure text)/2
-            let height = this.Font.Height+Dpi.scale 2
-            let top = bounds.Y+(bounds.Height-height)/2
-            for start,length in runs do
-                if start>=0 && start+length<=text.Length then
-                    let left = bounds.X+pad+(if start=0 then 0 else measure (text.Substring(0,start)))
-                    let right = bounds.X+pad+measure (text.Substring(0,start+length))
-                    if right<=bounds.Right-(if measure text+pad>bounds.Width then measure "…" else 0) then
-                        if SystemInformation.HighContrast then
-                            use line = new Pen(SystemColors.Highlight,float32(Dpi.scale 2))
-                            g.DrawLine(line,left,top+height,right,top+height)
+    /// A text with its matching runs in the accent colour, as the settings search shows them,
+    /// drawn in pieces so the colour changes mid-word; cut with an ellipsis where it does not fit.
+    member private this.drawMarked(g:Graphics, text:string, runs:(int * int) list, bounds:Rectangle, flags:TextFormatFlags, font:Font, color:Color, p:SettingsPalette) =
+        if runs.IsEmpty || text="" then TextRenderer.DrawText(g,text,font,bounds,color,flags)
+        else
+            let pieces = flags &&& ~~~(TextFormatFlags.EndEllipsis ||| TextFormatFlags.HorizontalCenter) ||| TextFormatFlags.NoPadding
+            let width (part:string) = TextRenderer.MeasureText(g,part,font,Size(Int32.MaxValue,bounds.Height),pieces).Width
+            // Cut where an ellipsis still fits, since the pieces cannot be shortened as a whole.
+            let text =
+                if width text<=bounds.Width then text
+                else
+                    let rec fit fits tooLong =
+                        if tooLong-fits<=1 then fits
                         else
-                            use shape = SettingsShapes.rounded (RectangleF(float32 left-1.0f,float32 top,float32(right-left)+2.0f,float32 height)) (float32(Dpi.scale 3))
-                            use fill = new SolidBrush(Color.FromArgb(90,p.accent))
-                            g.FillPath(fill,shape)
+                            let middle = (fits+tooLong)/2
+                            if width (text.Substring(0,middle)+"…")<=bounds.Width then fit middle tooLong else fit fits middle
+                    text.Substring(0,fit 0 text.Length).TrimEnd()+"…"
+            let marked = if SystemInformation.HighContrast then SystemColors.Highlight else p.accent
+            let inRun i = runs |> List.exists(fun (start,length) -> i>=start && i<start+length)
+            let state = g.Save()
+            g.SetClip(bounds,CombineMode.Intersect)
+            try
+                // The padding DrawText adds before a text, so the pieces sit where the whole would.
+                let mutable x = bounds.Left+Dpi.scale 1
+                let mutable start = 0
+                while start<text.Length do
+                    let active = inRun start
+                    let mutable finish = start+1
+                    while finish<text.Length && inRun finish=active do finish <- finish+1
+                    let part = text.Substring(start,finish-start)
+                    TextRenderer.DrawText(g,part,font,Rectangle(x,bounds.Y,max 1 (bounds.Right-x),bounds.Height),(if active then marked else color),pieces)
+                    x <- x+width part
+                    start <- finish
+            finally g.Restore(state)
 
     override this.OnResize(e) = base.OnResize(e); this.updateScroll()
     override this.OnGotFocus(e) = base.OnGotFocus(e); this.Invalidate()
@@ -725,8 +738,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         SettingsTreeList.drawGlyph(g,item.Glyph,iconBox,p.muted)
                     if not editing then
                         let nameBounds,laid,add,_ = if item.Chips.IsEmpty && not item.ChipAdd then bounds,[],None,1 else this.chipLayout(item,level,top)
-                        this.drawHighlights(g,item.Text,item.highlights 0,nameBounds,flags,p)
-                        TextRenderer.DrawText(g,item.Text,this.Font,nameBounds,text,flags)
+                        this.drawMarked(g,item.Text,item.highlights 0,nameBounds,flags,this.Font,text,p)
                         // Chips: a shade of the text over the row, so they show on any highlight.
                         let chipFill = if SystemInformation.HighContrast then SystemColors.Window else Color.FromArgb(26,p.text)
                         for chipIndex,box,closeBox in laid do
@@ -800,10 +812,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                             let width = min bounds.Width (TextRenderer.MeasureText(g,item.value column,this.Font,Size(Int32.MaxValue,rowHeight),flags).Width)
                             Rectangle(bounds.Right-width,bounds.Y,width,bounds.Height)
                         else bounds
-                    this.drawHighlights(g,item.value column,item.highlights column,bounds,flags,p)
-                    // Muted text is hard to read on a highlight: a column with matches takes the full colour.
-                    let color = if isSelected || not (item.highlights column).IsEmpty then text else p.muted
-                    TextRenderer.DrawText(g,item.value column,this.Font,bounds,color,flags)
+                    let color = if isSelected then text else p.muted
+                    this.drawMarked(g,item.value column,item.highlights column,bounds,flags,this.Font,color,p)
                 | CheckColumn ->
                     match item.check column with
                     | Some isChecked ->

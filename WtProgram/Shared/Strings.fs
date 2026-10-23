@@ -562,6 +562,8 @@ module Strings =
                                               ar="يتنقل بين الأجزاء بالتناوب، ويعيد الأجزاء المخفية." }
                                 keywords=splitWords }
         let private tabWords = { en="tab"; zh="标签"; ja="タブ"; ar="علامة تبويب" }
+        /// The tab commands' category, under each in the palette; the others use their cards' names.
+        let tabs = { en="Tabs"; zh="标签"; ja="タブ"; ar="علامات التبويب" }
         let renameTab = { caption={ en="Rename tab"; zh="重命名标签"; ja="タブの名前を変更"; ar="إعادة تسمية علامة التبويب" }
                           description={ en="Edits the name on the tab; an empty name brings the window's own back."
                                         zh="在标签上编辑名称；留空则恢复窗口自己的标题。"

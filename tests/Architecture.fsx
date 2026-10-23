@@ -456,6 +456,9 @@ let main() =
         check (Commands.holder (fun _ -> 77) "nextTab" 0).IsNone "Clearing a shortcut must not be refused for a holder"
         check (Commands.find "toggle-use-windowtabs-for-alt-tab" |> Option.exists(fun command -> command.category=SettingsCommands)) "Every on/off setting must be a command"
         check (Commands.categoryOf "splitSwap"=Some SplitCommands && Commands.categoryOf "saveWorkspace"=Some WorkspaceCommands) "Shortcut cards must follow the commands' categories"
+        // What a typed word matched, said under a command as under a settings search result.
+        check (SettingsCatalog.evidence "switcher" Strings.Settings.groupWindowsInSwitcher "General" []=["switcher"]) "A keyword match is not named under the row"
+        check (SettingsCatalog.evidence "group" Strings.Settings.groupWindowsInSwitcher "General" []=[]) "A match the name shows is repeated under the row"
         api.setValue("replaceAltTab",box false)
         (Commands.find "toggle-use-windowtabs-for-alt-tab").Value.run IntPtr.Zero |> ignore
         check (api.getValue("replaceAltTab") :?> bool) "A toggle command must turn the setting on"
@@ -783,7 +786,8 @@ let main() =
                     { TabSearch.create (IntPtr 2) "Restore workspace" "Restore workspace" "" with recency=1 } ]
           choose=(fun entry -> if entry.hwnd=IntPtr 1 then (ran <- "close"::ran; Done) else Choose [option "Work";option "Home"])
           shortcut=(fun _ -> None)
-          dimmed=fun _ -> false }
+          dimmed=(fun _ -> false)
+          explain=fun _ _ -> "" }
     let palette = TabSearchForm([mail;notes;editor],[mail.hwnd;editor.hwnd],pages=[commandsPage])
     check (palette.Scope=GroupTabs) "The palette did not open on the group"
     palette.SwitchScope()

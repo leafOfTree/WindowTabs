@@ -209,11 +209,11 @@ module SettingsCatalog =
     /// Why a result matched, for each term its caption and page name do not show: the keywords
     /// holding it (just those words; the list is long), the caption in another language or the
     /// settings-file key, else the part of the description around it.
-    let searchEvidence (query:string) item =
-        let shown = tr item.text.caption+" "+tr (searchContext item)
-        let keywords = tr item.text.keywords :: Localization.all item.text.keywords |> List.collect(fun line -> line.Split(' ') |> List.ofArray)
-        let texts = keywords @ searchTexts item |> List.filter((<>) "")
-        let descriptions = tr item.text.description :: Localization.all item.text.description
+    let evidence (query:string) (text:SettingText) (context:string) (extra:string list) =
+        let shown = tr text.caption+" "+context
+        let keywords = tr text.keywords :: Localization.all text.keywords |> List.collect(fun line -> line.Split(' ') |> List.ofArray)
+        let texts = keywords @ ([text.caption;text.keywords] |> List.collect Localization.all) @ extra |> List.filter((<>) "")
+        let descriptions = tr text.description :: Localization.all text.description
         terms query
         |> Array.filter(fun term -> not (contains term shown))
         |> Array.choose(fun term ->
@@ -222,3 +222,5 @@ module SettingsCatalog =
             | None -> descriptions |> List.tryPick (snippet term))
         |> Array.distinct
         |> List.ofArray
+    let searchEvidence (query:string) item =
+        evidence query item.text (tr (searchContext item)) (Localization.all (searchContext item) @ [storageKey item])

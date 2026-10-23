@@ -168,7 +168,10 @@ type PalettePage = {
     shortcut:TabSearchEntry -> ShortcutAssignment option
     /// A row listed in the muted colour that does nothing now, such as a tab command with no
     /// tab in front: there to be found, and to be given a key.
-    dimmed:TabSearchEntry -> bool }
+    dimmed:TabSearchEntry -> bool
+    /// What the typed words matched when the row's name does not show it, such as a keyword or
+    /// a piece of a description, put at the row's right end before its own detail; empty for nothing.
+    explain:string -> TabSearchEntry -> string }
 
 module private TabSearchNative =
     let EM_SETCUEBANNER = 0x1501
@@ -409,15 +412,25 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         // no longer together, lose their dividers.
         let typed = not (String.IsNullOrWhiteSpace input.Text)
         let shown = TabSearch.shown input.Text (List.ofArray (scoped())) |> Array.ofList
+        // At the right: what a typed word matched that the name does not show, then the row's own
+        // detail (the program, a shortcut).
+        let explain = match choices,page() with [],Some page -> page.explain input.Text | _ -> (fun _ -> "")
+        let aside (entry:TabSearchEntry) =
+            match explain entry,TabSearch.source entry with
+            | "",detail -> detail
+            | why,"" -> why
+            | why,detail -> why+"   "+detail
         // Titles reclaim the fixed app column's spare space, including after filtering.
         let programWidth =
             shown |> Array.fold(fun width (_,entry) ->
-                max width (TextRenderer.MeasureText(TabSearch.source entry,list.Font,Size(Int32.MaxValue,Dpi.scale rowHeight),
+                max width (TextRenderer.MeasureText(aside entry,list.Font,Size(Int32.MaxValue,Dpi.scale rowHeight),
                               TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine).Width)) 0
-        programColumn.Width <- max 48 (min 220 (int(Math.Ceiling(float programWidth/Dpi.currentFactor()))+16))
+        programColumn.Width <- max 48 (min 300 (int(Math.Ceiling(float programWidth/Dpi.currentFactor()))+16))
         shown |> Array.iteri(fun index (item,entry) ->
+            let aside = aside entry
+            item.Values.[1] <- aside
             item.SeparatorAbove <- not typed && index>0 && (snd shown.[index-1]).group<>entry.group
-            item.Highlights <- [| TabSearch.highlights input.Text entry.title; TabSearch.highlights input.Text entry.program |])
+            item.Highlights <- [| TabSearch.highlights input.Text entry.title; TabSearch.highlights input.Text aside |])
         list.Roots.Clear()
         list.Roots.AddRange(Array.map fst shown)
         list.Rebuild()
