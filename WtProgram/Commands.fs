@@ -2,10 +2,12 @@ namespace Bemo
 open System
 open Bemo.Win32
 
-/// What running a command leaves to do: nothing, or a choice among further steps.
+/// What running a command leaves to do: nothing, a choice among further steps, or, for a
+/// setting turned on or off from the palette, the palette staying up to show it.
 type CommandOutcome =
     | Done
     | Choose of CommandChoice list
+    | Stay
 /// One further step: its name, a detail beside it, and what choosing it does.
 and CommandChoice = { label:string; detail:string; run:unit -> CommandOutcome }
 
@@ -77,18 +79,13 @@ module Commands =
         | ProgramSettings -> "app-rules"
         | LayoutSettings -> "workspaces"
         | DiagnosticsSettings -> "support"
-    /// A setting that is on or off, turned the other way; the setting's own text names it.
+    /// A setting that is on or off, turned the other way; the setting's own text names it. On
+    /// the palette's settings page as a switch, not among the commands.
     let private toggle (item:SettingDefinition) key =
-        plain ("toggle-"+item.id) item.text SettingsCommands always (fun _ ->
-            let current = Services.settings.getValue key :?> bool
-            Services.settings.setValue(key,box (not current)))
-    /// The settings-file key of a toggle command, to show whether it is on.
-    let toggleKey (command:Command) =
-        if command.id.StartsWith "toggle-" then
-            match (SettingsCatalog.find (command.id.Substring 7)).binding with
-            | Toggle(key,_,_) -> Some key
-            | _ -> None
-        else None
+        { plain ("toggle-"+item.id) item.text SettingsCommands always (fun _ ->
+              let current = Services.settings.getValue key :?> bool
+              Services.settings.setValue(key,box (not current)))
+          with listed=false }
     let all : Command list = [
         fromCatalog "next-tab" TabCommands hasGroup (onGroup(fun g -> g.switchWindow(true,false)))
         fromCatalog "previous-tab" TabCommands hasGroup (onGroup(fun g -> g.switchWindow(false,false)))
@@ -183,9 +180,11 @@ module Commands =
                     model.selected <- (ws :> Dynamic)
                     model.remove())))
         plain "open-settings" Strings.Commands.openSettings SettingsCommands always (fun _ -> Services.managerView.show())
+        // The pages are reached from the palette's settings page; these are for keys and the command line.
         for page in [GeneralSettings;AppearanceSettings;HotKeySettings;ProgramSettings;LayoutSettings;DiagnosticsSettings] do
-            plain ("open-settings-"+pageId page) (Strings.Commands.settingsPage (Strings.Pages.title page)) SettingsCommands always
-                  (fun _ -> Services.managerView.show page)
+            { plain ("open-settings-"+pageId page) (Strings.Commands.settingsPage (Strings.Pages.title page)) SettingsCommands always
+                    (fun _ -> Services.managerView.show page)
+              with listed=false }
         for item in SettingsCatalog.all do
             match item.binding with
             | Toggle(key,_,_) -> toggle item key

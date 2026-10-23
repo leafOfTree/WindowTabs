@@ -53,6 +53,8 @@ type TreeListItem(text:string) =
     member val SeparatorAbove = false with get,set
     /// Shown in the muted colour, for a row that is listed but cannot be taken now.
     member val Dimmed = false with get,set
+    /// A switch at the row's right end, on or off, for a setting the row stands for.
+    member val Switch : bool option = None with get,set
     /// Said on hover over the row's icon or glyph, for a row whose icon stands in for a name. The
     /// icon only explains; it does not light up as a button would.
     member val IconTip = "" with get,set
@@ -433,6 +435,31 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         | _ -> ()
 
     /// Draws a glyph on a 16-unit grid scaled to the box.
+    /// A switch as the settings pages' toggles look: a pill, filled in the accent colour when on,
+    /// with its knob at that end.
+    static member drawSwitch(g:Graphics, box:Rectangle, isOn:bool, p:SettingsPalette) =
+        let dark = ThemeService.currentIsDark()
+        let x,y,w,h = float32 box.X,float32 box.Y,float32 box.Width,float32 box.Height
+        use path = new GraphicsPath()
+        path.AddArc(x,y,h,h,90.0f,180.0f)
+        path.AddArc(x+w-h,y,h,h,270.0f,180.0f)
+        path.CloseFigure()
+        let onColor = if SystemInformation.HighContrast then SystemColors.Highlight else p.accent
+        let offColor =
+            if SystemInformation.HighContrast then SystemColors.Control
+            elif dark then Color.FromRGB(0x424242) else Color.FromRGB(0xD8D8D8)
+        use fill = new SolidBrush(if isOn then onColor else offColor)
+        g.FillPath(fill,path)
+        let inset = float32(Dpi.scale 3)
+        let diameter = h-inset*2.0f
+        let left = if isOn then x+w-diameter-inset else x+inset
+        let knobColor =
+            if SystemInformation.HighContrast then (if isOn then SystemColors.HighlightText else SystemColors.WindowText)
+            elif isOn then Color.White
+            elif dark then Color.FromRGB(0xA0A0A0) else Color.FromRGB(0x686868)
+        use knob = new SolidBrush(knobColor)
+        g.FillEllipse(knob,left,y+inset,diameter,diameter)
+
     static member drawGlyph(g:Graphics, glyph:TreeListGlyph, box:Rectangle, color:Color) =
         let state = g.Save()
         g.SmoothingMode <- SmoothingMode.AntiAlias
@@ -805,7 +832,11 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         let side = Dpi.scale this.IconSize
                         SettingsTreeList.drawGlyph(g,glyph,Rectangle(button.X+(button.Width-side)/2,button.Y+(button.Height-side)/2,side,side),color))
                 | TextColumn ->
-                    let bounds = Rectangle(cell.X+Dpi.scale 8,top,max 1 (cell.Width-Dpi.scale 16),rowHeight)
+                    // The row's switch, if any, takes the right end of the last column; the text
+                    // sits before it.
+                    let switchWidth,switchHeight = Dpi.scale 36,Dpi.scale 18
+                    let reserve = if column=columns.Length-1 && item.Switch.IsSome then switchWidth+Dpi.scale 8 else 0
+                    let bounds = Rectangle(cell.X+Dpi.scale 8,top,max 1 (cell.Width-Dpi.scale 16-reserve),rowHeight)
                     // Move text and its match highlights together, preserving ellipsis clipping.
                     let bounds =
                         if columns.[column].RightAligned then
@@ -814,6 +845,9 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         else bounds
                     let color = if isSelected then text else p.muted
                     this.drawMarked(g,item.value column,item.highlights column,bounds,flags,this.Font,color,p)
+                    if reserve>0 then
+                        let isOn = item.Switch.Value
+                        SettingsTreeList.drawSwitch(g,Rectangle(cell.Right-Dpi.scale 8-switchWidth,top+(rowHeight-switchHeight)/2,switchWidth,switchHeight),isOn,p)
                 | CheckColumn ->
                     match item.check column with
                     | Some isChecked ->

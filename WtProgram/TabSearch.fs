@@ -169,9 +169,16 @@ type PalettePage = {
     /// A row listed in the muted colour that does nothing now, such as a tab command with no
     /// tab in front: there to be found, and to be given a key.
     dimmed:TabSearchEntry -> bool
-    /// What the typed words matched when the row's name does not show it, such as a keyword or
-    /// a piece of a description, put at the row's right end before its own detail; empty for nothing.
-    explain:string -> TabSearchEntry -> string }
+    /// The right end of a row for what is typed, read again after every change.
+    aside:string -> TabSearchEntry -> PaletteAside
+    /// Whether the palette goes out of sight while a row's command runs, so the window it acts
+    /// on is in front: not for a setting turned on or off, which the palette stays up to show.
+    concealed:bool }
+
+/// The right end of a page's row: what the typed words matched that the name does not show,
+/// such as a keyword or a piece of a description; then the row's own detail, a shortcut or a
+/// page; or a switch, for a setting that is on or off.
+and PaletteAside = { explained:string; detail:string; switch:bool option }
 
 module private TabSearchNative =
     let EM_SETCUEBANNER = 0x1501
@@ -221,7 +228,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let pageItems =
         pages |> List.map(fun page ->
             page.scope,
-            page.entries |> List.map(fun entry -> TreeListItem(entry.title,Values=[|"";TabSearch.source entry|],Glyph=page.glyph,Dimmed=page.dimmed entry),entry) |> Array.ofList)
+            page.entries |> List.map(fun entry -> TreeListItem(entry.title,Values=[|"";""|],Glyph=page.glyph,Dimmed=page.dimmed entry),entry) |> Array.ofList)
         |> Map.ofList
     let preferred =
         settings |> Option.map(fun api -> api.getValue("tabSearchScope") :?> string)
@@ -337,17 +344,37 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                             elif current || hovered=Some target then p.text
                             else p.muted
                         TextRenderer.DrawText(g,caption target,SettingsUi.bodyFont(),bounds,color,centred)
-                    key |> Option.iter(fun cap -> drawKey cap "Tab")
-                    // At the right end, the key that sets a row's shortcut, named.
-                    if canAssign() then
-                        let label = tr Strings.TabSearch.setShortcut
-                        let labelWidth = TextRenderer.MeasureText(label,keyFont,Size.Empty,TextFormatFlags.NoPadding).Width
-                        let cap = keyCap 0 "Alt+Enter"
-                        let cap = Rectangle(this.ClientSize.Width-labelWidth-Dpi.scale 8-cap.Width,cap.Y,cap.Width,cap.Height)
-                        if cap.Left>(match key with Some tab -> tab.Right | None -> outline.Right)+Dpi.scale 16 then
-                            drawKey cap "Alt+Enter"
-                            TextRenderer.DrawText(g,label,keyFont,Rectangle(cap.Right+Dpi.scale 6,0,labelWidth+Dpi.scale 4,scopeHeight),p.muted,
-                                                  TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter) }
+                    key |> Option.iter(fun cap -> drawKey cap "Tab") }
+    /// Under the rows, at the right: the key that sets a row's shortcut, named, as editors put it.
+    let footerHeight = if pages.IsEmpty then 0 else Dpi.scale 28
+    let footer =
+        { new Panel(Dock=DockStyle.Bottom,Height=footerHeight,BackColor=palette.surface) with
+            override this.OnPaint(e) =
+                base.OnPaint(e)
+                if canAssign() then
+                    let p = SettingsColors.current()
+                    let g = e.Graphics
+                    g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+                    let label = tr Strings.TabSearch.setShortcut
+                    let labelWidth = TextRenderer.MeasureText(label,keyFont,Size.Empty,TextFormatFlags.NoPadding).Width
+                    let cap = keyCap 0 "Alt+Enter"
+                    let cap = Rectangle(this.ClientSize.Width-Dpi.scale 4-cap.Width,(this.ClientSize.Height-cap.Height)/2,cap.Width,cap.Height)
+                    let edge = if SystemInformation.HighContrast then SystemColors.WindowText else Color.FromArgb(140,p.muted)
+                    let rounded (bounds:Rectangle) radius =
+                        SettingsShapes.rounded (RectangleF(float32 bounds.X+0.5f,float32 bounds.Y+0.5f,float32 bounds.Width-1.0f,float32 bounds.Height-1.0f)) (float32(Dpi.scale radius))
+                    use base' = rounded (Rectangle(cap.X,cap.Y+Dpi.scale 2,cap.Width,cap.Height)) 5
+                    use edgeFill = new SolidBrush(edge)
+                    g.FillPath(edgeFill,base')
+                    use face = rounded cap 5
+                    use faceFill = new SolidBrush(p.surface)
+                    use outline = new Pen(edge)
+                    g.FillPath(faceFill,face)
+                    g.DrawPath(outline,face)
+                    let centred = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter
+                    TextRenderer.DrawText(g,"Alt+Enter",keyFont,cap,p.muted,centred)
+                    TextRenderer.DrawText(g,label,keyFont,Rectangle(cap.Left-Dpi.scale 8-labelWidth,0,labelWidth+Dpi.scale 4,this.ClientSize.Height),
+                                          (if SystemInformation.HighContrast then SystemColors.WindowText else p.accent),
+                                          TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter) }
     let programColumn = TreeListColumn("",160,TextColumn,RightAligned=true)
     let list = new SettingsTreeList([TreeListColumn("",0,TextColumn);programColumn],
                                     ShowHeader=false,ShowExpanders=false,ExpandOnDoubleClick=false,
@@ -376,7 +403,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         // Wide enough for every scope's segment and the key beside them.
         let _,outline,key = segments()
         let segmentsWidth = (match key with Some cap -> cap.Right | None -> outline.Right)+padding*2
-        let size = Size(min (max (Dpi.scale (defaultArg width 640)) segmentsWidth) (area.Width-Dpi.scale 32),padding*2+boxHeight+scopeHeight+rows*Dpi.scale rowHeight)
+        let size = Size(min (max (Dpi.scale (defaultArg width 640)) segmentsWidth) (area.Width-Dpi.scale 32),padding*2+boxHeight+scopeHeight+rows*Dpi.scale rowHeight+footerHeight)
         f.AutoScaleMode <- AutoScaleMode.None
         f.FormBorderStyle <- FormBorderStyle.None
         f.ShowInTaskbar <- false
@@ -398,6 +425,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         // Docking runs from the last added: the box on top, then the scope, then the results.
         f.Controls.Add(list)
         f.Controls.Add(empty)
+        f.Controls.Add(footer)
         f.Controls.Add(scopeLine)
         f.Controls.Add(searchBox)
         use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 size.Width,float32 size.Height)) (float32 radius)
@@ -408,29 +436,32 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         if input.IsHandleCreated then
             TabSearchNative.SendMessage(input.Handle,TabSearchNative.EM_SETCUEBANNER,IntPtr(1),currentPrompt()) |> ignore
     let apply() =
-        // In their groups while nothing is typed; then the best matches first, and the groups,
-        // no longer together, lose their dividers.
-        let typed = not (String.IsNullOrWhiteSpace input.Text)
+        // In their groups while nothing is typed; then the best matches first.
         let shown = TabSearch.shown input.Text (List.ofArray (scoped())) |> Array.ofList
         // At the right: what a typed word matched that the name does not show, then the row's own
-        // detail (the program, a shortcut).
-        let explain = match choices,page() with [],Some page -> page.explain input.Text | _ -> (fun _ -> "")
-        let aside (entry:TabSearchEntry) =
-            match explain entry,TabSearch.source entry with
+        // detail (the program, a shortcut) or its switch.
+        let aside (entry:TabSearchEntry) : PaletteAside =
+            match choices,page() with
+            | [],Some page -> page.aside input.Text entry
+            | _ -> { explained=""; detail=TabSearch.source entry; switch=None }
+        let text (aside:PaletteAside) =
+            match aside.explained,aside.detail with
             | "",detail -> detail
             | why,"" -> why
             | why,detail -> why+"   "+detail
+        let asides = shown |> Array.map(fun (_,entry) -> aside entry)
         // Titles reclaim the fixed app column's spare space, including after filtering.
         let programWidth =
-            shown |> Array.fold(fun width (_,entry) ->
-                max width (TextRenderer.MeasureText(aside entry,list.Font,Size(Int32.MaxValue,Dpi.scale rowHeight),
-                              TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine).Width)) 0
+            asides |> Array.fold(fun width aside ->
+                let switch = if aside.switch.IsSome then Dpi.scale 44 else 0
+                max width (switch+TextRenderer.MeasureText(text aside,list.Font,Size(Int32.MaxValue,Dpi.scale rowHeight),
+                                     TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine).Width)) 0
         programColumn.Width <- max 48 (min 300 (int(Math.Ceiling(float programWidth/Dpi.currentFactor()))+16))
         shown |> Array.iteri(fun index (item,entry) ->
-            let aside = aside entry
-            item.Values.[1] <- aside
-            item.SeparatorAbove <- not typed && index>0 && (snd shown.[index-1]).group<>entry.group
-            item.Highlights <- [| TabSearch.highlights input.Text entry.title; TabSearch.highlights input.Text aside |])
+            let aside = asides.[index]
+            item.Values.[1] <- text aside
+            item.Switch <- aside.switch
+            item.Highlights <- [| TabSearch.highlights input.Text entry.title; TabSearch.highlights input.Text item.Values.[1] |])
         list.Roots.Clear()
         list.Roots.AddRange(Array.map fst shown)
         list.Rebuild()
@@ -513,13 +544,17 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     /// Runs a row's command with the palette out of the way; what it leaves to choose brings
     /// the palette back.
     let outcome caption (run:unit -> CommandOutcome) =
-        conceal()
-        match (try run() with error -> hiding <- false; present(); raise error) with
+        let concealed = page() |> Option.forall(fun page -> page.concealed)
+        if concealed then conceal()
+        let back() = if concealed then hiding <- false; present()
+        match (try run() with error -> back(); raise error) with
         | Done -> finish None
         | Choose options ->
-            hiding <- false
-            present()
+            back()
             push caption options
+        | Stay ->
+            back()
+            apply()
     /// Enter or a click on a row: switches to the window, or runs the command and shows what it
     /// leaves to choose. A dimmed row does nothing.
     let activate (target:TreeListItem) =

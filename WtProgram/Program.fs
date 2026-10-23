@@ -602,7 +602,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             | None -> Result.Error (tr (Strings.CommandLine.unknownCommand id))
             | Some command ->
                 match command.run (WinUserApi.GetForegroundWindow()) with
-                | Done -> Result.Ok ""
+                | Done | Stay -> Result.Ok ""
                 | Choose options ->
                     match choice with
                     | None -> this.showChoices(tr command.text.caption,options); Result.Ok ""
@@ -819,7 +819,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// A command from its hotkey, for the window in front; a choice it leaves opens the palette.
     member this.runCommand (command:Command) () =
         match command.run (WinUserApi.GetForegroundWindow()) with
-        | Done -> ()
+        | Done | Stay -> ()
         | Choose options -> this.showChoices(tr command.text.caption,options)
 
    

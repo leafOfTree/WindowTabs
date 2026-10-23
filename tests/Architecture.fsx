@@ -787,7 +787,8 @@ let main() =
           choose=(fun entry -> if entry.hwnd=IntPtr 1 then (ran <- "close"::ran; Done) else Choose [option "Work";option "Home"])
           shortcut=(fun _ -> None)
           dimmed=(fun _ -> false)
-          explain=fun _ _ -> "" }
+          aside=(fun _ entry -> { explained=""; detail=entry.program; switch=None })
+          concealed=true }
     let palette = TabSearchForm([mail;notes;editor],[mail.hwnd;editor.hwnd],pages=[commandsPage])
     check (palette.Scope=GroupTabs) "The palette did not open on the group"
     palette.SwitchScope()
@@ -807,6 +808,15 @@ let main() =
     greyed.Accept()
     check (ran=["close"] && not greyed.IsClosed && greyed.Results.Length=1) "A dimmed command ran, or was left out"
     greyed.Close()
+    pump 100
+    // A setting turned in place: the palette stays up and its switch shows the new state.
+    let mutable lamp = false
+    let switchPage = { commandsPage with choose=(fun _ -> lamp <- not lamp; Stay); aside=(fun _ _ -> { explained=""; detail=""; switch=Some lamp }); concealed=false }
+    let switched = TabSearchForm([mail;notes],[],pages=[switchPage],scope=CommandScope)
+    switched.Query <- "clo"
+    switched.Accept()
+    check (lamp && not switched.IsClosed && switched.Depth=0) "Turning a setting in place closed the palette"
+    switched.Close()
     pump 100
     let chooser = TabSearchForm([mail;notes],[],pages=[commandsPage],scope=CommandScope)
     check (chooser.Scope=CommandScope) "The palette did not open on the scope asked for"
