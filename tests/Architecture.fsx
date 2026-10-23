@@ -745,6 +745,8 @@ let main() =
     let arranged = TabSearch.arrange zorder editor.hwnd [[mail;notes];[];[editor]]
     check (arranged |> List.map(fun entry -> entry.hwnd) = [mail.hwnd;notes.hwnd;editor.hwnd]) "Tabs were not listed group by group in tab order, the active one last"
     check (arranged |> List.map(fun entry -> entry.group) = [1;1;0]) "Groups were not numbered from the most recently used"
+    // Rows a line of text and a small icon tall, eleven in about the room nine roomier ones took.
+    check (TabSearchMetrics.rowHeight=36 && TabSearchMetrics.iconSize=20 && TabSearchMetrics.visibleRows=11) "The search box's rows changed size"
     check (arranged |> List.map(fun entry -> entry.recency) = [1;0;2]) "The active tab was not treated as the least recent"
     // The window in front goes last even inside its group, and the first row is what Enter takes.
     let inGroup = TabSearch.arrange zorder notes.hwnd [[mail;notes;editor]]

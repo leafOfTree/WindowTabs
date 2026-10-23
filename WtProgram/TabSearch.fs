@@ -21,6 +21,13 @@ type TabSearchEntry = {
     /// The virtual desktop the window is on when that is not the one in view, else "".
     desktop:string }
 
+/// The search box's rows, in logical pixels: room for a line of text and a small app icon,
+/// eleven of them about as tall as nine of the earlier, roomier rows.
+module TabSearchMetrics =
+    let rowHeight = 36
+    let iconSize = 20
+    let visibleRows = 11
+
 module TabSearch =
     /// Keep the earliest position of the strongest match, rather than an earlier weak occurrence.
     let private termMatch (term:string) (text:string) =
@@ -207,8 +214,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                    ?pick:IntPtr -> unit, ?within:Rectangle, ?prompt:string, ?rows:int, ?width:int,
                    ?pages:PalettePage list, ?scope:PaletteScope, ?windows:bool,
                    ?windowShortcut:TabSearchEntry -> ShortcutAssignment option, ?windowShortcutText:TabSearchEntry -> string) =
-    let rowHeight = 44
-    let visibleRows = defaultArg rows 9
+    let rowHeight = TabSearchMetrics.rowHeight
+    let visibleRows = defaultArg rows TabSearchMetrics.visibleRows
     let windows = defaultArg windows true
     /// Alt+Enter on a window: the key given to it, when the box is told how; and the key it has.
     let windowShortcut = defaultArg windowShortcut (fun _ -> None)
@@ -399,7 +406,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let asideWidths = Collections.Generic.Dictionary<string,int>()
     let list = new SettingsTreeList([TreeListColumn("",0,TextColumn);programColumn],
                                     ShowHeader=false,ShowExpanders=false,ExpandOnDoubleClick=false,
-                                    RowHeight=rowHeight,IconSize=24,TabStop=false,Dock=DockStyle.Fill,
+                                    RowHeight=rowHeight,IconSize=TabSearchMetrics.iconSize,TabStop=false,Dock=DockStyle.Fill,
                                     BackColor=palette.surface,ForeColor=palette.text)
     let empty = new Label(Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleCenter,Visible=false,
                           Font=SettingsUi.bodyFont(),BackColor=palette.surface,ForeColor=palette.muted,
