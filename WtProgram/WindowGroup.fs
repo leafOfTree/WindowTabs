@@ -282,7 +282,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// Looks, while split, for a pane raised over the tabs with no notice to the group.
     let splitGuardTimer = new System.Windows.Forms.Timer(Interval=200)
     /// Looks, while the strip is owned by nothing, for its window raised over it with no notice.
-    let stripGuardTimer = new System.Windows.Forms.Timer(Interval=100)
+    let stripGuardTimer = new System.Windows.Forms.Timer(Interval=200)
     /// Told of every change in the order of top-level windows while the strip is owned by nothing.
     let mutable reorderHook : IDisposable option = None
     /// One divider per split and one window per empty pane, by their place in the layout.
