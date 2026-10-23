@@ -282,7 +282,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// Looks, while split, for a pane raised over the tabs with no notice to the group.
     let splitGuardTimer = new System.Windows.Forms.Timer(Interval=200)
     /// Looks, while the strip is owned by nothing, for its window raised over it with no notice.
-    let stripGuardTimer = new System.Windows.Forms.Timer(Interval=200)
+    let stripGuardTimer = new System.Windows.Forms.Timer(Interval=100)
     /// One divider per split and one window per empty pane, by their place in the layout.
     let mutable splitDividers : Map<PanePath,SplitDivider * IntPtr> = Map.empty
     let mutable emptySplitPanes : Map<PanePath,EmptySplitPane * IntPtr> = Map.empty
@@ -801,15 +801,22 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if not shared && owner.hwnd<>IntPtr.Zero && not isDestroyed.value then stripGuardTimer.Start()
         else stripGuardTimer.Stop()
 
+    /// A strip owned by nothing goes back just above the window, if the window has come over it.
+    /// Done in the same step as whatever raised the window, the tabs do not flash.
+    member private this.liftUnownedStrip(hwnd:IntPtr) =
+        let strip = this.os.windowFromHwnd(this.ts.hwnd)
+        if strip.parent.hwnd=IntPtr.Zero && this.windows.contains hwnd && not(isMinimized hwnd) && not this.isSplit && this.isAbove(hwnd,strip.hwnd) then
+            let previous = this.os.windowFromHwnd(hwnd).prevZorder
+            if previous.hwnd<>strip.hwnd then strip.insertAfter(previous)
+
     /// A window already in front raises itself over a strip it does not own when it is maximized
     /// or its title bar is clicked, with no foreground change to tell the group: its tabs went
-    /// under it until another window was activated. The strip goes back just above it.
+    /// under it until another window was activated. A title bar click says nothing at all, so
+    /// the order is looked at every so often.
     member private this.guardUnownedStrip() =
         if isDestroyed.value || this.isEmpty then stripGuardTimer.Stop()
-        elif isVisibleCell.value && not this.isSplit && not liveResize && not inMoveSize.value && not reconcileMinimizeState then
-            let top = this.topWindow
-            if not(isMinimized top) && this.isAbove(top,this.ts.hwnd) then
-                this.withUpdate(fun () -> this.setTsParent(top))
+        elif isVisibleCell.value && not liveResize && not inMoveSize.value && not reconcileMinimizeState then
+            this.liftUnownedStrip this.topWindow
 
     /// Permission checks stay off the placement hot path and expire with group membership.
     member this.canShareInput hwnd =
@@ -1996,6 +2003,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                         this.makeTopWindowForeground()
                     this.foreground <- this.os.foreground.hwnd
                     isMaximizedExport.update()
+                    // Maximized or restored, a window rises over a strip it does not own.
+                    this.liftUnownedStrip hwnd
             | _ -> ()
         | WinEvent.EVENT_SYSTEM_FOREGROUND ->
             // Activated some other way (Alt+Tab, its own window), an owned tab can stay under the
@@ -2318,6 +2327,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         // Activated but still under the other tabs when its owner is a combined taskbar's preview;
         // only once it is in front, as a refused activation leaves the strip with the real top window.
         if this.os.foreground.hwnd=hwnd then window.raise()
+        // Raised just now over a strip it does not own: the strip goes back over it at once.
+        this.liftUnownedStrip hwnd
         if this.os.foreground.hwnd=hwnd then lastActiveTab <- Some hwnd
         // The layout follows once the tab is in front: parking a split first re-placed every window
         // while the tab chosen was still under them, and a tab behind showed for a moment. Active,

@@ -355,6 +355,14 @@ let main() =
                 OS().windowFromHwnd(strip).insertAfter(isolated.Handle)
                 check (rank isolated.Handle<rank strip) "The test could not put the isolated strip under its window"
                 pumpUntil "An isolated window raised over its strip kept its tabs under it" (fun () -> rank strip<rank isolated.Handle)
+                // A click on its tab raises the window and puts the strip back over it in the same
+                // step, read here before the group's thread could do anything else: the tabs did
+                // not flash.
+                OS().windowFromHwnd(strip).insertAfter(isolated.Handle)
+                let afterClick = onGroup fixture (fun group ->
+                    group.tabActivate(Tab(isolated.Handle),false)
+                    rank strip,rank isolated.Handle)
+                check (fst afterClick<snd afterClick) (sprintf "A tab clicked raised its window over the strip for a moment: strip %d, window %d" (fst afterClick) (snd afterClick))
             finally
                 (fixture :> IGroup).destroy()
                 pumpUntil "Isolated fixture did not exit" (fun () -> fixture.isExited)
