@@ -147,6 +147,10 @@ module TabSearch =
         |> List.map(List.map os.windowFromHwnd >> List.filter(fun window -> not (String.IsNullOrEmpty window.text)) >> List.map (entry nameOverride))
         |> arrange (fun hwnd -> zorder.TryFind hwnd |> Option.defaultValue Int32.MaxValue) active
 
+/// How a row's shortcut is set from the palette: the one it has now; what holds a key already,
+/// by name, if anything; and setting one, false when another program holds the key.
+type ShortcutAssignment = { current:int; usedBy:int -> string option; set:int -> bool }
+
 /// A page of the palette beside the windows: what it lists, with a glyph for its rows, and what
 /// choosing a row does. Its entries carry a number of their own in place of a window handle.
 type PalettePage = {
@@ -159,7 +163,9 @@ type PalettePage = {
     noMatches:string
     glyph:TreeListGlyph
     entries:TabSearchEntry list
-    choose:TabSearchEntry -> CommandOutcome }
+    choose:TabSearchEntry -> CommandOutcome
+    /// For a row that can be given a shortcut with Alt+Enter.
+    shortcut:TabSearchEntry -> ShortcutAssignment option }
 
 module private TabSearchNative =
     let EM_SETCUEBANNER = 0x1501
@@ -273,6 +279,11 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         let text = match choices with (caption,_,_,_)::_ -> "‹  "+caption | [] -> ""
         let width = TextRenderer.MeasureText(text,SettingsUi.bodyFont(),Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 8
         Rectangle(Dpi.scale 2,0,width,scopeHeight),keyCap (width+Dpi.scale 12) "Esc"
+    /// Whether the rows in view can be given shortcuts, said at the line's right end.
+    let canAssign() =
+        choices.IsEmpty && (page() |> Option.exists(fun page -> page.entries |> List.exists(fun entry -> (page.shortcut entry).IsSome)))
+    /// The shortcut editor over the chosen row while one is being set, with its row.
+    let mutable assigning : (TreeListItem * SettingsShortcutInput) option = None
     let mutable hovered : PaletteScope option = None
     let scopeLine =
         { new Panel(Dock=DockStyle.Top,Height=scopeHeight,BackColor=palette.surface) with
@@ -318,7 +329,17 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                             elif current || hovered=Some target then p.text
                             else p.muted
                         TextRenderer.DrawText(g,caption target,SettingsUi.bodyFont(),bounds,color,centred)
-                    key |> Option.iter(fun cap -> drawKey cap "Tab") }
+                    key |> Option.iter(fun cap -> drawKey cap "Tab")
+                    // At the right end, the key that sets a row's shortcut, named.
+                    if canAssign() then
+                        let label = tr Strings.TabSearch.setShortcut
+                        let labelWidth = TextRenderer.MeasureText(label,keyFont,Size.Empty,TextFormatFlags.NoPadding).Width
+                        let cap = keyCap 0 "Alt+Enter"
+                        let cap = Rectangle(this.ClientSize.Width-labelWidth-Dpi.scale 8-cap.Width,cap.Y,cap.Width,cap.Height)
+                        if cap.Left>(match key with Some tab -> tab.Right | None -> outline.Right)+Dpi.scale 16 then
+                            drawKey cap "Alt+Enter"
+                            TextRenderer.DrawText(g,label,keyFont,Rectangle(cap.Right+Dpi.scale 6,0,labelWidth+Dpi.scale 4,scopeHeight),p.muted,
+                                                  TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter) }
     let programColumn = TreeListColumn("",160,TextColumn,RightAligned=true)
     let list = new SettingsTreeList([TreeListColumn("",0,TextColumn);programColumn],
                                     ShowHeader=false,ShowExpanders=false,ExpandOnDoubleClick=false,
@@ -404,11 +425,21 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         empty.Text <- currentEmpty()
         list.Visible <- shown.Length>0
         empty.Visible <- shown.Length=0
+    /// Takes the shortcut editor off its row and gives the keys back to the box.
+    let endAssign() =
+        match assigning with
+        | Some(_,editor) ->
+            assigning <- None
+            list.Controls.Remove(editor)
+            editor.Dispose()
+            if not closed then input.Focus() |> ignore
+        | None -> ()
     /// Closes, switching to the window chosen, if one was.
     let finish (chosen:IntPtr option) =
         // Switching away deactivates the box, which asks to close again: once is enough.
         if not closed then
             closed <- true
+            endAssign()
             chosen |> Option.iter pick
             shadow |> Option.iter(fun item -> (item :> IDisposable).Dispose())
             shadow <- None
@@ -422,6 +453,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     /// The choices a command left take the rows' place, under its name, until one is chosen or
     /// Esc goes back.
     let push (caption:string) (options:CommandChoice list) =
+        endAssign()
         let rows =
             options |> List.mapi(fun index option ->
                 let entry = { TabSearch.create (IntPtr(index+1)) option.label option.label option.detail with recency=index }
@@ -455,8 +487,46 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 | (_,_,choose,_)::_,_ -> outcome entry.title (choose entry)
                 | [],Some page -> outcome entry.title (page.choose entry)
                 | [],None -> finish (Some entry.hwnd))
+    /// Alt+Enter: the chosen row's shortcut is recorded in a box over the row, as on the
+    /// Shortcuts page, with the same refusals; Esc or a click elsewhere leaves it as it was.
+    let beginAssign() =
+        if assigning.IsNone && not closed then
+            let target = list.SelectedItem
+            if not (isNull target) then
+                scoped() |> Array.tryFind(fun (row,_) -> obj.ReferenceEquals(row,target))
+                |> Option.bind(fun (_,entry) -> page() |> Option.bind(fun page -> page.shortcut entry |> Option.map(fun assignment -> entry,assignment)))
+                |> Option.iter(fun (entry,assignment) ->
+                    let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=assignment.current,
+                                                           BackColor=palette.surface,ForeColor=palette.text)
+                    let place() =
+                        match list.RowBounds target with
+                        | Some bounds ->
+                            let margin = Dpi.scale 6
+                            editor.Bounds <- Rectangle(bounds.Right-editor.Width-margin,bounds.Top+Dpi.scale 4,editor.Width,bounds.Height-Dpi.scale 8)
+                            editor.Visible <- true
+                        | None -> editor.Visible <- false
+                    assigning <- Some(target,editor)
+                    list.Controls.Add(editor)
+                    place()
+                    editor.BringToFront()
+                    editor.SizeChanged.Add(fun _ -> place())
+                    editor.Changed.Add(fun _ ->
+                        let previous = assignment.current
+                        match assignment.usedBy editor.Shortcut with
+                        | Some name -> editor.Reject(previous,tr (Strings.Shortcuts.usedBy name))
+                        | None when not (assignment.set editor.Shortcut) -> editor.Reject(previous,tr Strings.Shortcuts.inUse)
+                        | None ->
+                            target.Values.[1] <- SettingsShortcut.text editor.Shortcut
+                            list.Invalidate()
+                            endAssign())
+                    // Esc while recording stops it in the box's own key handling; the key's release
+                    // then leaves the box. A refusal's message stays until the next key.
+                    editor.KeyUp.Add(fun e -> if e.KeyCode=Keys.Escape && not editor.IsRecording then endAssign())
+                    editor.LostFocus.Add(fun _ -> if assigning |> Option.exists(fun (_,current) -> obj.ReferenceEquals(current,editor)) then endAssign())
+                    editor.StartRecording())
     let setScope target =
         if target<>scope && List.contains target scopes then
+            endAssign()
             scope <- target
             if canSwitchScope && (target=GroupTabs || target=AllTabs) then
                 settings |> Option.iter(fun api -> api.setValue("tabSearchScope",box(if target=AllTabs then "All" else "Group")))
@@ -514,6 +584,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 | Keys.Up -> move -1; true
                 | Keys.PageDown -> move visibleRows; true
                 | Keys.PageUp -> move -visibleRows; true
+                | Keys.Enter when e.Alt -> beginAssign(); true
                 | Keys.Enter -> activate list.SelectedItem; true
                 | Keys.Escape -> (if choices.IsEmpty then finish None else pop()); true
                 | Keys.Back when input.Text="" && not choices.IsEmpty -> pop(); true
@@ -524,7 +595,9 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 // No beep for Enter and Esc in a single-line box.
                 e.SuppressKeyPress <- true)
         // Clicking a row focuses the list; keep the keys working there and go back to typing.
-        list.KeyDown.Add(fun e -> if e.KeyCode=Keys.Escape then (if choices.IsEmpty then finish None else pop()))
+        list.KeyDown.Add(fun e ->
+            if e.KeyCode=Keys.Escape then (if choices.IsEmpty then finish None else pop())
+            elif e.KeyCode=Keys.Enter && e.Alt then beginAssign())
         list.PreviewKeyDown.Add(fun e -> if e.KeyCode=Keys.Tab then (e.IsInputKey <- true; cycle (if e.Shift then -1 else 1)))
         list.KeyPress.Add(fun e ->
             if not (Char.IsControl e.KeyChar) then
@@ -570,3 +643,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     member _.Depth = choices.Length
     /// Back from a command's choices, as Esc goes.
     member _.Back() = pop()
+    /// Starts recording a shortcut for the chosen row, as Alt+Enter does.
+    member _.BeginAssign() = beginAssign()
+    /// The box recording a shortcut, while one is.
+    member _.ShortcutEditor = assigning |> Option.map snd

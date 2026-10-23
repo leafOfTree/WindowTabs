@@ -429,11 +429,16 @@ let main() =
                 | Some command -> check (command.id=item.id) (sprintf "Shortcut %s belongs to command %s, not %s" key command.id item.id)
                 | None -> failwithf "Shortcut %s in the catalog has no command" key
             | _ -> ()
+        // Every listed command can be given a key: under the catalog's key when it has an entry
+        // there, else under its own id, unbound to begin with.
         for command in commands do
             match command.shortcut with
-            | Some key -> check (SettingsCatalog.all |> List.exists(fun item -> item.binding=Shortcut(key,SettingsCatalog.shortcutDefault key))) (sprintf "Command %s has a shortcut key the catalog does not list" command.id)
+            | Some key when SettingsCatalog.all |> List.exists(fun item -> item.binding=Shortcut(key,SettingsCatalog.shortcutDefault key)) -> ()
+            | Some key -> check (key=command.id && SettingsCatalog.shortcutDefault key=0) (sprintf "Command %s keeps its shortcut under a key that is neither the catalog's nor its id" command.id)
             | None -> check command.listed (sprintf "Command %s is neither in the palette nor on a key" command.id)
-        check (Commands.find "exit" |> Option.exists(fun command -> command.category=AppCommands && command.shortcut.IsNone)) "Exit must be a command without a shortcut key"
+        check (Commands.find "exit" |> Option.exists(fun command -> command.category=AppCommands && command.shortcut=Some "exit")) "Exit must be a command bindable under its id"
+        check (Commands.holder (fun key -> if key="prevTab" then 77 else 0) "nextTab" 77 |> Option.map(fun command -> command.id) = Some "previous-tab") "The holder of a key must be named"
+        check (Commands.holder (fun _ -> 77) "nextTab" 0).IsNone "Clearing a shortcut must not be refused for a holder"
         check (Commands.find "toggle-use-windowtabs-for-alt-tab" |> Option.exists(fun command -> command.category=SettingsCommands)) "Every on/off setting must be a command"
         check (Commands.categoryOf "splitSwap"=Some SplitCommands && Commands.categoryOf "saveWorkspace"=Some WorkspaceCommands) "Shortcut cards must follow the commands' categories"
         api.setValue("replaceAltTab",box false)
@@ -761,7 +766,8 @@ let main() =
         { scope=CommandScope; caption="Commands"; prompt="cmd"; noMatches="none"; glyph=NoGlyph
           entries=[ { TabSearch.create (IntPtr 1) "Close tab" "Close tab" "Ctrl+Alt+W" with recency=0 }
                     { TabSearch.create (IntPtr 2) "Restore workspace" "Restore workspace" "" with recency=1 } ]
-          choose=fun entry -> if entry.hwnd=IntPtr 1 then (ran <- "close"::ran; Done) else Choose [option "Work";option "Home"] }
+          choose=(fun entry -> if entry.hwnd=IntPtr 1 then (ran <- "close"::ran; Done) else Choose [option "Work";option "Home"])
+          shortcut=fun _ -> None }
     let palette = TabSearchForm([mail;notes;editor],[mail.hwnd;editor.hwnd],pages=[commandsPage])
     check (palette.Scope=GroupTabs) "The palette did not open on the group"
     palette.SwitchScope()
@@ -789,6 +795,43 @@ let main() =
     back.Back()
     check (back.Depth=0 && back.Query="rest" && back.Scope=CommandScope) "Esc did not go back to the search"
     back.Close()
+    pump 100
+    // Alt+Enter sets the chosen command's shortcut in place, refusing a key another holds.
+    let mutable assigned = 0
+    let bindable = { commandsPage with shortcut=fun entry -> if entry.hwnd=IntPtr 1 then Some { current=1623; usedBy=(fun code -> if code=3623 then Some "Next tab" else None); set=(fun code -> assigned <- code; code<>1616) } else None }
+    let recorder = TabSearchForm([mail;notes],[],pages=[bindable],scope=CommandScope)
+    recorder.Query <- "close"
+    recorder.BeginAssign()
+    let editor = match recorder.ShortcutEditor with Some editor -> editor | None -> failwith "Alt+Enter did not open a shortcut box on the command"
+    check (editor.IsRecording && editor.Shortcut=1623) "The shortcut box did not start recording the current shortcut"
+    let press (control:Control) (keys:Keys) =
+        let mutable msg = Message()
+        let processKey = control.GetType().GetMethod("ProcessCmdKey",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
+        processKey.Invoke(control,[|box msg;box keys|]) |> ignore
+    press editor (Keys.Control ||| Keys.Alt ||| Keys.Right)
+    check (recorder.ShortcutEditor.IsSome && editor.Shortcut=1623 && editor.Message.IsSome && assigned=0) "A key another command holds was not refused by name"
+    press editor Keys.Enter
+    press editor (Keys.Control ||| Keys.Alt ||| Keys.P)
+    check (recorder.ShortcutEditor.IsSome && editor.Shortcut=1623 && editor.Message.IsSome) "A key another program holds was not refused"
+    press editor Keys.Enter
+    press editor (Keys.Control ||| Keys.Alt ||| Keys.K)
+    check (assigned=SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.K) && recorder.ShortcutEditor.IsNone) "A free key was not set and the box left"
+    recorder.BeginAssign()
+    let again = recorder.ShortcutEditor.Value
+    press again Keys.Escape
+    // The key's release, which leaves the box once recording has stopped.
+    let release (control:Control) (keys:Keys) =
+        let onKeyUp = control.GetType().GetMethod("OnKeyUp",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public)
+        onKeyUp.Invoke(control,[|box (KeyEventArgs keys)|]) |> ignore
+    release again Keys.Escape
+    check recorder.ShortcutEditor.IsNone "Esc did not leave the shortcut box"
+    recorder.Close()
+    pump 100
+    let unlisted = TabSearchForm([mail;notes],[],pages=[bindable],scope=CommandScope)
+    unlisted.Query <- "restore"
+    unlisted.BeginAssign()
+    check unlisted.ShortcutEditor.IsNone "Alt+Enter opened a shortcut box on a row that takes none"
+    unlisted.Close()
     pump 100
     printfn "PASS: atomic/deferred saves, failure retry and backup recovery, subscriptions, temporary state, coalesced scans, dispatch, group cleanup, popup disposal and tab search."
 TestInit.run main

@@ -46,8 +46,9 @@ module Commands =
         { id=id; text=item.text; category=category
           shortcut=(match item.binding with Shortcut(key,_) -> Some key | _ -> None)
           listed=true; enabled=enabled; run=finished action }
+    /// A command of its own, its shortcut kept under its id; unbound until the user picks a key.
     let private plain id text category enabled action =
-        { id=id; text=text; category=category; shortcut=None; listed=true; enabled=enabled; run=finished action }
+        { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; run=finished action }
     let private pageId page =
         match page with
         | GeneralSettings -> "general"
@@ -110,3 +111,7 @@ module Commands =
     let categoryOf key = byShortcut key |> Option.map(fun command -> command.category)
     /// Where a category's commands are listed, in the palette's order.
     let categories = [TabCommands;SplitCommands;WorkspaceCommands;SettingsCommands;AppCommands]
+    /// The command, other than the one on `key`, whose shortcut is `code`, to name in a refusal.
+    let holder (getHotKey:string -> int) key code =
+        if code=0 then None
+        else all |> List.tryFind(fun other -> match other.shortcut with Some k -> k<>key && getHotKey k=code | None -> false)

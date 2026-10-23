@@ -227,6 +227,11 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         this.updateEditorBounds()
         editor.BringToFront()
 
+    /// Where a shown row is in the client area, for a control put over part of it; None for a
+    /// row not shown.
+    member this.RowBounds(item:TreeListItem) =
+        this.indexOf item |> Option.map(fun index -> Rectangle(0,this.rowTop index,this.contentWidth,this.rowHeight))
+
     member this.ClearRowEditor() =
         let previous = rowEditor
         rowEditor <- None

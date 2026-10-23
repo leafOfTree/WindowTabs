@@ -338,7 +338,11 @@ commands. A command that leaves a choice (`Choose`) shows its options in place u
 command's name, with Esc or Backspace the way back; a hotkey for such a command opens the
 palette on them. Commands take the window that was in front when they were asked for, since
 the palette is in front itself by then. The pages are built in `CommandPalette` and given to
-`TabSearchForm` as `PalettePage`s.
+`TabSearchForm` as `PalettePage`s. Alt+Enter on a command records a shortcut for it in a
+`SettingsShortcutInput` over its row, with the Shortcuts page's refusals (a key another command
+or program holds); every listed command can take one, kept under the catalog's key when the
+catalog names the command and under its id otherwise, and the Shortcuts page lists them all by
+category.
 
 With nothing typed the list keeps that group order. Once a query is typed the
 matches are listed best first, without group separators, and the first one is the

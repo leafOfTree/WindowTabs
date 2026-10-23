@@ -135,9 +135,11 @@ module SettingsCatalog =
         fresh
     let toggleDefault key existing =
         all |> List.pick(fun item -> match item.binding with Toggle(k,fresh,old) when k=key -> Some(if existing then old else fresh) | _ -> None)
-    /// Ctrl+Alt+Right / Ctrl+Alt+Left, in hotkey-control encoding.
+    /// Ctrl+Alt+Right / Ctrl+Alt+Left, in hotkey-control encoding; none for a command the
+    /// catalog does not list, which ships unbound.
     let shortcutDefault key =
-        all |> List.pick(fun item -> match item.binding with Shortcut(k,code) when k=key -> Some code | _ -> None)
+        all |> List.tryPick(fun item -> match item.binding with Shortcut(k,code) when k=key -> Some code | _ -> None)
+        |> Option.defaultValue 0
     let textDefault key =
         all |> List.pick(fun item -> match item.binding with Text(k,value) when k=key -> Some value | _ -> None)
     let choiceDefault key =

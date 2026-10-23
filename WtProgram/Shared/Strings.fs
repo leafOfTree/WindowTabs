@@ -502,10 +502,13 @@ module Strings =
         let keyboard = { en="Keyboard"; zh="键盘"; ja="キーボード"; ar="لوحة المفاتيح" }
         let mouse = { en="Mouse"; zh="鼠标"; ja="マウス"; ar="الفأرة" }
         let splitView = { en="Split view"; zh="分屏"; ja="分割表示"; ar="العرض المقسّم" }
-        let keyboardNote = { en="Click a shortcut, then press the new combination. Esc cancels."
-                             zh="点击快捷键后按下新的组合键。按 Esc 取消。"
-                             ja="ショートカットをクリックして、新しいキーの組み合わせを押します。Esc でキャンセルします。"
-                             ar="انقر اختصارًا ثم اضغط مجموعة المفاتيح الجديدة. اضغط Esc للإلغاء." }
+        /// Cards for the commands that turn settings on or off and open pages, and the app's own.
+        let settingsCommands = { en="Settings"; zh="设置"; ja="設定"; ar="الإعدادات" }
+        let appCommands = { en="WindowTabs"; zh="WindowTabs"; ja="WindowTabs"; ar="WindowTabs" }
+        let keyboardNote = { en="Click a shortcut, then press the new combination. Esc cancels. The command palette sets one too: Alt+Enter on a command."
+                             zh="点击快捷键后按下新的组合键。按 Esc 取消。在命令面板中选中命令后按 Alt+Enter 也可设置。"
+                             ja="ショートカットをクリックして、新しいキーの組み合わせを押します。Esc でキャンセルします。コマンドパレットでコマンドを選んで Alt+Enter でも設定できます。"
+                             ar="انقر اختصارًا ثم اضغط مجموعة المفاتيح الجديدة. اضغط Esc للإلغاء. وتعيّنه لوحة الأوامر أيضًا: Alt+Enter على أمر." }
         let restoreDefaults = { en="Restore default shortcuts"; zh="恢复默认快捷键"; ja="既定のショートカットに戻す"; ar="استعادة الاختصارات الافتراضية" }
         let inUse = { en="Shortcut already in use"; zh="快捷键已被占用"; ja="ショートカットは使用中です"; ar="الاختصار مستخدم بالفعل" }
         let usedBy name = { en=sprintf "Used by %s" name; zh=sprintf "已用于“%s”" name; ja=sprintf "「%s」で使用中" name; ar=sprintf "يستخدمه «%s»" name }
@@ -585,6 +588,8 @@ module Strings =
         let noCommands = { en="No matching commands."; zh="没有匹配的命令。"; ja="一致するコマンドはありません。"; ar="لا توجد أوامر مطابقة." }
         let noWorkspaces = { en="No workspace saved yet."; zh="尚未保存任何工作区。"; ja="保存されたワークスペースはまだありません。"; ar="لم يتم حفظ أي مساحة عمل بعد." }
         let noChoices = { en="No matching choices."; zh="没有匹配的选项。"; ja="一致する項目はありません。"; ar="لا توجد خيارات مطابقة." }
+        /// Beside the Alt+Enter key cap on the commands page.
+        let setShortcut = { en="Set shortcut"; zh="设置快捷键"; ja="ショートカットを設定"; ar="تعيين اختصار" }
         /// Beside a workspace: how many windows it holds.
         let windows count = { en=sprintf "%d windows" count; zh=sprintf "%d 个窗口" count; ja=sprintf "%d 個のウィンドウ" count; ar=sprintf "%d نوافذ" count }
         /// Beside a setting that is on or off.
