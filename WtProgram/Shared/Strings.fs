@@ -165,10 +165,11 @@ module Strings =
                                description={ en="Runs in the system tray after you sign in."; zh="登录后在系统托盘中运行。"; ja="サインイン後にシステムトレイで実行します。"; ar="يعمل في منطقة الإعلام بعد تسجيل الدخول." }
                                keywords={ en="startup autostart"; zh="开机启动 自启动"; ja="スタートアップ 自動起動"; ar="بدء التشغيل التشغيل التلقائي" } }
         let restoreSession = { caption={ en="Restore the last session after sign-in"; zh="登录后恢复上次会话"; ja="サインイン後に前回のセッションを復元"; ar="استعادة الجلسة الأخيرة بعد تسجيل الدخول" }
-                               description={ en="Puts open windows back into the groups, positions and split views they had, optionally launching missing apps first."
-                                             zh="把已打开的窗口放回原来的分组、位置和分屏，可选先启动缺少的应用。"
-                                             ja="開いているウィンドウを元のグループ、位置、分割表示に戻します。足りないアプリを先に起動することもできます。"
-                                             ar="يعيد النوافذ المفتوحة إلى مجموعاتها ومواضعها وعروضها المقسّمة السابقة، مع تشغيل التطبيقات الناقصة أولًا اختياريًا." }
+                               // One line beside the choice, which says whether apps are started.
+                               description={ en="Puts windows back into their groups, places and splits."
+                                             zh="将窗口放回原来的分组、位置和分屏。"
+                                             ja="ウィンドウを元のグループ、位置、分割に戻します。"
+                                             ar="يعيد النوافذ إلى مجموعاتها ومواضعها وتقسيماتها." }
                                keywords={ en="session reboot"; zh="会话 重启"; ja="セッション 再起動"; ar="جلسة إعادة التشغيل" } }
         let enableTabsByDefault = { caption={ en="Use tabs for new apps"; zh="新应用自动启用标签"; ja="新しいアプリでタブを使う"; ar="استخدام علامات التبويب للتطبيقات الجديدة" }
                                     description={ en="Only apps first discovered after this change. Existing apps keep their tab setting."; zh="只影响此后首次出现的应用。已有应用保留原来的标签设置。"; ja="変更後に初めて検出するアプリに適用します。既存のアプリのタブ設定は維持します。"; ar="ينطبق ذلك على التطبيقات التي يكتشفها البرنامج لأول مرة بعد هذا التغيير فقط. وتحتفظ التطبيقات الموجودة بإعداد علامات التبويب الحالي." }
@@ -382,8 +383,9 @@ module Strings =
     module General =
         /// The choices of Restore the last session at start.
         let sessionOff = { en="Off"; zh="关闭"; ja="オフ"; ar="إيقاف" }
-        let sessionWindows = { en="Open windows only"; zh="仅已打开的窗口"; ja="開いているウィンドウのみ"; ar="النوافذ المفتوحة فقط" }
-        let sessionApps = { en="Open windows, and start their apps"; zh="已打开的窗口，并启动缺少的应用"; ja="開いているウィンドウと、アプリの起動"; ar="النوافذ المفتوحة، مع تشغيل تطبيقاتها" }
+        /// Short, so the choice leaves its row's description room for one line.
+        let sessionWindows = { en="Windows only"; zh="仅窗口"; ja="ウィンドウのみ"; ar="النوافذ فقط" }
+        let sessionApps = { en="Windows and missing apps"; zh="窗口和缺少的应用"; ja="ウィンドウと不足アプリ"; ar="النوافذ والتطبيقات الناقصة" }
         let settingsFile = { en="Settings file"; zh="设置文件"; ja="設定ファイル"; ar="ملف الإعدادات" }
         let openFolder = { en="Open folder"; zh="打开文件夹"; ja="フォルダーを開く"; ar="فتح المجلد" }
         let export = { en="Export…"; zh="导出…"; ja="エクスポート…"; ar="تصدير…" }

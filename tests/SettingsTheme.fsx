@@ -852,6 +852,10 @@ let main() =
         WinUserApi.ShowWindow(lazyForm.Handle,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
         Application.DoEvents()
         check (generalLoads=1 && appearanceLoads=0 && unusedLoads=0) "Opening the frame eagerly loads pages"
+        // The session choice's options are short, so its description keeps to one line beside it.
+        let sessionNote = controls lazyForm |> Seq.find(fun control -> control :? Label && control.Text=tr Strings.Settings.restoreSession.description)
+        let oneLine = TextRenderer.MeasureText("Xg",sessionNote.Font).Height
+        check (sessionNote.Height<oneLine*3/2) (sprintf "The session restore description wraps: %d px for a %d px line" sessionNote.Height oneLine)
         let lazySearch = controls lazyForm |> Seq.choose(function :? TextBox as input when input.AccessibleName="Search settings" -> Some input | _ -> None) |> Seq.head
         lazySearch.Text <- "标签高度"
         Application.DoEvents()
