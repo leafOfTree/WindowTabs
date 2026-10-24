@@ -310,3 +310,6 @@ module Commands =
         | Some command -> Some(tr command.text.caption)
         | None when code=0 -> None
         | None -> listKeys |> List.tryFind(fun k -> k<>key && getHotKey k=code) |> Option.bind listKeyName
+    /// What a command is called for the window in front: pinning says which way it goes.
+    let textFor (command:Command) (hwnd:IntPtr) =
+        if command.id="pin-tab" && PinnedTabs.contains hwnd then Strings.Commands.unpinTab else command.text

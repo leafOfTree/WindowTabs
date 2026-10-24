@@ -610,12 +610,15 @@ module Strings =
         let resetTabName = { caption={ en="Reset tab name"; zh="重置标签名称"; ja="タブ名をリセット"; ar="إعادة تعيين اسم علامة التبويب" }
                              description={ en="The tab follows the window's title again."; zh="标签重新跟随窗口标题。"; ja="タブはウィンドウのタイトルに再び従います。"; ar="تتبع علامة التبويب عنوان النافذة من جديد." }
                              keywords=tabWords }
-        let pinTab = { caption={ en="Pin or unpin tab"; zh="固定或取消固定标签"; ja="タブを固定 / 固定解除"; ar="تثبيت علامة التبويب أو إلغاء تثبيتها" }
+        let private pinWords = { en="pin unpin keep"; zh="固定 取消固定 置顶 钉住"; ja="固定 固定解除 ピン留め"; ar="تثبيت إلغاء" }
+        let pinTab = { caption={ en="Pin tab"; zh="固定标签"; ja="タブを固定"; ar="تثبيت علامة التبويب" }
                        description={ en="A pinned tab stays first and shows a pin for its close button; closing tabs together leaves it."
                                      zh="固定的标签排在最前，关闭按钮处显示图钉；批量关闭标签时保留。"
                                      ja="固定したタブは先頭に並び、閉じるボタンの代わりにピンを表示します。まとめて閉じるときも残ります。"
                                      ar="تبقى علامة التبويب المثبتة أولًا وتعرض دبوسًا مكان زر الإغلاق؛ ولا تُغلق عند إغلاق علامات التبويب معًا." }
-                       keywords={ en="pin keep"; zh="固定 置顶 钉住"; ja="固定 ピン留め"; ar="تثبيت" } }
+                       keywords=pinWords }
+        /// The same command, for a tab already pinned.
+        let unpinTab = { pinTab with caption={ en="Unpin tab"; zh="取消固定标签"; ja="タブの固定を解除"; ar="إلغاء تثبيت علامة التبويب" } }
         let tabColor = { caption={ en="Tab color…"; zh="标签颜色…"; ja="タブの色…"; ar="لون علامة التبويب…" }
                          description={ en="A color of the palette for the tab in front, or none."; zh="为当前标签选一种调色板颜色，或清除。"; ja="前面のタブにパレットの色を付けるか、解除します。"; ar="لون من اللوحة لعلامة التبويب الأمامية، أو لا شيء." }
                          keywords={ en="colour"; zh="颜色 着色"; ja="色 カラー"; ar="لون" } }

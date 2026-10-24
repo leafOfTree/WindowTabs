@@ -429,6 +429,7 @@ let main() =
         attempt "pin-tab" (fun () ->
             runDone "pin-tab" three
             pumpUntil "Pinning a tab" (fun () -> isPinned() && List.head (lorderOf three)=three)
+            note (Commands.textFor (Commands.find "pin-tab").Value three=Strings.Commands.unpinTab) "A pinned tab's command still offered to pin it"
             runDone "move-tab-right" three
             settle three
             note (List.head (lorderOf three)=three) "Move tab right took a pinned tab past the others"

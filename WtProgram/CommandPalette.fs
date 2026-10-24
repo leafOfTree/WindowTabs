@@ -150,7 +150,7 @@ module CommandPalette =
             match action with
             | ACommand command -> List.findIndex ((=) command.category) Commands.categories
             | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item | ANumberKeys item -> Commands.categories.Length+(match item.page with GeneralSettings -> 0 | AppearanceSettings -> 1 | HotKeySettings -> 2 | ProgramSettings -> 3 | LayoutSettings -> 4 | DiagnosticsSettings -> 5)
-        let text action = match action with ACommand command -> command.text | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item | ANumberKeys item -> item.text
+        let text action = match action with ACommand command -> Commands.textFor command active | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item | ANumberKeys item -> item.text
         // The value it shows at the right is found as its name is: a style, a size, a colour's code.
         let shownValue action =
             try
