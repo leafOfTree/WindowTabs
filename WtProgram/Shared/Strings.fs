@@ -533,6 +533,8 @@ module Strings =
         // Shortcut field messages are kept short to fit.
         let alreadySet = { en="Already set"; zh="已是当前快捷键"; ja="設定済み"; ar="هذا هو الاختصار الحالي" }
         /// A key Windows or WindowTabs keeps for itself, such as Alt+F4 or the palette's Alt+Enter.
+        /// A key pressed, then what was said of it, as "Alt+J: Used by Next tab".
+        let keySays key (said:string) = { en=sprintf "%s: %s" key said; zh=sprintf "%s：%s" key said; ja=sprintf "%s: %s" key said; ar=sprintf "%s: %s" key said }
         let reserved = { en="Kept for Windows or WindowTabs"; zh="由 Windows 或 WindowTabs 保留"; ja="Windows か WindowTabs が使用中"; ar="محجوز لـ Windows أو WindowTabs" }
         let includeCtrlOrAlt = { en="Include Ctrl or Alt"; zh="需要包含 Ctrl 或 Alt"; ja="Ctrl か Alt が必要です"; ar="يجب أن يتضمن Ctrl أو Alt" }
         let pressShortcut = { en="Press a shortcut…"; zh="按下组合键…"; ja="キーを押してください…"; ar="اضغط اختصارًا…" }

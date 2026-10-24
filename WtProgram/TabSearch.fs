@@ -858,7 +858,9 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     let showNote (text:string option) =
                         match text with
                         | Some text ->
-                            note.Text <- text
+                            // The key pressed, then what is wrong with it.
+                            let key = SettingsShortcut.text editor.LastPressed
+                            note.Text <- if key="" then text else tr (Strings.Shortcuts.keySays key text)
                             note.Location <- Point(editor.Right-note.PreferredWidth,editor.Bottom+Dpi.scale 2)
                             note.Visible <- true
                             note.BringToFront()

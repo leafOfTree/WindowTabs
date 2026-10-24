@@ -256,6 +256,8 @@ type SettingsShortcutInput() as this =
     /// Modifiers already down as recording starts, such as the Alt of Alt+Enter: not shown as
     /// pressed until let go and pressed again.
     let mutable heldAtStart = Keys.None
+    /// The last combination pressed while recording, taken or not, to name beside a refusal.
+    let mutable lastPressed = 0
     let messageTimer = new Timer(Interval=2500)
     let clearMessage() =
         messageTimer.Stop()
@@ -320,6 +322,8 @@ type SettingsShortcutInput() as this =
     member _.IsRecording = recording
     /// A recording that ended on the shortcut the box already had.
     member _.Unchanged = unchanged.Publish
+    /// The last combination pressed while recording, taken or not.
+    member _.LastPressed = lastPressed
     /// The box's notice or error as it comes and goes, for a host that shows it elsewhere.
     member _.MessageChanged = messageChanged.Publish
     /// Draws its notice or error in place of the shortcut; off where the host shows it beside.
@@ -363,12 +367,11 @@ type SettingsShortcutInput() as this =
         // Enter alone while nothing is held: no shortcut, as Backspace.
         elif key=Keys.Enter && keyData=key then commit 0; true
         elif SettingsShortcut.isModifier key then this.Invalidate(); true
-        elif SettingsShortcut.isReserved keyData then
-            showMessage true (tr Strings.Shortcuts.reserved)
-            true
-        elif SettingsShortcut.isAcceptable keyData then commit (SettingsShortcut.encode keyData); true
         else
-            showMessage true (tr Strings.Shortcuts.includeCtrlOrAlt)
+            lastPressed <- SettingsShortcut.encode keyData
+            if SettingsShortcut.isReserved keyData then showMessage true (tr Strings.Shortcuts.reserved)
+            elif SettingsShortcut.isAcceptable keyData then commit lastPressed
+            else showMessage true (tr Strings.Shortcuts.includeCtrlOrAlt)
             true
     override this.OnKeyUp(e) =
         base.OnKeyUp(e)

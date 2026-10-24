@@ -1105,10 +1105,10 @@ let main() =
     let noteUnder (text:string) =
         editor.Parent.Controls |> Seq.cast<Control> |> Seq.exists(fun control -> control :? Label && control.Text=text && control.Top>=editor.Bottom)
     press editor (Keys.Control ||| Keys.Alt ||| Keys.Right)
-    check (recorder.ShortcutEditor.IsSome && editor.Shortcut=1623 && editor.IsRecording && assigned=0 && noteUnder (tr (Strings.Shortcuts.usedBy "Next tab")))
+    check (recorder.ShortcutEditor.IsSome && editor.Shortcut=1623 && editor.IsRecording && assigned=0 && noteUnder (tr (Strings.Shortcuts.keySays (SettingsShortcut.text (SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.Right))) (tr (Strings.Shortcuts.usedBy "Next tab")))))
           "A key another command holds was not refused by name under the box"
     press editor (Keys.Control ||| Keys.Alt ||| Keys.P)
-    check (recorder.ShortcutEditor.IsSome && editor.Shortcut=1623 && editor.IsRecording && noteUnder (tr Strings.Shortcuts.inUse)) "A key another program holds was not refused under the box"
+    check (recorder.ShortcutEditor.IsSome && editor.Shortcut=1623 && editor.IsRecording && noteUnder (tr (Strings.Shortcuts.keySays (SettingsShortcut.text (SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.P))) (tr Strings.Shortcuts.inUse)))) "A key another program holds was not refused under the box"
     press editor (Keys.Control ||| Keys.Alt ||| Keys.K)
     // Taken at once, seen in its box a moment, then the box goes.
     check (assigned=SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.K) && recorder.ShortcutEditor.IsSome) "A free key was not set, or its box went at once"
