@@ -34,6 +34,21 @@ type NumericShortcutCapture() =
             else pressed.Contains(key), None
         else false, None
 
+/// Number shortcuts typed faster than the group activates their tabs: until the last one is done,
+/// the tab it asked for counts as current, not the foreground an earlier one has just reached.
+/// Read against the foreground, a quick run of presses passed on the press for that earlier tab
+/// and was left on a tab chosen before it.
+/// A request a group never ran, as when it closed meanwhile, stops counting after a while.
+type PendingActivation() =
+    let gate = obj()
+    let mutable pending = 0
+    let mutable requested = IntPtr.Zero
+    let mutable requestedAt = DateTime.MinValue
+    member _.request(hwnd:IntPtr, now:DateTime) = lock gate (fun () -> pending <- pending+1; requested <- hwnd; requestedAt <- now)
+    member _.completed() = lock gate (fun () -> pending <- max 0 (pending-1))
+    member _.current(foreground:IntPtr, now:DateTime) =
+        lock gate (fun () -> if pending>0 && now-requestedAt < TimeSpan.FromSeconds(2.0) then requested else foreground)
+
 /// Esc beside an empty pane closes it, as its close button does. The pane is a choice still to
 /// make, so the key is taken, and its release with it, as a popup's dismissal would be.
 type EmptyPaneEscape() =
@@ -62,6 +77,7 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
     let leader = NumberLeaderState()
     let leaderCapture = NumericShortcutCapture()
     let emptyPaneEscape = EmptyPaneEscape()
+    let activation = PendingActivation()
     let mutable leaderGroup : GroupInfo option = None
     let timer = new System.Windows.Forms.Timer(Interval=50)
     let owned = new LifetimeScope(ignore)
@@ -171,7 +187,7 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
                 if wasArmed || capturedLeader || extraModifier || (leaderEnabled && chordMatches) then None
                 else foreground |> Option.bind(fun group ->
                     numeric.targetIndex(int key,data.vkCode,controlPressed,altPressed=altPressed)
-                    |> Option.filter(NumericShortcutTarget.available group.windows.list (WinUserApi.GetForegroundWindow())))
+                    |> Option.filter(NumericShortcutTarget.available group.windows.list (activation.current(WinUserApi.GetForegroundWindow(),DateTime.UtcNow))))
             let target = target |> Option.filter(fun _ -> NumberShortcutRules.enabled (pathFor (WinUserApi.GetForegroundWindow())))
             let consumed,activate = numericCapture.handle(int key,data.vkCode,target)
             let activate = if leaderConsumed then leaderTarget else activate
@@ -179,7 +195,10 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
             activate |> Option.iter(fun index ->
                 foreground.iter <| fun group ->
                     let groupInfo = group.cast<GroupInfo>()
-                    groupInfo.invokeGroup <| fun() -> groupInfo.group.activateIndex(index,true))
+                    activation.request(group.windows.list.[index],DateTime.UtcNow)
+                    groupInfo.invokeGroup <| fun() ->
+                        try groupInfo.group.activateIndex(index,true)
+                        finally activation.completed())
             if consumed || capturedLeader then Some 1 else None
 
     interface IStartupInputPlugin
