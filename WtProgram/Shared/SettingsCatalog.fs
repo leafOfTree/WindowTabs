@@ -82,7 +82,7 @@ module SettingsCatalog =
         { id="number-leader"; page=HotKeySettings; text=Strings.Settings.numberLeader; binding=Shortcut("numberLeader",1094) }
         { id="leader-keys"; page=HotKeySettings; text=Strings.Settings.leaderKeys; binding=Text("numberLeaderKeys","123456789") }
         { id="activate-on-hover"; page=HotKeySettings; text=Strings.Settings.activateOnHover; binding=Toggle("enableHoverActivate",false,false) }
-        { id="tab-hover-preview"; page=HotKeySettings; text=Strings.Settings.tabHoverPreview; binding=Toggle("tabHoverPreview",true,true) }
+        { id="tab-hover-preview"; page=HotKeySettings; text=Strings.Settings.tabHoverPreview; binding=Toggle("tabHoverPreview",false,false) }
         { id="shift-scroll"; page=HotKeySettings; text=Strings.Settings.shiftScroll; binding=Toggle("enableShiftScroll",true,true) }
         { id="ctrl-scroll"; page=HotKeySettings; text=Strings.Settings.ctrlScroll; binding=Toggle("enableCtrlScroll",true,true) }
         { id="middle-click-close"; page=HotKeySettings; text=Strings.Settings.middleClickClose; binding=Toggle("enableMiddleClickClose",true,true) }
