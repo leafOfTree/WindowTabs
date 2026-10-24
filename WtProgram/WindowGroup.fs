@@ -2417,9 +2417,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         let shown = this.topWindow
         if SystemInformation.UIEffectsEnabled && not dragPause && not this.isSplit && shown<>hwnd &&
            this.windows.contains shown && isOpen shown && not(isMinimized shown) && not(isMinimized hwnd) && isVisibleCell.value then
-            let frame = this.layoutFrame
             let window = this.os.windowFromHwnd shown
             let bounds,visible = window.bounds,window.visibleBounds
+            // Maximized, the group's frame is the work area a pixel up and left of where the window
+            // shows: the image faded out from there, and the tab seemed to jolt.
+            let frame = if window.isMaximized then visible else this.layoutFrame
             let move = { hwnd=shown; from=frame; target=frame; fade=NoFade
                          border=Pt(visible.x-bounds.x,visible.y-bounds.y)
                          borderSize=Sz(bounds.width-visible.width,bounds.height-visible.height) }
