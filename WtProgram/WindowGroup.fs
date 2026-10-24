@@ -9,6 +9,30 @@ open System.Threading
 open System.Windows.Forms
 open Bemo.Win32.Forms
 
+/// EXPERIMENTAL: refreshing tabs moved maximized to a monitor of another scale.
+///
+/// Seen on Windows 11 24H2 with two monitors of different scales (100% and 125%): a maximized
+/// group moved to the other monitor (Win+Shift+arrow) left the tabs behind drawing nothing.
+/// Switched to, Edge went on showing the tab before it and a click went back there; Explorer
+/// showed black; the taskbar preview was blank, even with WindowTabs closed. The window was in
+/// place, at its size, with its new DPI, neither cloaked nor layered, until resized by hand.
+/// Not seen on 26H2 (build 26300) nor between monitors of one scale, nor with restored windows.
+///
+/// Only a change of state made it draw: minimized and maximized again (or restored and
+/// maximized). A redraw, SWP_FRAMECHANGED, WM_SIZE, WM_DISPLAYCHANGE, WM_DWMCOMPOSITIONCHANGED,
+/// WM_THEMECHANGED, a 1 px move, a restack and a hide and show did nothing. Restoring the tabs
+/// behind as they moved was tried and dropped: every window was seen resizing and the tabs went.
+///
+/// So the tabs behind are only marked as the group changes scale, and each is minimized and
+/// maximized once, without the animation, as it first comes in front; the group ignores that
+/// tab's own minimize and maximize meanwhile. A slight jolt shows on that one switch.
+/// Set `enabled` to false to turn it off; remove this module and its uses in WindowGroup
+/// (staleFrames, refreshing, refreshFrame, isRefreshing) to take it out.
+module ScaleChangeRefresh =
+    let enabled = true
+    /// Windows 26H2 draws such a window again by itself.
+    let applies = enabled && Environment.OSVersion.Version.Build < 26300
+
 module TabNavigation =
     /// Right neighbour in tab order, or the left one when the closed tab was last.
     let neighbour (order:IntPtr list) closed =
@@ -379,6 +403,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// The tab the group was last minimized from, which comes back first.
     let mutable minimizedFrom : IntPtr option = None
     let transitionClock = Stopwatch.StartNew()
+    /// EXPERIMENTAL (ScaleChangeRefresh): tabs to refresh as they come in front, and the time until
+    /// which a refreshed tab's own minimize and maximize are not the group's to follow.
+    let staleFrames = Collections.Generic.HashSet<IntPtr>()
+    let refreshing = Collections.Generic.Dictionary<IntPtr,int64>()
     let iconCache = new WindowIconCache(invoker :> IDispatcher,fun hwnd ->
         Cell.beginUpdate()
         try
@@ -1691,6 +1719,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     /// Losing a pane window: its neighbour takes its room, and the last other pane fills the frame.
     member private this.onRemoved(hwnd) =
+        staleFrames.Remove(hwnd) |> ignore
         match groupLayout with
         | Split s when SplitView.contains hwnd s ->
             splitRestore <- None
@@ -1832,6 +1861,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         let window = this.os.windowFromHwnd(hwnd)
         let dpi = Dpi.forMonitor window.hwnd
         if dpi <> Dpi.value() then
+            // EXPERIMENTAL (ScaleChangeRefresh): moved maximized to a monitor of another scale,
+            // the tabs behind went with it and are refreshed as they come in front.
+            if placement.value.IsSome && window.isMaximized && ScaleChangeRefresh.applies then
+                for other in zorderCell.value.where((<>) hwnd).list do staleFrames.Add other |> ignore
             Dpi.set dpi
             appearanceSnapshot <- logicalAppearance.scaled
             this.ts.setTabAppearance(appearanceSnapshot)
@@ -1952,7 +1985,33 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if post then
             this.invokeAsync(fun () ->
                 if location then lock locationGate (fun () -> pendingLocations.Remove(hwnd) |> ignore)
-                if not isDestroyed.value then this.handleWindowEvent(hwnd,evt))
+                if not isDestroyed.value && not (this.isRefreshing(hwnd,evt)) then this.handleWindowEvent(hwnd,evt))
+
+    /// EXPERIMENTAL (ScaleChangeRefresh): a tab moved maximized to a monitor of another scale is
+    /// minimized and maximized again, without the animation, as it comes in front; the only
+    /// change that made it draw.
+    member private this.refreshFrame(hwnd:IntPtr) =
+        let window = this.os.windowFromHwnd(hwnd)
+        if window.isMaximized then
+            refreshing.[hwnd] <- transitionClock.ElapsedMilliseconds+1000L
+            window.dwmSetAttribute 3 1
+            WinUserApi.ShowWindowAsync(hwnd,ShowWindowCommands.SW_SHOWMINNOACTIVE) |> ignore
+            WinUserApi.ShowWindowAsync(hwnd,ShowWindowCommands.SW_SHOWMAXIMIZED) |> ignore
+            // Its animations back once the window has done both.
+            let timer = new System.Windows.Forms.Timer(Interval=500)
+            timer.Tick.Add(fun _ ->
+                timer.Stop()
+                timer.Dispose()
+                if WinUserApi.IsWindow(hwnd) then window.dwmSetAttribute 3 0)
+            timer.Start()
+
+    /// A refreshed tab minimizing and maximizing: the group stays as it is.
+    member private this.isRefreshing(hwnd:IntPtr,evt) =
+        match refreshing.TryGetValue(hwnd) with
+        | true,until when transitionClock.ElapsedMilliseconds<until ->
+            evt=WinEvent.EVENT_SYSTEM_MINIMIZESTART || evt=WinEvent.EVENT_SYSTEM_MINIMIZEEND || evt=WinEvent.EVENT_OBJECT_LOCATIONCHANGE
+        | true,_ -> refreshing.Remove(hwnd) |> ignore; false
+        | _ -> false
 
     member private this.handleWindowEvent(hwnd,evt) =
         // These native events announce the start of a transition. A group STA
@@ -2078,6 +2137,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if this.windows.contains(hwnd) then
                 let window = this.os.windowFromHwnd(hwnd)
                 if window.isOwned && not window.isMinimized then window.raise()
+                if staleFrames.Remove(hwnd) then this.refreshFrame hwnd
             this.foreground <- hwnd
             this.followClosedTab(this.os.foreground.hwnd)
             this.saveZorder()

@@ -375,6 +375,51 @@ let main() =
                 (fixture :> IGroup).destroy()
                 pumpUntil "Isolated fixture did not exit" (fun () -> fixture.isExited)
 
+        // EXPERIMENTAL (ScaleChangeRefresh): before Windows 26H2, a maximized tab taken behind its
+        // tab to a monitor of another scale drew nothing more until its state changed. Marked so,
+        // it is minimized and maximized once as it comes in front, and the tab in front stays.
+        // Whether that makes it draw needs 24H2 and two scales; here only the mechanism is checked.
+        do
+            use front = new Form(Text="Front tab",ShowInTaskbar=false)
+            use behind = new Form(Text="Tab behind",ShowInTaskbar=false)
+            let fixture = desktopApi.createGroup(false) :?> GroupInfo
+            try
+                for form in [behind;front] do
+                    form.Show()
+                    OS().windowFromHwnd(form.Handle).showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED)
+                for form in [front;behind] do (fixture :> IGroup).addWindow(form.Handle,false)
+                pumpUntil "The refresh fixture did not form its group" (fun () -> (nativeOrder fixture).Length=2)
+                let states = ResizeArray<FormWindowState>()
+                behind.Resize.Add(fun _ -> states.Add behind.WindowState)
+                let stale (group:WindowGroup) =
+                    typeof<WindowGroup>.GetField("staleFrames",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).GetValue(group)
+                    :?> Collections.Generic.HashSet<IntPtr>
+                onGroup fixture (fun group -> (stale group).Add behind.Handle |> ignore)
+                let comeInFront () =
+                    OS().windowFromHwnd(behind.Handle).setForeground(false)
+                    onGroup fixture (fun group -> group.main(behind.Handle,WinEvent.EVENT_SYSTEM_FOREGROUND))
+                comeInFront()
+                pumpUntil "A marked tab was not minimized and maximized as it came in front" (fun () ->
+                    states.Contains FormWindowState.Minimized && behind.WindowState=FormWindowState.Maximized)
+                let settle = Diagnostics.Stopwatch.StartNew()
+                while settle.ElapsedMilliseconds<300L do
+                    Application.DoEvents()
+                    Thread.Sleep(10)
+                check (OS().windowFromHwnd(front.Handle).isMaximized && not(OS().windowFromHwnd(front.Handle).isMinimized))
+                      "Refreshing a tab minimized the tab in front"
+                check (onGroup fixture (fun group -> not((stale group).Contains behind.Handle))) "A refreshed tab stayed marked"
+                // Once only: the next time it comes in front it is left as it is.
+                let refreshes = states |> Seq.filter((=) FormWindowState.Minimized) |> Seq.length
+                comeInFront()
+                let settle = Diagnostics.Stopwatch.StartNew()
+                while settle.ElapsedMilliseconds<300L do
+                    Application.DoEvents()
+                    Thread.Sleep(10)
+                check ((states |> Seq.filter((=) FormWindowState.Minimized) |> Seq.length)=refreshes) "A tab was refreshed again as it came in front"
+            finally
+                (fixture :> IGroup).destroy()
+                pumpUntil "Refresh fixture did not exit" (fun () -> fixture.isExited)
+
         // Placement failure keeps real windows independent; a later successful attempt may combine them.
         do
             use first = new Form(ShowInTaskbar=false)
