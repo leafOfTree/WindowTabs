@@ -888,7 +888,7 @@ let main() =
           choose=(fun entry -> if entry.hwnd=IntPtr 1 then (ran <- "close"::ran; Done) else Choose [option "Work";option "Home"])
           shortcut=(fun _ -> None)
           dimmed=(fun _ -> false)
-          aside=(fun _ entry -> { detail=entry.program; switch=None; swatch=None; shortcut=""; dropdown=false })
+          aside=(fun _ entry -> { detail=entry.program; switch=None; swatch=None; shortcut=""; dropdown=false; small=false })
           concealed=fun _ -> true }
     let palette = TabSearchForm([mail;notes;editor],[mail.hwnd;editor.hwnd],pages=[commandsPage])
     check (palette.Scope=GroupTabs) "The palette did not open on the group"
@@ -920,7 +920,7 @@ let main() =
     pump 100
     // A setting turned in place: the palette stays up and its switch shows the new state.
     let mutable lamp = false
-    let switchPage = { commandsPage with choose=(fun _ -> lamp <- not lamp; Stay); aside=(fun _ _ -> { detail=""; switch=Some lamp; swatch=None; shortcut=""; dropdown=false }); concealed=fun _ -> false }
+    let switchPage = { commandsPage with choose=(fun _ -> lamp <- not lamp; Stay); aside=(fun _ _ -> { detail=""; switch=Some lamp; swatch=None; shortcut=""; dropdown=false; small=false }); concealed=fun _ -> false }
     let switched = TabSearchForm([mail;notes],[],pages=[switchPage],scope=ActionScope)
     switched.Query <- "clo"
     switched.Accept()

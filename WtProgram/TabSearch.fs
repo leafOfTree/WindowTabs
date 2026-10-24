@@ -206,7 +206,8 @@ type PalettePage = {
 /// page, with a down arrow when the value is picked from a list, or a switch, for a setting that
 /// is on or off; just after the name, in the muted colour, its shortcut, as editors list theirs;
 /// and a colour, for a row that stands for one, shown as a dot before the name.
-and PaletteAside = { detail:string; switch:bool option; swatch:Color option; shortcut:string; dropdown:bool }
+/// small: the detail in a smaller type, for a note such as where a row opens rather than a value.
+and PaletteAside = { detail:string; switch:bool option; swatch:Color option; shortcut:string; dropdown:bool; small:bool }
 
 module private TabSearchNative =
     let EM_SETCUEBANNER = 0x1501
@@ -489,19 +490,22 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             | [],None ->
                 // A window's key before its program.
                 match windowShortcutText entry,TabSearch.source entry with
-                | "",detail -> { detail=detail; switch=None; swatch=None; shortcut=""; dropdown=false }
-                | key,"" -> { detail=""; switch=None; swatch=None; shortcut=key; dropdown=false }
-                | key,detail -> { detail=detail; switch=None; swatch=None; shortcut=key; dropdown=false }
-            | _ -> { detail=TabSearch.source entry; switch=None; swatch=None; shortcut=""; dropdown=false }
+                | "",detail -> { detail=detail; switch=None; swatch=None; shortcut=""; dropdown=false; small=false }
+                | key,"" -> { detail=""; switch=None; swatch=None; shortcut=key; dropdown=false; small=false }
+                | key,detail -> { detail=detail; switch=None; swatch=None; shortcut=key; dropdown=false; small=false }
+            | _ -> { detail=TabSearch.source entry; switch=None; swatch=None; shortcut=""; dropdown=false; small=false }
         let text (aside:PaletteAside) = aside.detail
         let asides = shown |> Array.map(fun (_,entry) -> aside entry)
         // Titles reclaim the fixed app column's spare space, including after filtering.
-        let measure (value:string) =
-            match asideWidths.TryGetValue value with
+        let measure (aside:PaletteAside) =
+            let value = text aside
+            let key = (if aside.small then "small:" else "")+value
+            match asideWidths.TryGetValue key with
             | true,width -> width
             | _ ->
-                let width = TextRenderer.MeasureText(value,list.Font,Size(Int32.MaxValue,Dpi.scale rowHeight),TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine).Width
-                asideWidths.[value] <- width
+                let font = if aside.small then SettingsUi.font list.Font.FontFamily.Name (list.Font.SizeInPoints*0.86f) FontStyle.Regular else list.Font
+                let width = TextRenderer.MeasureText(value,font,Size(Int32.MaxValue,Dpi.scale rowHeight),TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine).Width
+                asideWidths.[key] <- width
                 width
         let programWidth =
             asides |> Array.fold(fun width aside ->
@@ -510,7 +514,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     elif aside.dropdown then Dpi.scale 18
                     elif aside.swatch.IsSome then Dpi.scale 22
                     else 0
-                max width (switch+measure (text aside))) 0
+                max width (switch+measure aside)) 0
         programColumn.Width <- max 48 (min 300 (int(Math.Ceiling(float programWidth/Dpi.currentFactor()))+16))
         shown |> Array.iteri(fun index (item,entry) ->
             let aside = asides.[index]
@@ -518,6 +522,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             item.Switch <- aside.switch
             item.Suffix <- aside.shortcut
             item.Dropdown <- aside.dropdown
+            item.SmallValue <- aside.small
             // A colour setting's value: its dot before its code at the right, as the settings pages show it.
             item.ValueSwatch <- aside.swatch
             item.Highlights <- [| TabSearch.highlights input.Text entry.title; TabSearch.highlights input.Text item.Values.[1] |])

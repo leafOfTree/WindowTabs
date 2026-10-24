@@ -476,6 +476,9 @@ let main() =
                         note (question.accept "#12").IsSome (sprintf "%s took a colour that is no colour" item.id)
                     | Navigation,Done ->
                         note (called ("setting "+item.id)) (sprintf "%s did not open its page" item.id)
+                        let aside = page.aside "" entry
+                        note (aside.small && aside.detail=tr (Strings.TabSearch.inSettings (SettingsCatalog.searchContext item)))
+                             (sprintf "%s does not say it opens in settings, in the smaller type: %A" item.id aside)
                         // Out of the way first, so the settings window, already open behind another, comes to the front.
                         note (page.concealed entry) (sprintf "%s opens its page with the palette still up" item.id)
                     | binding,outcome -> issues.Add(sprintf "The setting %s (%A) answered %A" item.id binding outcome))

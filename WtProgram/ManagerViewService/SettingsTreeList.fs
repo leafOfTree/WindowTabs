@@ -59,6 +59,8 @@ type TreeListItem(text:string) =
     member val Suffix = "" with get,set
     /// A down arrow after the last column's text, for a value picked from a list, as drop-downs show.
     member val Dropdown = false with get,set
+    /// The last column's text in a smaller type, as the suffix is: a note, not a value.
+    member val SmallValue = false with get,set
     /// A colour dot just before the last column's text, for a value that is a colour.
     member val ValueSwatch : Color option = None with get,set
     /// A colour shown as a dot where the icon goes, for a row that stands for one.
@@ -892,14 +894,17 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         elif item.Dropdown then arrowWidth+Dpi.scale 8
                         else 0
                     let bounds = Rectangle(cell.X+Dpi.scale 8,top,max 1 (cell.Width-Dpi.scale 16-reserve),rowHeight)
+                    let font =
+                        if column=columns.Length-1 && item.SmallValue then SettingsUi.font this.Font.FontFamily.Name (this.Font.SizeInPoints*0.86f) FontStyle.Regular
+                        else this.Font
                     // Move text and its match highlights together, preserving ellipsis clipping.
                     let bounds =
                         if columns.[column].RightAligned then
-                            let width = min bounds.Width (TextRenderer.MeasureText(g,item.value column,this.Font,Size(Int32.MaxValue,rowHeight),flags).Width)
+                            let width = min bounds.Width (TextRenderer.MeasureText(g,item.value column,font,Size(Int32.MaxValue,rowHeight),flags).Width)
                             Rectangle(bounds.Right-width,bounds.Y,width,bounds.Height)
                         else bounds
                     let color = if isSelected then text else p.muted
-                    this.drawMarked(g,item.value column,item.highlights column,bounds,flags,this.Font,color,p)
+                    this.drawMarked(g,item.value column,item.highlights column,bounds,flags,font,color,p)
                     // The colour's dot before its code, with a faint rim, as the settings pages' colour box draws it.
                     if column=columns.Length-1 && item.ValueSwatch.IsSome then
                         let side = Dpi.scale 16

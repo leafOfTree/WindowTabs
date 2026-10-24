@@ -172,15 +172,15 @@ module CommandPalette =
               | _ ->
                   let aside =
                       match action chosen with
-                      | ACommand command -> { detail=""; switch=None; swatch=None; shortcut=shortcutText command; dropdown=false }
-                      | ASwitch(_,key,command) -> { detail=""; switch=Some(Services.settings.getValue key :?> bool); swatch=None; shortcut=shortcutText command; dropdown=false }
-                      | AChoice(item,key,values) -> { detail=choiceNow item key values; switch=None; swatch=None; shortcut=""; dropdown=true }
+                      | ACommand command -> { detail=""; switch=None; swatch=None; shortcut=shortcutText command; dropdown=false; small=false }
+                      | ASwitch(_,key,command) -> { detail=""; switch=Some(Services.settings.getValue key :?> bool); swatch=None; shortcut=shortcutText command; dropdown=false; small=false }
+                      | AChoice(item,key,values) -> { detail=choiceNow item key values; switch=None; swatch=None; shortcut=""; dropdown=true; small=false }
                       | ASetting item ->
                           match item.binding with
-                          | Number _ -> { detail=string (Services.settings.getValue item.id :?> int); switch=None; swatch=None; shortcut=""; dropdown=false }
-                          | Text(key,_) -> { detail=Services.settings.getValue key :?> string; switch=None; swatch=None; shortcut=""; dropdown=false }
-                          | Colour -> let color = colorNow item.id in { detail=hex color; switch=None; swatch=Some color; shortcut=""; dropdown=false }
-                          | _ -> { detail=tr (SettingsCatalog.searchContext item); switch=None; swatch=None; shortcut=""; dropdown=false }
+                          | Number _ -> { detail=string (Services.settings.getValue item.id :?> int); switch=None; swatch=None; shortcut=""; dropdown=false; small=false }
+                          | Text(key,_) -> { detail=Services.settings.getValue key :?> string; switch=None; swatch=None; shortcut=""; dropdown=false; small=false }
+                          | Colour -> let color = colorNow item.id in { detail=hex color; switch=None; swatch=Some color; shortcut=""; dropdown=false; small=false }
+                          | _ -> { detail=tr (Strings.TabSearch.inSettings (SettingsCatalog.searchContext item)); switch=None; swatch=None; shortcut=""; dropdown=false; small=true }
                   asides.[chosen.hwnd] <- aside
                   aside)
           // A command acts on the window in front, which the palette stands clear of, and a
@@ -204,5 +204,5 @@ module CommandPalette =
           choose=(fun chosen -> restore names.[int chosen.hwnd-1]; Done)
           shortcut=(fun _ -> None)
           dimmed=(fun _ -> false)
-          aside=(fun _ chosen -> { detail=tr (Strings.TabSearch.windows (snd workspaces.[int chosen.hwnd-1])); switch=None; swatch=None; shortcut=""; dropdown=false })
+          aside=(fun _ chosen -> { detail=tr (Strings.TabSearch.windows (snd workspaces.[int chosen.hwnd-1])); switch=None; swatch=None; shortcut=""; dropdown=false; small=false })
           concealed=fun _ -> true }
