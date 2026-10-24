@@ -251,9 +251,16 @@ type SettingsShortcutInput() as this =
     let mutable focusCue = false
     /// Text and whether it reports an error (red) rather than a notice (muted).
     let mutable message : (string * bool) option = None
+    let messageChanged = Event<string option>()
+    let unchanged = Event<EventArgs>()
+    /// Modifiers already down as recording starts, such as the Alt of Alt+Enter: not shown as
+    /// pressed until let go and pressed again.
+    let mutable heldAtStart = Keys.None
     let messageTimer = new Timer(Interval=2500)
-    let clearMessage() = messageTimer.Stop(); message <- None
-    let showMessage error text = message <- Some(text,error); messageTimer.Stop(); messageTimer.Start(); this.Invalidate()
+    let clearMessage() =
+        messageTimer.Stop()
+        if message.IsSome then message <- None; messageChanged.Trigger None
+    let showMessage error text = message <- Some(text,error); messageTimer.Stop(); messageTimer.Start(); messageChanged.Trigger(Some text); this.Invalidate()
     /// Recording or not, with the app's own global shortcuts standing aside meanwhile, so the keys
     /// pressed reach the box rather than run what they are bound to.
     let setRecording value =
@@ -271,7 +278,9 @@ type SettingsShortcutInput() as this =
         if next<>shortcut then
             this.Shortcut <- next
             changed.Trigger(EventArgs.Empty)
-        elif next<>0 then showMessage false (tr Strings.Shortcuts.alreadySet)
+        else
+            if next<>0 then showMessage false (tr Strings.Shortcuts.alreadySet)
+            unchanged.Trigger(EventArgs.Empty)
         this.Invalidate()
     /// Key caps padded tightly, so three keys and the clear button fit the editors' width.
     let capHeight() = this.Height-Dpi.scale 14
@@ -309,6 +318,12 @@ type SettingsShortcutInput() as this =
     override this.OnFontChanged(e) = base.OnFontChanged(e); fitWidth()
     member _.Changed = changed.Publish
     member _.IsRecording = recording
+    /// A recording that ended on the shortcut the box already had.
+    member _.Unchanged = unchanged.Publish
+    /// The box's notice or error as it comes and goes, for a host that shows it elsewhere.
+    member _.MessageChanged = messageChanged.Publish
+    /// Draws its notice or error in place of the shortcut; off where the host shows it beside.
+    member val ShowsMessage = true with get,set
     /// Whether the accent outline is drawn: while recording, or on fresh keyboard focus.
     member this.IsHighlighted = recording || (this.Focused && focusCue)
     /// The notice or error currently shown in place of the shortcut, if any.
@@ -317,6 +332,7 @@ type SettingsShortcutInput() as this =
     member this.Reject(previous,reason) = this.Shortcut <- previous; showMessage true reason
     member this.StartRecording() =
         clearMessage()
+        heldAtStart <- Control.ModifierKeys
         setRecording true
         if not this.Focused then this.Focus() |> ignore
         this.Invalidate()
@@ -354,7 +370,10 @@ type SettingsShortcutInput() as this =
         else
             showMessage true (tr Strings.Shortcuts.includeCtrlOrAlt)
             true
-    override this.OnKeyUp(e) = base.OnKeyUp(e); if recording then this.Invalidate()
+    override this.OnKeyUp(e) =
+        base.OnKeyUp(e)
+        heldAtStart <- heldAtStart &&& Control.ModifierKeys
+        if recording then this.Invalidate()
     override this.OnPaint(e) =
         let p = SettingsColors.current()
         let g = e.Graphics
@@ -399,10 +418,10 @@ type SettingsShortcutInput() as this =
                     else bounds.Y+(bounds.Height-line.Height)/2
                 TextRenderer.DrawText(g,label,this.Font,Rectangle(textX,textY,line.Width+Dpi.scale 2,line.Height),p.text,flags)
                 x+bounds.Width+Dpi.scale 2) left
-        match message with
+        match (if this.ShowsMessage then message else None) with
         | Some(text,isError) -> TextRenderer.DrawText(g,text,this.Font,textArea (Dpi.scale 12),(if isError then error else p.muted),flags)
         | None when recording ->
-            let held = SettingsShortcut.heldParts Control.ModifierKeys
+            let held = SettingsShortcut.heldParts (Control.ModifierKeys &&& ~~~heldAtStart)
             if held.IsEmpty then TextRenderer.DrawText(g,tr Strings.Shortcuts.pressShortcut,this.Font,textArea (Dpi.scale 12),p.muted,flags)
             else
                 let x = chips held

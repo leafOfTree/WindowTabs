@@ -849,24 +849,48 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     place()
                     editor.BringToFront()
                     editor.SizeChanged.Add(fun _ -> place())
+                    // Why a key was refused, on a line under the box rather than cut short in it.
+                    editor.ShowsMessage <- false
+                    let note = new Label(AutoSize=true,Font=editor.Font,UseMnemonic=false,Visible=false,BackColor=palette.surface,
+                                         ForeColor=(if SystemInformation.HighContrast then SystemColors.WindowText
+                                                    elif ThemeService.currentIsDark() then Color.FromRGB(0xFF99A4) else Color.FromRGB(0xC42B1C)))
+                    list.Controls.Add(note)
+                    let showNote (text:string option) =
+                        match text with
+                        | Some text ->
+                            note.Text <- text
+                            note.Location <- Point(editor.Right-note.PreferredWidth,editor.Bottom+Dpi.scale 2)
+                            note.Visible <- true
+                            note.BringToFront()
+                        | None -> note.Visible <- false
+                    editor.MessageChanged.Add showNote
+                    editor.Disposed.Add(fun _ -> list.Controls.Remove note; note.Dispose())
+                    // The box a moment longer, its key seen, then the row as it now is.
+                    let leaveSoon (taken:string option) =
+                        let pause = new System.Windows.Forms.Timer(Interval=600)
+                        pause.Tick.Add(fun _ ->
+                            pause.Stop()
+                            pause.Dispose()
+                            if not closed then
+                                taken |> Option.iter(fun text -> target.Suffix <- text)
+                                list.Invalidate()
+                                if assigning |> Option.exists(fun (_,current) -> obj.ReferenceEquals(current,editor)) then endAssign())
+                        pause.Start()
+                    // Refused: said under the box, which listens again for another key.
+                    let refuse previous reason =
+                        editor.Shortcut <- previous
+                        editor.StartRecording()
+                        showNote (Some reason)
                     editor.Changed.Add(fun _ ->
                         let previous = assignment.current
                         match assignment.usedBy editor.Shortcut with
-                        | Some name -> editor.Reject(previous,tr (Strings.Shortcuts.usedBy name))
-                        | None when not (assignment.set editor.Shortcut) -> editor.Reject(previous,tr Strings.Shortcuts.inUse)
-                        | None ->
-                            // Seen taken in its box a moment, then beside the name, where a row's
-                            // shortcut is shown; the page lists it afresh from now on.
-                            let taken = SettingsShortcut.text editor.Shortcut
-                            let pause = new System.Windows.Forms.Timer(Interval=600)
-                            pause.Tick.Add(fun _ ->
-                                pause.Stop()
-                                pause.Dispose()
-                                if not closed then
-                                    target.Suffix <- taken
-                                    list.Invalidate()
-                                    if assigning |> Option.exists(fun (_,current) -> obj.ReferenceEquals(current,editor)) then endAssign())
-                            pause.Start())
+                        | Some name -> refuse previous (tr (Strings.Shortcuts.usedBy name))
+                        | None when not (assignment.set editor.Shortcut) -> refuse previous (tr Strings.Shortcuts.inUse)
+                        // Seen taken in its box a moment, then beside the name, where a row's
+                        // shortcut is shown; the page lists it afresh from now on.
+                        | None -> leaveSoon (Some(SettingsShortcut.text editor.Shortcut)))
+                    // The key it had already: nothing to change, so the box goes as after a key taken.
+                    editor.Unchanged.Add(fun _ -> leaveSoon None)
                     // Esc while recording stops it in the box's own key handling; the key's release
                     // then leaves the box. A refusal's message stays until the next key.
                     editor.KeyUp.Add(fun e -> if e.KeyCode=Keys.Escape && not editor.IsRecording then endAssign())

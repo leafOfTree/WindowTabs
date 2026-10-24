@@ -1101,12 +1101,14 @@ let main() =
         let mutable msg = Message()
         let processKey = control.GetType().GetMethod("ProcessCmdKey",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
         processKey.Invoke(control,[|box msg;box keys|]) |> ignore
+    // A refusal is said on a line under the box, which listens again for another key at once.
+    let noteUnder (text:string) =
+        editor.Parent.Controls |> Seq.cast<Control> |> Seq.exists(fun control -> control :? Label && control.Text=text && control.Top>=editor.Bottom)
     press editor (Keys.Control ||| Keys.Alt ||| Keys.Right)
-    check (recorder.ShortcutEditor.IsSome && editor.Shortcut=1623 && editor.Message.IsSome && assigned=0) "A key another command holds was not refused by name"
-    press editor Keys.Enter
+    check (recorder.ShortcutEditor.IsSome && editor.Shortcut=1623 && editor.IsRecording && assigned=0 && noteUnder (tr (Strings.Shortcuts.usedBy "Next tab")))
+          "A key another command holds was not refused by name under the box"
     press editor (Keys.Control ||| Keys.Alt ||| Keys.P)
-    check (recorder.ShortcutEditor.IsSome && editor.Shortcut=1623 && editor.Message.IsSome) "A key another program holds was not refused"
-    press editor Keys.Enter
+    check (recorder.ShortcutEditor.IsSome && editor.Shortcut=1623 && editor.IsRecording && noteUnder (tr Strings.Shortcuts.inUse)) "A key another program holds was not refused under the box"
     press editor (Keys.Control ||| Keys.Alt ||| Keys.K)
     // Taken at once, seen in its box a moment, then the box goes.
     check (assigned=SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.K) && recorder.ShortcutEditor.IsSome) "A free key was not set, or its box went at once"
@@ -1117,6 +1119,16 @@ let main() =
     check (recorder.ShortcutEditor.IsNone && boxClock.ElapsedMilliseconds>=400L) (sprintf "A taken key's box went after %d ms" boxClock.ElapsedMilliseconds)
     // The key shows beside the name, where shortcuts are, not cut short at the right end.
     check (recorder.RowNotes |> List.exists(fun (suffix,right) -> suffix="Ctrl+Alt+K" && right<>"Ctrl+Alt+K")) "A key set in the palette was not shown beside the name"
+    // The key it has already: said, then the box goes as after a key taken, rather than waiting.
+    recorder.BeginAssign()
+    let same = recorder.ShortcutEditor.Value
+    check (same.Shortcut=1623 && SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.W)=1623) "The box did not start on the command's key"
+    press same (Keys.Control ||| Keys.Alt ||| Keys.W)
+    let sameClock = Diagnostics.Stopwatch.StartNew()
+    while recorder.ShortcutEditor.IsSome && sameClock.ElapsedMilliseconds<3000L do
+        Application.DoEvents()
+        Thread.Sleep 10
+    check recorder.ShortcutEditor.IsNone "The box stayed after the key it already had"
     recorder.BeginAssign()
     let again = recorder.ShortcutEditor.Value
     press again Keys.Escape
