@@ -205,6 +205,15 @@ type CloseButtonSprite = {
             bitmap
         member this.children = List2()
 
+module PinGlyph =
+    /// The filled pin Explorer shows by a pinned folder, from the icon font of Windows 11, or of
+    /// Windows 10; none on a system with neither, where the pin is drawn by hand.
+    let font =
+        lazy(
+            use installed = new Text.InstalledFontCollection()
+            let names = installed.Families |> Array.map(fun family -> family.Name)
+            ["Segoe Fluent Icons";"Segoe MDL2 Assets"] |> List.tryFind(fun name -> Array.contains name names))
+
 /// A pinned tab's pushpin, where its close button would be, in the quiet colour of that button.
 type PinMarkSprite = {
     foreColor: Color
@@ -220,14 +229,22 @@ type PinMarkSprite = {
             g.SmoothingMode <- SmoothingMode.AntiAlias
             let c = this.foreColor
             use brush = new SolidBrush(Color.FromArgb(170, int c.R, int c.G, int c.B))
-            use pen = new Pen(brush, float32 (max 1 (Dpi.scale 1)) * 1.2f)
-            // Upright about its middle, then leaning as a pin pushed in at an angle.
-            let s = float32 (min this.size.width this.size.height) * 0.78f
-            g.TranslateTransform(float32 this.size.width / 2.0f, float32 this.size.height / 2.0f)
-            g.RotateTransform(45.0f)
-            g.FillRectangle(brush, -s * 0.17f, -s * 0.5f, s * 0.34f, s * 0.34f)
-            g.FillRectangle(brush, -s * 0.32f, -s * 0.2f, s * 0.64f, s * 0.12f)
-            g.DrawLine(pen, 0.0f, -s * 0.1f, 0.0f, s * 0.5f)
+            let side = float32 (min this.size.width this.size.height)
+            match PinGlyph.font.Force() with
+            | Some name ->
+                g.TextRenderingHint <- Text.TextRenderingHint.AntiAlias
+                use font = new Font(name, side * 0.8f, GraphicsUnit.Pixel)
+                use format = new StringFormat(Alignment=StringAlignment.Center, LineAlignment=StringAlignment.Center)
+                g.DrawString("", font, brush, RectangleF(0.0f, 0.0f, float32 this.size.width, float32 this.size.height), format)
+            | None ->
+                use pen = new Pen(brush, float32 (max 1 (Dpi.scale 1)) * 1.2f)
+                // Upright about its middle, then leaning as a pin pushed in at an angle.
+                let s = side * 0.78f
+                g.TranslateTransform(float32 this.size.width / 2.0f, float32 this.size.height / 2.0f)
+                g.RotateTransform(45.0f)
+                g.FillRectangle(brush, -s * 0.17f, -s * 0.5f, s * 0.34f, s * 0.34f)
+                g.FillRectangle(brush, -s * 0.32f, -s * 0.2f, s * 0.64f, s * 0.12f)
+                g.DrawLine(pen, 0.0f, -s * 0.1f, 0.0f, s * 0.5f)
             bitmap
         member this.children = List2()
 
