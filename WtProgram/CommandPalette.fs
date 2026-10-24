@@ -38,6 +38,8 @@ module CommandPalette =
         let current = Services.settings.getValue key :?> string
         choiceOptions item values |> List.tryFind(fun (value,_) -> value=current) |> Option.map snd |> Option.defaultValue ""
     /// A colour setting of the look in use, light or dark, as the Appearance page edits it.
+    /// The Support page's settings file buttons, which the palette runs itself rather than open the page on.
+    let private runsInPlace = set ["settings-location";"settings-backup";"settings-reset"]
     let private colorField id = PaletteEditing.colorFields |> List.find(fun (key,_,_) -> key=id)
     let private colorNow id =
         let _,read,_ = colorField id
@@ -189,9 +191,11 @@ module CommandPalette =
                           | Text(key,_) -> { detail=Services.settings.getValue key :?> string; switch=None; swatch=None; shortcut=""; dropdown=false; small=false }
                           | Colour -> let color = colorNow item.id in { detail=hex color; switch=None; swatch=Some color; shortcut=""; dropdown=false; small=false }
                           | _ ->
-                              // Its page, unless the row is the page itself.
+                              // Where the settings window opens on it; nothing for a row run here, or
+                              // for the page itself.
                               let page = tr (SettingsCatalog.searchContext item)
-                              { detail=(if page=tr item.text.caption then "" else page); switch=None; swatch=None; shortcut=""; dropdown=false; small=true }
+                              let shown = not (runsInPlace.Contains item.id) && page<>tr item.text.caption
+                              { detail=(if shown then page else ""); switch=None; swatch=None; shortcut=""; dropdown=false; small=true }
                   asides.[chosen.hwnd] <- aside
                   aside)
           // A command acts on the window in front, which the palette stands clear of, and a

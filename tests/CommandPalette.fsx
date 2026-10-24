@@ -447,6 +447,7 @@ let main() =
             // the settings window.
             | Some item when item.id="settings-location" || item.id="settings-reset" ->
                 note (page.concealed entry) (sprintf "%s runs with the palette still up" item.id)
+                note ((page.aside "" entry).detail="") (sprintf "%s, run here, names a page it does not open" item.id)
             | Some item when item.id="settings-backup" ->
                 attempt ("setting "+item.id) (fun () ->
                     match page.choose entry with
@@ -454,6 +455,7 @@ let main() =
                         note (options |> List.map(fun option -> option.label)=[tr Strings.General.export;tr Strings.General.import])
                              (sprintf "%s does not offer to export and import: %A" item.id (options |> List.map(fun option -> option.label)))
                         note (not (called ("setting "+item.id))) (sprintf "%s opened the settings window" item.id)
+                        note ((page.aside "" entry).detail="") (sprintf "%s, run here, names a page it does not open" item.id)
                     | outcome -> issues.Add(sprintf "%s answered %A" item.id outcome))
             | Some item ->
                 attempt ("setting "+item.id) (fun () ->
