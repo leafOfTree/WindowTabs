@@ -87,6 +87,20 @@ let main() =
         match program.execute(RunCommand("no-such-command",None)) with
         | Result.Error text -> check (text=tr (Strings.CommandLine.unknownCommand "no-such-command")) (sprintf "An unknown command said %s" text)
         | Result.Ok _ -> failwith "The command line took a command that does not exist"
+        // A key given to a window from the window search is kept, also while a box records keys,
+        // as the search's own box does when it sets one.
+        let programApi = program :> IProgram
+        let exePath = Diagnostics.Process.GetCurrentProcess().MainModule.FileName
+        for recording in [false;true] do
+            let title = sprintf "Window key probe %b" recording
+            let code = SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.Shift ||| (if recording then Keys.F11 else Keys.F10))
+            if recording then ShortcutRecording.start()
+            let taken = programApi.setWindowShortcut { path=exePath; title=title; code=code }
+            if recording then ShortcutRecording.stop()
+            check taken (sprintf "A window key was refused (recording %b)" recording)
+            check (programApi.windowShortcuts() |> List.exists(fun shortcut -> shortcut.title=title && shortcut.code=code)) (sprintf "A window key was not kept (recording %b)" recording)
+            check (string (runtimeSettings :> ISettings).root.["windowShortcuts"] |> fun text -> text.Contains title) (sprintf "A window key was not written (recording %b)" recording)
+            programApi.setWindowShortcut { path=exePath; title=title; code=0 } |> ignore
         let scansBefore,_,_ = RuntimeMetrics.snapshot()
         let input = {new IStartupInputPlugin with
                         member _.init() =
