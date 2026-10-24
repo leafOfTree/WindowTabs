@@ -89,6 +89,7 @@ module SettingsCatalog =
         { id="tabNormalBgColor"; page=AppearanceSettings; text=Strings.Settings.tabNormalBgColor; binding=Colour }
         { id="tabActiveBgColor"; page=AppearanceSettings; text=Strings.Settings.tabActiveBgColor; binding=Colour }
         { id="tabHighlightBgColor"; page=AppearanceSettings; text=Strings.Settings.tabHighlightBgColor; binding=Colour }
+        { id="tabFlashBgColor"; page=AppearanceSettings; text=Strings.Settings.tabFlashBgColor; binding=Colour }
         // Kept with the tab sizes in the "tabAppearance" object, not at the top of the file.
         { id="tabStyle"; page=AppearanceSettings; text=Strings.Settings.tabStyle; binding=Choice("tabStyle",TabStyle.names,"joined") }
         { id="tab-text-bold"; page=AppearanceSettings; text=Strings.Settings.tabTextBold; binding=Toggle("tabTextBold",false,false) }

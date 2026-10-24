@@ -44,12 +44,14 @@ module PaletteEditing =
                 let edits = if values next=values (original dark index) then s.presetEdits.Remove(editKey dark index) else s.presetEdits.Add(editKey dark index,next)
                 {(setActive dark next s) with presetEdits=edits} |> setPreset dark ThemePresets.keys.[index]
     /// The colours a setting names, read and written on a palette. The separator follows the text
-    /// and inactive tab colours, and a flashing tab is rare and brief: neither has a setting.
+    /// and inactive tab colours, so it has no setting of its own.
     let colorFields : (string * (TabPalette -> Color) * (Color -> TabPalette -> TabPalette)) list = [
         "tabTextColor",(fun p -> p.tabTextColor),(fun v p -> {p with tabTextColor=v})
         "tabActiveBgColor",(fun p -> p.tabActiveBgColor),(fun v p -> {p with tabActiveBgColor=v})
         "tabHighlightBgColor",(fun p -> p.tabHighlightBgColor),(fun v p -> {p with tabHighlightBgColor=v})
-        "tabNormalBgColor",(fun p -> p.tabNormalBgColor),(fun v p -> {p with tabNormalBgColor=v}) ]
+        "tabNormalBgColor",(fun p -> p.tabNormalBgColor),(fun v p -> {p with tabNormalBgColor=v})
+        // A tab whose window flashes for attention, as its taskbar button does.
+        "tabFlashBgColor",(fun p -> p.tabFlashBgColor),(fun v p -> {p with tabFlashBgColor=v}) ]
 
 /// A colour remembered for an app, in `appTabColors` by its program's path: the tab menu and the
 /// palette both read and change it here.

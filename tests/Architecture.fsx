@@ -433,7 +433,13 @@ let main() =
               "Separator did not return to the preset's own when its colors did"
         let activeOnly = {basis with tabActiveBgColor=System.Drawing.Color.Red}
         check ((Theme.followSeparator (Some basis) basis activeOnly).tabBorderColor.ToArgb()=basis.tabBorderColor.ToArgb()) "Separator changed with an unrelated color"
-        check (SettingsCatalog.all |> List.forall(fun item -> item.id<>"tabBorderColor" && item.id<>"tabFlashBgColor")) "Search still offers separator or flashing tab colors"
+        // The separator follows the text and inactive colours, so it has no setting; the colour of a
+        // tab asking for attention has one, found as such and edited as the others are.
+        check (SettingsCatalog.all |> List.forall(fun item -> item.id<>"tabBorderColor")) "Search offers the separator color, which follows the others"
+        check (SettingsCatalog.all |> List.exists(fun item -> item.id="tabFlashBgColor" && item.binding=Colour)) "The color of a tab asking for attention has no setting"
+        check (PaletteEditing.colorFields |> List.exists(fun (key,_,_) -> key="tabFlashBgColor")) "The color of a tab asking for attention cannot be edited"
+        let attention = SettingsCatalog.find "tabFlashBgColor"
+        check (["danger";"attention";"flash"] |> List.forall(fun term -> SettingsCatalog.matches term attention)) "The color of a tab asking for attention is not found by what it is for"
         // Every action is a command: the hotkeys, the palette and the command line share the list.
         let commands = Commands.all
         check (commands |> List.map(fun command -> command.id) |> List.distinct |> List.length = commands.Length) "Command ids must be unique"
