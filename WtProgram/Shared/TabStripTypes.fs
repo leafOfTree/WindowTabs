@@ -74,12 +74,14 @@ and TabDock =
     | TabDockLeft
     | TabDockRight
 
-/// Pinned tabs by window: one stays pinned in whatever group its window moves to. Written and
-/// read on every group's thread.
+/// Pinned tabs, kept on the window itself as its tab layout is: one stays pinned in whatever
+/// group its window moves to, and once WindowTabs starts again; it goes with the window.
 module PinnedTabs =
-    let private pinned = Collections.Concurrent.ConcurrentDictionary<IntPtr,bool>()
-    let contains hwnd = pinned.ContainsKey hwnd
-    let set hwnd value = if value then pinned.[hwnd] <- true else pinned.TryRemove(hwnd) |> ignore
+    let private key = "WindowTabs.Pinned.v1"
+    let contains hwnd = WinUserApi.GetProp(hwnd,key)<>IntPtr.Zero
+    let set hwnd value =
+        if value then WinUserApi.SetProp(hwnd,key,IntPtr(1)) |> ignore
+        else WinUserApi.RemoveProp(hwnd,key) |> ignore
     /// The pinned ones first, each part in the order it had.
     let ordered (isPinned:'a -> bool) (items:'a list) = List.filter isPinned items @ List.filter (isPinned >> not) items
 

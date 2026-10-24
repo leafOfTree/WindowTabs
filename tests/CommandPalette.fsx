@@ -430,6 +430,8 @@ let main() =
             runDone "pin-tab" three
             pumpUntil "Pinning a tab" (fun () -> isPinned() && List.head (lorderOf three)=three)
             note (Commands.textFor (Commands.find "pin-tab").Value three=Strings.Commands.unpinTab) "A pinned tab's command still offered to pin it"
+            // Kept on the window, as its tab layout is, for a WindowTabs started again to find.
+            note (WinUserApi.GetProp(three,"WindowTabs.Pinned.v1")<>IntPtr.Zero) "A pin was not kept on its window, so a restart lost it"
             runDone "move-tab-right" three
             settle three
             note (List.head (lorderOf three)=three) "Move tab right took a pinned tab past the others"
