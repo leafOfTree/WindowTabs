@@ -22,8 +22,9 @@ and QuestionKind =
     /// A colour as #RRGGBB, in the settings pages' colour box, its picker open.
     | ColorQuestion
 /// One further step: its name, a detail beside it, a colour to show for it where it is one,
-/// and what choosing it does.
-and CommandChoice = { label:string; detail:string; swatch:Drawing.Color option; run:unit -> CommandOutcome }
+/// and what choosing it does; preview, when choosing it is only a setting's value, so moving onto
+/// it may show it at once and going back puts the ticked one back.
+and CommandChoice = { label:string; detail:string; swatch:Drawing.Color option; run:unit -> CommandOutcome; preview:bool }
 
 type CommandCategory =
     | TabCommands
@@ -71,7 +72,7 @@ module Commands =
     /// A command that leaves a choice: what it offers for the window, each doing its part.
     let private choosing id text category enabled (options:IntPtr -> CommandChoice list) =
         { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); run=fun hwnd -> Choose(options hwnd) }
-    let private choice label detail action = { label=label; detail=detail; swatch=None; run=fun () -> action(); Done }
+    let private choice label detail action = { label=label; detail=detail; swatch=None; run=(fun () -> action(); Done); preview=false }
     /// The group's side, alignment and auto-hide mode as last read, and reading them again once a
     /// command has changed one, so the palette shows the value now the next time.
     let private shownChoices hwnd =
@@ -85,7 +86,8 @@ module Commands =
         let options hwnd =
             let ticked = current hwnd
             [ for text,value in options ->
-                choice (tr text) (if tr text=ticked then "✓" else "") (fun () -> onGroup (fun g -> g.run(set value); readAgain g) hwnd) ]
+                { choice (tr text) (if tr text=ticked then "✓" else "") (fun () -> onGroup (fun g -> g.run(set value); readAgain g) hwnd)
+                    with preview=true } ]
         current,options
     let private positions = [Strings.TabMenu.top,TabDockTop; Strings.Common.left,TabDockLeft; Strings.Common.right,TabDockRight]
     let private alignments = [Strings.Common.left,TabLeft; Strings.Common.center,TabCenter; Strings.Common.right,TabRight]

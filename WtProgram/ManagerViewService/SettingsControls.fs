@@ -1036,6 +1036,8 @@ type SettingsChoicePopup() as this =
         this.Disposed.Add(fun _ ->
             shadow |> Option.iter(fun halo -> (halo :> IDisposable).Dispose())
             shadow <- None)
+    /// Its outline when it opens from a field outlined in a colour of its own, as on the palette.
+    member val Outline = Color.Empty with get,set
     override this.OnOpened(e) =
         // Finish the first themed paint before returning to other UI work.
         this.Refresh()
@@ -1054,7 +1056,7 @@ type SettingsChoicePopup() as this =
         e.Graphics.Clear(this.BackColor)
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 10))
-        use pen = new Pen((SettingsColors.current()).border)
+        use pen = new Pen(if (this.Outline:Color).IsEmpty then (SettingsColors.current()).border else this.Outline)
         e.Graphics.DrawPath(pen,shape)
 
 module SettingsPopupLifetime =

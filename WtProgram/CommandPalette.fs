@@ -129,7 +129,22 @@ module CommandPalette =
             | ACommand command -> List.findIndex ((=) command.category) Commands.categories
             | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item -> Commands.categories.Length+(match item.page with GeneralSettings -> 0 | AppearanceSettings -> 1 | HotKeySettings -> 2 | ProgramSettings -> 3 | LayoutSettings -> 4 | DiagnosticsSettings -> 5)
         let text action = match action with ACommand command -> command.text | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item -> item.text
-        let extra action = match action with ACommand command -> [command.id] | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item -> [SettingsCatalog.storageKey item]
+        // The value it shows at the right is found as its name is: a style, a size, a colour's code.
+        let shownValue action =
+            try
+                match action with
+                | AChoice(item,key,values) -> choiceNow item key values
+                | ASetting item ->
+                    match item.binding with
+                    | Number _ -> string (Services.settings.getValue item.id :?> int)
+                    | Text(key,_) -> Services.settings.getValue key :?> string
+                    | Colour -> hex (colorNow item.id)
+                    | _ -> ""
+                | _ -> ""
+            with _ -> ""
+        let extra action =
+            (match action with ACommand command -> [command.id] | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item -> [SettingsCatalog.storageKey item])
+            @ [shownValue action]
         { scope=ActionScope; caption=tr Strings.TabSearch.actions; prompt=tr Strings.TabSearch.actionPrompt
           noMatches=tr Strings.TabSearch.noActions; noEntries=tr Strings.TabSearch.noActions; glyph=NoGlyph
           entries=listed |> Array.mapi(fun index action ->
@@ -149,7 +164,9 @@ module CommandPalette =
                   let current = Services.settings.getValue key :?> string
                   Choose [ for value,label in choiceOptions item values ->
                              { label=label; detail=(if value=current then "✓" else ""); swatch=None
-                               run=fun () -> Services.settings.setValue(key,box value); Done } ]
+                               run=(fun () -> Services.settings.setValue(key,box value); Done)
+                               // Shown as the choice moves, but for the language, which builds the app's text again.
+                               preview=(key<>"language") } ]
               // A size or the leader keys typed in the box, a colour picked; what a Support page
               // button does, done here; a page opened.
               | ASetting item ->
@@ -162,7 +179,7 @@ module CommandPalette =
                   | _,"settings-location" -> guarded SettingsFile.showInFolder; Done
                   | _,"settings-backup" ->
                       Choose [ for caption,action in [Strings.General.export,SettingsFile.export;Strings.General.import,SettingsFile.import] ->
-                                 { label=tr caption; detail=""; swatch=None; run=fun () -> guarded (fun () -> action null); Done } ]
+                                 { label=tr caption; detail=""; swatch=None; run=(fun () -> guarded (fun () -> action null); Done); preview=false } ]
                   | _,"settings-reset" -> guarded (fun () -> SettingsFile.reset null); Done
                   | _ -> Services.managerView.showSetting item.id; Done)
           // A key set here is shown from then on: the row's right end, kept, is worked out again.

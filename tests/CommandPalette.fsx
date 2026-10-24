@@ -630,7 +630,53 @@ let main() =
         pump 200
         note (palette.AskBox |> Option.exists(fun box -> box :? SettingsColorInput && (box :?> SettingsColorInput).PickerOpen)) "A colour did not open the colour box with its picker"
         note (not palette.IsClosed) "The colour picker closed the palette"
+        // Esc in the picker goes back at once, as it does in the box: not a first Esc to close it.
+        match palette.AskBox with
+        | Some(:? SettingsColorInput as color) ->
+            let key = typeof<SettingsColorInput>.GetField("pickerKey",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).GetValue(color) :?> Event<Keys>
+            key.Trigger Keys.Escape
+            note (palette.Depth=0 && palette.AskBox.IsNone) "Esc in the colour picker did not go back"
+        | _ -> ()
         palette.Close()
+        pump 100
+        // The value at a row's right end is found as its name is, and lit there.
+        let trial = TabSearchForm([],[],settings=api,pages=[CommandPalette.actionsPage active],scope=ActionScope,windows=false)
+        trial.Show()
+        pump 100
+        let trialPage = CommandPalette.actionsPage active
+        for entry in trialPage.entries do
+            let aside = trialPage.aside "" entry
+            if aside.detail<>"" && not aside.small && aside.switch.IsNone then
+                trial.Query <- aside.detail
+                note (trial.Results |> List.exists(fun found -> found.title=entry.title)) (sprintf "Searching its value \"%s\" did not find %s" aside.detail entry.title)
+        // A switch turned with Enter keeps its row chosen, not the first row again.
+        trial.Query <- "tab text"
+        let boldTitle = tr Strings.Settings.tabTextBold.caption
+        let mutable steps = 0
+        while (trial.Selected |> Option.map(fun entry -> entry.title))<>Some boldTitle && steps<10 do
+            trial.SelectNext()
+            steps <- steps+1
+        let boldBefore = api.getValue "tabTextBold" :?> bool
+        trial.Accept()
+        note ((api.getValue "tabTextBold" :?> bool)<>boldBefore) "Enter on Bold tab text did not turn it"
+        note ((trial.Selected |> Option.map(fun entry -> entry.title))=Some boldTitle) "Turning a switch with Enter chose another row"
+        trial.Accept()
+        // Moving through a setting's values shows each; Esc puts back the one it had.
+        let style() = api.getValue "tabStyle" :?> string
+        let before = style()
+        trial.Query <- tr Strings.Settings.tabStyle.caption
+        trial.Accept()
+        note (trial.Depth=1 && (trial.Selected |> Option.exists(fun entry -> entry.program="✓"))) "A setting's values did not open on the one it has"
+        trial.SelectNext()
+        note (style()<>before) "Moving to another value did not show it"
+        trial.Back()
+        note (style()=before) (sprintf "Esc left the style %s, not %s" (style()) before)
+        trial.Accept()
+        trial.SelectNext()
+        let shown = style()
+        trial.Accept()
+        note (style()=shown && style()<>before && trial.IsClosed) "Enter on a value shown did not keep it"
+        api.setValue("tabStyle",box before)
         pump 100
         let search = TabSearchForm(entries,[active],settings=api)
         search.Show()

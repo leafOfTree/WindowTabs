@@ -506,7 +506,7 @@ type SettingsColorPicker() as this =
             pending <- false
             this.Invalidate()
     override this.OnPaint(e) =
-        e.Graphics.Clear((SettingsColors.current()).surface)
+        e.Graphics.Clear(this.BackColor)
         let rect = svRect()
         use spectrum = new LinearGradientBrush(rect,Color.White,SettingsHsv.color hue 1.0 1.0,LinearGradientMode.Horizontal)
         e.Graphics.FillRectangle(spectrum,rect)
@@ -568,6 +568,7 @@ type SettingsColorInput() as this =
     let swatch = new Button(FlatStyle=FlatStyle.Flat,Text="",AccessibleName=tr Strings.Appearance.chooseColor,Cursor=Cursors.Hand)
     let picker = new SettingsColorPicker()
     let popup = new SettingsChoicePopup(AutoSize=true)
+    let pickerKey = Event<Keys>()
     let mutable suppressClick = false
     let sync() =
         text.Text <- sprintf "#%06X" (color.ToArgb() &&& 0xFFFFFF)
@@ -620,7 +621,8 @@ type SettingsColorInput() as this =
             if e.KeyCode=Keys.Escape || e.KeyCode=Keys.Enter then
                 popup.Close()
                 text.Focus() |> ignore
-                e.SuppressKeyPress <- true)
+                e.SuppressKeyPress <- true
+                pickerKey.Trigger e.KeyCode)
         text.KeyDown.Add(fun e ->
             if e.KeyCode=Keys.Enter then commitText(); e.SuppressKeyPress <- true
             elif e.KeyCode=Keys.Escape then sync(); e.SuppressKeyPress <- true)
@@ -632,11 +634,19 @@ type SettingsColorInput() as this =
         commitText()
         picker.Color <- color
         picker.ApplyTheme()
-        popup.BackColor <- (SettingsColors.current()).surface
-        popup.Show(swatch,Point(0,swatch.Height+Dpi.scale 8))
+        // Outlined in a colour of its own, the field sits on a surface it shares with the picker,
+        // as on the palette; otherwise the picker is a settings page's popup.
+        let framed = not this.Border.IsEmpty && not this.Surroundings.IsEmpty
+        popup.BackColor <- if framed then this.Surroundings else (SettingsColors.current()).surface
+        popup.Outline <- if framed then this.Border else Color.Empty
+        picker.BackColor <- popup.BackColor
+        // Under the field, its left edge with the field's.
+        popup.Show(this,Point(0,this.Height+Dpi.scale 6))
         picker.Focus() |> ignore
     member _.PickerOpen = popup.Visible
     member _.PickerClosed = popup.Closed
+    /// Esc or Enter in the picker, which closes it: a host may take either as its own.
+    member _.PickerKey = pickerKey.Publish
     /// The hex code's box, for a host that acts on what is typed, as the palette does.
     member _.TextBox = text
     override this.ApplyTheme() =

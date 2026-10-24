@@ -493,6 +493,14 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let setPrompt() =
         if input.IsHandleCreated then
             TabSearchNative.SendMessage(input.Handle,TabSearchNative.EM_SETCUEBANNER,IntPtr(1),currentPrompt()) |> ignore
+    /// Lists the rows again for a value that changed, the chosen row kept.
+    let mutable keptRow : IntPtr option = None
+    /// A setting's values listed: each shown as the choice moves onto it, and whether one has been,
+    /// so leaving without choosing puts the ticked value back.
+    let mutable previewOptions : CommandChoice list = []
+    let mutable previewed = false
+    /// The list's choice being set by the palette itself, not moved by the user.
+    let mutable selecting = false
     let apply() =
         // The line under the box: the scopes to go round, or the way back from a command's
         // choices. The palette's one page has neither until a command leaves a choice.
@@ -556,15 +564,27 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         list.Roots.AddRange(Array.map fst shown)
         list.Rebuild()
         let chosen =
-            TabSearch.best input.Text (shown |> Array.map snd |> List.ofArray)
-            |> Option.bind(fun entry -> shown |> Array.tryFind(fun (_,candidate) -> candidate.hwnd=entry.hwnd))
+            // The row chosen before, while the same rows are listed again for a value that changed.
+            keptRow |> Option.bind(fun hwnd -> shown |> Array.tryFind(fun (_,candidate) -> candidate.hwnd=hwnd))
+            |> Option.orElse (
+                TabSearch.best input.Text (shown |> Array.map snd |> List.ofArray)
+                |> Option.bind(fun entry -> shown |> Array.tryFind(fun (_,candidate) -> candidate.hwnd=entry.hwnd)))
             |> Option.map fst
-        list.SelectedItem <- Option.toObj chosen
+        selecting <- true
+        try list.SelectedItem <- Option.toObj chosen finally selecting <- false
         chosen |> Option.iter list.EnsureVisible
         empty.Text <- currentEmpty input.Text
         // A value being typed has the place of the rows to itself.
         list.Visible <- shown.Length>0 && asking.IsNone
         empty.Visible <- shown.Length=0 && asking.IsNone
+    /// The rows listed again, the chosen one still chosen: a switch turned with Enter, or a value
+    /// come in, does not send the choice back to the best match.
+    let reapply() =
+        keptRow <-
+            match list.SelectedItem with
+            | null -> None
+            | item -> scoped() |> Array.tryPick(fun (row,entry) -> if obj.ReferenceEquals(row,item) then Some entry.hwnd else None)
+        try apply() finally keptRow <- None
     /// Takes the shortcut editor off its row and gives the keys back to the box.
     let endAssign() =
         match assigning with
@@ -575,9 +595,16 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             if not closed then input.Focus() |> ignore
         | None -> ()
     /// Closes, switching to the window chosen, if one was.
+    /// The ticked value back, when another was shown and none chosen.
+    let restorePreview() =
+        if previewed then
+            previewed <- false
+            previewOptions |> List.tryFind(fun option -> option.detail="✓") |> Option.iter(fun option -> option.run() |> ignore)
+        previewOptions <- []
     let finish (chosen:IntPtr option) =
         // Switching away deactivates the box, which asks to close again: once is enough.
         if not closed then
+            restorePreview()
             closed <- true
             endAssign()
             chosen |> Option.iter pick
@@ -601,11 +628,15 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             |> Array.ofList
         let run (entry:TabSearchEntry) = options.[int entry.hwnd-1].run()
         choices <- (caption,rows,run,input.Text)::choices
+        restorePreview()
+        previewOptions <- if options |> List.exists(fun option -> option.preview) then options else []
         input.Text <- ""
         setPrompt()
         scopeLine.Invalidate()
         footer.Invalidate()
-        apply()
+        // Opened on the value it has now, so moving from it shows the others.
+        keptRow <- options |> List.tryFindIndex(fun option -> option.detail="✓") |> Option.map(fun index -> IntPtr(index+1))
+        try apply() finally keptRow <- None
     /// The line under the value's box: what is accepted, or in the error colour why it was not.
     let showNote() =
         match asking with
@@ -628,6 +659,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let pop() =
         asking <- None
         endAsk()
+        restorePreview()
         if not closed then input.Focus() |> ignore
         match choices with
         | (_,_,_,query)::rest ->
@@ -671,6 +703,12 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 colorBox <- Some color
                 // Back to the palette once a colour is picked, so a click elsewhere still closes it.
                 color.PickerClosed.Add(fun _ -> if not closed && form.Visible then form.Activate())
+                // One Esc goes back and one Enter takes the colour, as in the box, rather than the
+                // first only closing the picker.
+                color.PickerKey.Add(fun key ->
+                    if not closed then
+                        if key=Keys.Escape then pop()
+                        elif key=Keys.Enter then answer())
                 (color :> SettingsInputFrame),color.TextBox
         frame.PlaceOn(palette.surface)
         // On the palette's surface, the field's own colour: outlined as the search box is.
@@ -742,14 +780,18 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             ask caption question
         | Stay ->
             back()
-            apply()
+            reapply()
     /// Enter or a click on a row: switches to the window, or runs the command and shows what it
     /// leaves to choose. A dimmed row does nothing.
     let activate (target:TreeListItem) =
         if not closed && not (isNull target) && not target.Dimmed then
             scoped() |> Array.tryFind(fun (row,_) -> obj.ReferenceEquals(row,target)) |> Option.iter(fun (_,entry) ->
                 match choices,page() with
-                | (_,_,choose,_)::_,_ -> outcome entry.title true (fun () -> choose entry)
+                | (_,_,choose,_)::_,_ ->
+                    // Chosen: what was shown stays.
+                    previewed <- false
+                    previewOptions <- []
+                    outcome entry.title true (fun () -> choose entry)
                 | [],Some page -> outcome entry.title (page.concealed entry) (fun () -> page.choose entry)
                 | [],None -> finish (Some entry.hwnd))
     /// Alt+Enter: the chosen row's shortcut is recorded in a box over the row, as on the
@@ -871,6 +913,16 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 input.AppendText(string e.KeyChar)
                 e.Handled <- true)
         list.ItemActivated.Add activate
+        // A setting's value shown as the choice moves onto it with the keys; Esc puts it back.
+        list.SelectionChanged.Add(fun _ ->
+            if not selecting && not closed && asking.IsNone && not previewOptions.IsEmpty then
+                match list.SelectedItem with
+                | null -> ()
+                | item ->
+                    scoped() |> Array.tryPick(fun (row,entry) -> if obj.ReferenceEquals(row,item) then Some entry.hwnd else None)
+                    |> Option.bind(fun hwnd -> List.tryItem (int hwnd-1) previewOptions)
+                    |> Option.filter(fun option -> option.preview)
+                    |> Option.iter(fun option -> option.run() |> ignore; previewed <- true))
         list.MouseClick.Add(fun e ->
             if e.Button=MouseButtons.Left then list.ItemAt(e.Location) |> Option.iter activate)
         // Going out of the way for a command is no closing.
@@ -915,7 +967,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     /// The line under the box, with the scopes or the way back, takes room.
     member _.ScopeLineShown = scopeLine.Height>0
     /// Lists the rows again, for what came in after they were listed.
-    member _.Refresh() = if not closed then apply()
+    member _.Refresh() = if not closed then reapply()
     member _.SearchBoxUnderlined = searchBox.Underlined
     /// Back from a command's choices, as Esc goes.
     member _.Back() = pop()
