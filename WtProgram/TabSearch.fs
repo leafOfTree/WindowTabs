@@ -1036,6 +1036,13 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     member _.RowNotes = list.Roots |> Seq.map(fun item -> item.Suffix,item.value 1) |> List.ofSeq
     member _.Selected =
         scoped() |> Array.tryFind(fun (item,_) -> obj.ReferenceEquals(item,list.SelectedItem)) |> Option.map snd
+    /// The row chosen among the scope's own rows, under any choices a command left: what the box
+    /// chooses again when it opens with the same search.
+    member _.BaseRow = match List.tryLast backRows with Some row -> row | None -> selectedRow()
+    /// Chooses the row for that entry, if it is listed; otherwise the best match stays chosen.
+    member _.ChooseRow(hwnd:IntPtr) =
+        keptRow <- Some hwnd
+        try apply() finally keptRow <- None
     member _.SelectNext() = move 1
     /// A key pressed in the box, as typing it would.
     member _.Press(keys:Keys) = keyDown (KeyEventArgs(keys))

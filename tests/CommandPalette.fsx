@@ -742,8 +742,21 @@ let main() =
             pump 100
             note (palette.Depth=0 && palette.AskBox.IsNone) "Esc in the colour picker did not go back"
         | _ -> ()
+        // Opened again with its search, the box chooses the row it had, not the best match.
+        palette.Query <- "next"
+        palette.SelectNext()
+        let chosen = palette.Selected |> Option.map(fun entry -> entry.title)
+        let row = palette.BaseRow
         palette.Close()
         pump 100
+        do
+            let again = TabSearchForm([],[],settings=api,pages=[CommandPalette.actionsPage active],scope=ActionScope,windows=false)
+            again.Query <- "next"
+            row |> Option.iter again.ChooseRow
+            let back = again.Selected |> Option.map(fun entry -> entry.title)
+            note (chosen.IsSome && back=chosen) (sprintf "Opened again, the palette chose %A, not %A as it had" back chosen)
+            again.Close()
+            pump 100
         // The value at a row's right end is found as its name is, and lit there.
         let trial = TabSearchForm([],[],settings=api,pages=[CommandPalette.actionsPage active],scope=ActionScope,windows=false)
         trial.Show()

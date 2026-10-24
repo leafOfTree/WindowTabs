@@ -43,6 +43,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// again, selected, the next time it opens.
     let mutable lastWindowQuery = ""
     let mutable lastPaletteQuery = ""
+    /// The row each box had chosen as it closed, chosen again with its search.
+    let mutable lastWindowRow : IntPtr option = None
+    let mutable lastPaletteRow : IntPtr option = None
     let isTabMonitoringSuspendedCell = Cell.create(0)
     let llMouseEvent = Event<_>()
 
@@ -796,8 +799,16 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 palette
         let isWindows = scope.IsNone
         search.Query <- if isWindows then lastWindowQuery else lastPaletteQuery
+        // A window switched to is in front now, and listed last: the best match is chosen instead.
+        (if isWindows then lastWindowRow |> Option.filter((<>) (WinUserApi.GetForegroundWindow())) else lastPaletteRow)
+        |> Option.iter search.ChooseRow
         search.Ended.Add(fun () ->
-            if isWindows then lastWindowQuery <- search.BaseQuery else lastPaletteQuery <- search.BaseQuery
+            if isWindows then
+                lastWindowQuery <- search.BaseQuery
+                lastWindowRow <- search.BaseRow
+            else
+                lastPaletteQuery <- search.BaseQuery
+                lastPaletteRow <- search.BaseRow
             tabSearchCell.set(None))
         tabSearchCell.set(Some(search))
         search
