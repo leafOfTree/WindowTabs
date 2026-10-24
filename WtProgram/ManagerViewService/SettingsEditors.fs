@@ -179,6 +179,14 @@ type SettingsNumberInput() as this =
             minus.SetBounds(plus.Left-size-Dpi.scale 2,plus.Top,size,size)
             text.SetBounds(Dpi.scale 12,(this.Height-text.Height)/2,max 1 (minus.Left-Dpi.scale 18),text.Height))
         text.LostFocus.Add(fun _ -> commit())
+        // A whole number in range is the value as soon as it is typed, left as typed: Esc, which
+        // puts back the value, then kept it, where it had brought back the one before typing.
+        text.TextChanged.Add(fun _ ->
+            match Decimal.TryParse(text.Text,NumberStyles.Integer,CultureInfo.InvariantCulture) with
+            | true,next when next>=minimum && next<=maximum && next<>value ->
+                value <- next
+                changed.Trigger(EventArgs.Empty)
+            | _ -> ())
         text.KeyDown.Add(fun e ->
             match e.KeyCode with
             | Keys.Enter -> commit(); e.SuppressKeyPress <- true
@@ -186,8 +194,9 @@ type SettingsNumberInput() as this =
             | Keys.Up -> commit(); setValue(value+1M); e.SuppressKeyPress <- true
             | Keys.Down -> commit(); setValue(value-1M); e.SuppressKeyPress <- true
             | _ -> ())
-        minus.Click.Add(fun _ -> commit(); setValue(value-1M))
-        plus.Click.Add(fun _ -> commit(); setValue(value+1M))
+        // The keys stay in the box: on the button, Esc and Enter reached nothing.
+        minus.Click.Add(fun _ -> commit(); setValue(value-1M); text.Focus() |> ignore)
+        plus.Click.Add(fun _ -> commit(); setValue(value+1M); text.Focus() |> ignore)
     member _.Minimum with get() = minimum and set(v) = minimum <- v
     member _.Maximum with get() = maximum and set(v) = maximum <- v
     member _.Value with get() = value and set(v) = setValue v

@@ -166,6 +166,23 @@ let main() =
     key numberText Keys.Enter
     key numberText Keys.Down
     assertTrue (number.Value= -9M) "Negative input and arrow step"
+    // A number in range is the value as typed, so Esc keeps it rather than bring back the one before.
+    let mutable changes = 0
+    number.ValueChanged.Add(fun _ -> changes <- changes+1)
+    numberText.Text <- "42"
+    assertTrue (number.Value=42M && changes=1) "A typed number waited for Enter"
+    key numberText Keys.Escape
+    assertTrue (numberText.Text="42" && number.Value=42M) "Esc brought back the number from before typing"
+    // − and + leave the keys in the box, so Esc and Enter still reach it.
+    do
+        use host = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Point(-3000,-3000))
+        host.Controls.Add(number)
+        host.Show()
+        let plus = number.Controls |> Seq.cast<Control> |> Seq.find(fun control -> control.Text="+")
+        plus.Focus() |> ignore
+        typeof<Control>.GetMethod("OnClick",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).Invoke(plus,[|box EventArgs.Empty|]) |> ignore
+        assertTrue (number.Value=43M && numberText.Focused) "After + the keys stayed on the button, where Esc did nothing"
+        host.Controls.Remove(number)
     number.Dispose()
     let input = new SettingsColorInput()
     let colorEditor = input :> IPropEditor
