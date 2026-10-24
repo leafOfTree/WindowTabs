@@ -406,7 +406,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let asideWidths = Collections.Generic.Dictionary<string,int>()
     let list = new SettingsTreeList([TreeListColumn("",0,TextColumn);programColumn],
                                     ShowHeader=false,ShowExpanders=false,ExpandOnDoubleClick=false,
-                                    RowHeight=rowHeight,IconSize=TabSearchMetrics.iconSize,TabStop=false,Dock=DockStyle.Fill,KeepScrollRoom=true,
+                                    RowHeight=rowHeight,IconSize=TabSearchMetrics.iconSize,TabStop=false,KeepScrollRoom=true,
+                                    ScrollBarWidth=padding-1,
                                     BackColor=palette.surface,ForeColor=palette.text)
     let empty = new Label(Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleCenter,Visible=false,
                           Font=SettingsUi.bodyFont(),BackColor=palette.surface,ForeColor=palette.muted,
@@ -468,6 +469,15 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         f.Controls.Add(scopeLine)
         f.Controls.Add(new Panel(Dock=DockStyle.Top,Height=underGap,BackColor=palette.surface))
         f.Controls.Add(searchBox)
+        // The list runs on into the right padding, up to the outline, its scroll bar's column as
+        // wide as that padding: a row's highlight then stands as far from the right edge as from
+        // the left, rather than the padding and the column both.
+        let placeList() =
+            let top = padding+searchBox.Height+underGap+scopeLine.Height
+            let bottom = f.ClientSize.Height-padding-footer.Height
+            list.Bounds <- Rectangle(padding,top,max 1 (f.ClientSize.Width-padding-1),max 0 (bottom-top))
+        f.Layout.Add(fun _ -> placeList())
+        placeList()
         use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 size.Width,float32 size.Height)) (float32 radius)
         f.Region <- new Region(shape)
         f

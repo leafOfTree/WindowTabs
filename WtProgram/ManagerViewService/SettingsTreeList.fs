@@ -158,6 +158,10 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     /// Leaves the scroll bar's room empty when there is nothing to scroll, so a list whose rows
     /// come and go as a search is typed keeps its right edge where it was.
     member val KeepScrollRoom = false with get,set
+    /// The scroll bar's column: narrower where the list runs into its parent's padding.
+    member this.ScrollBarWidth
+        with get() = scroll.Width
+        and set value = scroll.Width <- value; this.PerformLayout(); this.Invalidate()
     member val ShowHeader = true with get,set
     member val ShowExpanders = true with get,set
     /// When false, double-clicking a row raises ItemActivated instead of expanding it; the

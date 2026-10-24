@@ -529,7 +529,17 @@ let main() =
         |> Option.iter(fun form ->
             use image = new Bitmap(form.Width,form.Height)
             form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
-            image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","command-palette.png")))
+            image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","command-palette.png"))
+            // The chosen row's highlight stands as far from the right edge as from the left.
+            let selection = (SettingsColors.current()).selection.ToArgb()
+            let middle = image.Width/2
+            match [0..image.Height-1] |> List.tryFind(fun y -> image.GetPixel(middle,y).ToArgb()=selection) with
+            | Some top ->
+                let y = top+Dpi.scale 6
+                let lit = [0..image.Width-1] |> List.filter(fun x -> image.GetPixel(x,y).ToArgb()=selection)
+                let left,right = List.min lit,image.Width-1-List.max lit
+                note (abs(left-right)<=1) (sprintf "The chosen row stands %d px from the left edge and %d px from the right" left right)
+            | None -> issues.Add "The palette's picture shows no chosen row")
         palette.Query <- ""
         palette.SwitchScope()
         note (palette.Scope=ActionScope) "Tab left the palette's one page"
