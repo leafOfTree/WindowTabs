@@ -303,6 +303,15 @@ let main() =
         check (api.root.["tabDarkColors"].["tabHeight"] = null) "Geometry duplicated into colour palette"
         settings.clearCaches()
         check (settings.settings.appearance.mode=LightTheme && settings.settings.appearance.geometry.height=31) "Settings round-trip failed"
+        // Bold tab text and the tabs' opacity are written and read back, the opacity within its range.
+        api.setValue("tabTextBold",box true)
+        api.setValue("tabOpacity",box 10)
+        settings.clearCaches()
+        check ((api.getValue "tabTextBold" :?> bool) && (api.getValue "tabOpacity" :?> int)=fst SettingsCatalog.opacityRange)
+              (sprintf "Bold tab text and tab opacity read back as %A and %A" (api.getValue "tabTextBold") (api.getValue "tabOpacity"))
+        check (string api.root.["tabOpacity"]=string (fst SettingsCatalog.opacityRange) && string api.root.["tabTextBold"]="True") "Bold tab text and tab opacity were not written"
+        api.setValue("tabTextBold",box false)
+        api.setValue("tabOpacity",box SettingsCatalog.opacityDefault)
         api.setValue("tabUseCustomColors",box false)
         api.setValue("tabAppearance",box Theme.light)
 

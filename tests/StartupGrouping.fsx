@@ -75,6 +75,18 @@ let main() =
         check ((runtimeSettings.rememberedGroups |> List.map(fun group -> group.id)) = [5151]) "Remembered groups were not kept in the settings"
         use lifetime = new LifetimeScope(fun error -> raise error)
         let program = Program.Program(lifetime,settings=runtimeSettings)
+        // From the command line, a command that has nothing to act on for the window in front says
+        // so, rather than doing nothing or offering choices that do nothing; no group exists yet.
+        let closeTab = (Commands.find "close-tab").Value
+        match program.execute(RunCommand("close-tab",None)) with
+        | Result.Error text -> check (text=tr (Strings.CommandLine.unavailable (tr closeTab.text.caption))) (sprintf "The command line said %s" text)
+        | Result.Ok _ -> failwith "The command line ran a tab command with no tab in front"
+        match program.execute(RunCommand("tab-color",Some "Blue")) with
+        | Result.Error _ -> ()
+        | Result.Ok _ -> failwith "The command line chose a tab colour with no tab in front"
+        match program.execute(RunCommand("no-such-command",None)) with
+        | Result.Error text -> check (text=tr (Strings.CommandLine.unknownCommand "no-such-command")) (sprintf "An unknown command said %s" text)
+        | Result.Ok _ -> failwith "The command line took a command that does not exist"
         let scansBefore,_,_ = RuntimeMetrics.snapshot()
         let input = {new IStartupInputPlugin with
                         member _.init() =
