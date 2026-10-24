@@ -838,13 +838,19 @@ type TabStripSprite<'id> when 'id : equality = {
             // tab's own bar colour, as a row of tabs fills each tab's slot. Neighbours of one
             // colour join into one block, and the colour changes only where the tabs do.
             gr.SetClip(outline)
-            let half = (this.rowStep-this.rowHeight)/2
-            for id in this.lorder.list do
+            let gap = this.rowStep-this.rowHeight
+            let half = gap/2
+            let ids = this.lorder.list
+            for id in ids do
                 let bar = (this.tabSpriteOf id).barColor
                 if bar<>bgColor then
                     let location : Pt = this.tabLocation id
+                    // The first and last also take the column's padding before and after them, the
+                    // gap's width, so no plain bar shows at its ends.
+                    let top = location.y-(if id=List.head ids then gap else half)
+                    let bottom = location.y+this.rowHeight+(if id=List.last ids then gap else this.rowStep-this.rowHeight-half)
                     use band = new SolidBrush(bar)
-                    gr.FillRectangle(band,Rectangle(0,location.y-half,this.size.width,this.rowStep))
+                    gr.FillRectangle(band,Rectangle(0,top,this.size.width,bottom-top))
             gr.ResetClip()
         else gr.FillRectangle(brush, bounds.Rectangle)
         this.scrollThumb |> Option.iter(fun thumb ->

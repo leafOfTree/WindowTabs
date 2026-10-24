@@ -287,6 +287,10 @@ let main () =
                     check (at (below 1)=shade.ToArgb()) "Two tabs of one colour do not join across the gap between them"
                     check (at (below 2)=shade.ToArgb() && at ((mixed.tabLocation 3).y-1)=plain) "A coloured tab's band does not end halfway to a plain tab"
                     check (at ((mixed.tabLocation 4).y-1)=(Theme.tabShade 0.12 0.6 Color.Red).ToArgb()) "A tab of another colour does not stand on its own band"
+                    // At the column's ends the first and last bands take its padding too.
+                    let gap = mixed.rowStep-mixed.rowHeight
+                    check (at 1=shade.ToArgb()) "The plain bar shows above the first coloured tab"
+                    check (at (below 4+gap-1)=(Theme.tabShade 0.12 0.6 Color.Red).ToArgb()) "The plain bar shows below the last coloured tab"
                 let inactive = column.tabSprites.list |> List.map snd |> List.find(fun tab -> not tab.isTop)
                 let inactive = {inactive with hover=None;captured=None}
                 if not System.Windows.Forms.SystemInformation.HighContrast then
