@@ -617,6 +617,22 @@ let main() =
         let wholeRight,cutRight = lastInk whole,lastInk cut
         assertTrue (wholeRight>0 && wholeRight=cutRight) (sprintf "A lit letter moved the text after it: it ends at %d, not %d" cutRight wholeRight)
         rowsForm.Close()
+    // The palette's search box: no outline round it, only a line along its foot.
+    do
+        use boxForm = new Form(ClientSize=Size(300,60),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false)
+        boxForm.BackColor <- (SettingsColors.current()).surface
+        let box = new SettingsSearchBox(new TextBox(BorderStyle=BorderStyle.None),Dock=DockStyle.Fill,Underlined=true)
+        boxForm.Controls.Add(box)
+        boxForm.Show()
+        Application.DoEvents()
+        use image = new Bitmap(box.Width,box.Height)
+        box.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+        let background = boxForm.BackColor.ToArgb()
+        let middle = image.Width*3/4
+        assertTrue (image.GetPixel(middle,1).ToArgb()=background && image.GetPixel(1,image.Height/2).ToArgb()=background)
+                   "The palette's search box still has an outline"
+        assertTrue (image.GetPixel(middle,image.Height-1).ToArgb()<>background) "The palette's search box has no line under it"
+        boxForm.Close()
     // SettingsTreeList: expansion, keyboard navigation, check boxes and selection events.
     let treeList = new SettingsTreeList([TreeListColumn("Name",0,TextColumn);TreeListColumn("On",80,CheckColumn)])
     treeList.Size <- Size(400,300)

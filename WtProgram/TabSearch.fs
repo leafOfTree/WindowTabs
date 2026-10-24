@@ -304,7 +304,10 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let input = new TextBox(Font=SettingsUi.bodyFont(),BorderStyle=BorderStyle.None,Tag="search-input",
                             BackColor=palette.surface,ForeColor=palette.text,
                             AccessibleName=windowPrompt)
-    let searchBox = new SettingsSearchBox(input,Dock=DockStyle.Top,Height=boxHeight)
+    // No outline: a line under it parts the box from the rows, as a launcher's search does.
+    let searchBox = new SettingsSearchBox(input,Dock=DockStyle.Top,Height=boxHeight,Underlined=true)
+    /// Room between that line and the first row's highlight.
+    let underGap = Dpi.scale 6
     /// Smaller than the segments' text, as key caps are.
     let keyFont = SettingsUi.font "Segoe UI" 8.5f FontStyle.Regular
     let caption target =
@@ -438,7 +441,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         // Wide enough for every scope's segment and the key beside them.
         let _,outline,key = segments()
         let segmentsWidth = (match key with Some cap -> cap.Right | None -> outline.Right)+padding*2
-        let size = Size(min (max (Dpi.scale (defaultArg width 640)) segmentsWidth) (area.Width-Dpi.scale 32),padding*2+boxHeight+scopeHeight+rows*Dpi.scale rowHeight+footerHeight)
+        let size = Size(min (max (Dpi.scale (defaultArg width 640)) segmentsWidth) (area.Width-Dpi.scale 32),padding*2+boxHeight+underGap+scopeHeight+rows*Dpi.scale rowHeight+footerHeight)
         f.AutoScaleMode <- AutoScaleMode.None
         f.FormBorderStyle <- FormBorderStyle.None
         f.ShowInTaskbar <- false
@@ -463,6 +466,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         f.Controls.Add(askPanel)
         f.Controls.Add(footer)
         f.Controls.Add(scopeLine)
+        f.Controls.Add(new Panel(Dock=DockStyle.Top,Height=underGap,BackColor=palette.surface))
         f.Controls.Add(searchBox)
         use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 size.Width,float32 size.Height)) (float32 radius)
         f.Region <- new Region(shape)
@@ -892,6 +896,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     member _.HasWindows = windows
     /// The line under the box, with the scopes or the way back, takes room.
     member _.ScopeLineShown = scopeLine.Height>0
+    member _.SearchBoxUnderlined = searchBox.Underlined
     /// Back from a command's choices, as Esc goes.
     member _.Back() = pop()
     /// Asks for a value, as a command chosen here does, under its name.

@@ -507,6 +507,16 @@ let main() =
         note (palette.Scope=ActionScope) "The palette did not open on the actions"
         // One page: no scopes to go round, so no line for them until a command leaves a choice.
         note (not palette.ScopeLineShown) "The palette's one page shows a line of scopes"
+        note palette.SearchBoxUnderlined "The palette's search box is outlined rather than underlined"
+        // A picture of it searching, kept with the logs.
+        palette.Query <- "app"
+        pump 100
+        Application.OpenForms |> Seq.cast<Form> |> Seq.tryFind(fun form -> form.Controls |> Seq.cast<Control> |> Seq.exists(fun control -> control :? SettingsSearchBox))
+        |> Option.iter(fun form ->
+            use image = new Bitmap(form.Width,form.Height)
+            form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+            image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","command-palette.png")))
+        palette.Query <- ""
         palette.SwitchScope()
         note (palette.Scope=ActionScope) "Tab left the palette's one page"
         // What can do nothing for the window in front comes after what can.

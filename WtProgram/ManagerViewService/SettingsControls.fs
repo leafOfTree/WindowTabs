@@ -6,6 +6,7 @@ open System.Runtime.InteropServices
 
 type SettingsSearchBox(search:TextBox) as this =
     inherit Panel()
+    let mutable underlined = false
     do
         this.DoubleBuffered <- true
         this.ResizeRedraw <- true
@@ -24,6 +25,10 @@ type SettingsSearchBox(search:TextBox) as this =
         if SystemInformation.HighContrast then (SettingsColors.current()).border
         elif ThemeService.currentIsDark() then Color.FromRGB(0x4A4A48)
         else Color.FromRGB(0xD6D6D3)
+    /// No outline, only a line along its foot, as a search box over its own results draws it.
+    member this.Underlined
+        with get() = underlined
+        and set value = underlined <- value; this.Invalidate()
     override this.OnMouseDown(e) =
         base.OnMouseDown(e)
         if e.Button=MouseButtons.Left then
@@ -32,7 +37,10 @@ type SettingsSearchBox(search:TextBox) as this =
     override this.OnPaintBackground(e) =
         let p = SettingsColors.current()
         e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
-        if this.Width>2 && this.Height>2 then
+        if underlined then
+            use line = new Pen(if SystemInformation.HighContrast then p.border else SettingsSearchBox.Outline())
+            e.Graphics.DrawLine(line,0,this.Height-1,this.Width,this.Height-1)
+        elif this.Width>2 && this.Height>2 then
             e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
             use path = SettingsShapes.rounded (RectangleF(1.0f,1.0f,float32(this.Width-3),float32(this.Height-3))) (float32(Dpi.scale 10))
             use fill = new SolidBrush(p.surface)
