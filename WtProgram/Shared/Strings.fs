@@ -538,10 +538,20 @@ module Strings =
         let usedBy name = { en=sprintf "Used by %s" name; zh=sprintf "已用于“%s”" name; ja=sprintf "「%s」で使用中" name; ar=sprintf "يستخدمه «%s»" name }
         // Shortcut field messages are kept short to fit.
         let alreadySet = { en="Already set"; zh="已是当前快捷键"; ja="設定済み"; ar="هذا هو الاختصار الحالي" }
-        /// A key Windows or WindowTabs keeps for itself, such as Alt+F4 or the palette's Alt+Enter.
         /// A key pressed, then what was said of it, as "Alt+J: Used by Next tab".
         let keySays key (said:string) = { en=sprintf "%s: %s" key said; zh=sprintf "%s：%s" key said; ja=sprintf "%s: %s" key said; ar=sprintf "%s: %s" key said }
-        let reserved = { en="Kept for Windows or WindowTabs"; zh="由 Windows 或 WindowTabs 保留"; ja="Windows か WindowTabs が使用中"; ar="محجوز لـ Windows أو WindowTabs" }
+        /// A key Windows keeps for itself, with what it does there, as "Used by Windows (close window)".
+        let usedByWindows (what:LocalizedText) =
+            { en=sprintf "Used by Windows (%s)" what.en; zh=sprintf "Windows 已占用（%s）" what.zh
+              ja=sprintf "Windows が使用中（%s）" what.ja; ar=sprintf "يستخدمه Windows (%s)" what.ar }
+        let closeWindow = { en="close window"; zh="关闭窗口"; ja="ウィンドウを閉じる"; ar="إغلاق النافذة" }
+        let switchWindows = { en="switch windows"; zh="切换窗口"; ja="ウィンドウの切り替え"; ar="التبديل بين النوافذ" }
+        let cycleWindows = { en="cycle windows"; zh="按顺序切换窗口"; ja="ウィンドウを順に切り替え"; ar="التنقل بين النوافذ بالترتيب" }
+        let startMenu = { en="Start menu"; zh="开始菜单"; ja="スタート メニュー"; ar="قائمة ابدأ" }
+        let taskManager = { en="Task Manager"; zh="任务管理器"; ja="タスク マネージャー"; ar="إدارة المهام" }
+        /// Alt+Enter, which sets a shortcut in the palette.
+        let usedByPalette = { en="Used by the command palette (set shortcut)"; zh="命令面板已占用（设置快捷键）"
+                              ja="コマンドパレットが使用中（ショートカットの設定）"; ar="تستخدمه لوحة الأوامر (تعيين اختصار)" }
         let includeCtrlOrAlt = { en="Include Ctrl or Alt"; zh="需要包含 Ctrl 或 Alt"; ja="Ctrl か Alt が必要です"; ar="يجب أن يتضمن Ctrl أو Alt" }
         let pressShortcut = { en="Press a shortcut…"; zh="按下组合键…"; ja="キーを押してください…"; ar="اضغط اختصارًا…" }
         let notSet = { en="Not set"; zh="未设置"; ja="未設定"; ar="غير معيّن" }

@@ -553,18 +553,25 @@ let main() =
         // Keys Windows or the palette keep are refused by name, the shortcut left as it was.
         previous.Shortcut <- 3621
         hotKeys.["prevTab"] <- 3621
-        for reserved in [Keys.Alt ||| Keys.Enter;Keys.Alt ||| Keys.F4;Keys.Alt ||| Keys.Space;Keys.Control ||| Keys.Escape] do
+        // Each says what has the key: Windows and what it does there, or the palette.
+        for reserved,why in [Keys.Alt ||| Keys.Enter,Strings.Shortcuts.usedByPalette
+                             Keys.Alt ||| Keys.F4,Strings.Shortcuts.usedByWindows Strings.Shortcuts.closeWindow
+                             Keys.Control ||| Keys.Escape,Strings.Shortcuts.usedByWindows Strings.Shortcuts.startMenu] do
             previous.StartRecording()
             command previous reserved |> ignore
-            assertTrue (previous.Shortcut=3621 && hotKeys.["prevTab"]=3621 && previous.Message=Some(tr Strings.Shortcuts.reserved))
+            assertTrue (previous.Shortcut=3621 && hotKeys.["prevTab"]=3621 && previous.Message=Some(tr why))
                        (sprintf "%A was taken as a shortcut" reserved)
             // Said with the key on a line under the box, as the palette says it, not cut short in it.
             let row = previous.Parent :?> TableLayoutPanel
-            let said = tr (Strings.Shortcuts.keySays (SettingsShortcut.text (SettingsShortcut.encode reserved)) (tr Strings.Shortcuts.reserved))
+            let said = tr (Strings.Shortcuts.keySays (SettingsShortcut.text (SettingsShortcut.encode reserved)) (tr why))
             match row.GetControlFromPosition(1,1) with
             | :? Label as note -> assertTrue (not previous.ShowsMessage && note.Visible && note.Text=said) (sprintf "The refusal of %A under the box reads %A" reserved note.Text)
             | _ -> failwithf "The refusal of %A is not on a line under the box" reserved
             command previous Keys.Escape |> ignore
+        // Alt+Space, the window menu's key, which launchers commonly take, can be a shortcut.
+        previous.StartRecording()
+        command previous (Keys.Alt ||| Keys.Space) |> ignore
+        assertTrue (previous.Shortcut=SettingsShortcut.encode (Keys.Alt ||| Keys.Space)) "Alt+Space was refused as a shortcut"
         previous.Shortcut <- 3621
         previous.Clear()
         assertTrue (hotKeys.["prevTab"]=0) "Clear removes the shortcut"

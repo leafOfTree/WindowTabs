@@ -371,9 +371,10 @@ type SettingsShortcutInput() as this =
         elif SettingsShortcut.isModifier key then this.Invalidate(); true
         else
             lastPressed <- SettingsShortcut.encode keyData
-            if SettingsShortcut.isReserved keyData then showMessage true (tr Strings.Shortcuts.reserved)
-            elif SettingsShortcut.isAcceptable keyData then commit lastPressed
-            else showMessage true (tr Strings.Shortcuts.includeCtrlOrAlt)
+            match SettingsShortcut.reservedFor keyData with
+            | Some why -> showMessage true (tr why)
+            | None when SettingsShortcut.isAcceptable keyData -> commit lastPressed
+            | None -> showMessage true (tr Strings.Shortcuts.includeCtrlOrAlt)
             true
     override this.OnKeyUp(e) =
         base.OnKeyUp(e)
