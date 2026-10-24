@@ -352,12 +352,18 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         let left = rowNameLeft()
         let width = TextRenderer.MeasureText(text,SettingsUi.bodyFont(),Size.Empty,TextFormatFlags.SingleLine).Width
         Rectangle(left,0,width,scopeHeight),keyCap (left+width+Dpi.scale 8) "Esc"
-    /// Whether the rows in view can be given shortcuts, said at the line's right end.
+    /// The chosen row, once the list below is made.
+    let mutable chosenRow : unit -> obj = fun () -> null
+    /// Whether Alt+Enter gives the chosen row a shortcut, said at the line's right end only then:
+    /// said for any row of the page, it promised a key to a setting that takes none.
     let canAssign() =
         choices.IsEmpty &&
-        (match page() with
-         | Some page -> page.entries |> List.exists(fun entry -> (page.shortcut entry).IsSome)
-         | None -> scoped() |> Array.exists(fun (_,entry) -> (windowShortcut entry).IsSome))
+        (let chosen = chosenRow()
+         scoped() |> Array.exists(fun (row,entry) ->
+             obj.ReferenceEquals(row,chosen) &&
+             (match page() with
+              | Some page -> (page.shortcut entry).IsSome
+              | None -> (windowShortcut entry).IsSome)))
     /// The shortcut editor over the chosen row while one is being set, with its row.
     let mutable assigning : (TreeListItem * SettingsShortcutInput) option = None
     let mutable hovered : PaletteScope option = None
@@ -429,6 +435,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                                     ScrollBarWidth=padding-1,
                                     BackColor=palette.surface,ForeColor=palette.text)
     do rowNameLeft <- fun () -> match Seq.tryHead list.Roots with Some item -> list.NameLeft item | None -> Dpi.scale 10
+    do chosenRow <- fun () -> box list.SelectedItem
     let empty = new Label(Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleCenter,Visible=false,
                           Font=SettingsUi.bodyFont(),BackColor=palette.surface,ForeColor=palette.muted,
                           Text=tr Strings.TabSearch.noMatches)
@@ -982,6 +989,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 input.AppendText(string e.KeyChar)
                 e.Handled <- true)
         list.ItemActivated.Add activate
+        list.SelectionChanged.Add(fun _ -> footer.Invalidate())
         // A setting's value shown as the choice moves onto it with the keys; Esc puts it back.
         list.SelectionChanged.Add(fun _ ->
             if not selecting && not closed && asking.IsNone && not previewOptions.IsEmpty then
@@ -1060,3 +1068,5 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     member _.BeginAssign() = beginAssign()
     /// The box recording a shortcut, while one is.
     member _.ShortcutEditor = assigning |> Option.map snd
+    /// Whether the line under the rows offers Alt+Enter for the chosen row.
+    member _.ShortcutOffered = canAssign()

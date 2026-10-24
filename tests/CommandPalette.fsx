@@ -667,6 +667,11 @@ let main() =
             match palette.Results with
             | first::_ -> note (first.title=tr command.text.caption) (sprintf "Searching \"%s\" put %s first" (tr command.text.caption) first.title)
             | [] -> issues.Add(sprintf "Searching \"%s\" found nothing" (tr command.text.caption))
+        // Alt+Enter is offered for a row that takes a key, and not for a setting that takes none.
+        for caption,offered in [tr Strings.Commands.renameTab.caption,true; tr Strings.Settings.switchTabsByNumber.caption,false] do
+            palette.Query <- caption
+            note ((palette.Results |> List.tryHead |> Option.map(fun entry -> entry.title))=Some caption) (sprintf "Searching \"%s\" did not put it first" caption)
+            note (palette.ShortcutOffered=offered) (sprintf "With %s chosen, Alt+Enter was %s" caption (if offered then "not offered" else "offered, though it sets no key"))
         palette.Query <- tr Strings.Commands.tabColor.caption
         palette.Accept()
         note (palette.Depth=1 && not palette.IsClosed) "Tab color… did not list its colours in the palette"
