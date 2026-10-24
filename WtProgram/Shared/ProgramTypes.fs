@@ -45,6 +45,8 @@ type SettingsRec = {
     enabledNumberShortcutPaths: Set2<string>
     combineIconsInTaskbar: bool
     enableHoverActivate: bool
+    /// Tab titles in bold.
+    tabTextBold: bool
     /// "Never", "Maximized" or "Always".
     autoHideMode: string
     /// Off, Windows (groups, positions and splits among the windows open) or Apps (their apps started too).

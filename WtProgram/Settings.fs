@@ -160,6 +160,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         numberHotKeyModifier = settingsJson.getString("numberHotKeyModifier").def(SettingsCatalog.choiceDefault "numberHotKeyModifier") |> SettingsCatalog.normalizeChoice "numberHotKeyModifier"
                         sessionRestore = settingsJson.getString("sessionRestore").def(SettingsCatalog.choiceDefault "sessionRestore") |> SettingsCatalog.normalizeChoice "sessionRestore"
                         enableHoverActivate = settingsJson.getBool("enableHoverActivate").def(SettingsCatalog.toggleDefault "enableHoverActivate" hasExistingSettings)
+                        tabTextBold = settingsJson.getBool("tabTextBold").def(SettingsCatalog.toggleDefault "tabTextBold" hasExistingSettings)
                         // Older versions stored two toggles: minimalMode (every window) and autoHide (maximized only).
                         autoHideMode =
                             settingsJson.getString("autoHideMode").def(
@@ -253,6 +254,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setString("numberHotKeyModifier", settings.numberHotKeyModifier)
             settingsJson.setString("sessionRestore", settings.sessionRestore)
             settingsJson.setBool("enableHoverActivate", settings.enableHoverActivate)
+            settingsJson.setBool("tabTextBold", settings.tabTextBold)
             settingsJson.setString("autoHideMode", settings.autoHideMode)
             settingsJson.setBool("showTabsOnSwitch", settings.showTabsOnSwitch)
             settingsJson.Remove("autoHide") |> ignore

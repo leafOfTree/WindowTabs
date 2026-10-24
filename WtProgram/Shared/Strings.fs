@@ -152,7 +152,9 @@ module Strings =
 
     /// Captions, descriptions and search keywords of SettingsCatalog entries.
     module Settings =
-        let private colorWords = { en="color colour"; zh="颜色 配色"; ja="色 カラー"; ar="اللون الألوان" }
+        let private colorWords = { en="tab color colour"; zh="标签 颜色 配色"; ja="タブ 色 カラー"; ar="علامة تبويب اللون الألوان" }
+        /// The tabs' text, found as such: the settings name it by what it colours.
+        let private tabTextWords = { en="tab text title font color colour"; zh="标签文本 标签文字 标签 文本 文字 标题 字体 颜色"; ja="タブの文字 タブ テキスト 文字 タイトル フォント 色"; ar="نص علامة التبويب علامة تبويب نص عنوان خط اللون" }
         let private sizeWords = { en="size"; zh="尺寸 大小"; ja="サイズ 大きさ"; ar="الحجم" }
         let private hotkeyWords = { en="hotkey"; zh="热键"; ja="ホットキー"; ar="مفتاح الاختصار" }
         let theme = { caption={ en="Theme"; zh="主题"; ja="テーマ"; ar="السمة" }
@@ -340,7 +342,10 @@ module Strings =
                                                ja="タブ上でホイールを押すと、そのウィンドウを閉じます。"
                                                ar="اضغط بعجلة الفأرة على علامة التبويب لإغلاق نافذتها." }
                                  keywords={ en="wheel click"; zh="中键 滚轮"; ja="ホイール クリック"; ar="النقر بعجلة الفأرة" } }
-        let tabTextColor = { caption={ en="Text and close button"; zh="文字与关闭按钮"; ja="文字と閉じるボタン"; ar="النص وزر الإغلاق" }; description=none; keywords=colorWords }
+        let tabTextColor = { caption={ en="Text and close button"; zh="文字与关闭按钮"; ja="文字と閉じるボタン"; ar="النص وزر الإغلاق" }; description=none; keywords=tabTextWords }
+        let tabTextBold = { caption={ en="Bold tab text"; zh="标签文字加粗"; ja="タブの文字を太字にする"; ar="نص علامات التبويب بخط عريض" }
+                            description={ en="Titles of every tab in a heavier weight."; zh="所有标签的标题以粗体显示。"; ja="すべてのタブのタイトルを太字で表示します。"; ar="عناوين كل علامات التبويب بخط أثقل." }
+                            keywords=tabTextWords }
         let tabNormalBgColor = { caption={ en="Inactive tab"; zh="非活动标签"; ja="非アクティブなタブ"; ar="علامة تبويب غير نشطة" }; description=none; keywords=colorWords }
         let tabActiveBgColor = { caption={ en="Active tab"; zh="活动标签"; ja="アクティブなタブ"; ar="علامة تبويب نشطة" }; description=none; keywords=colorWords }
         let tabHighlightBgColor = { caption={ en="Hovered tab"; zh="悬停标签"; ja="ホバー中のタブ"; ar="علامة التبويب التي يشير إليها المؤشر" }; description=none; keywords=colorWords }

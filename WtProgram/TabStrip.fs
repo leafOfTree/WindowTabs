@@ -77,6 +77,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let eventHandlersCell = Cell.create(Set2())
     let tabTint = Cell.create(Map2())
     let colorStyleCell = Cell.create(Services.settings.getValue("tabColorStyle") :?> string)
+    let textBoldCell = Cell.create(Services.settings.getValue("tabTextBold") :?> bool)
     let tabBgColor = Cell.create(Map2())
     let mutable shadowWindow : TabShadowWindow option = None
     let mutable shadowRefreshPending = false
@@ -108,6 +109,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let mutable fontKey = Dpi.value(),0
     let mutable normalFont = makeFont 0 FontStyle.Regular
     let mutable renamedFont = makeFont 0 FontStyle.Italic
+    let mutable boldFont = makeFont 0 FontStyle.Bold
+    let mutable renamedBoldFont = makeFont 0 (FontStyle.Bold ||| FontStyle.Italic)
 
     let isMouseOverExport = Cell.export <| fun() ->
         if this.isVertical then ptCell.value.IsSome else hoverCell.value.IsSome
@@ -154,6 +157,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member _.setTabTint(tab,color) =
         if tabTint.value.tryFind(tab) <> color then tabTint.value <- match color with Some c -> tabTint.value.add tab c | None -> tabTint.value.remove tab
     member _.colorStyle with get() = colorStyleCell.value and set value = colorStyleCell.value <- value
+    member _.textBold with get() = textBoldCell.value and set value = textBoldCell.value <- value
     member _.numberBadgeKeys with get() = numberBadgeKeysCell.value and set value = numberBadgeKeysCell.value <- value
     member _.numberBadges with get() = numberBadgesCell.value and set value = numberBadgesCell.value <- value
 
@@ -182,7 +186,12 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                     TabDisplayInfo.text = ti.text
                     splitTrail = ti.splitTrail
                     icon = ti.iconSmall
-                    textFont = if ti.isRenamed then renamedFont else normalFont
+                    textFont =
+                        match ti.isRenamed,textBoldCell.value with
+                        | true,true -> renamedBoldFont
+                        | true,false -> renamedFont
+                        | false,true -> boldFont
+                        | false,false -> normalFont
                     textBrush = SystemBrushes.MenuText
                 }
                 tab,tabInfo
@@ -805,10 +814,11 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.setTabAppearance(appearance:TabAppearanceInfo) =
         let key = Dpi.value(),appearance.tabHeight
         if fontKey <> key then
-            normalFont.Dispose()
-            renamedFont.Dispose()
+            for font in [normalFont;renamedFont;boldFont;renamedBoldFont] do font.Dispose()
             normalFont <- makeFont appearance.tabHeight FontStyle.Regular
             renamedFont <- makeFont appearance.tabHeight FontStyle.Italic
+            boldFont <- makeFont appearance.tabHeight FontStyle.Bold
+            renamedBoldFont <- makeFont appearance.tabHeight (FontStyle.Bold ||| FontStyle.Italic)
             fontKey <- key
         appearanceCell.set(Some(appearance))
             
@@ -881,8 +891,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         titleTip |> Option.iter(fun tip -> tip.Dispose())
         titleTip <- None
         dropRevealImages()
-        normalFont.Dispose()
-        renamedFont.Dispose()
+        for font in [normalFont;renamedFont;boldFont;renamedBoldFont] do font.Dispose()
         shadowWindow |> Option.iter (fun shadow -> (shadow :> IDisposable).Dispose())
         shadowWindow <- None
         eventHandlersCell.value.items.iter(fun d -> d.Dispose())

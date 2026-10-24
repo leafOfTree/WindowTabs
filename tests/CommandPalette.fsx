@@ -410,6 +410,12 @@ let main() =
                     runDone command.id active
                     note ((api.getValue key :?> bool)=before) (sprintf "%s run again did not turn %s back" command.id key)
                 | _ -> issues.Add(sprintf "%s has no setting to turn" command.id))
+        // Bold tab text reaches each group's strip as it is turned, and back.
+        attempt "tab text bold" (fun () ->
+            api.setValue("tabTextBold",box true)
+            pumpUntil "Bold tab text reaching the group" (fun () -> onGroupOf active (fun group -> group.ts.textBold))
+            api.setValue("tabTextBold",box false)
+            pumpUntil "Bold tab text leaving the group" (fun () -> not (onGroupOf active (fun group -> group.ts.textBold))))
         attempt "refresh-windows" (fun () -> runDone "refresh-windows" active; note (called "refresh") "Look for windows again did not refresh")
         attempt "exit" (fun () -> runDone "exit" active; note (called "shutdown") "Exit WindowTabs did not exit")
         // Closing, last, on groups of their own.
@@ -571,6 +577,12 @@ let main() =
         palette.Query <- ""
         palette.SwitchScope()
         note (palette.Scope=ActionScope) "Tab left the palette's one page"
+        // The tabs' text is found as tab text, in English and as one Chinese word.
+        for query in ["tab text";"标签文本"] do
+            palette.Query <- query
+            let titles = palette.Results |> List.map(fun entry -> entry.title)
+            for setting in [Strings.Settings.tabTextColor;Strings.Settings.tabTextBold] do
+                note (List.contains (tr setting.caption) titles) (sprintf "Searching \"%s\" did not find %s: %A" query (tr setting.caption) titles)
         // A setting for the group in front comes before the one for every group, its name a little
         // longer: the group in front is what the palette was opened over.
         for query,groupCommand,setting in ["tab po",Strings.Commands.groupTabPosition,Strings.Settings.tabPosition
