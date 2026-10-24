@@ -98,7 +98,8 @@ type SettingsActionButton() as this =
             // Whole pixels, so each stroke is as crisp as the text beside it; a length of the
             // button's own parity sits exactly in its middle.
             let w,h = this.Width,this.Height
-            let arm = max 3 (min w h*7/26)
+            // About the size the font drew them: 10px across on a 26px button.
+            let arm = max 2 (min w h*5/26)
             let stroke = max 1 (Dpi.scale 1)
             use ink = new SolidBrush(textColor)
             e.Graphics.SmoothingMode <- SmoothingMode.None
