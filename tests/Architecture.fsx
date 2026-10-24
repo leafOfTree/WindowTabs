@@ -1047,6 +1047,25 @@ let main() =
     check (applied.[applied.Count-1]="50") "Closing undid a size saved as it was typed"
     // The command line: what each form asks for, and the pipe a running copy takes them over.
     check (CommandLine.parse [||]=Start && CommandLine.parse [|"--restart"|]=Restart) "A plain or restarting start was not read"
+    // Every example the help gives is read as it says, in every language, its commands real ones.
+    for language in ["en";"zh";"ja";"ar"] do
+        let help =
+            match language with
+            | "zh" -> Strings.CommandLine.usage.zh | "ja" -> Strings.CommandLine.usage.ja
+            | "ar" -> Strings.CommandLine.usage.ar | _ -> Strings.CommandLine.usage.en
+        let examples = help.Split('\n') |> Array.filter(fun line -> line.StartsWith "  WindowTabs ")
+        check (examples.Length>=5) (sprintf "The %s help gives too few examples" language)
+        for example in examples do
+            // Words, or several in quotes, as a shell splits them.
+            let args =
+                Text.RegularExpressions.Regex.Matches(example.Trim().Substring("WindowTabs ".Length),"\"[^\"]*\"|\\S+")
+                |> Seq.cast<Text.RegularExpressions.Match> |> Seq.map(fun m -> m.Value.Trim('"')) |> Array.ofSeq
+            match CommandLine.parse args with
+            | Invalid _ | Start | Help -> failwithf "The help's example %s is not read as a request" example
+            | RunCommand(id,_) -> check (Commands.find id).IsSome (sprintf "The help's example names no command %s" id)
+            | _ -> ()
+        for option in ["--command";"-c";"--workspace";"-w";"--group";"-g";"--commands";"--help";"-h"] do
+            check (help.Contains option) (sprintf "The %s help leaves out %s" language option)
     check (CommandLine.parse [|"--command";"next-tab"|]=RunCommand("next-tab",None)) "A command by id was not read"
     check (CommandLine.parse [|"-c";"tab-color";"Sky";"blue"|]=RunCommand("tab-color",Some "Sky blue")) "A command's choice was not read whole"
     check (CommandLine.parse [|"--workspace";"Dev";"work"|]=RestoreWorkspace "Dev work") "A workspace name with a space was not read whole"
