@@ -291,24 +291,24 @@ let main() =
             note (not (onGroupOf active (fun group -> group.isIconOnly))) "Show icons only run again did not bring them back")
         attempt "group-tab-position" (fun () ->
             let options = choicesOf "group-tab-position" active
-            note (options.Length=3) "Tab position… does not offer top, left and right"
+            note (options.Length=3) "Position this group's tabs… does not offer top, left and right"
             if options.Length=3 then
                 options.[1].run() |> ignore
-                note (onGroupOf active (fun group -> group.ts.dock)=TabDockLeft) "Tab position… left did not move the tabs"
+                note (onGroupOf active (fun group -> group.ts.dock)=TabDockLeft) "Position this group's tabs… left did not move the tabs"
                 options.[0].run() |> ignore
-                note (onGroupOf active (fun group -> group.ts.dock)=TabDockTop) "Tab position… top did not bring them back")
+                note (onGroupOf active (fun group -> group.ts.dock)=TabDockTop) "Position this group's tabs… top did not bring them back")
         attempt "group-tab-alignment" (fun () ->
             let options = choicesOf "group-tab-alignment" active
-            note (options.Length=3) "Align tabs… does not offer three places"
+            note (options.Length=3) "Align this group's tabs… does not offer three places"
             if options.Length=3 then
                 options.[0].run() |> ignore
-                note (onGroupOf active (fun group -> group.ts.getAlignment TabUp)=TabLeft) "Align tabs… did not align the tabs")
+                note (onGroupOf active (fun group -> group.ts.getAlignment TabUp)=TabLeft) "Align this group's tabs… did not align the tabs")
         attempt "group-auto-hide" (fun () ->
             let options = choicesOf "group-auto-hide" active
-            note (options.Length=3) "Auto-hide tabs… does not offer its three modes"
+            note (options.Length=3) "Auto-hide this group's tabs… does not offer its three modes"
             if options.Length=3 then
                 options.[2].run() |> ignore
-                note (onGroupOf active (fun group -> group.bb.read("autoHideMode",""))="Always") "Auto-hide tabs… did not set the group's mode"
+                note (onGroupOf active (fun group -> group.bb.read("autoHideMode",""))="Always") "Auto-hide this group's tabs… did not set the group's mode"
                 options.[0].run() |> ignore)
         attempt "tabs-for-app" (fun () ->
             let before = Services.filter.getIsTabbingEnabledForProcess path
@@ -424,6 +424,14 @@ let main() =
         let titles = page.entries |> List.map(fun entry -> entry.title)
         for title,count in titles |> List.countBy id do
             note (count=1) (sprintf "The Actions page lists %s %d times" title count)
+        // A command for the group in front is not named as the setting for every group is: the two
+        // read alike in a search, a "…" apart, with nothing to tell which is which.
+        let bare (text:string) = text.TrimEnd('…').Trim().ToLowerInvariant()
+        let settingNames = SettingsCatalog.all |> List.filter(fun item -> match item.binding with Shortcut _ -> false | _ -> true) |> List.collect(fun item -> Localization.all item.text.caption) |> List.map bare |> set
+        for command in Commands.all |> List.filter(fun command -> command.listed) do
+            for caption in Localization.all command.text.caption do
+                note (not (settingNames.Contains (bare caption)) || (Commands.find command.id).Value.category=SettingsCommands)
+                     (sprintf "%s is named \"%s\" as a setting is" command.id caption)
         for command in Commands.all |> List.filter(fun command -> command.listed) do
             note (List.contains (tr command.text.caption) titles) (sprintf "%s is not on the Actions page" command.id)
             for caption in Localization.all command.text.caption do

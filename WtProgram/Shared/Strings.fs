@@ -610,10 +610,10 @@ module Strings =
                                keywords={ en="join"; zh="加入 合并"; ja="参加 結合"; ar="انضمام" } }
         let private groupNote = { en="For this group; the setting is for new groups."; zh="只对当前分组有效；设置项针对新分组。"; ja="このグループのみ。設定は新しいグループに適用されます。"; ar="لهذه المجموعة؛ أما الإعداد فللمجموعات الجديدة." }
         let iconsOnly = { caption=TabMenu.showIconsOnly; description={ en="Again, and the titles come back."; zh="再次执行则恢复标题。"; ja="もう一度実行するとタイトルが戻ります。"; ar="مرة أخرى، وتعود العناوين." }; keywords={ en="titles compact"; zh="标题 紧凑"; ja="タイトル コンパクト"; ar="عناوين مضغوط" } }
-        let groupTabPosition = { caption={ en="Tab position…"; zh="标签位置…"; ja="タブの位置…"; ar="موضع علامات التبويب…" }; description=groupNote; keywords={ en="top left right side"; zh="顶部 左侧 右侧"; ja="上 左 右"; ar="أعلى يسار يمين" } }
-        let groupTabAlignment = { caption={ en="Align tabs…"; zh="对齐标签…"; ja="タブを揃える…"; ar="محاذاة علامات التبويب…" }; description=groupNote; keywords={ en="alignment center"; zh="对齐 居中"; ja="配置 中央"; ar="محاذاة وسط" } }
-        let groupAutoHide = { caption={ en="Auto-hide tabs…"; zh="自动隐藏标签…"; ja="タブを自動的に隠す…"; ar="إخفاء علامات التبويب تلقائيًا…" }; description=groupNote; keywords={ en="collapse"; zh="收起"; ja="折りたたみ"; ar="طيّ" } }
-        let combineGroupIcons = { caption=TabMenu.combineTaskbarIcons; description=groupNote; keywords={ en="merge taskbar"; zh="合并 任务栏"; ja="結合 タスクバー"; ar="دمج شريط المهام" } }
+        let groupTabPosition = { caption={ en="Position this group's tabs…"; zh="此分组的标签位置…"; ja="このグループのタブの位置…"; ar="موضع علامات تبويب هذه المجموعة…" }; description=groupNote; keywords={ en="top left right side"; zh="顶部 左侧 右侧"; ja="上 左 右"; ar="أعلى يسار يمين" } }
+        let groupTabAlignment = { caption={ en="Align this group's tabs…"; zh="对齐此分组的标签…"; ja="このグループのタブを揃える…"; ar="محاذاة علامات تبويب هذه المجموعة…" }; description=groupNote; keywords={ en="alignment center"; zh="对齐 居中"; ja="配置 中央"; ar="محاذاة وسط" } }
+        let groupAutoHide = { caption={ en="Auto-hide this group's tabs…"; zh="自动隐藏此分组的标签…"; ja="このグループのタブを自動的に隠す…"; ar="إخفاء علامات تبويب هذه المجموعة تلقائيًا…" }; description=groupNote; keywords={ en="collapse"; zh="收起"; ja="折りたたみ"; ar="طيّ" } }
+        let combineGroupIcons = { caption={ en="Combine this group's taskbar icons"; zh="合并此分组的任务栏图标"; ja="このグループのタスクバーアイコンをまとめる"; ar="دمج أيقونات شريط المهام لهذه المجموعة" }; description=groupNote; keywords={ en="merge taskbar"; zh="合并 任务栏"; ja="結合 タスクバー"; ar="دمج شريط المهام" } }
         let tabsForApp = { caption={ en="Tabs for this app"; zh="此应用启用标签"; ja="このアプリのタブ"; ar="علامات التبويب لهذا التطبيق" }
                            description={ en="Turns tabs on or off for the app of the window in front."; zh="为当前窗口所属的应用开启或关闭标签。"; ja="前面のウィンドウのアプリでタブをオン／オフにします。"; ar="يشغّل علامات التبويب أو يوقفها لتطبيق النافذة الأمامية." }
                            keywords={ en="enable disable application"; zh="启用 禁用 应用"; ja="有効 無効 アプリ"; ar="تمكين تعطيل تطبيق" } }
