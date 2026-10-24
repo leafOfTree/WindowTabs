@@ -16,19 +16,27 @@ type AnimationWindow(os:OS) =
             WindowsExtendedStyles.WS_EX_TOPMOST |||
             WindowsExtendedStyles.WS_EX_TRANSPARENT 
         os.createWindow (fun msg -> msg.def()) styles stylesExe
-        
+    /// The image on screen. One set while the window shows, as a dragged window's picture that
+    /// arrives after the tab left its strip, is drawn: moved only, the drag kept the tab alone.
+    let mutable shown : Img option = None
+
     do  scope.listen <| fun() ->
             let window = os.windowFromHwnd(window.hwnd)
             match isWindowVisible.value, isVisible.value with
-            | true, true -> 
-                window.updateLocation(location.value)
-            | true, false -> 
+            | true, true ->
+                match image.value with
+                | Some(image) when not (shown |> Option.exists(fun s -> obj.ReferenceEquals(s,image))) ->
+                    window.update(image, location.value, alpha.value)
+                    shown <- Some image
+                | _ -> window.updateLocation(location.value)
+            | true, false ->
                 window.hide()
                 isWindowVisible.set(false)
-            | false, true -> 
+            | false, true ->
                 match image.value with
                 | Some(image) ->
                     window.update(image, location.value, alpha.value)
+                    shown <- Some image
                     isWindowVisible.set(true)
                 | None -> ()
             | false, false -> ()

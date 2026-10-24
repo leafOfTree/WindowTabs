@@ -70,6 +70,15 @@ let main() =
         use graphics = image.graphics
         graphics.Clear(color)
         image
+    // A dragged window's picture arrives after the tab-only image may already show.
+    let shown = AnimationWindow(OS())
+    shown.setLocation(Pt(-32000,-32000))
+    shown.setImage(colored Color.Red (Sz(20,10)))
+    shown.setIsVisible(true)
+    shown.setImage(colored Color.Red (Sz(60,40)))
+    let drawn = Win32Helper.GetWindowRectangle(shown.hwnd)
+    shown.Dispose()
+    check (drawn.Width=60 && drawn.Height=40) (sprintf "A drag image set while showing was not drawn: %dx%d" drawn.Width drawn.Height)
     // A desktop origin must be subtracted before drawing into the preview canvas.
     let origin = Pt(300,200)
     let location = TaskbarPreview.relativeLocation (Rect(origin,Sz(64,52))) (Rect(Pt(300,220),Sz(64,32)))
