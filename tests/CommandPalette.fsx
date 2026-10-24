@@ -291,24 +291,24 @@ let main() =
             note (not (onGroupOf active (fun group -> group.isIconOnly))) "Show icons only run again did not bring them back")
         attempt "group-tab-position" (fun () ->
             let options = choicesOf "group-tab-position" active
-            note (options.Length=3) "Position this group's tabs… does not offer top, left and right"
+            note (options.Length=3) "Position tabs for this group… does not offer top, left and right"
             if options.Length=3 then
                 options.[1].run() |> ignore
-                note (onGroupOf active (fun group -> group.ts.dock)=TabDockLeft) "Position this group's tabs… left did not move the tabs"
+                note (onGroupOf active (fun group -> group.ts.dock)=TabDockLeft) "Position tabs for this group… left did not move the tabs"
                 options.[0].run() |> ignore
-                note (onGroupOf active (fun group -> group.ts.dock)=TabDockTop) "Position this group's tabs… top did not bring them back")
+                note (onGroupOf active (fun group -> group.ts.dock)=TabDockTop) "Position tabs for this group… top did not bring them back")
         attempt "group-tab-alignment" (fun () ->
             let options = choicesOf "group-tab-alignment" active
-            note (options.Length=3) "Align this group's tabs… does not offer three places"
+            note (options.Length=3) "Align tabs for this group… does not offer three places"
             if options.Length=3 then
                 options.[0].run() |> ignore
-                note (onGroupOf active (fun group -> group.ts.getAlignment TabUp)=TabLeft) "Align this group's tabs… did not align the tabs")
+                note (onGroupOf active (fun group -> group.ts.getAlignment TabUp)=TabLeft) "Align tabs for this group… did not align the tabs")
         attempt "group-auto-hide" (fun () ->
             let options = choicesOf "group-auto-hide" active
-            note (options.Length=3) "Auto-hide this group's tabs… does not offer its three modes"
+            note (options.Length=3) "Auto-hide tabs for this group… does not offer its three modes"
             if options.Length=3 then
                 options.[2].run() |> ignore
-                note (onGroupOf active (fun group -> group.bb.read("autoHideMode",""))="Always") "Auto-hide this group's tabs… did not set the group's mode"
+                note (onGroupOf active (fun group -> group.bb.read("autoHideMode",""))="Always") "Auto-hide tabs for this group… did not set the group's mode"
                 options.[0].run() |> ignore)
         // Each shows the group's value now beside it once read from the group, ticked among its choices.
         attempt "group values shown" (fun () ->
