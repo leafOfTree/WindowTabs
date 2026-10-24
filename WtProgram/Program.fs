@@ -634,7 +634,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             else Result.Error (tr (Strings.CommandLine.noSuchWorkspace name))
         | StartGroup paths -> this.launchGroup paths; Result.Ok ""
         | ListCommands -> Result.Ok (CommandLine.listing())
-        | Start | Restart | Help | Invalid _ -> Result.Ok (CommandLine.usage())
+        | Invalid given -> Result.Error (CommandLine.invalid given)
+        | Start | Restart | Help -> Result.Ok (CommandLine.usage())
 
     /// Done once the first scan is over, as the windows are in their groups by then.
     member this.queueRequest(request:CommandLineRequest) = startupRequest <- Some request
@@ -1132,9 +1133,13 @@ module Bootstrap =
         let request = CommandLine.parse argv
         try
             match request with
-            | Help | Invalid _ ->
+            | Help ->
                 ConsoleOutput.write (CommandLine.usage())
-                (match request with Invalid _ -> 2 | _ -> 0)
+                0
+            // What was wrong, briefly, rather than the whole help.
+            | Invalid given ->
+                ConsoleOutput.write (CommandLine.invalid given)
+                2
             | ListCommands ->
                 ConsoleOutput.write (CommandLine.listing())
                 0

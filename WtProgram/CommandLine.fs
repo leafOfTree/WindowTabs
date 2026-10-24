@@ -33,6 +33,33 @@ module CommandLine =
         | ["--help"] | ["-h"] | ["/?"] -> Help
         | other -> Invalid(String.Join(" ",other))
     let usage() = tr Strings.CommandLine.usage
+    /// The options a command line may begin with, the long ones offered when one is mistyped.
+    let private options = ["--command";"-c";"--workspace";"-w";"--group";"-g";"--commands";"--list";"--help";"-h";"/?";"--restart"]
+    let private longOptions = ["--command";"--workspace";"--group";"--commands";"--help"]
+    let private distance (a:string) (b:string) =
+        let row = Array.init (b.Length+1) id
+        for i in 1..a.Length do
+            let mutable diagonal = row.[0]
+            row.[0] <- i
+            for j in 1..b.Length do
+                let above = row.[j]
+                row.[j] <- min (min (row.[j]+1) (row.[j-1]+1)) (diagonal+(if a.[i-1]=b.[j-1] then 0 else 1))
+                diagonal <- above
+        row.[b.Length]
+    /// Why a command line is not one, in a line or two: the option that needs a value, or the one
+    /// not known with the nearest that is, then where the options are listed.
+    let invalid (given:string) =
+        let word = given.Split([|' '|],StringSplitOptions.RemoveEmptyEntries) |> Array.tryHead |> Option.defaultValue ""
+        let problem =
+            if List.contains (word.ToLowerInvariant()) options then tr (Strings.CommandLine.needsValue word)
+            else
+                let near =
+                    longOptions |> List.map(fun option -> option,distance (word.ToLowerInvariant()) option)
+                    |> List.filter(fun (_,apart) -> apart<=2) |> List.sortBy snd |> List.tryHead |> Option.map fst
+                match near with
+                | Some option -> tr (Strings.CommandLine.unknownOption word)+" "+tr (Strings.CommandLine.didYouMean option)
+                | None -> tr (Strings.CommandLine.unknownOption word)
+        problem+Environment.NewLine+tr Strings.CommandLine.seeHelp
     /// Every command the palette lists, one per line: its id, then its name.
     let listing() =
         Commands.all |> List.filter(fun command -> command.listed)

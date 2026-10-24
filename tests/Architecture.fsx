@@ -1047,6 +1047,13 @@ let main() =
     check (applied.[applied.Count-1]="50") "Closing undid a size saved as it was typed"
     // The command line: what each form asks for, and the pipe a running copy takes them over.
     check (CommandLine.parse [||]=Start && CommandLine.parse [|"--restart"|]=Restart) "A plain or restarting start was not read"
+    // A mistyped option says so, with the nearest one, rather than printing the whole help.
+    check (CommandLine.parse [|"--comands"|]=Invalid "--comands") "A mistyped option was read as something"
+    let mistyped = CommandLine.invalid "--comands"
+    check (mistyped.Contains "--comands" && mistyped.Contains (tr (Strings.CommandLine.didYouMean "--commands")) && not (mistyped.Contains "Examples"))
+          (sprintf "A mistyped option said: %s" mistyped)
+    check ((CommandLine.invalid "--command").Contains (tr (Strings.CommandLine.needsValue "--command"))) "An option missing its value was not said to need one"
+    check (not ((CommandLine.invalid "--zzzzzz").Contains (tr (Strings.CommandLine.didYouMean "--commands")))) "An option far from any was given a guess"
     // Every example the help gives is read as it says, in every language, its commands real ones.
     for language in ["en";"zh";"ja";"ar"] do
         let help =
