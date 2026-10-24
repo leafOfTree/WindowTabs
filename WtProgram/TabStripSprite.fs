@@ -812,9 +812,16 @@ type TabStripSprite<'id> when 'id : equality = {
         path.CloseFigure()
         path
 
+    /// A column whose tabs are all filled with one colour is that colour's bar, as a row of them
+    /// is: the plain bar's grey round each tab broke it into pieces.
+    member private this.columnColor =
+        match this.lorder.list |> List.map(fun tab -> (this.tabSpriteOf tab).barColor) |> List.distinct with
+        | [one] -> one
+        | _ -> this.appearance.tabNormalBgColor
+
     member private this.bgImage =
         let bgColor = 
-            if this.isVertical then this.appearance.tabNormalBgColor
+            if this.isVertical then this.columnColor
             elif this.transparent then Color.FromArgb(0, 0, 0, 0)
             else Color.FromArgb(1, 1, 1, 1) 
         let img = Img(if this.size.isEmptyArea then Sz(1,1) else this.size)

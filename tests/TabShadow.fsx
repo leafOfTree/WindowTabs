@@ -263,6 +263,21 @@ let main () =
                     use collapsed = column.renderCollapsed.bitmap
                     let location = column.tabLocation tab.id
                     check (collapsed.GetPixel(1,location.y+tab.size.height/2).ToArgb()=Color.Red.ToArgb()) "Collapsed vertical strip lost its color mark"
+                // Filled with one colour, floating tabs in a column stand on that colour's bar, as in
+                // a row: the plain bar's grey between and round them broke it into pieces.
+                let filled tint = {info "Tab" with tint=Some tint;colorStyle="Fill"}
+                let coloured = {column with tabs=Map2(List2([1,filled Color.Blue;2,filled Color.Blue]))}
+                if not System.Windows.Forms.SystemInformation.HighContrast then
+                    use image = coloured.render.bitmap
+                    image.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "filled-column-%A-%A-%d.png" dock direction dpi))
+                    let shade = Theme.tabShade 0.12 0.6 Color.Blue
+                    check (image.GetPixel(image.Width/2,image.Height-Dpi.scale 4).ToArgb()=shade.ToArgb())
+                          "A column of tabs filled with one colour stands on the plain bar"
+                    // Tabs of different colours keep the plain bar between them.
+                    let mixed = {column with tabs=Map2(List2([1,filled Color.Blue;2,filled Color.Red]))}
+                    use mixedImage = mixed.render.bitmap
+                    check (mixedImage.GetPixel(mixedImage.Width/2,mixedImage.Height-Dpi.scale 4).ToArgb()=Theme.dark.scaled.tabNormalBgColor.ToArgb())
+                          "A column of tabs in different colours lost the plain bar"
                 let inactive = column.tabSprites.list |> List.map snd |> List.find(fun tab -> not tab.isTop)
                 let inactive = {inactive with hover=None;captured=None}
                 if not System.Windows.Forms.SystemInformation.HighContrast then
