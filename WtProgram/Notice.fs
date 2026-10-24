@@ -263,7 +263,21 @@ module Notice =
             value
     /// A notice that cannot be shown is no reason to stop what it was about.
     let private attempt action = try action() with error -> Diagnostics.Trace.TraceWarning("Notice failed: {0}",error.Message)
-    let private post kind (title:string) (message:string) = attempt (fun () -> (current()).show(title,message,kind))
+    let mutable private home : IDispatcher option = None
+    let mutable private presenter : (NoticeKind -> string -> string -> unit) option = None
+    /// The main thread, set at startup: a notice from a group's own thread is shown from there,
+    /// where its one window lives.
+    let useThread (dispatcher:IDispatcher) = home <- Some dispatcher
+    /// Takes the notices in place of the window, as a host checking them does.
+    let install present = presenter <- Some present
+    let private post kind (title:string) (message:string) =
+        let show() =
+            match presenter with
+            | Some present -> present kind title message
+            | None -> attempt (fun () -> (current()).show(title,message,kind))
+        match home with
+        | Some dispatcher when not dispatcher.CheckAccess -> dispatcher.Post show
+        | _ -> show()
     /// Goes after a few seconds.
     let show title message = post Info title message
     /// Done, but not all of it; stays a little longer.

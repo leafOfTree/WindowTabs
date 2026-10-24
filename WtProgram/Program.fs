@@ -35,6 +35,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let Cell = CellScope()
     let os = OS()
     let invoker = InvokerService.invoker
+    do Notice.useThread (invoker :> IDispatcher)
     let taskSwitchCell = Cell.create(None)
     let mutable initialDiscoveryComplete = false
     let tabSearchCell = Cell.create(None:TabSearchForm option)
@@ -154,7 +155,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             if unbox<bool> value then
                 if not ((this :> IProgram).setHotKey "numberLeader" ((this :> IProgram).getHotKey "numberLeader")) then
                     Services.settings.setValue("enableNumberLeader",box false)
-                    Alert.showSystem AlertKind.Warning (tr Strings.Settings.numberLeader.caption) (tr Strings.Shortcuts.inUse)
+                    // Said beside the switch just turned, not in a box to dismiss.
+                    Notice.error (tr Strings.Settings.numberLeader.caption) (tr Strings.Shortcuts.inUse)
             else hotKeyManager.unregister "numberLeader")) |> ignore
         let startupSubscription = Services.settings.notifyValue "runAtStartup" this.updateRunAtStartup
         let switcherSubscription = Services.settings.notifyValue "replaceAltTab" (fun value ->

@@ -1614,7 +1614,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 match next with
                 | Split s when fitsNow && not(fitsAll s.tree) ->
                     // A ratio or axis that does not fit is ignored; a split that cannot start says so.
-                    if not wasSplit then Alert.show AlertKind.Warning (tr Strings.TabMenu.split) (tr Strings.TabMenu.splitFailed)
+                    if not wasSplit then Notice.remind (tr Strings.TabMenu.split) (tr Strings.TabMenu.splitFailed)
                 | _ ->
                     let keep = match command with EndSplit keep -> keep | _ -> None
                     (match command with EndSplit _ -> splitRestore <- None | _ -> ())

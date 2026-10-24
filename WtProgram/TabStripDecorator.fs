@@ -382,7 +382,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         match Services.tryGet<ISplitPanePicker>() with
         | Some picker when not(List.isEmpty entries) ->
             picker.showWithin(group.layoutFrame.Rectangle,entries,fun chosen -> group.placeBeside(beside,chosen,axis,side))
-        | Some _ -> Alert.show AlertKind.Info (tr Strings.TabMenu.split) (tr Strings.TabMenu.splitNoWindows)
+        | Some _ -> Notice.show (tr Strings.TabMenu.split) (tr Strings.TabMenu.splitNoWindows)
         | None -> ()
 
     member private this.showSplitMenu(ptScreen:Pt, button:IntPtr option) =

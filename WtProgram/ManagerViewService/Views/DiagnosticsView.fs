@@ -29,7 +29,7 @@ module SettingsFile =
         if dialog.ShowDialog(owner)=DialogResult.OK then
             // The in-memory root, including edits still waiting to be written.
             File.WriteAllText(dialog.FileName,Services.settings.root.ToString(),UTF8Encoding(false))
-            Alert.show AlertKind.Info (tr Strings.General.settingsFile) (tr Strings.General.exported)
+            Notice.show (tr Strings.General.settingsFile) (tr Strings.General.exported)
 
     /// Replaces every setting, keeping a copy of the current ones beside the settings file, then
     /// restarts so hotkeys, workspaces, rules and open groups all reload.

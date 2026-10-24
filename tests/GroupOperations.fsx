@@ -805,9 +805,9 @@ let main() =
                         let form = forms |> List.find(fun form -> onHelper(fun () -> form.Handle)=other)
                         let frame = onGroup(fun group -> group.layoutFrame)
                         let wide = frame.width*3/5
-                        // Said, not shown: a message box would wait on the group's thread.
+                        // A notice, taken here rather than shown.
                         let alerts = ref []
-                        Alert.install(fun _ _ message -> lock alerts (fun () -> alerts.Value <- message::alerts.Value))
+                        Notice.install(fun _ _ message -> lock alerts (fun () -> alerts.Value <- message::alerts.Value))
                         onHelper(fun () -> form.MinimumSize <- Size(wide,100))
                         try
                             onGroup(fun group -> group.execute(SplitWith(other,SideBySide),current=shown))

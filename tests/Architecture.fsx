@@ -548,6 +548,19 @@ let main() =
         // What a typed word matched, said under a command as under a settings search result.
         check (SettingsCatalog.evidence "switcher" Strings.Settings.groupWindowsInSwitcher "General" []=["switcher"]) "A keyword match is not named under the row"
         check (SettingsCatalog.evidence "group" Strings.Settings.groupWindowsInSwitcher "General" []=[]) "A match the name shows is repeated under the row"
+        // A notice from a group's own thread is shown from the main one, where its window lives.
+        do
+            let shownOn = ref None
+            Notice.useThread (InvokerService.invoker :> IDispatcher)
+            Notice.install(fun _ _ _ -> shownOn.Value <- Some Thread.CurrentThread.ManagedThreadId)
+            let worker = Thread(fun () -> Notice.show "Title" "Message")
+            worker.Start()
+            worker.Join()
+            let clock = Diagnostics.Stopwatch.StartNew()
+            while shownOn.Value.IsNone && clock.ElapsedMilliseconds<5000L do
+                Application.DoEvents()
+                Thread.Sleep 5
+            check (shownOn.Value=Some Thread.CurrentThread.ManagedThreadId) "A notice from another thread was not shown from the main one"
         // Recent actions: the latest first, each once, a few kept.
         for key in ["a";"b";"a";"c";"d";"e";"f";"g";"h";"i"] do CommandPalette.remember key
         check (CommandPalette.recent()=["i";"h";"g";"f";"e";"d";"c";"a"]) "Recent actions were not kept latest first, each once, eight at most"
