@@ -495,6 +495,9 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             TabSearchNative.SendMessage(input.Handle,TabSearchNative.EM_SETCUEBANNER,IntPtr(1),currentPrompt()) |> ignore
     /// Lists the rows again for a value that changed, the chosen row kept.
     let mutable keptRow : IntPtr option = None
+    /// The row chosen at each level a command's choices or value were opened from, chosen again
+    /// on the way back rather than the first.
+    let mutable backRows : IntPtr option list = []
     /// A setting's values listed: each shown as the choice moves onto it, and whether one has been,
     /// so leaving without choosing puts the ticked value back.
     let mutable previewOptions : CommandChoice list = []
@@ -579,11 +582,12 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         empty.Visible <- shown.Length=0 && asking.IsNone
     /// The rows listed again, the chosen one still chosen: a switch turned with Enter, or a value
     /// come in, does not send the choice back to the best match.
+    let selectedRow() =
+        match list.SelectedItem with
+        | null -> None
+        | item -> scoped() |> Array.tryPick(fun (row,entry) -> if obj.ReferenceEquals(row,item) then Some entry.hwnd else None)
     let reapply() =
-        keptRow <-
-            match list.SelectedItem with
-            | null -> None
-            | item -> scoped() |> Array.tryPick(fun (row,entry) -> if obj.ReferenceEquals(row,item) then Some entry.hwnd else None)
+        keptRow <- selectedRow()
         try apply() finally keptRow <- None
     /// Takes the shortcut editor off its row and gives the keys back to the box.
     let endAssign() =
@@ -621,6 +625,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     /// Esc goes back.
     let push (caption:string) (options:CommandChoice list) =
         endAssign()
+        backRows <- selectedRow()::backRows
         let rows =
             options |> List.mapi(fun index option ->
                 let entry = { TabSearch.create (IntPtr(index+1)) option.label option.label option.detail with recency=index }
@@ -664,13 +669,15 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         match choices with
         | (_,_,_,query)::rest ->
             choices <- rest
+            let back = match backRows with row::more -> backRows <- more; row | [] -> None
             input.Text <- query
             // Back at the end of what was typed, to carry on typing.
             input.Select(query.Length,0)
             setPrompt()
             scopeLine.Invalidate()
             footer.Invalidate()
-            apply()
+            keptRow <- back
+            try apply() finally keptRow <- None
         | [] -> ()
     /// Enter while a value is asked for: taken, the palette closes; refused, it says why.
     let answer() =
@@ -705,10 +712,13 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 color.PickerClosed.Add(fun _ -> if not closed && form.Visible then form.Activate())
                 // One Esc goes back and one Enter takes the colour, as in the box, rather than the
                 // first only closing the picker.
+                // On the next turn: the box and its picker go with the value, not inside the
+                // picker's own closing.
                 color.PickerKey.Add(fun key ->
-                    if not closed then
-                        if key=Keys.Escape then pop()
-                        elif key=Keys.Enter then answer())
+                    form.BeginInvoke(Action(fun () ->
+                        if not closed then
+                            if key=Keys.Escape then pop()
+                            elif key=Keys.Enter then answer())) |> ignore)
                 (color :> SettingsInputFrame),color.TextBox
         frame.PlaceOn(palette.surface)
         // On the palette's surface, the field's own colour: outlined as the search box is.

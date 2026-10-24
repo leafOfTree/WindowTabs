@@ -633,8 +633,10 @@ let main() =
         // Esc in the picker goes back at once, as it does in the box: not a first Esc to close it.
         match palette.AskBox with
         | Some(:? SettingsColorInput as color) ->
-            let key = typeof<SettingsColorInput>.GetField("pickerKey",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).GetValue(color) :?> Event<Keys>
-            key.Trigger Keys.Escape
+            // The drop-down takes Esc itself and closes for the keyboard, as here.
+            let popup = typeof<SettingsColorInput>.GetField("popup",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).GetValue(color) :?> ToolStripDropDown
+            popup.Close(ToolStripDropDownCloseReason.Keyboard)
+            pump 100
             note (palette.Depth=0 && palette.AskBox.IsNone) "Esc in the colour picker did not go back"
         | _ -> ()
         palette.Close()
@@ -661,6 +663,19 @@ let main() =
         note ((api.getValue "tabTextBold" :?> bool)<>boldBefore) "Enter on Bold tab text did not turn it"
         note ((trial.Selected |> Option.map(fun entry -> entry.title))=Some boldTitle) "Turning a switch with Enter chose another row"
         trial.Accept()
+        // Back from a value or a list of values, the row it was opened from is chosen again.
+        trial.Query <- ""
+        for title in [tr Strings.Settings.tabTextColor.caption;tr Strings.Settings.tabStyle.caption] do
+            let mutable steps = 0
+            while (trial.Selected |> Option.map(fun entry -> entry.title))<>Some title && steps<200 do
+                trial.SelectNext()
+                steps <- steps+1
+            trial.Accept()
+            pump 100
+            note (trial.Depth=1) (sprintf "%s did not open" title)
+            trial.Back()
+            note ((trial.Selected |> Option.map(fun entry -> entry.title))=Some title)
+                 (sprintf "Back from %s chose %A" title (trial.Selected |> Option.map(fun entry -> entry.title)))
         // Moving through a setting's values shows each; Esc puts back the one it had.
         let style() = api.getValue "tabStyle" :?> string
         let before = style()

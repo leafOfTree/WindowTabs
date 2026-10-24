@@ -611,7 +611,9 @@ type SettingsColorInput() as this =
         popup.Items.Add(host) |> ignore
         popup.Closed.Add(fun e ->
             picker.Flush()
-            suppressClick <- SettingsPopupLifetime.isOwnerClick swatch e)
+            suppressClick <- SettingsPopupLifetime.isOwnerClick swatch e
+            // The drop-down takes Esc itself, before the picker sees the key, and closes for it.
+            if e.CloseReason=ToolStripDropDownCloseReason.Keyboard then pickerKey.Trigger Keys.Escape)
         swatch.Click.Add(fun _ ->
             if suppressClick then suppressClick <- false
             elif popup.Visible then popup.Close()
