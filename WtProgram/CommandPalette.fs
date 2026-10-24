@@ -15,6 +15,8 @@ module CommandPalette =
             { current=Services.program.getHotKey key
               usedBy=fun code -> Commands.holderName Services.program.getHotKey key code
               set=fun code -> Services.program.setHotKey key code })
+    /// A key of the lists, kept in the settings as the box reads it.
+    let private listKey key = Services.settings.hotKey key |> Option.defaultValue (SettingsCatalog.shortcutDefault key)
     let private shortcutText (command:Command) =
         command.shortcut |> Option.map(fun key -> SettingsShortcut.text (Services.program.getHotKey key)) |> Option.defaultValue ""
     /// One row of the actions page: a command, or a setting the commands do not already stand for.
@@ -93,6 +95,8 @@ module CommandPalette =
             pages |> List.collect(fun page ->
                 SettingsCatalog.all |> List.filter(fun item -> item.page=page) |> List.choose(fun item ->
                     match item.binding with
+                    // The lists' own keys, set here and nowhere else; the commands' are with them.
+                    | Shortcut(key,_) when List.contains key Commands.listKeys -> Some(ASetting item)
                     | Shortcut _ -> None
                     | Toggle(key,_,_) -> Commands.find ("toggle-"+item.id) |> Option.map(fun command -> ASwitch(item,key,command))
                     | Choice(key,values,_) -> Some(AChoice(item,key,values))
@@ -174,6 +178,8 @@ module CommandPalette =
                   let guarded action =
                       try action() with error -> Alert.show AlertKind.Warning (tr Strings.Common.operationFailed) error.Message
                   match item.binding,item.id with
+                  // A key of the lists: recorded over its row, as Enter starts there.
+                  | Shortcut _,_ -> Stay
                   | Number _,_ -> askNumber item
                   | Text(key,_),_ when key="numberLeaderKeys" -> askText item key
                   | Colour,_ -> askColor item
@@ -192,8 +198,14 @@ module CommandPalette =
                                        let taken = given.set code
                                        if taken then asides.Remove chosen.hwnd |> ignore
                                        taken })
+              // A key of the lists: kept in the settings, never for the whole desktop.
+              | ASetting { binding=Shortcut(key,_) } ->
+                  Some { current=listKey key
+                         usedBy=fun code -> Commands.holderName Services.program.getHotKey key code
+                         set=fun code -> Services.settings.setHotKey key code; asides.Remove chosen.hwnd |> ignore; true }
               | AChoice _ | ASetting _ -> None)
           dimmed=(fun chosen -> match action chosen with ACommand command -> not (command.enabled active) | _ -> false)
+          assignOnEnter=(fun chosen -> match action chosen with ASetting { binding=Shortcut _ } -> true | _ -> false)
           aside=(fun _ chosen ->
               match action chosen,asides.TryGetValue chosen.hwnd with
               // A group's value comes in from its own thread after the rows are listed: not kept.
@@ -211,6 +223,8 @@ module CommandPalette =
                           | Number _ -> { detail=string (Services.settings.getValue item.id :?> int); switch=None; swatch=None; shortcut=""; dropdown=false; small=false }
                           | Text(key,_) -> { detail=Services.settings.getValue key :?> string; switch=None; swatch=None; shortcut=""; dropdown=false; small=false }
                           | Colour -> let color = colorNow item.id in { detail=hex color; switch=None; swatch=Some color; shortcut=""; dropdown=false; small=false }
+                          // Its key beside its name, as a command's.
+                          | Shortcut(key,_) -> { detail=""; switch=None; swatch=None; shortcut=SettingsShortcut.text (listKey key); dropdown=false; small=false }
                           | _ ->
                               // Where the settings window opens on it; nothing for a row run here, or
                               // for the page itself.
@@ -227,7 +241,7 @@ module CommandPalette =
               | ACommand _ -> true
               | ASetting item ->
                   match item.binding with
-                  | Number _ | Colour -> false
+                  | Number _ | Colour | Shortcut _ -> false
                   | Text(key,_) when key="numberLeaderKeys" -> false
                   | _ -> true
               | _ -> false }

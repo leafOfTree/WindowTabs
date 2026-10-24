@@ -911,6 +911,7 @@ let main() =
           choose=(fun entry -> if entry.hwnd=IntPtr 1 then (ran <- "close"::ran; Done) else Choose [option "Work";option "Home"])
           shortcut=(fun _ -> None)
           dimmed=(fun _ -> false)
+          assignOnEnter=(fun _ -> false)
           aside=(fun _ entry -> { detail=entry.program; switch=None; swatch=None; shortcut=""; dropdown=false; small=false })
           concealed=fun _ -> true }
     let palette = TabSearchForm([mail;notes;editor],[mail.hwnd;editor.hwnd],pages=[commandsPage])

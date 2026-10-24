@@ -107,7 +107,7 @@ module SettingsCatalog =
     ]
     let find id = all |> List.find(fun item -> item.id=id)
     /// Found and set in the command palette only: the settings window has no row for them.
-    let paletteOnly = set ["tabFlashBgColor"]
+    let paletteOnly = set ["tabFlashBgColor";"list-next";"list-previous"]
     /// The tab sizes, kept in the appearance's geometry: each read and written as the Appearance
     /// page shows it. The gap between tabs is shown positive and stored as a negative overlap.
     let geometryNumbers : (string * (TabGeometry -> int) * (int -> TabGeometry -> TabGeometry)) list = [

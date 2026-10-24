@@ -433,6 +433,9 @@ let main() =
         // #82: the workspace shortcuts were in the catalog but not on the page.
         for item in SettingsCatalog.all do
             match item.binding with
+            // The lists' own keys are set in the palette alone.
+            | Shortcut _ when SettingsCatalog.paletteOnly.Contains item.id ->
+                assertTrue (view.control.Controls.Find(item.id,true).Length=0) (sprintf "The Shortcuts page lists %s, which the palette is for" item.id)
             | Shortcut _ ->
                 assertTrue (view.control.Controls.Find(item.id,true) |> Array.exists(fun control -> control :? SettingsShortcutInput))
                       (sprintf "The shortcut %s has no editor on the Shortcuts page" item.id)

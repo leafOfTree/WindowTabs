@@ -204,6 +204,8 @@ type PalettePage = {
     /// A row listed in the muted colour that does nothing now, such as a tab command with no
     /// tab in front: there to be found, and to be given a key.
     dimmed:TabSearchEntry -> bool
+    /// A row that is only a key to set: Enter records it, as Alt+Enter does.
+    assignOnEnter:TabSearchEntry -> bool
     /// The right end of a row, read again after every change, as a switch may have turned.
     aside:string -> TabSearchEntry -> PaletteAside
     /// Whether the palette goes out of sight while a row's command runs, so the window it acts
@@ -801,6 +803,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         | Stay ->
             back()
             reapply()
+    /// Records a key for the chosen row; set once that is defined, below.
+    let mutable assignChosen = fun () -> ()
     /// Enter or a click on a row: switches to the window, or runs the command and shows what it
     /// leaves to choose. A dimmed row does nothing.
     let activate (target:TreeListItem) =
@@ -812,6 +816,9 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     previewed <- false
                     previewOptions <- []
                     outcome entry.title true (fun () -> choose entry)
+                | [],Some page when page.assignOnEnter entry ->
+                    list.SelectedItem <- target
+                    assignChosen()
                 | [],Some page -> outcome entry.title (page.concealed entry) (fun () -> page.choose entry)
                 | [],None -> finish (Some entry.hwnd))
     /// Alt+Enter: the chosen row's shortcut is recorded in a box over the row, as on the
@@ -858,6 +865,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     editor.KeyUp.Add(fun e -> if e.KeyCode=Keys.Escape && not editor.IsRecording then endAssign())
                     editor.LostFocus.Add(fun _ -> if assigning |> Option.exists(fun (_,current) -> obj.ReferenceEquals(current,editor)) then endAssign())
                     editor.StartRecording())
+    do assignChosen <- beginAssign
     let setScope target =
         if target<>scope && List.contains target scopes then
             endAssign()

@@ -17,20 +17,7 @@ type HotKeyView() =
             | None -> ())
         editor
     let editors = actions |> List.map (fun (key,_) -> key,hotKey key)
-    /// The lists' own keys: kept in the settings, never registered for the desktop.
-    let listKey key =
-        let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=Services.program.getHotKey key)
-        editor.Changed.Add(fun _ ->
-            match Commands.holderName Services.program.getHotKey key editor.Shortcut with
-            | Some other -> editor.Reject(Services.program.getHotKey key,tr (Strings.Shortcuts.usedBy other))
-            | None -> Services.settings.setHotKey key editor.Shortcut)
-        editor
-    let listEditors = Commands.listKeys |> List.map(fun key -> key,listKey key)
     let restoreDefaults() =
-        for key,editor in listEditors do
-            let target = SettingsCatalog.shortcutDefault key
-            Services.settings.setHotKey key target
-            editor.Shortcut <- target
         // Clear first so swapped shortcuts (next <-> previous) do not collide with each other.
         for key,_ in editors do Services.program.setHotKey key 0 |> ignore
         for key,editor in editors do
@@ -162,8 +149,8 @@ type HotKeyView() =
         dependOn leaderEnabled [leaderEditor.Parent :?> SettingsRow;keysEditor.Parent :?> SettingsRow]
         // Offered only while a shortcut differs from its default; otherwise it would do nothing.
         let updateRestore() =
-            restore.Offered <- editors @ listEditors |> List.exists(fun (key,editor) -> editor.Shortcut<>SettingsCatalog.shortcutDefault key)
-        for _,editor in editors @ listEditors do editor.Changed.Add(fun _ -> updateRestore())
+            restore.Offered <- editors |> List.exists(fun (key,editor) -> editor.Shortcut<>SettingsCatalog.shortcutDefault key)
+        for _,editor in editors do editor.Changed.Add(fun _ -> updateRestore())
         restore.Click.Add(fun _ -> restoreDefaults(); updateRestore())
         updateRestore()
         // The split view's and the workspaces' keys in cards of their own: among the tabs' they
@@ -176,10 +163,6 @@ type HotKeyView() =
             let card = SettingsUi.sectionCard table (tr Strings.Shortcuts.fromPalette)
             SettingsUi.note card (tr Strings.Shortcuts.fromPaletteNote)
             for (_,editor),(_,command) in given do row card command editor
-        // Keys inside the palette and the window search, beside the arrows.
-        let lists = SettingsUi.sectionCard table (tr Strings.Shortcuts.listKeys)
-        SettingsUi.note lists (tr Strings.Shortcuts.listKeysNote)
-        for (key,editor),id in List.zip listEditors ["list-next";"list-previous"] do SettingsUi.settingRow lists id editor
         // The keys given to windows from the search box, each named by the window and its program.
         let windowKeys : WindowShortcut list = Services.program.windowShortcuts()
         if not windowKeys.IsEmpty then

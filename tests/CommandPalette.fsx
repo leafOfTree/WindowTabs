@@ -547,7 +547,9 @@ let main() =
                     let taken = page.shortcut entry |> Option.map(fun given -> given.current)
                     note (taken=Some code) (sprintf "%s did not keep its new key" entry.title)
                     note ((page.aside "" entry).shortcut=SettingsShortcut.text code) (sprintf "%s does not show its new key beside its name" entry.title)
-                    note (not (assignment.set heldElsewhere)) (sprintf "%s took a key another program holds" entry.title)
+                    // The lists' own keys are never registered for the desktop, so no program holds one.
+                    let listKey = entry.title=tr Strings.Settings.listNext.caption || entry.title=tr Strings.Settings.listPrevious.caption
+                    if not listKey then note (not (assignment.set heldElsewhere)) (sprintf "%s took a key another program holds" entry.title)
                     code <- code+1)
             | None -> ()
         let first,second = page.entries |> List.choose(fun entry -> page.shortcut entry |> Option.map(fun given -> entry,given)) |> fun bound -> bound.[0],bound.[1]
@@ -666,6 +668,19 @@ let main() =
         note (Commands.holderName settingsKey "newTab" nextKey=Some(tr Strings.Settings.listNext.caption)) "A command could take a key of the lists"
         api.setHotKey "listNext" 0
         api.setHotKey "listPrevious" 0
+        // Set in the palette: Enter on their row records the key over it.
+        trial.Query <- tr Strings.Settings.listNext.caption
+        note ((trial.Selected |> Option.map(fun entry -> entry.title))=Some(tr Strings.Settings.listNext.caption)) "Next in the list is not in the palette"
+        trial.Accept()
+        note (trial.ShortcutEditor.IsSome && not trial.IsClosed) "Enter on Next in the list did not record its key"
+        // A key pressed in its box is the list's from then on, and the box goes.
+        trial.ShortcutEditor |> Option.iter(fun editor ->
+            let mutable message = Message()
+            let processKey = editor.GetType().GetMethod("ProcessCmdKey",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
+            processKey.Invoke(editor,[|box message;box (Keys.Control ||| Keys.J)|]) |> ignore)
+        note (api.hotKey "listNext"=Some nextKey && trial.ShortcutEditor.IsNone) "A key recorded for Next in the list was not kept"
+        api.setHotKey "listNext" 0
+        trial.Query <- ""
         // A switch turned with Enter keeps its row chosen, not the first row again.
         trial.Query <- "tab text"
         let boldTitle = tr Strings.Settings.tabTextBold.caption

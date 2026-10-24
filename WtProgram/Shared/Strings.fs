@@ -543,9 +543,6 @@ module Strings =
         let alreadySet = { en="Already set"; zh="已是当前快捷键"; ja="設定済み"; ar="هذا هو الاختصار الحالي" }
         /// A key Windows or WindowTabs keeps for itself, such as Alt+F4 or the palette's Alt+Enter.
         let reserved = { en="Kept for Windows or WindowTabs"; zh="由 Windows 或 WindowTabs 保留"; ja="Windows か WindowTabs が使用中"; ar="محجوز لـ Windows أو WindowTabs" }
-        /// The card of keys that work only inside the palette and the window search.
-        let listKeys = { en="Command palette and window search"; zh="命令面板与窗口搜索"; ja="コマンドパレットとウィンドウ検索"; ar="لوحة الأوامر وبحث النوافذ" }
-        let listKeysNote = { en="These keys work only while one of the two is open, beside ↑ and ↓."; zh="这些按键只在两者打开时生效，与 ↑ ↓ 并用。"; ja="どちらかが開いている間だけ、↑ ↓ と並んで使えます。"; ar="تعمل هذه المفاتيح فقط أثناء فتح أحدهما، إلى جانب ↑ و↓." }
         let includeCtrlOrAlt = { en="Include Ctrl or Alt"; zh="需要包含 Ctrl 或 Alt"; ja="Ctrl か Alt が必要です"; ar="يجب أن يتضمن Ctrl أو Alt" }
         let pressShortcut = { en="Press a shortcut…"; zh="按下组合键…"; ja="キーを押してください…"; ar="اضغط اختصارًا…" }
         let notSet = { en="Not set"; zh="未设置"; ja="未設定"; ar="غير معيّن" }
