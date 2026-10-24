@@ -166,7 +166,8 @@ module CommandPalette =
                              { label=label; detail=(if value=current then "✓" else ""); swatch=None
                                run=(fun () -> Services.settings.setValue(key,box value); Done)
                                // Shown as the choice moves, but for the language, which builds the app's text again.
-                               preview=(key<>"language") } ]
+                               preview=(if key="language" then None else Some(fun () -> Services.settings.setValue(key,box value)))
+                               undo=(if key="language" then None else Some(fun () -> Services.settings.setValue(key,box current))) } ]
               // A size or the leader keys typed in the box, a colour picked; what a Support page
               // button does, done here; a page opened.
               | ASetting item ->
@@ -179,7 +180,7 @@ module CommandPalette =
                   | _,"settings-location" -> guarded SettingsFile.showInFolder; Done
                   | _,"settings-backup" ->
                       Choose [ for caption,action in [Strings.General.export,SettingsFile.export;Strings.General.import,SettingsFile.import] ->
-                                 { label=tr caption; detail=""; swatch=None; run=(fun () -> guarded (fun () -> action null); Done); preview=false } ]
+                                 { label=tr caption; detail=""; swatch=None; run=(fun () -> guarded (fun () -> action null); Done); preview=None; undo=None } ]
                   | _,"settings-reset" -> guarded (fun () -> SettingsFile.reset null); Done
                   | _ -> Services.managerView.showSetting item.id; Done)
           // A key set here is shown from then on: the row's right end, kept, is worked out again.

@@ -613,7 +613,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let restorePreview() =
         if previewed then
             previewed <- false
-            previewOptions |> List.tryFind(fun option -> option.detail="✓") |> Option.iter(fun option -> option.run() |> ignore)
+            previewOptions |> List.tryPick(fun option -> option.undo) |> Option.iter(fun undo -> undo())
         previewOptions <- []
     let finish (chosen:IntPtr option) =
         // Switching away deactivates the box, which asks to close again: once is enough.
@@ -644,7 +644,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         let run (entry:TabSearchEntry) = options.[int entry.hwnd-1].run()
         choices <- (caption,rows,run,input.Text)::choices
         restorePreview()
-        previewOptions <- if options |> List.exists(fun option -> option.preview) then options else []
+        previewOptions <- if options |> List.exists(fun option -> option.preview.IsSome) then options else []
         input.Text <- ""
         setPrompt()
         scopeLine.Invalidate()
@@ -941,8 +941,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 | item ->
                     scoped() |> Array.tryPick(fun (row,entry) -> if obj.ReferenceEquals(row,item) then Some entry.hwnd else None)
                     |> Option.bind(fun hwnd -> List.tryItem (int hwnd-1) previewOptions)
-                    |> Option.filter(fun option -> option.preview)
-                    |> Option.iter(fun option -> option.run() |> ignore; previewed <- true))
+                    |> Option.bind(fun option -> option.preview)
+                    |> Option.iter(fun show -> show(); previewed <- true))
         list.MouseClick.Add(fun e ->
             if e.Button=MouseButtons.Left then list.ItemAt(e.Location) |> Option.iter activate)
         // Going out of the way for a command is no closing.

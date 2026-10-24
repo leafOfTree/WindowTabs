@@ -22,9 +22,10 @@ and QuestionKind =
     /// A colour as #RRGGBB, in the settings pages' colour box, its picker open.
     | ColorQuestion
 /// One further step: its name, a detail beside it, a colour to show for it where it is one,
-/// and what choosing it does; preview, when choosing it is only a setting's value, so moving onto
-/// it may show it at once and going back puts the ticked one back.
-and CommandChoice = { label:string; detail:string; swatch:Drawing.Color option; run:unit -> CommandOutcome; preview:bool }
+/// and what choosing it does. A value that can be tried also says how to show it as the choice
+/// moves onto it, and how to put back what there was if none is chosen.
+and CommandChoice = { label:string; detail:string; swatch:Drawing.Color option; run:unit -> CommandOutcome
+                      preview:(unit -> unit) option; undo:(unit -> unit) option }
 
 type CommandCategory =
     | TabCommands
@@ -72,7 +73,7 @@ module Commands =
     /// A command that leaves a choice: what it offers for the window, each doing its part.
     let private choosing id text category enabled (options:IntPtr -> CommandChoice list) =
         { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); run=fun hwnd -> Choose(options hwnd) }
-    let private choice label detail action = { label=label; detail=detail; swatch=None; run=(fun () -> action(); Done); preview=false }
+    let private choice label detail action = { label=label; detail=detail; swatch=None; run=(fun () -> action(); Done); preview=None; undo=None }
     /// The group's side, alignment and auto-hide mode as last read, and reading them again once a
     /// command has changed one, so the palette shows the value now the next time.
     let private shownChoices hwnd =
@@ -85,9 +86,12 @@ module Commands =
             |> Option.map(fun (text,_) -> tr text) |> Option.defaultValue ""
         let options hwnd =
             let ticked = current hwnd
+            let apply value = fun () -> onGroup (fun g -> g.run(set value); readAgain g) hwnd
+            // Tried only once the group's own value is known, to be put back.
+            let before = shownChoices hwnd |> Option.map now
             [ for text,value in options ->
-                { choice (tr text) (if tr text=ticked then "✓" else "") (fun () -> onGroup (fun g -> g.run(set value); readAgain g) hwnd)
-                    with preview=true } ]
+                { choice (tr text) (if tr text=ticked then "✓" else "") (apply value)
+                    with preview=before |> Option.map(fun _ -> apply value); undo=before |> Option.map apply } ]
         current,options
     let private positions = [Strings.TabMenu.top,TabDockTop; Strings.Common.left,TabDockLeft; Strings.Common.right,TabDockRight]
     let private alignments = [Strings.Common.left,TabLeft; Strings.Common.center,TabCenter; Strings.Common.right,TabRight]
@@ -174,9 +178,13 @@ module Commands =
         choosing "tab-color" Strings.Commands.tabColor TabCommands hasGroup (fun hwnd ->
             let current = currentTabColor hwnd
             let remembered = AppTabColors.remembered (processPath hwnd)
+            // Tried on the tab alone, the app's colour left as it is, then the tab's own colour, or
+            // none, put back.
+            let tabOnly color = fun () -> onTab (fun g hwnd -> g.run(SetTabColor(hwnd,color))) hwnd
+            let undo = Some(tabOnly (Services.program.getTabColorOverride hwnd))
             [ for index in Theme.tabColorOrder do
                 yield { choice (tr Strings.Settings.tabColorNames.[index]) (if current=Some(PaletteColor index) then "✓" else "") (fun () -> setTabColor hwnd (PaletteColor index))
-                        with swatch=Some(tabColour index) }
+                        with swatch=Some(tabColour index); preview=Some(tabOnly (Some(PaletteColor index))); undo=undo }
               yield choice (tr Strings.Settings.customTabColor) "" (fun () -> customTabColor hwnd)
               // Off with nothing to remember, as the tab menu greys it.
               if canRememberTabColor hwnd then

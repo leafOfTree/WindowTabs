@@ -704,6 +704,17 @@ let main() =
                 | None -> issues.Add "The line over the values shows no arrow apart from its name"
             | None -> issues.Add "The list of values shows no chosen row")
         trial.Back()
+        // Moving through the tab colours tries each on the tab alone; Esc puts back its own colour.
+        let colourBefore = Services.program.getTabColorOverride active
+        let rememberedBefore = AppTabColors.remembered path
+        trial.Query <- tr Strings.Commands.tabColor.caption
+        trial.Accept()
+        trial.SelectNext()
+        attempt "tab colour preview" (fun () ->
+            pumpUntil "A tab colour tried" (fun () -> settle active; Services.program.getTabColorOverride active<>colourBefore)
+            note (AppTabColors.remembered path=rememberedBefore) "Trying a tab colour changed the app's colour"
+            trial.Back()
+            pumpUntil "The tab's own colour put back" (fun () -> settle active; Services.program.getTabColorOverride active=colourBefore))
         // Moving through a setting's values shows each; Esc puts back the one it had.
         let style() = api.getValue "tabStyle" :?> string
         let before = style()
