@@ -578,6 +578,8 @@ let main() =
                     let shown () = typeof<TabStrip>.GetProperty("titleTipShown",flags).GetValue(strip) :?> bool
                     let waiting () = (typeof<TabStrip>.GetField("titleTimer",flags).GetValue(strip) :?> Timer).Enabled
                     let rest () = typeof<TabStrip>.GetMethod("showTitle",flags).Invoke(strip,[||]) |> ignore
+                    // The title alone first; the window's picture is checked after.
+                    api.setValue("tabHoverPreview",box false)
                     hover 60
                     check (waiting() && not (shown())) "A cut-short title did not wait for the pointer to rest"
                     rest()
@@ -612,6 +614,23 @@ let main() =
                     rest()
                     send WindowMessages.WM_MOUSELEAVE Pt.empty
                     check (not (shown()) && not (waiting())) "The tip stayed after the pointer left the strip"
+                    // A tab behind, with the preview on, waits for its window's picture, printed off
+                    // the strip's thread; the tip then shows it under the whole title.
+                    api.setValue("tabHoverPreview",box true)
+                    let back = [101;103] |> List.map(fun id -> Tab(IntPtr(id))) |> List.find((<>) strip.zorder.head)
+                    hover (if back=Tab(IntPtr(101)) then 60 else 460)
+                    rest()
+                    check (not (shown())) "A tab behind showed its tip before its window's picture"
+                    let picture = new Bitmap(Dpi.scale 120,Dpi.scale 80)
+                    typeof<TabStrip>.GetMethod("showTip",flags).Invoke(strip,[|box back;box (Some picture)|]) |> ignore
+                    let tip = (typeof<TabStrip>.GetField("titleTip",flags).GetValue(strip) :?> TabTitleTip option).Value
+                    check (shown() && tip.Width>=Dpi.scale 120 && tip.Height>Dpi.scale 80) "A tab behind did not show its window's picture under its title"
+                    send WindowMessages.WM_MOUSELEAVE Pt.empty
+                    // The print shrunk to fit, and a failed one shows no picture.
+                    let fitted = TabPreviewPicture.fit 280 200 (Img(Sz(800,600)))
+                    check (fitted |> Option.exists(fun image -> image.Width=266 && image.Height=200)) "A window's picture did not shrink to fit the tip"
+                    fitted |> Option.iter(fun image -> image.Dispose())
+                    check (TabPreviewPicture.fit 280 200 (Img(Sz(1,1)))).IsNone "A failed print showed as a picture"
                     for id in [101;102;103] do titled id ""
 
                 let os = OS()

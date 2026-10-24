@@ -100,6 +100,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let titleTimer = new Timer(Interval=500)
     let mutable titleTab : Tab option = None
     let mutable titleTip : TabTitleTip option = None
+    /// Counts the tips asked for, so a window's picture printed for one already put away is dropped.
+    let mutable tipRequest = 0
     /// The full strip and the collapsed bar while an expand or collapse runs, so a frame only
     /// blends them; dropped whenever what they show changes.
     let mutable revealImages : (Img*Img) option = None
@@ -278,6 +280,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member private this.hideTitle() =
         titleTimer.Stop()
+        tipRequest <- tipRequest+1
         titleTip |> Option.iter(fun tip -> tip.hide())
 
     /// From tab to tab, a title already showing moves straight to the next cut one; otherwise
@@ -290,25 +293,55 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             if tab.IsSome then
                 if showing then this.showTitle() else titleTimer.Start()
 
+    /// The tab's sprite while a tip may show for it.
+    member private this.tipSprite(tab:Tab) =
+        let sprites : List2<Pt*TabSprite<Tab>> = this.tabSprites
+        sprites.list |> List.tryFind(fun (_,sprite) -> sprite.id=tab)
+        |> Option.filter(fun _ -> this.visible && not this.isShrunk && not (OpenMenus.any()))
+
+    /// A tab behind, with the preview setting on, shows its window under its title once that is
+    /// printed, off this thread; any other tab shows its title alone, when it is cut short.
     member private this.showTitle() =
         titleTab |> Option.iter(fun tab ->
-            let sprites : List2<Pt*TabSprite<Tab>> = this.tabSprites
-            match sprites.list |> List.tryFind(fun (_,sprite) -> sprite.id=tab) with
-            | Some(offset,sprite) when this.visible && not this.isShrunk && not (OpenMenus.any()) && sprite.titleCut ->
-                let tip =
-                    match titleTip with
-                    | Some tip -> tip
-                    | None ->
-                        let tip = new TabTitleTip()
-                        titleTip <- Some tip
-                        tip
-                let strip : Rect = this.bounds
-                let anchor = if this.isVertical then Rect(strip.location.add(offset),sprite.size) else strip
-                let pointer = pointerSource()
-                tip.show(sprite.displayInfo.text,sprite.displayInfo.textFont,
-                         Rectangle(anchor.x,anchor.y,anchor.width,anchor.height),pointer.X,
-                         ?side=(if this.isVertical then Some this.dock else None),?pointerY=Some pointer.Y)
+            match this.tipSprite tab with
+            | Some(_,sprite) when not sprite.isTop && (Services.settings.getValue("tabHoverPreview") :?> bool) ->
+                tipRequest <- tipRequest+1
+                let request = tipRequest
+                let invoker = InvokerService.invoker
+                let preview = this.tabInfo(tab).preview
+                let width,height = Dpi.scale TabPreviewPicture.width,Dpi.scale TabPreviewPicture.height
+                let picture () = try TabPreviewPicture.fit width height (preview()) with _ -> None
+                let (Tab hwnd) = tab
+                // A minimized window's picture is its icon, drawn from the group's own state: here.
+                if _os.windowFromHwnd(hwnd).isMinimized then this.showTip(tab,picture())
+                else
+                    Threading.ThreadPool.QueueUserWorkItem(fun _ ->
+                        let picture = picture()
+                        invoker.asyncInvoke(fun () ->
+                            match picture with
+                            | Some image when request=tipRequest && titleTab=Some tab -> this.showTip(tab,Some image)
+                            | Some image -> image.Dispose()
+                            | None -> if request=tipRequest && titleTab=Some tab then this.showTip(tab,None))) |> ignore
+            | Some(_,sprite) when sprite.titleCut -> this.showTip(tab,None)
             | _ -> ())
+
+    member private this.showTip(tab:Tab,picture:Bitmap option) =
+        match this.tipSprite tab with
+        | Some(offset,sprite) when picture.IsSome || sprite.titleCut ->
+            let tip =
+                match titleTip with
+                | Some tip -> tip
+                | None ->
+                    let tip = new TabTitleTip()
+                    titleTip <- Some tip
+                    tip
+            let strip : Rect = this.bounds
+            let anchor = if this.isVertical then Rect(strip.location.add(offset),sprite.size) else strip
+            let pointer = pointerSource()
+            tip.show(sprite.displayInfo.text,sprite.displayInfo.textFont,
+                     Rectangle(anchor.x,anchor.y,anchor.width,anchor.height),pointer.X,
+                     ?side=(if this.isVertical then Some this.dock else None),?pointerY=Some pointer.Y,?image=picture)
+        | _ -> picture |> Option.iter(fun image -> image.Dispose())
 
     member internal _.titleTipShown = titleTip |> Option.exists(fun tip -> tip.Visible)
 
@@ -903,6 +936,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         revealTimer.Dispose()
         captureWatch.Dispose()
         titleTimer.Dispose()
+        tipRequest <- tipRequest+1
+        titleTab <- None
         titleTip |> Option.iter(fun tip -> tip.Dispose())
         titleTip <- None
         dropRevealImages()

@@ -182,6 +182,7 @@ type HotKeyView() =
         updateRestore()
         let pointer = SettingsUi.sectionCard table (tr Strings.Shortcuts.mouse)
         SettingsBindings.toggleRow pointer "activate-on-hover"
+        SettingsBindings.toggleRow pointer "tab-hover-preview"
         SettingsBindings.toggleRow pointer "shift-scroll"
         SettingsBindings.toggleRow pointer "ctrl-scroll"
         SettingsBindings.toggleRow pointer "middle-click-close"

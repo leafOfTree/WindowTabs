@@ -339,6 +339,12 @@ module Strings =
         let activateOnHover = { caption={ en="Switch tabs on hover"; zh="悬停切换标签"; ja="ホバーでタブを切り替え"; ar="التبديل بين علامات التبويب عند تمرير المؤشر" }
                                 description={ en="Rest the pointer on a tab instead of clicking."; zh="鼠标停在标签上即可，无需点击。"; ja="クリックしなくても、タブにポインターを置くだけで済みます。"; ar="ضع المؤشر فوق علامة تبويب بدلًا من النقر عليها." }
                                 keywords={ en="mouse over"; zh="悬停"; ja="マウスオーバー"; ar="تمرير المؤشر" } }
+        let tabHoverPreview = { caption={ en="Preview a tab's window on hover"; zh="悬停时预览标签窗口"; ja="ホバーでタブのウィンドウをプレビュー"; ar="معاينة نافذة علامة التبويب عند تمرير المؤشر" }
+                                description={ en="Rest the pointer on a tab behind to see its window, with its full title."
+                                              zh="鼠标停在后面的标签上，显示它的窗口截图和完整标题。"
+                                              ja="背面のタブにポインターを置くと、そのウィンドウと完全なタイトルを表示します。"
+                                              ar="ضع المؤشر فوق علامة تبويب خلفية لرؤية نافذتها مع عنوانها الكامل." }
+                                keywords={ en="thumbnail screenshot picture hover card"; zh="缩略图 截图 预览 悬停"; ja="サムネイル スクリーンショット プレビュー"; ar="صورة مصغرة لقطة شاشة معاينة" } }
         let shiftScroll = { caption={ en="Switch tabs with Shift + scroll"; zh="用 Shift + 滚轮切换标签"; ja="Shift + スクロールでタブを切り替え"; ar="التبديل بين علامات التبويب باستخدام Shift والتمرير" }
                             description={ en="Works anywhere over a grouped window. Over the tab bar, Shift isn't needed."
                                           zh="在分组窗口的任意位置均可使用；在标签栏上滚动时无需按 Shift。"

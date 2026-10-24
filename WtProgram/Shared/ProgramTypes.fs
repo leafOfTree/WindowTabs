@@ -59,6 +59,8 @@ type SettingsRec = {
     /// Ctrl + scroll over the tabs moves the current tab.
     enableCtrlScroll: bool
     enableMiddleClickClose: bool
+    /// A picture of a tab's window while the pointer rests on the tab.
+    tabHoverPreview: bool
     /// "Icons" (large icons in a row) or "List" (window titles in a column).
     switcherStyle: string
     tabSearchScope: string
