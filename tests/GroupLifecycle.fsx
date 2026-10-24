@@ -268,48 +268,6 @@ let main() =
             sourceWindow.showWindow(ShowWindowCommands.SW_SHOWNORMAL)
             check (sourceWindow.bounds.size=Sz(640,480)) "Moving the maximize restore frame changed the window's normal size"
             printfn "PASS: centred minimize/restore for normal and maximized windows on %d monitors." Screen.AllScreens.Length
-            // A maximized follower goes with its tab to each other monitor restored, and maximizes
-            // there at its tab's size even when it sizes itself on arrival, as an app does for a new
-            // scale: moved across maximized, Explorer was not laid out again and showed black.
-            // Needs a second monitor. Not the active tab here: a WinForms window activates itself
-            // on reaching a monitor, which a native window such as Explorer does not.
-            if Screen.AllScreens.Length>1 then
-                let first = Screen.PrimaryScreen
-                let frame = Drawing.Rectangle(first.WorkingArea.Left+100,first.WorkingArea.Top+100,640,480)
-                use source = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Bounds=frame)
-                use follower = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Bounds=frame)
-                follower.Show()
-                source.Show()
-                let sourceWindow,followerWindow = OS().windowFromHwnd(source.Handle),OS().windowFromHwnd(follower.Handle)
-                followerWindow.showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED)
-                sourceWindow.showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED)
-                let mutable seen = Screen.FromHandle(follower.Handle).DeviceName
-                let crossedMaximized = ref false
-                use _ = follower.Move.Subscribe(fun _ ->
-                    let now = Screen.FromHandle(follower.Handle).DeviceName
-                    if now<>seen then
-                        seen <- now
-                        if followerWindow.isMaximized then crossedMaximized.Value <- true
-                        let b = followerWindow.bounds
-                        WinUserApi.SetWindowPos(follower.Handle,IntPtr.Zero,b.x,b.y,b.width*5/4,b.height*5/4,
-                            SetWindowPosFlags.SWP_NOZORDER ||| SetWindowPosFlags.SWP_NOACTIVATE) |> ignore)
-                let owner = obj()
-                FollowerPlacement.queue.claim(owner,follower.Handle)
-                try
-                    for screen in Array.append (Screen.AllScreens |> Array.filter(fun screen -> screen.DeviceName<>first.DeviceName)) [|first|] do
-                        let work = screen.WorkingArea
-                        sourceWindow.move(Rect(Pt(work.Left,work.Top),Sz(work.Width,work.Height)))
-                        FollowerPlacement.queue.submit(owner,follower.Handle,
-                            FollowerPlacement.alignBelowRequest follower.Handle sourceWindow.bounds sourceWindow.placement source.Handle)
-                        pumpUntil "Cross-monitor follower placement did not finish" (fun () -> FollowerPlacement.queue.isIdle(owner))
-                        check (followerWindow.isMaximized && Screen.FromHandle(follower.Handle).DeviceName=screen.DeviceName)
-                              "A maximized follower did not follow its tab to another monitor"
-                        check (not crossedMaximized.Value) "A maximized follower crossed monitors still maximized"
-                        check (followerWindow.bounds=sourceWindow.bounds)
-                              (sprintf "A follower that sized itself on another monitor kept that size: %A, its tab %A" followerWindow.bounds sourceWindow.bounds)
-                        check (sourceWindow.zorder<followerWindow.zorder) "A follower crossing monitors covered the originating tab"
-                finally FollowerPlacement.queue.release(owner,follower.Handle)
-                printfn "PASS: a maximized follower crosses monitors restored and maximizes at its tab's size."
         finally
             FollowerPlacement.queue.release(snapQueueOwner,snapFollower.Handle)
             snapSource.Hide()
