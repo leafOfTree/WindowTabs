@@ -183,6 +183,22 @@ let main() =
         typeof<Control>.GetMethod("OnClick",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).Invoke(plus,[|box EventArgs.Empty|]) |> ignore
         assertTrue (number.Value=43M && numberText.Focused) "After + the keys stayed on the button, where Esc did nothing"
         host.Controls.Remove(number)
+        // − and + sit on the middle of their buttons, the same room on every side.
+        for sign in ['−';'+'] do
+            use button = new SettingsActionButton(Text=string sign,Sign=sign,Size=Size(Dpi.scale 26,Dpi.scale 26))
+            host.Controls.Add(button)
+            use image = new Bitmap(button.Width,button.Height)
+            button.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+            let inset = Dpi.scale 5
+            let fill = image.GetPixel(inset,inset)
+            let inked = [ for y in inset..button.Height-1-inset do
+                            for x in inset..button.Width-1-inset do
+                                if image.GetPixel(x,y)<>fill then yield x,y ]
+            let xs,ys = List.map fst inked,List.map snd inked
+            let left,right = List.min xs,button.Width-1-List.max xs
+            let top,bottom = List.min ys,button.Height-1-List.max ys
+            assertTrue (abs(left-right)<=1 && abs(top-bottom)<=1) (sprintf "%c sat off its button's middle: %d/%d across, %d/%d down" sign left right top bottom)
+            host.Controls.Remove(button)
     number.Dispose()
     let input = new SettingsColorInput()
     let colorEditor = input :> IPropEditor

@@ -21,11 +21,16 @@ type SettingsActionButton() as this =
     let mutable mousePressed = false
     let mutable keyPressed = false
     let mutable kind = SettingsButtonKind.Standard
+    /// A − or + drawn as strokes on the button's middle: as text, the font's ascent and side
+    /// bearings set them a pixel or two off it.
+    let mutable sign : char option = None
     do
         this.FlatStyle <- FlatStyle.Flat
         this.FlatAppearance.BorderSize <- 0
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
     member this.Kind with get() = kind and set value = kind <- value; this.Invalidate()
+    /// '−' or '+', drawn in place of the text, which stays for screen readers.
+    member this.Sign with get() = defaultArg sign ' ' and set (value:char) = sign <- (if value='−' || value='+' then Some value else None); this.Invalidate()
     /// Held down by the mouse while over the button, or by Space, as a click is about to happen.
     member this.IsPressed = this.Enabled && ((mousePressed && hovering) || keyPressed)
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); hovering <- true; this.Invalidate()
@@ -88,8 +93,23 @@ type SettingsActionButton() as this =
         use border = new Pen(borderColor)
         e.Graphics.FillPath(fill,shape)
         e.Graphics.DrawPath(border,shape)
-        TextRenderer.DrawText(e.Graphics,this.Text,this.Font,this.ClientRectangle,textColor,
-            TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
+        match sign with
+        | Some symbol ->
+            // Whole pixels, so each stroke is as crisp as the text beside it; a length of the
+            // button's own parity sits exactly in its middle.
+            let w,h = this.Width,this.Height
+            let arm = max 3 (min w h*7/26)
+            let stroke = max 1 (Dpi.scale 1)
+            use ink = new SolidBrush(textColor)
+            e.Graphics.SmoothingMode <- SmoothingMode.None
+            let across = 2*arm+w%2
+            e.Graphics.FillRectangle(ink,(w-across)/2,(h-stroke)/2,across,stroke)
+            if symbol='+' then
+                let down = 2*arm+h%2
+                e.Graphics.FillRectangle(ink,(w-stroke)/2,(h-down)/2,stroke,down)
+        | None ->
+            TextRenderer.DrawText(e.Graphics,this.Text,this.Font,this.ClientRectangle,textColor,
+                TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
 
 type SettingsInputFrame() as this =
     inherit Panel()
@@ -157,8 +177,8 @@ type SettingsNumberInput() as this =
     let mutable maximum = 100M
     let mutable value = 0M
     let text = new TextBox(BorderStyle=BorderStyle.None,Text="0",TextAlign=HorizontalAlignment.Left)
-    let minus = new SettingsActionButton(Text="−",TabStop=false,AccessibleName=tr Strings.Appearance.decrease)
-    let plus = new SettingsActionButton(Text="+",TabStop=false,AccessibleName=tr Strings.Appearance.increase)
+    let minus = new SettingsActionButton(Text="−",Sign='−',TabStop=false,AccessibleName=tr Strings.Appearance.decrease)
+    let plus = new SettingsActionButton(Text="+",Sign='+',TabStop=false,AccessibleName=tr Strings.Appearance.increase)
     let sync() = text.Text <- value.ToString("0",CultureInfo.InvariantCulture)
     let setValue next =
         let next = max minimum (min maximum (Decimal.Truncate next))
