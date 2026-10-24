@@ -44,13 +44,21 @@ module TabSearch =
     /// None when a term is missing; otherwise higher for better matches. Terms are separated by
     /// spaces and may come in any order; case is ignored.
     let private rank (query:string) (entry:TabSearchEntry) =
+        let title = entry.title.ToLowerInvariant()
         query.ToLowerInvariant().Split([|' ';'\t'|],StringSplitOptions.RemoveEmptyEntries)
         |> Array.fold (fun total term ->
             total |> Option.bind(fun (sum,position) ->
-                entry.keywords |> List.choose (termMatch term)
-                |> List.sortBy(fun (quality,at) -> -quality,at)
-                |> List.tryHead
-                |> Option.map(fun (quality,at) -> sum+quality,position+at))) (Some(0,0))
+                let best =
+                    entry.keywords |> List.choose (termMatch term)
+                    |> List.sortBy(fun (quality,at) -> -quality,at)
+                    |> List.tryHead
+                // Where it stands in the name, when the name has it as well as any: a keyword that
+                // has it sooner does not put a row above one named alike.
+                let best =
+                    match best,termMatch term title with
+                    | Some(quality,_),Some(inName,at) when inName=quality -> Some(quality,at)
+                    | _ -> best
+                best |> Option.map(fun (quality,at) -> sum+quality,position+at))) (Some(0,0))
 
     let score query entry = rank query entry |> Option.map fst
 

@@ -571,6 +571,17 @@ let main() =
         palette.Query <- ""
         palette.SwitchScope()
         note (palette.Scope=ActionScope) "Tab left the palette's one page"
+        // A setting for the group in front comes before the one for every group, its name a little
+        // longer: the group in front is what the palette was opened over.
+        for query,groupCommand,setting in ["tab po",Strings.Commands.groupTabPosition,Strings.Settings.tabPosition
+                                           "align",Strings.Commands.groupTabAlignment,Strings.Settings.tabAlignment
+                                           "auto hide",Strings.Commands.groupAutoHide,Strings.Settings.autoHide
+                                           "combine",Strings.Commands.combineGroupIcons,Strings.Settings.combineTaskbarIcons] do
+            palette.Query <- query
+            let titles = palette.Results |> List.map(fun entry -> entry.title)
+            match List.tryFindIndex ((=) (tr groupCommand.caption)) titles,List.tryFindIndex ((=) (tr setting.caption)) titles with
+            | Some forGroup,Some forAll -> note (forGroup<forAll) (sprintf "Searching \"%s\" listed %s above %s" query (tr setting.caption) (tr groupCommand.caption))
+            | _ -> issues.Add(sprintf "Searching \"%s\" did not find both %s and %s: %A" query (tr groupCommand.caption) (tr setting.caption) titles)
         // What can do nothing for the window in front comes after what can.
         let shownPage = CommandPalette.actionsPage active
         for query in ["icon";"app";"tab";"workspace"] do
