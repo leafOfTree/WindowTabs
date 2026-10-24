@@ -906,6 +906,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     member _.HasWindows = windows
     /// The line under the box, with the scopes or the way back, takes room.
     member _.ScopeLineShown = scopeLine.Height>0
+    /// Lists the rows again, for what came in after they were listed.
+    member _.Refresh() = if not closed then apply()
     member _.SearchBoxUnderlined = searchBox.Underlined
     /// Back from a command's choices, as Esc goes.
     member _.Back() = pop()

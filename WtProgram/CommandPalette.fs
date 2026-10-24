@@ -177,8 +177,11 @@ module CommandPalette =
               | AChoice _ | ASetting _ -> None)
           dimmed=(fun chosen -> match action chosen with ACommand command -> not (command.enabled active) | _ -> false)
           aside=(fun _ chosen ->
-              match asides.TryGetValue chosen.hwnd with
-              | true,aside -> aside
+              match action chosen,asides.TryGetValue chosen.hwnd with
+              // A group's value comes in from its own thread after the rows are listed: not kept.
+              | ACommand command,_ when command.current active<>"" ->
+                  { detail=command.current active; switch=None; swatch=None; shortcut=shortcutText command; dropdown=true; small=false }
+              | _,(true,aside) -> aside
               | _ ->
                   let aside =
                       match action chosen with

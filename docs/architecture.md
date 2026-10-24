@@ -362,7 +362,10 @@ and the command line set them as any other setting. Rows are found by their capt
 language, and matches are drawn in the accent colour, as the settings search shows them. A command that leaves a choice (`Choose`) shows its options in place under the
 command's name, with Esc or Backspace the way back; a hotkey for such a command opens the
 palette on them. Commands take the window that was in front when they were asked for, since
-the palette is in front itself by then. The pages are built in `CommandPalette` and given to
+the palette is in front itself by then. A group's own tab position, alignment and auto-hide mode
+live on its thread: the palette asks for them as it opens (`GroupInfo.readShownChoices`, posted
+back, never waited for) and lists its rows again once they are in, the value beside each command.
+The pages are built in `CommandPalette` and given to
 `TabSearchForm` as `PalettePage`s. Alt+Enter on a command records a shortcut for it in a
 `SettingsShortcutInput` over its row, with the Shortcuts page's refusals (a key another command
 or program holds); every listed command can take one, kept under the catalog's key when the

@@ -47,6 +47,8 @@ type Command = {
     listed:bool
     /// Whether it can do anything for that window, such as a tab command with a tab in front.
     enabled:IntPtr -> bool
+    /// What it is set to now for that window, as its choices name it; empty when it is not a setting.
+    current:IntPtr -> string
     run:IntPtr -> CommandOutcome }
 
 /// Every command, in the order the palette lists them within a category. Each runs on the main
@@ -62,14 +64,37 @@ module Commands =
         let item = SettingsCatalog.find id
         { id=id; text=item.text; category=category
           shortcut=(match item.binding with Shortcut(key,_) -> Some key | _ -> None)
-          listed=true; enabled=enabled; run=finished action }
+          listed=true; enabled=enabled; current=(fun _ -> ""); run=finished action }
     /// A command of its own, its shortcut kept under its id; unbound until the user picks a key.
     let private plain id text category enabled action =
-        { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; run=finished action }
+        { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); run=finished action }
     /// A command that leaves a choice: what it offers for the window, each doing its part.
     let private choosing id text category enabled (options:IntPtr -> CommandChoice list) =
-        { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; run=fun hwnd -> Choose(options hwnd) }
+        { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); run=fun hwnd -> Choose(options hwnd) }
     let private choice label detail action = { label=label; detail=detail; swatch=None; run=fun () -> action(); Done }
+    /// The group's side, alignment and auto-hide mode as last read, and reading them again once a
+    /// command has changed one, so the palette shows the value now the next time.
+    let private shownChoices hwnd =
+        groupOf hwnd |> Option.bind(fun group -> match group with :? GroupInfo as info -> info.shownChoices | _ -> None)
+    let private readAgain (group:IGroup) = match group with :? GroupInfo as info -> info.readShownChoices ignore | _ -> ()
+    /// A group setting's choices, the one it has now ticked as a setting's are, and its name now.
+    let private groupChoice (options:(LocalizedText * 'value) list) (now:GroupChoicesShown -> 'value) (set:'value -> GroupCommand) =
+        let current hwnd =
+            shownChoices hwnd |> Option.bind(fun shown -> options |> List.tryFind(fun (_,value) -> value=now shown))
+            |> Option.map(fun (text,_) -> tr text) |> Option.defaultValue ""
+        let options hwnd =
+            let ticked = current hwnd
+            [ for text,value in options ->
+                choice (tr text) (if tr text=ticked then "✓" else "") (fun () -> onGroup (fun g -> g.run(set value); readAgain g) hwnd) ]
+        current,options
+    let private positions = [Strings.TabMenu.top,TabDockTop; Strings.Common.left,TabDockLeft; Strings.Common.right,TabDockRight]
+    let private alignments = [Strings.Common.left,TabLeft; Strings.Common.center,TabCenter; Strings.Common.right,TabRight]
+    let private autoHides = [Strings.Common.never,"Never"; Strings.Common.whenMaximized,"Maximized"; Strings.Common.always,"Always"]
+    let private positionChoice = groupChoice positions (fun shown -> shown.dock) SetTabDock
+    let private alignmentChoice = groupChoice alignments (fun shown -> shown.alignment) SetTabAlignment
+    /// A group following the setting shows the setting's mode.
+    let private autoHideChoice =
+        groupChoice autoHides (fun shown -> shown.autoHide |> Option.defaultWith(fun () -> Services.settings.getValue "autoHideMode" :?> string)) SetAutoHide
     /// A colour of the tab palette, as it shows on the bars of the current look.
     let private tabColour index =
         Theme.tabColor (Theme.darkBar (ThemeService.currentAppearance().tabNormalBgColor)) (PaletteColor index)
@@ -179,15 +204,9 @@ module Commands =
             | None -> [])
         // The tab menu's commands for the group, and for the app of the window in front.
         plain "icons-only" Strings.Commands.iconsOnly GroupCommands hasGroup (onGroup(fun g -> g.run ToggleIconsOnly))
-        choosing "group-tab-position" Strings.Commands.groupTabPosition GroupCommands hasGroup (fun hwnd ->
-            [ for text,dock in [Strings.TabMenu.top,TabDockTop; Strings.Common.left,TabDockLeft; Strings.Common.right,TabDockRight] ->
-                choice (tr text) "" (fun () -> onGroup (fun g -> g.run(SetTabDock dock)) hwnd) ])
-        choosing "group-tab-alignment" Strings.Commands.groupTabAlignment GroupCommands hasGroup (fun hwnd ->
-            [ for text,alignment in [Strings.Common.left,TabLeft; Strings.Common.center,TabCenter; Strings.Common.right,TabRight] ->
-                choice (tr text) "" (fun () -> onGroup (fun g -> g.run(SetTabAlignment alignment)) hwnd) ])
-        choosing "group-auto-hide" Strings.Commands.groupAutoHide GroupCommands hasGroup (fun hwnd ->
-            [ for text,mode in [Strings.Common.never,"Never"; Strings.Common.whenMaximized,"Maximized"; Strings.Common.always,"Always"] ->
-                choice (tr text) "" (fun () -> onGroup (fun g -> g.run(SetAutoHide mode)) hwnd) ])
+        { choosing "group-tab-position" Strings.Commands.groupTabPosition GroupCommands hasGroup (snd positionChoice) with current=fst positionChoice }
+        { choosing "group-tab-alignment" Strings.Commands.groupTabAlignment GroupCommands hasGroup (snd alignmentChoice) with current=fst alignmentChoice }
+        { choosing "group-auto-hide" Strings.Commands.groupAutoHide GroupCommands hasGroup (snd autoHideChoice) with current=fst autoHideChoice }
         plain "combine-group-taskbar-icons" Strings.Commands.combineGroupIcons GroupCommands hasGroup (onGroup(fun g ->
             match g with
             // From the group's thread, as its tab menu does: a group just rebuilt has no strip yet.

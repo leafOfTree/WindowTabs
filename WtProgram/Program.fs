@@ -774,7 +774,12 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                   WindowShortcuts.find (this.windowShortcuts()) path entry.title |> Option.map(fun s -> SettingsShortcut.text s.code) |> Option.defaultValue ""))
             | Some wanted ->
                 let pages = [CommandPalette.actionsPage active]
-                TabSearchForm([],[],settings=(settingsManager :> ISettings),pages=pages,scope=wanted,windows=false)
+                let palette = TabSearchForm([],[],settings=(settingsManager :> ISettings),pages=pages,scope=wanted,windows=false)
+                // The group's own choices, read on its thread, shown beside their commands once in.
+                match this.desktop.groups.tryFind(fun group -> group.windows.contains((=)active)) with
+                | Some(:? GroupInfo as info) -> info.readShownChoices(fun () -> palette.Refresh())
+                | _ -> ()
+                palette
         let isWindows = scope.IsNone
         search.Query <- if isWindows then lastWindowQuery else lastPaletteQuery
         search.Ended.Add(fun () ->

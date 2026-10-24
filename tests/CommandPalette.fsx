@@ -310,6 +310,24 @@ let main() =
                 options.[2].run() |> ignore
                 note (onGroupOf active (fun group -> group.bb.read("autoHideMode",""))="Always") "Auto-hide this group's tabs… did not set the group's mode"
                 options.[0].run() |> ignore)
+        // Each shows the group's value now beside it once read from the group, ticked among its choices.
+        attempt "group values shown" (fun () ->
+            let info = (groupOf active).Value
+            let mutable read = false
+            info.readShownChoices(fun () -> read <- true)
+            pumpUntil "The group's choices read" (fun () -> read)
+            let palettePage = CommandPalette.actionsPage active
+            for id,expected in ["group-tab-position",tr Strings.TabMenu.top
+                                "group-tab-alignment",tr Strings.Common.left
+                                "group-auto-hide",tr Strings.Common.never] do
+                let command = (Commands.find id).Value
+                note (command.current active=expected) (sprintf "%s shows %s, not %s" id (command.current active) expected)
+                let ticked = choicesOf id active |> List.filter(fun option -> option.detail="✓") |> List.map(fun option -> option.label)
+                note (ticked=[expected]) (sprintf "%s ticks %A, not %s" id ticked expected)
+                let entry = palettePage.entries |> List.find(fun entry -> entry.title=tr command.text.caption)
+                let aside = palettePage.aside "" entry
+                note (aside.detail=expected && aside.dropdown) (sprintf "%s's row shows %A beside it" id aside)
+            note ((Commands.find "group-tab-position").Value.current IntPtr.Zero="") "A group's value is shown with no group in front")
         attempt "tabs-for-app" (fun () ->
             let before = Services.filter.getIsTabbingEnabledForProcess path
             runDone "tabs-for-app" active
