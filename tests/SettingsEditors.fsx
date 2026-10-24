@@ -558,6 +558,12 @@ let main() =
             command previous reserved |> ignore
             assertTrue (previous.Shortcut=3621 && hotKeys.["prevTab"]=3621 && previous.Message=Some(tr Strings.Shortcuts.reserved))
                        (sprintf "%A was taken as a shortcut" reserved)
+            // Said with the key on a line under the box, as the palette says it, not cut short in it.
+            let row = previous.Parent :?> TableLayoutPanel
+            let said = tr (Strings.Shortcuts.keySays (SettingsShortcut.text (SettingsShortcut.encode reserved)) (tr Strings.Shortcuts.reserved))
+            match row.GetControlFromPosition(1,1) with
+            | :? Label as note -> assertTrue (not previous.ShowsMessage && note.Visible && note.Text=said) (sprintf "The refusal of %A under the box reads %A" reserved note.Text)
+            | _ -> failwithf "The refusal of %A is not on a line under the box" reserved
             command previous Keys.Escape |> ignore
         previous.Shortcut <- 3621
         previous.Clear()

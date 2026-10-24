@@ -324,6 +324,8 @@ type SettingsShortcutInput() as this =
     member _.Unchanged = unchanged.Publish
     /// The last combination pressed while recording, taken or not.
     member _.LastPressed = lastPressed
+    /// Whether the message shown is a refusal rather than a notice such as "already set".
+    member _.MessageIsError = message |> Option.exists snd
     /// The box's notice or error as it comes and goes, for a host that shows it elsewhere.
     member _.MessageChanged = messageChanged.Publish
     /// Draws its notice or error in place of the shortcut; off where the host shows it beside.

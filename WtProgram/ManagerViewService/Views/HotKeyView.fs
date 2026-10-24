@@ -11,8 +11,29 @@ type HotKeyView() =
     let actions =
         Commands.all |> List.choose(fun command -> command.shortcut |> Option.map(fun key -> key,command))
         |> List.filter(fun (key,_) -> ownShortcut key)
+    /// Why a key was refused, with the key, on a line under the box as the palette says it,
+    /// rather than cut short inside it.
+    let noteBelow (editor:SettingsShortcutInput) =
+        editor.ShowsMessage <- false
+        let note = new Label(AutoSize=true,UseMnemonic=false,Visible=false,Anchor=AnchorStyles.Right,Margin=Padding(0,Dpi.scale 4,0,0))
+        editor.MessageChanged.Add(fun text ->
+            match text,editor.Parent with
+            | Some text,(:? TableLayoutPanel as row) ->
+                let key = SettingsShortcut.text editor.LastPressed
+                let p = SettingsColors.current()
+                note.Text <- if key="" then text else tr (Strings.Shortcuts.keySays key text)
+                note.Font <- editor.Font
+                note.ForeColor <-
+                    if not editor.MessageIsError then p.muted
+                    elif System.Windows.Forms.SystemInformation.HighContrast then System.Drawing.SystemColors.WindowText
+                    elif ThemeService.currentIsDark() then System.Drawing.Color.FromRGB(0xFF99A4) else System.Drawing.Color.FromRGB(0xC42B1C)
+                if not (row.Controls.Contains note) then row.Controls.Add(note,1,1)
+                note.Visible <- true
+            | _ -> note.Visible <- false)
+        editor.Disposed.Add(fun _ -> note.Dispose())
     let hotKey key =
         let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=Services.program.getHotKey key)
+        noteBelow editor
         editor.Changed.Add(fun _ ->
             let previous = Services.program.getHotKey key
             match Commands.holderName Services.program.getHotKey key editor.Shortcut with
