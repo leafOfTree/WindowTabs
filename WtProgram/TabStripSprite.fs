@@ -232,10 +232,22 @@ type PinMarkSprite = {
             let side = float32 (min this.size.width this.size.height)
             match PinGlyph.font.Force() with
             | Some name ->
-                g.TextRenderingHint <- Text.TextRenderingHint.AntiAlias
-                use font = new Font(name, side * 0.8f, GraphicsUnit.Pixel)
-                use format = new StringFormat(Alignment=StringAlignment.Center, LineAlignment=StringAlignment.Center)
-                g.DrawString("", font, brush, RectangleF(0.0f, 0.0f, float32 this.size.width, float32 this.size.height), format)
+                // The font's pin is two glyphs, as Explorer draws it: the head's fill, and the
+                // outline with the needle. Laid on each other solid, then faded as one: faded each,
+                // their overlap showed as a lighter seam.
+                let w,h = this.size.width,this.size.height
+                use layer = new Bitmap(w, h)
+                do
+                    use lg = Graphics.FromImage(layer)
+                    lg.TextRenderingHint <- Text.TextRenderingHint.AntiAlias
+                    use font = new Font(name, side * 0.8f, GraphicsUnit.Pixel)
+                    use format = new StringFormat(Alignment=StringAlignment.Center, LineAlignment=StringAlignment.Center)
+                    use solid = new SolidBrush(Color.FromArgb(255, int c.R, int c.G, int c.B))
+                    for glyph in ["";""] do
+                        lg.DrawString(glyph, font, solid, RectangleF(0.0f, 0.0f, float32 w, float32 h), format)
+                use fade = new ImageAttributes()
+                fade.SetColorMatrix(ColorMatrix(Matrix33=170.0f/255.0f))
+                g.DrawImage(layer, Rectangle(0, 0, w, h), 0, 0, w, h, GraphicsUnit.Pixel, fade)
             | None ->
                 use pen = new Pen(brush, float32 (max 1 (Dpi.scale 1)) * 1.2f)
                 // Upright about its middle, then leaning as a pin pushed in at an angle.
