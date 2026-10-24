@@ -318,7 +318,7 @@ Shortcuts and menus share `SplitCommand`. Shortcuts are commands in `Commands.fs
 `SettingsCatalog.Shortcut` entry each, act on the foreground group, and are all unbound (0) by
 default so that no global hotkey is taken. The entries:
 
-Twelve keys, in a card of their own on the Shortcuts page: two ways in, which open the tab
+Twelve keys, unbound to begin with and given in the command palette: two ways in, which open the tab
 menu's window list for the tab in front, the focus by direction or in turn, and the split's own
 commands (swap, equalize, turn, close a pane, end the split), which the palette also runs by name.
 

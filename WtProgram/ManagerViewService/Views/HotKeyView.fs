@@ -3,9 +3,14 @@ open System.Windows.Forms
 
 type HotKeyView() =
     let panel,table = SettingsUi.page()
-    // Every command with a shortcut key, read from the one list: a command left off here was
-    // once left off the page. A conflict names the other command.
-    let actions = Commands.all |> List.choose(fun command -> command.shortcut |> Option.map(fun key -> key,command))
+    /// The page's own shortcuts: those with a key to begin with, read from the one list of
+    /// commands. Every other command, the split view's and the tab menu's among them, is found and
+    /// given a key in the command palette, the one place for them all. A conflict names the other.
+    let ownShortcut key =
+        SettingsCatalog.all |> List.exists(fun item -> match item.binding with Shortcut(k,_) -> k=key && SettingsCatalog.inSettingsWindow item | _ -> false)
+    let actions =
+        Commands.all |> List.choose(fun command -> command.shortcut |> Option.map(fun key -> key,command))
+        |> List.filter(fun (key,_) -> ownShortcut key)
     let hotKey key =
         let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=Services.program.getHotKey key)
         editor.Changed.Add(fun _ ->
@@ -31,16 +36,9 @@ type HotKeyView() =
         else
             editor.Name <- command.id
             SettingsUi.row card (tr command.text.caption) (tr command.text.description) editor
-    /// The page's own shortcuts: those the catalog lists. The other commands, the tab menu's and
-    /// the settings', are found and given keys in the command palette, the one place for them all.
-    let ownShortcut key = SettingsCatalog.all |> List.exists(fun item -> match item.binding with Shortcut(k,_) -> k=key | _ -> false)
     let rows card category (skip:string list) =
         for (key,editor),(_,command) in List.zip editors actions do
-            if command.category=category && ownShortcut key && not (List.contains key skip) then row card command editor
-    /// A card for a category only when it has shortcuts of the page's own.
-    let categoryCard title category =
-        if actions |> List.exists(fun (key,command) -> command.category=category && ownShortcut key) then
-            rows (SettingsUi.sectionCard table title) category []
+            if command.category=category && not (List.contains key skip) then row card command editor
     do
         let restore = new SettingsResetButton(tr Strings.Shortcuts.restoreDefaults,Name="restore-shortcuts")
         SettingsUi.sectionHeading table (tr Strings.Shortcuts.keyboard) [restore]
@@ -153,16 +151,6 @@ type HotKeyView() =
         for _,editor in editors do editor.Changed.Add(fun _ -> updateRestore())
         restore.Click.Add(fun _ -> restoreDefaults(); updateRestore())
         updateRestore()
-        // The split view's and the workspaces' keys in cards of their own: among the tabs' they
-        // were hard to tell apart.
-        categoryCard (tr Strings.Shortcuts.splitView) SplitCommands
-        categoryCard (tr Strings.Pages.workspaces) WorkspaceCommands
-        // Keys given in the palette to its other commands, so they can be seen and cleared here.
-        let given = List.zip editors actions |> List.filter(fun ((key,_),_) -> not (ownShortcut key) && Services.program.getHotKey key<>0)
-        if not given.IsEmpty then
-            let card = SettingsUi.sectionCard table (tr Strings.Shortcuts.fromPalette)
-            SettingsUi.note card (tr Strings.Shortcuts.fromPaletteNote)
-            for (_,editor),(_,command) in given do row card command editor
         // The keys given to windows from the search box, each named by the window and its program.
         let windowKeys : WindowShortcut list = Services.program.windowShortcuts()
         if not windowKeys.IsEmpty then

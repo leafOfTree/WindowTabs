@@ -423,18 +423,18 @@ let main() =
         // The tab menu's and the settings' commands are given keys in the palette, not listed here.
         assertTrue (view.control.Controls.Find("rename-tab",true).Length=0 && view.control.Controls.Find("toggle-dim-inactive-groups",true).Length=0)
                    "The Shortcuts page lists commands the palette is for"
-        // A key given to one in the palette is shown, to be seen and cleared.
+        // Nor is a key given to one there: the palette shows it beside the command's name.
         hotKeys.["rename-tab"] <- SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.F7)
         do
             let given = HotKeyView() :> ISettingsView
-            assertTrue (given.control.Controls.Find("rename-tab",true).Length=1) "A key given in the palette is not shown on the Shortcuts page"
+            assertTrue (given.control.Controls.Find("rename-tab",true).Length=0) "A key given in the palette is listed on the Shortcuts page"
             given.control.Dispose()
         hotKeys.Remove "rename-tab" |> ignore
-        // #82: the workspace shortcuts were in the catalog but not on the page.
+        // #82: every shortcut with a key to begin with is on the page; one without, such as the
+        // split view's or the workspaces', is given its key in the palette.
         for item in SettingsCatalog.all do
             match item.binding with
-            // The lists' own keys are set in the palette alone.
-            | Shortcut _ when SettingsCatalog.paletteOnly.Contains item.id ->
+            | Shortcut _ when not (SettingsCatalog.inSettingsWindow item) ->
                 assertTrue (view.control.Controls.Find(item.id,true).Length=0) (sprintf "The Shortcuts page lists %s, which the palette is for" item.id)
             | Shortcut _ ->
                 assertTrue (view.control.Controls.Find(item.id,true) |> Array.exists(fun control -> control :? SettingsShortcutInput))

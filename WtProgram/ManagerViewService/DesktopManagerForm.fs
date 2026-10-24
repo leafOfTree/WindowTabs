@@ -216,7 +216,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         // What has a row here: a setting the palette alone offers is not listed.
         let entries =
             SettingsCatalog.all
-            |> List.filter(fun item -> not (SettingsCatalog.paletteOnly.Contains item.id) && pages |> List.exists(fun page -> page.key=item.page))
+            |> List.filter(fun item -> SettingsCatalog.inSettingsWindow item && pages |> List.exists(fun page -> page.key=item.page))
             |> List.toArray
         let mutable matches : SettingDefinition array = [||]
         searchResults.Controls.Add(resultsFrame)

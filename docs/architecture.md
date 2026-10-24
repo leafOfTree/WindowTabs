@@ -369,8 +369,8 @@ The pages are built in `CommandPalette` and given to
 `TabSearchForm` as `PalettePage`s. Alt+Enter on a command records a shortcut for it in a
 `SettingsShortcutInput` over its row, with the Shortcuts page's refusals (a key another command
 or program holds); every listed command can take one, kept under the catalog's key when the
-catalog names the command and under its id otherwise, and the Shortcuts page lists them all by
-category.
+catalog names the command and under its id otherwise. The Shortcuts page lists only the
+shortcuts with a key to begin with; the palette gives every other command its key.
 
 The tab menu's actions are commands too. `IGroup.run` takes a `GroupCommand` (rename, reset
 name, close others or all, sort, move a tab, a tab's colour, icons only, dock, alignment, the
