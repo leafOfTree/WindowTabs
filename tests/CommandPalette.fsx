@@ -651,6 +651,21 @@ let main() =
             if aside.detail<>"" && not aside.small && aside.switch.IsNone then
                 trial.Query <- aside.detail
                 note (trial.Results |> List.exists(fun found -> found.title=entry.title)) (sprintf "Searching its value \"%s\" did not find %s" aside.detail entry.title)
+        // The lists' own keys move the choice as the arrows do; a command cannot take one of them.
+        let nextKey,previousKey = SettingsShortcut.encode (Keys.Control ||| Keys.J),SettingsShortcut.encode (Keys.Control ||| Keys.K)
+        api.setHotKey "listNext" nextKey
+        api.setHotKey "listPrevious" previousKey
+        trial.Query <- "tab"
+        let first = trial.Selected |> Option.map(fun entry -> entry.title)
+        trial.Press(Keys.Control ||| Keys.J)
+        let second = trial.Selected |> Option.map(fun entry -> entry.title)
+        trial.Press(Keys.Control ||| Keys.K)
+        note (second<>first && (trial.Selected |> Option.map(fun entry -> entry.title))=first) "The lists' own keys did not move the choice"
+        // As the program reads them: from the settings.
+        let settingsKey key = api.hotKey key |> Option.defaultValue (SettingsCatalog.shortcutDefault key)
+        note (Commands.holderName settingsKey "newTab" nextKey=Some(tr Strings.Settings.listNext.caption)) "A command could take a key of the lists"
+        api.setHotKey "listNext" 0
+        api.setHotKey "listPrevious" 0
         // A switch turned with Enter keeps its row chosen, not the first row again.
         trial.Query <- "tab text"
         let boldTitle = tr Strings.Settings.tabTextBold.caption

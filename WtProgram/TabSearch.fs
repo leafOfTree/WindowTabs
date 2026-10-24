@@ -825,7 +825,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     let assignment = match page() with Some page -> page.shortcut entry | None -> windowShortcut entry
                     assignment |> Option.map(fun assignment -> entry,assignment))
                 |> Option.iter(fun (entry,assignment) ->
-                    let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=assignment.current,ForeColor=palette.text)
+                    // A size under the rows' text, as the shortcuts beside the names are.
+                    let editor = new SettingsShortcutInput(Font=SettingsUi.font "Segoe UI" 9.0f FontStyle.Regular,Shortcut=assignment.current,ForeColor=palette.text)
                     // On the chosen row: round its corners the row's highlight shows, not the
                     // list's surface, which showed as dark corners.
                     editor.PlaceOn(if SystemInformation.HighContrast then SystemColors.Highlight else palette.selection)
@@ -878,6 +879,30 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         if shown.Count>0 then
             let current = shown.IndexOf(list.SelectedItem)
             list.SelectedItem <- shown.[max 0 (min (shown.Count-1) (current+delta))]
+    /// The box's keys, from typing or a host pressing them.
+    let keyDown (e:KeyEventArgs) =
+        // The lists' own keys, set on the Shortcuts page, beside the arrows.
+        let listKey name = settings |> Option.bind(fun api -> api.hotKey name) |> Option.defaultValue 0
+        let pressed = SettingsShortcut.encode e.KeyData
+        let handled =
+            match e.KeyCode with
+            | _ when not (SettingsShortcut.isModifier e.KeyCode) && pressed=listKey "listNext" -> move 1; true
+            | _ when not (SettingsShortcut.isModifier e.KeyCode) && pressed=listKey "listPrevious" -> move -1; true
+            | Keys.Down -> move 1; true
+            | Keys.Up -> move -1; true
+            | Keys.PageDown -> move visibleRows; true
+            | Keys.PageUp -> move -visibleRows; true
+            | Keys.Enter when e.Alt -> beginAssign(); true
+            | Keys.Enter when asking.IsSome -> answer(); true
+            | Keys.Enter -> activate list.SelectedItem; true
+            | Keys.Escape -> (if choices.IsEmpty then finish None else pop()); true
+            | Keys.Back when input.Text="" && not choices.IsEmpty -> pop(); true
+            | Keys.Tab -> cycle (if e.Shift then -1 else 1); true
+            | _ -> false
+        if handled then
+            e.Handled <- true
+            // No beep for Enter and Esc in a single-line box.
+            e.SuppressKeyPress <- true
     do
         input.HandleCreated.Add(fun _ -> setPrompt())
         input.TextChanged.Add(fun _ -> apply())
@@ -904,24 +929,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             if e.Button=MouseButtons.Left then
                 if choices.IsEmpty then pointed e.Location |> Option.iter setScope else pop()
                 input.Focus() |> ignore)
-        input.KeyDown.Add(fun e ->
-            let handled =
-                match e.KeyCode with
-                | Keys.Down -> move 1; true
-                | Keys.Up -> move -1; true
-                | Keys.PageDown -> move visibleRows; true
-                | Keys.PageUp -> move -visibleRows; true
-                | Keys.Enter when e.Alt -> beginAssign(); true
-                | Keys.Enter when asking.IsSome -> answer(); true
-                | Keys.Enter -> activate list.SelectedItem; true
-                | Keys.Escape -> (if choices.IsEmpty then finish None else pop()); true
-                | Keys.Back when input.Text="" && not choices.IsEmpty -> pop(); true
-                | Keys.Tab -> cycle (if e.Shift then -1 else 1); true
-                | _ -> false
-            if handled then
-                e.Handled <- true
-                // No beep for Enter and Esc in a single-line box.
-                e.SuppressKeyPress <- true)
+        input.KeyDown.Add(fun e -> keyDown e)
         // Clicking a row focuses the list; keep the keys working there and go back to typing.
         list.KeyDown.Add(fun e ->
             if e.KeyCode=Keys.Escape then (if choices.IsEmpty then finish None else pop())
@@ -976,6 +984,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     member _.Selected =
         scoped() |> Array.tryFind(fun (item,_) -> obj.ReferenceEquals(item,list.SelectedItem)) |> Option.map snd
     member _.SelectNext() = move 1
+    /// A key pressed in the box, as typing it would.
+    member _.Press(keys:Keys) = keyDown (KeyEventArgs(keys))
     /// Switches to the chosen window, or runs the chosen row, as Enter does.
     member _.Accept() = activate list.SelectedItem
     /// Shows a command's choices, as a command chosen here does, under its name.

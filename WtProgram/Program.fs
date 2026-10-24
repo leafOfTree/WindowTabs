@@ -762,8 +762,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                usedBy=fun code ->
                                    if code=0 then None
                                    else
-                                       match Commands.holder (this :> IProgram).getHotKey "" code with
-                                       | Some command -> Some(tr command.text.caption)
+                                       match Commands.holderName (this :> IProgram).getHotKey "" code with
+                                       | Some name -> Some name
                                        | None ->
                                            saved() |> List.tryFind(fun other -> other.code=code && not (AppIdentity.same other.path path && other.title=entry.title))
                                            |> Option.map(fun other -> other.title)

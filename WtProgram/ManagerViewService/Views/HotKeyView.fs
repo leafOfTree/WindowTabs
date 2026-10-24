@@ -10,14 +10,27 @@ type HotKeyView() =
         let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=Services.program.getHotKey key)
         editor.Changed.Add(fun _ ->
             let previous = Services.program.getHotKey key
-            match Commands.holder Services.program.getHotKey key editor.Shortcut with
-            | Some other -> editor.Reject(previous,tr (Strings.Shortcuts.usedBy (tr other.text.caption)))
+            match Commands.holderName Services.program.getHotKey key editor.Shortcut with
+            | Some other -> editor.Reject(previous,tr (Strings.Shortcuts.usedBy other))
             | None when not (Services.program.setHotKey key editor.Shortcut) ->
                 editor.Reject(previous,tr Strings.Shortcuts.inUse)
             | None -> ())
         editor
     let editors = actions |> List.map (fun (key,_) -> key,hotKey key)
+    /// The lists' own keys: kept in the settings, never registered for the desktop.
+    let listKey key =
+        let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=Services.program.getHotKey key)
+        editor.Changed.Add(fun _ ->
+            match Commands.holderName Services.program.getHotKey key editor.Shortcut with
+            | Some other -> editor.Reject(Services.program.getHotKey key,tr (Strings.Shortcuts.usedBy other))
+            | None -> Services.settings.setHotKey key editor.Shortcut)
+        editor
+    let listEditors = Commands.listKeys |> List.map(fun key -> key,listKey key)
     let restoreDefaults() =
+        for key,editor in listEditors do
+            let target = SettingsCatalog.shortcutDefault key
+            Services.settings.setHotKey key target
+            editor.Shortcut <- target
         // Clear first so swapped shortcuts (next <-> previous) do not collide with each other.
         for key,_ in editors do Services.program.setHotKey key 0 |> ignore
         for key,editor in editors do
@@ -142,8 +155,8 @@ type HotKeyView() =
         dependOn leaderEnabled [leaderEditor.Parent :?> SettingsRow;keysEditor.Parent :?> SettingsRow]
         // Offered only while a shortcut differs from its default; otherwise it would do nothing.
         let updateRestore() =
-            restore.Offered <- editors |> List.exists(fun (key,editor) -> editor.Shortcut<>SettingsCatalog.shortcutDefault key)
-        for _,editor in editors do editor.Changed.Add(fun _ -> updateRestore())
+            restore.Offered <- editors @ listEditors |> List.exists(fun (key,editor) -> editor.Shortcut<>SettingsCatalog.shortcutDefault key)
+        for _,editor in editors @ listEditors do editor.Changed.Add(fun _ -> updateRestore())
         restore.Click.Add(fun _ -> restoreDefaults(); updateRestore())
         updateRestore()
         // The group's and the split view's keys in cards of their own: among the tabs' they were
@@ -155,6 +168,10 @@ type HotKeyView() =
         // until a key is picked here or in the palette.
         rows (SettingsUi.sectionCard table (tr Strings.Shortcuts.settingsCommands)) SettingsCommands []
         rows (SettingsUi.sectionCard table (tr Strings.Shortcuts.appCommands)) AppCommands []
+        // Keys inside the palette and the window search, beside the arrows.
+        let lists = SettingsUi.sectionCard table (tr Strings.Shortcuts.listKeys)
+        SettingsUi.note lists (tr Strings.Shortcuts.listKeysNote)
+        for (key,editor),id in List.zip listEditors ["list-next";"list-previous"] do SettingsUi.settingRow lists id editor
         // The keys given to windows from the search box, each named by the window and its program.
         let windowKeys : WindowShortcut list = Services.program.windowShortcuts()
         if not windowKeys.IsEmpty then
@@ -163,8 +180,8 @@ type HotKeyView() =
             for shortcut in windowKeys do
                 let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=shortcut.code,Name="window-"+WindowShortcuts.key shortcut)
                 editor.Changed.Add(fun _ ->
-                    match Commands.holder Services.program.getHotKey "" editor.Shortcut with
-                    | Some other -> editor.Reject(shortcut.code,tr (Strings.Shortcuts.usedBy (tr other.text.caption)))
+                    match Commands.holderName Services.program.getHotKey "" editor.Shortcut with
+                    | Some other -> editor.Reject(shortcut.code,tr (Strings.Shortcuts.usedBy other))
                     | None when not (Services.program.setWindowShortcut { shortcut with code=editor.Shortcut }) -> editor.Reject(shortcut.code,tr Strings.Shortcuts.inUse)
                     | None -> ())
                 SettingsUi.row card shortcut.title (System.IO.Path.GetFileName shortcut.path) editor

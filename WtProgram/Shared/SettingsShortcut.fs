@@ -66,6 +66,12 @@ module SettingsShortcut =
     let text code = String.Join("+",parts code)
     let heldParts (modifiers:Keys) =
         modifierNames (modifiers.HasFlag(Keys.Control),modifiers.HasFlag(Keys.Alt),modifiers.HasFlag(Keys.Shift))
+    /// Kept by Windows, or by the palette for setting a shortcut: taking one would stop it working.
+    let reservedKeys =
+        [Keys.Alt ||| Keys.Enter; Keys.Alt ||| Keys.F4; Keys.Alt ||| Keys.Tab; Keys.Alt ||| Keys.Shift ||| Keys.Tab
+         Keys.Alt ||| Keys.Escape; Keys.Control ||| Keys.Escape; Keys.Alt ||| Keys.Space; Keys.Control ||| Keys.Shift ||| Keys.Escape]
+        |> List.map encode
+    let isReserved (keyData:Keys) = List.contains (encode keyData) reservedKeys
     /// A global shortcut without Ctrl or Alt would swallow ordinary typing.
     let isAcceptable (keyData:Keys) =
         let key = keyData &&& Keys.KeyCode

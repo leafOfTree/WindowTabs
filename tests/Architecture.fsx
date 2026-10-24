@@ -444,6 +444,8 @@ let main() =
             | Shortcut(key,_) ->
                 match Commands.byShortcut key with
                 | Some command -> check (command.id=item.id) (sprintf "Shortcut %s belongs to command %s, not %s" key command.id item.id)
+                // The lists' own keys, which work inside the palette and the window search only.
+                | None when List.contains key Commands.listKeys -> ()
                 | None -> failwithf "Shortcut %s in the catalog has no command" key
             | _ -> ()
         // Every listed command can be given a key: under the catalog's key when it has an entry

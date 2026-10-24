@@ -216,11 +216,24 @@ module Strings =
         let searchTabs = { caption={ en="Switch windows"; zh="切换窗口"; ja="ウィンドウを切り替え"; ar="التبديل بين النوافذ" }
                            description={ en="Switch to a window by title or app name."; zh="按标题或应用名查找并切换窗口。"; ja="タイトルやアプリ名でウィンドウを探して切り替えます。"; ar="الانتقال إلى نافذة باستخدام عنوانها أو اسم التطبيق." }
                            keywords={ en="find"; zh="查找"; ja="検索"; ar="بحث" } }
+        /// Keys inside the palette and the window search only, beside the arrows.
+        let listNext = { caption={ en="Next in the list"; zh="列表中的下一项"; ja="リストの次の項目"; ar="العنصر التالي في القائمة" }
+                         description={ en="Moves the choice down in the command palette and the window search, as ↓ does. Only there."
+                                       zh="在命令面板和窗口搜索中把选中项下移，与 ↓ 相同。只在这两处生效。"
+                                       ja="コマンドパレットとウィンドウ検索で選択を下へ移動します（↓ と同じ）。そこでのみ有効です。"
+                                       ar="ينقل الاختيار لأسفل في لوحة الأوامر وبحث النوافذ، كما يفعل ↓. هناك فقط." }
+                         keywords={ en="down select move palette search"; zh="向下 选择 移动 面板 搜索"; ja="下 選択 移動 パレット 検索"; ar="أسفل تحديد نقل لوحة بحث" } }
+        let listPrevious = { caption={ en="Previous in the list"; zh="列表中的上一项"; ja="リストの前の項目"; ar="العنصر السابق في القائمة" }
+                             description={ en="Moves the choice up in the command palette and the window search, as ↑ does. Only there."
+                                           zh="在命令面板和窗口搜索中把选中项上移，与 ↑ 相同。只在这两处生效。"
+                                           ja="コマンドパレットとウィンドウ検索で選択を上へ移動します（↑ と同じ）。そこでのみ有効です。"
+                                           ar="ينقل الاختيار لأعلى في لوحة الأوامر وبحث النوافذ، كما يفعل ↑. هناك فقط." }
+                             keywords={ en="up select move palette search"; zh="向上 选择 移动 面板 搜索"; ja="上 選択 移動 パレット 検索"; ar="أعلى تحديد نقل لوحة بحث" } }
         let commandPalette = { caption={ en="Command palette"; zh="命令面板"; ja="コマンドパレット"; ar="لوحة الأوامر" }
-                               description={ en="Run any command or setting by name; Tab switches to the workspaces."
-                                             zh="按名称运行任意命令或设置；Tab 切换到工作区。"
-                                             ja="名前でコマンドや設定を実行します。Tab でワークスペースに切り替えます。"
-                                             ar="شغّل أي أمر أو إعداد باسمه؛ ويبدّل Tab إلى مساحات العمل." }
+                               description={ en="Run any command or setting by name."
+                                             zh="按名称运行任意命令或设置。"
+                                             ja="名前でコマンドや設定を実行します。"
+                                             ar="شغّل أي أمر أو إعداد باسمه." }
                                keywords={ en="actions search everywhere"; zh="动作 全局搜索"; ja="アクション 検索"; ar="إجراءات بحث شامل" } }
         let newTab = { caption={ en="New tab"; zh="新建标签"; ja="新しいタブ"; ar="علامة تبويب جديدة" }
                        description={ en="Starts the current tab's app again."
@@ -525,6 +538,11 @@ module Strings =
         let usedBy name = { en=sprintf "Used by %s" name; zh=sprintf "已用于“%s”" name; ja=sprintf "「%s」で使用中" name; ar=sprintf "يستخدمه «%s»" name }
         // Shortcut field messages are kept short to fit.
         let alreadySet = { en="Already set"; zh="已是当前快捷键"; ja="設定済み"; ar="هذا هو الاختصار الحالي" }
+        /// A key Windows or WindowTabs keeps for itself, such as Alt+F4 or the palette's Alt+Enter.
+        let reserved = { en="Kept for Windows or WindowTabs"; zh="由 Windows 或 WindowTabs 保留"; ja="Windows か WindowTabs が使用中"; ar="محجوز لـ Windows أو WindowTabs" }
+        /// The card of keys that work only inside the palette and the window search.
+        let listKeys = { en="Command palette and window search"; zh="命令面板与窗口搜索"; ja="コマンドパレットとウィンドウ検索"; ar="لوحة الأوامر وبحث النوافذ" }
+        let listKeysNote = { en="These keys work only while one of the two is open, beside ↑ and ↓."; zh="这些按键只在两者打开时生效，与 ↑ ↓ 并用。"; ja="どちらかが開いている間だけ、↑ ↓ と並んで使えます。"; ar="تعمل هذه المفاتيح فقط أثناء فتح أحدهما، إلى جانب ↑ و↓." }
         let includeCtrlOrAlt = { en="Include Ctrl or Alt"; zh="需要包含 Ctrl 或 Alt"; ja="Ctrl か Alt が必要です"; ar="يجب أن يتضمن Ctrl أو Alt" }
         let pressShortcut = { en="Press a shortcut…"; zh="按下组合键…"; ja="キーを押してください…"; ar="اضغط اختصارًا…" }
         let notSet = { en="Not set"; zh="未设置"; ja="未設定"; ar="غير معيّن" }

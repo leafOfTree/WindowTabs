@@ -344,7 +344,12 @@ type SettingsShortcutInput() as this =
             else base.ProcessCmdKey(&msg,keyData)
         elif key=Keys.Escape && keyData=key then stopRecording(); true
         elif (key=Keys.Back || key=Keys.Delete) && keyData=key then commit 0; true
+        // Enter alone while nothing is held: no shortcut, as Backspace.
+        elif key=Keys.Enter && keyData=key then commit 0; true
         elif SettingsShortcut.isModifier key then this.Invalidate(); true
+        elif SettingsShortcut.isReserved keyData then
+            showMessage true (tr Strings.Shortcuts.reserved)
+            true
         elif SettingsShortcut.isAcceptable keyData then commit (SettingsShortcut.encode keyData); true
         else
             showMessage true (tr Strings.Shortcuts.includeCtrlOrAlt)

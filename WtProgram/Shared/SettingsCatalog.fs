@@ -52,6 +52,9 @@ module SettingsCatalog =
         { id="search-tabs"; page=HotKeySettings; text=Strings.Settings.searchTabs; binding=Shortcut("searchTabs",1620) }
         // Ctrl+Alt+P, beside the window search's Ctrl+Alt+T.
         { id="command-palette"; page=HotKeySettings; text=Strings.Settings.commandPalette; binding=Shortcut("commandPalette",1616) }
+        // Keys inside the palette and the window search, never registered for the whole desktop.
+        { id="list-next"; page=HotKeySettings; text=Strings.Settings.listNext; binding=Shortcut("listNext",0) }
+        { id="list-previous"; page=HotKeySettings; text=Strings.Settings.listPrevious; binding=Shortcut("listPrevious",0) }
         { id="new-tab"; page=HotKeySettings; text=Strings.Settings.newTab; binding=Shortcut("newTab",1614) }
         // Ctrl+Alt+W beside New tab's Ctrl+Alt+N; Ctrl+W alone belongs to the apps.
         { id="close-tab"; page=HotKeySettings; text=Strings.Settings.closeTab; binding=Shortcut("closeTab",1623) }

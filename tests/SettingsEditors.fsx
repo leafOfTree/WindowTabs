@@ -522,6 +522,21 @@ let main() =
         previous.StartRecording()
         command previous Keys.Back |> ignore
         assertTrue (previous.Shortcut=0 && hotKeys.["prevTab"]=0 && not previous.IsRecording) "Backspace removes the shortcut"
+        // Enter with nothing held while recording removes it too.
+        previous.Shortcut <- 3621
+        hotKeys.["prevTab"] <- 3621
+        previous.StartRecording()
+        command previous Keys.Enter |> ignore
+        assertTrue (previous.Shortcut=0 && hotKeys.["prevTab"]=0 && not previous.IsRecording) "Enter with nothing held did not remove the shortcut"
+        // Keys Windows or the palette keep are refused by name, the shortcut left as it was.
+        previous.Shortcut <- 3621
+        hotKeys.["prevTab"] <- 3621
+        for reserved in [Keys.Alt ||| Keys.Enter;Keys.Alt ||| Keys.F4;Keys.Alt ||| Keys.Space;Keys.Control ||| Keys.Escape] do
+            previous.StartRecording()
+            command previous reserved |> ignore
+            assertTrue (previous.Shortcut=3621 && hotKeys.["prevTab"]=3621 && previous.Message=Some(tr Strings.Shortcuts.reserved))
+                       (sprintf "%A was taken as a shortcut" reserved)
+            command previous Keys.Escape |> ignore
         previous.Shortcut <- 3621
         previous.Clear()
         assertTrue (hotKeys.["prevTab"]=0) "Clear removes the shortcut"

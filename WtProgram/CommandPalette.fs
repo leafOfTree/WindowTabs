@@ -13,7 +13,7 @@ module CommandPalette =
     let assignment (command:Command) =
         command.shortcut |> Option.map(fun key ->
             { current=Services.program.getHotKey key
-              usedBy=fun code -> Commands.holder Services.program.getHotKey key code |> Option.map(fun other -> tr other.text.caption)
+              usedBy=fun code -> Commands.holderName Services.program.getHotKey key code
               set=fun code -> Services.program.setHotKey key code })
     let private shortcutText (command:Command) =
         command.shortcut |> Option.map(fun key -> SettingsShortcut.text (Services.program.getHotKey key)) |> Option.defaultValue ""

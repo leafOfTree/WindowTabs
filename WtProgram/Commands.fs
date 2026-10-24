@@ -285,3 +285,15 @@ module Commands =
     let holder (getHotKey:string -> int) key code =
         if code=0 then None
         else all |> List.tryFind(fun other -> match other.shortcut with Some k -> k<>key && getHotKey k=code | None -> false)
+    /// Keys the palette and the window search take inside them, set as shortcuts are but never
+    /// registered for the whole desktop.
+    let listKeys = ["listNext";"listPrevious"]
+    let private listKeyName key =
+        SettingsCatalog.all |> List.tryPick(fun item -> match item.binding with Shortcut(k,_) when k=key -> Some(tr item.text.caption) | _ -> None)
+    /// What has `code` besides `key`, by name: a command, or a key of the lists, which a shortcut
+    /// for the whole desktop would take from them.
+    let holderName (getHotKey:string -> int) key code =
+        match holder getHotKey key code with
+        | Some command -> Some(tr command.text.caption)
+        | None when code=0 -> None
+        | None -> listKeys |> List.tryFind(fun k -> k<>key && getHotKey k=code) |> Option.bind listKeyName
