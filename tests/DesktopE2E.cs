@@ -60,6 +60,8 @@ static partial class DesktopE2E
     static int completed, totalSwitches;
     static double switchingSeconds;
     static int clickOrdinal;
+    static Point lastClickPoint;
+    static readonly Stopwatch lastClick=new Stopwatch();
     static Point savedCursor;
     static bool inputOwned;
     static bool randomize;
@@ -147,10 +149,16 @@ static partial class DesktopE2E
         // Repeated clicks at the same position within the system double-click
         // interval intentionally open Rename. Keep this a single-click scenario.
         p.X += (++clickOrdinal%2==0 ? 1 : -1) * (SystemInformation.DoubleClickSize.Width+2);
+        // The offset only alternates for one tab count: a strip that lost or gained a tab puts
+        // the same tab where the previous click was, and Windows pairs the two into a double-click.
+        var size=SystemInformation.DoubleClickSize;
+        var wait=SystemInformation.DoubleClickTime+50-(int)lastClick.Elapsed.TotalMilliseconds;
+        if(lastClick.IsRunning && wait>0 && Math.Abs(p.X-lastClickPoint.X)<=size.Width/2 && Math.Abs(p.Y-lastClickPoint.Y)<=size.Height/2) await Task.Delay(wait);
         Remember("click",new { strip=strip.ToInt64(),index,count,x=p.X,y=p.Y });
         Check(WindowFromPoint(p)==strip,"Tab is occluded; refusing to click another window");
         Move(p); await Task.Delay(20);
         Inject(MouseInput(2)); await Task.Delay(20); Inject(MouseInput(4));
+        lastClickPoint=p; lastClick.Restart();
         uint pid; uint thread=GetWindowThreadProcessId(strip,out pid);
         await Until("Tab click did not release mouse capture",()=> { var info=new GuiThread { Size=Marshal.SizeOf(typeof(GuiThread)) }; return GetGUIThreadInfo(thread,ref info) && info.Capture==IntPtr.Zero; });
     }
@@ -179,7 +187,10 @@ static partial class DesktopE2E
         Remember("verify activation",new { expected=expected.ToInt64(),strip=strip.ToInt64(),owner=GetWindow(strip,4).ToInt64() });
         try { await Until("Wrong foreground or strip owner after switch",()=>GetForegroundWindow()==expected && GetWindow(strip,4)==expected && IsWindowVisible(strip),2000); }
         catch { Log("expected="+expected+" foreground="+GetForegroundWindow()+" owner="+GetWindow(strip,4)); throw; }
-        Check(WindowFromPoint(TabPoint(strip,0,3))==strip,"Active window covers its tab strip");
+        // Windows coming back from minimized are stacked again a moment after the foreground
+        // settles; a strip still covered after that is the defect.
+        try { await Until("Active window covers its tab strip",()=>WindowFromPoint(TabPoint(strip,0,3))==strip,1000); }
+        catch { var cover=WindowFromPoint(TabPoint(strip,0,3)); Log("strip="+strip+" covered by "+cover+" ("+Class(cover)+")"); throw; }
     }
     static async Task Drag(IntPtr source, IntPtr target, int targetCount)
     {
@@ -269,9 +280,12 @@ static partial class DesktopE2E
             get { var parameters=base.CreateParams; if(!ForceTaskbar) parameters.ExStyle &= ~0x40000; return parameters; }
         }
     }
+    static int helperOrdinal;
     static Form NewHelper(Point position, bool appWindow=false)
     {
-        var helper=new NativeTaskbarForm { ForceTaskbar=appWindow,Text="WindowTabs E2E fixture",StartPosition=FormStartPosition.Manual,
+        // A title of its own: one already in a group dragged together is remembered by program
+        // and title, and a new window with the same title joins that group as it opens.
+        var helper=new NativeTaskbarForm { ForceTaskbar=appWindow,Text="WindowTabs E2E fixture "+(++helperOrdinal),StartPosition=FormStartPosition.Manual,
             Location=position,Size=new Size(560,150),BackColor=Color.LightBlue };
         helper.Menu=new MainMenu(new[]{new MenuItem("&File",new[]{new MenuItem("&Test")})});
         Forms.Add(helper); helper.Show(); ShowWindow(helper.Handle,4);
