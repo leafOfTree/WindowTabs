@@ -265,10 +265,12 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let items =
         tabs |> List.map(fun entry ->
             let item = TreeListItem(entry.title,Values=[|"";TabSearch.source entry|])
-            match ImgHelper.windowIcon (OS().windowFromHwnd entry.hwnd) with
+            match ImgHelper.knownWindowIcon (OS().windowFromHwnd entry.hwnd) with
             | Some icon -> item.Icon <- icon
             | None -> item.Glyph <- WindowGlyph
             item,entry) |> Array.ofList
+    // An icon changed since shows the next time.
+    do if not tabs.IsEmpty then ImgHelper.refreshWindowIcons (tabs |> List.map(fun entry -> entry.hwnd))
     let groupItems = items |> Array.filter(fun (_,entry) -> List.contains entry.hwnd group)
     let pageItems =
         pages |> List.map(fun page ->

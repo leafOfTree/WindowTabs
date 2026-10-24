@@ -95,6 +95,16 @@ let main() =
                         Location=Point(area.Left+40,area.Top+40),Size=Size(320,200),BackColor=Color.CornflowerBlue) with
                             override _.ShowWithoutActivation = true }
     captureForm.Show()
+    // The window search shows each window's icon as last read: every list gets a copy of its own,
+    // disposed with it, and the next opening still has the icon.
+    do
+        captureForm.Icon <- SystemIcons.Information
+        let window = OS().windowFromHwnd captureForm.Handle
+        let first = ImgHelper.knownWindowIcon window
+        first |> Option.iter(fun image -> image.Dispose())
+        let second = ImgHelper.knownWindowIcon window
+        check (first.IsSome && second |> Option.exists(fun image -> image.Width>0)) "A window's icon kept for the window search was lost once a list let it go"
+        second |> Option.iter(fun image -> image.Dispose())
     captureForm.Refresh()
     // Let the compositor present the first frame before asking for its surface.
     let firstFrame = Diagnostics.Stopwatch.StartNew()

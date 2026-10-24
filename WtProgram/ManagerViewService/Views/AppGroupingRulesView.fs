@@ -22,6 +22,48 @@ module ImgHelper =
             if obj.ReferenceEquals(source,SystemIcons.Application) then None
             elif AppIcons.IsGenericIcon(source.Handle) then source.Dispose(); None
             else try Some(imgFromIcon source) finally source.Dispose()
+    /// Windows' icons as last read, each with its window's process, so a handle used again by
+    /// another window is not taken for it. Asking every window for its icon held the window
+    /// search up as it opened.
+    let private known = Collections.Generic.Dictionary<IntPtr,int * Image option>()
+    let private copy (image:Image option) = image |> Option.map(fun image -> new Bitmap(image) :> Image)
+    /// A copy of the window's icon, the list owning it: as last read, else read now.
+    let knownWindowIcon (window:Window) : Image option =
+        let pid = Win32Helper.GetWindowProcessId(window.hwnd)
+        let cached = lock known (fun () -> match known.TryGetValue window.hwnd with
+                                           | true,(owner,image) when owner=pid -> Some(copy image)
+                                           | _ -> None)
+        match cached with
+        | Some image -> image
+        | None ->
+            let image = try windowIcon window with _ -> None
+            lock known (fun () ->
+                match known.TryGetValue window.hwnd with
+                | true,(_,previous) -> previous |> Option.iter(fun image -> image.Dispose())
+                | _ -> ()
+                known.[window.hwnd] <- (pid,image)
+                copy image)
+    /// Reads the windows' icons again off this thread, for the next time they are shown, and
+    /// lets go of those of windows gone. Store apps' icons come from the shell, read where shown.
+    let refreshWindowIcons (hwnds:IntPtr list) =
+        Threading.ThreadPool.QueueUserWorkItem(fun _ ->
+            for hwnd in hwnds do
+                try
+                    let window = OS().windowFromHwnd hwnd
+                    if window.className<>"ApplicationFrameWindow" then
+                        let pid = Win32Helper.GetWindowProcessId(hwnd)
+                        let image = windowIcon window
+                        lock known (fun () ->
+                            match known.TryGetValue hwnd with
+                            | true,(_,previous) -> previous |> Option.iter(fun image -> image.Dispose())
+                            | _ -> ()
+                            known.[hwnd] <- (pid,image))
+                with _ -> ()
+            lock known (fun () ->
+                for hwnd in List.ofSeq known.Keys do
+                    if not (WinUserApi.IsWindow hwnd) then
+                        snd known.[hwnd] |> Option.iter(fun image -> image.Dispose())
+                        known.Remove hwnd |> ignore)) |> ignore
     /// List items own their icons; release them when a list is replaced or discarded.
     let rec disposeItems (items:seq<TreeListItem>) =
         for item in items do
