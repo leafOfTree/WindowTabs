@@ -394,20 +394,20 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
             | None ->
                 for page in pages do
                     if page.isCreated then page.control.Dispose())
-    member _.show() =
+    /// Restored and in front. Asked for from the palette, a key or the command line, another
+    /// app is in front by then, and Windows ignores a plain Activate from behind it.
+    member private _.bringToFront() =
         if form.WindowState=FormWindowState.Minimized then form.WindowState <- FormWindowState.Normal
         form.Show()
+        OS().windowFromHwnd(form.Handle).setForeground(true)
         form.Activate()
-    member _.showView(view) =
+    member this.show() = this.bringToFront()
+    member this.showView(view) =
         select view
-        if form.WindowState=FormWindowState.Minimized then form.WindowState <- FormWindowState.Normal
-        form.Show()
-        form.Activate()
+        this.bringToFront()
     /// The window on a setting's page, scrolled to the setting and lit, as from the search.
-    member _.showSetting(id) =
-        if form.WindowState=FormWindowState.Minimized then form.WindowState <- FormWindowState.Normal
-        form.Show()
-        form.Activate()
+    member this.showSetting(id) =
+        this.bringToFront()
         SettingsCatalog.all |> List.tryFind(fun item -> item.id=id) |> Option.iter navigate
     member _.window = form :> Form
     member _.activeView = activePage

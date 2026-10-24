@@ -476,6 +476,8 @@ let main() =
                         note (question.accept "#12").IsSome (sprintf "%s took a colour that is no colour" item.id)
                     | Navigation,Done ->
                         note (called ("setting "+item.id)) (sprintf "%s did not open its page" item.id)
+                        // Out of the way first, so the settings window, already open behind another, comes to the front.
+                        note (page.concealed entry) (sprintf "%s opens its page with the palette still up" item.id)
                     | binding,outcome -> issues.Add(sprintf "The setting %s (%A) answered %A" item.id binding outcome))
             | None -> ()
         // Keys: every row that takes one is given one, and a key another action has is refused by name.

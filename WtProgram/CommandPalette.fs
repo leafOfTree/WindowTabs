@@ -183,9 +183,18 @@ module CommandPalette =
                           | _ -> { detail=tr (SettingsCatalog.searchContext item); switch=None; swatch=None; shortcut=""; dropdown=false }
                   asides.[chosen.hwnd] <- aside
                   aside)
-          // A command acts on the window in front, which the palette stands clear of; a setting
-          // turned, typed or picked leaves the palette where it is.
-          concealed=fun chosen -> match action chosen with ACommand _ -> true | _ -> false }
+          // A command acts on the window in front, which the palette stands clear of, and a
+          // settings page comes up in its place; a setting turned, typed or picked leaves the
+          // palette where it is.
+          concealed=fun chosen ->
+              match action chosen with
+              | ACommand _ -> true
+              | ASetting item ->
+                  match item.binding with
+                  | Number _ | Colour -> false
+                  | Text(key,_) when key="numberLeaderKeys" -> false
+                  | _ -> true
+              | _ -> false }
     /// The saved workspaces by name, with how many windows each holds; chosen, one is restored.
     let workspacesPage (workspaces:(string * int) list) (restore:string -> unit) =
         let names = workspaces |> List.map fst |> Array.ofList
