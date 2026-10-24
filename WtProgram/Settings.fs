@@ -10,6 +10,8 @@ open Bemo.Json
 type Settings(isStandAlone, ?saveDelay:int) as this =
     let mutable cachedSettingsString = None
     let mutable cachedSettingsRec = None
+    /// The settings parsed once for reading; dropped with the text they came from.
+    let mutable cachedJson : JObject option = None
     let mutable hasExistingSettings = false
     let settingChangedEvent = Event<string* obj>()
     let valueCache = Dictionary<string, obj>()
@@ -41,6 +43,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
         store.Flush() |> ignore
         cachedSettingsString <- None
         cachedSettingsRec <- None
+        cachedJson <- None
         valueCache.Clear()
         published.Clear()
 
@@ -63,6 +66,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
         and set(newSettings : string option) =
             cachedSettingsString <- newSettings
             cachedSettingsRec <- None
+            cachedJson <- None
             valueCache.Clear()
             published.Clear()
             store.Schedule(newSettings.Value)
@@ -76,6 +80,16 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                 Alert.showSystem AlertKind.Warning (tr Strings.Messages.settingsError) errorMessage
                 failwith "Error parsing settings json"
         and set(settingsJson:JObject) = this.settingsString <- Some(settingsJson.ToString())
+
+    /// The settings to read from, never to change: `settingsJson` gives a copy for that. Parsed again
+    /// for each key looked up, a large file held the palette up a third of a second as it opened.
+    member this.readJson =
+        match cachedJson with
+        | Some json -> json
+        | None ->
+            let json = this.settingsJson
+            cachedJson <- Some json
+            json
 
     // Neutral greys rather than the original Aero blue: the tab shape is now a
     // rounded rectangle, and a saturated border around every tab reads as busy
@@ -92,7 +106,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
     /// Groups made by hand, kept after their windows close. Written by the program as groups
     /// change rather than edited on a settings page, so it stays out of the settings record.
     member this.rememberedGroups
-        with get() = RememberedGroups.read (this.settingsJson.["rememberedGroups"])
+        with get() = RememberedGroups.read (this.readJson.["rememberedGroups"])
         and set(groups:RememberedGroup list) =
             let json = this.settingsJson
             json.["rememberedGroups"] <- RememberedGroups.write groups
@@ -106,7 +120,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
     /// group's id, a group made by hand's token, or the app of an automatic group.
     member this.groupIcons
         with get() =
-            match this.settingsJson.["groupIcons"] with
+            match this.readJson.["groupIcons"] with
             | :? JObject as icons -> icons.Properties() |> Seq.choose(fun p -> if p.Value.Type=JTokenType.String then Some(p.Name,p.Value.Value<string>()) else None) |> Map.ofSeq
             | _ -> Map.empty
         and set(icons:Map<string,string>) =
@@ -282,7 +296,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
 
     interface ISettings with
 
-        member x.hotKey key = x.settingsJson.getObject("hotKeys") |> Option.bind (fun hotKeys -> hotKeys.getInt32(key))
+        member x.hotKey key = x.readJson.getObject("hotKeys") |> Option.bind (fun hotKeys -> hotKeys.getInt32(key))
         member x.setHotKey key value =
             let json = x.settingsJson
             let hotKeys = json.getObject("hotKeys").def(JObject())

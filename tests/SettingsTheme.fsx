@@ -288,7 +288,12 @@ let main() =
         check (samePalette api.appearance.lightPalette Theme.lightPalette && samePalette api.appearance.darkPalette Theme.bluePalette) "Upgrade replaced explicit per-theme colours"
         api.root <- legacyJson
         check (api.hotKey "nextTab" = None) "Unchanged shortcut reported as customised"
+        // Read from one parse of the file, the palette's rows each asking for their key: parsed for
+        // each, a large file held the palette up a third of a second. A write is read at once.
+        let parsed = settings.readJson
+        check (obj.ReferenceEquals(parsed,settings.readJson)) "Every key looked up parsed the whole settings file again"
         api.setHotKey "nextTab" 0x2DD
+        check (not (obj.ReferenceEquals(parsed,settings.readJson))) "A shortcut set was read from the settings as they were before"
         check (api.hotKey "nextTab" = Some 0x2DD && int api.root.["hotKeys"].["nextTab"] = 0x2DD) "Shortcut not saved"
         api.setValue("language",box "zh")
         check (string api.root.["language"]="zh" && api.getValue("language")=box "zh") "Language setting not saved"

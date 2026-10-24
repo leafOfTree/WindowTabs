@@ -755,12 +755,21 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 // The desktop keeps each group's windows in tab order.
                 let groups = this.desktop.groups.list |> List.map(fun group -> group.windows.list)
                 let group = this.desktop.foregroundGroup |> Option.map(fun group -> group.windows.list) |> Option.defaultValue []
+                // The windows' keys read once for all the rows, and again once one is set.
+                let known : WindowShortcut list option ref = ref None
+                let shortcuts() =
+                    match known.Value with
+                    | Some saved -> saved
+                    | None ->
+                        let saved = this.windowShortcuts()
+                        known.Value <- Some saved
+                        saved
                 // Alt+Enter on a window gives it a key, kept by its program and name.
                 let windowShortcut (entry:TabSearchEntry) =
                     let path = try os.windowFromHwnd(entry.hwnd).pid.processPath with _ -> ""
                     if path="" then None
                     else
-                        let saved() : WindowShortcut list = this.windowShortcuts()
+                        let saved() : WindowShortcut list = shortcuts()
                         let current() = WindowShortcuts.find (saved()) path entry.title |> Option.map(fun s -> s.code) |> Option.defaultValue 0
                         Some { current=current()
                                usedBy=fun code ->
@@ -771,11 +780,13 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                        | None ->
                                            saved() |> List.tryFind(fun other -> other.code=code && not (AppIdentity.same other.path path && other.title=entry.title))
                                            |> Option.map(fun other -> other.title)
-                               set=fun code -> (this :> IProgram).setWindowShortcut { path=path; title=entry.title; code=code } }
+                               set=fun code ->
+                                   known.Value <- None
+                                   (this :> IProgram).setWindowShortcut { path=path; title=entry.title; code=code } }
                 TabSearchForm(TabSearch.tabs nameOverride active groups,group,settings=(settingsManager :> ISettings),
                               windowShortcut=windowShortcut,windowShortcutText=(fun entry ->
                                   let path = try os.windowFromHwnd(entry.hwnd).pid.processPath with _ -> ""
-                                  WindowShortcuts.find (this.windowShortcuts()) path entry.title |> Option.map(fun s -> SettingsShortcut.text s.code) |> Option.defaultValue ""))
+                                  WindowShortcuts.find (shortcuts()) path entry.title |> Option.map(fun s -> SettingsShortcut.text s.code) |> Option.defaultValue ""))
             | Some wanted ->
                 let pages = [CommandPalette.actionsPage active]
                 let palette = TabSearchForm([],[],settings=(settingsManager :> ISettings),pages=pages,scope=wanted,windows=false)
