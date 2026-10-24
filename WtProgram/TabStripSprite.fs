@@ -834,6 +834,18 @@ type TabStripSprite<'id> when 'id : equality = {
             gr.PixelOffsetMode <- PixelOffsetMode.Half
             use outline = this.columnOutline
             gr.FillPath(brush,outline)
+            // Tabs of different colours: each row's band, half the gap above and below it, in its
+            // tab's own bar colour, as a row of tabs fills each tab's slot. Neighbours of one
+            // colour join into one block, and the colour changes only where the tabs do.
+            gr.SetClip(outline)
+            let half = (this.rowStep-this.rowHeight)/2
+            for id in this.lorder.list do
+                let bar = (this.tabSpriteOf id).barColor
+                if bar<>bgColor then
+                    let location : Pt = this.tabLocation id
+                    use band = new SolidBrush(bar)
+                    gr.FillRectangle(band,Rectangle(0,location.y-half,this.size.width,this.rowStep))
+            gr.ResetClip()
         else gr.FillRectangle(brush, bounds.Rectangle)
         this.scrollThumb |> Option.iter(fun thumb ->
             use ink = new SolidBrush(this.appearance.tabBorderColor)

@@ -273,11 +273,20 @@ let main () =
                     let shade = Theme.tabShade 0.12 0.6 Color.Blue
                     check (image.GetPixel(image.Width/2,image.Height-Dpi.scale 4).ToArgb()=shade.ToArgb())
                           "A column of tabs filled with one colour stands on the plain bar"
-                    // Tabs of different colours keep the plain bar between them.
-                    let mixed = {column with tabs=Map2(List2([1,filled Color.Blue;2,filled Color.Red]))}
+                    // Tabs of different colours: each row's band in its tab's own bar colour, so two
+                    // of one colour join across the gap between them and the colour changes only
+                    // where the tabs do; the plain bar below the last.
+                    let mixed = {column with size=Dpi.scaleSize(Sz(220,300)); lorder=List2([1;2;3;4]); zorder=List2([1;2;3;4])
+                                             tabs=Map2(List2([1,filled Color.Blue;2,filled Color.Blue;3,info "Plain";4,filled Color.Red]))}
                     use mixedImage = mixed.render.bitmap
-                    check (mixedImage.GetPixel(mixedImage.Width/2,mixedImage.Height-Dpi.scale 4).ToArgb()=Theme.dark.scaled.tabNormalBgColor.ToArgb())
-                          "A column of tabs in different colours lost the plain bar"
+                    mixedImage.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "mixed-column-%A-%A-%d.png" dock direction dpi))
+                    let plain = Theme.dark.scaled.tabNormalBgColor.ToArgb()
+                    let at y = mixedImage.GetPixel(mixedImage.Width/2,y).ToArgb()
+                    let below (id:int) = (mixed.tabLocation id).y+mixed.rowHeight
+                    check (at (mixedImage.Height-Dpi.scale 4)=plain) "A column of tabs in different colours lost the plain bar below them"
+                    check (at (below 1)=shade.ToArgb()) "Two tabs of one colour do not join across the gap between them"
+                    check (at (below 2)=shade.ToArgb() && at ((mixed.tabLocation 3).y-1)=plain) "A coloured tab's band does not end halfway to a plain tab"
+                    check (at ((mixed.tabLocation 4).y-1)=(Theme.tabShade 0.12 0.6 Color.Red).ToArgb()) "A tab of another colour does not stand on its own band"
                 let inactive = column.tabSprites.list |> List.map snd |> List.find(fun tab -> not tab.isTop)
                 let inactive = {inactive with hover=None;captured=None}
                 if not System.Windows.Forms.SystemInformation.HighContrast then
