@@ -582,6 +582,12 @@ let main() =
                     check (waiting() && not (shown())) "A cut-short title did not wait for the pointer to rest"
                     rest()
                     check (shown()) "A cut-short title did not show in full after a rest"
+                    // Read on its own, the title is at least 10pt, near the settings window's help: in
+                    // the tab's font, cut to fit its row, it read small.
+                    do
+                        let tip = (typeof<TabStrip>.GetField("titleTip",flags).GetValue(strip) :?> TabTitleTip option).Value
+                        let least = 10.0f*float32(Dpi.value())/float32(Dpi.system())
+                        check (tip.Font.SizeInPoints>=least-0.01f) (sprintf "A title tip read at %.1fpt, under %.1fpt" tip.Font.SizeInPoints least)
                     hover 460
                     check (shown()) "Moving between cut-short titles did not show the next one at once"
                     hover 260

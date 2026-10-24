@@ -48,9 +48,12 @@ type TabTitleTip() =
             this.StartPosition <- FormStartPosition.Manual
             this.ShowInTaskbar <- false
             this.DoubleBuffered <- true
-        if isNull font || font.Name<>tabFont.Name || font.Size<>tabFont.Size then
+        // The tab's own size, cut to fit its row, read small on its own; at least 10pt, near the
+        // settings window's help.
+        let size = max tabFont.Size (10.0f*float32(Dpi.value())/float32(Dpi.system()))
+        if isNull font || font.Name<>tabFont.Name || font.Size<>size then
             let previous = font
-            font <- new Font(tabFont,FontStyle.Regular)
+            font <- new Font(tabFont.FontFamily,size,FontStyle.Regular)
             this.Font <- font
             if not (isNull previous) then previous.Dispose()
         let inset = Dpi.scale 8
