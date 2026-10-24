@@ -36,16 +36,24 @@ type HotKeyView() =
         else
             editor.Name <- command.id
             SettingsUi.row card (tr command.text.caption) (tr command.text.description) editor
+    /// The window search and the palette, the way in to everything else, on a card of their own.
+    let entryKeys = ["searchTabs";"commandPalette"]
     let rows card category (skip:string list) =
         for (key,editor),(_,command) in List.zip editors actions do
             if command.category=category && not (List.contains key skip) then row card command editor
     do
         let restore = new SettingsResetButton(tr Strings.Shortcuts.restoreDefaults,Name="restore-shortcuts")
-        SettingsUi.sectionHeading table (tr Strings.Shortcuts.keyboard) [restore]
-        let keyboard = new SettingsCard()
-        SettingsUi.add table keyboard
+        SettingsUi.sectionHeading table (tr Strings.Shortcuts.startHere) [restore]
+        let entry = new SettingsCard(Name="start-here")
+        SettingsUi.add table entry
+        SettingsUi.note entry (tr Strings.Shortcuts.startHereNote)
+        for key in entryKeys do
+            let editor = editors |> List.find(fun (k,_) -> k=key) |> snd
+            let command = actions |> List.find(fun (k,_) -> k=key) |> snd
+            row entry command editor
+        let keyboard = SettingsUi.sectionCard table (tr Strings.Shortcuts.keyboard)
         SettingsUi.note keyboard (tr Strings.Shortcuts.keyboardNote)
-        rows keyboard TabCommands ["numberLeader"]
+        rows keyboard TabCommands ("numberLeader"::entryKeys)
         // Rows inset under a toggle and collapsed while it is off.
         let dependOn (toggle:SettingsToggle) (rows:SettingsRow list) =
             for row in rows do SettingsUi.indentDependentRow row

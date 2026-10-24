@@ -420,6 +420,13 @@ let main() =
         let restore = form.Controls.Find("restore-shortcuts",true).[0]
         Application.DoEvents()
         let next = view.control.Controls.Find("next-tab",true).[0] :?> SettingsShortcutInput
+        // The window search and the palette lead the page on a card of their own, listed once.
+        do
+            let entry = view.control.Controls.Find("start-here",true).[0]
+            for id in ["search-tabs";"command-palette"] do
+                let found = view.control.Controls.Find(id,true) |> Array.filter(fun control -> control :? SettingsShortcutInput)
+                assertTrue (found.Length=1 && entry.Contains found.[0]) (sprintf "%s is not on the page's first card, once" id)
+            assertTrue (not (entry.Contains next)) "The first card holds more than the window search and the palette"
         // The tab menu's and the settings' commands are given keys in the palette, not listed here.
         assertTrue (view.control.Controls.Find("rename-tab",true).Length=0 && view.control.Controls.Find("toggle-dim-inactive-groups",true).Length=0)
                    "The Shortcuts page lists commands the palette is for"

@@ -521,6 +521,12 @@ module Strings =
 
     module Shortcuts =
         let keyboard = { en="Keyboard"; zh="键盘"; ja="キーボード"; ar="لوحة المفاتيح" }
+        /// The card of the two keys that reach everything else: the window search and the palette.
+        let startHere = { en="Start here"; zh="从这里开始"; ja="ここから始める"; ar="ابدأ من هنا" }
+        let startHereNote = { en="Type a few letters to find any window, or to run any command or setting."
+                              zh="输入几个字，即可找到任意窗口，或运行任意命令和设置。"
+                              ja="数文字入力するだけで、任意のウィンドウを探したり、コマンドや設定を実行したりできます。"
+                              ar="اكتب بضعة أحرف للعثور على أي نافذة، أو لتشغيل أي أمر أو إعداد." }
         let mouse = { en="Mouse"; zh="鼠标"; ja="マウス"; ar="الفأرة" }
         /// Cards for the commands that turn settings on or off and open pages, and the app's own.
         let keyboardNote = { en="Click a shortcut, then press the new combination. Esc cancels. The command palette sets one too: Alt+Enter on a command."
