@@ -522,7 +522,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         g.Restore(state)
 
     /// A text with its matching runs in the accent colour, as the settings search shows them,
-    /// drawn in pieces so the colour changes mid-word; cut with an ellipsis where it does not fit.
+    /// the colour changing mid-word; cut with an ellipsis where it does not fit.
     member private this.drawMarked(g:Graphics, text:string, runs:(int * int) list, bounds:Rectangle, flags:TextFormatFlags, font:Font, color:Color, p:SettingsPalette) =
         if runs.IsEmpty || text="" then TextRenderer.DrawText(g,text,font,bounds,color,flags)
         else
@@ -549,16 +549,26 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             let state = g.Save()
             g.SetClip(bounds,CombineMode.Intersect)
             try
-                let mutable x = bounds.Left+pad
+                // The whole text in one go, as it stands with nothing matched, once in each colour
+                // through its own part of the row: drawn in pieces, the letters either side of a
+                // cut lost their kerning and moved as a match came and went.
+                let left = bounds.Left+pad
+                use lit = new Region(Rectangle.Empty)
                 let mutable start = 0
                 while start<text.Length do
                     let active = inRun start
                     let mutable finish = start+1
                     while finish<text.Length && inRun finish=active do finish <- finish+1
-                    let part = text.Substring(start,finish-start)
-                    TextRenderer.DrawText(g,part,font,Rectangle(x,bounds.Y,max 1 (bounds.Right-x),bounds.Height),(if active then marked else color),pieces)
-                    x <- x+width part
+                    if active then
+                        let x0 = left+(if start=0 then 0 else width (text.Substring(0,start)))
+                        lit.Union(Rectangle(x0,bounds.Y,max 1 (left+width (text.Substring(0,finish))-x0),bounds.Height))
                     start <- finish
+                use around = g.Clip
+                g.SetClip(lit,CombineMode.Intersect)
+                TextRenderer.DrawText(g,text,font,bounds,marked,flags)
+                g.Clip <- around
+                g.SetClip(lit,CombineMode.Exclude)
+                TextRenderer.DrawText(g,text,font,bounds,color,flags)
             finally g.Restore(state)
 
     override this.OnResize(e) = base.OnResize(e); this.updateScroll()

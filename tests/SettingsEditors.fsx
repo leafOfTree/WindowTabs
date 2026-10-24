@@ -583,13 +583,17 @@ let main() =
         rows.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
         image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","palette-rows.png"))
         rowsForm.Close()
-    // A name with a match lit up starts where it does without one: typing must not move it.
+    // A name with a match lit up starts where it does without one, and the text after the match
+    // ends where it did: typing must not move it.
     do
-        use rowsForm = new Form(ClientSize=Size(400,80),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false)
+        use rowsForm = new Form(ClientSize=Size(400,240),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false)
         let rows = new SettingsTreeList([TreeListColumn("",0,TextColumn)],ShowHeader=false,ShowExpanders=false,RowHeight=36,Dock=DockStyle.Fill,Font=SettingsUi.bodyFont())
         let plain = TreeListItem("Rename tab")
         let lit = TreeListItem("Rename tab",Highlights=[|[0,2]|])
-        rows.Roots.AddRange([plain;lit])
+        // One letter inside a word, where the cut loses the pair's kerning.
+        let whole = TreeListItem("Reset to defaults")
+        let cut = TreeListItem("Reset to defaults",Highlights=[|[12,1]|])
+        rows.Roots.AddRange([plain;lit;whole;cut])
         rows.Rebuild()
         rowsForm.Controls.Add(rows)
         SettingsUi.apply rowsForm
@@ -598,13 +602,20 @@ let main() =
         use image = new Bitmap(rowsForm.ClientSize.Width,rowsForm.ClientSize.Height)
         rows.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
         let background = image.GetPixel(image.Width-2,10).ToArgb()
-        let firstInk y0 =
+        let firstInk (item:TreeListItem) =
             seq { for x in 0..image.Width/2 do
-                    for y in y0+4..y0+30 do
+                    for y in (let row = rows.RowBounds(item).Value in [row.Top+2..row.Bottom-3]) do
                         if image.GetPixel(x,y).ToArgb()<>background then yield x }
             |> Seq.tryHead |> Option.defaultValue -1
-        let plainLeft,litLeft = firstInk 0,firstInk 36
+        let lastInk (item:TreeListItem) =
+            seq { for x in image.Width/2 .. -1 .. 0 do
+                    for y in (let row = rows.RowBounds(item).Value in [row.Top+2..row.Bottom-3]) do
+                        if image.GetPixel(x,y).ToArgb()<>background then yield x }
+            |> Seq.tryHead |> Option.defaultValue -1
+        let plainLeft,litLeft = firstInk plain,firstInk lit
         assertTrue (plainLeft>0 && abs(plainLeft-litLeft)<=1) (sprintf "A lit match moved its name: %d against %d" litLeft plainLeft)
+        let wholeRight,cutRight = lastInk whole,lastInk cut
+        assertTrue (wholeRight>0 && wholeRight=cutRight) (sprintf "A lit letter moved the text after it: it ends at %d, not %d" cutRight wholeRight)
         rowsForm.Close()
     // SettingsTreeList: expansion, keyboard navigation, check boxes and selection events.
     let treeList = new SettingsTreeList([TreeListColumn("Name",0,TextColumn);TreeListColumn("On",80,CheckColumn)])
