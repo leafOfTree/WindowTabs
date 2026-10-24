@@ -24,6 +24,9 @@ It runs in the system tray.
 
 - **Group windows:** drag a tab onto another window's tab bar. Drag it away to ungroup.
 - **Group an app automatically:** right-click its tab → **Enable auto-grouping**.
+- **Pin a tab:** right-click it → **Pin**. It stays at the front of its group with a pin in
+  place of its close button, is left open by **Close others** and **Close all**, and stays
+  pinned when WindowTabs starts again.
 - **Settings:** right-click a tab or the tray icon.
 
 Grouped windows move and resize together. Tabs hide on maximized windows; point at
@@ -44,8 +47,9 @@ the top edge to show them, or set **Auto-hide tabs** to **Never**.
 Change any shortcut under **Settings → Shortcuts**. If Ctrl/Alt + number conflicts
 with an app, turn it off for that app from the tab's right-click menu.
 
-**Optional, off by default:** switch on hover, a leader key to pick tabs by letter
-(Alt + F, then the key on the tab), automatic tab colors, and an Alt+Tab replacement.
+**Optional, off by default:** switch on hover, a picture of a tab's window when the pointer
+rests on it, a leader key to pick tabs by letter (Alt + F, then the key on the tab), automatic
+tab colors, and an Alt+Tab replacement.
 
 Drag files onto a tab and pause to bring that window forward. On a **File Explorer**
 tab, let go to drop them into its folder as Explorer would: Ctrl copies, Shift moves,
@@ -78,9 +82,11 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
 
 **Ctrl + Alt + P** opens the command palette: type a command's name and press Enter.
 Every tab menu action, split view command, workspace command and setting is there,
-with its shortcut beside it: a setting that is on or off shows a switch and is turned in
-place, any other opens the settings window on it. **Restore workspace…** lists the saved workspaces. Alt + Enter on an action sets its
-shortcut, as **Settings → Shortcuts** does. The window search (**Ctrl + Alt + T**) is a box
+with its shortcut beside it. A setting that is on or off shows a switch and is turned in
+place; a choice is picked from its list, a size typed and saved as you type, a colour picked,
+and anything else opens the settings window on it. **Restore workspace…** lists the saved
+workspaces. Alt + Enter on an action sets its shortcut, as **Settings → Shortcuts** does; a
+setting's shortcut opens the palette on its choices or its box. The window search (**Ctrl + Alt + T**) is a box
 of its own, over the group's tabs or every window.
 
 The same commands run from a command line, in the running WindowTabs:

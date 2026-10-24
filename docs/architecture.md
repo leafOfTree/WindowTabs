@@ -336,7 +336,8 @@ overwrite the preferred scope.
 The same form is the command palette (`Ctrl+Alt+P` by default), opened with the actions page
 in place of the window scopes (`windows=false`); saved workspaces are restored through Restore
 workspace…, which lists them. With one page there is nothing for Tab to go round, so the line
-under the box only takes room for the way back from a command's choices. Each key closes its own box or
+under the box only takes room for the way back from a command's choices. It is a row's
+height, so a name chosen keeps its place as its choices or its box open under it. Each key closes its own box or
 puts it up in the other's place. Each box offers what was typed when it last closed, selected,
 so typing starts afresh; the actions chosen last from the palette (`recentActions` in the
 settings file, eight at most) come first while nothing is typed and win ties after. Alt+Enter on a window in the search gives it a key
@@ -355,7 +356,11 @@ it is typed (`live`), as the settings pages save, Enter closes the palette, Esc 
 keeping what was saved, and a value Enter cannot take is explained under the box; a colour shows its dot before its code at the right and is asked for
 in the settings pages' colour box (`SettingsColorInput`) with its picker open, the palette kept
 up while the picker has the keys, and saved as it changes through `PaletteEditing`, as the
-Appearance page edits it; a page opens the settings window. The tab
+Appearance page edits it; a page opens the settings window. What a setting's row does lives
+in `SettingRows`, ahead of the commands, so a hidden command for each setting
+(`SettingRows.commandId`, `setting-<id>` in kebab-case) does the same from a key of its own;
+Alt+Enter is offered only while the chosen row can take a key. A row's value at the right is
+kept while typing and worked out again once the value is set from that row. The tab
 colour command offers what the tab menu does, with `AppTabColors` shared between them. Sizes and
 the tab style are read and written by key (`SettingsCatalog.geometryNumbers`), so the palette
 and the command line set them as any other setting. Rows are found by their caption, keywords and description in every
@@ -373,14 +378,32 @@ catalog names the command and under its id otherwise. The Shortcuts page lists o
 shortcuts with a key to begin with, the window search's and the palette's first on a card of
 their own; the palette gives every other command its key.
 
+Opening either box reads nothing slow per row. Settings are read from one parse of the
+file (`Settings.readJson`), dropped with every write: each row asking for its key parsed the
+whole file, a third of a second on a large one. The window search shows each window's icon as
+last read (`ImgHelper.knownWindowIcon`, by window and process) and reads them again in the
+background for the next time.
+
 The tab menu's actions are commands too. `IGroup.run` takes a `GroupCommand` (rename, reset
-name, close others or all, sort, move a tab, a tab's colour, icons only, dock, alignment, the
-group's auto-hide) onto the group's thread: what the group keeps it does itself, and what the
+name, pin, close others or all, sort, move a tab, a tab's colour, icons only, dock, alignment,
+the group's auto-hide) onto the group's thread: what the group keeps it does itself, and what the
 strip owns it asks of the decorator through `commandRequested`, as a pick is asked. Taking a tab
 out into a group of its own marks it as dropped, as a drag to the desktop does, and lets the next
 scan start the group; moving it to another group goes through `addAfterDetaching`. The app
 toggles (tabs, auto-grouping and number switching for the app of the window in front) and the
 workspace choices (restore by name, delete) are commands as well.
+
+A pinned tab (`PinnedTabs`) is a property on its window, as its tab layout is, so it stays
+pinned in whatever group the window moves to and when WindowTabs starts again, and goes with the
+window. The group keeps its pinned tabs first (`keepPinnedFirst`, as a window joins or a tab is
+pinned or unpinned); a drag, Move tab and sorting keep each tab within its part, and closing
+tabs together leaves the pinned ones. A pinned tab keeps its icon and title, the system icon
+font's pin (`PinGlyph`, its fill and outline) drawn where its close button would be.
+
+Resting on a tab, the tip shows a title cut short in full (`TabTitleTip`). With the hover
+preview on, a tab behind also shows its window under the title: printed off the strip's
+thread, shrunk to fit (`TabPreviewPicture`), and dropped if the pointer has moved on by then;
+a minimized window's stand-in, its app's icon, is drawn on the strip's thread.
 
 The command line (`CommandLine.parse`) asks for a command by id, a workspace by name, or
 programs to start into one group. A start that finds a copy running sends its arguments to it
