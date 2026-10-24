@@ -350,6 +350,9 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         expander
 
     /// The name cell of a row: its icon box and its text bounds.
+    /// Where a top-level row's name starts, for text over the list to line up with it.
+    member this.NameLeft(item:TreeListItem) = let _,bounds = this.nameLayout(item,0,0) in bounds.X
+
     member private this.nameLayout(item:TreeListItem, level:int, top:int) =
         let cell = this.columnBounds.[0]
         let size = Dpi.scale this.IconSize

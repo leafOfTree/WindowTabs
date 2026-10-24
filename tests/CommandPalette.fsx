@@ -676,6 +676,34 @@ let main() =
             trial.Back()
             note ((trial.Selected |> Option.map(fun entry -> entry.title))=Some title)
                  (sprintf "Back from %s chose %A" title (trial.Selected |> Option.map(fun entry -> entry.title)))
+        // A picture of a list of values under its name, kept with the logs.
+        trial.Query <- tr Strings.Commands.groupTabAlignment.caption
+        trial.Accept()
+        pump 100
+        Application.OpenForms |> Seq.cast<Form> |> Seq.tryFind(fun form -> form.Visible && form.Controls |> Seq.cast<Control> |> Seq.exists(fun control -> control :? SettingsSearchBox))
+        |> Option.iter(fun form ->
+            use image = new Bitmap(form.Width,form.Height)
+            form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+            image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","command-palette-choices.png"))
+            // The name over the values starts where their names do, its arrow in the margin before.
+            let selection = (SettingsColors.current()).selection.ToArgb()
+            let middle = image.Width/2
+            match [0..image.Height-1] |> List.tryFind(fun y -> image.GetPixel(middle,y).ToArgb()=selection) with
+            | Some rowTop ->
+                let inked (y0:int) (y1:int) (background:int) (from:int) =
+                    [from..middle] |> List.filter(fun x -> [y0..y1] |> List.exists(fun y -> image.GetPixel(x,y).ToArgb()<>background))
+                let rowLeft = [0..middle] |> List.find(fun x -> image.GetPixel(x,rowTop+Dpi.scale 8).ToArgb()=selection)
+                let rowText = inked (rowTop+Dpi.scale 6) (rowTop+Dpi.scale 30) selection (rowLeft+Dpi.scale 4) |> List.head
+                let surface = image.GetPixel(middle,rowTop-Dpi.scale 17).ToArgb()
+                let line = inked (rowTop-Dpi.scale 28) (rowTop-Dpi.scale 6) surface 1
+                // The arrow is the first run of ink; the name begins after the gap behind it.
+                match line |> List.pairwise |> List.tryFind(fun (a,b) -> b-a>1) with
+                | Some(arrowEnd,nameStart) ->
+                    note (abs(nameStart-rowText)<=Dpi.scale 2) (sprintf "The name over the values starts at %d, their names at %d" nameStart rowText)
+                    note (List.head line<nameStart-Dpi.scale 4) "The arrow back is not before the name"
+                | None -> issues.Add "The line over the values shows no arrow apart from its name"
+            | None -> issues.Add "The list of values shows no chosen row")
+        trial.Back()
         // Moving through a setting's values shows each; Esc puts back the one it had.
         let style() = api.getValue "tabStyle" :?> string
         let before = style()

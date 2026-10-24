@@ -342,10 +342,14 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         let key = keyCap (outline.Right+Dpi.scale 12) "Tab"
         placed,outline,(if scopes.Length>1 then Some key else None)
     /// The way back from a command's choices: its name, and the key that returns.
+    /// Where the listed rows' names start, once the list is made.
+    let mutable rowNameLeft = fun () -> Dpi.scale 10
+    /// The caption where the rows' names start, the arrow back in the room before it, and the key.
     let breadcrumb() =
-        let text = match choices with (caption,_,_,_)::_ -> "‹  "+caption | [] -> ""
-        let width = TextRenderer.MeasureText(text,SettingsUi.bodyFont(),Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 8
-        Rectangle(Dpi.scale 2,0,width,scopeHeight),keyCap (width+Dpi.scale 12) "Esc"
+        let text = match choices with (caption,_,_,_)::_ -> caption | [] -> ""
+        let left = rowNameLeft()
+        let width = TextRenderer.MeasureText(text,SettingsUi.bodyFont(),Size.Empty,TextFormatFlags.SingleLine).Width
+        Rectangle(left,0,width,scopeHeight),keyCap (left+width+Dpi.scale 8) "Esc"
     /// Whether the rows in view can be given shortcuts, said at the line's right end.
     let canAssign() =
         choices.IsEmpty &&
@@ -370,8 +374,13 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 match choices with
                 | (caption,_,_,_)::_ ->
                     let bounds,key = breadcrumb()
-                    TextRenderer.DrawText(g,"‹  "+caption,SettingsUi.bodyFont(),bounds,p.text,
+                    TextRenderer.DrawText(g,caption,SettingsUi.bodyFont(),bounds,p.text,
                                           TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
+                    // A chevron as large as the text's capitals, in the margin before the names.
+                    let s = float32(Dpi.scaleF 4.5)
+                    let cx,cy = float32(Dpi.scale 3)+s/2.0f,float32 scopeHeight/2.0f
+                    use pen = new Pen(p.text,float32(Dpi.scaleF 1.6),StartCap=Drawing2D.LineCap.Round,EndCap=Drawing2D.LineCap.Round,LineJoin=Drawing2D.LineJoin.Round)
+                    g.DrawLines(pen,[|PointF(cx+s/2.0f,cy-s);PointF(cx-s/2.0f,cy);PointF(cx+s/2.0f,cy+s)|])
                     drawKey key "Esc"
                 | [] ->
                     let placed,outline,key = segments()
@@ -417,6 +426,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                                     RowHeight=rowHeight,IconSize=TabSearchMetrics.iconSize,TabStop=false,KeepScrollRoom=true,
                                     ScrollBarWidth=padding-1,
                                     BackColor=palette.surface,ForeColor=palette.text)
+    do rowNameLeft <- fun () -> match Seq.tryHead list.Roots with Some item -> list.NameLeft item | None -> Dpi.scale 10
     let empty = new Label(Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleCenter,Visible=false,
                           Font=SettingsUi.bodyFont(),BackColor=palette.surface,ForeColor=palette.muted,
                           Text=tr Strings.TabSearch.noMatches)
