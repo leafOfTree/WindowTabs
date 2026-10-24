@@ -114,13 +114,25 @@ module CommandPalette =
                   |> Array.sortBy(fun entry -> entry.recency) |> List.ofArray
           choose=(fun chosen ->
               remember (recentKey (action chosen))
+              // What its row shows at the right is worked out again once the value is set from it:
+              // kept, going back showed the value from before.
+              let forget () = asides.Remove chosen.hwnd |> ignore
+              let fresh outcome =
+                  match outcome with
+                  | Ask question -> Ask { question with accept=fun typed -> let refused = question.accept typed in forget(); refused }
+                  | Choose options ->
+                      Choose [ for option in options ->
+                                 { option with run=(fun () -> let next = option.run() in forget(); next)
+                                               preview=option.preview |> Option.map(fun show -> fun () -> show(); forget())
+                                               undo=option.undo |> Option.map(fun back -> fun () -> back(); forget()) } ]
+                  | other -> other
               match action chosen with
               // A command with a state is a switch: turned here, the palette staying up to show it.
               | ACommand command when (command.state active).IsSome -> command.run active |> ignore; Stay
               | ACommand command -> command.run active
-              | ANumberKeys item -> SettingRows.run item
+              | ANumberKeys item -> fresh (SettingRows.run item)
               | ASwitch(_,_,command) -> command.run active |> ignore; asides.Remove chosen.hwnd |> ignore; Stay
-              | AChoice(item,_,_) -> SettingRows.run item
+              | AChoice(item,_,_) -> fresh (SettingRows.run item)
               // A key of the lists recorded over its row; what a Support page button does, done
               // here; anything else as its own shortcut does it.
               | ASetting item ->
@@ -134,7 +146,7 @@ module CommandPalette =
                       Choose [ for caption,action in [Strings.General.export,SettingsFile.export;Strings.General.import,SettingsFile.import] ->
                                  { label=tr caption; detail=""; swatch=None; run=(fun () -> guarded (fun () -> action null); Done); preview=None; undo=None } ]
                   | _,"settings-reset" -> guarded (fun () -> SettingsFile.reset null); Done
-                  | _ -> SettingRows.run item)
+                  | _ -> fresh (SettingRows.run item))
           // A key set here is shown from then on: the row's right end, kept, is worked out again.
           shortcut=(fun chosen ->
               match action chosen with

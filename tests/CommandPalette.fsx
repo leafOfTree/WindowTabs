@@ -693,7 +693,8 @@ let main() =
         palette.Query <- tr Strings.Settings.tabHeight.caption
         palette.Accept()
         note (palette.AskBox |> Option.exists(fun box -> box :? SettingsNumberInput)) "Tab height did not ask for a number in the number box"
-        // Saved as it is typed or stepped, with no Enter, as the settings pages save.
+        // Saved as it is typed or stepped, with no Enter, as the settings pages save; back on the
+        // row, it shows the value now, not the one it was opened with.
         match palette.AskBox with
         | Some(:? SettingsNumberInput as number) ->
             let height () = Services.settings.getValue "tabHeight" :?> int
@@ -705,9 +706,11 @@ let main() =
             number.Value <- decimal (typed+1)
             pump 50
             note (height()=typed+1) (sprintf "A tab height stepped with + waited for Enter: %d saved" (height()))
+            palette.Back()
+            let shown = palette.RowNotes |> List.tryHead |> Option.map snd
+            note (shown=Some(string (typed+1))) (sprintf "Back from the box, the tab height's row showed %A, not %d" shown (typed+1))
             Services.settings.setValue("tabHeight",box before)
-        | _ -> ()
-        palette.Back()
+        | _ -> palette.Back()
         palette.Query <- tr Strings.Settings.tabTextColor.caption
         palette.Accept()
         pump 200
