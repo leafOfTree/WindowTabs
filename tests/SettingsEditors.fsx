@@ -633,6 +633,38 @@ let main() =
                    "The palette's search box still has an outline"
         assertTrue (image.GetPixel(middle,image.Height-1).ToArgb()<>background) "The palette's search box has no line under it"
         boxForm.Close()
+    // At a row's right end, a note ends where a switch does, and a value sits close to its arrow.
+    do
+        use rowsForm = new Form(ClientSize=Size(420,200),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false)
+        let rows = new SettingsTreeList([TreeListColumn("",0,TextColumn);TreeListColumn("",160,TextColumn,RightAligned=true)],
+                                        ShowHeader=false,ShowExpanders=false,RowHeight=36,Dock=DockStyle.Fill,Font=SettingsUi.bodyFont())
+        let note = TreeListItem("Location",Values=[|"";"Support"|])
+        let switch = TreeListItem("Tabs",Values=[|"";""|],Switch=Some true)
+        let value = TreeListItem("Leader",Values=[|"";"Ctrl"|],Dropdown=true)
+        rows.Roots.AddRange([note;switch;value])
+        rows.Rebuild()
+        rowsForm.Controls.Add(rows)
+        SettingsUi.apply rowsForm
+        rowsForm.Show()
+        Application.DoEvents()
+        use image = new Bitmap(rows.Width,rows.Height)
+        rows.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+        let background = image.GetPixel(image.Width/2,(rows.RowBounds(note).Value.Top+rows.RowBounds(note).Value.Bottom)/2).ToArgb()
+        // The columns at the right half of a row with anything drawn in them.
+        let inked (item:TreeListItem) =
+            let row = rows.RowBounds(item).Value
+            [ for x in image.Width/2..image.Width-1 do
+                if [row.Top+2..row.Bottom-3] |> List.exists(fun y -> image.GetPixel(x,y).ToArgb()<>background) then yield x ]
+        let noteEnd,switchEnd = List.max (inked note),List.max (inked switch)
+        assertTrue (abs(noteEnd-switchEnd)<=Dpi.scale 2) (sprintf "A note at the right ends at %d, a switch at %d" noteEnd switchEnd)
+        // The arrow is the last run of ink; the value's text ends before the gap ahead of it.
+        let columns = inked value |> List.rev
+        let arrowStart = columns |> List.pairwise |> List.tryFind(fun (later,earlier) -> later-earlier>1) |> Option.map fst
+        let textEnd = columns |> List.pairwise |> List.tryFind(fun (later,earlier) -> later-earlier>1) |> Option.map snd
+        match arrowStart,textEnd with
+        | Some arrow,Some text -> assertTrue (arrow-text<=Dpi.scale 9) (sprintf "A value sits %d px from its arrow" (arrow-text))
+        | _ -> assertTrue false "A value and its arrow could not be told apart"
+        rowsForm.Close()
     // SettingsTreeList: expansion, keyboard navigation, check boxes and selection events.
     let treeList = new SettingsTreeList([TreeListColumn("Name",0,TextColumn);TreeListColumn("On",80,CheckColumn)])
     treeList.Size <- Size(400,300)

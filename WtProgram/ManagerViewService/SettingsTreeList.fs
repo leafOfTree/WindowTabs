@@ -891,17 +891,23 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                     let reserve =
                         if column<>columns.Length-1 then 0
                         elif item.Switch.IsSome then switchWidth+Dpi.scale 8
-                        elif item.Dropdown then arrowWidth+Dpi.scale 8
+                        // The value close to its arrow, as a drop-down's text sits by its own.
+                        elif item.Dropdown then arrowWidth+Dpi.scale 4
                         else 0
                     let bounds = Rectangle(cell.X+Dpi.scale 8,top,max 1 (cell.Width-Dpi.scale 16-reserve),rowHeight)
                     let font =
                         if column=columns.Length-1 && item.SmallValue then SettingsUi.font this.Font.FontFamily.Name (this.Font.SizeInPoints*0.86f) FontStyle.Regular
                         else this.Font
-                    // Move text and its match highlights together, preserving ellipsis clipping.
+                    // Move text and its match highlights together, preserving ellipsis clipping. Text
+                    // at the right ends where a switch does: the padding DrawText leaves after the
+                    // last letter goes past the edge rather than before it.
                     let bounds =
                         if columns.[column].RightAligned then
-                            let width = min bounds.Width (TextRenderer.MeasureText(g,item.value column,font,Size(Int32.MaxValue,rowHeight),flags).Width)
-                            Rectangle(bounds.Right-width,bounds.Y,width,bounds.Height)
+                            let measure extra = TextRenderer.MeasureText(g,item.value column,font,Size(Int32.MaxValue,rowHeight),flags ||| extra).Width
+                            let padded = measure TextFormatFlags.Default
+                            let trailing = max 0 ((padded-measure TextFormatFlags.NoPadding)/2)
+                            let width = min (bounds.Width+trailing) padded
+                            Rectangle(bounds.Right+trailing-width,bounds.Y,width,bounds.Height)
                         else bounds
                     let color = if isSelected then text else p.muted
                     this.drawMarked(g,item.value column,item.highlights column,bounds,flags,font,color,p)
