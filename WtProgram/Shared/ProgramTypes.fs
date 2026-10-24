@@ -47,6 +47,8 @@ type SettingsRec = {
     enableHoverActivate: bool
     /// Tab titles in bold.
     tabTextBold: bool
+    /// Percent the tabs are solid while the pointer is elsewhere.
+    tabOpacity: int
     /// "Never", "Maximized" or "Always".
     autoHideMode: string
     /// Off, Windows (groups, positions and splits among the windows open) or Apps (their apps started too).

@@ -245,7 +245,7 @@ type AppearanceView(?settings:ISettings) =
             e.Graphics.DrawLine(border,left,bodyTop+toolbarHeight,left+width-1,bodyTop+toolbarHeight)
             e.Graphics.Restore(state)
             // The font real tabs use, so the preview shrinks its text with short tabs too.
-            use font = TabMetrics.font appearance.tabHeight (if settings.getValue("tabTextBold") :?> bool then FontStyle.Bold else FontStyle.Regular)
+            use font = TabMetrics.font appearance.tabHeight (match settings.getValue("tabTextBold") with :? bool as bold when bold -> FontStyle.Bold | _ -> FontStyle.Regular)
             let info index (caption:string) : TabDisplayInfo = {
                 tint=(if settings.getValue("tabColorMode") :?> string = "Off" then None else Some((Theme.tabPalette (Theme.darkBar appearance.tabNormalBgColor)).[index])); colorStyle=settings.getValue("tabColorStyle") :?> string; numberBadge=None; bgColor=None; text=caption; icon=SystemIcons.Application
                 textFont=font; textBrush=SystemBrushes.MenuText; splitTrail=None }
@@ -263,6 +263,11 @@ type AppearanceView(?settings:ISettings) =
         let textBold = SettingsBindings.settingToggle "tabTextBold"
         textBold.CheckedChanged.Add(fun _ -> preview.Invalidate())
         SettingsUi.settingRow styleCard "tab-text-bold" textBold
+        let opacityLow,opacityHigh = SettingsCatalog.opacityRange
+        let opacity = new SettingsNumberInput(Minimum=decimal opacityLow,Maximum=decimal opacityHigh,Font=SettingsUi.bodyFont(),
+                                              Value=decimal (match settings.getValue("tabOpacity") with :? int as value -> value | _ -> SettingsCatalog.opacityDefault))
+        opacity.ValueChanged.Add(fun _ -> settings.setValue("tabOpacity",box(int opacity.Value)))
+        SettingsUi.settingRow styleCard "tabOpacity" opacity
         // Which tabs get a color and how it shows, side by side in one row. Search still finds
         // each list by its own setting.
         let colorMode = SettingsBindings.choice "tab-color-mode"

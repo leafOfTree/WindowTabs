@@ -343,6 +343,9 @@ module Strings =
                                                ar="اضغط بعجلة الفأرة على علامة التبويب لإغلاق نافذتها." }
                                  keywords={ en="wheel click"; zh="中键 滚轮"; ja="ホイール クリック"; ar="النقر بعجلة الفأرة" } }
         let tabTextColor = { caption={ en="Text and close button"; zh="文字与关闭按钮"; ja="文字と閉じるボタン"; ar="النص وزر الإغلاق" }; description=none; keywords=tabTextWords }
+        let tabOpacity = { caption={ en="Tab opacity (%)"; zh="标签不透明度（%）"; ja="タブの不透明度 (%)"; ar="عتامة علامات التبويب (%)" }
+                           description={ en="Below 100, what is behind the tabs shows through them; under the pointer or while dragging they are solid."; zh="低于 100 时可透过标签看到后面的内容；鼠标在标签上或拖动时恢复不透明。"; ja="100 未満では、タブ越しに後ろが透けて見えます。ポインターを重ねたときやドラッグ中は不透明になります。"; ar="أقل من 100 يظهر ما خلف علامات التبويب من خلالها؛ وتصبح معتمة تحت المؤشر أو أثناء السحب." }
+                           keywords={ en="transparency transparent see-through alpha"; zh="透明度 透明 半透明"; ja="透明度 透明 半透明"; ar="شفافية شفاف" } }
         let tabTextBold = { caption={ en="Bold tab text"; zh="标签文字加粗"; ja="タブの文字を太字にする"; ar="نص علامات التبويب بخط عريض" }
                             description={ en="Titles of every tab in a heavier weight."; zh="所有标签的标题以粗体显示。"; ja="すべてのタブのタイトルを太字で表示します。"; ar="عناوين كل علامات التبويب بخط أثقل." }
                             keywords=tabTextWords }

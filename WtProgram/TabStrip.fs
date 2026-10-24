@@ -78,6 +78,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let tabTint = Cell.create(Map2())
     let colorStyleCell = Cell.create(Services.settings.getValue("tabColorStyle") :?> string)
     let textBoldCell = Cell.create(Services.settings.getValue("tabTextBold") :?> bool)
+    let mutable lastAlpha = 255uy
+    let opacityCell = Cell.create(Services.settings.getValue("tabOpacity") :?> int)
     let tabBgColor = Cell.create(Map2())
     let mutable shadowWindow : TabShadowWindow option = None
     let mutable shadowRefreshPending = false
@@ -158,6 +160,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         if tabTint.value.tryFind(tab) <> color then tabTint.value <- match color with Some c -> tabTint.value.add tab c | None -> tabTint.value.remove tab
     member _.colorStyle with get() = colorStyleCell.value and set value = colorStyleCell.value <- value
     member _.textBold with get() = textBoldCell.value and set value = textBoldCell.value <- value
+    member _.opacity with get() = opacityCell.value and set value = opacityCell.value <- value
     member _.numberBadgeKeys with get() = numberBadgeKeysCell.value and set value = numberBadgeKeysCell.value <- value
     member _.numberBadges with get() = numberBadgesCell.value and set value = numberBadgesCell.value <- value
 
@@ -394,6 +397,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     // Used by native performance/regression hosts to verify that unchanged
     // hover and movement do not regenerate pixels; not a user-facing setting.
     member internal _.renderCount = renderedFrames
+    /// The window's opacity as last shown, 255 solid, for the same hosts.
+    member internal _.shownAlpha = lastAlpha
 
     member private this.update() =
         if not this.visible then this.hideTitle()
@@ -452,12 +457,20 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         try
             renderedOffset <- offset
             renderedFrames <- renderedFrames+1L
-            this.window.update(image, this.location.add(this.renderedShift), 255uy)
+            lastAlpha <- this.alpha
+            this.window.update(image, this.location.add(this.renderedShift), lastAlpha)
             shadowWindow |> Option.iter (fun shadow ->
                 if reveal<1.0 || this.isEmpty || (this.isVertical && SystemInformation.HighContrast) then shadow.hide()
-                else shadow.update(image, 255uy, this.direction))
+                else shadow.update(image, lastAlpha, this.direction))
         finally
             image.bitmap.Dispose()
+
+    /// The opacity setting while the pointer is elsewhere; solid while it is over a tab, while a
+    /// tab is held or dragged, and in high contrast. The tab under the pointer already repaints
+    /// the strip as it changes, so this adds no painting as the pointer moves.
+    member private this.alpha =
+        let solid = hoverCell.value.IsSome || capturedCell.value.IsSome || slideCell.value.IsSome || SystemInformation.HighContrast
+        if solid || opacityCell.value>=100 then 255uy else byte (opacityCell.value*255/100)
 
     member private this.render : Img = this.renderAt this.isShrunk
 

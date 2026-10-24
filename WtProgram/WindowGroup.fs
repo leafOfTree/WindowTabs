@@ -515,6 +515,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         let textBoldSubscription = Services.settings.notifyValue "tabTextBold" (fun value ->
             this.invokeAsync(fun() -> if not isDestroyed.value then this.ts.textBold <- unbox value))
         exitedEvent.Publish.Add(fun _ -> textBoldSubscription.Dispose())
+        let opacitySubscription = Services.settings.notifyValue "tabOpacity" (fun value ->
+            this.invokeAsync(fun() -> if not isDestroyed.value then this.ts.opacity <- unbox value))
+        exitedEvent.Publish.Add(fun _ -> opacitySubscription.Dispose())
         themeSubscription <- Some(ThemeService.changed.Subscribe(fun () ->
             this.invokeAsync <| fun() ->
                 if not isDestroyed.value then

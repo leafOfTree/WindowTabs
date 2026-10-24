@@ -455,6 +455,25 @@ let main() =
                 let count = frames strip
                 for x in 61..90 do hover x
                 check (frames strip=count) "Moving inside one tab repainted unchanged pixels"
+                // Below full opacity the tabs are see-through, solid again under the pointer, without
+                // painting more as it moves over them.
+                let alphaProperty = typeof<TabStrip>.GetProperty("shownAlpha",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public)
+                let alpha() = alphaProperty.GetValue(strip) :?> byte
+                check (alpha()=255uy) "Tabs under the pointer are not solid"
+                // Repainted as it is set: no message pump, which would also take the leave Windows
+                // posts for the real pointer, elsewhere.
+                strip.opacity <- 50
+                check (alpha()=255uy) "Tabs under the pointer took the opacity setting"
+                send WindowMessages.WM_MOUSELEAVE Pt.empty
+                check (alpha()=127uy) (sprintf "Tabs left by the pointer show %d, not half their opacity" (alpha()))
+                let count = frames strip
+                hover 60
+                check (alpha()=255uy && frames strip=count+1L) "Tabs did not come back solid under the pointer, painted once"
+                strip.opacity <- 100
+                send WindowMessages.WM_MOUSELEAVE Pt.empty
+                check (alpha()=255uy) "Tabs at full opacity are see-through"
+                hover 60
+                let count = frames strip
                 hover 260
                 check (frames strip=count+1L) "Crossing a tab did not render exactly once"
                 api.setValue("enableHoverActivate",box true)

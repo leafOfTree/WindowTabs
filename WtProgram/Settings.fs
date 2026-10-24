@@ -180,6 +180,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         alignment = settingsJson.getString("alignment").def(SettingsCatalog.choiceDefault "alignment") |> SettingsCatalog.normalizeChoice "alignment"
                         tabPosition = settingsJson.getString("tabPosition").def(SettingsCatalog.choiceDefault "tabPosition") |> SettingsCatalog.normalizeChoice "tabPosition"
                         tabColumnWidth = settingsJson.getInt32("tabColumnWidth").def(SettingsCatalog.columnWidthDefault) |> between SettingsCatalog.columnWidthRange
+                        tabOpacity = settingsJson.getInt32("tabOpacity").def(SettingsCatalog.opacityDefault) |> between SettingsCatalog.opacityRange
                         switcherStyle = settingsJson.getString("switcherStyle").def(SettingsCatalog.choiceDefault "switcherStyle") |> SettingsCatalog.normalizeChoice "switcherStyle"
                         language = settingsJson.getString("language").def(SettingsCatalog.choiceDefault "language") |> SettingsCatalog.normalizeChoice "language"
                         appearance = {
@@ -267,6 +268,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setBool("enableMiddleClickClose", settings.enableMiddleClickClose)
             settingsJson.setString("tabPosition",settings.tabPosition)
             settingsJson.setInt32("tabColumnWidth",settings.tabColumnWidth)
+            settingsJson.setInt32("tabOpacity",settings.tabOpacity)
             settingsJson.setStringArray("includedPaths", settings.includedPaths.items)
             settingsJson.setStringArray("excludedPaths", settings.excludedPaths.items)
             settingsJson.setStringArray("autoGroupingPaths", settings.autoGroupingPaths.items)
@@ -314,6 +316,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             let value = if key="numberLeaderKeys" then box(NumberLeaderKeys.normalize (unbox value)) else value
             let value = if key="alignment" || key="language" || key="autoHideMode" || key="switcherStyle" || key="numberHotKeyModifier" || key="tabColorStyle" || key="tabColorMode" || key="tabPosition" || key="sessionRestore" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
             let value = if key="tabColumnWidth" then box(between SettingsCatalog.columnWidthRange (unbox<int> value)) else value
+            let value = if key="tabOpacity" then box(between SettingsCatalog.opacityRange (unbox<int> value)) else value
             match key with
             | "tabAppearance" ->
                 let appearance = value :?> TabAppearanceInfo

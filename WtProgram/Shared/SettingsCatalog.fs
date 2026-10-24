@@ -24,6 +24,9 @@ module SettingsCatalog =
         if List.contains value tabSearchScopeValues then value else tabSearchScopeDefault
     let columnWidthDefault = 220
     let columnWidthRange = 48,420
+    /// Percent, solid at 100: below 30 the tabs would be hard to find.
+    let opacityRange = 30,100
+    let opacityDefault = 100
     let leaderKeyPresets = List.zip ["123456789";"QWERTYUIOP";"ASDFGHJKL;"] (Array.toList Strings.Settings.leaderKeyPresets)
     let all = [
         { id="tab-color-mode"; page=AppearanceSettings; text=Strings.Settings.tabColorMode; binding=Choice("tabColorMode",["Off";"ByWindow";"ByApp"],"Off") }
@@ -86,6 +89,7 @@ module SettingsCatalog =
         // Kept with the tab sizes in the "tabAppearance" object, not at the top of the file.
         { id="tabStyle"; page=AppearanceSettings; text=Strings.Settings.tabStyle; binding=Choice("tabStyle",TabStyle.names,"joined") }
         { id="tab-text-bold"; page=AppearanceSettings; text=Strings.Settings.tabTextBold; binding=Toggle("tabTextBold",false,false) }
+        { id="tabOpacity"; page=AppearanceSettings; text=Strings.Settings.tabOpacity; binding=Number(opacityRange) }
         { id="tabHeight"; page=AppearanceSettings; text=Strings.Settings.tabHeight; binding=Number(12,120) }
         { id="tabMaxWidth"; page=AppearanceSettings; text=Strings.Settings.tabMaxWidth; binding=Number(60,1000) }
         { id="tabOverlap"; page=AppearanceSettings; text=Strings.Settings.tabOverlap; binding=Number(0,100) }

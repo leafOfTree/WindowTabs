@@ -415,7 +415,12 @@ let main() =
             api.setValue("tabTextBold",box true)
             pumpUntil "Bold tab text reaching the group" (fun () -> onGroupOf active (fun group -> group.ts.textBold))
             api.setValue("tabTextBold",box false)
-            pumpUntil "Bold tab text leaving the group" (fun () -> not (onGroupOf active (fun group -> group.ts.textBold))))
+            pumpUntil "Bold tab text leaving the group" (fun () -> not (onGroupOf active (fun group -> group.ts.textBold)))
+            // And the tabs' opacity, kept within its range.
+            api.setValue("tabOpacity",box 10)
+            pumpUntil "Tab opacity reaching the group" (fun () -> onGroupOf active (fun group -> group.ts.opacity)=fst SettingsCatalog.opacityRange)
+            api.setValue("tabOpacity",box SettingsCatalog.opacityDefault)
+            pumpUntil "Full tab opacity reaching the group" (fun () -> onGroupOf active (fun group -> group.ts.opacity)=SettingsCatalog.opacityDefault))
         attempt "refresh-windows" (fun () -> runDone "refresh-windows" active; note (called "refresh") "Look for windows again did not refresh")
         attempt "exit" (fun () -> runDone "exit" active; note (called "shutdown") "Exit WindowTabs did not exit")
         // Closing, last, on groups of their own.
