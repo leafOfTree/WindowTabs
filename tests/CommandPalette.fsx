@@ -442,6 +442,19 @@ let main() =
             match SettingsCatalog.all |> List.tryFind(fun item -> tr item.text.caption=entry.title) with
             // A shortcut's row is its command's, walked above.
             | Some { binding=Shortcut _ } -> ()
+            // The Support page's buttons, done from the palette: File Explorer, the file dialogs and
+            // a confirmation are not opened here. Backing up offers both ways, without opening
+            // the settings window.
+            | Some item when item.id="settings-location" || item.id="settings-reset" ->
+                note (page.concealed entry) (sprintf "%s runs with the palette still up" item.id)
+            | Some item when item.id="settings-backup" ->
+                attempt ("setting "+item.id) (fun () ->
+                    match page.choose entry with
+                    | Choose options ->
+                        note (options |> List.map(fun option -> option.label)=[tr Strings.General.export;tr Strings.General.import])
+                             (sprintf "%s does not offer to export and import: %A" item.id (options |> List.map(fun option -> option.label)))
+                        note (not (called ("setting "+item.id))) (sprintf "%s opened the settings window" item.id)
+                    | outcome -> issues.Add(sprintf "%s answered %A" item.id outcome))
             | Some item ->
                 attempt ("setting "+item.id) (fun () ->
                     match item.binding,page.choose entry with
@@ -477,8 +490,9 @@ let main() =
                     | Navigation,Done ->
                         note (called ("setting "+item.id)) (sprintf "%s did not open its page" item.id)
                         let aside = page.aside "" entry
-                        note (aside.small && aside.detail=tr (Strings.TabSearch.inSettings (SettingsCatalog.searchContext item)))
-                             (sprintf "%s does not say it opens in settings, in the smaller type: %A" item.id aside)
+                        let place = tr (SettingsCatalog.searchContext item)
+                        note (aside.small && aside.detail=(if place=entry.title then "" else place))
+                             (sprintf "%s does not name its page, in the smaller type, once: %A" item.id aside)
                         // Out of the way first, so the settings window, already open behind another, comes to the front.
                         note (page.concealed entry) (sprintf "%s opens its page with the palette still up" item.id)
                     | binding,outcome -> issues.Add(sprintf "The setting %s (%A) answered %A" item.id binding outcome))

@@ -148,12 +148,20 @@ module CommandPalette =
                   Choose [ for value,label in choiceOptions item values ->
                              { label=label; detail=(if value=current then "✓" else ""); swatch=None
                                run=fun () -> Services.settings.setValue(key,box value); Done } ]
-              // A size or the leader keys typed in the box, a colour picked; a page opened.
+              // A size or the leader keys typed in the box, a colour picked; what a Support page
+              // button does, done here; a page opened.
               | ASetting item ->
-                  match item.binding with
-                  | Number _ -> askNumber item
-                  | Text(key,_) when key="numberLeaderKeys" -> askText item key
-                  | Colour -> askColor item
+                  let guarded action =
+                      try action() with error -> Alert.show AlertKind.Warning (tr Strings.Common.operationFailed) error.Message
+                  match item.binding,item.id with
+                  | Number _,_ -> askNumber item
+                  | Text(key,_),_ when key="numberLeaderKeys" -> askText item key
+                  | Colour,_ -> askColor item
+                  | _,"settings-location" -> guarded SettingsFile.showInFolder; Done
+                  | _,"settings-backup" ->
+                      Choose [ for caption,action in [Strings.General.export,SettingsFile.export;Strings.General.import,SettingsFile.import] ->
+                                 { label=tr caption; detail=""; swatch=None; run=fun () -> guarded (fun () -> action null); Done } ]
+                  | _,"settings-reset" -> guarded (fun () -> SettingsFile.reset null); Done
                   | _ -> Services.managerView.showSetting item.id; Done)
           // A key set here is shown from then on: the row's right end, kept, is worked out again.
           shortcut=(fun chosen ->
@@ -180,7 +188,10 @@ module CommandPalette =
                           | Number _ -> { detail=string (Services.settings.getValue item.id :?> int); switch=None; swatch=None; shortcut=""; dropdown=false; small=false }
                           | Text(key,_) -> { detail=Services.settings.getValue key :?> string; switch=None; swatch=None; shortcut=""; dropdown=false; small=false }
                           | Colour -> let color = colorNow item.id in { detail=hex color; switch=None; swatch=Some color; shortcut=""; dropdown=false; small=false }
-                          | _ -> { detail=tr (Strings.TabSearch.inSettings (SettingsCatalog.searchContext item)); switch=None; swatch=None; shortcut=""; dropdown=false; small=true }
+                          | _ ->
+                              // Its page, unless the row is the page itself.
+                              let page = tr (SettingsCatalog.searchContext item)
+                              { detail=(if page=tr item.text.caption then "" else page); switch=None; swatch=None; shortcut=""; dropdown=false; small=true }
                   asides.[chosen.hwnd] <- aside
                   aside)
           // A command acts on the window in front, which the palette stands clear of, and a
