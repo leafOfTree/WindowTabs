@@ -375,6 +375,31 @@ let main() =
                 (fixture :> IGroup).destroy()
                 pumpUntil "Isolated fixture did not exit" (fun () -> fixture.isExited)
 
+        // Maximized, the group's frame is the work area itself, where the window shows: a pixel up
+        // and left, the tab shown faded out off its place and a split from it left a pixel of
+        // desktop along its right and bottom.
+        do
+            use first = new Form(Text="First maximized tab",ShowInTaskbar=false)
+            use second = new Form(Text="Second maximized tab",ShowInTaskbar=false)
+            let fixture = desktopApi.createGroup(false) :?> GroupInfo
+            try
+                for form in [second;first] do
+                    form.Show()
+                    OS().windowFromHwnd(form.Handle).showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED)
+                for form in [first;second] do (fixture :> IGroup).addWindow(form.Handle,false)
+                pumpUntil "The maximized fixture did not form its group" (fun () -> (nativeOrder fixture).Length=2)
+                OS().windowFromHwnd(first.Handle).setForeground(false)
+                onGroup fixture (fun group -> group.main(first.Handle,WinEvent.EVENT_SYSTEM_FOREGROUND))
+                pumpUntil "The maximized fixture did not show its first tab" (fun () ->
+                    onGroup fixture (fun group -> group.topWindow=first.Handle && group.bounds.value.IsSome) &&
+                    OS().windowFromHwnd(second.Handle).isMaximized)
+                let work = (Mon.fromHwnd(first.Handle)).Value.workRect
+                let frame,shown = onGroup fixture (fun group -> group.layoutFrame,group.bounds.value)
+                check (frame=work && shown=Some work) (sprintf "A maximized group's frame is %A, not its work area %A" frame work)
+            finally
+                (fixture :> IGroup).destroy()
+                pumpUntil "Maximized fixture did not exit" (fun () -> fixture.isExited)
+
         // EXPERIMENTAL (ScaleChangeRefresh): before Windows 26H2, a maximized tab taken behind its
         // tab to a monitor of another scale drew nothing more until its state changed. Marked so,
         // it is minimized and maximized once as it comes in front, and the tab in front stays.

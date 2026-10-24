@@ -1872,13 +1872,14 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if  not this.isSplit && not splitMerging && window.isMinimized.not &&
             this.os.isOnScreen(window.bounds)
             then
-            let monitorBounds =
-                if window.isMaximized then
-                    //windows are placed slightly off screen when maximized, get the bounds of the monitor instead
-                    Mon.fromHwnd(window.hwnd).map(fun mon -> mon.workRect.move(-1,-1))
-                else None
-            let bounds = monitorBounds.def(window.bounds)
-            let visible = monitorBounds.def(window.visibleBounds)
+            // Maximized, a window's rect reaches past the screen by its invisible frame: the
+            // monitor's work area stands for it. The followers are moved to that a pixel up and
+            // left, as ever; what is seen is the work area itself. Shifted with them, the tab
+            // shown faded out a pixel off and a split from a maximized window left a pixel of
+            // desktop along its right and bottom.
+            let workArea = if window.isMaximized then Mon.fromHwnd(window.hwnd).map(fun mon -> mon.workRect) else None
+            let bounds = workArea.map(fun area -> area.move(-1,-1)).def(window.bounds)
+            let visible = workArea.def(window.visibleBounds)
             placement.set(Some(bounds, window.placement, visible))
             // Parked panes come back at the frame the group has now.
             (match groupLayout with Parked _ -> this.saveSplitProps() | _ -> ())
@@ -2419,9 +2420,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
            this.windows.contains shown && isOpen shown && not(isMinimized shown) && not(isMinimized hwnd) && isVisibleCell.value then
             let window = this.os.windowFromHwnd shown
             let bounds,visible = window.bounds,window.visibleBounds
-            // Maximized, the group's frame is the work area a pixel up and left of where the window
-            // shows: the image faded out from there, and the tab seemed to jolt.
-            let frame = if window.isMaximized then visible else this.layoutFrame
+            let frame = this.layoutFrame
             let move = { hwnd=shown; from=frame; target=frame; fade=NoFade
                          border=Pt(visible.x-bounds.x,visible.y-bounds.y)
                          borderSize=Sz(bounds.width-visible.width,bounds.height-visible.height) }
