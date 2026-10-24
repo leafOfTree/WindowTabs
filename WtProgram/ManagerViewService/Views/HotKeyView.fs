@@ -44,9 +44,16 @@ type HotKeyView() =
         else
             editor.Name <- command.id
             SettingsUi.row card (tr command.text.caption) (tr command.text.description) editor
+    /// The page's own shortcuts: those the catalog lists. The other commands, the tab menu's and
+    /// the settings', are found and given keys in the command palette, the one place for them all.
+    let ownShortcut key = SettingsCatalog.all |> List.exists(fun item -> match item.binding with Shortcut(k,_) -> k=key | _ -> false)
     let rows card category (skip:string list) =
         for (key,editor),(_,command) in List.zip editors actions do
-            if command.category=category && not (List.contains key skip) then row card command editor
+            if command.category=category && ownShortcut key && not (List.contains key skip) then row card command editor
+    /// A card for a category only when it has shortcuts of the page's own.
+    let categoryCard title category =
+        if actions |> List.exists(fun (key,command) -> command.category=category && ownShortcut key) then
+            rows (SettingsUi.sectionCard table title) category []
     do
         let restore = new SettingsResetButton(tr Strings.Shortcuts.restoreDefaults,Name="restore-shortcuts")
         SettingsUi.sectionHeading table (tr Strings.Shortcuts.keyboard) [restore]
@@ -159,15 +166,16 @@ type HotKeyView() =
         for _,editor in editors @ listEditors do editor.Changed.Add(fun _ -> updateRestore())
         restore.Click.Add(fun _ -> restoreDefaults(); updateRestore())
         updateRestore()
-        // The group's and the split view's keys in cards of their own: among the tabs' they were
-        // hard to tell apart.
-        rows (SettingsUi.sectionCard table (tr Strings.Shortcuts.group)) GroupCommands []
-        rows (SettingsUi.sectionCard table (tr Strings.Shortcuts.splitView)) SplitCommands []
-        rows (SettingsUi.sectionCard table (tr Strings.Pages.workspaces)) WorkspaceCommands []
-        // Commands that turn settings on or off and open pages, then the app's own: unbound
-        // until a key is picked here or in the palette.
-        rows (SettingsUi.sectionCard table (tr Strings.Shortcuts.settingsCommands)) SettingsCommands []
-        rows (SettingsUi.sectionCard table (tr Strings.Shortcuts.appCommands)) AppCommands []
+        // The split view's and the workspaces' keys in cards of their own: among the tabs' they
+        // were hard to tell apart.
+        categoryCard (tr Strings.Shortcuts.splitView) SplitCommands
+        categoryCard (tr Strings.Pages.workspaces) WorkspaceCommands
+        // Keys given in the palette to its other commands, so they can be seen and cleared here.
+        let given = List.zip editors actions |> List.filter(fun ((key,_),_) -> not (ownShortcut key) && Services.program.getHotKey key<>0)
+        if not given.IsEmpty then
+            let card = SettingsUi.sectionCard table (tr Strings.Shortcuts.fromPalette)
+            SettingsUi.note card (tr Strings.Shortcuts.fromPaletteNote)
+            for (_,editor),(_,command) in given do row card command editor
         // Keys inside the palette and the window search, beside the arrows.
         let lists = SettingsUi.sectionCard table (tr Strings.Shortcuts.listKeys)
         SettingsUi.note lists (tr Strings.Shortcuts.listKeysNote)

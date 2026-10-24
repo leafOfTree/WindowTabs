@@ -529,9 +529,9 @@ module Strings =
                             ar="تُعيَّن من بحث النوافذ بـ Alt+Enter. يُحضر المفتاح النافذة بذلك الاسم إلى المقدمة، أو أحدث نافذة للبرنامج، ويشغّل البرنامج إن لم تكن أي نافذة مفتوحة. امسح المفتاح لنسيانه." }
         let splitView = { en="Split view"; zh="分屏"; ja="分割表示"; ar="العرض المقسّم" }
         /// Cards for the commands that turn settings on or off and open pages, and the app's own.
-        let group = { en="Group"; zh="分组"; ja="グループ"; ar="المجموعة" }
-        let settingsCommands = { en="Settings"; zh="设置"; ja="設定"; ar="الإعدادات" }
-        let appCommands = { en="WindowTabs"; zh="WindowTabs"; ja="WindowTabs"; ar="WindowTabs" }
+        /// Keys given in the command palette to commands the page does not list.
+        let fromPalette = { en="Set in the command palette"; zh="在命令面板中设置的"; ja="コマンドパレットで設定したキー"; ar="المعيّنة في لوحة الأوامر" }
+        let fromPaletteNote = { en="Keys given with Alt+Enter in the command palette, which lists every command."; zh="在命令面板中按 Alt+Enter 设置的按键；所有命令都在命令面板里。"; ja="コマンドパレットで Alt+Enter から設定したキーです。すべてのコマンドはパレットにあります。"; ar="مفاتيح عُيّنت بـ Alt+Enter في لوحة الأوامر، التي تسرد كل الأوامر." }
         let keyboardNote = { en="Click a shortcut, then press the new combination. Esc cancels. The command palette sets one too: Alt+Enter on a command."
                              zh="点击快捷键后按下新的组合键。按 Esc 取消。在命令面板中选中命令后按 Alt+Enter 也可设置。"
                              ja="ショートカットをクリックして、新しいキーの組み合わせを押します。Esc でキャンセルします。コマンドパレットでコマンドを選んで Alt+Enter でも設定できます。"

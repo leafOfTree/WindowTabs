@@ -420,6 +420,16 @@ let main() =
         let restore = form.Controls.Find("restore-shortcuts",true).[0]
         Application.DoEvents()
         let next = view.control.Controls.Find("next-tab",true).[0] :?> SettingsShortcutInput
+        // The tab menu's and the settings' commands are given keys in the palette, not listed here.
+        assertTrue (view.control.Controls.Find("rename-tab",true).Length=0 && view.control.Controls.Find("toggle-dim-inactive-groups",true).Length=0)
+                   "The Shortcuts page lists commands the palette is for"
+        // A key given to one in the palette is shown, to be seen and cleared.
+        hotKeys.["rename-tab"] <- SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.F7)
+        do
+            let given = HotKeyView() :> ISettingsView
+            assertTrue (given.control.Controls.Find("rename-tab",true).Length=1) "A key given in the palette is not shown on the Shortcuts page"
+            given.control.Dispose()
+        hotKeys.Remove "rename-tab" |> ignore
         // #82: the workspace shortcuts were in the catalog but not on the page.
         for item in SettingsCatalog.all do
             match item.binding with
