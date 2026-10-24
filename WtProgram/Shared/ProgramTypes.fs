@@ -212,6 +212,7 @@ type GroupCommand =
     /// By that many places along the strip, backwards when negative.
     | MoveTab of IntPtr * int
     | SetTabColor of IntPtr * TabColorChoice option
+    | SetTabPinned of IntPtr * bool
     | ToggleIconsOnly
     | SetTabDock of TabDock
     | SetTabAlignment of Bemo.TabAlignment

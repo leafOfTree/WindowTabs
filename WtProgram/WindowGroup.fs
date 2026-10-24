@@ -749,6 +749,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             text = this.tabName hwnd
             isRenamed = this.isRenamed hwnd
             splitTrail = SplitView.trail hwnd groupLayout
+            isPinned = PinnedTabs.contains hwnd
             iconSmall = small
             iconBig = big
             preview = fun() ->
@@ -824,7 +825,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if isNew then this.refreshTabColor(hwnd)
         let info = this.getTabInfo(hwnd)
         let previous = this.ts.tabInfo(Tab(hwnd))
-        if isNew || info.text <> previous.text || info.isRenamed <> previous.isRenamed || info.splitTrail <> previous.splitTrail ||
+        if isNew || info.text <> previous.text || info.isRenamed <> previous.isRenamed || info.splitTrail <> previous.splitTrail || info.isPinned <> previous.isPinned ||
            not(obj.ReferenceEquals(info.iconSmall,previous.iconSmall)) ||
            not(obj.ReferenceEquals(info.iconBig,previous.iconBig)) then
             this.ts.setTabInfo(Tab(hwnd),info)
@@ -1692,11 +1693,15 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             match command with
             | ResetTabName hwnd -> if this.windows.contains hwnd then this.setTabName(hwnd,None)
             | SetTabColor(hwnd,color) -> if this.windows.contains hwnd then this.setTabColor(hwnd,color)
+            | SetTabPinned(hwnd,pinned) -> if this.windows.contains hwnd then this.setTabPinned(hwnd,pinned)
             | MoveTab(hwnd,places) ->
                 let order = this.lorder.list
                 match List.tryFindIndex ((=) hwnd) order with
                 | Some index ->
-                    let target = max 0 (min (order.Length-1) (index+places))
+                    // Within its own part: the pinned tabs, or the ones after them.
+                    let pinned = order |> List.filter PinnedTabs.contains |> List.length
+                    let low,high = if PinnedTabs.contains hwnd then 0,pinned-1 else pinned,order.Length-1
+                    let target = max low (min high (index+places))
                     if target<>index then this.ts.moveTab(Tab(hwnd),target)
                 | None -> ()
             | ToggleIconsOnly -> this.isIconOnly <- not this.isIconOnly
@@ -1918,6 +1923,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.setTabName(hwnd,name) =
         Services.program.setWindowNameOverride(hwnd, name)
         this.setTabInfo(hwnd)
+
+    /// Pinned, the tab goes after the other pinned ones; unpinned, first after them.
+    member this.setTabPinned(hwnd,pinned) =
+        if PinnedTabs.contains hwnd<>pinned then
+            PinnedTabs.set hwnd pinned
+            this.setTabInfo(hwnd)
+            this.keepPinnedFirst()
+
+    member private this.keepPinnedFirst() =
+        PinnedTabs.ordered PinnedTabs.contains this.lorder.list |> List.iteri(fun index hwnd ->
+            if this.lorder.list.[index]<>hwnd then this.ts.moveTab(Tab(hwnd),index))
 
     member this.isMaximized = isMaximizedExport :> ICellOutput<bool>
 
@@ -2200,6 +2216,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             hookCleanup.map(fun hooks -> hooks.add hwnd dispose)
             StartupTrace.measure "group.add.info" (fun () -> this.setTabInfo hwnd)
             StartupTrace.measure "group.add.strip" (fun () -> this.ts.addTab(Tab(hwnd)))
+            // A pinned tab from another group joins the pinned ones; any other joins after them.
+            this.keepPinnedFirst()
             StartupTrace.measure "group.add.colors" this.refreshTabColors
             // Only a window that opens in the foreground has an opener. Windows found at
             // startup or dropped in the background then close like any other tab.

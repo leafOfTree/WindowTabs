@@ -352,15 +352,19 @@ type TabStripDecorator(group:WindowGroup) as this =
     member private this.onCloseWindow hwnd =
         os.windowFromHwnd(hwnd).close()
 
+    /// Closing tabs together leaves the pinned ones, as a browser does.
+    member private this.closeTogether (hwnds:List2<IntPtr>) =
+        hwnds.where(PinnedTabs.contains >> not).iter this.onCloseWindow
+
     member private this.onCloseOtherWindows hwnd =
-        group.windows.items.where((<>)hwnd).iter this.onCloseWindow
+        this.closeTogether(group.windows.items.where((<>)hwnd))
 
     member private this.onCloseAllExeWindows exeName =
         let matchesExe hwnd = os.windowFromHwnd(hwnd).pid.exeName = exeName
-        group.windows.items.where(matchesExe).iter this.onCloseWindow
+        this.closeTogether(group.windows.items.where(matchesExe))
 
     member private this.onCloseAllWindows() =
-        group.windows.items.iter this.onCloseWindow
+        this.closeTogether group.windows.items
 
     member private this.sortedTabs() =
         // Each program name once per tab, not once per comparison.
@@ -368,6 +372,8 @@ type TabStripDecorator(group:WindowGroup) as this =
         |> List.map(fun hwnd -> hwnd,os.windowFromHwnd(hwnd).pid.exeName,group.tabName hwnd)
         |> TabOrder.byAppThenTitle (fun (_,app,_) -> app) (fun (_,_,title) -> title)
         |> List.map(fun (hwnd,_,_) -> hwnd)
+        // The pinned tabs sorted among themselves, still first.
+        |> PinnedTabs.ordered PinnedTabs.contains
 
     /// One move per tab out of place, each announced as a dragged tab's is.
     member private this.sortTabs() =
@@ -591,6 +597,14 @@ type TabStripDecorator(group:WindowGroup) as this =
                 click = fun() -> group.setTabName(hwnd, None)
                 flags = List2()
             })
+        let pinned = PinnedTabs.contains hwnd
+        let pinTabItem =
+            CmiRegular({
+                text = tr (if pinned then Strings.TabMenu.unpinTab else Strings.TabMenu.pinTab)
+                image = None
+                click = fun() -> group.setTabPinned(hwnd, not pinned)
+                flags = List2()
+            })
 
         let isTabbingEnabled = Services.filter.getIsTabbingEnabledForProcess processPath
         let enableTabsItem =
@@ -660,6 +674,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(newTabItem)
             Some(renameTabItem)
             (if group.isRenamed(hwnd) then Some(restoreTabNameItem) else None)
+            Some(pinTabItem)
             Some(colorMenu)
             Some(splitMenu)
             Some(CmiSeparator)

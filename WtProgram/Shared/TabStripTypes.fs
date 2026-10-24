@@ -13,6 +13,8 @@ and TabInfo = {
     /// The splits above this tab's pane, root first, with the side taken at each: the button on
     /// the seam between two pane tabs shows the split that parts them; the text itself stays clean.
     splitTrail: (SplitAxis * Side) list option
+    /// Kept at the front of the strip, with a pin where its close button would be.
+    isPinned: bool
 }
 
 and TabDragInfo = {
@@ -71,6 +73,15 @@ and TabDock =
     | TabDockBottom
     | TabDockLeft
     | TabDockRight
+
+/// Pinned tabs by window: one stays pinned in whatever group its window moves to. Written and
+/// read on every group's thread.
+module PinnedTabs =
+    let private pinned = Collections.Concurrent.ConcurrentDictionary<IntPtr,bool>()
+    let contains hwnd = pinned.ContainsKey hwnd
+    let set hwnd value = if value then pinned.[hwnd] <- true else pinned.TryRemove(hwnd) |> ignore
+    /// The pinned ones first, each part in the order it had.
+    let ordered (isPinned:'a -> bool) (items:'a list) = List.filter isPinned items @ List.filter (isPinned >> not) items
 
 /// Workspace widths stay in logical pixels across monitor DPI changes.
 type GroupTabLayout = {

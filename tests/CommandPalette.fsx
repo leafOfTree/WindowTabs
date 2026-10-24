@@ -423,6 +423,19 @@ let main() =
             pumpUntil "Full tab opacity reaching the group" (fun () -> onGroupOf active (fun group -> group.ts.opacity)=SettingsCatalog.opacityDefault))
         attempt "refresh-windows" (fun () -> runDone "refresh-windows" active; note (called "refresh") "Look for windows again did not refresh")
         attempt "exit" (fun () -> runDone "exit" active; note (called "shutdown") "Exit WindowTabs did not exit")
+        // A pinned tab goes first and stays among the pinned ones; closing tabs together leaves it.
+        let three = hwndOf "Close three"
+        let isPinned () = onGroupOf three (fun group -> group.ts.tabInfo(Tab three).isPinned)
+        attempt "pin-tab" (fun () ->
+            runDone "pin-tab" three
+            pumpUntil "Pinning a tab" (fun () -> isPinned() && List.head (lorderOf three)=three)
+            runDone "move-tab-right" three
+            settle three
+            note (List.head (lorderOf three)=three) "Move tab right took a pinned tab past the others"
+            runDone "pin-tab" three
+            pumpUntil "Unpinning a tab" (fun () -> not (isPinned()))
+            runDone "pin-tab" three
+            pumpUntil "Pinning a tab again" isPinned)
         // Closing, last, on groups of their own.
         attempt "close-tab" (fun () ->
             let four = hwndOf "Close four"
@@ -430,11 +443,15 @@ let main() =
             pumpUntil "Closing a tab" (fun () -> not (WinUserApi.IsWindow four)))
         attempt "close-other-tabs" (fun () ->
             runDone "close-other-tabs" (hwndOf "Close one")
-            pumpUntil "Closing the other tabs" (fun () -> not (WinUserApi.IsWindow (hwndOf "Close two")) && not (WinUserApi.IsWindow (hwndOf "Close three")))
-            note (WinUserApi.IsWindow (hwndOf "Close one")) "Close other tabs closed the tab in front")
+            pumpUntil "Closing the other tabs" (fun () -> not (WinUserApi.IsWindow (hwndOf "Close two")))
+            pump 200
+            note (WinUserApi.IsWindow (hwndOf "Close one")) "Close other tabs closed the tab in front"
+            note (WinUserApi.IsWindow three) "Close other tabs closed a pinned tab")
         attempt "close-app-tabs" (fun () ->
             runDone "close-app-tabs" (hwndOf "Close one")
-            pumpUntil "Closing the app's tabs" (fun () -> not (WinUserApi.IsWindow (hwndOf "Close one"))))
+            pumpUntil "Closing the app's tabs" (fun () -> not (WinUserApi.IsWindow (hwndOf "Close one")))
+            pump 200
+            note (WinUserApi.IsWindow three) "Closing the app's tabs closed a pinned tab")
         attempt "close-all-tabs" (fun () ->
             runDone "close-all-tabs" (hwndOf "All one")
             pumpUntil "Closing all tabs" (fun () -> not (WinUserApi.IsWindow (hwndOf "All one")) && not (WinUserApi.IsWindow (hwndOf "All two"))))

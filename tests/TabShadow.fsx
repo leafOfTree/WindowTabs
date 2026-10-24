@@ -103,7 +103,7 @@ let main () =
         tabBorderColor=Color.FromArgb(168,168,168) }
     let info text : TabDisplayInfo = {
         tint=None; colorStyle="Stripe"; numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application
-        textFont=SystemFonts.MenuFont; textBrush=Brushes.Black; splitTrail=None }
+        textFont=SystemFonts.MenuFont; textBrush=Brushes.Black; splitTrail=None; isPinned=false }
     let ts : TabStripSprite<int> = {
         tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"]))
         lorder=List2([1;2]); zorder=List2([1;2]); size=Sz(420,28)
@@ -172,6 +172,20 @@ let main () =
                 let icons = { column with onlyIcons=true; size=Dpi.scaleSize(Sz(48,300)) }
                 check ((snd icons.tabSprites.head).onlyIcon) "The vertical icon rail still shows titles"
     finally Dpi.set originalVerticalDpi
+    // A pinned tab keeps its title and width, shows a pin for a close button, and keeps its place.
+    let pinnedRow = { ts with tabs=Map2(List2([1,{info "Pinned" with isPinned=true}; 2,info "Two"; 3,info "Three"]))
+                              lorder=List2([1;2;3]); zorder=List2([1;2;3]) }
+    let spriteOf (row:TabStripSprite<int>) id = snd (row.tabSprites.list |> List.find(fun (_,tab) -> tab.id=id))
+    let pinnedSprite = spriteOf pinnedRow 1
+    let has kind (tab:TabSprite<int>) = (tab :> ISprite).children.list |> List.exists(fun (_,child) -> kind child)
+    let isClose (child:ISprite) = child :? CloseButtonSprite
+    let isPin (child:ISprite) = child :? PinMarkSprite
+    check (not pinnedSprite.onlyIcon && pinnedSprite.size.width=(spriteOf pinnedRow 2).size.width) "Pinning changed how the tab shows its icon and title"
+    check (not (has isClose pinnedSprite) && not (has isClose { pinnedSprite with hover=Some TabBackground })) "A pinned tab showed a close button"
+    check (has isPin pinnedSprite && not (has isPin (spriteOf pinnedRow 2))) "The pin was missing, or shown on a tab not pinned"
+    check (not (has isPin (spriteOf { pinnedRow with onlyIcons=true } 1))) "A pin crowded a tab that shows its icon only"
+    check (({ pinnedRow with slide=Some(3,0) }).movedTab=Some(3,1)) "A tab dragged before a pinned one went among the pinned tabs"
+    check (({ pinnedRow with slide=Some(1,pinnedRow.size.width) }).movedTab=Some(1,0)) "A pinned tab dragged right left the pinned tabs"
     for appearance in [Theme.light;Theme.dark] do
         for icons in [false;true] do
             let badges = { ts with appearance=appearance;onlyIcons=icons;tabs=Map2(List2([1,{info "One" with numberBadge=Some "1"};2,{info "Ten" with numberBadge=Some "A"}])) }
@@ -328,7 +342,7 @@ let main () =
     for h in [12;18;26] do
         use font = TabMetrics.font h FontStyle.Regular
         check (font.Height <= max h (SystemFonts.MenuFont.Height)) (sprintf "Text line does not fit a %dpx tab" h)
-        let info text : TabDisplayInfo = { tint=None; colorStyle="Stripe"; numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application; textFont=font; textBrush=Brushes.Black; splitTrail=None }
+        let info text : TabDisplayInfo = { tint=None; colorStyle="Stripe"; numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application; textFont=font; textBrush=Brushes.Black; splitTrail=None; isPinned=false }
         let strip = { ts with appearance={ appearance with tabHeight=h }; size=Sz(420,h+1)
                               tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"])) }
         for _,tab in strip.sprite.children.list do

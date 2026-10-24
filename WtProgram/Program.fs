@@ -695,6 +695,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 settling.Remove hwnd |> ignore
                 isDroppedAndAwaitingGrouping.map(fun s -> s.remove hwnd)
                 windowNameOverride <- windowNameOverride.remove hwnd
+                PinnedTabs.set hwnd false
                 windowColors.remove hwnd
                 VirtualDesktop.forget hwnd
                 awaitingDesktop.Remove hwnd |> ignore

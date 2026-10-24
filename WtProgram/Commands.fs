@@ -180,6 +180,7 @@ module Commands =
         // The tab menu's commands for the tab in front.
         plain "rename-tab" Strings.Commands.renameTab TabCommands hasGroup (onTab(fun g hwnd -> g.run(RenameTab hwnd)))
         plain "reset-tab-name" Strings.Commands.resetTabName TabCommands hasGroup (onTab(fun g hwnd -> g.run(ResetTabName hwnd)))
+        plain "pin-tab" Strings.Commands.pinTab TabCommands hasGroup (onTab(fun g hwnd -> g.run(SetTabPinned(hwnd,not (PinnedTabs.contains hwnd)))))
         // As the tab menu's Color: the palette, a colour of one's own, remembering the colour for
         // the app, and none. The last three are actions of their own too, to be found by name.
         choosing "tab-color" Strings.Commands.tabColor TabCommands hasGroup (fun hwnd ->

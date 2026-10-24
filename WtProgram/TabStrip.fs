@@ -188,6 +188,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                     bgColor = tabBgColor.value.tryFind(tab)
                     TabDisplayInfo.text = ti.text
                     splitTrail = ti.splitTrail
+                    isPinned = ti.isPinned
                     icon = ti.iconSmall
                     textFont =
                         match ti.isRenamed,textBoldCell.value with
@@ -738,6 +739,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             text = ""
             isRenamed = false
             splitTrail = None
+            isPinned = false
             iconSmall = System.Drawing.SystemIcons.Application
             iconBig = System.Drawing.SystemIcons.Application
             preview = fun() -> Img(Sz(1,1))

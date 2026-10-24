@@ -205,6 +205,32 @@ type CloseButtonSprite = {
             bitmap
         member this.children = List2()
 
+/// A pinned tab's pushpin, where its close button would be, in the quiet colour of that button.
+type PinMarkSprite = {
+    foreColor: Color
+    size: Sz
+    }
+    with
+    interface ISpriteHitTest with
+        member this.containsPoint _ = false
+    interface ISprite with
+        member this.image =
+            let bitmap = Img(this.size)
+            use g = bitmap.graphics
+            g.SmoothingMode <- SmoothingMode.AntiAlias
+            let c = this.foreColor
+            use brush = new SolidBrush(Color.FromArgb(170, int c.R, int c.G, int c.B))
+            use pen = new Pen(brush, float32 (max 1 (Dpi.scale 1)) * 1.2f)
+            // Upright about its middle, then leaning as a pin pushed in at an angle.
+            let s = float32 (min this.size.width this.size.height) * 0.78f
+            g.TranslateTransform(float32 this.size.width / 2.0f, float32 this.size.height / 2.0f)
+            g.RotateTransform(45.0f)
+            g.FillRectangle(brush, -s * 0.17f, -s * 0.5f, s * 0.34f, s * 0.34f)
+            g.FillRectangle(brush, -s * 0.32f, -s * 0.2f, s * 0.64f, s * 0.12f)
+            g.DrawLine(pen, 0.0f, -s * 0.1f, 0.0f, s * 0.5f)
+            bitmap
+        member this.children = List2()
+
 /// Where the two tabs of a split view meet: it marks them as a pair and opens the split's menu.
 /// Two panes side by side or one above the other, in the tabs' text colour.
 type SplitJunctionSprite = {
@@ -266,6 +292,7 @@ type TabDisplayInfo = {
     icon: Icon
     /// The tab's pane in a split view; the pair gets a button where the two tabs meet.
     splitTrail: (SplitAxis * Side) list option
+    isPinned: bool
     }
     
 type TabSprite<'id> = {
@@ -551,9 +578,12 @@ type TabSprite<'id> = {
     // either way - see textSize - so a label never reflows as the pointer moves
     // across the strip. With icons only it shows on the pointed-at tab alone, so
     // the strip stays a row of icons.
+    /// A pinned tab has a pin there instead: it closes from its menu, by middle-click or from
+    /// its own window.
     member this.showCloseButton =
         let pointed = this.hover.IsSome || this.captured.IsSome
-        if this.onlyIcon then pointed && this.closeButtonFits
+        if this.displayInfo.isPinned then false
+        elif this.onlyIcon then pointed && this.closeButtonFits
         else this.isTop || pointed
 
     member this.textSize =
@@ -652,7 +682,11 @@ type TabSprite<'id> = {
                      let foreground = if background=Color.White then Color.Black else Color.White
                      Some(point,({label=label;size=Sz(side,side);background=background;foreground=foreground} : NumberBadgeSprite) :> ISprite)
                  | _ -> Some(this.iconLocation,this.iconSprite))
-                (if this.showCloseButton then Some(this.closeButtonLocation, this.closeButtonSprite) else None)
+                (if this.showCloseButton then Some(this.closeButtonLocation, this.closeButtonSprite)
+                 // A row of icons stays a row of icons.
+                 elif this.displayInfo.isPinned && not this.onlyIcon then
+                     Some(this.closeButtonLocation, ({ foreColor=this.textColor; size=this.closeButtonSize } : PinMarkSprite) :> ISprite)
+                 else None)
                 ]).choose(id)
 
 /// The concave foot where an active folder tab meets the bar beside it. It is drawn over
@@ -876,6 +910,10 @@ type TabStripSprite<'id> when 'id : equality = {
         | TabCenter -> min (2.0 * this.centerShift) (float this.size.width)
         | _ -> 0.0
 
+    /// The pinned tabs at the front of the strip.
+    member private this.leadingPinned =
+        this.lorder.list |> List.takeWhile(fun tab -> (this.tabs.find tab).isPinned) |> List.length
+
     member private this.fittedLength =
         let tsWidth = float(this.size.width) - this.leftReserve
         let tsWidth =
@@ -954,9 +992,12 @@ type TabStripSprite<'id> when 'id : equality = {
             let left,right = this.tabSpan tab
             Sz(right - left, this.size.height - (if this.direction = TabUp then 1 else 2))
 
+    /// Where a slid tab would go. Pinned tabs stay among the pinned ones, the others after them.
     member this.movedTab =
         match this.slide with
         | Some(tab, x) ->
+            let pinned = this.leadingPinned
+            let isPinned = match this.indexOf tab with Some(index) -> index < pinned | None -> false
             let index = 
                 if this.count = 0 then 0
                 else
@@ -966,6 +1007,10 @@ type TabStripSprite<'id> when 'id : equality = {
                         let x = x - this.alignmentOffset
                         let mid = x + this.tabLength / 2.0
                         int((mid - this.tabOverlap / 2.0) / (this.tabLength - this.tabOverlap))
+            let index =
+                if this.count = 0 then 0
+                elif isPinned then max 0 (min (pinned - 1) index)
+                else max (min pinned (this.count - 1)) (min (this.count - 1) index)
             Some(tab, index)
         | None -> None
 

@@ -80,6 +80,8 @@ module Strings =
         let newTab = { en="New tab"; zh="新建标签"; ja="新しいタブ"; ar="علامة تبويب جديدة" }
         let renameTab = { en="Rename"; zh="重命名"; ja="名前を変更"; ar="إعادة تسمية" }
         let restoreTabName = { en="Reset name"; zh="重置名称"; ja="名前をリセット"; ar="إعادة تعيين الاسم" }
+        let pinTab = { en="Pin"; zh="固定"; ja="固定"; ar="تثبيت" }
+        let unpinTab = { en="Unpin"; zh="取消固定"; ja="固定を解除"; ar="إلغاء التثبيت" }
         let sortTabs = { en="Sort by app and title"; zh="按应用和标题排序"; ja="アプリとタイトル順に並べ替え"; ar="ترتيب حسب التطبيق والعنوان" }
         let combineTaskbarIcons = { en="Combine taskbar icons"; zh="合并任务栏图标"; ja="タスクバーアイコンをまとめる"; ar="دمج أيقونات شريط المهام" }
         /// Shown greyed out under "Combine taskbar icons" while the group's windows keep their own buttons.
@@ -602,6 +604,12 @@ module Strings =
         let resetTabName = { caption={ en="Reset tab name"; zh="重置标签名称"; ja="タブ名をリセット"; ar="إعادة تعيين اسم علامة التبويب" }
                              description={ en="The tab follows the window's title again."; zh="标签重新跟随窗口标题。"; ja="タブはウィンドウのタイトルに再び従います。"; ar="تتبع علامة التبويب عنوان النافذة من جديد." }
                              keywords=tabWords }
+        let pinTab = { caption={ en="Pin or unpin tab"; zh="固定或取消固定标签"; ja="タブを固定 / 固定解除"; ar="تثبيت علامة التبويب أو إلغاء تثبيتها" }
+                       description={ en="A pinned tab stays first and shows a pin for its close button; closing tabs together leaves it."
+                                     zh="固定的标签排在最前，关闭按钮处显示图钉；批量关闭标签时保留。"
+                                     ja="固定したタブは先頭に並び、閉じるボタンの代わりにピンを表示します。まとめて閉じるときも残ります。"
+                                     ar="تبقى علامة التبويب المثبتة أولًا وتعرض دبوسًا مكان زر الإغلاق؛ ولا تُغلق عند إغلاق علامات التبويب معًا." }
+                       keywords={ en="pin keep"; zh="固定 置顶 钉住"; ja="固定 ピン留め"; ar="تثبيت" } }
         let tabColor = { caption={ en="Tab color…"; zh="标签颜色…"; ja="タブの色…"; ar="لون علامة التبويب…" }
                          description={ en="A color of the palette for the tab in front, or none."; zh="为当前标签选一种调色板颜色，或清除。"; ja="前面のタブにパレットの色を付けるか、解除します。"; ar="لون من اللوحة لعلامة التبويب الأمامية، أو لا شيء." }
                          keywords={ en="colour"; zh="颜色 着色"; ja="色 カラー"; ar="لون" } }
@@ -626,16 +634,16 @@ module Strings =
                              keywords={ en="reorder down"; zh="排序 下移"; ja="並べ替え 下"; ar="ترتيب أسفل" } }
         let sortTabs = { caption=TabMenu.sortTabs; description=none; keywords={ en="order"; zh="排序"; ja="並べ替え"; ar="ترتيب" } }
         let closeOtherTabs = { caption={ en="Close other tabs"; zh="关闭其他标签"; ja="他のタブを閉じる"; ar="إغلاق علامات التبويب الأخرى" }
-                               description={ en="Closes every other window of the group."; zh="关闭分组中的其他窗口。"; ja="グループの他のウィンドウをすべて閉じます。"; ar="يغلق كل النوافذ الأخرى في المجموعة." }
+                               description={ en="Closes every other window of the group but the pinned ones."; zh="关闭分组中的其他窗口，固定的标签除外。"; ja="グループの他のウィンドウを、固定したタブを除いてすべて閉じます。"; ar="يغلق كل النوافذ الأخرى في المجموعة عدا المثبتة." }
                                keywords=tabWords }
         let closeAppTabs = { caption={ en="Close all tabs of this app"; zh="关闭此应用的全部标签"; ja="このアプリのタブをすべて閉じる"; ar="إغلاق جميع علامات تبويب هذا التطبيق" }
-                             description={ en="Every window of the group from the app of the tab in front."; zh="分组中属于当前标签所在应用的所有窗口。"; ja="グループ内で、前面のタブのアプリのウィンドウをすべて。"; ar="كل نوافذ المجموعة من تطبيق علامة التبويب الأمامية." }
+                             description={ en="Every window of the group from the app of the tab in front, but the pinned ones."; zh="分组中属于当前标签所在应用的所有窗口，固定的标签除外。"; ja="グループ内で、前面のタブのアプリのウィンドウを、固定したタブを除いてすべて。"; ar="كل نوافذ المجموعة من تطبيق علامة التبويب الأمامية، عدا المثبتة." }
                              keywords=tabWords }
         let private iconNote = { en="For a group with combined taskbar icons."; zh="用于已合并任务栏图标的分组。"; ja="タスクバーアイコンをまとめたグループ用。"; ar="لمجموعة دُمجت أيقونات شريط المهام لها." }
         let changeGroupIcon = { caption=TabMenu.changeTaskbarIcon; description=iconNote; keywords={ en="picture image"; zh="图片 图像"; ja="画像 ピクチャ"; ar="صورة" } }
         let restoreGroupIcon = { caption=TabMenu.restoreTaskbarIcon; description=iconNote; keywords={ en="default picture"; zh="默认 图片"; ja="既定 画像"; ar="افتراضي صورة" } }
         let closeAllTabs = { caption={ en="Close all tabs"; zh="关闭全部标签"; ja="すべてのタブを閉じる"; ar="إغلاق جميع علامات التبويب" }
-                             description={ en="Closes every window of the group."; zh="关闭分组中的所有窗口。"; ja="グループのウィンドウをすべて閉じます。"; ar="يغلق كل نوافذ المجموعة." }
+                             description={ en="Closes every window of the group but the pinned ones."; zh="关闭分组中的所有窗口，固定的标签除外。"; ja="グループのウィンドウを、固定したタブを除いてすべて閉じます。"; ar="يغلق كل نوافذ المجموعة عدا المثبتة." }
                              keywords=tabWords }
         let detachTab = { caption={ en="Move tab to a new group"; zh="拆出到新分组"; ja="タブを新しいグループへ"; ar="نقل علامة التبويب إلى مجموعة جديدة" }
                           description={ en="Takes the tab out on its own, as dragging it to the desktop does."; zh="把标签单独拆出来，与拖到桌面上相同。"; ja="タブを単独で取り出します。デスクトップへドラッグするのと同じです。"; ar="يخرج علامة التبويب وحدها، كما يفعل سحبها إلى سطح المكتب." }
