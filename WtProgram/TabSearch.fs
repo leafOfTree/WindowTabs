@@ -471,8 +471,17 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         if input.IsHandleCreated then
             TabSearchNative.SendMessage(input.Handle,TabSearchNative.EM_SETCUEBANNER,IntPtr(1),currentPrompt()) |> ignore
     let apply() =
-        // In their groups while nothing is typed; then the best matches first.
-        let shown = TabSearch.shown input.Text (List.ofArray (scoped())) |> Array.ofList
+        // In their groups while nothing is typed; then the best matches first, those that can do
+        // nothing for the window in front after the rest, unless named just as typed.
+        let shown =
+            let ranked = TabSearch.shown input.Text (List.ofArray (scoped()))
+            if String.IsNullOrWhiteSpace input.Text then Array.ofList ranked
+            else
+                let typed = input.Text.Trim()
+                let later (item:TreeListItem,entry:TabSearchEntry) =
+                    item.Dimmed && not (entry.title.Equals(typed,StringComparison.CurrentCultureIgnoreCase))
+                let dimmed,live = ranked |> List.partition later
+                Array.ofList (live @ dimmed)
         // At the right: the row's own detail (the program, a shortcut) or its switch.
         let aside (entry:TabSearchEntry) : PaletteAside =
             match choices,page() with

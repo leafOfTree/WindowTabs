@@ -474,7 +474,8 @@ let main() =
                         note (question.kind=ColorQuestion) (sprintf "%s does not ask for a colour" item.id)
                         note (question.accept question.value).IsNone (sprintf "%s refused the colour it had" item.id)
                         note (question.accept "#12").IsSome (sprintf "%s took a colour that is no colour" item.id)
-                    | Navigation,Done -> note (called ("setting "+item.id)) (sprintf "%s did not open its page" item.id)
+                    | Navigation,Done ->
+                        note (called ("setting "+item.id)) (sprintf "%s did not open its page" item.id)
                     | binding,outcome -> issues.Add(sprintf "The setting %s (%A) answered %A" item.id binding outcome))
             | None -> ()
         // Keys: every row that takes one is given one, and a key another action has is refused by name.
@@ -506,6 +507,16 @@ let main() =
         palette.Query <- ""
         palette.SwitchScope()
         note (palette.Scope=ActionScope) "Tab did not come back to the actions"
+        // What can do nothing for the window in front comes after what can.
+        let shownPage = CommandPalette.actionsPage active
+        for query in ["icon";"app";"tab";"workspace"] do
+            palette.Query <- query
+            let dimmed = palette.Results |> List.map(fun entry -> shownPage.dimmed entry)
+            if query="icon" then note (List.contains true dimmed) "Searching \"icon\" found no dimmed row to place"
+            match List.tryFindIndex id dimmed, List.tryFindIndexBack not dimmed with
+            | Some firstDimmed,Some lastLive when lastLive>firstDimmed ->
+                issues.Add(sprintf "Searching \"%s\" listed a dimmed row above one that can act: %A" query (palette.Results |> List.map(fun entry -> entry.title)))
+            | _ -> ()
         for command in Commands.all |> List.filter(fun command -> command.listed) do
             palette.Query <- tr command.text.caption
             match palette.Results with
