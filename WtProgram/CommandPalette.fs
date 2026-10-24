@@ -21,7 +21,7 @@ module CommandPalette =
     let private shortcutText (command:Command) =
         command.shortcut |> Option.map(fun key -> SettingsShortcut.text (Services.program.getHotKey key)) |> Option.defaultValue ""
     /// The hidden command that opens a setting's row, which its shortcut is kept for.
-    let private (|SettingCommand|_|) (item:SettingDefinition) = Commands.find ("setting-"+item.id)
+    let private (|SettingCommand|_|) (item:SettingDefinition) = Commands.find (SettingRows.commandId item)
     let private settingKey item = match item with SettingCommand command -> shortcutText command | _ -> ""
     /// One row of the actions page: a command, or a setting the commands do not already stand for.
     type private Action =

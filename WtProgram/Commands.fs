@@ -129,6 +129,10 @@ module SettingRows =
                       Services.settings.updateAppearance(PaletteEditing.edit (ThemeService.currentIsDark()) (write color))
                       None
                   | _ -> Some(tr Strings.TabSearch.colorRefused) }
+    /// The id of the command that opens the setting's row, in kebab-case as every command's is,
+    /// though some settings' own ids are not.
+    let commandId (item:SettingDefinition) =
+        "setting-"+System.Text.RegularExpressions.Regex.Replace(item.id,"(?<=[a-z0-9])([A-Z])","-$1").ToLowerInvariant()
     /// Whether the setting has a row a key can open: not one turned on or off, which has its own
     /// command; not a key, set where it is; and not the settings file's buttons, run in place.
     let takesKey (item:SettingDefinition) =
@@ -394,7 +398,7 @@ module Commands =
             let asks =
                 item.id="switch-tabs-by-number" ||
                 (match item.binding with Choice _ | Number _ | Colour -> true | Text(key,_) -> key="numberLeaderKeys" | _ -> false)
-            { plain ("setting-"+item.id) item.text SettingsCommands always ignore
+            { plain (SettingRows.commandId item) item.text SettingsCommands always ignore
                 with listed=false; chooses=asks; run=fun _ -> SettingRows.run item }
         plain "refresh-windows" Strings.Commands.refreshWindows AppCommands always (fun _ -> Services.program.refresh())
         plain "exit" Strings.Commands.exit AppCommands always (fun _ -> Services.program.shutdown()) ]
