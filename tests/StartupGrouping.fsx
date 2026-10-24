@@ -75,6 +75,57 @@ let main() =
         check ((runtimeSettings.rememberedGroups |> List.map(fun group -> group.id)) = [5151]) "Remembered groups were not kept in the settings"
         use lifetime = new LifetimeScope(fun error -> raise error)
         let program = Program.Program(lifetime,settings=runtimeSettings)
+        // From the command line, a command that has nothing to act on for the window in front says
+        // so, rather than doing nothing or offering choices that do nothing; no group exists yet.
+        let closeTab = (Commands.find "close-tab").Value
+        match program.execute(RunCommand("close-tab",None)) with
+        | Result.Error text -> check (text=tr (Strings.CommandLine.unavailable (tr closeTab.text.caption))) (sprintf "The command line said %s" text)
+        | Result.Ok _ -> failwith "The command line ran a tab command with no tab in front"
+        match program.execute(RunCommand("tab-color",Some "Blue")) with
+        | Result.Error _ -> ()
+        | Result.Ok _ -> failwith "The command line chose a tab colour with no tab in front"
+        match program.execute(RunCommand("no-such-command",None)) with
+        | Result.Error text -> check (text=tr (Strings.CommandLine.unknownCommand "no-such-command")) (sprintf "An unknown command said %s" text)
+        | Result.Ok _ -> failwith "The command line took a command that does not exist"
+        // A key given to a window from the window search is kept, also while a box records keys,
+        // as the search's own box does when it sets one.
+        let programApi = program :> IProgram
+        let exePath = Diagnostics.Process.GetCurrentProcess().MainModule.FileName
+        for recording in [false;true] do
+            let title = sprintf "Window key probe %b" recording
+            let code = SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.Shift ||| (if recording then Keys.F11 else Keys.F10))
+            if recording then ShortcutRecording.start()
+            let taken = programApi.setWindowShortcut { path=exePath; title=title; code=code }
+            if recording then ShortcutRecording.stop()
+            check taken (sprintf "A window key was refused (recording %b)" recording)
+            check (programApi.windowShortcuts() |> List.exists(fun shortcut -> shortcut.title=title && shortcut.code=code)) (sprintf "A window key was not kept (recording %b)" recording)
+            check (string (runtimeSettings :> ISettings).root.["windowShortcuts"] |> fun text -> text.Contains title) (sprintf "A window key was not written (recording %b)" recording)
+            programApi.setWindowShortcut { path=exePath; title=title; code=0 } |> ignore
+        // And as a user gives one: the window search, Alt+Enter on a window, then a key.
+        do
+            let title = "Window key target"
+            use target = new Form(Text=title,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-20000,-20000))
+            target.Show()
+            Application.DoEvents()
+            program.togglePalette None
+            let cellField = typeof<Program.Program>.GetFields(Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic) |> Array.find(fun field -> field.Name.StartsWith "tabSearchCell")
+            let cell = cellField.GetValue(program)
+            let search = (cell.GetType().GetProperty("value").GetValue(cell) :?> TabSearchForm option).Value
+            search.Query <- title
+            Application.DoEvents()
+            check ((search.Selected |> Option.map(fun entry -> entry.title))=Some title) (sprintf "The window search did not list %s" title)
+            search.BeginAssign()
+            let editor = match search.ShortcutEditor with Some editor -> editor | None -> failwith "Alt+Enter on a window opened no key box"
+            let code = SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.Shift ||| Keys.F9)
+            let mutable message = Message()
+            let processKey = editor.GetType().GetMethod("ProcessCmdKey",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
+            processKey.Invoke(editor,[|box message;box (Keys.Control ||| Keys.Alt ||| Keys.Shift ||| Keys.F9)|]) |> ignore
+            Application.DoEvents()
+            let kept = programApi.windowShortcuts() |> List.exists(fun shortcut -> shortcut.title=title && shortcut.code=code)
+            let said = editor.Message
+            search.Close()
+            programApi.setWindowShortcut { path=exePath; title=title; code=0 } |> ignore
+            check kept (sprintf "A key given in the window search was not kept; the box said %A" said)
         let scansBefore,_,_ = RuntimeMetrics.snapshot()
         let input = {new IStartupInputPlugin with
                         member _.init() =

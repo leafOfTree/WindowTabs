@@ -70,6 +70,15 @@ let main() =
         use graphics = image.graphics
         graphics.Clear(color)
         image
+    // A dragged window's picture arrives after the tab-only image may already show.
+    let shown = AnimationWindow(OS())
+    shown.setLocation(Pt(-32000,-32000))
+    shown.setImage(colored Color.Red (Sz(20,10)))
+    shown.setIsVisible(true)
+    shown.setImage(colored Color.Red (Sz(60,40)))
+    let drawn = Win32Helper.GetWindowRectangle(shown.hwnd)
+    shown.Dispose()
+    check (drawn.Width=60 && drawn.Height=40) (sprintf "A drag image set while showing was not drawn: %dx%d" drawn.Width drawn.Height)
     // A desktop origin must be subtracted before drawing into the preview canvas.
     let origin = Pt(300,200)
     let location = TaskbarPreview.relativeLocation (Rect(origin,Sz(64,52))) (Rect(Pt(300,220),Sz(64,32)))
@@ -86,6 +95,16 @@ let main() =
                         Location=Point(area.Left+40,area.Top+40),Size=Size(320,200),BackColor=Color.CornflowerBlue) with
                             override _.ShowWithoutActivation = true }
     captureForm.Show()
+    // The window search shows each window's icon as last read: every list gets a copy of its own,
+    // disposed with it, and the next opening still has the icon.
+    do
+        captureForm.Icon <- SystemIcons.Information
+        let window = OS().windowFromHwnd captureForm.Handle
+        let first = ImgHelper.knownWindowIcon window
+        first |> Option.iter(fun image -> image.Dispose())
+        let second = ImgHelper.knownWindowIcon window
+        check (first.IsSome && second |> Option.exists(fun image -> image.Width>0)) "A window's icon kept for the window search was lost once a list let it go"
+        second |> Option.iter(fun image -> image.Dispose())
     captureForm.Refresh()
     // Let the compositor present the first frame before asking for its surface.
     let firstFrame = Diagnostics.Stopwatch.StartNew()

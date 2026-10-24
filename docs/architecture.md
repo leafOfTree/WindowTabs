@@ -320,7 +320,10 @@ before constructing services. `LifetimeScope` owns resources immediately and rel
 them in reverse order, continuing when one cleanup fails. OLE drop targets revoke
 registration before the native HWND is destroyed and balance `OleInitialize`.
 Hotkeys reserve a new native registration before releasing the old one. A conflict
-preserves the working shortcut and does not persist the rejected value.
+preserves the working shortcut and does not persist the rejected value. While any shortcut box
+records (`ShortcutRecording`), every hotkey is released, as Windows would otherwise hand a
+registered key to the program before the box saw it and run its command; they are registered
+again as the last recording ends, before the recorded key is taken.
 
 Window search includes grouped tabs and switchable application windows without
 tabs, keeping each HWND only once. Ungrouped windows act as individual entries in
@@ -329,6 +332,87 @@ An explicit search scope change is persisted as `tabSearchScope`. Missing or inv
 values retain the group default, while a saved global choice opens globally even
 inside a group. Falling back to global when no searchable group exists does not
 overwrite the preferred scope.
+
+The same form is the command palette (`Ctrl+Alt+P` by default), opened with the actions page
+in place of the window scopes (`windows=false`); saved workspaces are restored through Restore
+workspace…, which lists them. With one page there is nothing for Tab to go round, so the line
+under the box only takes room for the way back from a command's choices. It is a row's
+height, so a name chosen keeps its place as its choices or its box open under it. Each key closes its own box or
+puts it up in the other's place. Each box offers what was typed when it last closed, selected,
+so typing starts afresh; the actions chosen last from the palette (`recentActions` in the
+settings file, eight at most) come first while nothing is typed and win ties after. Alt+Enter on a window in the search gives it a key
+(`WindowShortcut`, kept by program path and name in `windowShortcuts`, registered as
+`window:<app>|<name>`): pressed, it brings the program's window with that name to the front,
+else its most recent window, and starts the program when none is open. They are seen and
+changed in the window search alone, beside each window's name. The actions page is one list: the commands (`Commands.all`,
+those listed, in their categories, dimmed when they can do nothing for the window that was in
+front, with their shortcuts beside them), then the settings by page, leaving out the catalog's
+shortcut entries, which are commands already; a setting that is on or off shows a switch and
+is turned in place by its toggle command, the palette staying up; a choice shows what it is set
+to and, chosen, lists its values by the catalog's `choiceLabels`, the current one ticked, and
+sets the one picked; a size or the leader keys asks for a value (`Ask`) in the settings pages' own
+box under the line naming it: the box holds the value now, selected, a valid value is saved as
+it is typed (`live`), as the settings pages save, Enter closes the palette, Esc goes back
+keeping what was saved, and a value Enter cannot take is explained under the box; a colour shows its dot before its code at the right and is asked for
+in the settings pages' colour box (`SettingsColorInput`) with its picker open, the palette kept
+up while the picker has the keys, and saved as it changes through `PaletteEditing`, as the
+Appearance page edits it; a page opens the settings window. What a setting's row does lives
+in `SettingRows`, ahead of the commands, so a hidden command for each setting
+(`SettingRows.commandId`, `setting-<id>` in kebab-case) does the same from a key of its own;
+Alt+Enter is offered only while the chosen row can take a key. A row's value at the right is
+kept while typing and worked out again once the value is set from that row. The tab
+colour command offers what the tab menu does, with `AppTabColors` shared between them. Sizes and
+the tab style are read and written by key (`SettingsCatalog.geometryNumbers`), so the palette
+and the command line set them as any other setting. Rows are found by their caption, keywords and description in every
+language, and matches are drawn in the accent colour, as the settings search shows them. A command that leaves a choice (`Choose`) shows its options in place under the
+command's name, with Esc or Backspace the way back; a hotkey for such a command opens the
+palette on them. Commands take the window that was in front when they were asked for, since
+the palette is in front itself by then. A group's own tab position, alignment and auto-hide mode
+live on its thread: the palette asks for them as it opens (`GroupInfo.readShownChoices`, posted
+back, never waited for) and lists its rows again once they are in, the value beside each command.
+The pages are built in `CommandPalette` and given to
+`TabSearchForm` as `PalettePage`s. Alt+Enter on a command records a shortcut for it in a
+`SettingsShortcutInput` over its row, with the Shortcuts page's refusals (a key another command
+or program holds); every listed command can take one, kept under the catalog's key when the
+catalog names the command and under its id otherwise. The Shortcuts page lists only the
+shortcuts with a key to begin with, the window search's and the palette's first on a card of
+their own; the palette gives every other command its key.
+
+Opening either box reads nothing slow per row. Settings are read from one parse of the
+file (`Settings.readJson`), dropped with every write: each row asking for its key parsed the
+whole file, a third of a second on a large one. The window search shows each window's icon as
+last read (`ImgHelper.knownWindowIcon`, by window and process) and reads them again in the
+background for the next time.
+
+The tab menu's actions are commands too. `IGroup.run` takes a `GroupCommand` (rename, reset
+name, pin, close others or all, sort, move a tab, a tab's colour, icons only, dock, alignment,
+the group's auto-hide) onto the group's thread: what the group keeps it does itself, and what the
+strip owns it asks of the decorator through `commandRequested`, as a pick is asked. Taking a tab
+out into a group of its own marks it as dropped, as a drag to the desktop does, and lets the next
+scan start the group; moving it to another group goes through `addAfterDetaching`. The app
+toggles (tabs, auto-grouping and number switching for the app of the window in front) and the
+workspace choices (restore by name, delete) are commands as well.
+
+A pinned tab (`PinnedTabs`) is a property on its window, as its tab layout is, so it stays
+pinned in whatever group the window moves to and when WindowTabs starts again, and goes with the
+window. The group keeps its pinned tabs first (`keepPinnedFirst`, as a window joins or a tab is
+pinned or unpinned); a drag, Move tab and sorting keep each tab within its part, and closing
+tabs together leaves the pinned ones. A pinned tab keeps its icon and title, the system icon
+font's pin (`PinGlyph`, its fill and outline) drawn where its close button would be.
+
+Resting on a tab, the tip shows a title cut short in full (`TabTitleTip`). With the hover
+preview on, a tab behind also shows its window under the title: printed off the strip's
+thread, shrunk to fit (`TabPreviewPicture`), and dropped if the pointer has moved on by then;
+a minimized window's stand-in, its app's icon, is drawn on the strip's thread.
+
+The command line (`CommandLine.parse`) asks for a command by id, a workspace by name, or
+programs to start into one group. A start that finds a copy running sends its arguments to it
+over a named pipe (`CommandPipe`, per sign-in session; `CommandServer` listens in the running
+copy and answers on the main thread) and prints the reply to the console it was started from
+(`ConsoleOutput`); without a running copy it starts one, which does the request once its first
+scan is over, a workspace asked for taking the session restore's place. Programs started
+together are matched by executable name for a minute: the first window to appear makes a group
+by hand (`tryLaunched`, ahead of the remembered groups and the rules) and the rest join it.
 
 With nothing typed the list keeps that group order. Once a query is typed the
 matches are listed best first, without group separators, and the first one is the

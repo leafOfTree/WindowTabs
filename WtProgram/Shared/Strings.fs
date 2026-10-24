@@ -80,6 +80,8 @@ module Strings =
         let newTab = { en="New tab"; zh="新建标签"; ja="新しいタブ"; ar="علامة تبويب جديدة" }
         let renameTab = { en="Rename"; zh="重命名"; ja="名前を変更"; ar="إعادة تسمية" }
         let restoreTabName = { en="Reset name"; zh="重置名称"; ja="名前をリセット"; ar="إعادة تعيين الاسم" }
+        let pinTab = { en="Pin"; zh="固定"; ja="固定"; ar="تثبيت" }
+        let unpinTab = { en="Unpin"; zh="取消固定"; ja="固定を解除"; ar="إلغاء التثبيت" }
         let sortTabs = { en="Sort by app and title"; zh="按应用和标题排序"; ja="アプリとタイトル順に並べ替え"; ar="ترتيب حسب التطبيق والعنوان" }
         let combineTaskbarIcons = { en="Combine taskbar icons"; zh="合并任务栏图标"; ja="タスクバーアイコンをまとめる"; ar="دمج أيقونات شريط المهام" }
         /// Shown greyed out under "Combine taskbar icons" while the group's windows keep their own buttons.
@@ -152,7 +154,9 @@ module Strings =
 
     /// Captions, descriptions and search keywords of SettingsCatalog entries.
     module Settings =
-        let private colorWords = { en="color colour"; zh="颜色 配色"; ja="色 カラー"; ar="اللون الألوان" }
+        let private colorWords = { en="tab color colour"; zh="标签 颜色 配色"; ja="タブ 色 カラー"; ar="علامة تبويب اللون الألوان" }
+        /// The tabs' text, found as such: the settings name it by what it colours.
+        let private tabTextWords = { en="tab text title font color colour"; zh="标签文本 标签文字 标签 文本 文字 标题 字体 颜色"; ja="タブの文字 タブ テキスト 文字 タイトル フォント 色"; ar="نص علامة التبويب علامة تبويب نص عنوان خط اللون" }
         let private sizeWords = { en="size"; zh="尺寸 大小"; ja="サイズ 大きさ"; ar="الحجم" }
         let private hotkeyWords = { en="hotkey"; zh="热键"; ja="ホットキー"; ar="مفتاح الاختصار" }
         let theme = { caption={ en="Theme"; zh="主题"; ja="テーマ"; ar="السمة" }
@@ -214,6 +218,25 @@ module Strings =
         let searchTabs = { caption={ en="Switch windows"; zh="切换窗口"; ja="ウィンドウを切り替え"; ar="التبديل بين النوافذ" }
                            description={ en="Switch to a window by title or app name."; zh="按标题或应用名查找并切换窗口。"; ja="タイトルやアプリ名でウィンドウを探して切り替えます。"; ar="الانتقال إلى نافذة باستخدام عنوانها أو اسم التطبيق." }
                            keywords={ en="find"; zh="查找"; ja="検索"; ar="بحث" } }
+        /// Keys inside the palette and the window search only, beside the arrows.
+        let listNext = { caption={ en="Next in the list"; zh="列表中的下一项"; ja="リストの次の項目"; ar="العنصر التالي في القائمة" }
+                         description={ en="Moves the choice down in the command palette and the window search, as ↓ does. Only there."
+                                       zh="在命令面板和窗口搜索中把选中项下移，与 ↓ 相同。只在这两处生效。"
+                                       ja="コマンドパレットとウィンドウ検索で選択を下へ移動します（↓ と同じ）。そこでのみ有効です。"
+                                       ar="ينقل الاختيار لأسفل في لوحة الأوامر وبحث النوافذ، كما يفعل ↓. هناك فقط." }
+                         keywords={ en="down select move palette search"; zh="向下 选择 移动 面板 搜索"; ja="下 選択 移動 パレット 検索"; ar="أسفل تحديد نقل لوحة بحث" } }
+        let listPrevious = { caption={ en="Previous in the list"; zh="列表中的上一项"; ja="リストの前の項目"; ar="العنصر السابق في القائمة" }
+                             description={ en="Moves the choice up in the command palette and the window search, as ↑ does. Only there."
+                                           zh="在命令面板和窗口搜索中把选中项上移，与 ↑ 相同。只在这两处生效。"
+                                           ja="コマンドパレットとウィンドウ検索で選択を上へ移動します（↑ と同じ）。そこでのみ有効です。"
+                                           ar="ينقل الاختيار لأعلى في لوحة الأوامر وبحث النوافذ، كما يفعل ↑. هناك فقط." }
+                             keywords={ en="up select move palette search"; zh="向上 选择 移动 面板 搜索"; ja="上 選択 移動 パレット 検索"; ar="أعلى تحديد نقل لوحة بحث" } }
+        let commandPalette = { caption={ en="Command palette"; zh="命令面板"; ja="コマンドパレット"; ar="لوحة الأوامر" }
+                               description={ en="Run any command or setting by name."
+                                             zh="按名称运行任意命令或设置。"
+                                             ja="名前でコマンドや設定を実行します。"
+                                             ar="شغّل أي أمر أو إعداد باسمه." }
+                               keywords={ en="actions search everywhere"; zh="动作 全局搜索"; ja="アクション 検索"; ar="إجراءات بحث شامل" } }
         let newTab = { caption={ en="New tab"; zh="新建标签"; ja="新しいタブ"; ar="علامة تبويب جديدة" }
                        description={ en="Starts the current tab's app again."
                                      zh="再次启动当前标签的应用。"
@@ -244,6 +267,12 @@ module Strings =
                                description={ en="Lists the windows to put beside the tab in front."; zh="列出可放到当前标签旁边的窗口。"; ja="前面のタブの隣に置くウィンドウを一覧表示します。"; ar="يعرض النوافذ التي يمكن وضعها بجانب علامة التبويب الأمامية." }
                                keywords=splitWords }
         let splitPickBelow = { caption={ en="Window below…"; zh="在下方放入窗口…"; ja="下側にウィンドウを配置…"; ar="نافذة في الأسفل…" }
+                               description=none
+                               keywords=splitWords }
+        let splitPickLeft = { caption={ en="Window on the left…"; zh="在左侧放入窗口…"; ja="左側にウィンドウを配置…"; ar="نافذة على اليسار…" }
+                              description=none
+                              keywords=splitWords }
+        let splitPickAbove = { caption={ en="Window above…"; zh="在上方放入窗口…"; ja="上側にウィンドウを配置…"; ar="نافذة في الأعلى…" }
                                description=none
                                keywords=splitWords }
         let splitFocusLeft = { caption={ en="Focus the pane to the left"; zh="焦点切到左边的格"; ja="左のペインにフォーカス"; ar="التركيز على الجزء الأيسر" }
@@ -310,6 +339,12 @@ module Strings =
         let activateOnHover = { caption={ en="Switch tabs on hover"; zh="悬停切换标签"; ja="ホバーでタブを切り替え"; ar="التبديل بين علامات التبويب عند تمرير المؤشر" }
                                 description={ en="Rest the pointer on a tab instead of clicking."; zh="鼠标停在标签上即可，无需点击。"; ja="クリックしなくても、タブにポインターを置くだけで済みます。"; ar="ضع المؤشر فوق علامة تبويب بدلًا من النقر عليها." }
                                 keywords={ en="mouse over"; zh="悬停"; ja="マウスオーバー"; ar="تمرير المؤشر" } }
+        let tabHoverPreview = { caption={ en="Preview a tab's window on hover"; zh="悬停时预览标签窗口"; ja="ホバーでタブのウィンドウをプレビュー"; ar="معاينة نافذة علامة التبويب عند تمرير المؤشر" }
+                                description={ en="Rest the pointer on a tab behind to see its window, with its full title."
+                                              zh="鼠标停在后面的标签上，显示它的窗口截图和完整标题。"
+                                              ja="背面のタブにポインターを置くと、そのウィンドウと完全なタイトルを表示します。"
+                                              ar="ضع المؤشر فوق علامة تبويب خلفية لرؤية نافذتها مع عنوانها الكامل." }
+                                keywords={ en="thumbnail screenshot picture hover card"; zh="缩略图 截图 预览 悬停"; ja="サムネイル スクリーンショット プレビュー"; ar="صورة مصغرة لقطة شاشة معاينة" } }
         let shiftScroll = { caption={ en="Switch tabs with Shift + scroll"; zh="用 Shift + 滚轮切换标签"; ja="Shift + スクロールでタブを切り替え"; ar="التبديل بين علامات التبويب باستخدام Shift والتمرير" }
                             description={ en="Works anywhere over a grouped window. Over the tab bar, Shift isn't needed."
                                           zh="在分组窗口的任意位置均可使用；在标签栏上滚动时无需按 Shift。"
@@ -328,10 +363,19 @@ module Strings =
                                                ja="タブ上でホイールを押すと、そのウィンドウを閉じます。"
                                                ar="اضغط بعجلة الفأرة على علامة التبويب لإغلاق نافذتها." }
                                  keywords={ en="wheel click"; zh="中键 滚轮"; ja="ホイール クリック"; ar="النقر بعجلة الفأرة" } }
-        let tabTextColor = { caption={ en="Text and close button"; zh="文字与关闭按钮"; ja="文字と閉じるボタン"; ar="النص وزر الإغلاق" }; description=none; keywords=colorWords }
+        let tabTextColor = { caption={ en="Text and close button"; zh="文字与关闭按钮"; ja="文字と閉じるボタン"; ar="النص وزر الإغلاق" }; description=none; keywords=tabTextWords }
+        let tabOpacity = { caption={ en="Tab opacity (%)"; zh="标签不透明度（%）"; ja="タブの不透明度 (%)"; ar="عتامة علامات التبويب (%)" }
+                           description={ en="Below 100, what is behind the tabs shows through them; under the pointer or while dragging they are solid."; zh="低于 100 时可透过标签看到后面的内容；鼠标在标签上或拖动时恢复不透明。"; ja="100 未満では、タブ越しに後ろが透けて見えます。ポインターを重ねたときやドラッグ中は不透明になります。"; ar="أقل من 100 يظهر ما خلف علامات التبويب من خلالها؛ وتصبح معتمة تحت المؤشر أو أثناء السحب." }
+                           keywords={ en="transparency transparent see-through alpha"; zh="透明度 透明 半透明"; ja="透明度 透明 半透明"; ar="شفافية شفاف" } }
+        let tabTextBold = { caption={ en="Bold tab text"; zh="标签文字加粗"; ja="タブの文字を太字にする"; ar="نص علامات التبويب بخط عريض" }
+                            description={ en="Titles of every tab in a heavier weight."; zh="所有标签的标题以粗体显示。"; ja="すべてのタブのタイトルを太字で表示します。"; ar="عناوين كل علامات التبويب بخط أثقل." }
+                            keywords=tabTextWords }
         let tabNormalBgColor = { caption={ en="Inactive tab"; zh="非活动标签"; ja="非アクティブなタブ"; ar="علامة تبويب غير نشطة" }; description=none; keywords=colorWords }
         let tabActiveBgColor = { caption={ en="Active tab"; zh="活动标签"; ja="アクティブなタブ"; ar="علامة تبويب نشطة" }; description=none; keywords=colorWords }
         let tabHighlightBgColor = { caption={ en="Hovered tab"; zh="悬停标签"; ja="ホバー中のタブ"; ar="علامة التبويب التي يشير إليها المؤشر" }; description=none; keywords=colorWords }
+        let tabFlashBgColor = { caption={ en="Tab asking for attention"; zh="请求注意的标签"; ja="注意を求めるタブ"; ar="علامة تبويب تطلب الانتباه" }
+                                description={ en="While its window flashes, as its taskbar button does."; zh="其窗口闪烁提醒时（如任务栏按钮闪烁）。"; ja="ウィンドウが点滅して知らせている間（タスクバーのボタンと同様）。"; ar="أثناء وميض نافذتها، كما يومض زرها في شريط المهام." }
+                                keywords={ en="tab flash attention alert danger notify blink color colour"; zh="标签 闪烁 提醒 警示 注意 危险 颜色"; ja="タブ 点滅 注意 警告 通知 色"; ar="علامة تبويب وميض انتباه تنبيه خطر لون" } }
         let tabStyle = { caption={ en="Tab style"; zh="标签样式"; ja="タブのスタイル"; ar="نمط علامة التبويب" }
                          description={ en="How the active tab stands out from the rest."; zh="活动标签以何种方式与其他标签区分。"; ja="アクティブなタブをほかのタブとどう見分けるかを選びます。"; ar="كيفية تمييز علامة التبويب النشطة عن البقية." }
                          keywords={ en="shape folder pill"; zh="形状 文件夹 胶囊"; ja="形 フォルダー ピル"; ar="شكل مجلد كبسولة" } }
@@ -475,15 +519,6 @@ module Strings =
                { en="Amber"; zh="琥珀橙"; ja="アンバー"; ar="كهرماني" }
                Settings.tabColorNames.[11]
                Settings.tabColorNames.[6] |]
-        let quickColorNames = [|
-            { en="Black"; zh="黑色"; ja="黒"; ar="أسود" }
-            { en="White"; zh="白色"; ja="白"; ar="أبيض" }
-            { en="Gray"; zh="灰色"; ja="グレー"; ar="رمادي" }
-            { en="Red"; zh="红色"; ja="赤"; ar="أحمر" }
-            { en="Orange"; zh="橙色"; ja="オレンジ"; ar="برتقالي" }
-            { en="Yellow"; zh="黄色"; ja="黄"; ar="أصفر" }
-            { en="Green"; zh="绿色"; ja="緑"; ar="أخضر" }
-            { en="Blue"; zh="蓝色"; ja="青"; ar="أزرق" } |]
         let pickerHelp = { en="Color picker: arrow keys adjust saturation and brightness; Shift + arrow keys adjust hue"
                            zh="颜色选择器：方向键调整饱和度和亮度；Shift + 方向键调整色相"
                            ja="色の選択：方向キーで彩度と明るさを調整し、Shift + 方向キーで色相を調整します"
@@ -494,20 +529,196 @@ module Strings =
 
     module Shortcuts =
         let keyboard = { en="Keyboard"; zh="键盘"; ja="キーボード"; ar="لوحة المفاتيح" }
+        /// The card of the two keys that reach everything else: the window search and the palette.
+        let startHere = { en="Start here"; zh="从这里开始"; ja="ここから始める"; ar="ابدأ من هنا" }
+        let startHereNote = { en="Type a few letters to find any window, or to run any command or setting."
+                              zh="输入几个字，即可找到任意窗口，或运行任意命令和设置。"
+                              ja="数文字入力するだけで、任意のウィンドウを探したり、コマンドや設定を実行したりできます。"
+                              ar="اكتب بضعة أحرف للعثور على أي نافذة، أو لتشغيل أي أمر أو إعداد." }
         let mouse = { en="Mouse"; zh="鼠标"; ja="マウス"; ar="الفأرة" }
-        let splitView = { en="Split view"; zh="分屏"; ja="分割表示"; ar="العرض المقسّم" }
-        let keyboardNote = { en="Click a shortcut, then press the new combination. Esc cancels."
-                             zh="点击快捷键后按下新的组合键。按 Esc 取消。"
-                             ja="ショートカットをクリックして、新しいキーの組み合わせを押します。Esc でキャンセルします。"
-                             ar="انقر اختصارًا ثم اضغط مجموعة المفاتيح الجديدة. اضغط Esc للإلغاء." }
+        /// Cards for the commands that turn settings on or off and open pages, and the app's own.
+        let keyboardNote = { en="Click a shortcut, then press the new combination. Esc cancels. The command palette sets one too: Alt+Enter on a command."
+                             zh="点击快捷键后按下新的组合键。按 Esc 取消。在命令面板中选中命令后按 Alt+Enter 也可设置。"
+                             ja="ショートカットをクリックして、新しいキーの組み合わせを押します。Esc でキャンセルします。コマンドパレットでコマンドを選んで Alt+Enter でも設定できます。"
+                             ar="انقر اختصارًا ثم اضغط مجموعة المفاتيح الجديدة. اضغط Esc للإلغاء. وتعيّنه لوحة الأوامر أيضًا: Alt+Enter على أمر." }
         let restoreDefaults = { en="Restore default shortcuts"; zh="恢复默认快捷键"; ja="既定のショートカットに戻す"; ar="استعادة الاختصارات الافتراضية" }
         let inUse = { en="Shortcut already in use"; zh="快捷键已被占用"; ja="ショートカットは使用中です"; ar="الاختصار مستخدم بالفعل" }
         let usedBy name = { en=sprintf "Used by %s" name; zh=sprintf "已用于“%s”" name; ja=sprintf "「%s」で使用中" name; ar=sprintf "يستخدمه «%s»" name }
         // Shortcut field messages are kept short to fit.
         let alreadySet = { en="Already set"; zh="已是当前快捷键"; ja="設定済み"; ar="هذا هو الاختصار الحالي" }
+        /// A key pressed, then what was said of it, as "Alt+J: Used by Next tab".
+        let keySays key (said:string) = { en=sprintf "%s: %s" key said; zh=sprintf "%s：%s" key said; ja=sprintf "%s: %s" key said; ar=sprintf "%s: %s" key said }
+        /// A key Windows keeps for itself, with what it does there, as "Used by Windows (close window)".
+        let usedByWindows (what:LocalizedText) =
+            { en=sprintf "Used by Windows (%s)" what.en; zh=sprintf "Windows 已占用（%s）" what.zh
+              ja=sprintf "Windows が使用中（%s）" what.ja; ar=sprintf "يستخدمه Windows (%s)" what.ar }
+        let closeWindow = { en="close window"; zh="关闭窗口"; ja="ウィンドウを閉じる"; ar="إغلاق النافذة" }
+        let switchWindows = { en="switch windows"; zh="切换窗口"; ja="ウィンドウの切り替え"; ar="التبديل بين النوافذ" }
+        let cycleWindows = { en="cycle windows"; zh="按顺序切换窗口"; ja="ウィンドウを順に切り替え"; ar="التنقل بين النوافذ بالترتيب" }
+        let startMenu = { en="Start menu"; zh="开始菜单"; ja="スタート メニュー"; ar="قائمة ابدأ" }
+        let taskManager = { en="Task Manager"; zh="任务管理器"; ja="タスク マネージャー"; ar="إدارة المهام" }
+        /// Alt+Enter, which sets a shortcut in the palette.
+        let usedByPalette = { en="Used by the command palette (set shortcut)"; zh="命令面板已占用（设置快捷键）"
+                              ja="コマンドパレットが使用中（ショートカットの設定）"; ar="تستخدمه لوحة الأوامر (تعيين اختصار)" }
         let includeCtrlOrAlt = { en="Include Ctrl or Alt"; zh="需要包含 Ctrl 或 Alt"; ja="Ctrl か Alt が必要です"; ar="يجب أن يتضمن Ctrl أو Alt" }
         let pressShortcut = { en="Press a shortcut…"; zh="按下组合键…"; ja="キーを押してください…"; ar="اضغط اختصارًا…" }
         let notSet = { en="Not set"; zh="未设置"; ja="未設定"; ar="غير معيّن" }
+
+    /// Commands run by name, from the palette or the command line, that no setting names already.
+    module Commands =
+        let private splitWords = { en="split view pane"; zh="分屏 窗格"; ja="分割 ペイン"; ar="عرض مقسّم جزء" }
+        let splitSwap = { caption={ en="Swap panes"; zh="交换两侧"; ja="ペインを入れ替え"; ar="تبديل الأجزاء" }
+                          description={ en="The two halves of the focused pane's split change places."
+                                        zh="当前格所在分屏的两侧互换位置。"
+                                        ja="フォーカスしているペインの分割の両側を入れ替えます。"
+                                        ar="يتبادل نصفا التقسيم الذي يحتوي على الجزء المركّز مكانيهما." }
+                          keywords=splitWords }
+        let splitEqualize = { caption={ en="Equal panes"; zh="恢复均分"; ja="均等に分割"; ar="أجزاء متساوية" }
+                              description={ en="Gives both halves of the focused pane's split the same room."
+                                            zh="让当前格所在分屏的两侧占同样的空间。"
+                                            ja="フォーカスしているペインの分割の両側を同じ広さにします。"
+                                            ar="يمنح نصفي التقسيم الذي يحتوي على الجزء المركّز المساحة نفسها." }
+                              keywords=splitWords }
+        let splitTurn = { caption={ en="Turn the split"; zh="切换分屏方向"; ja="分割の向きを切り替え"; ar="تدوير التقسيم" }
+                          description={ en="Side by side becomes top and bottom, and back."
+                                        zh="左右变为上下，再按一次变回。"
+                                        ja="左右を上下に、またその逆に切り替えます。"
+                                        ar="يتحول العرض جنبًا إلى جنب إلى أعلى وأسفل، والعكس." }
+                          keywords=splitWords }
+        let splitClosePane = { caption={ en="Close the pane"; zh="关闭当前格"; ja="ペインを閉じる"; ar="إغلاق الجزء" }
+                               description={ en="The focused pane leaves the split and its neighbour takes its room; the window stays a tab."
+                                             zh="当前格退出分屏，空间让给相邻的格；窗口仍保留为标签。"
+                                             ja="フォーカスしているペインを分割から外し、隣のペインがその場所を使います。ウィンドウはタブとして残ります。"
+                                             ar="يغادر الجزء المركّز التقسيم ويأخذ جاره مكانه؛ وتبقى النافذة علامة تبويب." }
+                               keywords=splitWords }
+        let splitEnd = { caption={ en="End split view"; zh="结束分屏"; ja="分割表示を終了"; ar="إنهاء العرض المقسّم" }
+                         description={ en="Every window becomes a tab again."; zh="所有窗口恢复为标签。"; ja="すべてのウィンドウをタブに戻します。"; ar="تعود كل نافذة إلى علامة تبويب." }
+                         keywords=splitWords }
+        let splitFocusOther = { caption={ en="Focus the next pane"; zh="焦点切到下一个格"; ja="次のペインにフォーカス"; ar="التركيز على الجزء التالي" }
+                                description={ en="Around the panes in turn; brings parked panes back."
+                                              zh="按顺序在各格之间轮换；已收起的格会重新显示。"
+                                              ja="ペインを順に巡ります。しまわれたペインは元に戻します。"
+                                              ar="يتنقل بين الأجزاء بالتناوب، ويعيد الأجزاء المخفية." }
+                                keywords=splitWords }
+        let private tabWords = { en="tab"; zh="标签"; ja="タブ"; ar="علامة تبويب" }
+        let renameTab = { caption={ en="Rename tab"; zh="重命名标签"; ja="タブの名前を変更"; ar="إعادة تسمية علامة التبويب" }
+                          description={ en="Edits the name on the tab; an empty name brings the window's own back."
+                                        zh="在标签上编辑名称；留空则恢复窗口自己的标题。"
+                                        ja="タブ上で名前を編集します。空にするとウィンドウ自身のタイトルに戻ります。"
+                                        ar="يحرر الاسم على علامة التبويب؛ ويعيد الاسم الفارغ عنوان النافذة نفسها." }
+                          keywords=tabWords }
+        let resetTabName = { caption={ en="Reset tab name"; zh="重置标签名称"; ja="タブ名をリセット"; ar="إعادة تعيين اسم علامة التبويب" }
+                             description={ en="The tab follows the window's title again."; zh="标签重新跟随窗口标题。"; ja="タブはウィンドウのタイトルに再び従います。"; ar="تتبع علامة التبويب عنوان النافذة من جديد." }
+                             keywords=tabWords }
+        let private pinWords = { en="pin unpin keep"; zh="固定 取消固定 置顶 钉住"; ja="固定 固定解除 ピン留め"; ar="تثبيت إلغاء" }
+        let pinTab = { caption={ en="Pin tab"; zh="固定标签"; ja="タブを固定"; ar="تثبيت علامة التبويب" }
+                       description={ en="A pinned tab stays first and shows a pin for its close button; closing tabs together leaves it."
+                                     zh="固定的标签排在最前，关闭按钮处显示图钉；批量关闭标签时保留。"
+                                     ja="固定したタブは先頭に並び、閉じるボタンの代わりにピンを表示します。まとめて閉じるときも残ります。"
+                                     ar="تبقى علامة التبويب المثبتة أولًا وتعرض دبوسًا مكان زر الإغلاق؛ ولا تُغلق عند إغلاق علامات التبويب معًا." }
+                       keywords=pinWords }
+        /// The same command, for a tab already pinned.
+        let unpinTab = { pinTab with caption={ en="Unpin tab"; zh="取消固定标签"; ja="タブの固定を解除"; ar="إلغاء تثبيت علامة التبويب" } }
+        let tabColor = { caption={ en="Tab color…"; zh="标签颜色…"; ja="タブの色…"; ar="لون علامة التبويب…" }
+                         description={ en="A color of the palette for the tab in front, or none."; zh="为当前标签选一种调色板颜色，或清除。"; ja="前面のタブにパレットの色を付けるか、解除します。"; ar="لون من اللوحة لعلامة التبويب الأمامية، أو لا شيء." }
+                         keywords={ en="colour"; zh="颜色 着色"; ja="色 カラー"; ar="لون" } }
+        let private colorWords = { en="colour color"; zh="颜色 着色"; ja="色 カラー"; ar="لون" }
+        let customTabColor = { caption={ en="Custom tab color…"; zh="自定义标签颜色…"; ja="タブの色をカスタム…"; ar="لون مخصص لعلامة التبويب…" }
+                               description={ en="A color of your own for the tab in front."; zh="为当前标签选择自定义颜色。"; ja="前面のタブに好きな色を付けます。"; ar="لون من اختيارك لعلامة التبويب الأمامية." }
+                               keywords=colorWords }
+        let rememberTabColor = { caption={ en="Remember tab color for this app"; zh="为此应用记住标签颜色"; ja="このアプリのタブの色を記憶"; ar="تذكّر لون علامة التبويب لهذا التطبيق" }
+                                 description={ en="New windows of the app take the tab's color; again, and the app forgets it."
+                                               zh="此应用的新窗口沿用该标签颜色；再执行一次则忘记。"
+                                               ja="アプリの新しいウィンドウにもこの色を使います。もう一度実行すると忘れます。"
+                                               ar="تأخذ نوافذ التطبيق الجديدة لون علامة التبويب؛ ومرة أخرى ينساه التطبيق." }
+                                 keywords=colorWords }
+        let clearTabColor = { caption={ en="Clear tab color"; zh="清除标签颜色"; ja="タブの色を解除"; ar="مسح لون علامة التبويب" }
+                              description={ en="No color on the tab in front, nor kept for its app."; zh="清除当前标签的颜色，并取消为其应用记住的颜色。"; ja="前面のタブの色と、そのアプリに記憶した色を解除します。"; ar="لا لون لعلامة التبويب الأمامية، ولا لون محفوظ لتطبيقها." }
+                              keywords=colorWords }
+        let moveTabLeft = { caption={ en="Move tab left"; zh="向左移动标签"; ja="タブを左へ移動"; ar="نقل علامة التبويب إلى اليسار" }
+                            description={ en="One place; up, with tabs at the side."; zh="移动一格；标签在侧边时为向上。"; ja="1 つ分。タブが横にあるときは上へ。"; ar="موضعًا واحدًا؛ إلى الأعلى عندما تكون علامات التبويب على الجانب." }
+                            keywords={ en="reorder up"; zh="排序 上移"; ja="並べ替え 上"; ar="ترتيب أعلى" } }
+        let moveTabRight = { caption={ en="Move tab right"; zh="向右移动标签"; ja="タブを右へ移動"; ar="نقل علامة التبويب إلى اليمين" }
+                             description={ en="One place; down, with tabs at the side."; zh="移动一格；标签在侧边时为向下。"; ja="1 つ分。タブが横にあるときは下へ。"; ar="موضعًا واحدًا؛ إلى الأسفل عندما تكون علامات التبويب على الجانب." }
+                             keywords={ en="reorder down"; zh="排序 下移"; ja="並べ替え 下"; ar="ترتيب أسفل" } }
+        let sortTabs = { caption=TabMenu.sortTabs; description=none; keywords={ en="order"; zh="排序"; ja="並べ替え"; ar="ترتيب" } }
+        let closeOtherTabs = { caption={ en="Close other tabs"; zh="关闭其他标签"; ja="他のタブを閉じる"; ar="إغلاق علامات التبويب الأخرى" }
+                               description={ en="Closes every other window of the group but the pinned ones."; zh="关闭分组中的其他窗口，固定的标签除外。"; ja="グループの他のウィンドウを、固定したタブを除いてすべて閉じます。"; ar="يغلق كل النوافذ الأخرى في المجموعة عدا المثبتة." }
+                               keywords=tabWords }
+        let closeAppTabs = { caption={ en="Close all tabs of this app"; zh="关闭此应用的全部标签"; ja="このアプリのタブをすべて閉じる"; ar="إغلاق جميع علامات تبويب هذا التطبيق" }
+                             description={ en="Every window of the group from the app of the tab in front, but the pinned ones."; zh="分组中属于当前标签所在应用的所有窗口，固定的标签除外。"; ja="グループ内で、前面のタブのアプリのウィンドウを、固定したタブを除いてすべて。"; ar="كل نوافذ المجموعة من تطبيق علامة التبويب الأمامية، عدا المثبتة." }
+                             keywords=tabWords }
+        let private iconNote = { en="For a group with combined taskbar icons."; zh="用于已合并任务栏图标的分组。"; ja="タスクバーアイコンをまとめたグループ用。"; ar="لمجموعة دُمجت أيقونات شريط المهام لها." }
+        let changeGroupIcon = { caption=TabMenu.changeTaskbarIcon; description=iconNote; keywords={ en="picture image"; zh="图片 图像"; ja="画像 ピクチャ"; ar="صورة" } }
+        let restoreGroupIcon = { caption=TabMenu.restoreTaskbarIcon; description=iconNote; keywords={ en="default picture"; zh="默认 图片"; ja="既定 画像"; ar="افتراضي صورة" } }
+        let closeAllTabs = { caption={ en="Close all tabs"; zh="关闭全部标签"; ja="すべてのタブを閉じる"; ar="إغلاق جميع علامات التبويب" }
+                             description={ en="Closes every window of the group but the pinned ones."; zh="关闭分组中的所有窗口，固定的标签除外。"; ja="グループのウィンドウを、固定したタブを除いてすべて閉じます。"; ar="يغلق كل نوافذ المجموعة عدا المثبتة." }
+                             keywords=tabWords }
+        let detachTab = { caption={ en="Move tab to a new group"; zh="拆出到新分组"; ja="タブを新しいグループへ"; ar="نقل علامة التبويب إلى مجموعة جديدة" }
+                          description={ en="Takes the tab out on its own, as dragging it to the desktop does."; zh="把标签单独拆出来，与拖到桌面上相同。"; ja="タブを単独で取り出します。デスクトップへドラッグするのと同じです。"; ar="يخرج علامة التبويب وحدها، كما يفعل سحبها إلى سطح المكتب." }
+                          keywords={ en="detach split ungroup"; zh="分离 取消分组"; ja="分離 グループ解除"; ar="فصل إلغاء التجميع" } }
+        let moveTabToGroup = { caption={ en="Move tab to group…"; zh="移动标签到分组…"; ja="タブをグループへ移動…"; ar="نقل علامة التبويب إلى مجموعة…" }
+                               description={ en="Lists the other groups by their first tab."; zh="按各分组的第一个标签列出其他分组。"; ja="他のグループを先頭のタブで一覧表示します。"; ar="يعرض المجموعات الأخرى بعلامة التبويب الأولى لكل منها." }
+                               keywords={ en="join"; zh="加入 合并"; ja="参加 結合"; ar="انضمام" } }
+        let private groupNote = { en="For this group; the setting is for new groups."; zh="只对当前分组有效；设置项针对新分组。"; ja="このグループのみ。設定は新しいグループに適用されます。"; ar="لهذه المجموعة؛ أما الإعداد فللمجموعات الجديدة." }
+        /// A setting's own name for the group in front alone: listed and found beside the setting,
+        /// and told apart from it.
+        let private forThisGroup (setting:LocalizedText) (more:string) =
+            { en=setting.en+" for this group"+more; zh=setting.zh+"（此分组）"+more; ja=setting.ja+"（このグループ）"+more; ar=setting.ar+" لهذه المجموعة"+more }
+        let iconsOnly = { caption=TabMenu.showIconsOnly; description={ en="Again, and the titles come back."; zh="再次执行则恢复标题。"; ja="もう一度実行するとタイトルが戻ります。"; ar="مرة أخرى، وتعود العناوين." }; keywords={ en="titles compact"; zh="标题 紧凑"; ja="タイトル コンパクト"; ar="عناوين مضغوط" } }
+        let groupTabPosition = { caption=forThisGroup Settings.tabPosition.caption "…"; description=groupNote; keywords={ en="top left right side"; zh="顶部 左侧 右侧"; ja="上 左 右"; ar="أعلى يسار يمين" } }
+        let groupTabAlignment = { caption=forThisGroup Settings.tabAlignment.caption "…"; description=groupNote; keywords={ en="alignment center"; zh="对齐 居中"; ja="配置 中央"; ar="محاذاة وسط" } }
+        let groupAutoHide = { caption=forThisGroup Settings.autoHide.caption "…"; description=groupNote; keywords={ en="collapse"; zh="收起"; ja="折りたたみ"; ar="طيّ" } }
+        let combineGroupIcons = { caption=forThisGroup TabMenu.combineTaskbarIcons ""; description=groupNote; keywords={ en="merge taskbar"; zh="合并 任务栏"; ja="結合 タスクバー"; ar="دمج شريط المهام" } }
+        let tabsForApp = { caption={ en="Tabs for this app"; zh="此应用启用标签"; ja="このアプリのタブ"; ar="علامات التبويب لهذا التطبيق" }
+                           description={ en="Turns tabs on or off for the app of the window in front."; zh="为当前窗口所属的应用开启或关闭标签。"; ja="前面のウィンドウのアプリでタブをオン／オフにします。"; ar="يشغّل علامات التبويب أو يوقفها لتطبيق النافذة الأمامية." }
+                           keywords={ en="enable disable application"; zh="启用 禁用 应用"; ja="有効 無効 アプリ"; ar="تمكين تعطيل تطبيق" } }
+        let autoGroupApp = { caption={ en="Auto-group this app"; zh="自动分组此应用"; ja="このアプリを自動グループ化"; ar="تجميع هذا التطبيق تلقائيًا" }
+                             description={ en="On or off for the app of the window in front."; zh="为当前窗口所属的应用开启或关闭。"; ja="前面のウィンドウのアプリでオン／オフにします。"; ar="تشغيل أو إيقاف لتطبيق النافذة الأمامية." }
+                             keywords={ en="application grouping"; zh="应用 分组"; ja="アプリ グループ化"; ar="تطبيق تجميع" } }
+        let numberShortcutForApp = { caption={ en="Switch by number in this app"; zh="此应用用数字键切换"; ja="このアプリで番号切り替え"; ar="التبديل بالأرقام في هذا التطبيق" }
+                                     description={ en="On or off for the app of the window in front."; zh="为当前窗口所属的应用开启或关闭。"; ja="前面のウィンドウのアプリでオン／オフにします。"; ar="تشغيل أو إيقاف لتطبيق النافذة الأمامية." }
+                                     keywords={ en="digit application"; zh="数字 应用"; ja="数字 アプリ"; ar="رقم تطبيق" } }
+        let restoreWorkspaceNamed = { caption={ en="Restore workspace…"; zh="恢复工作区…"; ja="ワークスペースを復元…"; ar="استعادة مساحة عمل…" }
+                                      description={ en="Lists the saved workspaces."; zh="列出已保存的工作区。"; ja="保存済みのワークスペースを一覧表示します。"; ar="يعرض مساحات العمل المحفوظة." }
+                                      keywords={ en="layout"; zh="布局"; ja="配置"; ar="تخطيط" } }
+        let deleteWorkspace = { caption={ en="Delete workspace…"; zh="删除工作区…"; ja="ワークスペースを削除…"; ar="حذف مساحة عمل…" }
+                                description={ en="Lists the saved workspaces; the one chosen is forgotten."; zh="列出已保存的工作区；选中的会被删除。"; ja="保存済みのワークスペースを一覧表示し、選んだものを削除します。"; ar="يعرض مساحات العمل المحفوظة؛ وتُنسى المختارة." }
+                                keywords={ en="remove layout"; zh="移除 布局"; ja="削除 配置"; ar="إزالة تخطيط" } }
+        let openSettings = { caption={ en="Open settings"; zh="打开设置"; ja="設定を開く"; ar="فتح الإعدادات" }
+                             description=none
+                             keywords={ en="preferences options"; zh="偏好 选项"; ja="環境設定 オプション"; ar="التفضيلات الخيارات" } }
+        /// One settings page by name, as "Settings: General".
+        let settingsPage (page:LocalizedText) =
+            { caption={ en="Settings: "+page.en; zh="设置："+page.zh; ja="設定: "+page.ja; ar="الإعدادات: "+page.ar }
+              description=none
+              keywords={ en="open page"; zh="打开 页面"; ja="開く ページ"; ar="فتح صفحة" } }
+        let exit = { caption=Tray.exit
+                     description={ en="Every window gets its own frame back."; zh="所有窗口恢复各自的边框。"; ja="すべてのウィンドウが元の枠に戻ります。"; ar="تستعيد كل نافذة إطارها الخاص." }
+                     keywords={ en="quit close"; zh="退出 关闭"; ja="終了"; ar="إنهاء إغلاق" } }
+        let refreshWindows = { caption={ en="Look for windows again"; zh="重新扫描窗口"; ja="ウィンドウを再スキャン"; ar="إعادة فحص النوافذ" }
+                               description={ en="Groups any window that was missed."; zh="把漏掉的窗口加入分组。"; ja="見落とされたウィンドウをグループに入れます。"; ar="يضيف أي نافذة فاتها البرنامج إلى مجموعة." }
+                               keywords={ en="rescan refresh reload"; zh="刷新 重新加载"; ja="更新 再読み込み"; ar="تحديث إعادة تحميل" } }
+
+    /// Written to the console a command line was given from.
+    module CommandLine =
+        /// Shown for --help: the options, then examples to copy.
+        let usage = { en="Usage: WindowTabs [option]\n\nOptions:\n  -c, --command <id> [choice]   Run a command in the running WindowTabs. A command that offers\n                                choices takes the one named, as the palette lists it.\n  -w, --workspace <name>        Restore a saved workspace.\n  -g, --group <program>...      Start the programs and put the windows they open into one group.\n      --commands                List the commands and their ids.\n  -h, --help                    Show this help.\n\nWith no option, WindowTabs starts, replacing a copy already running.\n\nExamples:\n  WindowTabs --commands\n  WindowTabs --command next-tab\n  WindowTabs --command tab-color Blue\n  WindowTabs --command group-tab-position Left\n  WindowTabs --command restore-workspace-named \"Project A\"\n  WindowTabs --workspace \"Project A\"\n  WindowTabs --group notepad.exe \"C:\\Program Files\\App\\app.exe\"\n\nA command acts on the window in front, as its key does: run it from a shortcut or a hotkey\ntool. From a terminal, the terminal is the window in front."
+                      zh="用法：WindowTabs [选项]\n\n选项：\n  -c, --command <id> [选项名]   在运行中的 WindowTabs 里执行命令。有选项的命令按面板中\n                                列出的名称选择其中一项。\n  -w, --workspace <名称>        恢复已保存的工作区。\n  -g, --group <程序>...         启动这些程序，并把它们打开的窗口编成一个分组。\n      --commands                列出所有命令及其 id。\n  -h, --help                    显示本帮助。\n\n不带选项时启动 WindowTabs，并替换正在运行的副本。\n\n示例：\n  WindowTabs --commands\n  WindowTabs --command next-tab\n  WindowTabs --command tab-color Blue\n  WindowTabs --command group-tab-position Left\n  WindowTabs --command restore-workspace-named \"Project A\"\n  WindowTabs --workspace \"Project A\"\n  WindowTabs --group notepad.exe \"C:\\Program Files\\App\\app.exe\"\n\n命令作用于前台窗口，与它的快捷键相同：请从快捷方式或热键工具中运行。\n在终端中运行时，前台窗口就是终端本身。"
+                      ja="使い方: WindowTabs [オプション]\n\nオプション:\n  -c, --command <id> [選択肢]   実行中の WindowTabs でコマンドを実行します。選択肢のある\n                                コマンドは、パレットに表示される名前で選びます。\n  -w, --workspace <名前>        保存済みのワークスペースを復元します。\n  -g, --group <プログラム>...   プログラムを起動し、開いたウィンドウを 1 つのグループにまとめます。\n      --commands                コマンドとその id を一覧表示します。\n  -h, --help                    このヘルプを表示します。\n\nオプションなしでは WindowTabs を起動し、実行中のコピーを置き換えます。\n\n例:\n  WindowTabs --commands\n  WindowTabs --command next-tab\n  WindowTabs --command tab-color Blue\n  WindowTabs --command group-tab-position Left\n  WindowTabs --command restore-workspace-named \"Project A\"\n  WindowTabs --workspace \"Project A\"\n  WindowTabs --group notepad.exe \"C:\\Program Files\\App\\app.exe\"\n\nコマンドはキーと同じく前面のウィンドウに働きます。ショートカットやホットキー\nツールから実行してください。ターミナルから実行すると、前面にあるのはターミナルです。"
+                      ar="الاستخدام: WindowTabs [خيار]\n\nالخيارات:\n  -c, --command <id> [اختيار]   يشغّل أمرًا في WindowTabs العامل. الأمر الذي يعرض خيارات\n                                يأخذ المسمّى منها كما تسرده اللوحة.\n  -w, --workspace <اسم>         يستعيد مساحة عمل محفوظة.\n  -g, --group <برنامج>...       يشغّل البرامج ويضع النوافذ التي تفتحها في مجموعة واحدة.\n      --commands                يعرض الأوامر ومعرّفاتها.\n  -h, --help                    يعرض هذه المساعدة.\n\nبدون خيار، يبدأ WindowTabs ويحل محل النسخة العاملة.\n\nأمثلة:\n  WindowTabs --commands\n  WindowTabs --command next-tab\n  WindowTabs --command tab-color Blue\n  WindowTabs --command group-tab-position Left\n  WindowTabs --command restore-workspace-named \"Project A\"\n  WindowTabs --workspace \"Project A\"\n  WindowTabs --group notepad.exe \"C:\\Program Files\\App\\app.exe\"\n\nيعمل الأمر على النافذة الأمامية كما يفعل مفتاحه: شغّله من اختصار أو من أداة مفاتيح\nتشغيل سريع. من الطرفية، الطرفية نفسها هي النافذة الأمامية." }
+        let unknownCommand id = { en=sprintf "No command is called %s. --commands lists them." id; zh=sprintf "没有名为 %s 的命令。--commands 可列出全部命令。" id; ja=sprintf "%s というコマンドはありません。--commands で一覧表示できます。" id; ar=sprintf "لا يوجد أمر باسم %s. يعرض --commands الأوامر." id }
+        let unavailable caption = { en=sprintf "%s has nothing to act on for the window in front." caption; zh=sprintf "“%s”对当前前台窗口无可操作的内容。" caption; ja=sprintf "「%s」は前面のウィンドウに対して実行できる操作がありません。" caption; ar=sprintf "لا يجد «%s» ما يعمل عليه في النافذة الأمامية." caption }
+        /// A command line that is not one: what was wrong, and where to look.
+        let unknownOption word = { en=sprintf "Unknown option %s." word; zh=sprintf "未知选项 %s。" word; ja=sprintf "不明なオプション %s です。" word; ar=sprintf "خيار غير معروف %s." word }
+        let didYouMean option = { en=sprintf "Did you mean %s?" option; zh=sprintf "是否想输入 %s？" option; ja=sprintf "%s のことですか?" option; ar=sprintf "هل تقصد %s؟" option }
+        let needsValue option = { en=sprintf "%s needs a value, as the examples in --help show." option; zh=sprintf "%s 需要一个值，参见 --help 中的示例。" option; ja=sprintf "%s には値が必要です。--help の例を参照してください。" option; ar=sprintf "يحتاج %s إلى قيمة، كما تُظهر أمثلة --help." option }
+        let seeHelp = { en="WindowTabs --help lists the options."; zh="WindowTabs --help 会列出所有选项。"; ja="WindowTabs --help でオプションを一覧表示します。"; ar="يعرض WindowTabs --help الخيارات." }
+        let noSuchChoice wanted (choices:string list) =
+            let listed = System.String.Join(", ",choices)
+            { en=sprintf "No choice is called %s. The choices are: %s" wanted listed; zh=sprintf "没有名为 %s 的选项。可选：%s" wanted listed; ja=sprintf "%s という選択肢はありません。選択肢: %s" wanted listed; ar=sprintf "لا يوجد خيار باسم %s. الخيارات: %s" wanted listed }
+        let noSuchWorkspace name = { en=sprintf "No workspace is called %s." name; zh=sprintf "没有名为 %s 的工作区。" name; ja=sprintf "%s というワークスペースはありません。" name; ar=sprintf "لا توجد مساحة عمل باسم %s." name }
+        let notListening = { en="WindowTabs is running but does not take command lines; start it again first."; zh="WindowTabs 正在运行，但不接收命令行；请先重新启动它。"; ja="WindowTabs は実行中ですが、コマンド ラインを受け付けません。先に起動し直してください。"; ar="WindowTabs يعمل لكنه لا يقبل سطور الأوامر؛ أعد تشغيله أولًا." }
 
     /// The tab search box.
     module TabSearch =
@@ -518,6 +729,23 @@ module Strings =
         let otherDesktop = { en="Another desktop"; zh="其他桌面"; ja="別のデスクトップ"; ar="سطح مكتب آخر" }
         let groupTabs count = { en=sprintf "This group · %d" count; zh=sprintf "当前分组 · %d" count; ja=sprintf "このグループ · %d" count; ar=sprintf "هذه المجموعة · %d" count }
         let allTabs count = { en=sprintf "All windows · %d" count; zh=sprintf "全局窗口 · %d" count; ja=sprintf "すべてのウィンドウ · %d" count; ar=sprintf "كل النوافذ · %d" count }
+        /// The palette's other pages, beside the windows.
+        let actions = { en="Actions"; zh="操作"; ja="アクション"; ar="الإجراءات" }
+        let actionPrompt = { en="Type a command or setting"; zh="输入命令或设置名"; ja="コマンドや設定名を入力"; ar="اكتب أمرًا أو إعدادًا" }
+        let choicePrompt = { en="Choose, or type to filter"; zh="选择一项，或输入以筛选"; ja="選択するか、入力して絞り込み"; ar="اختر، أو اكتب للتصفية" }
+        let noActions = { en="No matching commands or settings."; zh="没有匹配的命令或设置。"; ja="一致するコマンドや設定はありません。"; ar="لا توجد أوامر أو إعدادات مطابقة." }
+        let noChoices = { en="No matching choices."; zh="没有匹配的选项。"; ja="一致する項目はありません。"; ar="لا توجد خيارات مطابقة." }
+        /// Asking for a size: the hint in the box, the line under it, and why a value is refused.
+        let numberPrompt low high = { en=sprintf "A number from %d to %d" low high; zh=sprintf "输入 %d 到 %d 之间的数字" low high; ja=sprintf "%d～%d の数値" low high; ar=sprintf "رقم من %d إلى %d" low high }
+        let colorRefused = { en="Type a colour as #RRGGBB."; zh="请输入 #RRGGBB 格式的颜色。"; ja="色を #RRGGBB の形式で入力してください。"; ar="اكتب اللون بالصيغة ‎#RRGGBB." }
+        let numberRefused low high ={ en=sprintf "Type a whole number from %d to %d." low high; zh=sprintf "请输入 %d 到 %d 之间的整数。" low high; ja=sprintf "%d～%d の整数を入力してください。" low high; ar=sprintf "اكتب عددًا صحيحًا من %d إلى %d." low high }
+        /// Beside the Alt+Enter key cap on the commands page.
+        let setShortcut = { en="Set shortcut"; zh="设置快捷键"; ja="ショートカットを設定"; ar="تعيين اختصار" }
+        /// Beside a workspace: how many windows it holds.
+        let windows count = { en=sprintf "%d windows" count; zh=sprintf "%d 个窗口" count; ja=sprintf "%d 個のウィンドウ" count; ar=sprintf "%d نوافذ" count }
+        /// Beside a setting that is on or off.
+        let on = { en="On"; zh="开"; ja="オン"; ar="مفعّل" }
+        let off = { en="Off"; zh="关"; ja="オフ"; ar="معطّل" }
 
     module AppRules =
         let addApplication = { en="Add application"; zh="添加应用"; ja="アプリを追加"; ar="إضافة تطبيق" }

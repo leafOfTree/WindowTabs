@@ -45,6 +45,10 @@ type SettingsRec = {
     enabledNumberShortcutPaths: Set2<string>
     combineIconsInTaskbar: bool
     enableHoverActivate: bool
+    /// Tab titles in bold.
+    tabTextBold: bool
+    /// Percent the tabs are solid while the pointer is elsewhere.
+    tabOpacity: int
     /// "Never", "Maximized" or "Always".
     autoHideMode: string
     /// Off, Windows (groups, positions and splits among the windows open) or Apps (their apps started too).
@@ -55,6 +59,8 @@ type SettingsRec = {
     /// Ctrl + scroll over the tabs moves the current tab.
     enableCtrlScroll: bool
     enableMiddleClickClose: bool
+    /// A picture of a tab's window while the pointer rests on the tab.
+    tabHoverPreview: bool
     /// "Icons" (large icons in a row) or "List" (window titles in a column).
     switcherStyle: string
     tabSearchScope: string
@@ -108,6 +114,15 @@ type IPropEditor =
 type IManagerView =
     abstract member show : unit -> unit
     abstract member show : SettingsViewType -> unit
+    /// Opens the window on the page of a setting, scrolled to it, as choosing it in the search does.
+    abstract member showSetting : string -> unit
+
+/// Which rows the palette lists: the active group's tabs, every window, or one of its pages.
+type PaletteScope =
+    | GroupTabs
+    | AllTabs
+    /// The commands and the settings, as one list.
+    | ActionScope
 
 type IProgram =
     abstract member version : string
@@ -148,6 +163,22 @@ type IProgram =
     abstract member llMouse : IEvent<int32 * IntPtr>
     /// Windows an empty pane can take, on this desktop: handle, tab name and program.
     abstract member paneCandidates : unit -> (IntPtr * string * string) list
+    /// Opens the palette on a scope, the windows when none is given, or closes it when it is
+    /// open on that scope already; open on another, it switches. Posted to the UI thread.
+    abstract member toggleSearch : PaletteScope option -> unit
+    /// Saves the windows as a new workspace, as the Save layout button does. Posted to the UI thread.
+    abstract member saveWorkspace : unit -> unit
+    /// Brings back the workspace last saved or restored. Posted to the UI thread.
+    abstract member restoreWorkspace : unit -> unit
+    /// Brings back the workspace of that name. Posted to the UI thread.
+    abstract member restoreWorkspaceNamed : string -> unit
+    /// Takes a tab out of its group into a group of its own, as dragging it out does.
+    abstract member detachTab : IntPtr -> unit
+    /// The keys given to windows from the search box.
+    abstract member windowShortcuts : unit -> WindowShortcut list
+    /// Gives a window its key, or with a code of 0 takes it away; false when another program
+    /// holds the key.
+    abstract member setWindowShortcut : WindowShortcut -> bool
 
 /// Whether a group set to combine its taskbar icons has its one button, and if not, why its
 /// windows keep their own: else the setting looked on while nothing was combined.
@@ -170,8 +201,30 @@ module TaskbarCombineStates =
     /// Not combined although the group should be, for a reason the user can act on.
     let isBlocked = function DifferentPermissions | DesktopUnknown | PlacementFailed -> true | Combined | SingleWindow -> false
 
+/// What the tab menu does, asked for from outside the group, such as from the palette or a
+/// hotkey; the window is the tab's, where one is needed.
+type GroupCommand =
+    | RenameTab of IntPtr
+    | ResetTabName of IntPtr
+    | CloseOtherTabs of IntPtr
+    /// Every tab of the window's program.
+    | CloseAppTabs of IntPtr
+    | CloseAllTabs
+    | SortTabs
+    /// By that many places along the strip, backwards when negative.
+    | MoveTab of IntPtr * int
+    | SetTabColor of IntPtr * TabColorChoice option
+    | SetTabPinned of IntPtr * bool
+    | ToggleIconsOnly
+    | SetTabDock of TabDock
+    | SetTabAlignment of Bemo.TabAlignment
+    /// "Never", "Maximized" or "Always", for this group.
+    | SetAutoHide of string
+
 type IGroup =
     abstract member hwnd : IntPtr
+    /// A tab menu command, run on the group's thread.
+    abstract member run : GroupCommand -> unit
     abstract member addWindow: IntPtr * bool -> unit
     abstract member removeWindow: IntPtr -> unit
     abstract member switchWindow: bool * bool -> unit

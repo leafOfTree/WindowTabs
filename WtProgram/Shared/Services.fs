@@ -116,6 +116,13 @@ type DispatchedProgram(inner:IProgram, dispatcher:IDispatcher) =
         member _.resumeTabMonitoring() = dispatcher.Send(fun () -> inner.resumeTabMonitoring())
         member _.llMouse = dispatcher.Send(fun () -> inner.llMouse)
         member _.paneCandidates() = dispatcher.Send(fun () -> inner.paneCandidates())
+        member _.toggleSearch scope = dispatcher.Post(fun () -> inner.toggleSearch scope)
+        member _.saveWorkspace() = dispatcher.Post(fun () -> inner.saveWorkspace())
+        member _.restoreWorkspace() = dispatcher.Post(fun () -> inner.restoreWorkspace())
+        member _.restoreWorkspaceNamed name = dispatcher.Post(fun () -> inner.restoreWorkspaceNamed name)
+        member _.detachTab hwnd = dispatcher.Post(fun () -> inner.detachTab hwnd)
+        member _.windowShortcuts() = dispatcher.Send(fun () -> inner.windowShortcuts())
+        member _.setWindowShortcut shortcut = dispatcher.Send(fun () -> inner.setWindowShortcut shortcut)
 
 type DispatchedFilterService(inner:IFilterService, dispatcher:IDispatcher) =
     interface IFilterService with
@@ -133,6 +140,7 @@ type DispatchedManagerView(inner:IManagerView, dispatcher:IDispatcher) =
     interface IManagerView with
         member _.show() = dispatcher.Send(fun () -> inner.show())
         member _.show(view:SettingsViewType) = dispatcher.Send(fun () -> inner.show(view))
+        member _.showSetting id = dispatcher.Send(fun () -> inner.showSetting id)
 
 type WtServiceProvider() =
     inherit ServiceProvider()

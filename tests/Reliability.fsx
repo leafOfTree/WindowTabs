@@ -163,6 +163,28 @@ let main() =
     check (Seq.toList operations=["register";"release"] && registered.Count=1) "Hotkey replacement was not transactional"
     keys.Register "action" (0,0) ignore |> ignore
     check (registered.Count=0) "Disabling hotkey leaked registration"
+    // While a shortcut is recorded, every key is let go so the box can have it, and taken back after.
+    invoked <- 0
+    check (keys.Register "palette" (2,80) (fun () -> invoked <- invoked+1)) "Hotkey for recording test failed"
+    let paletteId = Seq.head registered
+    keys.Suspend()
+    check (registered.Count=0) "Recording a shortcut kept the app's keys from the box"
+    keys.Invoke paletteId
+    check (invoked=0) "A key ran its command while a shortcut was recorded"
+    keys.Resume()
+    check (registered.Contains paletteId) "The keys were not taken back after recording"
+    keys.Invoke paletteId
+    check (invoked=1) "A key taken back did not run its command"
+    // A box's recording tells the program, once for the first and once for the last.
+    let seen = ResizeArray<bool>()
+    use watching = ShortcutRecording.Changed.Subscribe(seen.Add)
+    ShortcutRecording.start()
+    ShortcutRecording.start()
+    ShortcutRecording.stop()
+    check (ShortcutRecording.isActive() && List.ofSeq seen=[true]) "A second recording box let the keys back too soon"
+    ShortcutRecording.stop()
+    ShortcutRecording.stop()
+    check (not (ShortcutRecording.isActive()) && List.ofSeq seen=[true;false]) "The keys did not come back once recording ended"
 
     // Settings files written by older versions (with Json.NET) read and write back unchanged.
     let seen = DateTime(2026,10,16,8,30,0,DateTimeKind.Utc)

@@ -9,6 +9,30 @@ open System.Threading
 open System.Windows.Forms
 open Bemo.Win32.Forms
 
+/// EXPERIMENTAL: refreshing tabs moved maximized to a monitor of another scale.
+///
+/// Seen on Windows 11 24H2 with two monitors of different scales (100% and 125%): a maximized
+/// group moved to the other monitor (Win+Shift+arrow) left the tabs behind drawing nothing.
+/// Switched to, Edge went on showing the tab before it and a click went back there; Explorer
+/// showed black; the taskbar preview was blank, even with WindowTabs closed. The window was in
+/// place, at its size, with its new DPI, neither cloaked nor layered, until resized by hand.
+/// Not seen on 26H2 (build 26300) nor between monitors of one scale, nor with restored windows.
+///
+/// Only a change of state made it draw: minimized and maximized again (or restored and
+/// maximized). A redraw, SWP_FRAMECHANGED, WM_SIZE, WM_DISPLAYCHANGE, WM_DWMCOMPOSITIONCHANGED,
+/// WM_THEMECHANGED, a 1 px move, a restack and a hide and show did nothing. Restoring the tabs
+/// behind as they moved was tried and dropped: every window was seen resizing and the tabs went.
+///
+/// So the tabs behind are only marked as the group changes scale, and each is minimized and
+/// maximized once, without the animation, as it first comes in front; the group ignores that
+/// tab's own minimize and maximize meanwhile. A slight jolt shows on that one switch.
+/// Set `enabled` to false to turn it off; remove this module and its uses in WindowGroup
+/// (staleFrames, refreshing, refreshFrame, isRefreshing) to take it out.
+module ScaleChangeRefresh =
+    let enabled = true
+    /// Windows 26H2 draws such a window again by itself.
+    let applies = enabled && Environment.OSVersion.Version.Build < 26300
+
 module TabNavigation =
     /// Right neighbour in tab order, or the left one when the closed tab was last.
     let neighbour (order:IntPtr list) closed =
@@ -338,6 +362,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let mutable liveResize = false
     let layoutChangedEvent = Event<unit>()
     let pickRequestedEvent = Event<SplitAxis * Side>()
+    let commandRequestedEvent = Event<GroupCommand>()
     /// An empty pane's window gone (first) or made (second): a drop surface of its own, owned by nothing.
     let emptyPaneChangedEvent = Event<IntPtr * IntPtr>()
     let windowsCell = Cell.create(Set2())
@@ -378,6 +403,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// The tab the group was last minimized from, which comes back first.
     let mutable minimizedFrom : IntPtr option = None
     let transitionClock = Stopwatch.StartNew()
+    /// EXPERIMENTAL (ScaleChangeRefresh): tabs to refresh as they come in front, and the time until
+    /// which a refreshed tab's own minimize and maximize are not the group's to follow.
+    let staleFrames = Collections.Generic.HashSet<IntPtr>()
+    let refreshing = Collections.Generic.Dictionary<IntPtr,int64>()
     let iconCache = new WindowIconCache(invoker :> IDispatcher,fun hwnd ->
         Cell.beginUpdate()
         try
@@ -511,6 +540,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         let colorStyleSubscription = Services.settings.notifyValue "tabColorStyle" (fun value ->
             this.invokeAsync(fun() -> if not isDestroyed.value then this.ts.colorStyle <- unbox value))
         exitedEvent.Publish.Add(fun _ -> colorStyleSubscription.Dispose())
+        let textBoldSubscription = Services.settings.notifyValue "tabTextBold" (fun value ->
+            this.invokeAsync(fun() -> if not isDestroyed.value then this.ts.textBold <- unbox value))
+        exitedEvent.Publish.Add(fun _ -> textBoldSubscription.Dispose())
+        let opacitySubscription = Services.settings.notifyValue "tabOpacity" (fun value ->
+            this.invokeAsync(fun() -> if not isDestroyed.value then this.ts.opacity <- unbox value))
+        exitedEvent.Publish.Add(fun _ -> opacitySubscription.Dispose())
         themeSubscription <- Some(ThemeService.changed.Subscribe(fun () ->
             this.invokeAsync <| fun() ->
                 if not isDestroyed.value then
@@ -714,6 +749,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             text = this.tabName hwnd
             isRenamed = this.isRenamed hwnd
             splitTrail = SplitView.trail hwnd groupLayout
+            isPinned = PinnedTabs.contains hwnd
             iconSmall = small
             iconBig = big
             preview = fun() ->
@@ -789,7 +825,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if isNew then this.refreshTabColor(hwnd)
         let info = this.getTabInfo(hwnd)
         let previous = this.ts.tabInfo(Tab(hwnd))
-        if isNew || info.text <> previous.text || info.isRenamed <> previous.isRenamed || info.splitTrail <> previous.splitTrail ||
+        if isNew || info.text <> previous.text || info.isRenamed <> previous.isRenamed || info.splitTrail <> previous.splitTrail || info.isPinned <> previous.isPinned ||
            not(obj.ReferenceEquals(info.iconSmall,previous.iconSmall)) ||
            not(obj.ReferenceEquals(info.iconBig,previous.iconBig)) then
             this.ts.setTabInfo(Tab(hwnd),info)
@@ -992,7 +1028,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         choices.alignments |> List.iter this.ts.setAlignment
         choices.autoHideMode |> Option.iter(fun mode -> this.bb.write("autoHideMode", mode))
 
-    member this.hwnd = this.ts.hwnd
+    /// Zero until the tab strip is attached, a moment after the group is listed on the desktop.
+    member this.hwnd = match _ts.Value with Some (ts:TabStrip) -> ts.hwnd | None -> IntPtr.Zero
 
     member private this.os : OS = _os
        
@@ -1606,7 +1643,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 match next with
                 | Split s when fitsNow && not(fitsAll s.tree) ->
                     // A ratio or axis that does not fit is ignored; a split that cannot start says so.
-                    if not wasSplit then Alert.show AlertKind.Warning (tr Strings.TabMenu.split) (tr Strings.TabMenu.splitFailed)
+                    if not wasSplit then Notice.remind (tr Strings.TabMenu.split) (tr Strings.TabMenu.splitFailed)
                 | _ ->
                     let keep = match command with EndSplit keep -> keep | _ -> None
                     (match command with EndSplit _ -> splitRestore <- None | _ -> ())
@@ -1649,6 +1686,32 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if not this.isEmpty && not isDestroyed.value then pickRequestedEvent.Trigger(axis,side)
     member _.pickRequested = pickRequestedEvent.Publish
 
+    /// A tab menu command from outside: what the group itself keeps is done here; what the strip
+    /// owns (renaming, closing, sorting) is asked of it, as a pick is.
+    member this.run(command:GroupCommand) =
+        if not isDestroyed.value then
+            match command with
+            | ResetTabName hwnd -> if this.windows.contains hwnd then this.setTabName(hwnd,None)
+            | SetTabColor(hwnd,color) -> if this.windows.contains hwnd then this.setTabColor(hwnd,color)
+            | SetTabPinned(hwnd,pinned) -> if this.windows.contains hwnd then this.setTabPinned(hwnd,pinned)
+            | MoveTab(hwnd,places) ->
+                let order = this.lorder.list
+                match List.tryFindIndex ((=) hwnd) order with
+                | Some index ->
+                    // Within its own part: the pinned tabs, or the ones after them.
+                    let pinned = order |> List.filter PinnedTabs.contains |> List.length
+                    let low,high = if PinnedTabs.contains hwnd then 0,pinned-1 else pinned,order.Length-1
+                    let target = max low (min high (index+places))
+                    if target<>index then this.ts.moveTab(Tab(hwnd),target)
+                | None -> ()
+            | ToggleIconsOnly -> this.isIconOnly <- not this.isIconOnly
+            | SetTabDock dock -> this.ts.dock <- dock
+            // The tabs' direction in view, as the tab menu's alignment items set.
+            | SetTabAlignment alignment -> this.ts.setAlignment((if this.ts.isVertical then TabUp else this.ts.direction),alignment)
+            | SetAutoHide mode -> this.bb.write("autoHideMode",mode)
+            | RenameTab _ | CloseOtherTabs _ | CloseAppTabs _ | CloseAllTabs | SortTabs -> commandRequestedEvent.Trigger(command)
+    member _.commandRequested = commandRequestedEvent.Publish
+
     /// A pane window coming to the front focuses its side; another tab parks the pair.
     /// A tab clicked over the panes, or a pane's tab clicked to bring them back: the cover with
     /// no steps, up before the window is activated where the click comes through `tabActivate`.
@@ -1661,6 +1724,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     /// Losing a pane window: its neighbour takes its room, and the last other pane fills the frame.
     member private this.onRemoved(hwnd) =
+        staleFrames.Remove(hwnd) |> ignore
         match groupLayout with
         | Split s when SplitView.contains hwnd s ->
             splitRestore <- None
@@ -1802,6 +1866,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         let window = this.os.windowFromHwnd(hwnd)
         let dpi = Dpi.forMonitor window.hwnd
         if dpi <> Dpi.value() then
+            // EXPERIMENTAL (ScaleChangeRefresh): moved maximized to a monitor of another scale,
+            // the tabs behind went with it and are refreshed as they come in front.
+            if placement.value.IsSome && window.isMaximized && ScaleChangeRefresh.applies then
+                for other in zorderCell.value.where((<>) hwnd).list do staleFrames.Add other |> ignore
             Dpi.set dpi
             appearanceSnapshot <- logicalAppearance.scaled
             this.ts.setTabAppearance(appearanceSnapshot)
@@ -1809,13 +1877,14 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if  not this.isSplit && not splitMerging && window.isMinimized.not &&
             this.os.isOnScreen(window.bounds)
             then
-            let monitorBounds =
-                if window.isMaximized then
-                    //windows are placed slightly off screen when maximized, get the bounds of the monitor instead
-                    Mon.fromHwnd(window.hwnd).map(fun mon -> mon.workRect.move(-1,-1))
-                else None
-            let bounds = monitorBounds.def(window.bounds)
-            let visible = monitorBounds.def(window.visibleBounds)
+            // Maximized, a window's rect reaches past the screen by its invisible frame: the
+            // monitor's work area stands for it. The followers are moved to that a pixel up and
+            // left, as ever; what is seen is the work area itself. Shifted with them, the tab
+            // shown faded out a pixel off and a split from a maximized window left a pixel of
+            // desktop along its right and bottom.
+            let workArea = if window.isMaximized then Mon.fromHwnd(window.hwnd).map(fun mon -> mon.workRect) else None
+            let bounds = workArea.map(fun area -> area.move(-1,-1)).def(window.bounds)
+            let visible = workArea.def(window.visibleBounds)
             placement.set(Some(bounds, window.placement, visible))
             // Parked panes come back at the frame the group has now.
             (match groupLayout with Parked _ -> this.saveSplitProps() | _ -> ())
@@ -1854,6 +1923,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.setTabName(hwnd,name) =
         Services.program.setWindowNameOverride(hwnd, name)
         this.setTabInfo(hwnd)
+
+    /// Pinned, the tab goes after the other pinned ones; unpinned, first after them.
+    member this.setTabPinned(hwnd,pinned) =
+        if PinnedTabs.contains hwnd<>pinned then
+            PinnedTabs.set hwnd pinned
+            this.setTabInfo(hwnd)
+            this.keepPinnedFirst()
+
+    member private this.keepPinnedFirst() =
+        PinnedTabs.ordered PinnedTabs.contains this.lorder.list |> List.iteri(fun index hwnd ->
+            if this.lorder.list.[index]<>hwnd then this.ts.moveTab(Tab(hwnd),index))
 
     member this.isMaximized = isMaximizedExport :> ICellOutput<bool>
 
@@ -1922,7 +2002,33 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if post then
             this.invokeAsync(fun () ->
                 if location then lock locationGate (fun () -> pendingLocations.Remove(hwnd) |> ignore)
-                if not isDestroyed.value then this.handleWindowEvent(hwnd,evt))
+                if not isDestroyed.value && not (this.isRefreshing(hwnd,evt)) then this.handleWindowEvent(hwnd,evt))
+
+    /// EXPERIMENTAL (ScaleChangeRefresh): a tab moved maximized to a monitor of another scale is
+    /// minimized and maximized again, without the animation, as it comes in front; the only
+    /// change that made it draw.
+    member private this.refreshFrame(hwnd:IntPtr) =
+        let window = this.os.windowFromHwnd(hwnd)
+        if window.isMaximized then
+            refreshing.[hwnd] <- transitionClock.ElapsedMilliseconds+1000L
+            window.dwmSetAttribute 3 1
+            WinUserApi.ShowWindowAsync(hwnd,ShowWindowCommands.SW_SHOWMINNOACTIVE) |> ignore
+            WinUserApi.ShowWindowAsync(hwnd,ShowWindowCommands.SW_SHOWMAXIMIZED) |> ignore
+            // Its animations back once the window has done both.
+            let timer = new System.Windows.Forms.Timer(Interval=500)
+            timer.Tick.Add(fun _ ->
+                timer.Stop()
+                timer.Dispose()
+                if WinUserApi.IsWindow(hwnd) then window.dwmSetAttribute 3 0)
+            timer.Start()
+
+    /// A refreshed tab minimizing and maximizing: the group stays as it is.
+    member private this.isRefreshing(hwnd:IntPtr,evt) =
+        match refreshing.TryGetValue(hwnd) with
+        | true,until when transitionClock.ElapsedMilliseconds<until ->
+            evt=WinEvent.EVENT_SYSTEM_MINIMIZESTART || evt=WinEvent.EVENT_SYSTEM_MINIMIZEEND || evt=WinEvent.EVENT_OBJECT_LOCATIONCHANGE
+        | true,_ -> refreshing.Remove(hwnd) |> ignore; false
+        | _ -> false
 
     member private this.handleWindowEvent(hwnd,evt) =
         // These native events announce the start of a transition. A group STA
@@ -2048,6 +2154,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if this.windows.contains(hwnd) then
                 let window = this.os.windowFromHwnd(hwnd)
                 if window.isOwned && not window.isMinimized then window.raise()
+                if staleFrames.Remove(hwnd) then this.refreshFrame hwnd
             this.foreground <- hwnd
             this.followClosedTab(this.os.foreground.hwnd)
             this.saveZorder()
@@ -2109,6 +2216,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             hookCleanup.map(fun hooks -> hooks.add hwnd dispose)
             StartupTrace.measure "group.add.info" (fun () -> this.setTabInfo hwnd)
             StartupTrace.measure "group.add.strip" (fun () -> this.ts.addTab(Tab(hwnd)))
+            // A pinned tab from another group joins the pinned ones; any other joins after them.
+            this.keepPinnedFirst()
             StartupTrace.measure "group.add.colors" this.refreshTabColors
             // Only a window that opens in the foreground has an opener. Windows found at
             // startup or dropped in the background then close like any other tab.
@@ -2327,9 +2436,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         let shown = this.topWindow
         if SystemInformation.UIEffectsEnabled && not dragPause && not this.isSplit && shown<>hwnd &&
            this.windows.contains shown && isOpen shown && not(isMinimized shown) && not(isMinimized hwnd) && isVisibleCell.value then
-            let frame = this.layoutFrame
             let window = this.os.windowFromHwnd shown
             let bounds,visible = window.bounds,window.visibleBounds
+            let frame = this.layoutFrame
             let move = { hwnd=shown; from=frame; target=frame; fade=NoFade
                          border=Pt(visible.x-bounds.x,visible.y-bounds.y)
                          borderSize=Sz(bounds.width-visible.width,bounds.height-visible.height) }

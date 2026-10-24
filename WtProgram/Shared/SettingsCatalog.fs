@@ -24,6 +24,9 @@ module SettingsCatalog =
         if List.contains value tabSearchScopeValues then value else tabSearchScopeDefault
     let columnWidthDefault = 220
     let columnWidthRange = 48,420
+    /// Percent, solid at 100: below 30 the tabs would be hard to find.
+    let opacityRange = 30,100
+    let opacityDefault = 100
     let leaderKeyPresets = List.zip ["123456789";"QWERTYUIOP";"ASDFGHJKL;"] (Array.toList Strings.Settings.leaderKeyPresets)
     let all = [
         { id="tab-color-mode"; page=AppearanceSettings; text=Strings.Settings.tabColorMode; binding=Choice("tabColorMode",["Off";"ByWindow";"ByApp"],"Off") }
@@ -47,16 +50,29 @@ module SettingsCatalog =
         { id="next-tab"; page=HotKeySettings; text=Strings.Settings.nextTab; binding=Shortcut("nextTab",3623) }
         { id="previous-tab"; page=HotKeySettings; text=Strings.Settings.previousTab; binding=Shortcut("prevTab",3621) }
         { id="search-tabs"; page=HotKeySettings; text=Strings.Settings.searchTabs; binding=Shortcut("searchTabs",1620) }
+        // Ctrl+Alt+P, beside the window search's Ctrl+Alt+T.
+        { id="command-palette"; page=HotKeySettings; text=Strings.Settings.commandPalette; binding=Shortcut("commandPalette",1616) }
+        // Keys inside the palette and the window search, never registered for the whole desktop.
+        { id="list-next"; page=HotKeySettings; text=Strings.Settings.listNext; binding=Shortcut("listNext",0) }
+        { id="list-previous"; page=HotKeySettings; text=Strings.Settings.listPrevious; binding=Shortcut("listPrevious",0) }
         { id="new-tab"; page=HotKeySettings; text=Strings.Settings.newTab; binding=Shortcut("newTab",1614) }
         // Ctrl+Alt+W beside New tab's Ctrl+Alt+N; Ctrl+W alone belongs to the apps.
         { id="close-tab"; page=HotKeySettings; text=Strings.Settings.closeTab; binding=Shortcut("closeTab",1623) }
         // Split view keys ship unbound: nothing global is taken until the user picks a key.
         { id="split-pick-right"; page=HotKeySettings; text=Strings.Settings.splitPickRight; binding=Shortcut("splitPickRight",0) }
         { id="split-pick-below"; page=HotKeySettings; text=Strings.Settings.splitPickBelow; binding=Shortcut("splitPickBelow",0) }
+        { id="split-pick-left"; page=HotKeySettings; text=Strings.Settings.splitPickLeft; binding=Shortcut("splitPickLeft",0) }
+        { id="split-pick-above"; page=HotKeySettings; text=Strings.Settings.splitPickAbove; binding=Shortcut("splitPickAbove",0) }
         { id="split-focus-left"; page=HotKeySettings; text=Strings.Settings.splitFocusLeft; binding=Shortcut("splitFocusLeft",0) }
         { id="split-focus-right"; page=HotKeySettings; text=Strings.Settings.splitFocusRight; binding=Shortcut("splitFocusRight",0) }
         { id="split-focus-up"; page=HotKeySettings; text=Strings.Settings.splitFocusUp; binding=Shortcut("splitFocusUp",0) }
         { id="split-focus-down"; page=HotKeySettings; text=Strings.Settings.splitFocusDown; binding=Shortcut("splitFocusDown",0) }
+        { id="split-focus-other"; page=HotKeySettings; text=Strings.Commands.splitFocusOther; binding=Shortcut("splitFocusOther",0) }
+        { id="split-swap"; page=HotKeySettings; text=Strings.Commands.splitSwap; binding=Shortcut("splitSwap",0) }
+        { id="split-equalize"; page=HotKeySettings; text=Strings.Commands.splitEqualize; binding=Shortcut("splitEqualize",0) }
+        { id="split-turn"; page=HotKeySettings; text=Strings.Commands.splitTurn; binding=Shortcut("splitTurn",0) }
+        { id="split-close-pane"; page=HotKeySettings; text=Strings.Commands.splitClosePane; binding=Shortcut("splitClosePane",0) }
+        { id="split-end"; page=HotKeySettings; text=Strings.Commands.splitEnd; binding=Shortcut("splitEnd",0) }
         // Unbound too, for the same reason.
         { id="save-workspace"; page=HotKeySettings; text=Strings.Settings.saveWorkspace; binding=Shortcut("saveWorkspace",0) }
         { id="restore-workspace"; page=HotKeySettings; text=Strings.Settings.restoreWorkspace; binding=Shortcut("restoreWorkspace",0) }
@@ -66,6 +82,7 @@ module SettingsCatalog =
         { id="number-leader"; page=HotKeySettings; text=Strings.Settings.numberLeader; binding=Shortcut("numberLeader",1094) }
         { id="leader-keys"; page=HotKeySettings; text=Strings.Settings.leaderKeys; binding=Text("numberLeaderKeys","123456789") }
         { id="activate-on-hover"; page=HotKeySettings; text=Strings.Settings.activateOnHover; binding=Toggle("enableHoverActivate",false,false) }
+        { id="tab-hover-preview"; page=HotKeySettings; text=Strings.Settings.tabHoverPreview; binding=Toggle("tabHoverPreview",false,false) }
         { id="shift-scroll"; page=HotKeySettings; text=Strings.Settings.shiftScroll; binding=Toggle("enableShiftScroll",true,true) }
         { id="ctrl-scroll"; page=HotKeySettings; text=Strings.Settings.ctrlScroll; binding=Toggle("enableCtrlScroll",true,true) }
         { id="middle-click-close"; page=HotKeySettings; text=Strings.Settings.middleClickClose; binding=Toggle("enableMiddleClickClose",true,true) }
@@ -73,8 +90,11 @@ module SettingsCatalog =
         { id="tabNormalBgColor"; page=AppearanceSettings; text=Strings.Settings.tabNormalBgColor; binding=Colour }
         { id="tabActiveBgColor"; page=AppearanceSettings; text=Strings.Settings.tabActiveBgColor; binding=Colour }
         { id="tabHighlightBgColor"; page=AppearanceSettings; text=Strings.Settings.tabHighlightBgColor; binding=Colour }
+        { id="tabFlashBgColor"; page=AppearanceSettings; text=Strings.Settings.tabFlashBgColor; binding=Colour }
         // Kept with the tab sizes in the "tabAppearance" object, not at the top of the file.
         { id="tabStyle"; page=AppearanceSettings; text=Strings.Settings.tabStyle; binding=Choice("tabStyle",TabStyle.names,"joined") }
+        { id="tab-text-bold"; page=AppearanceSettings; text=Strings.Settings.tabTextBold; binding=Toggle("tabTextBold",false,false) }
+        { id="tabOpacity"; page=AppearanceSettings; text=Strings.Settings.tabOpacity; binding=Number(opacityRange) }
         { id="tabHeight"; page=AppearanceSettings; text=Strings.Settings.tabHeight; binding=Number(12,120) }
         { id="tabMaxWidth"; page=AppearanceSettings; text=Strings.Settings.tabMaxWidth; binding=Number(60,1000) }
         { id="tabOverlap"; page=AppearanceSettings; text=Strings.Settings.tabOverlap; binding=Number(0,100) }
@@ -87,6 +107,41 @@ module SettingsCatalog =
         { id="settings-reset"; page=DiagnosticsSettings; text=Strings.Settings.settingsReset; binding=Navigation }
     ]
     let find id = all |> List.find(fun item -> item.id=id)
+    /// Found and set in the command palette only: the settings window has no row for them.
+    let paletteOnly = set ["tabFlashBgColor"]
+    /// Whether the settings window has a row for it: not one the palette alone offers, nor a
+    /// shortcut with no key to begin with, which the palette gives like every other command's.
+    let inSettingsWindow item =
+        not (paletteOnly.Contains item.id) && (match item.binding with Shortcut(_,code) -> code<>0 | _ -> true)
+    /// The tab sizes, kept in the appearance's geometry: each read and written as the Appearance
+    /// page shows it. The gap between tabs is shown positive and stored as a negative overlap.
+    let geometryNumbers : (string * (TabGeometry -> int) * (int -> TabGeometry -> TabGeometry)) list = [
+        "tabHeight",(fun g -> g.height),(fun v g -> {g with height=v})
+        "tabMaxWidth",(fun g -> g.maxWidth),(fun v g -> {g with maxWidth=v})
+        "tabOverlap",(fun g -> -g.overlap),(fun v g -> {g with overlap= -v})
+        "tabIndentNormal",(fun g -> g.indentNormal),(fun v g -> {g with indentNormal=v}) ]
+    /// The tab alignment's names: along the top, or down a side.
+    let alignmentLabels vertical =
+        if vertical then [Strings.Common.top;Strings.Common.center;Strings.Common.bottom]
+        else [Strings.Common.left;Strings.Common.center;Strings.Common.right]
+    /// What each value of a Choice setting is called, in the order of its values: the settings
+    /// pages and the palette both show these.
+    let choiceLabels id =
+        match id with
+        | "tab-color-mode" -> [Strings.Settings.colorsOff;Strings.Settings.byWindow;Strings.Settings.byApp]
+        | "tab-color-style" -> [Strings.Settings.fill;Strings.Settings.stripe]
+        | "theme" -> [Strings.Appearance.system;Strings.Appearance.light;Strings.Appearance.dark]
+        | "language" ->
+            Strings.SettingsWindow.followWindows ::
+                [for _,name,_ in Localization.languages -> { en=name; zh=name; ja=name; ar=name }]
+        | "restore-session" -> [Strings.General.sessionOff;Strings.General.sessionWindows;Strings.General.sessionApps]
+        | "tab-alignment" -> alignmentLabels false
+        | "tab-position" -> [Strings.TabMenu.top;Strings.Common.left;Strings.Common.right]
+        | "auto-hide-tabs" -> [Strings.Common.never;Strings.Common.whenMaximized;Strings.Common.always]
+        | "switcher-style" -> [Strings.Appearance.switcherHorizontal;Strings.Appearance.switcherVertical]
+        | "number-shortcut" -> [Strings.Settings.numberShortcutCtrl;Strings.Settings.numberShortcutAlt]
+        | "tabStyle" -> List.ofArray Strings.Appearance.tabStyles
+        | other -> invalidArg "id" (sprintf "No labels for the choice %s" other)
     /// Shown from an (i) button beside the caption.
     let help id =
         if id="tabHeight" then Some Strings.Settings.tabHeightHint
@@ -127,9 +182,11 @@ module SettingsCatalog =
         fresh
     let toggleDefault key existing =
         all |> List.pick(fun item -> match item.binding with Toggle(k,fresh,old) when k=key -> Some(if existing then old else fresh) | _ -> None)
-    /// Ctrl+Alt+Right / Ctrl+Alt+Left, in hotkey-control encoding.
+    /// Ctrl+Alt+Right / Ctrl+Alt+Left, in hotkey-control encoding; none for a command the
+    /// catalog does not list, which ships unbound.
     let shortcutDefault key =
-        all |> List.pick(fun item -> match item.binding with Shortcut(k,code) when k=key -> Some code | _ -> None)
+        all |> List.tryPick(fun item -> match item.binding with Shortcut(k,code) when k=key -> Some code | _ -> None)
+        |> Option.defaultValue 0
     let textDefault key =
         all |> List.pick(fun item -> match item.binding with Text(k,value) when k=key -> Some value | _ -> None)
     let choiceDefault key =
@@ -197,11 +254,11 @@ module SettingsCatalog =
     /// Why a result matched, for each term its caption and page name do not show: the keywords
     /// holding it (just those words; the list is long), the caption in another language or the
     /// settings-file key, else the part of the description around it.
-    let searchEvidence (query:string) item =
-        let shown = tr item.text.caption+" "+tr (searchContext item)
-        let keywords = tr item.text.keywords :: Localization.all item.text.keywords |> List.collect(fun line -> line.Split(' ') |> List.ofArray)
-        let texts = keywords @ searchTexts item |> List.filter((<>) "")
-        let descriptions = tr item.text.description :: Localization.all item.text.description
+    let evidence (query:string) (text:SettingText) (context:string) (extra:string list) =
+        let shown = tr text.caption+" "+context
+        let keywords = tr text.keywords :: Localization.all text.keywords |> List.collect(fun line -> line.Split(' ') |> List.ofArray)
+        let texts = keywords @ ([text.caption;text.keywords] |> List.collect Localization.all) @ extra |> List.filter((<>) "")
+        let descriptions = tr text.description :: Localization.all text.description
         terms query
         |> Array.filter(fun term -> not (contains term shown))
         |> Array.choose(fun term ->
@@ -210,3 +267,5 @@ module SettingsCatalog =
             | None -> descriptions |> List.tryPick (snippet term))
         |> Array.distinct
         |> List.ofArray
+    let searchEvidence (query:string) item =
+        evidence query item.text (tr (searchContext item)) (Localization.all (searchContext item) @ [storageKey item])

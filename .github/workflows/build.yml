@@ -64,7 +64,7 @@ jobs:
           - group: architecture
             suites: 'Architecture,SplitView,StartupGrouping,WindowIcon'
           - group: operations
-            suites: 'GroupOperations,SettingsEditors'
+            suites: 'GroupOperations,SettingsEditors,CommandPalette'
           - group: ui
             suites: 'Reliability,DpiLayout,SettingsTheme,TabShadow,GroupLifecycle,PopupRendering,TabInteraction,TaskbarPreview,PrintWindowProbe'
 

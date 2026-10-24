@@ -259,7 +259,14 @@ let main() =
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
             member _.llMouse = mouse.Publish
-            member _.paneCandidates() = []})
+            member _.paneCandidates() = []
+            member _.toggleSearch _ = ()
+            member _.saveWorkspace() = ()
+            member _.restoreWorkspace() = ()
+            member _.restoreWorkspaceNamed _ = ()
+            member _.detachTab _ = ()
+            member _.windowShortcuts() = []
+            member _.setWindowShortcut _ = true})
         let desktop = Desktop({new IDesktopNotification with
                                 member _.dragDrop _ = ()
                                 member _.dragEnd() = ()},api,dispatcher)
@@ -282,6 +289,19 @@ let main() =
         onGroup(fun group -> group.ts.setAlignment(TabUp,TabRight))
         api.setValue("alignment",box "Center")
         check (positions()=(TabRight,TabCenter)) "Alignment update lost the per-direction menu override"
+        // The tab menu's commands reach the group from outside, as the palette asks for them.
+        (live :> IGroup).run(SetTabAlignment TabLeft)
+        check (positions()=(TabLeft,TabCenter)) "A group command did not set the tabs' alignment"
+        (live :> IGroup).run ToggleIconsOnly
+        check (onGroup(fun group -> group.isIconOnly)) "A group command did not switch to icons only"
+        (live :> IGroup).run ToggleIconsOnly
+        check (not (onGroup(fun group -> group.isIconOnly))) "A group command did not bring the titles back"
+        (live :> IGroup).run(SetTabDock TabDockLeft)
+        check (onGroup(fun group -> group.ts.dock)=TabDockLeft) "A group command did not move the tabs to the side"
+        (live :> IGroup).run(SetTabDock TabDockTop)
+        check (onGroup(fun group -> group.ts.dock)=TabDockTop) "A group command did not move the tabs back to the top"
+        check (Commands.find "rename-tab" |> Option.exists(fun command -> command.category=TabCommands && command.shortcut=Some "rename-tab")) "The tab menu's rename must be a command"
+        check (Commands.find "group-tab-position" |> Option.exists(fun command -> match command.run IntPtr.Zero with Choose options -> options.Length=3 | Done -> false)) "Tab position must offer its three places"
 
         let numeric = NumericTabHotKeyPlugin()
         // The OS can already focus B while the delayed foreground event still
@@ -413,7 +433,154 @@ let main() =
               "Separator did not return to the preset's own when its colors did"
         let activeOnly = {basis with tabActiveBgColor=System.Drawing.Color.Red}
         check ((Theme.followSeparator (Some basis) basis activeOnly).tabBorderColor.ToArgb()=basis.tabBorderColor.ToArgb()) "Separator changed with an unrelated color"
-        check (SettingsCatalog.all |> List.forall(fun item -> item.id<>"tabBorderColor" && item.id<>"tabFlashBgColor")) "Search still offers separator or flashing tab colors"
+        // The separator follows the text and inactive colours, so it has no setting; the colour of a
+        // tab asking for attention has one, found as such and edited as the others are.
+        check (SettingsCatalog.all |> List.forall(fun item -> item.id<>"tabBorderColor")) "Search offers the separator color, which follows the others"
+        check (SettingsCatalog.all |> List.exists(fun item -> item.id="tabFlashBgColor" && item.binding=Colour)) "The color of a tab asking for attention has no setting"
+        check (PaletteEditing.colorFields |> List.exists(fun (key,_,_) -> key="tabFlashBgColor")) "The color of a tab asking for attention cannot be edited"
+        // In the palette only: the Appearance page shows no row for it, nor its search.
+        check (SettingsCatalog.paletteOnly.Contains "tabFlashBgColor") "The color of a tab asking for attention is shown on the Appearance page"
+        let attention = SettingsCatalog.find "tabFlashBgColor"
+        check (["danger";"attention";"flash"] |> List.forall(fun term -> SettingsCatalog.matches term attention)) "The color of a tab asking for attention is not found by what it is for"
+        // Every action is a command: the hotkeys, the palette and the command line share the list.
+        let commands = Commands.all
+        check (commands |> List.map(fun command -> command.id) |> List.distinct |> List.length = commands.Length) "Command ids must be unique"
+        check (commands |> List.forall(fun command -> command.id<>"" && command.id=command.id.ToLowerInvariant() && not (command.id.Contains " "))) "Command ids must be kebab-case"
+        check (commands |> List.forall(fun command -> Localization.all command.text.caption |> List.forall(fun text -> text<>""))) "Every command needs a caption in every language"
+        for item in SettingsCatalog.all do
+            match item.binding with
+            | Shortcut(key,_) ->
+                match Commands.byShortcut key with
+                | Some command -> check (command.id=item.id) (sprintf "Shortcut %s belongs to command %s, not %s" key command.id item.id)
+                // The lists' own keys, which work inside the palette and the window search only.
+                | None when List.contains key Commands.listKeys -> ()
+                | None -> failwithf "Shortcut %s in the catalog has no command" key
+            | _ -> ()
+        // Every listed command can be given a key: under the catalog's key when it has an entry
+        // there, else under its own id, unbound to begin with.
+        for command in commands do
+            match command.shortcut with
+            | Some key when SettingsCatalog.all |> List.exists(fun item -> item.binding=Shortcut(key,SettingsCatalog.shortcutDefault key)) -> ()
+            | Some key -> check (key=command.id && SettingsCatalog.shortcutDefault key=0) (sprintf "Command %s keeps its shortcut under a key that is neither the catalog's nor its id" command.id)
+            | None -> check command.listed (sprintf "Command %s is neither in the palette nor on a key" command.id)
+        check (Commands.find "exit" |> Option.exists(fun command -> command.category=AppCommands && command.shortcut=Some "exit")) "Exit must be a command bindable under its id"
+        check (Commands.holder (fun key -> if key="prevTab" then 77 else 0) "nextTab" 77 |> Option.map(fun command -> command.id) = Some "previous-tab") "The holder of a key must be named"
+        check (Commands.holder (fun _ -> 77) "nextTab" 0).IsNone "Clearing a shortcut must not be refused for a holder"
+        check (Commands.find "toggle-use-windowtabs-for-alt-tab" |> Option.exists(fun command -> command.category=SettingsCommands)) "Every on/off setting must be a command"
+        check (Commands.categoryOf "splitSwap"=Some SplitCommands && Commands.categoryOf "saveWorkspace"=Some WorkspaceCommands) "Shortcut cards must follow the commands' categories"
+        // A choice's labels live beside its values, one per value in every language, for the
+        // settings pages and the palette alike.
+        for item in SettingsCatalog.all do
+            match item.binding with
+            | Choice(_,values,_) ->
+                let labels = SettingsCatalog.choiceLabels item.id
+                check (labels.Length=values.Length) (sprintf "The choice %s has %d labels for %d values" item.id labels.Length values.Length)
+                check (labels |> List.forall(fun label -> Localization.all label |> List.forall((<>) ""))) (sprintf "A label of the choice %s is missing a language" item.id)
+            | _ -> ()
+        // Tab style is kept in the appearance, and by its key too.
+        api.setValue("tabStyle",box "folder")
+        check (api.getValue "tabStyle" :?> string="folder" && api.appearance.geometry.style=FolderTabs) "The tab style could not be set by its key"
+        api.setValue("tabStyle",box "joined")
+        // The palette lists a choice's values and sets the one chosen, without the settings window.
+        let session = CommandPalette.actionsPage IntPtr.Zero
+        let sessionEntry = session.entries |> List.find(fun entry -> entry.title=tr Strings.Settings.restoreSession.caption)
+        check ((session.aside "" sessionEntry).detail=tr Strings.General.sessionOff) "A choice's row did not show what it is set to"
+        check ((session.aside "" sessionEntry).dropdown) "A choice's value did not show the drop-down arrow"
+        // A command's shortcut goes just after its name, not at the right.
+        let exitEntry = session.entries |> List.find(fun entry -> entry.title=tr Strings.Commands.exit.caption)
+        check ((session.aside "" exitEntry).detail="" && not (session.aside "" exitEntry).dropdown) "A command's shortcut was put at the right end"
+        match session.choose sessionEntry with
+        | Choose options ->
+            check (options |> List.map(fun option -> option.label)=[tr Strings.General.sessionOff;tr Strings.General.sessionWindows;tr Strings.General.sessionApps]) "A choice's values were not listed by name"
+            check (options.Head.detail="✓") "The value a choice has now was not ticked"
+            options.[1].run() |> ignore
+            check (api.getValue "sessionRestore" :?> string="Windows") "Choosing a value in the palette did not set it"
+            api.setValue("sessionRestore",box "Off")
+        | _ -> failwith "A choice setting did not list its values"
+        // Sizes are read and written by key as the Appearance page shows them, kept in range.
+        api.setValue("tabHeight",box 30)
+        check (api.appearance.geometry.height=30 && api.getValue "tabHeight" :?> int=30) "A tab size could not be set by its key"
+        api.setValue("tabOverlap",box 4)
+        check (api.appearance.geometry.overlap= -4 && api.getValue "tabOverlap" :?> int=4) "The gap between tabs was not stored as a negative overlap"
+        api.setValue("tabHeight",box 5000)
+        check (api.getValue "tabHeight" :?> int=snd (SettingsCatalog.range "tabHeight")) "A size out of range was kept"
+        // The palette asks for a size, refuses what is not one, and sets what is.
+        let entryOf (page:PalettePage) caption = page.entries |> List.find(fun entry -> entry.title=tr caption)
+        let sizes = CommandPalette.actionsPage IntPtr.Zero
+        let height = entryOf sizes Strings.Settings.tabHeight.caption
+        check ((sizes.aside "" height).detail=string (api.getValue "tabHeight" :?> int)) "A size's row did not show its value"
+        match sizes.choose height with
+        | Ask question ->
+            check (question.value=string (api.getValue "tabHeight" :?> int)) "The box did not hold the size it has now"
+            check (question.accept "tall").IsSome "A size that is not a number was taken"
+            check (question.accept "9999").IsSome "A size out of range was taken"
+            check ((question.accept "28").IsNone && api.getValue "tabHeight" :?> int=28) "A size typed in the palette was not set"
+        | _ -> failwith "A size did not ask for a value"
+        match sizes.choose (entryOf sizes Strings.Settings.leaderKeys.caption) with
+        | Ask question ->
+            check (question.accept "aa").IsSome "Repeated leader keys were taken"
+            check ((question.accept "asdf").IsNone && api.getValue "numberLeaderKeys" :?> string="ASDF") "Leader keys typed in the palette were not set"
+            api.setValue("numberLeaderKeys",box "123456789")
+        | _ -> failwith "The leader keys did not ask for a value"
+        // A colour setting shows its colour, as a dot and by its value.
+        let textColor = sizes.aside "" (entryOf sizes Strings.Settings.tabTextColor.caption)
+        check (textColor.swatch.IsSome && textColor.detail.StartsWith "#") "A colour setting's row did not show its colour"
+        // A colour is picked in the settings pages' colour box, and saved as it changes.
+        match sizes.choose (entryOf sizes Strings.Settings.tabTextColor.caption) with
+        | Ask question ->
+            check (question.kind=ColorQuestion && question.live && question.value.StartsWith "#") "A colour was not asked for in the colour box"
+            check (question.accept "nope").IsSome "A colour that is not one was taken"
+            check (question.accept "#123456").IsNone "A colour typed in the palette was not taken"
+            let dark = ThemeService.currentIsDark()
+            check ((PaletteEditing.activePalette dark api.appearance).tabTextColor.ToArgb()=Drawing.Color.FromArgb(0x12,0x34,0x56).ToArgb()) "A colour picked in the palette was not set"
+        | _ -> failwith "A colour setting did not ask for a colour"
+        // The tab menu's colour list in full: the palette, one of one's own, and none.
+        match (Commands.find "tab-color").Value.run IntPtr.Zero with
+        | Choose options ->
+            let labels = options |> List.map(fun option -> option.label)
+            check (List.contains (tr Strings.Settings.customTabColor) labels && List.last labels=tr Strings.Settings.clearTabColor) "The tab colour list left out Custom or Clear"
+            // Each found by name among the actions too, not only inside Tab color….
+            let actions = CommandPalette.actionsPage IntPtr.Zero
+            for caption in [Strings.Commands.customTabColor;Strings.Commands.rememberTabColor;Strings.Commands.clearTabColor] do
+                check (actions.entries |> List.exists(fun entry -> entry.title=tr caption.caption && TabSearch.matches "color" entry)) (sprintf "%s is not an action of its own" (tr caption.caption))
+        | _ -> failwith "The tab colour command did not list colours"
+        // A colour remembered for an app follows the colour chosen for its tabs, and only then.
+        let app = @"C:\Apps\PaletteProbe.exe"
+        AppTabColors.chosen app (PaletteColor 3)
+        check (not (AppTabColors.remembered app)) "Choosing a colour remembered it for an app that keeps none"
+        AppTabColors.save app (Some(PaletteColor 2))
+        AppTabColors.chosen @"D:\Other\paletteprobe.exe" (PaletteColor 5)
+        check ((api.getValue "appTabColors" :?> Map<string,string>) |> Map.exists(fun path value -> AppIdentity.same path app && value=Theme.formatTabColor (PaletteColor 5))) "A remembered app colour did not follow the colour chosen"
+        AppTabColors.save app None
+        check (not (AppTabColors.remembered app)) "An app colour was not forgotten"
+        // What a typed word matched, said under a command as under a settings search result.
+        check (SettingsCatalog.evidence "switcher" Strings.Settings.groupWindowsInSwitcher "General" []=["switcher"]) "A keyword match is not named under the row"
+        check (SettingsCatalog.evidence "group" Strings.Settings.groupWindowsInSwitcher "General" []=[]) "A match the name shows is repeated under the row"
+        // A notice from a group's own thread is shown from the main one, where its window lives.
+        do
+            let shownOn = ref None
+            Notice.useThread (InvokerService.invoker :> IDispatcher)
+            Notice.install(fun _ _ _ -> shownOn.Value <- Some Thread.CurrentThread.ManagedThreadId)
+            let worker = Thread(fun () -> Notice.show "Title" "Message")
+            worker.Start()
+            worker.Join()
+            let clock = Diagnostics.Stopwatch.StartNew()
+            while shownOn.Value.IsNone && clock.ElapsedMilliseconds<5000L do
+                Application.DoEvents()
+                Thread.Sleep 5
+            check (shownOn.Value=Some Thread.CurrentThread.ManagedThreadId) "A notice from another thread was not shown from the main one"
+        // Recent actions: the latest first, each once, a few kept.
+        for key in ["a";"b";"a";"c";"d";"e";"f";"g";"h";"i"] do CommandPalette.remember key
+        check (CommandPalette.recent()=["i";"h";"g";"f";"e";"d";"c";"a"]) "Recent actions were not kept latest first, each once, eight at most"
+        let page = CommandPalette.actionsPage IntPtr.Zero
+        CommandPalette.remember "exit"
+        let reordered = CommandPalette.actionsPage IntPtr.Zero
+        check (page.entries.Head.title<>reordered.entries.Head.title && reordered.entries.Head.title=tr Strings.Commands.exit.caption) "A recent action was not listed first"
+        api.setValue("replaceAltTab",box false)
+        (Commands.find "toggle-use-windowtabs-for-alt-tab").Value.run IntPtr.Zero |> ignore
+        check (api.getValue("replaceAltTab") :?> bool) "A toggle command must turn the setting on"
+        (Commands.find "toggle-use-windowtabs-for-alt-tab").Value.run IntPtr.Zero |> ignore
+        check (not (api.getValue("replaceAltTab") :?> bool)) "A toggle command must turn the setting off again"
         let renamed = api.root.DeepClone() :?> Bemo.Json.JObject
         renamed.["tabColorMode"] <- Bemo.Json.JValue("Rainbow")
         let current = api.root
@@ -640,6 +807,8 @@ let main() =
     check (TabSearch.highlights "md read" "README.md - Code" = [0,4;7,2]) "Search terms were not highlighted where they appear"
     check (TabSearch.highlights "o" "Foo" = [1,2]) "Adjacent matches were not merged"
     check (TabSearch.highlights "ab bc" "xabcx" = [1,3]) "Overlapping matches were not merged"
+    check (TabSearch.highlights "window on" "Window on the right" = [0,9]) "A phrase typed with a space was not lit up whole"
+    check (TabSearch.highlights "on  the" "On the on" = [0,6;7,2]) "A phrase's terms were not also lit up on their own"
     check (TabSearch.highlights "" "Foo" = [] && TabSearch.highlights "zz" "Foo" = []) "Text was highlighted without a match"
     // Choosing: word-start quality, earlier positions, then recency.
     check (TabSearch.quality "set" "windowtabs settings" = 2) "A match at a word start was not ranked best"
@@ -682,9 +851,14 @@ let main() =
     // Grouping: groups by last use, each in tab order; the active tab is the least recent.
     let zorder hwnd = if hwnd=editor.hwnd then 0 elif hwnd=notes.hwnd then 1 else 2
     let arranged = TabSearch.arrange zorder editor.hwnd [[mail;notes];[];[editor]]
-    check (arranged |> List.map(fun entry -> entry.hwnd) = [editor.hwnd;mail.hwnd;notes.hwnd]) "Tabs were not listed group by group in tab order"
-    check (arranged |> List.map(fun entry -> entry.group) = [0;1;1]) "Groups were not numbered from the most recently used"
-    check (arranged |> List.map(fun entry -> entry.recency) = [2;1;0]) "The active tab was not treated as the least recent"
+    check (arranged |> List.map(fun entry -> entry.hwnd) = [mail.hwnd;notes.hwnd;editor.hwnd]) "Tabs were not listed group by group in tab order, the active one last"
+    check (arranged |> List.map(fun entry -> entry.group) = [1;1;0]) "Groups were not numbered from the most recently used"
+    // Rows a line of text and a small icon tall, eleven in about the room nine roomier ones took.
+    check (TabSearchMetrics.rowHeight=36 && TabSearchMetrics.iconSize=20 && TabSearchMetrics.visibleRows=11) "The search box's rows changed size"
+    check (arranged |> List.map(fun entry -> entry.recency) = [1;0;2]) "The active tab was not treated as the least recent"
+    // The window in front goes last even inside its group, and the first row is what Enter takes.
+    let inGroup = TabSearch.arrange zorder notes.hwnd [[mail;notes;editor]]
+    check (inGroup |> List.map(fun entry -> entry.hwnd) = [mail.hwnd;editor.hwnd;notes.hwnd]) "The active tab was not listed last in its group"
     // Scope: a group of two or more tabs is searched first; Tab switches to every tab and back.
     let grouped = TabSearchForm([mail;notes;editor],[mail.hwnd;editor.hwnd])
     check (grouped.Scope=GroupTabs && grouped.Results=[mail;editor]) "Tab search did not start in the active group"
@@ -727,5 +901,273 @@ let main() =
     picked.Accept()
     pump 100
     check picked.IsClosed "Accepting a match did not close the tab search"
+    // The palette: pages beside the windows, > for the commands, and a command's choices in place.
+    let mutable ran = []
+    let option name = { label=name; detail=""; swatch=None; run=(fun () -> ran <- name::ran; Done); preview=None; undo=None }
+    let commandsPage =
+        { scope=ActionScope; caption="Actions"; prompt="cmd"; noMatches="none"; noEntries="empty"; glyph=NoGlyph
+          entries=[ { TabSearch.create (IntPtr 1) "Close tab" "Close tab" "Ctrl+Alt+W" with recency=0 }
+                    { TabSearch.create (IntPtr 2) "Restore workspace" "Restore workspace" "" with recency=1 } ]
+          choose=(fun entry -> if entry.hwnd=IntPtr 1 then (ran <- "close"::ran; Done) else Choose [option "Work";option "Home"])
+          shortcut=(fun _ -> None)
+          dimmed=(fun _ -> false)
+          assignOnEnter=(fun _ -> false)
+          aside=(fun _ entry -> { detail=entry.program; switch=None; swatch=None; shortcut=""; dropdown=false; small=false })
+          concealed=fun _ -> true }
+    let palette = TabSearchForm([mail;notes;editor],[mail.hwnd;editor.hwnd],pages=[commandsPage])
+    check (palette.Scope=GroupTabs) "The palette did not open on the group"
+    palette.SwitchScope()
+    palette.SwitchScope()
+    check (palette.Scope=ActionScope && palette.Results.Length=2) "Tab did not reach the actions page"
+    palette.SwitchScope()
+    check (palette.Scope=GroupTabs) "Tab did not come round to the group"
+    // The command palette: the pages alone, no windows among its scopes.
+    let bare = TabSearchForm([],[],pages=[commandsPage],windows=false)
+    check (bare.Scope=ActionScope && not bare.HasWindows && bare.Results.Length=2) "The command palette did not open on its page alone"
+    bare.SwitchScope()
+    check (bare.Scope=ActionScope) "The command palette offered the windows"
+    bare.Close()
+    pump 100
+    palette.SetScope ActionScope
+    palette.Query <- "clo"
+    check (palette.Scope=ActionScope && palette.Results.Length=1) "Typing did not filter the actions"
+    palette.Accept()
+    pump 100
+    check (ran=["close"] && palette.IsClosed) "Accepting a command did not run it and close"
+    // A command that cannot act now is listed dimmed and does nothing when chosen.
+    let dimmedPage = { commandsPage with dimmed=fun entry -> entry.hwnd=IntPtr 1 }
+    let greyed = TabSearchForm([mail;notes],[],pages=[dimmedPage],scope=ActionScope)
+    greyed.Query <- "clo"
+    greyed.Accept()
+    check (ran=["close"] && not greyed.IsClosed && greyed.Results.Length=1) "A dimmed command ran, or was left out"
+    greyed.Close()
+    pump 100
+    // A setting turned in place: the palette stays up and its switch shows the new state.
+    let mutable lamp = false
+    let switchPage = { commandsPage with choose=(fun _ -> lamp <- not lamp; Stay); aside=(fun _ _ -> { detail=""; switch=Some lamp; swatch=None; shortcut=""; dropdown=false; small=false }); concealed=fun _ -> false }
+    let switched = TabSearchForm([mail;notes],[],pages=[switchPage],scope=ActionScope)
+    switched.Query <- "clo"
+    switched.Accept()
+    check (lamp && not switched.IsClosed && switched.Depth=0) "Turning a setting in place closed the palette"
+    switched.Close()
+    pump 100
+    let chooser = TabSearchForm([mail;notes],[],pages=[commandsPage],scope=ActionScope)
+    check (chooser.Scope=ActionScope) "The palette did not open on the scope asked for"
+    chooser.Query <- "restore"
+    chooser.Accept()
+    check (not chooser.IsClosed && chooser.Depth=1 && chooser.Query="" && chooser.Results.Length=2) "A command's choices were not shown in place"
+    chooser.Query <- "ho"
+    chooser.Accept()
+    pump 100
+    check (ran=["Home";"close"] && chooser.IsClosed) "Choosing did not run the choice"
+    let back = TabSearchForm([mail;notes],[],pages=[commandsPage],scope=ActionScope)
+    back.Query <- "rest"
+    back.Accept()
+    check (back.BaseQuery="rest") "The search under a command's choices was not the one to offer again"
+    back.Back()
+    check (back.Depth=0 && back.Query="rest" && back.Scope=ActionScope) "Esc did not go back to the search"
+    back.Close()
+    pump 100
+    // A value asked for: the box holds it now, a refusal says why, a value taken closes the box.
+    let mutable typed = ""
+    let question = { kind=TextQuestion; live=false; prompt="A word"; value="12"; hint="Enter sets it"; accept=fun text -> if text="ok" then (typed <- text; None) else Some "Not that" }
+    let askingPage = { commandsPage with choose=fun _ -> Ask question }
+    let asked = TabSearchForm([mail;notes],[],pages=[askingPage],scope=ActionScope)
+    asked.Query <- "close"
+    asked.Accept()
+    // In a box of its own under the line naming it, as on the settings pages, not in the search.
+    check (asked.Depth=1 && asked.Query="" && asked.Answered="12" && asked.Message="Enter sets it") "A value asked for was not shown in its box"
+    check (asked.AskBox |> Option.exists(fun box -> box :? SettingsTextInput)) "A text was not asked for in the settings pages' text box"
+    asked.Answered <- "no"
+    asked.Answer()
+    check (not asked.IsClosed && asked.Message="Not that") "A refused value did not say why"
+    asked.Answered <- "ok"
+    check (asked.Message="Enter sets it") "Typing again did not put the hint back"
+    asked.Answer()
+    pump 100
+    check (typed="ok" && asked.IsClosed) "A value taken did not close the box"
+    // A number in the settings pages' number box, its − and + beside it, back with Esc.
+    let numberPage = { commandsPage with choose=fun _ -> Ask { question with kind=NumberQuestion(12,120); value="30" } }
+    let numbered = TabSearchForm([mail;notes],[],pages=[numberPage],scope=ActionScope)
+    numbered.Query <- "close"
+    numbered.Accept()
+    check (numbered.AskBox |> Option.exists(fun box -> box :? SettingsNumberInput && (box :?> SettingsNumberInput).Value=30M)) "A number was not asked for in the settings pages' number box"
+    numbered.Back()
+    check (numbered.Depth=0 && numbered.AskBox.IsNone && numbered.Query="close") "Esc did not take the number box away"
+    check (numbered.Caret=5) "Esc did not put the caret back at the end of the search"
+    numbered.Close()
+    pump 100
+    // A search that finds nothing says so; a page with nothing in it says that instead.
+    let searched = TabSearchForm([mail;notes],[],pages=[commandsPage],scope=ActionScope)
+    searched.Query <- "zzz"
+    check (searched.Message="none") "A search that found nothing did not say so"
+    searched.Close()
+    pump 100
+    let emptyPage = { commandsPage with entries=[] }
+    let nothing = TabSearchForm([mail;notes],[],pages=[emptyPage],scope=ActionScope)
+    check (nothing.Message="empty") "A page with nothing in it did not say so"
+    nothing.Query <- "ee"
+    check (nothing.Message="none") "A search on an empty page did not say it found nothing"
+    nothing.Close()
+    pump 100
+    let colorPage = { commandsPage with choose=fun _ -> Ask { question with kind=ColorQuestion; value="#202020" } }
+    let colored = TabSearchForm([mail;notes],[],pages=[colorPage],scope=ActionScope)
+    colored.Query <- "close"
+    colored.Accept()
+    check (colored.AskBox |> Option.exists(fun box -> box :? SettingsColorInput) && colored.Answered="#202020") "A colour was not asked for in the settings pages' colour box"
+    check (colored.AskBox |> Option.exists(fun box -> box.Border=SettingsSearchBox.Outline())) "The palette's value box was not outlined as the search box is"
+    colored.Close()
+    pump 100
+    // On screen, the picker opens with the box, and taking the keys does not close the palette.
+    let shownColor = TabSearchForm([mail;notes],[],pages=[colorPage],scope=ActionScope)
+    shownColor.Show()
+    pump 100
+    shownColor.Query <- "close"
+    shownColor.Accept()
+    pump 300
+    let picker = shownColor.AskBox |> Option.map(fun box -> box :?> SettingsColorInput)
+    check (picker |> Option.exists(fun box -> box.PickerOpen)) "The colour picker did not open with the colour box"
+    check (not shownColor.IsClosed) "The colour picker closed the palette"
+    shownColor.Close()
+    pump 100
+    // A size is saved as it changes, as the settings pages save it; Esc only goes back.
+    let applied = ResizeArray<string>()
+    let saveSize (text:string) = match Int32.TryParse text with | true,v when v>=12 && v<=120 -> applied.Add text; None | _ -> Some "no"
+    let livePage = { commandsPage with choose=fun _ -> Ask { kind=NumberQuestion(12,120); live=true; prompt=""; value="30"; hint=""; accept=saveSize } }
+    let live = TabSearchForm([mail;notes],[],pages=[livePage],scope=ActionScope)
+    live.Query <- "close"
+    live.Accept()
+    live.Answered <- "45"
+    check (applied.Count>0 && applied.[applied.Count-1]="45") "A size was not saved as it was typed"
+    live.Back()
+    check (applied.[applied.Count-1]="45" && live.Depth=0) "Esc undid a size saved as it was typed"
+    live.Accept()
+    live.Answered <- "50"
+    live.Close()
+    pump 100
+    check (applied.[applied.Count-1]="50") "Closing undid a size saved as it was typed"
+    // The command line: what each form asks for, and the pipe a running copy takes them over.
+    check (CommandLine.parse [||]=Start && CommandLine.parse [|"--restart"|]=Restart) "A plain or restarting start was not read"
+    // A mistyped option says so, with the nearest one, rather than printing the whole help.
+    check (CommandLine.parse [|"--comands"|]=Invalid "--comands") "A mistyped option was read as something"
+    let mistyped = CommandLine.invalid "--comands"
+    check (mistyped.Contains "--comands" && mistyped.Contains (tr (Strings.CommandLine.didYouMean "--commands")) && not (mistyped.Contains "Examples"))
+          (sprintf "A mistyped option said: %s" mistyped)
+    check ((CommandLine.invalid "--command").Contains (tr (Strings.CommandLine.needsValue "--command"))) "An option missing its value was not said to need one"
+    check (not ((CommandLine.invalid "--zzzzzz").Contains (tr (Strings.CommandLine.didYouMean "--commands")))) "An option far from any was given a guess"
+    // Every example the help gives is read as it says, in every language, its commands real ones.
+    for language in ["en";"zh";"ja";"ar"] do
+        let help =
+            match language with
+            | "zh" -> Strings.CommandLine.usage.zh | "ja" -> Strings.CommandLine.usage.ja
+            | "ar" -> Strings.CommandLine.usage.ar | _ -> Strings.CommandLine.usage.en
+        let examples = help.Split('\n') |> Array.filter(fun line -> line.StartsWith "  WindowTabs ")
+        check (examples.Length>=5) (sprintf "The %s help gives too few examples" language)
+        for example in examples do
+            // Words, or several in quotes, as a shell splits them.
+            let args =
+                Text.RegularExpressions.Regex.Matches(example.Trim().Substring("WindowTabs ".Length),"\"[^\"]*\"|\\S+")
+                |> Seq.cast<Text.RegularExpressions.Match> |> Seq.map(fun m -> m.Value.Trim('"')) |> Array.ofSeq
+            match CommandLine.parse args with
+            | Invalid _ | Start | Help -> failwithf "The help's example %s is not read as a request" example
+            | RunCommand(id,_) -> check (Commands.find id).IsSome (sprintf "The help's example names no command %s" id)
+            | _ -> ()
+        for option in ["--command";"-c";"--workspace";"-w";"--group";"-g";"--commands";"--help";"-h"] do
+            check (help.Contains option) (sprintf "The %s help leaves out %s" language option)
+    check (CommandLine.parse [|"--command";"next-tab"|]=RunCommand("next-tab",None)) "A command by id was not read"
+    check (CommandLine.parse [|"-c";"tab-color";"Sky";"blue"|]=RunCommand("tab-color",Some "Sky blue")) "A command's choice was not read whole"
+    check (CommandLine.parse [|"--workspace";"Dev";"work"|]=RestoreWorkspace "Dev work") "A workspace name with a space was not read whole"
+    check (CommandLine.parse [|"--group";"a.exe";"b.exe"|]=StartGroup ["a.exe";"b.exe"]) "The programs of a group were not read"
+    check (CommandLine.parse [|"--commands"|]=ListCommands && CommandLine.parse [|"--help"|]=Help) "The listing and help were not read"
+    check ((match CommandLine.parse [|"--bogus"|] with Invalid _ -> true | _ -> false) && (match CommandLine.parse [|"--group"|] with Invalid _ -> true | _ -> false)) "An unknown or incomplete command line was accepted"
+    check (CommandLine.listing().Contains "command-palette") "The listing left out the palette"
+    let pipe = "BemoSoftware.WindowTabs.Test."+Guid.NewGuid().ToString("N")
+    do
+        use server = new CommandServer(pipe,fun argv -> if argv.Length=0 then Result.Error "nothing" else Result.Ok(String.Join("+",argv)))
+        check (CommandPipe.send pipe [|"--command";"next-tab"|] 3000=Some(Result.Ok "--command+next-tab")) "The pipe did not carry a command line and its reply"
+        check (CommandPipe.send pipe [||] 3000=Some(Result.Error "nothing")) "The pipe did not carry a refusal"
+        check (CommandPipe.send pipe [|"again"|] 3000=Some(Result.Ok "again")) "The pipe did not take a second command line"
+    check (CommandPipe.send (pipe+".gone") [|"x"|] 200).IsNone "Sending to no listener did not say so"
+    // Alt+Enter sets the chosen command's shortcut in place, refusing a key another holds.
+    let mutable assigned = 0
+    let bindable = { commandsPage with shortcut=fun entry -> if entry.hwnd=IntPtr 1 then Some { current=1623; usedBy=(fun code -> if code=3623 then Some "Next tab" else None); set=(fun code -> assigned <- code; code<>1616) } else None }
+    let recorder = TabSearchForm([mail;notes],[],pages=[bindable],scope=ActionScope)
+    recorder.Query <- "close"
+    recorder.BeginAssign()
+    let editor = match recorder.ShortcutEditor with Some editor -> editor | None -> failwith "Alt+Enter did not open a shortcut box on the command"
+    check (editor.IsRecording && editor.Shortcut=1623) "The shortcut box did not start recording the current shortcut"
+    check (editor.Surroundings=(SettingsColors.current()).selection) "The shortcut box's corners did not take the chosen row's colour"
+    let press (control:Control) (keys:Keys) =
+        let mutable msg = Message()
+        let processKey = control.GetType().GetMethod("ProcessCmdKey",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
+        processKey.Invoke(control,[|box msg;box keys|]) |> ignore
+    // A refusal is said on a line under the box, which listens again for another key at once.
+    let noteUnder (text:string) =
+        editor.Parent.Controls |> Seq.cast<Control> |> Seq.exists(fun control -> control :? Label && control.Text=text && control.Top>=editor.Bottom)
+    press editor (Keys.Control ||| Keys.Alt ||| Keys.Right)
+    check (recorder.ShortcutEditor.IsSome && editor.Shortcut=1623 && editor.IsRecording && assigned=0 && noteUnder (tr (Strings.Shortcuts.keySays (SettingsShortcut.text (SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.Right))) (tr (Strings.Shortcuts.usedBy "Next tab")))))
+          "A key another command holds was not refused by name under the box"
+    press editor (Keys.Control ||| Keys.Alt ||| Keys.P)
+    check (recorder.ShortcutEditor.IsSome && editor.Shortcut=1623 && editor.IsRecording && noteUnder (tr (Strings.Shortcuts.keySays (SettingsShortcut.text (SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.P))) (tr Strings.Shortcuts.inUse)))) "A key another program holds was not refused under the box"
+    press editor (Keys.Control ||| Keys.Alt ||| Keys.K)
+    // Taken at once, seen in its box a moment, then the box goes.
+    check (assigned=SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.K) && recorder.ShortcutEditor.IsSome) "A free key was not set, or its box went at once"
+    let boxClock = Diagnostics.Stopwatch.StartNew()
+    while recorder.ShortcutEditor.IsSome && boxClock.ElapsedMilliseconds<3000L do
+        Application.DoEvents()
+        Thread.Sleep 10
+    check (recorder.ShortcutEditor.IsNone && boxClock.ElapsedMilliseconds>=400L) (sprintf "A taken key's box went after %d ms" boxClock.ElapsedMilliseconds)
+    // The key shows beside the name, where shortcuts are, not cut short at the right end.
+    check (recorder.RowNotes |> List.exists(fun (suffix,right) -> suffix="Ctrl+Alt+K" && right<>"Ctrl+Alt+K")) "A key set in the palette was not shown beside the name"
+    // The key it has already: said, then the box goes as after a key taken, rather than waiting.
+    recorder.BeginAssign()
+    let same = recorder.ShortcutEditor.Value
+    check (same.Shortcut=1623 && SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.W)=1623) "The box did not start on the command's key"
+    press same (Keys.Control ||| Keys.Alt ||| Keys.W)
+    let sameClock = Diagnostics.Stopwatch.StartNew()
+    while recorder.ShortcutEditor.IsSome && sameClock.ElapsedMilliseconds<3000L do
+        Application.DoEvents()
+        Thread.Sleep 10
+    check recorder.ShortcutEditor.IsNone "The box stayed after the key it already had"
+    recorder.BeginAssign()
+    let again = recorder.ShortcutEditor.Value
+    press again Keys.Escape
+    // The key's release, which leaves the box once recording has stopped.
+    let release (control:Control) (keys:Keys) =
+        let onKeyUp = control.GetType().GetMethod("OnKeyUp",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public)
+        onKeyUp.Invoke(control,[|box (KeyEventArgs keys)|]) |> ignore
+    release again Keys.Escape
+    check recorder.ShortcutEditor.IsNone "Esc did not leave the shortcut box"
+    recorder.Close()
+    pump 100
+    let unlisted = TabSearchForm([mail;notes],[],pages=[bindable],scope=ActionScope)
+    unlisted.Query <- "restore"
+    unlisted.BeginAssign()
+    check unlisted.ShortcutEditor.IsNone "Alt+Enter opened a shortcut box on a row that takes none"
+    unlisted.Close()
+    pump 100
+    // A window's key: kept by program and name, found among the windows open, else the program starts.
+    let chrome : WindowShortcut = { path = @"C:\Apps\chrome.exe"; title="Inbox"; code=1616 }
+    let kept = WindowShortcuts.read (WindowShortcuts.write [chrome])
+    check (kept=[chrome]) "A window's key did not survive the settings file"
+    check (WindowShortcuts.set [chrome] { chrome with code=0 }=[] && (WindowShortcuts.set [chrome] { chrome with code=1620 }).Head.code=1620) "Setting or clearing a window's key did not replace it"
+    let open' = [IntPtr 1,@"D:\Other\CHROME.EXE","News";IntPtr 2,@"D:\Other\chrome.exe","Inbox";IntPtr 3,@"C:\Apps\notepad.exe","Inbox"]
+    check (WindowShortcuts.target open' chrome=Some(IntPtr 2)) "The window with the name was not chosen"
+    check (WindowShortcuts.target open' { chrome with title="Gone" }=Some(IntPtr 1)) "The program's most recent window was not chosen"
+    check (WindowShortcuts.target open' { chrome with path="word.exe" }).IsNone "A window of another program was chosen"
+    let mutable givenKey = 0
+    let keyed = TabSearchForm([mail;notes],[],windowShortcut=(fun entry -> if entry.hwnd=mail.hwnd then Some { current=0; usedBy=(fun _ -> None); set=(fun code -> givenKey <- code; true) } else None))
+    keyed.Query <- "inbox"
+    keyed.BeginAssign()
+    let keyEditor = match keyed.ShortcutEditor with Some editor -> editor | None -> failwith "Alt+Enter did not open a shortcut box on a window"
+    press keyEditor (Keys.Control ||| Keys.Alt ||| Keys.M)
+    check (givenKey=SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.M)) "A window's key was not set from the search box"
+    let keyClock = Diagnostics.Stopwatch.StartNew()
+    while keyed.ShortcutEditor.IsSome && keyClock.ElapsedMilliseconds<3000L do
+        Application.DoEvents()
+        Thread.Sleep 10
+    check keyed.ShortcutEditor.IsNone "A window's key box stayed after its key was set"
+    keyed.Close()
+    pump 100
     printfn "PASS: atomic/deferred saves, failure retry and backup recovery, subscriptions, temporary state, coalesced scans, dispatch, group cleanup, popup disposal and tab search."
 TestInit.run main

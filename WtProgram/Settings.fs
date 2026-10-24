@@ -10,6 +10,8 @@ open Bemo.Json
 type Settings(isStandAlone, ?saveDelay:int) as this =
     let mutable cachedSettingsString = None
     let mutable cachedSettingsRec = None
+    /// The settings parsed once for reading; dropped with the text they came from.
+    let mutable cachedJson : JObject option = None
     let mutable hasExistingSettings = false
     let settingChangedEvent = Event<string* obj>()
     let valueCache = Dictionary<string, obj>()
@@ -41,6 +43,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
         store.Flush() |> ignore
         cachedSettingsString <- None
         cachedSettingsRec <- None
+        cachedJson <- None
         valueCache.Clear()
         published.Clear()
 
@@ -63,6 +66,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
         and set(newSettings : string option) =
             cachedSettingsString <- newSettings
             cachedSettingsRec <- None
+            cachedJson <- None
             valueCache.Clear()
             published.Clear()
             store.Schedule(newSettings.Value)
@@ -76,6 +80,16 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                 Alert.showSystem AlertKind.Warning (tr Strings.Messages.settingsError) errorMessage
                 failwith "Error parsing settings json"
         and set(settingsJson:JObject) = this.settingsString <- Some(settingsJson.ToString())
+
+    /// The settings to read from, never to change: `settingsJson` gives a copy for that. Parsed again
+    /// for each key looked up, a large file held the palette up a third of a second as it opened.
+    member this.readJson =
+        match cachedJson with
+        | Some json -> json
+        | None ->
+            let json = this.settingsJson
+            cachedJson <- Some json
+            json
 
     // Neutral greys rather than the original Aero blue: the tab shape is now a
     // rounded rectangle, and a saturated border around every tab reads as busy
@@ -92,7 +106,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
     /// Groups made by hand, kept after their windows close. Written by the program as groups
     /// change rather than edited on a settings page, so it stays out of the settings record.
     member this.rememberedGroups
-        with get() = RememberedGroups.read (this.settingsJson.["rememberedGroups"])
+        with get() = RememberedGroups.read (this.readJson.["rememberedGroups"])
         and set(groups:RememberedGroup list) =
             let json = this.settingsJson
             json.["rememberedGroups"] <- RememberedGroups.write groups
@@ -106,7 +120,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
     /// group's id, a group made by hand's token, or the app of an automatic group.
     member this.groupIcons
         with get() =
-            match this.settingsJson.["groupIcons"] with
+            match this.readJson.["groupIcons"] with
             | :? JObject as icons -> icons.Properties() |> Seq.choose(fun p -> if p.Value.Type=JTokenType.String then Some(p.Name,p.Value.Value<string>()) else None) |> Map.ofSeq
             | _ -> Map.empty
         and set(icons:Map<string,string>) =
@@ -160,6 +174,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         numberHotKeyModifier = settingsJson.getString("numberHotKeyModifier").def(SettingsCatalog.choiceDefault "numberHotKeyModifier") |> SettingsCatalog.normalizeChoice "numberHotKeyModifier"
                         sessionRestore = settingsJson.getString("sessionRestore").def(SettingsCatalog.choiceDefault "sessionRestore") |> SettingsCatalog.normalizeChoice "sessionRestore"
                         enableHoverActivate = settingsJson.getBool("enableHoverActivate").def(SettingsCatalog.toggleDefault "enableHoverActivate" hasExistingSettings)
+                        tabTextBold = settingsJson.getBool("tabTextBold").def(SettingsCatalog.toggleDefault "tabTextBold" hasExistingSettings)
                         // Older versions stored two toggles: minimalMode (every window) and autoHide (maximized only).
                         autoHideMode =
                             settingsJson.getString("autoHideMode").def(
@@ -175,10 +190,12 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         enableShiftScroll = settingsJson.getBool("enableShiftScroll").def(SettingsCatalog.toggleDefault "enableShiftScroll" hasExistingSettings)
                         enableCtrlScroll = settingsJson.getBool("enableCtrlScroll").def(SettingsCatalog.toggleDefault "enableCtrlScroll" hasExistingSettings)
                         enableMiddleClickClose = settingsJson.getBool("enableMiddleClickClose").def(SettingsCatalog.toggleDefault "enableMiddleClickClose" hasExistingSettings)
+                        tabHoverPreview = settingsJson.getBool("tabHoverPreview").def(SettingsCatalog.toggleDefault "tabHoverPreview" hasExistingSettings)
                         version = settingsJson.getString("version").def(String.Empty)
                         alignment = settingsJson.getString("alignment").def(SettingsCatalog.choiceDefault "alignment") |> SettingsCatalog.normalizeChoice "alignment"
                         tabPosition = settingsJson.getString("tabPosition").def(SettingsCatalog.choiceDefault "tabPosition") |> SettingsCatalog.normalizeChoice "tabPosition"
                         tabColumnWidth = settingsJson.getInt32("tabColumnWidth").def(SettingsCatalog.columnWidthDefault) |> between SettingsCatalog.columnWidthRange
+                        tabOpacity = settingsJson.getInt32("tabOpacity").def(SettingsCatalog.opacityDefault) |> between SettingsCatalog.opacityRange
                         switcherStyle = settingsJson.getString("switcherStyle").def(SettingsCatalog.choiceDefault "switcherStyle") |> SettingsCatalog.normalizeChoice "switcherStyle"
                         language = settingsJson.getString("language").def(SettingsCatalog.choiceDefault "language") |> SettingsCatalog.normalizeChoice "language"
                         appearance = {
@@ -253,6 +270,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setString("numberHotKeyModifier", settings.numberHotKeyModifier)
             settingsJson.setString("sessionRestore", settings.sessionRestore)
             settingsJson.setBool("enableHoverActivate", settings.enableHoverActivate)
+            settingsJson.setBool("tabTextBold", settings.tabTextBold)
             settingsJson.setString("autoHideMode", settings.autoHideMode)
             settingsJson.setBool("showTabsOnSwitch", settings.showTabsOnSwitch)
             settingsJson.Remove("autoHide") |> ignore
@@ -263,8 +281,10 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setBool("enableShiftScroll", settings.enableShiftScroll)
             settingsJson.setBool("enableCtrlScroll", settings.enableCtrlScroll)
             settingsJson.setBool("enableMiddleClickClose", settings.enableMiddleClickClose)
+            settingsJson.setBool("tabHoverPreview", settings.tabHoverPreview)
             settingsJson.setString("tabPosition",settings.tabPosition)
             settingsJson.setInt32("tabColumnWidth",settings.tabColumnWidth)
+            settingsJson.setInt32("tabOpacity",settings.tabOpacity)
             settingsJson.setStringArray("includedPaths", settings.includedPaths.items)
             settingsJson.setStringArray("excludedPaths", settings.excludedPaths.items)
             settingsJson.setStringArray("autoGroupingPaths", settings.autoGroupingPaths.items)
@@ -276,7 +296,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
 
     interface ISettings with
 
-        member x.hotKey key = x.settingsJson.getObject("hotKeys") |> Option.bind (fun hotKeys -> hotKeys.getInt32(key))
+        member x.hotKey key = x.readJson.getObject("hotKeys") |> Option.bind (fun hotKeys -> hotKeys.getInt32(key))
         member x.setHotKey key value =
             let json = x.settingsJson
             let hotKeys = json.getObject("hotKeys").def(JObject())
@@ -312,11 +332,17 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             let value = if key="numberLeaderKeys" then box(NumberLeaderKeys.normalize (unbox value)) else value
             let value = if key="alignment" || key="language" || key="autoHideMode" || key="switcherStyle" || key="numberHotKeyModifier" || key="tabColorStyle" || key="tabColorMode" || key="tabPosition" || key="sessionRestore" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
             let value = if key="tabColumnWidth" then box(between SettingsCatalog.columnWidthRange (unbox<int> value)) else value
+            let value = if key="tabOpacity" then box(between SettingsCatalog.opacityRange (unbox<int> value)) else value
             match key with
             | "tabAppearance" ->
                 let appearance = value :?> TabAppearanceInfo
                 api.updateAppearance(fun s -> {s with geometry=TabGeometry.fromAppearance appearance;legacyPalette=TabPalette.fromAppearance appearance})
             | "tabThemeMode" -> api.updateAppearance(fun s -> {s with mode=ThemeMode.parse (value :?> string)})
+            // Kept with the tab sizes in the appearance; by its key too, as the palette sets choices.
+            | "tabStyle" -> api.updateAppearance(fun s -> {s with geometry={s.geometry with style=TabStyle.parse (value :?> string)}})
+            | key when SettingsCatalog.geometryNumbers |> List.exists(fun (name,_,_) -> name=key) ->
+                let _,_,write = SettingsCatalog.geometryNumbers |> List.find(fun (name,_,_) -> name=key)
+                api.updateAppearance(fun s -> {s with geometry=write (SettingsCatalog.normalizeNumber key (unbox<int> value)) s.geometry})
             | "tabUseCustomColors" -> api.updateAppearance(fun s -> {s with useCustomColors=unbox value})
             | "tabLightColors" | "tabDarkColors" ->
                 let palette = match value with :? TabPalette as p -> p | _ -> TabPalette.fromAppearance (value :?> TabAppearanceInfo)
@@ -331,6 +357,10 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             match key with
             | "tabAppearance" -> box(TabPalette.compose appearance.geometry appearance.legacyPalette)
             | "tabThemeMode" -> box(ThemeMode.serialize appearance.mode)
+            | "tabStyle" -> box(TabStyle.serialize appearance.geometry.style)
+            | key when SettingsCatalog.geometryNumbers |> List.exists(fun (name,_,_) -> name=key) ->
+                let _,read,_ = SettingsCatalog.geometryNumbers |> List.find(fun (name,_,_) -> name=key)
+                box(read appearance.geometry)
             | "tabUseCustomColors" -> box appearance.useCustomColors
             | "tabLightColors" -> box(TabPalette.compose appearance.geometry appearance.lightPalette)
             | "tabDarkColors" -> box(TabPalette.compose appearance.geometry appearance.darkPalette)

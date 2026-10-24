@@ -3,6 +3,7 @@ open System
 open System.Collections.Generic
 open System.Diagnostics
 open System.Threading
+open System.Windows.Forms
 
 type private PlacementEntry<'a>(hwnd:IntPtr) =
     member _.hwnd = hwnd
@@ -195,8 +196,14 @@ module FollowerPlacement =
                     place {wp with showCmd=ShowWindowCommands.SW_SHOWNOACTIVATE}
                     move()
                 elif actual.showCmd=ShowWindowCommands.SW_SHOWMAXIMIZED && wp.showCmd=ShowWindowCommands.SW_SHOWMAXIMIZED then
+                    // Maximized on the monitor its tab is on, a follower is in place; only its restore
+                    // frame follows. Its rect, past the screen by its invisible frame, never matched the
+                    // work area it was given, so every placement asked the app twice, to move and to
+                    // maximize, for a window that stays where Windows keeps it.
+                    if Screen.FromHandle(hwnd).DeviceName=Screen.FromRectangle(bounds.Rectangle).DeviceName then
+                        if actual.rcNormalPosition<>wp.rcNormalPosition then place wp
                     // Cross-monitor maximization requires moving before restoring placement.
-                    if actual<>wp || window.bounds<>target() then
+                    elif actual<>wp || window.bounds<>target() then
                         move()
                         place wp
                 elif actual<>wp then place wp

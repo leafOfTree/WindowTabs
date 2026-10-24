@@ -77,6 +77,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let eventHandlersCell = Cell.create(Set2())
     let tabTint = Cell.create(Map2())
     let colorStyleCell = Cell.create(Services.settings.getValue("tabColorStyle") :?> string)
+    let textBoldCell = Cell.create(Services.settings.getValue("tabTextBold") :?> bool)
+    let mutable lastAlpha = 255uy
+    let opacityCell = Cell.create(Services.settings.getValue("tabOpacity") :?> int)
     let tabBgColor = Cell.create(Map2())
     let mutable shadowWindow : TabShadowWindow option = None
     let mutable shadowRefreshPending = false
@@ -97,6 +100,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let titleTimer = new Timer(Interval=500)
     let mutable titleTab : Tab option = None
     let mutable titleTip : TabTitleTip option = None
+    /// Counts the tips asked for, so a window's picture printed for one already put away is dropped.
+    let mutable tipRequest = 0
     /// The full strip and the collapsed bar while an expand or collapse runs, so a frame only
     /// blends them; dropped whenever what they show changes.
     let mutable revealImages : (Img*Img) option = None
@@ -108,6 +113,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let mutable fontKey = Dpi.value(),0
     let mutable normalFont = makeFont 0 FontStyle.Regular
     let mutable renamedFont = makeFont 0 FontStyle.Italic
+    let mutable boldFont = makeFont 0 FontStyle.Bold
+    let mutable renamedBoldFont = makeFont 0 (FontStyle.Bold ||| FontStyle.Italic)
 
     let isMouseOverExport = Cell.export <| fun() ->
         if this.isVertical then ptCell.value.IsSome else hoverCell.value.IsSome
@@ -154,6 +161,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member _.setTabTint(tab,color) =
         if tabTint.value.tryFind(tab) <> color then tabTint.value <- match color with Some c -> tabTint.value.add tab c | None -> tabTint.value.remove tab
     member _.colorStyle with get() = colorStyleCell.value and set value = colorStyleCell.value <- value
+    member _.textBold with get() = textBoldCell.value and set value = textBoldCell.value <- value
+    member _.opacity with get() = opacityCell.value and set value = opacityCell.value <- value
     member _.numberBadgeKeys with get() = numberBadgeKeysCell.value and set value = numberBadgeKeysCell.value <- value
     member _.numberBadges with get() = numberBadgesCell.value and set value = numberBadgesCell.value <- value
 
@@ -181,8 +190,14 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                     bgColor = tabBgColor.value.tryFind(tab)
                     TabDisplayInfo.text = ti.text
                     splitTrail = ti.splitTrail
+                    isPinned = ti.isPinned
                     icon = ti.iconSmall
-                    textFont = if ti.isRenamed then renamedFont else normalFont
+                    textFont =
+                        match ti.isRenamed,textBoldCell.value with
+                        | true,true -> renamedBoldFont
+                        | true,false -> renamedFont
+                        | false,true -> boldFont
+                        | false,false -> normalFont
                     textBrush = SystemBrushes.MenuText
                 }
                 tab,tabInfo
@@ -265,6 +280,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
 
     member private this.hideTitle() =
         titleTimer.Stop()
+        tipRequest <- tipRequest+1
         titleTip |> Option.iter(fun tip -> tip.hide())
 
     /// From tab to tab, a title already showing moves straight to the next cut one; otherwise
@@ -277,25 +293,55 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             if tab.IsSome then
                 if showing then this.showTitle() else titleTimer.Start()
 
+    /// The tab's sprite while a tip may show for it.
+    member private this.tipSprite(tab:Tab) =
+        let sprites : List2<Pt*TabSprite<Tab>> = this.tabSprites
+        sprites.list |> List.tryFind(fun (_,sprite) -> sprite.id=tab)
+        |> Option.filter(fun _ -> this.visible && not this.isShrunk && not (OpenMenus.any()))
+
+    /// A tab behind, with the preview setting on, shows its window under its title once that is
+    /// printed, off this thread; any other tab shows its title alone, when it is cut short.
     member private this.showTitle() =
         titleTab |> Option.iter(fun tab ->
-            let sprites : List2<Pt*TabSprite<Tab>> = this.tabSprites
-            match sprites.list |> List.tryFind(fun (_,sprite) -> sprite.id=tab) with
-            | Some(offset,sprite) when this.visible && not this.isShrunk && not (OpenMenus.any()) && sprite.titleCut ->
-                let tip =
-                    match titleTip with
-                    | Some tip -> tip
-                    | None ->
-                        let tip = new TabTitleTip()
-                        titleTip <- Some tip
-                        tip
-                let strip : Rect = this.bounds
-                let anchor = if this.isVertical then Rect(strip.location.add(offset),sprite.size) else strip
-                let pointer = pointerSource()
-                tip.show(sprite.displayInfo.text,sprite.displayInfo.textFont,
-                         Rectangle(anchor.x,anchor.y,anchor.width,anchor.height),pointer.X,
-                         ?side=(if this.isVertical then Some this.dock else None),?pointerY=Some pointer.Y)
+            match this.tipSprite tab with
+            | Some(_,sprite) when not sprite.isTop && (Services.settings.getValue("tabHoverPreview") :?> bool) ->
+                tipRequest <- tipRequest+1
+                let request = tipRequest
+                let invoker = InvokerService.invoker
+                let preview = this.tabInfo(tab).preview
+                let width,height = Dpi.scale TabPreviewPicture.width,Dpi.scale TabPreviewPicture.height
+                let picture () = try TabPreviewPicture.fit width height (preview()) with _ -> None
+                let (Tab hwnd) = tab
+                // A minimized window's picture is its icon, drawn from the group's own state: here.
+                if _os.windowFromHwnd(hwnd).isMinimized then this.showTip(tab,picture())
+                else
+                    Threading.ThreadPool.QueueUserWorkItem(fun _ ->
+                        let picture = picture()
+                        invoker.asyncInvoke(fun () ->
+                            match picture with
+                            | Some image when request=tipRequest && titleTab=Some tab -> this.showTip(tab,Some image)
+                            | Some image -> image.Dispose()
+                            | None -> if request=tipRequest && titleTab=Some tab then this.showTip(tab,None))) |> ignore
+            | Some(_,sprite) when sprite.titleCut -> this.showTip(tab,None)
             | _ -> ())
+
+    member private this.showTip(tab:Tab,picture:Bitmap option) =
+        match this.tipSprite tab with
+        | Some(offset,sprite) when picture.IsSome || sprite.titleCut ->
+            let tip =
+                match titleTip with
+                | Some tip -> tip
+                | None ->
+                    let tip = new TabTitleTip()
+                    titleTip <- Some tip
+                    tip
+            let strip : Rect = this.bounds
+            let anchor = if this.isVertical then Rect(strip.location.add(offset),sprite.size) else strip
+            let pointer = pointerSource()
+            tip.show(sprite.displayInfo.text,sprite.displayInfo.textFont,
+                     Rectangle(anchor.x,anchor.y,anchor.width,anchor.height),pointer.X,
+                     ?side=(if this.isVertical then Some this.dock else None),?pointerY=Some pointer.Y,?image=picture)
+        | _ -> picture |> Option.iter(fun image -> image.Dispose())
 
     member internal _.titleTipShown = titleTip |> Option.exists(fun tip -> tip.Visible)
 
@@ -385,6 +431,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     // Used by native performance/regression hosts to verify that unchanged
     // hover and movement do not regenerate pixels; not a user-facing setting.
     member internal _.renderCount = renderedFrames
+    /// The window's opacity as last shown, 255 solid, for the same hosts.
+    member internal _.shownAlpha = lastAlpha
 
     member private this.update() =
         if not this.visible then this.hideTitle()
@@ -443,12 +491,20 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         try
             renderedOffset <- offset
             renderedFrames <- renderedFrames+1L
-            this.window.update(image, this.location.add(this.renderedShift), 255uy)
+            lastAlpha <- this.alpha
+            this.window.update(image, this.location.add(this.renderedShift), lastAlpha)
             shadowWindow |> Option.iter (fun shadow ->
                 if reveal<1.0 || this.isEmpty || (this.isVertical && SystemInformation.HighContrast) then shadow.hide()
-                else shadow.update(image, 255uy, this.direction))
+                else shadow.update(image, lastAlpha, this.direction))
         finally
             image.bitmap.Dispose()
+
+    /// The opacity setting while the pointer is elsewhere; solid while it is over a tab, while a
+    /// tab is held or dragged, and in high contrast. The tab under the pointer already repaints
+    /// the strip as it changes, so this adds no painting as the pointer moves.
+    member private this.alpha =
+        let solid = hoverCell.value.IsSome || capturedCell.value.IsSome || slideCell.value.IsSome || SystemInformation.HighContrast
+        if solid || opacityCell.value>=100 then 255uy else byte (opacityCell.value*255/100)
 
     member private this.render : Img = this.renderAt this.isShrunk
 
@@ -716,6 +772,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             text = ""
             isRenamed = false
             splitTrail = None
+            isPinned = false
             iconSmall = System.Drawing.SystemIcons.Application
             iconBig = System.Drawing.SystemIcons.Application
             preview = fun() -> Img(Sz(1,1))
@@ -805,10 +862,11 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.setTabAppearance(appearance:TabAppearanceInfo) =
         let key = Dpi.value(),appearance.tabHeight
         if fontKey <> key then
-            normalFont.Dispose()
-            renamedFont.Dispose()
+            for font in [normalFont;renamedFont;boldFont;renamedBoldFont] do font.Dispose()
             normalFont <- makeFont appearance.tabHeight FontStyle.Regular
             renamedFont <- makeFont appearance.tabHeight FontStyle.Italic
+            boldFont <- makeFont appearance.tabHeight FontStyle.Bold
+            renamedBoldFont <- makeFont appearance.tabHeight (FontStyle.Bold ||| FontStyle.Italic)
             fontKey <- key
         appearanceCell.set(Some(appearance))
             
@@ -878,11 +936,12 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         revealTimer.Dispose()
         captureWatch.Dispose()
         titleTimer.Dispose()
+        tipRequest <- tipRequest+1
+        titleTab <- None
         titleTip |> Option.iter(fun tip -> tip.Dispose())
         titleTip <- None
         dropRevealImages()
-        normalFont.Dispose()
-        renamedFont.Dispose()
+        for font in [normalFont;renamedFont;boldFont;renamedBoldFont] do font.Dispose()
         shadowWindow |> Option.iter (fun shadow -> (shadow :> IDisposable).Dispose())
         shadowWindow <- None
         eventHandlersCell.value.items.iter(fun d -> d.Dispose())

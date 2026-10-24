@@ -36,10 +36,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
 
 - `WtProgram/WtProgram.fsproj` lists every source file in compile order. F# needs a
   file to come after everything it uses; add new files to the list at the right spot.
-- `Program.fs`: entry point, window discovery, program hotkeys (`hotKeyInfo`).
+- `Program.fs`: entry point, window discovery, hotkey registration.
+- `Commands.fs`: every named action, with its text, category and shortcut key; hotkeys,
+  the palette and the command line all run commands from this one list.
 - `Desktop.fs`, `WindowGroup.fs`, `TabStrip*.fs`: groups and the tab strip.
 - `TaskSwitch.fs`: the Alt+Tab replacement (icon and list styles).
-- `TabSearch.fs`: the tab search box.
+- `TabSearch.fs`, `CommandPalette.fs`: the palette: the window search and its page of
+  commands and settings.
 - `Shared/`: core types, Win32 wrappers, theme, DPI, `Strings`, `SettingsCatalog`.
 - `ManagerViewService/`: the Settings window; one view per page under `Views/`.
 - `GroupPlugins/`, `DesktopPlugins/`: per-group and app-wide behaviour.
@@ -55,8 +58,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
   way round (except group creation). A new service method needs a line in its adapter.
 - **Text.** Every user-visible string is a `LocalizedText` in `Shared/Strings.fs` with
   `en`, `zh` and `ja` filled in, shown with `tr`. Never hard-code UI text.
-- **Settings.** Captions, defaults, ranges, choices and shortcut defaults live in
-  `Shared/SettingsCatalog.fs`; search, editors and reset all read from there.
+- **Settings.** Captions, defaults, ranges, choices with their labels (`choiceLabels`) and
+  shortcut defaults live in `Shared/SettingsCatalog.fs`; search, editors, the command palette
+  and reset all read from there.
   Shortcuts use the hotkey-control encoding: virtual key in the low byte, `HOTKEYF_*`
   flags (Shift 1, Ctrl 2, Alt 4, Ext 8) in the high byte.
 - **DPI.** Write sizes in logical pixels and scale at the point of use with

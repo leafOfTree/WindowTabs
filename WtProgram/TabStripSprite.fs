@@ -205,6 +205,61 @@ type CloseButtonSprite = {
             bitmap
         member this.children = List2()
 
+module PinGlyph =
+    /// The filled pin Explorer shows by a pinned folder, from the icon font of Windows 11, or of
+    /// Windows 10; none on a system with neither, where the pin is drawn by hand.
+    let font =
+        lazy(
+            use installed = new Text.InstalledFontCollection()
+            let names = installed.Families |> Array.map(fun family -> family.Name)
+            ["Segoe Fluent Icons";"Segoe MDL2 Assets"] |> List.tryFind(fun name -> Array.contains name names))
+
+/// A pinned tab's pushpin, where its close button would be, in the quiet colour of that button.
+type PinMarkSprite = {
+    foreColor: Color
+    size: Sz
+    }
+    with
+    interface ISpriteHitTest with
+        member this.containsPoint _ = false
+    interface ISprite with
+        member this.image =
+            let bitmap = Img(this.size)
+            use g = bitmap.graphics
+            g.SmoothingMode <- SmoothingMode.AntiAlias
+            let c = this.foreColor
+            use brush = new SolidBrush(Color.FromArgb(170, int c.R, int c.G, int c.B))
+            let side = float32 (min this.size.width this.size.height)
+            match PinGlyph.font.Force() with
+            | Some name ->
+                // The font's pin is two glyphs, as Explorer draws it: the head's fill, and the
+                // outline with the needle. Laid on each other solid, then faded as one: faded each,
+                // their overlap showed as a lighter seam.
+                let w,h = this.size.width,this.size.height
+                use layer = new Bitmap(w, h)
+                do
+                    use lg = Graphics.FromImage(layer)
+                    lg.TextRenderingHint <- Text.TextRenderingHint.AntiAlias
+                    use font = new Font(name, side * 0.8f, GraphicsUnit.Pixel)
+                    use format = new StringFormat(Alignment=StringAlignment.Center, LineAlignment=StringAlignment.Center)
+                    use solid = new SolidBrush(Color.FromArgb(255, int c.R, int c.G, int c.B))
+                    for glyph in ["";""] do
+                        lg.DrawString(glyph, font, solid, RectangleF(0.0f, 0.0f, float32 w, float32 h), format)
+                use fade = new ImageAttributes()
+                fade.SetColorMatrix(ColorMatrix(Matrix33=170.0f/255.0f))
+                g.DrawImage(layer, Rectangle(0, 0, w, h), 0, 0, w, h, GraphicsUnit.Pixel, fade)
+            | None ->
+                use pen = new Pen(brush, float32 (max 1 (Dpi.scale 1)) * 1.2f)
+                // Upright about its middle, then leaning as a pin pushed in at an angle.
+                let s = side * 0.78f
+                g.TranslateTransform(float32 this.size.width / 2.0f, float32 this.size.height / 2.0f)
+                g.RotateTransform(45.0f)
+                g.FillRectangle(brush, -s * 0.17f, -s * 0.5f, s * 0.34f, s * 0.34f)
+                g.FillRectangle(brush, -s * 0.32f, -s * 0.2f, s * 0.64f, s * 0.12f)
+                g.DrawLine(pen, 0.0f, -s * 0.1f, 0.0f, s * 0.5f)
+            bitmap
+        member this.children = List2()
+
 /// Where the two tabs of a split view meet: it marks them as a pair and opens the split's menu.
 /// Two panes side by side or one above the other, in the tabs' text colour.
 type SplitJunctionSprite = {
@@ -266,6 +321,7 @@ type TabDisplayInfo = {
     icon: Icon
     /// The tab's pane in a split view; the pair gets a button where the two tabs meet.
     splitTrail: (SplitAxis * Side) list option
+    isPinned: bool
     }
     
 type TabSprite<'id> = {
@@ -357,6 +413,22 @@ type TabSprite<'id> = {
                 elif hovered then Theme.tabShade 0.06 0.75 tint
                 else Theme.tabShade 0.12 0.6 tint
             | _ -> basis
+
+    /// What a raised tab sits on in its slot: the bar, in the shade a filled tab's colour has when
+    /// not raised, so a strip of coloured tabs reads as one coloured bar with the active tab on it
+    /// rather than breaking to the plain bar round it.
+    member this.barColor =
+        match this.tint with
+        | Some tint when this.displayInfo.colorStyle="Fill" && this.displayInfo.bgColor.IsNone -> Theme.tabShade 0.12 0.6 tint
+        | _ -> this.appearance.tabNormalBgColor
+
+    /// The hairline between two plain tabs. On a filled colour it is drawn from the tab's own text
+    /// and fill, as the plain bar's follows its text and bar colours: the bar's grey cut a coloured
+    /// bar in two.
+    member this.separatorColor =
+        match this.tint with
+        | Some _ when this.displayInfo.colorStyle="Fill" && this.displayInfo.bgColor.IsNone -> Theme.blend 0.25 this.textColor this.fillColor
+        | _ -> this.appearance.tabBorderColor
 
     /// Quiet inactive titles and close buttons on every tab style, while preserving readable
     /// contrast. Hover, capture, attention and high contrast keep the full text colour.
@@ -457,8 +529,8 @@ type TabSprite<'id> = {
     /// A raised tab the bar's own colour, as in high contrast, is outlined so it still shows. One
     /// only as light or dark as the bar, a deep tab colour on a dark bar, stands out by its colour.
     member private this.needsOutline =
-        TextContrast.ratio this.fillColor this.appearance.tabNormalBgColor < 1.25 &&
-        Theme.OkLab.distance this.fillColor this.appearance.tabNormalBgColor < 0.1
+        TextContrast.ratio this.fillColor this.barColor < 1.25 &&
+        Theme.OkLab.distance this.fillColor this.barColor < 0.1
 
     // The inset exists because GDI+ puts pixel centres on integer coordinates
     // once antialiasing is on, so column k spans k-0.5 to k+0.5, and a fill run
@@ -535,9 +607,12 @@ type TabSprite<'id> = {
     // either way - see textSize - so a label never reflows as the pointer moves
     // across the strip. With icons only it shows on the pointed-at tab alone, so
     // the strip stays a row of icons.
+    /// A pinned tab has a pin there instead: it closes from its menu, by middle-click or from
+    /// its own window.
     member this.showCloseButton =
         let pointed = this.hover.IsSome || this.captured.IsSome
-        if this.onlyIcon then pointed && this.closeButtonFits
+        if this.displayInfo.isPinned then false
+        elif this.onlyIcon then pointed && this.closeButtonFits
         else this.isTop || pointed
 
     member this.textSize =
@@ -567,7 +642,7 @@ type TabSprite<'id> = {
                 use background = new SolidBrush(this.fillColor)
                 g.FillPath(background, path)
             | FolderTabs | PillTabs ->
-                use bar = new SolidBrush(if this.isRaised then this.appearance.tabNormalBgColor else this.fillColor)
+                use bar = new SolidBrush(if this.isRaised then this.barColor else this.fillColor)
                 g.FillPath(bar, path)
                 if this.isRaised then
                     use raised = this.raisedShape -0.5f
@@ -610,7 +685,7 @@ type TabSprite<'id> = {
             if this.showLeftSeparator then
                 let inset = float32 this.size.height * 0.28f
                 let x = 0.0f
-                use pen = new Pen(this.appearance.tabBorderColor, 1.0f)
+                use pen = new Pen(this.separatorColor, 1.0f)
                 do g.DrawLine(pen, x, inset, x, float32 this.size.height - inset)
             if this.onlyIcon.not then
                 //the text can't be drawn as a separate bitmap because clearcase fonts
@@ -636,7 +711,11 @@ type TabSprite<'id> = {
                      let foreground = if background=Color.White then Color.Black else Color.White
                      Some(point,({label=label;size=Sz(side,side);background=background;foreground=foreground} : NumberBadgeSprite) :> ISprite)
                  | _ -> Some(this.iconLocation,this.iconSprite))
-                (if this.showCloseButton then Some(this.closeButtonLocation, this.closeButtonSprite) else None)
+                (if this.showCloseButton then Some(this.closeButtonLocation, this.closeButtonSprite)
+                 // A row of icons stays a row of icons.
+                 elif this.displayInfo.isPinned && not this.onlyIcon then
+                     Some(this.closeButtonLocation, ({ foreColor=this.textColor; size=this.closeButtonSize } : PinMarkSprite) :> ISprite)
+                 else None)
                 ]).choose(id)
 
 /// The concave foot where an active folder tab meets the bar beside it. It is drawn over
@@ -796,9 +875,16 @@ type TabStripSprite<'id> when 'id : equality = {
         path.CloseFigure()
         path
 
+    /// A column whose tabs are all filled with one colour is that colour's bar, as a row of them
+    /// is: the plain bar's grey round each tab broke it into pieces.
+    member private this.columnColor =
+        match this.lorder.list |> List.map(fun tab -> (this.tabSpriteOf tab).barColor) |> List.distinct with
+        | [one] -> one
+        | _ -> this.appearance.tabNormalBgColor
+
     member private this.bgImage =
         let bgColor = 
-            if this.isVertical then this.appearance.tabNormalBgColor
+            if this.isVertical then this.columnColor
             elif this.transparent then Color.FromArgb(0, 0, 0, 0)
             else Color.FromArgb(1, 1, 1, 1) 
         let img = Img(if this.size.isEmptyArea then Sz(1,1) else this.size)
@@ -811,6 +897,24 @@ type TabStripSprite<'id> when 'id : equality = {
             gr.PixelOffsetMode <- PixelOffsetMode.Half
             use outline = this.columnOutline
             gr.FillPath(brush,outline)
+            // Tabs of different colours: each row's band, half the gap above and below it, in its
+            // tab's own bar colour, as a row of tabs fills each tab's slot. Neighbours of one
+            // colour join into one block, and the colour changes only where the tabs do.
+            gr.SetClip(outline)
+            let gap = this.rowStep-this.rowHeight
+            let half = gap/2
+            let ids = this.lorder.list
+            for id in ids do
+                let bar = (this.tabSpriteOf id).barColor
+                if bar<>bgColor then
+                    let location : Pt = this.tabLocation id
+                    // The first and last also take the column's padding before and after them, the
+                    // gap's width, so no plain bar shows at its ends.
+                    let top = location.y-(if id=List.head ids then gap else half)
+                    let bottom = location.y+this.rowHeight+(if id=List.last ids then gap else this.rowStep-this.rowHeight-half)
+                    use band = new SolidBrush(bar)
+                    gr.FillRectangle(band,Rectangle(0,top,this.size.width,bottom-top))
+            gr.ResetClip()
         else gr.FillRectangle(brush, bounds.Rectangle)
         this.scrollThumb |> Option.iter(fun thumb ->
             use ink = new SolidBrush(this.appearance.tabBorderColor)
@@ -834,6 +938,10 @@ type TabStripSprite<'id> when 'id : equality = {
         match this.alignment with
         | TabCenter -> min (2.0 * this.centerShift) (float this.size.width)
         | _ -> 0.0
+
+    /// The pinned tabs at the front of the strip.
+    member private this.leadingPinned =
+        this.lorder.list |> List.takeWhile(fun tab -> (this.tabs.find tab).isPinned) |> List.length
 
     member private this.fittedLength =
         let tsWidth = float(this.size.width) - this.leftReserve
@@ -913,9 +1021,12 @@ type TabStripSprite<'id> when 'id : equality = {
             let left,right = this.tabSpan tab
             Sz(right - left, this.size.height - (if this.direction = TabUp then 1 else 2))
 
+    /// Where a slid tab would go. Pinned tabs stay among the pinned ones, the others after them.
     member this.movedTab =
         match this.slide with
         | Some(tab, x) ->
+            let pinned = this.leadingPinned
+            let isPinned = match this.indexOf tab with Some(index) -> index < pinned | None -> false
             let index = 
                 if this.count = 0 then 0
                 else
@@ -925,6 +1036,10 @@ type TabStripSprite<'id> when 'id : equality = {
                         let x = x - this.alignmentOffset
                         let mid = x + this.tabLength / 2.0
                         int((mid - this.tabOverlap / 2.0) / (this.tabLength - this.tabOverlap))
+            let index =
+                if this.count = 0 then 0
+                elif isPinned then max 0 (min (pinned - 1) index)
+                else max (min pinned (this.count - 1)) (min (this.count - 1) index)
             Some(tab, index)
         | None -> None
 

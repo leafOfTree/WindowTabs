@@ -82,12 +82,12 @@ parallel on separate runners. The final build check requires Release and every
 regression group to succeed. A failing group does not cancel the other groups.
 Each group uploads its own diagnostics. Groups are balanced by observed execution
 and compilation time rather than suite
-count: Architecture/SplitView/WindowIcon, GroupOperations/SettingsEditors, and the remaining
+count: Architecture/SplitView/StartupGrouping/WindowIcon, GroupOperations/SettingsEditors/CommandPalette, and the remaining
 nine suites.
 Each job caches downloaded NuGet packages; each regression group restores the shared test-host
 dependencies once, and the Release job reuses its exe when compiling the desktop driver.
 Interactive desktop E2E still builds its own isolated Release copy. Native suites
-remain serial within each runner, with all 14 suites retained across the groups.
+remain serial within each runner, with all 16 suites retained across the groups.
 Push and pull request builds run without
 coverage instrumentation. The Monthly coverage workflow measures the full suite
 on the default branch at 08:00 China Standard Time on the first day of each month,
@@ -139,6 +139,7 @@ for run evidence, activation requirements and remaining limitations.
 | Window grouping | GroupLifecycle plus desktop E2E drag/focus on foreign helper HWNDs | Third-party application scenarios, drag-out and cancellation |
 | Split view | SplitView pure model: geometry, commands, parking, placement plans; GroupOperations native pair placement | Drag transactions, native resize reconciliation, third-party applications |
 | Frequent tab switching | Desktop E2E clicks, numeric and next/previous shortcuts, maximized/closed tabs; deterministic stale-focus and Ctrl snapshot checks | Mixed-monitor switching, minimize/restore, prolonged soak |
+| Command palette | CommandPalette: every command with a tab in front and with none, every action chosen, searched for in each language and given a key, and the palette driven | Real key presses through the global hotkeys, command lines against a running copy |
 | Long-running desktop | Short resource-cycle tests | Multi-hour soak, sleep/resume, Explorer restart |
 
 Establish a repeatable coverage baseline before increasing thresholds. Prioritize

@@ -309,7 +309,7 @@ let main() =
     let strip sides : TabStripSprite<int> =
         { tabs=Map2(List2([1..3] |> List.map(fun id -> id, {
               tint=None; colorStyle="Stripe"; numberBadge=None; bgColor=None; text=sprintf "Window %d" id; icon=SystemIcons.Application
-              textFont=font; textBrush=Brushes.Black; splitTrail=Map.tryFind id sides })))
+              textFont=font; textBrush=Brushes.Black; splitTrail=Map.tryFind id sides; isPinned=false })))
           lorder=List2([1;2;3]); zorder=List2([1;2;3]); size=Sz(630,Dpi.scale 28)
           slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false
           transparent=true; held=None; centerShift=0.0; dock=TabDockTop; scrollOffset=0; appearance=appearance; hover=None; captured=None }

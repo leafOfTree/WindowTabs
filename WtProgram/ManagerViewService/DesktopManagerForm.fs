@@ -48,6 +48,8 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
             SettingsPageRegistration(DiagnosticsSettings,tr Strings.Pages.diagnostics,fun () -> DiagnosticsView() :> ISettingsView) ]
     let mutable activePage = pages.Head.key
     let mutable suppressSearch = false
+    /// Goes to a setting as a search result does; set once the search is built.
+    let mutable navigate : SettingDefinition -> unit = ignore
     let themedPages = Collections.Generic.HashSet<SettingsViewType>()
     let form = new SettingsWindow(Text=tr Strings.SettingsWindow.title,AccessibleName=tr Strings.SettingsWindow.title,Font=SettingsUi.bodyFont())
     do SettingsUi.hideCaptionText form
@@ -61,8 +63,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
     // Each language names itself, so the list stays readable whatever is selected.
     let languageChoice =
         let languages = Array.ofList Localization.preferences
-        let choice = SettingsUi.choice [| yield tr Strings.SettingsWindow.followWindows
-                                          for _,name,_ in Localization.languages -> name |]
+        let choice = SettingsUi.choice (SettingsBindings.labels "language")
         choice.Name <- "language"
         choice.AccessibleName <- tr Strings.Settings.language.caption
         choice.Size <- Size(Dpi.scale 56,Dpi.scale 28)
@@ -212,7 +213,11 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         form.Controls.Add(navigation)
         form.Controls.Add(searchResults)
 
-        let entries = SettingsCatalog.all |> List.filter(fun item -> pages |> List.exists(fun page -> page.key=item.page)) |> List.toArray
+        // What has a row here: a setting the palette alone offers is not listed.
+        let entries =
+            SettingsCatalog.all
+            |> List.filter(fun item -> SettingsCatalog.inSettingsWindow item && pages |> List.exists(fun page -> page.key=item.page))
+            |> List.toArray
         let mutable matches : SettingDefinition array = [||]
         searchResults.Controls.Add(resultsFrame)
         searchResults.Controls.Add(emptyResults)
@@ -297,14 +302,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                 resultsFrame.Visible <- matches.Length>0
                 if matches.Length>0 then results.SelectedIndex <- 0
                 showSearch()
-        let navigateResult() =
-            searchResults.Hide()
-            let selected = results.SelectedIndex
-            if selected>=0 && selected<matches.Length then
-                let item = matches.[selected]
-                suppressSearch <- true
-                search.Clear()
-                suppressSearch <- false
+        let navigateTo (item:SettingDefinition) =
                 // The language picker lives in the sidebar footer, not on a page.
                 if item.id="language" then
                     languageChoice.Select()
@@ -331,6 +329,16 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                         control.Select()
                         SettingsUi.flash control
                     | None -> page.control.SelectNextControl(null,true,true,true,false) |> ignore
+        navigate <- navigateTo
+        let navigateResult() =
+            searchResults.Hide()
+            let selected = results.SelectedIndex
+            if selected>=0 && selected<matches.Length then
+                let item = matches.[selected]
+                suppressSearch <- true
+                search.Clear()
+                suppressSearch <- false
+                navigateTo item
         results.MouseClick.Add(fun e ->
             if e.Button=MouseButtons.Left && results.IndexFromPoint(e.Location)>=0 then navigateResult())
         results.MouseMove.Add(fun e ->
@@ -390,14 +398,20 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
             | None ->
                 for page in pages do
                     if page.isCreated then page.control.Dispose())
-    member _.show() =
+    /// Restored and in front. Asked for from the palette, a key or the command line, another
+    /// app is in front by then, and Windows ignores a plain Activate from behind it.
+    member private _.bringToFront() =
         if form.WindowState=FormWindowState.Minimized then form.WindowState <- FormWindowState.Normal
         form.Show()
+        OS().windowFromHwnd(form.Handle).setForeground(true)
         form.Activate()
-    member _.showView(view) =
+    member this.show() = this.bringToFront()
+    member this.showView(view) =
         select view
-        if form.WindowState=FormWindowState.Minimized then form.WindowState <- FormWindowState.Normal
-        form.Show()
-        form.Activate()
+        this.bringToFront()
+    /// The window on a setting's page, scrolled to the setting and lit, as from the search.
+    member this.showSetting(id) =
+        this.bringToFront()
+        SettingsCatalog.all |> List.tryFind(fun item -> item.id=id) |> Option.iter navigate
     member _.window = form :> Form
     member _.activeView = activePage

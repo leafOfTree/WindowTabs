@@ -166,6 +166,39 @@ let main() =
     key numberText Keys.Enter
     key numberText Keys.Down
     assertTrue (number.Value= -9M) "Negative input and arrow step"
+    // A number in range is the value as typed, so Esc keeps it rather than bring back the one before.
+    let mutable changes = 0
+    number.ValueChanged.Add(fun _ -> changes <- changes+1)
+    numberText.Text <- "42"
+    assertTrue (number.Value=42M && changes=1) "A typed number waited for Enter"
+    key numberText Keys.Escape
+    assertTrue (numberText.Text="42" && number.Value=42M) "Esc brought back the number from before typing"
+    // − and + leave the keys in the box, so Esc and Enter still reach it.
+    do
+        use host = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Point(-3000,-3000))
+        host.Controls.Add(number)
+        host.Show()
+        let plus = number.Controls |> Seq.cast<Control> |> Seq.find(fun control -> control.Text="+")
+        plus.Focus() |> ignore
+        typeof<Control>.GetMethod("OnClick",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).Invoke(plus,[|box EventArgs.Empty|]) |> ignore
+        assertTrue (number.Value=43M && numberText.Focused) "After + the keys stayed on the button, where Esc did nothing"
+        host.Controls.Remove(number)
+        // − and + sit on the middle of their buttons, the same room on every side.
+        for sign in ['−';'+'] do
+            use button = new SettingsActionButton(Text=string sign,Sign=sign,Size=Size(Dpi.scale 26,Dpi.scale 26))
+            host.Controls.Add(button)
+            use image = new Bitmap(button.Width,button.Height)
+            button.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+            let inset = Dpi.scale 5
+            let fill = image.GetPixel(inset,inset)
+            let inked = [ for y in inset..button.Height-1-inset do
+                            for x in inset..button.Width-1-inset do
+                                if image.GetPixel(x,y)<>fill then yield x,y ]
+            let xs,ys = List.map fst inked,List.map snd inked
+            let left,right = List.min xs,button.Width-1-List.max xs
+            let top,bottom = List.min ys,button.Height-1-List.max ys
+            assertTrue (abs(left-right)<=1 && abs(top-bottom)<=1) (sprintf "%c sat off its button's middle: %d/%d across, %d/%d down" sign left right top bottom)
+            host.Controls.Remove(button)
     number.Dispose()
     let input = new SettingsColorInput()
     let colorEditor = input :> IPropEditor
@@ -200,6 +233,8 @@ let main() =
         form.Show()
         Application.DoEvents()
         SettingsUi.apply form
+        // The colour of a tab asking for attention is set from the palette alone.
+        assertTrue (view.control.Controls.Find("tabFlashBgColor",true).Length=0) "The Appearance page shows the color of a tab asking for attention"
         let all = view.control.Controls.Find("tabTextColor",true)
         let layoutIds = ["tabHeight";"tabMaxWidth";"tabOverlap";"tabIndentNormal";"tabColumnWidth"]
         let layoutRows = layoutIds |> List.map(fun id -> view.control.Controls.Find(id,true).[0].Parent)
@@ -224,6 +259,13 @@ let main() =
         let codingNote = view.control.Controls.Find("colors-by-coding",true).[0]
         assertTrue (preset.Parent.Visible && not preset.Visible && not (backgroundRows.Head.Parent.Visible)) "Tab colours lost its heading, or kept its presets and colours, while automatic colours fill every tab"
         assertTrue (codingNote.Visible && codingNote.Text=tr Strings.Appearance.colorsByCoding) "Tab colours does not say why its colours are not offered"
+        // Marked as the app's own word by a bar down its left side.
+        do
+            use image = new Bitmap(codingNote.Width,codingNote.Height)
+            codingNote.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+            image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "notice-%A.png" mode))
+            assertTrue (image.GetPixel(1,image.Height/2).ToArgb()=(SettingsColors.current()).accent.ToArgb() && codingNote.Padding.Left>=Dpi.scale 8)
+                       "A notice has no bar down its left side"
         assertTrue (not note.Visible) "Filled tabs, white by design, still explain an adjustment"
         assertTrue (comparison.Samples.IsEmpty && not comparison.Visible) "Filled tabs list a sample for every adjusted colour"
         (comboNamed "tab-color-mode").SelectedIndex <- 0
@@ -249,8 +291,17 @@ let main() =
             let picker = (popup.Items.[0] :?> ToolStripControlHost).Control :?> SettingsColorPicker
             let other = if mode=DarkTheme then preferences.lightPalette else preferences.darkPalette
             let swatches = picker.Controls |> Seq.cast<Control> |> Seq.choose(function :? Button as button -> Some button | _ -> None) |> Seq.toArray
-            assertTrue (swatches.Length=8) "Picker is missing common colour shortcuts"
-            for index,expected in [0,Color.Black;1,Color.White] do
+            // The greys the looks are made of, then the tab menu's own colours.
+            assertTrue (swatches.Length=16) "Picker is missing its quick colours"
+            // Greys from black to white in even steps, each well apart from the next.
+            let greys = swatches.[0..7] |> Array.map(fun swatch -> int swatch.BackColor.R)
+            assertTrue (greys.[0]=0 && greys.[7]=255 && (greys |> Array.pairwise |> Array.forall(fun (a,b) -> b-a>=30))) "The picker's greys are too close to tell apart"
+            assertTrue (swatches.[8].BackColor.ToArgb()=(Theme.tabPalette false).[List.head Theme.tabColorOrder].ToArgb()) "The picker's colours are not the tab menu's"
+            do
+                use image = new Bitmap(picker.Width,picker.Height)
+                picker.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "color-picker-%A.png" mode))
+            for index,expected in [0,Color.Black;7,Color.White] do
                 swatches.[index].Focus() |> ignore
                 swatches.[index].PerformClick()
                 Application.DoEvents()
@@ -378,7 +429,14 @@ let main() =
         member _.suspendTabMonitoring() = ()
         member _.resumeTabMonitoring() = ()
         member _.llMouse = mouse.Publish
-        member _.paneCandidates() = []})
+        member _.paneCandidates() = []
+        member _.toggleSearch _ = ()
+        member _.saveWorkspace() = ()
+        member _.restoreWorkspace() = ()
+        member _.restoreWorkspaceNamed _ = ()
+        member _.detachTab _ = ()
+        member _.windowShortcuts() = []
+        member _.setWindowShortcut _ = true})
     let command (control:Control) (keys:Keys) =
         let mutable msg = Message()
         let processKey = control.GetType().GetMethod("ProcessCmdKey",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
@@ -395,9 +453,29 @@ let main() =
         let restore = form.Controls.Find("restore-shortcuts",true).[0]
         Application.DoEvents()
         let next = view.control.Controls.Find("next-tab",true).[0] :?> SettingsShortcutInput
-        // #82: the workspace shortcuts were in the catalog but not on the page.
+        // The window search and the palette lead the page on a card of their own, listed once.
+        do
+            let entry = view.control.Controls.Find("start-here",true).[0]
+            for id in ["search-tabs";"command-palette"] do
+                let found = view.control.Controls.Find(id,true) |> Array.filter(fun control -> control :? SettingsShortcutInput)
+                assertTrue (found.Length=1 && entry.Contains found.[0]) (sprintf "%s is not on the page's first card, once" id)
+            assertTrue (not (entry.Contains next)) "The first card holds more than the window search and the palette"
+        // The tab menu's and the settings' commands are given keys in the palette, not listed here.
+        assertTrue (view.control.Controls.Find("rename-tab",true).Length=0 && view.control.Controls.Find("toggle-dim-inactive-groups",true).Length=0)
+                   "The Shortcuts page lists commands the palette is for"
+        // Nor is a key given to one there: the palette shows it beside the command's name.
+        hotKeys.["rename-tab"] <- SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.F7)
+        do
+            let given = HotKeyView() :> ISettingsView
+            assertTrue (given.control.Controls.Find("rename-tab",true).Length=0) "A key given in the palette is listed on the Shortcuts page"
+            given.control.Dispose()
+        hotKeys.Remove "rename-tab" |> ignore
+        // #82: every shortcut with a key to begin with is on the page; one without, such as the
+        // split view's or the workspaces', is given its key in the palette.
         for item in SettingsCatalog.all do
             match item.binding with
+            | Shortcut _ when not (SettingsCatalog.inSettingsWindow item) ->
+                assertTrue (view.control.Controls.Find(item.id,true).Length=0) (sprintf "The Shortcuts page lists %s, which the palette is for" item.id)
             | Shortcut _ ->
                 assertTrue (view.control.Controls.Find(item.id,true) |> Array.exists(fun control -> control :? SettingsShortcutInput))
                       (sprintf "The shortcut %s has no editor on the Shortcuts page" item.id)
@@ -473,8 +551,10 @@ let main() =
         | _ -> failwith "Number modifier is not a choice"
         next.StartRecording()
         assertTrue (command next Keys.A && next.IsRecording && next.Shortcut=3623) "Plain key is refused while recording"
+        assertTrue (ShortcutRecording.isActive()) "Recording did not set the app's own keys aside"
         command next Keys.Escape |> ignore
         assertTrue (not next.IsRecording && next.Shortcut=3623) "Esc cancels recording"
+        assertTrue (not (ShortcutRecording.isActive())) "Cancelling a recording did not give the keys back"
         next.StartRecording()
         command next (Keys.Control ||| Keys.OemCloseBrackets) |> ignore
         let expected = SettingsShortcut.encode (Keys.Control ||| Keys.OemCloseBrackets)
@@ -497,6 +577,34 @@ let main() =
         previous.StartRecording()
         command previous Keys.Back |> ignore
         assertTrue (previous.Shortcut=0 && hotKeys.["prevTab"]=0 && not previous.IsRecording) "Backspace removes the shortcut"
+        // Enter with nothing held while recording removes it too.
+        previous.Shortcut <- 3621
+        hotKeys.["prevTab"] <- 3621
+        previous.StartRecording()
+        command previous Keys.Enter |> ignore
+        assertTrue (previous.Shortcut=0 && hotKeys.["prevTab"]=0 && not previous.IsRecording) "Enter with nothing held did not remove the shortcut"
+        // Keys Windows or the palette keep are refused by name, the shortcut left as it was.
+        previous.Shortcut <- 3621
+        hotKeys.["prevTab"] <- 3621
+        // Each says what has the key: Windows and what it does there, or the palette.
+        for reserved,why in [Keys.Alt ||| Keys.Enter,Strings.Shortcuts.usedByPalette
+                             Keys.Alt ||| Keys.F4,Strings.Shortcuts.usedByWindows Strings.Shortcuts.closeWindow
+                             Keys.Control ||| Keys.Escape,Strings.Shortcuts.usedByWindows Strings.Shortcuts.startMenu] do
+            previous.StartRecording()
+            command previous reserved |> ignore
+            assertTrue (previous.Shortcut=3621 && hotKeys.["prevTab"]=3621 && previous.Message=Some(tr why))
+                       (sprintf "%A was taken as a shortcut" reserved)
+            // Said with the key on a line under the box, as the palette says it, not cut short in it.
+            let row = previous.Parent :?> TableLayoutPanel
+            let said = tr (Strings.Shortcuts.keySays (SettingsShortcut.text (SettingsShortcut.encode reserved)) (tr why))
+            match row.GetControlFromPosition(1,1) with
+            | :? Label as note -> assertTrue (not previous.ShowsMessage && note.Visible && note.Text=said) (sprintf "The refusal of %A under the box reads %A" reserved note.Text)
+            | _ -> failwithf "The refusal of %A is not on a line under the box" reserved
+            command previous Keys.Escape |> ignore
+        // Alt+Space, the window menu's key, which launchers commonly take, can be a shortcut.
+        previous.StartRecording()
+        command previous (Keys.Alt ||| Keys.Space) |> ignore
+        assertTrue (previous.Shortcut=SettingsShortcut.encode (Keys.Alt ||| Keys.Space)) "Alt+Space was refused as a shortcut"
         previous.Shortcut <- 3621
         previous.Clear()
         assertTrue (hotKeys.["prevTab"]=0) "Clear removes the shortcut"
@@ -518,8 +626,128 @@ let main() =
         hotKeys.["prevTab"] <- 3621
         Application.DoEvents()
         paints form "The shortcuts page"
+        // A setting found by search blinks: its row's labels go to the tint, back, and to it again.
+        if mode=DarkTheme then
+            let rec labelOf (control:Control) =
+                if control :? Label && control.Text=(tr Strings.Settings.previousTab.caption) then Some control
+                else control.Controls |> Seq.cast<Control> |> Seq.tryPick labelOf
+            let label = (labelOf view.control).Value
+            let resting = label.BackColor
+            SettingsUi.flash previous
+            let clock = Diagnostics.Stopwatch.StartNew()
+            let samples = ResizeArray<bool>()
+            while clock.ElapsedMilliseconds<1800L do
+                Application.DoEvents()
+                samples.Add(label.BackColor<>resting)
+                Threading.Thread.Sleep(10)
+            let changes = samples |> Seq.pairwise |> Seq.filter(fun (a,b) -> a<>b) |> Seq.length
+            printfn "Flash: %d samples, %d changes, tinted %d" samples.Count changes (samples |> Seq.filter id |> Seq.length)
+            assertTrue (changes>=4 && not samples.[samples.Count-1]) (sprintf "A found setting did not blink twice and clear: %d changes" changes)
         hotKeys.["nextTab"] <- 3623
         form.Close()
+    // Palette rows: a shortcut just after the name, a value with its drop-down arrow, a switch.
+    do
+        use rowsForm = new Form(ClientSize=Size(560,200),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false)
+        let rows = new SettingsTreeList([TreeListColumn("",0,TextColumn);TreeListColumn("",160,TextColumn,RightAligned=true)],
+                                        ShowHeader=false,ShowExpanders=false,RowHeight=36,Dock=DockStyle.Fill,Font=SettingsUi.bodyFont())
+        let renamed = TreeListItem("Rename tab",Values=[|"";""|],Suffix="Ctrl+Alt+R")
+        let session = TreeListItem("Restore the last session after sign-in",Values=[|"";"Windows only"|],Dropdown=true)
+        let lamp = TreeListItem("Dim tabs in inactive groups",Values=[|"";""|],Switch=Some true,Suffix="Ctrl+Alt+D")
+        let textColor = TreeListItem("Tab text",Values=[|"";"#FFFFFF"|],ValueSwatch=Some Color.White)
+        rows.Roots.AddRange([renamed;session;lamp;textColor])
+        rows.Rebuild()
+        // Chosen: a row with a shortcut, which lightens on the highlight.
+        rows.SelectedItem <- lamp
+        rowsForm.Controls.Add(rows)
+        SettingsUi.apply rowsForm
+        rowsForm.Show()
+        Application.DoEvents()
+        use image = new Bitmap(rowsForm.ClientSize.Width,rowsForm.ClientSize.Height)
+        rows.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+        image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","palette-rows.png"))
+        rowsForm.Close()
+    // A name with a match lit up starts where it does without one, and the text after the match
+    // ends where it did: typing must not move it.
+    do
+        use rowsForm = new Form(ClientSize=Size(400,240),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false)
+        let rows = new SettingsTreeList([TreeListColumn("",0,TextColumn)],ShowHeader=false,ShowExpanders=false,RowHeight=36,Dock=DockStyle.Fill,Font=SettingsUi.bodyFont())
+        let plain = TreeListItem("Rename tab")
+        let lit = TreeListItem("Rename tab",Highlights=[|[0,2]|])
+        // One letter inside a word, where the cut loses the pair's kerning.
+        let whole = TreeListItem("Reset to defaults")
+        let cut = TreeListItem("Reset to defaults",Highlights=[|[12,1]|])
+        rows.Roots.AddRange([plain;lit;whole;cut])
+        rows.Rebuild()
+        rowsForm.Controls.Add(rows)
+        SettingsUi.apply rowsForm
+        rowsForm.Show()
+        Application.DoEvents()
+        use image = new Bitmap(rowsForm.ClientSize.Width,rowsForm.ClientSize.Height)
+        rows.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+        let background = image.GetPixel(image.Width-2,10).ToArgb()
+        let firstInk (item:TreeListItem) =
+            seq { for x in 0..image.Width/2 do
+                    for y in (let row = rows.RowBounds(item).Value in [row.Top+2..row.Bottom-3]) do
+                        if image.GetPixel(x,y).ToArgb()<>background then yield x }
+            |> Seq.tryHead |> Option.defaultValue -1
+        let lastInk (item:TreeListItem) =
+            seq { for x in image.Width/2 .. -1 .. 0 do
+                    for y in (let row = rows.RowBounds(item).Value in [row.Top+2..row.Bottom-3]) do
+                        if image.GetPixel(x,y).ToArgb()<>background then yield x }
+            |> Seq.tryHead |> Option.defaultValue -1
+        let plainLeft,litLeft = firstInk plain,firstInk lit
+        assertTrue (plainLeft>0 && abs(plainLeft-litLeft)<=1) (sprintf "A lit match moved its name: %d against %d" litLeft plainLeft)
+        let wholeRight,cutRight = lastInk whole,lastInk cut
+        assertTrue (wholeRight>0 && wholeRight=cutRight) (sprintf "A lit letter moved the text after it: it ends at %d, not %d" cutRight wholeRight)
+        rowsForm.Close()
+    // The palette's search box: no outline round it, only a line along its foot.
+    do
+        use boxForm = new Form(ClientSize=Size(300,60),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false)
+        boxForm.BackColor <- (SettingsColors.current()).surface
+        let box = new SettingsSearchBox(new TextBox(BorderStyle=BorderStyle.None),Dock=DockStyle.Fill,Underlined=true)
+        boxForm.Controls.Add(box)
+        boxForm.Show()
+        Application.DoEvents()
+        use image = new Bitmap(box.Width,box.Height)
+        box.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+        let background = boxForm.BackColor.ToArgb()
+        let middle = image.Width*3/4
+        assertTrue (image.GetPixel(middle,1).ToArgb()=background && image.GetPixel(1,image.Height/2).ToArgb()=background)
+                   "The palette's search box still has an outline"
+        assertTrue (image.GetPixel(middle,image.Height-1).ToArgb()<>background) "The palette's search box has no line under it"
+        boxForm.Close()
+    // At a row's right end, a note ends where a switch does, and a value sits close to its arrow.
+    do
+        use rowsForm = new Form(ClientSize=Size(420,200),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false)
+        let rows = new SettingsTreeList([TreeListColumn("",0,TextColumn);TreeListColumn("",160,TextColumn,RightAligned=true)],
+                                        ShowHeader=false,ShowExpanders=false,RowHeight=36,Dock=DockStyle.Fill,Font=SettingsUi.bodyFont())
+        let note = TreeListItem("Location",Values=[|"";"Support"|])
+        let switch = TreeListItem("Tabs",Values=[|"";""|],Switch=Some true)
+        let value = TreeListItem("Leader",Values=[|"";"Ctrl"|],Dropdown=true)
+        rows.Roots.AddRange([note;switch;value])
+        rows.Rebuild()
+        rowsForm.Controls.Add(rows)
+        SettingsUi.apply rowsForm
+        rowsForm.Show()
+        Application.DoEvents()
+        use image = new Bitmap(rows.Width,rows.Height)
+        rows.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+        let background = image.GetPixel(image.Width/2,(rows.RowBounds(note).Value.Top+rows.RowBounds(note).Value.Bottom)/2).ToArgb()
+        // The columns at the right half of a row with anything drawn in them.
+        let inked (item:TreeListItem) =
+            let row = rows.RowBounds(item).Value
+            [ for x in image.Width/2..image.Width-1 do
+                if [row.Top+2..row.Bottom-3] |> List.exists(fun y -> image.GetPixel(x,y).ToArgb()<>background) then yield x ]
+        let noteEnd,switchEnd = List.max (inked note),List.max (inked switch)
+        assertTrue (abs(noteEnd-switchEnd)<=Dpi.scale 2) (sprintf "A note at the right ends at %d, a switch at %d" noteEnd switchEnd)
+        // The arrow is the last run of ink; the value's text ends before the gap ahead of it.
+        let columns = inked value |> List.rev
+        let arrowStart = columns |> List.pairwise |> List.tryFind(fun (later,earlier) -> later-earlier>1) |> Option.map fst
+        let textEnd = columns |> List.pairwise |> List.tryFind(fun (later,earlier) -> later-earlier>1) |> Option.map snd
+        match arrowStart,textEnd with
+        | Some arrow,Some text -> assertTrue (arrow-text<=Dpi.scale 9) (sprintf "A value sits %d px from its arrow" (arrow-text))
+        | _ -> assertTrue false "A value and its arrow could not be told apart"
+        rowsForm.Close()
     // SettingsTreeList: expansion, keyboard navigation, check boxes and selection events.
     let treeList = new SettingsTreeList([TreeListColumn("Name",0,TextColumn);TreeListColumn("On",80,CheckColumn)])
     treeList.Size <- Size(400,300)

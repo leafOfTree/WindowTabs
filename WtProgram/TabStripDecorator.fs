@@ -140,6 +140,18 @@ type TabStripDecorator(group:WindowGroup) as this =
         group.pickRequested.Add(fun (axis,side) ->
             let top = group.topWindow
             this.pickBeside(top,group.splitCandidates top,axis,side))
+        // The tab menu's commands the strip does, asked for by the palette or a hotkey.
+        group.commandRequested.Add(fun command ->
+            match command with
+            | RenameTab hwnd when group.windows.contains hwnd ->
+                // The name is edited on the tab, which a hidden strip has not drawn.
+                group.isIconOnly <- false
+                try this.beginRename(hwnd) with _ -> ()
+            | CloseOtherTabs hwnd -> this.onCloseOtherWindows hwnd
+            | CloseAppTabs hwnd -> this.onCloseAllExeWindows (os.windowFromHwnd(hwnd).pid.exeName)
+            | CloseAllTabs -> this.onCloseAllWindows()
+            | SortTabs -> this.sortTabs()
+            | _ -> ())
         group.emptyPaneChanged.Add(fun (previous,current) ->
             if previous<>IntPtr.Zero then Services.dragDrop.unregisterLayoutTarget(previous, this:>ILayoutDropTarget)
             if current<>IntPtr.Zero then Services.dragDrop.registerLayoutTarget(current, this:>ILayoutDropTarget))
@@ -340,15 +352,19 @@ type TabStripDecorator(group:WindowGroup) as this =
     member private this.onCloseWindow hwnd =
         os.windowFromHwnd(hwnd).close()
 
+    /// Closing tabs together leaves the pinned ones, as a browser does.
+    member private this.closeTogether (hwnds:List2<IntPtr>) =
+        hwnds.where(PinnedTabs.contains >> not).iter this.onCloseWindow
+
     member private this.onCloseOtherWindows hwnd =
-        group.windows.items.where((<>)hwnd).iter this.onCloseWindow
+        this.closeTogether(group.windows.items.where((<>)hwnd))
 
     member private this.onCloseAllExeWindows exeName =
         let matchesExe hwnd = os.windowFromHwnd(hwnd).pid.exeName = exeName
-        group.windows.items.where(matchesExe).iter this.onCloseWindow
+        this.closeTogether(group.windows.items.where(matchesExe))
 
     member private this.onCloseAllWindows() =
-        group.windows.items.iter this.onCloseWindow
+        this.closeTogether group.windows.items
 
     member private this.sortedTabs() =
         // Each program name once per tab, not once per comparison.
@@ -356,6 +372,8 @@ type TabStripDecorator(group:WindowGroup) as this =
         |> List.map(fun hwnd -> hwnd,os.windowFromHwnd(hwnd).pid.exeName,group.tabName hwnd)
         |> TabOrder.byAppThenTitle (fun (_,app,_) -> app) (fun (_,_,title) -> title)
         |> List.map(fun (hwnd,_,_) -> hwnd)
+        // The pinned tabs sorted among themselves, still first.
+        |> PinnedTabs.ordered PinnedTabs.contains
 
     /// One move per tab out of place, each announced as a dragged tab's is.
     member private this.sortTabs() =
@@ -370,7 +388,7 @@ type TabStripDecorator(group:WindowGroup) as this =
         match Services.tryGet<ISplitPanePicker>() with
         | Some picker when not(List.isEmpty entries) ->
             picker.showWithin(group.layoutFrame.Rectangle,entries,fun chosen -> group.placeBeside(beside,chosen,axis,side))
-        | Some _ -> Alert.show AlertKind.Info (tr Strings.TabMenu.split) (tr Strings.TabMenu.splitNoWindows)
+        | Some _ -> Notice.show (tr Strings.TabMenu.split) (tr Strings.TabMenu.splitNoWindows)
         | None -> ()
 
     member private this.showSplitMenu(ptScreen:Pt, button:IntPtr option) =
@@ -539,18 +557,13 @@ type TabStripDecorator(group:WindowGroup) as this =
                 click = fun() ->
                     this.beginRename(hwnd)
             })
-        let colors() = Services.settings.getValue("appTabColors") :?> Map<string,string>
-        let sameApp path = AppIdentity.same path processPath
-        let remembered = colors() |> Map.exists(fun path _ -> sameApp path)
+        let remembered = AppTabColors.remembered processPath
         let currentColor = group.tabColor hwnd
         let dark = Theme.darkBar group.tabAppearance.tabNormalBgColor
-        let saveAppColor color =
-            let others = colors() |> Map.filter(fun path _ -> not (sameApp path))
-            let next = match color with Some value -> others.Add(processPath,Theme.formatTabColor value) | None -> others
-            Services.settings.setValue("appTabColors",box next)
+        let saveAppColor color = AppTabColors.save processPath color
         let choose color =
             group.setTabColor(hwnd,Some color)
-            if remembered then saveAppColor (Some color)
+            AppTabColors.chosen processPath color
         let colorItems =
             let palette = Theme.tabPalette dark
             Theme.tabColorOrder |> List.map(fun index ->
@@ -582,6 +595,14 @@ type TabStripDecorator(group:WindowGroup) as this =
                 text = tr Strings.TabMenu.restoreTabName
                 image = None
                 click = fun() -> group.setTabName(hwnd, None)
+                flags = List2()
+            })
+        let pinned = PinnedTabs.contains hwnd
+        let pinTabItem =
+            CmiRegular({
+                text = tr (if pinned then Strings.TabMenu.unpinTab else Strings.TabMenu.pinTab)
+                image = None
+                click = fun() -> group.setTabPinned(hwnd, not pinned)
                 flags = List2()
             })
 
@@ -653,6 +674,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(newTabItem)
             Some(renameTabItem)
             (if group.isRenamed(hwnd) then Some(restoreTabNameItem) else None)
+            Some(pinTabItem)
             Some(colorMenu)
             Some(splitMenu)
             Some(CmiSeparator)

@@ -59,6 +59,8 @@
     <Compile Include="Shared\WindowIconCache.fs" />
     <Compile Include="Shared\WindowPlacementQueue.fs" />
     <Compile Include="Shared\AppearanceModel.fs" />
+    <Compile Include="Shared\AppIdentity.fs" />
+    <Compile Include="Shared\WindowShortcuts.fs" />
     <Compile Include="Shared\ProgramTypes.fs" />
     <Compile Include="Shared\Localization.fs" />
     <Compile Include="Shared\Strings.fs" />
@@ -69,13 +71,13 @@
     <Compile Include="Shared\Serialize.fs" />
     <Compile Include="Shared\Win32Menu.fs" />
     <Compile Include="Shared\Services.fs" />
-    <Compile Include="Shared\AppIdentity.fs" />
     <Compile Include="Shared\NumberShortcutRules.fs" />
     <Compile Include="Shared\AppGroupingRules.fs" />
     <Compile Include="Shared\RuntimeDiagnostics.fs" />
     <Compile Include="Shared\Theme.fs" />
     <Compile Include="Shared\ThemePresets.fs" />
     <Compile Include="Shared\ThemeService.fs" />
+    <Compile Include="Shared\AppearanceEditing.fs" />
     <Compile Include="Shared\SettingsColors.fs" />
     <Compile Include="Shared\ThemedMenu.fs" />
     <Compile Include="Shared\AnimationWindow.fs" />
@@ -107,6 +109,8 @@
     <Compile Include="Desktop.fs" />
     <Compile Include="Workspace\WorkspaceData.fs" />
     <Compile Include="Workspace\WorkspaceModel.fs" />
+    <Compile Include="Commands.fs" />
+    <Compile Include="CommandLine.fs" />
     <Compile Include="ManagerViewService\ThemeBinding.fs" />
     <Compile Include="ManagerViewService\SettingsStyle.fs" />
     <Compile Include="ManagerViewService\SettingsControls.fs" />
@@ -132,6 +136,7 @@
     <Compile Include="DesktopPlugins\ExceptionHandlerPlugin.fs" />
     <Compile Include="TaskSwitch.fs" />
     <Compile Include="TabSearch.fs" />
+    <Compile Include="CommandPalette.fs" />
     <Compile Include="SplitPanePicker.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

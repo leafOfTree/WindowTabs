@@ -100,7 +100,7 @@ let main() =
             let count = 6
             let info index : TabDisplayInfo =
                 { tint=Some palette.[Theme.tabAllocationOrder.[index]]; colorStyle="Fill"; numberBadge=None; bgColor=None
-                  text="Tab"; icon=SystemIcons.Application; textFont=font; textBrush=SystemBrushes.MenuText; splitTrail=None }
+                  text="Tab"; icon=SystemIcons.Application; textFont=font; textBrush=SystemBrushes.MenuText; splitTrail=None; isPinned=false }
             let ids = [0..count-1]
             let strip : TabStripSprite<int> = {
                 tabs=Map2(List2(ids |> List.map(fun i -> i,info i))); lorder=List2(ids); zorder=List2(ids); size=Sz(900,27)
@@ -142,7 +142,7 @@ let main() =
                 let preview = ThemePresets.previewColor true color
                 check (max preview.R (max preview.G preview.B)>=174uy) "Dark preset preview is too dim to distinguish"
                 check (ThemePresets.previewColor false color=color) "Light preset preview changed its colour"
-        let optionalKeys = ["combineIconsInTaskbar";"replaceAltTab";"groupWindowsInSwitcher";"enableNumberLeader";"enableHoverActivate"]
+        let optionalKeys = ["combineIconsInTaskbar";"replaceAltTab";"groupWindowsInSwitcher";"enableNumberLeader";"enableHoverActivate";"tabHoverPreview"]
         let checkMinimalDefaults() =
             for key in optionalKeys do check (api.getValue(key)=box false) (sprintf "%s must be opt-in" key)
             check (api.getValue("autoHideMode")=box "Maximized") "Auto-hide lost its existing maximized-window default"
@@ -288,7 +288,12 @@ let main() =
         check (samePalette api.appearance.lightPalette Theme.lightPalette && samePalette api.appearance.darkPalette Theme.bluePalette) "Upgrade replaced explicit per-theme colours"
         api.root <- legacyJson
         check (api.hotKey "nextTab" = None) "Unchanged shortcut reported as customised"
+        // Read from one parse of the file, the palette's rows each asking for their key: parsed for
+        // each, a large file held the palette up a third of a second. A write is read at once.
+        let parsed = settings.readJson
+        check (obj.ReferenceEquals(parsed,settings.readJson)) "Every key looked up parsed the whole settings file again"
         api.setHotKey "nextTab" 0x2DD
+        check (not (obj.ReferenceEquals(parsed,settings.readJson))) "A shortcut set was read from the settings as they were before"
         check (api.hotKey "nextTab" = Some 0x2DD && int api.root.["hotKeys"].["nextTab"] = 0x2DD) "Shortcut not saved"
         api.setValue("language",box "zh")
         check (string api.root.["language"]="zh" && api.getValue("language")=box "zh") "Language setting not saved"
@@ -303,6 +308,15 @@ let main() =
         check (api.root.["tabDarkColors"].["tabHeight"] = null) "Geometry duplicated into colour palette"
         settings.clearCaches()
         check (settings.settings.appearance.mode=LightTheme && settings.settings.appearance.geometry.height=31) "Settings round-trip failed"
+        // Bold tab text and the tabs' opacity are written and read back, the opacity within its range.
+        api.setValue("tabTextBold",box true)
+        api.setValue("tabOpacity",box 10)
+        settings.clearCaches()
+        check ((api.getValue "tabTextBold" :?> bool) && (api.getValue "tabOpacity" :?> int)=fst SettingsCatalog.opacityRange)
+              (sprintf "Bold tab text and tab opacity read back as %A and %A" (api.getValue "tabTextBold") (api.getValue "tabOpacity"))
+        check (string api.root.["tabOpacity"]=string (fst SettingsCatalog.opacityRange) && string api.root.["tabTextBold"]="True") "Bold tab text and tab opacity were not written"
+        api.setValue("tabTextBold",box false)
+        api.setValue("tabOpacity",box SettingsCatalog.opacityDefault)
         api.setValue("tabUseCustomColors",box false)
         api.setValue("tabAppearance",box Theme.light)
 

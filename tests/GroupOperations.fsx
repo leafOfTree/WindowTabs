@@ -269,7 +269,14 @@ let main() =
             member _.suspendTabMonitoring() = ()
             member _.resumeTabMonitoring() = ()
             member _.llMouse = mouse.Publish
-            member _.paneCandidates() = []})
+            member _.paneCandidates() = []
+            member _.toggleSearch _ = ()
+            member _.saveWorkspace() = ()
+            member _.restoreWorkspace() = ()
+            member _.restoreWorkspaceNamed _ = ()
+            member _.detachTab _ = ()
+            member _.windowShortcuts() = []
+            member _.setWindowShortcut _ = true})
         Services.register<IFilterService>({new IFilterService with
             member _.isAppWindow _ = false
             member _.isAppWindowStyle _ = false
@@ -798,9 +805,9 @@ let main() =
                         let form = forms |> List.find(fun form -> onHelper(fun () -> form.Handle)=other)
                         let frame = onGroup(fun group -> group.layoutFrame)
                         let wide = frame.width*3/5
-                        // Said, not shown: a message box would wait on the group's thread.
+                        // A notice, taken here rather than shown.
                         let alerts = ref []
-                        Alert.install(fun _ _ message -> lock alerts (fun () -> alerts.Value <- message::alerts.Value))
+                        Notice.install(fun _ _ message -> lock alerts (fun () -> alerts.Value <- message::alerts.Value))
                         onHelper(fun () -> form.MinimumSize <- Size(wide,100))
                         try
                             onGroup(fun group -> group.execute(SplitWith(other,SideBySide),current=shown))

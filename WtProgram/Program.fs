@@ -35,9 +35,17 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let Cell = CellScope()
     let os = OS()
     let invoker = InvokerService.invoker
+    do Notice.useThread (invoker :> IDispatcher)
     let taskSwitchCell = Cell.create(None)
     let mutable initialDiscoveryComplete = false
     let tabSearchCell = Cell.create(None:TabSearchForm option)
+    /// What was typed when each box last closed, the window search's and the palette's, offered
+    /// again, selected, the next time it opens.
+    let mutable lastWindowQuery = ""
+    let mutable lastPaletteQuery = ""
+    /// The row each box had chosen as it closed, chosen again with its search.
+    let mutable lastWindowRow : IntPtr option = None
+    let mutable lastPaletteRow : IntPtr option = None
     let isTabMonitoringSuspendedCell = Cell.create(0)
     let llMouseEvent = Event<_>()
 
@@ -84,28 +92,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             | _ -> ())
 
 
-    // Default shortcuts live in SettingsCatalog; this maps each hotkey to its action.
-    let hotKeyInfo = Map2(List2([
-        ("prevTab", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.switchWindow(false, false)))
-        ("nextTab", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.switchWindow(true, false)))
-        ("searchTabs", fun () -> this.toggleTabSearch())
-        ("numberLeader", fun () -> if settingsManager.settings.enableNumberLeader then NumberLeaderRequest.toggle.Trigger())
-        ("newTab", fun () -> this.openNewTab(WinUserApi.GetForegroundWindow()))
-        // As the tab menu's Close: the window of the tab in front, and only a tab's.
-        ("closeTab", fun () ->
-            let hwnd = WinUserApi.GetForegroundWindow()
-            if this.isInGroup hwnd then os.windowFromHwnd(hwnd).close())
-        // A window chosen from a list goes beside the tab in front, as from the tab menu.
-        ("splitPickRight", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.pickPane(SideBySide,Second)))
-        ("splitPickBelow", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.pickPane(Stacked,Second)))
-        ("splitFocusLeft", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneLeft)))
-        ("splitFocusRight", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneRight)))
-        ("splitFocusUp", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneUp)))
-        ("splitFocusDown", fun () -> Services.desktop.foregroundGroup.iter(fun g -> g.executeSplit(FocusToward PaneDown)))
-        ("saveWorkspace", fun () -> this.saveWorkspace())
-        ("restoreWorkspace", fun () -> this.restoreWorkspace())
-        ]))
-        
+    // Each hotkey runs the command its shortcut key belongs to; the commands and their default
+    // shortcuts live in Commands and SettingsCatalog.
     let hotKeyManager = lifetime.Own(new HotKeyManager())
     // Native events can pump during startup, before the filter is registered in run.
     // The initial full refresh processes those windows once the services are ready.
@@ -144,6 +132,11 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// Windows is signing out: the session is written now, while the apps are still open, and not
     /// again at exit, when some have closed already and would be missing from it.
     let mutable sessionEnding = false
+    /// What the command line that started this copy asked for, done once the first scan is over.
+    let mutable startupRequest : CommandLineRequest option = None
+    /// Programs started together from the command line: the windows they open in the next
+    /// while go into one group, made at the first.
+    let mutable launched : (string list * DateTime * GroupInfo option ref) list = []
     /// Automatic groups of one app that have come to share a desktop are looked for at most once a second.
     let mergeSoon = lifetime.Own(new CoalescedAction(1000, fun () -> this.mergeAutoGroups()))
     let desktopRetry = lifetime.Own(new CoalescedAction(100, fun () ->
@@ -158,11 +151,15 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         lifetime.Own({new IDisposable with
             member _.Dispose() = tabSearchCell.value.iter(fun search -> search.Close())}) |> ignore
         this.registerHotKeys()
+        // While a shortcut is recorded, the keys go to the box rather than to what they run.
+        lifetime.Own(ShortcutRecording.Changed.Subscribe(fun recording ->
+            if recording then hotKeyManager.suspend() else hotKeyManager.resume())) |> ignore
         lifetime.Own(Services.settings.notifyValue "enableNumberLeader" (fun value ->
             if unbox<bool> value then
                 if not ((this :> IProgram).setHotKey "numberLeader" ((this :> IProgram).getHotKey "numberLeader")) then
                     Services.settings.setValue("enableNumberLeader",box false)
-                    Alert.showSystem AlertKind.Warning (tr Strings.Settings.numberLeader.caption) (tr Strings.Shortcuts.inUse)
+                    // Said beside the switch just turned, not in a box to dismiss.
+                    Notice.error (tr Strings.Settings.numberLeader.caption) (tr Strings.Shortcuts.inUse)
             else hotKeyManager.unregister "numberLeader")) |> ignore
         let startupSubscription = Services.settings.notifyValue "runAtStartup" this.updateRunAtStartup
         let switcherSubscription = Services.settings.notifyValue "replaceAltTab" (fun value ->
@@ -254,7 +251,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// started with Windows still open their windows. Saving waits for it.
     member private this.restoreSessionAtStart() =
         let mode = this.sessionMode
-        if mode="Off" || tokensSeen then sessionReady <- true
+        // A workspace asked for on the command line takes the session's place.
+        let workspaceAsked = match startupRequest with Some(RestoreWorkspace _) -> true | _ -> false
+        if mode="Off" || tokensSeen || workspaceAsked then sessionReady <- true
         else
             let timer = new System.Windows.Forms.Timer(Interval=4000)
             timer.Tick.Add(fun _ ->
@@ -583,9 +582,71 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             gi.windows.iter <| fun hwnd ->
                 if this.isTabbableWindow(os.windowFromHwnd(hwnd)).not then gi.removeWindow hwnd
 
+    /// A window of a program started with others from the command line joins their group, for a
+    /// minute after the start; the first of them makes the group, by hand.
+    member this.tryLaunched(window:Window) =
+        if launched.IsEmpty then None
+        else
+            let now = DateTime.UtcNow
+            launched <- launched |> List.filter(fun (_,since,_) -> now-since<TimeSpan.FromSeconds 60.0)
+            let path = window.pid.processPath
+            launched
+            |> List.tryFind(fun (paths,_,_) -> paths |> List.exists(fun each -> AppIdentity.same each path))
+            |> Option.map(fun (_,_,holder) ->
+                match holder.Value with
+                | Some group when not group.isExited && not group.isRetiring -> Some(group :> IGroup)
+                | _ ->
+                    let group = Services.desktop.createGroup(Services.settings.getValue("combineIconsInTaskbar").cast<bool>()) :?> GroupInfo
+                    group.group.isManual <- true
+                    holder.Value <- Some group
+                    Some(group :> IGroup))
+
+    /// Starts the programs; the windows they open go into one group.
+    member this.launchGroup(paths:string list) =
+        launched <- (paths,DateTime.UtcNow,ref None)::launched
+        WorkspaceLaunch.start paths (fun failures -> for name,reason in failures do Notice.error name reason)
+
+    /// What a command line asks for, done here; what the console is told, or why not.
+    member this.execute(request:CommandLineRequest) : Result<string,string> =
+        match request with
+        | RunCommand(id,choice) ->
+            match Commands.find id with
+            | None -> Result.Error (tr (Strings.CommandLine.unknownCommand id))
+            | Some command ->
+                let hwnd = WinUserApi.GetForegroundWindow()
+                if not (command.enabled hwnd) then Result.Error (tr (Strings.CommandLine.unavailable (tr command.text.caption))) else
+                match command.run hwnd with
+                | Done | Stay -> Result.Ok ""
+                // The value on the command line, as typed in the palette.
+                | Ask question ->
+                    match choice with
+                    | None -> this.showQuestion(tr command.text.caption,question); Result.Ok ""
+                    | Some value ->
+                        match question.accept value with
+                        | None -> Result.Ok ""
+                        | Some reason -> Result.Error reason
+                | Choose options ->
+                    match choice with
+                    | None -> this.showChoices(tr command.text.caption,options); Result.Ok ""
+                    | Some wanted ->
+                        match options |> List.tryFind(fun option -> String.Equals(option.label,wanted,StringComparison.CurrentCultureIgnoreCase)) with
+                        | Some option -> option.run() |> ignore; Result.Ok ""
+                        | None -> Result.Error (tr (Strings.CommandLine.noSuchChoice wanted (options |> List.map(fun option -> option.label))))
+        | RestoreWorkspace name ->
+            if this.workspaceSummaries() |> List.exists(fun (saved,_) -> saved=name) then this.restoreWorkspaceNamed name; Result.Ok ""
+            else Result.Error (tr (Strings.CommandLine.noSuchWorkspace name))
+        | StartGroup paths -> this.launchGroup paths; Result.Ok ""
+        | ListCommands -> Result.Ok (CommandLine.listing())
+        | Invalid given -> Result.Error (CommandLine.invalid given)
+        | Start | Restart | Help -> Result.Ok (CommandLine.usage())
+
+    /// Done once the first scan is over, as the windows are in their groups by then.
+    member this.queueRequest(request:CommandLineRequest) = startupRequest <- Some request
+
     member this.findGroupForWindow(window:Window) : IGroup option =
         let handlers = List2([
             this.tryDropped
+            this.tryLaunched
             this.tryRestoredGroup
             this.tryGroupingRule
             this.tryAutoGroup
@@ -672,20 +733,105 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
     member this.foregroundGroup = this.desktop.foregroundGroup
 
-    /// Opens the tab search, or closes it when it is already open.
-    member this.toggleTabSearch() =
+    /// Opens the palette on a scope, the windows when none is asked for, or closes it when it is
+    /// open on that scope already; open on another scope, it goes there instead.
+    member this.togglePalette(scope:PaletteScope option) =
         match tabSearchCell.value with
-        | Some search -> search.Close()
+        // The window search and the command palette are two boxes: the key of the one open closes
+        // it, the other's puts its box up instead.
+        | Some search when search.HasWindows<>scope.IsNone ->
+            search.Close()
+            (this.openPalette(scope) : TabSearchForm).Show()
+        | Some search when (match scope with None -> true | Some wanted -> search.Scope=wanted) -> search.Close()
+        | Some search -> scope |> Option.iter search.SetScope
+        | None -> (this.openPalette(scope) : TabSearchForm).Show()
+
+    /// The box over the window in front, built but not shown: the window search for no scope,
+    /// else the command palette on that scope.
+    member private this.openPalette(scope:PaletteScope option) : TabSearchForm =
+        let active = WinUserApi.GetForegroundWindow()
+        let search =
+            match scope with
+            | None ->
+                let nameOverride hwnd = windowNameOverride.tryFind(hwnd).bind(id)
+                // The desktop keeps each group's windows in tab order.
+                let groups = this.desktop.groups.list |> List.map(fun group -> group.windows.list)
+                let group = this.desktop.foregroundGroup |> Option.map(fun group -> group.windows.list) |> Option.defaultValue []
+                // The windows' keys read once for all the rows, and again once one is set.
+                let known : WindowShortcut list option ref = ref None
+                let shortcuts() =
+                    match known.Value with
+                    | Some saved -> saved
+                    | None ->
+                        let saved = this.windowShortcuts()
+                        known.Value <- Some saved
+                        saved
+                // Alt+Enter on a window gives it a key, kept by its program and name.
+                let windowShortcut (entry:TabSearchEntry) =
+                    let path = try os.windowFromHwnd(entry.hwnd).pid.processPath with _ -> ""
+                    if path="" then None
+                    else
+                        let saved() : WindowShortcut list = shortcuts()
+                        let current() = WindowShortcuts.find (saved()) path entry.title |> Option.map(fun s -> s.code) |> Option.defaultValue 0
+                        Some { current=current()
+                               usedBy=fun code ->
+                                   if code=0 then None
+                                   else
+                                       match Commands.holderName (this :> IProgram).getHotKey "" code with
+                                       | Some name -> Some name
+                                       | None ->
+                                           saved() |> List.tryFind(fun other -> other.code=code && not (AppIdentity.same other.path path && other.title=entry.title))
+                                           |> Option.map(fun other -> other.title)
+                               set=fun code ->
+                                   known.Value <- None
+                                   (this :> IProgram).setWindowShortcut { path=path; title=entry.title; code=code } }
+                TabSearchForm(TabSearch.tabs nameOverride active groups,group,settings=(settingsManager :> ISettings),
+                              windowShortcut=windowShortcut,windowShortcutText=(fun entry ->
+                                  let path = try os.windowFromHwnd(entry.hwnd).pid.processPath with _ -> ""
+                                  WindowShortcuts.find (shortcuts()) path entry.title |> Option.map(fun s -> SettingsShortcut.text s.code) |> Option.defaultValue ""))
+            | Some wanted ->
+                let pages = [CommandPalette.actionsPage active]
+                let palette = TabSearchForm([],[],settings=(settingsManager :> ISettings),pages=pages,scope=wanted,windows=false)
+                // The group's own choices, read on its thread, shown beside their commands once in.
+                match this.desktop.groups.tryFind(fun group -> group.windows.contains((=)active)) with
+                | Some(:? GroupInfo as info) -> info.readShownChoices(fun () -> palette.Refresh())
+                | _ -> ()
+                palette
+        let isWindows = scope.IsNone
+        search.Query <- if isWindows then lastWindowQuery else lastPaletteQuery
+        // A window switched to is in front now, and listed last: the best match is chosen instead.
+        (if isWindows then lastWindowRow |> Option.filter((<>) (WinUserApi.GetForegroundWindow())) else lastPaletteRow)
+        |> Option.iter search.ChooseRow
+        search.Ended.Add(fun () ->
+            if isWindows then
+                lastWindowQuery <- search.BaseQuery
+                lastWindowRow <- search.BaseRow
+            else
+                lastPaletteQuery <- search.BaseQuery
+                lastPaletteRow <- search.BaseRow
+            tabSearchCell.set(None))
+        tabSearchCell.set(Some(search))
+        search
+
+    /// A command's choices, from a hotkey: the palette opens on them.
+    member this.showChoices(caption:string, options:CommandChoice list) = this.paletteOpen().ShowChoices(caption,options)
+
+    /// A value a command asks for, from a hotkey: the palette opens on it.
+    member this.showQuestion(caption:string, question:CommandQuestion) = this.paletteOpen().Ask(caption,question)
+
+    member private this.paletteOpen() : TabSearchForm =
+        match tabSearchCell.value with
+        | Some search -> search
         | None ->
-            let nameOverride hwnd = windowNameOverride.tryFind(hwnd).bind(id)
-            // The desktop keeps each group's windows in tab order.
-            let groups = this.desktop.groups.list |> List.map(fun group -> group.windows.list)
-            let group = this.desktop.foregroundGroup |> Option.map(fun group -> group.windows.list) |> Option.defaultValue []
-            let search = TabSearchForm(TabSearch.tabs nameOverride (WinUserApi.GetForegroundWindow()) groups,group,
-                                      settings=(settingsManager :> ISettings))
-            search.Ended.Add(fun () -> tabSearchCell.set(None))
-            tabSearchCell.set(Some(search))
+            let search = this.openPalette(Some ActionScope)
             search.Show()
+            search
+
+    /// Each saved workspace's name and how many windows it holds.
+    member private this.workspaceSummaries() : (string * int) list =
+        let workspaces : WorkspaceModel = this.readWorkspaces()
+        workspaces.workspaces.list |> List.map(fun (ws:Workspace) ->
+            ws.name,ws.groups.list |> List.sumBy(fun group -> group.cast<WorkspaceGroup>().windows.count))
 
     /// The saved workspaces as Settings last wrote them, which an open Settings page may have changed.
     member private this.readWorkspaces() =
@@ -713,10 +859,10 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 Notice.error title (tr (Strings.Notices.saveFailed error.Message))
                 Diagnostics.Trace.TraceWarning("Workspace save failed: {0}",error.Message)
 
-    /// Brings back the workspace last saved or restored, with the result on screen rather than in a dialog.
-    member this.restoreWorkspace() =
+    /// Brings a workspace back, with the result on screen rather than in a dialog.
+    member private this.restoreWith (chosen:WorkspaceModel -> Workspace option) (restore:WorkspaceModel -> WorkspaceRestoreResult option) =
         let workspaces = this.readWorkspaces()
-        match workspaces.lastUsed with
+        match chosen workspaces with
         | None -> Notice.show (tr Strings.Pages.workspaces) (tr Strings.Workspaces.noneSaved)
         | Some ws ->
             // Said first, and painted before the windows move, so a user leaves them alone meanwhile.
@@ -726,19 +872,59 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 go.Stop()
                 go.Dispose()
                 try
-                    workspaces.restoreLast() |> Option.iter(fun result -> this.noticeRestored result.workspace result)
+                    restore workspaces |> Option.iter(fun result -> this.noticeRestored result.workspace result)
                 with error ->
                     Notice.error ws.name (tr (Strings.Notices.restoreFailed error.Message))
                     Diagnostics.Trace.TraceWarning("Workspace restore failed: {0}",error.Message))
             go.Start()
 
+    /// Brings back the workspace last saved or restored.
+    member this.restoreWorkspace() =
+        this.restoreWith (fun workspaces -> workspaces.lastUsed) (fun workspaces -> workspaces.restoreLast())
+
+    /// Brings back the workspace of that name, as choosing it in the palette does.
+    member this.restoreWorkspaceNamed(name:string) =
+        this.restoreWith (fun workspaces -> workspaces.workspaces.tryFind(fun ws -> ws.name=name))
+                         (fun workspaces -> workspaces.restoreNamed name)
+
     /// A shortcut another program already holds stays unregistered, without a message at every
     /// start; choosing it again in Settings says it is in use.
     member this.registerHotKeys() =
-        hotKeyInfo.items.iter <| fun(key,action) ->
-            let shortcut = if key="numberLeader" && not settingsManager.settings.enableNumberLeader then 0 else this.cast<IProgram>().getHotKey(key)
-            let shortcut = HotKeyShortcut(HotKeyControlCode=int16(shortcut))
-            hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags, shortcut.RegisterHotKeyVirtualKeyCode) action |> ignore
+        for command in Commands.all do
+            command.shortcut |> Option.iter(fun key ->
+                let shortcut = if key="numberLeader" && not settingsManager.settings.enableNumberLeader then 0 else this.cast<IProgram>().getHotKey(key)
+                let shortcut = HotKeyShortcut(HotKeyControlCode=int16(shortcut))
+                hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags, shortcut.RegisterHotKeyVirtualKeyCode) (this.runCommand command) |> ignore)
+        for shortcut in this.windowShortcuts() do this.registerWindowShortcut shortcut |> ignore
+
+    member private this.windowShortcuts() : WindowShortcut list = WindowShortcuts.read (Services.settings.root.["windowShortcuts"])
+
+    member private this.registerWindowShortcut(shortcut:WindowShortcut) =
+        let chord = HotKeyShortcut(HotKeyControlCode=int16 shortcut.code)
+        hotKeyManager.register (WindowShortcuts.key shortcut) (chord.RegisterHotKeyModifierFlags,chord.RegisterHotKeyVirtualKeyCode) (fun () -> this.switchToWindow shortcut)
+
+    /// The window a key names comes to the front; with none of its program open, the program starts.
+    member private this.switchToWindow(shortcut:WindowShortcut) =
+        let nameOverride hwnd = windowNameOverride.tryFind(hwnd).bind(id)
+        let windows =
+            os.windowsInZorder.list
+            |> List.filter(fun window -> window.isAltTabWindow || this.isInGroup window.hwnd)
+            |> List.map(fun window -> window.hwnd,(try window.pid.processPath with _ -> ""),(nameOverride window.hwnd |> Option.defaultValue window.text))
+        match WindowShortcuts.target windows shortcut with
+        | Some hwnd -> os.windowFromHwnd(hwnd).setForegroundOrRestore(false)
+        | None ->
+            try Process.Start(ProcessStartInfo(shortcut.path,UseShellExecute=true)) |> ignore
+            with error -> Notice.error (IO.Path.GetFileName shortcut.path) error.Message
+
+    /// A command from its hotkey, for the window in front; a choice it leaves opens the palette.
+    member this.runCommand (command:Command) () =
+        let hwnd = WinUserApi.GetForegroundWindow()
+        // Its key does nothing where the palette would show it dimmed, rather than offer choices that do nothing.
+        if not (command.enabled hwnd) then () else
+        match command.run hwnd with
+        | Done | Stay -> ()
+        | Choose options -> this.showChoices(tr command.text.caption,options)
+        | Ask question -> this.showQuestion(tr command.text.caption,question)
 
    
     member this.hwndZorders() : Map2<IntPtr, int>= Map2(os.windowsInZorder.enumerate.map(fun(i,w) -> w.hwnd,i))
@@ -865,13 +1051,15 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             (settingsManager :> ISettings).hotKey key |> Option.defaultValue (SettingsCatalog.shortcutDefault key)
 
         member x.setHotKey key value =
-            let action = hotKeyInfo.find(key)
-            let shortcut = HotKeyShortcut(HotKeyControlCode=int16(value))
-            let registered = hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags,shortcut.RegisterHotKeyVirtualKeyCode) action
-            if registered then
-                (settingsManager :> ISettings).setHotKey key value
-                if key="numberLeader" && not settingsManager.settings.enableNumberLeader then hotKeyManager.unregister key
-            registered
+            match Commands.byShortcut key with
+            | None -> false
+            | Some command ->
+                let shortcut = HotKeyShortcut(HotKeyControlCode=int16(value))
+                let registered = hotKeyManager.register key (shortcut.RegisterHotKeyModifierFlags,shortcut.RegisterHotKeyVirtualKeyCode) (this.runCommand command)
+                if registered then
+                    (settingsManager :> ISettings).setHotKey key value
+                    if key="numberLeader" && not settingsManager.settings.enableNumberLeader then hotKeyManager.unregister key
+                registered
 
         member x.newTab hwnd = this.openNewTab hwnd
 
@@ -883,6 +1071,29 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             TabSearch.tabs nameOverride (WinUserApi.GetForegroundWindow()) groups
             |> List.filter(fun entry -> entry.desktop="")
             |> List.map(fun entry -> entry.hwnd,entry.title,entry.program)
+
+        member x.toggleSearch scope = this.togglePalette scope
+        member x.saveWorkspace() = this.saveWorkspace()
+        member x.restoreWorkspace() = this.restoreWorkspace()
+        member x.restoreWorkspaceNamed name = this.restoreWorkspaceNamed name
+        member x.windowShortcuts() = this.windowShortcuts()
+        member x.setWindowShortcut shortcut =
+            let registered = shortcut.code=0 || this.registerWindowShortcut shortcut
+            if registered then
+                if shortcut.code=0 then hotKeyManager.unregister (WindowShortcuts.key shortcut)
+                let root = Services.settings.root
+                root.["windowShortcuts"] <- WindowShortcuts.write (WindowShortcuts.set (this.windowShortcuts()) shortcut)
+                Services.settings.root <- root
+            registered
+
+        // As a tab dragged out onto the desktop: marked as dropped, it starts a group by hand when
+        // the next scan finds it on its own.
+        member x.detachTab hwnd =
+            this.desktop.groups.tryFind(fun group -> group.windows.contains((=)hwnd)) |> Option.iter(fun group ->
+                if group.windows.count>1 then
+                    isDroppedAndAwaitingGrouping.map(fun s -> s.add hwnd)
+                    group.removeWindow hwnd
+                    refreshQueue.RequestAll())
 
     interface IDesktopNotification with
         member x.dragDrop(hwnd) =
@@ -913,6 +1124,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             Services.desktop.groupExited.Add(fun group -> if sessionMembers.Remove group.hwnd then sessionSoon.Request())
             this.updateTaskSwitcher(Services.settings.getValue("replaceAltTab"))
             this.restoreSessionAtStart()
+            startupRequest |> Option.iter(fun request -> this.execute request |> ignore)
+            // Later command lines reach this copy here; each is done on the main thread.
+            lifetime.Own(new CommandServer(CommandPipe.name,fun argv -> dispatcher.Send(fun () -> this.execute (CommandLine.parse argv)))) |> ignore
             sessionTimer.Tick.Add(fun _ -> this.saveSession())
             sessionTimer.Start()
             Microsoft.Win32.SystemEvents.SessionEnding.Add(fun _ ->
@@ -938,13 +1152,34 @@ module Bootstrap =
         Application.SetCompatibleTextRenderingDefault(false)
         use logger = new ExceptionHandlerPlugin()
         (logger :> IPlugin).init()
+        let request = CommandLine.parse argv
         try
+            match request with
+            | Help ->
+                ConsoleOutput.write (CommandLine.usage())
+                0
+            // What was wrong, briefly, rather than the whole help.
+            | Invalid given ->
+                ConsoleOutput.write (CommandLine.invalid given)
+                2
+            | ListCommands ->
+                ConsoleOutput.write (CommandLine.listing())
+                0
+            | _ ->
             use instance = new SingleInstance("BemoSoftware.WindowTabs")
             // Starting WindowTabs again replaces the running copy, whichever build or folder either
             // came from: the running one exits as from its tray menu, and this one takes over.
             use replaceRequest = new Threading.EventWaitHandle(false,Threading.EventResetMode.AutoReset,"BemoSoftware.WindowTabs.Replace")
             // A restart (after importing settings) waits for the previous instance to exit.
-            let wait = if Array.contains "--restart" argv then 10000 else 0
+            let wait = if request=Restart then 10000 else 0
+            // A command line with something to do goes to the running copy, which stays.
+            let forwarded = match request with RunCommand _ | RestoreWorkspace _ | StartGroup _ -> true | _ -> false
+            if forwarded && not (instance.TryAcquire(0)) then
+                match CommandPipe.send CommandPipe.name argv 3000 with
+                | Some(Result.Ok text) -> (if text<>"" then ConsoleOutput.write text); 0
+                | Some(Result.Error text) -> ConsoleOutput.write text; 1
+                | None -> ConsoleOutput.write (tr Strings.CommandLine.notListening); 1
+            else
             // Only a copy that does not exit in time is reported as already running.
             let acquired = instance.TryAcquire(wait) || (replaceRequest.Set() && instance.TryAcquire(15000))
             if not acquired then
@@ -957,6 +1192,7 @@ module Bootstrap =
                 if Environment.GetEnvironmentVariable("WINDOWTABS_CHECK_THREADS")="1" then Control.CheckForIllegalCrossThreadCalls <- true
                 use lifetime = new LifetimeScope(fun error -> logger.log "Shutdown" error)
                 let program = StartupTrace.measure "program.initialize" (fun () -> Program(lifetime))
+                if forwarded then program.queueRequest request
                 program.claimRunAtStartup()
                 // Its own request was taken by the instance it replaced, or none was made.
                 replaceRequest.Reset() |> ignore

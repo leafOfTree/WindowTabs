@@ -19,13 +19,15 @@ module SettingsBindings =
         let control = settingToggle key
         SettingsUi.settingRow table id control
 
-    /// A dropdown for a Choice setting, without a row; labels are listed in the same order as the
-    /// catalog values.
-    let choice id (labels:string[]) =
+    /// A Choice setting's labels as the catalog names them, in the order of its values.
+    let labels id = SettingsCatalog.choiceLabels id |> List.map tr |> Array.ofList
+
+    /// A dropdown for a Choice setting, without a row, its labels the catalog's.
+    let choice id =
         match (SettingsCatalog.find id).binding with
         | Choice(key,values,fallback) ->
             let values = Array.ofList values
-            let choice = SettingsUi.choice labels
+            let choice = SettingsUi.choice (labels id)
             let indexOf value = Array.tryFindIndex ((=) value) values
             choice.SelectedIndex <- indexOf (Services.settings.getValue(key) :?> string)
                                     |> Option.orElse (indexOf fallback) |> Option.defaultValue 0
@@ -34,8 +36,8 @@ module SettingsBindings =
             choice
         | _ -> invalidArg "id" "Not a choice"
 
-    let choiceRow table id (labels:string[]) =
-        let choice = choice id labels
+    let choiceRow table id =
+        let choice = choice id
         SettingsUi.settingRow table id choice
         choice
 
@@ -48,7 +50,7 @@ module SettingsBindings =
         for _ in 1..3 do table.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f/3.0f)) |> ignore
         let mutable refreshing = false
         let choices =
-            [|"system",tr Strings.Appearance.system;"light",tr Strings.Appearance.light;"dark",tr Strings.Appearance.dark|]
+            Array.zip [|"system";"light";"dark"|] (labels "theme")
             |> Array.mapi (fun index (mode,label) ->
                 let tile = new SettingsThemeTile(mode,Text=label,Font=bodyFont(),AccessibleName=label)
                 table.Controls.Add(tile,index,0)

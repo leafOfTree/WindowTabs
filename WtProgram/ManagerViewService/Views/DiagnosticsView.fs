@@ -6,7 +6,8 @@ open System.Text
 open System.Windows.Forms
 open Bemo.Json
 
-module private SettingsFile =
+/// The settings file's own actions, from the Support page or the command palette.
+module SettingsFile =
     type Location = Portable | AppData | WorkingDirectory
     /// Which of the places Settings looks in holds the file in use.
     let location() =
@@ -18,13 +19,17 @@ module private SettingsFile =
     /// Keys only a WindowTabs settings file has; an import needs at least one of them.
     let private knownKeys = ["version";"tabAppearance";"includedPaths";"excludedPaths";"runAtStartup";"alignment";"workspaces"]
 
+    /// The file selected in a File Explorer window.
+    let showInFolder() =
+        Diagnostics.Process.Start("explorer.exe",sprintf "/select,\"%s\"" Services.settings.path) |> ignore
+
     let export (owner:IWin32Window) =
         use dialog = new SaveFileDialog(FileName="WindowTabsSettings.json",Filter="JSON (*.json)|*.json",
                                         AddExtension=true,DefaultExt="json",OverwritePrompt=true)
         if dialog.ShowDialog(owner)=DialogResult.OK then
             // The in-memory root, including edits still waiting to be written.
             File.WriteAllText(dialog.FileName,Services.settings.root.ToString(),UTF8Encoding(false))
-            Alert.show AlertKind.Info (tr Strings.General.settingsFile) (tr Strings.General.exported)
+            Notice.show (tr Strings.General.settingsFile) (tr Strings.General.exported)
 
     /// Replaces every setting, keeping a copy of the current ones beside the settings file, then
     /// restarts so hotkeys, workspaces, rules and open groups all reload.
@@ -180,8 +185,7 @@ type DiagnosticsView() =
             try action owner
             with error -> Alert.show AlertKind.Warning (tr Strings.Common.operationFailed) error.Message
         let openFolder = SettingsUi.button (tr Strings.General.openFolder)
-        openFolder.Click.Add(run (fun _ ->
-            Diagnostics.Process.Start("explorer.exe",sprintf "/select,\"%s\"" Services.settings.path) |> ignore))
+        openFolder.Click.Add(run (fun _ -> SettingsFile.showInFolder()))
         // Which file is in use shows in the path itself; the heading's (i) says how it is chosen.
         SettingsUi.settingRowWithHelp card "settings-location" Services.settings.path None openFolder |> ignore
         let backup = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false)

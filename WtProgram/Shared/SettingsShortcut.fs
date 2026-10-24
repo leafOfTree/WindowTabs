@@ -2,6 +2,23 @@
 open System
 open System.Windows.Forms
 
+/// While a shortcut is being recorded, the app's own global shortcuts stand aside: Windows hands
+/// a registered key to its owner before any window sees it, so the box never got the key, and
+/// the command bound to it ran instead. Main thread only, where the boxes and the hotkeys live.
+module ShortcutRecording =
+    let private count = ref 0
+    let private changed = Event<bool>()
+    /// True as the first recording starts, false as the last one ends.
+    let Changed = changed.Publish
+    let isActive() = count.Value>0
+    let start() =
+        count.Value <- count.Value+1
+        if count.Value=1 then changed.Trigger true
+    let stop() =
+        if count.Value>0 then
+            count.Value <- count.Value-1
+            if count.Value=0 then changed.Trigger false
+
 /// Shortcuts use the hotkey control's encoding: virtual key in the low byte,
 /// HOTKEYF_* modifier flags in the high byte.
 module SettingsShortcut =
@@ -49,6 +66,22 @@ module SettingsShortcut =
     let text code = String.Join("+",parts code)
     let heldParts (modifiers:Keys) =
         modifierNames (modifiers.HasFlag(Keys.Control),modifiers.HasFlag(Keys.Alt),modifiers.HasFlag(Keys.Shift))
+    /// Kept by Windows, or by the palette for setting a shortcut, with what each does there:
+    /// taking one would stop it working. Not Alt+Space: its window menu is also on a right click of
+    /// the title bar, and launchers commonly take the key.
+    let private reserved =
+        let windows what = Strings.Shortcuts.usedByWindows what
+        [Keys.Alt ||| Keys.Enter,Strings.Shortcuts.usedByPalette
+         Keys.Alt ||| Keys.F4,windows Strings.Shortcuts.closeWindow
+         Keys.Alt ||| Keys.Tab,windows Strings.Shortcuts.switchWindows
+         Keys.Alt ||| Keys.Shift ||| Keys.Tab,windows Strings.Shortcuts.switchWindows
+         Keys.Alt ||| Keys.Escape,windows Strings.Shortcuts.cycleWindows
+         Keys.Control ||| Keys.Escape,windows Strings.Shortcuts.startMenu
+         Keys.Control ||| Keys.Shift ||| Keys.Escape,windows Strings.Shortcuts.taskManager]
+        |> List.map(fun (keys,why) -> encode keys,why)
+    /// Why a key cannot be a shortcut, for one Windows or the palette keeps.
+    let reservedFor (keyData:Keys) = reserved |> List.tryPick(fun (code,why) -> if code=encode keyData then Some why else None)
+    let isReserved (keyData:Keys) = (reservedFor keyData).IsSome
     /// A global shortcut without Ctrl or Alt would swallow ordinary typing.
     let isAcceptable (keyData:Keys) =
         let key = keyData &&& Keys.KeyCode

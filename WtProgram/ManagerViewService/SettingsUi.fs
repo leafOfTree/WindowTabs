@@ -111,22 +111,33 @@ module SettingsUi =
             let mix (a:Color) (b:Color) (t:float) =
                 let channel (x:byte) (y:byte) = int(Math.Round(float x+(float y-float x)*t))
                 Color.FromArgb(channel a.R b.R,channel a.G b.G,channel a.B b.B)
-            let clock = Diagnostics.Stopwatch.StartNew()
+            let clock = Diagnostics.Stopwatch()
             let timer = new Timer(Interval=16)
+            // The editors paint their own backgrounds in the row's colour, so they follow the tint.
+            let repaint() = if not row.IsDisposed then row.Invalidate(true)
             let finish restore =
                 timer.Stop()
                 timer.Dispose()
-                if restore then for item,color in targets do if not item.IsDisposed then item.BackColor <- color
+                if restore then
+                    for item,color in targets do if not item.IsDisposed then item.BackColor <- color
+                    repaint()
+            /// On screen: opened from the palette, the window is not up yet, and a blink before
+            /// that would be over before it is seen. The clock runs only from then.
+            let shown() =
+                row.Visible && (match row.FindForm() with null -> false | form -> form.Visible && form.WindowState<>FormWindowState.Minimized)
             timer.Tick.Add(fun _ ->
                 let p = palette()
                 // A theme change repaints everything with the new colours; leave those alone.
                 if row.IsDisposed || p.background<>start.background || p.accent<>start.accent then finish false
+                elif not clock.IsRunning && not (shown()) then ()
                 else
+                    clock.Start()
                     let elapsed = clock.Elapsed.TotalMilliseconds
                     if elapsed >= SettingsFlash.hold+SettingsFlash.fade then finish true
                     else
                         let strength = 0.22*SettingsFlash.strength elapsed
-                        for item,color in targets do item.BackColor <- mix color p.accent strength)
+                        for item,color in targets do item.BackColor <- mix color p.accent strength
+                        repaint())
             timer.Start())
 
     let button caption =
@@ -156,6 +167,15 @@ module SettingsUi =
         // Close to its first row, which has its own top padding.
         label.Margin <- Padding(0,(if table.RowCount=0 then 0 else Dpi.scale 24),0,Dpi.scale 4)
         add table label
+
+    /// Marks a label as something the app says about the settings, such as a colour it adjusted:
+    /// a bar down its left side in the accent colour, the text set in from it.
+    let notice (label:Label) =
+        label.Padding <- Padding(Dpi.scale 10,Dpi.scale 2,0,Dpi.scale 2)
+        label.Paint.Add(fun e ->
+            let p = SettingsColors.current()
+            use bar = new SolidBrush(if SystemInformation.HighContrast then SystemColors.Highlight else p.accent)
+            e.Graphics.FillRectangle(bar,Rectangle(0,0,Dpi.scale 3,label.Height)))
 
     let note (table:TableLayoutPanel) caption =
         let label = new Label(Text=caption,AutoSize=true,Tag="muted")

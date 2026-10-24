@@ -30,6 +30,10 @@ module AutoGroup =
             |> Option.map(fun other -> if size other>=size group then other,group else group,other)
         | _ -> None
 
+/// What the group's tab menu shows ticked, read on the group's thread for the palette: its tabs'
+/// side and alignment, and its own auto-hide mode, None while it follows the setting.
+type GroupChoicesShown = { dock:TabDock; alignment:Bemo.TabAlignment; autoHide:string option }
+
 type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher, ?taskbarPlugin:unit -> IPlugin) as this =
     let Cell = CellScope(true, true)
     let windowsCell = Cell.create(List2())
@@ -65,6 +69,22 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
                 windowsCell.map <| fun l -> l.where((<>) hwnd)
 
     member this.invokeGroup = invoker.asyncInvoke
+    /// The group's choices as last read, for the palette to show beside its commands. Main thread only.
+    member val shownChoices : GroupChoicesShown option = None with get,set
+    /// Reads them on the group's thread, after anything queued there, then calls `read` back on
+    /// the main thread. Never waited for: a group's thread may be waiting on the main one.
+    member this.readShownChoices(read:unit -> unit) =
+        this.invokeGroup(fun () ->
+            let shown =
+                try
+                    let ts : TabStrip = _group.ts
+                    Some { dock=ts.dock
+                           alignment=ts.getAlignment(if ts.isVertical then TabUp else ts.direction)
+                           autoHide=Option.ofObj(_group.bb.read<string>("autoHideMode",null)) }
+                with _ -> None
+            desktopDispatcher.Post(fun () ->
+                if shown.IsSome then this.shownChoices <- shown
+                read()))
     /// The group's tab layout and its split, read on the group's thread. Complete on the main
     /// STA, including when the group exits before its queued read.
     member this.captureLayout(callback:(GroupTabLayout * (bool * Rect * (IntPtr * SavedPane) list) option) option -> unit) =
@@ -153,6 +173,7 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
         member x.switchWindow(next,force) = this.switchWindow(next, force)
         member x.executeSplit command = this.invokeGroup <| fun() -> this.group.execute command
         member x.pickPane(axis,side) = this.invokeGroup <| fun() -> this.group.requestPick(axis,side)
+        member x.run command = this.invokeGroup <| fun() -> this.group.run command
         
 type IDesktopNotification =
     abstract member dragDrop : IntPtr -> unit

@@ -3,22 +3,41 @@ open System.Windows.Forms
 
 type HotKeyView() =
     let panel,table = SettingsUi.page()
-    // Setting id for each program hotkey, so a conflict can name the other action. Read from the
-    // catalog: a list of its own here left new shortcuts off the page.
-    let actions = SettingsCatalog.all |> List.choose(fun item -> match item.binding with Shortcut(key,_) -> Some(key,item.id) | _ -> None)
-    let isSplit (key:string) = key.StartsWith "split"
-    let isWorkspace (key:string) = key.EndsWith "Workspace"
+    /// The page's own shortcuts: those with a key to begin with, read from the one list of
+    /// commands. Every other command, the split view's and the tab menu's among them, is found and
+    /// given a key in the command palette, the one place for them all. A conflict names the other.
+    let ownShortcut key =
+        SettingsCatalog.all |> List.exists(fun item -> match item.binding with Shortcut(k,_) -> k=key && SettingsCatalog.inSettingsWindow item | _ -> false)
+    let actions =
+        Commands.all |> List.choose(fun command -> command.shortcut |> Option.map(fun key -> key,command))
+        |> List.filter(fun (key,_) -> ownShortcut key)
+    /// Why a key was refused, with the key, on a line under the box as the palette says it,
+    /// rather than cut short inside it.
+    let noteBelow (editor:SettingsShortcutInput) =
+        editor.ShowsMessage <- false
+        let note = new Label(AutoSize=true,UseMnemonic=false,Visible=false,Anchor=AnchorStyles.Right,Margin=Padding(0,Dpi.scale 4,0,0))
+        editor.MessageChanged.Add(fun text ->
+            match text,editor.Parent with
+            | Some text,(:? TableLayoutPanel as row) ->
+                let key = SettingsShortcut.text editor.LastPressed
+                let p = SettingsColors.current()
+                note.Text <- if key="" then text else tr (Strings.Shortcuts.keySays key text)
+                note.Font <- editor.Font
+                note.ForeColor <-
+                    if not editor.MessageIsError then p.muted
+                    elif System.Windows.Forms.SystemInformation.HighContrast then System.Drawing.SystemColors.WindowText
+                    elif ThemeService.currentIsDark() then System.Drawing.Color.FromRGB(0xFF99A4) else System.Drawing.Color.FromRGB(0xC42B1C)
+                if not (row.Controls.Contains note) then row.Controls.Add(note,1,1)
+                note.Visible <- true
+            | _ -> note.Visible <- false)
+        editor.Disposed.Add(fun _ -> note.Dispose())
     let hotKey key =
         let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=Services.program.getHotKey key)
+        noteBelow editor
         editor.Changed.Add(fun _ ->
             let previous = Services.program.getHotKey key
-            let conflict =
-                if editor.Shortcut=0 then None
-                else actions |> List.tryFind(fun (other,_) -> other<>key && Services.program.getHotKey other=editor.Shortcut)
-            match conflict with
-            | Some(_,id) ->
-                let name = SettingsCatalog.title id
-                editor.Reject(previous,tr (Strings.Shortcuts.usedBy name))
+            match Commands.holderName Services.program.getHotKey key editor.Shortcut with
+            | Some other -> editor.Reject(previous,tr (Strings.Shortcuts.usedBy other))
             | None when not (Services.program.setHotKey key editor.Shortcut) ->
                 editor.Reject(previous,tr Strings.Shortcuts.inUse)
             | None -> ())
@@ -31,14 +50,31 @@ type HotKeyView() =
             let target = SettingsCatalog.shortcutDefault key
             if Services.program.setHotKey key target then editor.Shortcut <- target
             else editor.Reject(0,tr Strings.Shortcuts.inUse)
+    /// A row for a command: the catalog's row for one the catalog lists, which the search finds;
+    /// else one from the command's own text.
+    let row (card:TableLayoutPanel) (command:Command) (editor:Control) =
+        if SettingsCatalog.all |> List.exists(fun item -> item.id=command.id) then SettingsUi.settingRow card command.id editor
+        else
+            editor.Name <- command.id
+            SettingsUi.row card (tr command.text.caption) (tr command.text.description) editor
+    /// The window search and the palette, the way in to everything else, on a card of their own.
+    let entryKeys = ["searchTabs";"commandPalette"]
+    let rows card category (skip:string list) =
+        for (key,editor),(_,command) in List.zip editors actions do
+            if command.category=category && not (List.contains key skip) then row card command editor
     do
         let restore = new SettingsResetButton(tr Strings.Shortcuts.restoreDefaults,Name="restore-shortcuts")
-        SettingsUi.sectionHeading table (tr Strings.Shortcuts.keyboard) [restore]
-        let keyboard = new SettingsCard()
-        SettingsUi.add table keyboard
+        SettingsUi.sectionHeading table (tr Strings.Shortcuts.startHere) [restore]
+        let entry = new SettingsCard(Name="start-here")
+        SettingsUi.add table entry
+        SettingsUi.note entry (tr Strings.Shortcuts.startHereNote)
+        for key in entryKeys do
+            let editor = editors |> List.find(fun (k,_) -> k=key) |> snd
+            let command = actions |> List.find(fun (k,_) -> k=key) |> snd
+            row entry command editor
+        let keyboard = SettingsUi.sectionCard table (tr Strings.Shortcuts.keyboard)
         SettingsUi.note keyboard (tr Strings.Shortcuts.keyboardNote)
-        for (key,editor),(_,id) in List.zip editors actions do
-            if key<>"numberLeader" && not(isSplit key) && not(isWorkspace key) then SettingsUi.settingRow keyboard id editor
+        rows keyboard TabCommands ("numberLeader"::entryKeys)
         // Rows inset under a toggle and collapsed while it is off.
         let dependOn (toggle:SettingsToggle) (rows:SettingsRow list) =
             for row in rows do SettingsUi.indentDependentRow row
@@ -60,7 +96,6 @@ type HotKeyView() =
         // Off, an app switched on from the tab menu still uses a key: only then is the key chosen
         // on its own row.
         let numericChoice = SettingsBindings.choiceRow keyboard "number-shortcut"
-                                [|tr Strings.Settings.numberShortcutCtrl;tr Strings.Settings.numberShortcutAlt|]
         let numericRow = numericChoice.Parent :?> SettingsRow
         SettingsUi.indentDependentRow numericRow
         let updateNumeric() =
@@ -145,15 +180,9 @@ type HotKeyView() =
         for _,editor in editors do editor.Changed.Add(fun _ -> updateRestore())
         restore.Click.Add(fun _ -> restoreDefaults(); updateRestore())
         updateRestore()
-        // The split view's keys in a card of their own: among the tabs' they were hard to tell apart.
-        let split = SettingsUi.sectionCard table (tr Strings.Shortcuts.splitView)
-        for (key,editor),(_,id) in List.zip editors actions do
-            if isSplit key then SettingsUi.settingRow split id editor
-        let workspaces = SettingsUi.sectionCard table (tr Strings.Pages.workspaces)
-        for (key,editor),(_,id) in List.zip editors actions do
-            if isWorkspace key then SettingsUi.settingRow workspaces id editor
         let pointer = SettingsUi.sectionCard table (tr Strings.Shortcuts.mouse)
         SettingsBindings.toggleRow pointer "activate-on-hover"
+        SettingsBindings.toggleRow pointer "tab-hover-preview"
         SettingsBindings.toggleRow pointer "shift-scroll"
         SettingsBindings.toggleRow pointer "ctrl-scroll"
         SettingsBindings.toggleRow pointer "middle-click-close"

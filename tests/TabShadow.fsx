@@ -103,7 +103,7 @@ let main () =
         tabBorderColor=Color.FromArgb(168,168,168) }
     let info text : TabDisplayInfo = {
         tint=None; colorStyle="Stripe"; numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application
-        textFont=SystemFonts.MenuFont; textBrush=Brushes.Black; splitTrail=None }
+        textFont=SystemFonts.MenuFont; textBrush=Brushes.Black; splitTrail=None; isPinned=false }
     let ts : TabStripSprite<int> = {
         tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"]))
         lorder=List2([1;2]); zorder=List2([1;2]); size=Sz(420,28)
@@ -172,6 +172,20 @@ let main () =
                 let icons = { column with onlyIcons=true; size=Dpi.scaleSize(Sz(48,300)) }
                 check ((snd icons.tabSprites.head).onlyIcon) "The vertical icon rail still shows titles"
     finally Dpi.set originalVerticalDpi
+    // A pinned tab keeps its title and width, shows a pin for a close button, and keeps its place.
+    let pinnedRow = { ts with tabs=Map2(List2([1,{info "Pinned" with isPinned=true}; 2,info "Two"; 3,info "Three"]))
+                              lorder=List2([1;2;3]); zorder=List2([1;2;3]) }
+    let spriteOf (row:TabStripSprite<int>) id = snd (row.tabSprites.list |> List.find(fun (_,tab) -> tab.id=id))
+    let pinnedSprite = spriteOf pinnedRow 1
+    let has kind (tab:TabSprite<int>) = (tab :> ISprite).children.list |> List.exists(fun (_,child) -> kind child)
+    let isClose (child:ISprite) = child :? CloseButtonSprite
+    let isPin (child:ISprite) = child :? PinMarkSprite
+    check (not pinnedSprite.onlyIcon && pinnedSprite.size.width=(spriteOf pinnedRow 2).size.width) "Pinning changed how the tab shows its icon and title"
+    check (not (has isClose pinnedSprite) && not (has isClose { pinnedSprite with hover=Some TabBackground })) "A pinned tab showed a close button"
+    check (has isPin pinnedSprite && not (has isPin (spriteOf pinnedRow 2))) "The pin was missing, or shown on a tab not pinned"
+    check (not (has isPin (spriteOf { pinnedRow with onlyIcons=true } 1))) "A pin crowded a tab that shows its icon only"
+    check (({ pinnedRow with slide=Some(3,0) }).movedTab=Some(3,1)) "A tab dragged before a pinned one went among the pinned tabs"
+    check (({ pinnedRow with slide=Some(1,pinnedRow.size.width) }).movedTab=Some(1,0)) "A pinned tab dragged right left the pinned tabs"
     for appearance in [Theme.light;Theme.dark] do
         for icons in [false;true] do
             let badges = { ts with appearance=appearance;onlyIcons=icons;tabs=Map2(List2([1,{info "One" with numberBadge=Some "1"};2,{info "Ten" with numberBadge=Some "A"}])) }
@@ -202,6 +216,20 @@ let main () =
                     check (active.fillColor=Color.Blue) "A fill changed the colour of the active tab"
                     check (inactive.fillColor=Theme.tabShade 0.12 0.6 Color.Blue) "An inactive filled tab is not a darker, quieter shade of its colour"
                     check (hovered.fillColor=Theme.tabShade 0.06 0.75 Color.Blue) "Hovering a filled tab gives no feedback"
+                    // Raised, the active tab sits on the colour's own bar, as its neighbours are,
+                    // so a coloured strip does not break to the plain bar round it.
+                    if style<>JoinedTabs then
+                        check (active.barColor=inactive.fillColor) "A raised filled tab sits on the plain bar"
+                        check (inactive.separatorColor<>appearance.tabBorderColor) "The plain bar's separator cuts a coloured bar"
+                        use image = (active :> ISprite).render.bitmap
+                        let corner = image.GetPixel(0,image.Height/2)
+                        check (corner.ToArgb()=inactive.fillColor.ToArgb()) (sprintf "A raised filled tab's slot is %A, not its colour's bar" corner)
+                        // Four tabs, the third in front, as the screenshot of a coloured strip had them.
+                        let strip = { tinted with size=Sz(760,tinted.size.height)
+                                                  lorder=List2([1;2;3;4]); zorder=List2([3;1;2;4])
+                                                  tabs=Map2(List2([ for index in 1..4 -> index,{info (sprintf "Tab %d" index) with tint=Some Color.Blue;colorStyle="Fill"} ])) }
+                        use whole = strip.sprite.render.bitmap
+                        whole.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "filled-strip-%A.png" style))
                     check (TextContrast.luminance inactive.fillColor<TextContrast.luminance hovered.fillColor &&
                            TextContrast.luminance hovered.fillColor<TextContrast.luminance active.fillColor) "The active filled tab is not the brightest"
                     // The text gives way instead, chosen for the colour whatever the text setting says:
@@ -249,6 +277,34 @@ let main () =
                     use collapsed = column.renderCollapsed.bitmap
                     let location = column.tabLocation tab.id
                     check (collapsed.GetPixel(1,location.y+tab.size.height/2).ToArgb()=Color.Red.ToArgb()) "Collapsed vertical strip lost its color mark"
+                // Filled with one colour, floating tabs in a column stand on that colour's bar, as in
+                // a row: the plain bar's grey between and round them broke it into pieces.
+                let filled tint = {info "Tab" with tint=Some tint;colorStyle="Fill"}
+                let coloured = {column with tabs=Map2(List2([1,filled Color.Blue;2,filled Color.Blue]))}
+                if not System.Windows.Forms.SystemInformation.HighContrast then
+                    use image = coloured.render.bitmap
+                    image.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "filled-column-%A-%A-%d.png" dock direction dpi))
+                    let shade = Theme.tabShade 0.12 0.6 Color.Blue
+                    check (image.GetPixel(image.Width/2,image.Height-Dpi.scale 4).ToArgb()=shade.ToArgb())
+                          "A column of tabs filled with one colour stands on the plain bar"
+                    // Tabs of different colours: each row's band in its tab's own bar colour, so two
+                    // of one colour join across the gap between them and the colour changes only
+                    // where the tabs do; the plain bar below the last.
+                    let mixed = {column with size=Dpi.scaleSize(Sz(220,300)); lorder=List2([1;2;3;4]); zorder=List2([1;2;3;4])
+                                             tabs=Map2(List2([1,filled Color.Blue;2,filled Color.Blue;3,info "Plain";4,filled Color.Red]))}
+                    use mixedImage = mixed.render.bitmap
+                    mixedImage.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "mixed-column-%A-%A-%d.png" dock direction dpi))
+                    let plain = Theme.dark.scaled.tabNormalBgColor.ToArgb()
+                    let at y = mixedImage.GetPixel(mixedImage.Width/2,y).ToArgb()
+                    let below (id:int) = (mixed.tabLocation id).y+mixed.rowHeight
+                    check (at (mixedImage.Height-Dpi.scale 4)=plain) "A column of tabs in different colours lost the plain bar below them"
+                    check (at (below 1)=shade.ToArgb()) "Two tabs of one colour do not join across the gap between them"
+                    check (at (below 2)=shade.ToArgb() && at ((mixed.tabLocation 3).y-1)=plain) "A coloured tab's band does not end halfway to a plain tab"
+                    check (at ((mixed.tabLocation 4).y-1)=(Theme.tabShade 0.12 0.6 Color.Red).ToArgb()) "A tab of another colour does not stand on its own band"
+                    // At the column's ends the first and last bands take its padding too.
+                    let gap = mixed.rowStep-mixed.rowHeight
+                    check (at 1=shade.ToArgb()) "The plain bar shows above the first coloured tab"
+                    check (at (below 4+gap-1)=(Theme.tabShade 0.12 0.6 Color.Red).ToArgb()) "The plain bar shows below the last coloured tab"
                 let inactive = column.tabSprites.list |> List.map snd |> List.find(fun tab -> not tab.isTop)
                 let inactive = {inactive with hover=None;captured=None}
                 if not System.Windows.Forms.SystemInformation.HighContrast then
@@ -286,7 +342,7 @@ let main () =
     for h in [12;18;26] do
         use font = TabMetrics.font h FontStyle.Regular
         check (font.Height <= max h (SystemFonts.MenuFont.Height)) (sprintf "Text line does not fit a %dpx tab" h)
-        let info text : TabDisplayInfo = { tint=None; colorStyle="Stripe"; numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application; textFont=font; textBrush=Brushes.Black; splitTrail=None }
+        let info text : TabDisplayInfo = { tint=None; colorStyle="Stripe"; numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application; textFont=font; textBrush=Brushes.Black; splitTrail=None; isPinned=false }
         let strip = { ts with appearance={ appearance with tabHeight=h }; size=Sz(420,h+1)
                               tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"])) }
         for _,tab in strip.sprite.children.list do

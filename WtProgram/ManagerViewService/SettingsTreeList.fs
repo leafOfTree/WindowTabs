@@ -51,6 +51,20 @@ type TreeListItem(text:string) =
     member val Glyph = NoGlyph with get,set
     /// Draws a divider above the row, to set it apart from the rows before.
     member val SeparatorAbove = false with get,set
+    /// Shown in the muted colour, for a row that is listed but cannot be taken now.
+    member val Dimmed = false with get,set
+    /// A switch at the row's right end, on or off, for a setting the row stands for.
+    member val Switch : bool option = None with get,set
+    /// A note just after the name, in the muted colour, such as the row's shortcut.
+    member val Suffix = "" with get,set
+    /// A down arrow after the last column's text, for a value picked from a list, as drop-downs show.
+    member val Dropdown = false with get,set
+    /// The last column's text in a smaller type, as the suffix is: a note, not a value.
+    member val SmallValue = false with get,set
+    /// A colour dot just before the last column's text, for a value that is a colour.
+    member val ValueSwatch : Color option = None with get,set
+    /// A colour shown as a dot where the icon goes, for a row that stands for one.
+    member val Swatch : Color option = None with get,set
     /// Said on hover over the row's icon or glyph, for a row whose icon stands in for a name. The
     /// icon only explains; it does not light up as a button would.
     member val IconTip = "" with get,set
@@ -141,6 +155,13 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     /// Said in the muted colour while the list has no rows: what would be listed, and how.
     member val EmptyText = "" with get,set
     member val IconSize = 16 with get,set
+    /// Leaves the scroll bar's room empty when there is nothing to scroll, so a list whose rows
+    /// come and go as a search is typed keeps its right edge where it was.
+    member val KeepScrollRoom = false with get,set
+    /// The scroll bar's column: narrower where the list runs into its parent's padding.
+    member this.ScrollBarWidth
+        with get() = scroll.Width
+        and set value = scroll.Width <- value; this.PerformLayout(); this.Invalidate()
     member val ShowHeader = true with get,set
     member val ShowExpanders = true with get,set
     /// When false, double-clicking a row raises ItemActivated instead of expanding it; the
@@ -171,7 +192,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member private this.viewport = max 1 (this.ClientSize.Height-this.headerHeight)
     /// The height that shows the header and every visible row without scrolling.
     member this.ContentHeight = this.headerHeight+this.rowsHeight
-    member private this.contentWidth = this.ClientSize.Width-(if scroll.Visible then scroll.Width else 0)
+    member private this.contentWidth = this.ClientSize.Width-(if scroll.Visible || this.KeepScrollRoom then scroll.Width else 0)
 
     member private this.tops =
         let key = (box rows,this.contentWidth,this.rowHeight)
@@ -226,6 +247,11 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         this.EnsureVisible(item)
         this.updateEditorBounds()
         editor.BringToFront()
+
+    /// Where a shown row is in the client area, for a control put over part of it; None for a
+    /// row not shown.
+    member this.RowBounds(item:TreeListItem) =
+        this.indexOf item |> Option.map(fun index -> Rectangle(0,this.rowTop index,this.contentWidth,this.rowHeight))
 
     member this.ClearRowEditor() =
         let previous = rowEditor
@@ -324,12 +350,15 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         expander
 
     /// The name cell of a row: its icon box and its text bounds.
+    /// Where a top-level row's name starts, for text over the list to line up with it.
+    member this.NameLeft(item:TreeListItem) = let _,bounds = this.nameLayout(item,0,0) in bounds.X
+
     member private this.nameLayout(item:TreeListItem, level:int, top:int) =
         let cell = this.columnBounds.[0]
         let size = Dpi.scale this.IconSize
         let left = cell.X+this.textLeft level
         let iconBox = Rectangle(left,top+(this.rowHeight-size)/2,size,size)
-        let x = if not (isNull item.Icon) || item.Glyph<>NoGlyph then left+size+Dpi.scale 8 else left
+        let x = if not (isNull item.Icon) || item.Glyph<>NoGlyph || item.Swatch.IsSome then left+size+Dpi.scale 8 else left
         iconBox,Rectangle(x,top,max 1 (cell.Right-Dpi.scale 8-x),this.rowHeight)
 
     /// Where a row's name ends and its chips go: the name keeps at most a quarter of the cell, and
@@ -426,6 +455,31 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         | _ -> ()
 
     /// Draws a glyph on a 16-unit grid scaled to the box.
+    /// A switch as the settings pages' toggles look: a pill, filled in the accent colour when on,
+    /// with its knob at that end.
+    static member drawSwitch(g:Graphics, box:Rectangle, isOn:bool, p:SettingsPalette) =
+        let dark = ThemeService.currentIsDark()
+        let x,y,w,h = float32 box.X,float32 box.Y,float32 box.Width,float32 box.Height
+        use path = new GraphicsPath()
+        path.AddArc(x,y,h,h,90.0f,180.0f)
+        path.AddArc(x+w-h,y,h,h,270.0f,180.0f)
+        path.CloseFigure()
+        let onColor = if SystemInformation.HighContrast then SystemColors.Highlight else p.accent
+        let offColor =
+            if SystemInformation.HighContrast then SystemColors.Control
+            elif dark then Color.FromRGB(0x424242) else Color.FromRGB(0xD8D8D8)
+        use fill = new SolidBrush(if isOn then onColor else offColor)
+        g.FillPath(fill,path)
+        let inset = float32(Dpi.scale 3)
+        let diameter = h-inset*2.0f
+        let left = if isOn then x+w-diameter-inset else x+inset
+        let knobColor =
+            if SystemInformation.HighContrast then (if isOn then SystemColors.HighlightText else SystemColors.WindowText)
+            elif isOn then Color.White
+            elif dark then Color.FromRGB(0xA0A0A0) else Color.FromRGB(0x686868)
+        use knob = new SolidBrush(knobColor)
+        g.FillEllipse(knob,left,y+inset,diameter,diameter)
+
     static member drawGlyph(g:Graphics, glyph:TreeListGlyph, box:Rectangle, color:Color) =
         let state = g.Save()
         g.SmoothingMode <- SmoothingMode.AntiAlias
@@ -476,27 +530,55 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         | NoGlyph -> ()
         g.Restore(state)
 
-    /// Tints the runs of a text drawn with these flags in these bounds, before the text goes on
-    /// top. Runs cut off by the ellipsis are left out; high contrast underlines instead.
-    member private this.drawHighlights(g:Graphics, text:string, runs:(int * int) list, bounds:Rectangle, flags:TextFormatFlags, p:SettingsPalette) =
-        if not runs.IsEmpty && text<>"" then
-            let measure (part:string) = TextRenderer.MeasureText(g,part,this.Font,Size(Int32.MaxValue,bounds.Height),flags ||| TextFormatFlags.NoPadding).Width
-            // The padding DrawText adds before the text.
-            let pad = (TextRenderer.MeasureText(g,text,this.Font,Size(Int32.MaxValue,bounds.Height),flags).Width-measure text)/2
-            let height = this.Font.Height+Dpi.scale 2
-            let top = bounds.Y+(bounds.Height-height)/2
-            for start,length in runs do
-                if start>=0 && start+length<=text.Length then
-                    let left = bounds.X+pad+(if start=0 then 0 else measure (text.Substring(0,start)))
-                    let right = bounds.X+pad+measure (text.Substring(0,start+length))
-                    if right<=bounds.Right-(if measure text+pad>bounds.Width then measure "…" else 0) then
-                        if SystemInformation.HighContrast then
-                            use line = new Pen(SystemColors.Highlight,float32(Dpi.scale 2))
-                            g.DrawLine(line,left,top+height,right,top+height)
+    /// A text with its matching runs in the accent colour, as the settings search shows them,
+    /// the colour changing mid-word; cut with an ellipsis where it does not fit.
+    member private this.drawMarked(g:Graphics, text:string, runs:(int * int) list, bounds:Rectangle, flags:TextFormatFlags, font:Font, color:Color, p:SettingsPalette) =
+        if runs.IsEmpty || text="" then TextRenderer.DrawText(g,text,font,bounds,color,flags)
+        else
+            let pieces = flags &&& ~~~(TextFormatFlags.EndEllipsis ||| TextFormatFlags.HorizontalCenter) ||| TextFormatFlags.NoPadding
+            let width (part:string) = TextRenderer.MeasureText(g,part,font,Size(Int32.MaxValue,bounds.Height),pieces).Width
+            // The padding DrawText puts each side of a whole text: the pieces start after it, where
+            // the text stood before anything matched, so typing does not move it.
+            let pad =
+                let padded = TextRenderer.MeasureText(g,text,font,Size(Int32.MaxValue,bounds.Height),flags &&& ~~~TextFormatFlags.EndEllipsis).Width
+                max 0 ((padded-width text)/2)
+            let room = max 1 (bounds.Width-pad*2)
+            // Cut where an ellipsis still fits, since the pieces cannot be shortened as a whole.
+            let text =
+                if width text<=room then text
+                else
+                    let rec fit fits tooLong =
+                        if tooLong-fits<=1 then fits
                         else
-                            use shape = SettingsShapes.rounded (RectangleF(float32 left-1.0f,float32 top,float32(right-left)+2.0f,float32 height)) (float32(Dpi.scale 3))
-                            use fill = new SolidBrush(Color.FromArgb(90,p.accent))
-                            g.FillPath(fill,shape)
+                            let middle = (fits+tooLong)/2
+                            if width (text.Substring(0,middle)+"…")<=room then fit middle tooLong else fit fits middle
+                    text.Substring(0,fit 0 text.Length).TrimEnd()+"…"
+            let marked = if SystemInformation.HighContrast then SystemColors.Highlight else p.accent
+            let inRun i = runs |> List.exists(fun (start,length) -> i>=start && i<start+length)
+            let state = g.Save()
+            g.SetClip(bounds,CombineMode.Intersect)
+            try
+                // The whole text in one go, as it stands with nothing matched, once in each colour
+                // through its own part of the row: drawn in pieces, the letters either side of a
+                // cut lost their kerning and moved as a match came and went.
+                let left = bounds.Left+pad
+                use lit = new Region(Rectangle.Empty)
+                let mutable start = 0
+                while start<text.Length do
+                    let active = inRun start
+                    let mutable finish = start+1
+                    while finish<text.Length && inRun finish=active do finish <- finish+1
+                    if active then
+                        let x0 = left+(if start=0 then 0 else width (text.Substring(0,start)))
+                        lit.Union(Rectangle(x0,bounds.Y,max 1 (left+width (text.Substring(0,finish))-x0),bounds.Height))
+                    start <- finish
+                use around = g.Clip
+                g.SetClip(lit,CombineMode.Intersect)
+                TextRenderer.DrawText(g,text,font,bounds,marked,flags)
+                g.Clip <- around
+                g.SetClip(lit,CombineMode.Exclude)
+                TextRenderer.DrawText(g,text,font,bounds,color,flags)
+            finally g.Restore(state)
 
     override this.OnResize(e) = base.OnResize(e); this.updateScroll()
     override this.OnGotFocus(e) = base.OnGotFocus(e); this.Invalidate()
@@ -692,7 +774,10 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                 g.SmoothingMode <- SmoothingMode.None
                 g.DrawLine(divider,Dpi.scale 10,top,this.contentWidth-Dpi.scale 10,top)
                 g.SmoothingMode <- SmoothingMode.AntiAlias
-            let text = if isSelected && SystemInformation.HighContrast then SystemColors.HighlightText else p.text
+            let text =
+                if item.Dimmed then (if SystemInformation.HighContrast then SystemColors.GrayText else p.muted)
+                elif isSelected && SystemInformation.HighContrast then SystemColors.HighlightText
+                else p.text
             for column in 0..columns.Length-1 do
                 let cell = bounds.[column]
                 match columns.[column].Kind with
@@ -713,10 +798,33 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         g.DrawImage(item.Icon,iconBox)
                     elif not hidesIcon && item.Glyph<>NoGlyph then
                         SettingsTreeList.drawGlyph(g,item.Glyph,iconBox,p.muted)
+                    elif not hidesIcon && item.Swatch.IsSome then
+                        // A dot as the tab menu shows its colours, with a hairline so a pale one shows on a pale surface.
+                        let side = max 4 (iconBox.Width*2/3)
+                        let dot = Rectangle(iconBox.X+(iconBox.Width-side)/2,iconBox.Y+(iconBox.Height-side)/2,side,side)
+                        use fill = new SolidBrush(item.Swatch.Value)
+                        g.FillEllipse(fill,dot)
+                        use edge = new Pen(Color.FromArgb(60,p.text))
+                        g.DrawEllipse(edge,dot)
                     if not editing then
                         let nameBounds,laid,add,_ = if item.Chips.IsEmpty && not item.ChipAdd then bounds,[],None,1 else this.chipLayout(item,level,top)
-                        this.drawHighlights(g,item.Text,item.highlights 0,nameBounds,flags,p)
-                        TextRenderer.DrawText(g,item.Text,this.Font,nameBounds,text,flags)
+                        if item.Suffix="" then this.drawMarked(g,item.Text,item.highlights 0,nameBounds,flags,this.Font,text,p)
+                        else
+                            // The note right after the name, which gives way to it when room is short.
+                            // Measured as drawn, with the padding the text is drawn with.
+                            let measureIn (font:Font) (value:string) = TextRenderer.MeasureText(g,value,font,Size(Int32.MaxValue,rowHeight),flags).Width
+                            let measure = measureIn this.Font
+                            // A step smaller than the name, so the name leads.
+                            let suffixFont = SettingsUi.font this.Font.FontFamily.Name (this.Font.SizeInPoints*0.86f) FontStyle.Regular
+                            let gap = Dpi.scale 6
+                            let suffixWidth = measureIn suffixFont item.Suffix
+                            let nameWidth = min (measure item.Text+Dpi.scale 2) (max 0 (nameBounds.Width-suffixWidth-gap))
+                            this.drawMarked(g,item.Text,item.highlights 0,Rectangle(nameBounds.X,nameBounds.Y,max 1 nameWidth,nameBounds.Height),flags,this.Font,text,p)
+                            let left = nameBounds.X+nameWidth+gap
+                            // On the chosen row in the name's own colour, as the value at its right
+                            // end is: the muted grey sank into the highlight. Smaller, it still leads less.
+                            let muted = if isSelected then text else p.muted
+                            TextRenderer.DrawText(g,item.Suffix,suffixFont,Rectangle(left,nameBounds.Y,max 1 (nameBounds.Right-left),nameBounds.Height),muted,flags)
                         // Chips: a shade of the text over the row, so they show on any highlight.
                         let chipFill = if SystemInformation.HighContrast then SystemColors.Window else Color.FromArgb(26,p.text)
                         for chipIndex,box,closeBox in laid do
@@ -783,17 +891,49 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         let side = Dpi.scale this.IconSize
                         SettingsTreeList.drawGlyph(g,glyph,Rectangle(button.X+(button.Width-side)/2,button.Y+(button.Height-side)/2,side,side),color))
                 | TextColumn ->
-                    let bounds = Rectangle(cell.X+Dpi.scale 8,top,max 1 (cell.Width-Dpi.scale 16),rowHeight)
-                    // Move text and its match highlights together, preserving ellipsis clipping.
+                    // The row's switch, if any, takes the right end of the last column; the text
+                    // sits before it.
+                    let switchWidth,switchHeight = Dpi.scale 36,Dpi.scale 18
+                    let arrowWidth = Dpi.scale 10
+                    let reserve =
+                        if column<>columns.Length-1 then 0
+                        elif item.Switch.IsSome then switchWidth+Dpi.scale 8
+                        // The value close to its arrow, as a drop-down's text sits by its own.
+                        elif item.Dropdown then arrowWidth+Dpi.scale 4
+                        else 0
+                    let bounds = Rectangle(cell.X+Dpi.scale 8,top,max 1 (cell.Width-Dpi.scale 16-reserve),rowHeight)
+                    let font =
+                        if column=columns.Length-1 && item.SmallValue then SettingsUi.font this.Font.FontFamily.Name (this.Font.SizeInPoints*0.86f) FontStyle.Regular
+                        else this.Font
+                    // Move text and its match highlights together, preserving ellipsis clipping. Text
+                    // at the right ends where a switch does: the padding DrawText leaves after the
+                    // last letter goes past the edge rather than before it.
                     let bounds =
                         if columns.[column].RightAligned then
-                            let width = min bounds.Width (TextRenderer.MeasureText(g,item.value column,this.Font,Size(Int32.MaxValue,rowHeight),flags).Width)
-                            Rectangle(bounds.Right-width,bounds.Y,width,bounds.Height)
+                            let measure extra = TextRenderer.MeasureText(g,item.value column,font,Size(Int32.MaxValue,rowHeight),flags ||| extra).Width
+                            let padded = measure TextFormatFlags.Default
+                            let trailing = max 0 ((padded-measure TextFormatFlags.NoPadding)/2)
+                            let width = min (bounds.Width+trailing) padded
+                            Rectangle(bounds.Right+trailing-width,bounds.Y,width,bounds.Height)
                         else bounds
-                    this.drawHighlights(g,item.value column,item.highlights column,bounds,flags,p)
-                    // Muted text is hard to read on a highlight: a column with matches takes the full colour.
-                    let color = if isSelected || not (item.highlights column).IsEmpty then text else p.muted
-                    TextRenderer.DrawText(g,item.value column,this.Font,bounds,color,flags)
+                    let color = if isSelected then text else p.muted
+                    this.drawMarked(g,item.value column,item.highlights column,bounds,flags,font,color,p)
+                    // The colour's dot before its code, with a faint rim, as the settings pages' colour box draws it.
+                    if column=columns.Length-1 && item.ValueSwatch.IsSome then
+                        let side = Dpi.scale 16
+                        let dot = Rectangle(bounds.Left-side-Dpi.scale 4,top+(rowHeight-side)/2,side,side)
+                        use fill = new SolidBrush(item.ValueSwatch.Value)
+                        g.FillEllipse(fill,dot)
+                        use rim = new Pen(Color.FromArgb(65,p.text))
+                        g.DrawEllipse(rim,dot)
+                    if reserve>0 && item.Switch.IsSome then
+                        SettingsTreeList.drawSwitch(g,Rectangle(cell.Right-Dpi.scale 8-switchWidth,top+(rowHeight-switchHeight)/2,switchWidth,switchHeight),item.Switch.Value,p)
+                    elif reserve>0 then
+                        // A chevron as the settings pages' drop-downs draw theirs.
+                        let cx,cy = float32(cell.Right-Dpi.scale 8-arrowWidth/2),float32(top+rowHeight/2)
+                        let s = float32(Dpi.scale 4)
+                        use pen = new Pen((if isSelected && SystemInformation.HighContrast then SystemColors.HighlightText else p.muted),1.5f)
+                        g.DrawLines(pen,[|PointF(cx-s,cy-s/2.0f);PointF(cx,cy+s/2.0f);PointF(cx+s,cy-s/2.0f)|])
                 | CheckColumn ->
                     match item.check column with
                     | Some isChecked ->

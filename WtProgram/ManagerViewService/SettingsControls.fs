@@ -6,6 +6,7 @@ open System.Runtime.InteropServices
 
 type SettingsSearchBox(search:TextBox) as this =
     inherit Panel()
+    let mutable underlined = false
     do
         this.DoubleBuffered <- true
         this.ResizeRedraw <- true
@@ -18,6 +19,16 @@ type SettingsSearchBox(search:TextBox) as this =
         search.TextChanged.Add(fun _ -> this.PerformLayout(); this.Invalidate())
         search.Enter.Add(fun _ -> this.Invalidate())
         search.Leave.Add(fun _ -> this.Invalidate())
+    /// The box's outline while it does not have the keys: plainer than the accent, and still seen
+    /// on a surface the box's own colour, as the palette's is.
+    static member Outline() =
+        if SystemInformation.HighContrast then (SettingsColors.current()).border
+        elif ThemeService.currentIsDark() then Color.FromRGB(0x4A4A48)
+        else Color.FromRGB(0xD6D6D3)
+    /// No outline, only a line along its foot, as a search box over its own results draws it.
+    member this.Underlined
+        with get() = underlined
+        and set value = underlined <- value; this.Invalidate()
     override this.OnMouseDown(e) =
         base.OnMouseDown(e)
         if e.Button=MouseButtons.Left then
@@ -26,7 +37,10 @@ type SettingsSearchBox(search:TextBox) as this =
     override this.OnPaintBackground(e) =
         let p = SettingsColors.current()
         e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
-        if this.Width>2 && this.Height>2 then
+        if underlined then
+            use line = new Pen(if SystemInformation.HighContrast then p.border else SettingsSearchBox.Outline())
+            e.Graphics.DrawLine(line,0,this.Height-1,this.Width,this.Height-1)
+        elif this.Width>2 && this.Height>2 then
             e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
             use path = SettingsShapes.rounded (RectangleF(1.0f,1.0f,float32(this.Width-3),float32(this.Height-3))) (float32(Dpi.scale 10))
             use fill = new SolidBrush(p.surface)
@@ -34,8 +48,7 @@ type SettingsSearchBox(search:TextBox) as this =
                 if SystemInformation.HighContrast then p.border
                 elif search.Focused && ThemeService.currentIsDark() then Color.FromRGB(0x777773)
                 elif search.Focused then p.accent
-                elif ThemeService.currentIsDark() then Color.FromRGB(0x4A4A48)
-                else Color.FromRGB(0xD6D6D3)
+                else SettingsSearchBox.Outline()
             use pen = new Pen(border,if search.Focused && not (ThemeService.currentIsDark()) then float32(Dpi.scaleF 1.5) else 1.0f)
             e.Graphics.FillPath(fill,path)
             e.Graphics.DrawPath(pen,path)
@@ -1023,6 +1036,8 @@ type SettingsChoicePopup() as this =
         this.Disposed.Add(fun _ ->
             shadow |> Option.iter(fun halo -> (halo :> IDisposable).Dispose())
             shadow <- None)
+    /// Its outline when it opens from a field outlined in a colour of its own, as on the palette.
+    member val Outline = Color.Empty with get,set
     override this.OnOpened(e) =
         // Finish the first themed paint before returning to other UI work.
         this.Refresh()
@@ -1041,7 +1056,7 @@ type SettingsChoicePopup() as this =
         e.Graphics.Clear(this.BackColor)
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 10))
-        use pen = new Pen((SettingsColors.current()).border)
+        use pen = new Pen(if (this.Outline:Color).IsEmpty then (SettingsColors.current()).border else this.Outline)
         e.Graphics.DrawPath(pen,shape)
 
 module SettingsPopupLifetime =
@@ -1064,12 +1079,15 @@ module SettingsPopupLifetime =
                     if not popup.IsDisposed then popup.Dispose())
                 timer.Start())
 
-/// How long a search result's highlight holds, then fades: shared by setting rows and by the
-/// controls that draw their own highlight.
+/// A search result's highlight: two blinks, then a fade, so the eye is drawn to the row rather
+/// than left with a steady tint. Shared by setting rows and by the controls that draw their own.
 module SettingsFlash =
-    let hold,fade = 1500.0,1200.0
-    /// Highlight strength from 1 down to 0, after the given milliseconds.
-    let strength (elapsed:float) = if elapsed <= hold then 1.0 else max 0.0 (1.0-(elapsed-hold)/fade)
+    let hold,fade = 900.0,600.0
+    /// Highlight strength, 1 or 0 through the blinks and then from 1 down to 0, after the given
+    /// milliseconds.
+    let strength (elapsed:float) =
+        if elapsed <= hold then (if elapsed>350.0 && elapsed<550.0 then 0.0 else 1.0)
+        else max 0.0 (1.0-(elapsed-hold)/fade)
 
 type SettingsCombo(items:string[]) as this =
     inherit Button()

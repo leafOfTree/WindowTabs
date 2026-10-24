@@ -21,11 +21,16 @@ type SettingsActionButton() as this =
     let mutable mousePressed = false
     let mutable keyPressed = false
     let mutable kind = SettingsButtonKind.Standard
+    /// A − or + drawn as strokes on the button's middle: as text, the font's ascent and side
+    /// bearings set them a pixel or two off it.
+    let mutable sign : char option = None
     do
         this.FlatStyle <- FlatStyle.Flat
         this.FlatAppearance.BorderSize <- 0
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
     member this.Kind with get() = kind and set value = kind <- value; this.Invalidate()
+    /// '−' or '+', drawn in place of the text, which stays for screen readers.
+    member this.Sign with get() = defaultArg sign ' ' and set (value:char) = sign <- (if value='−' || value='+' then Some value else None); this.Invalidate()
     /// Held down by the mouse while over the button, or by Space, as a click is about to happen.
     member this.IsPressed = this.Enabled && ((mousePressed && hovering) || keyPressed)
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); hovering <- true; this.Invalidate()
@@ -88,8 +93,24 @@ type SettingsActionButton() as this =
         use border = new Pen(borderColor)
         e.Graphics.FillPath(fill,shape)
         e.Graphics.DrawPath(border,shape)
-        TextRenderer.DrawText(e.Graphics,this.Text,this.Font,this.ClientRectangle,textColor,
-            TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
+        match sign with
+        | Some symbol ->
+            // Whole pixels, so each stroke is as crisp as the text beside it; a length of the
+            // button's own parity sits exactly in its middle.
+            let w,h = this.Width,this.Height
+            // About the size the font drew them: 10px across on a 26px button.
+            let arm = max 2 (min w h*5/26)
+            let stroke = max 1 (Dpi.scale 1)
+            use ink = new SolidBrush(textColor)
+            e.Graphics.SmoothingMode <- SmoothingMode.None
+            let across = 2*arm+w%2
+            e.Graphics.FillRectangle(ink,(w-across)/2,(h-stroke)/2,across,stroke)
+            if symbol='+' then
+                let down = 2*arm+h%2
+                e.Graphics.FillRectangle(ink,(w-stroke)/2,(h-down)/2,stroke,down)
+        | None ->
+            TextRenderer.DrawText(e.Graphics,this.Text,this.Font,this.ClientRectangle,textColor,
+                TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
 
 type SettingsInputFrame() as this =
     inherit Panel()
@@ -104,6 +125,8 @@ type SettingsInputFrame() as this =
     /// What shows round the rounded corners, when the field sits on something other than its
     /// parent's colour, such as a selected list row.
     member val Surroundings = Color.Empty with get,set
+    /// The outline, when the usual one would not show, as on a surface the field's own colour.
+    member val Border = Color.Empty with get,set
     /// Fills the field and its text with the usual field colour, over the given surroundings.
     member this.PlaceOn(surroundings:Color) =
         let field = (SettingsColors.current()).surface
@@ -130,7 +153,7 @@ type SettingsInputFrame() as this =
             let radius = if pill then float32 this.Height/2.0f else float32(Dpi.scale 8)
             use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) radius
             use fill = new SolidBrush(this.BackColor)
-            use border = new Pen(p.border)
+            use border = new Pen(if this.Border.IsEmpty then p.border else this.Border)
             e.Graphics.FillPath(fill,shape)
             e.Graphics.DrawPath(border,shape)
 
@@ -155,8 +178,8 @@ type SettingsNumberInput() as this =
     let mutable maximum = 100M
     let mutable value = 0M
     let text = new TextBox(BorderStyle=BorderStyle.None,Text="0",TextAlign=HorizontalAlignment.Left)
-    let minus = new SettingsActionButton(Text="−",TabStop=false,AccessibleName=tr Strings.Appearance.decrease)
-    let plus = new SettingsActionButton(Text="+",TabStop=false,AccessibleName=tr Strings.Appearance.increase)
+    let minus = new SettingsActionButton(Text="−",Sign='−',TabStop=false,AccessibleName=tr Strings.Appearance.decrease)
+    let plus = new SettingsActionButton(Text="+",Sign='+',TabStop=false,AccessibleName=tr Strings.Appearance.increase)
     let sync() = text.Text <- value.ToString("0",CultureInfo.InvariantCulture)
     let setValue next =
         let next = max minimum (min maximum (Decimal.Truncate next))
@@ -177,6 +200,14 @@ type SettingsNumberInput() as this =
             minus.SetBounds(plus.Left-size-Dpi.scale 2,plus.Top,size,size)
             text.SetBounds(Dpi.scale 12,(this.Height-text.Height)/2,max 1 (minus.Left-Dpi.scale 18),text.Height))
         text.LostFocus.Add(fun _ -> commit())
+        // A whole number in range is the value as soon as it is typed, left as typed: Esc, which
+        // puts back the value, then kept it, where it had brought back the one before typing.
+        text.TextChanged.Add(fun _ ->
+            match Decimal.TryParse(text.Text,NumberStyles.Integer,CultureInfo.InvariantCulture) with
+            | true,next when next>=minimum && next<=maximum && next<>value ->
+                value <- next
+                changed.Trigger(EventArgs.Empty)
+            | _ -> ())
         text.KeyDown.Add(fun e ->
             match e.KeyCode with
             | Keys.Enter -> commit(); e.SuppressKeyPress <- true
@@ -184,12 +215,58 @@ type SettingsNumberInput() as this =
             | Keys.Up -> commit(); setValue(value+1M); e.SuppressKeyPress <- true
             | Keys.Down -> commit(); setValue(value-1M); e.SuppressKeyPress <- true
             | _ -> ())
-        minus.Click.Add(fun _ -> commit(); setValue(value-1M))
-        plus.Click.Add(fun _ -> commit(); setValue(value+1M))
+        // The keys stay in the box: on the button, Esc and Enter reached nothing.
+        minus.Click.Add(fun _ -> commit(); setValue(value-1M); text.Focus() |> ignore)
+        plus.Click.Add(fun _ -> commit(); setValue(value+1M); text.Focus() |> ignore)
     member _.Minimum with get() = minimum and set(v) = minimum <- v
     member _.Maximum with get() = maximum and set(v) = maximum <- v
     member _.Value with get() = value and set(v) = setValue v
+    /// The box typed in, for a host that acts on its keys, as the palette does on Enter.
+    member _.TextBox = text
     member _.ValueChanged = changed.Publish
+
+/// Keys the palette names (Tab, Esc, Alt + Enter): a thin rounded outline round each key, with
+/// nothing filled in, so a key reads apart from the buttons and segments around it. The
+/// Shortcuts page's chips are values to edit, and keep their filled look.
+module KeyCaps =
+    /// The outline round one key.
+    let outline (g:Graphics) (bounds:Rectangle) (p:SettingsPalette) =
+        // Plainer than a field's border, which vanishes round a small key on a field.
+        let edge = if SystemInformation.HighContrast then SystemColors.WindowText else Color.FromArgb(140,p.muted)
+        use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X+0.5f,float32 bounds.Y+0.5f,float32 bounds.Width-1.0f,float32 bounds.Height-1.0f)) (float32(Dpi.scale 4))
+        use pen = new Pen(edge)
+        let smoothing = g.SmoothingMode
+        g.SmoothingMode <- SmoothingMode.AntiAlias
+        g.DrawPath(pen,shape)
+        g.SmoothingMode <- smoothing
+    /// The keys of a shortcut written as "Alt+Enter", each in a cap of its own.
+    let keys (shortcut:string) = shortcut.Split([|'+'|],StringSplitOptions.RemoveEmptyEntries) |> List.ofArray
+    let private capWidth (font:Font) height (key:string) =
+        max height (TextRenderer.MeasureText(key,font,Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 10)
+    /// The room between two caps, where a + joins them.
+    let private joinWidth (font:Font) = TextRenderer.MeasureText("+",font,Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 8
+    /// How wide the caps of a shortcut are, side by side with a + between them.
+    let width (font:Font) height shortcut =
+        let caps = keys shortcut
+        (caps |> List.sumBy (capWidth font height))+joinWidth font*(max 0 (caps.Length-1))
+    /// The caps of a shortcut, from a point, a + between them and their names in the muted
+    /// colour; their width.
+    let draw (g:Graphics) (font:Font) (x:int) (y:int) height (shortcut:string) (p:SettingsPalette) =
+        let centred = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter
+        let ink = if SystemInformation.HighContrast then SystemColors.WindowText else p.muted
+        let join = joinWidth font
+        let right =
+            keys shortcut |> List.fold(fun (left,first) key ->
+                let left =
+                    if first then left
+                    else
+                        TextRenderer.DrawText(g,"+",font,Rectangle(left,y,join,height),ink,centred)
+                        left+join
+                let bounds = Rectangle(left,y,capWidth font height key,height)
+                outline g bounds p
+                TextRenderer.DrawText(g,key,font,bounds,ink,centred)
+                bounds.Right,false) (x,true) |> fst
+        right-x
 
 /// Click (or Enter/Space) to record, press the combination, Esc to cancel.
 /// The × button, or Backspace/Delete while recording, removes the shortcut (0).
@@ -204,20 +281,38 @@ type SettingsShortcutInput() as this =
     let mutable focusCue = false
     /// Text and whether it reports an error (red) rather than a notice (muted).
     let mutable message : (string * bool) option = None
+    let messageChanged = Event<string option>()
+    let unchanged = Event<EventArgs>()
+    /// Modifiers already down as recording starts, such as the Alt of Alt+Enter: not shown as
+    /// pressed until let go and pressed again.
+    let mutable heldAtStart = Keys.None
+    /// The last combination pressed while recording, taken or not, to name beside a refusal.
+    let mutable lastPressed = 0
     let messageTimer = new Timer(Interval=2500)
-    let clearMessage() = messageTimer.Stop(); message <- None
-    let showMessage error text = message <- Some(text,error); messageTimer.Stop(); messageTimer.Start(); this.Invalidate()
-    let stopRecording() = if recording then recording <- false; focusCue <- false; this.Invalidate()
+    let clearMessage() =
+        messageTimer.Stop()
+        if message.IsSome then message <- None; messageChanged.Trigger None
+    let showMessage error text = message <- Some(text,error); messageTimer.Stop(); messageTimer.Start(); messageChanged.Trigger(Some text); this.Invalidate()
+    /// Recording or not, with the app's own global shortcuts standing aside meanwhile, so the keys
+    /// pressed reach the box rather than run what they are bound to.
+    let setRecording value =
+        if value<>recording then
+            recording <- value
+            if value then ShortcutRecording.start() else ShortcutRecording.stop()
+    let stopRecording() = if recording then setRecording false; focusCue <- false; this.Invalidate()
     /// The × shows while the pointer is on the box, or it has the keyboard focus, so it takes no
     /// room the rest of the time.
     let canClear() = shortcut<>0 && not recording && message.IsNone && (hovering || this.Focused)
     let commit next =
-        recording <- false
+        // The keys come back before the new one is taken, so a key held elsewhere is still refused.
+        setRecording false
         focusCue <- false
         if next<>shortcut then
             this.Shortcut <- next
             changed.Trigger(EventArgs.Empty)
-        elif next<>0 then showMessage false (tr Strings.Shortcuts.alreadySet)
+        else
+            if next<>0 then showMessage false (tr Strings.Shortcuts.alreadySet)
+            unchanged.Trigger(EventArgs.Empty)
         this.Invalidate()
     /// Key caps padded tightly, so three keys and the clear button fit the editors' width.
     let capHeight() = this.Height-Dpi.scale 14
@@ -243,7 +338,8 @@ type SettingsShortcutInput() as this =
         this.SetStyle(ControlStyles.Selectable ||| ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer,true)
         this.AccessibleRole <- AccessibleRole.HotkeyField
         messageTimer.Tick.Add(fun _ -> clearMessage(); this.Invalidate())
-        this.Disposed.Add(fun _ -> messageTimer.Dispose())
+        // Closed while recording, as the palette's box can be: the keys come back all the same.
+        this.Disposed.Add(fun _ -> setRecording false; messageTimer.Dispose())
     member _.Shortcut
         with get() = shortcut
         and set(value) =
@@ -254,6 +350,16 @@ type SettingsShortcutInput() as this =
     override this.OnFontChanged(e) = base.OnFontChanged(e); fitWidth()
     member _.Changed = changed.Publish
     member _.IsRecording = recording
+    /// A recording that ended on the shortcut the box already had.
+    member _.Unchanged = unchanged.Publish
+    /// The last combination pressed while recording, taken or not.
+    member _.LastPressed = lastPressed
+    /// Whether the message shown is a refusal rather than a notice such as "already set".
+    member _.MessageIsError = message |> Option.exists snd
+    /// The box's notice or error as it comes and goes, for a host that shows it elsewhere.
+    member _.MessageChanged = messageChanged.Publish
+    /// Draws its notice or error in place of the shortcut; off where the host shows it beside.
+    member val ShowsMessage = true with get,set
     /// Whether the accent outline is drawn: while recording, or on fresh keyboard focus.
     member this.IsHighlighted = recording || (this.Focused && focusCue)
     /// The notice or error currently shown in place of the shortcut, if any.
@@ -262,7 +368,8 @@ type SettingsShortcutInput() as this =
     member this.Reject(previous,reason) = this.Shortcut <- previous; showMessage true reason
     member this.StartRecording() =
         clearMessage()
-        recording <- true
+        heldAtStart <- Control.ModifierKeys
+        setRecording true
         if not this.Focused then this.Focus() |> ignore
         this.Invalidate()
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); hovering <- true; this.Invalidate()
@@ -289,12 +396,20 @@ type SettingsShortcutInput() as this =
             else base.ProcessCmdKey(&msg,keyData)
         elif key=Keys.Escape && keyData=key then stopRecording(); true
         elif (key=Keys.Back || key=Keys.Delete) && keyData=key then commit 0; true
+        // Enter alone while nothing is held: no shortcut, as Backspace.
+        elif key=Keys.Enter && keyData=key then commit 0; true
         elif SettingsShortcut.isModifier key then this.Invalidate(); true
-        elif SettingsShortcut.isAcceptable keyData then commit (SettingsShortcut.encode keyData); true
         else
-            showMessage true (tr Strings.Shortcuts.includeCtrlOrAlt)
+            lastPressed <- SettingsShortcut.encode keyData
+            match SettingsShortcut.reservedFor keyData with
+            | Some why -> showMessage true (tr why)
+            | None when SettingsShortcut.isAcceptable keyData -> commit lastPressed
+            | None -> showMessage true (tr Strings.Shortcuts.includeCtrlOrAlt)
             true
-    override this.OnKeyUp(e) = base.OnKeyUp(e); if recording then this.Invalidate()
+    override this.OnKeyUp(e) =
+        base.OnKeyUp(e)
+        heldAtStart <- heldAtStart &&& Control.ModifierKeys
+        if recording then this.Invalidate()
     override this.OnPaint(e) =
         let p = SettingsColors.current()
         let g = e.Graphics
@@ -339,10 +454,10 @@ type SettingsShortcutInput() as this =
                     else bounds.Y+(bounds.Height-line.Height)/2
                 TextRenderer.DrawText(g,label,this.Font,Rectangle(textX,textY,line.Width+Dpi.scale 2,line.Height),p.text,flags)
                 x+bounds.Width+Dpi.scale 2) left
-        match message with
+        match (if this.ShowsMessage then message else None) with
         | Some(text,isError) -> TextRenderer.DrawText(g,text,this.Font,textArea (Dpi.scale 12),(if isError then error else p.muted),flags)
         | None when recording ->
-            let held = SettingsShortcut.heldParts Control.ModifierKeys
+            let held = SettingsShortcut.heldParts (Control.ModifierKeys &&& ~~~heldAtStart)
             if held.IsEmpty then TextRenderer.DrawText(g,tr Strings.Shortcuts.pressShortcut,this.Font,textArea (Dpi.scale 12),p.muted,flags)
             else
                 let x = chips held
@@ -380,12 +495,20 @@ type SettingsColorPicker() as this =
     let mutable pending = false
     let timer = new Timer(Interval=50)
     let swatchTips = new ToolTip()
-    let colors = [|Color.Black;Color.White;Color.Gray;Color.Red;Color.Orange;Color.Yellow;Color.Green;Color.Blue|]
-    let swatches = colors |> Array.mapi(fun index color ->
-        let button = new Button(BackColor=color,FlatStyle=FlatStyle.Flat,UseVisualStyleBackColor=false,TabIndex=index,AccessibleName=tr Strings.Appearance.quickColorNames.[index])
+    /// Quick colours for tabs: greys from black to white in even steps, far enough apart to tell
+    /// at a glance as text colours, named by their codes; then the tab menu's own colours, by name.
+    let greys =
+        [0x000000;0x242424;0x494949;0x6D6D6D;0x929292;0xB6B6B6;0xDBDBDB;0xFFFFFF]
+        |> List.map(fun rgb -> Color.FromRGB rgb,sprintf "#%06X" rgb)
+    let tabColors =
+        Theme.tabColorOrder |> List.truncate 8 |> List.map(fun index ->
+            (Theme.tabPalette false).[index],tr Strings.Settings.tabColorNames.[index])
+    let colors = Array.ofList (greys @ tabColors)
+    let swatches = colors |> Array.mapi(fun index (color,name) ->
+        let button = new Button(BackColor=color,FlatStyle=FlatStyle.Flat,UseVisualStyleBackColor=false,TabIndex=index,AccessibleName=name)
         button.FlatAppearance.MouseOverBackColor <- color
         button.FlatAppearance.MouseDownBackColor <- color
-        swatchTips.SetToolTip(button,tr Strings.Appearance.quickColorNames.[index])
+        swatchTips.SetToolTip(button,name)
         button.Click.Add(fun _ ->
             timer.Stop()
             this.Color <- color
@@ -395,8 +518,10 @@ type SettingsColorPicker() as this =
         this.Controls.Add(button)
         button)
     let applySwatchTheme() = for button in swatches do button.FlatAppearance.BorderColor <- (SettingsColors.current()).muted
-    let svRect() = Rectangle(Dpi.scale 6,Dpi.scale 6,this.Width-Dpi.scale 12,this.Height-Dpi.scale 74)
-    let hueRect() = Rectangle(Dpi.scale 6,this.Height-Dpi.scale 60,this.Width-Dpi.scale 12,Dpi.scale 20)
+    /// Two rows of quick colours under the hue bar, eight to a row.
+    let perRow = 8
+    let svRect() = Rectangle(Dpi.scale 6,Dpi.scale 6,this.Width-Dpi.scale 12,this.Height-Dpi.scale 102)
+    let hueRect() = Rectangle(Dpi.scale 6,this.Height-Dpi.scale 88,this.Width-Dpi.scale 12,Dpi.scale 20)
     let flush() =
         if pending then pending <- false; changed.Trigger(SettingsHsv.color hue saturation brightness)
     let changeAt (point:Point) =
@@ -410,7 +535,7 @@ type SettingsColorPicker() as this =
             hue <- 359.99*clamp(float(point.X-rect.X)/float(max 1 (rect.Width-1)))
         if drag<>0 then pending <- true; this.Invalidate()
     do
-        this.Size <- Size(Dpi.scale 238,Dpi.scale 238)
+        this.Size <- Size(Dpi.scale 238,Dpi.scale 266)
         this.TabStop <- true
         this.AccessibleName <- tr Strings.Appearance.pickerHelp
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
@@ -418,10 +543,11 @@ type SettingsColorPicker() as this =
         this.Disposed.Add(fun _ -> timer.Dispose(); swatchTips.Dispose())
         let layoutSwatches() =
             let hue,gap = hueRect(),Dpi.scale 5
-            // Gaps sit only between swatches, so the row spans the hue bar exactly.
-            let edge index = hue.Left+index*(hue.Width+gap)/swatches.Length
+            // Gaps sit only between swatches, so each row spans the hue bar exactly.
+            let edge index = hue.Left+index*(hue.Width+gap)/perRow
             swatches |> Array.iteri(fun index button ->
-                button.SetBounds(edge index,this.Height-Dpi.scale 28,edge(index+1)-gap-edge index,Dpi.scale 22))
+                let column,row = index%perRow,index/perRow
+                button.SetBounds(edge column,this.Height-Dpi.scale 56+row*Dpi.scale 28,edge(column+1)-gap-edge column,Dpi.scale 22))
         this.SizeChanged.Add(fun _ -> layoutSwatches())
         layoutSwatches()
         applySwatchTheme()
@@ -440,7 +566,7 @@ type SettingsColorPicker() as this =
             pending <- false
             this.Invalidate()
     override this.OnPaint(e) =
-        e.Graphics.Clear((SettingsColors.current()).surface)
+        e.Graphics.Clear(this.BackColor)
         let rect = svRect()
         use spectrum = new LinearGradientBrush(rect,Color.White,SettingsHsv.color hue 1.0 1.0,LinearGradientMode.Horizontal)
         e.Graphics.FillRectangle(spectrum,rect)
@@ -502,6 +628,7 @@ type SettingsColorInput() as this =
     let swatch = new Button(FlatStyle=FlatStyle.Flat,Text="",AccessibleName=tr Strings.Appearance.chooseColor,Cursor=Cursors.Hand)
     let picker = new SettingsColorPicker()
     let popup = new SettingsChoicePopup(AutoSize=true)
+    let pickerKey = Event<Keys>()
     let mutable suppressClick = false
     let sync() =
         text.Text <- sprintf "#%06X" (color.ToArgb() &&& 0xFFFFFF)
@@ -544,29 +671,46 @@ type SettingsColorInput() as this =
         popup.Items.Add(host) |> ignore
         popup.Closed.Add(fun e ->
             picker.Flush()
-            suppressClick <- SettingsPopupLifetime.isOwnerClick swatch e)
+            suppressClick <- SettingsPopupLifetime.isOwnerClick swatch e
+            // The drop-down takes Esc itself, before the picker sees the key, and closes for it.
+            if e.CloseReason=ToolStripDropDownCloseReason.Keyboard then pickerKey.Trigger Keys.Escape)
         swatch.Click.Add(fun _ ->
             if suppressClick then suppressClick <- false
             elif popup.Visible then popup.Close()
-            else
-                commitText()
-                picker.Color <- color
-                picker.ApplyTheme()
-                popup.BackColor <- (SettingsColors.current()).surface
-                popup.Show(swatch,Point(0,swatch.Height+Dpi.scale 8))
-                picker.Focus() |> ignore)
+            else this.OpenPicker())
         picker.Changed.Add(commit)
         picker.KeyDown.Add(fun e ->
             if e.KeyCode=Keys.Escape || e.KeyCode=Keys.Enter then
                 popup.Close()
                 text.Focus() |> ignore
-                e.SuppressKeyPress <- true)
+                e.SuppressKeyPress <- true
+                pickerKey.Trigger e.KeyCode)
         text.KeyDown.Add(fun e ->
             if e.KeyCode=Keys.Enter then commitText(); e.SuppressKeyPress <- true
             elif e.KeyCode=Keys.Escape then sync(); e.SuppressKeyPress <- true)
         text.LostFocus.Add(fun _ -> commitText())
         SettingsPopupLifetime.own this popup false
         text.Text <- "#FFFFFF"
+    /// The colour picker under the dot, as a click on the dot opens it.
+    member this.OpenPicker() =
+        commitText()
+        picker.Color <- color
+        picker.ApplyTheme()
+        // Outlined in a colour of its own, the field sits on a surface it shares with the picker,
+        // as on the palette; otherwise the picker is a settings page's popup.
+        let framed = not this.Border.IsEmpty && not this.Surroundings.IsEmpty
+        popup.BackColor <- if framed then this.Surroundings else (SettingsColors.current()).surface
+        popup.Outline <- if framed then this.Border else Color.Empty
+        picker.BackColor <- popup.BackColor
+        // Under the field, its left edge with the field's.
+        popup.Show(this,Point(0,this.Height+Dpi.scale 6))
+        picker.Focus() |> ignore
+    member _.PickerOpen = popup.Visible
+    member _.PickerClosed = popup.Closed
+    /// Esc or Enter in the picker, which closes it: a host may take either as its own.
+    member _.PickerKey = pickerKey.Publish
+    /// The hex code's box, for a host that acts on what is typed, as the palette does.
+    member _.TextBox = text
     override this.ApplyTheme() =
         base.ApplyTheme()
         swatch.Invalidate()
