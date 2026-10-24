@@ -100,7 +100,11 @@ type AppearanceView(?settings:ISettings) =
         preview.TabBounds(ThemeService.currentAppearance().scaled.tabHeight)
     /// What the rest of the preview is drawn from besides its size, so it is redrawn only when one changes.
     let mutable previewFrame = None
-    let colors = PaletteEditing.colorFields |> List.map(fun (key,get,set) -> key,get,set,(new SettingsColorInput(Font=SettingsUi.bodyFont()) :> IPropEditor))
+    // The palette alone offers some, such as the colour of a tab asking for attention.
+    let colors =
+        PaletteEditing.colorFields
+        |> List.filter(fun (key,_,_) -> not (SettingsCatalog.paletteOnly.Contains key))
+        |> List.map(fun (key,get,set) -> key,get,set,(new SettingsColorInput(Font=SettingsUi.bodyFont()) :> IPropEditor))
     let dimensionFields = SettingsCatalog.geometryNumbers
 
     let low,high = SettingsCatalog.columnWidthRange

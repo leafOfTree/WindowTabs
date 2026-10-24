@@ -438,6 +438,8 @@ let main() =
         check (SettingsCatalog.all |> List.forall(fun item -> item.id<>"tabBorderColor")) "Search offers the separator color, which follows the others"
         check (SettingsCatalog.all |> List.exists(fun item -> item.id="tabFlashBgColor" && item.binding=Colour)) "The color of a tab asking for attention has no setting"
         check (PaletteEditing.colorFields |> List.exists(fun (key,_,_) -> key="tabFlashBgColor")) "The color of a tab asking for attention cannot be edited"
+        // In the palette only: the Appearance page shows no row for it, nor its search.
+        check (SettingsCatalog.paletteOnly.Contains "tabFlashBgColor") "The color of a tab asking for attention is shown on the Appearance page"
         let attention = SettingsCatalog.find "tabFlashBgColor"
         check (["danger";"attention";"flash"] |> List.forall(fun term -> SettingsCatalog.matches term attention)) "The color of a tab asking for attention is not found by what it is for"
         // Every action is a command: the hotkeys, the palette and the command line share the list.

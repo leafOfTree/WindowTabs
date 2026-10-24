@@ -200,6 +200,8 @@ let main() =
         form.Show()
         Application.DoEvents()
         SettingsUi.apply form
+        // The colour of a tab asking for attention is set from the palette alone.
+        assertTrue (view.control.Controls.Find("tabFlashBgColor",true).Length=0) "The Appearance page shows the color of a tab asking for attention"
         let all = view.control.Controls.Find("tabTextColor",true)
         let layoutIds = ["tabHeight";"tabMaxWidth";"tabOverlap";"tabIndentNormal";"tabColumnWidth"]
         let layoutRows = layoutIds |> List.map(fun id -> view.control.Controls.Find(id,true).[0].Parent)
