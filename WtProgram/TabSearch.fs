@@ -256,7 +256,9 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let padding = Dpi.scale 12
     let radius = Dpi.scale 12
     let boxHeight = Dpi.scale 40
-    let scopeHeight = Dpi.scale 34
+    /// A row's height: a name chosen moves up to this line as its choices or its box open under
+    /// it, and stays where its row had it rather than jump up.
+    let scopeHeight = Dpi.scale rowHeight
     let ended = Event<unit>()
     let mutable closed = false
     /// Out of sight while a command runs, so the window it acts on is in front: not closed.

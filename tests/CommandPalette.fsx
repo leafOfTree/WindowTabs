@@ -691,7 +691,23 @@ let main() =
         note (palette.Depth=0 && palette.Query=tr Strings.Commands.tabColor.caption && palette.Caret=palette.Query.Length) "Esc did not come back to the search, the caret at its end"
         note (not palette.ScopeLineShown) "The way back stayed after going back"
         palette.Query <- tr Strings.Settings.tabHeight.caption
+        // The name stays where the row had it as its box opens under it: where the line above the
+        // box set it higher, it jumped up as Enter was pressed.
+        let paletteForm () =
+            Application.OpenForms |> Seq.cast<Form> |> Seq.find(fun form -> form.Controls |> Seq.cast<Control> |> Seq.exists(fun control -> control :? SettingsSearchBox))
+        let nameTop () =
+            pump 50
+            let form = paletteForm()
+            use image = new Bitmap(form.Width,form.Height)
+            form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+            let distance (a:Color) (b:Color) = abs(int a.R-int b.R)+abs(int a.G-int b.G)+abs(int a.B-int b.B)
+            [Dpi.scale 54..Dpi.scale 100] |> List.tryFind(fun y ->
+                let background = image.GetPixel(form.Width/2,y)
+                [Dpi.scale 28..Dpi.scale 90] |> List.exists(fun x -> distance (image.GetPixel(x,y)) background>120))
+        let onRow = nameTop()
         palette.Accept()
+        let onLine = nameTop()
+        note (onRow.IsSome && onRow=onLine) (sprintf "The setting's name moved as its box opened: its top at %A on the row, %A above the box" onRow onLine)
         note (palette.AskBox |> Option.exists(fun box -> box :? SettingsNumberInput)) "Tab height did not ask for a number in the number box"
         // Saved as it is typed or stepped, with no Enter, as the settings pages save; back on the
         // row, it shows the value now, not the one it was opened with.
@@ -699,6 +715,7 @@ let main() =
         | Some(:? SettingsNumberInput as number) ->
             let height () = Services.settings.getValue "tabHeight" :?> int
             let before = height()
+            note (number.Value=decimal before) (sprintf "The tab height's box opened at %M, not the %d saved" number.Value before)
             let typed = if before=40 then 41 else 40
             number.TextBox.Text <- string typed
             pump 50
