@@ -29,6 +29,9 @@ module CommandPalette =
         /// Any other setting: a size or the leader keys, typed in the box; a colour, picked in the
         /// colour box; a page, opened in the settings window.
         | ASetting of SettingDefinition
+        /// Switching tabs by number: off, or the key held with 1–9, as the Shortcuts page offers
+        /// it, though two settings keep it.
+        | ANumberKeys of SettingDefinition
     /// A choice setting's values with what each is called, the alignment's after the tabs' side.
     let private choiceOptions (item:SettingDefinition) (values:string list) =
         let labels =
@@ -40,6 +43,18 @@ module CommandPalette =
         let current = Services.settings.getValue key :?> string
         choiceOptions item values |> List.tryFind(fun (value,_) -> value=current) |> Option.map snd |> Option.defaultValue ""
     /// A colour setting of the look in use, light or dark, as the Appearance page edits it.
+    /// Switching tabs by number as the Shortcuts page offers it: off, or Ctrl or Alt with 1–9,
+    /// each with what choosing it sets.
+    let private numberKeyOptions() =
+        let turn on (modifier:string option) = fun () ->
+            modifier |> Option.iter(fun key -> Services.settings.setValue("numberHotKeyModifier",box key))
+            Services.settings.setValue("enableCtrlNumberHotKey",box on)
+        [ tr Strings.Settings.numberShortcutOff,turn false None
+          tr (Strings.Settings.numberShortcutWith (tr Strings.Settings.numberShortcutCtrl)),turn true (Some "Ctrl")
+          tr (Strings.Settings.numberShortcutWith (tr Strings.Settings.numberShortcutAlt)),turn true (Some "Alt") ]
+    let private numberKeysNow() =
+        if not (Services.settings.getValue "enableCtrlNumberHotKey" :?> bool) then 0
+        elif (Services.settings.getValue "numberHotKeyModifier" :?> string)="Alt" then 2 else 1
     /// The Support page's settings file buttons, which the palette runs itself rather than open the page on.
     let private runsInPlace = set ["settings-location";"settings-backup";"settings-reset"]
     let private colorField id = PaletteEditing.colorFields |> List.find(fun (key,_,_) -> key=id)
@@ -95,6 +110,9 @@ module CommandPalette =
             pages |> List.collect(fun page ->
                 SettingsCatalog.all |> List.filter(fun item -> item.page=page) |> List.choose(fun item ->
                     match item.binding with
+                    | _ when item.id="switch-tabs-by-number" -> Some(ANumberKeys item)
+                    // Its modifier is one of the three above.
+                    | _ when item.id="number-shortcut" -> None
                     // The lists' own keys, set here and nowhere else; the commands' are with them.
                     | Shortcut(key,_) when List.contains key Commands.listKeys -> Some(ASetting item)
                     | Shortcut _ -> None
@@ -107,7 +125,7 @@ module CommandPalette =
         match action with
         | ACommand command -> command.id
         | ASwitch(_,_,command) -> command.id
-        | AChoice(item,_,_) | ASetting item -> "setting:"+item.id
+        | AChoice(item,_,_) | ASetting item | ANumberKeys item -> "setting:"+item.id
     let private recentLimit = 8
     /// The actions chosen last from the palette, the latest first, kept in the settings file.
     let recent() =
@@ -131,13 +149,14 @@ module CommandPalette =
         let group action =
             match action with
             | ACommand command -> List.findIndex ((=) command.category) Commands.categories
-            | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item -> Commands.categories.Length+(match item.page with GeneralSettings -> 0 | AppearanceSettings -> 1 | HotKeySettings -> 2 | ProgramSettings -> 3 | LayoutSettings -> 4 | DiagnosticsSettings -> 5)
-        let text action = match action with ACommand command -> command.text | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item -> item.text
+            | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item | ANumberKeys item -> Commands.categories.Length+(match item.page with GeneralSettings -> 0 | AppearanceSettings -> 1 | HotKeySettings -> 2 | ProgramSettings -> 3 | LayoutSettings -> 4 | DiagnosticsSettings -> 5)
+        let text action = match action with ACommand command -> command.text | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item | ANumberKeys item -> item.text
         // The value it shows at the right is found as its name is: a style, a size, a colour's code.
         let shownValue action =
             try
                 match action with
                 | AChoice(item,key,values) -> choiceNow item key values
+                | ANumberKeys _ -> fst (List.item (numberKeysNow()) (numberKeyOptions()))
                 | ASetting item ->
                     match item.binding with
                     | Number _ -> string (Services.settings.getValue item.id :?> int)
@@ -147,7 +166,7 @@ module CommandPalette =
                 | _ -> ""
             with _ -> ""
         let extra action =
-            (match action with ACommand command -> [command.id] | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item -> [SettingsCatalog.storageKey item])
+            (match action with ACommand command -> [command.id] | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item | ANumberKeys item -> [SettingsCatalog.storageKey item])
             @ [shownValue action]
         { scope=ActionScope; caption=tr Strings.TabSearch.actions; prompt=tr Strings.TabSearch.actionPrompt
           noMatches=tr Strings.TabSearch.noActions; noEntries=tr Strings.TabSearch.noActions; glyph=NoGlyph
@@ -161,7 +180,15 @@ module CommandPalette =
           choose=(fun chosen ->
               remember (recentKey (action chosen))
               match action chosen with
+              // A command with a state is a switch: turned here, the palette staying up to show it.
+              | ACommand command when (command.state active).IsSome -> command.run active |> ignore; Stay
               | ACommand command -> command.run active
+              | ANumberKeys _ ->
+                  let now = numberKeysNow()
+                  let options = numberKeyOptions()
+                  Choose [ for index,(label,apply) in List.indexed options ->
+                             { label=label; detail=(if index=now then "✓" else ""); swatch=None
+                               run=(fun () -> apply(); Done); preview=Some apply; undo=Some(snd options.[now]) } ]
               | ASwitch(_,_,command) -> command.run active |> ignore; asides.Remove chosen.hwnd |> ignore; Stay
               // Its values to pick from, the one it has now ticked.
               | AChoice(item,key,values) ->
@@ -203,12 +230,16 @@ module CommandPalette =
                   Some { current=listKey key
                          usedBy=fun code -> Commands.holderName Services.program.getHotKey key code
                          set=fun code -> Services.settings.setHotKey key code; asides.Remove chosen.hwnd |> ignore; true }
-              | AChoice _ | ASetting _ -> None)
+              | AChoice _ | ASetting _ | ANumberKeys _ -> None)
           dimmed=(fun chosen -> match action chosen with ACommand command -> not (command.enabled active) | _ -> false)
           assignOnEnter=(fun chosen -> match action chosen with ASetting { binding=Shortcut _ } -> true | _ -> false)
           aside=(fun _ chosen ->
               match action chosen,asides.TryGetValue chosen.hwnd with
               // A group's value comes in from its own thread after the rows are listed: not kept.
+              | ACommand command,_ when (command.state active).IsSome ->
+                  { detail=""; switch=command.state active; swatch=None; shortcut=shortcutText command; dropdown=false; small=false }
+              | ANumberKeys _,_ ->
+                  { detail=fst (List.item (numberKeysNow()) (numberKeyOptions())); switch=None; swatch=None; shortcut=""; dropdown=true; small=false }
               | ACommand command,_ when command.current active<>"" ->
                   { detail=command.current active; switch=None; swatch=None; shortcut=shortcutText command; dropdown=true; small=false }
               | _,(true,aside) -> aside
@@ -218,6 +249,7 @@ module CommandPalette =
                       | ACommand command -> { detail=""; switch=None; swatch=None; shortcut=shortcutText command; dropdown=false; small=false }
                       | ASwitch(_,key,command) -> { detail=""; switch=Some(Services.settings.getValue key :?> bool); swatch=None; shortcut=shortcutText command; dropdown=false; small=false }
                       | AChoice(item,key,values) -> { detail=choiceNow item key values; switch=None; swatch=None; shortcut=""; dropdown=true; small=false }
+                      | ANumberKeys _ -> { detail=fst (List.item (numberKeysNow()) (numberKeyOptions())); switch=None; swatch=None; shortcut=""; dropdown=true; small=false }
                       | ASetting item ->
                           match item.binding with
                           | Number _ -> { detail=string (Services.settings.getValue item.id :?> int); switch=None; swatch=None; shortcut=""; dropdown=false; small=false }
@@ -238,7 +270,7 @@ module CommandPalette =
           // palette where it is.
           concealed=fun chosen ->
               match action chosen with
-              | ACommand _ -> true
+              | ACommand command -> (command.state active).IsNone
               | ASetting item ->
                   match item.binding with
                   | Number _ | Colour | Shortcut _ -> false

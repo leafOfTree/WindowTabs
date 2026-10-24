@@ -151,19 +151,6 @@ type HotKeyView() =
         for _,editor in editors do editor.Changed.Add(fun _ -> updateRestore())
         restore.Click.Add(fun _ -> restoreDefaults(); updateRestore())
         updateRestore()
-        // The keys given to windows from the search box, each named by the window and its program.
-        let windowKeys : WindowShortcut list = Services.program.windowShortcuts()
-        if not windowKeys.IsEmpty then
-            let card = SettingsUi.sectionCard table (tr Strings.Shortcuts.windows)
-            SettingsUi.note card (tr Strings.Shortcuts.windowsNote)
-            for shortcut in windowKeys do
-                let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=shortcut.code,Name="window-"+WindowShortcuts.key shortcut)
-                editor.Changed.Add(fun _ ->
-                    match Commands.holderName Services.program.getHotKey "" editor.Shortcut with
-                    | Some other -> editor.Reject(shortcut.code,tr (Strings.Shortcuts.usedBy other))
-                    | None when not (Services.program.setWindowShortcut { shortcut with code=editor.Shortcut }) -> editor.Reject(shortcut.code,tr Strings.Shortcuts.inUse)
-                    | None -> ())
-                SettingsUi.row card shortcut.title (System.IO.Path.GetFileName shortcut.path) editor
         let pointer = SettingsUi.sectionCard table (tr Strings.Shortcuts.mouse)
         SettingsBindings.toggleRow pointer "activate-on-hover"
         SettingsBindings.toggleRow pointer "shift-scroll"

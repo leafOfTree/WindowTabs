@@ -522,11 +522,6 @@ module Strings =
     module Shortcuts =
         let keyboard = { en="Keyboard"; zh="键盘"; ja="キーボード"; ar="لوحة المفاتيح" }
         let mouse = { en="Mouse"; zh="鼠标"; ja="マウス"; ar="الفأرة" }
-        let windows = { en="Windows"; zh="窗口"; ja="ウィンドウ"; ar="النوافذ" }
-        let windowsNote = { en="Given from the window search with Alt+Enter. The key brings the window with that name to the front, or the program's most recent one, and starts the program when none is open. Clear a key to forget it."
-                            zh="在窗口搜索中按 Alt+Enter 设置。按键会把同名窗口切到前台，没有同名的则切到该程序最近的窗口；程序没开则启动它。清空快捷键即忘记。"
-                            ja="ウィンドウ検索で Alt+Enter から設定します。キーで同名のウィンドウ、なければそのプログラムの最近のウィンドウを前面にし、開いていなければプログラムを起動します。キーを消すと忘れます。"
-                            ar="تُعيَّن من بحث النوافذ بـ Alt+Enter. يُحضر المفتاح النافذة بذلك الاسم إلى المقدمة، أو أحدث نافذة للبرنامج، ويشغّل البرنامج إن لم تكن أي نافذة مفتوحة. امسح المفتاح لنسيانه." }
         /// Cards for the commands that turn settings on or off and open pages, and the app's own.
         let keyboardNote = { en="Click a shortcut, then press the new combination. Esc cancels. The command palette sets one too: Alt+Enter on a command."
                              zh="点击快捷键后按下新的组合键。按 Esc 取消。在命令面板中选中命令后按 Alt+Enter 也可设置。"

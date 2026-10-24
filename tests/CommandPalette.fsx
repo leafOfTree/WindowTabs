@@ -469,7 +469,16 @@ let main() =
         for item in SettingsCatalog.all do
             match item.binding with
             | Shortcut _ -> ()
+            // Its modifier is one of Switch tabs by number's three values.
+            | _ when item.id="number-shortcut" ->
+                note (not (List.contains (tr item.text.caption) titles)) "The number keys' modifier has a row of its own beside their three values"
             | _ -> note (List.contains (tr item.text.caption) titles) (sprintf "The setting %s is not on the Actions page" item.id)
+        // The app's own switches show whether they are on for the app in front.
+        for id in ["tabs-for-app";"auto-group-app";"number-shortcut-for-app";"combine-group-taskbar-icons"] do
+            let command = (Commands.find id).Value
+            let entry = page.entries |> List.find(fun entry -> entry.title=tr command.text.caption)
+            note ((page.aside "" entry).switch=command.state active && (command.state active).IsSome) (sprintf "%s shows no switch" id)
+            note (not (page.concealed entry)) (sprintf "%s hides the palette to be turned" id)
         for entry in page.entries do
             attempt ("row "+entry.title) (fun () ->
                 let aside = page.aside "" entry
@@ -479,6 +488,24 @@ let main() =
             match SettingsCatalog.all |> List.tryFind(fun item -> tr item.text.caption=entry.title) with
             // A shortcut's row is its command's, walked above.
             | Some { binding=Shortcut _ } -> ()
+            // Off, or Ctrl or Alt with 1–9: one list for two settings, as the Shortcuts page has it.
+            | Some item when item.id="switch-tabs-by-number" ->
+                attempt "switch tabs by number" (fun () ->
+                    let enabled() = api.getValue "enableCtrlNumberHotKey" :?> bool
+                    let modifier() = api.getValue "numberHotKeyModifier" :?> string
+                    let before = enabled(),modifier()
+                    match page.choose entry with
+                    | Choose options ->
+                        note (options.Length=3 && (options |> List.filter(fun option -> option.detail="✓")).Length=1) "Switch tabs by number does not offer off, Ctrl and Alt, the one it has ticked"
+                        options.[2].run() |> ignore
+                        note (enabled() && modifier()="Alt") "Alt + 1–9 did not turn switching by number on with Alt"
+                        options.[0].run() |> ignore
+                        note (not (enabled())) "Off did not turn switching by number off"
+                        options.[1].run() |> ignore
+                        note (enabled() && modifier()="Ctrl") "Ctrl + 1–9 did not turn it on with Ctrl"
+                    | outcome -> issues.Add(sprintf "Switch tabs by number answered %A" outcome)
+                    api.setValue("numberHotKeyModifier",box (snd before))
+                    api.setValue("enableCtrlNumberHotKey",box (fst before)))
             // The Support page's buttons, done from the palette: File Explorer, the file dialogs and
             // a confirmation are not opened here. Backing up offers both ways, without opening
             // the settings window.
@@ -678,7 +705,8 @@ let main() =
             let mutable message = Message()
             let processKey = editor.GetType().GetMethod("ProcessCmdKey",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
             processKey.Invoke(editor,[|box message;box (Keys.Control ||| Keys.J)|]) |> ignore)
-        note (api.hotKey "listNext"=Some nextKey && trial.ShortcutEditor.IsNone) "A key recorded for Next in the list was not kept"
+        pumpUntil "A taken key's box going" (fun () -> trial.ShortcutEditor.IsNone)
+        note (api.hotKey "listNext"=Some nextKey) "A key recorded for Next in the list was not kept"
         api.setHotKey "listNext" 0
         trial.Query <- ""
         // A switch turned with Enter keeps its row chosen, not the first row again.

@@ -51,6 +51,8 @@ type Command = {
     enabled:IntPtr -> bool
     /// What it is set to now for that window, as its choices name it; empty when it is not a setting.
     current:IntPtr -> string
+    /// On or off for that window, for a command that turns something; None for any other.
+    state:IntPtr -> bool option
     run:IntPtr -> CommandOutcome }
 
 /// Every command, in the order the palette lists them within a category. Each runs on the main
@@ -66,13 +68,13 @@ module Commands =
         let item = SettingsCatalog.find id
         { id=id; text=item.text; category=category
           shortcut=(match item.binding with Shortcut(key,_) -> Some key | _ -> None)
-          listed=true; enabled=enabled; current=(fun _ -> ""); run=finished action }
+          listed=true; enabled=enabled; current=(fun _ -> ""); state=(fun _ -> None); run=finished action }
     /// A command of its own, its shortcut kept under its id; unbound until the user picks a key.
     let private plain id text category enabled action =
-        { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); run=finished action }
+        { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); state=(fun _ -> None); run=finished action }
     /// A command that leaves a choice: what it offers for the window, each doing its part.
     let private choosing id text category enabled (options:IntPtr -> CommandChoice list) =
-        { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); run=fun hwnd -> Choose(options hwnd) }
+        { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); state=(fun _ -> None); run=fun hwnd -> Choose(options hwnd) }
     let private choice label detail action = { label=label; detail=detail; swatch=None; run=(fun () -> action(); Done); preview=None; undo=None }
     /// The group's side, alignment and auto-hide mode as last read, and reading them again once a
     /// command has changed one, so the palette shows the value now the next time.
@@ -132,6 +134,9 @@ module Commands =
     let private clearTabColor hwnd =
         AppTabColors.save (processPath hwnd) None
         onTab (fun g hwnd -> g.run(SetTabColor(hwnd,None))) hwnd
+    /// Whether an app's own switch is on, for the app of the window in front. `read` reaches the
+    /// services only when asked: the commands are listed before any service is there.
+    let private appState (read:string -> bool) hwnd = if hasApp hwnd then Some(read (processPath hwnd)) else None
     let private combinesIcons hwnd =
         groupOf hwnd |> Option.exists(fun group -> match group with :? GroupInfo as info -> info.isSuperBarEnabled | _ -> false)
     let private tabName hwnd =
@@ -217,26 +222,31 @@ module Commands =
         { choosing "group-tab-position" Strings.Commands.groupTabPosition GroupCommands hasGroup (snd positionChoice) with current=fst positionChoice }
         { choosing "group-tab-alignment" Strings.Commands.groupTabAlignment GroupCommands hasGroup (snd alignmentChoice) with current=fst alignmentChoice }
         { choosing "group-auto-hide" Strings.Commands.groupAutoHide GroupCommands hasGroup (snd autoHideChoice) with current=fst autoHideChoice }
-        plain "combine-group-taskbar-icons" Strings.Commands.combineGroupIcons GroupCommands hasGroup (onGroup(fun g ->
-            match g with
-            // From the group's thread, as its tab menu does: a group just rebuilt has no strip yet.
-            | :? GroupInfo as info -> info.invokeGroup(fun () -> Services.desktop.restartGroup(info.group.hwnd,not info.isSuperBarEnabled))
-            | _ -> ()))
+        { plain "combine-group-taskbar-icons" Strings.Commands.combineGroupIcons GroupCommands hasGroup (onGroup(fun g ->
+              match g with
+              // From the group's thread, as its tab menu does: a group just rebuilt has no strip yet.
+              | :? GroupInfo as info -> info.invokeGroup(fun () -> Services.desktop.restartGroup(info.group.hwnd,not info.isSuperBarEnabled))
+              | _ -> ()))
+          with state=fun hwnd -> if hasGroup hwnd then Some(combinesIcons hwnd) else None }
         // Only a group with combined icons has a taskbar button of its own to change.
         plain "change-group-icon" Strings.Commands.changeGroupIcon GroupCommands combinesIcons (fun hwnd ->
             use dialog = new System.Windows.Forms.OpenFileDialog(Title=tr Strings.TabMenu.changeTaskbarIcon,
                                                                  Filter=Localization.plain Strings.TabMenu.taskbarIconFiles,CheckFileExists=true)
             if dialog.ShowDialog()=System.Windows.Forms.DialogResult.OK then Services.program.setGroupIcon(hwnd,Some dialog.FileName))
         plain "restore-group-icon" Strings.Commands.restoreGroupIcon GroupCommands combinesIcons (fun hwnd -> Services.program.setGroupIcon(hwnd,None))
-        plain "tabs-for-app" Strings.Commands.tabsForApp GroupCommands hasApp (fun hwnd ->
-            let path = processPath hwnd
-            Services.filter.setIsTabbingEnabledForProcess path (not (Services.filter.getIsTabbingEnabledForProcess path)))
-        plain "auto-group-app" Strings.Commands.autoGroupApp GroupCommands hasApp (fun hwnd ->
-            let path = processPath hwnd
-            Services.program.setAutoGroupingEnabled path (not (Services.program.getAutoGroupingEnabled path)))
-        plain "number-shortcut-for-app" Strings.Commands.numberShortcutForApp GroupCommands hasApp (fun hwnd ->
-            let path = processPath hwnd
-            NumberShortcutRules.setEnabled path (not (NumberShortcutRules.enabled path)))
+        // The app's own switches: each shows whether it is on for the app in front.
+        { plain "tabs-for-app" Strings.Commands.tabsForApp GroupCommands hasApp (fun hwnd ->
+              let path = processPath hwnd
+              Services.filter.setIsTabbingEnabledForProcess path (not (Services.filter.getIsTabbingEnabledForProcess path)))
+          with state=appState (fun path -> Services.filter.getIsTabbingEnabledForProcess path) }
+        { plain "auto-group-app" Strings.Commands.autoGroupApp GroupCommands hasApp (fun hwnd ->
+              let path = processPath hwnd
+              Services.program.setAutoGroupingEnabled path (not (Services.program.getAutoGroupingEnabled path)))
+          with state=appState (fun path -> Services.program.getAutoGroupingEnabled path) }
+        { plain "number-shortcut-for-app" Strings.Commands.numberShortcutForApp GroupCommands hasApp (fun hwnd ->
+              let path = processPath hwnd
+              NumberShortcutRules.setEnabled path (not (NumberShortcutRules.enabled path)))
+          with state=appState NumberShortcutRules.enabled }
         // A window chosen from a list goes beside the tab in front, as from the tab menu.
         fromCatalog "split-pick-right" SplitCommands hasGroup (onGroup(fun g -> g.pickPane(SideBySide,Second)))
         fromCatalog "split-pick-below" SplitCommands hasGroup (onGroup(fun g -> g.pickPane(Stacked,Second)))

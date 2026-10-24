@@ -1108,7 +1108,13 @@ let main() =
     check (recorder.ShortcutEditor.IsSome && editor.Shortcut=1623 && editor.Message.IsSome) "A key another program holds was not refused"
     press editor Keys.Enter
     press editor (Keys.Control ||| Keys.Alt ||| Keys.K)
-    check (assigned=SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.K) && recorder.ShortcutEditor.IsNone) "A free key was not set and the box left"
+    // Taken at once, seen in its box a moment, then the box goes.
+    check (assigned=SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.K) && recorder.ShortcutEditor.IsSome) "A free key was not set, or its box went at once"
+    let boxClock = Diagnostics.Stopwatch.StartNew()
+    while recorder.ShortcutEditor.IsSome && boxClock.ElapsedMilliseconds<3000L do
+        Application.DoEvents()
+        Thread.Sleep 10
+    check (recorder.ShortcutEditor.IsNone && boxClock.ElapsedMilliseconds>=400L) (sprintf "A taken key's box went after %d ms" boxClock.ElapsedMilliseconds)
     // The key shows beside the name, where shortcuts are, not cut short at the right end.
     check (recorder.RowNotes |> List.exists(fun (suffix,right) -> suffix="Ctrl+Alt+K" && right<>"Ctrl+Alt+K")) "A key set in the palette was not shown beside the name"
     recorder.BeginAssign()
@@ -1143,7 +1149,12 @@ let main() =
     keyed.BeginAssign()
     let keyEditor = match keyed.ShortcutEditor with Some editor -> editor | None -> failwith "Alt+Enter did not open a shortcut box on a window"
     press keyEditor (Keys.Control ||| Keys.Alt ||| Keys.M)
-    check (givenKey=SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.M) && keyed.ShortcutEditor.IsNone) "A window's key was not set from the search box"
+    check (givenKey=SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.M)) "A window's key was not set from the search box"
+    let keyClock = Diagnostics.Stopwatch.StartNew()
+    while keyed.ShortcutEditor.IsSome && keyClock.ElapsedMilliseconds<3000L do
+        Application.DoEvents()
+        Thread.Sleep 10
+    check keyed.ShortcutEditor.IsNone "A window's key box stayed after its key was set"
     keyed.Close()
     pump 100
     printfn "PASS: atomic/deferred saves, failure retry and backup recovery, subscriptions, temporary state, coalesced scans, dispatch, group cleanup, popup disposal and tab search."

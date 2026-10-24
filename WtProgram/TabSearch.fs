@@ -855,11 +855,18 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                         | Some name -> editor.Reject(previous,tr (Strings.Shortcuts.usedBy name))
                         | None when not (assignment.set editor.Shortcut) -> editor.Reject(previous,tr Strings.Shortcuts.inUse)
                         | None ->
-                            // Beside the name, where a row's shortcut is shown; the page lists
-                            // it afresh from now on.
-                            target.Suffix <- SettingsShortcut.text editor.Shortcut
-                            list.Invalidate()
-                            endAssign())
+                            // Seen taken in its box a moment, then beside the name, where a row's
+                            // shortcut is shown; the page lists it afresh from now on.
+                            let taken = SettingsShortcut.text editor.Shortcut
+                            let pause = new System.Windows.Forms.Timer(Interval=600)
+                            pause.Tick.Add(fun _ ->
+                                pause.Stop()
+                                pause.Dispose()
+                                if not closed then
+                                    target.Suffix <- taken
+                                    list.Invalidate()
+                                    if assigning |> Option.exists(fun (_,current) -> obj.ReferenceEquals(current,editor)) then endAssign())
+                            pause.Start())
                     // Esc while recording stops it in the box's own key handling; the key's release
                     // then leaves the box. A refusal's message stays until the next key.
                     editor.KeyUp.Add(fun e -> if e.KeyCode=Keys.Escape && not editor.IsRecording then endAssign())
