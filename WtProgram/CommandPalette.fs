@@ -267,10 +267,11 @@ module CommandPalette =
                   aside)
           // A command acts on the window in front, which the palette stands clear of, and a
           // settings page comes up in its place; a setting turned, typed or picked leaves the
-          // palette where it is.
+          // palette where it is, as does a command that only lists its choices: hidden and shown
+          // again for them, the palette flickered.
           concealed=fun chosen ->
               match action chosen with
-              | ACommand command -> (command.state active).IsNone
+              | ACommand command -> not command.chooses && (command.state active).IsNone
               | ASetting item ->
                   match item.binding with
                   | Number _ | Colour | Shortcut _ -> false

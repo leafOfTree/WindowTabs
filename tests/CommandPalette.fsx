@@ -479,6 +479,13 @@ let main() =
             let entry = page.entries |> List.find(fun entry -> entry.title=tr command.text.caption)
             note ((page.aside "" entry).switch=command.state active && (command.state active).IsSome) (sprintf "%s shows no switch" id)
             note (not (page.concealed entry)) (sprintf "%s hides the palette to be turned" id)
+        // One that only lists choices keeps the palette up: hidden and shown again, it flickered.
+        // One that acts on the window in front, such as renaming its tab, still stands clear.
+        for command in Commands.all |> List.filter(fun command -> command.listed) do
+            match page.entries |> List.tryFind(fun entry -> entry.title=tr command.text.caption) with
+            | Some entry when command.chooses -> note (not (page.concealed entry)) (sprintf "%s hides the palette to list its choices" command.id)
+            | Some entry when command.id="rename-tab" -> note (page.concealed entry) "Renaming a tab leaves the palette over it"
+            | _ -> ()
         for entry in page.entries do
             attempt ("row "+entry.title) (fun () ->
                 let aside = page.aside "" entry

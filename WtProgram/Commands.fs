@@ -53,6 +53,8 @@ type Command = {
     current:IntPtr -> string
     /// On or off for that window, for a command that turns something; None for any other.
     state:IntPtr -> bool option
+    /// Only lists what to choose from when run, so the palette stays up for it.
+    chooses:bool
     run:IntPtr -> CommandOutcome }
 
 /// Every command, in the order the palette lists them within a category. Each runs on the main
@@ -68,13 +70,13 @@ module Commands =
         let item = SettingsCatalog.find id
         { id=id; text=item.text; category=category
           shortcut=(match item.binding with Shortcut(key,_) -> Some key | _ -> None)
-          listed=true; enabled=enabled; current=(fun _ -> ""); state=(fun _ -> None); run=finished action }
+          listed=true; enabled=enabled; current=(fun _ -> ""); state=(fun _ -> None); chooses=false; run=finished action }
     /// A command of its own, its shortcut kept under its id; unbound until the user picks a key.
     let private plain id text category enabled action =
-        { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); state=(fun _ -> None); run=finished action }
+        { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); state=(fun _ -> None); chooses=false; run=finished action }
     /// A command that leaves a choice: what it offers for the window, each doing its part.
     let private choosing id text category enabled (options:IntPtr -> CommandChoice list) =
-        { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); state=(fun _ -> None); run=fun hwnd -> Choose(options hwnd) }
+        { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); state=(fun _ -> None); chooses=true; run=fun hwnd -> Choose(options hwnd) }
     let private choice label detail action = { label=label; detail=detail; swatch=None; run=(fun () -> action(); Done); preview=None; undo=None }
     /// The group's side, alignment and auto-hide mode as last read, and reading them again once a
     /// command has changed one, so the palette shows the value now the next time.
