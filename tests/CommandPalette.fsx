@@ -499,19 +499,16 @@ let main() =
             | None -> ()
         let first,second = page.entries |> List.choose(fun entry -> page.shortcut entry |> Option.map(fun given -> entry,given)) |> fun bound -> bound.[0],bound.[1]
         note ((snd second).usedBy (snd first).current).IsSome "A key one action has was not refused for another"
-        // The window search and every page of the palette, driven as a user would.
+        // The window search and the palette, driven as a user would.
         let entries = TabSearch.tabs (fun _ -> None) active (groups() |> List.map(fun info -> (info :> IGroup).windows.list))
-        let palette = TabSearchForm([],[],settings=api,pages=[CommandPalette.actionsPage active;CommandPalette.workspacesPage [] ignore],scope=ActionScope,windows=false)
+        let palette = TabSearchForm([],[],settings=api,pages=[CommandPalette.actionsPage active],scope=ActionScope,windows=false)
         palette.Show()
         pump 100
         note (palette.Scope=ActionScope) "The palette did not open on the actions"
+        // One page: no scopes to go round, so no line for them until a command leaves a choice.
+        note (not palette.ScopeLineShown) "The palette's one page shows a line of scopes"
         palette.SwitchScope()
-        note (palette.Scope=WorkspaceScope && palette.Message=tr Strings.TabSearch.noWorkspaces) "Tab did not go to the workspaces, or they do not say none is saved"
-        palette.Query <- "zz"
-        note (palette.Message=tr Strings.TabSearch.noMatchingWorkspaces) "A search among no workspaces did not say it found none"
-        palette.Query <- ""
-        palette.SwitchScope()
-        note (palette.Scope=ActionScope) "Tab did not come back to the actions"
+        note (palette.Scope=ActionScope) "Tab left the palette's one page"
         // What can do nothing for the window in front comes after what can.
         let shownPage = CommandPalette.actionsPage active
         for query in ["icon";"app";"tab";"workspace"] do
@@ -530,8 +527,10 @@ let main() =
         palette.Query <- tr Strings.Commands.tabColor.caption
         palette.Accept()
         note (palette.Depth=1 && not palette.IsClosed) "Tab color… did not list its colours in the palette"
+        note palette.ScopeLineShown "A command's choices show no way back"
         palette.Back()
         note (palette.Depth=0 && palette.Query=tr Strings.Commands.tabColor.caption && palette.Caret=palette.Query.Length) "Esc did not come back to the search, the caret at its end"
+        note (not palette.ScopeLineShown) "The way back stayed after going back"
         palette.Query <- tr Strings.Settings.tabHeight.caption
         palette.Accept()
         note (palette.AskBox |> Option.exists(fun box -> box :? SettingsNumberInput)) "Tab height did not ask for a number in the number box"
@@ -562,7 +561,7 @@ let main() =
         printfn "Command palette walk: %d commands, %d actions, %d issues" Commands.all.Length page.entries.Length issues.Count
         for issue in issues do printfn "ISSUE: %s" issue
         check (issues.Count=0) (sprintf "The command palette walk found %d issues" issues.Count)
-        printfn "PASS: every command run with a tab in front and with none, every action chosen, searched for and given a key, and the palette driven through its pages."
+        printfn "PASS: every command run with a tab in front and with none, every action chosen, searched for and given a key, and the palette driven."
     finally
         Environment.CurrentDirectory <- original
 

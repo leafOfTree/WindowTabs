@@ -195,14 +195,3 @@ module CommandPalette =
                   | Text(key,_) when key="numberLeaderKeys" -> false
                   | _ -> true
               | _ -> false }
-    /// The saved workspaces by name, with how many windows each holds; chosen, one is restored.
-    let workspacesPage (workspaces:(string * int) list) (restore:string -> unit) =
-        let names = workspaces |> List.map fst |> Array.ofList
-        { scope=WorkspaceScope; caption=tr Strings.Pages.workspaces; prompt=tr Strings.TabSearch.workspacePrompt
-          noMatches=tr Strings.TabSearch.noMatchingWorkspaces; noEntries=tr Strings.TabSearch.noWorkspaces; glyph=WorkspaceGlyph
-          entries=workspaces |> List.mapi(fun index (name,_) -> row index name [] [name] 0)
-          choose=(fun chosen -> restore names.[int chosen.hwnd-1]; Done)
-          shortcut=(fun _ -> None)
-          dimmed=(fun _ -> false)
-          aside=(fun _ chosen -> { detail=tr (Strings.TabSearch.windows (snd workspaces.[int chosen.hwnd-1])); switch=None; swatch=None; shortcut=""; dropdown=false; small=false })
-          concealed=fun _ -> true }

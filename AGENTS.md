@@ -41,8 +41,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tests/Run-Tests.ps1 
   the palette and the command line all run commands from this one list.
 - `Desktop.fs`, `WindowGroup.fs`, `TabStrip*.fs`: groups and the tab strip.
 - `TaskSwitch.fs`: the Alt+Tab replacement (icon and list styles).
-- `TabSearch.fs`, `CommandPalette.fs`: the palette: the window search and its pages of
-  commands, settings and workspaces.
+- `TabSearch.fs`, `CommandPalette.fs`: the palette: the window search and its page of
+  commands and settings.
 - `Shared/`: core types, Win32 wrappers, theme, DPI, `Strings`, `SettingsCatalog`.
 - `ManagerViewService/`: the Settings window; one view per page under `Views/`.
 - `GroupPlugins/`, `DesktopPlugins/`: per-group and app-wide behaviour.

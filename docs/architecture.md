@@ -333,9 +333,10 @@ values retain the group default, while a saved global choice opens globally even
 inside a group. Falling back to global when no searchable group exists does not
 overwrite the preferred scope.
 
-The same form is the command palette (`Ctrl+Alt+P` by default), opened with pages in place
-of the window scopes (`windows=false`): Tab goes round the actions and the saved workspaces
-(restoring the one chosen). Each key closes its own box or
+The same form is the command palette (`Ctrl+Alt+P` by default), opened with the actions page
+in place of the window scopes (`windows=false`); saved workspaces are restored through Restore
+workspace…, which lists them. With one page there is nothing for Tab to go round, so the line
+under the box only takes room for the way back from a command's choices. Each key closes its own box or
 puts it up in the other's place. Each box offers what was typed when it last closed, selected,
 so typing starts afresh; the actions chosen last from the palette (`recentActions` in the
 settings file, eight at most) come first while nothing is typed and win ties after. Alt+Enter on a window in the search gives it a key

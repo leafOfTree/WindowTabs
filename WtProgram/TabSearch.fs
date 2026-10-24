@@ -472,6 +472,10 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         if input.IsHandleCreated then
             TabSearchNative.SendMessage(input.Handle,TabSearchNative.EM_SETCUEBANNER,IntPtr(1),currentPrompt()) |> ignore
     let apply() =
+        // The line under the box: the scopes to go round, or the way back from a command's
+        // choices. The palette's one page has neither until a command leaves a choice.
+        let lineHeight = if windows || scopes.Length>1 || not choices.IsEmpty || asking.IsSome then scopeHeight else 0
+        if scopeLine.Height<>lineHeight then scopeLine.Height <- lineHeight
         // In their groups while nothing is typed; then the best matches first, those that can do
         // nothing for the window in front after the rest, unless named just as typed.
         let shown =
@@ -886,6 +890,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     member _.Depth = choices.Length
     /// Whether the windows are among its scopes: the window search, rather than the command palette.
     member _.HasWindows = windows
+    /// The line under the box, with the scopes or the way back, takes room.
+    member _.ScopeLineShown = scopeLine.Height>0
     /// Back from a command's choices, as Esc goes.
     member _.Back() = pop()
     /// Asks for a value, as a command chosen here does, under its name.

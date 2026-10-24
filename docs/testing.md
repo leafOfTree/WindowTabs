@@ -139,7 +139,7 @@ for run evidence, activation requirements and remaining limitations.
 | Window grouping | GroupLifecycle plus desktop E2E drag/focus on foreign helper HWNDs | Third-party application scenarios, drag-out and cancellation |
 | Split view | SplitView pure model: geometry, commands, parking, placement plans; GroupOperations native pair placement | Drag transactions, native resize reconciliation, third-party applications |
 | Frequent tab switching | Desktop E2E clicks, numeric and next/previous shortcuts, maximized/closed tabs; deterministic stale-focus and Ctrl snapshot checks | Mixed-monitor switching, minimize/restore, prolonged soak |
-| Command palette | CommandPalette: every command with a tab in front and with none, every action chosen, searched for in each language and given a key, and the palette's pages driven | Real key presses through the global hotkeys, command lines against a running copy |
+| Command palette | CommandPalette: every command with a tab in front and with none, every action chosen, searched for in each language and given a key, and the palette driven | Real key presses through the global hotkeys, command lines against a running copy |
 | Long-running desktop | Short resource-cycle tests | Multi-hour soak, sleep/resume, Explorer restart |
 
 Establish a repeatable coverage baseline before increasing thresholds. Prioritize

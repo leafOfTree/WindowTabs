@@ -117,7 +117,6 @@ type PaletteScope =
     | AllTabs
     /// The commands and the settings, as one list.
     | ActionScope
-    | WorkspaceScope
 
 type IProgram =
     abstract member version : string

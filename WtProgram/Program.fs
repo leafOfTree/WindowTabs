@@ -773,8 +773,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                   let path = try os.windowFromHwnd(entry.hwnd).pid.processPath with _ -> ""
                                   WindowShortcuts.find (this.windowShortcuts()) path entry.title |> Option.map(fun s -> SettingsShortcut.text s.code) |> Option.defaultValue ""))
             | Some wanted ->
-                let pages = [CommandPalette.actionsPage active
-                             CommandPalette.workspacesPage (this.workspaceSummaries()) this.restoreWorkspaceNamed]
+                let pages = [CommandPalette.actionsPage active]
                 TabSearchForm([],[],settings=(settingsManager :> ISettings),pages=pages,scope=wanted,windows=false)
         let isWindows = scope.IsNone
         search.Query <- if isWindows then lastWindowQuery else lastPaletteQuery

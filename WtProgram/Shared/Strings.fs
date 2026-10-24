@@ -670,11 +670,8 @@ module Strings =
         /// The palette's other pages, beside the windows.
         let actions = { en="Actions"; zh="操作"; ja="アクション"; ar="الإجراءات" }
         let actionPrompt = { en="Type a command or setting"; zh="输入命令或设置名"; ja="コマンドや設定名を入力"; ar="اكتب أمرًا أو إعدادًا" }
-        let workspacePrompt = { en="Type a workspace name to restore it"; zh="输入工作区名称，恢复该工作区"; ja="ワークスペース名を入力して復元"; ar="اكتب اسم مساحة عمل لاستعادتها" }
         let choicePrompt = { en="Choose, or type to filter"; zh="选择一项，或输入以筛选"; ja="選択するか、入力して絞り込み"; ar="اختر، أو اكتب للتصفية" }
         let noActions = { en="No matching commands or settings."; zh="没有匹配的命令或设置。"; ja="一致するコマンドや設定はありません。"; ar="لا توجد أوامر أو إعدادات مطابقة." }
-        let noWorkspaces = { en="No workspace saved yet."; zh="尚未保存任何工作区。"; ja="保存されたワークスペースはまだありません。"; ar="لم يتم حفظ أي مساحة عمل بعد." }
-        let noMatchingWorkspaces = { en="No matching workspaces."; zh="没有匹配的工作区。"; ja="一致するワークスペースはありません。"; ar="لا توجد مساحات عمل مطابقة." }
         /// Where a settings row opens, beside its name.
         let inSettings (page:LocalizedText) = { en="Settings › "+page.en; zh="设置 › "+page.zh; ja="設定 › "+page.ja; ar="الإعدادات ‹ "+page.ar }
         let noChoices = { en="No matching choices."; zh="没有匹配的选项。"; ja="一致する項目はありません。"; ar="لا توجد خيارات مطابقة." }
