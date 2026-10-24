@@ -57,6 +57,109 @@ type Command = {
     chooses:bool
     run:IntPtr -> CommandOutcome }
 
+/// What a setting's row in the palette does, which its own shortcut does too: its values listed
+/// to pick from, a value typed, a colour picked, or its page opened.
+module SettingRows =
+    /// A choice setting's values with what each is called, the alignment's after the tabs' side.
+    let choiceOptions (item:SettingDefinition) (values:string list) =
+        let labels =
+            if item.id="tab-alignment" then SettingsCatalog.alignmentLabels (Services.settings.getValue "tabPosition" :?> string<>"Horizontal")
+            else SettingsCatalog.choiceLabels item.id
+        List.zip values (labels |> List.map tr)
+    /// What a choice setting is set to now, by name.
+    let choiceNow (item:SettingDefinition) key values =
+        let current = Services.settings.getValue key :?> string
+        choiceOptions item values |> List.tryFind(fun (value,_) -> value=current) |> Option.map snd |> Option.defaultValue ""
+    /// Switching tabs by number as the Shortcuts page offers it: off, or Ctrl or Alt with 1–9,
+    /// each with what choosing it sets.
+    let numberKeyOptions() =
+        let turn on (modifier:string option) = fun () ->
+            modifier |> Option.iter(fun key -> Services.settings.setValue("numberHotKeyModifier",box key))
+            Services.settings.setValue("enableCtrlNumberHotKey",box on)
+        [ tr Strings.Settings.numberShortcutOff,turn false None
+          tr (Strings.Settings.numberShortcutWith (tr Strings.Settings.numberShortcutCtrl)),turn true (Some "Ctrl")
+          tr (Strings.Settings.numberShortcutWith (tr Strings.Settings.numberShortcutAlt)),turn true (Some "Alt") ]
+    let numberKeysNow() =
+        if not (Services.settings.getValue "enableCtrlNumberHotKey" :?> bool) then 0
+        elif (Services.settings.getValue "numberHotKeyModifier" :?> string)="Alt" then 2 else 1
+    /// The Support page's settings file buttons, which the palette runs itself rather than open the page on.
+    let runsInPlace = set ["settings-location";"settings-backup";"settings-reset"]
+    let private colorField id = PaletteEditing.colorFields |> List.find(fun (key,_,_) -> key=id)
+    /// A colour setting of the look in use, light or dark, as the Appearance page edits it.
+    let colorNow id =
+        let _,read,_ = colorField id
+        read (PaletteEditing.activePalette (ThemeService.currentIsDark()) Services.settings.appearance)
+    let hex (color:Drawing.Color) = sprintf "#%02X%02X%02X" color.R color.G color.B
+    /// A size typed in the box: a whole number in the setting's range.
+    let askNumber (item:SettingDefinition) =
+        let low,high = SettingsCatalog.range item.id
+        Ask { kind=NumberQuestion(low,high)
+              live=true
+              prompt=tr (Strings.TabSearch.numberPrompt low high)
+              value=string (Services.settings.getValue item.id :?> int)
+              hint=tr (Strings.TabSearch.numberPrompt low high)
+              accept=fun typed ->
+                  match Int32.TryParse typed with
+                  | true,value when value>=low && value<=high -> Services.settings.setValue(item.id,box value); None
+                  | _ -> Some(tr (Strings.TabSearch.numberRefused low high)) }
+    /// A text setting typed in the box, checked as the Shortcuts page checks it.
+    let askText (item:SettingDefinition) key =
+        Ask { kind=TextQuestion
+              live=true
+              prompt=tr item.text.caption
+              value=Services.settings.getValue key :?> string
+              hint=tr item.text.description
+              accept=fun typed ->
+                  match NumberLeaderKeys.tryNormalize typed with
+                  | Some keys -> Services.settings.setValue(key,box keys); None
+                  | None -> Some(tr Strings.Settings.invalidLeaderKeys) }
+    /// A colour picked in the system's colour box, for the look in use.
+    let askColor (item:SettingDefinition) =
+        Ask { kind=ColorQuestion
+              live=true
+              prompt=tr item.text.caption
+              value=hex (colorNow item.id)
+              hint=tr item.text.description
+              accept=fun typed ->
+                  let code = typed.Trim().TrimStart('#')
+                  match Int32.TryParse(code,Globalization.NumberStyles.HexNumber,Globalization.CultureInfo.InvariantCulture) with
+                  | true,value when code.Length=6 ->
+                      let color = Drawing.Color.FromArgb((value >>> 16) &&& 255,(value >>> 8) &&& 255,value &&& 255)
+                      let _,_,write = colorField item.id
+                      Services.settings.updateAppearance(PaletteEditing.edit (ThemeService.currentIsDark()) (write color))
+                      None
+                  | _ -> Some(tr Strings.TabSearch.colorRefused) }
+    /// Whether the setting has a row a key can open: not one turned on or off, which has its own
+    /// command; not a key, set where it is; and not the settings file's buttons, run in place.
+    let takesKey (item:SettingDefinition) =
+        match item.binding with
+        | _ when item.id="switch-tabs-by-number" -> true
+        | _ when item.id="number-shortcut" || runsInPlace.Contains item.id -> false
+        | Shortcut _ | Toggle _ -> false
+        | _ -> true
+    /// Choosing the row: what is listed, asked for or opened.
+    let run (item:SettingDefinition) : CommandOutcome =
+        match item.binding with
+        | _ when item.id="switch-tabs-by-number" ->
+            let now = numberKeysNow()
+            let options = numberKeyOptions()
+            Choose [ for index,(label,apply) in List.indexed options ->
+                       { label=label; detail=(if index=now then "✓" else ""); swatch=None
+                         run=(fun () -> apply(); Done); preview=Some apply; undo=Some(snd options.[now]) } ]
+        // Its values to pick from, the one it has now ticked.
+        | Choice(key,values,_) ->
+            let current = Services.settings.getValue key :?> string
+            Choose [ for value,label in choiceOptions item values ->
+                       { label=label; detail=(if value=current then "✓" else ""); swatch=None
+                         run=(fun () -> Services.settings.setValue(key,box value); Done)
+                         // Shown as the choice moves, but for the language, which builds the app's text again.
+                         preview=(if key="language" then None else Some(fun () -> Services.settings.setValue(key,box value)))
+                         undo=(if key="language" then None else Some(fun () -> Services.settings.setValue(key,box current))) } ]
+        | Number _ -> askNumber item
+        | Text(key,_) when key="numberLeaderKeys" -> askText item key
+        | Colour -> askColor item
+        | _ -> Services.managerView.showSetting item.id; Done
+
 /// Every command, in the order the palette lists them within a category. Each runs on the main
 /// thread and reaches the groups through the dispatched services, as the hotkeys always did.
 module Commands =
@@ -286,9 +389,19 @@ module Commands =
             match item.binding with
             | Toggle(key,_,_) -> toggle item key
             | _ -> ()
+        // A setting's row in the palette, opened by a key of its own, as a group's choices are.
+        for item in SettingsCatalog.all |> List.filter SettingRows.takesKey do
+            let asks =
+                item.id="switch-tabs-by-number" ||
+                (match item.binding with Choice _ | Number _ | Colour -> true | Text(key,_) -> key="numberLeaderKeys" | _ -> false)
+            { plain ("setting-"+item.id) item.text SettingsCommands always ignore
+                with listed=false; chooses=asks; run=fun _ -> SettingRows.run item }
         plain "refresh-windows" Strings.Commands.refreshWindows AppCommands always (fun _ -> Services.program.refresh())
         plain "exit" Strings.Commands.exit AppCommands always (fun _ -> Services.program.shutdown()) ]
     let find id = all |> List.tryFind(fun command -> command.id=id)
+    /// What a command is called for the window in front: pinning says which way it goes.
+    let textFor (command:Command) (hwnd:IntPtr) =
+        if command.id="pin-tab" && PinnedTabs.contains hwnd then Strings.Commands.unpinTab else command.text
     /// The command a shortcut key belongs to.
     let byShortcut key = all |> List.tryFind(fun command -> command.shortcut=Some key)
     let categoryOf key = byShortcut key |> Option.map(fun command -> command.category)
@@ -310,6 +423,3 @@ module Commands =
         | Some command -> Some(tr command.text.caption)
         | None when code=0 -> None
         | None -> listKeys |> List.tryFind(fun k -> k<>key && getHotKey k=code) |> Option.bind listKeyName
-    /// What a command is called for the window in front: pinning says which way it goes.
-    let textFor (command:Command) (hwnd:IntPtr) =
-        if command.id="pin-tab" && PinnedTabs.contains hwnd then Strings.Commands.unpinTab else command.text

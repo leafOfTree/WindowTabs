@@ -457,7 +457,7 @@ let main() =
             runDone "close-all-tabs" (hwndOf "All one")
             pumpUntil "Closing all tabs" (fun () -> not (WinUserApi.IsWindow (hwndOf "All one")) && not (WinUserApi.IsWindow (hwndOf "All two"))))
         for command in Commands.all do
-            note (commandsRun.Contains command.id || command.id.StartsWith "open-settings-" || command.id.StartsWith "toggle-")
+            note (commandsRun.Contains command.id || command.id.StartsWith "open-settings-" || command.id.StartsWith "toggle-" || command.id.StartsWith "setting-")
                  (sprintf "%s was never run by this walk: add it" command.id)
         pump 200
         while not alerts.IsEmpty do
@@ -668,11 +668,19 @@ let main() =
             match palette.Results with
             | first::_ -> note (first.title=tr command.text.caption) (sprintf "Searching \"%s\" put %s first" (tr command.text.caption) first.title)
             | [] -> issues.Add(sprintf "Searching \"%s\" found nothing" (tr command.text.caption))
-        // Alt+Enter is offered for a row that takes a key, and not for a setting that takes none.
-        for caption,offered in [tr Strings.Commands.renameTab.caption,true; tr Strings.Settings.switchTabsByNumber.caption,false] do
+        // Alt+Enter is offered for a row that takes a key, a setting's among them, its key opening
+        // its row; not for a button run in place.
+        for caption,offered in [tr Strings.Commands.renameTab.caption,true; tr Strings.Settings.switchTabsByNumber.caption,true
+                                tr Strings.Settings.settingsLocation.caption,false] do
             palette.Query <- caption
             note ((palette.Results |> List.tryHead |> Option.map(fun entry -> entry.title))=Some caption) (sprintf "Searching \"%s\" did not put it first" caption)
             note (palette.ShortcutOffered=offered) (sprintf "With %s chosen, Alt+Enter was %s" caption (if offered then "not offered" else "offered, though it sets no key"))
+        match Commands.find "setting-switch-tabs-by-number" with
+        | Some command ->
+            match command.run active with
+            | Choose options -> note (options.Length=3) (sprintf "Switch tabs by number's key listed %d choices" options.Length)
+            | other -> issues.Add(sprintf "Switch tabs by number's key left %A instead of its choices" other)
+        | None -> issues.Add "Switch tabs by number has no command for a key of its own"
         palette.Query <- tr Strings.Commands.tabColor.caption
         palette.Accept()
         note (palette.Depth=1 && not palette.IsClosed) "Tab color… did not list its colours in the palette"
