@@ -24,9 +24,8 @@ It runs in the system tray.
 
 - **Group windows:** drag a tab onto another window's tab bar. Drag it away to ungroup.
 - **Group an app automatically:** right-click its tab → **Enable auto-grouping**.
-- **Pin a tab:** right-click it → **Pin**. It stays at the front of its group with a pin in
-  place of its close button, is left open by **Close others** and **Close all**, and stays
-  pinned when WindowTabs starts again.
+- **Run any command or change any setting:** press **Ctrl + Alt + P** and type its name
+  (see [Command palette](#command-palette-and-command-line)).
 - **Settings:** right-click a tab or the tray icon.
 
 Grouped windows move and resize together. Tabs hide on maximized windows; point at
@@ -59,6 +58,8 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
 
 - **Appearance:** light, dark or follow Windows; Joined, Folder or Floating tabs;
   per-tab or per-app colors.
+- **Pinned tabs:** right-click a tab → **Pin** to keep it at the front of its group, out of
+  reach of **Close others** and **Close all**, across restarts.
 - **App rules:** choose which running apps get tabs and which group automatically.
   Under **Groups across apps**, create named groups so windows of different apps join
   one group. Groups made by dragging tabs are remembered and listed there too.
