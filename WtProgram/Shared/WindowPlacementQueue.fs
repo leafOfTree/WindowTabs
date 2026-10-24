@@ -3,6 +3,7 @@ open System
 open System.Collections.Generic
 open System.Diagnostics
 open System.Threading
+open System.Windows.Forms
 
 type private PlacementEntry<'a>(hwnd:IntPtr) =
     member _.hwnd = hwnd
@@ -195,8 +196,21 @@ module FollowerPlacement =
                     place {wp with showCmd=ShowWindowCommands.SW_SHOWNOACTIVATE}
                     move()
                 elif actual.showCmd=ShowWindowCommands.SW_SHOWMAXIMIZED && wp.showCmd=ShowWindowCommands.SW_SHOWMAXIMIZED then
-                    // Cross-monitor maximization requires moving before restoring placement.
-                    if actual<>wp || window.bounds<>target() then
+                    let destination = Screen.FromRectangle(bounds.Rectangle)
+                    if Screen.FromHandle(hwnd).DeviceName<>destination.DeviceName then
+                        // Moved across while maximized, Explorer sized itself for the new monitor's
+                        // scale and the maximize after it did not lay it out again: the tab showed
+                        // black until resized. Restored onto the new monitor, behind its tab, the
+                        // window crosses as Win+Shift+arrow takes it, then maximizes there.
+                        let normal = wp.rcNormalPosition
+                        let from = Screen.FromRectangle(normal.Rectangle)
+                        let normal =
+                            if from.DeviceName=destination.DeviceName then normal
+                            else normal.move(destination.Bounds.Left-from.Bounds.Left,destination.Bounds.Top-from.Bounds.Top)
+                        place {wp with showCmd=ShowWindowCommands.SW_SHOWNOACTIVATE; rcNormalPosition=normal}
+                        place {wp with rcNormalPosition=normal}
+                    // On the same monitor, moving before restoring placement keeps it there.
+                    elif actual<>wp || window.bounds<>target() then
                         move()
                         place wp
                 elif actual<>wp then place wp
