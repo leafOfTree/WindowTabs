@@ -6,6 +6,17 @@ module NumericShortcutTarget =
     let available (windows:IntPtr list) foreground index =
         index >= 0 && index < windows.Length && windows.[index] <> foreground
 
+    /// The tab a key press asks for: 1 to 9 with the number modifier ("Alt", or Ctrl otherwise)
+    /// and not the other one.
+    let index msg vkCode controlPressed altPressed (modifier:string) =
+        let matches =
+            match modifier with
+            | "Alt" -> altPressed && not controlPressed
+            | _ -> controlPressed && not altPressed
+        let tab = vkCode - 0x31
+        if (msg = WindowMessages.WM_KEYDOWN || msg = WindowMessages.WM_SYSKEYDOWN) && matches && tab >= 0 && tab < 9 then Some tab
+        else None
+
 module AltMenuMask =
     let marker = 0x57544D
     let inputs() =
@@ -27,23 +38,9 @@ module AltMenuMask =
 type NumericTabHotKeyPlugin() as this =
     member this.wtGroup = Services.get<WindowGroup>()
 
-    member this.vkToTabIndex(msg) =
-        let index = msg - 0x31
-        if index >= 0 && index < 9 then
-            Some(index)
-        else
-            None
-
     member this.targetIndex(msg, vkCode, controlPressed, ?altPressed) =
-        let altPressed = defaultArg altPressed false
         let modifier = Services.settings.getValue("numberHotKeyModifier").cast<string>()
-        let matches =
-            match modifier with
-            | "Alt" -> altPressed && not controlPressed
-            | _ -> controlPressed && not altPressed
-        if (msg = WindowMessages.WM_KEYDOWN || msg = WindowMessages.WM_SYSKEYDOWN) && matches then
-            this.vkToTabIndex(vkCode)
-        else None
+        NumericShortcutTarget.index msg vkCode controlPressed (defaultArg altPressed false) modifier
 
     member this.onKeyboardLL(msg, data:KBDLLHOOKSTRUCT, controlPressed) =
         let altPressed = (data.flags &&& LlKeyboardHookFlags.LLKHF_ALTDOWN) <> 0
