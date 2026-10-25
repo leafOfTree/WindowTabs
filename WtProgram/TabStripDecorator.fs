@@ -837,7 +837,11 @@ type TabStripDecorator(group:WindowGroup) as this =
     /// would do (an empty pane, or one at an empty pane's edge, is filled; anything else
     /// splits), the place shown when `show` says so or at once for an empty pane.
     member private this.probeLayout(data:obj,pt:Pt,show:bool) =
-        match this.nearTabs pt with
+        let own =
+            match data with
+            | :? TabDragInfo as drag -> let (Tab hwnd) = drag.tab in dragSource=Some hwnd || group.windows.contains hwnd
+            | _ -> false
+        match this.nearTabs(pt,own) with
         | Some strip -> NearStrip strip
         | None ->
             let proposal = this.layoutProposal(data,pt)
@@ -903,7 +907,9 @@ type TabStripDecorator(group:WindowGroup) as this =
     /// carried to the top of the window joins the group anywhere along it, and the window's
     /// top edge offers a split only below that. Around the tabs alone, the rest of the row
     /// offered the edge, and a tab meant for the group split it.
-    member private this.nearTabs(pt:Pt) =
+    /// own: a tab of this group. Along a column it stays in only as far as the tabs go, so one
+    /// dragged down past the last tab comes out; another group's tab joins anywhere along the side.
+    member private this.nearTabs(pt:Pt,own:bool) =
         let sprites = this.ts.tabSprites.list
         match group.bounds.value with
         | Some frame when not sprites.IsEmpty && this.ts.visible && WinUserApi.IsWindowVisible this.ts.hwnd ->
@@ -916,7 +922,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 if this.ts.isVertical then tabsLeft-margin,tabsRight+margin
                 else (min frame.left tabsLeft)-margin,(max frame.right tabsRight)+margin
             let top,bottom =
-                if this.ts.isVertical then (min frame.top tabsTop)-margin,(max frame.bottom tabsBottom)+margin
+                if this.ts.isVertical && not own then (min frame.top tabsTop)-margin,(max frame.bottom tabsBottom)+margin
                 else tabsTop-margin,tabsBottom+margin
             if pt.x>=left && pt.x<right && pt.y>=top && pt.y<bottom then Some this.ts.hwnd else None
         | _ -> None

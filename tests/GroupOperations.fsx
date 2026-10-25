@@ -951,6 +951,25 @@ let main() =
                         check (near below=Some group.ts.hwnd) (sprintf "A point just below a group's tabs was not taken as its strip: %A below %A" below first)
                         check (near along=Some group.ts.hwnd) (sprintf "A point at the far end of a group's row of tabs was not taken as its strip: %A beside %A in %A" along first frame)
                         check (near away=None) (sprintf "A point well below a group's tabs was taken as its strip: %A below %A" away first))
+                    // Tabs at the side: a tab of the group dragged down past the last of its column
+                    // comes out, rather than going back into the column; another group's tab still
+                    // joins anywhere along the side.
+                    onGroup(fun group -> group.ts.dock <- TabDockRight)
+                    waitOperation()
+                    try
+                        onGroup(fun group ->
+                            let decorator = decoratorOf group
+                            let strip = OS().windowFromHwnd(group.ts.hwnd)
+                            let last = group.ts.tabSprites.list |> List.map(fun (location,sprite) -> Rect(strip.ptToScreen(location),sprite.size)) |> List.maxBy(fun r -> r.bottom)
+                            let frame = group.layoutFrame
+                            let below = Pt(last.x+last.width/2,last.bottom+Dpi.scale 40)
+                            check (below.y<frame.bottom) (sprintf "No room below the column's last tab to test: %A in %A" last frame)
+                            let near hwnd = match decorator.probe(dragOf group hwnd,below,false) with NearStrip _ -> true | Aimed _ -> false
+                            check (group.windows.contains source && not (near source)) "A tab dragged down past its column's last tab went back into the column"
+                            check (near foreign) "Another group's tab was not taken in along the column's side")
+                    finally
+                        onGroup(fun group -> group.ts.dock <- TabDockTop)
+                        waitOperation()
                     let shown = onGroup(fun group ->
                         let decorator = decoratorOf group
                         check (previewed decorator (dragOf group foreign,edgePoint)) "A tab from another group was not offered an edge"
