@@ -1,5 +1,61 @@
 # Changelog
 
+## v2026.10.25-beta.1 — 2026-10-25 (preview)
+
+Changes since v2026.10.17-beta.1. This remains a preview release.
+
+### Command palette and command line
+
+- Open a command palette with Ctrl + Alt + P. Every tab menu action, split view and
+  workspace command and every setting is there by name, with its shortcut beside it: a
+  setting that is on or off turns in place, a choice is picked from a list, a size is typed
+  and a colour picked. Recently used actions and the last search come first.
+- Give any command a shortcut with Alt + Enter on its row, and give a window a key of its
+  own the same way in the window search (Ctrl + Alt + T).
+- Run commands from the command line in the running WindowTabs: `--command`, `--workspace`
+  to restore a saved workspace, and `--group` to start programs and group their windows.
+  `--help` lists the options with examples, and a mistyped one is named.
+
+### Split view
+
+- Show two or more of a group's windows side by side or stacked: right-click a tab and
+  choose Split view, or drag a tab to a window's edge. Drag the divider to resize the panes,
+  and right-click it to swap, equalize, turn or end the split. Splits come back after a
+  restart.
+- Shortcuts for a window on the right or below and for moving the focus between panes,
+  unset by default.
+
+### Tabs
+
+- Pin a tab: it stays at the front of its group with a pin in place of its close button, is
+  left open by Close others and Close all, and stays pinned when WindowTabs starts again.
+- Preview a tab's window when the pointer rests on its tab, off by default.
+- Fade the window shown into the next when switching tabs, and switch maximized tabs
+  without a jolt.
+- Drag a tab out at its group's size, see what letting go will do beside it, and drop it on
+  the strip in sight under the pointer.
+- Set a tab opacity, and try tab colours on the tab as the palette moves through them.
+- Show tab text at the system menu font size on scaled displays.
+
+### Workspaces, taskbar and notices
+
+- Add shortcuts to save a workspace and restore the last one, and an option to restore the
+  last session after signing in.
+- Show every app of a group on its combined taskbar icon, and say why a group's icons are
+  not combined.
+- Show notices as cards that slide in at the bottom right, stay while pointed at and have a
+  close button.
+
+### Languages
+
+- Add Arabic.
+
+### Fixes
+
+- A quick click on a tab no longer swallows the next click.
+- Number shortcuts typed in quick succession switch to the last tab asked for.
+- Tabs stay over their windows when WindowTabs runs with other rights.
+
 ## v2026.10.17-beta.1 — 2026-10-17 (preview)
 
 Changes since v2026.10.10-beta.1, including those first shipped in v2026.10.13-beta.1.

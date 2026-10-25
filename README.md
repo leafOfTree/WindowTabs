@@ -9,8 +9,9 @@ between them with a click or a shortcut.
 [![Build](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml/badge.svg)](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml)
 
 > [!IMPORTANT]
-> **v2026.10.17-beta.1 preview**: group different apps together, remembered groups,
-> vertical tabs and workspace restores that launch missing apps. [What's changed →](CHANGELOG.md)
+> **v2026.10.25-beta.1 preview**: a command palette (Ctrl + Alt + P) for every command and
+> setting, split views within a group, pinned tabs, a tab hover preview, a command line and
+> Arabic. [What's changed →](CHANGELOG.md)
 
 <a href="docs/images/light.png"><img src="docs/images/light-rounded.svg" width="600" alt="Light tabs grouping three File Explorer windows" /></a>
 
