@@ -97,7 +97,8 @@ Searching works the same in both boxes:
   by, so `color tab` finds **Tab color…** and `merge` finds **Group this app**.
 - Leave out the spaces, or type the first letters of the words: `movedown` or `md` finds
   **Move down the list**. These come after rows that have the words themselves.
-- Type a shortcut, such as `ctrl+alt+t`, to see which command or window has it.
+- Type a shortcut, starting with its modifier or function key, such as `ctrl+alt+t` or `f5`,
+  to see which command or window has it.
 - The last search and recently used actions come first.
 - **↑ / ↓** and **Page Up / Page Down** move, **Enter** runs, **Esc** goes back or closes,
   **Tab** goes round the window search's scopes, **Ctrl + U** clears what is typed and

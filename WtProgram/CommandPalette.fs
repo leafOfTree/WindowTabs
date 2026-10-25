@@ -9,7 +9,7 @@ module CommandPalette =
     let private words (texts:LocalizedText list) (extra:string list) =
         (texts |> List.collect Localization.all) @ extra |> List.filter((<>) "") |> List.distinct |> List.map(fun text -> text.ToLowerInvariant())
     let private row index title texts extra group =
-        { hwnd=IntPtr(index+1); title=title; program=""; keywords=words texts extra; group=group; recency=index; desktop="" }
+        { hwnd=IntPtr(index+1); title=title; program=""; keywords=words texts extra; keys=[]; group=group; recency=index; desktop="" }
     /// What has a key besides `key`, which gives it up as the Shortcuts page's boxes do.
     let holderOf key code = Commands.holderOf Services.program.getHotKey Services.program.setHotKey Services.settings.setHotKey key code
     /// Setting a command's shortcut from its row, as the Shortcuts page does.
@@ -111,15 +111,16 @@ module CommandPalette =
             | AChoice(item,_,_) | ASetting item | ANumberKeys item -> settingKey item
         let extra action =
             (match action with ACommand command -> [command.id] | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item | ANumberKeys item -> [SettingsCatalog.storageKey item])
-            @ [shownValue action;keyText action]
+            @ [shownValue action]
         { scope=ActionScope; caption=tr Strings.TabSearch.actions; prompt=tr Strings.TabSearch.actionPrompt
           noMatches=tr Strings.TabSearch.noActions; noEntries=tr Strings.TabSearch.noActions; glyph=NoGlyph
           entries=listed |> Array.mapi(fun index action ->
                       let text = text action
                       let recency = rank action
+                      let key = (keyText action).ToLowerInvariant()
                       { row index (tr text.caption) [text.caption;text.keywords;text.description] (extra action)
                             (if recency<recentLimit then -1 else group action)
-                        with recency=recency*listed.Length+index })
+                        with recency=recency*listed.Length+index; keys=(if key="" then [] else [key]) })
                   |> Array.sortBy(fun entry -> entry.recency) |> List.ofArray
           choose=(fun chosen ->
               remember (recentKey (action chosen))

@@ -14,6 +14,9 @@ type TabSearchEntry = {
     program:string
     /// What a search term may match, in lower case: both names and the program.
     keywords:string list
+    /// Its shortcut, in lower case as "ctrl+alt+t": matched only by a search that starts as a
+    /// key does, so "al" for Align tabs does not list every key with Alt.
+    keys:string list
     /// Tabs of one group share a number; groups are numbered from the most recently used.
     group:int
     /// 0 for the most recently used tab, the active tab last.
@@ -71,15 +74,23 @@ module TabSearch =
                 | -1 -> None
                 | at -> Some [ for k in at..at+typed.Length-1 -> starts.[k] ]
 
+    /// A search that starts as a shortcut does: a modifier's name or a function key, as "ctrl+",
+    /// "alt t" or "f5". Only such a search looks at the rows' keys.
+    let looksLikeKey (query:string) =
+        let typed = query.TrimStart().ToLowerInvariant()
+        ["ctrl";"alt";"shift";"win"] |> List.exists(fun name -> typed.StartsWith name)
+        || (typed.Length>=2 && typed.[0]='f' && Char.IsDigit typed.[1])
+
     /// None when a term is missing; otherwise higher for better matches. Terms are separated by
     /// spaces and may come in any order; case is ignored.
     let private wordRank (query:string) (entry:TabSearchEntry) =
         let title = entry.title.ToLowerInvariant()
+        let words = if looksLikeKey query then entry.keywords @ entry.keys else entry.keywords
         query.ToLowerInvariant().Split([|' ';'\t'|],StringSplitOptions.RemoveEmptyEntries)
         |> Array.fold (fun total term ->
             total |> Option.bind(fun (sum,position) ->
                 let best =
-                    entry.keywords |> List.choose (termMatch term)
+                    words |> List.choose (termMatch term)
                     |> List.sortBy(fun (quality,at) -> -quality,at)
                     |> List.tryHead
                 // Where it stands in the name, when the name has it as well as any: a keyword that
@@ -181,7 +192,7 @@ module TabSearch =
     let create hwnd title original program =
         { hwnd=hwnd; title=title; program=program
           keywords=[title;original;program] |> List.filter((<>) "") |> List.distinct |> List.map(fun text -> text.ToLowerInvariant())
-          group=0; recency=0; desktop="" }
+          keys=[]; group=0; recency=0; desktop="" }
 
     /// Where a window on another virtual desktop is: the name the user gave that desktop, or its
     /// number.
@@ -648,7 +659,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             item.ValueSwatch <- aside.swatch
             item.Highlights <- [| TabSearch.highlights input.Text entry.title; TabSearch.highlights input.Text item.Values.[1] |]
             // A key typed lights up in the shortcut beside the name, as a word does in the name.
-            item.SuffixHighlights <- TabSearch.highlights input.Text aside.shortcut)
+            item.SuffixHighlights <- if TabSearch.looksLikeKey input.Text then TabSearch.highlights input.Text aside.shortcut else [])
         list.Roots.Clear()
         list.Roots.AddRange(Array.map fst shown)
         list.Rebuild()

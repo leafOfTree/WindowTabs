@@ -795,12 +795,12 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 let windowShortcutText (entry:TabSearchEntry) =
                     let path = try os.windowFromHwnd(entry.hwnd).pid.processPath with _ -> ""
                     WindowShortcuts.find (shortcuts()) path entry.title |> Option.map(fun s -> SettingsShortcut.text s.code) |> Option.defaultValue ""
-                // A window's key is a word it is found by, as a command's is in the palette.
+                // A window's key finds it, as a command's does in the palette.
                 let entries =
                     TabSearch.tabs nameOverride active groups |> List.map(fun entry ->
                         match windowShortcutText entry with
                         | "" -> entry
-                        | key -> { entry with keywords=entry.keywords@[key.ToLowerInvariant()] })
+                        | key -> { entry with keys=[key.ToLowerInvariant()] })
                 TabSearchForm(entries,group,settings=(settingsManager :> ISettings),
                               windowShortcut=windowShortcut,windowShortcutText=windowShortcutText)
             | Some wanted ->

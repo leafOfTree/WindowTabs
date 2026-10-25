@@ -947,6 +947,13 @@ let main() =
           "A name run together was found from the middle of a word"
     check (TabSearch.highlights "movedown" "Move down the list" = [0,4;5,4]) "Letters run together were not lit up where they are"
     check (TabSearch.highlights "md" "Move down the list" = [0,1;5,1]) "Initials were not lit up"
+    // A row's key is looked at only when what is typed starts as a key does: "al" for Align tabs
+    // does not list every key with Alt.
+    let switchWindows = { TabSearch.create (IntPtr 11) "Switch windows" "" "" with keys=["alt+space"] }
+    check (TabSearch.matches "alt+space" switchWindows && TabSearch.matches "Alt space" switchWindows && not (TabSearch.matches "al" switchWindows)
+           && not (TabSearch.matches "space" switchWindows)) "A row's key was matched by a search that does not start as a key"
+    check (TabSearch.looksLikeKey "ctrl+" && TabSearch.looksLikeKey " Shift" && TabSearch.looksLikeKey "f5" && TabSearch.looksLikeKey "win+e"
+           && not (TabSearch.looksLikeKey "font") && not (TabSearch.looksLikeKey "al") && not (TabSearch.looksLikeKey "f")) "A search was taken for a key, or a key not"
     // A key typed with its punctuation is meant as it is: Ctrl+U is not found for Ctrl+].
     let theme = TabSearch.create (IntPtr 10) "Theme" "Ctrl+U" ""
     check (TabSearch.matches "ctrl+u" theme && not (TabSearch.matches "ctrl+]" theme)) "A key with punctuation was matched by its letters alone"
