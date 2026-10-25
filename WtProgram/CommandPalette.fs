@@ -103,9 +103,15 @@ module CommandPalette =
                     | _ -> ""
                 | _ -> ""
             with _ -> ""
+        // Its key, so a key typed finds what has it, as "ctrl+alt+t" finds Switch windows.
+        let keyText action =
+            match action with
+            | ACommand command | ASwitch(_,_,command) -> shortcutText command
+            | ASetting { binding=Shortcut(key,_) } -> SettingsShortcut.text (listKey key)
+            | AChoice(item,_,_) | ASetting item | ANumberKeys item -> settingKey item
         let extra action =
             (match action with ACommand command -> [command.id] | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item | ANumberKeys item -> [SettingsCatalog.storageKey item])
-            @ [shownValue action]
+            @ [shownValue action;keyText action]
         { scope=ActionScope; caption=tr Strings.TabSearch.actions; prompt=tr Strings.TabSearch.actionPrompt
           noMatches=tr Strings.TabSearch.noActions; noEntries=tr Strings.TabSearch.noActions; glyph=NoGlyph
           entries=listed |> Array.mapi(fun index action ->

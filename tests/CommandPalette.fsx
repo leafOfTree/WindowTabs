@@ -632,6 +632,14 @@ let main() =
             let currentOf entry = page.shortcut entry |> Option.map(fun given -> given.current)
             note (currentOf (fst first)=Some 0 && currentOf (fst second)=Some moved) "A key taken over stayed with the action that had it"
         | None -> issues.Add "A key one action has was not found for another"
+        // A key typed finds the action that has it, to see where a key is used.
+        let keyedPage = CommandPalette.actionsPage active
+        match keyedPage.entries |> List.tryFind(fun entry -> (keyedPage.aside "" entry).shortcut<>"") with
+        | Some keyed ->
+            let key = (keyedPage.aside "" keyed).shortcut
+            note (TabSearch.best key keyedPage.entries |> Option.map(fun entry -> entry.hwnd)=Some keyed.hwnd)
+                 (sprintf "Typing %s did not find %s, which has it" key keyed.title)
+        | None -> issues.Add "No action had a key to search for"
         // The window search and the palette, driven as a user would.
         let entries = TabSearch.tabs (fun _ -> None) active (groups() |> List.map(fun info -> (info :> IGroup).windows.list))
         let palette = TabSearchForm([],[],settings=api,pages=[CommandPalette.actionsPage active],scope=ActionScope,windows=false)
