@@ -272,6 +272,13 @@ let main() =
         attempt "detach-tab" (fun () ->
             runDone "detach-tab" active
             note (called (sprintf "detachTab %d" active)) "Move tab to a new group did not take the tab out")
+        attempt "ungroup-tabs" (fun () ->
+            while not calls.IsEmpty do calls.TryDequeue() |> ignore
+            runDone "ungroup-tabs" active
+            note (called (sprintf "detachTab %d" (hwndOf "Bravo")) && called (sprintf "detachTab %d" (hwndOf "Charlie")))
+                 "Ungroup tabs did not take every other tab out"
+            note (not (called (sprintf "detachTab %d" active))) "Ungroup tabs took out the tab in front too"
+            note ((Commands.find "ungroup-tabs").Value.enabled (hwndOf "Delta")) "Ungroup tabs is dimmed in a group of two")
         attempt "move-tab-to-group" (fun () ->
             let bravo = hwndOf "Bravo"
             let options = choicesOf "move-tab-to-group" bravo

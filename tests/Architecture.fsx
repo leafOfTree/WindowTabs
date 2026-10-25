@@ -317,6 +317,9 @@ let main() =
         for pane in [Strings.Commands.splitSwap.caption;Strings.Commands.splitEqualize.caption;Strings.Commands.splitClosePane.caption;Strings.Commands.splitFocusOther.caption
                      Strings.Settings.splitFocusLeft.caption;Strings.Settings.splitFocusRight.caption;Strings.Settings.splitFocusUp.caption;Strings.Settings.splitFocusDown.caption] do
             check (named pane "pane" "窗格") (sprintf "%s does not call a pane 窗格: %s" pane.en pane.zh)
+        // The palette's Ungroup tabs is the app rules page's Ungroup.
+        check (Strings.Commands.ungroupTabs.caption.zh=Strings.AppRules.ungroup.zh && Strings.Commands.ungroupTabs.caption.ja=Strings.AppRules.ungroup.ja)
+              "Ungroup is named another way in the palette"
 
         let numeric = NumericTabHotKeyPlugin()
         // The OS can already focus B while the delayed foreground event still

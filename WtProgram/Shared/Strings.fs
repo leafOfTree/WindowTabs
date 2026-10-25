@@ -656,6 +656,12 @@ module Strings =
         let detachTab = { caption={ en="Move tab to a new group"; zh="拆出到新分组"; ja="タブを新しいグループへ"; ar="نقل علامة التبويب إلى مجموعة جديدة" }
                           description={ en="Takes the tab out on its own, as dragging it to the desktop does."; zh="把标签单独拆出来，与拖到桌面上相同。"; ja="タブを単独で取り出します。デスクトップへドラッグするのと同じです。"; ar="يخرج علامة التبويب وحدها، كما يفعل سحبها إلى سطح المكتب." }
                           keywords={ en="detach split ungroup"; zh="分离 取消分组"; ja="分離 グループ解除"; ar="فصل إلغاء التجميع" } }
+        let ungroupTabs = { caption={ en="Ungroup tabs"; zh="解除分组"; ja="グループを解除"; ar="إلغاء تجميع علامات التبويب" }
+                            description={ en="Takes every other tab out on its own, as dragging each to the desktop does. The tab in front stays."
+                                          zh="把其他标签都各自拆出来，与逐个拖到桌面上相同。当前标签留在原处。"
+                                          ja="手前のタブ以外を、それぞれ単独で取り出します。1 つずつデスクトップへドラッグするのと同じです。"
+                                          ar="يُخرج كل علامة تبويب أخرى وحدها، كما يفعل سحب كل منها إلى سطح المكتب. وتبقى علامة التبويب الأمامية." }
+                            keywords={ en="ungroup break apart separate detach all split"; zh="打散 取消分组 拆分 全部拆出 分离"; ja="グループ解除 分離 すべて 取り出す"; ar="فصل تفكيك الكل إلغاء التجميع" } }
         let moveTabToGroup = { caption={ en="Move tab to group…"; zh="移动标签到分组…"; ja="タブをグループへ移動…"; ar="نقل علامة التبويب إلى مجموعة…" }
                                description={ en="Lists the other groups by their first tab."; zh="按各分组的第一个标签列出其他分组。"; ja="他のグループを先頭のタブで一覧表示します。"; ar="يعرض المجموعات الأخرى بعلامة التبويب الأولى لكل منها." }
                                keywords={ en="join"; zh="加入 合并"; ja="参加 結合"; ar="انضمام" } }

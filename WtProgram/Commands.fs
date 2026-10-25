@@ -316,6 +316,12 @@ module Commands =
         plain "close-all-tabs" Strings.Commands.closeAllTabs TabCommands hasGroup (onGroup(fun g -> g.run CloseAllTabs))
         plain "detach-tab" Strings.Commands.detachTab TabCommands (fun hwnd -> groupOf hwnd |> Option.exists(fun g -> g.windows.count>1))
               (fun hwnd -> Services.program.detachTab hwnd)
+        // Palette only, not in the tab menu: every tab but the one in front is taken out on its own.
+        plain "ungroup-tabs" Strings.Commands.ungroupTabs GroupCommands (fun hwnd -> groupOf hwnd |> Option.exists(fun g -> g.windows.count>1))
+              (fun hwnd ->
+                  groupOf hwnd |> Option.iter(fun g ->
+                      for other in g.windows.list do
+                          if other<>hwnd then Services.program.detachTab other))
         choosing "move-tab-to-group" Strings.Commands.moveTabToGroup TabCommands hasGroup (fun hwnd ->
             match groupOf hwnd with
             | Some source ->
