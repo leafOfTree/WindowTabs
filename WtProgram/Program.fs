@@ -616,7 +616,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 let hwnd = WinUserApi.GetForegroundWindow()
                 if not (command.enabled hwnd) then Result.Error (tr (Strings.CommandLine.unavailable (tr command.text.caption))) else
                 match command.run hwnd with
-                | Done | Stay -> Result.Ok ""
+                | Done | Stay | Again _ -> Result.Ok ""
                 // The value on the command line, as typed in the palette.
                 | Ask question ->
                     match choice with
@@ -929,7 +929,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         // Its key does nothing where the palette would show it dimmed, rather than offer choices that do nothing.
         if not (command.enabled hwnd) then () else
         match command.run hwnd with
-        | Done | Stay -> ()
+        | Done | Stay | Again _ -> ()
         | Choose options -> this.showChoices(tr command.text.caption,options)
         | Ask question -> this.showQuestion(tr command.text.caption,question)
 

@@ -1025,7 +1025,7 @@ let main() =
     check picked.IsClosed "Accepting a match did not close the tab search"
     // The palette: pages beside the windows, > for the commands, and a command's choices in place.
     let mutable ran = []
-    let option name = { label=name; detail=""; swatch=None; run=(fun () -> ran <- name::ran; Done); preview=None; undo=None }
+    let option name = { label=name; detail=""; swatch=None; run=(fun () -> ran <- name::ran; Done); preview=None; undo=None; concealed=true }
     let commandsPage =
         { scope=ActionScope; caption="Actions"; prompt="cmd"; noMatches="none"; noEntries="empty"; glyph=NoGlyph
           entries=[ { TabSearch.create (IntPtr 1) "Close tab" "Close tab" "Ctrl+Alt+W" with recency=0 }
@@ -1072,6 +1072,36 @@ let main() =
     switched.Accept()
     check (lamp && not switched.IsClosed && switched.Depth=0) "Turning a setting in place closed the palette"
     switched.Close()
+    pump 100
+    // Deleting one of a command's choices, as a saved workspace, lists the rest in its place to
+    // delete more; the last gone, back to the commands, the palette still up.
+    // Each said in a notice, which must not take the palette's place in front and so close it.
+    let mutable saved = ["One";"Two";"Three"]
+    let deletedNotice = new NoticeWindow()
+    let rec deleting () =
+        [ for name in saved ->
+            { option name with
+                concealed=false
+                run=fun () ->
+                    saved <- List.filter ((<>) name) saved
+                    deletedNotice.show(name,"Deleted",Info)
+                    Again(deleting()) } ]
+    let deleter = TabSearchForm([mail;notes],[],pages=[{ commandsPage with choose=fun _ -> Choose(deleting()) }],scope=ActionScope)
+    deleter.Show()
+    pump 200
+    deleter.Accept()
+    pump 100
+    deleter.Accept()
+    pump 600
+    check (not deleter.IsClosed && deleter.Depth=1 && (deleter.Results |> List.map(fun entry -> entry.title))=["Two";"Three"])
+          "Deleting a choice closed the palette or left it listed"
+    deleter.Accept()
+    pump 600
+    deleter.Accept()
+    pump 600
+    check (saved.IsEmpty && not deleter.IsClosed && deleter.Depth=0) "Deleting the last choice did not go back to the commands"
+    deleter.Close()
+    deletedNotice.Dispose()
     pump 100
     let chooser = TabSearchForm([mail;notes],[],pages=[commandsPage],scope=ActionScope)
     check (chooser.Scope=ActionScope) "The palette did not open on the scope asked for"

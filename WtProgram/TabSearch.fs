@@ -298,7 +298,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         | _ -> if windows then initialWindowScope else List.head scopes
     /// The choices a command left, over the scope's rows while they are up: the command's name,
     /// the rows, what choosing one does, and the search typed before, for the way back.
-    let mutable choices : (string * (TreeListItem * TabSearchEntry)[] * (TabSearchEntry -> CommandOutcome) * string) list = []
+    let mutable choices : (string * (TreeListItem * TabSearchEntry)[] * (TabSearchEntry -> CommandChoice) * string) list = []
     /// A value asked for, on top of the choices with no rows of its own, with why the last one
     /// typed was not taken.
     let mutable asking : (CommandQuestion * string option) option = None
@@ -648,16 +648,19 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             if form.IsHandleCreated then form.BeginInvoke(Action dispose) |> ignore else dispose()
     /// The choices a command left take the rows' place, under its name, until one is chosen or
     /// Esc goes back.
-    let push (caption:string) (options:CommandChoice list) =
-        endAssign()
-        backRows <- selectedRow()::backRows
+    let choiceRows (options:CommandChoice list) =
         let rows =
             options |> List.mapi(fun index option ->
                 let entry = { TabSearch.create (IntPtr(index+1)) option.label option.label option.detail with recency=index }
                 TreeListItem(option.label,Values=[|"";option.detail|],Swatch=option.swatch),entry)
             |> Array.ofList
-        let run (entry:TabSearchEntry) = options.[int entry.hwnd-1].run()
-        choices <- (caption,rows,run,input.Text)::choices
+        let chosen (entry:TabSearchEntry) = options.[int entry.hwnd-1]
+        rows,chosen
+    let push (caption:string) (options:CommandChoice list) =
+        endAssign()
+        backRows <- selectedRow()::backRows
+        let rows,chosen = choiceRows options
+        choices <- (caption,rows,chosen,input.Text)::choices
         restorePreview()
         previewOptions <- if options |> List.exists(fun option -> option.preview.IsSome) then options else []
         input.Text <- ""
@@ -704,6 +707,17 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             keptRow <- back
             try apply() finally keptRow <- None
         | [] -> ()
+    /// The choices listed again in place of those shown, the way back unchanged and the row
+    /// where the chosen one was chosen; with none left, back to where they came from.
+    let relist (options:CommandChoice list) =
+        match choices with
+        | (caption,_,_,query)::rest when not options.IsEmpty ->
+            let at = selectedRow()
+            let rows,chosen = choiceRows options
+            choices <- (caption,rows,chosen,query)::rest
+            keptRow <- at |> Option.map(fun hwnd -> IntPtr(min (int hwnd) options.Length))
+            try apply() finally keptRow <- None
+        | _ -> pop()
     /// Enter while a value is asked for: taken, the palette closes; refused, it says why.
     let answer() =
         match asking,askBox with
@@ -816,6 +830,9 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         | Stay ->
             back()
             reapply()
+        | Again options ->
+            back()
+            relist options
     /// Records a key for the chosen row; set once that is defined, below.
     let mutable assignChosen = fun () -> ()
     /// Enter or a click on a row: switches to the window, or runs the command and shows what it
@@ -824,11 +841,12 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         if not closed && not (isNull target) && not target.Dimmed then
             scoped() |> Array.tryFind(fun (row,_) -> obj.ReferenceEquals(row,target)) |> Option.iter(fun (_,entry) ->
                 match choices,page() with
-                | (_,_,choose,_)::_,_ ->
+                | (_,_,chosen,_)::_,_ ->
                     // Chosen: what was shown stays.
                     previewed <- false
                     previewOptions <- []
-                    outcome entry.title true (fun () -> choose entry)
+                    let option = chosen entry
+                    outcome entry.title option.concealed option.run
                 | [],Some page when page.assignOnEnter entry ->
                     list.SelectedItem <- target
                     assignChosen()

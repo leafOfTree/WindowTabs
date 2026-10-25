@@ -8,6 +8,9 @@ type CommandOutcome =
     | Done
     | Choose of CommandChoice list
     | Stay
+    /// The same choices listed again in their place once one has done its part, as deleting a
+    /// workspace leaves the others to delete; with none left, back to where they came from.
+    | Again of CommandChoice list
     /// A value to type, such as a size.
     | Ask of CommandQuestion
 /// What to type: its kind, which picks the box it is typed in; what is accepted, said beside the
@@ -25,7 +28,10 @@ and QuestionKind =
 /// and what choosing it does. A value that can be tried also says how to show it as the choice
 /// moves onto it, and how to put back what there was if none is chosen.
 and CommandChoice = { label:string; detail:string; swatch:Drawing.Color option; run:unit -> CommandOutcome
-                      preview:(unit -> unit) option; undo:(unit -> unit) option }
+                      preview:(unit -> unit) option; undo:(unit -> unit) option
+                      /// Run with the palette out of the way, as one that may put up a box of its own
+                      /// needs; off for one that lists its choices again, which would flash it.
+                      concealed:bool }
 
 type CommandCategory =
     | TabCommands
@@ -153,7 +159,7 @@ module SettingRows =
             let options = numberKeyOptions()
             Choose [ for index,(label,apply) in List.indexed options ->
                        { label=label; detail=(if index=now then "✓" else ""); swatch=None
-                         run=(fun () -> apply(); Done); preview=Some apply; undo=Some(snd options.[now]) } ]
+                         run=(fun () -> apply(); Done); preview=Some apply; undo=Some(snd options.[now]); concealed=true } ]
         // Its values to pick from, the one it has now ticked.
         | Choice(key,values,_) ->
             let current = Services.settings.getValue key :?> string
@@ -162,7 +168,8 @@ module SettingRows =
                          run=(fun () -> Services.settings.setValue(key,box value); Done)
                          // Shown as the choice moves, but for the language, which builds the app's text again.
                          preview=(if key="language" then None else Some(fun () -> Services.settings.setValue(key,box value)))
-                         undo=(if key="language" then None else Some(fun () -> Services.settings.setValue(key,box current))) } ]
+                         undo=(if key="language" then None else Some(fun () -> Services.settings.setValue(key,box current)))
+                         concealed=true } ]
         | Number _ -> askNumber item
         | Text(key,_) when key="numberLeaderKeys" -> askText item key
         | Colour -> askColor item
@@ -188,7 +195,7 @@ module Commands =
     /// A command that leaves a choice: what it offers for the window, each doing its part.
     let private choosing id text category enabled (options:IntPtr -> CommandChoice list) =
         { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); state=(fun _ -> None); chooses=true; run=fun hwnd -> Choose(options hwnd) }
-    let private choice label detail action = { label=label; detail=detail; swatch=None; run=(fun () -> action(); Done); preview=None; undo=None }
+    let private choice label detail action = { label=label; detail=detail; swatch=None; run=(fun () -> action(); Done); preview=None; undo=None; concealed=true }
     /// The group's side, alignment and auto-hide mode as last read, and reading them again once a
     /// command has changed one, so the palette shows the value now the next time.
     let private shownChoices hwnd =
@@ -272,6 +279,22 @@ module Commands =
             ws,ws.groups.list |> List.sumBy(fun group -> group.cast<WorkspaceGroup>().windows.count))
     /// Something to restore or delete.
     let private anyWorkspace (_:IntPtr) = not (snd (workspaces())).IsEmpty
+    /// The saved workspaces to delete: each one deleted is said on screen, and the rest stay
+    /// listed, to delete more.
+    let rec private deleteChoices () : CommandChoice list =
+        let model,saved = workspaces()
+        saved |> List.map(fun (ws,count) ->
+            { choice ws.name (tr (Strings.TabSearch.windows count)) ignore with
+                concealed=false
+                run=fun () ->
+                    if model.isReadOnly then
+                        Notice.error (tr Strings.Pages.workspaces) (tr Strings.Workspaces.unsupportedVersion)
+                        Done
+                    else
+                        model.selected <- (ws :> Dynamic)
+                        model.remove()
+                        Notice.show ws.name (tr Strings.Notices.deleted)
+                        Again(deleteChoices()) })
     let private pageId page =
         match page with
         | GeneralSettings -> "general"
@@ -408,12 +431,7 @@ module Commands =
         choosing "restore-workspace-named" Strings.Commands.restoreWorkspaceNamed WorkspaceCommands anyWorkspace (fun _ ->
             snd (workspaces()) |> List.map(fun (ws,count) ->
                 choice ws.name (tr (Strings.TabSearch.windows count)) (fun () -> Services.program.restoreWorkspaceNamed ws.name)))
-        choosing "delete-workspace" Strings.Commands.deleteWorkspace WorkspaceCommands anyWorkspace (fun _ ->
-            let model,saved = workspaces()
-            saved |> List.map(fun (ws,count) ->
-                choice ws.name (tr (Strings.TabSearch.windows count)) (fun () ->
-                    model.selected <- (ws :> Dynamic)
-                    model.remove())))
+        choosing "delete-workspace" Strings.Commands.deleteWorkspace WorkspaceCommands anyWorkspace (fun _ -> deleteChoices())
         plain "open-settings" Strings.Commands.openSettings SettingsCommands always (fun _ -> Services.managerView.show())
         // The pages are reached from the palette's settings page; these are for keys and the command line.
         for page in [GeneralSettings;AppearanceSettings;HotKeySettings;ProgramSettings;LayoutSettings;DiagnosticsSettings] do

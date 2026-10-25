@@ -435,6 +435,7 @@ module Strings =
               zh=sprintf "已保存，共 %d 个窗口" windows
               ja=sprintf "保存しました（ウィンドウ %d 個）" windows
               ar=sprintf "تم الحفظ (%d نافذة)" windows }
+        let deleted = { en="Deleted"; zh="已删除"; ja="削除しました"; ar="تم الحذف" }
 
     module General =
         /// The choices of Restore the last session at start.
