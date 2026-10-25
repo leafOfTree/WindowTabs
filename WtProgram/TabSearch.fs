@@ -41,9 +41,37 @@ module TabSearch =
     /// 2 at the start of a word, 1 elsewhere, 0 not at all.
     let quality term text = termMatch term text |> Option.map fst |> Option.defaultValue 0
 
+    /// A text typed with its spaces left out, or as the first letters of its words: "movedown" or
+    /// "md" for "Move down". The indices of the letters it takes in `text`, in order; None when it
+    /// is not there. Run together, it must begin at the start of a word, so it does not turn up in
+    /// the middle of an unrelated one.
+    let looseMatch (query:string) (text:string) : int list option =
+        let typed = String(query.ToLowerInvariant() |> Seq.filter Char.IsLetterOrDigit |> Array.ofSeq)
+        if typed.Length<2 then None
+        else
+            let lower = text.ToLowerInvariant()
+            // Each letter or digit, where it stands and whether a word starts there.
+            let letters =
+                [| for i in 0..lower.Length-1 do
+                     if Char.IsLetterOrDigit lower.[i] then yield i,(i=0 || not (Char.IsLetterOrDigit lower.[i-1])) |]
+            let compact = String(letters |> Array.map(fun (i,_) -> lower.[i]))
+            let rec runTogether start =
+                match compact.IndexOf(typed,start,StringComparison.Ordinal) with
+                | -1 -> None
+                | at when snd letters.[at] -> Some [ for k in at..at+typed.Length-1 -> fst letters.[k] ]
+                | at -> runTogether (at+1)
+            match runTogether 0 with
+            | Some taken -> Some taken
+            | None ->
+                let starts = letters |> Array.filter snd |> Array.map fst
+                let initials = String(starts |> Array.map(fun i -> lower.[i]))
+                match initials.IndexOf(typed,StringComparison.Ordinal) with
+                | -1 -> None
+                | at -> Some [ for k in at..at+typed.Length-1 -> starts.[k] ]
+
     /// None when a term is missing; otherwise higher for better matches. Terms are separated by
     /// spaces and may come in any order; case is ignored.
-    let private rank (query:string) (entry:TabSearchEntry) =
+    let private wordRank (query:string) (entry:TabSearchEntry) =
         let title = entry.title.ToLowerInvariant()
         query.ToLowerInvariant().Split([|' ';'\t'|],StringSplitOptions.RemoveEmptyEntries)
         |> Array.fold (fun total term ->
@@ -59,6 +87,18 @@ module TabSearch =
                     | Some(quality,_),Some(inName,at) when inName=quality -> Some(quality,at)
                     | _ -> best
                 best |> Option.map(fun (quality,at) -> sum+quality,position+at))) (Some(0,0))
+
+    /// As wordRank, or, when the words are not there, typed without spaces or as initials: such a
+    /// row comes after every row with the words, the name before the other keywords.
+    let private rank (query:string) (entry:TabSearchEntry) =
+        match wordRank query entry with
+        | Some found -> Some found
+        | None ->
+            match looseMatch query entry.title |> Option.bind List.tryHead with
+            | Some at -> Some(0,at)
+            | None ->
+                entry.keywords |> List.tryPick(fun keyword -> looseMatch query keyword |> Option.bind List.tryHead)
+                |> Option.map(fun at -> 0,1000+at)
 
     let score query entry = rank query entry |> Option.map fst
 
@@ -113,7 +153,11 @@ module TabSearch =
                     | -1 -> None
                     | at -> Some((at,at+term.Length),at+1)) 0)
             |> Seq.sort |> List.ofSeq
-        // Overlapping runs merge, as with "ab" and "bc" in "abc".
+        // Typed without spaces or as initials: the letters it took, each run of them lit up.
+        let found =
+            if not found.IsEmpty then found
+            else looseMatch query text |> Option.defaultValue [] |> List.map(fun at -> at,at+1)
+        // Overlapping and adjacent runs merge, as with "ab" and "bc" in "abc".
         found
         |> List.fold(fun runs (start,stop) ->
             match runs with

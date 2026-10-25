@@ -932,6 +932,19 @@ let main() =
     check (TabSearch.highlights "window on" "Window on the right" = [0,9]) "A phrase typed with a space was not lit up whole"
     check (TabSearch.highlights "on  the" "On the on" = [0,6;7,2]) "A phrase's terms were not also lit up on their own"
     check (TabSearch.highlights "" "Foo" = [] && TabSearch.highlights "zz" "Foo" = []) "Text was highlighted without a match"
+    // Typed without its spaces, or as the first letters of the words, a name is still found, and
+    // after every row that has the words; the letters taken light up.
+    let moveDown = TabSearch.create (IntPtr 7) "Move down the list" "" ""
+    // "Remove download" holds "movedown" run together, but from the middle of "Remove".
+    let removed = TabSearch.create (IntPtr 8) "Remove download" "" ""
+    check (TabSearch.matches "movedown" moveDown && TabSearch.matches "MoveDown" moveDown && TabSearch.matches "mdtl" moveDown)
+          "A name typed without spaces or as initials was not found"
+    check (not (TabSearch.matches "ovedown" moveDown) && not (TabSearch.matches "movedown" removed))
+          "A name run together was found from the middle of a word"
+    check (TabSearch.highlights "movedown" "Move down the list" = [0,4;5,4]) "Letters run together were not lit up where they are"
+    check (TabSearch.highlights "md" "Move down the list" = [0,1;5,1]) "Initials were not lit up"
+    let downTitled = TabSearch.create (IntPtr 9) "Download movedown.zip" "" ""
+    check (TabSearch.shown "movedown" [1,moveDown;2,downTitled] |> List.map fst = [2;1]) "A row found without spaces came before one with the word itself"
     // Choosing: word-start quality, earlier positions, then recency.
     check (TabSearch.quality "set" "windowtabs settings" = 2) "A match at a word start was not ranked best"
     check (TabSearch.quality "tabs" "windowtabs settings" = 1) "A match inside a word did not count"
