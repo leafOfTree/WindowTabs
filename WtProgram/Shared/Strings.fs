@@ -547,15 +547,6 @@ module Strings =
         let alreadySet = { en="Already set"; zh="已是当前快捷键"; ja="設定済み"; ar="هذا هو الاختصار الحالي" }
         /// A key pressed, then what was said of it, as "Alt+J: Used by Next tab".
         let keySays key (said:string) = { en=sprintf "%s: %s" key said; zh=sprintf "%s：%s" key said; ja=sprintf "%s: %s" key said; ar=sprintf "%s: %s" key said }
-        /// A key Windows keeps for itself, with what it does there, as "Used by Windows (close window)".
-        let usedByWindows (what:LocalizedText) =
-            { en=sprintf "Used by Windows (%s)" what.en; zh=sprintf "Windows 已占用（%s）" what.zh
-              ja=sprintf "Windows が使用中（%s）" what.ja; ar=sprintf "يستخدمه Windows (%s)" what.ar }
-        let closeWindow = { en="close window"; zh="关闭窗口"; ja="ウィンドウを閉じる"; ar="إغلاق النافذة" }
-        let switchWindows = { en="switch windows"; zh="切换窗口"; ja="ウィンドウの切り替え"; ar="التبديل بين النوافذ" }
-        let cycleWindows = { en="cycle windows"; zh="按顺序切换窗口"; ja="ウィンドウを順に切り替え"; ar="التنقل بين النوافذ بالترتيب" }
-        let startMenu = { en="Start menu"; zh="开始菜单"; ja="スタート メニュー"; ar="قائمة ابدأ" }
-        let taskManager = { en="Task Manager"; zh="任务管理器"; ja="タスク マネージャー"; ar="إدارة المهام" }
         /// Alt+Enter, which sets a shortcut in the palette.
         let usedByPalette = { en="Used by the command palette (set shortcut)"; zh="命令面板已占用（设置快捷键）"
                               ja="コマンドパレットが使用中（ショートカットの設定）"; ar="تستخدمه لوحة الأوامر (تعيين اختصار)" }

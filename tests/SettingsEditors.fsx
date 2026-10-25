@@ -587,13 +587,11 @@ let main() =
         previous.StartRecording()
         command previous Keys.Enter |> ignore
         assertTrue (previous.Shortcut=0 && hotKeys.["prevTab"]=0 && not previous.IsRecording) "Enter with nothing held did not remove the shortcut"
-        // Keys Windows or the palette keep are refused by name, the shortcut left as it was.
+        // Alt+Enter, which the palette keeps for setting a shortcut, is refused by name, the shortcut
+        // left as it was.
         previous.Shortcut <- 3621
         hotKeys.["prevTab"] <- 3621
-        // Each says what has the key: Windows and what it does there, or the palette.
-        for reserved,why in [Keys.Alt ||| Keys.Enter,Strings.Shortcuts.usedByPalette
-                             Keys.Alt ||| Keys.F4,Strings.Shortcuts.usedByWindows Strings.Shortcuts.closeWindow
-                             Keys.Control ||| Keys.Escape,Strings.Shortcuts.usedByWindows Strings.Shortcuts.startMenu] do
+        for reserved,why in [Keys.Alt ||| Keys.Enter,Strings.Shortcuts.usedByPalette] do
             previous.StartRecording()
             command previous reserved |> ignore
             assertTrue (previous.Shortcut=3621 && hotKeys.["prevTab"]=3621 && previous.Message=Some(tr why))
@@ -605,10 +603,14 @@ let main() =
             | :? Label as note -> assertTrue (not previous.ShowsMessage && note.Visible && note.Text=said) (sprintf "The refusal of %A under the box reads %A" reserved note.Text)
             | _ -> failwithf "The refusal of %A is not on a line under the box" reserved
             command previous Keys.Escape |> ignore
-        // Alt+Space, the window menu's key, which launchers commonly take, can be a shortcut.
-        previous.StartRecording()
-        command previous (Keys.Alt ||| Keys.Space) |> ignore
-        assertTrue (previous.Shortcut=SettingsShortcut.encode (Keys.Alt ||| Keys.Space)) "Alt+Space was refused as a shortcut"
+        // Keys Windows uses are the user's to take: Alt+Space, the window menu's key, which
+        // launchers commonly take, and Alt+F4 or Ctrl+Esc, which the editor no longer refuses itself.
+        for windowsKey in [Keys.Alt ||| Keys.Space;Keys.Alt ||| Keys.F4;Keys.Control ||| Keys.Escape] do
+            previous.Shortcut <- 3621
+            previous.StartRecording()
+            command previous windowsKey |> ignore
+            assertTrue (previous.Shortcut=SettingsShortcut.encode windowsKey && not (SettingsShortcut.isReserved windowsKey))
+                       (sprintf "%A was refused as a shortcut" windowsKey)
         previous.Shortcut <- 3621
         previous.Clear()
         assertTrue (hotKeys.["prevTab"]=0) "Clear removes the shortcut"
