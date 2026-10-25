@@ -816,16 +816,30 @@ let main() =
         api.setHotKey "listPrevious" 0
         // Set in the palette: Enter on their row records the key over it.
         trial.Query <- tr Strings.Settings.listNext.caption
-        note ((trial.Selected |> Option.map(fun entry -> entry.title))=Some(tr Strings.Settings.listNext.caption)) "Next in the list is not in the palette"
+        note ((trial.Selected |> Option.map(fun entry -> entry.title))=Some(tr Strings.Settings.listNext.caption)) "Move down the list is not in the palette"
         trial.Accept()
-        note (trial.ShortcutEditor.IsSome && not trial.IsClosed) "Enter on Next in the list did not record its key"
+        note (trial.ShortcutEditor.IsSome && not trial.IsClosed) "Enter on Move down the list did not record its key"
         // A key pressed in its box is the list's from then on, and the box goes.
         trial.ShortcutEditor |> Option.iter(fun editor ->
             let mutable message = Message()
             let processKey = editor.GetType().GetMethod("ProcessCmdKey",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
             processKey.Invoke(editor,[|box message;box (Keys.Control ||| Keys.J)|]) |> ignore)
         pumpUntil "A taken key's box going" (fun () -> trial.ShortcutEditor.IsNone)
-        note (api.hotKey "listNext"=Some nextKey) "A key recorded for Next in the list was not kept"
+        note (api.hotKey "listNext"=Some nextKey) "A key recorded for Move down the list was not kept"
+        // Used only in these boxes, a key of the lists may be Tab alone, which then moves the
+        // choice rather than going round the scopes.
+        trial.Query <- tr Strings.Settings.listNext.caption
+        trial.Accept()
+        trial.ShortcutEditor |> Option.iter(fun editor ->
+            let mutable message = Message()
+            let processKey = editor.GetType().GetMethod("ProcessCmdKey",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
+            processKey.Invoke(editor,[|box message;box Keys.Tab|]) |> ignore)
+        pumpUntil "Tab's box going" (fun () -> trial.ShortcutEditor.IsNone)
+        note (api.hotKey "listNext"=Some(SettingsShortcut.encode Keys.Tab)) "Tab was not taken as a key of the lists"
+        trial.Query <- "tab"
+        let beforeTab = trial.Selected |> Option.map(fun entry -> entry.title)
+        trial.Press Keys.Tab
+        note ((trial.Selected |> Option.map(fun entry -> entry.title))<>beforeTab) "Tab set as a key of the lists did not move the choice"
         api.setHotKey "listNext" 0
         trial.Query <- ""
         // A switch turned with Enter keeps its row chosen, not the first row again.

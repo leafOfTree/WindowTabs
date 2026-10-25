@@ -17,7 +17,8 @@ module CommandPalette =
         command.shortcut |> Option.map(fun key ->
             { current=Services.program.getHotKey key
               usedBy=holderOf key
-              set=fun code -> Services.program.setHotKey key code })
+              set=fun code -> Services.program.setHotKey key code
+              inList=false })
     /// A key of the lists, kept in the settings as the box reads it.
     let private listKey key = Services.settings.hotKey key |> Option.defaultValue (SettingsCatalog.shortcutDefault key)
     let private shortcutText (command:Command) =
@@ -165,7 +166,8 @@ module CommandPalette =
               | ASetting { binding=Shortcut(key,_) } ->
                   Some { current=listKey key
                          usedBy=holderOf key
-                         set=fun code -> Services.settings.setHotKey key code; asides.Clear(); true }
+                         set=fun code -> Services.settings.setHotKey key code; asides.Clear(); true
+                         inList=true }
               | AChoice _ | ASetting _ | ANumberKeys _ -> None)
           dimmed=(fun chosen -> match action chosen with ACommand command -> not (command.enabled active) | _ -> false)
           assignOnEnter=(fun chosen -> match action chosen with ASetting { binding=Shortcut _ } -> true | _ -> false)

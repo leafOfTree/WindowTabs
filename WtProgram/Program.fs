@@ -790,7 +790,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                                  restore=(fun () -> known.Value <- None; program.setWindowShortcut other |> ignore) })
                                set=fun code ->
                                    known.Value <- None
-                                   (this :> IProgram).setWindowShortcut { path=path; title=entry.title; code=code } }
+                                   (this :> IProgram).setWindowShortcut { path=path; title=entry.title; code=code }
+                               inList=false }
                 TabSearchForm(TabSearch.tabs nameOverride active groups,group,settings=(settingsManager :> ISettings),
                               windowShortcut=windowShortcut,windowShortcutText=(fun entry ->
                                   let path = try os.windowFromHwnd(entry.hwnd).pid.processPath with _ -> ""

@@ -182,8 +182,9 @@ module TabSearch =
 
 /// How a row's shortcut is set from the palette: the one it has now; what holds a key already,
 /// by name, if anything; and setting one, false when another program holds the key.
-/// A row's shortcut: the key it has, what has a key besides it, and setting one.
-type ShortcutAssignment = { current:int; usedBy:int -> ShortcutHolder option; set:int -> bool }
+/// A row's shortcut: the key it has, what has a key besides it, and setting one. inList: a key
+/// of the lists, used only in these boxes, which Tab may be.
+type ShortcutAssignment = { current:int; usedBy:int -> ShortcutHolder option; set:int -> bool; inList:bool }
 
 /// A page of the palette beside the windows: what it lists, with a glyph for its rows, and what
 /// choosing a row does. Its entries carry a number of their own in place of a window handle.
@@ -845,7 +846,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     assignment |> Option.map(fun assignment -> entry,assignment))
                 |> Option.iter(fun (entry,assignment) ->
                     // A size under the rows' text, as the shortcuts beside the names are.
-                    let editor = new SettingsShortcutInput(Font=SettingsUi.font "Segoe UI" 9.0f FontStyle.Regular,Shortcut=assignment.current,ForeColor=palette.text)
+                    let editor = new SettingsShortcutInput(Font=SettingsUi.font "Segoe UI" 9.0f FontStyle.Regular,Shortcut=assignment.current,ForeColor=palette.text,InList=assignment.inList)
                     // On the chosen row: round its corners the row's highlight shows, not the
                     // list's surface, which showed as dark corners.
                     editor.PlaceOn(if SystemInformation.HighContrast then SystemColors.Highlight else palette.selection)
@@ -944,15 +945,22 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         if shown.Count>0 then
             let current = shown.IndexOf(list.SelectedItem)
             list.SelectedItem <- shown.[max 0 (min (shown.Count-1) (current+delta))]
+    /// The lists' own keys, set in the palette, beside the arrows: which way one moves the choice.
+    /// Checked before Tab goes round the scopes, as one may be Tab.
+    let listStep (keyData:Keys) =
+        let listKey name = settings |> Option.bind(fun api -> api.hotKey name) |> Option.defaultValue 0
+        let pressed = SettingsShortcut.encode keyData
+        if SettingsShortcut.isModifier (keyData &&& Keys.KeyCode) then None
+        elif pressed=listKey "listNext" then Some 1
+        elif pressed=listKey "listPrevious" then Some -1
+        else None
     /// The box's keys, from typing or a host pressing them.
     let keyDown (e:KeyEventArgs) =
-        // The lists' own keys, set on the Shortcuts page, beside the arrows.
-        let listKey name = settings |> Option.bind(fun api -> api.hotKey name) |> Option.defaultValue 0
-        let pressed = SettingsShortcut.encode e.KeyData
         let handled =
-            match e.KeyCode with
-            | _ when not (SettingsShortcut.isModifier e.KeyCode) && pressed=listKey "listNext" -> move 1; true
-            | _ when not (SettingsShortcut.isModifier e.KeyCode) && pressed=listKey "listPrevious" -> move -1; true
+            match e.KeyCode,listStep e.KeyData with
+            | _,Some step -> move step; true
+            | key,None ->
+            match key with
             | Keys.Down -> move 1; true
             | Keys.Up -> move -1; true
             | Keys.PageDown -> move visibleRows; true
@@ -999,7 +1007,12 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         list.KeyDown.Add(fun e ->
             if e.KeyCode=Keys.Escape then (if choices.IsEmpty then finish None else pop())
             elif e.KeyCode=Keys.Enter && e.Alt then beginAssign())
-        list.PreviewKeyDown.Add(fun e -> if e.KeyCode=Keys.Tab then (e.IsInputKey <- true; cycle (if e.Shift then -1 else 1)))
+        list.PreviewKeyDown.Add(fun e ->
+            if e.KeyCode=Keys.Tab then
+                e.IsInputKey <- true
+                match listStep e.KeyData with
+                | Some step -> move step
+                | None -> cycle (if e.Shift then -1 else 1))
         list.KeyPress.Add(fun e ->
             if not (Char.IsControl e.KeyChar) then
                 input.Focus() |> ignore

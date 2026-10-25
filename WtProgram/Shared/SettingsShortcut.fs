@@ -79,3 +79,7 @@ module SettingsShortcut =
     let isAcceptable (keyData:Keys) =
         let key = keyData &&& Keys.KeyCode
         not (isModifier key) && (keyData.HasFlag(Keys.Control) || keyData.HasFlag(Keys.Alt) || isFunctionKey key)
+    /// A key of the lists, used only in the palette and the window search, never for the whole
+    /// desktop: Tab, with Shift or not, may be one too. Keys that type into the box still may not.
+    let isAcceptableInList (keyData:Keys) =
+        isAcceptable keyData || (keyData &&& Keys.KeyCode)=Keys.Tab && (keyData &&& Keys.Modifiers &&& ~~~Keys.Shift)=Keys.None

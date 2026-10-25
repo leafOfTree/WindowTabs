@@ -218,18 +218,18 @@ module Strings =
                            description={ en="Switch to a window by title or app name."; zh="按标题或应用名查找并切换窗口。"; ja="タイトルやアプリ名でウィンドウを探して切り替えます。"; ar="الانتقال إلى نافذة باستخدام عنوانها أو اسم التطبيق." }
                            keywords={ en="find"; zh="查找"; ja="検索"; ar="بحث" } }
         /// Keys inside the palette and the window search only, beside the arrows.
-        let listNext = { caption={ en="Next in the list"; zh="列表中的下一项"; ja="リストの次の項目"; ar="العنصر التالي في القائمة" }
+        let listNext = { caption={ en="Move down the list"; zh="在列表中下移"; ja="リストで下へ移動"; ar="النزول في القائمة" }
                          description={ en="Moves the choice down in the command palette and the window search, as ↓ does. Only there."
                                        zh="在命令面板和窗口搜索中把选中项下移，与 ↓ 相同。只在这两处生效。"
                                        ja="コマンドパレットとウィンドウ検索で選択を下へ移動します（↓ と同じ）。そこでのみ有効です。"
                                        ar="ينقل الاختيار لأسفل في لوحة الأوامر وبحث النوافذ، كما يفعل ↓. هناك فقط." }
-                         keywords={ en="down select move palette search"; zh="向下 选择 移动 面板 搜索"; ja="下 選択 移動 パレット 検索"; ar="أسفل تحديد نقل لوحة بحث" } }
-        let listPrevious = { caption={ en="Previous in the list"; zh="列表中的上一项"; ja="リストの前の項目"; ar="العنصر السابق في القائمة" }
+                         keywords={ en="next down select move palette search"; zh="下一项 向下 选择 移动 面板 搜索"; ja="次 下 選択 移動 パレット 検索"; ar="التالي أسفل تحديد نقل لوحة بحث" } }
+        let listPrevious = { caption={ en="Move up the list"; zh="在列表中上移"; ja="リストで上へ移動"; ar="الصعود في القائمة" }
                              description={ en="Moves the choice up in the command palette and the window search, as ↑ does. Only there."
                                            zh="在命令面板和窗口搜索中把选中项上移，与 ↑ 相同。只在这两处生效。"
                                            ja="コマンドパレットとウィンドウ検索で選択を上へ移動します（↑ と同じ）。そこでのみ有効です。"
                                            ar="ينقل الاختيار لأعلى في لوحة الأوامر وبحث النوافذ، كما يفعل ↑. هناك فقط." }
-                             keywords={ en="up select move palette search"; zh="向上 选择 移动 面板 搜索"; ja="上 選択 移動 パレット 検索"; ar="أعلى تحديد نقل لوحة بحث" } }
+                             keywords={ en="previous up select move palette search"; zh="上一项 向上 选择 移动 面板 搜索"; ja="前 上 選択 移動 パレット 検索"; ar="السابق أعلى تحديد نقل لوحة بحث" } }
         let commandPalette = { caption={ en="Command palette"; zh="命令面板"; ja="コマンドパレット"; ar="لوحة الأوامر" }
                                description={ en="Run any command or setting by name."
                                              zh="按名称运行任意命令或设置。"
@@ -557,6 +557,8 @@ module Strings =
         let usedByPalette = { en="Used by the command palette (set shortcut)"; zh="命令面板已占用（设置快捷键）"
                               ja="コマンドパレットが使用中（ショートカットの設定）"; ar="تستخدمه لوحة الأوامر (تعيين اختصار)" }
         let includeCtrlOrAlt = { en="Include Ctrl or Alt"; zh="需要包含 Ctrl 或 Alt"; ja="Ctrl か Alt が必要です"; ar="يجب أن يتضمن Ctrl أو Alt" }
+        /// A key of the lists may also be Tab or a function key alone.
+        let includeCtrlAltOrTab = { en="Use Tab, a function key, or Ctrl or Alt"; zh="请使用 Tab、功能键，或包含 Ctrl 或 Alt"; ja="Tab、ファンクション キー、または Ctrl か Alt を使ってください"; ar="استخدم Tab أو مفتاح وظيفة أو Ctrl أو Alt" }
         let pressShortcut = { en="Press a shortcut…"; zh="按下组合键…"; ja="キーを押してください…"; ar="اضغط اختصارًا…" }
         let notSet = { en="Not set"; zh="未设置"; ja="未設定"; ar="غير معيّن" }
 

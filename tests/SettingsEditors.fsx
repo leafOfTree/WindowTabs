@@ -612,6 +612,12 @@ let main() =
             | :? Label as note -> assertTrue (not previous.ShowsMessage && note.Visible && note.Text=said) (sprintf "The refusal of %A under the box reads %A" reserved note.Text)
             | _ -> failwithf "The refusal of %A is not on a line under the box" reserved
             command previous Keys.Escape |> ignore
+        // A key of the lists, used only in the palette and the window search, may be Tab too; keys
+        // that type into the box may not, nor Tab for the whole desktop.
+        for keyData,inList,desktop in [Keys.Tab,true,false; Keys.Shift ||| Keys.Tab,true,false; Keys.Control ||| Keys.Tab,true,true
+                                       Keys.F6,true,true; Keys.A,false,false; Keys.Space,false,false; Keys.Enter,false,false; Keys.Shift ||| Keys.A,false,false] do
+            assertTrue (SettingsShortcut.isAcceptableInList keyData=inList && SettingsShortcut.isAcceptable keyData=desktop)
+                       (sprintf "%A is wrongly allowed or refused as a key" keyData)
         // Keys Windows uses are the user's to take: Alt+Space, the window menu's key, which
         // launchers commonly take, and Alt+F4 or Ctrl+Esc, which the editor no longer refuses itself.
         for windowsKey in [Keys.Alt ||| Keys.Space;Keys.Alt ||| Keys.F4;Keys.Control ||| Keys.Escape] do

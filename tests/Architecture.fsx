@@ -1214,7 +1214,7 @@ let main() =
     let mutable assigned = 0
     let mutable released = false
     let nextTabHolder = { name="Next tab"; key="nextTab"; release=(fun () -> released <- true); restore=(fun () -> released <- false) }
-    let bindable = { commandsPage with shortcut=fun entry -> if entry.hwnd=IntPtr 1 then Some { current=1623; usedBy=(fun code -> if code=3623 then Some nextTabHolder else None); set=(fun code -> assigned <- code; code<>1616) } else None }
+    let bindable = { commandsPage with shortcut=fun entry -> if entry.hwnd=IntPtr 1 then Some { current=1623; usedBy=(fun code -> if code=3623 then Some nextTabHolder else None); set=(fun code -> assigned <- code; code<>1616); inList=false } else None }
     let recorder = TabSearchForm([mail;notes],[],pages=[bindable],scope=ActionScope)
     recorder.Query <- "close"
     recorder.BeginAssign()
@@ -1290,7 +1290,7 @@ let main() =
     check (WindowShortcuts.target open' { chrome with title="Gone" }=Some(IntPtr 1)) "The program's most recent window was not chosen"
     check (WindowShortcuts.target open' { chrome with path="word.exe" }).IsNone "A window of another program was chosen"
     let mutable givenKey = 0
-    let keyed = TabSearchForm([mail;notes],[],windowShortcut=(fun entry -> if entry.hwnd=mail.hwnd then Some { current=0; usedBy=(fun _ -> None); set=(fun code -> givenKey <- code; true) } else None))
+    let keyed = TabSearchForm([mail;notes],[],windowShortcut=(fun entry -> if entry.hwnd=mail.hwnd then Some { current=0; usedBy=(fun _ -> None); set=(fun code -> givenKey <- code; true); inList=false } else None))
     keyed.Query <- "inbox"
     keyed.BeginAssign()
     let keyEditor = match keyed.ShortcutEditor with Some editor -> editor | None -> failwith "Alt+Enter did not open a shortcut box on a window"
