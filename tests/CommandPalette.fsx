@@ -276,9 +276,9 @@ let main() =
             while not calls.IsEmpty do calls.TryDequeue() |> ignore
             runDone "ungroup-tabs" active
             note (called (sprintf "detachTab %d" (hwndOf "Bravo")) && called (sprintf "detachTab %d" (hwndOf "Charlie")))
-                 "Ungroup tabs did not take every other tab out"
-            note (not (called (sprintf "detachTab %d" active))) "Ungroup tabs took out the tab in front too"
-            note ((Commands.find "ungroup-tabs").Value.enabled (hwndOf "Delta")) "Ungroup tabs is dimmed in a group of two")
+                 "Ungroup this group did not take every other tab out"
+            note (not (called (sprintf "detachTab %d" active))) "Ungroup this group took out the tab in front too"
+            note ((Commands.find "ungroup-tabs").Value.enabled (hwndOf "Delta")) "Ungroup this group is dimmed in a group of two")
         attempt "move-tab-to-group" (fun () ->
             let bravo = hwndOf "Bravo"
             let options = choicesOf "move-tab-to-group" bravo
@@ -465,6 +465,15 @@ let main() =
         attempt "close-all-tabs" (fun () ->
             runDone "close-all-tabs" (hwndOf "All one")
             pumpUntil "Closing all tabs" (fun () -> not (WinUserApi.IsWindow (hwndOf "All one")) && not (WinUserApi.IsWindow (hwndOf "All two"))))
+        // Last, as it gathers every window of this app: all of them join the group in front.
+        attempt "group-app" (fun () ->
+            let delta = hwndOf "Delta"
+            let grouped hwnd = groups() |> List.exists(fun info -> (info :> IGroup).windows.contains((=)hwnd))
+            let others = windows |> List.map snd |> List.filter(fun hwnd -> hwnd<>delta && WinUserApi.IsWindow hwnd && grouped hwnd)
+            note ((Commands.find "group-app").Value.enabled delta) "Group this app is dimmed with the app's windows in other groups"
+            runDone "group-app" delta
+            pumpUntil "Grouping the app's windows" (fun () -> let order = lorderOf delta in others |> List.forall(fun hwnd -> List.contains hwnd order))
+            note (not ((Commands.find "group-app").Value.enabled delta)) "Group this app is offered with every window of the app in the group")
         for command in Commands.all do
             note (commandsRun.Contains command.id || command.id.StartsWith "open-settings-" || command.id.StartsWith "toggle-" || command.id.StartsWith "setting-")
                  (sprintf "%s was never run by this walk: add it" command.id)

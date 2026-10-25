@@ -224,6 +224,16 @@ module Commands =
     let private hasApp hwnd = hwnd<>IntPtr.Zero && processPath hwnd<>""
     /// A group still at work, not one on its way out.
     let private live (group:IGroup) = match group with :? GroupInfo as info -> not info.isExited && not info.isRetiring | _ -> true
+    /// The windows of the app in front that are in other groups, each with its group.
+    let private appWindowsElsewhere (hwnd:IntPtr) =
+        match groupOf hwnd with
+        | Some current when hasApp hwnd ->
+            let path = processPath hwnd
+            Services.desktop.groups.list
+            |> List.filter(fun group -> not (obj.ReferenceEquals(group,current)) && live group)
+            |> List.collect(fun group ->
+                group.windows.list |> List.filter(fun other -> processPath other=path) |> List.map(fun other -> group,other))
+        | _ -> []
     /// The tab's colour now, picked or given by its app.
     let private currentTabColor hwnd = groupOf hwnd |> Option.bind(fun g -> Services.program.getTabColor(hwnd,g.windows.list))
     /// A colour for the tab, and for its app too while the app remembers one.
@@ -326,6 +336,17 @@ module Commands =
                   groupOf hwnd |> Option.iter(fun g ->
                       for other in g.windows.list do
                           if other<>hwnd then Services.program.detachTab other))
+        // Its opposite, palette only too: every window of the app in front joins this group, from
+        // other groups or on its own, as moving each tab to it does.
+        plain "group-app" Strings.Commands.groupApp GroupCommands (fun hwnd -> not (appWindowsElsewhere hwnd).IsEmpty)
+              (fun hwnd ->
+                  match groupOf hwnd with
+                  | Some(:? GroupInfo as target) when live target ->
+                      for source,other in appWindowsElsewhere hwnd do
+                          match source with
+                          | :? GroupInfo as source when live source -> target.addAfterDetaching(source,other)
+                          | _ -> ()
+                  | _ -> ())
         choosing "move-tab-to-group" Strings.Commands.moveTabToGroup TabCommands hasGroup (fun hwnd ->
             match groupOf hwnd with
             | Some source ->
