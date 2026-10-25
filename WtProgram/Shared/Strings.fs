@@ -540,6 +540,11 @@ module Strings =
                              zh="点击快捷键后按下新的组合键。按 Esc 取消。在命令面板中选中命令后按 Alt+Enter 也可设置。"
                              ja="ショートカットをクリックして、新しいキーの組み合わせを押します。Esc でキャンセルします。コマンドパレットでコマンドを選んで Alt+Enter でも設定できます。"
                              ar="انقر اختصارًا ثم اضغط مجموعة المفاتيح الجديدة. اضغط Esc للإلغاء. وتعيّنه لوحة الأوامر أيضًا: Alt+Enter على أمر." }
+        /// Hovering the reset button: what it resets and what it leaves.
+        let restoreDefaultsHelp = { en="Restore default shortcuts: the ones on this page, and every key given to a command or a list in the command palette. Keys given to windows in the window search stay."
+                                    zh="恢复默认快捷键：包括本页的快捷键，以及在命令面板中为命令或列表设置的按键。在窗口搜索中为窗口设置的按键会保留。"
+                                    ja="既定のショートカットに戻します。このページのショートカットと、コマンドパレットでコマンドやリストに設定したキーが対象です。ウィンドウ検索でウィンドウに設定したキーは残ります。"
+                                    ar="استعادة الاختصارات الافتراضية: اختصارات هذه الصفحة، وكل مفتاح عُيّن لأمر أو لقائمة في لوحة الأوامر. تبقى المفاتيح المعيّنة للنوافذ في بحث النوافذ." }
         let restoreDefaults = { en="Restore default shortcuts"; zh="恢复默认快捷键"; ja="既定のショートカットに戻す"; ar="استعادة الاختصارات الافتراضية" }
         let inUse = { en="Shortcut already in use"; zh="快捷键已被占用"; ja="ショートカットは使用中です"; ar="الاختصار مستخدم بالفعل" }
         /// A key pressed for one command that another had: it moves, and the other is left without.

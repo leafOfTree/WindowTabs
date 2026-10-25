@@ -449,15 +449,16 @@ type SettingsHelpButton(text:string) as this =
         this.AccessibleDescription <- text
         this.Click.Add(fun _ -> hover.Show())
 
-/// A round arrow beside a section heading that resets the section; hovering says what it resets.
-/// Dimmed while there is nothing to reset.
-type SettingsResetButton(text:string) as this =
+/// A round arrow beside a section heading that resets the section; hovering says what it resets,
+/// `help` in more words where its name alone does not. Dimmed while there is nothing to reset.
+type SettingsResetButton(text:string, ?help:string) as this =
     inherit Button()
     let mutable offered = true
-    let hover = SettingsHover(this,text)
+    let hover = SettingsHover(this,defaultArg help text)
     do
         this.Text <- text
         this.AccessibleName <- text
+        help |> Option.iter(fun help -> this.AccessibleDescription <- help)
         this.Size <- Size(Dpi.scale 28,Dpi.scale 28)
         this.FlatStyle <- FlatStyle.Flat
         this.FlatAppearance.BorderSize <- 0

@@ -633,8 +633,13 @@ let main() =
         assertTrue (search.Shortcut=0) "Explicitly cleared tab search shortcut was not preserved"
         hotKeys.["searchTabs"] <- 1568
         search.Shortcut <- 1568
-        (findButton "Restore default shortcuts" view.control).Value.PerformClick()
+        // A key given in the palette to a command the page does not list goes back to none as well.
+        hotKeys.["rename-tab"] <- SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.F7)
+        let restoreButton = (findButton "Restore default shortcuts" view.control).Value
+        assertTrue (restoreButton.AccessibleDescription=tr Strings.Shortcuts.restoreDefaultsHelp) "The reset button does not say what it resets"
+        restoreButton.PerformClick()
         assertTrue (hotKeys.["nextTab"]=3623 && hotKeys.["prevTab"]=3621 && next.Shortcut=3623 && previous.Shortcut=3621) "Restore default shortcuts"
+        assertTrue (hotKeys.["rename-tab"]=0) "Restore default shortcuts left a key given in the palette"
         assertTrue (hotKeys.["searchTabs"]=1620 && search.Shortcut=1620) "Restore default must set tab search to Ctrl+Alt+T"
         let newTab = view.control.Controls.Find("new-tab",true).[0] :?> SettingsShortcutInput
         assertTrue (hotKeys.["newTab"]=1614 && newTab.Shortcut=1614) "Restore default must set new tab to Ctrl+Alt+N"

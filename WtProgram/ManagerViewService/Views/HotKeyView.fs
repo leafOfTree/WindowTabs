@@ -57,13 +57,19 @@ type HotKeyView() =
             | None -> ())
         editor
     let editors = actions |> List.map (fun (key,_) -> key,hotKey key)
+    /// Every command's shortcut and the lists' keys go back to their defaults, those given in the
+    /// palette too, which most often means none; keys given to windows in the window search stay.
     let restoreDefaults() =
+        let commandKeys = Commands.all |> List.choose(fun command -> command.shortcut) |> List.distinct
         // Clear first so swapped shortcuts (next <-> previous) do not collide with each other.
-        for key,_ in editors do Services.program.setHotKey key 0 |> ignore
-        for key,editor in editors do
+        for key in commandKeys do Services.program.setHotKey key 0 |> ignore
+        for key in Commands.listKeys do Services.settings.setHotKey key (SettingsCatalog.shortcutDefault key)
+        for key in commandKeys do
             let target = SettingsCatalog.shortcutDefault key
-            if Services.program.setHotKey key target then editor.Shortcut <- target
-            else editor.Reject(0,tr Strings.Shortcuts.inUse)
+            let restored = target=0 || Services.program.setHotKey key target
+            match shown.TryGetValue key with
+            | true,editor -> if restored then editor.Shortcut <- target else editor.Reject(0,tr Strings.Shortcuts.inUse)
+            | _ -> ()
     /// A row for a command: the catalog's row for one the catalog lists, which the search finds;
     /// else one from the command's own text.
     let row (card:TableLayoutPanel) (command:Command) (editor:Control) =
@@ -77,7 +83,7 @@ type HotKeyView() =
         for (key,editor),(_,command) in List.zip editors actions do
             if command.category=category && not (List.contains key skip) then row card command editor
     do
-        let restore = new SettingsResetButton(tr Strings.Shortcuts.restoreDefaults,Name="restore-shortcuts")
+        let restore = new SettingsResetButton(tr Strings.Shortcuts.restoreDefaults,help=tr Strings.Shortcuts.restoreDefaultsHelp,Name="restore-shortcuts")
         SettingsUi.sectionHeading table (tr Strings.Shortcuts.startHere) [restore]
         let entry = new SettingsCard(Name="start-here")
         SettingsUi.add table entry
