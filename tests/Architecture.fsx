@@ -308,6 +308,15 @@ let main() =
                   Strings.TabMenu.numberShortcut,[Strings.Commands.numberShortcutForApp.caption;Strings.Settings.switchTabsByNumber.caption] ] do
             for other in others do
                 check (other.en.Contains menu.en && other.zh.Contains menu.zh) (sprintf "%s is named another way as %s" menu.en other.en)
+        let named (text:LocalizedText) (en:string) (zh:string) =
+            text.en.IndexOf(en,StringComparison.OrdinalIgnoreCase)>=0 && text.zh.Contains zh
+        check (Strings.Workspaces.saveCurrent=Strings.Settings.saveWorkspace.caption) "The workspaces page saves a workspace under another name"
+        check (named (Strings.TabMenu.closeAllOf "App") "tabs" "标签" && named Strings.Commands.closeAppTabs.caption "tabs" "标签") "Closing an app's tabs is named after windows somewhere"
+        check (named Strings.Settings.rememberTabColor "this app" "此应用" && named Strings.Commands.rememberTabColor.caption "this app" "此应用") "Remembering a colour names the app another way"
+        check (named Strings.Settings.enableNumberLeader.caption Strings.Settings.numberLeader.caption.en Strings.Settings.numberLeader.caption.zh) "The leader key is named another way by its shortcut"
+        for pane in [Strings.Commands.splitSwap.caption;Strings.Commands.splitEqualize.caption;Strings.Commands.splitClosePane.caption;Strings.Commands.splitFocusOther.caption
+                     Strings.Settings.splitFocusLeft.caption;Strings.Settings.splitFocusRight.caption;Strings.Settings.splitFocusUp.caption;Strings.Settings.splitFocusDown.caption] do
+            check (named pane "pane" "窗格") (sprintf "%s does not call a pane 窗格: %s" pane.en pane.zh)
 
         let numeric = NumericTabHotKeyPlugin()
         // The OS can already focus B while the delayed foreground event still

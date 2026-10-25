@@ -845,7 +845,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         if result.missing.IsEmpty && result.failed.IsEmpty then Notice.show title message
         else Notice.remind title message
 
-    /// As Save layout in Settings, said on screen since nothing else shows it.
+    /// As Save workspace in Settings, said on screen since nothing else shows it.
     member this.saveWorkspace() =
         let workspaces = this.readWorkspaces()
         let title = tr Strings.Pages.workspaces

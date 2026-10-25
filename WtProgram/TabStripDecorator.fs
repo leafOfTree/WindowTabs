@@ -431,7 +431,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             let item (text,dock) = CmiRegular({
                 text=tr text; image=None; flags=checkedFlag(this.ts.dock=dock)
                 click=fun () -> this.ts.dock <- dock })
-            CmiPopUp({ text=tr Strings.TabMenu.position; image=None
+            CmiPopUp({ text=tr Strings.Settings.tabPosition.caption; image=None
                        items=List2([Strings.TabMenu.top,TabDockTop; Strings.Common.left,TabDockLeft; Strings.Common.right,TabDockRight]).map(item) })
 
         let alignmentItem =

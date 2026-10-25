@@ -63,17 +63,16 @@ module Strings =
         let splitEmpty = { en="Drop a tab or window here"; zh="将标签或窗口拖到这里"; ja="ここにタブまたはウィンドウをドロップ"; ar="أفلت علامة تبويب أو نافذة هنا" }
         let splitChoose = { en="Choose a window…"; zh="选择窗口…"; ja="ウィンドウを選択…"; ar="اختر نافذة…" }
         let splitOr = { en="or"; zh="或"; ja="または"; ar="أو" }
-        let splitSearch = { en="Type a title or app name to fill the pane"; zh="输入标题或应用名，放入这一侧"; ja="タイトルやアプリ名を入力してペインに配置"; ar="اكتب عنوانًا أو اسم تطبيق لملء الجزء" }
+        let splitSearch = { en="Type a title or app name to fill the pane"; zh="输入标题或应用名，放入这个窗格"; ja="タイトルやアプリ名を入力してペインに配置"; ar="اكتب عنوانًا أو اسم تطبيق لملء الجزء" }
         let splitShow = { en="Show split view"; zh="显示分屏"; ja="分割表示に戻す"; ar="إظهار العرض المقسّم" }
         let splitNoWindows = { en="No other windows"; zh="没有其他窗口"; ja="他のウィンドウはありません"; ar="لا توجد نوافذ أخرى" }
         let splitMerge = { en="End split view"; zh="结束分屏"; ja="分割表示を終了"; ar="إنهاء العرض المقسّم" }
         let splitMakeStacked = { en="Switch to top and bottom"; zh="切换为上下"; ja="上下に切り替え"; ar="التبديل إلى أعلى وأسفل" }
         let splitMakeSideBySide = { en="Switch to side by side"; zh="切换为左右"; ja="左右に切り替え"; ar="التبديل إلى جنبًا إلى جنب" }
-        let splitSwap = { en="Swap panes"; zh="交换两侧"; ja="ペインを入れ替え"; ar="تبديل الأجزاء" }
-        let splitEqual = { en="Equal panes"; zh="恢复均分"; ja="均等に分割"; ar="أجزاء متساوية" }
+        let splitSwap = { en="Swap panes"; zh="交换窗格"; ja="ペインを入れ替え"; ar="تبديل الأجزاء" }
+        let splitEqual = { en="Equal panes"; zh="均分窗格"; ja="均等に分割"; ar="أجزاء متساوية" }
         let splitRatio = { en="Split divider"; zh="分屏分隔条"; ja="分割境界"; ar="فاصل التقسيم" }
         let splitFailed = { en="These windows could not fit the split layout. Split view has ended."; zh="窗口无法适应分屏尺寸，已退出分屏。"; ja="ウィンドウを分割領域に配置できないため、分割を終了しました。"; ar="تعذّر احتواء هذه النوافذ في تخطيط التقسيم. انتهى العرض المقسّم." }
-        let position = { en="Tab position"; zh="标签位置"; ja="タブの位置"; ar="موضع علامات التبويب" }
         let top = { en="Top"; zh="顶部"; ja="上部"; ar="أعلى" }
         let showTabTitles = { en="Show tab titles"; zh="显示标签标题"; ja="タブのタイトルを表示"; ar="إظهار عناوين علامات التبويب" }
         let showIconsOnly = { en="Show icons only"; zh="仅显示图标"; ja="アイコンのみ表示"; ar="إظهار الأيقونات فقط" }
@@ -110,9 +109,9 @@ module Strings =
         let autoGroupWindows = { en="Auto-group windows"; zh="自动分组"; ja="ウィンドウを自動グループ化"; ar="تجميع النوافذ تلقائيًا" }
         let close = { en="Close"; zh="关闭"; ja="閉じる"; ar="إغلاق" }
         let closeOthers = { en="Close others"; zh="关闭其他"; ja="他を閉じる"; ar="إغلاق علامات التبويب الأخرى" }
-        let closeAllOf exe = { en=sprintf "Close all '%s' windows" exe; zh=sprintf "关闭所有“%s”窗口" exe; ja=sprintf "「%s」のウィンドウをすべて閉じる" exe; ar=sprintf "إغلاق جميع نوافذ «%s»" exe }
+        let closeAllOf exe = { en=sprintf "Close all '%s' tabs" exe; zh=sprintf "关闭所有“%s”标签" exe; ja=sprintf "「%s」のタブをすべて閉じる" exe; ar=sprintf "إغلاق جميع علامات تبويب «%s»" exe }
         let closeAll = { en="Close all"; zh="关闭全部"; ja="すべて閉じる"; ar="إغلاق الكل" }
-        let settings = { en="Settings..."; zh="设置..."; ja="設定..."; ar="الإعدادات..." }
+        let settings = { en="Settings…"; zh="设置…"; ja="設定…"; ar="الإعدادات…" }
 
     /// Menu shown when a tab is dropped with the right mouse button.
     module DropMenu =
@@ -275,16 +274,16 @@ module Strings =
         let splitPickAbove = { caption={ en="Window above…"; zh="在上方放入窗口…"; ja="上側にウィンドウを配置…"; ar="نافذة في الأعلى…" }
                                description=none
                                keywords=splitWords }
-        let splitFocusLeft = { caption={ en="Focus the pane to the left"; zh="焦点切到左边的格"; ja="左のペインにフォーカス"; ar="التركيز على الجزء الأيسر" }
+        let splitFocusLeft = { caption={ en="Focus the pane to the left"; zh="焦点切到左边的窗格"; ja="左のペインにフォーカス"; ar="التركيز على الجزء الأيسر" }
                                description=none
                                keywords=splitWords }
-        let splitFocusRight = { caption={ en="Focus the pane to the right"; zh="焦点切到右边的格"; ja="右のペインにフォーカス"; ar="التركيز على الجزء الأيمن" }
+        let splitFocusRight = { caption={ en="Focus the pane to the right"; zh="焦点切到右边的窗格"; ja="右のペインにフォーカス"; ar="التركيز على الجزء الأيمن" }
                                 description=none
                                 keywords=splitWords }
-        let splitFocusUp = { caption={ en="Focus the pane above"; zh="焦点切到上边的格"; ja="上のペインにフォーカス"; ar="التركيز على الجزء الأعلى" }
+        let splitFocusUp = { caption={ en="Focus the pane above"; zh="焦点切到上边的窗格"; ja="上のペインにフォーカス"; ar="التركيز على الجزء الأعلى" }
                              description=none
                              keywords=splitWords }
-        let splitFocusDown = { caption={ en="Focus the pane below"; zh="焦点切到下边的格"; ja="下のペインにフォーカス"; ar="التركيز على الجزء الأسفل" }
+        let splitFocusDown = { caption={ en="Focus the pane below"; zh="焦点切到下边的窗格"; ja="下のペインにフォーカス"; ar="التركيز على الجزء الأسفل" }
                                description=none
                                keywords=splitWords }
         let switchTabsByNumber = { caption={ en="Switch tabs by number"; zh="按数字切换标签"; ja="番号でタブを切り替え"; ar="التبديل بين علامات التبويب باستخدام الأرقام" }
@@ -297,11 +296,11 @@ module Strings =
         let leaderKeys = { caption={en="Selection keys";zh="选择键";ja="選択キー";ar="مفاتيح الاختيار"}; description={en="Use unique letters or digits, in tab order.";zh="按标签顺序，使用不重复的字母或数字。";ja="タブ順に、重複しない英字または数字を指定します。";ar="استخدم أحرفًا أو أرقامًا غير مكررة حسب ترتيب علامات التبويب."}; keywords={en="leader keys letters home row";zh="引导键 字母 主键区";ja="リーダーキー 英字 ホームポジション";ar="مفتاح تمهيدي أحرف الصف الأوسط"} }
         let leaderKeyPresets = [| {en="123456789";zh="123456789";ja="123456789";ar="123456789"}; {en="QWERTYUIOP";zh="QWERTYUIOP";ja="QWERTYUIOP";ar="QWERTYUIOP"}; {en="ASDFGHJKL;";zh="ASDFGHJKL;";ja="ASDFGHJKL;";ar="ASDFGHJKL;"} |]
         let invalidLeaderKeys = {en="Use at least one unique letter, digit or unshifted punctuation key.";zh="请使用至少一个不重复的字母、数字或无需 Shift 的标点键。";ja="重複しない英字、数字、Shift 不要の記号を 1 つ以上指定してください。";ar="استخدم حرفًا أو رقمًا أو علامة ترقيم واحدة على الأقل، غير مكررة ولا تحتاج إلى Shift."}
-        let numberLeader = { caption={ en="Tab selection leader"; zh="标签选择引导键"; ja="タブ選択のリーダーキー"; ar="المفتاح التمهيدي لاختيار علامة التبويب" }; description=none; keywords=none }
+        let numberLeader = { caption={ en="Leader key"; zh="引导键"; ja="リーダーキー"; ar="المفتاح التمهيدي" }; description=none; keywords=none }
         let tabColors = { en="Color"; zh="颜色"; ja="色"; ar="اللون" }
         let customTabColor = { en="Custom…"; zh="自定义…"; ja="カスタム…"; ar="مخصص…" }
         let clearTabColor = { en="Clear color"; zh="清除颜色"; ja="色を解除"; ar="مسح اللون" }
-        let rememberTabColor = { en="Remember color for current app"; zh="为当前应用记住颜色"; ja="現在のアプリの色を記憶"; ar="تذكّر اللون للتطبيق الحالي" }
+        let rememberTabColor = { en="Remember color for this app"; zh="为此应用记住颜色"; ja="このアプリの色を記憶"; ar="تذكّر اللون لهذا التطبيق" }
         let tabColorNames = [|
             { en="Grey";zh="灰色";ja="グレー";ar="رمادي" }; { en="Blue";zh="蓝色";ja="青";ar="أزرق" }
             { en="Red";zh="红色";ja="赤";ar="أحمر" }; { en="Yellow";zh="黄色";ja="黄";ar="أصفر" }
@@ -567,15 +566,15 @@ module Strings =
     /// Commands run by name, from the palette or the command line, that no setting names already.
     module Commands =
         let private splitWords = { en="split view pane"; zh="分屏 窗格"; ja="分割 ペイン"; ar="عرض مقسّم جزء" }
-        let splitSwap = { caption={ en="Swap panes"; zh="交换两侧"; ja="ペインを入れ替え"; ar="تبديل الأجزاء" }
+        let splitSwap = { caption={ en="Swap panes"; zh="交换窗格"; ja="ペインを入れ替え"; ar="تبديل الأجزاء" }
                           description={ en="The two halves of the focused pane's split change places."
-                                        zh="当前格所在分屏的两侧互换位置。"
+                                        zh="当前窗格所在分屏的两个窗格互换位置。"
                                         ja="フォーカスしているペインの分割の両側を入れ替えます。"
                                         ar="يتبادل نصفا التقسيم الذي يحتوي على الجزء المركّز مكانيهما." }
                           keywords=splitWords }
-        let splitEqualize = { caption={ en="Equal panes"; zh="恢复均分"; ja="均等に分割"; ar="أجزاء متساوية" }
+        let splitEqualize = { caption={ en="Equal panes"; zh="均分窗格"; ja="均等に分割"; ar="أجزاء متساوية" }
                               description={ en="Gives both halves of the focused pane's split the same room."
-                                            zh="让当前格所在分屏的两侧占同样的空间。"
+                                            zh="让当前窗格所在分屏的两个窗格占同样的空间。"
                                             ja="フォーカスしているペインの分割の両側を同じ広さにします。"
                                             ar="يمنح نصفي التقسيم الذي يحتوي على الجزء المركّز المساحة نفسها." }
                               keywords=splitWords }
@@ -585,18 +584,18 @@ module Strings =
                                         ja="左右を上下に、またその逆に切り替えます。"
                                         ar="يتحول العرض جنبًا إلى جنب إلى أعلى وأسفل، والعكس." }
                           keywords=splitWords }
-        let splitClosePane = { caption={ en="Close the pane"; zh="关闭当前格"; ja="ペインを閉じる"; ar="إغلاق الجزء" }
+        let splitClosePane = { caption={ en="Close the pane"; zh="关闭当前窗格"; ja="ペインを閉じる"; ar="إغلاق الجزء" }
                                description={ en="The focused pane leaves the split and its neighbour takes its room; the window stays a tab."
-                                             zh="当前格退出分屏，空间让给相邻的格；窗口仍保留为标签。"
+                                             zh="当前窗格退出分屏，空间让给相邻的窗格；窗口仍保留为标签。"
                                              ja="フォーカスしているペインを分割から外し、隣のペインがその場所を使います。ウィンドウはタブとして残ります。"
                                              ar="يغادر الجزء المركّز التقسيم ويأخذ جاره مكانه؛ وتبقى النافذة علامة تبويب." }
                                keywords=splitWords }
         let splitEnd = { caption={ en="End split view"; zh="结束分屏"; ja="分割表示を終了"; ar="إنهاء العرض المقسّم" }
                          description={ en="Every window becomes a tab again."; zh="所有窗口恢复为标签。"; ja="すべてのウィンドウをタブに戻します。"; ar="تعود كل نافذة إلى علامة تبويب." }
                          keywords=splitWords }
-        let splitFocusOther = { caption={ en="Focus the next pane"; zh="焦点切到下一个格"; ja="次のペインにフォーカス"; ar="التركيز على الجزء التالي" }
+        let splitFocusOther = { caption={ en="Focus the next pane"; zh="焦点切到下一个窗格"; ja="次のペインにフォーカス"; ar="التركيز على الجزء التالي" }
                                 description={ en="Around the panes in turn; brings parked panes back."
-                                              zh="按顺序在各格之间轮换；已收起的格会重新显示。"
+                                              zh="按顺序在各窗格之间轮换；已收起的窗格会重新显示。"
                                               ja="ペインを順に巡ります。しまわれたペインは元に戻します。"
                                               ar="يتنقل بين الأجزاء بالتناوب، ويعيد الأجزاء المخفية." }
                                 keywords=splitWords }
@@ -807,7 +806,7 @@ module Strings =
                      ja="使い方\n1  ウィンドウをグループ化して配置し、「配置を保存」をクリックします。\n2  ワークスペースを選び、「選択したものを復元」をクリックします。\n3  項目をダブルクリックするか、項目にポインターを合わせて編集ボタンをクリックすると、名前やタイトルの一致方法を変更できます。\n保存後にタイトルが変わったウィンドウも、アプリで照合されます。\n復元は開いているウィンドウを使います。アプリが起動していない場合は、結果から起動できます。"
                      ar="طريقة الاستخدام\n١  جمّع النوافذ واضبط مواضعها، ثم انقر «حفظ التخطيط».\n٢  حدد مساحة عمل وانقر «استعادة المحدد».\n٣  لتغيير اسم عنصر أو طريقة مطابقة عنوان نافذة، انقر عليه مرتين أو أشر إليه ثم انقر زر التحرير.\nتظل النافذة التي تغير عنوانها منذ الحفظ مطابقةً باستخدام التطبيق الخاص بها.\nتستخدم الاستعادة النوافذ المفتوحة. إذا لم يكن التطبيق قيد التشغيل، فستتيح لك النتيجة تشغيله." }
         /// Saving makes a new workspace of the windows as they are; restoring acts on the selected one.
-        let saveCurrent = { en="Save layout"; zh="保存布局"; ja="配置を保存"; ar="حفظ التخطيط" }
+        let saveCurrent = { en="Save workspace"; zh="保存工作区"; ja="ワークスペースを保存"; ar="حفظ مساحة العمل" }
         let restoreSelected = { en="Restore selected"; zh="恢复所选"; ja="選択したものを復元"; ar="استعادة المحدد" }
         let editTitle name = { en=sprintf "Edit %s" name; zh=sprintf "编辑 %s" name; ja=sprintf "%s を編集" name; ar=sprintf "تحرير %s" name }
         let matchMethod = { en="Match method"; zh="匹配方式"; ja="一致方法"; ar="طريقة المطابقة" }
