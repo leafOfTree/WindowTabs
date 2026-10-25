@@ -57,6 +57,8 @@ type TreeListItem(text:string) =
     member val Switch : bool option = None with get,set
     /// A note just after the name, in the muted colour, such as the row's shortcut.
     member val Suffix = "" with get,set
+    /// Runs of the suffix to light up as the name's are, (start,length).
+    member val SuffixHighlights : (int * int) list = [] with get,set
     /// A down arrow after the last column's text, for a value picked from a list, as drop-downs show.
     member val Dropdown = false with get,set
     /// The last column's text in a smaller type, as the suffix is: a note, not a value.
@@ -828,7 +830,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                             // On the chosen row in the name's own colour, as the value at its right
                             // end is: the muted grey sank into the highlight. Smaller, it still leads less.
                             let muted = if isSelected then text else p.muted
-                            TextRenderer.DrawText(g,item.Suffix,suffixFont,Rectangle(left,nameBounds.Y,max 1 (nameBounds.Right-left),nameBounds.Height),muted,flags)
+                            this.drawMarked(g,item.Suffix,item.SuffixHighlights,Rectangle(left,nameBounds.Y,max 1 (nameBounds.Right-left),nameBounds.Height),flags,suffixFont,muted,p)
                         // Chips: a shade of the text over the row, so they show on any highlight.
                         let chipFill = if SystemInformation.HighContrast then SystemColors.Window else Color.FromArgb(26,p.text)
                         for chipIndex,box,closeBox in laid do

@@ -47,7 +47,9 @@ module TabSearch =
     /// the middle of an unrelated one.
     let looseMatch (query:string) (text:string) : int list option =
         let typed = String(query.ToLowerInvariant() |> Seq.filter Char.IsLetterOrDigit |> Array.ofSeq)
-        if typed.Length<2 then None
+        // Punctuation typed, as in a key such as "ctrl+]", is meant as it is: left out, every key
+        // with Ctrl matched "ctrl".
+        if typed.Length<2 || query |> Seq.exists(fun c -> not (Char.IsLetterOrDigit c || Char.IsWhiteSpace c)) then None
         else
             let lower = text.ToLowerInvariant()
             // Each letter or digit, where it stands and whether a word starts there.
@@ -644,7 +646,9 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             item.SmallValue <- aside.small
             // A colour setting's value: its dot before its code at the right, as the settings pages show it.
             item.ValueSwatch <- aside.swatch
-            item.Highlights <- [| TabSearch.highlights input.Text entry.title; TabSearch.highlights input.Text item.Values.[1] |])
+            item.Highlights <- [| TabSearch.highlights input.Text entry.title; TabSearch.highlights input.Text item.Values.[1] |]
+            // A key typed lights up in the shortcut beside the name, as a word does in the name.
+            item.SuffixHighlights <- TabSearch.highlights input.Text aside.shortcut)
         list.Roots.Clear()
         list.Roots.AddRange(Array.map fst shown)
         list.Rebuild()

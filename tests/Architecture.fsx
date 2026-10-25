@@ -947,6 +947,10 @@ let main() =
           "A name run together was found from the middle of a word"
     check (TabSearch.highlights "movedown" "Move down the list" = [0,4;5,4]) "Letters run together were not lit up where they are"
     check (TabSearch.highlights "md" "Move down the list" = [0,1;5,1]) "Initials were not lit up"
+    // A key typed with its punctuation is meant as it is: Ctrl+U is not found for Ctrl+].
+    let theme = TabSearch.create (IntPtr 10) "Theme" "Ctrl+U" ""
+    check (TabSearch.matches "ctrl+u" theme && not (TabSearch.matches "ctrl+]" theme)) "A key with punctuation was matched by its letters alone"
+    check (TabSearch.highlights "ctrl+]" "Ctrl+]" = [0,6]) "A key typed did not light up in the shortcut"
     let downTitled = TabSearch.create (IntPtr 9) "Download movedown.zip" "" ""
     check (TabSearch.shown "movedown" [1,moveDown;2,downTitled] |> List.map fst = [2;1]) "A row found without spaces came before one with the word itself"
     // Choosing: word-start quality, earlier positions, then recency.
