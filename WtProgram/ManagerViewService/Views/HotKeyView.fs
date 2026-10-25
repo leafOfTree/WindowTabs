@@ -57,8 +57,8 @@ type HotKeyView() =
         else
             editor.Name <- command.id
             SettingsUi.row card (tr command.text.caption) (tr command.text.description) editor
-    /// The window search and the palette, the way in to everything else, on a card of their own.
-    let entryKeys = ["searchTabs";"commandPalette"]
+    /// The palette and the window search, the way in to everything else, on a card of their own.
+    let entryKeys = ["commandPalette";"searchTabs"]
     let rows card category (skip:string list) =
         for (key,editor),(_,command) in List.zip editors actions do
             if command.category=category && not (List.contains key skip) then row card command editor
