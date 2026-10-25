@@ -353,6 +353,10 @@ type DragAction(info:DragActionInfo) =
         timer.Tick.Add <| fun _ -> if this.captureWindow.hasCapture.not then this.cancel()
         timer.Start()
         this.dragDetect()
+        // A quick click can be released while the tab is still being activated. Its button-up then
+        // never reaches the capture, which held on and took the next click as the drop.
+        let primary = if SystemInformation.MouseButtonsSwapped then VirtualKeyCodes.VK_RBUTTON else VirtualKeyCodes.VK_LBUTTON
+        if WinUserApi.GetAsyncKeyState(primary)>=0s then this.cancel()
 
 type DragDropController(parent:IDragDropParent) =
     let lockObj = obj()
