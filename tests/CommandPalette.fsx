@@ -638,6 +638,17 @@ let main() =
         palette.Show()
         pump 100
         note (palette.Scope=ActionScope) "The palette did not open on the actions"
+        // Its rows keep the colours it opened with, as the rest of it does: a theme tried from its
+        // choices painted the rows in the new theme over the old background.
+        let rec trees (control:Control) : SettingsTreeList list =
+            (match control with :? SettingsTreeList as tree -> [tree] | _ -> []) @ (control.Controls |> Seq.cast<Control> |> Seq.collect trees |> List.ofSeq)
+        let opened = SettingsColors.current()
+        let paletteTrees =
+            Application.OpenForms |> Seq.cast<Form>
+            |> Seq.filter(fun form -> form.Controls |> Seq.cast<Control> |> Seq.exists(fun control -> control :? SettingsSearchBox))
+            |> Seq.collect trees |> List.ofSeq
+        note (not paletteTrees.IsEmpty && paletteTrees |> List.forall(fun tree -> tree.FixedColors=Some opened))
+             "The palette's rows follow the theme while it is open"
         // One page: no scopes to go round, so no line for them until a command leaves a choice.
         note (not palette.ScopeLineShown) "The palette's one page shows a line of scopes"
         note palette.SearchBoxUnderlined "The palette's search box is outlined rather than underlined"

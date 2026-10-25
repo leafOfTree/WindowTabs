@@ -152,6 +152,10 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member val ChipAddTip = "" with get,set
     /// Hover and selection at half strength, so chips stay apart from a highlighted row.
     member val SoftHighlight = false with get,set
+    /// Colours kept whatever the theme becomes, for a box that keeps the look it opened with, as
+    /// the palette does while a theme is tried on the rest; None follows the theme.
+    member val FixedColors : SettingsPalette option = None with get,set
+    member private this.colors() = match this.FixedColors with Some p -> p | None -> SettingsColors.current()
     /// Said in the muted colour while the list has no rows: what would be listed, and how.
     member val EmptyText = "" with get,set
     member val IconSize = 16 with get,set
@@ -268,7 +272,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     /// A text field keeps its field colour so it stands out from a selected row, as buttons do;
     /// other editors take the row's colour behind their own controls.
     member private this.colorEditor(item:TreeListItem,editor:Control) =
-        let p = SettingsColors.current()
+        let p = this.colors()
         let row = if Object.ReferenceEquals(item,selected) then this.highlight(true,p) else p.surface
         match editor with
         | :? SettingsInputFrame as field -> field.PlaceOn row
@@ -747,7 +751,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             if handled then e.Handled <- true
 
     override this.OnPaint(e) =
-        let p = SettingsColors.current()
+        let p = this.colors()
         rowEditor |> Option.iter(fun (item,editor,_) -> this.colorEditor(item,editor))
         let g = e.Graphics
         g.Clear(this.BackColor)

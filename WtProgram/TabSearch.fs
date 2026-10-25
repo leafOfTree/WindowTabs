@@ -421,7 +421,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         { new Panel(Dock=DockStyle.Top,Height=scopeHeight,BackColor=palette.surface) with
             override this.OnPaint(e) =
                 base.OnPaint(e)
-                let p = SettingsColors.current()
+                let p = palette
                 let g = e.Graphics
                 g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
                 let rounded (bounds:Rectangle) radius =
@@ -464,7 +464,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             override this.OnPaint(e) =
                 base.OnPaint(e)
                 if canAssign() then
-                    let p = SettingsColors.current()
+                    let p = palette
                     let g = e.Graphics
                     g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
                     let label = tr Strings.TabSearch.setShortcut
@@ -483,7 +483,10 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                                     ShowHeader=false,ShowExpanders=false,ExpandOnDoubleClick=false,
                                     RowHeight=rowHeight,IconSize=TabSearchMetrics.iconSize,TabStop=false,KeepScrollRoom=true,
                                     ScrollBarWidth=padding-1,
-                                    BackColor=palette.surface,ForeColor=palette.text)
+                                    BackColor=palette.surface,ForeColor=palette.text,
+                                    // The look it opened with, as the rest of the box keeps: a theme
+                                    // tried from its choices showed rows in the new theme on the old.
+                                    FixedColors=Some palette)
     do rowNameLeft <- fun () -> match Seq.tryHead list.Roots with Some item -> list.NameLeft item | None -> Dpi.scale 10
     do chosenRow <- fun () -> box list.SelectedItem
     let empty = new Label(Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleCenter,Visible=false,
@@ -511,7 +514,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     base.OnPaint(e)
                     e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
                     use outline = SettingsShapes.rounded (SettingsShapes.outlineRect this.ClientSize.Width this.ClientSize.Height) (float32 radius)
-                    use border = new Pen((SettingsColors.current()).border)
+                    use border = new Pen(palette.border)
                     e.Graphics.DrawPath(border,outline) }
         // One size whatever is typed or listed, so the box does not jump about while filtering.
         let longest = scopes |> List.map(fun target -> (rowsOf target).Length) |> List.max
