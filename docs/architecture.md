@@ -372,8 +372,9 @@ live on its thread: the palette asks for them as it opens (`GroupInfo.readShownC
 back, never waited for) and lists its rows again once they are in, the value beside each command.
 The pages are built in `CommandPalette` and given to
 `TabSearchForm` as `PalettePage`s. Alt+Enter on a command records a shortcut for it in a
-`SettingsShortcutInput` over its row, with the Shortcuts page's refusals (a key another command
-or program holds); every listed command can take one, kept under the catalog's key when the
+`SettingsShortcutInput` over its row, as the Shortcuts page does: a key another command, a key of
+the lists or another window has moves to the row pressed for, the box saying where it came from,
+and a key another program holds is refused; every listed command can take one, kept under the catalog's key when the
 catalog names the command and under its id otherwise. The Shortcuts page lists only the
 shortcuts with a key to begin with, the window search's and the palette's first on a card of
 their own; the palette gives every other command its key.

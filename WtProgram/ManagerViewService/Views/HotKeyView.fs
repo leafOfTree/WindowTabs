@@ -5,7 +5,7 @@ type HotKeyView() =
     let panel,table = SettingsUi.page()
     /// The page's own shortcuts: those with a key to begin with, read from the one list of
     /// commands. Every other command, the split view's and the tab menu's among them, is found and
-    /// given a key in the command palette, the one place for them all. A conflict names the other.
+    /// given a key in the command palette, the one place for them all. A key another has moves here.
     let ownShortcut key =
         SettingsCatalog.all |> List.exists(fun item -> match item.binding with Shortcut(k,_) -> k=key && SettingsCatalog.inSettingsWindow item | _ -> false)
     let actions =
@@ -31,25 +31,45 @@ type HotKeyView() =
                 note.Visible <- true
             | _ -> note.Visible <- false)
         editor.Disposed.Add(fun _ -> note.Dispose())
+    /// The page's boxes by key, so one whose key was taken for another shows it has none now.
+    let shown = System.Collections.Generic.Dictionary<string,SettingsShortcutInput>()
     let hotKey key =
         let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=Services.program.getHotKey key)
+        shown.[key] <- editor
         noteBelow editor
         editor.Changed.Add(fun _ ->
             let previous = Services.program.getHotKey key
-            match Commands.holderName Services.program.getHotKey key editor.Shortcut with
-            | Some other -> editor.Reject(previous,tr (Strings.Shortcuts.usedBy other))
-            | None when not (Services.program.setHotKey key editor.Shortcut) ->
+            let code = editor.Shortcut
+            match Commands.holderOf Services.program.getHotKey Services.program.setHotKey Services.settings.setHotKey key code with
+            // Pressed for this one, the key is meant for it: the other gives it up.
+            | Some other ->
+                other.release()
+                if Services.program.setHotKey key code then
+                    match shown.TryGetValue other.key with
+                    | true,box -> box.Shortcut <- 0
+                    | _ -> ()
+                    editor.Notice(tr (Strings.Shortcuts.takenFrom other.name))
+                else
+                    other.restore()
+                    editor.Reject(previous,tr Strings.Shortcuts.inUse)
+            | None when not (Services.program.setHotKey key code) ->
                 editor.Reject(previous,tr Strings.Shortcuts.inUse)
             | None -> ())
         editor
     let editors = actions |> List.map (fun (key,_) -> key,hotKey key)
+    /// Every command's shortcut and the lists' keys go back to their defaults, those given in the
+    /// palette too, which most often means none; keys given to windows in the window search stay.
     let restoreDefaults() =
+        let commandKeys = Commands.all |> List.choose(fun command -> command.shortcut) |> List.distinct
         // Clear first so swapped shortcuts (next <-> previous) do not collide with each other.
-        for key,_ in editors do Services.program.setHotKey key 0 |> ignore
-        for key,editor in editors do
+        for key in commandKeys do Services.program.setHotKey key 0 |> ignore
+        for key in Commands.listKeys do Services.settings.setHotKey key (SettingsCatalog.shortcutDefault key)
+        for key in commandKeys do
             let target = SettingsCatalog.shortcutDefault key
-            if Services.program.setHotKey key target then editor.Shortcut <- target
-            else editor.Reject(0,tr Strings.Shortcuts.inUse)
+            let restored = target=0 || Services.program.setHotKey key target
+            match shown.TryGetValue key with
+            | true,editor -> if restored then editor.Shortcut <- target else editor.Reject(0,tr Strings.Shortcuts.inUse)
+            | _ -> ()
     /// A row for a command: the catalog's row for one the catalog lists, which the search finds;
     /// else one from the command's own text.
     let row (card:TableLayoutPanel) (command:Command) (editor:Control) =
@@ -63,7 +83,7 @@ type HotKeyView() =
         for (key,editor),(_,command) in List.zip editors actions do
             if command.category=category && not (List.contains key skip) then row card command editor
     do
-        let restore = new SettingsResetButton(tr Strings.Shortcuts.restoreDefaults,Name="restore-shortcuts")
+        let restore = new SettingsResetButton(tr Strings.Shortcuts.restoreDefaults,help=tr Strings.Shortcuts.restoreDefaultsHelp,Name="restore-shortcuts")
         SettingsUi.sectionHeading table (tr Strings.Shortcuts.startHere) [restore]
         let entry = new SettingsCard(Name="start-here")
         SettingsUi.add table entry

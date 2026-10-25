@@ -8,6 +8,9 @@ type CommandOutcome =
     | Done
     | Choose of CommandChoice list
     | Stay
+    /// The same choices listed again in their place once one has done its part, as deleting a
+    /// workspace leaves the others to delete; with none left, back to where they came from.
+    | Again of CommandChoice list
     /// A value to type, such as a size.
     | Ask of CommandQuestion
 /// What to type: its kind, which picks the box it is typed in; what is accepted, said beside the
@@ -25,7 +28,10 @@ and QuestionKind =
 /// and what choosing it does. A value that can be tried also says how to show it as the choice
 /// moves onto it, and how to put back what there was if none is chosen.
 and CommandChoice = { label:string; detail:string; swatch:Drawing.Color option; run:unit -> CommandOutcome
-                      preview:(unit -> unit) option; undo:(unit -> unit) option }
+                      preview:(unit -> unit) option; undo:(unit -> unit) option
+                      /// Run with the palette out of the way, as one that may put up a box of its own
+                      /// needs; off for one that lists its choices again, which would flash it.
+                      concealed:bool }
 
 type CommandCategory =
     | TabCommands
@@ -56,6 +62,10 @@ type Command = {
     /// Only lists what to choose from when run, so the palette stays up for it.
     chooses:bool
     run:IntPtr -> CommandOutcome }
+
+/// What has a shortcut key already: its name, its settings key for a command or a key of the
+/// lists, and how to take the key from it, and give it back when the key cannot be taken.
+type ShortcutHolder = { name:string; key:string; release:unit -> unit; restore:unit -> unit }
 
 /// What a setting's row in the palette does, which its own shortcut does too: its values listed
 /// to pick from, a value typed, a colour picked, or its page opened.
@@ -149,7 +159,7 @@ module SettingRows =
             let options = numberKeyOptions()
             Choose [ for index,(label,apply) in List.indexed options ->
                        { label=label; detail=(if index=now then "✓" else ""); swatch=None
-                         run=(fun () -> apply(); Done); preview=Some apply; undo=Some(snd options.[now]) } ]
+                         run=(fun () -> apply(); Done); preview=Some apply; undo=Some(snd options.[now]); concealed=true } ]
         // Its values to pick from, the one it has now ticked.
         | Choice(key,values,_) ->
             let current = Services.settings.getValue key :?> string
@@ -158,7 +168,8 @@ module SettingRows =
                          run=(fun () -> Services.settings.setValue(key,box value); Done)
                          // Shown as the choice moves, but for the language, which builds the app's text again.
                          preview=(if key="language" then None else Some(fun () -> Services.settings.setValue(key,box value)))
-                         undo=(if key="language" then None else Some(fun () -> Services.settings.setValue(key,box current))) } ]
+                         undo=(if key="language" then None else Some(fun () -> Services.settings.setValue(key,box current)))
+                         concealed=true } ]
         | Number _ -> askNumber item
         | Text(key,_) when key="numberLeaderKeys" -> askText item key
         | Colour -> askColor item
@@ -184,7 +195,7 @@ module Commands =
     /// A command that leaves a choice: what it offers for the window, each doing its part.
     let private choosing id text category enabled (options:IntPtr -> CommandChoice list) =
         { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); state=(fun _ -> None); chooses=true; run=fun hwnd -> Choose(options hwnd) }
-    let private choice label detail action = { label=label; detail=detail; swatch=None; run=(fun () -> action(); Done); preview=None; undo=None }
+    let private choice label detail action = { label=label; detail=detail; swatch=None; run=(fun () -> action(); Done); preview=None; undo=None; concealed=true }
     /// The group's side, alignment and auto-hide mode as last read, and reading them again once a
     /// command has changed one, so the palette shows the value now the next time.
     let private shownChoices hwnd =
@@ -220,6 +231,16 @@ module Commands =
     let private hasApp hwnd = hwnd<>IntPtr.Zero && processPath hwnd<>""
     /// A group still at work, not one on its way out.
     let private live (group:IGroup) = match group with :? GroupInfo as info -> not info.isExited && not info.isRetiring | _ -> true
+    /// The windows of the app in front that are in other groups, each with its group.
+    let private appWindowsElsewhere (hwnd:IntPtr) =
+        match groupOf hwnd with
+        | Some current when hasApp hwnd ->
+            let path = processPath hwnd
+            Services.desktop.groups.list
+            |> List.filter(fun group -> not (obj.ReferenceEquals(group,current)) && live group)
+            |> List.collect(fun group ->
+                group.windows.list |> List.filter(fun other -> processPath other=path) |> List.map(fun other -> group,other))
+        | _ -> []
     /// The tab's colour now, picked or given by its app.
     let private currentTabColor hwnd = groupOf hwnd |> Option.bind(fun g -> Services.program.getTabColor(hwnd,g.windows.list))
     /// A colour for the tab, and for its app too while the app remembers one.
@@ -258,6 +279,22 @@ module Commands =
             ws,ws.groups.list |> List.sumBy(fun group -> group.cast<WorkspaceGroup>().windows.count))
     /// Something to restore or delete.
     let private anyWorkspace (_:IntPtr) = not (snd (workspaces())).IsEmpty
+    /// The saved workspaces to delete: each one deleted is said on screen, and the rest stay
+    /// listed, to delete more.
+    let rec private deleteChoices () : CommandChoice list =
+        let model,saved = workspaces()
+        saved |> List.map(fun (ws,count) ->
+            { choice ws.name (tr (Strings.TabSearch.windows count)) ignore with
+                concealed=false
+                run=fun () ->
+                    if model.isReadOnly then
+                        Notice.error (tr Strings.Pages.workspaces) (tr Strings.Workspaces.unsupportedVersion)
+                        Done
+                    else
+                        model.selected <- (ws :> Dynamic)
+                        model.remove()
+                        Notice.show ws.name (tr Strings.Notices.deleted)
+                        Again(deleteChoices()) })
     let private pageId page =
         match page with
         | GeneralSettings -> "general"
@@ -316,6 +353,23 @@ module Commands =
         plain "close-all-tabs" Strings.Commands.closeAllTabs TabCommands hasGroup (onGroup(fun g -> g.run CloseAllTabs))
         plain "detach-tab" Strings.Commands.detachTab TabCommands (fun hwnd -> groupOf hwnd |> Option.exists(fun g -> g.windows.count>1))
               (fun hwnd -> Services.program.detachTab hwnd)
+        // Palette only, not in the tab menu: every tab but the one in front is taken out on its own.
+        plain "ungroup-tabs" Strings.Commands.ungroupTabs GroupCommands (fun hwnd -> groupOf hwnd |> Option.exists(fun g -> g.windows.count>1))
+              (fun hwnd ->
+                  groupOf hwnd |> Option.iter(fun g ->
+                      for other in g.windows.list do
+                          if other<>hwnd then Services.program.detachTab other))
+        // Its opposite, palette only too: every window of the app in front joins this group, from
+        // other groups or on its own, as moving each tab to it does.
+        plain "group-app" Strings.Commands.groupApp GroupCommands (fun hwnd -> not (appWindowsElsewhere hwnd).IsEmpty)
+              (fun hwnd ->
+                  match groupOf hwnd with
+                  | Some(:? GroupInfo as target) when live target ->
+                      for source,other in appWindowsElsewhere hwnd do
+                          match source with
+                          | :? GroupInfo as source when live source -> target.addAfterDetaching(source,other)
+                          | _ -> ()
+                  | _ -> ())
         choosing "move-tab-to-group" Strings.Commands.moveTabToGroup TabCommands hasGroup (fun hwnd ->
             match groupOf hwnd with
             | Some source ->
@@ -377,12 +431,7 @@ module Commands =
         choosing "restore-workspace-named" Strings.Commands.restoreWorkspaceNamed WorkspaceCommands anyWorkspace (fun _ ->
             snd (workspaces()) |> List.map(fun (ws,count) ->
                 choice ws.name (tr (Strings.TabSearch.windows count)) (fun () -> Services.program.restoreWorkspaceNamed ws.name)))
-        choosing "delete-workspace" Strings.Commands.deleteWorkspace WorkspaceCommands anyWorkspace (fun _ ->
-            let model,saved = workspaces()
-            saved |> List.map(fun (ws,count) ->
-                choice ws.name (tr (Strings.TabSearch.windows count)) (fun () ->
-                    model.selected <- (ws :> Dynamic)
-                    model.remove())))
+        choosing "delete-workspace" Strings.Commands.deleteWorkspace WorkspaceCommands anyWorkspace (fun _ -> deleteChoices())
         plain "open-settings" Strings.Commands.openSettings SettingsCommands always (fun _ -> Services.managerView.show())
         // The pages are reached from the palette's settings page; these are for keys and the command line.
         for page in [GeneralSettings;AppearanceSettings;HotKeySettings;ProgramSettings;LayoutSettings;DiagnosticsSettings] do
@@ -411,7 +460,7 @@ module Commands =
     let categoryOf key = byShortcut key |> Option.map(fun command -> command.category)
     /// Where a category's commands are listed, in the palette's order.
     let categories = [TabCommands;GroupCommands;SplitCommands;WorkspaceCommands;SettingsCommands;AppCommands]
-    /// The command, other than the one on `key`, whose shortcut is `code`, to name in a refusal.
+    /// The command, other than the one on `key`, whose shortcut is `code`.
     let holder (getHotKey:string -> int) key code =
         if code=0 then None
         else all |> List.tryFind(fun other -> match other.shortcut with Some k -> k<>key && getHotKey k=code | None -> false)
@@ -420,10 +469,17 @@ module Commands =
     let listKeys = ["listNext";"listPrevious"]
     let private listKeyName key =
         SettingsCatalog.all |> List.tryPick(fun item -> match item.binding with Shortcut(k,_) when k=key -> Some(tr item.text.caption) | _ -> None)
-    /// What has `code` besides `key`, by name: a command, or a key of the lists, which a shortcut
-    /// for the whole desktop would take from them.
-    let holderName (getHotKey:string -> int) key code =
+    /// What has `code` besides `key`: a command, or a key of the lists, which a shortcut for the
+    /// whole desktop would take from them. A key pressed for `key` is meant for it, so the holder
+    /// gives it up: `setHotKey` sets a command's key, `setListKey` a list's.
+    let holderOf (getHotKey:string -> int) (setHotKey:string -> int -> bool) (setListKey:string -> int -> unit) key code =
         match holder getHotKey key code with
-        | Some command -> Some(tr command.text.caption)
+        | Some command ->
+            let other = command.shortcut.Value
+            Some { name=tr command.text.caption; key=other
+                   release=(fun () -> setHotKey other 0 |> ignore); restore=(fun () -> setHotKey other code |> ignore) }
         | None when code=0 -> None
-        | None -> listKeys |> List.tryFind(fun k -> k<>key && getHotKey k=code) |> Option.bind listKeyName
+        | None ->
+            listKeys |> List.tryFind(fun k -> k<>key && getHotKey k=code) |> Option.bind(fun other ->
+                listKeyName other |> Option.map(fun name ->
+                    { name=name; key=other; release=(fun () -> setListKey other 0); restore=(fun () -> setListKey other code) }))

@@ -9,13 +9,16 @@ module CommandPalette =
     let private words (texts:LocalizedText list) (extra:string list) =
         (texts |> List.collect Localization.all) @ extra |> List.filter((<>) "") |> List.distinct |> List.map(fun text -> text.ToLowerInvariant())
     let private row index title texts extra group =
-        { hwnd=IntPtr(index+1); title=title; program=""; keywords=words texts extra; group=group; recency=index; desktop="" }
-    /// Setting a command's shortcut from its row, with the same refusals as the Shortcuts page.
+        { hwnd=IntPtr(index+1); title=title; program=""; keywords=words texts extra; keys=[]; group=group; recency=index; desktop="" }
+    /// What has a key besides `key`, which gives it up as the Shortcuts page's boxes do.
+    let holderOf key code = Commands.holderOf Services.program.getHotKey Services.program.setHotKey Services.settings.setHotKey key code
+    /// Setting a command's shortcut from its row, as the Shortcuts page does.
     let assignment (command:Command) =
         command.shortcut |> Option.map(fun key ->
             { current=Services.program.getHotKey key
-              usedBy=fun code -> Commands.holderName Services.program.getHotKey key code
-              set=fun code -> Services.program.setHotKey key code })
+              usedBy=holderOf key
+              set=fun code -> Services.program.setHotKey key code
+              inList=false })
     /// A key of the lists, kept in the settings as the box reads it.
     let private listKey key = Services.settings.hotKey key |> Option.defaultValue (SettingsCatalog.shortcutDefault key)
     let private shortcutText (command:Command) =
@@ -100,6 +103,12 @@ module CommandPalette =
                     | _ -> ""
                 | _ -> ""
             with _ -> ""
+        // Its key, so a key typed finds what has it, as "ctrl+alt+t" finds Switch windows.
+        let keyText action =
+            match action with
+            | ACommand command | ASwitch(_,_,command) -> shortcutText command
+            | ASetting { binding=Shortcut(key,_) } -> SettingsShortcut.text (listKey key)
+            | AChoice(item,_,_) | ASetting item | ANumberKeys item -> settingKey item
         let extra action =
             (match action with ACommand command -> [command.id] | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item | ANumberKeys item -> [SettingsCatalog.storageKey item])
             @ [shownValue action]
@@ -108,9 +117,10 @@ module CommandPalette =
           entries=listed |> Array.mapi(fun index action ->
                       let text = text action
                       let recency = rank action
+                      let key = (keyText action).ToLowerInvariant()
                       { row index (tr text.caption) [text.caption;text.keywords;text.description] (extra action)
                             (if recency<recentLimit then -1 else group action)
-                        with recency=recency*listed.Length+index })
+                        with recency=recency*listed.Length+index; keys=(if key="" then [] else [key]) })
                   |> Array.sortBy(fun entry -> entry.recency) |> List.ofArray
           choose=(fun chosen ->
               remember (recentKey (action chosen))
@@ -144,7 +154,7 @@ module CommandPalette =
                   | _,"settings-location" -> guarded SettingsFile.showInFolder; Done
                   | _,"settings-backup" ->
                       Choose [ for caption,action in [Strings.General.export,SettingsFile.export;Strings.General.import,SettingsFile.import] ->
-                                 { label=tr caption; detail=""; swatch=None; run=(fun () -> guarded (fun () -> action null); Done); preview=None; undo=None } ]
+                                 { label=tr caption; detail=""; swatch=None; run=(fun () -> guarded (fun () -> action null); Done); preview=None; undo=None; concealed=true } ]
                   | _,"settings-reset" -> guarded (fun () -> SettingsFile.reset null); Done
                   | _ -> fresh (SettingRows.run item))
           // A key set here is shown from then on: the row's right end, kept, is worked out again.
@@ -153,16 +163,18 @@ module CommandPalette =
               // A setting's row by the command that opens it, as a switch's is the one that turns it.
               | ACommand command | ASwitch(_,_,command)
               | (AChoice(SettingCommand command,_,_) | ASetting(SettingCommand command) | ANumberKeys(SettingCommand command)) ->
+                  // Taken, the key may have come from another row, which shows it no longer.
                   assignment command |> Option.map(fun given ->
                       { given with set=fun code ->
                                        let taken = given.set code
-                                       if taken then asides.Remove chosen.hwnd |> ignore
+                                       if taken then asides.Clear()
                                        taken })
               // A key of the lists: kept in the settings, never for the whole desktop.
               | ASetting { binding=Shortcut(key,_) } ->
                   Some { current=listKey key
-                         usedBy=fun code -> Commands.holderName Services.program.getHotKey key code
-                         set=fun code -> Services.settings.setHotKey key code; asides.Remove chosen.hwnd |> ignore; true }
+                         usedBy=holderOf key
+                         set=fun code -> Services.settings.setHotKey key code; asides.Clear(); true
+                         inList=true }
               | AChoice _ | ASetting _ | ANumberKeys _ -> None)
           dimmed=(fun chosen -> match action chosen with ACommand command -> not (command.enabled active) | _ -> false)
           assignOnEnter=(fun chosen -> match action chosen with ASetting { binding=Shortcut _ } -> true | _ -> false)

@@ -302,6 +302,25 @@ let main() =
         check (onGroup(fun group -> group.ts.dock)=TabDockTop) "A group command did not move the tabs back to the top"
         check (Commands.find "rename-tab" |> Option.exists(fun command -> command.category=TabCommands && command.shortcut=Some "rename-tab")) "The tab menu's rename must be a command"
         check (Commands.find "group-tab-position" |> Option.exists(fun command -> match command.run IntPtr.Zero with Choose options -> options.Length=3 | Done -> false)) "Tab position must offer its three places"
+        // One name for each of an app's options, in the tab menu, the palette and the settings.
+        for (menu:LocalizedText),(others:LocalizedText list) in
+                [ Strings.TabMenu.enableTabs,[Strings.Commands.tabsForApp.caption;Strings.Settings.enableTabsByDefault.caption]
+                  Strings.TabMenu.numberShortcut,[Strings.Commands.numberShortcutForApp.caption;Strings.Settings.switchTabsByNumber.caption] ] do
+            for other in others do
+                check (other.en.Contains menu.en && other.zh.Contains menu.zh) (sprintf "%s is named another way as %s" menu.en other.en)
+        let named (text:LocalizedText) (en:string) (zh:string) =
+            text.en.IndexOf(en,StringComparison.OrdinalIgnoreCase)>=0 && text.zh.Contains zh
+        check (Strings.Workspaces.saveCurrent=Strings.Settings.saveWorkspace.caption) "The workspaces page saves a workspace under another name"
+        check (named (Strings.TabMenu.closeAllOf "App") "tabs" "标签" && named Strings.Commands.closeAppTabs.caption "tabs" "标签") "Closing an app's tabs is named after windows somewhere"
+        check (named Strings.Settings.rememberTabColor "this app" "此应用" && named Strings.Commands.rememberTabColor.caption "this app" "此应用") "Remembering a colour names the app another way"
+        check (named Strings.Settings.enableNumberLeader.caption Strings.Settings.numberLeader.caption.en Strings.Settings.numberLeader.caption.zh) "The leader key is named another way by its shortcut"
+        for pane in [Strings.Commands.splitSwap.caption;Strings.Commands.splitEqualize.caption;Strings.Commands.splitClosePane.caption;Strings.Commands.splitFocusOther.caption
+                     Strings.Settings.splitFocusLeft.caption;Strings.Settings.splitFocusRight.caption;Strings.Settings.splitFocusUp.caption;Strings.Settings.splitFocusDown.caption] do
+            check (named pane "pane" "窗格") (sprintf "%s does not call a pane 窗格: %s" pane.en pane.zh)
+        // The palette's Ungroup this group is the app rules page's Ungroup, said of this group.
+        let ungroupThis,ungroup = Strings.Commands.ungroupTabs.caption,Strings.AppRules.ungroup
+        check (ungroupThis.en.StartsWith ungroup.en && ungroupThis.zh.Replace("此","")=ungroup.zh && ungroupThis.ja.Contains ungroup.ja)
+              "Ungroup is named another way in the palette"
 
         let numeric = NumericTabHotKeyPlugin()
         // The OS can already focus B while the delayed foreground event still
@@ -913,6 +932,34 @@ let main() =
     check (TabSearch.highlights "window on" "Window on the right" = [0,9]) "A phrase typed with a space was not lit up whole"
     check (TabSearch.highlights "on  the" "On the on" = [0,6;7,2]) "A phrase's terms were not also lit up on their own"
     check (TabSearch.highlights "" "Foo" = [] && TabSearch.highlights "zz" "Foo" = []) "Text was highlighted without a match"
+    // Ctrl+Backspace takes the word before the caret, spaces after it too, or the selection.
+    check (TabSearch.deleteWordBefore "move down " 10 0=("move ",5) && TabSearch.deleteWordBefore "move down" 9 0=("move ",5)
+           && TabSearch.deleteWordBefore "move down" 4 0=(" down",0) && TabSearch.deleteWordBefore "move" 0 0=("move",0)
+           && TabSearch.deleteWordBefore "move down" 2 3=("modown",2)) "Ctrl+Backspace did not take the word before the caret"
+    // Typed without its spaces, or as the first letters of the words, a name is still found, and
+    // after every row that has the words; the letters taken light up.
+    let moveDown = TabSearch.create (IntPtr 7) "Move down the list" "" ""
+    // "Remove download" holds "movedown" run together, but from the middle of "Remove".
+    let removed = TabSearch.create (IntPtr 8) "Remove download" "" ""
+    check (TabSearch.matches "movedown" moveDown && TabSearch.matches "MoveDown" moveDown && TabSearch.matches "mdtl" moveDown)
+          "A name typed without spaces or as initials was not found"
+    check (not (TabSearch.matches "ovedown" moveDown) && not (TabSearch.matches "movedown" removed))
+          "A name run together was found from the middle of a word"
+    check (TabSearch.highlights "movedown" "Move down the list" = [0,4;5,4]) "Letters run together were not lit up where they are"
+    check (TabSearch.highlights "md" "Move down the list" = [0,1;5,1]) "Initials were not lit up"
+    // A row's key is looked at only when what is typed starts as a key does: "al" for Align tabs
+    // does not list every key with Alt.
+    let switchWindows = { TabSearch.create (IntPtr 11) "Switch windows" "" "" with keys=["alt+space"] }
+    check (TabSearch.matches "alt+space" switchWindows && TabSearch.matches "Alt space" switchWindows && not (TabSearch.matches "al" switchWindows)
+           && not (TabSearch.matches "space" switchWindows)) "A row's key was matched by a search that does not start as a key"
+    check (TabSearch.looksLikeKey "ctrl+" && TabSearch.looksLikeKey " Shift" && TabSearch.looksLikeKey "f5" && TabSearch.looksLikeKey "win+e"
+           && not (TabSearch.looksLikeKey "font") && not (TabSearch.looksLikeKey "al") && not (TabSearch.looksLikeKey "f")) "A search was taken for a key, or a key not"
+    // A key typed with its punctuation is meant as it is: Ctrl+U is not found for Ctrl+].
+    let theme = TabSearch.create (IntPtr 10) "Theme" "Ctrl+U" ""
+    check (TabSearch.matches "ctrl+u" theme && not (TabSearch.matches "ctrl+]" theme)) "A key with punctuation was matched by its letters alone"
+    check (TabSearch.highlights "ctrl+]" "Ctrl+]" = [0,6]) "A key typed did not light up in the shortcut"
+    let downTitled = TabSearch.create (IntPtr 9) "Download movedown.zip" "" ""
+    check (TabSearch.shown "movedown" [1,moveDown;2,downTitled] |> List.map fst = [2;1]) "A row found without spaces came before one with the word itself"
     // Choosing: word-start quality, earlier positions, then recency.
     check (TabSearch.quality "set" "windowtabs settings" = 2) "A match at a word start was not ranked best"
     check (TabSearch.quality "tabs" "windowtabs settings" = 1) "A match inside a word did not count"
@@ -1006,7 +1053,7 @@ let main() =
     check picked.IsClosed "Accepting a match did not close the tab search"
     // The palette: pages beside the windows, > for the commands, and a command's choices in place.
     let mutable ran = []
-    let option name = { label=name; detail=""; swatch=None; run=(fun () -> ran <- name::ran; Done); preview=None; undo=None }
+    let option name = { label=name; detail=""; swatch=None; run=(fun () -> ran <- name::ran; Done); preview=None; undo=None; concealed=true }
     let commandsPage =
         { scope=ActionScope; caption="Actions"; prompt="cmd"; noMatches="none"; noEntries="empty"; glyph=NoGlyph
           entries=[ { TabSearch.create (IntPtr 1) "Close tab" "Close tab" "Ctrl+Alt+W" with recency=0 }
@@ -1053,6 +1100,36 @@ let main() =
     switched.Accept()
     check (lamp && not switched.IsClosed && switched.Depth=0) "Turning a setting in place closed the palette"
     switched.Close()
+    pump 100
+    // Deleting one of a command's choices, as a saved workspace, lists the rest in its place to
+    // delete more; the last gone, back to the commands, the palette still up.
+    // Each said in a notice, which must not take the palette's place in front and so close it.
+    let mutable saved = ["One";"Two";"Three"]
+    let deletedNotice = new NoticeWindow()
+    let rec deleting () =
+        [ for name in saved ->
+            { option name with
+                concealed=false
+                run=fun () ->
+                    saved <- List.filter ((<>) name) saved
+                    deletedNotice.show(name,"Deleted",Info)
+                    Again(deleting()) } ]
+    let deleter = TabSearchForm([mail;notes],[],pages=[{ commandsPage with choose=fun _ -> Choose(deleting()) }],scope=ActionScope)
+    deleter.Show()
+    pump 200
+    deleter.Accept()
+    pump 100
+    deleter.Accept()
+    pump 600
+    check (not deleter.IsClosed && deleter.Depth=1 && (deleter.Results |> List.map(fun entry -> entry.title))=["Two";"Three"])
+          "Deleting a choice closed the palette or left it listed"
+    deleter.Accept()
+    pump 600
+    deleter.Accept()
+    pump 600
+    check (saved.IsEmpty && not deleter.IsClosed && deleter.Depth=0) "Deleting the last choice did not go back to the commands"
+    deleter.Close()
+    deletedNotice.Dispose()
     pump 100
     let chooser = TabSearchForm([mail;notes],[],pages=[commandsPage],scope=ActionScope)
     check (chooser.Scope=ActionScope) "The palette did not open on the scope asked for"
@@ -1191,9 +1268,11 @@ let main() =
         check (CommandPipe.send pipe [||] 3000=Some(Result.Error "nothing")) "The pipe did not carry a refusal"
         check (CommandPipe.send pipe [|"again"|] 3000=Some(Result.Ok "again")) "The pipe did not take a second command line"
     check (CommandPipe.send (pipe+".gone") [|"x"|] 200).IsNone "Sending to no listener did not say so"
-    // Alt+Enter sets the chosen command's shortcut in place, refusing a key another holds.
+    // Alt+Enter sets the chosen command's shortcut in place, taking a key another command holds.
     let mutable assigned = 0
-    let bindable = { commandsPage with shortcut=fun entry -> if entry.hwnd=IntPtr 1 then Some { current=1623; usedBy=(fun code -> if code=3623 then Some "Next tab" else None); set=(fun code -> assigned <- code; code<>1616) } else None }
+    let mutable released = false
+    let nextTabHolder = { name="Next tab"; key="nextTab"; release=(fun () -> released <- true); restore=(fun () -> released <- false) }
+    let bindable = { commandsPage with shortcut=fun entry -> if entry.hwnd=IntPtr 1 then Some { current=1623; usedBy=(fun code -> if code=3623 then Some nextTabHolder else None); set=(fun code -> assigned <- code; code<>1616); inList=false } else None }
     let recorder = TabSearchForm([mail;notes],[],pages=[bindable],scope=ActionScope)
     recorder.Query <- "close"
     recorder.BeginAssign()
@@ -1207,9 +1286,6 @@ let main() =
     // A refusal is said on a line under the box, which listens again for another key at once.
     let noteUnder (text:string) =
         editor.Parent.Controls |> Seq.cast<Control> |> Seq.exists(fun control -> control :? Label && control.Text=text && control.Top>=editor.Bottom)
-    press editor (Keys.Control ||| Keys.Alt ||| Keys.Right)
-    check (recorder.ShortcutEditor.IsSome && editor.Shortcut=1623 && editor.IsRecording && assigned=0 && noteUnder (tr (Strings.Shortcuts.keySays (SettingsShortcut.text (SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.Right))) (tr (Strings.Shortcuts.usedBy "Next tab")))))
-          "A key another command holds was not refused by name under the box"
     press editor (Keys.Control ||| Keys.Alt ||| Keys.P)
     check (recorder.ShortcutEditor.IsSome && editor.Shortcut=1623 && editor.IsRecording && noteUnder (tr (Strings.Shortcuts.keySays (SettingsShortcut.text (SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.P))) (tr Strings.Shortcuts.inUse)))) "A key another program holds was not refused under the box"
     press editor (Keys.Control ||| Keys.Alt ||| Keys.K)
@@ -1222,6 +1298,19 @@ let main() =
     check (recorder.ShortcutEditor.IsNone && boxClock.ElapsedMilliseconds>=400L) (sprintf "A taken key's box went after %d ms" boxClock.ElapsedMilliseconds)
     // The key shows beside the name, where shortcuts are, not cut short at the right end.
     check (recorder.RowNotes |> List.exists(fun (suffix,right) -> suffix="Ctrl+Alt+K" && right<>"Ctrl+Alt+K")) "A key set in the palette was not shown beside the name"
+    // A key another command holds moves to this one: that command gives it up, and the box says
+    // where it came from, staying up long enough to read it.
+    recorder.BeginAssign()
+    let taking = recorder.ShortcutEditor.Value
+    let nextTabKey = SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.Right)
+    press taking (Keys.Control ||| Keys.Alt ||| Keys.Right)
+    check (released && assigned=nextTabKey && taking.Message=Some(tr (Strings.Shortcuts.takenFrom "Next tab")) && not taking.MessageIsError)
+          (sprintf "A key another command holds was not taken over: released %b, assigned %d, said %A" released assigned taking.Message)
+    let takenClock = Diagnostics.Stopwatch.StartNew()
+    while recorder.ShortcutEditor.IsSome && takenClock.ElapsedMilliseconds<4000L do
+        Application.DoEvents()
+        Thread.Sleep 10
+    check (recorder.ShortcutEditor.IsNone && takenClock.ElapsedMilliseconds>=1200L) (sprintf "A key taken over left its box after %d ms" takenClock.ElapsedMilliseconds)
     // The key it has already: said, then the box goes as after a key taken, rather than waiting.
     recorder.BeginAssign()
     let same = recorder.ShortcutEditor.Value
@@ -1259,7 +1348,7 @@ let main() =
     check (WindowShortcuts.target open' { chrome with title="Gone" }=Some(IntPtr 1)) "The program's most recent window was not chosen"
     check (WindowShortcuts.target open' { chrome with path="word.exe" }).IsNone "A window of another program was chosen"
     let mutable givenKey = 0
-    let keyed = TabSearchForm([mail;notes],[],windowShortcut=(fun entry -> if entry.hwnd=mail.hwnd then Some { current=0; usedBy=(fun _ -> None); set=(fun code -> givenKey <- code; true) } else None))
+    let keyed = TabSearchForm([mail;notes],[],windowShortcut=(fun entry -> if entry.hwnd=mail.hwnd then Some { current=0; usedBy=(fun _ -> None); set=(fun code -> givenKey <- code; true); inList=false } else None))
     keyed.Query <- "inbox"
     keyed.BeginAssign()
     let keyEditor = match keyed.ShortcutEditor with Some editor -> editor | None -> failwith "Alt+Enter did not open a shortcut box on a window"

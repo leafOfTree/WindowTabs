@@ -360,12 +360,16 @@ type SettingsShortcutInput() as this =
     member _.MessageChanged = messageChanged.Publish
     /// Draws its notice or error in place of the shortcut; off where the host shows it beside.
     member val ShowsMessage = true with get,set
+    /// For a key of the lists, used only in the palette and the window search: Tab may be one.
+    member val InList = false with get,set
     /// Whether the accent outline is drawn: while recording, or on fresh keyboard focus.
     member this.IsHighlighted = recording || (this.Focused && focusCue)
     /// The notice or error currently shown in place of the shortcut, if any.
     member _.Message = message |> Option.map fst
     /// Restores a previous shortcut and says why the new one was not kept.
     member this.Reject(previous,reason) = this.Shortcut <- previous; showMessage true reason
+    /// Says something of the shortcut just kept, in the muted colour, as "already set" is.
+    member this.Notice(text) = showMessage false text
     member this.StartRecording() =
         clearMessage()
         heldAtStart <- Control.ModifierKeys
@@ -403,7 +407,9 @@ type SettingsShortcutInput() as this =
             lastPressed <- SettingsShortcut.encode keyData
             match SettingsShortcut.reservedFor keyData with
             | Some why -> showMessage true (tr why)
-            | None when SettingsShortcut.isAcceptable keyData -> commit lastPressed
+            | None when this.InList && SettingsShortcut.isAcceptableInList keyData -> commit lastPressed
+            | None when not this.InList && SettingsShortcut.isAcceptable keyData -> commit lastPressed
+            | None when this.InList -> showMessage true (tr Strings.Shortcuts.includeCtrlAltOrTab)
             | None -> showMessage true (tr Strings.Shortcuts.includeCtrlOrAlt)
             true
     override this.OnKeyUp(e) =

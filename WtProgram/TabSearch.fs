@@ -14,6 +14,9 @@ type TabSearchEntry = {
     program:string
     /// What a search term may match, in lower case: both names and the program.
     keywords:string list
+    /// Its shortcut, in lower case as "ctrl+alt+t": matched only by a search that starts as a
+    /// key does, so "al" for Align tabs does not list every key with Alt.
+    keys:string list
     /// Tabs of one group share a number; groups are numbered from the most recently used.
     group:int
     /// 0 for the most recently used tab, the active tab last.
@@ -41,15 +44,53 @@ module TabSearch =
     /// 2 at the start of a word, 1 elsewhere, 0 not at all.
     let quality term text = termMatch term text |> Option.map fst |> Option.defaultValue 0
 
+    /// A text typed with its spaces left out, or as the first letters of its words: "movedown" or
+    /// "md" for "Move down". The indices of the letters it takes in `text`, in order; None when it
+    /// is not there. Run together, it must begin at the start of a word, so it does not turn up in
+    /// the middle of an unrelated one.
+    let looseMatch (query:string) (text:string) : int list option =
+        let typed = String(query.ToLowerInvariant() |> Seq.filter Char.IsLetterOrDigit |> Array.ofSeq)
+        // Punctuation typed, as in a key such as "ctrl+]", is meant as it is: left out, every key
+        // with Ctrl matched "ctrl".
+        if typed.Length<2 || query |> Seq.exists(fun c -> not (Char.IsLetterOrDigit c || Char.IsWhiteSpace c)) then None
+        else
+            let lower = text.ToLowerInvariant()
+            // Each letter or digit, where it stands and whether a word starts there.
+            let letters =
+                [| for i in 0..lower.Length-1 do
+                     if Char.IsLetterOrDigit lower.[i] then yield i,(i=0 || not (Char.IsLetterOrDigit lower.[i-1])) |]
+            let compact = String(letters |> Array.map(fun (i,_) -> lower.[i]))
+            let rec runTogether start =
+                match compact.IndexOf(typed,start,StringComparison.Ordinal) with
+                | -1 -> None
+                | at when snd letters.[at] -> Some [ for k in at..at+typed.Length-1 -> fst letters.[k] ]
+                | at -> runTogether (at+1)
+            match runTogether 0 with
+            | Some taken -> Some taken
+            | None ->
+                let starts = letters |> Array.filter snd |> Array.map fst
+                let initials = String(starts |> Array.map(fun i -> lower.[i]))
+                match initials.IndexOf(typed,StringComparison.Ordinal) with
+                | -1 -> None
+                | at -> Some [ for k in at..at+typed.Length-1 -> starts.[k] ]
+
+    /// A search that starts as a shortcut does: a modifier's name or a function key, as "ctrl+",
+    /// "alt t" or "f5". Only such a search looks at the rows' keys.
+    let looksLikeKey (query:string) =
+        let typed = query.TrimStart().ToLowerInvariant()
+        ["ctrl";"alt";"shift";"win"] |> List.exists(fun name -> typed.StartsWith name)
+        || (typed.Length>=2 && typed.[0]='f' && Char.IsDigit typed.[1])
+
     /// None when a term is missing; otherwise higher for better matches. Terms are separated by
     /// spaces and may come in any order; case is ignored.
-    let private rank (query:string) (entry:TabSearchEntry) =
+    let private wordRank (query:string) (entry:TabSearchEntry) =
         let title = entry.title.ToLowerInvariant()
+        let words = if looksLikeKey query then entry.keywords @ entry.keys else entry.keywords
         query.ToLowerInvariant().Split([|' ';'\t'|],StringSplitOptions.RemoveEmptyEntries)
         |> Array.fold (fun total term ->
             total |> Option.bind(fun (sum,position) ->
                 let best =
-                    entry.keywords |> List.choose (termMatch term)
+                    words |> List.choose (termMatch term)
                     |> List.sortBy(fun (quality,at) -> -quality,at)
                     |> List.tryHead
                 // Where it stands in the name, when the name has it as well as any: a keyword that
@@ -59,6 +100,18 @@ module TabSearch =
                     | Some(quality,_),Some(inName,at) when inName=quality -> Some(quality,at)
                     | _ -> best
                 best |> Option.map(fun (quality,at) -> sum+quality,position+at))) (Some(0,0))
+
+    /// As wordRank, or, when the words are not there, typed without spaces or as initials: such a
+    /// row comes after every row with the words, the name before the other keywords.
+    let private rank (query:string) (entry:TabSearchEntry) =
+        match wordRank query entry with
+        | Some found -> Some found
+        | None ->
+            match looseMatch query entry.title |> Option.bind List.tryHead with
+            | Some at -> Some(0,at)
+            | None ->
+                entry.keywords |> List.tryPick(fun keyword -> looseMatch query keyword |> Option.bind List.tryHead)
+                |> Option.map(fun at -> 0,1000+at)
 
     let score query entry = rank query entry |> Option.map fst
 
@@ -93,6 +146,16 @@ module TabSearch =
         if String.IsNullOrWhiteSpace query then List.map fst matching
         else matching |> List.sortBy snd |> List.map fst
 
+    /// Ctrl+Backspace: the text with the word before the caret gone, and the caret where it began;
+    /// a selection goes instead. A plain text box put a box character in its place.
+    let deleteWordBefore (text:string) (caret:int) (selected:int) =
+        if selected>0 then text.Remove(caret,selected),caret
+        else
+            let mutable start = caret
+            while start>0 && Char.IsWhiteSpace text.[start-1] do start <- start-1
+            while start>0 && not (Char.IsWhiteSpace text.[start-1]) do start <- start-1
+            text.Remove(start,caret-start),start
+
     /// The program, and the desktop of a window on another one.
     let source (entry:TabSearchEntry) =
         match entry.program,entry.desktop with
@@ -113,7 +176,11 @@ module TabSearch =
                     | -1 -> None
                     | at -> Some((at,at+term.Length),at+1)) 0)
             |> Seq.sort |> List.ofSeq
-        // Overlapping runs merge, as with "ab" and "bc" in "abc".
+        // Typed without spaces or as initials: the letters it took, each run of them lit up.
+        let found =
+            if not found.IsEmpty then found
+            else looseMatch query text |> Option.defaultValue [] |> List.map(fun at -> at,at+1)
+        // Overlapping and adjacent runs merge, as with "ab" and "bc" in "abc".
         found
         |> List.fold(fun runs (start,stop) ->
             match runs with
@@ -125,7 +192,7 @@ module TabSearch =
     let create hwnd title original program =
         { hwnd=hwnd; title=title; program=program
           keywords=[title;original;program] |> List.filter((<>) "") |> List.distinct |> List.map(fun text -> text.ToLowerInvariant())
-          group=0; recency=0; desktop="" }
+          keys=[]; group=0; recency=0; desktop="" }
 
     /// Where a window on another virtual desktop is: the name the user gave that desktop, or its
     /// number.
@@ -182,7 +249,9 @@ module TabSearch =
 
 /// How a row's shortcut is set from the palette: the one it has now; what holds a key already,
 /// by name, if anything; and setting one, false when another program holds the key.
-type ShortcutAssignment = { current:int; usedBy:int -> string option; set:int -> bool }
+/// A row's shortcut: the key it has, what has a key besides it, and setting one. inList: a key
+/// of the lists, used only in these boxes, which Tab may be.
+type ShortcutAssignment = { current:int; usedBy:int -> ShortcutHolder option; set:int -> bool; inList:bool }
 
 /// A page of the palette beside the windows: what it lists, with a glyph for its rows, and what
 /// choosing a row does. Its entries carry a number of their own in place of a window handle.
@@ -296,7 +365,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         | _ -> if windows then initialWindowScope else List.head scopes
     /// The choices a command left, over the scope's rows while they are up: the command's name,
     /// the rows, what choosing one does, and the search typed before, for the way back.
-    let mutable choices : (string * (TreeListItem * TabSearchEntry)[] * (TabSearchEntry -> CommandOutcome) * string) list = []
+    let mutable choices : (string * (TreeListItem * TabSearchEntry)[] * (TabSearchEntry -> CommandChoice) * string) list = []
     /// A value asked for, on top of the choices with no rows of its own, with why the last one
     /// typed was not taken.
     let mutable asking : (CommandQuestion * string option) option = None
@@ -375,7 +444,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         { new Panel(Dock=DockStyle.Top,Height=scopeHeight,BackColor=palette.surface) with
             override this.OnPaint(e) =
                 base.OnPaint(e)
-                let p = SettingsColors.current()
+                let p = palette
                 let g = e.Graphics
                 g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
                 let rounded (bounds:Rectangle) radius =
@@ -418,7 +487,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             override this.OnPaint(e) =
                 base.OnPaint(e)
                 if canAssign() then
-                    let p = SettingsColors.current()
+                    let p = palette
                     let g = e.Graphics
                     g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
                     let label = tr Strings.TabSearch.setShortcut
@@ -437,7 +506,10 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                                     ShowHeader=false,ShowExpanders=false,ExpandOnDoubleClick=false,
                                     RowHeight=rowHeight,IconSize=TabSearchMetrics.iconSize,TabStop=false,KeepScrollRoom=true,
                                     ScrollBarWidth=padding-1,
-                                    BackColor=palette.surface,ForeColor=palette.text)
+                                    BackColor=palette.surface,ForeColor=palette.text,
+                                    // The look it opened with, as the rest of the box keeps: a theme
+                                    // tried from its choices showed rows in the new theme on the old.
+                                    FixedColors=Some palette)
     do rowNameLeft <- fun () -> match Seq.tryHead list.Roots with Some item -> list.NameLeft item | None -> Dpi.scale 10
     do chosenRow <- fun () -> box list.SelectedItem
     let empty = new Label(Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleCenter,Visible=false,
@@ -465,7 +537,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     base.OnPaint(e)
                     e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
                     use outline = SettingsShapes.rounded (SettingsShapes.outlineRect this.ClientSize.Width this.ClientSize.Height) (float32 radius)
-                    use border = new Pen((SettingsColors.current()).border)
+                    use border = new Pen(palette.border)
                     e.Graphics.DrawPath(border,outline) }
         // One size whatever is typed or listed, so the box does not jump about while filtering.
         let longest = scopes |> List.map(fun target -> (rowsOf target).Length) |> List.max
@@ -585,7 +657,9 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             item.SmallValue <- aside.small
             // A colour setting's value: its dot before its code at the right, as the settings pages show it.
             item.ValueSwatch <- aside.swatch
-            item.Highlights <- [| TabSearch.highlights input.Text entry.title; TabSearch.highlights input.Text item.Values.[1] |])
+            item.Highlights <- [| TabSearch.highlights input.Text entry.title; TabSearch.highlights input.Text item.Values.[1] |]
+            // A key typed lights up in the shortcut beside the name, as a word does in the name.
+            item.SuffixHighlights <- if TabSearch.looksLikeKey input.Text then TabSearch.highlights input.Text aside.shortcut else [])
         list.Roots.Clear()
         list.Roots.AddRange(Array.map fst shown)
         list.Rebuild()
@@ -646,16 +720,19 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             if form.IsHandleCreated then form.BeginInvoke(Action dispose) |> ignore else dispose()
     /// The choices a command left take the rows' place, under its name, until one is chosen or
     /// Esc goes back.
-    let push (caption:string) (options:CommandChoice list) =
-        endAssign()
-        backRows <- selectedRow()::backRows
+    let choiceRows (options:CommandChoice list) =
         let rows =
             options |> List.mapi(fun index option ->
                 let entry = { TabSearch.create (IntPtr(index+1)) option.label option.label option.detail with recency=index }
                 TreeListItem(option.label,Values=[|"";option.detail|],Swatch=option.swatch),entry)
             |> Array.ofList
-        let run (entry:TabSearchEntry) = options.[int entry.hwnd-1].run()
-        choices <- (caption,rows,run,input.Text)::choices
+        let chosen (entry:TabSearchEntry) = options.[int entry.hwnd-1]
+        rows,chosen
+    let push (caption:string) (options:CommandChoice list) =
+        endAssign()
+        backRows <- selectedRow()::backRows
+        let rows,chosen = choiceRows options
+        choices <- (caption,rows,chosen,input.Text)::choices
         restorePreview()
         previewOptions <- if options |> List.exists(fun option -> option.preview.IsSome) then options else []
         input.Text <- ""
@@ -702,6 +779,17 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             keptRow <- back
             try apply() finally keptRow <- None
         | [] -> ()
+    /// The choices listed again in place of those shown, the way back unchanged and the row
+    /// where the chosen one was chosen; with none left, back to where they came from.
+    let relist (options:CommandChoice list) =
+        match choices with
+        | (caption,_,_,query)::rest when not options.IsEmpty ->
+            let at = selectedRow()
+            let rows,chosen = choiceRows options
+            choices <- (caption,rows,chosen,query)::rest
+            keptRow <- at |> Option.map(fun hwnd -> IntPtr(min (int hwnd) options.Length))
+            try apply() finally keptRow <- None
+        | _ -> pop()
     /// Enter while a value is asked for: taken, the palette closes; refused, it says why.
     let answer() =
         match asking,askBox with
@@ -814,6 +902,9 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         | Stay ->
             back()
             reapply()
+        | Again options ->
+            back()
+            relist options
     /// Records a key for the chosen row; set once that is defined, below.
     let mutable assignChosen = fun () -> ()
     /// Enter or a click on a row: switches to the window, or runs the command and shows what it
@@ -822,18 +913,19 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         if not closed && not (isNull target) && not target.Dimmed then
             scoped() |> Array.tryFind(fun (row,_) -> obj.ReferenceEquals(row,target)) |> Option.iter(fun (_,entry) ->
                 match choices,page() with
-                | (_,_,choose,_)::_,_ ->
+                | (_,_,chosen,_)::_,_ ->
                     // Chosen: what was shown stays.
                     previewed <- false
                     previewOptions <- []
-                    outcome entry.title true (fun () -> choose entry)
+                    let option = chosen entry
+                    outcome entry.title option.concealed option.run
                 | [],Some page when page.assignOnEnter entry ->
                     list.SelectedItem <- target
                     assignChosen()
                 | [],Some page -> outcome entry.title (page.concealed entry) (fun () -> page.choose entry)
                 | [],None -> finish (Some entry.hwnd))
     /// Alt+Enter: the chosen row's shortcut is recorded in a box over the row, as on the
-    /// Shortcuts page, with the same refusals; Esc or a click elsewhere leaves it as it was.
+    /// Shortcuts page, taking a key another has; Esc or a click elsewhere leaves it as it was.
     let beginAssign() =
         if assigning.IsNone && not closed then
             let target = list.SelectedItem
@@ -844,7 +936,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     assignment |> Option.map(fun assignment -> entry,assignment))
                 |> Option.iter(fun (entry,assignment) ->
                     // A size under the rows' text, as the shortcuts beside the names are.
-                    let editor = new SettingsShortcutInput(Font=SettingsUi.font "Segoe UI" 9.0f FontStyle.Regular,Shortcut=assignment.current,ForeColor=palette.text)
+                    let editor = new SettingsShortcutInput(Font=SettingsUi.font "Segoe UI" 9.0f FontStyle.Regular,Shortcut=assignment.current,ForeColor=palette.text,InList=assignment.inList)
                     // On the chosen row: round its corners the row's highlight shows, not the
                     // list's surface, which showed as dark corners.
                     editor.PlaceOn(if SystemInformation.HighContrast then SystemColors.Highlight else palette.selection)
@@ -879,8 +971,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     editor.MessageChanged.Add showNote
                     editor.Disposed.Add(fun _ -> list.Controls.Remove note; note.Dispose())
                     // The box a moment longer, its key seen, then the row as it now is.
-                    let leaveSoon (taken:string option) =
-                        let pause = new System.Windows.Forms.Timer(Interval=600)
+                    let leaveAfter (ms:int) (taken:string option) =
+                        let pause = new System.Windows.Forms.Timer(Interval=ms)
                         pause.Tick.Add(fun _ ->
                             pause.Stop()
                             pause.Dispose()
@@ -889,6 +981,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                                 list.Invalidate()
                                 if assigning |> Option.exists(fun (_,current) -> obj.ReferenceEquals(current,editor)) then endAssign())
                         pause.Start()
+                    let leaveSoon = leaveAfter 600
                     // Refused: said under the box, which listens again for another key.
                     let refuse previous reason =
                         editor.Shortcut <- previous
@@ -896,12 +989,23 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                         showNote (Some reason)
                     editor.Changed.Add(fun _ ->
                         let previous = assignment.current
-                        match assignment.usedBy editor.Shortcut with
-                        | Some name -> refuse previous (tr (Strings.Shortcuts.usedBy name))
-                        | None when not (assignment.set editor.Shortcut) -> refuse previous (tr Strings.Shortcuts.inUse)
+                        let code = editor.Shortcut
+                        match assignment.usedBy code with
+                        // Pressed for this row, the key is meant for it: whatever had it gives it
+                        // up, and the box says where it came from before it goes.
+                        | Some holder ->
+                            holder.release()
+                            if assignment.set code then
+                                editor.Notice(tr (Strings.Shortcuts.takenFrom holder.name))
+                                // Long enough to read where the key came from.
+                                leaveAfter 1500 (Some(SettingsShortcut.text code))
+                            else
+                                holder.restore()
+                                refuse previous (tr Strings.Shortcuts.inUse)
+                        | None when not (assignment.set code) -> refuse previous (tr Strings.Shortcuts.inUse)
                         // Seen taken in its box a moment, then beside the name, where a row's
                         // shortcut is shown; the page lists it afresh from now on.
-                        | None -> leaveSoon (Some(SettingsShortcut.text editor.Shortcut)))
+                        | None -> leaveSoon (Some(SettingsShortcut.text code)))
                     // The key it had already: nothing to change, so the box goes as after a key taken.
                     editor.Unchanged.Add(fun _ -> leaveSoon None)
                     // Esc while recording stops it in the box's own key handling; the key's release
@@ -931,15 +1035,22 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         if shown.Count>0 then
             let current = shown.IndexOf(list.SelectedItem)
             list.SelectedItem <- shown.[max 0 (min (shown.Count-1) (current+delta))]
+    /// The lists' own keys, set in the palette, beside the arrows: which way one moves the choice.
+    /// Checked before Tab goes round the scopes, as one may be Tab.
+    let listStep (keyData:Keys) =
+        let listKey name = settings |> Option.bind(fun api -> api.hotKey name) |> Option.defaultValue 0
+        let pressed = SettingsShortcut.encode keyData
+        if SettingsShortcut.isModifier (keyData &&& Keys.KeyCode) then None
+        elif pressed=listKey "listNext" then Some 1
+        elif pressed=listKey "listPrevious" then Some -1
+        else None
     /// The box's keys, from typing or a host pressing them.
     let keyDown (e:KeyEventArgs) =
-        // The lists' own keys, set on the Shortcuts page, beside the arrows.
-        let listKey name = settings |> Option.bind(fun api -> api.hotKey name) |> Option.defaultValue 0
-        let pressed = SettingsShortcut.encode e.KeyData
         let handled =
-            match e.KeyCode with
-            | _ when not (SettingsShortcut.isModifier e.KeyCode) && pressed=listKey "listNext" -> move 1; true
-            | _ when not (SettingsShortcut.isModifier e.KeyCode) && pressed=listKey "listPrevious" -> move -1; true
+            match e.KeyCode,listStep e.KeyData with
+            | _,Some step -> move step; true
+            | key,None ->
+            match key with
             | Keys.Down -> move 1; true
             | Keys.Up -> move -1; true
             | Keys.PageDown -> move visibleRows; true
@@ -949,6 +1060,14 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             | Keys.Enter -> activate list.SelectedItem; true
             | Keys.Escape -> (if choices.IsEmpty then finish None else pop()); true
             | Keys.Back when input.Text="" && not choices.IsEmpty -> pop(); true
+            // Ctrl+Backspace deletes the word before the caret, as in most of Windows.
+            | Keys.Back when e.Control && not e.Alt ->
+                let text,caret = TabSearch.deleteWordBefore input.Text input.SelectionStart input.SelectionLength
+                input.Text <- text
+                input.SelectionStart <- caret
+                true
+            // Ctrl+U clears what is typed, as a terminal's line does.
+            | Keys.U when e.Control && not e.Alt && not e.Shift -> input.Clear(); true
             | Keys.Tab -> cycle (if e.Shift then -1 else 1); true
             | _ -> false
         if handled then
@@ -986,7 +1105,12 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         list.KeyDown.Add(fun e ->
             if e.KeyCode=Keys.Escape then (if choices.IsEmpty then finish None else pop())
             elif e.KeyCode=Keys.Enter && e.Alt then beginAssign())
-        list.PreviewKeyDown.Add(fun e -> if e.KeyCode=Keys.Tab then (e.IsInputKey <- true; cycle (if e.Shift then -1 else 1)))
+        list.PreviewKeyDown.Add(fun e ->
+            if e.KeyCode=Keys.Tab then
+                e.IsInputKey <- true
+                match listStep e.KeyData with
+                | Some step -> move step
+                | None -> cycle (if e.Shift then -1 else 1))
         list.KeyPress.Add(fun e ->
             if not (Char.IsControl e.KeyChar) then
                 input.Focus() |> ignore

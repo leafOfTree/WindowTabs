@@ -66,23 +66,20 @@ module SettingsShortcut =
     let text code = String.Join("+",parts code)
     let heldParts (modifiers:Keys) =
         modifierNames (modifiers.HasFlag(Keys.Control),modifiers.HasFlag(Keys.Alt),modifiers.HasFlag(Keys.Shift))
-    /// Kept by Windows, or by the palette for setting a shortcut, with what each does there:
-    /// taking one would stop it working. Not Alt+Space: its window menu is also on a right click of
-    /// the title bar, and launchers commonly take the key.
+    /// Kept by the palette for setting a shortcut: taken, it could not set one any more. Keys
+    /// Windows uses, such as Alt+F4 or Ctrl+Esc, are the user's to take; one Windows will not
+    /// give up is refused as in use when it is set.
     let private reserved =
-        let windows what = Strings.Shortcuts.usedByWindows what
-        [Keys.Alt ||| Keys.Enter,Strings.Shortcuts.usedByPalette
-         Keys.Alt ||| Keys.F4,windows Strings.Shortcuts.closeWindow
-         Keys.Alt ||| Keys.Tab,windows Strings.Shortcuts.switchWindows
-         Keys.Alt ||| Keys.Shift ||| Keys.Tab,windows Strings.Shortcuts.switchWindows
-         Keys.Alt ||| Keys.Escape,windows Strings.Shortcuts.cycleWindows
-         Keys.Control ||| Keys.Escape,windows Strings.Shortcuts.startMenu
-         Keys.Control ||| Keys.Shift ||| Keys.Escape,windows Strings.Shortcuts.taskManager]
+        [Keys.Alt ||| Keys.Enter,Strings.Shortcuts.usedByPalette]
         |> List.map(fun (keys,why) -> encode keys,why)
-    /// Why a key cannot be a shortcut, for one Windows or the palette keeps.
+    /// Why a key cannot be a shortcut, for one the palette keeps.
     let reservedFor (keyData:Keys) = reserved |> List.tryPick(fun (code,why) -> if code=encode keyData then Some why else None)
     let isReserved (keyData:Keys) = (reservedFor keyData).IsSome
     /// A global shortcut without Ctrl or Alt would swallow ordinary typing.
     let isAcceptable (keyData:Keys) =
         let key = keyData &&& Keys.KeyCode
         not (isModifier key) && (keyData.HasFlag(Keys.Control) || keyData.HasFlag(Keys.Alt) || isFunctionKey key)
+    /// A key of the lists, used only in the palette and the window search, never for the whole
+    /// desktop: Tab, with Shift or not, may be one too. Keys that type into the box still may not.
+    let isAcceptableInList (keyData:Keys) =
+        isAcceptable keyData || (keyData &&& Keys.KeyCode)=Keys.Tab && (keyData &&& Keys.Modifiers &&& ~~~Keys.Shift)=Keys.None

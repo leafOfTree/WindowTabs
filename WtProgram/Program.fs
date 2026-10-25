@@ -616,7 +616,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 let hwnd = WinUserApi.GetForegroundWindow()
                 if not (command.enabled hwnd) then Result.Error (tr (Strings.CommandLine.unavailable (tr command.text.caption))) else
                 match command.run hwnd with
-                | Done | Stay -> Result.Ok ""
+                | Done | Stay | Again _ -> Result.Ok ""
                 // The value on the command line, as typed in the palette.
                 | Ask question ->
                     match choice with
@@ -777,18 +777,32 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                usedBy=fun code ->
                                    if code=0 then None
                                    else
-                                       match Commands.holderName (this :> IProgram).getHotKey "" code with
-                                       | Some name -> Some name
+                                       let program = this :> IProgram
+                                       let settings = settingsManager :> ISettings
+                                       match Commands.holderOf program.getHotKey program.setHotKey (fun key code -> settings.setHotKey key code) "" code with
+                                       | Some holder -> Some holder
                                        | None ->
+                                           // Another window's key moves to this one, as a command's does.
                                            saved() |> List.tryFind(fun other -> other.code=code && not (AppIdentity.same other.path path && other.title=entry.title))
-                                           |> Option.map(fun other -> other.title)
+                                           |> Option.map(fun other ->
+                                               { name=other.title; key=""
+                                                 release=(fun () -> known.Value <- None; program.setWindowShortcut { other with code=0 } |> ignore)
+                                                 restore=(fun () -> known.Value <- None; program.setWindowShortcut other |> ignore) })
                                set=fun code ->
                                    known.Value <- None
-                                   (this :> IProgram).setWindowShortcut { path=path; title=entry.title; code=code } }
-                TabSearchForm(TabSearch.tabs nameOverride active groups,group,settings=(settingsManager :> ISettings),
-                              windowShortcut=windowShortcut,windowShortcutText=(fun entry ->
-                                  let path = try os.windowFromHwnd(entry.hwnd).pid.processPath with _ -> ""
-                                  WindowShortcuts.find (shortcuts()) path entry.title |> Option.map(fun s -> SettingsShortcut.text s.code) |> Option.defaultValue ""))
+                                   (this :> IProgram).setWindowShortcut { path=path; title=entry.title; code=code }
+                               inList=false }
+                let windowShortcutText (entry:TabSearchEntry) =
+                    let path = try os.windowFromHwnd(entry.hwnd).pid.processPath with _ -> ""
+                    WindowShortcuts.find (shortcuts()) path entry.title |> Option.map(fun s -> SettingsShortcut.text s.code) |> Option.defaultValue ""
+                // A window's key finds it, as a command's does in the palette.
+                let entries =
+                    TabSearch.tabs nameOverride active groups |> List.map(fun entry ->
+                        match windowShortcutText entry with
+                        | "" -> entry
+                        | key -> { entry with keys=[key.ToLowerInvariant()] })
+                TabSearchForm(entries,group,settings=(settingsManager :> ISettings),
+                              windowShortcut=windowShortcut,windowShortcutText=windowShortcutText)
             | Some wanted ->
                 let pages = [CommandPalette.actionsPage active]
                 let palette = TabSearchForm([],[],settings=(settingsManager :> ISettings),pages=pages,scope=wanted,windows=false)
@@ -845,7 +859,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         if result.missing.IsEmpty && result.failed.IsEmpty then Notice.show title message
         else Notice.remind title message
 
-    /// As Save layout in Settings, said on screen since nothing else shows it.
+    /// As Save workspace in Settings, said on screen since nothing else shows it.
     member this.saveWorkspace() =
         let workspaces = this.readWorkspaces()
         let title = tr Strings.Pages.workspaces
@@ -922,7 +936,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         // Its key does nothing where the palette would show it dimmed, rather than offer choices that do nothing.
         if not (command.enabled hwnd) then () else
         match command.run hwnd with
-        | Done | Stay -> ()
+        | Done | Stay | Again _ -> ()
         | Choose options -> this.showChoices(tr command.text.caption,options)
         | Ask question -> this.showQuestion(tr command.text.caption,question)
 

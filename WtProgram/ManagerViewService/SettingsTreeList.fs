@@ -57,6 +57,8 @@ type TreeListItem(text:string) =
     member val Switch : bool option = None with get,set
     /// A note just after the name, in the muted colour, such as the row's shortcut.
     member val Suffix = "" with get,set
+    /// Runs of the suffix to light up as the name's are, (start,length).
+    member val SuffixHighlights : (int * int) list = [] with get,set
     /// A down arrow after the last column's text, for a value picked from a list, as drop-downs show.
     member val Dropdown = false with get,set
     /// The last column's text in a smaller type, as the suffix is: a note, not a value.
@@ -152,6 +154,10 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member val ChipAddTip = "" with get,set
     /// Hover and selection at half strength, so chips stay apart from a highlighted row.
     member val SoftHighlight = false with get,set
+    /// Colours kept whatever the theme becomes, for a box that keeps the look it opened with, as
+    /// the palette does while a theme is tried on the rest; None follows the theme.
+    member val FixedColors : SettingsPalette option = None with get,set
+    member private this.colors() = match this.FixedColors with Some p -> p | None -> SettingsColors.current()
     /// Said in the muted colour while the list has no rows: what would be listed, and how.
     member val EmptyText = "" with get,set
     member val IconSize = 16 with get,set
@@ -268,7 +274,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     /// A text field keeps its field colour so it stands out from a selected row, as buttons do;
     /// other editors take the row's colour behind their own controls.
     member private this.colorEditor(item:TreeListItem,editor:Control) =
-        let p = SettingsColors.current()
+        let p = this.colors()
         let row = if Object.ReferenceEquals(item,selected) then this.highlight(true,p) else p.surface
         match editor with
         | :? SettingsInputFrame as field -> field.PlaceOn row
@@ -747,7 +753,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             if handled then e.Handled <- true
 
     override this.OnPaint(e) =
-        let p = SettingsColors.current()
+        let p = this.colors()
         rowEditor |> Option.iter(fun (item,editor,_) -> this.colorEditor(item,editor))
         let g = e.Graphics
         g.Clear(this.BackColor)
@@ -824,7 +830,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                             // On the chosen row in the name's own colour, as the value at its right
                             // end is: the muted grey sank into the highlight. Smaller, it still leads less.
                             let muted = if isSelected then text else p.muted
-                            TextRenderer.DrawText(g,item.Suffix,suffixFont,Rectangle(left,nameBounds.Y,max 1 (nameBounds.Right-left),nameBounds.Height),muted,flags)
+                            this.drawMarked(g,item.Suffix,item.SuffixHighlights,Rectangle(left,nameBounds.Y,max 1 (nameBounds.Right-left),nameBounds.Height),flags,suffixFont,muted,p)
                         // Chips: a shade of the text over the row, so they show on any highlight.
                         let chipFill = if SystemInformation.HighContrast then SystemColors.Window else Color.FromArgb(26,p.text)
                         for chipIndex,box,closeBox in laid do

@@ -272,6 +272,13 @@ let main() =
         attempt "detach-tab" (fun () ->
             runDone "detach-tab" active
             note (called (sprintf "detachTab %d" active)) "Move tab to a new group did not take the tab out")
+        attempt "ungroup-tabs" (fun () ->
+            while not calls.IsEmpty do calls.TryDequeue() |> ignore
+            runDone "ungroup-tabs" active
+            note (called (sprintf "detachTab %d" (hwndOf "Bravo")) && called (sprintf "detachTab %d" (hwndOf "Charlie")))
+                 "Ungroup this group did not take every other tab out"
+            note (not (called (sprintf "detachTab %d" active))) "Ungroup this group took out the tab in front too"
+            note ((Commands.find "ungroup-tabs").Value.enabled (hwndOf "Delta")) "Ungroup this group is dimmed in a group of two")
         attempt "move-tab-to-group" (fun () ->
             let bravo = hwndOf "Bravo"
             let options = choicesOf "move-tab-to-group" bravo
@@ -331,7 +338,7 @@ let main() =
         attempt "tabs-for-app" (fun () ->
             let before = Services.filter.getIsTabbingEnabledForProcess path
             runDone "tabs-for-app" active
-            note (Services.filter.getIsTabbingEnabledForProcess path<>before) "Tabs for this app did not change the app's tabs"
+            note (Services.filter.getIsTabbingEnabledForProcess path<>before) "Use tabs for this app did not change the app's tabs"
             runDone "tabs-for-app" active)
         attempt "auto-group-app" (fun () ->
             runDone "auto-group-app" active
@@ -341,7 +348,7 @@ let main() =
         attempt "number-shortcut-for-app" (fun () ->
             let before = NumberShortcutRules.enabled path
             runDone "number-shortcut-for-app" active
-            note (NumberShortcutRules.enabled path<>before) "Switch by number in this app did not change it"
+            note (NumberShortcutRules.enabled path<>before) "Switch tabs by number in this app did not change it"
             runDone "number-shortcut-for-app" active)
         attempt "combine-group-taskbar-icons" (fun () ->
             runDone "combine-group-taskbar-icons" active
@@ -458,6 +465,15 @@ let main() =
         attempt "close-all-tabs" (fun () ->
             runDone "close-all-tabs" (hwndOf "All one")
             pumpUntil "Closing all tabs" (fun () -> not (WinUserApi.IsWindow (hwndOf "All one")) && not (WinUserApi.IsWindow (hwndOf "All two"))))
+        // Last, as it gathers every window of this app: all of them join the group in front.
+        attempt "group-app" (fun () ->
+            let delta = hwndOf "Delta"
+            let grouped hwnd = groups() |> List.exists(fun info -> (info :> IGroup).windows.contains((=)hwnd))
+            let others = windows |> List.map snd |> List.filter(fun hwnd -> hwnd<>delta && WinUserApi.IsWindow hwnd && grouped hwnd)
+            note ((Commands.find "group-app").Value.enabled delta) "Group this app is dimmed with the app's windows in other groups"
+            runDone "group-app" delta
+            pumpUntil "Grouping the app's windows" (fun () -> let order = lorderOf delta in others |> List.forall(fun hwnd -> List.contains hwnd order))
+            note (not ((Commands.find "group-app").Value.enabled delta)) "Group this app is offered with every window of the app in the group")
         for command in Commands.all do
             note (commandsRun.Contains command.id || command.id.StartsWith "open-settings-" || command.id.StartsWith "toggle-" || command.id.StartsWith "setting-")
                  (sprintf "%s was never run by this walk: add it" command.id)
@@ -607,13 +623,40 @@ let main() =
                     code <- code+1)
             | None -> ()
         let first,second = page.entries |> List.choose(fun entry -> page.shortcut entry |> Option.map(fun given -> entry,given)) |> fun bound -> bound.[0],bound.[1]
-        note ((snd second).usedBy (snd first).current).IsSome "A key one action has was not refused for another"
+        // Pressed for another action, a key one action has moves to it, and the first is left without.
+        match (snd second).usedBy (snd first).current with
+        | Some holder ->
+            let moved = (snd first).current
+            holder.release()
+            note ((snd second).set moved) "A key given up by another action was not taken"
+            let currentOf entry = page.shortcut entry |> Option.map(fun given -> given.current)
+            note (currentOf (fst first)=Some 0 && currentOf (fst second)=Some moved) "A key taken over stayed with the action that had it"
+        | None -> issues.Add "A key one action has was not found for another"
+        // A key typed finds the action that has it, to see where a key is used.
+        let keyedPage = CommandPalette.actionsPage active
+        match keyedPage.entries |> List.tryFind(fun entry -> (keyedPage.aside "" entry).shortcut<>"") with
+        | Some keyed ->
+            let key = (keyedPage.aside "" keyed).shortcut
+            note (TabSearch.best key keyedPage.entries |> Option.map(fun entry -> entry.hwnd)=Some keyed.hwnd)
+                 (sprintf "Typing %s did not find %s, which has it" key keyed.title)
+        | None -> issues.Add "No action had a key to search for"
         // The window search and the palette, driven as a user would.
         let entries = TabSearch.tabs (fun _ -> None) active (groups() |> List.map(fun info -> (info :> IGroup).windows.list))
         let palette = TabSearchForm([],[],settings=api,pages=[CommandPalette.actionsPage active],scope=ActionScope,windows=false)
         palette.Show()
         pump 100
         note (palette.Scope=ActionScope) "The palette did not open on the actions"
+        // Its rows keep the colours it opened with, as the rest of it does: a theme tried from its
+        // choices painted the rows in the new theme over the old background.
+        let rec trees (control:Control) : SettingsTreeList list =
+            (match control with :? SettingsTreeList as tree -> [tree] | _ -> []) @ (control.Controls |> Seq.cast<Control> |> Seq.collect trees |> List.ofSeq)
+        let opened = SettingsColors.current()
+        let paletteTrees =
+            Application.OpenForms |> Seq.cast<Form>
+            |> Seq.filter(fun form -> form.Controls |> Seq.cast<Control> |> Seq.exists(fun control -> control :? SettingsSearchBox))
+            |> Seq.collect trees |> List.ofSeq
+        note (not paletteTrees.IsEmpty && paletteTrees |> List.forall(fun tree -> tree.FixedColors=Some opened))
+             "The palette's rows follow the theme while it is open"
         // One page: no scopes to go round, so no line for them until a command leaves a choice.
         note (not palette.ScopeLineShown) "The palette's one page shows a line of scopes"
         note palette.SearchBoxUnderlined "The palette's search box is outlined rather than underlined"
@@ -779,22 +822,48 @@ let main() =
         note (second<>first && (trial.Selected |> Option.map(fun entry -> entry.title))=first) "The lists' own keys did not move the choice"
         // As the program reads them: from the settings.
         let settingsKey key = api.hotKey key |> Option.defaultValue (SettingsCatalog.shortcutDefault key)
-        note (Commands.holderName settingsKey "newTab" nextKey=Some(tr Strings.Settings.listNext.caption)) "A command could take a key of the lists"
+        // A key of the lists pressed for a command moves to it, and comes back if it cannot be taken.
+        match Commands.holderOf settingsKey (fun _ _ -> true) (fun key code -> api.setHotKey key code) "newTab" nextKey with
+        | Some holder ->
+            note (holder.name=tr Strings.Settings.listNext.caption) (sprintf "A key of the lists was said to be %s's" holder.name)
+            holder.release()
+            note (settingsKey "listNext"=0) "A key of the lists taken for a command stayed with the list"
+            holder.restore()
+            note (settingsKey "listNext"=nextKey) "A key of the lists did not come back"
+        | None -> issues.Add "A key of the lists was not found for a command"
         api.setHotKey "listNext" 0
         api.setHotKey "listPrevious" 0
         // Set in the palette: Enter on their row records the key over it.
         trial.Query <- tr Strings.Settings.listNext.caption
-        note ((trial.Selected |> Option.map(fun entry -> entry.title))=Some(tr Strings.Settings.listNext.caption)) "Next in the list is not in the palette"
+        note ((trial.Selected |> Option.map(fun entry -> entry.title))=Some(tr Strings.Settings.listNext.caption)) "Move down the list is not in the palette"
         trial.Accept()
-        note (trial.ShortcutEditor.IsSome && not trial.IsClosed) "Enter on Next in the list did not record its key"
+        note (trial.ShortcutEditor.IsSome && not trial.IsClosed) "Enter on Move down the list did not record its key"
         // A key pressed in its box is the list's from then on, and the box goes.
         trial.ShortcutEditor |> Option.iter(fun editor ->
             let mutable message = Message()
             let processKey = editor.GetType().GetMethod("ProcessCmdKey",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
             processKey.Invoke(editor,[|box message;box (Keys.Control ||| Keys.J)|]) |> ignore)
         pumpUntil "A taken key's box going" (fun () -> trial.ShortcutEditor.IsNone)
-        note (api.hotKey "listNext"=Some nextKey) "A key recorded for Next in the list was not kept"
+        note (api.hotKey "listNext"=Some nextKey) "A key recorded for Move down the list was not kept"
+        // Used only in these boxes, a key of the lists may be Tab alone, which then moves the
+        // choice rather than going round the scopes.
+        trial.Query <- tr Strings.Settings.listNext.caption
+        trial.Accept()
+        trial.ShortcutEditor |> Option.iter(fun editor ->
+            let mutable message = Message()
+            let processKey = editor.GetType().GetMethod("ProcessCmdKey",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
+            processKey.Invoke(editor,[|box message;box Keys.Tab|]) |> ignore)
+        pumpUntil "Tab's box going" (fun () -> trial.ShortcutEditor.IsNone)
+        note (api.hotKey "listNext"=Some(SettingsShortcut.encode Keys.Tab)) "Tab was not taken as a key of the lists"
+        trial.Query <- "tab"
+        let beforeTab = trial.Selected |> Option.map(fun entry -> entry.title)
+        trial.Press Keys.Tab
+        note ((trial.Selected |> Option.map(fun entry -> entry.title))<>beforeTab) "Tab set as a key of the lists did not move the choice"
         api.setHotKey "listNext" 0
+        // Ctrl+U clears what is typed.
+        trial.Query <- "move down"
+        trial.Press(Keys.Control ||| Keys.U)
+        note (trial.Query="") (sprintf "Ctrl+U left %A in the box" trial.Query)
         trial.Query <- ""
         // A switch turned with Enter keeps its row chosen, not the first row again.
         trial.Query <- "tab text"

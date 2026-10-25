@@ -166,7 +166,7 @@ type IProgram =
     /// Opens the palette on a scope, the windows when none is given, or closes it when it is
     /// open on that scope already; open on another, it switches. Posted to the UI thread.
     abstract member toggleSearch : PaletteScope option -> unit
-    /// Saves the windows as a new workspace, as the Save layout button does. Posted to the UI thread.
+    /// Saves the windows as a new workspace, as the Save workspace button does. Posted to the UI thread.
     abstract member saveWorkspace : unit -> unit
     /// Brings back the workspace last saved or restored. Posted to the UI thread.
     abstract member restoreWorkspace : unit -> unit

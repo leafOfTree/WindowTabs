@@ -19,7 +19,7 @@ type NoticeKind =
 /// replacing another does not jump: the app's icon, a bold title, and the message below it in up
 /// to two lines. Under the pointer it shows a close button and does not go.
 type NoticeWindow() =
-    inherit Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,TopMost=true)
+    inherit Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual)
     let mutable title = ""
     let mutable text = ""
     let mutable kind = Info
@@ -31,15 +31,19 @@ type NoticeWindow() =
     let animation = new Timer(Interval=15)
     let clock = Diagnostics.Stopwatch()
     let mutable leaving = false
+    /// The notice to come in once the one on screen has slid out for it.
+    let mutable replacement : (string * string * NoticeKind) option = None
     let mutable hovered = false
     let mutable closeHot = false
     /// Where the notice rests once in.
     let mutable target = Rectangle.Empty
     let mutable wired = false
     override _.ShowWithoutActivation = true
+    /// Over everything by its style rather than TopMost, which WinForms applies by bringing the
+    /// window forward and so takes the foreground, closing a palette the notice is about.
     override _.CreateParams =
         let cp = base.CreateParams
-        cp.ExStyle <- cp.ExStyle ||| WindowsExtendedStyles.WS_EX_NOACTIVATE ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW
+        cp.ExStyle <- cp.ExStyle ||| WindowsExtendedStyles.WS_EX_NOACTIVATE ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW ||| WindowsExtendedStyles.WS_EX_TOPMOST
         cp
     override this.OnHandleCreated(e) =
         this.SetStyle(ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint ||| ControlStyles.UserPaint,true)
@@ -75,7 +79,13 @@ type NoticeWindow() =
             if leaving then
                 leaving <- false
                 this.Hide()
+                match replacement with
+                | Some(heading,message,noticeKind) ->
+                    replacement <- None
+                    this.present(heading,message,noticeKind)
+                | None -> ()
     member private this.leave() =
+        replacement <- None
         hide.Stop()
         if not this.Visible then ()
         elif this.animates then
@@ -93,6 +103,7 @@ type NoticeWindow() =
         | _ -> ()
     /// Gone at once.
     member this.hideNow() =
+        replacement <- None
         hide.Stop()
         animation.Stop()
         leaving <- false
@@ -140,8 +151,21 @@ type NoticeWindow() =
             this.Region <- new Region(outline)
             if not(isNull previous) then previous.Dispose()
     /// Shows the title and message at the bottom right of the main monitor's work area; a later
-    /// call replaces them. The kind says how long it stays.
+    /// call replaces them, the notice on screen sliding out for the new one to slide in. The kind
+    /// says how long it stays.
     member this.show(heading:string, message:string, noticeKind:NoticeKind) =
+        if replacement.IsSome then replacement <- Some(heading,message,noticeKind)
+        elif this.Visible && not leaving && not animation.Enabled && this.animates then
+            replacement <- Some(heading,message,noticeKind)
+            hide.Stop()
+            // Gone from under the pointer, which then sends no leave for the new one to count from.
+            hovered <- false
+            closeHot <- false
+            leaving <- true
+            clock.Restart()
+            animation.Start()
+        else this.present(heading,message,noticeKind)
+    member private this.present(heading:string, message:string, noticeKind:NoticeKind) =
         title <- heading
         text <- message
         kind <- noticeKind

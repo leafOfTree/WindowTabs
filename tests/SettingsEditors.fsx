@@ -572,9 +572,18 @@ let main() =
         assertTrue (next.IsRecording && next.IsHighlighted) "Enter must restart recording"
         command next Keys.Escape |> ignore
         assertTrue (not next.IsHighlighted) "Cancelled recording kept the listening highlight"
+        // A key another action has moves to this one, which says where it came from; the other's box
+        // shows it has none. Then both go back as they were.
         previous.StartRecording()
         command previous (Keys.Control ||| Keys.OemCloseBrackets) |> ignore
-        assertTrue (previous.Shortcut=3621 && hotKeys.["prevTab"]=3621 && previous.Message.IsSome) "Shortcut used by another action is refused"
+        assertTrue (previous.Shortcut=expected && hotKeys.["prevTab"]=expected && hotKeys.["nextTab"]=0 && next.Shortcut=0)
+                   "A key another action has did not move to the one it was pressed for"
+        assertTrue (previous.Message=Some(tr (Strings.Shortcuts.takenFrom (tr Strings.Settings.nextTab.caption))) && not previous.MessageIsError)
+                   (sprintf "Taking another action's key said %A" previous.Message)
+        hotKeys.["prevTab"] <- 3621
+        previous.Shortcut <- 3621
+        hotKeys.["nextTab"] <- expected
+        next.Shortcut <- expected
         previous.StartRecording()
         command previous (Keys.Control ||| Keys.B) |> ignore
         assertTrue (previous.Shortcut=3621 && hotKeys.["prevTab"]=3621) "Unavailable shortcut restored"
@@ -587,13 +596,11 @@ let main() =
         previous.StartRecording()
         command previous Keys.Enter |> ignore
         assertTrue (previous.Shortcut=0 && hotKeys.["prevTab"]=0 && not previous.IsRecording) "Enter with nothing held did not remove the shortcut"
-        // Keys Windows or the palette keep are refused by name, the shortcut left as it was.
+        // Alt+Enter, which the palette keeps for setting a shortcut, is refused by name, the shortcut
+        // left as it was.
         previous.Shortcut <- 3621
         hotKeys.["prevTab"] <- 3621
-        // Each says what has the key: Windows and what it does there, or the palette.
-        for reserved,why in [Keys.Alt ||| Keys.Enter,Strings.Shortcuts.usedByPalette
-                             Keys.Alt ||| Keys.F4,Strings.Shortcuts.usedByWindows Strings.Shortcuts.closeWindow
-                             Keys.Control ||| Keys.Escape,Strings.Shortcuts.usedByWindows Strings.Shortcuts.startMenu] do
+        for reserved,why in [Keys.Alt ||| Keys.Enter,Strings.Shortcuts.usedByPalette] do
             previous.StartRecording()
             command previous reserved |> ignore
             assertTrue (previous.Shortcut=3621 && hotKeys.["prevTab"]=3621 && previous.Message=Some(tr why))
@@ -605,10 +612,20 @@ let main() =
             | :? Label as note -> assertTrue (not previous.ShowsMessage && note.Visible && note.Text=said) (sprintf "The refusal of %A under the box reads %A" reserved note.Text)
             | _ -> failwithf "The refusal of %A is not on a line under the box" reserved
             command previous Keys.Escape |> ignore
-        // Alt+Space, the window menu's key, which launchers commonly take, can be a shortcut.
-        previous.StartRecording()
-        command previous (Keys.Alt ||| Keys.Space) |> ignore
-        assertTrue (previous.Shortcut=SettingsShortcut.encode (Keys.Alt ||| Keys.Space)) "Alt+Space was refused as a shortcut"
+        // A key of the lists, used only in the palette and the window search, may be Tab too; keys
+        // that type into the box may not, nor Tab for the whole desktop.
+        for keyData,inList,desktop in [Keys.Tab,true,false; Keys.Shift ||| Keys.Tab,true,false; Keys.Control ||| Keys.Tab,true,true
+                                       Keys.F6,true,true; Keys.A,false,false; Keys.Space,false,false; Keys.Enter,false,false; Keys.Shift ||| Keys.A,false,false] do
+            assertTrue (SettingsShortcut.isAcceptableInList keyData=inList && SettingsShortcut.isAcceptable keyData=desktop)
+                       (sprintf "%A is wrongly allowed or refused as a key" keyData)
+        // Keys Windows uses are the user's to take: Alt+Space, the window menu's key, which
+        // launchers commonly take, and Alt+F4 or Ctrl+Esc, which the editor no longer refuses itself.
+        for windowsKey in [Keys.Alt ||| Keys.Space;Keys.Alt ||| Keys.F4;Keys.Control ||| Keys.Escape] do
+            previous.Shortcut <- 3621
+            previous.StartRecording()
+            command previous windowsKey |> ignore
+            assertTrue (previous.Shortcut=SettingsShortcut.encode windowsKey && not (SettingsShortcut.isReserved windowsKey))
+                       (sprintf "%A was refused as a shortcut" windowsKey)
         previous.Shortcut <- 3621
         previous.Clear()
         assertTrue (hotKeys.["prevTab"]=0) "Clear removes the shortcut"
@@ -622,8 +639,13 @@ let main() =
         assertTrue (search.Shortcut=0) "Explicitly cleared tab search shortcut was not preserved"
         hotKeys.["searchTabs"] <- 1568
         search.Shortcut <- 1568
-        (findButton "Restore default shortcuts" view.control).Value.PerformClick()
+        // A key given in the palette to a command the page does not list goes back to none as well.
+        hotKeys.["rename-tab"] <- SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.F7)
+        let restoreButton = (findButton "Restore default shortcuts" view.control).Value
+        assertTrue (restoreButton.AccessibleDescription=tr Strings.Shortcuts.restoreDefaultsHelp) "The reset button does not say what it resets"
+        restoreButton.PerformClick()
         assertTrue (hotKeys.["nextTab"]=3623 && hotKeys.["prevTab"]=3621 && next.Shortcut=3623 && previous.Shortcut=3621) "Restore default shortcuts"
+        assertTrue (hotKeys.["rename-tab"]=0) "Restore default shortcuts left a key given in the palette"
         assertTrue (hotKeys.["searchTabs"]=1620 && search.Shortcut=1620) "Restore default must set tab search to Ctrl+Alt+T"
         let newTab = view.control.Controls.Find("new-tab",true).[0] :?> SettingsShortcutInput
         assertTrue (hotKeys.["newTab"]=1614 && newTab.Shortcut=1614) "Restore default must set new tab to Ctrl+Alt+N"
