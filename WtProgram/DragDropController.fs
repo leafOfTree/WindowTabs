@@ -199,6 +199,8 @@ type DragActionInfo = {
     onBegin : unit -> unit
     onDrop : Pt -> unit
     onEnd : unit -> unit
+    /// Whether the button that began the drag is still down.
+    buttonDown : unit -> bool
     }
 
 type DragAction(info:DragActionInfo) =
@@ -355,10 +357,13 @@ type DragAction(info:DragActionInfo) =
         this.dragDetect()
         // A quick click can be released while the tab is still being activated. Its button-up then
         // never reaches the capture, which held on and took the next click as the drop.
-        let primary = if SystemInformation.MouseButtonsSwapped then VirtualKeyCodes.VK_RBUTTON else VirtualKeyCodes.VK_LBUTTON
-        if WinUserApi.GetAsyncKeyState(primary)>=0s then this.cancel()
+        if not(info.buttonDown()) then this.cancel()
 
-type DragDropController(parent:IDragDropParent) =
+/// `buttonDown` says whether the primary button is down, the physical one unless a test says.
+type DragDropController(parent:IDragDropParent, ?buttonDown:unit -> bool) =
+    let buttonDown = defaultArg buttonDown (fun () ->
+        let primary = if SystemInformation.MouseButtonsSwapped then VirtualKeyCodes.VK_RBUTTON else VirtualKeyCodes.VK_LBUTTON
+        WinUserApi.GetAsyncKeyState(primary)<0s)
     let lockObj = obj()
     let withLock = lock lockObj
     let Cell = CellScope(true, false)
@@ -412,6 +417,7 @@ type DragDropController(parent:IDragDropParent) =
                         withLock(fun () ->
                             dragActionCell.set(None)
                             dragInvoker <- None)
+                    buttonDown = buttonDown
                 })
                 dragActionCell.set(Some(dragAction))
                 dragInvoker <- Some InvokerService.invoker

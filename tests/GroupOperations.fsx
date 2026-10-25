@@ -169,6 +169,94 @@ let main() =
         check (hit=app.Handle) (sprintf "A drag over an app's child window found %A, not its window %A" hit app.Handle)
         let appSurfaces = Map2(List2([app.Handle,surface]))
         check (DragRouting.resolve strips appSurfaces hit owner=LayoutHit app.Handle) "A drag over an app's child window did not offer a pane"
+    // A tab dragged from its strip, as the drag's capture window sees the pointer: it starts once
+    // the pointer has moved, moves in its strip, goes over to another strip, floats away from any,
+    // lands or is cancelled back to its strip.
+    do
+        let events = ResizeArray<string>()
+        let stripTarget name =
+            {new IDragDropTarget with
+                member _.dragBegin() = events.Add(name+" begin")
+                member _.dragEnd() = events.Add(name+" end")
+                member _.dragEnter _ _ = events.Add(name+" enter"); true
+                member _.dragMove _ = if not(events.Contains(name+" move")) then events.Add(name+" move")
+                member _.dragExit() = events.Add(name+" exit")
+                member _.dragCancel _ = events.Add(name+" cancel")}
+        let parent =
+            {new IDragDropParent with
+                member _.dragBegin() = events.Add("parent begin")
+                member _.dragDrop((_,data)) = events.Add("parent drop "+string data)
+                member _.dragEnd() = events.Add("parent end")}
+        let stripAt x = new Form(ShowInTaskbar=false,TopMost=true,StartPosition=FormStartPosition.Manual,
+                                 FormBorderStyle=FormBorderStyle.None,Location=Point(x,600),Size=Size(300,30))
+        use source = stripAt 120
+        use other = stripAt 600
+        source.Show(); other.Show()
+        for _ in 1..5 do Application.DoEvents()
+        let controller = DragDropController(parent,fun () -> true)
+        let api = controller :> IDragDrop
+        api.registerTarget(source.Handle,stripTarget "source")
+        api.registerTarget(other.Handle,stripTarget "other")
+        let start = Pt(200,615)
+        let startDrag data =
+            events.Clear()
+            api.beginDrag(source.Handle,(fun _ -> failwith "no drag image here"),Pt(),start,box data)
+            let capture = WinUserApi.GetCapture()
+            check (capture<>IntPtr.Zero) "A drag began without taking the mouse capture"
+            capture
+        let send capture msg (pt:Pt) =
+            let client = OS().windowFromHwnd(capture).ptToClient(pt)
+            WinUserApi.SendMessage(capture,msg,IntPtr.Zero,IntPtr((client.y <<< 16) ||| (client.x &&& 0xFFFF))) |> ignore
+        let move capture pt = send capture WindowMessages.WM_MOUSEMOVE pt
+        let release capture pt = send capture WindowMessages.WM_LBUTTONUP pt
+        let ended() = WinUserApi.GetCapture()=IntPtr.Zero && not(api.cancelDrag())
+        let empty = Pt(950,300)
+        check (WinUserApi.WindowFromPoint(Pt(750,615).POINT)=other.Handle && WinUserApi.WindowFromPoint(empty.POINT)<>source.Handle &&
+               WinUserApi.WindowFromPoint(empty.POINT)<>other.Handle) "The drag fixture's strips are not where the pointer goes"
+        // A click: the button comes up before the pointer moved, so no drag began.
+        let capture = startDrag "click"
+        move capture (Pt(202,616))
+        release capture (Pt(202,616))
+        check (events.Count=0 && ended()) (sprintf "A click on a tab began a drag: %A" (List.ofSeq events))
+        // Moved past the threshold, the tab is dragged in its strip, joins the other strip and lands there.
+        let capture = startDrag "join"
+        move capture (Pt(230,615))
+        check (List.ofSeq events=["source begin";"other begin";"parent begin";"source enter"] || List.ofSeq events=["other begin";"source begin";"parent begin";"source enter"])
+              (sprintf "A drag did not begin in its own strip: %A" (List.ofSeq events))
+        move capture (Pt(260,615))
+        check (events.Contains "source move") "A tab dragged in its strip did not move there"
+        move capture (Pt(750,615))
+        check (events.Contains "source exit" && events.Contains "other enter") (sprintf "A tab dragged over another strip did not go to it: %A" (List.ofSeq events))
+        release capture (Pt(750,615))
+        check (events.Contains "parent end" && events.Contains "source end" && events.Contains "other end" && not(events.Exists(fun e -> e.StartsWith "parent drop")) && ended())
+              (sprintf "A tab let go over a strip did not end the drag there: %A" (List.ofSeq events))
+        // Dragged away from every strip, it floats and is let go as a window of its own.
+        let capture = startDrag "float"
+        move capture (Pt(230,615))
+        move capture empty
+        check (events.Contains "source exit") "A tab dragged away from its strip stayed in it"
+        release capture empty
+        check (events.Contains "parent drop float" && events.Contains "parent end" && ended()) (sprintf "A tab let go away from the strips was not dropped: %A" (List.ofSeq events))
+        // Cancelled while floating, as Escape does, it goes back to its strip.
+        let capture = startDrag "cancel"
+        move capture (Pt(230,615))
+        move capture empty
+        check (api.cancelDrag()) "A floating drag could not be cancelled"
+        for _ in 1..5 do Application.DoEvents()
+        check (events.Contains "source cancel" && events.Contains "parent end" && not(events.Exists(fun e -> e.StartsWith "parent drop")) && ended())
+              (sprintf "A cancelled drag did not go back to its strip: %A" (List.ofSeq events))
+        // Cancelled before it began, nothing happened to drag back.
+        let _ = startDrag "early"
+        check (api.cancelDrag()) "A drag about to begin could not be cancelled"
+        for _ in 1..5 do Application.DoEvents()
+        check (events.Count=0 && ended()) (sprintf "Cancelling a drag before it began did something: %A" (List.ofSeq events))
+        // One drag at a time: a second press while one is on is not another drag.
+        let capture = startDrag "first"
+        api.beginDrag(other.Handle,(fun _ -> failwith "no drag image here"),Pt(),Pt(700,615),box "second")
+        move capture (Pt(230,615))
+        check (events.Contains "source enter" && not(events.Contains "other enter")) "A second drag took over the one already on"
+        release capture (Pt(230,615))
+        check (ended()) "Two drags at once left one open"
     // Lasts until the test process exits.
     Timer.timeBeginPeriod 1u |> ignore
     // Hold a native-like call in flight, then replace its queued successors and

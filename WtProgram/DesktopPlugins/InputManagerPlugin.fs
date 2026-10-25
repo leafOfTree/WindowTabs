@@ -68,16 +68,83 @@ type EmptyPaneEscape() =
             wasTaken
         else false
 
+/// One key as the keyboard hook sees it, with what it needs of the desktop at that moment.
+type ShortcutKey = {
+    msg: int
+    vk: int
+    alt: bool
+    control: bool
+    shift: bool
+    win: bool
+    now: DateTime
+    foreground: IntPtr
+    /// The tabs of the foreground window's group, in order; None outside a group.
+    tabs: IntPtr list option
+    numberModifier: string
+    /// Number shortcuts are not turned off for the foreground window's app.
+    numberShortcutsEnabled: bool
+    leaderEnabled: bool
+    leaderCode: int
+    leaderKeys: string
+    /// The group the leader was armed in is still the one in front.
+    leaderInSameGroup: bool }
+
+/// What the hook does with a key: takes it from the app, activates a tab (its index and window),
+/// masks Alt so the app's menu does not open, and ends the leader's badges.
+type ShortcutOutcome = { swallow: bool; activate: (int * IntPtr) option; maskAlt: bool; leaderEnded: bool }
+
+/// The keyboard hook's decisions, apart from the hook, the desktop and the groups' threads.
+/// `cancelDrag` and `closeEmptyPane` say whether there was a drag or a pane to end.
+type ShortcutKeys(cancelDrag:unit -> bool, closeEmptyPane:unit -> bool) =
+    let numericCapture = NumericShortcutCapture()
+    let leaderState = NumberLeaderState()
+    let leaderCapture = NumericShortcutCapture()
+    let emptyPaneEscape = EmptyPaneEscape()
+    let pending = PendingActivation()
+    let pass = { swallow=false; activate=None; maskAlt=false; leaderEnded=false }
+    member _.leader = leaderState
+    member _.activation = pending
+    member _.handle(key:ShortcutKey) =
+        let leader,activation = leaderState,pending
+        let down = key.msg=WindowMessages.WM_KEYDOWN || key.msg=WindowMessages.WM_SYSKEYDOWN
+        // Escape during a tab drag cancels it and goes no further.
+        if down && key.vk=VirtualKeyCodes.VK_ESCAPE && cancelDrag() then { pass with swallow=true }
+        // Escape beside an empty pane closes it.
+        elif key.vk=VirtualKeyCodes.VK_ESCAPE &&
+             emptyPaneEscape.handle(key.msg,key.vk,key.alt || key.control || key.shift || key.win,closeEmptyPane) then { pass with swallow=true }
+        else
+        let wasArmed = leader.active
+        if wasArmed then
+            if not key.leaderInSameGroup then leader.cancel()
+            leader.validate key.foreground key.now |> ignore
+        let code = key.leaderCode
+        let chordMatches = key.vk=(code &&& 0xFF) && key.control=((code &&& 0x200)<>0) && key.alt=((code &&& 0x400)<>0) && key.shift=((code &&& 0x100)<>0)
+        let count = key.tabs |> Option.map List.length |> Option.defaultValue 0
+        let leaderConsumed,leaderTarget =
+            if down && not chordMatches then leader.key key.foreground key.now key.vk count key.leaderKeys
+            else false,None
+        let capturedLeader,_ = leaderCapture.handle(key.msg,key.vk,if leaderConsumed then Some 0 else None)
+        let target =
+            if wasArmed || capturedLeader || key.shift || key.win || (key.leaderEnabled && chordMatches) then None
+            else key.tabs |> Option.bind(fun tabs ->
+                NumericShortcutTarget.index key.msg key.vk key.control key.alt key.numberModifier
+                |> Option.filter(NumericShortcutTarget.available tabs (activation.current(key.foreground,key.now))))
+        let target = target |> Option.filter(fun _ -> key.numberShortcutsEnabled)
+        let consumed,activate = numericCapture.handle(key.msg,key.vk,target)
+        let activate = if leaderConsumed then leaderTarget else activate
+        let activate = activate |> Option.bind(fun index -> key.tabs |> Option.map(fun tabs -> index,tabs.[index]))
+        activate |> Option.iter(fun (_,hwnd) -> activation.request(hwnd,key.now))
+        { swallow=consumed || capturedLeader
+          activate=activate
+          maskAlt=(activate.IsSome || leaderConsumed) && key.alt
+          leaderEnded=wasArmed && not leader.active }
+
 type InputManagerPlugin(msgSet:Set2<Int32>) as this =
     let hookProcDelegate = HOOKPROC(this.llHook)
     let mutable kbHook = null
     let OS = OS()
-    let numeric = NumericTabHotKeyPlugin()
-    let numericCapture = NumericShortcutCapture()
-    let leader = NumberLeaderState()
-    let leaderCapture = NumericShortcutCapture()
-    let emptyPaneEscape = EmptyPaneEscape()
-    let activation = PendingActivation()
+    let keys = ShortcutKeys((fun () -> Services.dragDrop.cancelDrag()),(fun () -> this.closeEmptyPane()))
+    let leader = keys.leader
     let mutable leaderGroup : GroupInfo option = None
     let timer = new System.Windows.Forms.Timer(Interval=50)
     let owned = new LifetimeScope(ignore)
@@ -102,10 +169,12 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
         leaderGroup |> Option.iter(fun group -> group.invokeGroup(fun() -> group.group.bb.write("numberBadges",false)))
         leaderGroup <- None
 
-    member private this.validateLeader() =
-        let sameGroup = leaderGroup |> Option.exists(fun group ->
+    member private this.leaderInSameGroup =
+        leaderGroup |> Option.exists(fun group ->
             not group.isExited && (this.foregroundGroup |> Option.exists(fun current -> current.hwnd=group.hwnd)))
-        if not sameGroup then leader.cancel()
+
+    member private this.validateLeader() =
+        if not this.leaderInSameGroup then leader.cancel()
         leader.validate (WinUserApi.GetForegroundWindow()) DateTime.UtcNow
 
     member private this.toggleLeader() =
@@ -138,11 +207,6 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
     member this.registerMouseLLHook() =
         mouseHook <- WinUserApi.SetWindowsHookEx(WindowHookTypes.WH_MOUSE_LL, hookProcDelegate, IntPtr.Zero, 0)
 
-    member private this.modifiersHeld(data:KBDLLHOOKSTRUCT) =
-        (data.flags &&& LlKeyboardHookFlags.LLKHF_ALTDOWN) <> 0 ||
-        [VirtualKeyCodes.VK_CONTROL;VirtualKeyCodes.VK_SHIFT;int System.Windows.Forms.Keys.LWin;int System.Windows.Forms.Keys.RWin]
-        |> List.exists Win32Helper.IsKeyPressed
-
     /// The group of the active window, if an empty pane is shown beside it, is told to close it.
     member private this.closeEmptyPane() =
         match this.foregroundGroup with
@@ -157,49 +221,36 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
     member this.registerKeyboardLLHook() =
         kbHook <- OS.registerKeyboardLLHook <| fun(key, data) ->
             if data.dwExtraInfo = AltMenuMask.marker then None
-            // Escape during a tab drag cancels it and goes no further.
-            elif (int key=WindowMessages.WM_KEYDOWN || int key=WindowMessages.WM_SYSKEYDOWN) && data.vkCode=VirtualKeyCodes.VK_ESCAPE && Services.dragDrop.cancelDrag() then Some 1
-            // Escape beside an empty pane closes it.
-            elif data.vkCode=VirtualKeyCodes.VK_ESCAPE &&
-                 emptyPaneEscape.handle(int key,data.vkCode,this.modifiersHeld(data),this.closeEmptyPane) then Some 1
             else
             // The group runs asynchronously; Ctrl may be released before it handles
             // this key. Preserve the modifier state belonging to this input event.
-            let controlPressed = Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_CONTROL)
             let foreground = this.foregroundGroup
             let foregroundHwnd = WinUserApi.GetForegroundWindow()
-            let altPressed = (data.flags &&& LlKeyboardHookFlags.LLKHF_ALTDOWN) <> 0
-            let extraModifier = Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_SHIFT) ||
-                                Win32Helper.IsKeyPressed(int System.Windows.Forms.Keys.LWin) ||
-                                Win32Helper.IsKeyPressed(int System.Windows.Forms.Keys.RWin)
-            let wasArmed = leader.active
-            if wasArmed then this.validateLeader() |> ignore
-            let down = int key=WindowMessages.WM_KEYDOWN || int key=WindowMessages.WM_SYSKEYDOWN
-            let shiftPressed = Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_SHIFT)
-            let chordMatches = data.vkCode=(leaderCode &&& 0xFF) && controlPressed=((leaderCode &&& 0x200)<>0) && altPressed=((leaderCode &&& 0x400)<>0) && shiftPressed=((leaderCode &&& 0x100)<>0)
-            let leaderConsumed,leaderTarget =
-                if down && not chordMatches then
-                    leader.key foregroundHwnd DateTime.UtcNow data.vkCode (foreground |> Option.map(fun g -> g.windows.length) |> Option.defaultValue 0) leaderKeys
-                else false,None
-            if wasArmed && not leader.active then this.cancelLeader()
-            let capturedLeader,_ = leaderCapture.handle(int key,data.vkCode,if leaderConsumed then Some 0 else None)
-            let target =
-                if wasArmed || capturedLeader || extraModifier || (leaderEnabled && chordMatches) then None
-                else foreground |> Option.bind(fun group ->
-                    numeric.targetIndex(int key,data.vkCode,controlPressed,altPressed=altPressed)
-                    |> Option.filter(NumericShortcutTarget.available group.windows.list (activation.current(WinUserApi.GetForegroundWindow(),DateTime.UtcNow))))
-            let target = target |> Option.filter(fun _ -> NumberShortcutRules.enabled (pathFor (WinUserApi.GetForegroundWindow())))
-            let consumed,activate = numericCapture.handle(int key,data.vkCode,target)
-            let activate = if leaderConsumed then leaderTarget else activate
-            if (activate.IsSome || leaderConsumed) && altPressed then AltMenuMask.send()
-            activate |> Option.iter(fun index ->
+            let outcome =
+                keys.handle { msg=int key
+                              vk=data.vkCode
+                              alt=(data.flags &&& LlKeyboardHookFlags.LLKHF_ALTDOWN) <> 0
+                              control=Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_CONTROL)
+                              shift=Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_SHIFT)
+                              win=Win32Helper.IsKeyPressed(int System.Windows.Forms.Keys.LWin) || Win32Helper.IsKeyPressed(int System.Windows.Forms.Keys.RWin)
+                              now=DateTime.UtcNow
+                              foreground=foregroundHwnd
+                              tabs=foreground |> Option.map(fun group -> group.windows.list)
+                              numberModifier=Services.settings.getValue("numberHotKeyModifier").cast<string>()
+                              numberShortcutsEnabled=NumberShortcutRules.enabled (pathFor foregroundHwnd)
+                              leaderEnabled=leaderEnabled
+                              leaderCode=leaderCode
+                              leaderKeys=leaderKeys
+                              leaderInSameGroup=this.leaderInSameGroup }
+            if outcome.leaderEnded then this.cancelLeader()
+            if outcome.maskAlt then AltMenuMask.send()
+            outcome.activate |> Option.iter(fun (index,_) ->
                 foreground.iter <| fun group ->
                     let groupInfo = group.cast<GroupInfo>()
-                    activation.request(group.windows.list.[index],DateTime.UtcNow)
                     groupInfo.invokeGroup <| fun() ->
                         try groupInfo.group.activateIndex(index,true)
-                        finally activation.completed())
-            if consumed || capturedLeader then Some 1 else None
+                        finally keys.activation.completed())
+            if outcome.swallow then Some 1 else None
 
     interface IStartupInputPlugin
 

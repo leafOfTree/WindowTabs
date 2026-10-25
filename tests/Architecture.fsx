@@ -635,6 +635,97 @@ let main() =
         check (activation.current(IntPtr(2),pendingAt.AddSeconds(3.0))=IntPtr(2)) "A queued number shortcut that never ran kept counting"
         activation.completed()
         check (activation.current(IntPtr(3),pendingAt)=IntPtr(3)) "The foreground did not count again once every shortcut ran"
+        // The keyboard hook's decisions, key by key, as it makes them for a group of three tabs.
+        do
+            let down,up = WindowMessages.WM_KEYDOWN,WindowMessages.WM_KEYUP
+            let sysDown,sysUp = WindowMessages.WM_SYSKEYDOWN,WindowMessages.WM_SYSKEYUP
+            let w1,w2,w3 = IntPtr 101,IntPtr 102,IntPtr 103
+            let mutable drag = false
+            let mutable emptyPane = false
+            let keys = ShortcutKeys((fun () -> let was = drag in drag <- false; was),(fun () -> emptyPane))
+            let at = DateTime(2026,1,1)
+            // Alt+F, the leader's default chord.
+            let key msg vk = { msg=msg; vk=vk; alt=false; control=false; shift=false; win=false; now=at; foreground=w1
+                               tabs=Some [w1;w2;w3]; numberModifier="Ctrl"; numberShortcutsEnabled=true
+                               leaderEnabled=false; leaderCode=0x446; leaderKeys="ASDF"; leaderInSameGroup=true }
+            let ctrl msg vk = { key msg vk with control=true }
+            let passed (outcome:ShortcutOutcome) = not outcome.swallow && outcome.activate.IsNone && not outcome.maskAlt
+            // Ctrl+2 goes to the second tab and is taken from the app, its release with it.
+            let pressed = keys.handle(ctrl down 0x32)
+            check (pressed.swallow && pressed.activate=Some(1,w2) && not pressed.maskAlt) "Ctrl+2 did not go to the second tab"
+            check (keys.handle(ctrl up 0x32).swallow) "The release of a taken Ctrl+2 reached the app"
+            keys.activation.completed()
+            // The tab in front, a tab that is not there, a key that is no number: the app has them.
+            check (passed (keys.handle(ctrl down 0x31)) && passed (keys.handle(ctrl up 0x31))) "Ctrl+1 on the tab in front was taken from the app"
+            check (passed (keys.handle(ctrl down 0x35))) "Ctrl+5 in a group of three was taken from the app"
+            check (passed (keys.handle(ctrl down 0x30)) && passed (keys.handle(ctrl down 0x41))) "Ctrl+0 or Ctrl+A was taken as a tab"
+            check (passed (keys.handle(key down 0x32))) "2 without Ctrl was taken as a tab"
+            // Shift or Win as well is another shortcut; Ctrl+Alt is neither modifier alone.
+            check (passed (keys.handle({ ctrl down 0x32 with shift=true }))) "Ctrl+Shift+2 was taken as a tab"
+            check (passed (keys.handle({ ctrl down 0x32 with win=true }))) "Win+Ctrl+2 was taken as a tab"
+            check (passed (keys.handle({ ctrl down 0x32 with alt=true }))) "Ctrl+Alt+2 was taken as a tab"
+            // Outside a group, or for an app whose number shortcuts are off, the keys are the app's.
+            check (passed (keys.handle({ ctrl down 0x32 with tabs=None }))) "Ctrl+2 outside a group was taken"
+            check (passed (keys.handle({ ctrl down 0x32 with numberShortcutsEnabled=false }))) "Ctrl+2 was taken from an app that keeps its number keys"
+            // With Alt as the modifier, Alt+3 goes to the third tab and its menu is masked.
+            let alt = keys.handle({ key sysDown 0x33 with alt=true; numberModifier="Alt" })
+            check (alt.swallow && alt.activate=Some(2,w3) && alt.maskAlt) "Alt+3 did not go to the third tab with the app's menu masked"
+            check (keys.handle({ key sysUp 0x33 with alt=true; numberModifier="Alt" }).swallow) "The release of a taken Alt+3 reached the app"
+            keys.activation.completed()
+            check (passed (keys.handle({ ctrl down 0x32 with numberModifier="Alt" }))) "Ctrl+2 was taken with Alt as the number modifier"
+            // Typed faster than the group switches: each press counts from the tab the last one asked
+            // for, so Ctrl+1 right after Ctrl+2 goes back even while the first tab is still in front.
+            let first = keys.handle(ctrl down 0x32)
+            keys.handle(ctrl up 0x32) |> ignore
+            let second = keys.handle(ctrl down 0x31)
+            keys.handle(ctrl up 0x31) |> ignore
+            check (first.activate=Some(1,w2) && second.swallow && second.activate=Some(0,w1)) "A quick Ctrl+1 after Ctrl+2 was passed to the app while the switch was queued"
+            keys.activation.completed()
+            keys.activation.completed()
+            // Escape cancels a drag on its press only; beside an empty pane it closes it, and is taken
+            // with its release, unless a modifier makes it another shortcut.
+            drag <- true
+            check (keys.handle(key down 0x1B).swallow && not drag) "Escape did not cancel the tab drag"
+            check (passed (keys.handle(key up 0x1B))) "The release of Escape after a drag was taken"
+            emptyPane <- true
+            check (keys.handle(key down 0x1B).swallow && keys.handle(key down 0x1B).swallow && keys.handle(key up 0x1B).swallow)
+                  "Escape beside an empty pane, held and released, reached the app"
+            check (passed (keys.handle({ key down 0x1B with control=true }))) "Ctrl+Escape beside an empty pane was taken"
+            keys.handle(key up 0x1B) |> ignore
+            emptyPane <- false
+            check (passed (keys.handle(key down 0x1B))) "Escape with no drag and no empty pane was taken"
+            keys.handle(key up 0x1B) |> ignore
+            // The leader's chord is never a number shortcut, even when its key is a number.
+            check (passed (keys.handle({ key sysDown 0x46 with alt=true; leaderEnabled=true }))) "The leader's chord was taken as a key"
+            check (passed (keys.handle({ ctrl down 0x32 with leaderEnabled=true; leaderCode=0x232 }))) "Ctrl+2 as the leader's chord went to a tab"
+            // Armed, the leader takes the next key: D, the third of ASDF, goes to the third tab.
+            keys.leader.arm w1 at
+            let picked = keys.handle(key down 0x44)
+            check (picked.swallow && picked.activate=Some(2,w3) && picked.leaderEnded && not keys.leader.active) "The leader's D did not go to the third tab"
+            check (keys.handle(key up 0x44).swallow) "The release of the leader's key reached the app"
+            keys.activation.completed()
+            // A key for a tab that is not there ends the leader without a switch; Escape ends it too.
+            keys.leader.arm w1 at
+            let missing = keys.handle(key down 0x46)
+            check (missing.swallow && missing.activate.IsNone && missing.leaderEnded) "The leader's F in a group of three switched or reached the app"
+            keys.handle(key up 0x46) |> ignore
+            keys.leader.arm w1 at
+            check (keys.handle(key down 0x1B).leaderEnded) "Escape did not end the leader"
+            keys.handle(key up 0x1B) |> ignore
+            // Any other key ends it and reaches the app; so does the group or the window changing.
+            keys.leader.arm w1 at
+            let other = keys.handle(key down 0x5A)
+            check (not other.swallow && other.leaderEnded) "Z after the leader was taken from the app"
+            keys.leader.arm w1 at
+            check (passed (keys.handle({ key down 0x44 with leaderInSameGroup=false })) && not keys.leader.active) "The leader armed in another group picked a tab"
+            keys.leader.arm w1 at
+            check (passed (keys.handle({ key down 0x44 with foreground=w2 })) && not keys.leader.active) "The leader armed on another window picked a tab"
+            keys.leader.arm w1 at
+            check (passed (keys.handle({ key down 0x44 with now=at.AddSeconds(11.0) })) && not keys.leader.active) "The leader picked a tab after it expired"
+            // Modifiers alone keep the leader waiting for its key.
+            keys.leader.arm w1 at
+            check (passed (keys.handle(key down 0x10)) && keys.leader.active) "Shift ended the leader before its key"
+            keys.leader.cancel()
         // Dropping on tabs reaches Explorer late bound: no interop assembly ships, and a window
         // that is not an Explorer folder is simply no target.
         check (typeof<OleDropTarget>.Assembly.GetReferencedAssemblies() |> Array.forall(fun name -> not (name.Name.StartsWith("Interop."))))
