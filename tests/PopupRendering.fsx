@@ -145,16 +145,22 @@ let main() =
         // Its size is fixed, whatever the text, so one notice replacing another does not jump.
         let fixedSize = Size(Dpi.scale NoticeWindow.size.Width,Dpi.scale NoticeWindow.size.Height)
         check (notice.Size=fixedSize) (sprintf "A short notice is not the fixed size: %A" notice.Size)
+        // A new notice replaces the one on screen by sliding it out, then sliding in itself.
         notice.show(String.replicate 4 "A long title ",String.replicate 12 "A much longer notice that has to wrap ",Progress)
         Application.DoEvents()
+        check (notice.Visible && (notice.staysFor=Some 4000 || not SystemInformation.UIEffectsEnabled)) "A new notice put the one on screen away at once"
+        pumpFor 600L
+        check (notice.Visible && notice.Opacity=1.0 && notice.staysFor=None) "A new notice did not come in in place of the old one"
         check (notice.Size=fixedSize) (sprintf "A long notice changed the notice's size: %A" notice.Size)
         // How long each kind stays: an error until it is closed, as work in progress until replaced.
         for kind,stays in [Info,Some 4000;Reminder,Some 8000;Error,None;Progress,None] do
             notice.show("Workspace 1","Message",kind)
+            pumpFor 600L
             check (notice.staysFor=stays && notice.isCountingDown=stays.IsSome)
                   (sprintf "A %A notice stays %A, counting down %b" kind notice.staysFor notice.isCountingDown)
         // Under the pointer it does not go; it counts again from the start once the pointer leaves.
         notice.show("Workspace 1","Saved with 2 windows",Info)
+        pumpFor 600L
         let raise name (args:EventArgs) =
             typeof<Control>.GetMethod(name,Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).Invoke(notice,[|box args|]) |> ignore
         raise "OnMouseEnter" EventArgs.Empty
@@ -163,7 +169,7 @@ let main() =
         check notice.isCountingDown "A notice did not count down again once the pointer left"
         // Its close button takes an error away, which would otherwise stay.
         notice.show("Workspace 1","Could not restore.",Error)
-        pumpFor 300L
+        pumpFor 600L
         raise "OnMouseEnter" EventArgs.Empty
         let close = notice.closeBounds
         let centre = Point(close.X+close.Width/2,close.Y+close.Height/2)
