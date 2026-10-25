@@ -542,7 +542,8 @@ module Strings =
                              ar="انقر اختصارًا ثم اضغط مجموعة المفاتيح الجديدة. اضغط Esc للإلغاء. وتعيّنه لوحة الأوامر أيضًا: Alt+Enter على أمر." }
         let restoreDefaults = { en="Restore default shortcuts"; zh="恢复默认快捷键"; ja="既定のショートカットに戻す"; ar="استعادة الاختصارات الافتراضية" }
         let inUse = { en="Shortcut already in use"; zh="快捷键已被占用"; ja="ショートカットは使用中です"; ar="الاختصار مستخدم بالفعل" }
-        let usedBy name = { en=sprintf "Used by %s" name; zh=sprintf "已用于“%s”" name; ja=sprintf "「%s」で使用中" name; ar=sprintf "يستخدمه «%s»" name }
+        /// A key pressed for one command that another had: it moves, and the other is left without.
+        let takenFrom name = { en=sprintf "Taken from %s" name; zh=sprintf "已从“%s”移过来" name; ja=sprintf "「%s」から移しました" name; ar=sprintf "نُقل من «%s»" name }
         // Shortcut field messages are kept short to fit.
         let alreadySet = { en="Already set"; zh="已是当前快捷键"; ja="設定済み"; ar="هذا هو الاختصار الحالي" }
         /// A key pressed, then what was said of it, as "Alt+J: Used by Next tab".

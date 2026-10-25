@@ -57,6 +57,10 @@ type Command = {
     chooses:bool
     run:IntPtr -> CommandOutcome }
 
+/// What has a shortcut key already: its name, its settings key for a command or a key of the
+/// lists, and how to take the key from it, and give it back when the key cannot be taken.
+type ShortcutHolder = { name:string; key:string; release:unit -> unit; restore:unit -> unit }
+
 /// What a setting's row in the palette does, which its own shortcut does too: its values listed
 /// to pick from, a value typed, a colour picked, or its page opened.
 module SettingRows =
@@ -417,7 +421,7 @@ module Commands =
     let categoryOf key = byShortcut key |> Option.map(fun command -> command.category)
     /// Where a category's commands are listed, in the palette's order.
     let categories = [TabCommands;GroupCommands;SplitCommands;WorkspaceCommands;SettingsCommands;AppCommands]
-    /// The command, other than the one on `key`, whose shortcut is `code`, to name in a refusal.
+    /// The command, other than the one on `key`, whose shortcut is `code`.
     let holder (getHotKey:string -> int) key code =
         if code=0 then None
         else all |> List.tryFind(fun other -> match other.shortcut with Some k -> k<>key && getHotKey k=code | None -> false)
@@ -426,10 +430,17 @@ module Commands =
     let listKeys = ["listNext";"listPrevious"]
     let private listKeyName key =
         SettingsCatalog.all |> List.tryPick(fun item -> match item.binding with Shortcut(k,_) when k=key -> Some(tr item.text.caption) | _ -> None)
-    /// What has `code` besides `key`, by name: a command, or a key of the lists, which a shortcut
-    /// for the whole desktop would take from them.
-    let holderName (getHotKey:string -> int) key code =
+    /// What has `code` besides `key`: a command, or a key of the lists, which a shortcut for the
+    /// whole desktop would take from them. A key pressed for `key` is meant for it, so the holder
+    /// gives it up: `setHotKey` sets a command's key, `setListKey` a list's.
+    let holderOf (getHotKey:string -> int) (setHotKey:string -> int -> bool) (setListKey:string -> int -> unit) key code =
         match holder getHotKey key code with
-        | Some command -> Some(tr command.text.caption)
+        | Some command ->
+            let other = command.shortcut.Value
+            Some { name=tr command.text.caption; key=other
+                   release=(fun () -> setHotKey other 0 |> ignore); restore=(fun () -> setHotKey other code |> ignore) }
         | None when code=0 -> None
-        | None -> listKeys |> List.tryFind(fun k -> k<>key && getHotKey k=code) |> Option.bind listKeyName
+        | None ->
+            listKeys |> List.tryFind(fun k -> k<>key && getHotKey k=code) |> Option.bind(fun other ->
+                listKeyName other |> Option.map(fun name ->
+                    { name=name; key=other; release=(fun () -> setListKey other 0); restore=(fun () -> setListKey other code) }))

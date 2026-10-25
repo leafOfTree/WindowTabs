@@ -10,11 +10,13 @@ module CommandPalette =
         (texts |> List.collect Localization.all) @ extra |> List.filter((<>) "") |> List.distinct |> List.map(fun text -> text.ToLowerInvariant())
     let private row index title texts extra group =
         { hwnd=IntPtr(index+1); title=title; program=""; keywords=words texts extra; group=group; recency=index; desktop="" }
-    /// Setting a command's shortcut from its row, with the same refusals as the Shortcuts page.
+    /// What has a key besides `key`, which gives it up as the Shortcuts page's boxes do.
+    let holderOf key code = Commands.holderOf Services.program.getHotKey Services.program.setHotKey Services.settings.setHotKey key code
+    /// Setting a command's shortcut from its row, as the Shortcuts page does.
     let assignment (command:Command) =
         command.shortcut |> Option.map(fun key ->
             { current=Services.program.getHotKey key
-              usedBy=fun code -> Commands.holderName Services.program.getHotKey key code
+              usedBy=holderOf key
               set=fun code -> Services.program.setHotKey key code })
     /// A key of the lists, kept in the settings as the box reads it.
     let private listKey key = Services.settings.hotKey key |> Option.defaultValue (SettingsCatalog.shortcutDefault key)
@@ -153,16 +155,17 @@ module CommandPalette =
               // A setting's row by the command that opens it, as a switch's is the one that turns it.
               | ACommand command | ASwitch(_,_,command)
               | (AChoice(SettingCommand command,_,_) | ASetting(SettingCommand command) | ANumberKeys(SettingCommand command)) ->
+                  // Taken, the key may have come from another row, which shows it no longer.
                   assignment command |> Option.map(fun given ->
                       { given with set=fun code ->
                                        let taken = given.set code
-                                       if taken then asides.Remove chosen.hwnd |> ignore
+                                       if taken then asides.Clear()
                                        taken })
               // A key of the lists: kept in the settings, never for the whole desktop.
               | ASetting { binding=Shortcut(key,_) } ->
                   Some { current=listKey key
-                         usedBy=fun code -> Commands.holderName Services.program.getHotKey key code
-                         set=fun code -> Services.settings.setHotKey key code; asides.Remove chosen.hwnd |> ignore; true }
+                         usedBy=holderOf key
+                         set=fun code -> Services.settings.setHotKey key code; asides.Clear(); true }
               | AChoice _ | ASetting _ | ANumberKeys _ -> None)
           dimmed=(fun chosen -> match action chosen with ACommand command -> not (command.enabled active) | _ -> false)
           assignOnEnter=(fun chosen -> match action chosen with ASetting { binding=Shortcut _ } -> true | _ -> false)

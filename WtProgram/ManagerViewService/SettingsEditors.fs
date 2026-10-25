@@ -366,6 +366,8 @@ type SettingsShortcutInput() as this =
     member _.Message = message |> Option.map fst
     /// Restores a previous shortcut and says why the new one was not kept.
     member this.Reject(previous,reason) = this.Shortcut <- previous; showMessage true reason
+    /// Says something of the shortcut just kept, in the muted colour, as "already set" is.
+    member this.Notice(text) = showMessage false text
     member this.StartRecording() =
         clearMessage()
         heldAtStart <- Control.ModifierKeys

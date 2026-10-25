@@ -777,11 +777,17 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                usedBy=fun code ->
                                    if code=0 then None
                                    else
-                                       match Commands.holderName (this :> IProgram).getHotKey "" code with
-                                       | Some name -> Some name
+                                       let program = this :> IProgram
+                                       let settings = settingsManager :> ISettings
+                                       match Commands.holderOf program.getHotKey program.setHotKey (fun key code -> settings.setHotKey key code) "" code with
+                                       | Some holder -> Some holder
                                        | None ->
+                                           // Another window's key moves to this one, as a command's does.
                                            saved() |> List.tryFind(fun other -> other.code=code && not (AppIdentity.same other.path path && other.title=entry.title))
-                                           |> Option.map(fun other -> other.title)
+                                           |> Option.map(fun other ->
+                                               { name=other.title; key=""
+                                                 release=(fun () -> known.Value <- None; program.setWindowShortcut { other with code=0 } |> ignore)
+                                                 restore=(fun () -> known.Value <- None; program.setWindowShortcut other |> ignore) })
                                set=fun code ->
                                    known.Value <- None
                                    (this :> IProgram).setWindowShortcut { path=path; title=entry.title; code=code } }

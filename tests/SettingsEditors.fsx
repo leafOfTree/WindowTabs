@@ -572,9 +572,18 @@ let main() =
         assertTrue (next.IsRecording && next.IsHighlighted) "Enter must restart recording"
         command next Keys.Escape |> ignore
         assertTrue (not next.IsHighlighted) "Cancelled recording kept the listening highlight"
+        // A key another action has moves to this one, which says where it came from; the other's box
+        // shows it has none. Then both go back as they were.
         previous.StartRecording()
         command previous (Keys.Control ||| Keys.OemCloseBrackets) |> ignore
-        assertTrue (previous.Shortcut=3621 && hotKeys.["prevTab"]=3621 && previous.Message.IsSome) "Shortcut used by another action is refused"
+        assertTrue (previous.Shortcut=expected && hotKeys.["prevTab"]=expected && hotKeys.["nextTab"]=0 && next.Shortcut=0)
+                   "A key another action has did not move to the one it was pressed for"
+        assertTrue (previous.Message=Some(tr (Strings.Shortcuts.takenFrom (tr Strings.Settings.nextTab.caption))) && not previous.MessageIsError)
+                   (sprintf "Taking another action's key said %A" previous.Message)
+        hotKeys.["prevTab"] <- 3621
+        previous.Shortcut <- 3621
+        hotKeys.["nextTab"] <- expected
+        next.Shortcut <- expected
         previous.StartRecording()
         command previous (Keys.Control ||| Keys.B) |> ignore
         assertTrue (previous.Shortcut=3621 && hotKeys.["prevTab"]=3621) "Unavailable shortcut restored"

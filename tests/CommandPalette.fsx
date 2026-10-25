@@ -614,7 +614,15 @@ let main() =
                     code <- code+1)
             | None -> ()
         let first,second = page.entries |> List.choose(fun entry -> page.shortcut entry |> Option.map(fun given -> entry,given)) |> fun bound -> bound.[0],bound.[1]
-        note ((snd second).usedBy (snd first).current).IsSome "A key one action has was not refused for another"
+        // Pressed for another action, a key one action has moves to it, and the first is left without.
+        match (snd second).usedBy (snd first).current with
+        | Some holder ->
+            let moved = (snd first).current
+            holder.release()
+            note ((snd second).set moved) "A key given up by another action was not taken"
+            let currentOf entry = page.shortcut entry |> Option.map(fun given -> given.current)
+            note (currentOf (fst first)=Some 0 && currentOf (fst second)=Some moved) "A key taken over stayed with the action that had it"
+        | None -> issues.Add "A key one action has was not found for another"
         // The window search and the palette, driven as a user would.
         let entries = TabSearch.tabs (fun _ -> None) active (groups() |> List.map(fun info -> (info :> IGroup).windows.list))
         let palette = TabSearchForm([],[],settings=api,pages=[CommandPalette.actionsPage active],scope=ActionScope,windows=false)
@@ -786,7 +794,15 @@ let main() =
         note (second<>first && (trial.Selected |> Option.map(fun entry -> entry.title))=first) "The lists' own keys did not move the choice"
         // As the program reads them: from the settings.
         let settingsKey key = api.hotKey key |> Option.defaultValue (SettingsCatalog.shortcutDefault key)
-        note (Commands.holderName settingsKey "newTab" nextKey=Some(tr Strings.Settings.listNext.caption)) "A command could take a key of the lists"
+        // A key of the lists pressed for a command moves to it, and comes back if it cannot be taken.
+        match Commands.holderOf settingsKey (fun _ _ -> true) (fun key code -> api.setHotKey key code) "newTab" nextKey with
+        | Some holder ->
+            note (holder.name=tr Strings.Settings.listNext.caption) (sprintf "A key of the lists was said to be %s's" holder.name)
+            holder.release()
+            note (settingsKey "listNext"=0) "A key of the lists taken for a command stayed with the list"
+            holder.restore()
+            note (settingsKey "listNext"=nextKey) "A key of the lists did not come back"
+        | None -> issues.Add "A key of the lists was not found for a command"
         api.setHotKey "listNext" 0
         api.setHotKey "listPrevious" 0
         // Set in the palette: Enter on their row records the key over it.

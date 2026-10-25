@@ -182,7 +182,8 @@ module TabSearch =
 
 /// How a row's shortcut is set from the palette: the one it has now; what holds a key already,
 /// by name, if anything; and setting one, false when another program holds the key.
-type ShortcutAssignment = { current:int; usedBy:int -> string option; set:int -> bool }
+/// A row's shortcut: the key it has, what has a key besides it, and setting one.
+type ShortcutAssignment = { current:int; usedBy:int -> ShortcutHolder option; set:int -> bool }
 
 /// A page of the palette beside the windows: what it lists, with a glyph for its rows, and what
 /// choosing a row does. Its entries carry a number of their own in place of a window handle.
@@ -833,7 +834,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                 | [],Some page -> outcome entry.title (page.concealed entry) (fun () -> page.choose entry)
                 | [],None -> finish (Some entry.hwnd))
     /// Alt+Enter: the chosen row's shortcut is recorded in a box over the row, as on the
-    /// Shortcuts page, with the same refusals; Esc or a click elsewhere leaves it as it was.
+    /// Shortcuts page, taking a key another has; Esc or a click elsewhere leaves it as it was.
     let beginAssign() =
         if assigning.IsNone && not closed then
             let target = list.SelectedItem
@@ -879,8 +880,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     editor.MessageChanged.Add showNote
                     editor.Disposed.Add(fun _ -> list.Controls.Remove note; note.Dispose())
                     // The box a moment longer, its key seen, then the row as it now is.
-                    let leaveSoon (taken:string option) =
-                        let pause = new System.Windows.Forms.Timer(Interval=600)
+                    let leaveAfter (ms:int) (taken:string option) =
+                        let pause = new System.Windows.Forms.Timer(Interval=ms)
                         pause.Tick.Add(fun _ ->
                             pause.Stop()
                             pause.Dispose()
@@ -889,6 +890,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                                 list.Invalidate()
                                 if assigning |> Option.exists(fun (_,current) -> obj.ReferenceEquals(current,editor)) then endAssign())
                         pause.Start()
+                    let leaveSoon = leaveAfter 600
                     // Refused: said under the box, which listens again for another key.
                     let refuse previous reason =
                         editor.Shortcut <- previous
@@ -896,12 +898,23 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                         showNote (Some reason)
                     editor.Changed.Add(fun _ ->
                         let previous = assignment.current
-                        match assignment.usedBy editor.Shortcut with
-                        | Some name -> refuse previous (tr (Strings.Shortcuts.usedBy name))
-                        | None when not (assignment.set editor.Shortcut) -> refuse previous (tr Strings.Shortcuts.inUse)
+                        let code = editor.Shortcut
+                        match assignment.usedBy code with
+                        // Pressed for this row, the key is meant for it: whatever had it gives it
+                        // up, and the box says where it came from before it goes.
+                        | Some holder ->
+                            holder.release()
+                            if assignment.set code then
+                                editor.Notice(tr (Strings.Shortcuts.takenFrom holder.name))
+                                // Long enough to read where the key came from.
+                                leaveAfter 1500 (Some(SettingsShortcut.text code))
+                            else
+                                holder.restore()
+                                refuse previous (tr Strings.Shortcuts.inUse)
+                        | None when not (assignment.set code) -> refuse previous (tr Strings.Shortcuts.inUse)
                         // Seen taken in its box a moment, then beside the name, where a row's
                         // shortcut is shown; the page lists it afresh from now on.
-                        | None -> leaveSoon (Some(SettingsShortcut.text editor.Shortcut)))
+                        | None -> leaveSoon (Some(SettingsShortcut.text code)))
                     // The key it had already: nothing to change, so the box goes as after a key taken.
                     editor.Unchanged.Add(fun _ -> leaveSoon None)
                     // Esc while recording stops it in the box's own key handling; the key's release

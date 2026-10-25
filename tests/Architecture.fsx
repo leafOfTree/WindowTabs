@@ -1209,9 +1209,11 @@ let main() =
         check (CommandPipe.send pipe [||] 3000=Some(Result.Error "nothing")) "The pipe did not carry a refusal"
         check (CommandPipe.send pipe [|"again"|] 3000=Some(Result.Ok "again")) "The pipe did not take a second command line"
     check (CommandPipe.send (pipe+".gone") [|"x"|] 200).IsNone "Sending to no listener did not say so"
-    // Alt+Enter sets the chosen command's shortcut in place, refusing a key another holds.
+    // Alt+Enter sets the chosen command's shortcut in place, taking a key another command holds.
     let mutable assigned = 0
-    let bindable = { commandsPage with shortcut=fun entry -> if entry.hwnd=IntPtr 1 then Some { current=1623; usedBy=(fun code -> if code=3623 then Some "Next tab" else None); set=(fun code -> assigned <- code; code<>1616) } else None }
+    let mutable released = false
+    let nextTabHolder = { name="Next tab"; key="nextTab"; release=(fun () -> released <- true); restore=(fun () -> released <- false) }
+    let bindable = { commandsPage with shortcut=fun entry -> if entry.hwnd=IntPtr 1 then Some { current=1623; usedBy=(fun code -> if code=3623 then Some nextTabHolder else None); set=(fun code -> assigned <- code; code<>1616) } else None }
     let recorder = TabSearchForm([mail;notes],[],pages=[bindable],scope=ActionScope)
     recorder.Query <- "close"
     recorder.BeginAssign()
@@ -1225,9 +1227,6 @@ let main() =
     // A refusal is said on a line under the box, which listens again for another key at once.
     let noteUnder (text:string) =
         editor.Parent.Controls |> Seq.cast<Control> |> Seq.exists(fun control -> control :? Label && control.Text=text && control.Top>=editor.Bottom)
-    press editor (Keys.Control ||| Keys.Alt ||| Keys.Right)
-    check (recorder.ShortcutEditor.IsSome && editor.Shortcut=1623 && editor.IsRecording && assigned=0 && noteUnder (tr (Strings.Shortcuts.keySays (SettingsShortcut.text (SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.Right))) (tr (Strings.Shortcuts.usedBy "Next tab")))))
-          "A key another command holds was not refused by name under the box"
     press editor (Keys.Control ||| Keys.Alt ||| Keys.P)
     check (recorder.ShortcutEditor.IsSome && editor.Shortcut=1623 && editor.IsRecording && noteUnder (tr (Strings.Shortcuts.keySays (SettingsShortcut.text (SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.P))) (tr Strings.Shortcuts.inUse)))) "A key another program holds was not refused under the box"
     press editor (Keys.Control ||| Keys.Alt ||| Keys.K)
@@ -1240,6 +1239,19 @@ let main() =
     check (recorder.ShortcutEditor.IsNone && boxClock.ElapsedMilliseconds>=400L) (sprintf "A taken key's box went after %d ms" boxClock.ElapsedMilliseconds)
     // The key shows beside the name, where shortcuts are, not cut short at the right end.
     check (recorder.RowNotes |> List.exists(fun (suffix,right) -> suffix="Ctrl+Alt+K" && right<>"Ctrl+Alt+K")) "A key set in the palette was not shown beside the name"
+    // A key another command holds moves to this one: that command gives it up, and the box says
+    // where it came from, staying up long enough to read it.
+    recorder.BeginAssign()
+    let taking = recorder.ShortcutEditor.Value
+    let nextTabKey = SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.Right)
+    press taking (Keys.Control ||| Keys.Alt ||| Keys.Right)
+    check (released && assigned=nextTabKey && taking.Message=Some(tr (Strings.Shortcuts.takenFrom "Next tab")) && not taking.MessageIsError)
+          (sprintf "A key another command holds was not taken over: released %b, assigned %d, said %A" released assigned taking.Message)
+    let takenClock = Diagnostics.Stopwatch.StartNew()
+    while recorder.ShortcutEditor.IsSome && takenClock.ElapsedMilliseconds<4000L do
+        Application.DoEvents()
+        Thread.Sleep 10
+    check (recorder.ShortcutEditor.IsNone && takenClock.ElapsedMilliseconds>=1200L) (sprintf "A key taken over left its box after %d ms" takenClock.ElapsedMilliseconds)
     // The key it has already: said, then the box goes as after a key taken, rather than waiting.
     recorder.BeginAssign()
     let same = recorder.ShortcutEditor.Value

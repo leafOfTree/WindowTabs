@@ -5,7 +5,7 @@ type HotKeyView() =
     let panel,table = SettingsUi.page()
     /// The page's own shortcuts: those with a key to begin with, read from the one list of
     /// commands. Every other command, the split view's and the tab menu's among them, is found and
-    /// given a key in the command palette, the one place for them all. A conflict names the other.
+    /// given a key in the command palette, the one place for them all. A key another has moves here.
     let ownShortcut key =
         SettingsCatalog.all |> List.exists(fun item -> match item.binding with Shortcut(k,_) -> k=key && SettingsCatalog.inSettingsWindow item | _ -> false)
     let actions =
@@ -31,14 +31,28 @@ type HotKeyView() =
                 note.Visible <- true
             | _ -> note.Visible <- false)
         editor.Disposed.Add(fun _ -> note.Dispose())
+    /// The page's boxes by key, so one whose key was taken for another shows it has none now.
+    let shown = System.Collections.Generic.Dictionary<string,SettingsShortcutInput>()
     let hotKey key =
         let editor = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Shortcut=Services.program.getHotKey key)
+        shown.[key] <- editor
         noteBelow editor
         editor.Changed.Add(fun _ ->
             let previous = Services.program.getHotKey key
-            match Commands.holderName Services.program.getHotKey key editor.Shortcut with
-            | Some other -> editor.Reject(previous,tr (Strings.Shortcuts.usedBy other))
-            | None when not (Services.program.setHotKey key editor.Shortcut) ->
+            let code = editor.Shortcut
+            match Commands.holderOf Services.program.getHotKey Services.program.setHotKey Services.settings.setHotKey key code with
+            // Pressed for this one, the key is meant for it: the other gives it up.
+            | Some other ->
+                other.release()
+                if Services.program.setHotKey key code then
+                    match shown.TryGetValue other.key with
+                    | true,box -> box.Shortcut <- 0
+                    | _ -> ()
+                    editor.Notice(tr (Strings.Shortcuts.takenFrom other.name))
+                else
+                    other.restore()
+                    editor.Reject(previous,tr Strings.Shortcuts.inUse)
+            | None when not (Services.program.setHotKey key code) ->
                 editor.Reject(previous,tr Strings.Shortcuts.inUse)
             | None -> ())
         editor
