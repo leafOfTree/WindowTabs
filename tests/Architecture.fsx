@@ -302,6 +302,12 @@ let main() =
         check (onGroup(fun group -> group.ts.dock)=TabDockTop) "A group command did not move the tabs back to the top"
         check (Commands.find "rename-tab" |> Option.exists(fun command -> command.category=TabCommands && command.shortcut=Some "rename-tab")) "The tab menu's rename must be a command"
         check (Commands.find "group-tab-position" |> Option.exists(fun command -> match command.run IntPtr.Zero with Choose options -> options.Length=3 | Done -> false)) "Tab position must offer its three places"
+        // One name for each of an app's options, in the tab menu, the palette and the settings.
+        for (menu:LocalizedText),(others:LocalizedText list) in
+                [ Strings.TabMenu.enableTabs,[Strings.Commands.tabsForApp.caption;Strings.Settings.enableTabsByDefault.caption]
+                  Strings.TabMenu.numberShortcut,[Strings.Commands.numberShortcutForApp.caption;Strings.Settings.switchTabsByNumber.caption] ] do
+            for other in others do
+                check (other.en.Contains menu.en && other.zh.Contains menu.zh) (sprintf "%s is named another way as %s" menu.en other.en)
 
         let numeric = NumericTabHotKeyPlugin()
         // The OS can already focus B while the delayed foreground event still

@@ -331,7 +331,7 @@ let main() =
         attempt "tabs-for-app" (fun () ->
             let before = Services.filter.getIsTabbingEnabledForProcess path
             runDone "tabs-for-app" active
-            note (Services.filter.getIsTabbingEnabledForProcess path<>before) "Tabs for this app did not change the app's tabs"
+            note (Services.filter.getIsTabbingEnabledForProcess path<>before) "Use tabs for this app did not change the app's tabs"
             runDone "tabs-for-app" active)
         attempt "auto-group-app" (fun () ->
             runDone "auto-group-app" active
@@ -341,7 +341,7 @@ let main() =
         attempt "number-shortcut-for-app" (fun () ->
             let before = NumberShortcutRules.enabled path
             runDone "number-shortcut-for-app" active
-            note (NumberShortcutRules.enabled path<>before) "Switch by number in this app did not change it"
+            note (NumberShortcutRules.enabled path<>before) "Switch tabs by number in this app did not change it"
             runDone "number-shortcut-for-app" active)
         attempt "combine-group-taskbar-icons" (fun () ->
             runDone "combine-group-taskbar-icons" active
