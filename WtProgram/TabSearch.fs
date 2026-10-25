@@ -133,6 +133,16 @@ module TabSearch =
         if String.IsNullOrWhiteSpace query then List.map fst matching
         else matching |> List.sortBy snd |> List.map fst
 
+    /// Ctrl+Backspace: the text with the word before the caret gone, and the caret where it began;
+    /// a selection goes instead. A plain text box put a box character in its place.
+    let deleteWordBefore (text:string) (caret:int) (selected:int) =
+        if selected>0 then text.Remove(caret,selected),caret
+        else
+            let mutable start = caret
+            while start>0 && Char.IsWhiteSpace text.[start-1] do start <- start-1
+            while start>0 && not (Char.IsWhiteSpace text.[start-1]) do start <- start-1
+            text.Remove(start,caret-start),start
+
     /// The program, and the desktop of a window on another one.
     let source (entry:TabSearchEntry) =
         match entry.program,entry.desktop with
@@ -1035,6 +1045,14 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             | Keys.Enter -> activate list.SelectedItem; true
             | Keys.Escape -> (if choices.IsEmpty then finish None else pop()); true
             | Keys.Back when input.Text="" && not choices.IsEmpty -> pop(); true
+            // Ctrl+Backspace deletes the word before the caret, as in most of Windows.
+            | Keys.Back when e.Control && not e.Alt ->
+                let text,caret = TabSearch.deleteWordBefore input.Text input.SelectionStart input.SelectionLength
+                input.Text <- text
+                input.SelectionStart <- caret
+                true
+            // Ctrl+U clears what is typed, as a terminal's line does.
+            | Keys.U when e.Control && not e.Alt && not e.Shift -> input.Clear(); true
             | Keys.Tab -> cycle (if e.Shift then -1 else 1); true
             | _ -> false
         if handled then

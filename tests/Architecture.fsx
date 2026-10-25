@@ -932,6 +932,10 @@ let main() =
     check (TabSearch.highlights "window on" "Window on the right" = [0,9]) "A phrase typed with a space was not lit up whole"
     check (TabSearch.highlights "on  the" "On the on" = [0,6;7,2]) "A phrase's terms were not also lit up on their own"
     check (TabSearch.highlights "" "Foo" = [] && TabSearch.highlights "zz" "Foo" = []) "Text was highlighted without a match"
+    // Ctrl+Backspace takes the word before the caret, spaces after it too, or the selection.
+    check (TabSearch.deleteWordBefore "move down " 10 0=("move ",5) && TabSearch.deleteWordBefore "move down" 9 0=("move ",5)
+           && TabSearch.deleteWordBefore "move down" 4 0=(" down",0) && TabSearch.deleteWordBefore "move" 0 0=("move",0)
+           && TabSearch.deleteWordBefore "move down" 2 3=("modown",2)) "Ctrl+Backspace did not take the word before the caret"
     // Typed without its spaces, or as the first letters of the words, a name is still found, and
     // after every row that has the words; the letters taken light up.
     let moveDown = TabSearch.create (IntPtr 7) "Move down the list" "" ""

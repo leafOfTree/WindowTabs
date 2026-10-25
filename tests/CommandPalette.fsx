@@ -852,6 +852,10 @@ let main() =
         trial.Press Keys.Tab
         note ((trial.Selected |> Option.map(fun entry -> entry.title))<>beforeTab) "Tab set as a key of the lists did not move the choice"
         api.setHotKey "listNext" 0
+        // Ctrl+U clears what is typed.
+        trial.Query <- "move down"
+        trial.Press(Keys.Control ||| Keys.U)
+        note (trial.Query="") (sprintf "Ctrl+U left %A in the box" trial.Query)
         trial.Query <- ""
         // A switch turned with Enter keeps its row chosen, not the first row again.
         trial.Query <- "tab text"
