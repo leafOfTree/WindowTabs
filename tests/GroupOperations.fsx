@@ -405,6 +405,11 @@ let main() =
                         check (surfaces.isLayoutTarget hwnd) "The old group's removal took the window's drop surface from its new group"
                         api.unregisterLayoutTarget(hwnd,later)
                         check (not(surfaces.isLayoutTarget hwnd)) "The new group's removal left the window a drop surface"
+                        // A click released before its tab finished activating: the drag it began
+                        // holds no capture to swallow the next click as its drop.
+                        api.beginDrag(source,(fun _ -> failwith "no drag image for a released click"),Pt(),Pt(),box "released")
+                        check (WinUserApi.GetCapture()=IntPtr.Zero) "A drag begun after its button was released kept the mouse capture"
+                        check (not(api.cancelDrag())) "A drag begun after its button was released stayed open"
                     check (onGroup(fun group -> group.ts.tabInfo(Tab(partner)).splitTrail=Some [SideBySide,First] && group.ts.tabInfo(Tab(source)).splitTrail=Some [SideBySide,Second])) "Pane tabs carry no badge"
                     check (onGroup(fun group -> group.ts.tabInfo(Tab(partner)).text=group.tabName partner)) "The badge leaked into the tab's name"
                     onGroup(fun group -> group.execute(EndSplit(Some source)))

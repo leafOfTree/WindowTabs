@@ -623,6 +623,18 @@ let main() =
         check (not (NumericShortcutTarget.available [IntPtr(1)] (IntPtr(1)) 0)) "Current/only tab must pass through"
         check (NumericShortcutTarget.available [IntPtr(1);IntPtr(2)] (IntPtr(1)) 1) "Other tab must remain available"
         check (not (NumericShortcutTarget.available [IntPtr(1)] IntPtr.Zero 1)) "Missing tab must pass through"
+        // Presses faster than the group activates: the tab last asked for is current, so the
+        // press for the tab an earlier one has just reached is not passed through.
+        let pendingAt = DateTime(2026,1,1)
+        let activation = PendingActivation()
+        activation.request(IntPtr(2),pendingAt)
+        activation.request(IntPtr(3),pendingAt)
+        activation.completed()
+        check (activation.current(IntPtr(2),pendingAt)=IntPtr(3)) "A queued number shortcut did not count as the current tab"
+        check (NumericShortcutTarget.available [IntPtr(1);IntPtr(2);IntPtr(3)] (activation.current(IntPtr(2),pendingAt)) 1) "A quick number shortcut for the tab just reached was passed through"
+        check (activation.current(IntPtr(2),pendingAt.AddSeconds(3.0))=IntPtr(2)) "A queued number shortcut that never ran kept counting"
+        activation.completed()
+        check (activation.current(IntPtr(3),pendingAt)=IntPtr(3)) "The foreground did not count again once every shortcut ran"
         // Dropping on tabs reaches Explorer late bound: no interop assembly ships, and a window
         // that is not an Explorer folder is simply no target.
         check (typeof<OleDropTarget>.Assembly.GetReferencedAssemblies() |> Array.forall(fun name -> not (name.Name.StartsWith("Interop."))))
