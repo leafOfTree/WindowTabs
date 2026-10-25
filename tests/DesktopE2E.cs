@@ -158,7 +158,7 @@ static partial class DesktopE2E
         Check(WindowFromPoint(p)==strip,"Tab is occluded; refusing to click another window");
         Move(p); await Task.Delay(20);
         Inject(MouseInput(2)); await Task.Delay(20); Inject(MouseInput(4));
-        lastClickPoint=p; lastClick.Restart();
+        lastClickPoint=p; lastClick.Restart(); skippedChord=null;
         uint pid; uint thread=GetWindowThreadProcessId(strip,out pid);
         await Until("Tab click did not release mouse capture",()=> { var info=new GuiThread { Size=Marshal.SizeOf(typeof(GuiThread)) }; return GetGUIThreadInfo(thread,ref info) && info.Capture==IntPtr.Zero; });
     }
@@ -168,8 +168,16 @@ static partial class DesktopE2E
         uint pid; GetWindowThreadProcessId(GetForegroundWindow(),out pid);
         Check(pid==Process.GetCurrentProcess().Id || (app!=null && pid==app.Id),"Foreground belongs to another application; refusing keyboard input");
         var input=keys.Select(k=>KeyInput(k,false)).Concat(keys.Reverse().Select(k=>KeyInput(k,true))).ToArray();
+        var injecting=Stopwatch.StartNew();
         Inject(input);
+        // SendInput waits on each low-level keyboard hook for at most LowLevelHooksTimeout (about
+        // 300 ms), then passes the key on without it; the hook stays installed for the next key.
+        // Held that long, as on a hosted runner that paused for two seconds, the keys went past
+        // WindowTabs.
+        skippedChord=injecting.ElapsedMilliseconds>=250 ? keys : null;
+        if(skippedChord!=null) Log("Keyboard hooks skipped after a "+injecting.ElapsedMilliseconds+" ms stall: "+string.Join(",",keys));
     }
+    static int[] skippedChord;
     static async Task Until(string description, Func<bool> condition, int timeout=5000)
     {
         var watch=Stopwatch.StartNew();
@@ -185,7 +193,18 @@ static partial class DesktopE2E
     static async Task Activated(IntPtr expected, IntPtr strip)
     {
         Remember("verify activation",new { expected=expected.ToInt64(),strip=strip.ToInt64(),owner=GetWindow(strip,4).ToInt64() });
-        try { await Until("Wrong foreground or strip owner after switch",()=>GetForegroundWindow()==expected && GetWindow(strip,4)==expected && IsWindowVisible(strip),2000); }
+        Func<bool> switched=()=>GetForegroundWindow()==expected && GetWindow(strip,4)==expected && IsWindowVisible(strip);
+        // Keys Windows never showed WindowTabs say nothing about it: they are sent once more. A
+        // WindowTabs that hangs stalls the second press too, and fails.
+        var skipped=skippedChord;
+        skippedChord=null;
+        if(skipped!=null)
+        {
+            var settled=Stopwatch.StartNew();
+            while(!switched() && settled.ElapsedMilliseconds<2000) await Task.Delay(10);
+            if(!switched()) { Log("Sending the skipped keys again"); Chord(skipped); }
+        }
+        try { await Until("Wrong foreground or strip owner after switch",switched,2000); }
         catch { Log("expected="+expected+" foreground="+GetForegroundWindow()+" owner="+GetWindow(strip,4)); throw; }
         // Windows coming back from minimized are stacked again a moment after the foreground
         // settles; a strip still covered after that is the defect.
