@@ -117,12 +117,12 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let settleTimer = lifetime.Own(new System.Windows.Forms.Timer(Interval=1000))
     /// Groups are recorded a moment after they change, once for a burst of changes.
     let rememberSoon = lifetime.Own(new CoalescedAction(500, fun () -> this.rememberGroups()))
-    /// The session, written as the groups change and every so often as windows move, so a
-    /// sign-in finds the last state. A window carrying a group token at start means WindowTabs
-    /// alone restarted: the tokens put the groups back and the session is left alone.
+    /// The session, written as the groups change, as Windows signs out and at exit, so a
+    /// sign-in finds the last state; a window moved or retitled since is kept by the last two.
+    /// A window carrying a group token at start means WindowTabs alone restarted: the tokens
+    /// put the groups back and the session is left alone.
     let sessions = WorkspaceModel()
     let sessionSoon = lifetime.Own(new CoalescedAction(3000, fun () -> this.saveSession()))
-    let sessionTimer = lifetime.Own(new System.Windows.Forms.Timer(Interval=120000))
     let mutable tokensSeen = false
     /// Each group's members as last seen, so a title change alone writes no session.
     let sessionMembers = Dictionary<IntPtr,IntPtr list>()
@@ -253,6 +253,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         let mode = this.sessionMode
         // A workspace asked for on the command line takes the session's place.
         let workspaceAsked = match startupRequest with Some(RestoreWorkspace _) -> true | _ -> false
+        DebugLog.writef "Started, pid %d; session restore: mode %s, group tokens seen %b, workspace asked %b"
+            (Diagnostics.Process.GetCurrentProcess().Id) mode tokensSeen workspaceAsked
         if mode="Off" || tokensSeen || workspaceAsked then sessionReady <- true
         else
             let timer = new System.Windows.Forms.Timer(Interval=4000)
@@ -261,7 +263,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 timer.Dispose()
                 if not inShutdown.value then
                     match sessions.loadSession() with
-                    | None -> sessionReady <- true
+                    | None ->
+                        DebugLog.write "Session restore: no session saved"
+                        sessionReady <- true
                     | Some _ ->
                         // Said on screen first, so a user leaves the windows alone while they move.
                         let title = tr Strings.Notices.lastSession
@@ -276,9 +280,12 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                     fun result ->
                                         sessionReady <- true
                                         sessionSoon.Request()
-                                        this.noticeRestored title result
-                                        Diagnostics.Trace.TraceInformation("Session restored: {0} windows, {1} not found, {2} failed",result.restored,result.missing.Length,result.failed.Length))
+                                        DebugLog.writef "Session restored: %d windows, %d not found, %d failed" result.restored result.pending.Length result.failed.Length
+                                        try this.noticeRestored title result
+                                        with error -> DebugLog.writef "Session restore notice failed: %O" error
+                                        Diagnostics.Trace.TraceInformation("Session restored: {0} windows, {1} not found, {2} failed",result.restored,result.pending.Length,result.failed.Length))
                             with error ->
+                                DebugLog.writef "Session restore failed: %O" error
                                 sessionReady <- true
                                 Notice.error title (tr (Strings.Notices.restoreFailed error.Message))
                                 Diagnostics.Trace.TraceWarning("Session restore failed: {0}",error.Message))
@@ -853,11 +860,12 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         workspaces.loadSettings()
         workspaces
 
-    /// What a restore did; windows left out keep it up longer, to be read.
+    /// What a restore did. Windows left out are listed in full with why, and the apps restored,
+    /// on a warning that stays to be read.
     member private this.noticeRestored title (result:WorkspaceRestoreResult) =
-        let message = tr (Strings.Notices.restored result.restored result.missing.Length)
-        if result.missing.IsEmpty && result.failed.IsEmpty then Notice.show title message
-        else Notice.remind title message
+        let message = tr (Strings.Notices.restored result.restored result.pending.Length)
+        if result.pending.IsEmpty && result.failed.IsEmpty then Notice.show title message
+        else Notice.warn title message (result.noticeLines IO.File.Exists)
 
     /// As Save workspace in Settings, said on screen since nothing else shows it.
     member this.saveWorkspace() =
@@ -974,7 +982,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             this.refresh()
 
         member x.shutdown() =
-            sessionTimer.Stop()
+            DebugLog.writef "Shutting down, pid %d" (Diagnostics.Process.GetCurrentProcess().Id)
             sessionSoon.Cancel()
             // From the layouts last read: the groups are about to go and cannot be asked.
             if this.sessionMode<>"Off" && sessionReady && not sessionEnding then
@@ -1141,12 +1149,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             startupRequest |> Option.iter(fun request -> this.execute request |> ignore)
             // Later command lines reach this copy here; each is done on the main thread.
             lifetime.Own(new CommandServer(CommandPipe.name,fun argv -> dispatcher.Send(fun () -> this.execute (CommandLine.parse argv)))) |> ignore
-            sessionTimer.Tick.Add(fun _ -> this.saveSession())
-            sessionTimer.Start()
             Microsoft.Win32.SystemEvents.SessionEnding.Add(fun _ ->
                 if not sessionEnding then
                     sessionEnding <- true
-                    sessionTimer.Stop()
                     sessionSoon.Cancel()
                     if this.sessionMode<>"Off" && sessionReady then
                         try

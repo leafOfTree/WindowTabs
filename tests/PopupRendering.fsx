@@ -153,7 +153,8 @@ let main() =
         check (notice.Visible && notice.Opacity=1.0 && notice.staysFor=None) "A new notice did not come in in place of the old one"
         check (notice.Size=fixedSize) (sprintf "A long notice changed the notice's size: %A" notice.Size)
         // How long each kind stays: an error until it is closed, as work in progress until replaced.
-        for kind,stays in [Info,Some 4000;Reminder,Some 8000;Error,None;Progress,None] do
+        for kind,stays in [Info,Some 4000;Reminder,Some 8000;Warning,Some 30000;Error,None;Progress,None] do
+            notice.hideNow()
             notice.show("Workspace 1","Message",kind)
             pumpFor 600L
             check (notice.staysFor=stays && notice.isCountingDown=stays.IsSome)
@@ -176,6 +177,75 @@ let main() =
         raise "OnMouseUp" (new MouseEventArgs(MouseButtons.Left,1,centre.X,centre.Y,0))
         pumpFor 400L
         check (not notice.Visible) "The close button did not take the notice away"
+        // A warning lists what a restore left out in full: a long line wraps, so it is taller
+        // than one line each, and it stays half a minute to be read.
+        let short = ["Slow.exe — App is not running";"Restored: notepad.exe ×2"]
+        notice.show("Last session","Restored 2 windows, 1 not found",Warning,short)
+        pumpFor 600L
+        let shortHeight = notice.Height
+        check (notice.Visible && shortHeight>fixedSize.Height && notice.Width=fixedSize.Width && notice.staysFor=Some 30000)
+              (sprintf "A warning listing windows is %A and stays %A" notice.Size notice.staysFor)
+        let long = String.replicate 6 @"C:\Users\someone\repository\dotFile\"+"tmp.txt"
+        notice.hideNow()
+        notice.show("Last session","Restored 2 windows, 1 not found",Warning,("neovide.exe · "+long+" — App is not running")::List.tail short)
+        pumpFor 600L
+        check (notice.Height>shortHeight) (sprintf "A long listed line did not wrap: %d, one line each %d" notice.Height shortHeight)
+        check (notice.Bottom<=area.Bottom && notice.Top>=area.Top) (sprintf "A taller notice left the work area: %A" notice.Bounds)
+        notice.hideNow()
+        notice.show("Last session","Restored 2 windows",Warning,List.replicate 200 long)
+        pumpFor 600L
+        check (notice.Bottom<=area.Bottom && notice.Top>=area.Top) (sprintf "A very long list left the work area: %A" notice.Bounds)
+        // A window kept on top that came up after the notice does not cover the next one.
+        use onTop = new Form(TopMost=true,ShowInTaskbar=false,FormBorderStyle=FormBorderStyle.None,StartPosition=FormStartPosition.Manual,
+                             Bounds=Rectangle(notice.Left-Dpi.scale 40,notice.Top,Dpi.scale 120,Dpi.scale 120))
+        onTop.Show()
+        Application.DoEvents()
+        notice.hideNow()
+        notice.show("Workspace 1","Saved with 2 windows",Info)
+        pumpFor 600L
+        let rec isAbove (hwnd:IntPtr) =
+            hwnd<>IntPtr.Zero && (hwnd=onTop.Handle || isAbove (WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_HWNDPREV)))
+        check (not (isAbove (WinUserApi.GetWindow(notice.Handle,GetWindowConstants.GW_HWNDPREV)))) "A window kept on top covered the notice"
+        onTop.Close()
+        check (notice.Size=fixedSize) (sprintf "A notice after a list kept its height: %A" notice.Size)
+        // While the session is locked a notice waits, the latest in place of the others, and comes
+        // in at the unlock; one on screen when the session locks stops counting until the unlock.
+        notice.hideNow()
+        NoticeWindow.isLocked <- fun () -> true
+        notice.show("Last session","Starting 2 apps…",Progress)
+        notice.show("Last session","Restored 2 windows, 1 not found",Warning,["Slow.exe — App is not running"])
+        pumpFor 400L
+        check (not notice.Visible) "A notice came in while the session was locked"
+        NoticeWindow.isLocked <- SessionLock.IsLocked
+        notice.sessionSwitched false
+        pumpFor 600L
+        check (notice.Visible && notice.staysFor=Some 30000 && notice.Height>fixedSize.Height && notice.isCountingDown)
+              (sprintf "The notice held over the lock did not come in at the unlock: visible %b, stays %A" notice.Visible notice.staysFor)
+        notice.sessionSwitched true
+        check (notice.Visible && not notice.isCountingDown) "A notice kept counting down while the session was locked"
+        notice.sessionSwitched false
+        check notice.isCountingDown "A notice did not count down again after the unlock"
+        // A later notice waits behind a warning or an error rather than putting it away unread:
+        // warnings and errors in order, of the others only the latest, after them.
+        notice.show("Workspace 1","Saved with 2 windows",Info)
+        notice.show("Shortcut","In use",Error)
+        notice.show("Workspace 2","Saved with 3 windows",Info)
+        pumpFor 400L
+        check (notice.Visible && notice.staysFor=Some 30000 && notice.waitingTitles=["Shortcut";"Workspace 2"])
+              (sprintf "A later notice put a warning away, or the wrong ones wait: %A" notice.waitingTitles)
+        let closeNotice() =
+            raise "OnMouseEnter" EventArgs.Empty
+            raise "OnMouseUp" (new MouseEventArgs(MouseButtons.Left,1,centre.X,centre.Y,0))
+            pumpFor 600L
+        closeNotice()
+        check (notice.Visible && notice.staysFor=None && notice.waitingTitles=["Workspace 2"])
+              (sprintf "The error did not follow the closed warning: stays %A, waiting %A" notice.staysFor notice.waitingTitles)
+        closeNotice()
+        check (notice.Visible && notice.staysFor=Some 4000 && notice.waitingTitles.IsEmpty)
+              (sprintf "The latest other notice did not follow the closed error: stays %A, waiting %A" notice.staysFor notice.waitingTitles)
+        // An ordinary notice still takes the place of another at once.
+        notice.show("Workspace 3","Saved with 4 windows",Info)
+        check notice.waitingTitles.IsEmpty "An ordinary notice waited behind another ordinary one"
         notice.hideNow()
         check (not notice.Visible) "A notice taken away at once stayed visible"
         printfn "PASS: dark/light popup themes before visibility, composited HWNDs, repeated show/hide rendering and the notice's place, kinds and close button."

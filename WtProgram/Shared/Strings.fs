@@ -436,6 +436,17 @@ module Strings =
               ja=sprintf "保存しました（ウィンドウ %d 個）" windows
               ar=sprintf "تم الحفظ (%d نافذة)" windows }
         let deleted = { en="Deleted"; zh="已删除"; ja="削除しました"; ar="تم الحذف" }
+        /// Why a saved window was not found, after its app in the restore notice and log.
+        let unknownApp = { en="Saved without its app"; zh="保存时未记录应用"; ja="アプリが記録されていません"; ar="حُفظت دون تطبيقها" }
+        let storeApp = { en="Store app, cannot be started; open it and restore again"; zh="应用商店应用无法自动启动，请手动打开后再恢复"; ja="ストア アプリは起動できません。開いてから再度復元してください"; ar="تطبيق من المتجر لا يمكن تشغيله؛ افتحه ثم استعد مجددًا" }
+        let noWindowLeft = { en="App is open, but no window of it matches"; zh="应用已打开，但没有可对应的窗口"; ja="アプリは開いていますが、対応するウィンドウがありません"; ar="التطبيق مفتوح، لكن لا نافذة منه تطابقها" }
+        let noWindowAfterStart = { en="App started, but showed no window in time"; zh="应用已启动，但未及时出现窗口"; ja="アプリは起動しましたが、時間内にウィンドウが現れません"; ar="بدأ التطبيق، لكن لم تظهر نافذته في الوقت المحدد" }
+        let startFailed reason = { en=sprintf "App would not start: %s" reason; zh=sprintf "应用启动失败：%s" reason; ja=sprintf "アプリを起動できません: %s" reason; ar=sprintf "تعذّر تشغيل التطبيق: %s" reason }
+        let appGone = { en="App file no longer exists"; zh="应用文件已不存在"; ja="アプリのファイルがありません"; ar="ملف التطبيق لم يعد موجودًا" }
+        let notRunning = { en="App is not running"; zh="应用未运行"; ja="アプリが実行されていません"; ar="التطبيق لا يعمل" }
+        let more count = { en=sprintf "…and %d more" count; zh=sprintf "…另有 %d 个" count; ja=sprintf "…ほか %d 個" count; ar=sprintf "…و%d أخرى" count }
+        /// The apps whose windows came back, each with how many, at the end of the restore notice.
+        let restoredApps apps = { en="Restored: "+apps; zh="已恢复："+apps; ja="復元済み: "+apps; ar="تمت الاستعادة: "+apps }
 
     module General =
         /// The choices of Restore the last session at start.
