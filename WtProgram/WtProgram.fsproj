@@ -41,6 +41,8 @@
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
     <Compile Include="Shared\JsonDom.fs" />
+    <Compile Include="Shared\DebugLog.fs" />
+    <Compile Include="Shared\FullScreenPause.fs" />
     <Compile Include="Shared\Operators.fs" />
     <Compile Include="Shared\Dynamic.fs" />
     <Compile Include="Shared\Observable.fs" />

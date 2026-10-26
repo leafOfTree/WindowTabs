@@ -142,7 +142,7 @@ let main() =
                 let preview = ThemePresets.previewColor true color
                 check (max preview.R (max preview.G preview.B)>=174uy) "Dark preset preview is too dim to distinguish"
                 check (ThemePresets.previewColor false color=color) "Light preset preview changed its colour"
-        let optionalKeys = ["combineIconsInTaskbar";"replaceAltTab";"groupWindowsInSwitcher";"enableNumberLeader";"enableHoverActivate";"tabHoverPreview"]
+        let optionalKeys = ["combineIconsInTaskbar";"replaceAltTab";"groupWindowsInSwitcher";"enableNumberLeader";"enableHoverActivate";"tabHoverPreview";"pauseInFullScreen"]
         let checkMinimalDefaults() =
             for key in optionalKeys do check (api.getValue(key)=box false) (sprintf "%s must be opt-in" key)
             check (api.getValue("autoHideMode")=box "Maximized") "Auto-hide lost its existing maximized-window default"
@@ -317,6 +317,13 @@ let main() =
         check (string api.root.["tabOpacity"]=string (fst SettingsCatalog.opacityRange) && string api.root.["tabTextBold"]="True") "Bold tab text and tab opacity were not written"
         api.setValue("tabTextBold",box false)
         api.setValue("tabOpacity",box SettingsCatalog.opacityDefault)
+        // A switch on a settings page follows a change made elsewhere, as in the command palette.
+        do
+            use boldSwitch = SettingsBindings.settingToggle "tabTextBold"
+            api.setValue("tabTextBold",box true)
+            check boldSwitch.Checked "A settings page switch did not follow a change made in the palette"
+            api.setValue("tabTextBold",box false)
+            check (not boldSwitch.Checked) "A settings page switch did not follow a change made in the palette"
         api.setValue("tabUseCustomColors",box false)
         api.setValue("tabAppearance",box Theme.light)
 

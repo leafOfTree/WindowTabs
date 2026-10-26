@@ -61,6 +61,8 @@ type SettingsRec = {
     enableMiddleClickClose: bool
     /// A picture of a tab's window while the pointer rests on the tab.
     tabHoverPreview: bool
+    /// While a full-screen app is in front, shortcuts let go of their keys and notices wait.
+    pauseInFullScreen: bool
     /// "Icons" (large icons in a row) or "List" (window titles in a column).
     switcherStyle: string
     tabSearchScope: string

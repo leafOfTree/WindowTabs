@@ -180,6 +180,9 @@ module Strings =
         let dimInactiveGroups = { caption={ en="Dim tabs in inactive groups"; zh="淡化非活动分组的标签"; ja="非アクティブなグループのタブの色を薄くする"; ar="تخفيف لون علامات التبويب في المجموعات غير النشطة" }
                                   description={ en="Make the active group easier to spot."; zh="让当前活动的分组更容易辨认。"; ja="アクティブなグループを見分けやすくします。"; ar="يسهّل تمييز المجموعة النشطة." }
                                   keywords={ en="fade"; zh="变暗"; ja="薄く 暗く"; ar="تعتيم" } }
+        let pauseInFullScreen = { caption={ en="Pause while a full-screen app runs"; zh="全屏应用运行时暂停"; ja="全画面アプリの実行中は一時停止"; ar="الإيقاف المؤقت أثناء تشغيل تطبيق بملء الشاشة" }
+                                  description={ en="Shortcuts leave their keys to the app; notices wait until it closes or leaves full screen."; zh="快捷键暂不生效，通知等退出全屏后再显示。"; ja="ショートカットはアプリにキーを譲り、通知は全画面が終わってから表示します。"; ar="تترك الاختصارات مفاتيحها للتطبيق، وتنتظر الإشعارات حتى يخرج من ملء الشاشة." }
+                                  keywords={ en="fullscreen do not disturb"; zh="全屏 勿扰"; ja="フルスクリーン 応答不可"; ar="ملء الشاشة عدم الإزعاج" } }
         let autoHide = { caption={ en="Auto-hide tabs"; zh="自动隐藏标签"; ja="タブを自動的に隠す"; ar="إخفاء علامات التبويب تلقائيًا" }
                          description={ en="Show a thin strip until hover."; zh="只显示细栏，悬停展开。"; ja="細いバーだけ表示し、ホバーで展開します。"; ar="يبقى شريط رفيع فقط حتى تمرّر المؤشر فوقه." }
                          keywords={ en="collapse"; zh="收起"; ja="折りたたみ"; ar="طيّ" } }
@@ -364,7 +367,7 @@ module Strings =
                                  keywords={ en="wheel click"; zh="中键 滚轮"; ja="ホイール クリック"; ar="النقر بعجلة الفأرة" } }
         let tabTextColor = { caption={ en="Text and close button"; zh="文字与关闭按钮"; ja="文字と閉じるボタン"; ar="النص وزر الإغلاق" }; description=none; keywords=tabTextWords }
         let tabOpacity = { caption={ en="Tab opacity (%)"; zh="标签不透明度（%）"; ja="タブの不透明度 (%)"; ar="عتامة علامات التبويب (%)" }
-                           description={ en="Below 100, what is behind the tabs shows through them; under the pointer or while dragging they are solid."; zh="低于 100 时可透过标签看到后面的内容；鼠标在标签上或拖动时恢复不透明。"; ja="100 未満では、タブ越しに後ろが透けて見えます。ポインターを重ねたときやドラッグ中は不透明になります。"; ar="أقل من 100 يظهر ما خلف علامات التبويب من خلالها؛ وتصبح معتمة تحت المؤشر أو أثناء السحب." }
+                           description={ en="Below 100 the tabs are see-through, and solid under the pointer."; zh="低于 100 时标签半透明，鼠标指向时不透明。"; ja="100 未満でタブが半透明になり、ポインターを重ねると不透明になります。"; ar="أقل من 100 تصبح علامات التبويب شفافة، ومعتمة تحت المؤشر." }
                            keywords={ en="transparency transparent see-through alpha"; zh="透明度 透明 半透明"; ja="透明度 透明 半透明"; ar="شفافية شفاف" } }
         let tabTextBold = { caption={ en="Bold tab text"; zh="标签文字加粗"; ja="タブの文字を太字にする"; ar="نص علامات التبويب بخط عريض" }
                             description={ en="Titles of every tab in a heavier weight."; zh="所有标签的标题以粗体显示。"; ja="すべてのタブのタイトルを太字で表示します。"; ar="عناوين كل علامات التبويب بخط أثقل." }
@@ -436,6 +439,17 @@ module Strings =
               ja=sprintf "保存しました（ウィンドウ %d 個）" windows
               ar=sprintf "تم الحفظ (%d نافذة)" windows }
         let deleted = { en="Deleted"; zh="已删除"; ja="削除しました"; ar="تم الحذف" }
+        /// Why a saved window was not found, after its app in the restore notice and log.
+        let unknownApp = { en="Saved without its app"; zh="保存时未记录应用"; ja="アプリが記録されていません"; ar="حُفظت دون تطبيقها" }
+        let storeApp = { en="Store app, cannot be started; open it and restore again"; zh="应用商店应用无法自动启动，请手动打开后再恢复"; ja="ストア アプリは起動できません。開いてから再度復元してください"; ar="تطبيق من المتجر لا يمكن تشغيله؛ افتحه ثم استعد مجددًا" }
+        let noWindowLeft = { en="App is open, but no window of it matches"; zh="应用已打开，但没有可对应的窗口"; ja="アプリは開いていますが、対応するウィンドウがありません"; ar="التطبيق مفتوح، لكن لا نافذة منه تطابقها" }
+        let noWindowAfterStart = { en="App started, but showed no window in time"; zh="应用已启动，但未及时出现窗口"; ja="アプリは起動しましたが、時間内にウィンドウが現れません"; ar="بدأ التطبيق، لكن لم تظهر نافذته في الوقت المحدد" }
+        let startFailed reason = { en=sprintf "App would not start: %s" reason; zh=sprintf "应用启动失败：%s" reason; ja=sprintf "アプリを起動できません: %s" reason; ar=sprintf "تعذّر تشغيل التطبيق: %s" reason }
+        let appGone = { en="App file no longer exists"; zh="应用文件已不存在"; ja="アプリのファイルがありません"; ar="ملف التطبيق لم يعد موجودًا" }
+        let notRunning = { en="App is not running"; zh="应用未运行"; ja="アプリが実行されていません"; ar="التطبيق لا يعمل" }
+        let more count = { en=sprintf "…and %d more" count; zh=sprintf "…另有 %d 个" count; ja=sprintf "…ほか %d 個" count; ar=sprintf "…و%d أخرى" count }
+        /// The apps whose windows came back, each with how many, at the end of the restore notice.
+        let restoredApps apps = { en="Restored: "+apps; zh="已恢复："+apps; ja="復元済み: "+apps; ar="تمت الاستعادة: "+apps }
 
     module General =
         /// The choices of Restore the last session at start.
@@ -542,10 +556,10 @@ module Strings =
                              ja="ショートカットをクリックして、新しいキーの組み合わせを押します。Esc でキャンセルします。コマンドパレットでコマンドを選んで Alt+Enter でも設定できます。"
                              ar="انقر اختصارًا ثم اضغط مجموعة المفاتيح الجديدة. اضغط Esc للإلغاء. وتعيّنه لوحة الأوامر أيضًا: Alt+Enter على أمر." }
         /// Hovering the reset button: what it resets and what it leaves.
-        let restoreDefaultsHelp = { en="Restore default shortcuts: the ones on this page, and every key given to a command or a list in the command palette. Keys given to windows in the window search stay."
-                                    zh="恢复默认快捷键：包括本页的快捷键，以及在命令面板中为命令或列表设置的按键。在窗口搜索中为窗口设置的按键会保留。"
-                                    ja="既定のショートカットに戻します。このページのショートカットと、コマンドパレットでコマンドやリストに設定したキーが対象です。ウィンドウ検索でウィンドウに設定したキーは残ります。"
-                                    ar="استعادة الاختصارات الافتراضية: اختصارات هذه الصفحة، وكل مفتاح عُيّن لأمر أو لقائمة في لوحة الأوامر. تبقى المفاتيح المعيّنة للنوافذ في بحث النوافذ." }
+        let restoreDefaultsHelp = { en="Restore default shortcuts: the ones on this page, every key given to a command or a list in the command palette, and the keys given to windows in the window search, which are cleared."
+                                    zh="恢复默认快捷键：包括本页的快捷键、在命令面板中为命令或列表设置的按键，以及在窗口搜索中为窗口设置的按键（会被清除）。"
+                                    ja="既定のショートカットに戻します。このページのショートカット、コマンドパレットでコマンドやリストに設定したキー、ウィンドウ検索でウィンドウに設定したキー（解除されます）が対象です。"
+                                    ar="استعادة الاختصارات الافتراضية: اختصارات هذه الصفحة، وكل مفتاح عُيّن لأمر أو لقائمة في لوحة الأوامر، والمفاتيح المعيّنة للنوافذ في بحث النوافذ، التي تُزال." }
         let restoreDefaults = { en="Restore default shortcuts"; zh="恢复默认快捷键"; ja="既定のショートカットに戻す"; ar="استعادة الاختصارات الافتراضية" }
         let inUse = { en="Shortcut already in use"; zh="快捷键已被占用"; ja="ショートカットは使用中です"; ar="الاختصار مستخدم بالفعل" }
         /// A key pressed for one command that another had: it moves, and the other is left without.

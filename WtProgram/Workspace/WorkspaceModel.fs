@@ -271,6 +271,22 @@ type WindowResolver(?windows:List2<IntPtr * string * string>) =
         remaining <- remaining.where(fun (candidate,_,_) -> candidate<>hwnd)
         Some hwnd
 
+/// Why a saved window was not found, as the restore log and notice say it.
+type MissingReason =
+    /// Saved without the path of its app.
+    | UnknownApp
+    /// A Store app, which cannot be started by its path.
+    | StoreApp
+    /// Its app is open, but every window of it went to another saved window or none was there.
+    | NoWindowLeft
+    /// Its app was started, but showed no window in time.
+    | NoWindowAfterStart
+    | StartFailed of string
+    /// The app's file is no longer there.
+    | AppGone
+    /// Its app is not running and was not started.
+    | NotRunning
+
 /// The saved list is tab order; z-order only determines which restored window sits on top.
 module WorkspaceRestore =
     type private Slot =
@@ -306,6 +322,10 @@ module WorkspaceRestore =
     let zorder (windows:List2<WorkspaceWindow * IntPtr>) =
         windows.sortBy(fun (window,_) -> window.zorder).map snd
 
+    /// Store apps run inside ApplicationFrameHost, which cannot start them by its path.
+    let isStoreHost (path:string) =
+        String.Equals(Path.GetFileName path,"ApplicationFrameHost.exe",StringComparison.OrdinalIgnoreCase)
+
     /// A saved window as the result names it: its app and its full title.
     let describe (item:Dynamic) =
         match item with
@@ -320,9 +340,43 @@ module WorkspaceRestore =
         paths
         |> Seq.filter(fun path ->
             not(String.IsNullOrEmpty path) && not(running.Contains path) &&
-            not(String.Equals(Path.GetFileName path,"ApplicationFrameHost.exe",StringComparison.OrdinalIgnoreCase)) && exists path)
+            not(isStoreHost path) && exists path)
         |> Seq.distinctBy(fun path -> path.ToUpperInvariant())
         |> List.ofSeq
+
+    /// Why a saved window was not found, in the order `launchable` decides whether to start its
+    /// app: `launches` are the apps started, each with the error when it would not start.
+    let whyMissing (openPaths:string seq) (exists:string -> bool) (launches:(string*string option) list) (path:string) =
+        let same (other:string) = String.Equals(other,path,StringComparison.OrdinalIgnoreCase)
+        if String.IsNullOrEmpty path then UnknownApp
+        else
+            match launches |> List.tryFind(fst >> same) with
+            | Some(_,Some error) -> StartFailed error
+            | launched ->
+                if isStoreHost path then StoreApp
+                elif openPaths |> Seq.exists same then NoWindowLeft
+                elif launched.IsSome then NoWindowAfterStart
+                elif not(exists path) then AppGone
+                else NotRunning
+
+    let reasonText = function
+        | UnknownApp -> tr Strings.Notices.unknownApp
+        | StoreApp -> tr Strings.Notices.storeApp
+        | NoWindowLeft -> tr Strings.Notices.noWindowLeft
+        | NoWindowAfterStart -> tr Strings.Notices.noWindowAfterStart
+        | StartFailed error -> tr (Strings.Notices.startFailed error)
+        | AppGone -> tr Strings.Notices.appGone
+        | NotRunning -> tr Strings.Notices.notRunning
+
+    /// Apps started once that opened fewer windows than were saved, as most do: started again
+    /// once for each window still missing. Only apps that started and run now; an app that
+    /// restores its own windows found them all on the first start.
+    let startAgain (openPaths:string seq) (launches:(string*string option) list) (paths:string list) =
+        let same (path:string) (other:string) = String.Equals(other,path,StringComparison.OrdinalIgnoreCase)
+        paths |> List.filter(fun path ->
+            not(String.IsNullOrEmpty path) &&
+            launches |> List.exists(fun (started,error) -> same path started && error.IsNone) &&
+            openPaths |> Seq.exists(same path))
 
 /// What a restore did, for the result shown afterwards. Missing and failed windows are
 /// (app, title or error) pairs; a failure that concerns no single window has no app.
@@ -339,20 +393,66 @@ type WorkspaceRestoreResult = {
     /// several tries, one open and one started, is rebuilt once they are all there.
     placed:(Dynamic*IntPtr) list
     /// Apps of windows not found that are not running and can be started.
-    launchable:string list }
+    launchable:string list
+    /// The windows restored, as (app, title) pairs.
+    windows:(string*string) list
+    /// The apps with a window open when the try ended, to say why a window was not found.
+    openApps:string list
+    /// The apps started before this try, each with the error when it would not start.
+    launches:(string*string option) list }
     with
     static member Of(workspace,restored,missing,failed) =
-        { workspace=workspace; restored=restored; missing=missing; failed=failed; pending=[]; groups=[]; placed=[]; launchable=[] }
+        { workspace=workspace; restored=restored; missing=missing; failed=failed; pending=[]; groups=[]; placed=[]; launchable=[]
+          windows=[]; openApps=[]; launches=[] }
     /// A second try after starting apps: everything restored so far counts, what is still
     /// missing is what the second try did not find, and apps that would not start count as failed.
-    member first.Then(second:WorkspaceRestoreResult,launchFailures) =
-        { second with restored=first.restored+second.restored; failed=first.failed@launchFailures@second.failed }
+    member first.Then(second:WorkspaceRestoreResult,launchFailures:(string*string) list) =
+        let failure (path:string) =
+            launchFailures |> List.tryFind(fun (app,_) -> String.Equals(app,Path.GetFileName path,StringComparison.OrdinalIgnoreCase)) |> Option.map snd
+        { second with restored=first.restored+second.restored; failed=first.failed@launchFailures@second.failed
+                      windows=first.windows@second.windows
+                      launches=first.launches@(first.launchable |> List.map(fun path -> path,failure path)) }
+    /// The windows not found, as (app, title, reason).
+    member result.notFound(exists:string -> bool) =
+        result.pending |> List.map(fun (_,window) ->
+            let app,title = WorkspaceRestore.describe window
+            app,title,WorkspaceRestore.whyMissing result.openApps exists result.launches window.processPath)
+    /// The notice's list: each window left out with why, each failure, then the apps restored,
+    /// with how many windows of each. Past a dozen windows the rest are counted.
+    member result.noticeLines(exists:string -> bool) =
+        let shown = 12
+        let named (app:string) (detail:string) =
+            if String.IsNullOrEmpty app then detail
+            elif String.IsNullOrEmpty detail then app
+            else app+" — "+detail
+        let notFound = result.notFound exists
+        // An app that would not start is said once, with its windows.
+        let explained = notFound |> List.choose(function app,_,StartFailed error -> Some(app.ToLowerInvariant(),error) | _ -> None)
+        let left =
+            (notFound |> List.map(fun (app,title,why) ->
+                named (if String.IsNullOrEmpty title then app else app+" · "+title) (WorkspaceRestore.reasonText why)))
+            @ (result.failed |> List.filter(fun (app,error) -> not(List.contains (app.ToLowerInvariant(),error) explained))
+                             |> List.map(fun (app,error) -> named app error))
+        let restored =
+            result.windows |> List.countBy(fun (app,_) -> app.ToLowerInvariant())
+            |> List.map(fun (app,count) -> if count=1 then app else sprintf "%s ×%d" app count)
+        List.truncate shown left
+        @ (if left.Length>shown then [tr (Strings.Notices.more (left.Length-shown))] else [])
+        @ (if restored.IsEmpty then [] else [tr (Strings.Notices.restoredApps (String.concat ", " restored))])
 
-/// Starts apps by their path and waits, on this UI thread, for their windows: done once each has
-/// a window and no new one has appeared for a moment (an app restoring its session can open
-/// several), or after a time limit for an app that never shows one.
+/// Starts apps by their path, once for each time a path is given, and waits, on this UI thread,
+/// for their windows: done once each start has added a window to those its app had and no new one has
+/// appeared for a moment (an app restoring its session can open several), or after a time limit
+/// for an app that never shows one.
 module WorkspaceLaunch =
     let start (paths:string list) (complete:(string*string) list -> unit) =
+        let os = OS()
+        let same (path:string) (other:string) = String.Equals(other,path,StringComparison.OrdinalIgnoreCase)
+        let counts (apps:string list) =
+            let running = Services.program.appWindows.choose(fun hwnd -> try Some(os.windowFromHwnd(hwnd).pid.processPath) with _ -> None).list
+            apps |> List.map(fun path -> running |> List.filter(same path) |> List.length)
+        let apps = paths |> List.distinctBy(fun path -> path.ToUpperInvariant())
+        let before = counts apps
         let failures = ResizeArray<string*string>()
         let started =
             paths |> List.filter(fun path ->
@@ -363,21 +463,20 @@ module WorkspaceLaunch =
                 with ex -> failures.Add(Path.GetFileName(path),ex.Message); false)
         if started.IsEmpty then complete (List.ofSeq failures)
         else
-            let os = OS()
-            let counts() =
-                let running = Services.program.appWindows.choose(fun hwnd -> try Some(os.windowFromHwnd(hwnd).pid.processPath) with _ -> None).list
-                started |> List.map(fun path -> running |> List.filter(fun each -> String.Equals(each,path,StringComparison.OrdinalIgnoreCase)) |> List.length)
+            let wanted = List.map2 (fun path count -> count+(started |> List.filter(same path) |> List.length)) apps before
             let clock = Diagnostics.Stopwatch.StartNew()
             let mutable last = []
             let mutable changed = 0L
             let timer = new Timer(Interval=250)
             timer.Tick.Add(fun _ ->
-                let now = counts()
+                let now = counts apps
                 if now<>last then
                     last <- now
                     changed <- clock.ElapsedMilliseconds
-                let settled = now |> List.forall(fun count -> count>0) && clock.ElapsedMilliseconds-changed>=1500L
+                let settled = List.forall2 (>=) now wanted && clock.ElapsedMilliseconds-changed>=1500L
                 if settled || clock.ElapsedMilliseconds>=20000L then
+                    DebugLog.writef "Apps started %A: windows %A of %A wanted, %s after %d ms, failures %A"
+                        apps now wanted (if settled then "settled" else "timed out") clock.ElapsedMilliseconds (List.ofSeq failures)
                     timer.Stop()
                     timer.Dispose()
                     complete (List.ofSeq failures))
@@ -496,6 +595,7 @@ type WorkspaceModel() as this =
         let resolver = WindowResolver()
         let errors = ResizeArray<string*string>()
         let mutable restored = 0
+        let restoredWindows = ResizeArray<string*string>()
         let placedAll = ResizeArray<Dynamic*IntPtr>(placedBefore)
         let missing = ResizeArray<string*string>()
         let notFound = HashSet<obj>(HashIdentity.Reference)
@@ -531,6 +631,7 @@ type WorkspaceModel() as this =
                                 destination.Value.addWindow(hwnd,false)
                                 successful.Add(saved,hwnd)
                                 restored <- restored+1
+                                restoredWindows.Add(WorkspaceRestore.describe saved)
                             else lost saved
                         with ex -> errors.Add(fst (WorkspaceRestore.describe saved),ex.Message))
                     try os.setZorder(WorkspaceRestore.zorder (List2(successful))) with ex -> errors.Add("",ex.Message)
@@ -567,7 +668,8 @@ type WorkspaceModel() as this =
         { workspace=name; restored=restored; missing=List.ofSeq missing; failed=List.ofSeq errors; pending=pending
           groups=List.ofSeq used
           placed=List.ofSeq placedAll
-          launchable=WorkspaceRestore.launchable openPaths File.Exists (pending |> List.map(fun (_,window) -> window.processPath)) }
+          launchable=WorkspaceRestore.launchable openPaths File.Exists (pending |> List.map(fun (_,window) -> window.processPath))
+          windows=List.ofSeq restoredWindows; openApps=openPaths; launches=[] }
 
     member private this.restoreWorkspace(workspace:Workspace) =
         this.restoreInto(workspace.name,workspace.children.map(fun groupInfo -> groupInfo,(groupInfo?windows : List2<Dynamic>)),[],[])
@@ -629,8 +731,15 @@ type WorkspaceModel() as this =
     member private this.writeSession(ws:Workspace) =
         ws.name <- "Session"
         let root = Services.settings.root
-        root.["session"] <- ws.serialize()
-        Services.settings.root <- root
+        let session = ws.serialize()
+        // A save that finds the windows as they were leaves the settings file alone.
+        if not (WorkspaceModel.sameJson root.["session"] session) then
+            root.["session"] <- session
+            Services.settings.root <- root
+
+    /// Whether two pieces of JSON say the same, as written.
+    static member sameJson (saved:JToken) (current:JToken) =
+        not (isNull saved) && saved.ToString(Formatting.None)=current.ToString(Formatting.None)
 
     member this.saveSession() = this.createWorkspace(false,this.writeSession)
 
@@ -648,10 +757,25 @@ type WorkspaceModel() as this =
         match this.loadSession() with
         | None -> ()
         | Some ws ->
+            let tried (stage:string) (result:WorkspaceRestoreResult) =
+                DebugLog.writef "Session %s: %d restored, not found %A, failed %A, to start %A" stage result.restored
+                    (result.pending |> List.map(fun (_,window) -> window.name+" · "+window.title)) result.failed result.launchable
             let first = this.restoreWorkspace ws
+            tried "first try" first
             if launch && not first.launchable.IsEmpty then
                 launching first.launchable.Length
-                WorkspaceLaunch.start first.launchable (fun failures -> complete (first.Then(this.retry first,failures)))
+                WorkspaceLaunch.start first.launchable (fun failures ->
+                    let second = first.Then(this.retry first,failures)
+                    let again = WorkspaceRestore.startAgain second.openApps second.launches (second.pending |> List.map(fun (_,window) -> window.processPath))
+                    tried "after starting apps" second
+                    if again.IsEmpty then complete second
+                    else
+                        launching again.Length
+                        let second = { second with launchable=again }
+                        WorkspaceLaunch.start again (fun failures ->
+                            let third = second.Then(this.retry second,failures)
+                            tried "after starting apps again" third
+                            complete third))
             else complete first
     
     member this.remove() =

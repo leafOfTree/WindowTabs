@@ -20,23 +20,31 @@ type HotKeyBindings(register:int * int * int -> bool, unregister:int -> unit) =
             while used.Contains(nextId) do nextId <- if nextId=0xBFFF then 1 else nextId+1
             let id = nextId
             nextId <- if nextId=0xBFFF then 1 else nextId+1
-            if register(id,modifiers,key) then
+            // While suspended the key is only noted, and taken when the rest are.
+            if suspended then
+                bindings.[name] <- (id,modifiers,key,handler)
+                true
+            elif register(id,modifiers,key) then
                 bindings.[name] <- (id,modifiers,key,handler)
                 old |> Option.iter(fun (previous,_,_,_) -> unregister previous)
                 true
             else false
     member _.Invoke id =
+        let name = bindings |> Seq.tryFind(fun pair -> let registered,_,_,_ = pair.Value in registered=id) |> Option.map(fun pair -> pair.Key)
+        DebugLog.writef "Shortcut %A pressed, keys let go %b, full-screen pause %b" name suspended (FullScreenPause.isPaused())
         if not suspended then
             bindings.Values |> Seq.tryFind(fun (registered,_,_,_) -> registered=id)
             |> Option.iter(fun (_,_,_,handler) -> handler())
     /// Lets every key go while a shortcut is being recorded, keeping what each is bound to.
     member _.Suspend() =
+        DebugLog.writef "Shortcuts let go: %d keys, already %b" bindings.Count suspended
         if not suspended then
             suspended <- true
             for id,_,_,_ in bindings.Values do unregister id
     /// Takes the keys back once recording ends. One another program took meanwhile stays unbound,
     /// as at start.
     member _.Resume() =
+        DebugLog.writef "Shortcuts taken back, were let go %b" suspended
         if suspended then
             suspended <- false
             for id,modifiers,key,_ in List.ofSeq bindings.Values do register(id,modifiers,key) |> ignore

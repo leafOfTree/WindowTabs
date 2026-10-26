@@ -117,12 +117,12 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let settleTimer = lifetime.Own(new System.Windows.Forms.Timer(Interval=1000))
     /// Groups are recorded a moment after they change, once for a burst of changes.
     let rememberSoon = lifetime.Own(new CoalescedAction(500, fun () -> this.rememberGroups()))
-    /// The session, written as the groups change and every so often as windows move, so a
-    /// sign-in finds the last state. A window carrying a group token at start means WindowTabs
-    /// alone restarted: the tokens put the groups back and the session is left alone.
+    /// The session, written as the groups change, as Windows signs out and at exit, so a
+    /// sign-in finds the last state; a window moved or retitled since is kept by the last two.
+    /// A window carrying a group token at start means WindowTabs alone restarted: the tokens
+    /// put the groups back and the session is left alone.
     let sessions = WorkspaceModel()
     let sessionSoon = lifetime.Own(new CoalescedAction(3000, fun () -> this.saveSession()))
-    let sessionTimer = lifetime.Own(new System.Windows.Forms.Timer(Interval=120000))
     let mutable tokensSeen = false
     /// Each group's members as last seen, so a title change alone writes no session.
     let sessionMembers = Dictionary<IntPtr,IntPtr list>()
@@ -139,6 +139,17 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let mutable launched : (string list * DateTime * GroupInfo option ref) list = []
     /// Automatic groups of one app that have come to share a desktop are looked for at most once a second.
     let mergeSoon = lifetime.Own(new CoalescedAction(1000, fun () -> this.mergeAutoGroups()))
+    let mutable recordingShortcut = false
+    /// The shell sees a window go full screen a moment after it does, so an event is followed by
+    /// a few checks over the next two seconds rather than one; nothing runs between events.
+    let fullScreenFollowUp = lifetime.Own(new System.Windows.Forms.Timer(Interval=250))
+    let mutable fullScreenChecksLeft = 0
+    let mutable fullScreenStateSeen = -1
+    let ownProcess = Diagnostics.Process.GetCurrentProcess().Id
+    let mutable fullScreenBefore = false
+    let mutable fullScreenForeground : IDisposable option = None
+    let mutable fullScreenResize : IDisposable option = None
+    let mutable fullScreenResizePid = 0
     let desktopRetry = lifetime.Own(new CoalescedAction(100, fun () ->
                                         for hwnd in List.ofSeq awaitingDesktop.Keys do refreshQueue.RequestWindow hwnd))
 
@@ -153,7 +164,18 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         this.registerHotKeys()
         // While a shortcut is recorded, the keys go to the box rather than to what they run.
         lifetime.Own(ShortcutRecording.Changed.Subscribe(fun recording ->
-            if recording then hotKeyManager.suspend() else hotKeyManager.resume())) |> ignore
+            recordingShortcut <- recording
+            this.holdHotKeys())) |> ignore
+        lifetime.Own({new IDisposable with
+            member _.Dispose() = for hook in [fullScreenForeground;fullScreenResize] do hook |> Option.iter(fun hook -> hook.Dispose())}) |> ignore
+        fullScreenFollowUp.Tick.Add(fun _ ->
+            this.checkFullScreen()
+            fullScreenChecksLeft <- fullScreenChecksLeft-1
+            if fullScreenChecksLeft<=0 then
+                fullScreenChecksLeft <- 0
+                fullScreenFollowUp.Stop())
+        this.watchFullScreen()
+        lifetime.Own(Services.settings.notifyValue "pauseInFullScreen" (fun _ -> this.watchFullScreen())) |> ignore
         lifetime.Own(Services.settings.notifyValue "enableNumberLeader" (fun value ->
             if unbox<bool> value then
                 if not ((this :> IProgram).setHotKey "numberLeader" ((this :> IProgram).getHotKey "numberLeader")) then
@@ -240,6 +262,80 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
     member private this.sessionMode = string(Services.settings.getValue("sessionRestore"))
 
+    /// The shortcuts let go of their keys while one is being recorded or a full-screen app runs.
+    member private this.holdHotKeys() =
+        if recordingShortcut || FullScreenPause.isPaused() then hotKeyManager.suspend() else hotKeyManager.resume()
+
+    member private this.pausesInFullScreen = unbox<bool>(Services.settings.getValue("pauseInFullScreen"))
+
+    /// Looked at only while the setting is on, as Windows tells of it rather than on a timer: as
+    /// the foreground changes, and as the foreground window changes size, for one that goes full
+    /// screen in place, as a video does. Off, nothing is watched.
+    member private this.watchFullScreen() =
+        if this.pausesInFullScreen then
+            if fullScreenForeground.IsNone then
+                fullScreenForeground <- Some(os.setSingleWinEvent WinEvent.EVENT_SYSTEM_FOREGROUND (fun _ ->
+                    this.watchForegroundSize()
+                    this.checkFullScreenSoon "foreground"))
+            this.watchForegroundSize()
+        else
+            fullScreenForeground |> Option.iter(fun hook -> hook.Dispose())
+            fullScreenForeground <- None
+            fullScreenResize |> Option.iter(fun hook -> hook.Dispose())
+            fullScreenResize <- None
+            fullScreenResizePid <- 0
+            fullScreenChecksLeft <- 0
+            fullScreenFollowUp.Stop()
+        this.checkFullScreenSoon "setting"
+
+    /// Checks now and a few times over the next two seconds; a burst of events only renews them.
+    member private this.checkFullScreenSoon (cause:string) =
+        if fullScreenChecksLeft=0 then
+            let foreground = WinUserApi.GetForegroundWindow()
+            DebugLog.writef "Full-screen check on %s: foreground %A covers its monitor %b, shell state %d"
+                cause foreground (FullScreenApps.CoversMonitor foreground) (FullScreenApps.State())
+            this.checkFullScreen()
+        fullScreenChecksLeft <- 8
+        fullScreenFollowUp.Start()
+
+    /// Size changes of the foreground window only: the hook is limited to its process, so other
+    /// apps' moves are never sent here, and a burst, as while it is dragged, is looked at once.
+    member private this.watchForegroundSize() =
+        let foreground = WinUserApi.GetForegroundWindow()
+        let mutable pid = 0
+        WinUserApi.GetWindowThreadProcessId(foreground,&pid) |> ignore
+        if pid<>fullScreenResizePid then
+            fullScreenResize |> Option.iter(fun hook -> hook.Dispose())
+            fullScreenResizePid <- pid
+            fullScreenResize <-
+                if pid=0 then None
+                else Some(os.setWinEventHook(WinEvent.EVENT_OBJECT_LOCATIONCHANGE,WinEvent.EVENT_OBJECT_LOCATIONCHANGE,
+                                             (fun _ _ hwnd _ _ _ _ -> if hwnd=WinUserApi.GetForegroundWindow() then this.checkFullScreenSoon "size"),
+                                             pid,0))
+
+    /// Pauses while a full-screen game, video or presentation is in front, as Windows holds back
+    /// its own notifications then, unless the setting is off. The shell's word, or a window of
+    /// another app in front that covers its whole monitor: the shell was seen not to say so.
+    member private this.checkFullScreen() =
+        let state = if this.pausesInFullScreen then FullScreenApps.State() else 0
+        if state<>fullScreenStateSeen then
+            fullScreenStateSeen <- state
+            DebugLog.writef "Shell notification state %d, foreground %A" state (WinUserApi.GetForegroundWindow())
+        let foreground = WinUserApi.GetForegroundWindow()
+        let mutable pid = 0
+        WinUserApi.GetWindowThreadProcessId(foreground,&pid) |> ignore
+        let covers = pid<>ownProcess && FullScreenApps.CoversMonitor foreground
+        let fullScreen = this.pausesInFullScreen && (FullScreenApps.Running() || covers)
+        // Begun only when two checks in a row agree, a quarter of a second apart: a window on its
+        // way out of full screen passed through the monitor's size and paused for a moment.
+        // Ended at once.
+        let paused = fullScreen && (FullScreenPause.isPaused() || fullScreenBefore)
+        fullScreenBefore <- fullScreen
+        if paused<>FullScreenPause.isPaused() then
+            DebugLog.writef "Full-screen pause %s, foreground %A" (if paused then "begins" else "ends") (WinUserApi.GetForegroundWindow())
+            FullScreenPause.set paused
+            this.holdHotKeys()
+
     /// Not once Windows is signing out: the session was written then, with every app still
     /// open, and a save after it, as the apps close one by one, would leave their windows out.
     member private this.saveSession() =
@@ -253,6 +349,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         let mode = this.sessionMode
         // A workspace asked for on the command line takes the session's place.
         let workspaceAsked = match startupRequest with Some(RestoreWorkspace _) -> true | _ -> false
+        DebugLog.writef "Started, pid %d; session restore: mode %s, group tokens seen %b, workspace asked %b"
+            (Diagnostics.Process.GetCurrentProcess().Id) mode tokensSeen workspaceAsked
         if mode="Off" || tokensSeen || workspaceAsked then sessionReady <- true
         else
             let timer = new System.Windows.Forms.Timer(Interval=4000)
@@ -261,7 +359,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 timer.Dispose()
                 if not inShutdown.value then
                     match sessions.loadSession() with
-                    | None -> sessionReady <- true
+                    | None ->
+                        DebugLog.write "Session restore: no session saved"
+                        sessionReady <- true
                     | Some _ ->
                         // Said on screen first, so a user leaves the windows alone while they move.
                         let title = tr Strings.Notices.lastSession
@@ -276,9 +376,12 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                     fun result ->
                                         sessionReady <- true
                                         sessionSoon.Request()
-                                        this.noticeRestored title result
-                                        Diagnostics.Trace.TraceInformation("Session restored: {0} windows, {1} not found, {2} failed",result.restored,result.missing.Length,result.failed.Length))
+                                        DebugLog.writef "Session restored: %d windows, %d not found, %d failed" result.restored result.pending.Length result.failed.Length
+                                        try this.noticeRestored title result
+                                        with error -> DebugLog.writef "Session restore notice failed: %O" error
+                                        Diagnostics.Trace.TraceInformation("Session restored: {0} windows, {1} not found, {2} failed",result.restored,result.pending.Length,result.failed.Length))
                             with error ->
+                                DebugLog.writef "Session restore failed: %O" error
                                 sessionReady <- true
                                 Notice.error title (tr (Strings.Notices.restoreFailed error.Message))
                                 Diagnostics.Trace.TraceWarning("Session restore failed: {0}",error.Message))
@@ -853,11 +956,12 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         workspaces.loadSettings()
         workspaces
 
-    /// What a restore did; windows left out keep it up longer, to be read.
+    /// What a restore did. Windows left out are listed in full with why, and the apps restored,
+    /// on a warning that stays to be read.
     member private this.noticeRestored title (result:WorkspaceRestoreResult) =
-        let message = tr (Strings.Notices.restored result.restored result.missing.Length)
-        if result.missing.IsEmpty && result.failed.IsEmpty then Notice.show title message
-        else Notice.remind title message
+        let message = tr (Strings.Notices.restored result.restored result.pending.Length)
+        if result.pending.IsEmpty && result.failed.IsEmpty then Notice.show title message
+        else Notice.warn title message (result.noticeLines IO.File.Exists)
 
     /// As Save workspace in Settings, said on screen since nothing else shows it.
     member this.saveWorkspace() =
@@ -974,7 +1078,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             this.refresh()
 
         member x.shutdown() =
-            sessionTimer.Stop()
+            DebugLog.writef "Shutting down, pid %d" (Diagnostics.Process.GetCurrentProcess().Id)
             sessionSoon.Cancel()
             // From the layouts last read: the groups are about to go and cannot be asked.
             if this.sessionMode<>"Off" && sessionReady && not sessionEnding then
@@ -1141,12 +1245,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             startupRequest |> Option.iter(fun request -> this.execute request |> ignore)
             // Later command lines reach this copy here; each is done on the main thread.
             lifetime.Own(new CommandServer(CommandPipe.name,fun argv -> dispatcher.Send(fun () -> this.execute (CommandLine.parse argv)))) |> ignore
-            sessionTimer.Tick.Add(fun _ -> this.saveSession())
-            sessionTimer.Start()
             Microsoft.Win32.SystemEvents.SessionEnding.Add(fun _ ->
                 if not sessionEnding then
                     sessionEnding <- true
-                    sessionTimer.Stop()
                     sessionSoon.Cancel()
                     if this.sessionMode<>"Off" && sessionReady then
                         try

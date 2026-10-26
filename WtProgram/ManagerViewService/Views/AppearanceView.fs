@@ -264,14 +264,6 @@ type AppearanceView(?settings:ISettings) =
         let styleCard = new SettingsCard()
         SettingsUi.add table styleCard
         SettingsUi.settingRow styleCard "tabStyle" tabStyle
-        let textBold = SettingsBindings.settingToggle "tabTextBold"
-        textBold.CheckedChanged.Add(fun _ -> preview.Invalidate())
-        SettingsUi.settingRow styleCard "tab-text-bold" textBold
-        let opacityLow,opacityHigh = SettingsCatalog.opacityRange
-        let opacity = new SettingsNumberInput(Minimum=decimal opacityLow,Maximum=decimal opacityHigh,Font=SettingsUi.bodyFont(),
-                                              Value=decimal (match settings.getValue("tabOpacity") with :? int as value -> value | _ -> SettingsCatalog.opacityDefault))
-        opacity.ValueChanged.Add(fun _ -> settings.setValue("tabOpacity",box(int opacity.Value)))
-        SettingsUi.settingRow styleCard "tabOpacity" opacity
         // Which tabs get a color and how it shows, side by side in one row. Search still finds
         // each list by its own setting.
         let colorMode = SettingsBindings.choice "tab-color-mode"
@@ -314,6 +306,20 @@ type AppearanceView(?settings:ISettings) =
         SettingsUi.add table contrastNote
         SettingsUi.add table contrastComparison
         resetColorsButton.Click.Add(fun _ -> resetColors())
+        // After the colours, on a card of their own: changed less often than the style and the
+        // colours. Set apart from them by the space a section heading would leave.
+        let textCard = new SettingsCard(Margin=Padding(0,Dpi.scale 24,0,0))
+        SettingsUi.add table textCard
+        let textBold = SettingsBindings.settingToggle "tabTextBold"
+        textBold.CheckedChanged.Add(fun _ -> preview.Invalidate())
+        SettingsUi.settingRow textCard "tab-text-bold" textBold
+        let opacityLow,opacityHigh = SettingsCatalog.opacityRange
+        let opacity = new SettingsNumberInput(Minimum=decimal opacityLow,Maximum=decimal opacityHigh,Font=SettingsUi.bodyFont(),
+                                              Value=decimal (match settings.getValue("tabOpacity") with :? int as value -> value | _ -> SettingsCatalog.opacityDefault))
+        opacity.ValueChanged.Add(fun _ -> settings.setValue("tabOpacity",box(int opacity.Value)))
+        SettingsBindings.follow opacity "tabOpacity" (fun value ->
+            match value with :? int as percent when decimal percent<>opacity.Value -> opacity.Value <- decimal percent | _ -> ())
+        SettingsUi.settingRow textCard "tabOpacity" opacity
         SettingsUi.sectionHeading table (tr Strings.Appearance.tabLayout) [resetLayoutButton]
         let layoutCard = new SettingsCard()
         SettingsUi.add table layoutCard

@@ -191,6 +191,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         enableCtrlScroll = settingsJson.getBool("enableCtrlScroll").def(SettingsCatalog.toggleDefault "enableCtrlScroll" hasExistingSettings)
                         enableMiddleClickClose = settingsJson.getBool("enableMiddleClickClose").def(SettingsCatalog.toggleDefault "enableMiddleClickClose" hasExistingSettings)
                         tabHoverPreview = settingsJson.getBool("tabHoverPreview").def(SettingsCatalog.toggleDefault "tabHoverPreview" hasExistingSettings)
+                        pauseInFullScreen = settingsJson.getBool("pauseInFullScreen").def(SettingsCatalog.toggleDefault "pauseInFullScreen" hasExistingSettings)
                         version = settingsJson.getString("version").def(String.Empty)
                         alignment = settingsJson.getString("alignment").def(SettingsCatalog.choiceDefault "alignment") |> SettingsCatalog.normalizeChoice "alignment"
                         tabPosition = settingsJson.getString("tabPosition").def(SettingsCatalog.choiceDefault "tabPosition") |> SettingsCatalog.normalizeChoice "tabPosition"
@@ -282,6 +283,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setBool("enableCtrlScroll", settings.enableCtrlScroll)
             settingsJson.setBool("enableMiddleClickClose", settings.enableMiddleClickClose)
             settingsJson.setBool("tabHoverPreview", settings.tabHoverPreview)
+            settingsJson.setBool("pauseInFullScreen", settings.pauseInFullScreen)
             settingsJson.setString("tabPosition",settings.tabPosition)
             settingsJson.setInt32("tabColumnWidth",settings.tabColumnWidth)
             settingsJson.setInt32("tabOpacity",settings.tabOpacity)

@@ -929,6 +929,20 @@ let main() =
             note (AppTabColors.remembered path=rememberedBefore) "Trying a tab colour changed the app's colour"
             trial.Back()
             pumpUntil "The tab's own colour put back" (fun () -> settle active; Services.program.getTabColorOverride active=colourBefore))
+        // While the app remembers its colour, a tab of the app that follows that colour is tried
+        // with it too, and follows the app again after.
+        let appColorsBefore = api.getValue "appTabColors"
+        let follower = hwndOf "Bravo"
+        if WinUserApi.IsWindow follower && (Services.program.getTabColorOverride follower).IsNone then
+            AppTabColors.save path (Some(PaletteColor 0))
+            attempt "remembered app colour preview" (fun () ->
+                let options = choicesOf "tab-color" active
+                options.[1].preview.Value()
+                pumpUntil "The app's other tab tried with the colour" (fun () -> settle follower; (Services.program.getTabColorOverride follower).IsSome)
+                options.[1].undo.Value()
+                pumpUntil "The app's other tab back on the app's colour" (fun () -> settle follower; (Services.program.getTabColorOverride follower).IsNone))
+            api.setValue("appTabColors",appColorsBefore)
+        else issues.Add "No tab of the app without a colour of its own to try the remembered colour on"
         // Moving through a setting's values shows each; Esc puts back the one it had.
         let style() = api.getValue "tabStyle" :?> string
         let before = style()

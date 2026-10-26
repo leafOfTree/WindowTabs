@@ -175,6 +175,11 @@ let main() =
     check (registered.Contains paletteId) "The keys were not taken back after recording"
     keys.Invoke paletteId
     check (invoked=1) "A key taken back did not run its command"
+    // A shortcut set while the keys are let go, as in a full-screen game, waits to be taken with the rest.
+    keys.Suspend()
+    check (keys.Register "split" (2,81) ignore && registered.Count=0) "A shortcut set while the keys were let go took its key at once"
+    keys.Resume()
+    check (registered.Count=2) (sprintf "A shortcut set while the keys were let go was not taken with the rest: %d" registered.Count)
     // A box's recording tells the program, once for the first and once for the last.
     let seen = ResizeArray<bool>()
     use watching = ShortcutRecording.Changed.Subscribe(seen.Add)
@@ -264,6 +269,15 @@ let main() =
         let compatible = JObject(JProperty("workspaceSchemaVersion",schema),JProperty("workspaces",JArray(savedGroup.serialize() |> fun group -> JObject(JProperty("groups",JArray(group))))))
         let entries,_,blocked = WorkspaceData.read compatible
         check (entries.Length=1 && not blocked) "A supported workspace schema became read-only"
+    // A session save that finds the windows as they were, as read back from the file, does not
+    // rewrite the settings; one with a title changed does, and so does the first.
+    let writtenGroup = savedGroup.serialize()
+    let readBack = JObject.Parse(JObject(JProperty("session",writtenGroup)).ToString()).["session"]
+    check (WorkspaceModel.sameJson readBack (savedGroup.serialize())) "An unchanged session would rewrite the settings file"
+    let retitled = savedGroup.serialize()
+    (retitled.["windows"].[0] :?> JObject).["title"] <- JValue("Another title")
+    check (not (WorkspaceModel.sameJson readBack retitled) && not (WorkspaceModel.sameJson null writtenGroup))
+          "A changed or first session would not be written"
     let resolver = WindowResolver(List2([IntPtr(10),"Shared title",@"c:\apps\browser.EXE";
                                          IntPtr(20),"Shared title",@"c:\apps\editor.EXE"]))
     let restore resolver groups missing =
@@ -279,6 +293,49 @@ let main() =
             [@"C:\Apps\Editor.exe";@"c:\apps\EDITOR.exe";@"C:\apps\running.EXE";@"C:\Apps\Gone.exe";""
              @"C:\Windows\System32\ApplicationFrameHost.exe"]
     check (launchable=[@"C:\Apps\Editor.exe"]) (sprintf "Wrong apps offered to launch: %A" launchable)
+    // Each window left out says why: its app open with no window for it, started without one in
+    // time, would not start, a Store app, its file gone, not running, or saved without its app.
+    let why = WorkspaceRestore.whyMissing [@"C:\Apps\Running.exe"] (fun path -> not(path.Contains("Gone")))
+                  [@"C:\Apps\Slow.exe",None;@"C:\Apps\Denied.exe",Some "Access is denied."]
+    let reasons = [@"c:\apps\running.EXE";@"C:\Apps\Slow.exe";@"C:\Apps\Denied.exe";@"C:\Windows\System32\ApplicationFrameHost.exe"
+                   @"C:\Apps\Gone.exe";@"C:\Apps\Closed.exe";""] |> List.map why
+    check (reasons=[NoWindowLeft;NoWindowAfterStart;StartFailed "Access is denied.";StoreApp;AppGone;NotRunning;UnknownApp])
+          (sprintf "Wrong reasons for windows not found: %A" reasons)
+    // After starting apps, the result knows which were started and which would not start, and
+    // lists every window restored over both tries.
+    let leftOut name title path =
+        let window = savedWindow title path 0
+        window.name <- name
+        window
+    let slow = leftOut "Slow.exe" "Report" @"C:\Apps\Slow.exe"
+    let denied = leftOut "Denied.exe" "" @"C:\Apps\Denied.exe"
+    let firstTry = { WorkspaceRestoreResult.Of("Session",1,[],[]) with windows=["Editor.exe","Notes"]
+                                                                       launchable=[@"C:\Apps\Slow.exe";@"C:\Apps\Denied.exe"] }
+    let secondTry = { WorkspaceRestoreResult.Of("Session",1,["Slow.exe","Report";"Denied.exe",""],[]) with
+                        windows=["Other.exe","Mail"]; pending=[null,slow;null,denied] }
+    let both = firstTry.Then(secondTry,["Denied.exe","Access is denied."])
+    check (both.windows=["Editor.exe","Notes";"Other.exe","Mail"] && both.launches=[@"C:\Apps\Slow.exe",None;@"C:\Apps\Denied.exe",Some "Access is denied."])
+          (sprintf "The second try lost the windows restored or the apps started: %A %A" both.windows both.launches)
+    let notFound = both.notFound(fun _ -> true)
+    check (notFound=["Slow.exe","Report",NoWindowAfterStart;"Denied.exe","",StartFailed "Access is denied."])
+          (sprintf "Windows not found named the wrong reasons: %A" notFound)
+    // The notice lists every window left out with why, in full, then the apps restored.
+    Localization.setPreference "en"
+    let lines = { both with windows=both.windows@["notepad.exe","A";"Notepad.exe","B"] }.noticeLines(fun _ -> true)
+    Localization.setPreference "system"
+    check (lines=["Slow.exe · Report — App started, but showed no window in time"
+                  "Denied.exe — App would not start: Access is denied."
+                  "Restored: editor.exe, other.exe, notepad.exe ×2"])
+          (sprintf "The restore notice listed the wrong lines: %A" lines)
+    // An app started once that opened fewer windows than were saved is started again, once for
+    // each window still missing; not one that would not start, nor one that was never started.
+    let again = WorkspaceRestore.startAgain [@"C:\Apps\Neovide.exe";@"C:\Apps\Running.exe";@"C:\Apps\Denied.exe"]
+                    [@"c:\apps\neovide.EXE",None;@"C:\Apps\Denied.exe",Some "Access is denied.";@"C:\Apps\Slow.exe",None]
+                    [@"C:\Apps\Neovide.exe";@"C:\Apps\Neovide.exe";@"C:\Apps\Running.exe";@"C:\Apps\Denied.exe";@"C:\Apps\Slow.exe";""]
+    check (again=[@"C:\Apps\Neovide.exe";@"C:\Apps\Neovide.exe"]) (sprintf "Wrong apps started again: %A" again)
+    let third = { both with launchable=[@"C:\Apps\Slow.exe";@"C:\Apps\Slow.exe"] }.Then({ secondTry with windows=["Slow.exe","Report"]; pending=[] },[])
+    check (third.windows.Length=3 && third.launches.Length=4 && third.pending.IsEmpty)
+          (sprintf "Starting apps again lost what the earlier tries did: %A %A" third.windows third.launches)
     check ((resolver.resolve(first,false)).IsNone) "A window was matched twice"
     let wrongApp = WindowResolver(List2([IntPtr(30),"Shared title",@"C:\Other.exe"]))
     check ((wrongApp.resolve(first,true)).IsNone) "A title from another app matched as the saved app"

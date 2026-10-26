@@ -58,8 +58,10 @@ type HotKeyView() =
         editor
     let editors = actions |> List.map (fun (key,_) -> key,hotKey key)
     /// Every command's shortcut and the lists' keys go back to their defaults, those given in the
-    /// palette too, which most often means none; keys given to windows in the window search stay.
+    /// palette too, which most often means none, and keys given to windows in the window search go.
     let restoreDefaults() =
+        for shortcut in Services.program.windowShortcuts() do
+            Services.program.setWindowShortcut { shortcut with code=0 } |> ignore
         let commandKeys = Commands.all |> List.choose(fun command -> command.shortcut) |> List.distinct
         // Clear first so swapped shortcuts (next <-> previous) do not collide with each other.
         for key in commandKeys do Services.program.setHotKey key 0 |> ignore
@@ -194,9 +196,12 @@ type HotKeyView() =
             button :> Control)
         SettingsUi.settingRowWithActions keyboard "leader-keys" keysEditor presets |> ignore
         dependOn leaderEnabled [leaderEditor.Parent :?> SettingsRow;keysEditor.Parent :?> SettingsRow]
+        // Last: seldom changed.
+        SettingsBindings.toggleRow keyboard "pause-in-full-screen"
         // Offered only while a shortcut differs from its default; otherwise it would do nothing.
         let updateRestore() =
             restore.Offered <- editors |> List.exists(fun (key,editor) -> editor.Shortcut<>SettingsCatalog.shortcutDefault key)
+                               || not (List.isEmpty (Services.program.windowShortcuts()))
         for _,editor in editors do editor.Changed.Add(fun _ -> updateRestore())
         restore.Click.Add(fun _ -> restoreDefaults(); updateRestore())
         updateRestore()
