@@ -175,6 +175,11 @@ let main() =
     check (registered.Contains paletteId) "The keys were not taken back after recording"
     keys.Invoke paletteId
     check (invoked=1) "A key taken back did not run its command"
+    // A shortcut set while the keys are let go, as in a full-screen game, waits to be taken with the rest.
+    keys.Suspend()
+    check (keys.Register "split" (2,81) ignore && registered.Count=0) "A shortcut set while the keys were let go took its key at once"
+    keys.Resume()
+    check (registered.Count=2) (sprintf "A shortcut set while the keys were let go was not taken with the rest: %d" registered.Count)
     // A box's recording tells the program, once for the first and once for the last.
     let seen = ResizeArray<bool>()
     use watching = ShortcutRecording.Changed.Subscribe(seen.Add)

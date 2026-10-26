@@ -48,6 +48,7 @@ type NoticeWindow() =
     /// latest waits, after them, as anything newer makes it out of date.
     let mutable waiting : (string * string * NoticeKind * string list) list = []
     let mutable switches : Microsoft.Win32.SessionSwitchEventHandler = null
+    let mutable pauses : IDisposable option = None
     /// Whether the session is locked; a host checking the notices puts its own.
     static member val isLocked : unit -> bool = SessionLock.IsLocked with get,set
     override _.ShowWithoutActivation = true
@@ -247,11 +248,12 @@ type NoticeWindow() =
     member this.show(heading:string, message:string, noticeKind:NoticeKind, lines:string list) =
         this.listen()
         let locked = NoticeWindow.isLocked()
-        DebugLog.writef "Notice asked: %A %s: %s%s; showing %s, visible %b, leaving %b, animating %b, waiting %b, locked %b"
-            noticeKind heading message (String.concat "" (lines |> List.map(fun line -> " | "+line))) title this.Visible leaving animation.Enabled replacement.IsSome locked
-        // Nobody sees the screen while it is locked, and a warning or an error is not put away
-        // unread: the notice waits its turn.
-        if locked || this.importantShown then this.enqueue(heading,message,noticeKind,lines)
+        let paused = FullScreenPause.isPaused()
+        DebugLog.writef "Notice asked: %A %s: %s%s; showing %s, visible %b, leaving %b, animating %b, waiting %b, locked %b, full screen %b"
+            noticeKind heading message (String.concat "" (lines |> List.map(fun line -> " | "+line))) title this.Visible leaving animation.Enabled replacement.IsSome locked paused
+        // Nobody sees the screen while it is locked, a full-screen app is not covered, and a
+        // warning or an error is not put away unread: the notice waits its turn.
+        if locked || paused || this.importantShown then this.enqueue(heading,message,noticeKind,lines)
         else this.display(heading,message,noticeKind,lines)
     /// Shows it now: in place of the notice on screen, which slides out for it first.
     member private this.display(heading:string, message:string, noticeKind:NoticeKind, lines:string list) =
@@ -266,23 +268,31 @@ type NoticeWindow() =
             clock.Restart()
             animation.Start()
         else this.present(heading,message,noticeKind,lines)
-    /// Learns of the session locking and unlocking, from the first notice on.
+    /// Learns of the session locking and unlocking, and of full-screen pauses, from the first
+    /// notice on.
     member private this.listen() =
         if isNull switches then
             this.Handle |> ignore
+            let later action = if this.IsHandleCreated && not this.IsDisposed then this.BeginInvoke(Action(action)) |> ignore
             switches <- Microsoft.Win32.SessionSwitchEventHandler(fun _ e ->
                 let reason = e.Reason
                 let locked = reason=Microsoft.Win32.SessionSwitchReason.SessionLock
-                let change = locked || reason=Microsoft.Win32.SessionSwitchReason.SessionUnlock
-                if change && this.IsHandleCreated && not this.IsDisposed then
-                    this.BeginInvoke(Action(fun () -> this.sessionSwitched locked)) |> ignore)
+                if locked || reason=Microsoft.Win32.SessionSwitchReason.SessionUnlock then later(fun () -> this.sessionSwitched locked))
             Microsoft.Win32.SystemEvents.add_SessionSwitch switches
+            pauses <- Some(FullScreenPause.changes.Subscribe(fun paused -> later(fun () -> this.fullScreenPaused paused)))
     /// A lock stops the count, so a notice shown just before it is not gone unseen; the unlock
     /// shows what was asked for meanwhile, or counts the notice on screen from the start again.
     member this.sessionSwitched(locked:bool) =
         DebugLog.writef "Session %s; notice %s, visible %b, waiting %A" (if locked then "locked" else "unlocked") title this.Visible this.waitingTitles
         if locked then hide.Stop()
-        elif this.importantShown || waiting.IsEmpty then
+        elif not (FullScreenPause.isPaused()) then this.quietEnded()
+    /// The end of a full-screen pause shows what was asked for meanwhile, unless locked.
+    member this.fullScreenPaused(paused:bool) =
+        DebugLog.writef "Full screen %s; notice %s, visible %b, waiting %A" (if paused then "began" else "ended") title this.Visible this.waitingTitles
+        if not paused && not (NoticeWindow.isLocked()) then this.quietEnded()
+    /// Once nothing keeps notices back: the next waiting one, or the one on screen counted again.
+    member private this.quietEnded() =
+        if this.importantShown || waiting.IsEmpty then
             if this.Visible && not leaving then
                 this.raise()
                 this.countDown()
@@ -399,6 +409,7 @@ type NoticeWindow() =
     override this.Dispose(disposing) =
         if disposing then
             if not (isNull switches) then Microsoft.Win32.SystemEvents.remove_SessionSwitch switches
+            pauses |> Option.iter(fun subscription -> subscription.Dispose())
             hide.Dispose()
             animation.Dispose()
             icon |> Option.iter(fun value -> value.Dispose())

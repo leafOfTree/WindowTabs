@@ -330,13 +330,34 @@ module Commands =
         choosing "tab-color" Strings.Commands.tabColor TabCommands hasGroup (fun hwnd ->
             let current = currentTabColor hwnd
             let remembered = AppTabColors.remembered (processPath hwnd)
-            // Tried on the tab alone, the app's colour left as it is, then the tab's own colour, or
-            // none, put back.
-            let tabOnly color = fun () -> onTab (fun g hwnd -> g.run(SetTabColor(hwnd,color))) hwnd
-            let undo = Some(tabOnly (Services.program.getTabColorOverride hwnd))
+            // While the app remembers its colour, a colour chosen goes to every tab of the app that
+            // takes the app's colour, in any group, so they are tried with it; a tab with a colour
+            // of its own keeps it, as it will.
+            let followers =
+                if not remembered then []
+                else
+                    let path = processPath hwnd
+                    Services.desktop.groups.list |> List.filter live |> List.collect(fun group ->
+                        group.windows.list
+                        |> List.filter(fun other -> other<>hwnd && processPath other=path && (Services.program.getTabColorOverride other).IsNone)
+                        |> List.map(fun other -> group,other))
+            let colorFollowers color = for group,other in followers do group.run(SetTabColor(other,color))
+            // Tried on the tab, and on the tabs that follow the app's colour, the app's colour left
+            // as it is; then the tab's own colour, or none, put back, and the others follow the app.
+            let tryOn color = fun () ->
+                onTab (fun g hwnd -> g.run(SetTabColor(hwnd,color))) hwnd
+                colorFollowers color
+            let original = Services.program.getTabColorOverride hwnd
+            let undo = Some(fun () ->
+                onTab (fun g hwnd -> g.run(SetTabColor(hwnd,original))) hwnd
+                colorFollowers None)
+            // Chosen, the app's colour is the one shown: the others follow it again, as before.
+            let choose color = fun () ->
+                setTabColor hwnd color
+                colorFollowers None
             [ for index in Theme.tabColorOrder do
-                yield { choice (tr Strings.Settings.tabColorNames.[index]) (if current=Some(PaletteColor index) then "✓" else "") (fun () -> setTabColor hwnd (PaletteColor index))
-                        with swatch=Some(tabColour index); preview=Some(tabOnly (Some(PaletteColor index))); undo=undo }
+                yield { choice (tr Strings.Settings.tabColorNames.[index]) (if current=Some(PaletteColor index) then "✓" else "") (choose (PaletteColor index))
+                        with swatch=Some(tabColour index); preview=Some(tryOn (Some(PaletteColor index))); undo=undo }
               yield choice (tr Strings.Settings.customTabColor) "" (fun () -> customTabColor hwnd)
               // Off with nothing to remember, as the tab menu greys it.
               if canRememberTabColor hwnd then

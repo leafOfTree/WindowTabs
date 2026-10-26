@@ -225,6 +225,18 @@ let main() =
         check (notice.Visible && not notice.isCountingDown) "A notice kept counting down while the session was locked"
         notice.sessionSwitched false
         check notice.isCountingDown "A notice did not count down again after the unlock"
+        // While a full-screen app is paused for, a notice waits, and comes in once the pause ends.
+        notice.hideNow()
+        FullScreenPause.set true
+        notice.show("Workspace 1","Saved with 2 windows",Info)
+        pumpFor 400L
+        check (not notice.Visible && notice.waitingTitles=["Workspace 1"]) "A notice came in over a full-screen app"
+        FullScreenPause.set false
+        pumpFor 600L
+        check (notice.Visible && notice.waitingTitles.IsEmpty) "The notice held over a full-screen app did not come in after it"
+        notice.hideNow()
+        notice.show("Last session","Restored 2 windows, 1 not found",Warning,["Slow.exe — App is not running"])
+        pumpFor 600L
         // A later notice waits behind a warning or an error rather than putting it away unread:
         // warnings and errors in order, of the others only the latest, after them.
         notice.show("Workspace 1","Saved with 2 windows",Info)

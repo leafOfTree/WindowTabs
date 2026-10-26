@@ -398,6 +398,7 @@ let main() =
     openWindow.CreateControl()
     let draggedTogether() = [4711,["NOTEPAD.EXE","Notes - Notepad",IntPtr.Zero;"EXPLORER.EXE","Downloads",openWindow.Handle]]
     let handMade = ref (draggedTogether())
+    let windowKeys : WindowShortcut list ref = ref []
     let ungrouped = Collections.Generic.List<int>()
     Services.register<IProgram>({new IProgram with
         member _.version = "test"
@@ -435,8 +436,10 @@ let main() =
         member _.restoreWorkspace() = ()
         member _.restoreWorkspaceNamed _ = ()
         member _.detachTab _ = ()
-        member _.windowShortcuts() = []
-        member _.setWindowShortcut _ = true})
+        member _.windowShortcuts() = windowKeys.Value
+        member _.setWindowShortcut shortcut =
+            windowKeys.Value <- WindowShortcuts.set windowKeys.Value shortcut
+            true})
     let command (control:Control) (keys:Keys) =
         let mutable msg = Message()
         let processKey = control.GetType().GetMethod("ProcessCmdKey",BindingFlags.Instance ||| BindingFlags.NonPublic ||| BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
@@ -641,9 +644,12 @@ let main() =
         search.Shortcut <- 1568
         // A key given in the palette to a command the page does not list goes back to none as well.
         hotKeys.["rename-tab"] <- SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.F7)
+        // So does a key given to a window in the window search.
+        windowKeys.Value <- [{ path= @"C:\Apps\Notes.exe"; title="Notes"; code=SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.F8) }]
         let restoreButton = (findButton "Restore default shortcuts" view.control).Value
         assertTrue (restoreButton.AccessibleDescription=tr Strings.Shortcuts.restoreDefaultsHelp) "The reset button does not say what it resets"
         restoreButton.PerformClick()
+        assertTrue windowKeys.Value.IsEmpty "Restore default shortcuts left a key given to a window"
         assertTrue (hotKeys.["nextTab"]=3623 && hotKeys.["prevTab"]=3621 && next.Shortcut=3623 && previous.Shortcut=3621) "Restore default shortcuts"
         assertTrue (hotKeys.["rename-tab"]=0) "Restore default shortcuts left a key given in the palette"
         assertTrue (hotKeys.["searchTabs"]=1620 && search.Shortcut=1620) "Restore default must set tab search to Ctrl+Alt+T"

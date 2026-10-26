@@ -139,6 +139,17 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let mutable launched : (string list * DateTime * GroupInfo option ref) list = []
     /// Automatic groups of one app that have come to share a desktop are looked for at most once a second.
     let mergeSoon = lifetime.Own(new CoalescedAction(1000, fun () -> this.mergeAutoGroups()))
+    let mutable recordingShortcut = false
+    /// The shell sees a window go full screen a moment after it does, so an event is followed by
+    /// a few checks over the next two seconds rather than one; nothing runs between events.
+    let fullScreenFollowUp = lifetime.Own(new System.Windows.Forms.Timer(Interval=250))
+    let mutable fullScreenChecksLeft = 0
+    let mutable fullScreenStateSeen = -1
+    let ownProcess = Diagnostics.Process.GetCurrentProcess().Id
+    let mutable fullScreenBefore = false
+    let mutable fullScreenForeground : IDisposable option = None
+    let mutable fullScreenResize : IDisposable option = None
+    let mutable fullScreenResizePid = 0
     let desktopRetry = lifetime.Own(new CoalescedAction(100, fun () ->
                                         for hwnd in List.ofSeq awaitingDesktop.Keys do refreshQueue.RequestWindow hwnd))
 
@@ -153,7 +164,18 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         this.registerHotKeys()
         // While a shortcut is recorded, the keys go to the box rather than to what they run.
         lifetime.Own(ShortcutRecording.Changed.Subscribe(fun recording ->
-            if recording then hotKeyManager.suspend() else hotKeyManager.resume())) |> ignore
+            recordingShortcut <- recording
+            this.holdHotKeys())) |> ignore
+        lifetime.Own({new IDisposable with
+            member _.Dispose() = for hook in [fullScreenForeground;fullScreenResize] do hook |> Option.iter(fun hook -> hook.Dispose())}) |> ignore
+        fullScreenFollowUp.Tick.Add(fun _ ->
+            this.checkFullScreen()
+            fullScreenChecksLeft <- fullScreenChecksLeft-1
+            if fullScreenChecksLeft<=0 then
+                fullScreenChecksLeft <- 0
+                fullScreenFollowUp.Stop())
+        this.watchFullScreen()
+        lifetime.Own(Services.settings.notifyValue "pauseInFullScreen" (fun _ -> this.watchFullScreen())) |> ignore
         lifetime.Own(Services.settings.notifyValue "enableNumberLeader" (fun value ->
             if unbox<bool> value then
                 if not ((this :> IProgram).setHotKey "numberLeader" ((this :> IProgram).getHotKey "numberLeader")) then
@@ -239,6 +261,80 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             token
 
     member private this.sessionMode = string(Services.settings.getValue("sessionRestore"))
+
+    /// The shortcuts let go of their keys while one is being recorded or a full-screen app runs.
+    member private this.holdHotKeys() =
+        if recordingShortcut || FullScreenPause.isPaused() then hotKeyManager.suspend() else hotKeyManager.resume()
+
+    member private this.pausesInFullScreen = unbox<bool>(Services.settings.getValue("pauseInFullScreen"))
+
+    /// Looked at only while the setting is on, as Windows tells of it rather than on a timer: as
+    /// the foreground changes, and as the foreground window changes size, for one that goes full
+    /// screen in place, as a video does. Off, nothing is watched.
+    member private this.watchFullScreen() =
+        if this.pausesInFullScreen then
+            if fullScreenForeground.IsNone then
+                fullScreenForeground <- Some(os.setSingleWinEvent WinEvent.EVENT_SYSTEM_FOREGROUND (fun _ ->
+                    this.watchForegroundSize()
+                    this.checkFullScreenSoon "foreground"))
+            this.watchForegroundSize()
+        else
+            fullScreenForeground |> Option.iter(fun hook -> hook.Dispose())
+            fullScreenForeground <- None
+            fullScreenResize |> Option.iter(fun hook -> hook.Dispose())
+            fullScreenResize <- None
+            fullScreenResizePid <- 0
+            fullScreenChecksLeft <- 0
+            fullScreenFollowUp.Stop()
+        this.checkFullScreenSoon "setting"
+
+    /// Checks now and a few times over the next two seconds; a burst of events only renews them.
+    member private this.checkFullScreenSoon (cause:string) =
+        if fullScreenChecksLeft=0 then
+            let foreground = WinUserApi.GetForegroundWindow()
+            DebugLog.writef "Full-screen check on %s: foreground %A covers its monitor %b, shell state %d"
+                cause foreground (FullScreenApps.CoversMonitor foreground) (FullScreenApps.State())
+            this.checkFullScreen()
+        fullScreenChecksLeft <- 8
+        fullScreenFollowUp.Start()
+
+    /// Size changes of the foreground window only: the hook is limited to its process, so other
+    /// apps' moves are never sent here, and a burst, as while it is dragged, is looked at once.
+    member private this.watchForegroundSize() =
+        let foreground = WinUserApi.GetForegroundWindow()
+        let mutable pid = 0
+        WinUserApi.GetWindowThreadProcessId(foreground,&pid) |> ignore
+        if pid<>fullScreenResizePid then
+            fullScreenResize |> Option.iter(fun hook -> hook.Dispose())
+            fullScreenResizePid <- pid
+            fullScreenResize <-
+                if pid=0 then None
+                else Some(os.setWinEventHook(WinEvent.EVENT_OBJECT_LOCATIONCHANGE,WinEvent.EVENT_OBJECT_LOCATIONCHANGE,
+                                             (fun _ _ hwnd _ _ _ _ -> if hwnd=WinUserApi.GetForegroundWindow() then this.checkFullScreenSoon "size"),
+                                             pid,0))
+
+    /// Pauses while a full-screen game, video or presentation is in front, as Windows holds back
+    /// its own notifications then, unless the setting is off. The shell's word, or a window of
+    /// another app in front that covers its whole monitor: the shell was seen not to say so.
+    member private this.checkFullScreen() =
+        let state = if this.pausesInFullScreen then FullScreenApps.State() else 0
+        if state<>fullScreenStateSeen then
+            fullScreenStateSeen <- state
+            DebugLog.writef "Shell notification state %d, foreground %A" state (WinUserApi.GetForegroundWindow())
+        let foreground = WinUserApi.GetForegroundWindow()
+        let mutable pid = 0
+        WinUserApi.GetWindowThreadProcessId(foreground,&pid) |> ignore
+        let covers = pid<>ownProcess && FullScreenApps.CoversMonitor foreground
+        let fullScreen = this.pausesInFullScreen && (FullScreenApps.Running() || covers)
+        // Begun only when two checks in a row agree, a quarter of a second apart: a window on its
+        // way out of full screen passed through the monitor's size and paused for a moment.
+        // Ended at once.
+        let paused = fullScreen && (FullScreenPause.isPaused() || fullScreenBefore)
+        fullScreenBefore <- fullScreen
+        if paused<>FullScreenPause.isPaused() then
+            DebugLog.writef "Full-screen pause %s, foreground %A" (if paused then "begins" else "ends") (WinUserApi.GetForegroundWindow())
+            FullScreenPause.set paused
+            this.holdHotKeys()
 
     /// Not once Windows is signing out: the session was written then, with every app still
     /// open, and a save after it, as the apps close one by one, would leave their windows out.

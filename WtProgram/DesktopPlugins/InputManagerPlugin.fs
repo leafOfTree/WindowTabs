@@ -220,7 +220,8 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
 
     member this.registerKeyboardLLHook() =
         kbHook <- OS.registerKeyboardLLHook <| fun(key, data) ->
-            if data.dwExtraInfo = AltMenuMask.marker then None
+            // A full-screen game keeps its keys, Ctrl+1 to 9 among them.
+            if data.dwExtraInfo = AltMenuMask.marker || FullScreenPause.isPaused() then None
             else
             // The group runs asynchronously; Ctrl may be released before it handles
             // this key. Preserve the modifier state belonging to this input event.
@@ -250,6 +251,7 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
                     groupInfo.invokeGroup <| fun() ->
                         try groupInfo.group.activateIndex(index,true)
                         finally keys.activation.completed())
+            if outcome.swallow then DebugLog.writef "Key %d handled by the keyboard hook" data.vkCode
             if outcome.swallow then Some 1 else None
 
     interface IStartupInputPlugin

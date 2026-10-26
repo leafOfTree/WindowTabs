@@ -6,12 +6,24 @@ open System.Runtime.InteropServices
 
 module SettingsBindings =
     open SettingsUi
+    /// Keeps a control showing its setting as the palette, a shortcut or a reset changes it, on
+    /// the control's own thread.
+    let follow (control:Control) key (show:obj -> unit) =
+        let subscription = Services.settings.notifyValue key (fun value ->
+            if not control.IsDisposed then
+                if control.InvokeRequired then
+                    try control.BeginInvoke(Action(fun () -> if not control.IsDisposed then show value)) |> ignore
+                    with :? InvalidOperationException -> ()
+                else show value)
+        control.Disposed.Add(fun _ -> subscription.Dispose())
+
     let settingToggle key =
         let check = new SettingsToggle()
         check.Checked <- Services.settings.getValue(key) :?> bool
         check.CheckedChanged.Add(fun _ ->
             if key="enableTabbingByDefault" then Services.filter.isTabbingEnabledForAllProcessesByDefault <- check.Checked
             else Services.settings.setValue(key,box check.Checked))
+        follow check key (fun value -> match value with :? bool as on when on<>check.Checked -> check.Checked <- on | _ -> ())
         check
 
     let toggleRow table id =
@@ -33,6 +45,10 @@ module SettingsBindings =
                                     |> Option.orElse (indexOf fallback) |> Option.defaultValue 0
             choice.SelectedIndexChanged.Add(fun _ ->
                 if choice.SelectedIndex >= 0 then Services.settings.setValue(key,box values.[choice.SelectedIndex]))
+            follow choice key (fun value ->
+                match value with
+                | :? string as chosen -> indexOf chosen |> Option.iter(fun index -> if index<>choice.SelectedIndex then choice.SelectedIndex <- index)
+                | _ -> ())
             choice
         | _ -> invalidArg "id" "Not a choice"
 
