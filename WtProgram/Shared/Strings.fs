@@ -373,10 +373,10 @@ module Strings =
                             description={ en="Titles of every tab in a heavier weight."; zh="所有标签的标题以粗体显示。"; ja="すべてのタブのタイトルを太字で表示します。"; ar="عناوين كل علامات التبويب بخط أثقل." }
                             keywords=tabTextWords }
         let tabCloseButton = { caption={ en="Show close buttons"; zh="显示关闭按钮"; ja="閉じるボタンを表示"; ar="إظهار أزرار الإغلاق" }
-                               description={ en="Active tab only: clicking another tab just switches to it."
-                                             zh="仅当前标签时，点其他标签只会切换。"
-                                             ja="アクティブのみなら、他のタブのクリックは切り替えだけ。"
-                                             ar="النشطة فقط: النقر على علامة أخرى يبدّل إليها فقط." }
+                               description={ en="Which tabs show the × that closes their window."
+                                             zh="哪些标签显示用来关闭窗口的 × 按钮。"
+                                             ja="ウィンドウを閉じる × をどのタブに表示するか。"
+                                             ar="علامات التبويب التي يظهر عليها زر × لإغلاق نافذتها." }
                                keywords={ en="close button x hide"; zh="关闭按钮 叉 隐藏"; ja="閉じるボタン × 非表示"; ar="زر الإغلاق إخفاء" } }
         let closeOnActiveAndHover = { en="Active and on hover"; zh="当前标签和悬停时"; ja="アクティブとホバー時"; ar="النشطة وعند التمرير" }
         let closeOnActive = { en="Active tab only"; zh="仅当前标签"; ja="アクティブなタブのみ"; ar="علامة التبويب النشطة فقط" }
