@@ -322,6 +322,8 @@ type TabDisplayInfo = {
     /// The tab's pane in a split view; the pair gets a button where the two tabs meet.
     splitTrail: (SplitAxis * Side) list option
     isPinned: bool
+    /// "ActiveAndHover", "Active" or "Never", as the setting says.
+    closeButton: string
     }
     
 type TabSprite<'id> = {
@@ -609,14 +611,20 @@ type TabSprite<'id> = {
     // the strip stays a row of icons.
     /// A pinned tab has a pin there instead: it closes from its menu, by middle-click or from
     /// its own window.
+    /// Shown on the active tab only, a click on another tab cannot land on its close button.
     member this.showCloseButton =
         let pointed = this.hover.IsSome || this.captured.IsSome
-        if this.displayInfo.isPinned then false
+        if this.displayInfo.isPinned || this.displayInfo.closeButton="Never" then false
+        elif this.displayInfo.closeButton="Active" then this.isTop && not this.onlyIcon
         elif this.onlyIcon then pointed && this.closeButtonFits
         else this.isTop || pointed
 
+    /// With no close button ever, the title takes its room; a pinned tab keeps it for the pin.
+    member private this.closeButtonRoom =
+        if this.displayInfo.closeButton="Never" && not this.displayInfo.isPinned then 0 else this.closeButtonSize.width
+
     member this.textSize =
-        let width = this.size.width - this.textLocation.x - this.edgeWidth - this.closeButtonSize.width
+        let width = this.size.width - this.textLocation.x - this.edgeWidth - this.closeButtonRoom
         let width = max 1 width
         Sz(width, this.contentHeight)
 

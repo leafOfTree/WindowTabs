@@ -103,7 +103,7 @@ let main () =
         tabBorderColor=Color.FromArgb(168,168,168) }
     let info text : TabDisplayInfo = {
         tint=None; colorStyle="Stripe"; numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application
-        textFont=SystemFonts.MenuFont; textBrush=Brushes.Black; splitTrail=None; isPinned=false }
+        textFont=SystemFonts.MenuFont; textBrush=Brushes.Black; splitTrail=None; isPinned=false; closeButton="ActiveAndHover" }
     let ts : TabStripSprite<int> = {
         tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"]))
         lorder=List2([1;2]); zorder=List2([1;2]); size=Sz(420,28)
@@ -342,7 +342,7 @@ let main () =
     for h in [12;18;26] do
         use font = TabMetrics.font h FontStyle.Regular
         check (font.Height <= max h (SystemFonts.MenuFont.Height)) (sprintf "Text line does not fit a %dpx tab" h)
-        let info text : TabDisplayInfo = { tint=None; colorStyle="Stripe"; numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application; textFont=font; textBrush=Brushes.Black; splitTrail=None; isPinned=false }
+        let info text : TabDisplayInfo = { tint=None; colorStyle="Stripe"; numberBadge=None; bgColor=None; text=text; icon=SystemIcons.Application; textFont=font; textBrush=Brushes.Black; splitTrail=None; isPinned=false; closeButton="ActiveAndHover" }
         let strip = { ts with appearance={ appearance with tabHeight=h }; size=Sz(420,h+1)
                               tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"])) }
         for _,tab in strip.sprite.children.list do
@@ -374,6 +374,23 @@ let main () =
             | None -> check (id<>2) "The pointed-at icon-only tab shows no close button"
         let narrow = parts { icons with appearance={ appearance with tabMaxWidth=Dpi.scale 30 }; hover=Some(2,TabBackground) }
         check (narrow |> List.forall(fun (_,_,_,close) -> close.IsNone)) "A tab too narrow for icon and button shows a close button"
+        // Show close buttons: on the active tab only, a hovered tab has none to click by mistake;
+        // never, no tab has one and the title takes its room.
+        let withClose mode (strip:TabStripSprite<int>) = { strip with tabs=Map2(strip.tabs.items.map(fun (id,info) -> id,{ info with closeButton=mode })) }
+        let titled = { ts with size=Sz(420,28); tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"])) }
+        let closes (strip:TabStripSprite<int>) =
+            strip.sprite.children.list |> List.map(fun (_,tab) ->
+                let tab = tab :?> TabSprite<int>
+                tab.id,tab.isTop,(tab :> ISprite).children.list |> List.exists(fun (_,child) -> child :? CloseButtonSprite))
+        for id,isTop,shown in closes (withClose "Active" { titled with hover=Some(2,TabBackground) }) do
+            check (shown=isTop) (sprintf "With close buttons on the active tab only, tab %d (active %b) showed one: %b" id isTop shown)
+        let hoveredId = 2
+        check (closes (withClose "ActiveAndHover" { titled with hover=Some(hoveredId,TabBackground) }) |> List.exists(fun (id,isTop,shown) -> id=hoveredId && not isTop && shown))
+              "The hovered tab lost its close button in the default mode"
+        let never = withClose "Never" { titled with hover=Some(hoveredId,TabBackground) }
+        check (closes never |> List.forall(fun (_,_,shown) -> not shown)) "A tab showed a close button set to never"
+        let titleWidth (strip:TabStripSprite<int>) = strip.sprite.children.list |> List.map(fun (_,tab) -> (tab :?> TabSprite<int>).textSize.width) |> List.max
+        check (titleWidth never > titleWidth (withClose "ActiveAndHover" titled)) "With no close buttons the titles did not take their room"
     // Many tabs: titles give way to icons, tabs stop at a clickable width and the first stays in view.
     do
         let strip count = { ts with alignment=TabCenter; size=Sz(420,28)
