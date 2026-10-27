@@ -86,6 +86,12 @@ module TabNavigation =
         | Some(tab,time) -> tab=gone && now-time <= 500L
         | None -> false
 
+    /// The successor of a closed tab may take the foreground by force only while the group had
+    /// it: the closed tab was still in front, or the foreground left it once it was already
+    /// closing. A user who chose another window first is not pulled back.
+    let forceOnClose lastForeground closingWhenLeft closed =
+        lastForeground=closed || closingWhenLeft=Some closed
+
     /// Selecting another tab forgets the opener, but Windows activating the window
     /// below a closing tab does not.
     let keepOpener order isOpen opener foreground =
@@ -380,6 +386,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let mutable leftOpener : (IntPtr * IntPtr) option = None
     /// The last tab the foreground left for a window outside the group, and when.
     let mutable leftGroup : (IntPtr * int64) option = None
+    /// That tab, when it was already closing as the foreground left it: Windows moved the foreground, not the user.
+    let mutable leftGroupClosing : IntPtr option = None
     let isMinimized hwnd = this.os.windowFromHwnd(hwnd).isMinimized
     let isOpen hwnd = WinUserApi.IsWindow(hwnd) && WinUserApi.IsWindowVisible(hwnd)
     let hookCleanup = Cell.create(Map2<IntPtr, IDisposable>())
@@ -605,6 +613,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if prev <> value then
                 if List.contains prev this.lorder.list && not(List.contains value this.lorder.list) then
                     leftGroup <- Some(prev,transitionClock.ElapsedMilliseconds)
+                    leftGroupClosing <- if isOpen prev then None else Some prev
                 opener <- TabNavigation.keepOpener this.lorder.list isOpen opener value
                 foregroundCell.set(value)
                 foregroundEvent.Trigger()
@@ -2292,7 +2301,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     | Some target -> Some target
                     | None -> if this.windows.contains(foreground) then Some foreground else None
             if followedClose |> Option.exists(fun (closed,_) -> closed=hwnd) then followedClose <- None
-            else next |> Option.iter(fun target -> this.tabActivate(Tab(target),false))
+            else next |> Option.iter(fun target -> this.tabActivate(Tab(target),this.forceOnClose hwnd))
 
     /// The tab shown before `hwnd`, the one the foreground left for it, comes to the front, once
     /// `hwnd` has left the group by a drag. Nothing else is known to have been shown: a tab
@@ -2317,6 +2326,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.leftOnClose(hwnd) =
         foregroundCell.value=hwnd || TabNavigation.leftGroupJustBefore leftGroup hwnd transitionClock.ElapsedMilliseconds
 
+    /// Refused, the successor's taskbar button only flashes and the tab stays behind.
+    member private this.forceOnClose(hwnd) =
+        this.leftOnClose hwnd && TabNavigation.forceOnClose foregroundCell.value leftGroupClosing hwnd
+
     /// Windows activates the previously used window when a tab closes, before discovery
     /// removes it. Select the successor as soon as the active tab is hidden, destroyed or
     /// loses the foreground, so the wrong tab shows as briefly as possible.
@@ -2325,7 +2338,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         | Some closed when followedClose |> Option.forall(fun (followed,_) -> followed<>closed) ->
             TabNavigation.closeTarget this.lorder.list isOpen closed foreground lastActiveTab opener (this.leftOnClose closed)
             |> Option.iter(fun target ->
-                if target<>foreground then this.tabActivate(Tab(target),false)
+                if target<>foreground then this.tabActivate(Tab(target),this.forceOnClose closed)
                 // Activation can be refused; a later foreground event or removal retries.
                 if this.os.foreground.hwnd=target then followedClose <- Some(closed,target))
         | _ -> ()

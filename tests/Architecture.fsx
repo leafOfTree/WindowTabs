@@ -381,6 +381,10 @@ let main() =
         check (TabNavigation.leftGroupJustBefore (Some(b,1000L)) b 1300L) "A tab closed right after the foreground left the group was treated as left by the user"
         check (not(TabNavigation.leftGroupJustBefore (Some(b,1000L)) b 1600L)) "A tab closed long after the user left the group activated the group"
         check (not(TabNavigation.leftGroupJustBefore (Some(b,1000L)) c 1300L)) "Another tab's close was treated as the tab that left the group"
+        // Refused activation only flashed the next tab's taskbar button; force is kept for closes in front.
+        check (TabNavigation.forceOnClose b None b) "The tab after a close in front was not brought up by force"
+        check (TabNavigation.forceOnClose (IntPtr 999) (Some b) b) "The tab after a close Windows moved the foreground for was not brought up by force"
+        check (not(TabNavigation.forceOnClose (IntPtr 999) None b)) "A user who chose another window before the close was pulled back"
         // Browser opener rule: closing a tab before selecting another returns to its opener.
         let opened = Some(added,a)
         check (TabNavigation.closeTarget [a;b;c;added] closing added a active opened false=Some a) "Closing a new tab did not return to the tab it was opened from"
