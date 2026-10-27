@@ -1704,6 +1704,14 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     let target = max low (min high (index+places))
                     if target<>index then this.ts.moveTab(Tab(hwnd),target)
                 | None -> ()
+            | PlaceTabAfter(hwnd,anchor) ->
+                let order = this.lorder.list
+                match List.tryFindIndex ((=) hwnd) order,List.tryFindIndex ((=) anchor) order with
+                | Some index,Some at when not (PinnedTabs.contains hwnd) ->
+                    let pinned = order |> List.filter PinnedTabs.contains |> List.length
+                    let target = max pinned (if index<at then at else at+1)
+                    if target<>index then this.ts.moveTab(Tab(hwnd),target)
+                | _ -> ()
             | ToggleIconsOnly -> this.isIconOnly <- not this.isIconOnly
             | SetTabDock dock -> this.ts.dock <- dock
             // The tabs' direction in view, as the tab menu's alignment items set.

@@ -19,7 +19,7 @@ between them with a click or a shortcut.
 
 ## Get started
 
-Windows 10 and 11. No installation: download `WindowTabs.exe` from
+Download `WindowTabs.exe` from
 [Releases](https://github.com/leafOfTree/WindowTabs/releases) and run it.
 It runs in the system tray.
 
