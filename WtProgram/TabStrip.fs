@@ -78,6 +78,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let tabTint = Cell.create(Map2())
     let colorStyleCell = Cell.create(Services.settings.getValue("tabColorStyle") :?> string)
     let textBoldCell = Cell.create(Services.settings.getValue("tabTextBold") :?> bool)
+    let closeButtonCell = Cell.create(Services.settings.getValue("tabCloseButton") :?> string)
     let mutable lastAlpha = 255uy
     let opacityCell = Cell.create(Services.settings.getValue("tabOpacity") :?> int)
     let tabBgColor = Cell.create(Map2())
@@ -162,6 +163,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         if tabTint.value.tryFind(tab) <> color then tabTint.value <- match color with Some c -> tabTint.value.add tab c | None -> tabTint.value.remove tab
     member _.colorStyle with get() = colorStyleCell.value and set value = colorStyleCell.value <- value
     member _.textBold with get() = textBoldCell.value and set value = textBoldCell.value <- value
+    member _.closeButton with get() = closeButtonCell.value and set value = closeButtonCell.value <- value
     member _.opacity with get() = opacityCell.value and set value = opacityCell.value <- value
     member _.numberBadgeKeys with get() = numberBadgeKeysCell.value and set value = numberBadgeKeysCell.value <- value
     member _.numberBadges with get() = numberBadgesCell.value and set value = numberBadgesCell.value <- value
@@ -191,6 +193,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                     TabDisplayInfo.text = ti.text
                     splitTrail = ti.splitTrail
                     isPinned = ti.isPinned
+                    closeButton = closeButtonCell.value
                     icon = ti.iconSmall
                     textFont =
                         match ti.isRenamed,textBoldCell.value with

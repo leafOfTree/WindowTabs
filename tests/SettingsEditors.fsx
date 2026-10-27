@@ -45,6 +45,7 @@ let mutable preferences = {
     mode=DarkTheme;useCustomColors=true;lightPreset="";darkPreset="";presetEdits=Map.empty }
 let settingValues = Collections.Generic.Dictionary<string,obj>(dict ["tabPosition",box "Horizontal";"tabColumnWidth",box SettingsCatalog.columnWidthDefault;"appTabColors",box(Map.empty<string,string>);"tabColorMode",box "Off";"tabColorStyle",box "Stripe";"numberLeaderKeys",box "123456789";"numberHotKeyModifier",box "Ctrl";"disabledNumberShortcutPaths",box(Set2<string>());"enabledNumberShortcutPaths",box(Set2<string>())])
 do settingValues.["appGroupingRules"] <- box ([] : AppGroupingRule list)
+do settingValues.["tabCloseButton"] <- box "ActiveAndHover"
 do settingValues.["appGroupingTargets"] <- box ([] : AppGroupingTarget list)
 let settings = { new ISettings with
     member _.appearance = preferences

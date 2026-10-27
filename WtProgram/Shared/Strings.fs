@@ -372,6 +372,14 @@ module Strings =
         let tabTextBold = { caption={ en="Bold tab text"; zh="标签文字加粗"; ja="タブの文字を太字にする"; ar="نص علامات التبويب بخط عريض" }
                             description={ en="Titles of every tab in a heavier weight."; zh="所有标签的标题以粗体显示。"; ja="すべてのタブのタイトルを太字で表示します。"; ar="عناوين كل علامات التبويب بخط أثقل." }
                             keywords=tabTextWords }
+        let tabCloseButton = { caption={ en="Show close buttons"; zh="显示关闭按钮"; ja="閉じるボタンを表示"; ar="إظهار أزرار الإغلاق" }
+                               description={ en="Active tab only: clicking another tab just switches to it."
+                                             zh="仅当前标签时，点其他标签只会切换。"
+                                             ja="アクティブのみなら、他のタブのクリックは切り替えだけ。"
+                                             ar="النشطة فقط: النقر على علامة أخرى يبدّل إليها فقط." }
+                               keywords={ en="close button x hide"; zh="关闭按钮 叉 隐藏"; ja="閉じるボタン × 非表示"; ar="زر الإغلاق إخفاء" } }
+        let closeOnActiveAndHover = { en="Active and on hover"; zh="当前标签和悬停时"; ja="アクティブとホバー時"; ar="النشطة وعند التمرير" }
+        let closeOnActive = { en="Active tab only"; zh="仅当前标签"; ja="アクティブなタブのみ"; ar="علامة التبويب النشطة فقط" }
         let tabNormalBgColor = { caption={ en="Inactive tab"; zh="非活动标签"; ja="非アクティブなタブ"; ar="علامة تبويب غير نشطة" }; description=none; keywords=colorWords }
         let tabActiveBgColor = { caption={ en="Active tab"; zh="活动标签"; ja="アクティブなタブ"; ar="علامة تبويب نشطة" }; description=none; keywords=colorWords }
         let tabHighlightBgColor = { caption={ en="Hovered tab"; zh="悬停标签"; ja="ホバー中のタブ"; ar="علامة التبويب التي يشير إليها المؤشر" }; description=none; keywords=colorWords }

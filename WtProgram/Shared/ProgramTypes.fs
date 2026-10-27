@@ -47,6 +47,8 @@ type SettingsRec = {
     enableHoverActivate: bool
     /// Tab titles in bold.
     tabTextBold: bool
+    /// Where tabs show a close button: "ActiveAndHover", "Active" or "Never".
+    tabCloseButton: string
     /// Percent the tabs are solid while the pointer is elsewhere.
     tabOpacity: int
     /// "Never", "Maximized" or "Always".

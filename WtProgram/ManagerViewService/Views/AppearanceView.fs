@@ -252,7 +252,8 @@ type AppearanceView(?settings:ISettings) =
             use font = TabMetrics.font appearance.tabHeight (match settings.getValue("tabTextBold") with :? bool as bold when bold -> FontStyle.Bold | _ -> FontStyle.Regular)
             let info index (caption:string) : TabDisplayInfo = {
                 tint=(if settings.getValue("tabColorMode") :?> string = "Off" then None else Some((Theme.tabPalette (Theme.darkBar appearance.tabNormalBgColor)).[index])); colorStyle=settings.getValue("tabColorStyle") :?> string; numberBadge=None; bgColor=None; text=caption; icon=SystemIcons.Application
-                textFont=font; textBrush=SystemBrushes.MenuText; splitTrail=None; isPinned=false }
+                textFont=font; textBrush=SystemBrushes.MenuText; splitTrail=None; isPinned=false
+                closeButton=settings.getValue("tabCloseButton") :?> string }
             let ts : TabStripSprite<int> = {
                 tabs=Map2(List2([1,info 1 (tr Strings.Settings.tabActiveBgColor.caption);2,info 2 (tr Strings.Settings.tabHighlightBgColor.caption);3,info 4 (tr Strings.Settings.tabNormalBgColor.caption)]))
                 lorder=List2([1;2;3]);zorder=List2([1;2;3]);size=Sz(tabs.Width,tabs.Height)
@@ -313,6 +314,9 @@ type AppearanceView(?settings:ISettings) =
         let textBold = SettingsBindings.settingToggle "tabTextBold"
         textBold.CheckedChanged.Add(fun _ -> preview.Invalidate())
         SettingsUi.settingRow textCard "tab-text-bold" textBold
+        let closeButton = SettingsBindings.choice "tab-close-button"
+        closeButton.SelectedIndexChanged.Add(fun _ -> preview.Invalidate())
+        SettingsUi.settingRow textCard "tab-close-button" closeButton
         let opacityLow,opacityHigh = SettingsCatalog.opacityRange
         let opacity = new SettingsNumberInput(Minimum=decimal opacityLow,Maximum=decimal opacityHigh,Font=SettingsUi.bodyFont(),
                                               Value=decimal (match settings.getValue("tabOpacity") with :? int as value -> value | _ -> SettingsCatalog.opacityDefault))

@@ -100,7 +100,7 @@ let main() =
             let count = 6
             let info index : TabDisplayInfo =
                 { tint=Some palette.[Theme.tabAllocationOrder.[index]]; colorStyle="Fill"; numberBadge=None; bgColor=None
-                  text="Tab"; icon=SystemIcons.Application; textFont=font; textBrush=SystemBrushes.MenuText; splitTrail=None; isPinned=false }
+                  text="Tab"; icon=SystemIcons.Application; textFont=font; textBrush=SystemBrushes.MenuText; splitTrail=None; isPinned=false; closeButton="ActiveAndHover" }
             let ids = [0..count-1]
             let strip : TabStripSprite<int> = {
                 tabs=Map2(List2(ids |> List.map(fun i -> i,info i))); lorder=List2(ids); zorder=List2(ids); size=Sz(900,27)
