@@ -132,6 +132,19 @@ let main() =
                             let scans,_,_ = RuntimeMetrics.snapshot()
                             check (scans>scansBefore) "Production startup installed input hooks before its queued discovery ran"} :> IPlugin
         program.initializePlugins(List2([input]))
+        // A program started with --group gives the group one window for each start; a second
+        // window of it opened by hand meanwhile is grouped as usual.
+        do
+            let launchedField = typeof<Program.Program>.GetFields(Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic) |> Array.find(fun field -> field.Name="launched")
+            launchedField.SetValue(program,[ref [exePath],DateTime.UtcNow,ref (None:GroupInfo option)])
+            use started = new Form(ShowInTaskbar=false)
+            use byHand = new Form(ShowInTaskbar=false)
+            let os = OS()
+            let first = program.tryLaunched(os.windowFromHwnd started.Handle)
+            let second = program.tryLaunched(os.windowFromHwnd byHand.Handle)
+            first |> Option.flatten |> Option.iter(fun group -> group.destroy())
+            check (first |> Option.flatten |> Option.isSome) "A window of a program started with --group was not given its group"
+            check second.IsNone "A second window of a program started once with --group was taken into its group"
         use first = new Form(ShowInTaskbar=false)
         use second = new Form(ShowInTaskbar=false)
         let handles = [first.Handle;second.Handle]

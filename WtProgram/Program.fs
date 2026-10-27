@@ -134,9 +134,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let mutable sessionEnding = false
     /// What the command line that started this copy asked for, done once the first scan is over.
     let mutable startupRequest : CommandLineRequest option = None
-    /// Programs started together from the command line: the windows they open in the next
-    /// while go into one group, made at the first.
-    let mutable launched : (string list * DateTime * GroupInfo option ref) list = []
+    /// Programs started together from the command line, each still owed a window: the windows
+    /// they open in the next while go into one group, made at the first.
+    let mutable launched : (string list ref * DateTime * GroupInfo option ref) list = []
     /// New tab started the program: its first window in the next while goes into the group,
     /// beside the tab it was asked from.
     let mutable newTabs : (string * DateTime * GroupInfo * IntPtr) list = []
@@ -706,17 +706,20 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             gi.windows.iter <| fun hwnd ->
                 if this.isTabbableWindow(os.windowFromHwnd(hwnd)).not then gi.removeWindow hwnd
 
-    /// A window of a program started with others from the command line joins their group, for a
-    /// minute after the start; the first of them makes the group, by hand.
+    /// A window of a program started with others from the command line joins their group, one
+    /// for each start, so a window opened by hand meanwhile stays out; a slow program has a
+    /// minute. The first of them makes the group, by hand.
     member this.tryLaunched(window:Window) =
         if launched.IsEmpty then None
         else
             let now = DateTime.UtcNow
-            launched <- launched |> List.filter(fun (_,since,_) -> now-since<TimeSpan.FromSeconds 60.0)
+            launched <- launched |> List.filter(fun (paths,since,_) -> not paths.Value.IsEmpty && now-since<TimeSpan.FromSeconds 60.0)
             let path = window.pid.processPath
             launched
-            |> List.tryFind(fun (paths,_,_) -> paths |> List.exists(fun each -> AppIdentity.same each path))
-            |> Option.map(fun (_,_,holder) ->
+            |> List.tryFindBack(fun (paths,_,_) -> paths.Value |> List.exists(fun each -> AppIdentity.same each path))
+            |> Option.map(fun (paths,_,holder) ->
+                let index = paths.Value |> List.findIndex(fun each -> AppIdentity.same each path)
+                paths.Value <- List.removeAt index paths.Value
                 match holder.Value with
                 | Some group when not group.isExited && not group.isRetiring -> Some(group :> IGroup)
                 | _ ->
@@ -727,8 +730,13 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
     /// Starts the programs; the windows they open go into one group.
     member this.launchGroup(paths:string list) =
-        launched <- (paths,DateTime.UtcNow,ref None)::launched
-        WorkspaceLaunch.start paths (fun failures -> for name,reason in failures do Notice.error name reason)
+        let waiting = ref paths
+        launched <- (waiting,DateTime.UtcNow,ref None)::launched
+        WorkspaceLaunch.start paths (fun failures ->
+            // A program that did not start opens no window to wait for.
+            for name,reason in failures do
+                waiting.Value <- waiting.Value |> List.filter(fun path -> not (String.Equals(Path.GetFileName path,name,StringComparison.OrdinalIgnoreCase)))
+                Notice.error name reason)
 
     /// What a command line asks for, done here; what the console is told, or why not.
     member this.execute(request:CommandLineRequest) : Result<string,string> =
