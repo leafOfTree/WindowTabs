@@ -431,6 +431,16 @@ let main() =
                 for hwnd in handles |> List.take count do
                     if not((info :> IGroup).windows.contains ((=) hwnd)) then (info :> IGroup).addWindow(hwnd,false)
                 pumpUntil(fun () -> onGroup(fun group -> group.windows.count=count))
+                // A window New tab started lands beside the tab it was asked from, not at the end.
+                if count=5 then
+                    let order = onGroup(fun group -> group.lorder.list)
+                    let added = List.last order
+                    (info :> IGroup).run(PlaceTabAfter(added,order.Head))
+                    let placed = onGroup(fun group -> group.lorder.list)
+                    check (placed=order.Head::added::(order.Tail |> List.filter((<>)added)))
+                          (sprintf "New tab did not land after its tab: %A from %A" placed order)
+                    (info :> IGroup).run(PlaceTabAfter(added,order.[order.Length-2]))
+                    check (onGroup(fun group -> group.lorder.list)=order) "A tab placed after the last one did not go back to the end"
                 if count=2 then
                     waitOperation()
                     let source = onGroup(fun group -> group.topWindow)

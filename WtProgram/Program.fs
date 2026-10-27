@@ -137,6 +137,10 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// Programs started together from the command line: the windows they open in the next
     /// while go into one group, made at the first.
     let mutable launched : (string list * DateTime * GroupInfo option ref) list = []
+    /// New tab started the program: its first window in the next while goes into the group,
+    /// beside the tab it was asked from.
+    let mutable newTabs : (string * DateTime * GroupInfo * IntPtr) list = []
+    let newTabAnchors = Dictionary<IntPtr,IntPtr>()
     /// Automatic groups of one app that have come to share a desktop are looked for at most once a second.
     let mergeSoon = lifetime.Own(new CoalescedAction(1000, fun () -> this.mergeAutoGroups()))
     let mutable recordingShortcut = false
@@ -234,9 +238,26 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// Only for a tab: the hotkey does nothing over the desktop, the taskbar or an untabbed window.
     /// The new window is grouped like any other, so auto-grouping decides where it goes.
     member this.openNewTab(hwnd:IntPtr) =
-        if this.isInGroup hwnd then
-            try Process.Start(os.windowFromHwnd(hwnd).pid.processPath) |> ignore
-            with :? ComponentModel.Win32Exception -> ()
+        match this.desktop.groups.tryFind(fun group -> group.windows.contains((=)hwnd)) with
+        | Some(:? GroupInfo as group) ->
+            let path = os.windowFromHwnd(hwnd).pid.processPath
+            newTabs <- (path,DateTime.UtcNow,group,hwnd)::newTabs
+            WorkspaceLaunch.start [path] (fun failures -> for name,reason in failures do Notice.error name reason)
+        | _ -> ()
+
+    member this.tryNewTab(window:Window) =
+        if newTabs.IsEmpty then None
+        else
+            let now = DateTime.UtcNow
+            newTabs <- newTabs |> List.filter(fun (_,since,group,_) ->
+                now-since<TimeSpan.FromSeconds 20.0 && not group.isExited && not group.isRetiring)
+            let path = window.pid.processPath
+            match newTabs |> List.tryFindBack(fun (each,_,_,_) -> AppIdentity.same each path) with
+            | Some((_,_,group,anchor) as entry) ->
+                newTabs <- newTabs |> List.filter(fun other -> not (obj.ReferenceEquals(other,entry)))
+                newTabAnchors.[window.hwnd] <- anchor
+                Some(Some(group :> IGroup))
+            | None -> None
 
     member this.tryAutoGroup(window:Window) =
         if (this :> IProgram).getAutoGroupingEnabled(window.pid.processPath) then
@@ -749,6 +770,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     member this.findGroupForWindow(window:Window) : IGroup option =
         let handlers = List2([
             this.tryDropped
+            this.tryNewTab
             this.tryLaunched
             this.tryRestoredGroup
             this.tryGroupingRule
@@ -782,6 +804,11 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         isDroppedAndAwaitingGrouping.map(fun s -> s.remove hwnd)
         let withDelay = not isDropped && isNewGroup && delayTabExeNames.contains(window.pid.exeName)
         group.addWindow(hwnd, withDelay)
+        match newTabAnchors.TryGetValue hwnd with
+        | true,anchor ->
+            newTabAnchors.Remove hwnd |> ignore
+            group.run(PlaceTabAfter(hwnd,anchor))
+        | _ -> ()
         if restored.IsNone && not isDropped && RememberedGroups.hasApp remembered (AppIdentity.key (this.appKey hwnd)) then
             settling.[hwnd] <- (DateTime.UtcNow,group :?> GroupInfo)
             if initialDiscoveryComplete then settleTimer.Start()
@@ -798,6 +825,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 isSubscribed.Remove(hwnd)
                 groupedThisRun.Remove hwnd |> ignore
                 appKeys.Remove hwnd |> ignore
+                newTabAnchors.Remove hwnd |> ignore
                 settling.Remove hwnd |> ignore
                 isDroppedAndAwaitingGrouping.map(fun s -> s.remove hwnd)
                 windowNameOverride <- windowNameOverride.remove hwnd

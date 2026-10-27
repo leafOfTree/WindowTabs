@@ -215,6 +215,8 @@ type GroupCommand =
     | SortTabs
     /// By that many places along the strip, backwards when negative.
     | MoveTab of IntPtr * int
+    /// The first window's tab right after the second's, kept behind the pinned tabs.
+    | PlaceTabAfter of IntPtr * IntPtr
     | SetTabColor of IntPtr * TabColorChoice option
     | SetTabPinned of IntPtr * bool
     | ToggleIconsOnly
