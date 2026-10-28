@@ -77,7 +77,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let eventHandlersCell = Cell.create(Set2())
     let tabTint = Cell.create(Map2())
     let colorStyleCell = Cell.create(Services.settings.getValue("tabColorStyle") :?> string)
-    let textBoldCell = Cell.create(Services.settings.getValue("tabTextBold") :?> bool)
+    let textWeightCell = Cell.create(Services.settings.getValue("tabTextWeight") :?> string)
     let closeButtonCell = Cell.create(Services.settings.getValue("tabCloseButton") :?> string)
     let mutable lastAlpha = 255uy
     let opacityCell = Cell.create(Services.settings.getValue("tabOpacity") :?> int)
@@ -162,7 +162,7 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member _.setTabTint(tab,color) =
         if tabTint.value.tryFind(tab) <> color then tabTint.value <- match color with Some c -> tabTint.value.add tab c | None -> tabTint.value.remove tab
     member _.colorStyle with get() = colorStyleCell.value and set value = colorStyleCell.value <- value
-    member _.textBold with get() = textBoldCell.value and set value = textBoldCell.value <- value
+    member _.textWeight with get() = textWeightCell.value and set value = textWeightCell.value <- value
     member _.closeButton with get() = closeButtonCell.value and set value = closeButtonCell.value <- value
     member _.opacity with get() = opacityCell.value and set value = opacityCell.value <- value
     member _.numberBadgeKeys with get() = numberBadgeKeysCell.value and set value = numberBadgeKeysCell.value <- value
@@ -196,7 +196,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                     closeButton = closeButtonCell.value
                     icon = ti.iconSmall
                     textFont =
-                        match ti.isRenamed,textBoldCell.value with
+                        let bold = textWeightCell.value="All" || (textWeightCell.value="Active" && zorderCell.value.tryHead=Some tab)
+                        match ti.isRenamed,bold with
                         | true,true -> renamedBoldFont
                         | true,false -> renamedFont
                         | false,true -> boldFont
@@ -515,7 +516,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         try
             let image = if collapsed then this.ts.renderCollapsed else this.ts.render
             if dimmedCell.value && not SystemInformation.HighContrast then
-                try Img(TabDimming.render this.appearance.tabNormalBgColor image.bitmap)
+                let keep = if collapsed then None else zorderCell.value.tryHead |> Option.map this.ts.tabBounds
+                try Img(TabDimming.render this.appearance.tabNormalBgColor keep image.bitmap)
                 finally image.bitmap.Dispose()
             else image
         with ex ->

@@ -174,7 +174,10 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         numberHotKeyModifier = settingsJson.getString("numberHotKeyModifier").def(SettingsCatalog.choiceDefault "numberHotKeyModifier") |> SettingsCatalog.normalizeChoice "numberHotKeyModifier"
                         sessionRestore = settingsJson.getString("sessionRestore").def(SettingsCatalog.choiceDefault "sessionRestore") |> SettingsCatalog.normalizeChoice "sessionRestore"
                         enableHoverActivate = settingsJson.getBool("enableHoverActivate").def(SettingsCatalog.toggleDefault "enableHoverActivate" hasExistingSettings)
-                        tabTextBold = settingsJson.getBool("tabTextBold").def(SettingsCatalog.toggleDefault "tabTextBold" hasExistingSettings)
+                        // Older versions stored a tabTextBold toggle that made every tab bold.
+                        tabTextWeight =
+                            settingsJson.getString("tabTextWeight").def(if settingsJson.getBool("tabTextBold").def(false) then "All" else SettingsCatalog.choiceDefault "tabTextWeight")
+                            |> SettingsCatalog.normalizeChoice "tabTextWeight"
                         tabCloseButton = settingsJson.getString("tabCloseButton").def(SettingsCatalog.choiceDefault "tabCloseButton") |> SettingsCatalog.normalizeChoice "tabCloseButton"
                         // Older versions stored two toggles: minimalMode (every window) and autoHide (maximized only).
                         autoHideMode =
@@ -272,7 +275,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setString("numberHotKeyModifier", settings.numberHotKeyModifier)
             settingsJson.setString("sessionRestore", settings.sessionRestore)
             settingsJson.setBool("enableHoverActivate", settings.enableHoverActivate)
-            settingsJson.setBool("tabTextBold", settings.tabTextBold)
+            settingsJson.setString("tabTextWeight", settings.tabTextWeight)
             settingsJson.setString("tabCloseButton", settings.tabCloseButton)
             settingsJson.setString("autoHideMode", settings.autoHideMode)
             settingsJson.setBool("showTabsOnSwitch", settings.showTabsOnSwitch)
@@ -334,7 +337,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             let api = x :> ISettings
             let value = if key="tabSearchScope" then box(SettingsCatalog.normalizeTabSearchScope (unbox value)) else value
             let value = if key="numberLeaderKeys" then box(NumberLeaderKeys.normalize (unbox value)) else value
-            let value = if key="alignment" || key="language" || key="autoHideMode" || key="switcherStyle" || key="numberHotKeyModifier" || key="tabColorStyle" || key="tabColorMode" || key="tabPosition" || key="sessionRestore" || key="tabCloseButton" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
+            let value = if key="alignment" || key="language" || key="autoHideMode" || key="switcherStyle" || key="numberHotKeyModifier" || key="tabColorStyle" || key="tabColorMode" || key="tabPosition" || key="sessionRestore" || key="tabCloseButton" || key="tabTextWeight" then box(SettingsCatalog.normalizeChoice key (unbox value)) else value
             let value = if key="tabColumnWidth" then box(between SettingsCatalog.columnWidthRange (unbox<int> value)) else value
             let value = if key="tabOpacity" then box(between SettingsCatalog.opacityRange (unbox<int> value)) else value
             match key with

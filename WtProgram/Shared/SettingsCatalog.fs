@@ -94,8 +94,8 @@ module SettingsCatalog =
         { id="tabFlashBgColor"; page=AppearanceSettings; text=Strings.Settings.tabFlashBgColor; binding=Colour }
         // Kept with the tab sizes in the "tabAppearance" object, not at the top of the file.
         { id="tabStyle"; page=AppearanceSettings; text=Strings.Settings.tabStyle; binding=Choice("tabStyle",TabStyle.names,"joined") }
-        { id="tab-text-bold"; page=AppearanceSettings; text=Strings.Settings.tabTextBold; binding=Toggle("tabTextBold",false,false) }
-        { id="tab-close-button"; page=AppearanceSettings; text=Strings.Settings.tabCloseButton; binding=Choice("tabCloseButton",["ActiveAndHover";"Active";"Never"],"ActiveAndHover") }
+        { id="tab-text-bold"; page=AppearanceSettings; text=Strings.Settings.tabTextBold; binding=Choice("tabTextWeight",["Never";"Active";"All"],"Active") }
+        { id="tab-close-button"; page=AppearanceSettings; text=Strings.Settings.tabCloseButton; binding=Choice("tabCloseButton",["Never";"Active";"ActiveAndHover"],"ActiveAndHover") }
         { id="tabOpacity"; page=AppearanceSettings; text=Strings.Settings.tabOpacity; binding=Number(opacityRange) }
         { id="tabHeight"; page=AppearanceSettings; text=Strings.Settings.tabHeight; binding=Number(12,120) }
         { id="tabMaxWidth"; page=AppearanceSettings; text=Strings.Settings.tabMaxWidth; binding=Number(60,1000) }
@@ -143,7 +143,8 @@ module SettingsCatalog =
         | "switcher-style" -> [Strings.Appearance.switcherHorizontal;Strings.Appearance.switcherVertical]
         | "number-shortcut" -> [Strings.Settings.numberShortcutCtrl;Strings.Settings.numberShortcutAlt]
         | "tabStyle" -> List.ofArray Strings.Appearance.tabStyles
-        | "tab-close-button" -> [Strings.Settings.closeOnActiveAndHover;Strings.Settings.closeOnActive;Strings.Common.never]
+        | "tab-text-bold" -> [Strings.Common.never;Strings.Settings.closeOnActive;Strings.Settings.boldAllTabs]
+        | "tab-close-button" -> [Strings.Common.never;Strings.Settings.closeOnActive;Strings.Settings.closeOnActiveAndHover]
         | other -> invalidArg "id" (sprintf "No labels for the choice %s" other)
     /// Shown from an (i) button beside the caption.
     let help id =

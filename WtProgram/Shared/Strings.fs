@@ -370,7 +370,7 @@ module Strings =
                            description={ en="Below 100 the tabs are see-through, and solid under the pointer."; zh="低于 100 时标签半透明，鼠标指向时不透明。"; ja="100 未満でタブが半透明になり、ポインターを重ねると不透明になります。"; ar="أقل من 100 تصبح علامات التبويب شفافة، ومعتمة تحت المؤشر." }
                            keywords={ en="transparency transparent see-through alpha"; zh="透明度 透明 半透明"; ja="透明度 透明 半透明"; ar="شفافية شفاف" } }
         let tabTextBold = { caption={ en="Bold tab text"; zh="标签文字加粗"; ja="タブの文字を太字にする"; ar="نص علامات التبويب بخط عريض" }
-                            description={ en="Titles of every tab in a heavier weight."; zh="所有标签的标题以粗体显示。"; ja="すべてのタブのタイトルを太字で表示します。"; ar="عناوين كل علامات التبويب بخط أثقل." }
+                            description={ en="Which tab titles show in a heavier weight."; zh="哪些标签的标题以粗体显示。"; ja="どのタブのタイトルを太字で表示するか。"; ar="عناوين علامات التبويب التي تظهر بخط أثقل." }
                             keywords=tabTextWords }
         let tabCloseButton = { caption={ en="Show close buttons"; zh="显示关闭按钮"; ja="閉じるボタンを表示"; ar="إظهار أزرار الإغلاق" }
                                description={ en="Which tabs show the × that closes their window."
@@ -380,6 +380,7 @@ module Strings =
                                keywords={ en="close button x hide"; zh="关闭按钮 叉 隐藏"; ja="閉じるボタン × 非表示"; ar="زر الإغلاق إخفاء" } }
         let closeOnActiveAndHover = { en="Active and on hover"; zh="当前标签和悬停时"; ja="アクティブとホバー時"; ar="النشطة وعند التمرير" }
         let closeOnActive = { en="Active tab only"; zh="仅当前标签"; ja="アクティブなタブのみ"; ar="علامة التبويب النشطة فقط" }
+        let boldAllTabs = { en="All tabs"; zh="所有标签"; ja="すべてのタブ"; ar="كل علامات التبويب" }
         let tabNormalBgColor = { caption={ en="Inactive tab"; zh="非活动标签"; ja="非アクティブなタブ"; ar="علامة تبويب غير نشطة" }; description=none; keywords=colorWords }
         let tabActiveBgColor = { caption={ en="Active tab"; zh="活动标签"; ja="アクティブなタブ"; ar="علامة تبويب نشطة" }; description=none; keywords=colorWords }
         let tabHighlightBgColor = { caption={ en="Hovered tab"; zh="悬停标签"; ja="ホバー中のタブ"; ar="علامة التبويب التي يشير إليها المؤشر" }; description=none; keywords=colorWords }
@@ -528,6 +529,7 @@ module Strings =
         /// A colour preset whose colours the user has changed.
         let editedPreset name = { en=sprintf "%s*" name; zh=sprintf "%s*" name; ja=sprintf "%s*" name; ar=sprintf "%s*" name }
         let resetColors = { en="Reset colors"; zh="重置配色"; ja="配色をリセット"; ar="إعادة تعيين الألوان" }
+        let swapActiveInactive = { en="Swap active and inactive"; zh="互换激活与非激活"; ja="アクティブと非アクティブを入れ替え"; ar="تبديل النشطة وغير النشطة" }
         let tabLayout = { en="Tab layout"; zh="标签布局"; ja="タブのレイアウト"; ar="تخطيط علامات التبويب" }
         let resetTabLayout = { en="Reset tab layout"; zh="重置标签布局"; ja="タブのレイアウトをリセット"; ar="إعادة تعيين تخطيط علامات التبويب" }
         /// Stable source order; ThemePresets arranges the displayed colour families.

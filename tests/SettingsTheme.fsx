@@ -309,21 +309,29 @@ let main() =
         settings.clearCaches()
         check (settings.settings.appearance.mode=LightTheme && settings.settings.appearance.geometry.height=31) "Settings round-trip failed"
         // Bold tab text and the tabs' opacity are written and read back, the opacity within its range.
-        api.setValue("tabTextBold",box true)
+        check (api.getValue "tabTextWeight"=box "Active") "Tab text is not bold on the active tab by default"
+        api.setValue("tabTextWeight",box "All")
         api.setValue("tabOpacity",box 10)
         settings.clearCaches()
-        check ((api.getValue "tabTextBold" :?> bool) && (api.getValue "tabOpacity" :?> int)=fst SettingsCatalog.opacityRange)
-              (sprintf "Bold tab text and tab opacity read back as %A and %A" (api.getValue "tabTextBold") (api.getValue "tabOpacity"))
-        check (string api.root.["tabOpacity"]=string (fst SettingsCatalog.opacityRange) && string api.root.["tabTextBold"]="True") "Bold tab text and tab opacity were not written"
-        api.setValue("tabTextBold",box false)
+        check ((api.getValue "tabTextWeight"=box "All") && (api.getValue "tabOpacity" :?> int)=fst SettingsCatalog.opacityRange)
+              (sprintf "Bold tab text and tab opacity read back as %A and %A" (api.getValue "tabTextWeight") (api.getValue "tabOpacity"))
+        check (string api.root.["tabOpacity"]=string (fst SettingsCatalog.opacityRange) && string api.root.["tabTextWeight"]="All") "Bold tab text and tab opacity were not written"
+        // The old switch that made every tab bold reads as All tabs.
+        api.root.Remove("tabTextWeight") |> ignore
+        api.root.["tabTextBold"] <- JValue(true)
+        settings.clearCaches()
+        check (api.getValue "tabTextWeight"=box "All") (sprintf "Old bold tab text read back as %A" (api.getValue "tabTextWeight"))
+        api.root.Remove("tabTextBold") |> ignore
+        api.setValue("tabTextWeight",box "Active")
         api.setValue("tabOpacity",box SettingsCatalog.opacityDefault)
         // A switch on a settings page follows a change made elsewhere, as in the command palette.
         do
-            use boldSwitch = SettingsBindings.settingToggle "tabTextBold"
-            api.setValue("tabTextBold",box true)
-            check boldSwitch.Checked "A settings page switch did not follow a change made in the palette"
-            api.setValue("tabTextBold",box false)
-            check (not boldSwitch.Checked) "A settings page switch did not follow a change made in the palette"
+            use boldSwitch = SettingsBindings.settingToggle "hideInactiveTabs"
+            let before = boldSwitch.Checked
+            api.setValue("hideInactiveTabs",box (not before))
+            check (boldSwitch.Checked<>before) "A settings page switch did not follow a change made in the palette"
+            api.setValue("hideInactiveTabs",box before)
+            check (boldSwitch.Checked=before) "A settings page switch did not follow a change made in the palette"
         api.setValue("tabUseCustomColors",box false)
         api.setValue("tabAppearance",box Theme.light)
 

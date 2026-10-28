@@ -85,10 +85,16 @@ let main() =
         for bar in [Theme.light.tabNormalBgColor;Theme.dark.tabNormalBgColor] do
             use source = new Bitmap(4,1)
             for x,color in [0,Color.Red;1,Color.White;2,Color.FromArgb(128,20,40,60);3,Color.Transparent] do source.SetPixel(x,0,color)
-            use softened = TabDimming.render bar source
+            use softened = TabDimming.render bar None source
             for x in 0..3 do
                 check (softened.GetPixel(x,0).A=source.GetPixel(x,0).A) "Whole-strip dimming changed opacity or rounded-edge transparency"
-        // A frame part way keeps each row where it sits in the full strip, from the window edge out.
+            // The group's front tab is softened only part way, so it still tells itself apart.
+            use kept = TabDimming.render bar (Some(Rectangle(0,0,1,1))) source
+            let distance (a:Color) (b:Color) = abs(int a.R-int b.R)+abs(int a.G-int b.G)+abs(int a.B-int b.B)
+            let red = source.GetPixel(0,0)
+            check (distance (kept.GetPixel(0,0)) red>0 && distance (kept.GetPixel(0,0)) red<distance (softened.GetPixel(0,0)) red)
+                  "Dimming an inactive group did not soften its front tab part way"
+            check (kept.GetPixel(1,0)=softened.GetPixel(1,0)) "Dimming an inactive group left its other tabs bright"        // A frame part way keeps each row where it sits in the full strip, from the window edge out.
         do
             use full = new Bitmap(8,10)
             use bar = new Bitmap(8,2)

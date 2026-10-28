@@ -419,10 +419,11 @@ let main() =
                 | _ -> issues.Add(sprintf "%s has no setting to turn" command.id))
         // Bold tab text reaches each group's strip as it is turned, and back.
         attempt "tab text bold" (fun () ->
-            api.setValue("tabTextBold",box true)
-            pumpUntil "Bold tab text reaching the group" (fun () -> onGroupOf active (fun group -> group.ts.textBold))
-            api.setValue("tabTextBold",box false)
-            pumpUntil "Bold tab text leaving the group" (fun () -> not (onGroupOf active (fun group -> group.ts.textBold)))
+            let weight = api.getValue "tabTextWeight"
+            api.setValue("tabTextWeight",box "All")
+            pumpUntil "Bold tab text reaching the group" (fun () -> onGroupOf active (fun group -> group.ts.textWeight)="All")
+            api.setValue("tabTextWeight",weight)
+            pumpUntil "Bold tab text leaving the group" (fun () -> onGroupOf active (fun group -> group.ts.textWeight)=unbox weight)
             // And the tabs' opacity, kept within its range.
             api.setValue("tabOpacity",box 10)
             pumpUntil "Tab opacity reaching the group" (fun () -> onGroupOf active (fun group -> group.ts.opacity)=fst SettingsCatalog.opacityRange)
@@ -866,15 +867,15 @@ let main() =
         note (trial.Query="") (sprintf "Ctrl+U left %A in the box" trial.Query)
         trial.Query <- ""
         // A switch turned with Enter keeps its row chosen, not the first row again.
-        trial.Query <- "tab text"
-        let boldTitle = tr Strings.Settings.tabTextBold.caption
+        trial.Query <- "dim tabs"
+        let boldTitle = tr Strings.Settings.dimInactiveGroups.caption
         let mutable steps = 0
         while (trial.Selected |> Option.map(fun entry -> entry.title))<>Some boldTitle && steps<10 do
             trial.SelectNext()
             steps <- steps+1
-        let boldBefore = api.getValue "tabTextBold" :?> bool
+        let boldBefore = api.getValue "hideInactiveTabs" :?> bool
         trial.Accept()
-        note ((api.getValue "tabTextBold" :?> bool)<>boldBefore) "Enter on Bold tab text did not turn it"
+        note ((api.getValue "hideInactiveTabs" :?> bool)<>boldBefore) "Enter on Dim tabs in inactive groups did not turn it"
         note ((trial.Selected |> Option.map(fun entry -> entry.title))=Some boldTitle) "Turning a switch with Enter chose another row"
         trial.Accept()
         // Back from a value or a list of values, the row it was opened from is chosen again.
