@@ -548,8 +548,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         let colorStyleSubscription = Services.settings.notifyValue "tabColorStyle" (fun value ->
             this.invokeAsync(fun() -> if not isDestroyed.value then this.ts.colorStyle <- unbox value))
         exitedEvent.Publish.Add(fun _ -> colorStyleSubscription.Dispose())
-        let textBoldSubscription = Services.settings.notifyValue "tabTextBold" (fun value ->
-            this.invokeAsync(fun() -> if not isDestroyed.value then this.ts.textBold <- unbox value))
+        let textBoldSubscription = Services.settings.notifyValue "tabTextWeight" (fun value ->
+            this.invokeAsync(fun() -> if not isDestroyed.value then this.ts.textWeight <- unbox value))
         exitedEvent.Publish.Add(fun _ -> textBoldSubscription.Dispose())
         let closeButtonSubscription = Services.settings.notifyValue "tabCloseButton" (fun value ->
             this.invokeAsync(fun() -> if not isDestroyed.value then this.ts.closeButton <- unbox value))

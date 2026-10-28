@@ -6,23 +6,29 @@ open System.Drawing.Imaging
 open System.Windows.Forms
 
 module TabDimming =
-    /// Blend the finished surface so icons and glyphs soften equally; preserve edge alpha.
-    let render bar (source:Bitmap) =
+    /// Blend the finished surface so icons and glyphs soften equally; preserve edge alpha. The
+    /// kept area, the group's front tab, is softened half as much: it still stands out from the
+    /// rest without looking like the front tab of the active group.
+    let render bar (keep:Rectangle option) (source:Bitmap) =
         let output = new Bitmap(source.Width,source.Height,PixelFormat.Format32bppArgb)
         try
             use graphics = Graphics.FromImage(output)
-            use attributes = new ImageAttributes()
             let offset = Theme.dimColor bar Color.Black
-            let matrix = new ColorMatrix()
-            matrix.Matrix00 <- float32 Theme.dimAmount
-            matrix.Matrix11 <- float32 Theme.dimAmount
-            matrix.Matrix22 <- float32 Theme.dimAmount
-            matrix.Matrix40 <- float32 offset.R/255.0f
-            matrix.Matrix41 <- float32 offset.G/255.0f
-            matrix.Matrix42 <- float32 offset.B/255.0f
-            attributes.SetColorMatrix(matrix)
+            let draw (area:Rectangle) strength =
+                use attributes = new ImageAttributes()
+                let amount = 1.0-(1.0-Theme.dimAmount)*strength
+                let matrix = new ColorMatrix()
+                matrix.Matrix00 <- float32 amount
+                matrix.Matrix11 <- float32 amount
+                matrix.Matrix22 <- float32 amount
+                matrix.Matrix40 <- float32 (float offset.R/255.0*strength)
+                matrix.Matrix41 <- float32 (float offset.G/255.0*strength)
+                matrix.Matrix42 <- float32 (float offset.B/255.0*strength)
+                attributes.SetColorMatrix(matrix)
+                graphics.DrawImage(source,area,area.X,area.Y,area.Width,area.Height,GraphicsUnit.Pixel,attributes)
             graphics.CompositingMode <- CompositingMode.SourceCopy
-            graphics.DrawImage(source,Rectangle(0,0,source.Width,source.Height),0,0,source.Width,source.Height,GraphicsUnit.Pixel,attributes)
+            draw (Rectangle(0,0,source.Width,source.Height)) 1.0
+            keep |> Option.iter(fun area -> draw area 0.5)
             output
         with _ -> output.Dispose(); reraise()
 
@@ -1007,6 +1013,10 @@ type TabStripSprite<'id> when 'id : equality = {
         | _ ->
             let x = this.tabOffset (this.adjustedLorder.findIndex((=)tab)) + this.alignmentOffset
             int(x), int(x + this.tabLength)
+
+    member this.tabBounds tab =
+        let location,size = this.tabLocation tab,this.tabSizeOf tab
+        Rectangle(location.x,location.y,size.width,size.height)
 
     member this.tabLocation tab =
         if this.isVertical then

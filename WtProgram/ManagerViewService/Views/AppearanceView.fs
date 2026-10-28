@@ -74,7 +74,9 @@ type AppearanceView(?settings:ISettings) =
     let preset = SettingsUi.choice (Array.append (ThemePresets.names |> Array.map tr) [|tr Strings.Appearance.custom|])
     let tabStyle = SettingsUi.choice (SettingsBindings.labels "tabStyle")
     let resetColorsButton = new SettingsResetButton(tr Strings.Appearance.resetColors,Name="reset-colors")
-    let resetLayoutButton = new SettingsResetButton(tr Strings.Appearance.resetTabLayout,Name="reset-tab-layout")
+    /// Trades the active and inactive tab colours, for a front tab lighter than the rest or back.
+    let swapColorsButton = new SettingsIconButton(SwapIcon,tr Strings.Appearance.swapActiveInactive,Name="swap-colors")
+    let resetLayoutButton =new SettingsResetButton(tr Strings.Appearance.resetTabLayout,Name="reset-tab-layout")
     // The light or dark look being edited, by the same rules the command palette edits colours.
     let customForProfile s = PaletteEditing.customForProfile editingDark s
     let activePalette s = PaletteEditing.activePalette editingDark s
@@ -249,10 +251,13 @@ type AppearanceView(?settings:ISettings) =
             e.Graphics.DrawLine(border,left,bodyTop+toolbarHeight,left+width-1,bodyTop+toolbarHeight)
             e.Graphics.Restore(state)
             // The font real tabs use, so the preview shrinks its text with short tabs too.
-            use font = TabMetrics.font appearance.tabHeight (match settings.getValue("tabTextBold") with :? bool as bold when bold -> FontStyle.Bold | _ -> FontStyle.Regular)
+            use font = TabMetrics.font appearance.tabHeight FontStyle.Regular
+            use boldFont = TabMetrics.font appearance.tabHeight FontStyle.Bold
+            let weight = settings.getValue("tabTextWeight") :?> string
             let info index (caption:string) : TabDisplayInfo = {
+                textFont=(if weight="All" || (weight="Active" && index=1) then boldFont else font)
                 tint=(if settings.getValue("tabColorMode") :?> string = "Off" then None else Some((Theme.tabPalette (Theme.darkBar appearance.tabNormalBgColor)).[index])); colorStyle=settings.getValue("tabColorStyle") :?> string; numberBadge=None; bgColor=None; text=caption; icon=SystemIcons.Application
-                textFont=font; textBrush=SystemBrushes.MenuText; splitTrail=None; isPinned=false
+                textBrush=SystemBrushes.MenuText; splitTrail=None; isPinned=false
                 closeButton=settings.getValue("tabCloseButton") :?> string }
             let ts : TabStripSprite<int> = {
                 tabs=Map2(List2([1,info 1 (tr Strings.Settings.tabActiveBgColor.caption);2,info 2 (tr Strings.Settings.tabHighlightBgColor.caption);3,info 4 (tr Strings.Settings.tabNormalBgColor.caption)]))
@@ -288,7 +293,8 @@ type AppearanceView(?settings:ISettings) =
         preset.Width <- Dpi.scale 140
         resetColorsButton.Margin <- Padding(0,0,Dpi.scale 6,0)
         // The theme tiles above show which theme's colours these are.
-        SettingsUi.sectionHeading table (tr Strings.Appearance.tabColors) [resetColorsButton;preset]
+        swapColorsButton.Margin <- Padding(0,0,Dpi.scale 6,0)
+        SettingsUi.sectionHeading table (tr Strings.Appearance.tabColors) [resetColorsButton;swapColorsButton;preset]
         preset.SelectedIndexChanged.Add(fun _ ->
             if not refreshing && preset.SelectedIndex>=0 then
                 let index = preset.SelectedIndex
@@ -301,22 +307,27 @@ type AppearanceView(?settings:ISettings) =
         colorRows <-
             [ for key,read,write,editor in colors do
                 yield SettingsUi.settingRowControl colorsCard key editor.control ]
-        colorsSection <- [resetColorsButton;preset;colorsCard]
+        colorsSection <- [resetColorsButton;swapColorsButton;preset;colorsCard]
         contrastNote.MaximumSize <- Size(Dpi.scale 700,0)
         SettingsUi.notice contrastNote
         SettingsUi.add table contrastNote
         SettingsUi.add table contrastComparison
         resetColorsButton.Click.Add(fun _ -> resetColors())
+        swapColorsButton.Click.Add(fun _ ->
+            editPalette(fun palette -> {palette with tabActiveBgColor=palette.tabNormalBgColor; tabNormalBgColor=palette.tabActiveBgColor}))
         // After the colours, on a card of their own: changed less often than the style and the
         // colours. Set apart from them by the space a section heading would leave.
         let textCard = new SettingsCard(Margin=Padding(0,Dpi.scale 24,0,0))
         SettingsUi.add table textCard
-        let textBold = SettingsBindings.settingToggle "tabTextBold"
-        textBold.CheckedChanged.Add(fun _ -> preview.Invalidate())
+        let textBold = SettingsBindings.choice "tab-text-bold"
+        textBold.SelectedIndexChanged.Add(fun _ -> preview.Invalidate())
         SettingsUi.settingRow textCard "tab-text-bold" textBold
         let closeButton = SettingsBindings.choice "tab-close-button"
         closeButton.SelectedIndexChanged.Add(fun _ -> preview.Invalidate())
         SettingsUi.settingRow textCard "tab-close-button" closeButton
+        // The two lists offer the same kind of choice, so they line up at one width.
+        let listWidth = max textBold.Width closeButton.Width
+        for list in [textBold;closeButton] do list.Width <- listWidth
         let opacityLow,opacityHigh = SettingsCatalog.opacityRange
         let opacity = new SettingsNumberInput(Minimum=decimal opacityLow,Maximum=decimal opacityHigh,Font=SettingsUi.bodyFont(),
                                               Value=decimal (match settings.getValue("tabOpacity") with :? int as value -> value | _ -> SettingsCatalog.opacityDefault))

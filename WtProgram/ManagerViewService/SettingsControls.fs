@@ -368,6 +368,7 @@ type SettingsIcon =
     | RefreshIcon
     | CopyIcon
     | WindowListIcon
+    | SwapIcon
 
 /// A small square icon button with hover help. As a toggle it stays highlighted while on.
 type SettingsIconButton(icon:SettingsIcon, help:string, ?toggle:bool) as this =
@@ -439,6 +440,13 @@ type SettingsIconButton(icon:SettingsIcon, help:string, ?toggle:bool) as this =
             g.DrawPath(pen,frame)
             g.DrawLine(pen,at 0.06f 0.34f,at 0.94f 0.34f)
             for fy in [0.52f;0.7f] do g.DrawLine(pen,at 0.24f fy,at 0.76f fy)
+        | SwapIcon ->
+            // Two arrows passing each other: one right along the top, one left along the bottom.
+            // Small heads and a gap between the rows keep it as light as the arrow beside it.
+            g.DrawLine(pen,at 0.16f 0.3f,at 0.84f 0.3f)
+            g.DrawLines(pen,[|at 0.7f 0.18f;at 0.84f 0.3f;at 0.7f 0.42f|])
+            g.DrawLine(pen,at 0.84f 0.7f,at 0.16f 0.7f)
+            g.DrawLines(pen,[|at 0.3f 0.58f;at 0.16f 0.7f;at 0.3f 0.82f|])
         if this.Focused && this.ShowFocusCues then ControlPaint.DrawFocusRectangle(g,Rectangle(2,2,this.Width-4,this.Height-4))
 
 /// An (i) button that explains something on hover, focus or click.

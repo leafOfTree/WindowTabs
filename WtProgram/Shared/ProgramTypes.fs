@@ -45,8 +45,8 @@ type SettingsRec = {
     enabledNumberShortcutPaths: Set2<string>
     combineIconsInTaskbar: bool
     enableHoverActivate: bool
-    /// Tab titles in bold.
-    tabTextBold: bool
+    /// Which tab titles are bold: "Never", "Active" or "All".
+    tabTextWeight: string
     /// Where tabs show a close button: "ActiveAndHover", "Active" or "Never".
     tabCloseButton: string
     /// Percent the tabs are solid while the pointer is elsewhere.
