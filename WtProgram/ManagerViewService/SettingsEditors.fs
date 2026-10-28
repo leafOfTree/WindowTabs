@@ -216,8 +216,32 @@ type SettingsNumberInput() as this =
             | Keys.Down -> commit(); setValue(value-1M); e.SuppressKeyPress <- true
             | _ -> ())
         // The keys stay in the box: on the button, Esc and Enter reached nothing.
-        minus.Click.Add(fun _ -> commit(); setValue(value-1M); text.Focus() |> ignore)
-        plus.Click.Add(fun _ -> commit(); setValue(value+1M); text.Focus() |> ignore)
+        // Held down, a button steps again after a pause and then ever faster, as Windows' own
+        // spin buttons do. The click that ends a press has already stepped.
+        let step delta = commit(); setValue(value+delta); text.Focus() |> ignore
+        let repeat = new Timer()
+        let mutable held = 0M
+        let mutable repeats = 0
+        let mutable pressed = false
+        repeat.Tick.Add(fun _ ->
+            repeats <- repeats+1
+            repeat.Interval <- max 30 (120-repeats*6)
+            step held
+            if value=minimum || value=maximum then repeat.Stop())
+        let stopRepeat() = repeat.Stop()
+        for button,delta in [minus,-1M;plus,1M] do
+            button.MouseDown.Add(fun e ->
+                if e.Button=MouseButtons.Left then
+                    pressed <- true
+                    held <- delta
+                    repeats <- 0
+                    step delta
+                    repeat.Interval <- 400
+                    repeat.Start())
+            button.MouseUp.Add(fun _ -> stopRepeat())
+            button.MouseCaptureChanged.Add(fun _ -> stopRepeat())
+            button.Click.Add(fun _ -> if pressed then pressed <- false else step delta)
+        this.Disposed.Add(fun _ -> repeat.Dispose())
     member _.Minimum with get() = minimum and set(v) = minimum <- v
     member _.Maximum with get() = maximum and set(v) = maximum <- v
     member _.Value with get() = value and set(v) = setValue v
