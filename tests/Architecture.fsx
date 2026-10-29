@@ -390,6 +390,21 @@ let main() =
         let monitor = Drawing.Rectangle(0,0,2048,1152)
         check (FullScreenWindow.covers (Rect(Pt(0,0),Sz(2048,1152))) monitor) "A full-screen window was not seen to cover its monitor"
         check (not(FullScreenWindow.covers (Rect(Pt(0,0),Sz(2048,1104)) ) monitor)) "A maximized window above the taskbar was taken for full screen"
+        // The bars an app shows over its full-screen window: a connection bar at rest is kept, one
+        // sliding off the edge or a dialog is not, a bar that hides keeps its place while its window
+        // is in the group, and an empty group keeps none.
+        do
+            let bar,dialog,gone = IntPtr 11,IntPtr 12,IntPtr 13
+            let window = Some(Rect(Pt(0,0),Sz(2048,1152)))
+            let at y = Rect(Pt(700,y),Sz(660,32))
+            let update = AppBars.update (fun hwnd -> hwnd<>gone) (fun _ -> true) window
+            let seen = update [bar,at 0; dialog,Rect(Pt(500,300),Sz(400,300))] Map.empty
+            check (seen=Map.ofList [bar,at 0]) (sprintf "The bars kept were %A, not the connection bar alone" (Map.toList seen))
+            check (update [bar,at -20] seen=seen) "A bar sliding off the edge moved the place kept for it"
+            check (update [] seen=seen) "A bar that hid lost its place"
+            check (update [] (seen.Add(gone,at 0))=seen) "A bar whose window closed was kept"
+            check (AppBars.update (fun _ -> true) (fun _ -> false) window [] seen=Map.empty) "A bar whose window left the group was kept"
+            check (AppBars.update (fun _ -> true) (fun _ -> true) None [] seen=Map.empty) "An empty group kept bars"
         // Browser opener rule: closing a tab before selecting another returns to its opener.
         let opened = Some(added,a)
         check (TabNavigation.closeTarget [a;b;c;added] closing added a active opened false=Some a) "Closing a new tab did not return to the tab it was opened from"

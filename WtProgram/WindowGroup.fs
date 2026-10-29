@@ -314,8 +314,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let mutable reorderHook : IDisposable option = None
     /// The process whose windows' bars the tabs make way for, and its hooks.
     let mutable appBarHooks : (int * IDisposable list) option = None
-    /// Where each bar the group's windows have shown was last seen.
+    /// Where each bar the group's windows have shown was last seen, and the window in front they
+    /// were last looked for over.
     let mutable appBarsSeen : Map<IntPtr,Rect> = Map.empty
+    let mutable appBarsOwner = IntPtr.Zero
     /// Looks, while split, for a pane raised over the tabs; once for a burst of order changes,
     /// a split's own transitions making many.
     let mutable splitGuardSoon : CoalescedAction option = None
@@ -881,21 +883,15 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// pointer moved the tabs each time, and so did choosing another tab.
     member private this.refreshAppBars() =
         let owner = if this.isEmpty then IntPtr.Zero else this.topWindow
-        let seen =
-            appBarsSeen |> Map.filter(fun bar _ ->
-                WinUserApi.IsWindow bar && this.windows.contains(WinUserApi.GetWindow(bar,GetWindowConstants.GW_OWNER)))
-        let seen =
-            if owner=IntPtr.Zero then Map.empty
-            else
-                let window = (this.os.windowFromHwnd owner).bounds
-                // Where it rests, not on its way: sliding off the edge it no longer covers the tabs.
-                this.os.ownedBars owner
-                |> List.filter(fun (_,bounds) -> bounds.height <= window.height/4 && bounds.y >= window.y)
-                |> List.fold(fun (known:Map<IntPtr,Rect>) (bar,bounds) -> known.Add(bar,bounds)) seen
-        appBarsSeen <- seen
-        this.ts.appBars <- seen |> Map.toList |> List.map snd
+        let ownedByGroup bar = this.windows.contains(WinUserApi.GetWindow(bar,GetWindowConstants.GW_OWNER))
+        let window,bars =
+            if owner=IntPtr.Zero then None,[]
+            else Some (this.os.windowFromHwnd owner).bounds,this.os.ownedBars owner
+        appBarsSeen <- AppBars.update WinUserApi.IsWindow ownedByGroup window bars appBarsSeen
+        this.ts.appBars <- appBarsSeen |> Map.toList |> List.map snd
 
-    /// The app's windows coming, going and moving, watched in its own process only.
+    /// The app's windows coming, going and moving, watched in its own process only. The bars are
+    /// looked for when the window in front changes; from then on its events say when to look again.
     member private this.watchAppBars(owner:IntPtr) =
         let pid = if owner=IntPtr.Zero then 0 else Win32Helper.GetWindowProcessId(owner)
         if appBarHooks |> Option.map fst <> Some pid then
@@ -906,7 +902,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                         this.refreshAppBars()
                 appBarHooks <- Some(pid,[ this.os.setWinEventHook(WinEvent.EVENT_OBJECT_SHOW,WinEvent.EVENT_OBJECT_HIDE,onEvent,pid,0)
                                           this.os.setWinEventHook(WinEvent.EVENT_OBJECT_LOCATIONCHANGE,WinEvent.EVENT_OBJECT_LOCATIONCHANGE,onEvent,pid,0) ])
-        this.refreshAppBars()
+        if appBarsOwner<>owner then
+            appBarsOwner <- owner
+            this.refreshAppBars()
 
     member private this.unwatchAppBars() =
         appBarHooks |> Option.iter(fun (_,hooks) -> for hook in hooks do hook.Dispose())

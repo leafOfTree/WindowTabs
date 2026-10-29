@@ -11,6 +11,22 @@ module FullScreenWindow =
     let covers (bounds:Rect) (screen:Rectangle) =
         bounds.x <= screen.X && bounds.y <= screen.Y && bounds.x+bounds.width >= screen.Right && bounds.y+bounds.height >= screen.Bottom
 
+/// The bars an app keeps over its own window, as a remote desktop's connection bar over its
+/// full-screen window, that a group's tabs make way for.
+module AppBars =
+    /// The bars kept, from those seen before that are still a window of the group's, and the ones
+    /// over the window in front now. Small ones only, a dialog it owns is not a bar; and where one
+    /// rests, not on its way: sliding off the edge it no longer covers the tabs. A bar that hides
+    /// keeps its place, so the tabs stay put when it slides back.
+    let update (isWindow:IntPtr -> bool) (ownedByGroup:IntPtr -> bool) (window:Rect option) (bars:(IntPtr * Rect) list) (seen:Map<IntPtr,Rect>) =
+        let seen = seen |> Map.filter(fun bar _ -> isWindow bar && ownedByGroup bar)
+        match window with
+        | None -> Map.empty
+        | Some window ->
+            bars
+            |> List.filter(fun (_,bounds) -> bounds.height <= window.height/4 && bounds.y >= window.y)
+            |> List.fold(fun (known:Map<IntPtr,Rect>) (bar,bounds) -> known.Add(bar,bounds)) seen
+
 type MouseAction =
     | MouseDown
     | MouseUp
