@@ -1769,7 +1769,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             | ToggleIconsOnly -> this.isIconOnly <- not this.isIconOnly
             | SetTabDock dock -> this.ts.dock <- dock
             // The tabs' direction in view, as the tab menu's alignment items set.
-            | SetTabAlignment alignment -> this.ts.setAlignment((if this.ts.isVertical then TabUp else this.ts.direction),alignment)
+            | SetTabAlignment alignment -> for direction in [TabUp;TabDown] do this.ts.setAlignment(direction,alignment)
             | SetAutoHide mode -> this.bb.write("autoHideMode",mode)
             | RenameTab _ | CloseOtherTabs _ | CloseAppTabs _ | CloseAllTabs | SortTabs -> commandRequestedEvent.Trigger(command)
     member _.commandRequested = commandRequestedEvent.Publish

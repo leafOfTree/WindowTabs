@@ -290,8 +290,9 @@ let main() =
         api.setValue("alignment",box "Center")
         check (positions()=(TabRight,TabCenter)) "Alignment update lost the per-direction menu override"
         // The tab menu's commands reach the group from outside, as the palette asks for them.
+        // Over the window and inside it alike, or a maximized or full-screen window kept the old one.
         (live :> IGroup).run(SetTabAlignment TabLeft)
-        check (positions()=(TabLeft,TabCenter)) "A group command did not set the tabs' alignment"
+        check (positions()=(TabLeft,TabLeft)) "A group command did not set the tabs' alignment for inside the window too"
         (live :> IGroup).run ToggleIconsOnly
         check (onGroup(fun group -> group.isIconOnly)) "A group command did not switch to icons only"
         (live :> IGroup).run ToggleIconsOnly
