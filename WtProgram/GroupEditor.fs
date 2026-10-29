@@ -362,7 +362,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// What the popup may be tall, in client pixels: the work area's nine tenths, and, once
     /// placed, what is left under its top, since growing never moves it up.
     let mutable heightLimit = maxHeight
-    let viewHeight (l:GroupEditorLayout) = min l.height heightLimit
+    /// The popup's height while it is up, set as it opens: the taller of the overview and the
+    /// row it opens on, within the limit. Rows growing, folding, coming or going scroll inside it.
+    let mutable fixedHeight : int option = None
+    let viewHeight (l:GroupEditorLayout) = match fixedHeight with Some h -> h | None -> min l.height heightLimit
     /// How much of the rows is in sight above the footer.
     let viewBody (l:GroupEditorLayout) = viewHeight l-(l.height-l.body)
     let clampScroll (l:GroupEditorLayout) = scroll <- max 0 (min scroll (l.body-viewBody l))
@@ -816,6 +819,13 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let area = if placed && form.IsHandleCreated then Screen.FromControl(form).WorkingArea else area
         heightLimit <- maxHeight-frameHeight
         if placed then heightLimit <- max (scale 240) (min heightLimit (area.Bottom-form.Top-frameHeight))
+        if not placed then
+            let folded =
+                match expandedKey with
+                | Some key -> expandedKey <- None; (let f = layout() in expandedKey <- Some key; f)
+                | None -> l
+            fixedHeight <- Some(max l.height folded.height)
+        fixedHeight <- fixedHeight |> Option.map(fun h -> min h heightLimit)
         let height = viewHeight l
         if form.ClientSize<>Size(width,height) then form.ClientSize <- Size(width,height)
         let size = form.Size
@@ -1032,7 +1042,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             if t>=1.0 then
                 endMorph()
                 place l
-            else resizeTo (min heightLimit (morphLerp t m.fromHeight l.height))
+            else resizeTo (match fixedHeight with Some h -> h | None -> min heightLimit (morphLerp t m.fromHeight l.height))
             updateThumbnails l
             if form.IsHandleCreated then form.Invalidate()
         | None -> morphTimer.Stop()

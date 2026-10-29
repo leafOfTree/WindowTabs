@@ -40,8 +40,9 @@ picture, and moves the windows once, when the user is done.
   bar (the title and the groups' count in its caption, in the palette's colours as the
   Settings window has them), in the taskbar and Alt+Tab and covered by whatever comes in
   front, since it stays up while the user works; its close button leaves everything as it
-  was, as Esc does. Centred on the screen in view, about 1000 logical pixels wide and as
-  tall as its rows need up to nine tenths of the work area, scrolling past that: a thumb
+  was, as Esc does. Centred on the screen in view, about 1000 logical pixels wide, and as
+  tall as the overview or the row it opens on needs, up to nine tenths of the work area;
+  that height holds while it is up, the rows scrolling inside it past it: a thumb
   over the right margin, taking no room from the rows, shows how far down they are and
   drags, and a row cut at the top or the bottom fades into the surface rather than ending
   at a hard edge. It draws no 1px borders inside: the popup's surface, the rows'
@@ -93,11 +94,10 @@ picture, and moves the windows once, when the user is done.
   group as the same blocks, with "Loose windows" at the right end. Under it
   **New group**, a dashed, empty band that takes a drop.
 - **Expanding.** Clicking a row's chevron, or pressing Enter on the row, grows that row
-  in place over 180ms, the rows below sliding down and the popup's bottom with them (and
-  folds it back the same way), into the view of section 2.3. Nothing above the row moves:
-  the rows above stay where they are, the popup's top stays put and its height stops at the
-  screen's bottom, the rows scrolling past that. Only opening the popup scrolls, to the row
-  it opens on. It grows its tabs become the strip and the content with its
+  in place over 180ms, the rows below sliding down (and folds it back the same way), into
+  the view of section 2.3. The popup itself keeps its size and place: nothing above the
+  row moves, and what grows past the bottom scrolls. Only opening the popup scrolls, to
+  the row it opens on. Expanded, its tabs become the strip and the content with its
   pictures opens below. The other rows stay as they are and still take drops, so a window
   can be dragged from the expanded group to any other and back. Esc, the chevron at the
   strip's right end, now pointing up, or clicking the chevron of another row, goes back to
