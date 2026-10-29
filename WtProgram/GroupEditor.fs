@@ -1002,18 +1002,26 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         | Some(_,None) -> Some aim,true
                         | None -> None,true
                     | None -> None,true
-                // Within its own row's tabs the tab moves as the pointer does, the others making
-                // room, as a tab dragged along the strip does; nothing is left to drop then.
-                let aim,reordered =
+                // Among tabs the tab moves as the pointer does, the others making room, as a tab
+                // dragged along the strip does: within its own row, into another row's tabs, or
+                // among the loose windows; nothing is left to drop then. A new group waits for
+                // the drop, as the band would move under the pointer.
+                let aim,reordered,fromPane =
                     match aim,DesktopDraft.find d.hwnd current with
                     | Some(StripSlot(row,slot)),InGroup at when at=row && not d.fromPane ->
                         let g = current.groups.[row]
-                        let moved = GroupDraft.moveTab d.hwnd slot g
-                        if moved<>g then edit row (fun _ -> moved)
-                        None,moved<>g
-                    | _ -> aim,false
+                        let next = GroupDraft.moveTab d.hwnd slot g
+                        if next<>g then edit row (fun _ -> next)
+                        None,next<>g,d.fromPane
+                    | Some(StripSlot(row,slot)),source when row<(groups()).Length && source<>InGroup row ->
+                        moved (DesktopDraft.moveToGroup d.hwnd row (Some slot) current) d.hwnd
+                        None,true,false
+                    | Some LooseRow,source when source<>Loose ->
+                        moved (DesktopDraft.moveToLoose d.hwnd current) d.hwnd
+                        None,true,false
+                    | _ -> aim,false,d.fromPane
                 let changed = not d.begun || aim<>d.aim || fits<>d.fits || reordered
-                drag <- Some {d with at=pt; aim=aim; fits=fits; begun=true}
+                drag <- Some {d with at=pt; aim=aim; fits=fits; begun=true; fromPane=fromPane}
                 // The picture itself changes only as the aim does; the chip just moves over it.
                 if changed then refresh() elif form.IsHandleCreated then form.Invalidate()
         | None ->

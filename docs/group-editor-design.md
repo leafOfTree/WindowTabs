@@ -175,8 +175,9 @@ Between rows:
 
 | From | To | Result |
 | --- | --- | --- |
-| any tab or chip of a group | another row's tabs, thumbnail cell or edge | the window leaves its group (its pane closing as above) and joins the other as the table above says, at the place among the tabs it was dropped |
-| any tab or chip of a group | the loose windows row | the window leaves its group and stands on its own |
+| any tab or chip of a group | another row's tabs | the window joins that row as the pointer arrives, at the place among its tabs, the others making room; carried on, it moves on with the pointer |
+| any tab or chip of a group | another row's thumbnail cell or edge | the window leaves its group (its pane closing as above) and joins the other as the table above says |
+| any tab or chip of a group | the loose windows row | the window leaves its group and stands on its own, as the pointer arrives |
 | a loose window | a row's tabs, thumbnail cell or edge | the window joins that group as above |
 | any tab or chip | New group | a new row with that one window, above the loose row; drop more on it as on any row |
 

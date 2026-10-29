@@ -309,13 +309,13 @@ let main() =
             let centre (r:Rectangle) = Point(r.X+r.Width/2,r.Y+r.Height/2)
             let tabIn (row:GroupEditorRowLayout) hwnd = row.tabs |> List.find(fun (each,_) -> each=hwnd) |> snd
             let tabsOf i = editor.Draft.groups.[i].tabs
-            // A tab dragged to another row's tabs joins it there.
+            // A tab dragged to another row's tabs joins it there as the pointer arrives, the drop changing nothing more.
             editor.MouseDown(centre (tabIn l.rows.[0] c))
             let slot = let r = tabIn l.rows.[1] d in Point(r.Right+Dpi.scale 20,r.Y+r.Height/2)
             editor.MouseMove(slot)
-            check (editor.Drag |> Option.exists(fun d -> d.aim=Some(StripSlot(1,1)))) (sprintf "A tab over another row's tabs was not aimed at its slot: %A" editor.Drag)
+            check (tabsOf 0=[a;b] && tabsOf 1=[d;c] && editor.Drag |> Option.exists(fun d -> d.begun && d.aim=None)) (sprintf "A tab over another row's tabs did not join it there: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
             editor.MouseUp(slot)
-            check (tabsOf 0=[a;b] && tabsOf 1=[d;c]) (sprintf "A tab dropped on another row did not join it: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
+            check (tabsOf 0=[a;b] && tabsOf 1=[d;c]) (sprintf "A tab dropped on another row did not stay there: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
             // A loose window dragged onto a thumbnail's edge goes beside the row's active window.
             let l = editor.Layout
             editor.MouseDown(centre (l.looseTabs |> List.find(fun (each,_) -> each=e) |> snd))
@@ -330,7 +330,7 @@ let main() =
             let l = editor.Layout
             editor.MouseDown(centre (tabIn l.rows.[0] b))
             editor.MouseMove(centre l.loose)
-            check (editor.Drag |> Option.exists(fun d -> d.aim=Some LooseRow)) "A tab over the loose row was not aimed at it"
+            check (editor.Draft.loose=[f;b] && editor.Drag |> Option.exists(fun d -> d.aim=None)) "A tab over the loose row did not go loose there"
             editor.MouseUp(centre l.loose)
             check (editor.Draft.loose=[f;b] && tabsOf 0=[a] && editor.Draft.groups.[0].panes.IsNone) "A tab dropped on the loose row did not leave its group"
             let l = editor.Layout
