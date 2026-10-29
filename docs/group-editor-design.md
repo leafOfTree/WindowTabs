@@ -93,15 +93,16 @@ picture, and moves the windows once, when the user is done.
 - **Loose windows.** The last row, a shade darker than the group rows: the windows in no
   group as the same blocks, with "Loose windows" at the right end. Under it
   **New group**, a dashed, empty band that takes a drop.
-- **Expanding.** Clicking a row's chevron, or pressing Enter on the row, grows that row
+- **Expanding.** Clicking a row's chevron or its band's empty room, or pressing Enter on
+  the row, grows that row
   in place over 180ms, the rows below sliding down (and folds it back the same way), into
   the view of section 2.3. The popup itself keeps its size and place: nothing above the
   row moves, and what grows past the bottom scrolls. Only opening the popup scrolls, to
   the row it opens on. Expanded, its tabs become the strip and the content with its
   pictures opens below. The other rows stay as they are and still take drops, so a window
   can be dragged from the expanded group to any other and back. Esc, the chevron at the
-  strip's right end, now pointing up, or clicking the chevron of another row, goes back to
-  the overview.
+  strip's right end, now pointing up, the strip's empty room, or clicking the chevron of
+  another row, goes back to the overview.
 
 ### 2.3 A group expanded
 

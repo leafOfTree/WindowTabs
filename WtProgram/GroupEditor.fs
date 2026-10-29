@@ -545,7 +545,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 use shape = rounded r (scale 4)
                 match pane with
                 | Occupied hwnd ->
-                    use fill = new SolidBrush(cellFill)
+                    // The one cell of a group in no split is the content itself, in its colour, which
+                    // the selected tab above shares; the cells of a split stand out on it.
+                    use fill = new SolidBrush(if row.cells.Length>1 then cellFill else contentFill)
                     g.FillPath(fill,shape)
                     let chip = (chipOf row r).Height
                     if chip>0 then
@@ -794,7 +796,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                             g.DrawImage(bitmap,Rectangle(0,body,width,bitmap.Height-l.body),Rectangle(0,l.body,width,bitmap.Height-l.body),GraphicsUnit.Pixel)
                         | _ ->
                             let body = viewBody l
-                            e.Graphics.DrawImage(bitmap,Rectangle(0,0,width,body),Rectangle(0,scroll,width,body),GraphicsUnit.Pixel)
+                            // Rows shorter than the popup, whose height holds, leave the surface under them.
+                            let shown = max 0 (min body (l.body-scroll))
+                            if shown<body then
+                                use back = new SolidBrush(palette.surface)
+                                g.FillRectangle(back,Rectangle(0,shown,width,body-shown))
+                            if shown>0 then g.DrawImage(bitmap,Rectangle(0,0,width,shown),Rectangle(0,scroll,width,shown),GraphicsUnit.Pixel)
                             e.Graphics.DrawImage(bitmap,Rectangle(0,body,width,bitmap.Height-l.body),Rectangle(0,l.body,width,bitmap.Height-l.body),GraphicsUnit.Pixel)
                             scrollDecor g l body
                             e.Graphics.TranslateTransform(0.0f,float32 -scroll)
@@ -1204,10 +1211,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         // place of the panes it is about to be dropped on.
                         take hwnd false r
                     | None ->
-                        if not row.expanded then
-                            cursor <- row.index
-                            refresh()
-                        elif row.picture.Contains pt then
+                        // The band's empty room expands a folded row; the strip's folds the expanded one.
+                        if not row.expanded then expand (Some row.index)
+                        elif not(row.picture.Contains pt) then expand None
+                        else
                             row.cells |> List.tryFind(fun (_,_,r) -> r.Contains pt) |> Option.iter(fun (path,pane,r) ->
                                 match pane with
                                 | Occupied hwnd when (chipOf row r).Contains pt -> take hwnd true r

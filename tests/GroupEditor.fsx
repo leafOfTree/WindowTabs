@@ -361,6 +361,17 @@ let main() =
             check (editor.Expanded=None && editor.Cursor=1) "Clicking the expanded row's chevron did not fold it back"
             editor.Press Keys.Return
             check (editor.Expanded=Some 1) "Enter did not expand the row again"
+            // The strip's empty room folds the row; a folded row's band's empty room expands it.
+            let l = editor.Layout
+            let stripRoom = let r = snd l.rows.[1].tabs.Head in Point(l.rows.[1].band.Right-Dpi.scale 80,r.Y+r.Height/2)
+            editor.MouseDown(stripRoom)
+            editor.MouseUp(stripRoom)
+            check (editor.Expanded=None) "Clicking the strip's empty room did not fold the row"
+            let l = editor.Layout
+            let bandRoom = Point(l.rows.[1].band.Right-Dpi.scale 80,l.rows.[1].band.Y+l.rows.[1].band.Height/2)
+            editor.MouseDown(bandRoom)
+            editor.MouseUp(bandRoom)
+            check (editor.Expanded=Some 1) "Clicking a folded row's empty room did not expand it"
             editor.Press Keys.Escape
             check (editor.Expanded=None && editor.Cursor=1) "Esc did not go back to the overview on the row"
             editor.Press Keys.Tab
