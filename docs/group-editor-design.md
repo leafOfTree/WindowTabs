@@ -149,7 +149,8 @@ tab, so the strip starts at the row's top edge, as a real group's does.
 ### 2.4 Dragging
 
 One drag model for the overview and the expanded row alike: the tab itself comes along under
-the pointer, held where it was pressed, and its place stays open in the strip. The tabs a
+the pointer, held where it was pressed, and its place stays open in the strip as a slot
+dashed in the accent, so where it will land stands out from the tabs around it. The tabs a
 move shifts slide to their new places over 150ms, eased out, rather than jumping; the keys'
 moves slide the same way. Carried off
 the rows (to the title, the footer or out of the popup), the tab goes back to where it was
@@ -178,7 +179,9 @@ Between rows:
 | any tab or chip | New group | a new row with that one window, above the loose row; drop more on it as on any row |
 
 A row left with no window goes: the group would exit on its own once its last window
-left, and the picture says so first. A new row with one window is a group of one, as a tab
+left, and the picture says so first. While the drag that emptied it lasts, its band stays
+where it was, dashed like New group and taking a drop the same way, so the rows below do not
+move up under the pointer and the next move or the drop lands where it was aimed. A new row with one window is a group of one, as a tab
 dragged out and grouped again by hand is. A window dragged out of a row and back in is no
 change at Save.
 

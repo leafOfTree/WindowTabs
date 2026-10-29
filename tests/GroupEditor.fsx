@@ -373,6 +373,20 @@ let main() =
             let plan = editor.Plan
             check (plan.detached=[b;c] && plan.groups.Length=1 && plan.groups.Head.joining=[e] && not plan.groups.Head.reorder && plan.groups.Head.layout.IsNone)
                   (sprintf "The overview's plan is not as expected: %A" plan)
+            // A window alone in its row carried to another row's tabs empties its own: its band stays
+            // while the drag lasts, so the row below does not move up under the pointer, and takes
+            // a drop as New group does; the drop where the pointer is leaves the tab where it joined.
+            let l = editor.Layout
+            editor.MouseDown(centre (tabIn l.rows.[0] a))
+            let slot = let r = tabIn l.rows.[1] e in Point(r.Right+Dpi.scale 20,r.Y+r.Height/2)
+            editor.MouseMove(slot)
+            let after = editor.Layout
+            check (editor.Draft.groups.Length=1 && tabsOf 0=[d;e;a] && after.vacated=[l.rows.[0].band] && after.rows.[0].band=l.rows.[1].band) (sprintf "The emptied row did not keep its band under the rows: %A %A" after.vacated (after.rows |> List.map(fun row -> row.band)))
+            editor.MouseMove(centre after.vacated.Head)
+            check (editor.Drag |> Option.exists(fun d -> d.aim=Some(VacatedRow 0))) (sprintf "The emptied row's band was not aimed at: %A" editor.Drag)
+            editor.MouseMove(slot)
+            editor.MouseUp(slot)
+            check (editor.Draft.groups.Length=1 && tabsOf 0=[d;e;a] && editor.Layout.vacated.IsEmpty) (sprintf "A lone window carried to the row below did not stay there with its own row gone: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
             editor.Close()
         // A desktop of many rows is laid out and drawn in a fraction of a second, and the layout is
         // not measured again while nothing it depends on has changed.
