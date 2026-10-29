@@ -87,7 +87,8 @@ picture, and moves the windows once, when the user is done.
   group as the same blocks, with "Loose windows" at the right end. Under it
   **New group**, a dashed, empty band that takes a drop.
 - **Expanding.** Clicking a row's chevron, or pressing Enter on the row, grows that row
-  in place into the view of section 2.3: its tabs become the strip and the content with its
+  in place over 180ms, the rows below sliding down and the popup's bottom with them (and
+  folds it back the same way), into the view of section 2.3: its tabs become the strip and the content with its
   pictures opens below. The other rows stay as they are and still take drops, so a window
   can be dragged from the expanded group to any other and back. Esc, the chevron at the
   strip's right end, now pointing up, or clicking the chevron of another row, goes back to
@@ -121,7 +122,8 @@ tab, so the strip starts at the row's top edge, as a real group's does.
   content changes to what the group would show with that tab active, so the picture
   behaves as the group does. The selection is for looking: Save does not switch tabs.
 - **The content.** With a tab selected that is in no split, one cell with that window's
-  picture and its chip over it, filling the content: the whole group is that window. With
+  picture filling the content, with no chip over it, since the selected tab names it: the
+  whole group is that window. With
   a tab selected that is in a split, the split tree drawn as nested cells at their ratios,
   each leaf cell with its window's picture and chip, the split button on the selected one's
   cell; the other panes' tabs are marked in the strip as the real strip marks
