@@ -37,7 +37,8 @@ picture, and moves the windows once, when the user is done.
   Opened over a group, that group's row starts expanded (section 2.3); opened over a
   window of no group, or the desktop, none is.
 - It opens in the switcher's look: the settings palette's colours, rounded corners, the
-  switcher's shadow, a tool window on top of everything, centred on the screen in view,
+  switcher's shadow, but as an ordinary window, in the taskbar and Alt+Tab and covered by
+  whatever comes in front, since it stays up while the user works; centred on the screen in view,
   about 1000 logical pixels wide and as tall as its rows need up to nine tenths of the work
   area, scrolling past that. It draws no 1px borders inside: the popup's surface, the rows'
   bands, the tabs' blocks and the thumbnails are told apart by tone alone, three steps of

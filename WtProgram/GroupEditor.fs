@@ -623,11 +623,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
 
     let form =
         let f =
+            // An ordinary window, not on top of everything: a tool to come back to, in the taskbar
+            // and Alt+Tab, that other windows may cover.
             { new Form() with
-                override this.CreateParams =
-                    let createParams = base.CreateParams
-                    createParams.ExStyle <- createParams.ExStyle ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW ||| WindowsExtendedStyles.WS_EX_TOPMOST
-                    createParams
                 override this.OnHandleCreated(e) =
                     base.OnHandleCreated(e)
                     this.SetStyle(ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint ||| ControlStyles.UserPaint,true)
@@ -645,11 +643,11 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                          | _ -> hoverOverlay e.Graphics l)
                         e.Graphics.ResetTransform() }
         f.FormBorderStyle <- FormBorderStyle.None
-        f.ShowInTaskbar <- false
+        f.ShowInTaskbar <- true
         f.StartPosition <- FormStartPosition.Manual
-        f.TopMost <- true
         f.KeyPreview <- true
         f.Text <- tr Strings.GroupEditor.title
+        (try f.Icon <- Icon.ExtractAssociatedIcon(Application.ExecutablePath) with _ -> ())
         f.AccessibleName <- tr Strings.GroupEditor.title
         f.BackColor <- palette.surface
         f
@@ -721,11 +719,19 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                             Rectangle(picture.X+(picture.Width-w)/2,picture.Y+(picture.Height-h)/2,w,h)
                     let dest = Rectangle(dest.X,dest.Y-scroll,dest.Width,dest.Height)
                     let shown = Rectangle.Intersect(dest,view)
+                    // Cut at the rows' edge while scrolled half out of sight: the part of the window
+                    // shown is the part of its picture in sight.
+                    let along (shownEdge:int) (destEdge:int) (destSize:int) (sourceSize:int) =
+                        if destSize<=0 then 0 else int(int64 (shownEdge-destEdge)*int64 sourceSize/int64 destSize)
+                    let part (shownSize:int) (destSize:int) (sourceSize:int) = if destSize<=0 then 0 else int(int64 shownSize*int64 sourceSize/int64 destSize)
                     let mutable props = DWM_THUMBNAIL_PROPERTIES()
-                    props.dwFlags <- DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_RECTDESTINATION ||| DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_OPACITY ||| DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_VISIBLE
-                    props.rcDestination <- RECT.FromRectangle(dest)
+                    props.dwFlags <- DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_RECTDESTINATION ||| DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_RECTSOURCE |||
+                                     DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_OPACITY ||| DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_VISIBLE
+                    props.rcDestination <- RECT.FromRectangle(shown)
+                    props.rcSource <- RECT.FromRectangle(Rectangle(along shown.X dest.X dest.Width source.width,along shown.Y dest.Y dest.Height source.height,
+                                                                   part shown.Width dest.Width source.width,part shown.Height dest.Height source.height))
                     props.opacity <- 255uy
-                    props.fVisible <- if hidden || flyout || shown.Width<=0 || shown.Height<=0 || shown<>dest then 0 else 1
+                    props.fVisible <- if hidden || flyout || shown.Width<=0 || shown.Height<=0 then 0 else 1
                     DwmApi.DwmUpdateThumbnailProperties(thumb,&props) |> ignore)
 
     let refresh() =
@@ -1028,11 +1034,14 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             refresh()
         | None -> ()
 
+    /// Scrolling moves the picture and the thumbnails together, without drawing the picture again.
     let wheel (delta:int) =
         let l = layout()
         if l.body>viewBody l then
-            scroll <- scroll-delta/120*scale 48
-            refresh()
+            scroll <- scroll-int(float delta/120.0*float(scale 48))
+            clampScroll l
+            updateThumbnails l
+            if form.IsHandleCreated then form.Invalidate()
 
     do
         form.KeyDown.Add(fun e ->
