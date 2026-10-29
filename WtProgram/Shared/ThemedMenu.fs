@@ -4,6 +4,39 @@ open System.Drawing
 open System.Windows.Forms
 open System.Runtime.InteropServices
 
+/// Windows 11 rounds a popup with smooth corners, outlines it and, with a drop shadow, gives it
+/// the soft shadow of its own menus; a region's corners are jagged. Windows 10 has none of this,
+/// so its popups keep their region.
+module SystemCorners =
+    let supported =
+        lazy (try
+                  use key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion")
+                  match Int32.TryParse(string (key.GetValue("CurrentBuild"))) with
+                  | true,build -> build>=22000
+                  | _ -> false
+              with _ -> false)
+
+    /// The popup outlined in `border`; false where Windows cannot, which keeps the region.
+    let round (hwnd:IntPtr) (border:Color) =
+        supported.Value &&
+        (let mutable corner = 2 // DWMWCP_ROUND
+         DwmApi.DwmSetWindowAttribute(hwnd,33,&corner,4)=0) &&
+        (let mutable color = ColorTranslator.ToWin32(border)
+         DwmApi.DwmSetWindowAttribute(hwnd,34,&color,4) |> ignore
+         true)
+
+    /// Rounded each time it has a window, as WinForms makes a new one for some property changes,
+    /// and without making one early; true where Windows can, so the caller keeps no region.
+    let keep (control:Control) (border:unit -> Color) =
+        if supported.Value then
+            control.HandleCreated.Add(fun _ -> round control.Handle (border()) |> ignore)
+            if control.IsHandleCreated then round control.Handle (border()) |> ignore
+        supported.Value
+
+    /// The class style that gives a rounded popup its shadow on Windows 11; on Windows 10 it
+    /// gave a hard one offset to the bottom right, so none there.
+    let shadowClassStyle() = if supported.Value then 0x00020000 else 0
+
 module MenuShape =
     let outline width height =
         let path = new Drawing2D.GraphicsPath()
@@ -17,6 +50,61 @@ module MenuShape =
             path.CloseFigure()
         path
 
+module SettingsPopupShadowPixels =
+    let create dpi width height =
+        let padding = Dpi.scaleAt dpi 6
+        let w,h = width+padding*2,height+padding*2
+        let radius = float (min (min width height/2) (Dpi.scaleAt dpi 10))
+        let sigma = float (max 1 (Dpi.scaleAt dpi 2))
+        let pixels = Array.zeroCreate<byte> (w*h*4)
+        for y in 0..h-1 do
+            for x in 0..w-1 do
+                let dx = abs(float(x-padding)+0.5-float width/2.0)-(float width/2.0-radius)
+                let dy = abs(float(y-padding)+0.5-float height/2.0)-(float height/2.0-radius)
+                let distance = sqrt(max dx 0.0 ** 2.0+max dy 0.0 ** 2.0)+min (max dx dy) 0.0-radius
+                if distance>=0.0 then
+                    pixels.[(y*w+x)*4+3] <- byte(Math.Round(22.0*exp(-distance*distance/(2.0*sigma*sigma))))
+        pixels
+
+/// A click-through halo with no directional offset; owned by the popup's lifetime. The settings
+/// popups use it, and the tab menu where Windows 10 has no soft shadow of its own for menus.
+type SettingsPopupShadow(owner:Control) =
+    let os = OS()
+    let padding = Dpi.scale 6
+    let helper = os.createWindow (fun message -> message.def()) WindowsStyles.WS_POPUP
+                    (WindowsExtendedStyles.WS_EX_LAYERED ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW |||
+                     WindowsExtendedStyles.WS_EX_NOACTIVATE ||| WindowsExtendedStyles.WS_EX_TRANSPARENT)
+    let window = os.windowFromHwnd(helper.hwnd)
+    /// The halo of the last size, kept: a notice moves it on every frame of its slide.
+    let mutable cached : (int * int * int * Bitmap) option = None
+    let bitmapFor width height =
+        let dpi = Dpi.value()
+        match cached with
+        | Some(w,h,d,bitmap) when w=width && h=height && d=dpi -> bitmap
+        | _ ->
+            cached |> Option.iter(fun (_,_,_,old) -> old.Dispose())
+            let w,h = width+padding*2,height+padding*2
+            let pixels = SettingsPopupShadowPixels.create dpi width height
+            let bitmap = new Bitmap(w,h,Imaging.PixelFormat.Format32bppArgb)
+            let data = bitmap.LockBits(Rectangle(0,0,w,h),Imaging.ImageLockMode.WriteOnly,Imaging.PixelFormat.Format32bppArgb)
+            try
+                for y in 0..h-1 do Marshal.Copy(pixels,y*w*4,IntPtr.Add(data.Scan0,y*data.Stride),w*4)
+            finally bitmap.UnlockBits(data)
+            cached <- Some(width,height,dpi,bitmap)
+            bitmap
+    do window.setParent(os.windowFromHwnd(owner.Handle))
+    /// Around the owner where it is now, as see-through as the owner while it fades.
+    member _.Show(?opacity:float) =
+        let alpha = byte(Math.Round(255.0*max 0.0 (min 1.0 (defaultArg opacity 1.0))))
+        Win32Helper.UpdateLayeredWindow(helper.hwnd,Point(owner.Left-padding,owner.Top-padding),bitmapFor owner.Width owner.Height,alpha)
+        window.showNoActivate()
+    member _.Hide() = window.hide()
+    interface IDisposable with
+        member _.Dispose() =
+            cached |> Option.iter(fun (_,_,_,bitmap) -> bitmap.Dispose())
+            cached <- None
+            (helper :?> IDisposable).Dispose()
+
 /// Paint every surface explicitly so nested menus never inherit the light system renderer.
 type ThemeMenuRenderer(p:SettingsPalette) =
     inherit ToolStripProfessionalRenderer()
@@ -29,13 +117,16 @@ type ThemeMenuRenderer(p:SettingsPalette) =
         else p.text
     override _.OnRenderToolStripBackground(e) = fill e.Graphics p.surface e.AffectedBounds
     override _.OnRenderImageMargin(e) = fill e.Graphics p.surface e.AffectedBounds
-    override _.OnRenderToolStripBorder(e) =
-        use pen = new Pen(p.border)
-        use path = MenuShape.outline e.ToolStrip.Width e.ToolStrip.Height
-        let smoothing = e.Graphics.SmoothingMode
-        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-        e.Graphics.DrawPath(pen,path)
-        e.Graphics.SmoothingMode <- smoothing
+    /// Windows 11 draws the outline itself, with the menu's rounded corners and shadow.
+    member val DrawsOutline = true with get,set
+    override this.OnRenderToolStripBorder(e) =
+        if this.DrawsOutline then
+            use pen = new Pen(p.border)
+            use path = MenuShape.outline e.ToolStrip.Width e.ToolStrip.Height
+            let smoothing = e.Graphics.SmoothingMode
+            e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+            e.Graphics.DrawPath(pen,path)
+            e.Graphics.SmoothingMode <- smoothing
     override _.OnRenderMenuItemBackground(e) =
         fill e.Graphics (if e.Item.Selected && e.Item.Enabled then p.selection else p.surface) (Rectangle(Point.Empty,e.Item.Size))
     /// Marks a note's item, drawn inset under the item it is about.
@@ -140,14 +231,29 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
         dropdown.ShowCheckMargin <- false
         dropdown.ShowImageMargin <- true
         menu.Padding <- Padding(1,Dpi.scale 4,1,Dpi.scale 4)
+        // Windows 11 rounds the menu, outlines it and gives it the soft shadow of its own menus;
+        // a region cut the corners jagged and left the old shadow offset to the bottom right.
+        let systemRounded = SystemCorners.keep menu (fun () -> palette.border)
+        if systemRounded then renderer.DrawsOutline <- false
         let round() =
-            if menu.Width>1 && menu.Height>1 then
+            if not systemRounded && menu.Width>1 && menu.Height>1 then
                 use path = MenuShape.outline menu.Width menu.Height
                 let previous = menu.Region
                 menu.Region <- new Region(path)
                 if not(isNull previous) then previous.Dispose()
         menu.SizeChanged.Add(fun _ -> round())
         round()
+        // Windows 10: the same soft, even shadow as Windows 11, not the old one offset to the bottom right.
+        if not systemRounded && not SystemInformation.HighContrast then
+            menu.DropShadowEnabled <- false
+            let halo : SettingsPopupShadow option ref = ref None
+            menu.Opened.Add(fun _ ->
+                if halo.Value.IsNone then halo.Value <- Some(new SettingsPopupShadow(menu))
+                halo.Value |> Option.iter(fun shadow -> shadow.Show()))
+            menu.Closed.Add(fun _ -> halo.Value |> Option.iter(fun shadow -> shadow.Hide()))
+            menu.Disposed.Add(fun _ ->
+                halo.Value |> Option.iter(fun shadow -> (shadow :> IDisposable).Dispose())
+                halo.Value <- None)
     let rec add (target:ToolStripItemCollection) items =
         for item in items do
             match item with

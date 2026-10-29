@@ -36,6 +36,8 @@ type TabTitleTip() =
     /// Owned: replaced, or let go with the tip.
     let mutable picture : Bitmap option = None
     let mutable textHeight = 0
+    /// Windows 10's stand-in for the shadow Windows 11 gives it.
+    let mutable halo : SettingsPopupShadow option = None
     let rounded (rect:RectangleF) radius =
         let path = new GraphicsPath()
         let d = min (radius*2.0f) (min rect.Width rect.Height)
@@ -53,16 +55,19 @@ type TabTitleTip() =
     override _.CreateParams =
         let cp = base.CreateParams
         cp.ExStyle <- cp.ExStyle ||| 0x08000000 ||| 0x00000080 ||| 0x00000008 ||| 0x00000020
+        cp.ClassStyle <- cp.ClassStyle ||| SystemCorners.shadowClassStyle()
         cp
     override _.ShowWithoutActivation = true
 
     override this.OnPaintBackground(e) = e.Graphics.Clear((SettingsColors.current()).surface)
     override this.OnPaint(e) =
         let p = SettingsColors.current()
-        e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
-        use outline = rounded (RectangleF(0.0f,0.0f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 6))
-        use pen = new Pen(p.border)
-        e.Graphics.DrawPath(pen,outline)
+        // Windows 11 outlines it with its own rounded corners.
+        if not SystemCorners.supported.Value then
+            e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
+            use outline = rounded (RectangleF(0.0f,0.0f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 6))
+            use pen = new Pen(p.border)
+            e.Graphics.DrawPath(pen,outline)
         let inset = Dpi.scale 8
         TextRenderer.DrawText(e.Graphics,wrapped,this.Font,Rectangle(inset,Dpi.scale 5,this.Width-2*inset,textHeight),p.text,format)
         picture |> Option.iter(fun image ->
@@ -117,20 +122,33 @@ type TabTitleTip() =
                 max area.Left (min (pointerX-Dpi.scale 12) (area.Right-width)),
                 (if below+height<=area.Bottom then below else max area.Top (strip.Top-gap-height))
         this.Bounds <- Rectangle(x,y,width,height)
-        use shape = rounded (RectangleF(0.0f,0.0f,float32 width,float32 height)) (float32(Dpi.scale 6))
-        let previousRegion = this.Region
-        this.Region <- new Region(shape)
-        if not (isNull previousRegion) then previousRegion.Dispose()
+        if not (SystemCorners.round this.Handle (SettingsColors.current()).border) then
+            use shape = rounded (RectangleF(0.0f,0.0f,float32 width,float32 height)) (float32(Dpi.scale 6))
+            let previousRegion = this.Region
+            this.Region <- new Region(shape)
+            if not (isNull previousRegion) then previousRegion.Dispose()
         this.Invalidate()
         if not this.Visible then this.Show()
 
     member this.hide() = if this.Visible then this.Hide()
+
+    member private this.syncHalo() =
+        if not SystemCorners.supported.Value && not SystemInformation.HighContrast && this.IsHandleCreated then
+            if this.Visible && this.Width>0 then
+                if halo.IsNone then halo <- Some(new SettingsPopupShadow(this))
+                halo |> Option.iter(fun shadow -> shadow.Show())
+            else halo |> Option.iter(fun shadow -> shadow.Hide())
+    override this.OnMove(e) = base.OnMove(e); this.syncHalo()
+    override this.OnSizeChanged(e) = base.OnSizeChanged(e); this.syncHalo()
+    override this.OnVisibleChanged(e) = base.OnVisibleChanged(e); this.syncHalo()
 
     override this.Dispose(disposing) =
         if disposing && not (isNull font) then
             font.Dispose()
             font <- null
         if disposing then
+            halo |> Option.iter(fun shadow -> (shadow :> IDisposable).Dispose())
+            halo <- None
             picture |> Option.iter(fun image -> image.Dispose())
             picture <- None
         base.Dispose(disposing)

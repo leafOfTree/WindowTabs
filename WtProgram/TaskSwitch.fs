@@ -290,12 +290,14 @@ type TaskSwitchForm(control:ITaskSwitchListControl) =
                     createParams
                 override this.OnPaint(e) =
                     base.OnPaint(e)
-                    e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-                    use outline = SettingsShapes.rounded
-                                      (SettingsShapes.outlineRect this.ClientSize.Width this.ClientSize.Height)
-                                      (float32(Dpi.scale 12))
-                    use border = new Pen((SettingsColors.current()).border)
-                    e.Graphics.DrawPath(border,outline)
+                    // Windows 11 outlines it with its own rounded corners.
+                    if not SystemCorners.supported.Value then
+                        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+                        use outline = SettingsShapes.rounded
+                                          (SettingsShapes.outlineRect this.ClientSize.Width this.ClientSize.Height)
+                                          (float32(Dpi.scale 12))
+                        use border = new Pen((SettingsColors.current()).border)
+                        e.Graphics.DrawPath(border,outline)
         }
         let palette = SettingsColors.current()
         f.BackColor <- palette.surface
@@ -317,11 +319,12 @@ type TaskSwitchForm(control:ITaskSwitchListControl) =
         f.ControlBox <- false
         control.control.Dock <- DockStyle.Fill
         f.Controls.Add(control.control)
-        use shape = SettingsShapes.rounded
-                        (RectangleF(0.0f,0.0f,float32 formSize.Width,float32 formSize.Height))
-                        (float32(Dpi.scale 12))
-        f.Region <- new Region(shape)
-        f    
+        if not (SystemCorners.keep f (fun () -> palette.border)) then
+            use shape = SettingsShapes.rounded
+                            (RectangleF(0.0f,0.0f,float32 formSize.Width,float32 formSize.Height))
+                            (float32(Dpi.scale 12))
+            f.Region <- new Region(shape)
+        f
 
     member this.hwnd = form.Handle
 
@@ -401,8 +404,9 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
         f.TopMost <- true
         f.BackColor <- (SettingsColors.current()).surface
         f.Bounds <- Rectangle(area.Left+(area.Width-width)/2,area.Top+(area.Height-height)/2,width,height)
-        use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 width,float32 height)) (float32 radius)
-        f.Region <- new Region(shape)
+        if not (SystemCorners.keep f (fun () -> (SettingsColors.current()).border)) then
+            use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 width,float32 height)) (float32 radius)
+            f.Region <- new Region(shape)
         f
     /// Each row is centred, so a short last row sits in the middle.
     let cellBounds index =
@@ -426,9 +430,11 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
         let p = SettingsColors.current()
         let highContrast = SystemInformation.HighContrast
         g.Clear(p.surface)
-        use outline = SettingsShapes.rounded (SettingsShapes.outlineRect width height) (float32 radius)
-        use border = new Pen(p.border)
-        g.DrawPath(border,outline)
+        // Windows 11 outlines it with its own rounded corners.
+        if not SystemCorners.supported.Value then
+            use outline = SettingsShapes.rounded (SettingsShapes.outlineRect width height) (float32 radius)
+            use border = new Pen(p.border)
+            g.DrawPath(border,outline)
         items |> Array.iteri(fun index (_,icon) ->
             let bounds = cellBounds index
             if index=selected then

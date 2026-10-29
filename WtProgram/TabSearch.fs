@@ -535,10 +535,12 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     createParams
                 override this.OnPaint(e) =
                     base.OnPaint(e)
-                    e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-                    use outline = SettingsShapes.rounded (SettingsShapes.outlineRect this.ClientSize.Width this.ClientSize.Height) (float32 radius)
-                    use border = new Pen(palette.border)
-                    e.Graphics.DrawPath(border,outline) }
+                    // Windows 11 outlines it with its own rounded corners.
+                    if not SystemCorners.supported.Value then
+                        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+                        use outline = SettingsShapes.rounded (SettingsShapes.outlineRect this.ClientSize.Width this.ClientSize.Height) (float32 radius)
+                        use border = new Pen(palette.border)
+                        e.Graphics.DrawPath(border,outline) }
         // One size whatever is typed or listed, so the box does not jump about while filtering.
         let longest = scopes |> List.map(fun target -> (rowsOf target).Length) |> List.max
         let rows = max 1 (min visibleRows longest)
@@ -581,8 +583,9 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             list.Bounds <- Rectangle(padding,top,max 1 (f.ClientSize.Width-padding-1),max 0 (bottom-top))
         f.Layout.Add(fun _ -> placeList())
         placeList()
-        use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 size.Width,float32 size.Height)) (float32 radius)
-        f.Region <- new Region(shape)
+        if not (SystemCorners.keep f (fun () -> palette.border)) then
+            use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 size.Width,float32 size.Height)) (float32 radius)
+            f.Region <- new Region(shape)
         f
     let entryOf (item:TreeListItem) = scoped() |> Array.pick(fun (row,entry) -> if obj.ReferenceEquals(row,item) then Some entry else None)
     let setPrompt() =

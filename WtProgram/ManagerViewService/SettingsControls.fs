@@ -979,45 +979,6 @@ type SettingsListFrame(list:SettingsChoiceList) as this =
     member _.List = list
     override this.OnGotFocus(e) = base.OnGotFocus(e); list.Focus() |> ignore
 
-module SettingsPopupShadowPixels =
-    let create dpi width height =
-        let padding = Dpi.scaleAt dpi 6
-        let w,h = width+padding*2,height+padding*2
-        let radius = float (min (min width height/2) (Dpi.scaleAt dpi 10))
-        let sigma = float (max 1 (Dpi.scaleAt dpi 2))
-        let pixels = Array.zeroCreate<byte> (w*h*4)
-        for y in 0..h-1 do
-            for x in 0..w-1 do
-                let dx = abs(float(x-padding)+0.5-float width/2.0)-(float width/2.0-radius)
-                let dy = abs(float(y-padding)+0.5-float height/2.0)-(float height/2.0-radius)
-                let distance = sqrt(max dx 0.0 ** 2.0+max dy 0.0 ** 2.0)+min (max dx dy) 0.0-radius
-                if distance>=0.0 then
-                    pixels.[(y*w+x)*4+3] <- byte(Math.Round(22.0*exp(-distance*distance/(2.0*sigma*sigma))))
-        pixels
-
-/// A click-through halo with no directional offset; owned by the popup's lifetime.
-type private SettingsPopupShadow(owner:Control) =
-    let os = OS()
-    let padding = Dpi.scale 6
-    let helper = os.createWindow (fun message -> message.def()) WindowsStyles.WS_POPUP
-                    (WindowsExtendedStyles.WS_EX_LAYERED ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW |||
-                     WindowsExtendedStyles.WS_EX_NOACTIVATE ||| WindowsExtendedStyles.WS_EX_TRANSPARENT)
-    let window = os.windowFromHwnd(helper.hwnd)
-    do window.setParent(os.windowFromHwnd(owner.Handle))
-    member _.Show() =
-        let width,height = owner.Width+padding*2,owner.Height+padding*2
-        let pixels = SettingsPopupShadowPixels.create (Dpi.value()) owner.Width owner.Height
-        use bitmap = new Bitmap(width,height,Imaging.PixelFormat.Format32bppArgb)
-        let data = bitmap.LockBits(Rectangle(0,0,width,height),Imaging.ImageLockMode.WriteOnly,Imaging.PixelFormat.Format32bppArgb)
-        try
-            for y in 0..height-1 do Marshal.Copy(pixels,y*width*4,IntPtr.Add(data.Scan0,y*data.Stride),width*4)
-        finally bitmap.UnlockBits(data)
-        Win32Helper.UpdateLayeredWindow(helper.hwnd,Point(owner.Left-padding,owner.Top-padding),bitmap,255uy)
-        window.showNoActivate()
-    member _.Hide() = window.hide()
-    interface IDisposable with
-        member _.Dispose() = (helper :?> IDisposable).Dispose()
-
 /// A menu-style popup keeps the settings window active when dismissed outside.
 type SettingsChoicePopup() as this =
     inherit ToolStripDropDown()
@@ -1047,13 +1008,16 @@ type SettingsChoicePopup() as this =
             shadow <- None)
     /// Its outline when it opens from a field outlined in a colour of its own, as on the palette.
     member val Outline = Color.Empty with get,set
+    member private this.outlineColor = if (this.Outline:Color).IsEmpty then (SettingsColors.current()).border else this.Outline
     override this.OnOpened(e) =
+        // Its outline may have changed since it was last shown.
+        SystemCorners.round this.Handle this.outlineColor |> ignore
         // Finish the first themed paint before returning to other UI work.
         this.Refresh()
         base.OnOpened(e)
     override this.OnSizeChanged(e) =
         base.OnSizeChanged(e)
-        if this.Width>0 && this.Height>0 then
+        if this.Width>0 && this.Height>0 && not (SystemCorners.round this.Handle this.outlineColor) then
             use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (float32(Dpi.scale 10))
             let old = this.Region
             this.Region <- new Region(shape)
@@ -1063,10 +1027,12 @@ type SettingsChoicePopup() as this =
     override this.OnPaint(e) =
         // ToolStripDropDown's renderer draws a light system border by default.
         e.Graphics.Clear(this.BackColor)
-        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 10))
-        use pen = new Pen(if (this.Outline:Color).IsEmpty then (SettingsColors.current()).border else this.Outline)
-        e.Graphics.DrawPath(pen,shape)
+        // Windows 11 outlines it with its own rounded corners.
+        if not SystemCorners.supported.Value then
+            e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 10))
+            use pen = new Pen(this.outlineColor)
+            e.Graphics.DrawPath(pen,shape)
 
 module SettingsPopupLifetime =
     let isOwnerClick (owner:Control) (e:ToolStripDropDownClosedEventArgs) =
