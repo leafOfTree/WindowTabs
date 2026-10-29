@@ -36,6 +36,8 @@ type NoticeWindow() =
     let animation = new Timer(Interval=15)
     let clock = Diagnostics.Stopwatch()
     let mutable leaving = false
+    /// Windows 10's stand-in for the shadow Windows 11 gives it, following its slide and fade.
+    let mutable halo : SettingsPopupShadow option = None
     /// The notice to come in once the one on screen has slid out for it.
     let mutable replacement : (string * string * NoticeKind * string list) option = None
     let mutable hovered = false
@@ -57,6 +59,7 @@ type NoticeWindow() =
     override _.CreateParams =
         let cp = base.CreateParams
         cp.ExStyle <- cp.ExStyle ||| WindowsExtendedStyles.WS_EX_NOACTIVATE ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW ||| WindowsExtendedStyles.WS_EX_TOPMOST
+        cp.ClassStyle <- cp.ClassStyle ||| SystemCorners.shadowClassStyle()
         cp
     override this.OnHandleCreated(e) =
         this.SetStyle(ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint ||| ControlStyles.UserPaint,true)
@@ -235,7 +238,7 @@ type NoticeWindow() =
                 walk (WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_HWNDPREV)) found (steps-1)
         walk (WinUserApi.GetWindow(this.Handle,GetWindowConstants.GW_HWNDPREV)) [] 256
     member private this.reshape() =
-        if this.Width>0 && this.Height>0 then
+        if this.Width>0 && this.Height>0 && not (SystemCorners.round this.Handle (SettingsColors.current()).border) then
             use outline = MenuShape.outline this.Width this.Height
             let previous = this.Region
             this.Region <- new Region(outline)
@@ -363,12 +366,14 @@ type NoticeWindow() =
         let palette = SettingsColors.current()
         let g = e.Graphics
         g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-        use outline = MenuShape.outline (this.Width-1) (this.Height-1)
-        let state = g.Save()
-        g.TranslateTransform(0.5f,0.5f)
-        use pen = new Pen(palette.border)
-        g.DrawPath(pen,outline)
-        g.Restore(state)
+        // Windows 11 outlines it with its own rounded corners.
+        if not SystemCorners.supported.Value then
+            use outline = MenuShape.outline (this.Width-1) (this.Height-1)
+            let state = g.Save()
+            g.TranslateTransform(0.5f,0.5f)
+            use pen = new Pen(palette.border)
+            g.DrawPath(pen,outline)
+            g.Restore(state)
         let padding = this.padding
         let iconSide = this.iconSide
         // The title and message keep to the notice's usual size; listed lines go below them.
@@ -406,8 +411,19 @@ type NoticeWindow() =
         (header-Dpi.scale 4,List.zip details this.detailHeights) ||> List.fold(fun y (line,height) ->
             TextRenderer.DrawText(g,line,this.textFont,Rectangle(padding,y,this.detailsWidth,height),palette.text,NoticeWindow.detailFlags)
             y+height+this.detailGap) |> ignore
+    member private this.syncHalo() =
+        if not SystemCorners.supported.Value && not SystemInformation.HighContrast && this.IsHandleCreated then
+            if this.Visible && this.Width>0 then
+                if halo.IsNone then halo <- Some(new SettingsPopupShadow(this,corner=6))
+                halo |> Option.iter(fun shadow -> shadow.Show(this.Opacity))
+            else halo |> Option.iter(fun shadow -> shadow.Hide())
+    override this.OnMove(e) = base.OnMove(e); this.syncHalo()
+    override this.OnSizeChanged(e) = base.OnSizeChanged(e); this.syncHalo()
+    override this.OnVisibleChanged(e) = base.OnVisibleChanged(e); this.syncHalo()
     override this.Dispose(disposing) =
         if disposing then
+            halo |> Option.iter(fun shadow -> (shadow :> IDisposable).Dispose())
+            halo <- None
             if not (isNull switches) then Microsoft.Win32.SystemEvents.remove_SessionSwitch switches
             pauses |> Option.iter(fun subscription -> subscription.Dispose())
             hide.Dispose()
