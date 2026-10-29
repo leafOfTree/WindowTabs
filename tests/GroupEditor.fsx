@@ -391,6 +391,45 @@ let main() =
             editor.MouseUp(slot)
             check (editor.Draft.groups.Length=1 && tabsOf 0=[d;e;a] && editor.Layout.vacated.IsEmpty) (sprintf "A lone window carried to the row below did not stay there with its own row gone: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
             editor.Close()
+        // A row whose tabs wrap: a tab carried into the gap between the lines keeps its line, rather
+        // than flipping between two layouts as the nearer line changes; on the other line, it moves.
+        do
+            let names = List.init 6 (fun i -> sprintf "A window with a long enough name to wrap %d" i)
+            let shown = List.zip [a;b;c;d;e;f] names |> List.map(fun (hwnd,name) -> {hwnd=hwnd; name=name; icon=None; minimized=true})
+            let desk = DesktopDraft.ofDesktop [GroupDraft.ofGroup (IntPtr 1) [a;b;c;d;e;f] Set.empty GroupLayout.Single] []
+            let editor = GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=Rect(Pt(100,100),Sz(1600,900)); active=a}],shown,None)
+            let tabRect hwnd = editor.Layout.rows.[0].tabs |> List.find(fun (each,_) -> each=hwnd) |> snd
+            let centre (r:Rectangle) = Point(r.X+r.Width/2,r.Y+r.Height/2)
+            check ((tabRect f).Y>(tabRect a).Y && (tabRect e).Y>(tabRect a).Y) "Six long tabs did not wrap to a second line"
+            editor.MouseDown(centre (tabRect f))
+            editor.MouseMove(Point((tabRect f).X+2,(tabRect f).Y+2))
+            let gap = Point((tabRect b).Right+2,(tabRect a).Bottom+2)
+            editor.MouseMove(gap)
+            check (editor.Draft.groups.[0].tabs=[a;b;c;d;e;f]) (sprintf "A tab carried into the gap under its line left its line: %A" editor.Draft.groups.[0].tabs)
+            editor.MouseMove(Point(gap.X,(tabRect a).Y+(tabRect a).Height/2))
+            check (editor.Draft.groups.[0].tabs=[a;b;f;c;d;e]) (sprintf "A tab carried onto the line above did not take its slot there: %A" editor.Draft.groups.[0].tabs)
+            editor.MouseUp(gap)
+            editor.Close()
+            // Alone on the last line, the tab in hand holds that line: on it, its slot stays the
+            // last; carried onto the line above it moves up, and back onto its line it comes back.
+            let desk = DesktopDraft.ofDesktop [GroupDraft.ofGroup (IntPtr 1) [a;b;c;d;e] Set.empty GroupLayout.Single] []
+            let editor = GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=Rect(Pt(100,100),Sz(1600,900)); active=a}],shown,None)
+            let tabRect hwnd = editor.Layout.rows.[0].tabs |> List.find(fun (each,_) -> each=hwnd) |> snd
+            let tabs() = editor.Draft.groups.[0].tabs
+            check ((tabRect e).Y>(tabRect d).Y) "Five long tabs did not leave the fifth alone on a second line"
+            editor.MouseDown(centre (tabRect e))
+            let onLine2 = Point((tabRect b).Right+2,(tabRect e).Y+(tabRect e).Height/2)
+            editor.MouseMove(Point((tabRect e).X+2,(tabRect e).Y+2))
+            editor.MouseMove(onLine2)
+            check (tabs()=[a;b;c;d;e]) (sprintf "A tab alone on its line moved while the pointer stayed on that line: %A" (tabs()))
+            editor.MouseMove(Point(onLine2.X,(tabRect a).Y+(tabRect a).Height/2))
+            check (tabs()=[a;b;e;c;d]) (sprintf "A tab carried onto the line above did not take its slot there: %A" (tabs()))
+            editor.MouseMove(onLine2)
+            check (tabs()=[a;b;c;d;e]) (sprintf "A tab carried back onto its own line did not come back: %A" (tabs()))
+            editor.MouseMove(Point(onLine2.X+1,onLine2.Y))
+            check (tabs()=[a;b;c;d;e]) (sprintf "A tab alone on its line flipped back up: %A" (tabs()))
+            editor.MouseUp(onLine2)
+            editor.Close()
         // A desktop of many rows is laid out and drawn in a fraction of a second, and the layout is
         // not measured again while nothing it depends on has changed.
         do

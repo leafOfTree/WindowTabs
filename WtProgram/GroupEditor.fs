@@ -384,16 +384,24 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         (if side=First then a else b).Rectangle
     /// The slot among wrapped tabs a point is at: after the tabs on the lines above and, on its
     /// line, those whose middle is left of it.
-    /// The slot among the tabs the point is at: on the line of tabs it is on, or the nearest line
-    /// when it is above or below them all (the row's band is taller than its tabs), the tabs whose
-    /// middle it has passed, and every tab of the lines above.
+    /// The slot among the tabs the point is at: on the line of tabs it is on, the tabs whose
+    /// middle it has passed, and every tab of the lines above. Between two lines, the tab in hand
+    /// keeps the line it is on: the gap is no place to aim at, and going by the nearer line there
+    /// would flip the tab between two layouts as the lines wrap. Off every line otherwise (the
+    /// row's band is taller than its tabs), the nearest line.
     let slotAt (tabs:(IntPtr * Rectangle) list) (pt:Point) (dragged:IntPtr) =
         let others = tabs |> List.filter(fun (hwnd,_) -> hwnd<>dragged)
         if others.IsEmpty then 0
         else
+            // The lines are every tab's, the one in hand included: alone on the last line, its
+            // open slot is a line of its own, and the pointer on it stays there.
+            let lines = tabs |> List.map(fun (_,r) -> r.Y,r.Bottom) |> List.distinct
+            let own = tabs |> List.tryFind(fun (hwnd,_) -> hwnd=dragged) |> Option.map(fun (_,r) -> r.Y)
             let lineY =
-                others |> List.map(fun (_,r) -> r.Y,r.Bottom) |> List.distinct
-                |> List.minBy(fun (y,bottom) -> if pt.Y<y then y-pt.Y elif pt.Y>=bottom then pt.Y-bottom+1 else 0) |> fst
+                match lines |> List.tryFind(fun (y,bottom) -> pt.Y>=y && pt.Y<bottom),own with
+                | Some(y,_),_ -> y
+                | None,Some y when lines |> List.exists(fun (line,_) -> line=y) -> y
+                | None,_ -> lines |> List.minBy(fun (y,bottom) -> if pt.Y<y then y-pt.Y else pt.Y-bottom+1) |> fst
             others |> List.filter(fun (_,r) -> r.Y<lineY || (r.Y=lineY && r.X+r.Width/2<pt.X)) |> List.length
 
     /// What a drag is aimed at from the point: a slot among a row's tabs; in an expanded row's
