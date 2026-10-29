@@ -1,7 +1,9 @@
 # Group editor: design
 
-Status: design of 2026-10-29; phase 1 of section 7 (the model, `ReplaceLayout`, `SetTabOrder`
-and the apply pipeline, with `tests/GroupEditor.fsx`) is implemented, the popup is not.
+Status: design of 2026-10-29; phases 1 and 2 of section 7 are implemented: the model,
+`ReplaceLayout`, `SetTabOrder` and the apply pipeline, and the popup with the one row of the
+group in front expanded (`GroupEditor.fs`, opened by **Edit groups…** from the palette, the
+tab menu or its key), with `tests/GroupEditor.fsx`. Dragging, the overview and the rest are not.
 Scope: one popup that shows
 every group on the desktop in view as a row, with its tabs and its panes, and the windows
 that are in no group beside them; the user rearranges windows within a group and between

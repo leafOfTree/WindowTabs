@@ -178,6 +178,8 @@ type IProgram =
     abstract member restoreWorkspaceNamed : string -> unit
     /// Takes a tab out of its group into a group of its own, as dragging it out does.
     abstract member detachTab : IntPtr -> unit
+    /// The group editor over the group of the window; open already, it closes.
+    abstract member editGroups : IntPtr -> unit
     /// The keys given to windows from the search box.
     abstract member windowShortcuts : unit -> WindowShortcut list
     /// Gives a window its key, or with a code of 0 takes it away; false when another program

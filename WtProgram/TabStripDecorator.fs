@@ -513,6 +513,10 @@ type TabStripDecorator(group:WindowGroup) as this =
                 yield! splitItems.list
         ])})
 
+        // The group as a picture to rearrange, applied when saved.
+        let editGroupsItem =
+            CmiRegular({text=tr Strings.Settings.editGroups.caption;image=None;flags=List2();click=fun () -> Services.program.editGroups hwnd})
+
         let combineIconsInTaskbar =
             CmiRegular({
                 text = tr Strings.TabMenu.combineTaskbarIcons
@@ -679,6 +683,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(pinTabItem)
             Some(colorMenu)
             Some(splitMenu)
+            Some(editGroupsItem)
             Some(CmiSeparator)
             Some(positionItem)
             Some(alignmentItem)

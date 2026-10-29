@@ -10,6 +10,7 @@ open System.Windows.Forms
 open Bemo
 
 let check condition message = if not condition then failwith message
+let sameColor (expected:Color) (actual:Color) = expected.ToArgb()=actual.ToArgb()
 /// Checks the state it saw rather than asking again, which can catch a later change.
 let pumpUntil description predicate =
     let clock = Diagnostics.Stopwatch.StartNew()
@@ -140,6 +141,66 @@ let main() =
         let api = settings :> ISettings
         api.setValue("enableCtrlNumberHotKey",box false)
         api.setValue("autoHideMode",box "Never")
+        // The popup with one row expanded, drawn without a screen, in both looks: the tabs along
+        // the top with the selected one in the accent, the content under them; keys select, move
+        // and take out; Save plans what changed.
+        for mode in ["dark";"light"] do
+            api.setValue("tabThemeMode",box mode)
+            let palette = SettingsColors.current()
+            let names = ["Edge – Docs";"Notepad – notes.txt";"Terminal";"Downloads"]
+            let shown = List.zip [a;b;c;d] names |> List.map(fun (hwnd,name) -> {hwnd=hwnd; name=name; icon=None; minimized=true})
+            let frame = Rect(Pt(100,100),Sz(1600,900))
+            let desk = DesktopDraft.ofDesktop [GroupDraft.ofGroup (IntPtr 1) [a;b;c;d] Set.empty (Split(pair a b))] []
+            let editor = GroupEditorForm(desk,0,shown,frame,a)
+            let l = editor.Layout
+            check ((l.tabs |> List.map fst)=[a;b;c;d] && l.tabs |> List.forall(fun (_,r) -> r.Right<=l.content.Right)) "The strip did not list the tabs in order within the width"
+            check (l.cells.Length=2 && l.focused=Some [First]) "A selected pane tab did not show the split with its cell focused"
+            use image = editor.Render()
+            image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","group-editor-"+mode+".png"))
+            check (image.Size=editor.Size) "The picture is not the popup's size"
+            // Under a tab's text: the block's own colour.
+            let under (r:Rectangle) = image.GetPixel(r.X+r.Width/2,r.Bottom-3)
+            check (sameColor palette.hover (under (snd l.tabs.[1]))) (sprintf "An unselected tab is not in the %s look's hover colour" mode)
+            check (not(sameColor palette.hover (under (snd l.tabs.[0])))) "The selected tab is drawn like the others"
+            check (sameColor palette.surface (image.GetPixel(Dpi.scale 6,image.Height/2))) (sprintf "The popup is not on the %s look's surface" mode)
+            check (sameColor palette.background (image.GetPixel(l.content.X+l.content.Width/2,l.content.Bottom-2))) "The content is not darker than the popup"
+            // Right and Left choose a tab; one in no pane fills the content on its own.
+            editor.Press Keys.Right
+            editor.Press Keys.Right
+            check (editor.Selected=c && editor.Layout.cells=[[],Occupied c,editor.Layout.content] && editor.Layout.focused=None) "A tab in no pane did not fill the content"
+            editor.Press Keys.Left
+            check (editor.Selected=b && editor.Layout.cells.Length=2 && editor.Layout.focused=Some [Second]) "A pane tab chosen did not focus its cell"
+            editor.Press Keys.End
+            check (editor.Selected=d) "End did not choose the last tab"
+            editor.Press Keys.Home
+            editor.Press Keys.Right
+            // Ctrl+Right moves the tab along the strip; Delete takes it out, its pane closing.
+            editor.Press(Keys.Control ||| Keys.Right)
+            check (editor.Draft.groups.[0].tabs=[a;c;b;d] && editor.Selected=b) "Ctrl+Right did not move the tab"
+            editor.Press Keys.Delete
+            check (editor.Draft.groups.[0].tabs=[a;c;d] && editor.Draft.loose=[b] && editor.Selected=d && editor.Draft.groups.[0].panes.IsNone) "Delete did not take the tab out"
+            check (editor.Plan.detached=[b] && editor.Plan.groups.IsEmpty) "A tab taken out alone planned more than its detaching"
+            editor.Press Keys.Left
+            editor.Press(Keys.Control ||| Keys.Left)
+            check (editor.Draft.groups.[0].tabs=[c;a;d] && editor.Plan.groups.Head.reorder) "A tab moved to the front did not plan the order"
+            // Ctrl+Enter saves: the plan is handed on and the popup ends; Esc ends it with nothing.
+            let planned = ref None
+            let endings = ref 0
+            editor.Saved.Add(fun plan -> planned.Value <- Some plan)
+            editor.Ended.Add(fun () -> endings.Value <- endings.Value+1)
+            editor.Press(Keys.Control ||| Keys.Return)
+            check (editor.IsClosed && endings.Value=1) "Ctrl+Enter did not end the editor"
+            check (planned.Value |> Option.exists(fun plan -> plan.detached=[b] && plan.groups.Head.tabs=[c;a;d])) "Ctrl+Enter did not hand on the plan"
+            editor.Press Keys.Delete
+            check (editor.Draft.groups.[0].tabs=[c;a;d]) "A closed editor took a key"
+            let left = GroupEditorForm(desk,0,shown,frame,a)
+            let plannedLeft = ref false
+            left.Saved.Add(fun _ -> plannedLeft.Value <- true)
+            left.Press Keys.Escape
+            check (left.IsClosed && not plannedLeft.Value) "Esc saved"
+            // A selected window not in the group: the first tab is selected instead.
+            check ((GroupEditorForm(desk,0,shown,frame,IntPtr 99)).Selected=a) "A selection of no tab was kept"
+        api.setValue("tabThemeMode",box "dark")
         let mouse = Event<int * IntPtr>()
         let detached = Collections.Generic.List<IntPtr>()
         let desktopRef : IDesktop option ref = ref None
@@ -180,6 +241,7 @@ let main() =
                 detached.Add hwnd
                 desktopRef.Value |> Option.iter(fun desktop ->
                     desktop.groups.tryFind(fun group -> group.windows.contains((=) hwnd)) |> Option.iter(fun group -> group.removeWindow hwnd))
+            member _.editGroups _ = ()
             member _.windowShortcuts() = []
             member _.setWindowShortcut _ = true})
         let desktop = Desktop({new IDesktopNotification with

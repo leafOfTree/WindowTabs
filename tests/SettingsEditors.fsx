@@ -438,6 +438,7 @@ let main() =
         member _.restoreWorkspace() = ()
         member _.restoreWorkspaceNamed _ = ()
         member _.detachTab _ = ()
+        member _.editGroups _ = ()
         member _.windowShortcuts() = windowKeys.Value
         member _.setWindowShortcut shortcut =
             windowKeys.Value <- WindowShortcuts.set windowKeys.Value shortcut

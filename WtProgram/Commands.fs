@@ -391,6 +391,8 @@ module Commands =
                           | :? GroupInfo as source when live source -> target.addAfterDetaching(source,other)
                           | _ -> ()
                   | _ -> ())
+        // The group editor: the group in front as a picture to rearrange, applied when saved.
+        fromCatalog "edit-groups" GroupCommands hasGroup (fun hwnd -> Services.program.editGroups hwnd)
         choosing "move-tab-to-group" Strings.Commands.moveTabToGroup TabCommands hasGroup (fun hwnd ->
             match groupOf hwnd with
             | Some source ->

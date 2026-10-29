@@ -142,6 +142,7 @@
     <Compile Include="TabSearch.fs" />
     <Compile Include="CommandPalette.fs" />
     <Compile Include="SplitPanePicker.fs" />
+    <Compile Include="GroupEditor.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

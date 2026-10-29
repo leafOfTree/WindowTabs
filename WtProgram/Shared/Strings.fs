@@ -265,6 +265,12 @@ module Strings =
                                                ar="يستعيد آخر مساحة عمل تم حفظها أو استعادتها." }
                                  keywords=workspaceWords }
         let private splitWords = { en="split view pane"; zh="分屏 窗格"; ja="分割 ペイン"; ar="عرض مقسّم جزء" }
+        let editGroups = { caption={ en="Edit groups…"; zh="编辑分组…"; ja="グループを編集…"; ar="تحرير المجموعات…" }
+                           description={ en="A picture of the group in front to rearrange its tabs and panes, applied when saved."
+                                         zh="以图示方式编辑当前分组的标签和窗格，保存后一次性生效。"
+                                         ja="手前のグループのタブとペインを図で編集し、保存時にまとめて適用します。"
+                                         ar="صورة للمجموعة الأمامية لإعادة ترتيب علاماتها وأجزائها، تُطبَّق عند الحفظ." }
+                           keywords={ en="group editor layout rearrange organize"; zh="分组编辑器 布局 整理 重排"; ja="グループ エディター レイアウト 整理"; ar="محرر المجموعات تخطيط ترتيب" } }
         let splitPickRight = { caption={ en="Window on the right…"; zh="在右侧放入窗口…"; ja="右側にウィンドウを配置…"; ar="نافذة على اليمين…" }
                                description={ en="Lists the windows to put beside the tab in front."; zh="列出可放到当前标签旁边的窗口。"; ja="前面のタブの隣に置くウィンドウを一覧表示します。"; ar="يعرض النوافذ التي يمكن وضعها بجانب علامة التبويب الأمامية." }
                                keywords=splitWords }
@@ -736,6 +742,28 @@ module Strings =
                                keywords={ en="rescan refresh reload"; zh="刷新 重新加载"; ja="更新 再読み込み"; ar="تحديث إعادة تحميل" } }
 
     /// Written to the console a command line was given from.
+    /// The group editor's popup.
+    module GroupEditor =
+        let title = { en="Edit groups"; zh="编辑分组"; ja="グループを編集"; ar="تحرير المجموعات" }
+        let windows count =
+            { en=(if count=1 then "1 window" else sprintf "%d windows" count); zh=sprintf "%d 个窗口" count; ja=sprintf "%d 個のウィンドウ" count; ar=sprintf "%d نافذة" count }
+        let save = { en="Save"; zh="保存"; ja="保存"; ar="حفظ" }
+        let hint = { en="Left and Right choose a tab, Ctrl+Left and Ctrl+Right move it, Delete takes it out; Ctrl+Enter saves."
+                     zh="左右键选标签，Ctrl+左右键移动，Delete 移出分组；Ctrl+Enter 保存。"
+                     ja="左右キーでタブを選び、Ctrl+左右で移動、Delete で外し、Ctrl+Enter で保存します。"
+                     ar="السهمان يختاران علامة تبويب، وCtrl مع السهمين ينقلانها، وDelete يُخرجها؛ وCtrl+Enter يحفظ." }
+        let noGroup = { en="The window in front is in no group."; zh="当前窗口不在任何分组里。"; ja="手前のウィンドウはどのグループにもありません。"; ar="النافذة الأمامية ليست في أي مجموعة." }
+        /// What saving did.
+        let applied moved detached made =
+            let parts (en:string list) = System.String.Join(", ",en |> List.filter(fun part -> part<>""))
+            { en=parts [ (if moved=0 then "" elif moved=1 then "1 window moved" else sprintf "%d windows moved" moved)
+                         (if detached=0 then "" elif detached=1 then "1 window taken out" else sprintf "%d windows taken out" detached)
+                         (if made=0 then "" elif made=1 then "1 group made" else sprintf "%d groups made" made) ]
+              zh=parts [ (if moved=0 then "" else sprintf "移动 %d 个窗口" moved); (if detached=0 then "" else sprintf "移出 %d 个窗口" detached); (if made=0 then "" else sprintf "新建 %d 个分组" made) ]
+              ja=parts [ (if moved=0 then "" else sprintf "%d 個のウィンドウを移動" moved); (if detached=0 then "" else sprintf "%d 個のウィンドウを外しました" detached); (if made=0 then "" else sprintf "%d 個のグループを作成" made) ]
+              ar=parts [ (if moved=0 then "" else sprintf "نُقلت %d نافذة" moved); (if detached=0 then "" else sprintf "أُخرجت %d نافذة" detached); (if made=0 then "" else sprintf "أُنشئت %d مجموعة" made) ] }
+        let nothingChanged = { en="Nothing changed."; zh="没有改动。"; ja="変更はありません。"; ar="لم يتغير شيء." }
+
     module CommandLine =
         /// Shown for --help: the options, then examples to copy.
         let usage = { en="Usage: WindowTabs [option]\n\nOptions:\n  -c, --command <id> [choice]   Run a command in the running WindowTabs. A command that offers\n                                choices takes the one named, as the palette lists it.\n  -w, --workspace <name>        Restore a saved workspace.\n  -g, --group <program>...      Start the programs and put the windows they open into one group.\n      --commands                List the commands and their ids.\n  -h, --help                    Show this help.\n\nWith no option, WindowTabs starts, replacing a copy already running.\n\nExamples:\n  WindowTabs --commands\n  WindowTabs --command next-tab\n  WindowTabs --command tab-color Blue\n  WindowTabs --command group-tab-position Left\n  WindowTabs --command restore-workspace-named \"Project A\"\n  WindowTabs --workspace \"Project A\"\n  WindowTabs --group notepad.exe \"C:\\Program Files\\App\\app.exe\"\n\nA command acts on the window in front, as its key does: run it from a shortcut or a hotkey\ntool. From a terminal, the terminal is the window in front."

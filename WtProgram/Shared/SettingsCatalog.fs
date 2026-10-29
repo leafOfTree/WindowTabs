@@ -74,6 +74,7 @@ module SettingsCatalog =
         { id="split-turn"; page=HotKeySettings; text=Strings.Commands.splitTurn; binding=Shortcut("splitTurn",0) }
         { id="split-close-pane"; page=HotKeySettings; text=Strings.Commands.splitClosePane; binding=Shortcut("splitClosePane",0) }
         { id="split-end"; page=HotKeySettings; text=Strings.Commands.splitEnd; binding=Shortcut("splitEnd",0) }
+        { id="edit-groups"; page=HotKeySettings; text=Strings.Settings.editGroups; binding=Shortcut("editGroups",0) }
         // Unbound too, for the same reason.
         { id="save-workspace"; page=HotKeySettings; text=Strings.Settings.saveWorkspace; binding=Shortcut("saveWorkspace",0) }
         { id="restore-workspace"; page=HotKeySettings; text=Strings.Settings.restoreWorkspace; binding=Shortcut("restoreWorkspace",0) }

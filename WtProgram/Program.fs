@@ -39,6 +39,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let taskSwitchCell = Cell.create(None)
     let mutable initialDiscoveryComplete = false
     let tabSearchCell = Cell.create(None:TabSearchForm option)
+    let groupEditorCell = Cell.create(None:GroupEditorForm option)
     /// What was typed when each box last closed, the window search's and the palette's, offered
     /// again, selected, the next time it opens.
     let mutable lastWindowQuery = ""
@@ -898,6 +899,46 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
     member this.foregroundGroup = this.desktop.foregroundGroup
 
+    /// The group editor over the group of the window: its tabs in strip order with their names
+    /// and icons, and its layout read on its thread; one at a time, and opened again it closes.
+    member this.editGroups(hwnd:IntPtr) =
+        match groupEditorCell.value with
+        | Some editor -> editor.Close()
+        | None ->
+            match this.desktop.groups.tryFind(fun group -> group.windows.contains((=) hwnd)) with
+            | Some(:? GroupInfo as info) when not info.isExited && not info.isRetiring ->
+                info.captureLayout(fun captured ->
+                    if groupEditorCell.value.IsNone && not info.isExited then
+                        let members = (info :> IGroup).windows.list
+                        let top = if List.contains hwnd members then hwnd else List.head members
+                        // The tab's name as the strip shows it: the rename, or the last part of a path.
+                        let lastName (text:string) =
+                            let parts = text.Split([|'\\';'/'|],StringSplitOptions.RemoveEmptyEntries)
+                            if parts.Length=0 then text else parts.[parts.Length-1]
+                        let windows =
+                            members |> List.map(fun each ->
+                                let window = os.windowFromHwnd(each)
+                                { hwnd=each
+                                  name=windowNameOverride.tryFind(each).bind(id) |> Option.defaultValue (lastName window.text)
+                                  icon=ImgHelper.knownWindowIcon window
+                                  minimized=window.isMinimized })
+                        let layout,frame =
+                            match captured |> Option.bind snd with
+                            | Some(_,frame,panes) -> SplitPersistence.rebuild panes,frame
+                            | None -> GroupLayout.Single,os.windowFromHwnd(top).visibleBounds
+                        let pinned = members |> List.filter PinnedTabs.contains |> set
+                        let draft = DesktopDraft.ofDesktop [GroupDraft.ofGroup info.hwnd members pinned layout] []
+                        let editor = GroupEditorForm(draft,0,windows,frame,top)
+                        editor.Ended.Add(fun () -> groupEditorCell.set None)
+                        editor.Saved.Add(fun plan ->
+                            if DesktopPlan.isEmpty plan then Notice.show (tr Strings.GroupEditor.title) (tr Strings.GroupEditor.nothingChanged)
+                            else
+                                GroupEditorApply.run plan (fun outcome ->
+                                    Notice.show (tr Strings.GroupEditor.title) (tr (Strings.GroupEditor.applied outcome.moved outcome.detached outcome.made))))
+                        groupEditorCell.set(Some editor)
+                        editor.Show())
+            | _ -> Notice.remind (tr Strings.GroupEditor.title) (tr Strings.GroupEditor.noGroup)
+
     /// Opens the palette on a scope, the windows when none is asked for, or closes it when it is
     /// open on that scope already; open on another scope, it goes there instead.
     member this.togglePalette(scope:PaletteScope option) =
@@ -1274,6 +1315,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                     isDroppedAndAwaitingGrouping.map(fun s -> s.add hwnd)
                     group.removeWindow hwnd
                     refreshQueue.RequestAll())
+        member x.editGroups hwnd = this.editGroups hwnd
 
     interface IDesktopNotification with
         member x.dragDrop(hwnd) =
