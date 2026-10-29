@@ -31,7 +31,9 @@ picture, and moves the windows once, when the user is done.
 
 - From the palette: **Edit groups…** among the group commands, with a shortcut of its own,
   unbound until the user picks a key (`edit-groups`, kept as the split keys are). From the
-  tab menu, beside **Split view**. The command line runs it by id as it runs every command.
+  tab menu, beside **Split view**. From the Workspaces page of Settings, beside Save
+  workspace, as what to arrange before saving one. The command line runs it by id as it runs
+  every command.
   Opened over a group, that group's row starts expanded (section 2.3); opened over a
   window of no group, or the desktop, none is.
 - It opens in the switcher's look: the settings palette's colours, rounded corners, the

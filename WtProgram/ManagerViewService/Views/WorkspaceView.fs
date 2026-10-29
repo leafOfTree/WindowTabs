@@ -235,7 +235,7 @@ type WorkspaceView() as this =
             new SettingsListPage(tr Strings.Pages.workspaces,
                                  tr Strings.Workspaces.description,
                                  this.list,
-                                 [this.newButton :> Control;this.restoreButton],
+                                 [this.newButton :> Control;this.restoreButton;this.editGroupsButton],
                                  helpText=tr Strings.Workspaces.help)
         // In the order ActionInvoked expects them.
         if not this.wm.isReadOnly then this.list.RowActions <- [EditGlyph;DeleteGlyph]
@@ -275,6 +275,13 @@ type WorkspaceView() as this =
         let btn = SettingsUi.button (tr Strings.Workspaces.saveCurrent)
         btn.Enabled <- not this.wm.isReadOnly
         btn.Click.Add <| fun _ -> this.wm.create()
+        btn
+
+    /// The group editor over the desktop as it is now: what to arrange before saving a workspace.
+    member this.editGroupsButton : Button = Cell.cacheProp this <| fun() ->
+        let btn = SettingsUi.button (tr Strings.Settings.editGroups.caption)
+        btn.Name <- "edit-groups"
+        btn.Click.Add <| fun _ -> Services.program.editGroups IntPtr.Zero
         btn
 
     member this.restoreButton : Button = Cell.cacheProp this <| fun() ->

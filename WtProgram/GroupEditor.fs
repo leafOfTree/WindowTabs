@@ -172,6 +172,19 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let textFlags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis ||| TextFormatFlags.NoPadding
     let measure (font:Font) (text:string) = TextRenderer.MeasureText(text,font,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPadding ||| TextFormatFlags.SingleLine).Width
     let rounded (r:Rectangle) radius = SettingsShapes.rounded (RectangleF(float32 r.X,float32 r.Y,float32 r.Width,float32 r.Height)) (float32 radius)
+    /// Rounded at the top only: a tab standing on the content, as the strip's tabs do.
+    let roundedTop (r:Rectangle) (radius:int) =
+        let path = new Drawing2D.GraphicsPath()
+        let d = float32(min (2*radius) (min r.Width r.Height))
+        let x,y,w,h = float32 r.X,float32 r.Y,float32 r.Width,float32 r.Height
+        if d>0.0f then
+            path.AddArc(x,y,d,d,180.0f,90.0f)
+            path.AddArc(x+w-d,y,d,d,270.0f,90.0f)
+            path.AddLine(x+w,y+d/2.0f,x+w,y+h)
+            path.AddLine(x+w,y+h,x,y+h)
+        else path.AddRectangle(r)
+        path.CloseFigure()
+        path
     let toRect (r:Rectangle) = Rect(Pt(r.X,r.Y),Sz(r.Width,r.Height))
     let gap = scale SplitMetrics.gap
     let minPane = scale SplitMetrics.minPane
@@ -383,8 +396,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let inHand hwnd fromPane = dragging |> Option.exists(fun d -> d.hwnd=hwnd && d.fromPane=fromPane)
         /// A tab block: the icon and name, the selected one in the accent, a mark on a tab in a
         /// pane, a cross on the one under the pointer.
-        let drawTab (hwnd:IntPtr) (r:Rectangle) (isSelected:bool) (inPane:bool) =
-            use shape = rounded r (scale 6)
+        let drawTab (hwnd:IntPtr) (r:Rectangle) (isSelected:bool) (inPane:bool) (onContent:bool) =
+            // In the expanded row the tabs stand on the content, the selected one joined to it.
+            use shape = if onContent then roundedTop (if isSelected then Rectangle(r.X,r.Y,r.Width,r.Height+scale 2) else r) (scale 6) else rounded r (scale 6)
             let fill = if isSelected then selectedFill else tabFill
             use brush = new SolidBrush(fill)
             g.FillPath(brush,shape)
@@ -459,14 +473,14 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 use pen = new Pen(accent,float32(scale 1))
                 g.DrawPath(pen,band)
             let shown = if row.expanded then selected else (infoOf row.index).active
-            for hwnd,r in row.tabs do drawTab hwnd r (hwnd=shown) (List.contains hwnd inPane)
-            (match dragging with
-             | Some {aim=Some(StripSlot(index,slot))} when index=row.index -> drawSlot row.tabs slot (pad+rowPad) (row.band.Y+rowPad)
-             | _ -> ())
             if row.expanded then
                 use shape = rounded row.picture (scale 6)
                 use fill = new SolidBrush(if highContrast then SystemColors.Control else palette.background)
                 g.FillPath(fill,shape)
+            for hwnd,r in row.tabs do drawTab hwnd r (hwnd=shown) (List.contains hwnd inPane) row.expanded
+            (match dragging with
+             | Some {aim=Some(StripSlot(index,slot))} when index=row.index -> drawSlot row.tabs slot (pad+rowPad) (row.band.Y+rowPad)
+             | _ -> ())
             drawCells row shown
             // The split button on the focused cell, and its flyout of shapes while open.
             row.splitButton |> Option.iter(fun r ->
@@ -504,7 +518,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             if cursor=(groups()).Length && expandedRow().IsNone then
                 use pen = new Pen(accent,float32(scale 1))
                 g.DrawPath(pen,band)
-            for hwnd,r in l.looseTabs do drawTab hwnd r false false
+            for hwnd,r in l.looseTabs do drawTab hwnd r false false false
             let label = Rectangle(l.loose.Right-rowPad-scale GroupEditorMetrics.thumbWidth,l.loose.Y,scale GroupEditorMetrics.thumbWidth,l.loose.Height)
             TextRenderer.DrawText(g,tr Strings.GroupEditor.looseWindows,hintFont,label,palette.muted,looseFill,TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine)
             (match dragging with

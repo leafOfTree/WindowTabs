@@ -932,10 +932,12 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                     if parts.Length=0 then text else parts.[parts.Length-1]
                 let windowOf each =
                     let window = os.windowFromHwnd(each)
-                    { hwnd=each
-                      name=nameOverride each |> Option.defaultValue (lastName window.text)
-                      icon=ImgHelper.knownWindowIcon window
-                      minimized=window.isMinimized }
+                    // A window with no title goes by its program.
+                    let name =
+                        match nameOverride each |> Option.defaultValue (lastName window.text) with
+                        | "" -> (try IO.Path.GetFileNameWithoutExtension(window.pid.exeName) with _ -> "")
+                        | name -> name
+                    { hwnd=each; name=name; icon=ImgHelper.knownWindowIcon window; minimized=window.isMinimized }
                 let captured = Dictionary<IntPtr,GroupLayout * Rect>()
                 let remaining = ref groups.Length
                 let finish() =
