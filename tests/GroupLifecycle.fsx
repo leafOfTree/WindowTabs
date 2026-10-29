@@ -766,14 +766,34 @@ let main() =
             for hwnd in [a;b;d] do WinUserApi.ShowWindow(hwnd,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
             keyboardSource.setForeground(false)
             onGroup combined (fun group -> group.tabActivate(Tab(a),false))
+            // The group spreads a maximize only from its top window, and Windows may refuse this test
+            // the foreground, as on a busy desktop or a CI runner: the tab is put on top without it.
+            keyboardSource.insertAfter(WindowHandleTypes.HWND_TOP)
+            onGroup combined (fun group -> group.main(a,WinEvent.EVENT_OBJECT_REORDER))
+            pumpUntilShowing "The originating tab did not come to the front"
+                (fun () -> sprintf "top %A, foreground %A" (onGroup combined (fun group -> group.topWindow)) (WinUserApi.GetForegroundWindow()))
+                (fun () -> onGroup combined (fun group -> group.topWindow=a))
             checkStripOwner combined
-            for _ in 1..3 do
+            // From windows a user could have, on screen: these were made off screen, and Windows had
+            // parked them a pixel inside the screen's corner, (1023,719) on a CI runner's small
+            // screen, where maximizing the one in front did not hold.
+            let start =
+                let work = Screen.PrimaryScreen.WorkingArea
+                Rect(Pt(work.Left+100,work.Top+100),Sz(640,480))
+            keyboardSource.move(start)
+            pumpUntilShowing "Combined followers did not reach the starting frame"
+                (fun () -> [a;b;d] |> List.map(fun hwnd -> sprintf "%A" (OS().windowFromHwnd(hwnd).bounds)) |> String.concat "; ")
+                (fun () ->
+                    onGroup combined (fun group -> group.isPlacementIdle) &&
+                    [a;b;d] |> List.forall (fun hwnd -> OS().windowFromHwnd(hwnd).bounds=start))
+            for attempt in 1..3 do
                 keyboardSource.showWindow(ShowWindowCommands.SW_SHOWMAXIMIZED)
                 let followerState() =
                     let window hwnd =
                         let w = OS().windowFromHwnd(hwnd)
                         sprintf "%d maximized=%b minimized=%b bounds=%A" (hwnd.ToInt64()) w.isMaximized w.isMinimized w.bounds
-                    sprintf "placement idle=%b; %s" (onGroup combined (fun group -> group.isPlacementIdle))
+                    sprintf "round %d, top %A, placement idle=%b; %s" attempt (onGroup combined (fun group -> group.topWindow))
+                        (onGroup combined (fun group -> group.isPlacementIdle))
                         ([a;b;d] |> List.map window |> String.concat "; ")
                 pumpUntilShowing "Combined followers did not maximize" followerState (fun () ->
                     onGroup combined (fun group -> group.isPlacementIdle) &&
