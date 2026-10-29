@@ -314,6 +314,9 @@ let main() =
             let slot = let r = tabIn l.rows.[1] d in Point(r.Right+Dpi.scale 20,r.Y+r.Height/2)
             editor.MouseMove(slot)
             check (tabsOf 0=[a;b] && tabsOf 1=[d;c] && editor.Drag |> Option.exists(fun d -> d.begun && d.aim=None)) (sprintf "A tab over another row's tabs did not join it there: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
+            // Above the tabs' line, still past the first tab's middle: the same slot, not the first.
+            editor.MouseMove(Point(slot.X,(tabIn editor.Layout.rows.[1] d).Y-Dpi.scale 4))
+            check (tabsOf 1=[d;c]) (sprintf "A tab carried above the tabs' line was put at its start: %A" (tabsOf 1))
             editor.MouseUp(slot)
             check (tabsOf 0=[a;b] && tabsOf 1=[d;c]) (sprintf "A tab dropped on another row did not stay there: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
             // A tab carried off the rows goes back to where it was taken from; dropped there, nothing changes.

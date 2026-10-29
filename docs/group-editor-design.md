@@ -80,7 +80,8 @@ picture, and moves the windows once, when the user is done.
   lighter than the popup. Along the row, from the left,
   the group's tabs as blocks of icon and name in strip order, pinned ones first with the
   pin, wrapping to further lines when they do not fit; names are cut with an ellipsis and
-  hovering shows the whole in the tab title tip's manner. No tab is lit in a folded row
+  hovering shows the whole in the tab title tip's manner, and the tab under the pointer is
+  a step lighter. No tab is lit in a folded row
   (the active one means nothing here); tabs in a split have the pane mark. A row has no
   title: the active tab names it, as the
   strip names a group on the taskbar.
@@ -93,7 +94,10 @@ picture, and moves the windows once, when the user is done.
   **New group**, a dashed, empty band that takes a drop.
 - **Expanding.** Clicking a row's chevron, or pressing Enter on the row, grows that row
   in place over 180ms, the rows below sliding down and the popup's bottom with them (and
-  folds it back the same way), into the view of section 2.3: its tabs become the strip and the content with its
+  folds it back the same way), into the view of section 2.3. Nothing above the row moves:
+  the rows above stay where they are, the popup's top stays put and its height stops at the
+  screen's bottom, the rows scrolling past that. Only opening the popup scrolls, to the row
+  it opens on. It grows its tabs become the strip and the content with its
   pictures opens below. The other rows stay as they are and still take drops, so a window
   can be dragged from the expanded group to any other and back. Esc, the chevron at the
   strip's right end, now pointing up, or clicking the chevron of another row, goes back to

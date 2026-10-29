@@ -91,7 +91,9 @@ type GroupEditorRowLayout = {
 
 /// How a tab block is drawn: where, in the accent when selected, with the pane mark, standing
 /// on the content in the expanded row, and blank while in hand.
-type GroupEditorTabLook = { rect:Rectangle; selected:bool; inPane:bool; onContent:bool; blank:bool }
+type GroupEditorTabLook = { rect:Rectangle; selected:bool; inPane:bool; onContent:bool; blank:bool
+                            /// Under the pointer: a shade lighter, so the tab answers the hover.
+                            hot:bool }
 
 /// A row growing or folding: the picture as it was, with where its rows, loose row and bottom
 /// stood, blended towards the picture as it is over a few frames.
@@ -137,6 +139,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let mutable cursor = defaultArg expanded 0
     /// The cell the keys moved the focus to, in place of the selected tab's.
     let mutable cellFocus : PanePath option = None
+    let mutable hovered : IntPtr option = None
     let mutable hoveredCell : PanePath option = None
     let mutable drag : GroupEditorDrag option = None
     let mutable flyout = false
@@ -220,6 +223,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let tabFill = if highContrast then SystemColors.Window else palette.selection
     /// The content's colour, which the selected tab takes to join it: a tab is lit no other way.
     let contentFill = if highContrast then SystemColors.Control else palette.background
+    /// A tab under the pointer, a step lighter than the others.
+    let hotFill = if highContrast then SystemColors.Highlight else tint palette.text palette.selection 0.1
     let textFlags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis ||| TextFormatFlags.NoPadding
     let measure (font:Font) (text:string) = TextRenderer.MeasureText(text,font,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPadding ||| TextFormatFlags.SingleLine).Width
     let rounded (r:Rectangle) radius = SettingsShapes.rounded (RectangleF(float32 r.X,float32 r.Y,float32 r.Width,float32 r.Height)) (float32 radius)
@@ -354,7 +359,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             layoutCached <- Some computed
             computed
 
-    let viewHeight (l:GroupEditorLayout) = min l.height (maxHeight-frameHeight)
+    /// What the popup may be tall, in client pixels: the work area's nine tenths, and, once
+    /// placed, what is left under its top, since growing never moves it up.
+    let mutable heightLimit = maxHeight
+    let viewHeight (l:GroupEditorLayout) = min l.height heightLimit
     /// How much of the rows is in sight above the footer.
     let viewBody (l:GroupEditorLayout) = viewHeight l-(l.height-l.body)
     let clampScroll (l:GroupEditorLayout) = scroll <- max 0 (min scroll (l.body-viewBody l))
@@ -373,8 +381,17 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         (if side=First then a else b).Rectangle
     /// The slot among wrapped tabs a point is at: after the tabs on the lines above and, on its
     /// line, those whose middle is left of it.
+    /// The slot among the tabs the point is at: on the line of tabs it is on, or the nearest line
+    /// when it is above or below them all (the row's band is taller than its tabs), the tabs whose
+    /// middle it has passed, and every tab of the lines above.
     let slotAt (tabs:(IntPtr * Rectangle) list) (pt:Point) (dragged:IntPtr) =
-        tabs |> List.filter(fun (hwnd,r) -> hwnd<>dragged && (r.Bottom<=pt.Y || (r.Y<=pt.Y && r.X+r.Width/2<pt.X))) |> List.length
+        let others = tabs |> List.filter(fun (hwnd,_) -> hwnd<>dragged)
+        if others.IsEmpty then 0
+        else
+            let lineY =
+                others |> List.map(fun (_,r) -> r.Y,r.Bottom) |> List.distinct
+                |> List.minBy(fun (y,bottom) -> if pt.Y<y then y-pt.Y elif pt.Y>=bottom then pt.Y-bottom+1 else 0) |> fst
+            others |> List.filter(fun (_,r) -> r.Y<lineY || (r.Y=lineY && r.X+r.Width/2<pt.X)) |> List.length
 
     /// What a drag is aimed at from the point: a slot among a row's tabs; in an expanded row's
     /// content, a cell's edge, the whole content's edge or a cell's middle; the loose row; the
@@ -458,7 +475,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let r = look.rect
         // In the expanded row the tabs stand on the content, the selected one joined to it.
         use shape = if look.onContent then roundedTop (if look.selected then Rectangle(r.X,r.Y,r.Width,r.Height+scale 2) else r) (scale 6) else rounded r (scale 6)
-        let fill = if look.selected then contentFill else tabFill
+        let fill = if look.selected then contentFill elif look.hot then hotFill else tabFill
         if look.blank then
             use tintBrush = new SolidBrush(Color.FromArgb(40,accent))
             g.FillPath(tintBrush,shape)
@@ -488,8 +505,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             let inPane = GroupDraft.paneWindows g
             let shown = if row.expanded then selected else (infoOf row.index).active
             // Only the expanded row has a selected tab: in a folded row the active one means nothing here.
-            row.tabs |> List.map(fun (hwnd,r) -> hwnd,{rect=r; selected=row.expanded && hwnd=shown; inPane=List.contains hwnd inPane; onContent=row.expanded; blank=blank hwnd})))
-        @(l.looseTabs |> List.map(fun (hwnd,r) -> hwnd,{rect=r; selected=false; inPane=false; onContent=false; blank=blank hwnd}))
+            row.tabs |> List.map(fun (hwnd,r) -> hwnd,{rect=r; selected=row.expanded && hwnd=shown; inPane=List.contains hwnd inPane; onContent=row.expanded; blank=blank hwnd; hot=false})))
+        @(l.looseTabs |> List.map(fun (hwnd,r) -> hwnd,{rect=r; selected=false; inPane=false; onContent=false; blank=blank hwnd; hot=false}))
     /// Where a sliding tab is drawn now, on its way from where it was, eased out.
     let slideRect (from:Rectangle) (toward:Rectangle) =
         let t = min 1.0 ((DateTime.UtcNow-slideStart).TotalMilliseconds/GroupEditorMetrics.slideMs)
@@ -633,6 +650,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         hoveredCell |> Option.iter(fun path ->
             l.rows |> List.filter(fun row -> row.expanded) |> List.collect(fun row -> row.cells)
             |> List.tryFind(fun (each,pane,_) -> each=path && pane=Empty) |> Option.iter(fun (_,_,r) -> cross (cellCrossRect r) (if highContrast then SystemColors.Control else palette.background)))
+        hovered |> Option.iter(fun hwnd ->
+            tabLooks l |> List.tryFind(fun (each,_) -> each=hwnd) |> Option.iter(fun (_,look) ->
+                if not look.selected && not(sliding.ContainsKey hwnd) then drawTabOn g hwnd {look with hot=true}))
 
     /// What a drag adds over the picture, drawn in place at each move rather than into it: the
     /// slot among the tabs, the zone a drop would take (grey where it would not fit), the loose
@@ -792,17 +812,18 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// only its height follows the rows.
     let mutable placed = false
     let place (l:GroupEditorLayout) =
+        // Placed, the popup grows downward only, as far as its screen allows, and never moves up.
+        let area = if placed && form.IsHandleCreated then Screen.FromControl(form).WorkingArea else area
+        heightLimit <- maxHeight-frameHeight
+        if placed then heightLimit <- max (scale 240) (min heightLimit (area.Bottom-form.Top-frameHeight))
         let height = viewHeight l
         if form.ClientSize<>Size(width,height) then form.ClientSize <- Size(width,height)
         let size = form.Size
         let box = fallbackFrame.Rectangle
-        let location =
-            if placed then Point(form.Left,min form.Top (area.Bottom-size.Height))
-            else Point(max area.Left (min (area.Right-size.Width) (box.X+(box.Width-size.Width)/2)),
-                       max area.Top (min (area.Bottom-size.Height) (box.Y+(box.Height-size.Height)/2)))
-        if form.Location<>location || not placed then
+        if not placed then
             placed <- true
-            form.Location <- location
+            form.Location <- Point(max area.Left (min (area.Right-size.Width) (box.X+(box.Width-size.Width)/2)),
+                                   max area.Top (min (area.Bottom-size.Height) (box.Y+(box.Height-size.Height)/2)))
 
     let releaseThumbnails() =
         for KeyValue(_,thumb) in thumbs do DwmApi.DwmUnregisterThumbnail(thumb) |> ignore
@@ -1011,7 +1032,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             if t>=1.0 then
                 endMorph()
                 place l
-            else resizeTo (min maxHeight (morphLerp t m.fromHeight l.height))
+            else resizeTo (min heightLimit (morphLerp t m.fromHeight l.height))
             updateThumbnails l
             if form.IsHandleCreated then form.Invalidate()
         | None -> morphTimer.Stop()
@@ -1042,7 +1063,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         cellFocus <- None
         flyout <- false
         refresh()
-        index |> Option.iter showRow
         startMorph fromL from
 
     /// The focused cell cut into the shape; its window, or the selected tab for the whole content.
@@ -1265,10 +1285,13 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 if changed then refresh() elif form.IsHandleCreated then form.Invalidate()
         | None ->
             let l = layout()
+            let overTab =
+                (l.rows |> List.collect(fun row -> row.tabs))@l.looseTabs |> List.tryFind(fun (_,r) -> r.Contains pt) |> Option.map fst
             let overEmpty =
                 l.rows |> List.filter(fun row -> row.expanded) |> List.collect(fun row -> row.cells)
                 |> List.tryFind(fun (_,pane,r) -> pane=Empty && r.Contains pt) |> Option.map(fun (path,_,_) -> path)
-            if overEmpty<>hoveredCell then
+            if overTab<>hovered || overEmpty<>hoveredCell then
+                hovered <- overTab
                 hoveredCell <- overEmpty
                 if form.IsHandleCreated then form.Invalidate()
 
@@ -1361,7 +1384,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         form.MouseMove.Add(fun e -> mouseMove e.Location)
         form.MouseUp.Add(fun e -> if e.Button=MouseButtons.Left then mouseUp e.Location)
         form.MouseWheel.Add(fun e -> wheel e.Delta)
-        form.MouseLeave.Add(fun _ -> if hoveredCell.IsSome then (hoveredCell <- None; form.Invalidate()))
+        form.MouseLeave.Add(fun _ -> if hovered.IsSome || hoveredCell.IsSome then (hovered <- None; hoveredCell <- None; form.Invalidate()))
         // The frames of a slide; the last one leaves the tabs in place until the next picture.
         slideTimer.Tick.Add(fun _ ->
             if closed || slideDone() then slideTimer.Stop()
