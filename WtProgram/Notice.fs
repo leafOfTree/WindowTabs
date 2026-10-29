@@ -15,8 +15,9 @@ type NoticeKind =
     | Error
 
 /// What a notice lists under its message. An entry is one thing left out, as a window a restore
-/// did not find: its title in the text colour, and under it, muted, its app and why. A note
-/// stands on its own, muted, as the apps a restore brought back.
+/// did not find: its title in the text colour, and under it, muted, its app and why. A note is
+/// a paragraph of its own in the text colour, as the apps a restore brought back, said before
+/// what it left out as the message says them.
 type NoticeDetail =
     | Entry of title:string * detail:string
     | Note of string
@@ -201,9 +202,9 @@ type NoticeWindow() =
     /// The listed lines as laid out: `rows` and their height.
     member this.listed = rows
     /// Lays out what is listed, from the top of the list, within `available` pixels: an entry
-    /// is its title over its detail after a bullet, a note one muted paragraph, a gap between
-    /// them and a wider one before the notes that end the list. Entries that do not fit are
-    /// cut from the end and counted in a line of their own; the notes at the end stay.
+    /// is its title over its detail after a bullet, a note one paragraph, a gap between entries
+    /// and a wider one between a note and the entries. Entries that do not fit are cut from
+    /// the end and counted in a muted line where the first cut one was; the notes stay.
     member private this.layout(available:int) =
         let width = this.detailsWidth
         let font = this.textFont
@@ -216,7 +217,7 @@ type NoticeWindow() =
             | Entry(title,detail) ->
                 let heading = indented title false true 0
                 item,[heading;indented detail true false heading.bounds.Bottom]
-            | Note text -> item,[{ text=text; muted=true; bullet=false; bounds=Rectangle(0,0,width,measure text width) }]
+            | Note text -> item,[{ text=text; muted=false; bullet=false; bounds=Rectangle(0,0,width,measure text width) }]
         // The count of entries cut follows the entries, in their column.
         let more count =
             let text = tr (Strings.Notices.more count)
@@ -227,21 +228,29 @@ type NoticeWindow() =
                 let gap =
                     match previous,item with
                     | None,_ -> 0
-                    | Some(Entry _),Note _ -> Dpi.scale 10
-                    | _ -> Dpi.scale 6
+                    | Some(Entry _),Entry _ -> Dpi.scale 6
+                    | _ -> Dpi.scale 10
                 let top = y+gap
                 let lines = lines |> List.map(fun row -> { row with bounds=Rectangle(row.bounds.X,top+row.bounds.Y,row.bounds.Width,row.bounds.Height) })
                 let bottom = lines |> List.fold(fun most row -> max most row.bounds.Bottom) top
                 bottom,Some item,placed@lines)
             |> fun (height,_,placed) -> height,placed
         let blocks = details |> List.map block
-        let trailing = blocks |> List.rev |> List.takeWhile(fun (item,_) -> match item with Note _ -> true | _ -> false) |> List.length
-        let leading,notes = List.splitAt (blocks.Length-trailing) blocks
+        let entries = blocks |> List.filter(fun (item,_) -> match item with Entry _ -> true | _ -> false) |> List.length
+        // The first `kept` entries, the count of the rest where the next would have been, and every note.
         let rec fit kept =
-            let cut = leading.Length-kept
-            let height,placed = stack (List.truncate kept leading@(if cut=0 then [] else [more cut])@notes)
+            let cut = entries-kept
+            let shown =
+                ((0,[]),blocks) ||> List.fold(fun (seen,kept') (item,lines) ->
+                    match item with
+                    | Note _ -> seen,kept'@[item,lines]
+                    | Entry _ when seen<kept -> seen+1,kept'@[item,lines]
+                    | Entry _ when seen=kept && cut>0 -> seen+1,kept'@[more cut]
+                    | Entry _ -> seen+1,kept')
+                |> snd
+            let height,placed = stack shown
             if height<=available || kept=0 then height,placed else fit (kept-1)
-        let height,placed = fit leading.Length
+        let height,placed = fit entries
         listHeight <- if placed.IsEmpty then 0 else height+Dpi.scale 8
         // Placed under the title and message, which keep to the notice's usual size.
         let top = Dpi.scale NoticeWindow.size.Height-Dpi.scale 4

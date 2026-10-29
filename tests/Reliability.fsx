@@ -319,18 +319,18 @@ let main() =
     let notFound = both.notFound(fun _ -> true)
     check (notFound=["Slow.exe","Report",NoWindowAfterStart;"Denied.exe","",StartFailed "Access is denied."])
           (sprintf "Windows not found named the wrong reasons: %A" notFound)
-    // The notice lists every window left out as an entry, its title over its app and why, or
-    // its app alone over why, then the apps restored as a note.
+    // The notice says the apps restored first, as its message does, then lists every window
+    // left out as an entry: its title over its app and why, or its app alone over why.
     Localization.setPreference "en"
     let lines = { both with windows=both.windows@["notepad.exe","A";"Notepad.exe","B"] }.noticeLines(fun _ -> true)
     Localization.setPreference "system"
-    check (lines=[Entry("Report","Slow.exe · App started, but showed no window in time")
-                  Entry("Denied.exe","App would not start: Access is denied.")
-                  Note "Restored: editor.exe, other.exe, notepad.exe ×2"])
+    check (lines=[Note "Restored: editor.exe, other.exe, notepad.exe ×2"
+                  Entry("Report","Slow.exe · App started, but showed no window in time")
+                  Entry("Denied.exe","App would not start: Access is denied.")])
           (sprintf "The restore notice listed the wrong lines: %A" lines)
-    check ((lines |> List.map(fun line -> line.text))=["Report — Slow.exe · App started, but showed no window in time"
-                                                       "Denied.exe — App would not start: Access is denied."
-                                                       "Restored: editor.exe, other.exe, notepad.exe ×2"])
+    check ((lines |> List.map(fun line -> line.text))=["Restored: editor.exe, other.exe, notepad.exe ×2"
+                                                       "Report — Slow.exe · App started, but showed no window in time"
+                                                       "Denied.exe — App would not start: Access is denied."])
           (sprintf "The restore notice's lines read wrongly as text: %A" (lines |> List.map(fun line -> line.text)))
     // An app started once that opened fewer windows than were saved is started again, once for
     // each window still missing; not one that would not start, nor one that was never started.

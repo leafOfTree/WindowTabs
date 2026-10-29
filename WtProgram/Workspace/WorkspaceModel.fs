@@ -417,9 +417,9 @@ type WorkspaceRestoreResult = {
         result.pending |> List.map(fun (_,window) ->
             let app,title = WorkspaceRestore.describe window
             app,title,WorkspaceRestore.whyMissing result.openApps exists result.launches window.processPath)
-    /// The notice's list: each window left out, by its title with its app and why under it,
-    /// each failure, then a note of the apps restored, with how many windows of each. The
-    /// notice cuts the entries to its height itself.
+    /// The notice's list, in the message's order: a note of the apps restored, with how many
+    /// windows of each, then each window left out, by its title with its app and why under
+    /// it, and each failure. The notice cuts the entries to its height itself.
     member result.noticeLines(exists:string -> bool) =
         let named (app:string) (detail:string) =
             if String.IsNullOrEmpty app then Entry(detail,"")
@@ -438,7 +438,7 @@ type WorkspaceRestoreResult = {
         let restored =
             result.windows |> List.countBy(fun (app,_) -> app.ToLowerInvariant())
             |> List.map(fun (app,count) -> if count=1 then app else sprintf "%s ×%d" app count)
-        left @ (if restored.IsEmpty then [] else [Note(tr (Strings.Notices.restoredApps (String.concat ", " restored)))])
+        (if restored.IsEmpty then [] else [Note(tr (Strings.Notices.restoredApps (String.concat ", " restored)))]) @ left
 
 /// Starts apps by their path, once for each time a path is given, and waits, on this UI thread,
 /// for their windows: done once each start has added a window to those its app had and no new one has

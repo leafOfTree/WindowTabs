@@ -183,53 +183,53 @@ let main() =
         raise "OnMouseUp" (new MouseEventArgs(MouseButtons.Left,1,centre.X,centre.Y,0))
         pumpFor 400L
         check (not notice.Visible) "The close button did not take the notice away"
-        // A warning lists what a restore left out: each window's title in the text colour after
-        // a bullet, its app and why muted under it, then the apps restored as a muted note set
-        // apart; a long line wraps, so it is taller than one line each, and it stays half a
-        // minute to be read.
-        let short = [Entry("Report","Slow.exe · App is not running");Note "Restored: notepad.exe ×2"]
+        // A warning says what a restore did in its message's order: the apps restored as a
+        // paragraph in the text colour, then each window left out, its title in the text colour
+        // after a bullet and its app and why muted under it, set apart from the paragraph; a long
+        // line wraps, so it is taller than one line each, and it stays half a minute to be read.
+        let short = [Note "Restored: notepad.exe ×2";Entry("Report","Slow.exe · App is not running")]
         notice.show("Last session","Restored 2 windows, 1 not found",Warning,short)
         pumpFor 600L
         let shortHeight = notice.Height
         check (notice.Visible && shortHeight>fixedSize.Height && notice.Width=fixedSize.Width && notice.staysFor=Some 30000)
               (sprintf "A warning listing windows is %A and stays %A" notice.Size notice.staysFor)
         let rows = notice.listed
-        check ((rows |> List.map(fun row -> row.text,row.muted,row.bullet))=["Report",false,true;"Slow.exe · App is not running",true,false;"Restored: notepad.exe ×2",true,false])
-              (sprintf "The listed lines are not an entry's title, its muted detail and a muted note: %A" rows)
-        let title,detail,note = rows.[0].bounds,rows.[1].bounds,rows.[2].bounds
-        check (detail.Top=title.Bottom && title.Left=detail.Left && title.Left>note.Left && note.Top-detail.Bottom>detail.Top-title.Bottom)
-              (sprintf "An entry's detail is not right under its title in its column, with the note set apart below: %A" rows)
-        check (note.Bottom<notice.Height && rows |> List.forall(fun row -> row.bounds.Top>Dpi.scale NoticeWindow.size.Height-Dpi.scale 8))
+        check ((rows |> List.map(fun row -> row.text,row.muted,row.bullet))=["Restored: notepad.exe ×2",false,false;"Report",false,true;"Slow.exe · App is not running",true,false])
+              (sprintf "The listed lines are not the note, then an entry's title and its muted detail: %A" rows)
+        let note,title,detail = rows.[0].bounds,rows.[1].bounds,rows.[2].bounds
+        check (detail.Top=title.Bottom && title.Left=detail.Left && title.Left>note.Left && title.Top-note.Bottom>Dpi.scale 6)
+              (sprintf "An entry's detail is not right under its title in its column, set apart from the note above: %A" rows)
+        check (detail.Bottom<notice.Height && rows |> List.forall(fun row -> row.bounds.Top>Dpi.scale NoticeWindow.size.Height-Dpi.scale 8))
               (sprintf "The listed lines are not laid out under the message within the notice: %A in %A" rows notice.Size)
         let long = String.replicate 6 @"C:\Users\someone\repository\dotFile\"+"tmp.txt"
         notice.hideNow()
-        notice.show("Last session","Restored 2 windows, 1 not found",Warning,Entry(long,"neovide.exe · App is not running")::List.tail short)
+        notice.show("Last session","Restored 2 windows, 1 not found",Warning,List.head short::[Entry(long,"neovide.exe · App is not running")])
         pumpFor 600L
         check (notice.Height>shortHeight) (sprintf "A long listed line did not wrap: %d, one line each %d" notice.Height shortHeight)
         check (notice.Bottom<=area.Bottom && notice.Top>=area.Top) (sprintf "A taller notice left the work area: %A" notice.Bounds)
         // Past its limit the entries that do not fit are cut and counted after those that do,
-        // and the note of the apps restored still ends the list, however long.
+        // and the note of the apps restored still opens the list, however long.
         let failures = [for i in 1..40 -> Entry(sprintf "Window %d" i,"app.exe · App would not start: Access is denied")]
         let restored = Note("Restored: "+String.concat ", " [for i in 1..12 -> sprintf "program%d.exe ×%d" i i])
         notice.hideNow()
-        notice.show("Last session","Restored 78 windows, 40 not found",Warning,failures@[restored])
+        notice.show("Last session","Restored 78 windows, 40 not found",Warning,restored::failures)
         pumpFor 600L
         check (notice.Height<=Dpi.scale NoticeWindow.maxHeight && notice.Bottom<=area.Bottom && notice.Top>=area.Top)
               (sprintf "A very long list grew the notice past its limit: %A" notice.Bounds)
         let rows = notice.listed
         let shown = rows |> List.filter(fun row -> row.bullet) |> List.length
-        let cut = rows |> List.tryFind(fun row -> row.text=tr (Strings.Notices.more (40-shown)))
-        check (shown>3 && shown<40 && cut.IsSome && (List.last rows).text=restored.text && (List.last rows).muted)
-              (sprintf "The entries were not cut to the limit with a count of the rest before the note: %d shown, cut %A, last %A" shown cut (List.last rows))
-        check (cut.Value.muted && not cut.Value.bullet && cut.Value.bounds.Left=rows.[0].bounds.Left && cut.Value.bounds.Top>rows.[0].bounds.Bottom)
-              (sprintf "The count of entries cut is out of column or place: %A" cut)
-        check ((List.last rows).bounds.Bottom<=notice.Height-Dpi.scale 4 && (rows |> List.pairwise |> List.forall(fun (above,below) -> below.bounds.Top>=above.bounds.Bottom)))
+        let last = List.last rows
+        check (shown>3 && shown<40 && rows.[0].text=restored.text && not rows.[0].muted && last.text=tr (Strings.Notices.more (40-shown)))
+              (sprintf "The entries were not cut to the limit with a count of the rest after the note and those shown: %d shown, first %A, last %A" shown rows.[0] last)
+        check (last.muted && not last.bullet && last.bounds.Left=rows.[1].bounds.Left && last.bounds.Top>rows.[1].bounds.Bottom)
+              (sprintf "The count of entries cut is out of column or place: %A" last)
+        check (last.bounds.Bottom<=notice.Height-Dpi.scale 4 && (rows |> List.pairwise |> List.forall(fun (above,below) -> below.bounds.Top>=above.bounds.Bottom)))
               (sprintf "The listed lines overlap or run past the notice: %A" rows)
         // It draws in either theme, its colours from the theme's palette.
         for mode in ["light";"dark"] do
             api.setValue("tabThemeMode",box mode)
             notice.hideNow()
-            notice.show("Last session","Restored 78 windows, 40 not found",Warning,failures@[restored])
+            notice.show("Last session","Restored 78 windows, 40 not found",Warning,restored::failures)
             pumpFor 600L
             let palette = SettingsColors.current()
             check (sameColor palette.surface notice.BackColor) (sprintf "A %s notice is not on the theme's surface" mode)
