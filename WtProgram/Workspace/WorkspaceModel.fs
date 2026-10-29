@@ -417,28 +417,28 @@ type WorkspaceRestoreResult = {
         result.pending |> List.map(fun (_,window) ->
             let app,title = WorkspaceRestore.describe window
             app,title,WorkspaceRestore.whyMissing result.openApps exists result.launches window.processPath)
-    /// The notice's list: each window left out with why, each failure, then the apps restored,
-    /// with how many windows of each. Past a dozen windows the rest are counted.
+    /// The notice's list: each window left out, by its title with its app and why under it,
+    /// each failure, then a note of the apps restored, with how many windows of each. The
+    /// notice cuts the entries to its height itself.
     member result.noticeLines(exists:string -> bool) =
-        let shown = 12
         let named (app:string) (detail:string) =
-            if String.IsNullOrEmpty app then detail
-            elif String.IsNullOrEmpty detail then app
-            else app+" — "+detail
+            if String.IsNullOrEmpty app then Entry(detail,"")
+            else Entry(app,detail)
         let notFound = result.notFound exists
         // An app that would not start is said once, with its windows.
         let explained = notFound |> List.choose(function app,_,StartFailed error -> Some(app.ToLowerInvariant(),error) | _ -> None)
         let left =
             (notFound |> List.map(fun (app,title,why) ->
-                named (if String.IsNullOrEmpty title then app else app+" · "+title) (WorkspaceRestore.reasonText why)))
+                let reason = WorkspaceRestore.reasonText why
+                if String.IsNullOrEmpty title then named app reason
+                elif String.IsNullOrEmpty app then Entry(title,reason)
+                else Entry(title,app+" · "+reason)))
             @ (result.failed |> List.filter(fun (app,error) -> not(List.contains (app.ToLowerInvariant(),error) explained))
                              |> List.map(fun (app,error) -> named app error))
         let restored =
             result.windows |> List.countBy(fun (app,_) -> app.ToLowerInvariant())
             |> List.map(fun (app,count) -> if count=1 then app else sprintf "%s ×%d" app count)
-        List.truncate shown left
-        @ (if left.Length>shown then [tr (Strings.Notices.more (left.Length-shown))] else [])
-        @ (if restored.IsEmpty then [] else [tr (Strings.Notices.restoredApps (String.concat ", " restored))])
+        left @ (if restored.IsEmpty then [] else [Note(tr (Strings.Notices.restoredApps (String.concat ", " restored)))])
 
 /// Starts apps by their path, once for each time a path is given, and waits, on this UI thread,
 /// for their windows: done once each start has added a window to those its app had and no new one has

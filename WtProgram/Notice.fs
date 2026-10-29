@@ -14,21 +14,41 @@ type NoticeKind =
     | Warning
     | Error
 
+/// What a notice lists under its message. An entry is one thing left out, as a window a restore
+/// did not find: its title in the text colour, and under it, muted, its app and why. A note
+/// stands on its own, muted, as the apps a restore brought back.
+type NoticeDetail =
+    | Entry of title:string * detail:string
+    | Note of string
+    /// As one line of text, for the log and a host checking the notices.
+    member this.text =
+        match this with
+        | Entry(title,"") -> title
+        | Entry(title,detail) -> title+" — "+detail
+        | Note text -> text
+
+/// A listed line as it is laid out: muted or in the text colour, with a bullet before an entry's
+/// title, at its place in the notice.
+type NoticeRow = { text:string; muted:bool; bullet:bool; bounds:Rectangle }
+
 /// A card at the bottom right of the main monitor, where Windows shows its own notifications, in
 /// the theme's colours, over everything and taking no focus: what WindowTabs is doing to the
 /// windows just now, so a user does not pull at them meanwhile. One at a time; it slides in, and
 /// out again on its own after a while. A later notice takes its place, except over a warning or an
 /// error, which it waits behind. Its size is fixed, as an IDE's notifications are, so one
 /// replacing another does not jump: the app's icon, a bold title, and the message below it in up
-/// to two lines. Under the pointer it shows a close button and does not go.
+/// to two lines. What is listed under them makes it taller, up to a limit, past which the rest
+/// is counted. Under the pointer it shows a close button and does not go.
 type NoticeWindow() =
     inherit Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual)
     let mutable title = ""
     let mutable text = ""
     let mutable kind = Info
-    /// Lines listed under the message, each wrapped as long as it needs, as the windows a
-    /// restore left out.
-    let mutable details : string list = []
+    /// What is listed under the message, as the windows a restore left out.
+    let mutable details : NoticeDetail list = []
+    /// The listed lines as laid out for the notice's height: those that fit, then a count of the rest.
+    let mutable rows : NoticeRow list = []
+    let mutable listHeight = 0
     let mutable font : Font option = None
     let mutable titleFont : Font option = None
     let mutable icon : Icon option = None
@@ -39,7 +59,7 @@ type NoticeWindow() =
     /// Windows 10's stand-in for the shadow Windows 11 gives it, following its slide and fade.
     let mutable halo : SettingsPopupShadow option = None
     /// The notice to come in once the one on screen has slid out for it.
-    let mutable replacement : (string * string * NoticeKind * string list) option = None
+    let mutable replacement : (string * string * NoticeKind * NoticeDetail list) option = None
     let mutable hovered = false
     let mutable closeHot = false
     /// Where the notice rests once in.
@@ -48,7 +68,7 @@ type NoticeWindow() =
     /// Notices waiting their turn: those asked for while the session is locked, or while a
     /// warning or error is on screen. Warnings and errors wait in order; of the others only the
     /// latest waits, after them, as anything newer makes it out of date.
-    let mutable waiting : (string * string * NoticeKind * string list) list = []
+    let mutable waiting : (string * string * NoticeKind * NoticeDetail list) list = []
     let mutable switches : Microsoft.Win32.SessionSwitchEventHandler = null
     let mutable pauses : IDisposable option = None
     /// Whether the session is locked; a host checking the notices puts its own.
@@ -170,16 +190,62 @@ type NoticeWindow() =
             value
     /// Logical pixels: a title and two lines of message; listed lines add to its height.
     static member size = Size(360,80)
+    /// Logical pixels: as tall as a notice gets however much is listed; the rest is counted.
+    static member maxHeight = 440
     member private this.lineHeight = TextRenderer.MeasureText("Xg",this.textFont,Size.Empty,TextFormatFlags.NoPrefix).Height
     /// Listed lines wrap, a path with no spaces too, from the left edge under the icon.
     static member detailFlags = TextFormatFlags.Left ||| TextFormatFlags.WordBreak ||| TextFormatFlags.TextBoxControl ||| TextFormatFlags.NoPrefix
     member private this.detailsWidth = Dpi.scale NoticeWindow.size.Width-2*this.padding
-    member private this.detailGap = Dpi.scale 4
-    /// Each listed line's height, wrapped to the notice's width.
-    member private this.detailHeights =
-        details |> List.map(fun line -> TextRenderer.MeasureText(line,this.textFont,Size(this.detailsWidth,Int32.MaxValue),NoticeWindow.detailFlags).Height)
-    member private this.detailsHeight =
-        if details.IsEmpty then 0 else (this.detailHeights |> List.sumBy(fun height -> height+this.detailGap))+Dpi.scale 8
+    /// The column an entry's bullet takes, its title and detail starting after it.
+    member private this.indent = Dpi.scale 14
+    /// The listed lines as laid out: `rows` and their height.
+    member this.listed = rows
+    /// Lays out what is listed, from the top of the list, within `available` pixels: an entry
+    /// is its title over its detail after a bullet, a note one muted paragraph, a gap between
+    /// them and a wider one before the notes that end the list. Entries that do not fit are
+    /// cut from the end and counted in a line of their own; the notes at the end stay.
+    member private this.layout(available:int) =
+        let width = this.detailsWidth
+        let font = this.textFont
+        let measure (text:string) width = TextRenderer.MeasureText(text,font,Size(width,Int32.MaxValue),NoticeWindow.detailFlags).Height
+        let indented (text:string) muted bullet y =
+            { text=text; muted=muted; bullet=bullet; bounds=Rectangle(this.indent,y,width-this.indent,measure text (width-this.indent)) }
+        let block item =
+            match item with
+            | Entry(title,"") -> item,[indented title false true 0]
+            | Entry(title,detail) ->
+                let heading = indented title false true 0
+                item,[heading;indented detail true false heading.bounds.Bottom]
+            | Note text -> item,[{ text=text; muted=true; bullet=false; bounds=Rectangle(0,0,width,measure text width) }]
+        // The count of entries cut follows the entries, in their column.
+        let more count =
+            let text = tr (Strings.Notices.more count)
+            Note text,[indented text true false 0]
+        // Stacked with their gaps, each row placed under the last.
+        let stack (blocks:(NoticeDetail*NoticeRow list) list) =
+            ((0,None,[]),blocks) ||> List.fold(fun (y,previous,placed) (item,lines) ->
+                let gap =
+                    match previous,item with
+                    | None,_ -> 0
+                    | Some(Entry _),Note _ -> Dpi.scale 10
+                    | _ -> Dpi.scale 6
+                let top = y+gap
+                let lines = lines |> List.map(fun row -> { row with bounds=Rectangle(row.bounds.X,top+row.bounds.Y,row.bounds.Width,row.bounds.Height) })
+                let bottom = lines |> List.fold(fun most row -> max most row.bounds.Bottom) top
+                bottom,Some item,placed@lines)
+            |> fun (height,_,placed) -> height,placed
+        let blocks = details |> List.map block
+        let trailing = blocks |> List.rev |> List.takeWhile(fun (item,_) -> match item with Note _ -> true | _ -> false) |> List.length
+        let leading,notes = List.splitAt (blocks.Length-trailing) blocks
+        let rec fit kept =
+            let cut = leading.Length-kept
+            let height,placed = stack (List.truncate kept leading@(if cut=0 then [] else [more cut])@notes)
+            if height<=available || kept=0 then height,placed else fit (kept-1)
+        let height,placed = fit leading.Length
+        listHeight <- if placed.IsEmpty then 0 else height+Dpi.scale 8
+        // Placed under the title and message, which keep to the notice's usual size.
+        let top = Dpi.scale NoticeWindow.size.Height-Dpi.scale 4
+        rows <- placed |> List.map(fun row -> { row with bounds=Rectangle(this.padding+row.bounds.X,top+row.bounds.Y,row.bounds.Width,row.bounds.Height) })
     member private this.padding = Dpi.scale 16
     member private this.iconSide = Dpi.scale 24
     /// The close button, at the top right; shown under the pointer only.
@@ -247,19 +313,19 @@ type NoticeWindow() =
     /// call replaces them, the notice on screen sliding out for the new one to slide in. The kind
     /// says how long it stays.
     member this.show(heading:string, message:string, noticeKind:NoticeKind) = this.show(heading,message,noticeKind,[])
-    /// With lines listed in full under the message, which make it as tall as they need.
-    member this.show(heading:string, message:string, noticeKind:NoticeKind, lines:string list) =
+    /// With lines listed under the message, which make it as tall as they need, up to a limit.
+    member this.show(heading:string, message:string, noticeKind:NoticeKind, lines:NoticeDetail list) =
         this.listen()
         let locked = NoticeWindow.isLocked()
         let paused = FullScreenPause.isPaused()
         DebugLog.writef "Notice asked: %A %s: %s%s; showing %s, visible %b, leaving %b, animating %b, waiting %b, locked %b, full screen %b"
-            noticeKind heading message (String.concat "" (lines |> List.map(fun line -> " | "+line))) title this.Visible leaving animation.Enabled replacement.IsSome locked paused
+            noticeKind heading message (String.concat "" (lines |> List.map(fun line -> " | "+line.text))) title this.Visible leaving animation.Enabled replacement.IsSome locked paused
         // Nobody sees the screen while it is locked, a full-screen app is not covered, and a
         // warning or an error is not put away unread: the notice waits its turn.
         if locked || paused || this.importantShown then this.enqueue(heading,message,noticeKind,lines)
         else this.display(heading,message,noticeKind,lines)
     /// Shows it now: in place of the notice on screen, which slides out for it first.
-    member private this.display(heading:string, message:string, noticeKind:NoticeKind, lines:string list) =
+    member private this.display(heading:string, message:string, noticeKind:NoticeKind, lines:NoticeDetail list) =
         if replacement.IsSome then replacement <- Some(heading,message,noticeKind,lines)
         elif this.Visible && not leaving && not animation.Enabled && this.animates then
             replacement <- Some(heading,message,noticeKind,lines)
@@ -300,7 +366,7 @@ type NoticeWindow() =
                 this.raise()
                 this.countDown()
         else this.next()
-    member private this.present(heading:string, message:string, noticeKind:NoticeKind, lines:string list) =
+    member private this.present(heading:string, message:string, noticeKind:NoticeKind, lines:NoticeDetail list) =
         title <- heading
         text <- message
         kind <- noticeKind
@@ -309,8 +375,10 @@ type NoticeWindow() =
         this.BackColor <- palette.surface
         let area = Screen.PrimaryScreen.WorkingArea
         let margin = Dpi.scale 12
-        // However much is listed, it stays within the work area; what does not fit is cut.
-        let bounds = Size(Dpi.scale NoticeWindow.size.Width,min (area.Height-2*margin) (Dpi.scale NoticeWindow.size.Height+this.detailsHeight))
+        // However much is listed, it stays within its limit and the work area; the rest is counted.
+        let header = Dpi.scale NoticeWindow.size.Height
+        this.layout(min (Dpi.scale NoticeWindow.maxHeight) (area.Height-2*margin)-header-Dpi.scale 8)
+        let bounds = Size(Dpi.scale NoticeWindow.size.Width,min (area.Height-2*margin) (header+listHeight))
         target <- Rectangle(area.Right-margin-bounds.Width,area.Bottom-margin-bounds.Height,bounds.Width,bounds.Height)
         // A notice on its way out comes back in rather than going with the new text.
         let entering = not this.Visible || leaving
@@ -407,10 +475,14 @@ type NoticeWindow() =
         let oneLine = TextFormatFlags.Left ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis ||| TextFormatFlags.NoPrefix
         TextRenderer.DrawText(g,title,this.boldFont,Rectangle(left,top,width,titleHeight),palette.text,oneLine)
         TextRenderer.DrawText(g,text,this.textFont,Rectangle(left,top+titleHeight+gap,width,bodyHeight),palette.text,flags)
-        // Listed lines take the whole width, under the icon and the close button's column too.
-        (header-Dpi.scale 4,List.zip details this.detailHeights) ||> List.fold(fun y (line,height) ->
-            TextRenderer.DrawText(g,line,this.textFont,Rectangle(padding,y,this.detailsWidth,height),palette.text,NoticeWindow.detailFlags)
-            y+height+this.detailGap) |> ignore
+        // Listed lines take the whole width, under the icon and the close button's column too:
+        // an entry's title in the text colour after a bullet, what explains it muted below.
+        use dot = new SolidBrush(palette.muted)
+        for row in rows do
+            if row.bullet then
+                let side = float32(Dpi.scale 4)
+                g.FillEllipse(dot,float32 padding+float32(Dpi.scale 3),float32 row.bounds.Y+float32 lineHeight/2.0f-side/2.0f,side,side)
+            TextRenderer.DrawText(g,row.text,this.textFont,row.bounds,(if row.muted then palette.muted else palette.text),NoticeWindow.detailFlags)
     member private this.syncHalo() =
         if not SystemCorners.supported.Value && not SystemInformation.HighContrast && this.IsHandleCreated then
             if this.Visible && this.Width>0 then
@@ -457,10 +529,10 @@ module Notice =
     /// Takes the notices in place of the window, as a host checking them does.
     let install present = presenter <- Some present
     /// A host checking the notices is given the listed lines under the message.
-    let private postWith kind (title:string) (message:string) (lines:string list) =
+    let private postWith kind (title:string) (message:string) (lines:NoticeDetail list) =
         let show() =
             match presenter with
-            | Some present -> present kind title (String.concat "\n" (message::lines))
+            | Some present -> present kind title (String.concat "\n" (message::(lines |> List.map(fun line -> line.text))))
             | None -> attempt (fun () -> (current()).show(title,message,kind,lines))
         match home with
         | Some dispatcher when not dispatcher.CheckAccess -> dispatcher.Post show
@@ -468,8 +540,8 @@ module Notice =
     let private post kind title message = postWith kind title message []
     /// Goes after a few seconds.
     let show title message = post Info title message
-    /// Done, but not all of it, with what was left out listed in full; stays long enough to read.
-    let warn title message lines = postWith Warning title message lines
+    /// Done, but not all of it, with what was left out listed; stays long enough to read.
+    let warn title message (lines:NoticeDetail list) = postWith Warning title message lines
     /// Done, but not all of it; stays a little longer.
     let remind title message = post Reminder title message
     /// Stays until closed.
