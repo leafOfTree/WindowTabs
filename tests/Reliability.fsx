@@ -463,6 +463,14 @@ let main() =
     let crashLog = IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"WindowTabsCrash.log")
     let existingLog = if IO.File.Exists(crashLog) then Some(IO.File.ReadAllText(crashLog)) else None
     try
+        // Starting the handler leaves no file behind; only a logged error writes one.
+        if IO.File.Exists(crashLog) then IO.File.Delete(crashLog)
+        let handler = new ExceptionHandlerPlugin()
+        (handler :> IPlugin).init()
+        check (not (IO.File.Exists(crashLog))) "Crash log was created before any error"
+        handler.log "Test" (box (InvalidOperationException("probe")))
+        (handler :> IDisposable).Dispose()
+        check (IO.File.Exists(crashLog) && IO.File.ReadAllText(crashLog).Contains("probe")) "A logged error was not written to the crash log"
         let entry time kind =
             String.concat "\r\n" ["---------------------------------------------";"Time    : "+time;"Source  : Application.ThreadException"
                                   "Version : 1.2.3";"OS      : Windows 11 Pro 24H2 (26100.1) / .NET 4.8.1"

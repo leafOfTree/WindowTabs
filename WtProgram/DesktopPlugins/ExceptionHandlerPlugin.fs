@@ -21,7 +21,8 @@ type ExceptionHandlerPlugin() as this =
 
     // Follows the same convention as Settings: next to the exe when that
     // directory is writable (portable install), otherwise %AppData%\WindowTabs.
-    let logPath =
+    /// Resolved on the first crash: probing creates the file, and an empty log at every start looks like a crash.
+    let logPath = lazy (
         let tryDir (dir:string) =
             try
                 if Directory.Exists(dir).not then Directory.CreateDirectory(dir).ignore
@@ -35,7 +36,7 @@ type ExceptionHandlerPlugin() as this =
             try Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WindowTabs") with _ -> null
         [exeDir; appDataDir]
         |> List.filter (fun d -> String.IsNullOrEmpty(d).not)
-        |> List.tryPick tryDir
+        |> List.tryPick tryDir)
 
     let mutable registered = false
     let domainHandler = UnhandledExceptionEventHandler(fun _ e -> this.onException(e))
@@ -49,7 +50,7 @@ type ExceptionHandlerPlugin() as this =
 
     member this.log (source:string) (error:obj) =
         try
-            logPath |> Option.iter (fun path ->
+            logPath.Force() |> Option.iter (fun path ->
                 let text = StringBuilder()
                 text.AppendLine(RuntimeDiagnostics.CrashLog.separator).ignore
                 text.AppendLine(String.Format("Time    : {0:yyyy-MM-dd HH:mm:ss}", DateTime.Now)).ignore
