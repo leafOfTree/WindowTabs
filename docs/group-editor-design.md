@@ -76,8 +76,9 @@ picture, and moves the windows once, when the user is done.
   lighter than the popup. Along the row, from the left,
   the group's tabs as blocks of icon and name in strip order, pinned ones first with the
   pin, wrapping to further lines when they do not fit; names are cut with an ellipsis and
-  hovering shows the whole in the tab title tip's manner. The active tab has the accent
-  tint, tabs in a split the pane mark. A row has no title: the active tab names it, as the
+  hovering shows the whole in the tab title tip's manner. No tab is lit in a folded row
+  (the active one means nothing here); tabs in a split have the pane mark. A row has no
+  title: the active tab names it, as the
   strip names a group on the taskbar.
 - **The chevron**, at the row's right end, pointing down: the way into the expanded view.
   A folded row shows no picture of the group (a thumbnail there was tried and dropped: too
@@ -117,8 +118,8 @@ tab, so the strip starts at the row's top edge, as a real group's does.
   the real strip does. Right-clicking a tab (or a pane chip) offers **Take out of the group**:
   the window goes to the loose windows, to be put elsewhere or left on its own, and is not
   closed. A close cross on the tab was tried and dropped: it read as closing the window.
-  One tab is selected, drawn as the active tab is on the real strip and joined to the
-  content below; it starts as the group's active tab. Clicking a tab selects it, and the
+  One tab is selected, drawn in the content's colour and joined to the content below, as
+  the active tab is on the real strip; it starts as the group's active tab. Clicking a tab selects it, and the
   content changes to what the group would show with that tab active, so the picture
   behaves as the group does. The selection is for looking: Save does not switch tabs.
 - **The content.** With a tab selected that is in no split, one cell with that window's

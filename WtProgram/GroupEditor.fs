@@ -214,6 +214,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let rowFill = if highContrast then SystemColors.Control else palette.hover
     let looseFill = if highContrast then SystemColors.Control else tint palette.background palette.surface 0.5
     let tabFill = if highContrast then SystemColors.Window else palette.selection
+    /// The content's colour, which the selected tab takes to join it: a tab is lit no other way.
+    let contentFill = if highContrast then SystemColors.Control else palette.background
     let textFlags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis ||| TextFormatFlags.NoPadding
     let measure (font:Font) (text:string) = TextRenderer.MeasureText(text,font,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPadding ||| TextFormatFlags.SingleLine).Width
     let rounded (r:Rectangle) radius = SettingsShapes.rounded (RectangleF(float32 r.X,float32 r.Y,float32 r.Width,float32 r.Height)) (float32 radius)
@@ -452,7 +454,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let r = look.rect
         // In the expanded row the tabs stand on the content, the selected one joined to it.
         use shape = if look.onContent then roundedTop (if look.selected then Rectangle(r.X,r.Y,r.Width,r.Height+scale 2) else r) (scale 6) else rounded r (scale 6)
-        let fill = if look.selected then selectedFill else tabFill
+        let fill = if look.selected then contentFill else tabFill
         if look.blank then
             use tintBrush = new SolidBrush(Color.FromArgb(40,accent))
             g.FillPath(tintBrush,shape)
@@ -481,7 +483,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             let g = (groupAt row.index).Value
             let inPane = GroupDraft.paneWindows g
             let shown = if row.expanded then selected else (infoOf row.index).active
-            row.tabs |> List.map(fun (hwnd,r) -> hwnd,{rect=r; selected=hwnd=shown; inPane=List.contains hwnd inPane; onContent=row.expanded; blank=blank hwnd})))
+            // Only the expanded row has a selected tab: in a folded row the active one means nothing here.
+            row.tabs |> List.map(fun (hwnd,r) -> hwnd,{rect=r; selected=row.expanded && hwnd=shown; inPane=List.contains hwnd inPane; onContent=row.expanded; blank=blank hwnd})))
         @(l.looseTabs |> List.map(fun (hwnd,r) -> hwnd,{rect=r; selected=false; inPane=false; onContent=false; blank=blank hwnd}))
     /// Where a sliding tab is drawn now, on its way from where it was, eased out.
     let slideRect (from:Rectangle) (toward:Rectangle) =
