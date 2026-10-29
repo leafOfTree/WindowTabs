@@ -763,6 +763,15 @@ module Strings =
               ja=parts [ (if moved=0 then "" else sprintf "%d 個のウィンドウを移動" moved); (if detached=0 then "" else sprintf "%d 個のウィンドウを外しました" detached); (if made=0 then "" else sprintf "%d 個のグループを作成" made) ]
               ar=parts [ (if moved=0 then "" else sprintf "نُقلت %d نافذة" moved); (if detached=0 then "" else sprintf "أُخرجت %d نافذة" detached); (if made=0 then "" else sprintf "أُنشئت %d مجموعة" made) ] }
         let nothingChanged = { en="Nothing changed."; zh="没有改动。"; ja="変更はありません。"; ar="لم يتغير شيء." }
+        let dropHere = { en="Drop a window here"; zh="拖窗口到这里"; ja="ここにウィンドウをドロップ"; ar="أفلت نافذة هنا" }
+        /// Said in the footer while the split button's slots are still empty.
+        let emptyCellsClose count =
+            { en=(if count=1 then "1 empty cell will close at Save." else sprintf "%d empty cells will close at Save." count)
+              zh=sprintf "%d 个空格子会在保存时合并。" count
+              ja=sprintf "空のセル %d 個は保存時に閉じられます。" count
+              ar=sprintf "ستُغلق %d خلية فارغة عند الحفظ." count }
+        let splitButton = { en="Split this pane"; zh="拆分这个窗格"; ja="このペインを分割"; ar="تقسيم هذا الجزء" }
+        let removeTab = { en="Take out of the group"; zh="移出分组"; ja="グループから外す"; ar="إخراج من المجموعة" }
 
     module CommandLine =
         /// Shown for --help: the options, then examples to copy.
