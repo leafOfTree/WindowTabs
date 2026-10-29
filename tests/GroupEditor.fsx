@@ -203,8 +203,8 @@ let main() =
             // A selected window not in the group: the first tab is selected instead.
             check ((GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=frame; active=IntPtr 99}],shown,Some 0)).Selected=a) "A selection of no tab was kept"
         api.setValue("tabThemeMode",box "dark")
-        // Dragging within the row, the crosses, the split button and its empty cells, driven as
-        // the mouse drives them.
+        // Dragging within the row, taking a tab out, the split button and its empty cells, driven
+        // as the mouse drives them.
         do
             let names = ["Edge – Docs";"Notepad – notes.txt";"Terminal";"Downloads"]
             let shown = List.zip [a;b;c;d] names |> List.map(fun (hwnd,name) -> {hwnd=hwnd; name=name; icon=None; minimized=true})
@@ -215,7 +215,6 @@ let main() =
             let cellRect path = editor.Layout.rows.[0].cells |> List.find(fun (each,_,_) -> each=path) |> fun (_,_,r) -> r
             let tabRect hwnd = editor.Layout.rows.[0].tabs |> List.find(fun (each,_) -> each=hwnd) |> snd
             let chipPt path = let r = cellRect path in Point(r.X+r.Width/2,r.Y+Dpi.scale 12)
-            let crossPt (r:Rectangle) = Point(r.Right-Dpi.scale 6-Dpi.scale 8,r.Y+r.Height/2)
             let cellCrossPt (r:Rectangle) = Point(r.Right-Dpi.scale 6-Dpi.scale 8,r.Y+Dpi.scale 6+Dpi.scale 8)
             let panes() = GroupDraft.paneWindows editor.Draft.groups.[0]
             let tabsNow() = editor.Draft.groups.[0].tabs
@@ -243,11 +242,12 @@ let main() =
             check (editor.Drag |> Option.exists(fun d -> d.aim=Some(StripSlot(0,0)))) (sprintf "A chip over the strip's start was not aimed at the first slot: %A" editor.Drag)
             editor.MouseUp(slotPt)
             check (tabsNow()=[c;a;b;d] && panes()=[b;a]) (sprintf "Dropping a pane chip on the strip did not place the tab and close the pane: %A %A" (tabsNow()) (panes()))
-            // The cross on the tab under the pointer takes it out of the group.
-            editor.MouseMove(centre (tabRect d))
-            editor.MouseDown(crossPt (tabRect d))
-            editor.MouseUp(crossPt (tabRect c))
-            check (tabsNow()=[c;a;b] && editor.Draft.loose=[d]) (sprintf "The cross did not take the tab out: %A" (tabsNow()))
+            // The tabs the drop moved slide from where they were; the picture leaves them out meanwhile.
+            let slidFrom = editor.Sliding
+            check (slidFrom.ContainsKey a && slidFrom.ContainsKey b && slidFrom |> Map.forall(fun hwnd from -> from<>tabRect hwnd)) (sprintf "The tabs the drop moved are not on their way from where they were: %A" slidFrom)
+            // Taking a tab out, as its menu does, leaves it loose.
+            editor.TakeOut d
+            check (tabsNow()=[c;a;b] && editor.Draft.loose=[d]) (sprintf "Taking the tab out did not leave it loose: %A" (tabsNow()))
             // The split button on the focused cell opens the shapes; one cuts the cell, its slots empty.
             editor.MouseDown(centre (tabRect a))
             editor.MouseUp(centre (tabRect a))

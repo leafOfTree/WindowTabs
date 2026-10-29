@@ -917,27 +917,29 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 TabSearch.tabs nameOverride (WinUserApi.GetForegroundWindow()) (live |> List.map(fun info -> (info :> IGroup).windows.list))
                 |> List.filter(fun entry -> entry.desktop="")
             let onDesktop = entries |> List.map(fun entry -> entry.hwnd) |> set
-            let groups =
-                live |> List.filter(fun info -> (info :> IGroup).windows.list |> List.exists onDesktop.Contains)
-                |> List.sortBy(fun info -> entries |> List.tryFindIndex(fun entry -> (info :> IGroup).windows.contains((=) entry.hwnd)) |> Option.defaultValue Int32.MaxValue)
+            let groups = live |> List.filter(fun info -> (info :> IGroup).windows.list |> List.exists onDesktop.Contains)
             let grouped = groups |> List.collect(fun info -> (info :> IGroup).windows.list) |> set
             let loose = entries |> List.map(fun entry -> entry.hwnd) |> List.filter(fun each -> not(grouped.Contains each) && Services.filter.isTabbableWindow each)
             if groups.IsEmpty && loose.IsEmpty then Notice.remind (tr Strings.GroupEditor.title) (tr Strings.GroupEditor.noGroup)
             else
                 let zorder = this.hwndZorders()
                 let activeOf (info:GroupInfo) = (info :> IGroup).windows.list |> List.minBy(fun each -> zorder.tryFind(each).def(Int32.MaxValue))
-                // The tab's name as the strip shows it: the rename, or the last part of a path.
+                // The tab's name as the strip shows it: the rename, or the last part of a path; a
+                // window with no title goes by its program.
                 let lastName (text:string) =
                     let parts = text.Split([|'\\';'/'|],StringSplitOptions.RemoveEmptyEntries)
                     if parts.Length=0 then text else parts.[parts.Length-1]
+                let nameOf each =
+                    let window = os.windowFromHwnd(each)
+                    match nameOverride each |> Option.defaultValue (lastName window.text) with
+                    | "" -> (try IO.Path.GetFileNameWithoutExtension(window.pid.exeName) with _ -> "")
+                    | name -> name
                 let windowOf each =
                     let window = os.windowFromHwnd(each)
-                    // A window with no title goes by its program.
-                    let name =
-                        match nameOverride each |> Option.defaultValue (lastName window.text) with
-                        | "" -> (try IO.Path.GetFileNameWithoutExtension(window.pid.exeName) with _ -> "")
-                        | name -> name
-                    { hwnd=each; name=name; icon=ImgHelper.knownWindowIcon window; minimized=window.isMinimized }
+                    { hwnd=each; name=nameOf each; icon=ImgHelper.knownWindowIcon window; minimized=window.isMinimized }
+                // Rows by their first tab's name, and the loose windows by name: an order that
+                // holds from one opening to the next, where the window search's would shuffle them.
+                let byName (name:'a -> string) (a:'a) (b:'a) = String.Compare(name a,name b,StringComparison.CurrentCultureIgnoreCase)
                 let captured = Dictionary<IntPtr,GroupLayout * Rect>()
                 let remaining = ref groups.Length
                 let finish() =
@@ -952,6 +954,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                     | _ -> GroupLayout.Single,os.windowFromHwnd(active).visibleBounds
                                 {GroupEditorRow.group=Some info.hwnd; frame=frame; active=active},
                                 GroupDraft.ofGroup info.hwnd members (members |> List.filter PinnedTabs.contains |> set) layout)
+                            |> List.sortWith(byName (fun (_,g:GroupDraft) -> nameOf (List.head g.tabs)))
+                        let loose = loose |> List.sortWith(byName nameOf)
                         let drafts = rows |> List.map snd
                         let windows = (drafts |> List.collect(fun g -> g.tabs))@loose |> List.distinct |> List.map windowOf
                         let draft = DesktopDraft.ofDesktop drafts loose

@@ -4,7 +4,7 @@ Status: design of 2026-10-29; phases 1 to 4 of section 7 are implemented: the mo
 `ReplaceLayout`, `SetTabOrder` and the apply pipeline; the popup (`GroupEditor.fs`, opened by
 **Edit groups…** from the palette, the tab menu or its key) with every group of the desktop as
 a row, the loose row and the new group's band, a row expanded over the group in front, and
-dragging within and between rows, the crosses, the split button and its empty cells, with
+dragging within and between rows, the tab menu, the split button and its empty cells, with
 `tests/GroupEditor.fsx`. Phase 5's polish (the greyed tab and row for what is gone, the docs
 beyond this file, the README) is not.
 Scope: one popup that shows
@@ -71,8 +71,9 @@ picture, and moves the windows once, when the user is done.
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Rows.** One per group, in the order the window search lists groups (most recently
-  used first), each a band a shade lighter than the popup. Along the row, from the left,
+- **Rows.** One per group, in the order of their first tabs' names (the window search's
+  most-recent-first order shuffled them from one opening to the next), each a band a shade
+  lighter than the popup. Along the row, from the left,
   the group's tabs as blocks of icon and name in strip order, pinned ones first with the
   pin, wrapping to further lines when they do not fit; names are cut with an ellipsis and
   hovering shows the whole in the tab title tip's manner. The active tab has the accent
@@ -112,8 +113,9 @@ tab, so the strip starts at the row's top edge, as a real group's does.
 - **The strip.** Every window of the group as a tab in strip order, pinned ones first with
   the pin, each the app's icon and the tab's name (the rename where there is one), cut
   with an ellipsis; hovering a tab shows the whole name in the tab title tip's manner, as
-  the real strip does. Each has a close cross on hover that takes the window *out of the group*:
-  it goes to the loose windows, to be put elsewhere or left on its own, and is not closed.
+  the real strip does. Right-clicking a tab (or a pane chip) offers **Take out of the group**:
+  the window goes to the loose windows, to be put elsewhere or left on its own, and is not
+  closed. A close cross on the tab was tried and dropped: it read as closing the window.
   One tab is selected, drawn as the active tab is on the real strip and joined to the
   content below; it starts as the group's active tab. Clicking a tab selects it, and the
   content changes to what the group would show with that tab active, so the picture
@@ -121,8 +123,8 @@ tab, so the strip starts at the row's top edge, as a real group's does.
 - **The content.** With a tab selected that is in no split, one cell with that window's
   picture and its chip over it, filling the content: the whole group is that window. With
   a tab selected that is in a split, the split tree drawn as nested cells at their ratios,
-  each leaf cell with its window's picture and chip, the selected one's cell with the
-  accent outline; the other panes' tabs are marked in the strip as the real strip marks
+  each leaf cell with its window's picture and chip, the split button on the selected one's
+  cell; the other panes' tabs are marked in the strip as the real strip marks
   them, with the seam mark between neighbours. The cells do not resize here: ratios are
   the divider's job, and **Equal panes** stays on the seam button's menu.
 - No **Add window…** button: every window on this desktop is in some row of the popup, so
@@ -147,7 +149,9 @@ tab, so the strip starts at the row's top edge, as a real group's does.
 ### 2.4 Dragging
 
 One drag model for the overview and the expanded row alike: the tab itself comes along under
-the pointer, held where it was pressed, and its place stays open in the strip. Carried off
+the pointer, held where it was pressed, and its place stays open in the strip. The tabs a
+move shifts slide to their new places over 150ms, eased out, rather than jumping; the keys'
+moves slide the same way. Carried off
 the rows (to the title, the footer or out of the popup), the tab goes back to where it was
 taken from, so a drop there, or outside, changes nothing. Within a row (its tabs, and its
 content when expanded):
@@ -312,9 +316,11 @@ the main STA with the other popups, one at a time.
 - `WtProgram/GroupEditor.fs` (new, after `SplitPanePicker.fs`): the popup, its rows, its
   drawing and its drag, the expanded row's pictures through the DWM thumbnail helpers the
   split transition uses. The picture is drawn into a bitmap only when the draft, the selection or the aim of a
-  drag changes (about 60ms for a dozen rows); the chip in hand, the drop zone and the hover
-  cross are drawn over it at each paint, and the layout, with its text measured, is kept
-  until something it depends on changes. `GroupEditorApply.fs` has the four steps of
+  drag changes (about 60ms for a dozen rows); the chip in hand, the drop zone, the tabs on
+  their way and the hover cross are drawn over it at each paint, and the layout, with its
+  text measured, is kept until something it depends on changes. Nothing is outlined: the
+  row the keys are on has its chevron in the accent, since nothing in the popup is selected
+  in the sense an outline would claim. `GroupEditorApply.fs` has the four steps of
   section 4, taking the services it needs as arguments so the suites can drive it.
 - `WtProgram/Program.fs`: `editGroups`, building the draft from the desktop and the groups'
   captured layouts, opening the popup as the palette opens, keeping one at a time.
@@ -350,7 +356,7 @@ the main STA with the other popups, one at a time.
    draft, with their tests. No UI; this phase ships nothing visible and can land on its own.
 2. The popup with one row expanded: the strip, the content with its pictures, Save and
    Cancel, the entry points and strings. Rendering tests. Usable with the keyboard only.
-3. Dragging within a row, the close cross, the split button and its empty cells.
+3. Dragging within a row, taking a tab out, the split button and its empty cells.
 4. The overview: every group as a row with its chevron, the loose row, New group,
    expanding a row, dragging between rows. Rendering and drag tests for the overview.
 5. Polish: the greyed tab and row for what is gone, the notice naming what was done,
@@ -367,6 +373,6 @@ the main STA with the other popups, one at a time.
 - Ratios: the divider does that on the real windows, where the sizes can be seen.
 - Real empty panes: the split view has no way to make one any more, and the editor's empty
   cells live in the picture only, closed at Save.
-- Closing windows: the tab's close button and Close other tabs do that; the editor's cross
+- Closing windows: the tab's close button and Close other tabs do that; the editor's menu
   only changes membership, so a slip costs nothing.
 - Saving the picture as a workspace: Save workspace does that after Save here.
