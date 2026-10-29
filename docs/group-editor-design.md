@@ -203,8 +203,11 @@ move between panes by direction; Up comes back to the tabs. Ctrl+Left/Right move
 selected tab along the strip; Ctrl+Up/Down moves it to the row above or below, the loose
 row included, which is the keyboard's drag between groups; Ctrl+N takes it to a new group.
 Delete takes the selected window out of its group, to the loose row. Enter on a row expands
-it; Ctrl+Enter saves; Esc goes back from an expanded row, and from the overview cancels, as
-does clicking outside the popup, as the palette does. Every tab, chip and row has an
+it; Ctrl+Enter saves; Esc goes back from an expanded row, and from the overview cancels. The
+popup stays up while the user works elsewhere, unlike the palette: it is a tool to come back
+to, so clicking outside it changes nothing, and it closes only by Save, Cancel, Esc or its
+own command again. Dragging its title, or the footer's free room, moves it, and it stays
+where it was put. Every tab, chip and row has an
 accessible name; the picture is a custom-drawn control, as the switcher's icon view is, not
 a tree of WinForms controls.
 
@@ -314,8 +317,11 @@ the main STA with the other popups, one at a time.
   `IProgram`; a line in `DispatchedProgram` (`Services.fs`).
 - `WtProgram/WindowGroup.fs`: `run SetTabOrder`; nothing else, `execute` takes the new case.
 - `WtProgram/GroupEditor.fs` (new, after `SplitPanePicker.fs`): the popup, its rows, its
-  drawing and its drag, the thumbnails through the DWM thumbnail and `PrintWindow` helpers
-  the split transition and the tab preview use; `GroupEditorApply` with the four steps of
+  drawing and its drag, the thumbnails through the DWM thumbnail helpers the split transition
+  uses. The picture is drawn into a bitmap only when the draft, the selection or the aim of a
+  drag changes (about 60ms for a dozen rows); the chip in hand, the drop zone and the hover
+  cross are drawn over it at each paint, and the layout, with its text measured, is kept
+  until something it depends on changes. `GroupEditorApply.fs` has the four steps of
   section 4, taking the services it needs as arguments so the suites can drive it.
 - `WtProgram/Program.fs`: `editGroups`, building the draft from the desktop and the groups'
   captured layouts, opening the popup as the palette opens, keeping one at a time.

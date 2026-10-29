@@ -366,6 +366,26 @@ let main() =
             check (plan.detached=[b;c] && plan.groups.Length=1 && plan.groups.Head.joining=[e;f] && plan.groups.Head.reorder && plan.groups.Head.layout=Some(Split {pair d e with focused=[Second]}))
                   (sprintf "The overview's plan is not as expected: %A" plan)
             editor.Close()
+        // A desktop of many rows is laid out and drawn in a fraction of a second, and the layout is
+        // not measured again while nothing it depends on has changed.
+        do
+            let many = DesktopDraft.ofDesktop [for i in 1..12 -> GroupDraft.ofGroup (IntPtr(100+i)) [IntPtr(1000+i*3);IntPtr(1001+i*3);IntPtr(1002+i*3)] Set.empty GroupLayout.Single] []
+            let shownMany = many.groups |> List.collect(fun g -> g.tabs) |> List.map(fun h -> {hwnd=h; name=sprintf "Window %d" (int h); icon=None; minimized=true})
+            let rowsMany = many.groups |> List.map(fun g -> {group=g.group; frame=Rect(Pt(),Sz(1600,900)); active=g.tabs.Head})
+            let editor = GroupEditorForm(many,rowsMany,shownMany,Some 0)
+            let clock = Diagnostics.Stopwatch.StartNew()
+            let l = editor.Layout
+            let layoutMs = clock.Elapsed.TotalMilliseconds
+            clock.Restart()
+            use image = editor.Render()
+            let renderMs = clock.Elapsed.TotalMilliseconds
+            clock.Restart()
+            for _ in 1..50 do editor.Layout |> ignore
+            let cachedMs = clock.Elapsed.TotalMilliseconds
+            printfn "PERF group-editor rows=%d layout=%.1fms render=%.1fms layout-cached-x50=%.2fms" l.rows.Length layoutMs renderMs cachedMs
+            check (cachedMs<layoutMs+5.0) "The layout was measured again with nothing changed"
+            check (renderMs<2000.0) (sprintf "Drawing a desktop of 12 rows took %.0fms" renderMs)
+            editor.Close()
         let mouse = Event<int * IntPtr>()
         let detached = Collections.Generic.List<IntPtr>()
         let desktopRef : IDesktop option ref = ref None
