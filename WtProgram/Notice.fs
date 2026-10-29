@@ -414,7 +414,7 @@ type NoticeWindow() =
     member private this.syncHalo() =
         if not SystemCorners.supported.Value && not SystemInformation.HighContrast && this.IsHandleCreated then
             if this.Visible && this.Width>0 then
-                if halo.IsNone then halo <- Some(new SettingsPopupShadow(this))
+                if halo.IsNone then halo <- Some(new SettingsPopupShadow(this,corner=6))
                 halo |> Option.iter(fun shadow -> shadow.Show(this.Opacity))
             else halo |> Option.iter(fun shadow -> shadow.Hide())
     override this.OnMove(e) = base.OnMove(e); this.syncHalo()

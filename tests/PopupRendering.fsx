@@ -50,6 +50,11 @@ let referenceSwitcherShadow dpi width height =
 let main() =
     // The dropdown halo exists; its exact shape is a matter of looks.
     check (SettingsPopupShadowPixels.create 96 180 340 |> Array.exists(fun value -> value>0uy)) "Dropdown halo is missing"
+    // The halo's inside follows the popup's corners: around a 6px corner the pixel two in from the
+    // popup's corner, outside a 10px one, is left clear, so none of the shadow falls on the popup itself.
+    do
+        let inside corner = (SettingsPopupShadowPixels.createRounded 96 180 340 corner).[((6+2)*(180+12)+6+2)*4+3]
+        check (inside 10 > 0uy && inside 6 = 0uy) "The halo did not follow a smaller corner"
     for dpi,width,height in [96,320,180;144,960,420;96,15,10;144,37,37] do
         check (TaskSwitchShadowCache.get dpi width height = referenceSwitcherShadow dpi width height) "Optimized switcher shadow changed pixels"
     let cached = TaskSwitchShadowCache.get 96 320 180

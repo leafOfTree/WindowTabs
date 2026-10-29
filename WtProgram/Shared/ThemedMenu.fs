@@ -51,10 +51,12 @@ module MenuShape =
         path
 
 module SettingsPopupShadowPixels =
-    let create dpi width height =
+    /// Around a popup whose corners are rounded by `corner` logical pixels: the halo's inside
+    /// follows them, so none of it falls on the popup's own corners.
+    let createRounded dpi width height corner =
         let padding = Dpi.scaleAt dpi 6
         let w,h = width+padding*2,height+padding*2
-        let radius = float (min (min width height/2) (Dpi.scaleAt dpi 10))
+        let radius = float (min (min width height/2) (Dpi.scaleAt dpi corner))
         let sigma = float (max 1 (Dpi.scaleAt dpi 2))
         let pixels = Array.zeroCreate<byte> (w*h*4)
         for y in 0..h-1 do
@@ -65,11 +67,15 @@ module SettingsPopupShadowPixels =
                 if distance>=0.0 then
                     pixels.[(y*w+x)*4+3] <- byte(Math.Round(22.0*exp(-distance*distance/(2.0*sigma*sigma))))
         pixels
+    /// For the settings dropdowns, with their 10px corners.
+    let create dpi width height = createRounded dpi width height 10
 
 /// A click-through halo with no directional offset; owned by the popup's lifetime. The settings
 /// popups use it, and the tab menu where Windows 10 has no soft shadow of its own for menus.
-type SettingsPopupShadow(owner:Control) =
+/// `corner` is the popup's corner radius in logical pixels, 10 as the settings dropdowns'.
+type SettingsPopupShadow(owner:Control, ?corner:int) =
     let os = OS()
+    let corner = defaultArg corner 10
     let padding = Dpi.scale 6
     let helper = os.createWindow (fun message -> message.def()) WindowsStyles.WS_POPUP
                     (WindowsExtendedStyles.WS_EX_LAYERED ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW |||
@@ -84,7 +90,7 @@ type SettingsPopupShadow(owner:Control) =
         | _ ->
             cached |> Option.iter(fun (_,_,_,old) -> old.Dispose())
             let w,h = width+padding*2,height+padding*2
-            let pixels = SettingsPopupShadowPixels.create dpi width height
+            let pixels = SettingsPopupShadowPixels.createRounded dpi width height corner
             let bitmap = new Bitmap(w,h,Imaging.PixelFormat.Format32bppArgb)
             let data = bitmap.LockBits(Rectangle(0,0,w,h),Imaging.ImageLockMode.WriteOnly,Imaging.PixelFormat.Format32bppArgb)
             try
@@ -248,7 +254,7 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
             menu.DropShadowEnabled <- false
             let halo : SettingsPopupShadow option ref = ref None
             menu.Opened.Add(fun _ ->
-                if halo.Value.IsNone then halo.Value <- Some(new SettingsPopupShadow(menu))
+                if halo.Value.IsNone then halo.Value <- Some(new SettingsPopupShadow(menu,corner=6))
                 halo.Value |> Option.iter(fun shadow -> shadow.Show()))
             menu.Closed.Add(fun _ -> halo.Value |> Option.iter(fun shadow -> shadow.Hide()))
             menu.Disposed.Add(fun _ ->
