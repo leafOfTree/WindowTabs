@@ -107,7 +107,7 @@ let main () =
     let ts : TabStripSprite<int> = {
         tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"]))
         lorder=List2([1;2]); zorder=List2([1;2]); size=Sz(420,28)
-        slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; held=None; centerShift=0.0; dock=TabDockTop; scrollOffset=0
+        slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; held=None; centerShift=0.0; blocked=[]; dock=TabDockTop; scrollOffset=0
         transparent=true; appearance=appearance; hover=None; captured=None }
     let originalVerticalDpi = Dpi.value()
     try
@@ -421,6 +421,12 @@ let main () =
         let crowdedLeft,crowdedRight = span { wide 6 with centerShift=40.0 }
         check (crowdedRight = 800) "Centred tabs ran into the caption buttons or left the row unfilled"
         check (crowdedLeft = 80) "Centred tabs that fill the row are not symmetric about the window"
+        // An app's own bar over the middle of the row, such as a remote desktop's connection bar:
+        // centred tabs move to the nearest clear side of it and stay put for a bar elsewhere.
+        let barLeft,barRight = span { wide 1 with blocked=[(300.0,500.0)] }
+        check (barRight<=300 || barLeft>=500) (sprintf "A centred tab stayed under the app's bar: %d-%d" barLeft barRight)
+        check (span { wide 1 with blocked=[(0.0,100.0)] } = span (wide 1)) "A tab moved for a bar that did not cover it"
+        check (span { wide 2 with blocked=[(300.0,500.0)] } = (plainLeft,plainRight)) "Tabs too wide for either side of a bar left their alignment"
     // Folder and pill styles: the inactive tabs are the bar, the active tab a shape raised on it.
     // Three 140px tabs, the middle one active, each 27px tall from y=1.
     do

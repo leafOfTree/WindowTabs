@@ -437,8 +437,10 @@ type TabStripDecorator(group:WindowGroup) as this =
         let alignmentItem =
             let direction = if this.ts.isVertical then TabUp else this.ts.direction
             let currentAlignment = this.ts.getAlignment direction
-            let setAlignment newAlignment = fun() -> 
-                this.ts.setAlignment(direction, newAlignment)
+            // Both places at once: chosen over a normal window, it held only until the window
+            // was maximized or went full screen and the tabs moved inside.
+            let setAlignment newAlignment = fun() ->
+                for each in [TabUp;TabDown] do this.ts.setAlignment(each, newAlignment)
 
             let alignmentMenuItem(text,alignment) = CmiRegular({
                 text = text

@@ -37,6 +37,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let visibleCell = Bemo.Cell<bool>(Cell, false, (=))
     let transparentCell = Cell.create(true)
     let showInsideCell = Bemo.Cell<bool>(Cell, false, (=))
+    /// On screen, the bars the app keeps over its window that the tabs inside it make way for.
+    let appBarsCell = Bemo.Cell<Rect list>(Cell, [], (=))
     let isInAltTabCell = Cell.create(false)
     let numberBadgeKeysCell = Bemo.Cell<string>(Cell, SettingsCatalog.textDefault "numberLeaderKeys", (=))
     let numberBadgesCell = Bemo.Cell<bool>(Cell, false, (=))
@@ -222,6 +224,13 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             centerShift =
                 if this.showInside then float(this.appearance.tabIndentFlipped - this.appearance.tabIndentNormal) / 2.0
                 else 0.0
+            blocked =
+                if not this.showInside then []
+                else
+                    let top,bottom = location.y,location.y+this.size.height
+                    appBarsCell.value |> List.choose(fun bar ->
+                        if bar.y<bottom && bar.y+bar.height>top then Some(float(bar.x-location.x),float(bar.x+bar.width-location.x))
+                        else None)
             appearance =
                 if this.isIconOnly then
                     { this.appearance with tabMaxWidth = Dpi.scale 50 }
@@ -886,6 +895,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             foregroundCell.set(value) 
             
     member this.bounds = this.window.bounds
+
+    member this.appBars
+        with get() = appBarsCell.value
+        and set(value) = appBarsCell.set(value)
 
     member this.setPlacement(placement) =
         let moved = location <> placement.bounds.location
