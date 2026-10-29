@@ -111,6 +111,9 @@ type ProgramView() as this=
         // Only running apps: an app is set while it is open, and a saved rule for one that is not
         // (an installer run once, say) still applies when it runs again.
         let customRules = Services.settings.getValue("appGroupingRules") :?> AppGroupingRule list
+        // A grouped window in full screen has no caption buttons, so it does not look like an app
+        // window; its group still lists it, as Remote Desktop's. Read here: groups belong to this thread.
+        let grouped = try Set.ofSeq (Services.desktop.groups.list |> Seq.collect(fun group -> group.windows.list)) with _ -> Set.empty
         scanner.Request(fun cancellation ->
             let items = ResizeArray<TreeListItem>()
             try
@@ -119,7 +122,7 @@ type ProgramView() as this=
                 for window in os.windowsInZorder.toArray do
                     cancellation.ThrowIfCancellationRequested()
                     try
-                        if window.isWindow && Services.filter.isAppWindow(window.hwnd) then
+                        if window.isWindow && (Services.filter.isAppWindow(window.hwnd) || grouped.Contains window.hwnd) then
                             cancellation.ThrowIfCancellationRequested()
                             let path = window.pid.processPath
                             if not(String.IsNullOrEmpty(path)) then
