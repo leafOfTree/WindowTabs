@@ -1,10 +1,12 @@
 # Group editor: design
 
-Status: design of 2026-10-29; phases 1 to 3 of section 7 are implemented: the model,
-`ReplaceLayout`, `SetTabOrder` and the apply pipeline; the popup with the one row of the
-group in front expanded (`GroupEditor.fs`, opened by **Edit groups…** from the palette, the
-tab menu or its key); and within it dragging, the crosses, the split button and its empty
-cells, with `tests/GroupEditor.fsx`. The overview of every group is not.
+Status: design of 2026-10-29; phases 1 to 4 of section 7 are implemented: the model,
+`ReplaceLayout`, `SetTabOrder` and the apply pipeline; the popup (`GroupEditor.fs`, opened by
+**Edit groups…** from the palette, the tab menu or its key) with every group of the desktop as
+a row, the loose row and the new group's band, a row expanded over the group in front, and
+dragging within and between rows, the crosses, the split button and its empty cells, with
+`tests/GroupEditor.fsx`. Phase 5's polish (the greyed tab and row for what is gone, the docs
+beyond this file, the README) is not.
 Scope: one popup that shows
 every group on the desktop in view as a row, with its tabs and its panes, and the windows
 that are in no group beside them; the user rearranges windows within a group and between

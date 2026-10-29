@@ -899,36 +899,62 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
     member this.foregroundGroup = this.desktop.foregroundGroup
 
-    /// The group editor over the group of the window: its tabs in strip order with their names
-    /// and icons, and its layout read on its thread; one at a time, and opened again it closes.
+    /// The group editor over the desktop in view: every group there as a row, the group of the
+    /// window expanded, and the loose windows; each group's layout read on its thread. One at a
+    /// time, and opened again it closes.
     member this.editGroups(hwnd:IntPtr) =
         match groupEditorCell.value with
         | Some editor -> editor.Close()
         | None ->
-            match this.desktop.groups.tryFind(fun group -> group.windows.contains((=) hwnd)) with
-            | Some(:? GroupInfo as info) when not info.isExited && not info.isRetiring ->
-                info.captureLayout(fun captured ->
-                    if groupEditorCell.value.IsNone && not info.isExited then
-                        let members = (info :> IGroup).windows.list
-                        let top = if List.contains hwnd members then hwnd else List.head members
-                        // The tab's name as the strip shows it: the rename, or the last part of a path.
-                        let lastName (text:string) =
-                            let parts = text.Split([|'\\';'/'|],StringSplitOptions.RemoveEmptyEntries)
-                            if parts.Length=0 then text else parts.[parts.Length-1]
-                        let windows =
-                            members |> List.map(fun each ->
-                                let window = os.windowFromHwnd(each)
-                                { hwnd=each
-                                  name=windowNameOverride.tryFind(each).bind(id) |> Option.defaultValue (lastName window.text)
-                                  icon=ImgHelper.knownWindowIcon window
-                                  minimized=window.isMinimized })
-                        let layout,frame =
-                            match captured |> Option.bind snd with
-                            | Some(_,frame,panes) -> SplitPersistence.rebuild panes,frame
-                            | None -> GroupLayout.Single,os.windowFromHwnd(top).visibleBounds
-                        let pinned = members |> List.filter PinnedTabs.contains |> set
-                        let draft = DesktopDraft.ofDesktop [GroupDraft.ofGroup info.hwnd members pinned layout] []
-                        let editor = GroupEditorForm(draft,0,windows,frame,top)
+            let nameOverride each = windowNameOverride.tryFind(each).bind(id)
+            let live =
+                this.desktop.groups.list |> List.choose(fun group ->
+                    match group with
+                    | :? GroupInfo as info when not info.isExited && not info.isRetiring && group.windows.count>0 -> Some info
+                    | _ -> None)
+            // The windows on this desktop, groups first in the window search's order, then the loose ones.
+            let entries =
+                TabSearch.tabs nameOverride (WinUserApi.GetForegroundWindow()) (live |> List.map(fun info -> (info :> IGroup).windows.list))
+                |> List.filter(fun entry -> entry.desktop="")
+            let onDesktop = entries |> List.map(fun entry -> entry.hwnd) |> set
+            let groups =
+                live |> List.filter(fun info -> (info :> IGroup).windows.list |> List.exists onDesktop.Contains)
+                |> List.sortBy(fun info -> entries |> List.tryFindIndex(fun entry -> (info :> IGroup).windows.contains((=) entry.hwnd)) |> Option.defaultValue Int32.MaxValue)
+            let grouped = groups |> List.collect(fun info -> (info :> IGroup).windows.list) |> set
+            let loose = entries |> List.map(fun entry -> entry.hwnd) |> List.filter(fun each -> not(grouped.Contains each) && Services.filter.isTabbableWindow each)
+            if groups.IsEmpty && loose.IsEmpty then Notice.remind (tr Strings.GroupEditor.title) (tr Strings.GroupEditor.noGroup)
+            else
+                let zorder = this.hwndZorders()
+                let activeOf (info:GroupInfo) = (info :> IGroup).windows.list |> List.minBy(fun each -> zorder.tryFind(each).def(Int32.MaxValue))
+                // The tab's name as the strip shows it: the rename, or the last part of a path.
+                let lastName (text:string) =
+                    let parts = text.Split([|'\\';'/'|],StringSplitOptions.RemoveEmptyEntries)
+                    if parts.Length=0 then text else parts.[parts.Length-1]
+                let windowOf each =
+                    let window = os.windowFromHwnd(each)
+                    { hwnd=each
+                      name=nameOverride each |> Option.defaultValue (lastName window.text)
+                      icon=ImgHelper.knownWindowIcon window
+                      minimized=window.isMinimized }
+                let captured = Dictionary<IntPtr,GroupLayout * Rect>()
+                let remaining = ref groups.Length
+                let finish() =
+                    if groupEditorCell.value.IsNone then
+                        let rows =
+                            groups |> List.filter(fun info -> not info.isExited && (info :> IGroup).windows.count>0) |> List.map(fun info ->
+                                let members = (info :> IGroup).windows.list
+                                let active = activeOf info
+                                let layout,frame =
+                                    match captured.TryGetValue info.hwnd with
+                                    | true,(layout,frame) -> layout,frame
+                                    | _ -> GroupLayout.Single,os.windowFromHwnd(active).visibleBounds
+                                {GroupEditorRow.group=Some info.hwnd; frame=frame; active=active},
+                                GroupDraft.ofGroup info.hwnd members (members |> List.filter PinnedTabs.contains |> set) layout)
+                        let drafts = rows |> List.map snd
+                        let windows = (drafts |> List.collect(fun g -> g.tabs))@loose |> List.distinct |> List.map windowOf
+                        let draft = DesktopDraft.ofDesktop drafts loose
+                        let expanded = drafts |> List.tryFindIndex(fun g -> List.contains hwnd g.tabs)
+                        let editor = GroupEditorForm(draft,rows |> List.map fst,windows,expanded)
                         editor.Ended.Add(fun () -> groupEditorCell.set None)
                         editor.Saved.Add(fun plan ->
                             if DesktopPlan.isEmpty plan then Notice.show (tr Strings.GroupEditor.title) (tr Strings.GroupEditor.nothingChanged)
@@ -936,8 +962,15 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                 GroupEditorApply.run plan (fun outcome ->
                                     Notice.show (tr Strings.GroupEditor.title) (tr (Strings.GroupEditor.applied outcome.moved outcome.detached outcome.made))))
                         groupEditorCell.set(Some editor)
-                        editor.Show())
-            | _ -> Notice.remind (tr Strings.GroupEditor.title) (tr Strings.GroupEditor.noGroup)
+                        editor.Show()
+                for info in groups do
+                    info.captureLayout(fun result ->
+                        (match result |> Option.bind snd with
+                         | Some(_,frame,panes) -> captured.[info.hwnd] <- (SplitPersistence.rebuild panes,frame)
+                         | None -> ())
+                        remaining.Value <- remaining.Value-1
+                        if remaining.Value=0 then finish())
+                if groups.IsEmpty then finish()
 
     /// Opens the palette on a scope, the windows when none is asked for, or closes it when it is
     /// open on that scope already; open on another scope, it goes there instead.

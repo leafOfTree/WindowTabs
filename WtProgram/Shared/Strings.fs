@@ -771,6 +771,18 @@ module Strings =
               ja=sprintf "空のセル %d 個は保存時に閉じられます。" count
               ar=sprintf "ستُغلق %d خلية فارغة عند الحفظ." count }
         let splitButton = { en="Split this pane"; zh="拆分这个窗格"; ja="このペインを分割"; ar="تقسيم هذا الجزء" }
+        /// The title's count of rows and loose windows.
+        let summary groups loose =
+            { en=sprintf "%d %s, %d loose" groups (if groups=1 then "group" else "groups") loose
+              zh=sprintf "%d 个分组，%d 个未分组窗口" groups loose
+              ja=sprintf "グループ %d、未分類 %d" groups loose
+              ar=sprintf "%d مجموعة، %d نافذة غير مجمّعة" groups loose }
+        let looseWindows = { en="Loose windows"; zh="未分组窗口"; ja="未分類のウィンドウ"; ar="نوافذ غير مجمّعة" }
+        let newGroup = { en="New group: drop a window here"; zh="新建分组：把窗口拖到这里"; ja="新しいグループ: ここにウィンドウをドロップ"; ar="مجموعة جديدة: أفلت نافذة هنا" }
+        let overviewHint = { en="Drag tabs between rows to regroup; Enter expands a row, Ctrl+Up and Ctrl+Down move a tab between rows; Ctrl+Enter saves."
+                             zh="在行之间拖标签即换组；Enter 展开一行，Ctrl+上下在行间移动标签；Ctrl+Enter 保存。"
+                             ja="行の間でタブをドラッグしてグループを変えます。Enter で行を展開、Ctrl+上下でタブを行間移動、Ctrl+Enter で保存。"
+                             ar="اسحب علامات التبويب بين الصفوف لإعادة التجميع؛ Enter يوسّع صفًا، وCtrl مع السهمين ينقل علامة تبويب بين الصفوف؛ Ctrl+Enter يحفظ." }
         let removeTab = { en="Take out of the group"; zh="移出分组"; ja="グループから外す"; ar="إخراج من المجموعة" }
 
     module CommandLine =
