@@ -219,6 +219,9 @@ type GroupCommand =
     | MoveTab of IntPtr * int
     /// The first window's tab right after the second's, kept behind the pinned tabs.
     | PlaceTabAfter of IntPtr * IntPtr
+    /// The strip's order: the windows named, in that order, then any not named in the order
+    /// they had; the pinned ones kept first either way.
+    | SetTabOrder of IntPtr list
     | SetTabColor of IntPtr * TabColorChoice option
     | SetTabPinned of IntPtr * bool
     | ToggleIconsOnly

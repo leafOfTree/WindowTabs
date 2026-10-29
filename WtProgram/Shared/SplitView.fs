@@ -60,6 +60,9 @@ type SplitCommand =
     | EndSplit of keep:IntPtr option
     /// Group-level fill/restore; the layout itself is unchanged.
     | ToggleFill
+    /// The whole layout put in place of the one there is, as the group editor saves it; None
+    /// ends the split. The group keeps only the panes of its members.
+    | ReplaceLayout of SplitLayout option
 
 /// What a drop at a point does: fills an empty pane, or makes room beside a node (the whole
 /// group at []).
@@ -628,6 +631,9 @@ module SplitView =
                 | None,_ -> Single
         | EndSplit _,_ -> Single
         | ToggleFill,_ -> layout
+        // Shown at once, parked or not: the editor's picture is what the user asked to see.
+        | ReplaceLayout(Some next),_ -> Split(refocus next.tree next.focused)
+        | ReplaceLayout None,_ -> Single
         | _,Single -> Single
 
     /// A pane window coming to the front focuses its pane; any other tab parks the panes.

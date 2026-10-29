@@ -82,8 +82,8 @@ parallel on separate runners. The final build check requires Release and every
 regression group to succeed. A failing group does not cancel the other groups.
 Each group uploads its own diagnostics. Groups are balanced by observed execution
 and compilation time rather than suite
-count: Architecture/SplitView/StartupGrouping/WindowIcon, GroupOperations/SettingsEditors/CommandPalette, and the remaining
-nine suites.
+count: Architecture/SplitView/GroupEditor/StartupGrouping/WindowIcon, GroupOperations/SettingsEditors/CommandPalette,
+and the remaining nine suites.
 Each job caches downloaded NuGet packages; each regression group restores the shared test-host
 dependencies once, and the Release job reuses its exe when compiling the desktop driver.
 Interactive desktop E2E still builds its own isolated Release copy. Native suites
