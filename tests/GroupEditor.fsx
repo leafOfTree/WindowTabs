@@ -291,8 +291,8 @@ let main() =
             narrow.MouseUp(at)
             check (GroupDraft.paneWindows narrow.Draft.groups.[0]=[a;b]) "A refused drop changed the panes"
             narrow.Close()
-        // The overview: every group a row with its thumbnail, the loose row, a new group's band;
-        // rows expand, and tabs drag between rows and from the keys.
+        // The overview: every group a row of its tabs with the chevron, the loose row, a new
+        // group's band; rows expand, and tabs drag between rows and from the keys.
         do
             let names = ["Edge – Docs";"Notepad – notes.txt";"Terminal";"Downloads";"report.pdf";"Spotify"]
             let shown = List.zip [a;b;c;d;e;f] names |> List.map(fun (hwnd,name) -> {hwnd=hwnd; name=name; icon=None; minimized=true})
@@ -301,7 +301,7 @@ let main() =
             let editor = GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=frame; active=a};{group=Some(IntPtr 2); frame=frame; active=d}],shown,None)
             let l = editor.Layout
             check (editor.Expanded=None && l.rows.Length=2 && l.rows |> List.forall(fun row -> not row.expanded) && (l.looseTabs |> List.map fst)=[e;f]) "The overview did not list the rows and the loose windows"
-            check (l.rows.[0].cells.Length=2 && l.rows.[1].cells.Length=1 && l.rows.[0].picture.Right<=l.rows.[0].band.Right) "A thumbnail did not show the split's cells"
+            check (l.rows |> List.forall(fun row -> row.cells.IsEmpty && row.chevron |> Option.exists(fun r -> r.Right<=row.band.Right && row.tabs |> List.forall(fun (_,t) -> t.Right<=r.X)))) "A folded row did not keep to its tabs and the chevron"
             check (l.rows.[0].band.Bottom<=l.rows.[1].band.Y && l.rows.[1].band.Bottom<=l.loose.Y && l.loose.Bottom<=l.newGroup.Y && l.newGroup.Bottom<=l.save.Y) "The rows are not stacked in order"
             use image = editor.Render()
             image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","group-editor-overview.png"))
@@ -316,23 +316,24 @@ let main() =
             check (tabsOf 0=[a;b] && tabsOf 1=[d;c] && editor.Drag |> Option.exists(fun d -> d.begun && d.aim=None)) (sprintf "A tab over another row's tabs did not join it there: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
             editor.MouseUp(slot)
             check (tabsOf 0=[a;b] && tabsOf 1=[d;c]) (sprintf "A tab dropped on another row did not stay there: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
-            // A loose window dragged onto a thumbnail's edge goes beside the row's active window.
+            // A tab carried off the rows goes back to where it was taken from; dropped there, nothing changes.
             let l = editor.Layout
-            editor.MouseDown(centre (l.looseTabs |> List.find(fun (each,_) -> each=e) |> snd))
-            let thumb = l.rows.[1].picture
-            let edge = Point(thumb.Right-Dpi.scale 4,thumb.Y+thumb.Height/2)
-            editor.MouseMove(Point(edge.X-60,edge.Y-100))
-            editor.MouseMove(edge)
-            check (editor.Drag |> Option.exists(fun d -> d.aim=Some(CellEdge(1,[],SideBySide,Second)) && d.fits)) (sprintf "A loose window over a thumbnail's edge was not aimed at the whole: %A" editor.Drag)
-            editor.MouseUp(edge)
-            check (editor.Draft.loose=[f] && tabsOf 1=[d;c;e] && GroupDraft.paneWindows editor.Draft.groups.[1]=[d;e]) (sprintf "A loose window dropped on a thumbnail's edge did not make the pair: %A" editor.Draft.groups.[1])
+            editor.MouseDown(centre (tabIn l.rows.[1] c))
+            let slot = let r = tabIn l.rows.[0] b in Point(r.Right+Dpi.scale 20,r.Y+r.Height/2)
+            editor.MouseMove(slot)
+            check (tabsOf 0=[a;b;c] && tabsOf 1=[d]) (sprintf "A tab carried back over its old row did not join it: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
+            let off = Point(slot.X,-Dpi.scale 10)
+            editor.MouseMove(off)
+            check (tabsOf 0=[a;b] && tabsOf 1=[d;c] && editor.Drag |> Option.exists(fun d -> d.begun && d.aim=None)) (sprintf "A tab carried off the rows did not go back: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
+            editor.MouseUp(off)
+            check (tabsOf 0=[a;b] && tabsOf 1=[d;c] && editor.Drag.IsNone) (sprintf "A tab dropped off the rows changed something: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
             // A tab dragged to the loose row leaves its group; one on the new group's band starts one.
             let l = editor.Layout
             editor.MouseDown(centre (tabIn l.rows.[0] b))
             editor.MouseMove(centre l.loose)
-            check (editor.Draft.loose=[f;b] && editor.Drag |> Option.exists(fun d -> d.aim=None)) "A tab over the loose row did not go loose there"
+            check (editor.Draft.loose=[e;f;b] && editor.Drag |> Option.exists(fun d -> d.aim=None)) "A tab over the loose row did not go loose there"
             editor.MouseUp(centre l.loose)
-            check (editor.Draft.loose=[f;b] && tabsOf 0=[a] && editor.Draft.groups.[0].panes.IsNone) "A tab dropped on the loose row did not leave its group"
+            check (editor.Draft.loose=[e;f;b] && tabsOf 0=[a] && editor.Draft.groups.[0].panes.IsNone) "A tab dropped on the loose row did not leave its group"
             let l = editor.Layout
             editor.MouseDown(centre (tabIn l.rows.[1] c))
             editor.MouseMove(centre l.newGroup)
@@ -345,11 +346,18 @@ let main() =
             editor.MouseMove(centre l.newGroup)
             check (editor.Drag |> Option.exists(fun d -> d.begun && d.aim=None)) "A window alone in its group was offered a new group"
             editor.MouseUp(centre l.newGroup)
-            // Clicking a thumbnail expands the row; Esc goes back; Tab and Enter expand the next row.
+            // Clicking a row's chevron expands the row, and the expanded row's folds it back; Esc
+            // goes back too; Tab and Enter expand the next row.
             let l = editor.Layout
-            editor.MouseDown(centre l.rows.[1].picture)
-            editor.MouseUp(centre l.rows.[1].picture)
-            check (editor.Expanded=Some 1 && editor.Selected=d && editor.Layout.rows.[1].expanded && not editor.Layout.rows.[0].expanded) "Clicking a thumbnail did not expand its row"
+            editor.MouseDown(centre l.rows.[1].chevron.Value)
+            editor.MouseUp(centre l.rows.[1].chevron.Value)
+            check (editor.Expanded=Some 1 && editor.Selected=d && editor.Layout.rows.[1].expanded && not editor.Layout.rows.[0].expanded) "Clicking a row's chevron did not expand its row"
+            let l = editor.Layout
+            editor.MouseDown(centre l.rows.[1].chevron.Value)
+            editor.MouseUp(centre l.rows.[1].chevron.Value)
+            check (editor.Expanded=None && editor.Cursor=1) "Clicking the expanded row's chevron did not fold it back"
+            editor.Press Keys.Return
+            check (editor.Expanded=Some 1) "Enter did not expand the row again"
             editor.Press Keys.Escape
             check (editor.Expanded=None && editor.Cursor=1) "Esc did not go back to the overview on the row"
             editor.Press Keys.Tab
@@ -359,11 +367,11 @@ let main() =
             // Ctrl+Down moves the cursor row's tab down a row, out to the loose row past the last;
             // from the loose row Ctrl+Up puts a window in the last group.
             editor.Press(Keys.Control ||| Keys.Down)
-            check (editor.Draft.loose=[f;b;c] && editor.Draft.groups.Length=2 && editor.Cursor=2) (sprintf "Ctrl+Down past the last row did not take the tab out: %A" editor.Draft)
+            check (editor.Draft.loose=[e;f;b;c] && editor.Draft.groups.Length=2 && editor.Cursor=2) (sprintf "Ctrl+Down past the last row did not take the tab out: %A" editor.Draft)
             editor.Press(Keys.Control ||| Keys.Up)
-            check (tabsOf 1=[d;e;f] && editor.Draft.loose=[b;c]) "Ctrl+Up from the loose row did not put the window in the last group"
+            check (tabsOf 1=[d;e] && editor.Draft.loose=[f;b;c]) "Ctrl+Up from the loose row did not put the window in the last group"
             let plan = editor.Plan
-            check (plan.detached=[b;c] && plan.groups.Length=1 && plan.groups.Head.joining=[e;f] && plan.groups.Head.reorder && plan.groups.Head.layout=Some(Split {pair d e with focused=[Second]}))
+            check (plan.detached=[b;c] && plan.groups.Length=1 && plan.groups.Head.joining=[e] && not plan.groups.Head.reorder && plan.groups.Head.layout.IsNone)
                   (sprintf "The overview's plan is not as expected: %A" plan)
             editor.Close()
         // A desktop of many rows is laid out and drawn in a fraction of a second, and the layout is

@@ -31,8 +31,8 @@ module GroupEditorMetrics =
     let cellGap = 4
     let contentMin = 220
     let contentMax = 420
-    let thumbWidth = 128
-    let thumbHeight = 72
+    /// The "Loose windows" label at that row's right end.
+    let labelWidth = 128
     let newGroupHeight = 40
     let footerHeight = 44
     let buttonWidth = 84
@@ -60,10 +60,13 @@ type DragAim =
 /// the pointer is, and what it is aimed at, with whether that drop would fit.
 type GroupEditorDrag = { hwnd:IntPtr; fromPane:bool; start:Point; at:Point; aim:DragAim option; fits:bool; begun:bool
                          /// Where in the tab the press was, so the tab in hand stays under the pointer as it was.
-                         offset:Point }
+                         offset:Point
+                         /// The draft and the selection as the tab was taken, with where it was taken from: back
+                         /// to them when it is carried off the rows, as if it had not moved.
+                         origin:DesktopDraft; originPane:bool; originSelected:IntPtr }
 
-/// One row as drawn: its band, its tabs, and its picture, the thumbnail or, expanded, the
-/// content, with the cells in it.
+/// One row as drawn: its band, its tabs, the chevron that expands it or folds it back, and,
+/// expanded, its content with the cells in it.
 type GroupEditorRowLayout = {
     index:int
     band:Rectangle
@@ -75,8 +78,8 @@ type GroupEditorRowLayout = {
     focused:PanePath option
     splitButton:Rectangle option
     shapes:(PaneShape * Rectangle) list
-    /// The button that folds the expanded row back into the overview.
-    collapse:Rectangle option }
+    /// The button at the row's right end: down to expand the row, up to fold it back.
+    chevron:Rectangle option }
 
 /// Where the picture's parts are, in the popup's own coordinates before scrolling.
 type GroupEditorLayout = {
@@ -92,9 +95,9 @@ type GroupEditorLayout = {
     /// The whole picture's height, the footer included.
     height:int }
 
-/// The group editor: every group of the desktop as a row of its tabs with a thumbnail of what
-/// it shows, the loose windows as a row of their own, and a band to drop a window on for a new
-/// group. A row expanded shows the group large: its tabs along the top as the strip draws
+/// The group editor: every group of the desktop as a row of its tabs, the loose windows as a
+/// row of their own, and a band to drop a window on for a new group. A row expanded shows the
+/// group large: its tabs along the top as the strip draws
 /// them, and under them what the group shows with the selected tab active, each pane with its
 /// window's live picture. Tabs and pane chips drag within a row and between rows; the split
 /// button cuts the focused cell into a shape with empty slots to fill. Edits change a draft;
@@ -238,7 +241,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 if expandedIndex=Some index then
                     let stripTop = top+rowPad
                     let side = scale GroupEditorMetrics.splitButton
-                    let collapse = Rectangle(pad+inner-rowPad-side,stripTop+(scale GroupEditorMetrics.stripHeight-side)/2,side,side)
+                    let chevron = Rectangle(pad+inner-rowPad-side,stripTop+(scale GroupEditorMetrics.stripHeight-side)/2,side,side)
                     let tabs = stripTabs g.tabs (pad+rowPad) (stripTop+scale GroupEditorMetrics.stripHeight-scale GroupEditorMetrics.tabHeight) (inner-2*rowPad-side-scale 8)
                     let contentWidth = inner-2*rowPad
                     let contentHeight =
@@ -265,25 +268,18 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         | _ -> []
                     y <- content.Bottom+rowPad+scale GroupEditorMetrics.rowGap
                     {index=index; band=Rectangle(pad,top,inner,content.Bottom+rowPad-top); expanded=true; tabs=tabs; picture=content; cells=cells
-                     focused=focused; splitButton=splitButton; shapes=shapes; collapse=Some collapse}
+                     focused=focused; splitButton=splitButton; shapes=shapes; chevron=Some chevron}
                 else
-                    let thumbWidth,thumbHeight = scale GroupEditorMetrics.thumbWidth,scale GroupEditorMetrics.thumbHeight
-                    let tabs,tabsBottom = wrapTabs g.tabs (pad+rowPad) (top+rowPad) (inner-3*rowPad-thumbWidth)
-                    let bottom = max tabsBottom (top+rowPad+thumbHeight)+rowPad
-                    // The thumbnail at the frame's proportions, within its box.
-                    let box = Rectangle(pad+inner-rowPad-thumbWidth,top+rowPad,thumbWidth,thumbHeight)
-                    let picture =
-                        if info.frame.width<=0 || info.frame.height<=0 then box
-                        else
-                            let byWidth = thumbWidth,int(int64 thumbWidth*int64 info.frame.height/int64 info.frame.width)
-                            let w,h = if snd byWidth<=thumbHeight then byWidth else int(int64 thumbHeight*int64 info.frame.width/int64 info.frame.height),thumbHeight
-                            Rectangle(box.X+(box.Width-w)/2,box.Y+(box.Height-h)/2,w,h)
-                    let cells,_ = cellsOf g info.active picture (scale 2)
+                    // Folded: the tabs alone, with the chevron to expand the row at the right end.
+                    let side = scale GroupEditorMetrics.splitButton
+                    let tabs,tabsBottom = wrapTabs g.tabs (pad+rowPad) (top+rowPad) (inner-3*rowPad-side)
+                    let bottom = max tabsBottom (top+rowPad+scale GroupEditorMetrics.tabHeight)+rowPad
+                    let chevron = Rectangle(pad+inner-rowPad-side,top+rowPad+(scale GroupEditorMetrics.tabHeight-side)/2,side,side)
                     y <- bottom+scale GroupEditorMetrics.rowGap
-                    {index=index; band=Rectangle(pad,top,inner,bottom-top); expanded=false; tabs=tabs; picture=picture; cells=cells
-                     focused=None; splitButton=None; shapes=[]; collapse=None})
+                    {index=index; band=Rectangle(pad,top,inner,bottom-top); expanded=false; tabs=tabs; picture=Rectangle.Empty; cells=[]
+                     focused=None; splitButton=None; shapes=[]; chevron=Some chevron})
         let looseTop = y
-        let looseTabs,looseBottom = wrapTabs current.loose (pad+rowPad) (looseTop+rowPad) (inner-3*rowPad-scale GroupEditorMetrics.thumbWidth)
+        let looseTabs,looseBottom = wrapTabs current.loose (pad+rowPad) (looseTop+rowPad) (inner-3*rowPad-scale GroupEditorMetrics.labelWidth)
         let looseBottom = max looseBottom (looseTop+rowPad+scale GroupEditorMetrics.tabHeight)+rowPad
         let loose = Rectangle(pad,looseTop,inner,looseBottom-looseTop)
         let newGroup = Rectangle(pad,loose.Bottom+scale GroupEditorMetrics.rowGap,inner,scale GroupEditorMetrics.newGroupHeight)
@@ -331,8 +327,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         tabs |> List.filter(fun (hwnd,r) -> hwnd<>dragged && (r.Bottom<=pt.Y || (r.Y<=pt.Y && r.X+r.Width/2<pt.X))) |> List.length
 
     /// What a drag is aimed at from the point: a slot among a row's tabs; in an expanded row's
-    /// content, a cell's edge, the whole content's edge or a cell's middle; on a thumbnail, its
-    /// edge for the whole group or a cell's middle; the loose row; the new group's band.
+    /// content, a cell's edge, the whole content's edge or a cell's middle; the loose row; the
+    /// new group's band.
     let aimAt (l:GroupEditorLayout) (pt:Point) (dragged:IntPtr) =
         let inRow = l.rows |> List.tryFind(fun row -> row.band.Contains pt)
         match inRow with
@@ -344,13 +340,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 | Some((path,axis,side),_) -> Some(CellEdge(row.index,path,axis,side))
                 | None -> row.cells |> List.tryFind(fun (_,_,r) -> r.Contains pt) |> Option.map(fun (path,_,_) -> CellMiddle(row.index,path))
             else None
-        | Some row ->
-            if row.picture.Contains pt then
-                // Small: only the whole's edge, and a cell's middle.
-                match SplitGeometry.edgeDrop (Pt(pt.X,pt.Y)) (scale 12) (toRect row.picture) with
-                | Some(axis,side) -> Some(CellEdge(row.index,[],axis,side))
-                | None -> row.cells |> List.tryFind(fun (_,_,r) -> r.Contains pt) |> Option.map(fun (path,_,_) -> CellMiddle(row.index,path))
-            else Some(StripSlot(row.index,slotAt row.tabs pt dragged))
+        | Some row -> Some(StripSlot(row.index,slotAt row.tabs pt dragged))
         | None ->
             if l.loose.Contains pt then Some LooseRow
             elif l.newGroup.Contains pt then Some NewGroupRow
@@ -436,39 +426,32 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     let mark = Rectangle(r.Right-scale 8-side,r.Y+(r.Height-side)/2,side,side)
                     g.DrawRectangle(pen,mark)
                     g.DrawLine(pen,mark.X+side/2,mark.Y,mark.X+side/2,mark.Bottom)
-        let drawCells (row:GroupEditorRowLayout) (shown:IntPtr) =
-            let small = not row.expanded
+        /// The expanded row's cells: each window's chip over its picture, or the icon alone where
+        /// there is no picture to show; an empty cell dashed; the focused one outlined.
+        let drawCells (row:GroupEditorRowLayout) =
             for path,pane,r in row.cells do
-                use shape = rounded r (scale (if small then 2 else 4))
+                use shape = rounded r (scale 4)
                 match pane with
                 | Occupied hwnd ->
                     use fill = new SolidBrush(cellFill)
                     g.FillPath(fill,shape)
-                    if small then
-                        // The icon alone, where there is no picture to show.
-                        if not(thumbs.ContainsKey hwnd) then
-                            let side = min (scale 24) (min r.Width r.Height*2/3)
-                            if side>0 then drawIcon (iconOf hwnd) (Rectangle(r.X+(r.Width-side)/2,r.Y+(r.Height-side)/2,side,side))
-                    else
-                        let chip = scale GroupEditorMetrics.chipHeight
-                        let iconSize = scale GroupEditorMetrics.iconSize
-                        let iconBounds = Rectangle(r.X+scale 8,r.Y+(chip-iconSize)/2,iconSize,iconSize)
-                        drawIcon (iconOf hwnd) iconBounds
-                        TextRenderer.DrawText(g,nameOf hwnd,bodyFont,Rectangle(iconBounds.Right+scale 6,r.Y,max 0 (r.Right-scale 8-iconBounds.Right-scale 6),chip),textOn,cellFill,textFlags)
-                        if not(thumbs.ContainsKey hwnd) then
-                            let picture = Rectangle(r.X,r.Y+chip,r.Width,r.Height-chip)
-                            let side = min (scale 48) (min picture.Width picture.Height*2/3)
-                            if side>0 then drawIcon (iconOf hwnd) (Rectangle(picture.X+(picture.Width-side)/2,picture.Y+(picture.Height-side)/2,side,side))
+                    let chip = scale GroupEditorMetrics.chipHeight
+                    let iconSize = scale GroupEditorMetrics.iconSize
+                    let iconBounds = Rectangle(r.X+scale 8,r.Y+(chip-iconSize)/2,iconSize,iconSize)
+                    drawIcon (iconOf hwnd) iconBounds
+                    TextRenderer.DrawText(g,nameOf hwnd,bodyFont,Rectangle(iconBounds.Right+scale 6,r.Y,max 0 (r.Right-scale 8-iconBounds.Right-scale 6),chip),textOn,cellFill,textFlags)
+                    if not(thumbs.ContainsKey hwnd) then
+                        let picture = Rectangle(r.X,r.Y+chip,r.Width,r.Height-chip)
+                        let side = min (scale 48) (min picture.Width picture.Height*2/3)
+                        if side>0 then drawIcon (iconOf hwnd) (Rectangle(picture.X+(picture.Width-side)/2,picture.Y+(picture.Height-side)/2,side,side))
                 | Empty ->
                     use pen = new Pen(palette.muted,float32(scale 1),DashStyle=Drawing2D.DashStyle.Dash)
                     g.DrawPath(pen,shape)
-                    if not small then
-                        TextRenderer.DrawText(g,tr Strings.GroupEditor.dropHere,bodyFont,r,palette.muted,Color.Transparent,
-                                              TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis)
-                let focused = if small then path=(GroupDraft.pathOf shown (groupAt row.index).Value |> Option.defaultValue []) else row.focused=Some path
-                if focused then
-                    use pen = new Pen(accent,float32(scale (if small then 1 else 2)))
-                    use outline = rounded (Rectangle.Inflate(r,-scale 1,-scale 1)) (scale (if small then 2 else 4))
+                    TextRenderer.DrawText(g,tr Strings.GroupEditor.dropHere,bodyFont,r,palette.muted,Color.Transparent,
+                                          TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis)
+                if row.focused=Some path then
+                    use pen = new Pen(accent,float32(scale 2))
+                    use outline = rounded (Rectangle.Inflate(r,-scale 1,-scale 1)) (scale 4)
                     g.DrawPath(pen,outline)
         for row in l.rows do
             let g' = (groupAt row.index).Value
@@ -486,16 +469,17 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 use fill = new SolidBrush(if highContrast then SystemColors.Control else palette.background)
                 g.FillPath(fill,shape)
             for hwnd,r in row.tabs do drawTab hwnd r (hwnd=shown) (List.contains hwnd inPane) row.expanded
-            drawCells row shown
-            // The button that folds the row back, a chevron up.
-            row.collapse |> Option.iter(fun r ->
+            drawCells row
+            // The chevron: down to expand the row, up to fold it back.
+            row.chevron |> Option.iter(fun r ->
                 use shape = rounded r (scale 5)
                 use fill = new SolidBrush(palette.surface)
                 g.FillPath(fill,shape)
                 use pen = new Pen(palette.muted,float32(scale 2))
                 let cx,cy,arm = r.X+r.Width/2,r.Y+r.Height/2,scale 5
-                g.DrawLine(pen,cx-arm,cy+arm/2,cx,cy-arm/2)
-                g.DrawLine(pen,cx,cy-arm/2,cx+arm,cy+arm/2))
+                let tip,back = if row.expanded then cy-arm/2,cy+arm/2 else cy+arm/2,cy-arm/2
+                g.DrawLine(pen,cx-arm,back,cx,tip)
+                g.DrawLine(pen,cx,tip,cx+arm,back))
             // The split button on the focused cell, and its flyout of shapes while open.
             row.splitButton |> Option.iter(fun r ->
                 use shape = rounded r (scale 5)
@@ -533,7 +517,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 use pen = new Pen(accent,float32(scale 1))
                 g.DrawPath(pen,band)
             for hwnd,r in l.looseTabs do drawTab hwnd r false false false
-            let label = Rectangle(l.loose.Right-rowPad-scale GroupEditorMetrics.thumbWidth,l.loose.Y,scale GroupEditorMetrics.thumbWidth,l.loose.Height)
+            let label = Rectangle(l.loose.Right-rowPad-scale GroupEditorMetrics.labelWidth,l.loose.Y,scale GroupEditorMetrics.labelWidth,l.loose.Height)
             TextRenderer.DrawText(g,tr Strings.GroupEditor.looseWindows,hintFont,label,palette.muted,looseFill,TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine)
             use dashed = rounded l.newGroup (scale 8)
             use pen = new Pen(palette.muted,float32(scale 1),DashStyle=Drawing2D.DashStyle.Dash)
@@ -617,7 +601,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             use pen = new Pen(accent,float32(scale 1))
             g.DrawPath(pen,band)
             TextRenderer.DrawText(g,"+ "+tr Strings.GroupEditor.newGroup,bodyFont,l.newGroup,textOn,selectedFill,
-                                  TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine)
+                                  TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.PreserveGraphicsTranslateTransform)
         | None -> ()
         let w = tabWidth d.hwnd
         let r = Rectangle(d.at.X-d.offset.X,d.at.Y-d.offset.Y,w,scale GroupEditorMetrics.tabHeight)
@@ -633,7 +617,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         | None ->
             use outline = new Pen(palette.muted,float32(scale 1))
             g.DrawRectangle(outline,Rectangle.Inflate(iconBounds,-scale 3,-scale 3))
-        TextRenderer.DrawText(g,nameOf d.hwnd,bodyFont,Rectangle(iconBounds.Right+scale 6,r.Y,max 0 (r.Right-scale 8-iconBounds.Right-scale 6),r.Height),textOn,selectedFill,textFlags)
+        // Drawn scrolled with the rest: text keeps the Graphics' translation only when told to.
+        TextRenderer.DrawText(g,nameOf d.hwnd,bodyFont,Rectangle(iconBounds.Right+scale 6,r.Y,max 0 (r.Right-scale 8-iconBounds.Right-scale 6),r.Height),textOn,selectedFill,
+                              textFlags ||| TextFormatFlags.PreserveGraphicsTranslateTransform)
 
     let form =
         let f =
@@ -688,9 +674,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         for KeyValue(_,thumb) in thumbs do DwmApi.DwmUnregisterThumbnail(thumb) |> ignore
         thumbs.Clear()
 
-    /// Each cell's window drawn live by DWM: under the cell's band in the expanded row, filling
-    /// the cell in a thumbnail, at its own proportions; a window with no picture keeps its icon.
-    /// Hidden while a drop is aimed at the cell, so the zone shows, and while the flyout is up.
+    /// Each cell's window drawn live by DWM under the cell's band in the expanded row, at its
+    /// own proportions; a window with no picture keeps its icon. Hidden while a drop is aimed at
+    /// the cell, so the zone shows, and while the flyout is up.
     let updateThumbnails (l:GroupEditorLayout) =
         if form.IsHandleCreated && form.Visible then
             let view = Rectangle(0,0,width,viewBody l)
@@ -703,13 +689,13 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 l.rows |> List.collect(fun row ->
                     row.cells |> List.choose(fun (path,pane,r) ->
                         match pane with
-                        | Occupied hwnd when hasPicture hwnd -> Some(hwnd,r,row.expanded,covered row.index path)
+                        | Occupied hwnd when hasPicture hwnd -> Some(hwnd,r,covered row.index path)
                         | _ -> None))
             for hwnd in List.ofSeq thumbs.Keys do
-                if not(wanted |> List.exists(fun (each,_,_,_) -> each=hwnd)) then
+                if not(wanted |> List.exists(fun (each,_,_) -> each=hwnd)) then
                     DwmApi.DwmUnregisterThumbnail(thumbs.[hwnd]) |> ignore
                     thumbs.Remove hwnd |> ignore
-            for hwnd,r,large,hidden in wanted do
+            for hwnd,r,hidden in wanted do
                 let thumb =
                     match thumbs.TryGetValue hwnd with
                     | true,thumb -> Some thumb
@@ -720,9 +706,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                             Some thumb
                         else None
                 thumb |> Option.iter(fun thumb ->
-                    let picture =
-                        if large then Rectangle(r.X+scale 2,r.Y+scale GroupEditorMetrics.chipHeight,r.Width-scale 4,r.Height-scale GroupEditorMetrics.chipHeight-scale 2)
-                        else Rectangle.Inflate(r,-scale 1,-scale 1)
+                    let picture = Rectangle(r.X+scale 2,r.Y+scale GroupEditorMetrics.chipHeight,r.Width-scale 4,r.Height-scale GroupEditorMetrics.chipHeight-scale 2)
                     // Fitted inside, at the window's proportions: DWM stretches to the rectangle given.
                     let source = OS().windowFromHwnd(hwnd).bounds
                     let dest =
@@ -926,12 +910,15 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         | Keys.Delete -> keyTab() |> Option.iter(fun hwnd -> if DesktopDraft.find hwnd current<>Loose then takeOut hwnd)
         | _ -> ()
 
-    /// A press at the point: the crosses, the split button and its shapes, the buttons, a
-    /// thumbnail to expand; else a tab or a pane chip taken in hand.
+    /// A press at the point: the crosses, the split button and its shapes, the buttons, the
+    /// chevron; else a tab or a pane chip taken in hand.
     let mouseDown (pt:Point) =
       if not closed then
         let l = layout()
         let pt = unscroll pt
+        let take hwnd fromPane (r:Rectangle) =
+            drag <- Some {hwnd=hwnd; fromPane=fromPane; start=pt; at=pt; aim=None; fits=true; begun=false; offset=Point(pt.X-r.X,pt.Y-r.Y)
+                          origin=current; originPane=fromPane; originSelected=selected}
         let expandedIndex = expandedRow()
         let shapes = expandedIndex |> Option.bind(fun i -> l.rows |> List.tryItem i) |> Option.map(fun row -> row.shapes) |> Option.defaultValue []
         // Pressed on the title or on the footer's free room: the popup is moved, as by a caption.
@@ -948,7 +935,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         else
             match l.rows |> List.tryFind(fun row -> row.band.Contains pt) with
             | Some row ->
-                if row.collapse |> Option.exists(fun r -> r.Contains pt) then expand None
+                if row.chevron |> Option.exists(fun r -> r.Contains pt) then expand (if row.expanded then None else Some row.index)
                 elif row.splitButton |> Option.exists(fun r -> r.Contains pt) then
                     flyout <- true
                     refresh()
@@ -958,34 +945,37 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         if (crossRect r).Contains pt then takeOut hwnd
                         // Selected on release, not here: pressed to drag, the tab would show in
                         // place of the panes it is about to be dropped on.
-                        else drag <- Some {hwnd=hwnd; fromPane=false; start=pt; at=pt; aim=None; fits=true; begun=false; offset=Point(pt.X-r.X,pt.Y-r.Y)}
+                        else take hwnd false r
                     | None ->
-                        if row.picture.Contains pt then
-                            if not row.expanded then expand (Some row.index)
-                            else
-                                row.cells |> List.tryFind(fun (_,_,r) -> r.Contains pt) |> Option.iter(fun (path,pane,r) ->
-                                    match pane with
-                                    | Occupied hwnd when (chipRect r).Contains pt ->
-                                        drag <- Some {hwnd=hwnd; fromPane=true; start=pt; at=pt; aim=None; fits=true; begun=false; offset=Point(pt.X-r.X,pt.Y-r.Y)}
-                                    | Empty when (cellCrossRect r).Contains pt ->
-                                        edit row.index (GroupDraft.removeCell path)
-                                        refresh()
-                                    | _ ->
-                                        cellFocus <- Some path
-                                        refresh())
-                        elif not row.expanded then
+                        if not row.expanded then
                             cursor <- row.index
                             refresh()
+                        elif row.picture.Contains pt then
+                            row.cells |> List.tryFind(fun (_,_,r) -> r.Contains pt) |> Option.iter(fun (path,pane,r) ->
+                                match pane with
+                                | Occupied hwnd when (chipRect r).Contains pt -> take hwnd true r
+                                | Empty when (cellCrossRect r).Contains pt ->
+                                    edit row.index (GroupDraft.removeCell path)
+                                    refresh()
+                                | _ ->
+                                    cellFocus <- Some path
+                                    refresh())
             | None ->
                 match l.looseTabs |> List.tryFind(fun (_,r) -> r.Contains pt) with
-                | Some(hwnd,r) -> drag <- Some {hwnd=hwnd; fromPane=false; start=pt; at=pt; aim=None; fits=true; begun=false; offset=Point(pt.X-r.X,pt.Y-r.Y)}
+                | Some(hwnd,r) -> take hwnd false r
                 | None ->
                     if l.loose.Contains pt then
                         cursor <- (groups()).Length
                         refresh()
 
+    /// Whether the point (as seen, and as the picture has it) is off the rows: on the title, the
+    /// footer or out of the popup, where a tab in hand is aimed at nothing.
+    let offRows (l:GroupEditorLayout) (view:Point) (pt:Point) =
+        view.X<0 || view.X>=width || view.Y<0 || view.Y>=viewBody l || pt.Y<pad+scale GroupEditorMetrics.titleHeight
+
     let mouseMove (pt:Point) =
       if not closed then
+        let view = pt
         let pt = unscroll pt
         match drag with
         | Some d ->
@@ -993,9 +983,19 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             let begun = d.begun || abs(pt.X-d.start.X)>threshold.Width/2 || abs(pt.Y-d.start.Y)>threshold.Height/2
             if begun then
                 let l = layout()
+                // Carried off the rows, the tab goes back to where it was taken from, as if it had
+                // not moved.
+                let off = offRows l view pt
+                let restored = off && (current<>d.origin || selected<>d.originSelected)
+                if restored then
+                    current <- d.origin
+                    cursor <- min cursor (groups()).Length
+                    selected <- d.originSelected
+                    reselect()
+                let d = if off then {d with fromPane=d.originPane} else d
                 // Aimed only where the drop would change something: a tab over its own cell is not.
                 let aim,fits =
-                    match aimAt l pt d.hwnd with
+                    match (if off then None else aimAt l pt d.hwnd) with
                     | Some aim ->
                         match dropped d.hwnd d.fromPane aim current with
                         | Some(next,Some at) -> Some aim,fitsIn at next.groups.[at]
@@ -1020,7 +1020,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         moved (DesktopDraft.moveToLoose d.hwnd current) d.hwnd
                         None,true,false
                     | _ -> aim,false,d.fromPane
-                let changed = not d.begun || aim<>d.aim || fits<>d.fits || reordered
+                let changed = not d.begun || aim<>d.aim || fits<>d.fits || reordered || restored
                 drag <- Some {d with at=pt; aim=aim; fits=fits; begun=true; fromPane=fromPane}
                 // The picture itself changes only as the aim does; the chip just moves over it.
                 if changed then refresh() elif form.IsHandleCreated then form.Invalidate()
@@ -1038,12 +1038,14 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
 
     let mouseUp (pt:Point) =
       if not closed then
+        let view = pt
         let pt = unscroll pt
         match drag with
         | Some d ->
             drag <- None
             if d.begun then
-                match aimAt (layout()) pt d.hwnd with
+                let l = layout()
+                match (if offRows l view pt then None else aimAt l pt d.hwnd) with
                 | Some aim ->
                     match dropped d.hwnd d.fromPane aim current with
                     | Some(next,at) when (match at with Some at -> fitsIn at next.groups.[at] | None -> true) ->

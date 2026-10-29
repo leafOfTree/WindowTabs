@@ -41,7 +41,7 @@ picture, and moves the windows once, when the user is done.
   whatever comes in front, since it stays up while the user works; centred on the screen in view,
   about 1000 logical pixels wide and as tall as its rows need up to nine tenths of the work
   area, scrolling past that. It draws no 1px borders inside: the popup's surface, the rows'
-  bands, the tabs' blocks and the thumbnails are told apart by tone alone, three steps of
+  bands and the tabs' blocks are told apart by tone alone, three steps of
   the palette's surface colours, with the accent as a tint on what is selected; only the
   New group zone is dashed, as a place to drop into. High contrast gets the system's
   outlines through `SettingsColors.current()`, as every settings-style popup does.
@@ -60,20 +60,14 @@ picture, and moves the windows once, when the user is done.
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  Edit groups · 3 groups, 2 loose windows                                      │
 │                                                                                │
-│  ▌[🌐 Edge – Docs] 🗗 Notepad – notes.txt ▣  ⬛ Terminal ▣  📁 Downloads     ┌───┬──┐ │
-│  ▌                                                                        │ ▒ │▒ │ │
-│  ▌                                                                        └───┴──┘ │
-│  ▌[📁 Downloads] 📁 Documents  📁 Pictures                                 ┌──────┐ │
-│  ▌                                                                        │  ▒▒  │ │
-│  ▌                                                                        └──────┘ │
-│  ▌[⬛ Terminal]                                                            ┌──────┐ │
-│  ▌                                                                        │  ▒▒  │ │
-│  ▌                                                                        └──────┘ │
+│  ▌[🌐 Edge – Docs] 🗗 Notepad – notes.txt ▣  ⬛ Terminal ▣  📁 Downloads         ⌄  │
+│  ▌[📁 Downloads] 📁 Documents  📁 Pictures                                     ⌄  │
+│  ▌[⬛ Terminal]                                                                ⌄  │
 │  ▌ 📄 report.pdf  🎵 Spotify                                          Loose windows │
 │  ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐ │
 │                        + New group: drop a window here                          │
 │  └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘ │
-│  Drag tabs between rows to regroup; drop one on a thumbnail to put it in its panes.   [Cancel] [Save]
+│  Drag tabs between rows to regroup; Enter expands a row.                  [Cancel] [Save]
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -84,24 +78,19 @@ picture, and moves the windows once, when the user is done.
   hovering shows the whole in the tab title tip's manner. The active tab has the accent
   tint, tabs in a split the pane mark. A row has no title: the active tab names it, as the
   strip names a group on the taskbar.
-- **The thumbnail**, at the row's right end: the group as it stands on screen, drawn with
-  its windows' own pictures, the live thumbnails the split transition and the tab hover
-  preview already draw (`DwmRegisterThumbnail`, `Win32Helper.PrintWindow` for a window
-  that has none). One picture of the active window, or, for a group whose active tab is
-  in a split, the split tree as cells at their ratios with each pane's picture, the focused
-  one outlined in the accent. It is small (about 128 by 72 logical pixels, the frame's
-  proportions kept inside that): a glance says which group is which and whether it is
-  split, not what the windows say. Minimized and cloaked windows, which have no picture,
-  show their icon on a dark cell instead. It is the drop target for a group's panes
-  (section 2.4) and the way into the expanded view.
+- **The chevron**, at the row's right end, pointing down: the way into the expanded view.
+  A folded row shows no picture of the group (a thumbnail there was tried and dropped: too
+  small to read, and it cost a live DWM picture per row); the tabs say which group is
+  which, and the pane mark on a tab says it is split.
 - **Loose windows.** The last row, a shade darker than the group rows: the windows in no
-  group as the same blocks, with "Loose windows" where a thumbnail would be. Under it
+  group as the same blocks, with "Loose windows" at the right end. Under it
   **New group**, a dashed, empty band that takes a drop.
-- **Expanding.** Clicking a row's thumbnail, or pressing Enter on the row, grows that row
-  in place into the view of section 2.3: its tabs become the strip and its thumbnail the
-  content below. The other rows stay as they are and still take drops, so a window can be
-  dragged from the expanded group to any other and back. Esc, the chevron at the strip's
-  right end, or clicking the thumbnail of another row, goes back to the overview.
+- **Expanding.** Clicking a row's chevron, or pressing Enter on the row, grows that row
+  in place into the view of section 2.3: its tabs become the strip and the content with its
+  pictures opens below. The other rows stay as they are and still take drops, so a window
+  can be dragged from the expanded group to any other and back. Esc, the chevron at the
+  strip's right end, now pointing up, or clicking the chevron of another row, goes back to
+  the overview.
 
 ### 2.3 A group expanded
 
@@ -158,7 +147,10 @@ tab, so the strip starts at the row's top edge, as a real group's does.
 ### 2.4 Dragging
 
 One drag model for the overview and the expanded row alike: the tab itself comes along under
-the pointer, held where it was pressed, and its place stays open in the strip. Within a row (its tabs, and its thumbnail or content):
+the pointer, held where it was pressed, and its place stays open in the strip. Carried off
+the rows (to the title, the footer or out of the popup), the tab goes back to where it was
+taken from, so a drop there, or outside, changes nothing. Within a row (its tabs, and its
+content when expanded):
 
 | From | To | Result |
 | --- | --- | --- |
@@ -176,9 +168,9 @@ Between rows:
 | From | To | Result |
 | --- | --- | --- |
 | any tab or chip of a group | another row's tabs | the window joins that row as the pointer arrives, at the place among its tabs, the others making room; carried on, it moves on with the pointer |
-| any tab or chip of a group | another row's thumbnail cell or edge | the window leaves its group (its pane closing as above) and joins the other as the table above says |
+| any tab or chip of a group | the expanded row's cell or edge | the window leaves its group (its pane closing as above) and joins the expanded one as the table above says |
 | any tab or chip of a group | the loose windows row | the window leaves its group and stands on its own, as the pointer arrives |
-| a loose window | a row's tabs, thumbnail cell or edge | the window joins that group as above |
+| a loose window | a row's tabs, or the expanded row's cell or edge | the window joins that group as above |
 | any tab or chip | New group | a new row with that one window, above the loose row; drop more on it as on any row |
 
 A row left with no window goes: the group would exit on its own once its last window
@@ -189,9 +181,8 @@ change at Save.
 The drop zones are those of the real drag: an edge band of 36px at the ends widening to a
 fifth of the cell at its middle (`SplitMetrics.edgeZone`, `edgeShare`), and the outer band
 for the whole group; the zone under the pointer is tinted with the accent, as the half-window
-preview is on screen. On a thumbnail, where the cells are small, a cell has only its middle
-and its outer edge, so a split made there goes beside the whole group; the row expands to
-split a pane. A drop that would leave a pane under 120px is refused in the picture too, the
+preview is on screen. A row expands to split a pane; a folded row takes a drop among its
+tabs only. A drop that would leave a pane under 120px is refused in the picture too, the
 zone shown greyed, so nothing is promised that Save cannot keep. A drop never creates an
 empty cell; only the split button does, and a pane whose window is removed closes, its
 neighbour taking the room, as `ClosePane` does.
@@ -319,8 +310,8 @@ the main STA with the other popups, one at a time.
   `IProgram`; a line in `DispatchedProgram` (`Services.fs`).
 - `WtProgram/WindowGroup.fs`: `run SetTabOrder`; nothing else, `execute` takes the new case.
 - `WtProgram/GroupEditor.fs` (new, after `SplitPanePicker.fs`): the popup, its rows, its
-  drawing and its drag, the thumbnails through the DWM thumbnail helpers the split transition
-  uses. The picture is drawn into a bitmap only when the draft, the selection or the aim of a
+  drawing and its drag, the expanded row's pictures through the DWM thumbnail helpers the
+  split transition uses. The picture is drawn into a bitmap only when the draft, the selection or the aim of a
   drag changes (about 60ms for a dozen rows); the chip in hand, the drop zone and the hover
   cross are drawn over it at each paint, and the layout, with its text measured, is kept
   until something it depends on changes. `GroupEditorApply.fs` has the four steps of
@@ -342,7 +333,7 @@ the main STA with the other popups, one at a time.
   popup rendered off-screen in light and dark as `CommandPalette.fsx` renders the palette,
   in the overview and with a row expanded, saved as `tests/Debug/group-editor.png` and
   `group-editor-expanded.png`, its surface, band and block colours checked (the hidden
-  desktop has no DWM pictures, so the thumbnails show icons there); a drag driven by posted
+  desktop has no DWM pictures, so the expanded row's cells show icons there); a drag driven by posted
   mouse messages that moves a tab from one row to another and one into a cell's edge, and
   checks the draft.
 - `tests/GroupOperations.fsx`: the apply steps against real hidden HWNDs through the
@@ -360,7 +351,7 @@ the main STA with the other popups, one at a time.
 2. The popup with one row expanded: the strip, the content with its pictures, Save and
    Cancel, the entry points and strings. Rendering tests. Usable with the keyboard only.
 3. Dragging within a row, the close cross, the split button and its empty cells.
-4. The overview: every group as a row with its thumbnail, the loose row, New group,
+4. The overview: every group as a row with its chevron, the loose row, New group,
    expanding a row, dragging between rows. Rendering and drag tests for the overview.
 5. Polish: the greyed tab and row for what is gone, the notice naming what was done,
    docs (`architecture.md` popups list, this file kept current) and the README's feature
