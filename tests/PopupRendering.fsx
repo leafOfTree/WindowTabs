@@ -148,12 +148,13 @@ let main() =
         // A new notice replaces the one on screen by sliding it out, then sliding in itself.
         notice.show(String.replicate 4 "A long title ",String.replicate 12 "A much longer notice that has to wrap ",Progress)
         Application.DoEvents()
-        check (notice.Visible && (notice.staysFor=Some 4000 || not SystemInformation.UIEffectsEnabled)) "A new notice put the one on screen away at once"
+        check (notice.Visible && (notice.staysFor=Some 3000 || not SystemInformation.UIEffectsEnabled)) "A new notice put the one on screen away at once"
         pumpFor 600L
         check (notice.Visible && notice.Opacity=1.0 && notice.staysFor=None) "A new notice did not come in in place of the old one"
         check (notice.Size=fixedSize) (sprintf "A long notice changed the notice's size: %A" notice.Size)
         // How long each kind stays: an error until it is closed, as work in progress until replaced.
-        for kind,stays in [Info,Some 4000;Reminder,Some 8000;Warning,Some 30000;Error,None;Progress,None] do
+        // A confirmation is read at a glance, so it stays briefly; what lists windows stays to be read.
+        for kind,stays in [Info,Some 3000;Reminder,Some 8000;Warning,Some 30000;Error,None;Progress,None] do
             notice.hideNow()
             notice.show("Workspace 1","Message",kind)
             pumpFor 600L
@@ -253,7 +254,7 @@ let main() =
         check (notice.Visible && notice.staysFor=None && notice.waitingTitles=["Workspace 2"])
               (sprintf "The error did not follow the closed warning: stays %A, waiting %A" notice.staysFor notice.waitingTitles)
         closeNotice()
-        check (notice.Visible && notice.staysFor=Some 4000 && notice.waitingTitles.IsEmpty)
+        check (notice.Visible && notice.staysFor=Some 3000 && notice.waitingTitles.IsEmpty)
               (sprintf "The latest other notice did not follow the closed error: stays %A, waiting %A" notice.staysFor notice.waitingTitles)
         // An ordinary notice still takes the place of another at once.
         notice.show("Workspace 3","Saved with 4 windows",Info)

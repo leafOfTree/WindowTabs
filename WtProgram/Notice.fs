@@ -32,7 +32,7 @@ type NoticeWindow() =
     let mutable font : Font option = None
     let mutable titleFont : Font option = None
     let mutable icon : Icon option = None
-    let hide = new Timer(Interval=4000)
+    let hide = new Timer(Interval=3000)
     let animation = new Timer(Interval=15)
     let clock = Diagnostics.Stopwatch()
     let mutable leaving = false
@@ -72,7 +72,7 @@ type NoticeWindow() =
         base.OnHandleCreated(e)
     /// How long a kind of notice stays on its own, in milliseconds; None until replaced or closed.
     static member duration = function
-        | Info -> Some 4000
+        | Info -> Some 3000
         | Reminder -> Some 8000
         | Warning -> Some 30000
         | Progress | Error -> None
