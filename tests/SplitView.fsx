@@ -312,7 +312,7 @@ let main() =
               textFont=font; textBrush=Brushes.Black; splitTrail=Map.tryFind id sides; isPinned=false; closeButton="ActiveAndHover" })))
           lorder=List2([1;2;3]); zorder=List2([1;2;3]); size=Sz(630,Dpi.scale 28)
           slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false
-          transparent=true; held=None; centerShift=0.0; dock=TabDockTop; scrollOffset=0; appearance=appearance; hover=None; captured=None }
+          transparent=true; held=None; centerShift=0.0; blocked=[]; dock=TabDockTop; scrollOffset=0; appearance=appearance; hover=None; captured=None }
     let paired = strip (Map.ofList [1,[SideBySide,First];2,[SideBySide,Second]])
     let seam = paired.tabLocation 2
     // Near the bottom edge, where the button sits clear of the icons; the middle of the seam stays the tabs'.

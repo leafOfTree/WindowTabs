@@ -104,7 +104,7 @@ let main() =
             let ids = [0..count-1]
             let strip : TabStripSprite<int> = {
                 tabs=Map2(List2(ids |> List.map(fun i -> i,info i))); lorder=List2(ids); zorder=List2(ids); size=Sz(900,27)
-                slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; transparent=true; held=None; centerShift=0.0; dock=TabDockTop; scrollOffset=0
+                slide=None; direction=TabUp; alignment=TabLeft; onlyIcons=false; transparent=true; held=None; centerShift=0.0; blocked=[]; dock=TabDockTop; scrollOffset=0
                 appearance=appearance; hover=None; captured=None }
             let fills = strip.tabSprites.list |> List.filter(fun (_,sprite) -> not sprite.isTop) |> List.map(fun (_,sprite) -> sprite.fillColor)
             let spread (colors:Color list) =

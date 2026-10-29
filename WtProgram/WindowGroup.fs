@@ -312,6 +312,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// Told of every change in the order of top-level windows, while split or while the strip is
     /// owned by nothing: a window raised over the tabs gives the group no other notice.
     let mutable reorderHook : IDisposable option = None
+    /// The process whose windows' bars the tabs make way for, and its hooks.
+    let mutable appBarHooks : (int * IDisposable list) option = None
+    /// Where each bar the group's windows have shown was last seen.
+    let mutable appBarsSeen : Map<IntPtr,Rect> = Map.empty
     /// Looks, while split, for a pane raised over the tabs; once for a burst of order changes,
     /// a split's own transitions making many.
     let mutable splitGuardSoon : CoalescedAction option = None
@@ -871,6 +875,43 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         reorderHook |> Option.iter(fun hook -> hook.Dispose())
         reorderHook <- None
 
+    /// Bars the app shows over the window in front, such as a remote desktop's connection bar
+    /// over its full-screen window. Small ones only: a dialog it owns is not a bar. A bar that
+    /// hides keeps its place, whichever tab is in front: one that slid away and back under the
+    /// pointer moved the tabs each time, and so did choosing another tab.
+    member private this.refreshAppBars() =
+        let owner = if this.isEmpty then IntPtr.Zero else this.topWindow
+        let seen =
+            appBarsSeen |> Map.filter(fun bar _ ->
+                WinUserApi.IsWindow bar && this.windows.contains(WinUserApi.GetWindow(bar,GetWindowConstants.GW_OWNER)))
+        let seen =
+            if owner=IntPtr.Zero then Map.empty
+            else
+                let window = (this.os.windowFromHwnd owner).bounds
+                // Where it rests, not on its way: sliding off the edge it no longer covers the tabs.
+                this.os.ownedBars owner
+                |> List.filter(fun (_,bounds) -> bounds.height <= window.height/4 && bounds.y >= window.y)
+                |> List.fold(fun (known:Map<IntPtr,Rect>) (bar,bounds) -> known.Add(bar,bounds)) seen
+        appBarsSeen <- seen
+        this.ts.appBars <- seen |> Map.toList |> List.map snd
+
+    /// The app's windows coming, going and moving, watched in its own process only.
+    member private this.watchAppBars(owner:IntPtr) =
+        let pid = if owner=IntPtr.Zero then 0 else Win32Helper.GetWindowProcessId(owner)
+        if appBarHooks |> Option.map fst <> Some pid then
+            this.unwatchAppBars()
+            if pid<>0 then
+                let onEvent _ _ (hwnd:IntPtr) _ _ _ _ =
+                    if not this.isEmpty && WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)=this.topWindow then
+                        this.refreshAppBars()
+                appBarHooks <- Some(pid,[ this.os.setWinEventHook(WinEvent.EVENT_OBJECT_SHOW,WinEvent.EVENT_OBJECT_HIDE,onEvent,pid,0)
+                                          this.os.setWinEventHook(WinEvent.EVENT_OBJECT_LOCATIONCHANGE,WinEvent.EVENT_OBJECT_LOCATIONCHANGE,onEvent,pid,0) ])
+        this.refreshAppBars()
+
+    member private this.unwatchAppBars() =
+        appBarHooks |> Option.iter(fun (_,hooks) -> for hook in hooks do hook.Dispose())
+        appBarHooks <- None
+
     /// Not unhooked from inside its own report: setTsOwner and destroy unhook it once not needed.
     member private this.onOrderChanged() =
         if this.needsOrderWatch then
@@ -921,6 +962,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         let strip = this.os.windowFromHwnd(this.ts.hwnd)
         let parent = this.os.windowFromHwnd(parentHwnd)
         this.setTsOwner(parent)
+        this.watchAppBars(parentHwnd)
         // Restore can leave an owned popup visible but behind its unchanged owner.
         // Keep it adjacent to that window without activating or raising the group.
         if parentHwnd<>IntPtr.Zero && not parent.isMinimized then
@@ -2374,6 +2416,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             isDestroyed.set(true)
             splitSettleTimer.Dispose()
             this.unwatchOrder()
+            this.unwatchAppBars()
             for soon in [splitGuardSoon;stripLiftSoon] do soon |> Option.iter(fun soon -> (soon :> IDisposable).Dispose())
             transitionRelease.Dispose()
             // The chrome's thread disposes its windows and ends; nothing here waits for it.

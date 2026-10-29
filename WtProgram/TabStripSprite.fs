@@ -766,6 +766,20 @@ type TabFootSprite = {
             img
         member this.children = List2()
 
+/// A bar an app keeps over its own window's edge, such as a remote desktop's connection bar over
+/// its full-screen window, sits where the tabs would. The tabs keep their place when that is clear,
+/// else take the nearest one that is, else stay where they were.
+module StripRoom =
+    let place (blocked:(float * float) list) (high:float) (span:float) (wanted:float) =
+        let clear x = blocked |> List.forall(fun (left,right) -> x+span <= left || x >= right)
+        if clear wanted then wanted
+        else
+            wanted :: (blocked |> List.collect(fun (left,right) -> [left-span; right]))
+            |> List.filter(fun x -> x >= 0.0 && x+span <= high && clear x)
+            |> List.sortBy(fun x -> abs(x-wanted))
+            |> List.tryHead
+            |> Option.defaultValue wanted
+
 type TabStripSprite<'id> when 'id : equality = {
     tabs: Map2<'id, TabDisplayInfo>
     appearance: TabAppearanceInfo
@@ -786,6 +800,8 @@ type TabStripSprite<'id> when 'id : equality = {
     /// strip leaves room for the caption buttons on the right only, so its middle is left of the window's.
     /// Centred tabs keep the same room free on the left.
     centerShift: float
+    /// Stretches of the strip, left and right, that the app's own bars cover.
+    blocked: (float * float) list
     dock: TabDock
     scrollOffset: int
     } with
@@ -996,7 +1012,9 @@ type TabStripSprite<'id> when 'id : equality = {
                 | TabLeft -> 0.0
                 | TabCenter -> widthOfEmptySpace / 2.0
                 | TabRight -> widthOfEmptySpace - 60.0
-            this.leftReserve + max 0.0 offset
+            let wanted = this.leftReserve + max 0.0 offset
+            if this.blocked.IsEmpty || this.isVertical then wanted
+            else StripRoom.place this.blocked (float this.size.width) (this.rightOf this.tabLength 0.0) wanted
 
     /// The current tab length and left offset, for holding while tabs are closed.
     member this.layout = this.tabLength,this.alignmentOffset

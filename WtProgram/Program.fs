@@ -57,6 +57,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
     let inShutdown = Cell.create(false)
     let isSubscribed = lifetime.Own(new OwnedSubscriptions<IntPtr>())
+    /// Subscribed while full screen, with their moves: watched anew once they are windows again.
+    let subscribedFullScreen = HashSet<IntPtr>()
     let isDroppedAndAwaitingGrouping = Cell.create(Set2())
     let windowColors = WindowTabColors()
     // An immutable map swapped whole on the main thread, so tab strips on group threads
@@ -590,6 +592,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 if exists then this.ensureWindowIsSubscribed(window)
                 if exists && this.isTabbableWindow(window) then
                     if not this.isTabMonitoringSuspended then this.ensureWindowIsGrouped(window)
+                elif exists && this.keepsFullScreen(window) then ()
                 else
                     this.desktop.groups.iter(fun group ->
                         if group.windows.contains((=)hwnd) then group.removeWindow(hwnd))
@@ -598,13 +601,23 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
     member this.ensureWindowIsSubscribed(window:Window) =
         let hwnd = window.hwnd
-        if  isSubscribed.Contains(hwnd).not &&
-            window.pid.isCurrentProcess.not &&
-            this.isAppWindowStyle(window)
-            then
+        // Watched for its moves while full screen, a window back to normal is watched as any other:
+        // its moves no longer matter, and each asked for a look.
+        if subscribedFullScreen.Contains hwnd && this.isAppWindowStyle(window) then
+            isSubscribed.Remove(hwnd)
+            subscribedFullScreen.Remove hwnd |> ignore
+        let appStyle = isSubscribed.Contains(hwnd).not && window.pid.isCurrentProcess.not && this.isAppWindowStyle(window)
+        // A full-screen window, as Remote Desktop's, has no caption buttons until it leaves full
+        // screen, which only resizes it: its moves are watched too, or it waited for a full scan.
+        let fullScreen =
+            not appStyle && isSubscribed.Contains(hwnd).not && window.pid.isCurrentProcess.not && window.isVisible &&
+            FullScreenWindow.covers window.bounds (Screen.FromHandle(hwnd).Bounds)
+        if fullScreen then subscribedFullScreen.Add hwnd |> ignore
+        if appStyle || fullScreen then
             let registerEvent evt =
                 window.setWinEventHook evt (fun() -> this.receive(WinEvent(hwnd, evt)))
-            let hooks = List2([WinEvent.EVENT_OBJECT_SHOW;WinEvent.EVENT_OBJECT_HIDE]).map(registerEvent)
+            let events = [WinEvent.EVENT_OBJECT_SHOW;WinEvent.EVENT_OBJECT_HIDE] @ (if fullScreen then [WinEvent.EVENT_OBJECT_LOCATIONCHANGE] else [])
+            let hooks = List2(events).map(registerEvent)
             let dispose = {
                 new IDisposable with
                     member this.Dispose() =
@@ -701,10 +714,22 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         if gi.windows.isEmpty then
             gi.destroy()
 
+    /// A grouped window gone full screen, as a remote desktop or a video player does, drops its
+    /// frame and caption buttons and no longer looks like an app window. It stays in its group
+    /// while it covers its monitor; taken out, its tabs were gone for good.
+    member this.keepsFullScreen(window:Window) =
+        window.isWindow && window.isVisible &&
+        Services.filter.getIsTabbingEnabledForProcess(window.pid.processPath) &&
+        FullScreenWindow.covers window.bounds (Screen.FromHandle(window.hwnd).Bounds) &&
+        // Gone to another desktop, it leaves its group as any other window does.
+        (TaskbarProxies.ownsWindow window.hwnd || not (WindowCloaking.IsHiddenOnCurrentDesktop window.hwnd))
+
+    member this.staysGrouped(window:Window) = this.isTabbableWindow(window) || this.keepsFullScreen(window)
+
     member this.removeUntabableWindows() =
         this.desktop.groups.iter <| fun gi ->
             gi.windows.iter <| fun hwnd ->
-                if this.isTabbableWindow(os.windowFromHwnd(hwnd)).not then gi.removeWindow hwnd
+                if this.staysGrouped(os.windowFromHwnd(hwnd)).not then gi.removeWindow hwnd
 
     /// A window of a program started with others from the command line joins their group, one
     /// for each start, so a window opened by hand meanwhile stays out; a slow program has a
@@ -831,6 +856,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             // put back together by their saved group.
             | ShellEvent.HSHELL_WINDOWDESTROYED when not (WinUserApi.IsWindow hwnd) ->
                 isSubscribed.Remove(hwnd)
+                subscribedFullScreen.Remove hwnd |> ignore
                 groupedThisRun.Remove hwnd |> ignore
                 appKeys.Remove hwnd |> ignore
                 newTabAnchors.Remove hwnd |> ignore

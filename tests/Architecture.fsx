@@ -385,6 +385,10 @@ let main() =
         check (TabNavigation.forceOnClose b None b) "The tab after a close in front was not brought up by force"
         check (TabNavigation.forceOnClose (IntPtr 999) (Some b) b) "The tab after a close Windows moved the foreground for was not brought up by force"
         check (not(TabNavigation.forceOnClose (IntPtr 999) None b)) "A user who chose another window before the close was pulled back"
+        // Full-screen Remote Desktop drops its caption buttons; covering its monitor, it stays grouped.
+        let monitor = Drawing.Rectangle(0,0,2048,1152)
+        check (FullScreenWindow.covers (Rect(Pt(0,0),Sz(2048,1152))) monitor) "A full-screen window was not seen to cover its monitor"
+        check (not(FullScreenWindow.covers (Rect(Pt(0,0),Sz(2048,1104)) ) monitor)) "A maximized window above the taskbar was taken for full screen"
         // Browser opener rule: closing a tab before selecting another returns to its opener.
         let opened = Some(added,a)
         check (TabNavigation.closeTarget [a;b;c;added] closing added a active opened false=Some a) "Closing a new tab did not return to the tab it was opened from"

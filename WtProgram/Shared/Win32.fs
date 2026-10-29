@@ -6,6 +6,11 @@ open System.Runtime.InteropServices
 open System.Text
 open System.Windows.Forms
 
+module FullScreenWindow =
+    /// The window covers its whole monitor, as one in full screen does.
+    let covers (bounds:Rect) (screen:Rectangle) =
+        bounds.x <= screen.X && bounds.y <= screen.Y && bounds.x+bounds.width >= screen.Right && bounds.y+bounds.height >= screen.Bottom
+
 type MouseAction =
     | MouseDown
     | MouseUp
@@ -206,6 +211,14 @@ type OS()=
 
     member this.windowsInZorder = 
         List2(List.ofArray (Win32Helper.GetWindowsInZOrder())).map(this.windowFromHwnd)
+
+    /// The visible top-level windows another program keeps over `owner` as its own, and where they are.
+    member this.ownedBars(owner:IntPtr) =
+        let own = int this.pid
+        Win32Helper.GetWindowsInZOrder() |> List.ofArray |> List.filter(fun hwnd ->
+            WinUserApi.GetWindow(hwnd,GetWindowConstants.GW_OWNER)=owner && WinUserApi.IsWindowVisible(hwnd) &&
+            Win32Helper.GetWindowProcessId(hwnd)<>own && not(WindowCloaking.IsCloaked hwnd))
+        |> List.map(fun hwnd -> hwnd,Win32Helper.GetWindowRectangle(hwnd).Rect)
 
     member this.windowZorders =
         Map2(this.windowsInZorder.enumerate.map(fun(z, window) -> window.hwnd,z))
