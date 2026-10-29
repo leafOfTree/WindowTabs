@@ -16,7 +16,9 @@ type GroupEditorRow = { group:IntPtr option; frame:Rect; active:IntPtr }
 module GroupEditorMetrics =
     let width = 1000
     let padding = 16
-    let titleHeight = 28
+    /// The scroll thumb over the right margin, and the fade of a row cut at the rows' edge.
+    let scrollbar = 6
+    let fade = 24
     let rowPadding = 10
     let rowGap = 6
     let stripHeight = 36
@@ -124,7 +126,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let highContrast = SystemInformation.HighContrast
     let scale = Dpi.scale
     let bodyFont = SettingsUi.bodyFont()
-    let titleFont = SettingsUi.font "Segoe UI" 11.0f FontStyle.Regular
     let hintFont = SettingsUi.font "Segoe UI" 9.0f FontStyle.Regular
     let before = draft
     let mutable current = draft
@@ -141,7 +142,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let mutable flyout = false
     let mutable scroll = 0
     let mutable closed = false
-    let mutable shadow : TaskSwitchShadow option = None
+    /// What the frame adds around the client area, known once the window exists.
+    let mutable frameHeight = 0
+    /// The scroll thumb in hand: where the pointer took it and the scroll then.
+    let mutable scrollDrag : (int * int) option = None
     let thumbs = Dictionary<IntPtr,IntPtr>()
     let mutable bitmap : Bitmap = null
     /// Tabs on their way to where the last change put them, by where each was: slid into place
@@ -273,7 +277,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
 
     let computeLayout() : GroupEditorLayout =
         let expandedIndex = expandedRow()
-        let mutable y = pad+scale GroupEditorMetrics.titleHeight
+        let mutable y = pad
         let vacatedRects = ResizeArray<Rectangle>()
         let placeholders index =
             for _,h in vacated |> List.filter(fun (p,_) -> p=index) do
@@ -350,7 +354,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             layoutCached <- Some computed
             computed
 
-    let viewHeight (l:GroupEditorLayout) = min l.height maxHeight
+    let viewHeight (l:GroupEditorLayout) = min l.height (maxHeight-frameHeight)
     /// How much of the rows is in sight above the footer.
     let viewBody (l:GroupEditorLayout) = viewHeight l-(l.height-l.body)
     let clampScroll (l:GroupEditorLayout) = scroll <- max 0 (min scroll (l.body-viewBody l))
@@ -502,8 +506,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
         g.Clear(palette.surface)
-        let title = tr Strings.GroupEditor.title+" · "+tr (Strings.GroupEditor.summary (groups()).Length current.loose.Length)
-        TextRenderer.DrawText(g,title,titleFont,Rectangle(pad,pad,inner,scale GroupEditorMetrics.titleHeight),textOn,palette.surface,textFlags)
         let drawIcon = drawIconOn g
         let looks = tabLooks l |> Map.ofList
         // A tab on its way is drawn over the picture, where it is at the moment, not in it.
@@ -693,14 +695,46 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         TextRenderer.DrawText(g,nameOf d.hwnd,bodyFont,Rectangle(iconBounds.Right+scale 6,r.Y,max 0 (r.Right-scale 8-iconBounds.Right-scale 6),r.Height),textOn,selectedFill,
                               textFlags ||| TextFormatFlags.PreserveGraphicsTranslateTransform)
 
+    /// The thumb at the right edge, over the margin, where the rows scroll: how far down they
+    /// are. It takes no room from the rows, so nothing moves when they come to need scrolling.
+    let scrollThumb (l:GroupEditorLayout) (track:int) =
+        if l.body<=track || track<=0 then None
+        else
+            let bar = scale GroupEditorMetrics.scrollbar
+            let h = max (scale 24) (int(int64 track*int64 track/int64 l.body))
+            let y = int(int64 (track-h)*int64 scroll/int64 (l.body-track))
+            Some(Rectangle(width-pad+(pad-bar)/2,y,bar,h))
+    /// Where the rows scroll: a row cut at the top or the bottom fades into the surface rather
+    /// than ending at a hard edge, and the thumb shows how far down the rows are.
+    let scrollDecor (g:Graphics) (l:GroupEditorLayout) (track:int) =
+        scrollThumb l track |> Option.iter(fun thumb ->
+            let fade = scale GroupEditorMetrics.fade
+            let clear = Color.FromArgb(0,palette.surface)
+            if scroll>0 then
+                let r = Rectangle(0,0,width,fade)
+                use brush = new Drawing2D.LinearGradientBrush(r,palette.surface,clear,Drawing2D.LinearGradientMode.Vertical)
+                g.FillRectangle(brush,r)
+            if scroll<l.body-track then
+                let r = Rectangle(0,track-fade,width,fade)
+                use brush = new Drawing2D.LinearGradientBrush(r,clear,palette.surface,Drawing2D.LinearGradientMode.Vertical)
+                g.FillRectangle(brush,r)
+            g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+            use fill = new SolidBrush(Color.FromArgb(120,palette.muted))
+            use shape = rounded (Rectangle(thumb.X,thumb.Y+scale 2,thumb.Width,max 1 (thumb.Height-scale 4))) (thumb.Width/2)
+            g.FillPath(fill,shape))
+
     let form =
         let f =
-            // An ordinary window, not on top of everything: a tool to come back to, in the taskbar
-            // and Alt+Tab, that other windows may cover.
+            // An ordinary window with the system's title bar, not on top of everything: a tool to
+            // come back to, in the taskbar and Alt+Tab, that other windows may cover.
             { new Form() with
                 override this.OnHandleCreated(e) =
                     base.OnHandleCreated(e)
                     this.SetStyle(ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint ||| ControlStyles.UserPaint,true)
+                    frameHeight <- this.Height-this.ClientSize.Height
+                    // The title bar in the settings palette's colours, as the Settings window has it.
+                    SettingsUi.apply this
+                    this.BackColor <- palette.surface
                 override this.OnPaintBackground(e) = ()
                 // The rows scrolled, the footer in place under them, and the drag over it all.
                 override this.OnPaint(e) =
@@ -719,7 +753,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                             g.SetClip(Rectangle(0,0,width,body))
                             let blit (src:Bitmap) (srcY:int) (h:int) (y:int) =
                                 if h>0 then g.DrawImage(src,Rectangle(0,y-scroll,width,h),Rectangle(0,srcY,width,h),GraphicsUnit.Pixel)
-                            blit bitmap 0 (pad+scale GroupEditorMetrics.titleHeight) 0
+                            blit bitmap 0 pad 0
                             List.iter2 (fun (a:Rectangle) (row:GroupEditorRowLayout) ->
                                 let b = row.band
                                 let y,h = lerp a.Y b.Y,lerp a.Height b.Height
@@ -731,6 +765,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                             let body = viewBody l
                             e.Graphics.DrawImage(bitmap,Rectangle(0,0,width,body),Rectangle(0,scroll,width,body),GraphicsUnit.Pixel)
                             e.Graphics.DrawImage(bitmap,Rectangle(0,body,width,bitmap.Height-l.body),Rectangle(0,l.body,width,bitmap.Height-l.body),GraphicsUnit.Pixel)
+                            scrollDecor g l body
                             e.Graphics.TranslateTransform(0.0f,float32 -scroll)
                             if not sliding.IsEmpty then
                                 e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
@@ -741,7 +776,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                              | Some d when d.begun -> overlay e.Graphics l d
                              | _ -> hoverOverlay e.Graphics l)
                             e.Graphics.ResetTransform() }
-        f.FormBorderStyle <- FormBorderStyle.None
+        f.FormBorderStyle <- FormBorderStyle.FixedSingle
+        f.MaximizeBox <- false
         f.ShowInTaskbar <- true
         f.StartPosition <- FormStartPosition.Manual
         f.KeyPreview <- true
@@ -757,17 +793,16 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let mutable placed = false
     let place (l:GroupEditorLayout) =
         let height = viewHeight l
+        if form.ClientSize<>Size(width,height) then form.ClientSize <- Size(width,height)
+        let size = form.Size
         let box = fallbackFrame.Rectangle
-        let bounds =
-            if placed then Rectangle(form.Left,min form.Top (area.Bottom-height),width,height)
-            else Rectangle(max area.Left (min (area.Right-width) (box.X+(box.Width-width)/2)),
-                           max area.Top (min (area.Bottom-height) (box.Y+(box.Height-height)/2)),width,height)
-        if form.Bounds<>bounds || not placed then
+        let location =
+            if placed then Point(form.Left,min form.Top (area.Bottom-size.Height))
+            else Point(max area.Left (min (area.Right-size.Width) (box.X+(box.Width-size.Width)/2)),
+                       max area.Top (min (area.Bottom-size.Height) (box.Y+(box.Height-size.Height)/2)))
+        if form.Location<>location || not placed then
             placed <- true
-            form.Bounds <- bounds
-            if not (SystemCorners.keep form (fun () -> palette.border)) then
-                use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 width,float32 height)) (float32(scale GroupEditorMetrics.radius))
-                form.Region <- new Region(shape)
+            form.Location <- location
 
     let releaseThumbnails() =
         for KeyValue(_,thumb) in thumbs do DwmApi.DwmUnregisterThumbnail(thumb) |> ignore
@@ -847,6 +882,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             if morph.IsSome then endMorph()
             let l = layout()
             clampScroll l
+            let title = tr Strings.GroupEditor.title+" · "+tr (Strings.GroupEditor.summary (groups()).Length current.loose.Length)
+            if form.Text<>title then form.Text <- title
             if form.IsHandleCreated then place l
             updateThumbnails l
             let previous = bitmap
@@ -873,8 +910,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             menu |> Option.iter(fun each -> each.Dispose())
             menu <- None
             releaseThumbnails()
-            shadow |> Option.iter(fun item -> (item :> IDisposable).Dispose())
-            shadow <- None
             form.Hide()
             ended.Trigger()
             plan |> Option.iter saved.Trigger
@@ -957,7 +992,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let showRow (i:int) =
         let l = layout()
         l.rows |> List.tryItem i |> Option.iter(fun row ->
-            let top = pad+scale GroupEditorMetrics.titleHeight
+            let top = pad
             if row.band.Y-scroll<top || row.band.Bottom-scroll>viewBody l then
                 scroll <- row.band.Y-top
                 clampScroll l
@@ -966,11 +1001,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
 
     /// The popup at the height the morph has reached: its bottom follows the rows.
     let resizeTo (height:int) =
-        if form.IsHandleCreated && form.Height<>height then
-            form.Height <- height
-            if not (isNull form.Region) then
-                use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 width,float32 height)) (float32(scale GroupEditorMetrics.radius))
-                form.Region <- new Region(shape)
+        if form.IsHandleCreated && form.ClientSize.Height<>height then form.ClientSize <- Size(width,height)
     /// A frame of the morph: the popup's height on the way, the pictures along with the rows.
     let morphFrame() =
         match morph with
@@ -1098,17 +1129,23 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let mouseDown (pt:Point) =
       if not closed then
         let l = layout()
+        let view = pt
         let pt = unscroll pt
         let take hwnd fromPane (r:Rectangle) =
             drag <- Some {hwnd=hwnd; fromPane=fromPane; start=pt; at=pt; aim=None; fits=true; begun=false; offset=Point(pt.X-r.X,pt.Y-r.Y)
                           origin=current; originPane=fromPane; originSelected=selected}
         let expandedIndex = expandedRow()
         let shapes = expandedIndex |> Option.bind(fun i -> l.rows |> List.tryItem i) |> Option.map(fun row -> row.shapes) |> Option.defaultValue []
-        // Pressed on the title or on the footer's free room: the popup is moved, as by a caption.
-        let handle = pt.Y<pad+scale GroupEditorMetrics.titleHeight || (pt.Y>=l.body && not(l.save.Contains pt) && not(l.cancel.Contains pt))
-        if handle && form.IsHandleCreated then
-            WinUserApi.ReleaseCapture() |> ignore
-            WinUserApi.SendMessage(form.Handle,0xA1,IntPtr 2,IntPtr.Zero) |> ignore
+        let track = viewBody l
+        let thumb = match scrollThumb l track with Some thumb when view.Y<track && view.X>=width-pad -> Some thumb | _ -> None
+        if thumb.IsSome then
+            // On the thumb, the rows follow the pointer; on the track beside it, a page up or down.
+            if thumb.Value.Contains view then scrollDrag <- Some(view.Y,scroll)
+            else
+                scroll <- scroll+(if view.Y<thumb.Value.Y then -track else track)
+                clampScroll l
+                updateThumbnails l
+                if form.IsHandleCreated then form.Invalidate()
         elif not shapes.IsEmpty then
             match shapes |> List.tryFind(fun (_,r) -> r.Contains pt) with
             | Some(shape,_) -> cut shape
@@ -1153,12 +1190,21 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// Whether the point (as seen, and as the picture has it) is off the rows: on the title, the
     /// footer or out of the popup, where a tab in hand is aimed at nothing.
     let offRows (l:GroupEditorLayout) (view:Point) (pt:Point) =
-        view.X<0 || view.X>=width || view.Y<0 || view.Y>=viewBody l || pt.Y<pad+scale GroupEditorMetrics.titleHeight
+        ignore pt
+        view.X<0 || view.X>=width || view.Y<0 || view.Y>=viewBody l
 
-    let mouseMove (pt:Point) =
-      if not closed then
-        let view = pt
-        let pt = unscroll pt
+    /// The thumb in hand: the rows follow the pointer along the track.
+    let thumbMove (view:Point) (fromY:int) (fromScroll:int) =
+        let l = layout()
+        let track = viewBody l
+        let thumbHeight = scrollThumb l track |> Option.map(fun r -> r.Height) |> Option.defaultValue track
+        if track>thumbHeight then
+            scroll <- fromScroll+int(int64 (view.Y-fromY)*int64 (l.body-track)/int64 (track-thumbHeight))
+            clampScroll l
+            updateThumbnails l
+            if form.IsHandleCreated then form.Invalidate()
+
+    let dragMove (view:Point) (pt:Point) =
         match drag with
         | Some d ->
             let threshold = SystemInformation.DragSize
@@ -1226,8 +1272,15 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 hoveredCell <- overEmpty
                 if form.IsHandleCreated then form.Invalidate()
 
+    let mouseMove (pt:Point) =
+      if not closed then
+        match scrollDrag with
+        | Some(fromY,fromScroll) -> thumbMove pt fromY fromScroll
+        | None -> dragMove pt (unscroll pt)
+
     let mouseUp (pt:Point) =
       if not closed then
+        scrollDrag <- None
         let view = pt
         let pt = unscroll pt
         match drag with
@@ -1314,8 +1367,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             if closed || slideDone() then slideTimer.Stop()
             if not closed && form.IsHandleCreated then form.Invalidate())
         morphTimer.Tick.Add(fun _ -> if closed then morphTimer.Stop() else morphFrame())
-        // The popup stays up while the user works elsewhere, and its shadow follows it when moved.
-        form.LocationChanged.Add(fun _ -> if not closed then shadow |> Option.iter(fun item -> item.Show()))
+        // The title bar's close button leaves everything as it was, as Esc does.
+        form.FormClosing.Add(fun e -> if not closed then (e.Cancel <- true; cancel()))
 
     member _.Size = let l = layout() in Size(width,viewHeight l)
     /// The draft as edited so far.
@@ -1355,10 +1408,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let l = layout()
         place l
         bitmap <- render()
-        if shadow.IsNone && not highContrast then shadow <- Some(new TaskSwitchShadow(form))
         form.Show()
         form.Update()
-        shadow |> Option.iter(fun item -> item.Show())
         OS().windowFromHwnd(form.Handle).setForegroundOrRestore(true)
         form.Activate()
         refresh()

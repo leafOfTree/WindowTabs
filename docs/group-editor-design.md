@@ -36,11 +36,15 @@ picture, and moves the windows once, when the user is done.
   every command.
   Opened over a group, that group's row starts expanded (section 2.3); opened over a
   window of no group, or the desktop, none is.
-- It opens in the switcher's look: the settings palette's colours, rounded corners, the
-  switcher's shadow, but as an ordinary window, in the taskbar and Alt+Tab and covered by
-  whatever comes in front, since it stays up while the user works; centred on the screen in view,
-  about 1000 logical pixels wide and as tall as its rows need up to nine tenths of the work
-  area, scrolling past that. It draws no 1px borders inside: the popup's surface, the rows'
+- It opens in the settings palette's colours as an ordinary window with the system's title
+  bar (the title and the groups' count in its caption, in the palette's colours as the
+  Settings window has them), in the taskbar and Alt+Tab and covered by whatever comes in
+  front, since it stays up while the user works; its close button leaves everything as it
+  was, as Esc does. Centred on the screen in view, about 1000 logical pixels wide and as
+  tall as its rows need up to nine tenths of the work area, scrolling past that: a thumb
+  over the right margin, taking no room from the rows, shows how far down they are and
+  drags, and a row cut at the top or the bottom fades into the surface rather than ending
+  at a hard edge. It draws no 1px borders inside: the popup's surface, the rows'
   bands and the tabs' blocks are told apart by tone alone, three steps of
   the palette's surface colours, with the accent as a tint on what is selected; only the
   New group zone is dashed, as a place to drop into. High contrast gets the system's
