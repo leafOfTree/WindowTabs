@@ -58,7 +58,9 @@ type DragAim =
 
 /// A tab or a pane chip in hand: which window, from a cell or a strip, where the press was and
 /// the pointer is, and what it is aimed at, with whether that drop would fit.
-type GroupEditorDrag = { hwnd:IntPtr; fromPane:bool; start:Point; at:Point; aim:DragAim option; fits:bool; begun:bool }
+type GroupEditorDrag = { hwnd:IntPtr; fromPane:bool; start:Point; at:Point; aim:DragAim option; fits:bool; begun:bool
+                         /// Where in the tab the press was, so the tab in hand stays under the pointer as it was.
+                         offset:Point }
 
 /// One row as drawn: its band, its tabs, and its picture, the thumbnail or, expanded, the
 /// content, with the cells in it.
@@ -72,7 +74,9 @@ type GroupEditorRowLayout = {
     /// The cell in focus, in the expanded row: the selected tab's, or the one the keys moved to.
     focused:PanePath option
     splitButton:Rectangle option
-    shapes:(PaneShape * Rectangle) list }
+    shapes:(PaneShape * Rectangle) list
+    /// The button that folds the expanded row back into the overview.
+    collapse:Rectangle option }
 
 /// Where the picture's parts are, in the popup's own coordinates before scrolling.
 type GroupEditorLayout = {
@@ -233,7 +237,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 let info = infoOf index
                 if expandedIndex=Some index then
                     let stripTop = top+rowPad
-                    let tabs = stripTabs g.tabs (pad+rowPad) (stripTop+scale GroupEditorMetrics.stripHeight-scale GroupEditorMetrics.tabHeight) (inner-2*rowPad)
+                    let side = scale GroupEditorMetrics.splitButton
+                    let collapse = Rectangle(pad+inner-rowPad-side,stripTop+(scale GroupEditorMetrics.stripHeight-side)/2,side,side)
+                    let tabs = stripTabs g.tabs (pad+rowPad) (stripTop+scale GroupEditorMetrics.stripHeight-scale GroupEditorMetrics.tabHeight) (inner-2*rowPad-side-scale 8)
                     let contentWidth = inner-2*rowPad
                     let contentHeight =
                         let byFrame = if info.frame.width>0 then int(int64 contentWidth*int64 info.frame.height/int64 info.frame.width) else contentWidth*9/16
@@ -259,7 +265,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         | _ -> []
                     y <- content.Bottom+rowPad+scale GroupEditorMetrics.rowGap
                     {index=index; band=Rectangle(pad,top,inner,content.Bottom+rowPad-top); expanded=true; tabs=tabs; picture=content; cells=cells
-                     focused=focused; splitButton=splitButton; shapes=shapes}
+                     focused=focused; splitButton=splitButton; shapes=shapes; collapse=Some collapse}
                 else
                     let thumbWidth,thumbHeight = scale GroupEditorMetrics.thumbWidth,scale GroupEditorMetrics.thumbHeight
                     let tabs,tabsBottom = wrapTabs g.tabs (pad+rowPad) (top+rowPad) (inner-3*rowPad-thumbWidth)
@@ -275,7 +281,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     let cells,_ = cellsOf g info.active picture (scale 2)
                     y <- bottom+scale GroupEditorMetrics.rowGap
                     {index=index; band=Rectangle(pad,top,inner,bottom-top); expanded=false; tabs=tabs; picture=picture; cells=cells
-                     focused=None; splitButton=None; shapes=[]})
+                     focused=None; splitButton=None; shapes=[]; collapse=None})
         let looseTop = y
         let looseTabs,looseBottom = wrapTabs current.loose (pad+rowPad) (looseTop+rowPad) (inner-3*rowPad-scale GroupEditorMetrics.thumbWidth)
         let looseBottom = max looseBottom (looseTop+rowPad+scale GroupEditorMetrics.tabHeight)+rowPad
@@ -371,9 +377,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             match source with
             | InGroup i when i=row ->
                 let g = draft.groups.[row]
-                let index = List.tryFindIndex ((=) hwnd) g.tabs |> Option.defaultValue g.tabs.Length
-                let target = if slot>index then slot-1 else slot
-                let moved = GroupDraft.moveTab hwnd target (if fromPane then GroupDraft.removeFromPane hwnd g else g)
+                // The slot counts the other tabs before the point, which is where moveTab puts it.
+                let moved = GroupDraft.moveTab hwnd slot (if fromPane then GroupDraft.removeFromPane hwnd g else g)
                 if moved=g then None else Some(DesktopDraft.edit row (fun _ -> moved) draft,Some row)
             | _ -> if row>=draft.groups.Length then None else Some(DesktopDraft.moveToGroup hwnd row (Some slot) draft,Some row)
         | CellMiddle(row,path) ->
@@ -482,6 +487,15 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 g.FillPath(fill,shape)
             for hwnd,r in row.tabs do drawTab hwnd r (hwnd=shown) (List.contains hwnd inPane) row.expanded
             drawCells row shown
+            // The button that folds the row back, a chevron up.
+            row.collapse |> Option.iter(fun r ->
+                use shape = rounded r (scale 5)
+                use fill = new SolidBrush(palette.surface)
+                g.FillPath(fill,shape)
+                use pen = new Pen(palette.muted,float32(scale 2))
+                let cx,cy,arm = r.X+r.Width/2,r.Y+r.Height/2,scale 5
+                g.DrawLine(pen,cx-arm,cy+arm/2,cx,cy-arm/2)
+                g.DrawLine(pen,cx,cy-arm/2,cx+arm,cy+arm/2))
             // The split button on the focused cell, and its flyout of shapes while open.
             row.splitButton |> Option.iter(fun r ->
                 use shape = rounded r (scale 5)
@@ -606,7 +620,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                                   TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine)
         | None -> ()
         let w = tabWidth d.hwnd
-        let r = Rectangle(d.at.X+scale 12,d.at.Y+scale 12,w,scale GroupEditorMetrics.tabHeight)
+        let r = Rectangle(d.at.X-d.offset.X,d.at.Y-d.offset.Y,w,scale GroupEditorMetrics.tabHeight)
         use shape = rounded r (scale 6)
         use fill = new SolidBrush(selectedFill)
         g.FillPath(fill,shape)
@@ -934,7 +948,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         else
             match l.rows |> List.tryFind(fun row -> row.band.Contains pt) with
             | Some row ->
-                if row.splitButton |> Option.exists(fun r -> r.Contains pt) then
+                if row.collapse |> Option.exists(fun r -> r.Contains pt) then expand None
+                elif row.splitButton |> Option.exists(fun r -> r.Contains pt) then
                     flyout <- true
                     refresh()
                 else
@@ -943,7 +958,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         if (crossRect r).Contains pt then takeOut hwnd
                         // Selected on release, not here: pressed to drag, the tab would show in
                         // place of the panes it is about to be dropped on.
-                        else drag <- Some {hwnd=hwnd; fromPane=false; start=pt; at=pt; aim=None; fits=true; begun=false}
+                        else drag <- Some {hwnd=hwnd; fromPane=false; start=pt; at=pt; aim=None; fits=true; begun=false; offset=Point(pt.X-r.X,pt.Y-r.Y)}
                     | None ->
                         if row.picture.Contains pt then
                             if not row.expanded then expand (Some row.index)
@@ -951,7 +966,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                                 row.cells |> List.tryFind(fun (_,_,r) -> r.Contains pt) |> Option.iter(fun (path,pane,r) ->
                                     match pane with
                                     | Occupied hwnd when (chipRect r).Contains pt ->
-                                        drag <- Some {hwnd=hwnd; fromPane=true; start=pt; at=pt; aim=None; fits=true; begun=false}
+                                        drag <- Some {hwnd=hwnd; fromPane=true; start=pt; at=pt; aim=None; fits=true; begun=false; offset=Point(pt.X-r.X,pt.Y-r.Y)}
                                     | Empty when (cellCrossRect r).Contains pt ->
                                         edit row.index (GroupDraft.removeCell path)
                                         refresh()
@@ -963,7 +978,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                             refresh()
             | None ->
                 match l.looseTabs |> List.tryFind(fun (_,r) -> r.Contains pt) with
-                | Some(hwnd,_) -> drag <- Some {hwnd=hwnd; fromPane=false; start=pt; at=pt; aim=None; fits=true; begun=false}
+                | Some(hwnd,r) -> drag <- Some {hwnd=hwnd; fromPane=false; start=pt; at=pt; aim=None; fits=true; begun=false; offset=Point(pt.X-r.X,pt.Y-r.Y)}
                 | None ->
                     if l.loose.Contains pt then
                         cursor <- (groups()).Length
@@ -987,7 +1002,17 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         | Some(_,None) -> Some aim,true
                         | None -> None,true
                     | None -> None,true
-                let changed = not d.begun || aim<>d.aim || fits<>d.fits
+                // Within its own row's tabs the tab moves as the pointer does, the others making
+                // room, as a tab dragged along the strip does; nothing is left to drop then.
+                let aim,reordered =
+                    match aim,DesktopDraft.find d.hwnd current with
+                    | Some(StripSlot(row,slot)),InGroup at when at=row && not d.fromPane ->
+                        let g = current.groups.[row]
+                        let moved = GroupDraft.moveTab d.hwnd slot g
+                        if moved<>g then edit row (fun _ -> moved)
+                        None,moved<>g
+                    | _ -> aim,false
+                let changed = not d.begun || aim<>d.aim || fits<>d.fits || reordered
                 drag <- Some {d with at=pt; aim=aim; fits=fits; begun=true}
                 // The picture itself changes only as the aim does; the chip just moves over it.
                 if changed then refresh() elif form.IsHandleCreated then form.Invalidate()

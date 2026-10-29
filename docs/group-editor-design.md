@@ -100,8 +100,8 @@ picture, and moves the windows once, when the user is done.
 - **Expanding.** Clicking a row's thumbnail, or pressing Enter on the row, grows that row
   in place into the view of section 2.3: its tabs become the strip and its thumbnail the
   content below. The other rows stay as they are and still take drops, so a window can be
-  dragged from the expanded group to any other and back. Esc, or clicking the thumbnail of
-  another row, goes back to the overview.
+  dragged from the expanded group to any other and back. Esc, the chevron at the strip's
+  right end, or clicking the thumbnail of another row, goes back to the overview.
 
 ### 2.3 A group expanded
 
@@ -157,12 +157,12 @@ tab, so the strip starts at the row's top edge, as a real group's does.
 
 ### 2.4 Dragging
 
-One drag model for the overview and the expanded row alike, drawn with the same half-size
-chip under the pointer. Within a row (its tabs, and its thumbnail or content):
+One drag model for the overview and the expanded row alike: the tab itself comes along under
+the pointer, held where it was pressed, and its place stays open in the strip. Within a row (its tabs, and its thumbnail or content):
 
 | From | To | Result |
 | --- | --- | --- |
-| a tab | between two tabs of the strip | the tab moves there; pinned tabs stay first |
+| a tab | between two tabs of its own strip | the tab moves there as the pointer goes, the others making room, as on the real strip; pinned tabs stay first |
 | a tab | an empty cell | the window fills it |
 | a tab | the middle of a cell | the window takes that pane; the pane's old window goes back to being a tab |
 | a tab | a cell's edge (left/right/top/bottom) | that pane splits on that side for the window, as a tab dropped on a pane's edge does; with no split, the single cell splits, so the selected window and the dropped one become the first pair |

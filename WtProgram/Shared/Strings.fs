@@ -748,10 +748,10 @@ module Strings =
         let windows count =
             { en=(if count=1 then "1 window" else sprintf "%d windows" count); zh=sprintf "%d 个窗口" count; ja=sprintf "%d 個のウィンドウ" count; ar=sprintf "%d نافذة" count }
         let save = { en="Save"; zh="保存"; ja="保存"; ar="حفظ" }
-        let hint = { en="Left and Right choose a tab, Ctrl+Left and Ctrl+Right move it, Delete takes it out; Ctrl+Enter saves."
-                     zh="左右键选标签，Ctrl+左右键移动，Delete 移出分组；Ctrl+Enter 保存。"
-                     ja="左右キーでタブを選び、Ctrl+左右で移動、Delete で外し、Ctrl+Enter で保存します。"
-                     ar="السهمان يختاران علامة تبويب، وCtrl مع السهمين ينقلانها، وDelete يُخرجها؛ وCtrl+Enter يحفظ." }
+        let hint = { en="Left and Right choose a tab, Ctrl+Left and Ctrl+Right move it, Delete takes it out; Esc back to all groups; Ctrl+Enter saves."
+                     zh="左右键选标签，Ctrl+左右键移动，Delete 移出分组；Esc 回到全部分组；Ctrl+Enter 保存。"
+                     ja="左右キーでタブを選び、Ctrl+左右で移動、Delete で外し、Esc で全グループに戻り、Ctrl+Enter で保存します。"
+                     ar="السهمان يختاران علامة تبويب، وCtrl مع السهمين ينقلانها، وDelete يُخرجها؛ وEsc يعود إلى كل المجموعات؛ وCtrl+Enter يحفظ." }
         let noGroup = { en="The window in front is in no group."; zh="当前窗口不在任何分组里。"; ja="手前のウィンドウはどのグループにもありません。"; ar="النافذة الأمامية ليست في أي مجموعة." }
         /// What saving did.
         let applied moved detached made =
