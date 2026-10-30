@@ -301,8 +301,7 @@ let main() =
             let centre (r:Rectangle) = Point(r.X+r.Width/2,r.Y+r.Height/2)
             let tabIn (row:GroupEditorRowLayout) hwnd = row.tabs |> List.find(fun (each,_) -> each=hwnd) |> snd
             let tabsOf i = editor.Draft.groups.[i].tabs
-            // The row's menu: expand or fold first, Merge into between, Ungroup last.
-            let toggleRow index = match List.head (editor.RowMenu index) with CmiRegular r -> r.click() | _ -> failwith "The row's menu did not start with expand or fold"
+            let clickTab (row:GroupEditorRowLayout) hwnd = editor.MouseDown(centre (tabIn row hwnd)); editor.MouseUp(centre (tabIn row hwnd))
             // A tab dragged to another row's tabs joins it there as the pointer arrives, the drop changing nothing more.
             editor.MouseDown(centre (tabIn l.rows.[0] c))
             let slot = let r = tabIn l.rows.[1] d in Point(r.Right+Dpi.scale 20,r.Y+r.Height/2)
@@ -343,30 +342,22 @@ let main() =
             editor.MouseMove(centre l.newGroup)
             check (editor.Drag |> Option.exists(fun d -> d.begun && d.aim=None)) "A window alone in its group was offered a new group"
             editor.MouseUp(centre l.newGroup)
-            // The row's menu expands the row, and the expanded row's folds it back; Esc goes back too.
+            // Clicking a folded row's tab expands the row on that tab; the selected tab clicked
+            // again folds it back, and so does Esc.
             let l = editor.Layout
-            toggleRow 1
-            check (editor.Expanded=Some 1 && editor.Selected=d && editor.Layout.rows.[1].expanded && not editor.Layout.rows.[0].expanded) "The row's menu did not expand its row"
+            clickTab l.rows.[1] d
+            check (editor.Expanded=Some 1 && editor.Selected=d && editor.Layout.rows.[1].expanded && not editor.Layout.rows.[0].expanded) "Clicking a folded row's tab did not expand its row"
             // Expanded, the row's tabs stay where the folded row had them: only the content opens under them.
             check (tabIn editor.Layout.rows.[1] d=tabIn l.rows.[1] d) (sprintf "Expanding moved the row's tabs: %A to %A" (tabIn l.rows.[1] d) (tabIn editor.Layout.rows.[1] d))
-            toggleRow 1
-            check (editor.Expanded=None) "The expanded row's menu did not fold it back"
-            toggleRow 1
-            check (editor.Expanded=Some 1) "The row's menu did not expand the row again"
-            // Clicking the selected tab folds the row; clicking a folded row's tab expands it on that tab.
-            let l = editor.Layout
-            editor.MouseDown(centre (tabIn l.rows.[1] d))
-            editor.MouseUp(centre (tabIn l.rows.[1] d))
+            clickTab editor.Layout.rows.[1] d
             check (editor.Expanded=None) "Clicking the selected tab did not fold the row"
-            let l = editor.Layout
-            editor.MouseDown(centre (tabIn l.rows.[1] d))
-            editor.MouseUp(centre (tabIn l.rows.[1] d))
-            check (editor.Expanded=Some 1 && editor.Selected=d) "Clicking a folded row's tab did not expand it on that tab"
+            clickTab editor.Layout.rows.[1] d
+            check (editor.Expanded=Some 1 && editor.Selected=d) "Clicking a folded row's tab did not expand it again"
             editor.Press Keys.Escape
             check (editor.Expanded=None) "Esc did not go back to the overview"
-            // Another row's menu expands that row in place of the one before.
-            toggleRow 2
-            check (editor.Expanded=Some 2 && editor.Selected=c) "Another row's menu did not expand it"
+            // Another row's tab expands that row in place of the one before.
+            clickTab editor.Layout.rows.[2] c
+            check (editor.Expanded=Some 2 && editor.Selected=c) "Clicking another row's tab did not expand it"
             editor.Press Keys.Escape
             // Taking a lone window out, as its menu does, ends its row; a loose window dragged onto
             // a row's tabs joins that group.
@@ -412,12 +403,15 @@ let main() =
             let centred (at:int) (size:int) (from:int) (span:int) = abs((at+size/2)-(from+span/2))<=2
             check (centred bounds.X bounds.Width area.X area.Width && centred bounds.Y bounds.Height area.Y area.Height) (sprintf "The popup did not open centred on the screen: %A in %A" bounds area)
             let folded = editor.Size.Height
-            (match List.head (editor.RowMenu 0) with CmiRegular r -> r.click() | _ -> failwith "The row's menu did not start with expand")
+            let tab = snd editor.Layout.rows.[0].tabs.Head
+            editor.MouseDown(Point(tab.X+tab.Width/2,tab.Y+tab.Height/2))
+            editor.MouseUp(Point(tab.X+tab.Width/2,tab.Y+tab.Height/2))
             // The expanded row fits in the height set as it opened, unless the screen is too short for it.
             let fits = editor.Layout.height<=editor.Size.Height || editor.Size.Height>=area.Height*9/10-Dpi.scale 60
             check (editor.Expanded=Some 0 && fits && editor.Size.Height=folded) (sprintf "Expanding a row resized the popup, or did not fit: %d then %d for %d" folded editor.Size.Height editor.Layout.height)
             editor.Close()
-        // The row's menu merges the row into another, named there by its first tab, or ungroups it.
+        // The row's menu holds what a drag does less handily with many rows: merging the row into
+        // another, named there by its first tab, and ungrouping it.
         do
             let shown = List.zip [a;b;c] ["One";"Two";"Three"] |> List.map(fun (hwnd,name) -> {hwnd=hwnd; name=name; icon=None; minimized=true})
             let frame = Rect(Pt(100,100),Sz(1600,900))

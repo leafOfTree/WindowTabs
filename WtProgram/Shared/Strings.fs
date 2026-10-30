@@ -787,8 +787,6 @@ module Strings =
                              ar="اسحب علامة تبويب إلى صف آخر أو فك التجميع أو مجموعة جديدة؛ اسحب صفًا من فراغه إلى صف آخر لدمجهما؛ انقر علامة تبويب لتوسيع صفها." }
         let removeTab = { en="Take out of the group"; zh="移出分组"; ja="グループから外す"; ar="إخراج من المجموعة" }
         /// The row's menu, from the button at its right end.
-        let expandRow = { en="Expand and arrange panes"; zh="展开并编排窗格"; ja="展開してペインを並べる"; ar="توسيع وترتيب اللوحات" }
-        let foldRow = { en="Back to all groups"; zh="回到全部分组"; ja="全グループに戻る"; ar="العودة إلى كل المجموعات" }
         let mergeInto = { en="Merge into"; zh="合并到"; ja="統合先"; ar="دمج في" }
         let ungroup = { en="Ungroup"; zh="解散分组"; ja="グループ解除"; ar="فك التجميع" }
 

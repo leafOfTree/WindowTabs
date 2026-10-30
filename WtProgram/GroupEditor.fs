@@ -1150,8 +1150,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let at = form.PointToScreen view
         next.Show(form.Handle,at.X,at.Y)
 
-    /// A row's menu, from the button at its right end: expand it or fold it back, merge it into
-    /// another row, named by its first tab, as dropping the row there does, or ungroup it.
+    /// A row's menu, from the button at its right end: what a drag does less handily with many
+    /// rows, and nothing a click does. Merge the row into another, named by its first tab, as
+    /// dropping the row there does, or ungroup it, as dropping it on the loose row does.
     let rowMenuItems (index:int) =
         let regular text click = CmiRegular({ text=text; image=None; flags=List2(); click=click })
         let rowName (g:GroupDraft) =
@@ -1160,10 +1161,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let others =
             groups() |> List.indexed |> List.filter(fun (i,_) -> i<>index)
             |> List.map(fun (i,g) -> regular (rowName g) (fun () -> mergeRow index (IntoRow i)))
-        let expanded = expandedRow()=Some index
         List2(
-            [ regular (tr (if expanded then Strings.GroupEditor.foldRow else Strings.GroupEditor.expandRow)) (fun () -> expand (if expanded then None else Some index)) ]
-            @ (if others.IsEmpty then [] else [ CmiPopUp({ text=tr Strings.GroupEditor.mergeInto; image=None; items=List2(others) }) ])
+            (if others.IsEmpty then [] else [ CmiPopUp({ text=tr Strings.GroupEditor.mergeInto; image=None; items=List2(others) }) ])
             @ [ regular (tr Strings.GroupEditor.ungroup) (fun () -> mergeRow index Dissolve) ])
     let rowMenu (index:int) (view:Point) = showMenu (rowMenuItems index) view
 
