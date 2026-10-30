@@ -285,7 +285,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 widths.[hwnd] <- w
                 w
         let inPane = current.groups |> List.exists(fun g -> List.contains hwnd (GroupDraft.paneWindows g))
-        min (scale GroupEditorMetrics.tabMaxWidth) (name+scale GroupEditorMetrics.iconSize+scale 22+(if inPane then scale 14 else 0))
+        min (scale GroupEditorMetrics.tabMaxWidth) (name+scale GroupEditorMetrics.iconSize+scale 19+(if inPane then scale 14 else 0))
 
     /// Tabs wrapped into lines within the width, from the top left.
     let wrapTabs (order:IntPtr list) (left:int) (top:int) (width:int) =
@@ -558,7 +558,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             let iconBounds = Rectangle(r.X+scale 8,r.Y+(r.Height-iconSize)/2,iconSize,iconSize)
             drawIconOn g (iconOf hwnd) iconBounds
             let trailing = if look.inPane then scale 14 else 0
-            let textBounds = Rectangle(iconBounds.Right+scale 6,r.Y,max 0 (r.Right-scale 8-trailing-iconBounds.Right-scale 6),r.Height)
+            // The measured name runs a little past its glyphs, so the room kept after it is less
+            // than the room before the icon, and the two look alike.
+            let textBounds = Rectangle(iconBounds.Right+scale 6,r.Y,max 0 (r.Right-scale 5-trailing-iconBounds.Right-scale 6),r.Height)
             TextRenderer.DrawText(g,nameOf hwnd,bodyFont,textBounds,textOn,fill,textFlags ||| TextFormatFlags.PreserveGraphicsTranslateTransform)
             if look.inPane then
                 use pen = new Pen(palette.muted,float32(scale 1))
@@ -602,9 +604,13 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
         g.Clear(surface)
         let drawIcon = drawIconOn g
-        let looks = tabLooks l |> Map.ofList
-        // A tab on its way is drawn over the picture, where it is at the moment, not in it.
-        let drawTab hwnd = if not(sliding.ContainsKey hwnd) then drawTabOn g hwnd looks.[hwnd]
+        // Each tab by its place, not its window alone: the tab in hand is in two places, where it
+        // stands and, as a ghost, where it came from. A tab on its way is drawn over the picture,
+        // where it is at the moment, not in it.
+        let looks = tabLooks l
+        let drawTab (hwnd:IntPtr,r:Rectangle) =
+            if not(sliding.ContainsKey hwnd) then
+                looks |> List.tryFind(fun (each,look) -> each=hwnd && look.rect=r) |> Option.iter(fun (_,look) -> drawTabOn g hwnd look)
         /// The expanded row's cells: each window's picture, with its chip over it where the content
         /// is split, or the icon alone where there is no picture to show; an empty cell dashed.
         let drawCells (row:GroupEditorRowLayout) =
@@ -640,7 +646,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 use shape = rounded row.picture (scale 6)
                 use fill = new SolidBrush(if highContrast then SystemColors.Control else palette.background)
                 g.FillPath(fill,shape)
-            for hwnd,_ in row.tabs do drawTab hwnd
+            for tab in row.tabs do drawTab tab
             drawCells row
             // The split button on the focused cell, and its flyout of shapes while open.
             row.splitButton |> Option.iter(fun r ->
@@ -675,7 +681,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             use band = rounded l.loose (scale 8)
             use fill = new SolidBrush(looseFill)
             g.FillPath(fill,band)
-            for hwnd,_ in l.looseTabs do drawTab hwnd
+            for tab in l.looseTabs do drawTab tab
             let label = Rectangle(l.loose.Right-rowPad-scale GroupEditorMetrics.labelWidth,l.loose.Y,scale GroupEditorMetrics.labelWidth,l.loose.Height)
             TextRenderer.DrawText(g,tr Strings.GroupEditor.looseWindows,hintFont,label,palette.muted,looseFill,TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine)
             // Empty, the row says what it is for, as the new group's band does.

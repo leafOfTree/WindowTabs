@@ -310,6 +310,13 @@ let main() =
             // The row it left keeps a faded copy of it where it was, so its tabs do not close up.
             let after = editor.Layout
             check (after.ghost=Some(GhostInRow(0,2)) && (after.rows.[0].tabs |> List.map fst)=[a;b;c] && tabIn after.rows.[0] c=tabIn l.rows.[0] c && (after.rows.[1].tabs |> List.map fst)=[d;c]) (sprintf "The row the tab left did not keep its place: %A %A" after.ghost (after.rows |> List.map(fun row -> row.tabs |> List.map fst)))
+            // The copy is drawn there, faded: neither the tab's own colour nor the band's.
+            do
+                use picture = editor.Render()
+                let ghost = tabIn after.rows.[0] c
+                let px = picture.GetPixel(ghost.X+ghost.Width/2,ghost.Bottom-3)
+                let colors = SettingsColors.current()
+                check (px.ToArgb()<>colors.selection.ToArgb() && px.ToArgb()<>colors.surface.ToArgb()) (sprintf "The faded copy was not drawn where the tab came from: %A" px)
             // Above the tabs' line, still past the first tab's middle: the same slot, not the first.
             editor.MouseMove(Point(slot.X,(tabIn editor.Layout.rows.[1] d).Y-Dpi.scale 4))
             check (tabsOf 1=[d;c]) (sprintf "A tab carried above the tabs' line was put at its start: %A" (tabsOf 1))
