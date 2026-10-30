@@ -403,7 +403,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             | Some(start,width,growsRight),_ ->
                 let delta = this.window.ptToScreen(pt).x-start
                 let logical = int(Math.Round(float delta*96.0/float(Dpi.value())))
-                this.columnWidth <- width+(if growsRight then logical else -logical)
+                let next = between SettingsCatalog.columnWidthRange (width+(if growsRight then logical else -logical))
+                // Only a deliberate column resize reveals titles.
+                if next<>width then iconOnlyCell.set(false)
+                this.columnWidth <- next
             | _,Some(start,offset) ->
                 let travel = this.ts.scrollTrack.height-(this.ts.scrollThumb |> Option.map(fun thumb -> thumb.height) |> Option.defaultValue 0)
                 if travel>0 then this.scrollColumnTo(offset+(pt.y-start)*this.ts.scrollMaximum/travel)
@@ -641,9 +644,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         with get() = columnWidthValue
         and set(value) =
             let next = between SettingsCatalog.columnWidthRange value
-            let wasIconOnly = iconOnlyCell.value
-            if this.isVertical then iconOnlyCell.set(false)
-            if next<>columnWidthValue || (this.isVertical && wasIconOnly) then
+            // Restoring a group layout must preserve its icons-only choice.
+            if next<>columnWidthValue then
                 columnWidthValue <- next
                 dockChangedEvent.Trigger()
                 layoutChangedEvent.Trigger(true)
