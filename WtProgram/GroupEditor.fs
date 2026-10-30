@@ -137,8 +137,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let mutable expandedKey : (IntPtr option * IntPtr) option =
         expanded |> Option.bind(fun index -> draft.groups |> List.tryItem index) |> Option.map(fun g -> g.group,List.head g.tabs)
     let mutable selected = IntPtr.Zero
-    /// The row the keys are on: a group's, or the loose row at the end.
-    let mutable cursor = defaultArg expanded 0
     /// The cell the keys moved the focus to, in place of the selected tab's.
     let mutable cellFocus : PanePath option = None
     let mutable hovered : IntPtr option = None
@@ -568,9 +566,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                                           TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis)
         for row in l.rows do
             let g' = (groupAt row.index).Value
-            // The row the keys are on has its chevron in the accent: nothing here is selected,
-            // so no outline says so.
-            let isCursor = cursor=row.index && expandedRow().IsNone
             use band = rounded row.band (scale 8)
             use fill = new SolidBrush(rowFill)
             g.FillPath(fill,band)
@@ -585,7 +580,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 use shape = rounded r (scale 5)
                 use fill = new SolidBrush(palette.surface)
                 g.FillPath(fill,shape)
-                use pen = new Pen((if isCursor then accent else palette.muted),float32(scale 2))
+                use pen = new Pen(palette.muted,float32(scale 2))
                 let cx,cy,arm = r.X+r.Width/2,r.Y+r.Height/2,scale 5
                 let tip,back = if row.expanded then cy-arm/2,cy+arm/2 else cy+arm/2,cy-arm/2
                 g.DrawLine(pen,cx-arm,back,cx,tip)
@@ -625,8 +620,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             g.FillPath(fill,band)
             for hwnd,_ in l.looseTabs do drawTab hwnd
             let label = Rectangle(l.loose.Right-rowPad-scale GroupEditorMetrics.labelWidth,l.loose.Y,scale GroupEditorMetrics.labelWidth,l.loose.Height)
-            let labelColor = if cursor=(groups()).Length && expandedRow().IsNone then accent else palette.muted
-            TextRenderer.DrawText(g,tr Strings.GroupEditor.looseWindows,hintFont,label,labelColor,looseFill,TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine)
+            TextRenderer.DrawText(g,tr Strings.GroupEditor.looseWindows,hintFont,label,palette.muted,looseFill,TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine)
             // Empty, the row says what it is for, as the new group's band does.
             if l.looseTabs.IsEmpty then
                 TextRenderer.DrawText(g,tr Strings.GroupEditor.looseEmpty,bodyFont,Rectangle(l.loose.X,l.loose.Y,label.X-l.loose.X,l.loose.Height),palette.muted,looseFill,
@@ -951,7 +945,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
 
     let edit index (change:GroupDraft -> GroupDraft) =
         current <- DesktopDraft.edit index change current
-        cursor <- min cursor (groups()).Length
         reselect()
 
     let finish (plan:DesktopPlan option) =
@@ -991,7 +984,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let follow = selected=hwnd
         let after = nextAfter hwnd
         current <- next
-        cursor <- min cursor (groups()).Length
         if follow then
             match expandedRow() with
             | Some index when not(List.contains hwnd (groupAt index).Value.tabs) -> selected <- defaultArg after (infoOf index).active
@@ -1027,18 +1019,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
 
     /// The window taken out of its group: to the loose windows, its pane closing.
     let takeOut hwnd = slid (fun () -> moved (DesktopDraft.moveToLoose hwnd current) hwnd)
-
-    /// The window to a row above or below the one it is in: the loose row past the last.
-    let moveToRow hwnd (delta:int) =
-        match DesktopDraft.find hwnd current with
-        | InGroup index ->
-            let target = index+delta
-            if target<0 then ()
-            elif target>=(groups()).Length then takeOut hwnd
-            else slid (fun () -> moved (DesktopDraft.moveToGroup hwnd target None current) hwnd)
-        | Loose when delta<0 && not (groups()).IsEmpty ->
-            slid (fun () -> moved (DesktopDraft.moveToGroup hwnd ((groups()).Length-1) None current) hwnd)
-        | _ -> ()
 
     /// The row scrolled into sight, when the rows are taller than the popup shows.
     let showRow (i:int) =
@@ -1086,9 +1066,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             let g = (groupAt i).Value
             expandedKey <- Some(g.group,List.head g.tabs)
             selected <- (infoOf i).active
-            cursor <- i
         | _ ->
-            expandedRow() |> Option.iter(fun i -> cursor <- i)
             expandedKey <- None
             selected <- IntPtr.Zero
         cellFocus <- None
@@ -1106,74 +1084,13 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             refresh()
         | None -> ()
 
-    /// The tab the keys act on: the expanded row's selected tab, or the cursor row's active one.
-    let keyTab() =
-        match expandedRow() with
-        | Some _ -> if selected=IntPtr.Zero then None else Some selected
-        | None -> if cursor<(groups()).Length then Some (infoOf cursor).active else List.tryHead current.loose
-
+    /// The one key: Esc closes the shapes, folds the expanded row, then cancels. The rest is
+    /// the mouse's.
     let press (keys:Keys) =
-      if not closed then
-        let key = keys &&& Keys.KeyCode
-        let ctrl = keys.HasFlag Keys.Control
-        let shift = keys.HasFlag Keys.Shift
-        let l = layout()
-        let expandedIndex = expandedRow()
-        let order = expandedIndex |> Option.map(fun i -> (groupAt i).Value.tabs) |> Option.defaultValue []
-        let index = List.tryFindIndex ((=) selected) order
-        let rowCount = (groups()).Length
-        match key with
-        | Keys.Escape ->
-            if flyout then (flyout <- false; refresh())
-            elif expandedIndex.IsSome then expand None
-            else cancel()
-        | Keys.Return when ctrl -> save()
-        | Keys.Return -> if expandedIndex.IsSome then expand None else expand (Some cursor)
-        | Keys.Tab ->
-            cursor <- (cursor+(if shift then rowCount else 1)) % (rowCount+1)
-            if expandedIndex.IsSome then expand None else refresh()
-        | Keys.N when ctrl -> keyTab() |> Option.iter(fun hwnd -> slid (fun () -> moved (DesktopDraft.newGroup hwnd current) hwnd))
-        | Keys.Up | Keys.Down when ctrl -> keyTab() |> Option.iter(fun hwnd -> moveToRow hwnd (if key=Keys.Up then -1 else 1))
-        | Keys.Left | Keys.Right when ctrl ->
-            expandedIndex |> Option.iter(fun row ->
-                index |> Option.iter(fun i ->
-                    let target = if key=Keys.Left then i-1 else i+1
-                    if target>=0 && target<order.Length then slid (fun () -> edit row (GroupDraft.moveTab selected target))))
-        // In the expanded content: the arrows go between the cells by direction; Up from the top comes back.
-        | Keys.Left | Keys.Right | Keys.Up | Keys.Down when cellFocus.IsSome && expandedIndex.IsSome ->
-            let direction = match key with Keys.Left -> PaneLeft | Keys.Right -> PaneRight | Keys.Up -> PaneUp | _ -> PaneDown
-            let g = (groupAt expandedIndex.Value).Value
-            let next = match g.panes with Some(Branch tree) -> SplitView.toward direction {tree=tree;focused=cellFocus.Value} | _ -> None
-            match next,key with
-            | Some path,_ ->
-                cellFocus <- Some path
-                (match g.panes |> Option.bind(SplitTree.node path) with Some(Leaf(Occupied hwnd)) -> selected <- hwnd | _ -> ())
-                refresh()
-            | None,Keys.Up -> cellFocus <- None; refresh()
-            | _ -> ()
-        | Keys.Down when expandedIndex.IsSome ->
-            l.rows |> List.tryItem expandedIndex.Value |> Option.bind(fun row -> row.focused) |> Option.iter(fun path -> cellFocus <- Some path; refresh())
-        | Keys.Up | Keys.Down ->
-            cursor <- max 0 (min rowCount (cursor+(if key=Keys.Up then -1 else 1)))
-            refresh()
-        | Keys.Left | Keys.Right ->
-            index |> Option.iter(fun i ->
-                let target = max 0 (min (order.Length-1) (if key=Keys.Left then i-1 else i+1))
-                if target<>i then
-                    selected <- order.[target]
-                    refresh())
-        | Keys.Home | Keys.End when not order.IsEmpty ->
-            selected <- (if key=Keys.Home then List.head order else List.last order)
-            refresh()
-        | Keys.Delete when cellFocus.IsSome && expandedIndex.IsSome ->
-            // The pane goes, or the empty cell; the window stays a tab.
-            let g = (groupAt expandedIndex.Value).Value
-            match g.panes |> Option.bind(SplitTree.node cellFocus.Value) with
-            | Some(Leaf(Occupied hwnd)) -> edit expandedIndex.Value (GroupDraft.removeFromPane hwnd); cellFocus <- None; refresh()
-            | Some(Leaf Empty) -> edit expandedIndex.Value (GroupDraft.removeCell cellFocus.Value); cellFocus <- None; refresh()
-            | _ -> ()
-        | Keys.Delete -> keyTab() |> Option.iter(fun hwnd -> if DesktopDraft.find hwnd current<>Loose then takeOut hwnd)
-        | _ -> ()
+      if not closed && (keys &&& Keys.KeyCode)=Keys.Escape then
+        if flyout then (flyout <- false; refresh())
+        elif (expandedRow()).IsSome then expand None
+        else cancel()
 
     /// A press at the point: the empty cell's cross, the split button and its shapes, the buttons,
     /// the chevron; else a tab or a pane chip taken in hand.
@@ -1233,10 +1150,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             | None ->
                 match l.looseTabs |> List.tryFind(fun (_,r) -> r.Contains pt) with
                 | Some(hwnd,r) -> take hwnd false r
-                | None ->
-                    if l.loose.Contains pt then
-                        cursor <- (groups()).Length
-                        refresh()
+                | None -> ()
 
     /// Whether the point (as seen, and as the picture has it) is off the rows: on the title, the
     /// footer or out of the popup, where a tab in hand is aimed at nothing.
@@ -1270,7 +1184,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 if restored then
                     vacated <- []
                     current <- d.origin
-                    cursor <- min cursor (groups()).Length
                     selected <- d.originSelected
                     reselect()
                 let d = if off then {d with fromPane=d.originPane} else d
@@ -1356,14 +1269,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     | _ -> ()
                 | None -> ()
             else
-                // A click on a tab: selected in the expanded row; the row chosen elsewhere.
+                // A click on a tab of the expanded row selects it.
                 match DesktopDraft.find d.hwnd current,expandedRow() with
                 | InGroup index,Some row when index=row && not d.fromPane ->
                     selected <- d.hwnd
                     cellFocus <- None
-                | InGroup index,_ -> cursor <- index
-                | Loose,_ -> cursor <- (groups()).Length
-                | Nowhere,_ -> ()
+                | _ -> ()
             vacated <- []
             slide before
             refresh()
@@ -1399,18 +1310,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
 
     do
         form.KeyDown.Add(fun e ->
-            match e.KeyCode with
-            | Keys.Escape | Keys.Return | Keys.Tab | Keys.Left | Keys.Right | Keys.Up | Keys.Down | Keys.Home | Keys.End | Keys.Delete ->
+            if e.KeyCode=Keys.Escape then
                 press e.KeyData
                 e.Handled <- true
-                e.SuppressKeyPress <- true
-            | Keys.N when e.Control ->
-                press e.KeyData
-                e.Handled <- true
-                e.SuppressKeyPress <- true
-            | _ -> ())
-        // Tab is a key of the popup's own, not of the focus.
-        form.PreviewKeyDown.Add(fun e -> if e.KeyCode=Keys.Tab then e.IsInputKey <- true)
+                e.SuppressKeyPress <- true)
         form.MouseDown.Add(fun e -> if e.Button=MouseButtons.Left then mouseDown e.Location elif e.Button=MouseButtons.Right then menuAt e.Location)
         form.MouseMove.Add(fun e -> mouseMove e.Location)
         form.MouseUp.Add(fun e -> if e.Button=MouseButtons.Left then mouseUp e.Location)
@@ -1430,7 +1333,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     member _.Selected = selected
     /// The row expanded, if one is.
     member _.Expanded = expandedRow()
-    member _.Cursor = cursor
     member _.Layout = layout()
     /// The picture as it would be drawn now, at its whole height; the caller disposes it.
     member _.Render() = render()

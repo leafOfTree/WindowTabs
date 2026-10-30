@@ -164,35 +164,26 @@ let main() =
             check (sameColor palette.background (under (snd l.tabs.[0]))) "The selected tab is not in the content's colour"
             check (sameColor palette.surface (image.GetPixel(Dpi.scale 6,Dpi.scale 8))) (sprintf "The popup is not on the %s look's surface" mode)
             check (sameColor palette.background (image.GetPixel(l.picture.X+l.picture.Width/2,l.picture.Bottom-2))) "The content is not darker than the popup"
-            // Right and Left choose a tab; one in no pane fills the content on its own.
-            editor.Press Keys.Right
-            editor.Press Keys.Right
+            // Clicking a tab selects it; one in no pane fills the content on its own.
+            let tabRect hwnd = editor.Layout.rows.[0].tabs |> List.find(fun (each,_) -> each=hwnd) |> snd
+            let centre (r:Rectangle) = Point(r.X+r.Width/2,r.Y+r.Height/2)
+            let click hwnd = editor.MouseDown(centre (tabRect hwnd)); editor.MouseUp(centre (tabRect hwnd))
+            click c
             check (editor.Selected=c && editor.Layout.rows.[0].cells=[[],Occupied c,editor.Layout.rows.[0].picture] && editor.Layout.rows.[0].focused=Some [] && editor.Layout.rows.[0].splitButton.IsSome) "A tab in no pane did not fill the content with the split button on it"
-            editor.Press Keys.Left
+            click b
             check (editor.Selected=b && editor.Layout.rows.[0].cells.Length=2 && editor.Layout.rows.[0].focused=Some [Second]) "A pane tab chosen did not focus its cell"
-            editor.Press Keys.End
-            check (editor.Selected=d) "End did not choose the last tab"
-            editor.Press Keys.Home
-            editor.Press Keys.Right
-            // Ctrl+Right moves the tab along the strip; Delete takes it out, its pane closing.
-            editor.Press(Keys.Control ||| Keys.Right)
-            check (editor.Draft.groups.[0].tabs=[a;c;b;d] && editor.Selected=b) "Ctrl+Right did not move the tab"
-            editor.Press Keys.Delete
-            check (editor.Draft.groups.[0].tabs=[a;c;d] && editor.Draft.loose=[b] && editor.Selected=d && editor.Draft.groups.[0].panes.IsNone) "Delete did not take the tab out"
+            // Taking the selected tab out, as its menu does, closes its pane; the plan is just its detaching.
+            editor.TakeOut b
+            check (editor.Draft.groups.[0].tabs=[a;c;d] && editor.Draft.loose=[b] && editor.Selected=c && editor.Draft.groups.[0].panes.IsNone) "Taking the tab out did not close its pane"
             check (editor.Plan.detached=[b] && editor.Plan.groups.IsEmpty) "A tab taken out alone planned more than its detaching"
-            editor.Press Keys.Left
-            editor.Press(Keys.Control ||| Keys.Left)
-            check (editor.Draft.groups.[0].tabs=[c;a;d] && editor.Plan.groups.Head.reorder) "A tab moved to the front did not plan the order"
-            // Ctrl+Enter saves: the plan is handed on and the popup ends; Esc ends it with nothing.
+            // Save hands the plan on and the popup ends; Esc ends it with nothing.
             let planned = ref None
             let endings = ref 0
             editor.Saved.Add(fun plan -> planned.Value <- Some plan)
             editor.Ended.Add(fun () -> endings.Value <- endings.Value+1)
-            editor.Press(Keys.Control ||| Keys.Return)
-            check (editor.IsClosed && endings.Value=1) "Ctrl+Enter did not end the editor"
-            check (planned.Value |> Option.exists(fun plan -> plan.detached=[b] && plan.groups.Head.tabs=[c;a;d])) "Ctrl+Enter did not hand on the plan"
-            editor.Press Keys.Delete
-            check (editor.Draft.groups.[0].tabs=[c;a;d]) "A closed editor took a key"
+            editor.Save()
+            check (editor.IsClosed && endings.Value=1) "Save did not end the editor"
+            check (planned.Value |> Option.exists(fun plan -> plan.detached=[b] && plan.groups.IsEmpty)) "Save did not hand on the plan"
             let left = GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=frame; active=a}],shown,Some 0)
             let plannedLeft = ref false
             left.Saved.Add(fun _ -> plannedLeft.Value <- true)
@@ -270,14 +261,10 @@ let main() =
             check (editor.Drag |> Option.exists(fun d -> d.aim=Some(CellMiddle(0,[Second;Second])) && d.fits)) (sprintf "A tab over the empty cell was not aimed at it: %A" editor.Drag)
             editor.MouseUp(centre (cellRect [Second;Second]))
             check (panes()=[b;a;c] && GroupDraft.emptyCells editor.Draft.groups.[0]=[]) (sprintf "A tab dropped on the empty cell did not fill it: %A" (panes()))
-            // Esc closes the shapes, not the editor; Down then Delete takes the focused pane out.
+            // Esc closes the shapes, not the editor.
             editor.MouseDown(centre editor.Layout.rows.[0].splitButton.Value)
             editor.Press Keys.Escape
             check (not editor.FlyoutOpen && not editor.IsClosed) "Esc with the shapes open closed the editor"
-            editor.Press Keys.Down
-            editor.Press Keys.Delete
-            // The window dropped in is the one selected, so its pane is the one taken out.
-            check (panes()=[b;a] && tabsNow()=[c;a;b]) (sprintf "Delete in the content did not take the pane out alone: %A %A" (panes()) (tabsNow()))
             editor.Close()
             // A drop that would leave a pane under the minimum is refused.
             let narrow = GroupEditorForm(DesktopDraft.ofDesktop [GroupDraft.ofGroup (IntPtr 1) [a;b;c] Set.empty (Split(pair a b))] [],[{group=Some(IntPtr 1); frame=Rect(Pt(),Sz(300,900)); active=a}],shown,Some 0)
@@ -360,9 +347,11 @@ let main() =
             let l = editor.Layout
             editor.MouseDown(centre l.rows.[1].chevron.Value)
             editor.MouseUp(centre l.rows.[1].chevron.Value)
-            check (editor.Expanded=None && editor.Cursor=1) "Clicking the expanded row's chevron did not fold it back"
-            editor.Press Keys.Return
-            check (editor.Expanded=Some 1) "Enter did not expand the row again"
+            check (editor.Expanded=None) "Clicking the expanded row's chevron did not fold it back"
+            let l = editor.Layout
+            editor.MouseDown(centre l.rows.[1].chevron.Value)
+            editor.MouseUp(centre l.rows.[1].chevron.Value)
+            check (editor.Expanded=Some 1) "Clicking the chevron did not expand the row again"
             // The strip's empty room folds the row; a folded row's band's empty room expands it.
             let l = editor.Layout
             let stripRoom = let r = snd l.rows.[1].tabs.Head in Point(l.rows.[1].band.Right-Dpi.scale 80,r.Y+r.Height/2)
@@ -375,17 +364,24 @@ let main() =
             editor.MouseUp(bandRoom)
             check (editor.Expanded=Some 1) "Clicking a folded row's empty room did not expand it"
             editor.Press Keys.Escape
-            check (editor.Expanded=None && editor.Cursor=1) "Esc did not go back to the overview on the row"
-            editor.Press Keys.Tab
-            editor.Press Keys.Return
-            check (editor.Expanded=Some 2 && editor.Selected=c) "Enter did not expand the cursor row"
+            check (editor.Expanded=None) "Esc did not go back to the overview"
+            // Another row's chevron expands that row in place of the one before.
+            let l = editor.Layout
+            editor.MouseDown(centre l.rows.[2].chevron.Value)
+            editor.MouseUp(centre l.rows.[2].chevron.Value)
+            check (editor.Expanded=Some 2 && editor.Selected=c) "Clicking another row's chevron did not expand it"
             editor.Press Keys.Escape
-            // Ctrl+Down moves the cursor row's tab down a row, out to the loose row past the last;
-            // from the loose row Ctrl+Up puts a window in the last group.
-            editor.Press(Keys.Control ||| Keys.Down)
-            check (editor.Draft.loose=[e;f;b;c] && editor.Draft.groups.Length=2 && editor.Cursor=2) (sprintf "Ctrl+Down past the last row did not take the tab out: %A" editor.Draft)
-            editor.Press(Keys.Control ||| Keys.Up)
-            check (tabsOf 1=[d;e] && editor.Draft.loose=[f;b;c]) "Ctrl+Up from the loose row did not put the window in the last group"
+            // Taking a lone window out, as its menu does, ends its row; a loose window dragged onto
+            // a row's tabs joins that group.
+            editor.TakeOut c
+            check (editor.Draft.loose=[e;f;b;c] && editor.Draft.groups.Length=2) (sprintf "Taking the lone window out did not end its row: %A" editor.Draft)
+            let l = editor.Layout
+            editor.MouseDown(centre (l.looseTabs |> List.find(fun (each,_) -> each=e) |> snd))
+            let slot = let r = tabIn l.rows.[1] d in Point(r.Right+Dpi.scale 20,r.Y+r.Height/2)
+            editor.MouseMove(Point(slot.X,slot.Y+Dpi.scale 60))
+            editor.MouseMove(slot)
+            editor.MouseUp(slot)
+            check (tabsOf 1=[d;e] && editor.Draft.loose=[f;b;c]) (sprintf "A loose window dragged onto a row's tabs did not join the group: %A" editor.Draft)
             let plan = editor.Plan
             check (plan.detached=[b;c] && plan.groups.Length=1 && plan.groups.Head.joining=[e] && not plan.groups.Head.reorder && plan.groups.Head.layout.IsNone)
                   (sprintf "The overview's plan is not as expected: %A" plan)

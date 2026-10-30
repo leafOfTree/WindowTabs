@@ -164,8 +164,7 @@ tab, so the strip starts at the row's top edge, as a real group's does.
 One drag model for the overview and the expanded row alike: the tab itself comes along under
 the pointer, held where it was pressed, and its place stays open in the strip as a slot
 dashed in the accent, so where it will land stands out from the tabs around it. The tabs a
-move shifts slide to their new places over 150ms, eased out, rather than jumping; the keys'
-moves slide the same way. Carried off
+move shifts slide to their new places over 150ms, eased out, rather than jumping. Carried off
 the rows (to the title, the footer or out of the popup), the tab goes back to where it was
 taken from, so a drop there, or outside, changes nothing. Within a row (its tabs, and its
 content when expanded):
@@ -207,16 +206,12 @@ zone shown greyed, so nothing is promised that Save cannot keep. A drop never cr
 empty cell; only the split button does, and a pane whose window is removed closes, its
 neighbour taking the room, as `ClosePane` does.
 
-### 2.5 Keyboard
+### 2.5 Keys
 
-Tab and Shift+Tab move between the rows, New group and the buttons. Within a row, Left
-and Right move the selection along the tabs, the content following it as a click does when
-the row is expanded; Down goes from the selected tab into its cell, and the arrows then
-move between panes by direction; Up comes back to the tabs. Ctrl+Left/Right moves the
-selected tab along the strip; Ctrl+Up/Down moves it to the row above or below, the loose
-row included, which is the keyboard's drag between groups; Ctrl+N takes it to a new group.
-Delete takes the selected window out of its group, to the loose row. Enter on a row expands
-it; Ctrl+Enter saves; Esc goes back from an expanded row, and from the overview cancels. The
+The popup is worked with the mouse; its one key is Esc, which closes the split button's
+shapes, folds the expanded row, and from the overview cancels. (A full set of keys, from
+Tab between the rows to Ctrl+Enter, was tried and dropped: nobody reached for them, and
+the footer line listing them read as something to configure.) The
 popup stays up while the user works elsewhere, unlike the palette: it is a tool to come back
 to, so clicking outside it changes nothing, and it closes only by Save, Cancel, Esc or its
 own command again. Dragging its title, or the footer's free room, moves it, and it stays
@@ -334,9 +329,8 @@ the main STA with the other popups, one at a time.
   split transition uses. The picture is drawn into a bitmap only when the draft, the selection or the aim of a
   drag changes (about 60ms for a dozen rows); the chip in hand, the drop zone, the tabs on
   their way and the hover cross are drawn over it at each paint, and the layout, with its
-  text measured, is kept until something it depends on changes. Nothing is outlined: the
-  row the keys are on has its chevron in the accent, since nothing in the popup is selected
-  in the sense an outline would claim. `GroupEditorApply.fs` has the four steps of
+  text measured, is kept until something it depends on changes. Nothing is outlined or lit
+  but the selected tab, joined to the content. `GroupEditorApply.fs` has the four steps of
   section 4, taking the services it needs as arguments so the suites can drive it.
 - `WtProgram/Program.fs`: `editGroups`, building the draft from the desktop and the groups'
   captured layouts, opening the popup as the palette opens, keeping one at a time.
@@ -371,7 +365,7 @@ the main STA with the other popups, one at a time.
 1. Models, `ReplaceLayout`, `SetTabOrder` and the apply pipeline for a whole desktop
    draft, with their tests. No UI; this phase ships nothing visible and can land on its own.
 2. The popup with one row expanded: the strip, the content with its pictures, Save and
-   Cancel, the entry points and strings. Rendering tests. Usable with the keyboard only.
+   Cancel, the entry points and strings. Rendering tests.
 3. Dragging within a row, taking a tab out, the split button and its empty cells.
 4. The overview: every group as a row with its chevron, the loose row, New group,
    expanding a row, dragging between rows. Rendering and drag tests for the overview.

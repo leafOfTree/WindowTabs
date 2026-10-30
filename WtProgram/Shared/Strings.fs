@@ -748,10 +748,10 @@ module Strings =
         let windows count =
             { en=(if count=1 then "1 window" else sprintf "%d windows" count); zh=sprintf "%d 个窗口" count; ja=sprintf "%d 個のウィンドウ" count; ar=sprintf "%d نافذة" count }
         let save = { en="Save"; zh="保存"; ja="保存"; ar="حفظ" }
-        let hint = { en="Left and Right choose a tab, Ctrl+Left and Ctrl+Right move it, Delete takes it out; Esc back to all groups; Ctrl+Enter saves."
-                     zh="左右键选标签，Ctrl+左右键移动，Delete 移出分组；Esc 回到全部分组；Ctrl+Enter 保存。"
-                     ja="左右キーでタブを選び、Ctrl+左右で移動、Delete で外し、Esc で全グループに戻り、Ctrl+Enter で保存します。"
-                     ar="السهمان يختاران علامة تبويب، وCtrl مع السهمين ينقلانها، وDelete يُخرجها؛ وEsc يعود إلى كل المجموعات؛ وCtrl+Enter يحفظ." }
+        let hint = { en="Drag tabs along the strip or onto a pane; the button at a pane's corner splits it; right-click a tab to take it out; Esc goes back to all groups."
+                     zh="沿标签条或往窗格里拖标签；窗格角上的按钮可拆分；右键标签可移出分组；Esc 回到全部分组。"
+                     ja="タブをストリップに沿って、またはペインへドラッグします。ペイン隅のボタンで分割、タブの右クリックで外し、Esc で全グループに戻ります。"
+                     ar="اسحب علامات التبويب على طول الشريط أو إلى لوحة؛ الزر في زاوية اللوحة يقسمها؛ انقر بزر الفأرة الأيمن على علامة تبويب لإخراجها؛ وEsc يعود إلى كل المجموعات." }
         let noGroup = { en="The window in front is in no group."; zh="当前窗口不在任何分组里。"; ja="手前のウィンドウはどのグループにもありません。"; ar="النافذة الأمامية ليست في أي مجموعة." }
         /// What saving did.
         let applied moved detached made =
@@ -784,10 +784,10 @@ module Strings =
                            ja="どのグループにも属さないウィンドウはここに：タブをドロップするとグループから外れます"
                            ar="النوافذ التي ليست في أي مجموعة تأتي هنا: أفلت علامة تبويب لإخراج نافذتها من مجموعتها" }
         let newGroup = { en="Drop a tab here to start a new group with its window"; zh="把标签拖到这里，用它的窗口新建一组"; ja="タブをここにドロップすると、そのウィンドウで新しいグループを作ります"; ar="أفلت علامة تبويب هنا لبدء مجموعة جديدة بنافذتها" }
-        let overviewHint = { en="Drag tabs between rows to regroup; Enter expands a row, Ctrl+Up and Ctrl+Down move a tab between rows; Ctrl+Enter saves."
-                             zh="在行之间拖标签即换组；Enter 展开一行，Ctrl+上下在行间移动标签；Ctrl+Enter 保存。"
-                             ja="行の間でタブをドラッグしてグループを変えます。Enter で行を展開、Ctrl+上下でタブを行間移動、Ctrl+Enter で保存。"
-                             ar="اسحب علامات التبويب بين الصفوف لإعادة التجميع؛ Enter يوسّع صفًا، وCtrl مع السهمين ينقل علامة تبويب بين الصفوف؛ Ctrl+Enter يحفظ." }
+        let overviewHint = { en="Drag tabs between rows to regroup; click a row to expand it and arrange its panes; Esc closes without saving."
+                             zh="在行之间拖标签即换组；点一行即展开并可编排窗格；Esc 关闭且不保存。"
+                             ja="行の間でタブをドラッグしてグループを変えます。行をクリックで展開してペインを並べ、Esc で保存せずに閉じます。"
+                             ar="اسحب علامات التبويب بين الصفوف لإعادة التجميع؛ انقر صفًا لتوسيعه وترتيب لوحاته؛ وEsc يغلق دون حفظ." }
         let removeTab = { en="Take out of the group"; zh="移出分组"; ja="グループから外す"; ar="إخراج من المجموعة" }
 
     module CommandLine =
