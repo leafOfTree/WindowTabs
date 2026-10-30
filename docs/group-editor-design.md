@@ -139,7 +139,10 @@ tab, so the strip starts at the row's top edge, as a real group's does.
   with an ellipsis; hovering a tab shows the whole name in the tab title tip's manner, as
   the real strip does. Right-clicking a tab (or a pane chip) offers **Take out of the group**:
   the window goes to the loose windows, to be put elsewhere or left on its own, and is not
-  closed. A close cross on the tab was tried and dropped: it read as closing the window.
+  closed; for a window in a pane, **Take out of the pane** as well: the pane goes and the
+  window stays a tab. A close cross on the tab was tried and dropped: it read as closing the
+  window. The tabs of the panes of one split stand together, a sliver apart, where the
+  others keep their gap, so the strip says which windows share the content.
   One tab is selected, drawn in the content's colour and joined to the content below, as
   the active tab is on the real strip; it starts as the group's active tab. Clicking a tab selects it, and the
   content changes to what the group would show with that tab active, so the picture
@@ -148,8 +151,8 @@ tab, so the strip starts at the row's top edge, as a real group's does.
   picture filling the content, with no chip over it, since the selected tab names it: the
   whole group is that window. With
   a tab selected that is in a split, the split tree drawn as nested cells at their ratios,
-  each leaf cell with its window's picture and chip, the split button on the selected one's
-  cell; the other panes' tabs are marked in the strip as the real strip marks
+  each leaf cell with its window's picture and chip, the selected one's cell outlined in the
+  accent with the split button on it; the other panes' tabs are marked in the strip as the real strip marks
   them, with the seam mark between neighbours. The cells do not resize here: ratios are
   the divider's job, and **Equal panes** stays on the seam button's menu.
 - No **Add window…** button: every window on this desktop is in some row of the popup, so
@@ -194,7 +197,7 @@ content when expanded):
 | a tab | the content's outer edge | the whole group splits: a new column or row |
 | a pane chip | another cell's middle | the two panes swap windows |
 | a pane chip | a cell's edge or the outer edge | the pane leaves its place (its neighbour takes the room) and the split is made where it lands |
-| a pane chip | the strip | the pane goes; the window stays a tab |
+| a pane chip | the strip, or off the cells anywhere within the popup that takes no other drop | the pane goes; the window stays a tab |
 
 Between rows:
 

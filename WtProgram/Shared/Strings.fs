@@ -786,6 +786,8 @@ module Strings =
                              ja="タブを別の行、グループ解除、新しいグループへドラッグ。行の空きをつかんで別の行へ重ねると統合、タブや行をクリックで展開。"
                              ar="اسحب علامة تبويب إلى صف آخر أو فك التجميع أو مجموعة جديدة؛ اسحب صفًا من فراغه إلى صف آخر لدمجهما؛ انقر علامة تبويب أو صفًا لتوسيعه." }
         let removeTab = { en="Take out of the group"; zh="移出分组"; ja="グループから外す"; ar="إخراج من المجموعة" }
+        /// For a window in a pane: it stays a tab of its group, out of the split.
+        let leavePane = { en="Take out of the pane"; zh="移出窗格"; ja="ペインから外す"; ar="إخراج من اللوحة" }
         /// The row's menu, from a right click on its empty room.
         let mergeInto = { en="Merge into"; zh="合并到"; ja="統合先"; ar="دمج في" }
         let ungroup = { en="Ungroup"; zh="解散分组"; ja="グループ解除"; ar="فك التجميع" }
