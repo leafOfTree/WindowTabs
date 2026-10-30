@@ -181,6 +181,19 @@ let main() =
             let seam = Point(((snd l.tabs.[0]).Right+(snd l.tabs.[1]).X)/2-Dpi.scale 3,(snd l.tabs.[0]).Bottom-Dpi.scale 6)
             let ink = image.GetPixel(seam.X,seam.Y)
             check (not(sameColor palette.background ink) && not(sameColor palette.surface ink)) (sprintf "No seam button stands between the panes' tabs in the %s look" mode)
+            // The seam button stays over the tabs: lit under the pointer, the second pane's tab is
+            // drawn again, and the button still shows over it.
+            let second = snd l.tabs.[1]
+            editor.MouseMove(Point(second.X+second.Width/2,second.Y+second.Height/2))
+            use lit = editor.RenderHovered()
+            let h = max (Dpi.scale 11) ((snd l.tabs.[0]).Height*38/100)
+            let mid = ((snd l.tabs.[0]).Right+second.X)/2
+            let covered =
+                [ for x in mid-h*3/4 .. mid+h*3/4 do
+                    for y in second.Bottom-h .. second.Bottom-1 do
+                        if sameColor ink (image.GetPixel(x,y)) && not(sameColor ink (lit.GetPixel(x,y))) then yield (x,y) ]
+            check covered.IsEmpty (sprintf "The tab lit under the pointer covered the seam button in the %s look at %A" mode covered)
+            editor.MouseMove(Point(l.band.X+Dpi.scale 2,l.band.Bottom-Dpi.scale 2))
             // The split button is a block of its own on the content, in the tabs' colour.
             let button = l.splitButton.Value
             check (sameColor palette.selection (image.GetPixel(button.X+Dpi.scale 4,button.Y+button.Height/2))) "The split button has no block of its own on the content"

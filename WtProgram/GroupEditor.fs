@@ -647,6 +647,25 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         g.DrawLine(pen,glyph.X+glyph.Width/2,glyph.Y,glyph.X+glyph.Width/2,glyph.Bottom)
         g.DrawLine(pen,glyph.X+glyph.Width/2,glyph.Y+glyph.Height/2,glyph.Right,glyph.Y+glyph.Height/2)
 
+    /// The strip's own seam button between two tabs of the panes of one split standing next
+    /// to each other, over the seam at the tabs' bottom edge, as the real strip marks the
+    /// pair, in a folded row as in the expanded one; not while either is on its way or in
+    /// hand, as on the real strip. Always over the tabs: drawn after them, and again over a tab
+    /// drawn again on its own, so no tab ever covers it.
+    let drawSeamsOn (g:Graphics) (looks:(IntPtr * GroupEditorTabLook) list) (row:GroupEditorRowLayout) =
+        let still (hwnd,r) = not(sliding.ContainsKey hwnd) && looks |> List.exists(fun (each,look) -> each=hwnd && look.rect=r && not look.blank && not look.ghost)
+        groupAt row.index |> Option.iter(fun group ->
+            for (a,ra),(b,rb) in List.pairwise row.tabs do
+                match GroupDraft.partingAxis a b group with
+                | Some axis when ra.Y=rb.Y && rb.X>=ra.Right && still (a,ra) && still (b,rb) ->
+                    let h = max (scale 11) (ra.Height*38/100)
+                    let size = Sz(h*3/2,h)
+                    let fill = looks |> List.tryFind(fun (each,look) -> each=a && look.rect=ra) |> Option.map(fun (_,look) -> if look.selected then contentFill else tabFill) |> Option.defaultValue tabFill
+                    let sprite = {owner=box b; axis=axis; size=size; fill=fill; ink=textOn; hover=false} : SplitJunctionSprite
+                    use bitmap = (sprite :> ISprite).image.bitmap
+                    g.DrawImage(bitmap,Rectangle((ra.Right+rb.X)/2-size.width/2,ra.Bottom-h,size.width,h))
+                | _ -> ())
+
     /// The picture, opaque: the window's rounded region trims the corners, and opaque text gets
     /// ClearType as everywhere else.
     let render() =
@@ -664,23 +683,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let drawTab (hwnd:IntPtr,r:Rectangle) =
             if not(sliding.ContainsKey hwnd) then
                 looks |> List.tryFind(fun (each,look) -> each=hwnd && look.rect=r) |> Option.iter(fun (_,look) -> drawTabOn g hwnd look)
-        /// The strip's own seam button between two tabs of the panes of one split standing next
-        /// to each other, over the seam at the tabs' bottom edge, as the real strip marks the
-        /// pair, in a folded row as in the expanded one; not while either is on its way or in
-        /// hand, as on the real strip.
-        let drawSeams (row:GroupEditorRowLayout) =
-            let still (hwnd,r) = not(sliding.ContainsKey hwnd) && looks |> List.exists(fun (each,look) -> each=hwnd && look.rect=r && not look.blank && not look.ghost)
-            groupAt row.index |> Option.iter(fun group ->
-                for (a,ra),(b,rb) in List.pairwise row.tabs do
-                    match GroupDraft.partingAxis a b group with
-                    | Some axis when ra.Y=rb.Y && rb.X>=ra.Right && still (a,ra) && still (b,rb) ->
-                        let h = max (scale 11) (ra.Height*38/100)
-                        let size = Sz(h*3/2,h)
-                        let fill = looks |> List.tryFind(fun (each,look) -> each=a && look.rect=ra) |> Option.map(fun (_,look) -> if look.selected then contentFill else tabFill) |> Option.defaultValue tabFill
-                        let sprite = {owner=box b; axis=axis; size=size; fill=fill; ink=textOn; hover=false} : SplitJunctionSprite
-                        use bitmap = (sprite :> ISprite).image.bitmap
-                        g.DrawImage(bitmap,Rectangle((ra.Right+rb.X)/2-size.width/2,ra.Bottom-h,size.width,h))
-                    | _ -> ())
         /// The expanded row's cells: each window's picture, or the icon alone where there is no
         /// picture to show, with nothing over it, since the tabs above name the windows; an empty
         /// cell dashed.
@@ -717,7 +719,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 use fill = new SolidBrush(if highContrast then SystemColors.Control else palette.background)
                 g.FillPath(fill,shape)
             for tab in row.tabs do drawTab tab
-            drawSeams row
+            drawSeamsOn g looks row
             drawCells row
             // The split button on the focused cell, and its flyout of shapes while open.
             row.splitButton |> Option.iter(fun r -> drawSplitButton g r false)
@@ -804,8 +806,11 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             l.rows |> List.filter(fun row -> row.expanded) |> List.collect(fun row -> row.cells)
             |> List.tryFind(fun (each,pane,_) -> each=path && pane=Empty) |> Option.iter(fun (_,_,r) -> cross (cellCrossRect r) (if highContrast then SystemColors.Control else palette.background)))
         hovered |> Option.iter(fun hwnd ->
-            tabLooks l |> List.tryFind(fun (each,_) -> each=hwnd) |> Option.iter(fun (_,look) ->
-                if not look.selected && not(sliding.ContainsKey hwnd) then drawTabOn g hwnd {look with hot=true}))
+            let looks = tabLooks l
+            looks |> List.tryFind(fun (each,_) -> each=hwnd) |> Option.iter(fun (_,look) ->
+                if not look.selected && not(sliding.ContainsKey hwnd) then
+                    drawTabOn g hwnd {look with hot=true}
+                    l.rows |> List.filter(fun row -> row.tabs |> List.exists(fun (each,_) -> each=hwnd)) |> List.iter(drawSeamsOn g looks)))
 
     /// What a drag adds over the picture, drawn in place at each move rather than into it: the
     /// slot among the tabs, the zone a drop would take (grey where it would not fit), the loose
@@ -1697,6 +1702,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     member _.Layout = layout()
     /// The picture as it would be drawn now, at its whole height; the caller disposes it.
     member _.Render() = render()
+    /// The picture with what the pointer adds over it: the tab or the button under it lit.
+    member _.RenderHovered() =
+        let image = render()
+        use g = Graphics.FromImage(image)
+        hoverOverlay g (layout())
+        image
     /// A key pressed in the popup, as pressing it would.
     member _.Press(keys:Keys) = press keys
     /// The pointer, as the mouse would: pressed, moved and released at points of the popup.
