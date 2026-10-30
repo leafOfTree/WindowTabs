@@ -180,6 +180,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// The row whose split button is under the pointer.
     let mutable hoveredButton : int option = None
     let mutable drag : GroupEditorDrag option = None
+    /// The tab in hand is out of its strip while it is over the expanded row's content: the drop
+    /// lands in a cell, so the strip closes up, as the real strip does when a tab is dragged off.
+    let mutable lifted = false
     let mutable rowDrag : GroupEditorRowDrag option = None
     let mutable flyout = false
     let mutable scroll = 0
@@ -390,9 +393,11 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let ghost = ghostPlace()
         let ghostHwnd = drag |> Option.map(fun d -> d.hwnd) |> Option.defaultValue IntPtr.Zero
         let insertAt slot (tabs:IntPtr list) = let n = min slot tabs.Length in (List.take n tabs)@[ghostHwnd]@(List.skip n tabs)
-        let rowTabs index (g:GroupDraft) = match ghost with Some(GhostInRow(row,slot)) when row=index -> insertAt slot g.tabs | _ -> g.tabs
+        let inHand = if lifted then drag |> Option.map(fun d -> d.hwnd) else None
+        let standing (tabs:IntPtr list) = match inHand with Some hwnd -> tabs |> List.filter((<>) hwnd) | None -> tabs
+        let rowTabs index (g:GroupDraft) = match ghost with Some(GhostInRow(row,slot)) when row=index -> insertAt slot (standing g.tabs) | _ -> standing g.tabs
         let paneOf (g:GroupDraft) = let panes = GroupDraft.paneWindows g in fun hwnd -> List.contains hwnd panes
-        let looseNow = match ghost with Some(GhostInLoose slot) -> insertAt slot current.loose | _ -> current.loose
+        let looseNow = match ghost with Some(GhostInLoose slot) -> insertAt slot (standing current.loose) | _ -> standing current.loose
         let vacatedRects = ResizeArray<Rectangle>()
         let placeholders index =
             for _,h,_ in vacated |> List.filter(fun (p,_,_) -> p=index) do
@@ -454,14 +459,14 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
 
     /// The layout as last computed for the same state: asked for at every event and paint, it
     /// is measured again only once something it depends on has changed.
-    let mutable layoutKey : (DesktopDraft * IntPtr * (IntPtr option * IntPtr) option * PanePath option * bool * (int * int * GroupDraft) list * GhostPlace option) option = None
+    let mutable layoutKey : (DesktopDraft * IntPtr * (IntPtr option * IntPtr) option * PanePath option * bool * (int * int * GroupDraft) list * GhostPlace option * bool) option = None
     let mutable layoutCached : GroupEditorLayout option = None
     let layout() =
         match layoutKey,layoutCached with
-        | Some(draft,sel,key,focus,fly,gone,ghost),Some cached when obj.ReferenceEquals(draft,current) && sel=selected && key=expandedKey && focus=cellFocus && fly=flyout && gone=vacated && ghost=ghostPlace() -> cached
+        | Some(draft,sel,key,focus,fly,gone,ghost,up),Some cached when obj.ReferenceEquals(draft,current) && sel=selected && key=expandedKey && focus=cellFocus && fly=flyout && gone=vacated && ghost=ghostPlace() && up=lifted -> cached
         | _ ->
             let computed = computeLayout()
-            layoutKey <- Some(current,selected,expandedKey,cellFocus,flyout,vacated,computed.ghost)
+            layoutKey <- Some(current,selected,expandedKey,cellFocus,flyout,vacated,computed.ghost,lifted)
             layoutCached <- Some computed
             computed
 
@@ -681,8 +686,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             if not(sliding.ContainsKey hwnd) then
                 looks |> List.tryFind(fun (each,look) -> each=hwnd && look.rect=r) |> Option.iter(fun (_,look) -> drawTabOn g hwnd look)
         /// The strip's own seam button between two tabs of the panes of one split standing next
-        /// to each other, over the seam at the tabs' bottom edge, as the real strip marks the
-        /// pair; not while either is on its way or in hand, as on the real strip.
+        /// to each other, over the seam, as the real strip marks the pair: at the tabs' bottom
+        /// edge where they stand on the content, as on the strip; centred on them in a folded
+        /// row, whose tabs are blocks of their own, so it cuts no corner. Not while either is on
+        /// its way or in hand, as on the real strip.
         let drawSeams (row:GroupEditorRowLayout) =
             let still (hwnd,r) = not(sliding.ContainsKey hwnd) && looks |> List.exists(fun (each,look) -> each=hwnd && look.rect=r && not look.blank && not look.ghost)
             groupAt row.index |> Option.iter(fun group ->
@@ -694,7 +701,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         let fill = looks |> List.tryFind(fun (each,look) -> each=a && look.rect=ra) |> Option.map(fun (_,look) -> if look.selected then contentFill else tabFill) |> Option.defaultValue tabFill
                         let sprite = {owner=box b; axis=axis; size=size; fill=fill; ink=textOn; hover=false} : SplitJunctionSprite
                         use bitmap = (sprite :> ISprite).image.bitmap
-                        g.DrawImage(bitmap,Rectangle((ra.Right+rb.X)/2-size.width/2,ra.Bottom-h,size.width,h))
+                        let y = if row.expanded then ra.Bottom-h else ra.Y+(ra.Height-h)/2
+                        g.DrawImage(bitmap,Rectangle((ra.Right+rb.X)/2-size.width/2,y,size.width,h))
                     | _ -> ())
         /// The expanded row's cells: each window's picture, or the icon alone where there is no
         /// picture to show, with nothing over it, since the tabs above name the windows; an empty
@@ -848,8 +856,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             tabLooks l |> List.tryFind(fun (hwnd,look) -> hwnd=d.hwnd && look.blank) |> Option.iter(fun (_,look) ->
                 use cover = new SolidBrush(look.band)
                 g.FillRectangle(cover,Rectangle.Inflate(look.rect,scale 1,scale 1)))
-        // Over the expanded row's content, the strip above says nothing: the content alone answers.
-        if l.rows |> List.exists(fun row -> row.expanded && row.picture.Contains d.at) then coverSlot()
         match d.aim with
         | Some(StripSlot(index,slot)) ->
             l.rows |> List.tryItem index |> Option.iter(fun row ->
@@ -1203,6 +1209,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             scrollTimer.Stop()
             endMorph()
             hideDragImage()
+            lifted <- false
             menu |> Option.iter(fun each -> each.Dispose())
             menu <- None
             releaseThumbnails()
@@ -1555,9 +1562,14 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         putBack slot
                         None,true
                     | _ -> aim,false
-                let changed = not d.begun || aim<>d.aim || fits<>d.fits || reordered || restored
+                // Over the expanded row's content the tab is out of its strip, which closes up;
+                // back over the strip it stands in its place again.
+                let over = not off && l.rows |> List.exists(fun row -> row.expanded && row.picture.Contains pt)
+                let moved = over<>lifted
+                lifted <- over
+                let changed = not d.begun || aim<>d.aim || fits<>d.fits || reordered || restored || moved
                 drag <- Some {d with at=pt; aim=aim; fits=fits; begun=true}
-                if reordered || restored then slide before
+                if reordered || restored || moved then slide before
                 // The picture itself changes only as the aim does; the tab in hand just moves over it.
                 if changed then refresh() elif form.IsHandleCreated then form.Invalidate()
         | None ->
@@ -1594,6 +1606,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         | Some d ->
             let before = tabsNow()
             drag <- None
+            lifted <- false
             if d.begun then
                 let l = layout()
                 match (if offRows l view pt then None else aimAt l pt d.hwnd) with

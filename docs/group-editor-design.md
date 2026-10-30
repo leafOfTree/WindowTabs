@@ -189,7 +189,9 @@ One drag model for the overview and the expanded row alike: the tab itself comes
 the pointer, held where it was pressed, as a see-through window of its own, so it rides over
 the cells' pictures, which DWM draws over the popup; and the place it stands in is an open
 slot dashed in the accent, so where it will land stands out from the tabs around it. Over the
-expanded row's content that slot is covered: the content alone answers the drag there. Once it stands in
+expanded row's content the tab is out of its strip, which closes up, as the real strip does
+when a tab is dragged off it: the content alone answers the drag there, and back over the
+strip the tab stands in its place again. Once it stands in
 another row, or loose, the place it came from keeps a faded copy of it, veiled in its
 band's colour as a row in hand leaves one, so the row it left does not close up under the
 pointer and where it was stays in view; back in its own row the copy goes, and the tab

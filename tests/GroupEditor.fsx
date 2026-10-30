@@ -228,12 +228,19 @@ let main() =
             let tabsNow() = editor.Draft.groups.[0].tabs
             // A tab dragged onto a cell's right edge, the seam between the two, splits that cell for
             // it; at the content's own edge it would split the whole.
-            editor.MouseDown(centre (tabRect c))
+            let press = centre (tabRect c)
+            editor.MouseDown(press)
             let target = cellRect [First]
             let edgePt = Point(target.Right-Dpi.scale 8,target.Y+target.Height/2)
             editor.MouseMove(Point(edgePt.X-100,edgePt.Y))
             editor.MouseMove(edgePt)
             check (editor.Drag |> Option.exists(fun d -> d.begun && d.aim=Some(CellEdge(0,[First],SideBySide,Second)) && d.fits)) (sprintf "A tab over a cell's right edge was not aimed at it: %A" editor.Drag)
+            // Over the content the tab is out of the strip, which closes up; back over the strip it
+            // stands in its place again.
+            check (editor.Layout.rows.[0].tabs |> List.map fst=[a;b;d]) (sprintf "The tab in hand still stood in the strip while over the content: %A" (editor.Layout.rows.[0].tabs |> List.map fst))
+            editor.MouseMove(press)
+            check (editor.Layout.rows.[0].tabs |> List.map fst=[a;b;c;d]) (sprintf "The tab in hand did not stand in its place again back over the strip: %A" (editor.Layout.rows.[0].tabs |> List.map fst))
+            editor.MouseMove(edgePt)
             editor.MouseUp(edgePt)
             check (editor.Drag.IsNone && panes()=[a;c;b] && editor.Selected=c) (sprintf "Dropping a tab on a cell's edge did not split that cell: %A" (panes()))
             // A pane's tab dragged onto another cell's middle takes that cell: the window there goes
