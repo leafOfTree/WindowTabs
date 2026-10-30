@@ -119,6 +119,34 @@ let main() =
                 result <- Some(try Choice1Of2(action info.group) with error -> Choice2Of2 error))
             pumpUntil "Group dispatcher did not complete" (fun () -> result.IsSome)
             match result.Value with Choice1Of2 value -> value | Choice2Of2 error -> raise error
+        // The default seeds new groups; changing it must not overwrite a group's menu choice.
+        check (not(onGroup source (fun group -> group.ts.isIconOnly))) "Missing icon-only default hid tab titles"
+        api.setValue("showIconsOnlyByDefault",box true)
+        settings.Flush() |> ignore
+        settings.clearCaches()
+        check (api.getValue("showIconsOnlyByDefault") :?> bool) "Icon-only default did not survive reload"
+        let iconDefaults = desktopApi.createGroup(false) :?> GroupInfo
+        try
+            check (onGroup iconDefaults (fun group -> group.ts.isIconOnly)) "New group ignored the icon-only default"
+            check (not(onGroup source (fun group -> group.ts.isIconOnly))) "Changing the default altered an existing group"
+            onGroup iconDefaults (fun group -> group.ts.isIconOnly <- false)
+            check (not(onGroup iconDefaults (fun group -> group.ts.isIconOnly))) "Group could not show titles over the default"
+            api.setValue("showIconsOnlyByDefault",box false)
+            onGroup iconDefaults (fun group -> group.ts.isIconOnly <- true)
+            check (onGroup iconDefaults (fun group -> group.ts.isIconOnly)) "Group could not hide titles over the default"
+            api.setValue("showIconsOnlyByDefault",box true)
+            api.setValue("showIconsOnlyByDefault",box false)
+            check (onGroup iconDefaults (fun group -> group.ts.isIconOnly)) "Changing the default erased the group override"
+            let titleDefaults = desktopApi.createGroup(false) :?> GroupInfo
+            try
+                check (not(onGroup titleDefaults (fun group -> group.ts.isIconOnly))) "New group ignored the restored title default"
+            finally
+                (titleDefaults :> IGroup).destroy()
+                pumpUntil "Title-default fixture did not exit" (fun () -> titleDefaults.isExited)
+        finally
+            api.setValue("showIconsOnlyByDefault",box false)
+            (iconDefaults :> IGroup).destroy()
+            pumpUntil "Icon-default fixture did not exit" (fun () -> iconDefaults.isExited)
         let nativeOrder info = onGroup info (fun group -> group.lorder.list)
         let publicOrder (info:GroupInfo) = (info :> IGroup).windows.list
         let checkStripOwner info =
