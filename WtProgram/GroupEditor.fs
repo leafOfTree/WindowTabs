@@ -274,6 +274,30 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         else path.AddRectangle(r)
         path.CloseFigure()
         path
+    /// The selected pane's cell and its tab as one shape: the cell's outline, going up and
+    /// around the tab where the tab stands over the cell's top edge, so the two read as one
+    /// piece, as a tab and its page do.
+    let joinedOutline (tab:Rectangle) (cell:Rectangle) =
+        let path = new Drawing2D.GraphicsPath()
+        let dc,dt = float32(2*scale 4),float32(2*scale 6)
+        let cx,cy,cw,ch = float32 cell.X,float32 cell.Y,float32 cell.Width,float32 cell.Height
+        let tx,ty,tw = float32 tab.X,float32 tab.Y,float32 tab.Width
+        // From the bottom left, up the left side: a tab flush with the cell's edge carries the
+        // side straight up; one standing in from it leaves the cell its corner.
+        path.AddArc(cx,cy+ch-dc,dc,dc,90.0f,90.0f)
+        if tab.X>cell.X then
+            path.AddArc(cx,cy,dc,dc,180.0f,90.0f)
+            path.AddLine(tx,cy,tx,ty+dt/2.0f)
+        else path.AddLine(cx,cy,tx,ty+dt/2.0f)
+        path.AddArc(tx,ty,dt,dt,180.0f,90.0f)
+        path.AddArc(tx+tw-dt,ty,dt,dt,270.0f,90.0f)
+        if tab.Right<cell.Right then
+            path.AddLine(tx+tw,ty+dt/2.0f,tx+tw,cy)
+            path.AddArc(cx+cw-dc,cy,dc,dc,270.0f,90.0f)
+        else path.AddLine(tx+tw,ty+dt/2.0f,cx+cw,cy)
+        path.AddArc(cx+cw-dc,cy+ch-dc,dc,dc,0.0f,90.0f)
+        path.CloseFigure()
+        path
     let toRect (r:Rectangle) = Rect(Pt(r.X,r.Y),Sz(r.Width,r.Height))
     let gap = scale SplitMetrics.gap
     let minPane = scale SplitMetrics.minPane
@@ -655,7 +679,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     g.FillPath(fill,shape)
                     if row.cells.Length>1 && row.focused=Some path then
                         use pen = new Pen(accent,float32(scale 1))
-                        g.DrawPath(pen,shape)
+                        // With its tab standing over it, the outline takes the tab in; else the cell alone.
+                        match row.tabs |> List.tryFind(fun (each,_) -> each=hwnd) with
+                        | Some(_,tab) when hwnd=selected && r.Y=row.picture.Y && (tab.X=r.X || tab.X>=r.X+2*scale 4) && (tab.Right=r.Right || tab.Right<=r.Right-2*scale 4) ->
+                            use joined = joinedOutline tab r
+                            g.DrawPath(pen,joined)
+                        | _ -> g.DrawPath(pen,shape)
                     let chip = (chipOf row r).Height
                     if chip>0 then
                         let iconSize = scale GroupEditorMetrics.iconSize

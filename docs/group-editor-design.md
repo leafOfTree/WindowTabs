@@ -152,8 +152,9 @@ tab, so the strip starts at the row's top edge, as a real group's does.
   whole group is that window. With
   a tab selected that is in a split, the split tree drawn as nested cells at their ratios,
   each leaf cell with its window's picture and chip, the selected one's cell in the content's
-  colour as its tab is, outlined in the accent, with the split button on it, the others a
-  step lighter; the other panes' tabs are marked in the strip as the real strip marks
+  colour as its tab is and outlined in the accent, the outline going up and around the tab
+  where the tab stands over the cell, so tab and pane read as one piece, with the split
+  button on it, the others a step lighter; the other panes' tabs are marked in the strip as the real strip marks
   them, with the seam mark between neighbours. The cells do not resize here: ratios are
   the divider's job, and **Equal panes** stays on the seam button's menu.
 - No **Add window…** button: every window on this desktop is in some row of the popup, so
