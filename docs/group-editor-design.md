@@ -165,7 +165,8 @@ tab, so the strip starts at the row's top edge, as a real group's does.
   windows in a column and needed one.)
 - **The split button**, at the bottom right of the selected cell, as the system's snap
   flyout sits at a window's maximize button: it acts on that one cell, never on the whole
-  group. Hovering or pressing it opens a flyout of the shapes worth a button: two side by
+  group. It is a block of its own on the cell, in the tabs' colour, lit a step under the
+  pointer. Pressing it opens a flyout of the shapes worth a button: two side by
   side, two stacked, three columns, one beside two stacked, two by two. Choosing one cuts
   that cell into the shape, its window in the first slot and every other slot **empty**,
   so the user decides what goes where rather than the next tabs being taken. A cell that is
@@ -197,7 +198,7 @@ content when expanded):
 
 | From | To | Result |
 | --- | --- | --- |
-| a tab | between two tabs of its own strip | the tab moves there as the pointer goes, the others making room, as on the real strip; pinned tabs stay first. Where a row's tabs wrap, the slot is on the line the pointer is on; in the gap between lines the tab keeps its line, so the lines do not re-wrap under the pointer and flip it back and forth |
+| a tab | between two tabs of its own strip | the tab moves there as the pointer goes, the others making room, as on the real strip; pinned tabs stay first. A pane's tab moved past another pane's carries its pane along, the cells changing places below, so the panes always stand in the order of their tabs. Where a row's tabs wrap, the slot is on the line the pointer is on; in the gap between lines the tab keeps its line, so the lines do not re-wrap under the pointer and flip it back and forth |
 | a tab | an empty cell | the window fills it |
 | a tab | the middle of a cell of a split | the window takes that pane; the pane's old window goes back to being a tab. The whole content, unsplit, takes nothing at its middle: the strip is the way into the group |
 | a tab | a cell's edge (left/right/top/bottom) | that pane splits on that side for the window, as a tab dropped on a pane's edge does; with no split, the single cell splits, so the selected window and the dropped one become the first pair. While aimed, the cell's picture keeps to the half it would keep, the zone lit beside it, and the open slot in the strip is covered, so one place alone says where the drop lands |

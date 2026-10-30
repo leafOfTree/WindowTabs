@@ -66,13 +66,32 @@ module GroupDraft =
     /// A group of one window, made in the editor.
     let fresh hwnd = {group=None; tabs=[hwnd]; pinned=Set.empty; panes=None; focused=[]}
 
-    /// The tab moved to the index along the strip; a pinned tab stays among the pinned ones.
+    /// The panes stand in the order of their tabs: the cells, first to last, take the pane
+    /// windows as the strip lists them; the focus stays with its window.
+    let private panesInTabOrder draft =
+        match draft.panes with
+        | Some node ->
+            let panes = paneWindows draft
+            let wanted = draft.tabs |> List.filter(fun hwnd -> List.contains hwnd panes)
+            if wanted=panes then draft
+            else
+                let focusedWindow = SplitTree.node draft.focused node |> Option.bind(fun each -> match each with Leaf(Occupied hwnd) -> Some hwnd | _ -> None)
+                let places = leaves draft |> List.choose(fun (path,pane) -> match pane with Occupied _ -> Some path | Empty -> None)
+                let node = List.zip places wanted |> List.fold (fun node (path,hwnd) -> SplitTree.update path (fun _ -> Leaf(Occupied hwnd)) node) node
+                let focused = focusedWindow |> Option.bind(fun hwnd -> SplitTree.pathOf hwnd node) |> Option.defaultValue draft.focused
+                normalize {draft with panes=Some node; focused=focused}
+        | None -> draft
+
+    /// The tab moved to the index along the strip; a pinned tab stays among the pinned ones. A
+    /// pane's tab moved past another pane's carries its pane along: the panes stand in the
+    /// order of their tabs, so the strip and the content read the same way.
     let moveTab hwnd index draft =
         if not(List.contains hwnd draft.tabs) then draft
         else
             let others = draft.tabs |> List.filter((<>) hwnd)
             let at = max 0 (min others.Length index)
-            normalize {draft with tabs=List.take at others @ [hwnd] @ List.skip at others}
+            let moved = normalize {draft with tabs=List.take at others @ [hwnd] @ List.skip at others}
+            if inPane hwnd draft then panesInTabOrder moved else moved
 
     /// A window joining as a tab, at the index or at the end.
     let addTab hwnd (index:int option) draft =

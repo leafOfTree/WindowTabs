@@ -56,6 +56,12 @@ let main() =
     check (GroupDraft.putInPane a [First] g=g) "A window put in its own cell changed something"
     let s = GroupDraft.swapPanes [First] [Second] g
     check (GroupDraft.paneWindows s=[b;a] && s.focused=[Second]) "Swapping two cells did not keep the focus with its window"
+    // A pane's tab moved past the other pane's carries its pane: the panes stand in their tabs'
+    // order; a tab in no pane moved among them changes nothing below.
+    let g2 = GroupDraft.ofGroup (IntPtr 1) [a;b;c;d] Set.empty (Split(pair a b))
+    let m = GroupDraft.moveTab a 1 g2
+    check (m.tabs=[b;a;c;d] && GroupDraft.paneWindows m=[b;a] && m.focused=[Second]) (sprintf "A pane tab moved past the other did not take its pane along: %A" m)
+    check ((GroupDraft.moveTab c 1 g2).tabs=[a;c;b;d] && GroupDraft.paneWindows (GroupDraft.moveTab c 1 g2)=[a;b]) "A tab in no pane moved among the panes' tabs changed the panes"
     // At an edge: the pane splits, the whole group at the root, and a pane moved leaves its old place.
     let t = GroupDraft.splitAt c [Second] SideBySide Second g
     check (GroupDraft.paneWindows t=[a;b;c] && t.focused=[Second;Second] && GroupDraft.pathOf c t=Some [Second;Second]) "A tab dropped on a pane's edge did not split that pane"
@@ -168,6 +174,9 @@ let main() =
             check (sameColor palette.background (image.GetPixel(Dpi.scale 6,Dpi.scale 8))) (sprintf "The popup is not in the %s look's background, as Settings is" mode)
             check (sameColor palette.surface (image.GetPixel(l.band.X+Dpi.scale 12,l.band.Y+Dpi.scale 5))) (sprintf "The row's band is not in the %s look's surface colour" mode)
             check (sameColor palette.background (image.GetPixel(l.picture.X+l.picture.Width/2,l.picture.Bottom-2))) "The content is not in the background colour"
+            // The split button is a block of its own on the content, in the tabs' colour.
+            let button = l.splitButton.Value
+            check (sameColor palette.selection (image.GetPixel(button.X+Dpi.scale 4,button.Y+button.Height/2))) "The split button has no block of its own on the content"
             // Clicking a tab selects it; one in no pane fills the content on its own.
             let tabRect hwnd = editor.Layout.rows.[0].tabs |> List.find(fun (each,_) -> each=hwnd) |> snd
             let centre (r:Rectangle) = Point(r.X+r.Width/2,r.Y+r.Height/2)

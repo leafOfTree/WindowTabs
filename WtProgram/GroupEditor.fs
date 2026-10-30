@@ -182,6 +182,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let mutable cellFocus : PanePath option = None
     let mutable hovered : IntPtr option = None
     let mutable hoveredCell : PanePath option = None
+    /// The row whose split button is under the pointer.
+    let mutable hoveredButton : int option = None
     let mutable drag : GroupEditorDrag option = None
     let mutable rowDrag : GroupEditorRowDrag option = None
     let mutable flyout = false
@@ -666,6 +668,19 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let along (a:int) (b:int) = a+int(Math.Round(float(b-a)*eased))
         Rectangle(along from.X toward.X,along from.Y toward.Y,along from.Width toward.Width,along from.Height toward.Height)
 
+    /// The split button: a block of its own on the cell, as a tab is on the band, lit a step
+    /// while the pointer is on it and in the selected colour while its flyout is up.
+    let drawSplitButton (g:Graphics) (r:Rectangle) (hot:bool) =
+        use shape = rounded r (scale 5)
+        use fill = new SolidBrush(if flyout then selectedFill elif hot then hotFill else tabFill)
+        g.FillPath(fill,shape)
+        let ink = if flyout then accent elif hot then (if highContrast then SystemColors.HighlightText else textOn) else palette.muted
+        use pen = new Pen(ink,float32(scale 1))
+        let glyph = Rectangle.Inflate(r,-scale 7,-scale 7)
+        g.DrawRectangle(pen,glyph)
+        g.DrawLine(pen,glyph.X+glyph.Width/2,glyph.Y,glyph.X+glyph.Width/2,glyph.Bottom)
+        g.DrawLine(pen,glyph.X+glyph.Width/2,glyph.Y+glyph.Height/2,glyph.Right,glyph.Y+glyph.Height/2)
+
     /// The picture, opaque: the window's rounded region trims the corners, and opaque text gets
     /// ClearType as everywhere else.
     let render() =
@@ -741,15 +756,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     use shape = rounded picture (scale 6)
                     g.DrawPath(pen,shape)
             // The split button on the focused cell, and its flyout of shapes while open.
-            row.splitButton |> Option.iter(fun r ->
-                use shape = rounded r (scale 5)
-                use fill = new SolidBrush(if flyout then selectedFill else surface)
-                g.FillPath(fill,shape)
-                use pen = new Pen((if flyout then accent else palette.muted),float32(scale 1))
-                let glyph = Rectangle.Inflate(r,-scale 7,-scale 7)
-                g.DrawRectangle(pen,glyph)
-                g.DrawLine(pen,glyph.X+glyph.Width/2,glyph.Y,glyph.X+glyph.Width/2,glyph.Bottom)
-                g.DrawLine(pen,glyph.X+glyph.Width/2,glyph.Y+glyph.Height/2,glyph.Right,glyph.Y+glyph.Height/2))
+            row.splitButton |> Option.iter(fun r -> drawSplitButton g r false)
             if not row.shapes.IsEmpty then
                 let fpad = scale GroupEditorMetrics.flyoutPadding
                 let first,last = snd row.shapes.Head,snd (List.last row.shapes)
@@ -816,10 +823,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         button l.save (tr Strings.GroupEditor.save) true
         image
 
-    /// The cross on the empty cell under the pointer, drawn in place over the picture so that
-    /// moving across the cells draws nothing else again.
+    /// The cross on the empty cell under the pointer, the tab or the split button lit under it,
+    /// drawn in place over the picture so that moving across the cells draws nothing else again.
     let hoverOverlay (g:Graphics) (l:GroupEditorLayout) =
         g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        hoveredButton |> Option.iter(fun index ->
+            l.rows |> List.tryFind(fun row -> row.index=index) |> Option.bind(fun row -> row.splitButton) |> Option.iter(fun r -> drawSplitButton g r true))
         let cross (r:Rectangle) (back:Color) =
             use fill = new SolidBrush(back)
             g.FillRectangle(fill,Rectangle.Inflate(r,scale 2,-scale 1))
@@ -1568,9 +1577,11 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             let overEmpty =
                 l.rows |> List.filter(fun row -> row.expanded) |> List.collect(fun row -> row.cells)
                 |> List.tryFind(fun (_,pane,r) -> pane=Empty && r.Contains pt) |> Option.map(fun (path,_,_) -> path)
-            if overTab<>hovered || overEmpty<>hoveredCell then
+            let overButton = l.rows |> List.tryPick(fun row -> row.splitButton |> Option.filter(fun r -> r.Contains pt) |> Option.map(fun _ -> row.index))
+            if overTab<>hovered || overEmpty<>hoveredCell || overButton<>hoveredButton then
                 hovered <- overTab
                 hoveredCell <- overEmpty
+                hoveredButton <- overButton
                 if form.IsHandleCreated then form.Invalidate()
 
     let dragMove (view:Point) (pt:Point) =
@@ -1692,7 +1703,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         form.MouseMove.Add(fun e -> mouseMove e.Location)
         form.MouseUp.Add(fun e -> if e.Button=MouseButtons.Left then mouseUp e.Location)
         form.MouseWheel.Add(fun e -> wheel e.Delta)
-        form.MouseLeave.Add(fun _ -> if hovered.IsSome || hoveredCell.IsSome then (hovered <- None; hoveredCell <- None; form.Invalidate()))
+        form.MouseLeave.Add(fun _ -> if hovered.IsSome || hoveredCell.IsSome || hoveredButton.IsSome then (hovered <- None; hoveredCell <- None; hoveredButton <- None; form.Invalidate()))
         // The frames of a slide; the last one leaves the tabs in place until the next picture.
         scrollTimer.Tick.Add(fun _ -> if closed then scrollTimer.Stop() else scrollFrame())
         slideTimer.Tick.Add(fun _ ->
