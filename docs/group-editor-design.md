@@ -91,8 +91,9 @@ picture, and moves the windows once, when the user is done.
   small to read, and it cost a live DWM picture per row); the tabs say which group is
   which, and the pane mark on a tab says it is split.
 - **Loose windows.** The last row, a shade darker than the group rows: the windows in no
-  group as the same blocks, with "Loose windows" at the right end. Under it
-  **New group**, a dashed, empty band that takes a drop.
+  group as the same blocks, with "Loose windows" at the right end and, while there is
+  none, a line saying that a tab dropped there takes its window out of its group. Under it
+  **New group**, a dashed, empty band that takes a drop, saying so in its own words.
 - **Expanding.** Clicking a row's chevron or its band's empty room, or pressing Enter on
   the row, grows that row
   in place over 180ms, the rows below sliding down (and folds it back the same way), into
