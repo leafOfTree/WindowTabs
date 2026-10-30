@@ -273,15 +273,19 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let gap = scale SplitMetrics.gap
     let minPane = scale SplitMetrics.minPane
     let fitsIn index (candidate:GroupDraft) = GroupDraft.fits gap minPane (infoOf index).frame candidate
-    /// A tab's width for its name, measured once: the names do not change while the popup is up.
+    /// A tab's width: its name, measured once since the names do not change while the popup is
+    /// up, the icon, the same room at either end, and room for the pane mark while it is in one.
     let widths = Dictionary<IntPtr,int>()
     let tabWidth hwnd =
-        match widths.TryGetValue hwnd with
-        | true,w -> w
-        | _ ->
-            let w = min (scale GroupEditorMetrics.tabMaxWidth) (measure bodyFont (nameOf hwnd)+scale GroupEditorMetrics.iconSize+scale 30)
-            widths.[hwnd] <- w
-            w
+        let name =
+            match widths.TryGetValue hwnd with
+            | true,w -> w
+            | _ ->
+                let w = measure bodyFont (nameOf hwnd)
+                widths.[hwnd] <- w
+                w
+        let inPane = current.groups |> List.exists(fun g -> List.contains hwnd (GroupDraft.paneWindows g))
+        min (scale GroupEditorMetrics.tabMaxWidth) (name+scale GroupEditorMetrics.iconSize+scale 22+(if inPane then scale 14 else 0))
 
     /// Tabs wrapped into lines within the width, from the top left.
     let wrapTabs (order:IntPtr list) (left:int) (top:int) (width:int) =
