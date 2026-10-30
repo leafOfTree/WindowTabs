@@ -174,6 +174,11 @@ let main() =
             check (sameColor palette.background (image.GetPixel(Dpi.scale 6,Dpi.scale 8))) (sprintf "The popup is not in the %s look's background, as Settings is" mode)
             check (sameColor palette.surface (image.GetPixel(l.band.X+Dpi.scale 12,l.band.Y+Dpi.scale 5))) (sprintf "The row's band is not in the %s look's surface colour" mode)
             check (sameColor palette.background (image.GetPixel(l.picture.X+l.picture.Width/2,l.picture.Bottom-2))) "The content is not in the background colour"
+            // The strip's seam button stands over the seam between the panes' tabs, at their bottom
+            // edge: its glyph's ink is there, where the band showed through the gap.
+            let seam = Point(((snd l.tabs.[0]).Right+(snd l.tabs.[1]).X)/2-Dpi.scale 3,(snd l.tabs.[0]).Bottom-Dpi.scale 6)
+            let ink = image.GetPixel(seam.X,seam.Y)
+            check (not(sameColor palette.background ink) && not(sameColor palette.surface ink)) (sprintf "No seam button stands between the panes' tabs in the %s look" mode)
             // The split button is a block of its own on the content, in the tabs' colour.
             let button = l.splitButton.Value
             check (sameColor palette.selection (image.GetPixel(button.X+Dpi.scale 4,button.Y+button.Height/2))) "The split button has no block of its own on the content"

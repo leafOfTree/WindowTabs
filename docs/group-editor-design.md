@@ -88,7 +88,8 @@ picture, and moves the windows once, when the user is done.
   pin, wrapping to further lines when they do not fit; names are cut with an ellipsis and
   hovering shows the whole in the tab title tip's manner, and the tab under the pointer is
   a step lighter. No tab is lit in a folded row
-  (the active one means nothing here); tabs in a split have the pane mark. A row has no
+  (the active one means nothing here); the strip's own seam button stands between the tabs
+  of two panes next to each other, as on the real strip. A row has no
   title: the active tab names it, as the
   strip names a group on the taskbar.
 - **The row's menu**, on a right click of its band's empty room, holds only what a drag
@@ -97,7 +98,7 @@ picture, and moves the windows once, when the user is done.
   the loose row does. Nothing a click does is in it; the row has no button.
   A folded row shows no picture of the group (a thumbnail there was tried and dropped: too
   small to read, and it cost a live DWM picture per row); the tabs say which group is
-  which, and the pane mark on a tab says it is split.
+  which, and the seam button between two of them says it is split.
 - **Loose windows.** The last row, a shade darker than the group rows: the windows in no
   group as the same blocks, with "Loose windows" at the right end and, while there is
   none, a line saying that a tab or a whole row dropped there leaves its group. Under it
@@ -157,8 +158,8 @@ tab, so the strip starts at the row's top edge, as a real group's does.
   tabs are, told apart by a thin line each, the whole content outlined in the accent, the
   outline going up and around the panes' tabs where they stand together over it, so the
   tabs and the content read as one selected piece, with the split button on the selected
-  pane's cell; the panes' tabs are marked in the strip as the real strip marks
-  them, with the seam mark between neighbours. The cells do not resize here: ratios are
+  pane's cell; the panes' tabs stand together in the strip with the real strip's own seam
+  button between neighbours, in the tabs' colour. The cells do not resize here: ratios are
   the divider's job, and **Equal panes** stays on the seam button's menu.
 - No **Add window…** button: every window on this desktop is in some row of the popup, so
   bringing one in is a drag from where it is. (The earlier card layout kept the loose

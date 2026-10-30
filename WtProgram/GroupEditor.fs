@@ -107,7 +107,7 @@ type GroupEditorRowLayout = {
 /// How a tab block is drawn: where, in the accent when selected, with the pane mark, standing
 /// on the content in the expanded row; blank where the tab in hand stands now, an open slot;
 /// and a ghost where it came from, a faded copy veiled in its band's colour.
-type GroupEditorTabLook = { rect:Rectangle; selected:bool; inPane:bool; onContent:bool; blank:bool; ghost:bool; band:Color
+type GroupEditorTabLook = { rect:Rectangle; selected:bool; seamAfter:bool; onContent:bool; blank:bool; ghost:bool; band:Color
                             /// Under the pointer: a shade lighter, so the tab answers the hover.
                             hot:bool }
 
@@ -331,8 +331,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 let w = measure bodyFont (nameOf hwnd)
                 widths.[hwnd] <- w
                 w
-        let inPane = current.groups |> List.exists(fun g -> List.contains hwnd (GroupDraft.paneWindows g))
-        min (scale GroupEditorMetrics.tabMaxWidth) (name+scale GroupEditorMetrics.iconSize+scale 19+(if inPane then scale 14 else 0))
+        // Room after the name for the seam button, which stands half over the tab's end.
+        let seamAfter = current.groups |> List.exists(GroupDraft.seamAfter hwnd)
+        min (scale GroupEditorMetrics.tabMaxWidth) (name+scale GroupEditorMetrics.iconSize+scale 19+(if seamAfter then scale 8 else 0))
 
     /// The gap after a tab: closed to a sliver between the tabs of the panes of one split, which
     /// stand together, so the strip says which windows share the content.
@@ -605,7 +606,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         | None ->
             use pen = new Pen(palette.muted,float32(scale 1))
             g.DrawRectangle(pen,Rectangle.Inflate(bounds,-scale 3,-scale 3))
-    /// A tab block: the icon and name, the selected one in the accent, a mark on a tab in a pane.
+    /// A tab block: the icon and name, the selected one in the content's colour.
     /// While in hand, the tab itself being under the pointer, the place it stands in is an open
     /// slot, a dashed outline in the accent, so where it will land stands out from the tabs
     /// around it; the place it came from keeps a faded copy of it, veiled in its band's colour
@@ -627,22 +628,16 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             let iconSize = scale GroupEditorMetrics.iconSize
             let iconBounds = Rectangle(r.X+scale 8,r.Y+(r.Height-iconSize)/2,iconSize,iconSize)
             drawIconOn g (iconOf hwnd) iconBounds
-            let trailing = if look.inPane then scale 14 else 0
+            let trailing = if look.seamAfter then scale 8 else 0
             // The measured name runs a little past its glyphs, so the room kept after it is less
             // than the room before the icon, and the two look alike.
             let textBounds = Rectangle(iconBounds.Right+scale 6,r.Y,max 0 (r.Right-scale 5-trailing-iconBounds.Right-scale 6),r.Height)
             TextRenderer.DrawText(g,nameOf hwnd,bodyFont,textBounds,textOn,fill,textFlags ||| TextFormatFlags.PreserveGraphicsTranslateTransform)
-            if look.inPane then
-                use pen = new Pen(palette.muted,float32(scale 1))
-                let side = scale 8
-                let mark = Rectangle(r.Right-scale 8-side,r.Y+(r.Height-side)/2,side,side)
-                g.DrawRectangle(pen,mark)
-                g.DrawLine(pen,mark.X+side/2,mark.Y,mark.X+side/2,mark.Bottom)
             if look.ghost then
                 use veil = new SolidBrush(Color.FromArgb(170,look.band))
                 g.FillPath(veil,shape)
     /// Every tab of the layout with how it is drawn now.
-    let ghostLook (rect:Rectangle) (band:Color) = {rect=rect; selected=false; inPane=false; onContent=false; blank=false; ghost=true; band=band; hot=false}
+    let ghostLook (rect:Rectangle) (band:Color) = {rect=rect; selected=false; seamAfter=false; onContent=false; blank=false; ghost=true; band=band; hot=false}
     let tabLooks (l:GroupEditorLayout) =
         let inHand hwnd = drag |> Option.exists(fun d -> d.begun && d.hwnd=hwnd && not d.fromPane)
         (l.rows |> List.collect(fun row ->
@@ -657,10 +652,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             row.tabs |> List.map(fun (hwnd,r) ->
                 let ghost = ghostHere && inHand hwnd
                 let selected = row.expanded && (hwnd=shown || (split && List.contains hwnd inPane))
-                hwnd,{rect=r; selected=selected; inPane=List.contains hwnd inPane; onContent=row.expanded; blank=inHand hwnd && not ghost; ghost=ghost; band=rowFill; hot=false})))
+                hwnd,{rect=r; selected=selected; seamAfter=GroupDraft.seamAfter hwnd g; onContent=row.expanded; blank=inHand hwnd && not ghost; ghost=ghost; band=rowFill; hot=false})))
         @(l.looseTabs |> List.map(fun (hwnd,r) ->
             let ghost = (match l.ghost with Some(GhostInLoose _) -> true | _ -> false) && inHand hwnd
-            hwnd,{rect=r; selected=false; inPane=false; onContent=false; blank=inHand hwnd && not ghost; ghost=ghost; band=looseFill; hot=false}))
+            hwnd,{rect=r; selected=false; seamAfter=false; onContent=false; blank=inHand hwnd && not ghost; ghost=ghost; band=looseFill; hot=false}))
     /// Where a sliding tab is drawn now, on its way from where it was, eased out.
     let slideRect (from:Rectangle) (toward:Rectangle) =
         let t = min 1.0 ((DateTime.UtcNow-slideStart).TotalMilliseconds/GroupEditorMetrics.slideMs)
@@ -698,6 +693,22 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let drawTab (hwnd:IntPtr,r:Rectangle) =
             if not(sliding.ContainsKey hwnd) then
                 looks |> List.tryFind(fun (each,look) -> each=hwnd && look.rect=r) |> Option.iter(fun (_,look) -> drawTabOn g hwnd look)
+        /// The strip's own seam button between two tabs of the panes of one split standing next
+        /// to each other, over the seam at the tabs' bottom edge, as the real strip marks the
+        /// pair; not while either is on its way or in hand, as on the real strip.
+        let drawSeams (row:GroupEditorRowLayout) =
+            let still (hwnd,r) = not(sliding.ContainsKey hwnd) && looks |> List.exists(fun (each,look) -> each=hwnd && look.rect=r && not look.blank && not look.ghost)
+            groupAt row.index |> Option.iter(fun group ->
+                for (a,ra),(b,rb) in List.pairwise row.tabs do
+                    match GroupDraft.partingAxis a b group with
+                    | Some axis when ra.Y=rb.Y && rb.X>=ra.Right && still (a,ra) && still (b,rb) ->
+                        let h = max (scale 11) (ra.Height*38/100)
+                        let size = Sz(h*3/2,h)
+                        let fill = looks |> List.tryFind(fun (each,look) -> each=a && look.rect=ra) |> Option.map(fun (_,look) -> if look.selected then contentFill else tabFill) |> Option.defaultValue tabFill
+                        let sprite = {owner=box b; axis=axis; size=size; fill=fill; ink=textOn; hover=false} : SplitJunctionSprite
+                        use bitmap = (sprite :> ISprite).image.bitmap
+                        g.DrawImage(bitmap,Rectangle((ra.Right+rb.X)/2-size.width/2,ra.Bottom-h,size.width,h))
+                    | _ -> ())
         /// The expanded row's cells: each window's picture, with its chip over it where the content
         /// is split, or the icon alone where there is no picture to show; an empty cell dashed.
         let drawCells (row:GroupEditorRowLayout) =
@@ -739,6 +750,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 use fill = new SolidBrush(if highContrast then SystemColors.Control else palette.background)
                 g.FillPath(fill,shape)
             for tab in row.tabs do drawTab tab
+            drawSeams row
             drawCells row
             // A split is one selected piece: the content outlined in the accent, the outline going
             // up and around the panes' tabs, which stand together over it.

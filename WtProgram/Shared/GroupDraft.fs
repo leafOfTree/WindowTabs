@@ -37,6 +37,20 @@ module GroupDraft =
     let emptyCells draft = leaves draft |> List.choose(fun (path,pane) -> if pane=Empty then Some path else None)
     let inPane hwnd draft = List.contains hwnd (paneWindows draft)
     let pathOf hwnd draft = draft.panes |> Option.bind(SplitTree.pathOf hwnd)
+    /// The split parting two pane windows, by its axis: the deepest one both are in, where
+    /// their paths first take different sides.
+    let partingAxis a b draft =
+        match draft.panes,pathOf a draft,pathOf b draft with
+        | Some node,Some pa,Some pb ->
+            let shared = Seq.zip pa pb |> Seq.takeWhile(fun (x,y) -> x=y) |> Seq.length
+            match SplitTree.node (List.take shared pa) node with
+            | Some(Branch branch) -> Some branch.axis
+            | _ -> None
+        | _ -> None
+    /// Whether the next tab along the strip is a pane of the same split as this one: the seam
+    /// button stands between the two.
+    let seamAfter hwnd draft =
+        inPane hwnd draft && (draft.tabs |> List.pairwise |> List.exists(fun (a,b) -> a=hwnd && inPane b draft))
 
     /// The invariants put back after an edit: pinned tabs first, panes only of tabs, a tree
     /// down to one leaf no split, the focus on a pane with a window where there is one.
