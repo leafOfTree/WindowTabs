@@ -99,11 +99,18 @@ type GroupEditorRowLayout = {
     shapes:(PaneShape * Rectangle) list }
 
 /// How a tab block is drawn: where, in the accent when selected, with the pane mark, standing
-/// on the content in the expanded row, and blank while in hand, when it is a faded copy on
-/// its band's colour.
-type GroupEditorTabLook = { rect:Rectangle; selected:bool; inPane:bool; onContent:bool; blank:bool; band:Color
+/// on the content in the expanded row; blank where the tab in hand stands now, an open slot;
+/// and a ghost where it came from, a faded copy veiled in its band's colour.
+type GroupEditorTabLook = { rect:Rectangle; selected:bool; inPane:bool; onContent:bool; blank:bool; ghost:bool; band:Color
                             /// Under the pointer: a shade lighter, so the tab answers the hover.
                             hot:bool }
+
+/// Where the tab in hand came from, while it stands elsewhere: a row and its place among the
+/// tabs there, the loose row and its place there, or the band its row left empty.
+type GhostPlace =
+    | GhostInRow of int * int
+    | GhostInLoose of int
+    | GhostInVacated
 
 /// A row growing or folding: the picture as it was, with where its rows, loose row and bottom
 /// stood, blended towards the picture as it is over a few frames.
@@ -117,6 +124,8 @@ type GroupEditorLayout = {
     newGroup:Rectangle
     /// Bands kept where rows emptied by the drag in hand were, so nothing shifts under the pointer.
     vacated:Rectangle list
+    /// Where the tab in hand came from, kept by a faded copy of it, while it stands elsewhere.
+    ghost:GhostPlace option
     save:Rectangle
     cancel:Rectangle
     /// The rows' height, which the popup scrolls when it is taller than the screen allows; the
@@ -299,9 +308,37 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             SplitGeometry.leafRects cellGap (toRect picture) (Branch tree) [] |> List.map(fun (path,pane,rect) -> path,pane,rect.Rectangle),Some path
         | _ -> [[],Occupied shown,picture],Some []
 
+    /// Where the tab in hand came from, while it stands elsewhere: a faded copy of it keeps that
+    /// place, as the row in hand's old place is kept, so the row it left does not close up under
+    /// the pointer and where it was stays in view. None while it stands where it came from.
+    let ghostPlace() =
+        match drag with
+        | Some d when d.begun && not d.fromPane ->
+            let same (g:GroupDraft) (h:GroupDraft) =
+                if g.group.IsSome then g.group=h.group
+                else h.group.IsNone && g.tabs |> List.exists(fun t -> t<>d.hwnd && List.contains t h.tabs)
+            match DesktopDraft.find d.hwnd d.origin,DesktopDraft.find d.hwnd current with
+            | InGroup at,now ->
+                let g = d.origin.groups.[at]
+                let slot = g.tabs |> List.findIndex((=) d.hwnd)
+                match now,current.groups |> List.tryFindIndex(same g) with
+                | InGroup i,Some row when i=row -> None
+                | _,Some row -> Some(GhostInRow(row,slot))
+                | _,None -> if vacated.IsEmpty then None else Some GhostInVacated
+            | Loose,Loose -> None
+            | Loose,_ -> Some(GhostInLoose(d.origin.loose |> List.findIndex((=) d.hwnd)))
+            | _ -> None
+        | _ -> None
+
     let computeLayout() : GroupEditorLayout =
         let expandedIndex = expandedRow()
         let mutable y = pad
+        // The ghost holds the place the tab in hand came from among the tabs there.
+        let ghost = ghostPlace()
+        let ghostHwnd = drag |> Option.map(fun d -> d.hwnd) |> Option.defaultValue IntPtr.Zero
+        let insertAt slot (tabs:IntPtr list) = let n = min slot tabs.Length in (List.take n tabs)@[ghostHwnd]@(List.skip n tabs)
+        let rowTabs index (g:GroupDraft) = match ghost with Some(GhostInRow(row,slot)) when row=index -> insertAt slot g.tabs | _ -> g.tabs
+        let looseNow = match ghost with Some(GhostInLoose slot) -> insertAt slot current.loose | _ -> current.loose
         let vacatedRects = ResizeArray<Rectangle>()
         let placeholders index =
             for _,h,_ in vacated |> List.filter(fun (p,_,_) -> p=index) do
@@ -314,7 +351,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 let info = infoOf index
                 if expandedIndex=Some index then
                     let stripTop = top+rowPad
-                    let tabs = stripTabs g.tabs (pad+rowPad) (stripTop+scale GroupEditorMetrics.stripHeight-scale GroupEditorMetrics.tabHeight) (inner-2*rowPad)
+                    let tabs = stripTabs (rowTabs index g) (pad+rowPad) (stripTop+scale GroupEditorMetrics.stripHeight-scale GroupEditorMetrics.tabHeight) (inner-2*rowPad)
                     let contentWidth = inner-2*rowPad
                     let contentHeight =
                         let byFrame = if info.frame.width>0 then int(int64 contentWidth*int64 info.frame.height/int64 info.frame.width) else contentWidth*9/16
@@ -343,14 +380,14 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                      focused=focused; splitButton=splitButton; shapes=shapes}
                 else
                     // Folded: the tabs alone.
-                    let tabs,tabsBottom = wrapTabs g.tabs (pad+rowPad) (top+rowPad) (inner-2*rowPad)
+                    let tabs,tabsBottom = wrapTabs (rowTabs index g) (pad+rowPad) (top+rowPad) (inner-2*rowPad)
                     let bottom = max tabsBottom (top+rowPad+scale GroupEditorMetrics.tabHeight)+rowPad
                     y <- bottom+scale GroupEditorMetrics.rowGap
                     {index=index; band=Rectangle(pad,top,inner,bottom-top); expanded=false; tabs=tabs; picture=Rectangle.Empty; cells=[]
                      focused=None; splitButton=None; shapes=[]})
         placeholders (groups()).Length
         let looseTop = y
-        let looseTabs,looseBottom = wrapTabs current.loose (pad+rowPad) (looseTop+rowPad) (inner-3*rowPad-scale GroupEditorMetrics.labelWidth)
+        let looseTabs,looseBottom = wrapTabs looseNow (pad+rowPad) (looseTop+rowPad) (inner-3*rowPad-scale GroupEditorMetrics.labelWidth)
         let looseBottom = max looseBottom (looseTop+rowPad+scale GroupEditorMetrics.tabHeight)+rowPad
         let loose = Rectangle(pad,looseTop,inner,looseBottom-looseTop)
         let newGroup = Rectangle(pad,loose.Bottom+scale GroupEditorMetrics.rowGap,inner,scale GroupEditorMetrics.newGroupHeight)
@@ -359,18 +396,18 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let buttonTop = footerTop+(scale GroupEditorMetrics.footerHeight-buttonSize.Height)/2
         let save = Rectangle(width-pad-buttonSize.Width,buttonTop,buttonSize.Width,buttonSize.Height)
         let cancel = Rectangle(save.X-scale 8-buttonSize.Width,buttonTop,buttonSize.Width,buttonSize.Height)
-        {rows=rowLayouts; loose=loose; looseTabs=looseTabs; newGroup=newGroup; vacated=List.ofSeq vacatedRects; save=save; cancel=cancel; body=footerTop; height=footerTop+scale GroupEditorMetrics.footerHeight+pad/2}
+        {rows=rowLayouts; loose=loose; looseTabs=looseTabs; newGroup=newGroup; vacated=List.ofSeq vacatedRects; ghost=ghost; save=save; cancel=cancel; body=footerTop; height=footerTop+scale GroupEditorMetrics.footerHeight+pad/2}
 
     /// The layout as last computed for the same state: asked for at every event and paint, it
     /// is measured again only once something it depends on has changed.
-    let mutable layoutKey : (DesktopDraft * IntPtr * (IntPtr option * IntPtr) option * PanePath option * bool * (int * int * GroupDraft) list) option = None
+    let mutable layoutKey : (DesktopDraft * IntPtr * (IntPtr option * IntPtr) option * PanePath option * bool * (int * int * GroupDraft) list * GhostPlace option) option = None
     let mutable layoutCached : GroupEditorLayout option = None
     let layout() =
         match layoutKey,layoutCached with
-        | Some(draft,sel,key,focus,fly,gone),Some cached when obj.ReferenceEquals(draft,current) && sel=selected && key=expandedKey && focus=cellFocus && fly=flyout && gone=vacated -> cached
+        | Some(draft,sel,key,focus,fly,gone,ghost),Some cached when obj.ReferenceEquals(draft,current) && sel=selected && key=expandedKey && focus=cellFocus && fly=flyout && gone=vacated && ghost=ghostPlace() -> cached
         | _ ->
             let computed = computeLayout()
-            layoutKey <- Some(current,selected,expandedKey,cellFocus,flyout,vacated)
+            layoutKey <- Some(current,selected,expandedKey,cellFocus,flyout,vacated,computed.ghost)
             layoutCached <- Some computed
             computed
 
@@ -495,14 +532,22 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             use pen = new Pen(palette.muted,float32(scale 1))
             g.DrawRectangle(pen,Rectangle.Inflate(bounds,-scale 3,-scale 3))
     /// A tab block: the icon and name, the selected one in the accent, a mark on a tab in a pane.
-    /// While in hand, the tab itself being under the pointer, its place keeps a faded copy of
-    /// it, veiled in its band's colour as the row in hand leaves one: where it will land.
+    /// While in hand, the tab itself being under the pointer, the place it stands in is an open
+    /// slot, a dashed outline in the accent, so where it will land stands out from the tabs
+    /// around it; the place it came from keeps a faded copy of it, veiled in its band's colour
+    /// as the row in hand leaves one.
     let drawTabOn (g:Graphics) (hwnd:IntPtr) (look:GroupEditorTabLook) =
         let r = look.rect
         // In the expanded row the tabs stand on the content, the selected one joined to it.
         use shape = if look.onContent then roundedTop (if look.selected then Rectangle(r.X,r.Y,r.Width,r.Height+scale 2) else r) (scale 6) else rounded r (scale 6)
         let fill = if look.selected then contentFill elif look.hot then hotFill else tabFill
-        do
+        if look.blank then
+            use tintBrush = new SolidBrush(Color.FromArgb(40,accent))
+            g.FillPath(tintBrush,shape)
+            use pen = new Pen(accent,float32(scale 1),DashStyle=Drawing2D.DashStyle.Dash)
+            use inset = if look.onContent then roundedTop (Rectangle.Inflate(r,-scale 1,-scale 1)) (scale 5) else rounded (Rectangle.Inflate(r,-scale 1,-scale 1)) (scale 5)
+            g.DrawPath(pen,inset)
+        else
             use brush = new SolidBrush(fill)
             g.FillPath(brush,shape)
             let iconSize = scale GroupEditorMetrics.iconSize
@@ -517,19 +562,25 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 let mark = Rectangle(r.Right-scale 8-side,r.Y+(r.Height-side)/2,side,side)
                 g.DrawRectangle(pen,mark)
                 g.DrawLine(pen,mark.X+side/2,mark.Y,mark.X+side/2,mark.Bottom)
-        if look.blank then
-            use veil = new SolidBrush(Color.FromArgb(170,look.band))
-            g.FillPath(veil,shape)
+            if look.ghost then
+                use veil = new SolidBrush(Color.FromArgb(170,look.band))
+                g.FillPath(veil,shape)
     /// Every tab of the layout with how it is drawn now.
+    let ghostLook (rect:Rectangle) (band:Color) = {rect=rect; selected=false; inPane=false; onContent=false; blank=false; ghost=true; band=band; hot=false}
     let tabLooks (l:GroupEditorLayout) =
-        let blank hwnd = drag |> Option.exists(fun d -> d.begun && d.hwnd=hwnd && not d.fromPane)
+        let inHand hwnd = drag |> Option.exists(fun d -> d.begun && d.hwnd=hwnd && not d.fromPane)
         (l.rows |> List.collect(fun row ->
             let g = (groupAt row.index).Value
             let inPane = GroupDraft.paneWindows g
             let shown = if row.expanded then selected else (infoOf row.index).active
+            let ghostHere = match l.ghost with Some(GhostInRow(at,_)) -> at=row.index | _ -> false
             // Only the expanded row has a selected tab: in a folded row the active one means nothing here.
-            row.tabs |> List.map(fun (hwnd,r) -> hwnd,{rect=r; selected=row.expanded && hwnd=shown; inPane=List.contains hwnd inPane; onContent=row.expanded; blank=blank hwnd; band=rowFill; hot=false})))
-        @(l.looseTabs |> List.map(fun (hwnd,r) -> hwnd,{rect=r; selected=false; inPane=false; onContent=false; blank=blank hwnd; band=looseFill; hot=false}))
+            row.tabs |> List.map(fun (hwnd,r) ->
+                let ghost = ghostHere && inHand hwnd
+                hwnd,{rect=r; selected=row.expanded && hwnd=shown; inPane=List.contains hwnd inPane; onContent=row.expanded; blank=inHand hwnd && not ghost; ghost=ghost; band=rowFill; hot=false})))
+        @(l.looseTabs |> List.map(fun (hwnd,r) ->
+            let ghost = (match l.ghost with Some(GhostInLoose _) -> true | _ -> false) && inHand hwnd
+            hwnd,{rect=r; selected=false; inPane=false; onContent=false; blank=inHand hwnd && not ghost; ghost=ghost; band=looseFill; hot=false}))
     /// Where a sliding tab is drawn now, on its way from where it was, eased out.
     let slideRect (from:Rectangle) (toward:Rectangle) =
         let t = min 1.0 ((DateTime.UtcNow-slideStart).TotalMilliseconds/GroupEditorMetrics.slideMs)
@@ -628,19 +679,24 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 TextRenderer.DrawText(g,tr Strings.GroupEditor.looseEmpty,bodyFont,l.loose,palette.muted,looseFill,
                                       TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis)
             // The new group's band, dashed and named; the band of a row the drag emptied keeps the
-            // row's look with a dashed edge, nothing more, so the row reads as away rather than gone.
+            // row's look with the faded copy of the tab that left it, so the row reads as away
+            // rather than gone, or a dashed edge where no tab stands for it.
             do
                 use dashed = rounded l.newGroup (scale 8)
                 use pen = new Pen(palette.muted,float32(scale 1),DashStyle=Drawing2D.DashStyle.Dash)
                 g.DrawPath(pen,dashed)
                 TextRenderer.DrawText(g,"+ "+tr Strings.GroupEditor.newGroup,bodyFont,l.newGroup,palette.muted,Color.Transparent,
                                       TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine)
-            for r in l.vacated do
+            for i,r in List.indexed l.vacated do
                 use band = rounded r (scale 8)
                 use fill = new SolidBrush(rowFill)
                 g.FillPath(fill,band)
-                use pen = new Pen(palette.muted,float32(scale 1),DashStyle=Drawing2D.DashStyle.Dash)
-                g.DrawPath(pen,band)
+                match l.ghost,drag with
+                | Some GhostInVacated,Some d when i=0 ->
+                    drawTabOn g d.hwnd (ghostLook (Rectangle(r.X+rowPad,r.Y+rowPad,min (inner-2*rowPad) (tabWidth d.hwnd),scale GroupEditorMetrics.tabHeight)) rowFill)
+                | _ ->
+                    use pen = new Pen(palette.muted,float32(scale 1),DashStyle=Drawing2D.DashStyle.Dash)
+                    g.DrawPath(pen,band)
         // The footer: the keys, or what the empty cells come to, and the buttons.
         let note =
             match DesktopDraft.emptyCells current with
@@ -1045,7 +1101,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     | None,Some previous -> Some previous.rect
                     | _ -> None
                 match from with
-                | Some from when from<>look.rect && not look.blank -> Some(hwnd,from)
+                | Some from when from<>look.rect && not look.blank && not look.ghost -> Some(hwnd,from)
                 | _ -> None)
         sliding <- Map.ofList moved
         if not moved.IsEmpty then

@@ -307,11 +307,15 @@ let main() =
             let slot = let r = tabIn l.rows.[1] d in Point(r.Right+Dpi.scale 20,r.Y+r.Height/2)
             editor.MouseMove(slot)
             check (tabsOf 0=[a;b] && tabsOf 1=[d;c] && editor.Drag |> Option.exists(fun d -> d.begun && d.aim=None)) (sprintf "A tab over another row's tabs did not join it there: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
+            // The row it left keeps a faded copy of it where it was, so its tabs do not close up.
+            let after = editor.Layout
+            check (after.ghost=Some(GhostInRow(0,2)) && (after.rows.[0].tabs |> List.map fst)=[a;b;c] && tabIn after.rows.[0] c=tabIn l.rows.[0] c && (after.rows.[1].tabs |> List.map fst)=[d;c]) (sprintf "The row the tab left did not keep its place: %A %A" after.ghost (after.rows |> List.map(fun row -> row.tabs |> List.map fst)))
             // Above the tabs' line, still past the first tab's middle: the same slot, not the first.
             editor.MouseMove(Point(slot.X,(tabIn editor.Layout.rows.[1] d).Y-Dpi.scale 4))
             check (tabsOf 1=[d;c]) (sprintf "A tab carried above the tabs' line was put at its start: %A" (tabsOf 1))
             editor.MouseUp(slot)
             check (tabsOf 0=[a;b] && tabsOf 1=[d;c]) (sprintf "A tab dropped on another row did not stay there: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
+            check (editor.Layout.ghost=None && (editor.Layout.rows.[0].tabs |> List.map fst)=[a;b]) "The faded copy outlived the drop"
             // A tab carried off the rows goes back to where it was taken from; dropped there, nothing changes.
             let l = editor.Layout
             editor.MouseDown(centre (tabIn l.rows.[1] c))
@@ -382,6 +386,7 @@ let main() =
             editor.MouseMove(slot)
             let after = editor.Layout
             check (editor.Draft.groups.Length=1 && tabsOf 0=[d;e;a] && after.vacated=[l.rows.[0].band] && after.rows.[0].band=l.rows.[1].band) (sprintf "The emptied row did not keep its band under the rows: %A %A" after.vacated (after.rows |> List.map(fun row -> row.band)))
+            check (after.ghost=Some GhostInVacated) (sprintf "The emptied row's band did not keep the faded copy of its tab: %A" after.ghost)
             // Carried back onto the band, the window puts its group back as it was: the drag undone.
             editor.MouseMove(centre after.vacated.Head)
             check (editor.Draft.groups.Length=2 && tabsOf 0=[a] && editor.Draft.groups.[0].group=Some(IntPtr 1) && tabsOf 1=[d;e] && editor.Layout.vacated.IsEmpty) (sprintf "The window carried back onto its row's band did not put the group back: %A" editor.Draft)
