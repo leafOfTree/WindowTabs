@@ -615,6 +615,17 @@ let main() =
         let defaults = desktopApi.createGroup(false) :?> GroupInfo
         check (onGroup defaults (fun group -> group.ts.dock,group.ts.columnWidth)=(TabDockRight,280))
               "New group ignored the saved tab defaults"
+        onGroup defaults (fun group ->
+            let original = group.tabLayout
+            group.isIconOnly <- true
+            group.applyTabLayout {original with dock=TabDockLeft; columnWidth=300}
+            check group.isIconOnly "Restoring a vertical group layout discarded icons-only mode"
+            group.ts.columnWidth <- 320
+            check group.isIconOnly "Changing column width programmatically discarded icons-only mode"
+            group.applyTabLayout original
+            check group.isIconOnly "Replaying a saved layout discarded icons-only mode"
+            group.isIconOnly <- false
+            check (not group.isIconOnly) "The group's Show tab titles override stopped working")
         api.setValue("tabPosition",box "Left")
         api.setValue("tabColumnWidth",box 320)
         for info in [source;target;combined;defaults] do
