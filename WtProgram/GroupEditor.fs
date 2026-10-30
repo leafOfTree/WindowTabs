@@ -640,13 +640,20 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             if l.looseTabs.IsEmpty then
                 TextRenderer.DrawText(g,tr Strings.GroupEditor.looseEmpty,bodyFont,l.loose,palette.muted,looseFill,
                                       TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis)
-            // The new group's band, and the band of each row the drag emptied, which takes its tab back.
-            for r,text in (l.newGroup,"+ "+tr Strings.GroupEditor.newGroup) :: (l.vacated |> List.map(fun r -> r,tr Strings.GroupEditor.putBack)) do
-                use dashed = rounded r (scale 8)
+            // The new group's band, dashed and named; the band of a row the drag emptied keeps the
+            // row's look with a dashed edge, nothing more, so the row reads as away rather than gone.
+            do
+                use dashed = rounded l.newGroup (scale 8)
                 use pen = new Pen(palette.muted,float32(scale 1),DashStyle=Drawing2D.DashStyle.Dash)
                 g.DrawPath(pen,dashed)
-                TextRenderer.DrawText(g,text,bodyFont,r,palette.muted,Color.Transparent,
+                TextRenderer.DrawText(g,"+ "+tr Strings.GroupEditor.newGroup,bodyFont,l.newGroup,palette.muted,Color.Transparent,
                                       TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine)
+            for r in l.vacated do
+                use band = rounded r (scale 8)
+                use fill = new SolidBrush(rowFill)
+                g.FillPath(fill,band)
+                use pen = new Pen(palette.muted,float32(scale 1),DashStyle=Drawing2D.DashStyle.Dash)
+                g.DrawPath(pen,band)
         // The footer: the keys, or what the empty cells come to, and the buttons.
         let note =
             match DesktopDraft.emptyCells current with

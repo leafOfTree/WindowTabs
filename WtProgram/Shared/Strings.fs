@@ -780,8 +780,6 @@ module Strings =
         let looseWindows = { en="Loose windows"; zh="未分组窗口"; ja="未分類のウィンドウ"; ar="نوافذ غير مجمّعة" }
         /// In the loose row while no window is on its own: what the row is for.
         let looseEmpty = { en="Ungroup: drop a tab here"; zh="移出分组：拖到这里"; ja="グループ解除：ここにドロップ"; ar="فك التجميع: أفلت علامة تبويب هنا" }
-        /// On the band a row left empty: the tab dragged back there puts the group back.
-        let putBack = { en="Its group: drag the tab back here"; zh="原来的组：把标签拖回这里"; ja="元のグループ：タブをここへ戻す"; ar="مجموعتها: اسحب علامة التبويب إلى هنا لإعادتها" }
         let newGroup = { en="New group: drop a tab here"; zh="新建分组：拖到这里"; ja="新しいグループ：ここにドロップ"; ar="مجموعة جديدة: أفلت علامة تبويب هنا" }
         let overviewHint = { en="Drag tabs between rows to regroup; click a row to expand it and arrange its panes; Esc closes without saving."
                              zh="在行之间拖标签即换组；点一行即展开并可编排窗格；Esc 关闭且不保存。"

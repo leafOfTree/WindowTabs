@@ -197,7 +197,7 @@ Between rows:
 
 A row left with no window goes: the group would exit on its own once its last window
 left, and the picture says so first. While the drag that emptied it lasts, its band stays
-where it was, dashed, so the rows below do not move up under the pointer and the next move
+where it was, in the row's look with a dashed edge and no words, so the rows below do not move up under the pointer and the next move
 or the drop lands where it was aimed; the tab carried back onto it puts the group back as it
 was, with it, which undoes the drag. A new row with one window is a group of one, as a tab
 dragged out and grouped again by hand is. A window dragged out of a row and back in is no
