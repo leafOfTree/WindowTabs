@@ -35,7 +35,7 @@ picture, and moves the windows once, when the user is done.
   workspace, as what to arrange before saving one. The command line runs it by id as it runs
   every command.
   Every row starts folded, whatever is in front: the overview first, a row expanded from it
-  by its chevron or a tab (section 2.3).
+  by a tab or its menu (section 2.3).
 - It opens in the settings palette's colours as an ordinary window with the system's title
   bar (the title and the groups' count in its caption, in the palette's colours as the
   Settings window has them), in the taskbar and Alt+Tab and covered by whatever comes in
@@ -88,7 +88,9 @@ picture, and moves the windows once, when the user is done.
   (the active one means nothing here); tabs in a split have the pane mark. A row has no
   title: the active tab names it, as the
   strip names a group on the taskbar.
-- **The chevron**, at the row's right end, pointing down: the way into the expanded view.
+- **The menu's button**, three dots at the row's right end: expand the row (or, expanded,
+  go back to all groups), merge it into another row, named by its first tab, as dropping
+  the row on it does, or ungroup it, its windows going loose.
   A folded row shows no picture of the group (a thumbnail there was tried and dropped: too
   small to read, and it cost a live DWM picture per row); the tabs say which group is
   which, and the pane mark on a tab says it is split.
@@ -96,16 +98,15 @@ picture, and moves the windows once, when the user is done.
   group as the same blocks, with "Loose windows" at the right end and, while there is
   none, a line saying that a tab dropped there takes its window out of its group. Under it
   **New group**, a dashed, empty band that takes a drop, saying so in its own words.
-- **Expanding.** Clicking a row's chevron, or a tab of the row, which is then the selected
-  one, grows that row
+- **Expanding.** Clicking a tab of the row, which is then the selected one, or the row's
+  menu, grows that row
   in place over 180ms, the rows below sliding down (and folds it back the same way), into
   the view of section 2.3. The popup itself keeps its size and place: nothing above the
   row moves, and what grows past the bottom scrolls. Only opening the popup scrolls, to
   the row it opens on. Expanded, its tabs become the strip and the content with its
   pictures opens below. The other rows stay as they are and still take drops, so a window
-  can be dragged from the expanded group to any other and back. Esc, the chevron at the
-  strip's right end, now pointing up, clicking the selected tab again, or clicking the
-  chevron of another row, goes back to the overview.
+  can be dragged from the expanded group to any other and back. Esc, the row's menu,
+  clicking the selected tab again, or expanding another row, goes back to the overview.
 - **A whole row.** Pressed on its band's empty room, a row comes along under the pointer
   as it is, its old place faded behind it. Dropped on another row, every window of it joins that group, after the
   group's own; dropped on the loose row, the group dissolves and its windows stand on their
@@ -374,7 +375,7 @@ the main STA with the other popups, one at a time.
 2. The popup with one row expanded: the strip, the content with its pictures, Save and
    Cancel, the entry points and strings. Rendering tests.
 3. Dragging within a row, taking a tab out, the split button and its empty cells.
-4. The overview: every group as a row with its chevron, the loose row, New group,
+4. The overview: every group as a row with its menu, the loose row, New group,
    expanding a row, dragging between rows. Rendering and drag tests for the overview.
 5. Polish: the greyed tab and row for what is gone, the notice naming what was done,
    docs (`architecture.md` popups list, this file kept current) and the README's feature

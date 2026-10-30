@@ -15,7 +15,7 @@ type GroupEditorRow = { group:IntPtr option; frame:Rect; active:IntPtr }
 /// The popup's sizes, in logical pixels.
 module GroupEditorMetrics =
     let width = 1000
-    let padding = 16
+    let padding = 24
     /// The scroll thumb over the right margin, and the fade of a row cut at the rows' edge.
     let scrollbar = 4
     let fade = 24
@@ -85,8 +85,8 @@ type GroupEditorDrag = { hwnd:IntPtr; fromPane:bool; start:Point; at:Point; aim:
                          /// to them when it is carried off the rows, as if it had not moved.
                          origin:DesktopDraft; originPane:bool; originSelected:IntPtr }
 
-/// One row as drawn: its band, its tabs, the chevron that expands it or folds it back, and,
-/// expanded, its content with the cells in it.
+/// One row as drawn: its band, its tabs, the button of its menu, and, expanded, its content
+/// with the cells in it.
 type GroupEditorRowLayout = {
     index:int
     band:Rectangle
@@ -98,8 +98,9 @@ type GroupEditorRowLayout = {
     focused:PanePath option
     splitButton:Rectangle option
     shapes:(PaneShape * Rectangle) list
-    /// The button at the row's right end: down to expand the row, up to fold it back.
-    chevron:Rectangle option }
+    /// The button at the row's right end, which opens the row's menu: expand or fold it,
+    /// merge it into another row, or ungroup it.
+    menuButton:Rectangle option }
 
 /// How a tab block is drawn: where, in the accent when selected, with the pane mark, standing
 /// on the content in the expanded row, and blank while in hand.
@@ -314,7 +315,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 if expandedIndex=Some index then
                     let stripTop = top+rowPad
                     let side = scale GroupEditorMetrics.splitButton
-                    let chevron = Rectangle(pad+inner-rowPad-side,stripTop+(scale GroupEditorMetrics.stripHeight-side)/2,side,side)
+                    let menuButton = Rectangle(pad+inner-rowPad-side,stripTop+(scale GroupEditorMetrics.stripHeight-side)/2,side,side)
                     let tabs = stripTabs g.tabs (pad+rowPad) (stripTop+scale GroupEditorMetrics.stripHeight-scale GroupEditorMetrics.tabHeight) (inner-2*rowPad-side-scale 8)
                     let contentWidth = inner-2*rowPad
                     let contentHeight =
@@ -341,16 +342,16 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         | _ -> []
                     y <- content.Bottom+rowPad+scale GroupEditorMetrics.rowGap
                     {index=index; band=Rectangle(pad,top,inner,content.Bottom+rowPad-top); expanded=true; tabs=tabs; picture=content; cells=cells
-                     focused=focused; splitButton=splitButton; shapes=shapes; chevron=Some chevron}
+                     focused=focused; splitButton=splitButton; shapes=shapes; menuButton=Some menuButton}
                 else
-                    // Folded: the tabs alone, with the chevron to expand the row at the right end.
+                    // Folded: the tabs alone, with the menu's button at the right end.
                     let side = scale GroupEditorMetrics.splitButton
                     let tabs,tabsBottom = wrapTabs g.tabs (pad+rowPad) (top+rowPad) (inner-3*rowPad-side)
                     let bottom = max tabsBottom (top+rowPad+scale GroupEditorMetrics.tabHeight)+rowPad
-                    let chevron = Rectangle(pad+inner-rowPad-side,top+rowPad+(scale GroupEditorMetrics.tabHeight-side)/2,side,side)
+                    let menuButton = Rectangle(pad+inner-rowPad-side,top+rowPad+(scale GroupEditorMetrics.tabHeight-side)/2,side,side)
                     y <- bottom+scale GroupEditorMetrics.rowGap
                     {index=index; band=Rectangle(pad,top,inner,bottom-top); expanded=false; tabs=tabs; picture=Rectangle.Empty; cells=[]
-                     focused=None; splitButton=None; shapes=[]; chevron=Some chevron})
+                     focused=None; splitButton=None; shapes=[]; menuButton=Some menuButton})
         placeholders (groups()).Length
         let looseTop = y
         let looseTabs,looseBottom = wrapTabs current.loose (pad+rowPad) (looseTop+rowPad) (inner-3*rowPad-scale GroupEditorMetrics.labelWidth)
@@ -593,16 +594,14 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 g.FillPath(fill,shape)
             for hwnd,_ in row.tabs do drawTab hwnd
             drawCells row
-            // The chevron: down to expand the row, up to fold it back.
-            row.chevron |> Option.iter(fun r ->
+            // The menu's button: three dots.
+            row.menuButton |> Option.iter(fun r ->
                 use shape = rounded r (scale 5)
                 use fill = new SolidBrush(palette.surface)
                 g.FillPath(fill,shape)
-                use pen = new Pen(palette.muted,float32(scale 2))
-                let cx,cy,arm = r.X+r.Width/2,r.Y+r.Height/2,scale 5
-                let tip,back = if row.expanded then cy-arm/2,cy+arm/2 else cy+arm/2,cy-arm/2
-                g.DrawLine(pen,cx-arm,back,cx,tip)
-                g.DrawLine(pen,cx,tip,cx+arm,back))
+                use dot = new SolidBrush(palette.muted)
+                let cx,cy,d,step = r.X+r.Width/2,r.Y+r.Height/2,scale 3,scale 5
+                for i in -1..1 do g.FillEllipse(dot,Rectangle(cx+i*step-d/2,cy-d/2,d,d)))
             // The split button on the focused cell, and its flyout of shapes while open.
             row.splitButton |> Option.iter(fun r ->
                 use shape = rounded r (scale 5)
@@ -847,6 +846,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                             if shown>0 then g.DrawImage(bitmap,Rectangle(0,0,width,shown),Rectangle(0,scroll,width,shown),GraphicsUnit.Pixel)
                             e.Graphics.DrawImage(bitmap,Rectangle(0,body,width,bitmap.Height-l.body),Rectangle(0,l.body,width,bitmap.Height-l.body),GraphicsUnit.Pixel)
                             scrollDecor g l body
+                            // What moves over the rows stays within them: a tab sliding or in hand
+                            // past the bottom would otherwise show over the footer.
+                            g.SetClip(Rectangle(0,0,width,body))
                             e.Graphics.TranslateTransform(0.0f,float32 -scroll)
                             if not sliding.IsEmpty then
                                 e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
@@ -857,7 +859,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                              | Some d,_ when d.begun -> overlay e.Graphics l d
                              | _,Some d when d.begun -> rowOverlay e.Graphics l d
                              | _ -> hoverOverlay e.Graphics l)
-                            e.Graphics.ResetTransform() }
+                            e.Graphics.ResetTransform()
+                            g.ResetClip() }
         f.FormBorderStyle <- FormBorderStyle.FixedSingle
         f.MaximizeBox <- false
         f.ShowInTaskbar <- true
@@ -1123,6 +1126,44 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         refresh()
         startMorph fromL from
 
+    /// Every window of the row into another row's group, or loose: the row goes with its last one.
+    let mergeRow (index:int) (into:RowAim) =
+        let tabs = (groups()).[index].tabs
+        let target = match into with IntoRow t -> Some((groups()).[t].group,List.head (groups()).[t].tabs) | Dissolve -> None
+        let next =
+            tabs |> List.fold (fun (draft:DesktopDraft) hwnd ->
+                match target with
+                | Some(strip,head) ->
+                    let at = draft.groups |> List.findIndex(fun g -> (strip.IsSome && g.group=strip) || (strip.IsNone && List.contains head g.tabs))
+                    DesktopDraft.moveToGroup hwnd at None draft
+                | None -> DesktopDraft.moveToLoose hwnd draft) current
+        slid (fun () -> current <- next; reselect())
+
+    /// A menu at the point of the popup, in place of the one before it.
+    let showMenu (items:List2<ContextMenuItem>) (view:Point) =
+        menu |> Option.iter(fun each -> each.Dispose())
+        let next = new ThemedContextMenu(items,ignore)
+        menu <- Some next
+        let at = form.PointToScreen view
+        next.Show(form.Handle,at.X,at.Y)
+
+    /// A row's menu, from the button at its right end: expand it or fold it back, merge it into
+    /// another row, named by its first tab, as dropping the row there does, or ungroup it.
+    let rowMenuItems (index:int) =
+        let regular text click = CmiRegular({ text=text; image=None; flags=List2(); click=click })
+        let rowName (g:GroupDraft) =
+            let first = nameOf (List.head g.tabs)
+            if g.tabs.Length=1 then first else sprintf "%s (%s)" first (tr (Strings.GroupEditor.windows g.tabs.Length))
+        let others =
+            groups() |> List.indexed |> List.filter(fun (i,_) -> i<>index)
+            |> List.map(fun (i,g) -> regular (rowName g) (fun () -> mergeRow index (IntoRow i)))
+        let expanded = expandedRow()=Some index
+        List2(
+            [ regular (tr (if expanded then Strings.GroupEditor.foldRow else Strings.GroupEditor.expandRow)) (fun () -> expand (if expanded then None else Some index)) ]
+            @ (if others.IsEmpty then [] else [ CmiPopUp({ text=tr Strings.GroupEditor.mergeInto; image=None; items=List2(others) }) ])
+            @ [ regular (tr Strings.GroupEditor.ungroup) (fun () -> mergeRow index Dissolve) ])
+    let rowMenu (index:int) (view:Point) = showMenu (rowMenuItems index) view
+
     /// The focused cell cut into the shape; its window, or the selected tab for the whole content.
     let cut (shape:PaneShape) =
         let l = layout()
@@ -1142,7 +1183,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         else cancel()
 
     /// A press at the point: the empty cell's cross, the split button and its shapes, the buttons,
-    /// the chevron; else a tab or a pane chip taken in hand.
+    /// the row's menu button; else a tab or a pane chip taken in hand.
     let mouseDown (pt:Point) =
       if not closed then
         let l = layout()
@@ -1173,7 +1214,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         else
             match l.rows |> List.tryFind(fun row -> row.band.Contains pt) with
             | Some row ->
-                if row.chevron |> Option.exists(fun r -> r.Contains pt) then expand (if row.expanded then None else Some row.index)
+                if row.menuButton |> Option.exists(fun r -> r.Contains pt) then
+                    let r = row.menuButton.Value
+                    rowMenu row.index (Point(r.X,r.Y+r.Height+(view.Y-pt.Y)))
                 elif row.splitButton |> Option.exists(fun r -> r.Contains pt) then
                     flyout <- true
                     refresh()
@@ -1223,19 +1266,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             clampScroll l
             updateThumbnails l
             if form.IsHandleCreated then form.Invalidate()
-
-    /// Every window of the row into another row's group, or loose: the row goes with its last one.
-    let mergeRow (index:int) (into:RowAim) =
-        let tabs = (groups()).[index].tabs
-        let target = match into with IntoRow t -> Some((groups()).[t].group,List.head (groups()).[t].tabs) | Dissolve -> None
-        let next =
-            tabs |> List.fold (fun (draft:DesktopDraft) hwnd ->
-                match target with
-                | Some(strip,head) ->
-                    let at = draft.groups |> List.findIndex(fun g -> (strip.IsSome && g.group=strip) || (strip.IsNone && List.contains head g.tabs))
-                    DesktopDraft.moveToGroup hwnd at None draft
-                | None -> DesktopDraft.moveToLoose hwnd draft) current
-        slid (fun () -> current <- next; reselect())
 
     let rowMove (pt:Point) (d:GroupEditorRowDrag) =
         let threshold = SystemInformation.DragSize
@@ -1409,12 +1439,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             |> List.tryPick(fun (row,(_,pane,r)) -> match pane with Occupied hwnd when (chipOf row r).Contains pt -> Some hwnd | _ -> None)
         match (match onTab with Some _ -> onTab | None -> onChip) with
         | Some hwnd when DesktopDraft.find hwnd current<>Loose ->
-            let items = List2([CmiRegular({ text=tr Strings.GroupEditor.removeTab; image=None; flags=List2(); click=(fun () -> takeOut hwnd) })])
-            menu |> Option.iter(fun each -> each.Dispose())
-            let next = new ThemedContextMenu(items,ignore)
-            menu <- Some next
-            let at = form.PointToScreen view
-            next.Show(form.Handle,at.X,at.Y)
+            showMenu (List2([CmiRegular({ text=tr Strings.GroupEditor.removeTab; image=None; flags=List2(); click=(fun () -> takeOut hwnd) })])) view
         | _ -> ()
 
     /// Scrolling moves the picture and the thumbnails together, without drawing the picture again;
@@ -1475,6 +1500,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// The pointer, as the mouse would: pressed, moved and released at points of the popup.
     /// The window taken out of its group, as the tab's menu does.
     member _.TakeOut(hwnd:IntPtr) = takeOut hwnd
+    /// The items of a row's menu, as its button opens it.
+    member _.RowMenu(index:int) = (rowMenuItems index).list
     /// The tabs on their way to their places after the last change, by where each was.
     member _.Sliding = sliding
     /// Whether a row is still growing or folding.
