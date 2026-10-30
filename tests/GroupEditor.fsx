@@ -403,6 +403,27 @@ let main() =
             editor.MouseUp(slot)
             check (editor.Draft.groups.Length=1 && tabsOf 0=[d;e;a] && editor.Layout.vacated.IsEmpty) (sprintf "A lone window carried to the row below did not stay there with its own row gone: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
             editor.Close()
+        // Opened as the app opens it: every row folded, centred on the screen of the window in
+        // front, and tall enough already for any one row expanded, so expanding resizes nothing.
+        do
+            let shown = List.zip [a;b;c] ["One";"Two";"Three"] |> List.map(fun (hwnd,name) -> {hwnd=hwnd; name=name; icon=None; minimized=true})
+            let frame = Rect(Pt(100,100),Sz(1600,900))
+            let desk = DesktopDraft.ofDesktop [GroupDraft.ofGroup (IntPtr 1) [a;b] Set.empty GroupLayout.Single; GroupDraft.ofGroup (IntPtr 2) [c] Set.empty GroupLayout.Single] []
+            let editor = GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=frame; active=a};{group=Some(IntPtr 2); frame=frame; active=c}],shown,None,frame)
+            check (editor.Expanded=None && editor.Selected=IntPtr.Zero) "Opened over a group, a row started expanded"
+            editor.Show()
+            let area = Screen.FromRectangle(frame.Rectangle).WorkingArea
+            let bounds = editor.Bounds
+            let centred (at:int) (size:int) (from:int) (span:int) = abs((at+size/2)-(from+span/2))<=2
+            check (centred bounds.X bounds.Width area.X area.Width && centred bounds.Y bounds.Height area.Y area.Height) (sprintf "The popup did not open centred on the screen: %A in %A" bounds area)
+            let folded = editor.Size.Height
+            let chevron = editor.Layout.rows.[0].chevron.Value
+            editor.MouseDown(Point(chevron.X+chevron.Width/2,chevron.Y+chevron.Height/2))
+            editor.MouseUp(Point(chevron.X+chevron.Width/2,chevron.Y+chevron.Height/2))
+            // The expanded row fits in the height set as it opened, unless the screen is too short for it.
+            let fits = editor.Layout.height<=editor.Size.Height || editor.Size.Height>=area.Height*9/10-Dpi.scale 60
+            check (editor.Expanded=Some 0 && fits && editor.Size.Height=folded) (sprintf "Expanding a row resized the popup, or did not fit: %d then %d for %d" folded editor.Size.Height editor.Layout.height)
+            editor.Close()
         // A whole row taken by its band's empty room: dropped on another row, its windows join that
         // group; dropped on the loose row, they all go loose.
         do

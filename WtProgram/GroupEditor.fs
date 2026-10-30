@@ -135,7 +135,9 @@ type GroupEditorLayout = {
 /// button cuts the focused cell into a shape with empty slots to fill. Edits change a draft;
 /// Save turns the draft into a plan for `GroupEditorApply`, Esc or clicking elsewhere leaves
 /// everything as it was. Used once.
-type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:GroupEditorWindow list, expanded:int option) =
+/// `front` is the frame of the window in front as it opens: the popup opens centred on that
+/// window's screen.
+type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:GroupEditorWindow list, expanded:int option, ?front:Rect) =
     let palette = SettingsColors.current()
     let highContrast = SystemInformation.HighContrast
     let scale = Dpi.scale
@@ -196,7 +198,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let iconOf hwnd = byHwnd.TryFind hwnd |> Option.bind(fun window -> window.icon)
     let hasPicture hwnd = byHwnd.TryFind hwnd |> Option.exists(fun window -> not window.minimized)
     let fallbackFrame = rows |> List.tryHead |> Option.map(fun row -> row.frame) |> Option.defaultValue (Rect(Pt(),Sz(1600,900)))
-    let area = Screen.FromRectangle(fallbackFrame.Rectangle).WorkingArea
+    /// The screen the popup opens on: the one with the window in front, or the first row's.
+    let area = Screen.FromRectangle((defaultArg front fallbackFrame).Rectangle).WorkingArea
     let pad = scale GroupEditorMetrics.padding
     let width = min (scale GroupEditorMetrics.width) (area.Width-scale 32)
     let inner = width-2*pad
@@ -866,9 +869,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         f.BackColor <- palette.surface
         f
 
-    /// The popup's bounds for the picture's height: centred over the first row's frame at
-    /// first, kept on its screen, and rounded; moved by the user, it stays where it was put and
-    /// only its height follows the rows.
+    /// The popup's bounds: centred on its screen at first, as tall as the overview or any one
+    /// row expanded needs; moved by the user, it stays where it was put and keeps its height.
     let mutable placed = false
     let place (l:GroupEditorLayout) =
         // Placed, the popup grows downward only, as far as its screen allows, and never moves up.
@@ -876,20 +878,23 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         heightLimit <- maxHeight-frameHeight
         if placed then heightLimit <- max (scale 240) (min heightLimit (area.Bottom-form.Top-frameHeight))
         if not placed then
-            let folded =
-                match expandedKey with
-                | Some key -> expandedKey <- None; (let f = layout() in expandedKey <- Some key; f)
-                | None -> l
-            fixedHeight <- Some(max l.height folded.height)
+            // The height holds while the popup is up, so a row expanding or folding resizes
+            // nothing: what the overview needs, or the tallest row expanded, whichever is more.
+            let withKey key =
+                let was = expandedKey
+                expandedKey <- key
+                let laid = layout()
+                expandedKey <- was
+                laid.height
+            let heights = (None :: (groups() |> List.map(fun g -> Some(g.group,List.head g.tabs)))) |> List.map withKey
+            fixedHeight <- Some(List.max (l.height :: heights))
         fixedHeight <- fixedHeight |> Option.map(fun h -> min h heightLimit)
         let height = viewHeight l
         if form.ClientSize<>Size(width,height) then form.ClientSize <- Size(width,height)
         let size = form.Size
-        let box = fallbackFrame.Rectangle
         if not placed then
             placed <- true
-            form.Location <- Point(max area.Left (min (area.Right-size.Width) (box.X+(box.Width-size.Width)/2)),
-                                   max area.Top (min (area.Bottom-size.Height) (box.Y+(box.Height-size.Height)/2)))
+            form.Location <- Point(area.Left+max 0 ((area.Width-size.Width)/2),area.Top+max 0 ((area.Height-size.Height)/2))
 
     let releaseThumbnails() =
         for KeyValue(_,thumb) in thumbs do DwmApi.DwmUnregisterThumbnail(thumb) |> ignore
@@ -1455,6 +1460,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         form.FormClosing.Add(fun e -> if not closed then (e.Cancel <- true; cancel()))
 
     member _.Size = let l = layout() in Size(width,viewHeight l)
+    /// Where the popup stands on the screen, once shown.
+    member _.Bounds = form.Bounds
     /// The draft as edited so far.
     member _.Draft = current
     member _.Selected = selected

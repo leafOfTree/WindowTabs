@@ -899,9 +899,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
     member this.foregroundGroup = this.desktop.foregroundGroup
 
-    /// The group editor over the desktop in view: every group there as a row, the group of the
-    /// window expanded, and the loose windows; each group's layout read on its thread. One at a
-    /// time, and opened again it closes.
+    /// The group editor over the desktop in view: every group there as a folded row, and the
+    /// loose windows, centred on the screen of the window in front; each group's layout read on
+    /// its thread. One at a time, and opened again it closes.
     member this.editGroups(hwnd:IntPtr) =
         match groupEditorCell.value with
         | Some editor -> editor.Close()
@@ -959,8 +959,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                         let drafts = rows |> List.map snd
                         let windows = (drafts |> List.collect(fun g -> g.tabs))@loose |> List.distinct |> List.map windowOf
                         let draft = DesktopDraft.ofDesktop drafts loose
-                        let expanded = drafts |> List.tryFindIndex(fun g -> List.contains hwnd g.tabs)
-                        let editor = GroupEditorForm(draft,rows |> List.map fst,windows,expanded)
+                        // Every row folded, the overview first; the popup opens on the screen of the window in front.
+                        let front = if hwnd=IntPtr.Zero then None else Some(os.windowFromHwnd(hwnd).visibleBounds)
+                        let editor = GroupEditorForm(draft,rows |> List.map fst,windows,None,?front=front)
                         editor.Ended.Add(fun () -> groupEditorCell.set None)
                         editor.Saved.Add(fun plan ->
                             if DesktopPlan.isEmpty plan then Notice.show (tr Strings.GroupEditor.title) (tr Strings.GroupEditor.nothingChanged)

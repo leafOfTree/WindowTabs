@@ -3,7 +3,7 @@
 Status: design of 2026-10-29; phases 1 to 4 of section 7 are implemented: the model,
 `ReplaceLayout`, `SetTabOrder` and the apply pipeline; the popup (`GroupEditor.fs`, opened by
 **Edit groups…** from the palette, the tab menu or its key) with every group of the desktop as
-a row, the loose row and the new group's band, a row expanded over the group in front, and
+a row, folded at first, the loose row and the new group's band, and
 dragging within and between rows, the tab menu, the split button and its empty cells, with
 `tests/GroupEditor.fsx`. Phase 5's polish (the greyed tab and row for what is gone, the docs
 beyond this file, the README) is not.
@@ -34,14 +34,15 @@ picture, and moves the windows once, when the user is done.
   tab menu, beside **Split view**. From the Workspaces page of Settings, beside Save
   workspace, as what to arrange before saving one. The command line runs it by id as it runs
   every command.
-  Opened over a group, that group's row starts expanded (section 2.3); opened over a
-  window of no group, or the desktop, none is.
+  Every row starts folded, whatever is in front: the overview first, a row expanded from it
+  by its chevron or a tab (section 2.3).
 - It opens in the settings palette's colours as an ordinary window with the system's title
   bar (the title and the groups' count in its caption, in the palette's colours as the
   Settings window has them), in the taskbar and Alt+Tab and covered by whatever comes in
   front, since it stays up while the user works; its close button leaves everything as it
-  was, as Esc does. Centred on the screen in view, about 1000 logical pixels wide, and as
-  tall as the overview or the row it opens on needs, up to nine tenths of the work area;
+  was, as Esc does. Centred on the screen of the window in front, about 1000 logical pixels
+  wide, and as tall as the overview or any one row expanded needs, up to nine tenths of the
+  work area;
   that height holds while it is up, the rows scrolling inside it past it, the wheel easing
   them rather than jumping them: a thin thumb
   over the right margin, taking no room from the rows, shows how far down they are and
