@@ -156,6 +156,7 @@ type GroupEditorDragImage(owner:Form) =
     member _.Show(image:Bitmap,at:Point) =
         Win32Helper.UpdateLayeredWindow(helper.hwnd,at,image,255uy)
         window.showNoActivate()
+    member _.Hide() = window.hide()
     interface IDisposable with
         member _.Dispose() = (helper :?> IDisposable).Dispose()
 
@@ -288,30 +289,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             path.AddLine(x+w,y+d/2.0f,x+w,y+h)
             path.AddLine(x+w,y+h,x,y+h)
         else path.AddRectangle(r)
-        path.CloseFigure()
-        path
-    /// The content and the tabs over it as one shape: the content's outline, going up and
-    /// around the tabs' span where it stands over the content's top edge, so the two read as
-    /// one piece, as a tab and its page do.
-    let joinedOutline (tab:Rectangle) (cell:Rectangle) (radius:int) =
-        let path = new Drawing2D.GraphicsPath()
-        let dc,dt = float32(2*radius),float32(2*scale 6)
-        let cx,cy,cw,ch = float32 cell.X,float32 cell.Y,float32 cell.Width,float32 cell.Height
-        let tx,ty,tw = float32 tab.X,float32 tab.Y,float32 tab.Width
-        // From the bottom left, up the left side: a tab flush with the cell's edge carries the
-        // side straight up; one standing in from it leaves the cell its corner.
-        path.AddArc(cx,cy+ch-dc,dc,dc,90.0f,90.0f)
-        if tab.X>cell.X then
-            path.AddArc(cx,cy,dc,dc,180.0f,90.0f)
-            path.AddLine(tx,cy,tx,ty+dt/2.0f)
-        else path.AddLine(cx,cy,tx,ty+dt/2.0f)
-        path.AddArc(tx,ty,dt,dt,180.0f,90.0f)
-        path.AddArc(tx+tw-dt,ty,dt,dt,270.0f,90.0f)
-        if tab.Right<cell.Right then
-            path.AddLine(tx+tw,ty+dt/2.0f,tx+tw,cy)
-            path.AddArc(cx+cw-dc,cy,dc,dc,270.0f,90.0f)
-        else path.AddLine(tx+tw,ty+dt/2.0f,cx+cw,cy)
-        path.AddArc(cx+cw-dc,cy+ch-dc,dc,dc,0.0f,90.0f)
         path.CloseFigure()
         path
     let toRect (r:Rectangle) = Rect(Pt(r.X,r.Y),Sz(r.Width,r.Height))
@@ -688,10 +665,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             if not(sliding.ContainsKey hwnd) then
                 looks |> List.tryFind(fun (each,look) -> each=hwnd && look.rect=r) |> Option.iter(fun (_,look) -> drawTabOn g hwnd look)
         /// The strip's own seam button between two tabs of the panes of one split standing next
-        /// to each other, over the seam, as the real strip marks the pair: at the tabs' bottom
-        /// edge where they stand on the content, as on the strip; centred on them in a folded
-        /// row, whose tabs are blocks of their own, so it cuts no corner. Not while either is on
-        /// its way or in hand, as on the real strip.
+        /// to each other, over the seam at the tabs' bottom edge, as the real strip marks the
+        /// pair, in a folded row as in the expanded one; not while either is on its way or in
+        /// hand, as on the real strip.
         let drawSeams (row:GroupEditorRowLayout) =
             let still (hwnd,r) = not(sliding.ContainsKey hwnd) && looks |> List.exists(fun (each,look) -> each=hwnd && look.rect=r && not look.blank && not look.ghost)
             groupAt row.index |> Option.iter(fun group ->
@@ -703,8 +679,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         let fill = looks |> List.tryFind(fun (each,look) -> each=a && look.rect=ra) |> Option.map(fun (_,look) -> if look.selected then contentFill else tabFill) |> Option.defaultValue tabFill
                         let sprite = {owner=box b; axis=axis; size=size; fill=fill; ink=textOn; hover=false} : SplitJunctionSprite
                         use bitmap = (sprite :> ISprite).image.bitmap
-                        let y = if row.expanded then ra.Bottom-h else ra.Y+(ra.Height-h)/2
-                        g.DrawImage(bitmap,Rectangle((ra.Right+rb.X)/2-size.width/2,y,size.width,h))
+                        g.DrawImage(bitmap,Rectangle((ra.Right+rb.X)/2-size.width/2,ra.Bottom-h,size.width,h))
                     | _ -> ())
         /// The expanded row's cells: each window's picture, or the icon alone where there is no
         /// picture to show, with nothing over it, since the tabs above name the windows; an empty
@@ -714,14 +689,14 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 use shape = rounded r (scale 4)
                 match pane with
                 | Occupied hwnd ->
-                    // The content is the selected piece, in its colour, which the tabs over it share;
-                    // the cells of a split are parts of it, told apart by a thin line each, not
-                    // pieces of their own.
+                    // The content is in its colour, which the tabs over it share; the cells of a
+                    // split are told apart by a thin line each, and the selected pane's, the one
+                    // the split button and the keys act on, is outlined in the accent.
                     let back = contentFill
                     use fill = new SolidBrush(back)
                     g.FillPath(fill,shape)
                     if row.cells.Length>1 then
-                        use pen = new Pen(palette.border,float32(scale 1))
+                        use pen = new Pen((if row.focused=Some path then accent else palette.border),float32(scale 1))
                         g.DrawPath(pen,shape)
                     if not(thumbs.ContainsKey hwnd) then
                         let picture = r
@@ -744,21 +719,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             for tab in row.tabs do drawTab tab
             drawSeams row
             drawCells row
-            // A split is one selected piece: the content outlined in the accent, the outline going
-            // up and around the panes' tabs, which stand together over it.
-            if row.expanded && row.cells.Length>1 then
-                use pen = new Pen(accent,float32(scale 1))
-                let panes = GroupDraft.paneWindows (groupAt row.index).Value
-                let places = row.tabs |> List.indexed |> List.filter(fun (_,(hwnd,_)) -> List.contains hwnd panes)
-                let together = not places.IsEmpty && fst (List.last places)-fst (List.head places)=places.Length-1
-                let picture = row.picture
-                let span = places |> List.map(fun (_,(_,r)) -> r) |> List.fold (fun (a:Rectangle) b -> if a.IsEmpty then b else Rectangle.Union(a,b)) Rectangle.Empty
-                if together && (span.X=picture.X || span.X>=picture.X+2*scale 6) && (span.Right=picture.Right || span.Right<=picture.Right-2*scale 6) then
-                    use joined = joinedOutline span picture (scale 6)
-                    g.DrawPath(pen,joined)
-                else
-                    use shape = rounded picture (scale 6)
-                    g.DrawPath(pen,shape)
             // The split button on the focused cell, and its flyout of shapes while open.
             row.splitButton |> Option.iter(fun r -> drawSplitButton g r false)
             if not row.shapes.IsEmpty then
@@ -1078,24 +1038,35 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             placed <- true
             form.Location <- Point(area.Left+max 0 ((area.Width-size.Width)/2),area.Top+max 0 ((area.Height-size.Height)/2))
 
-    /// The drag image up while a tab is in hand: made as the drag begins, moved with the pointer.
-    let mutable dragImage : (GroupEditorDragImage * Bitmap * IntPtr) option = None
+    /// The drag image: one window for the popup's life, up with the tab's picture while a tab is
+    /// in hand, moved with the pointer, hidden on the drop and gone with the popup.
+    let mutable dragImage : GroupEditorDragImage option = None
+    let mutable dragPicture : (Bitmap * IntPtr) option = None
     let hideDragImage() =
-        dragImage |> Option.iter(fun (window,image,_) ->
-            (window :> IDisposable).Dispose()
-            image.Dispose())
+        dragImage |> Option.iter(fun window -> window.Hide())
+        dragPicture |> Option.iter(fun (image,_) -> image.Dispose())
+        dragPicture <- None
+    let closeDragImage() =
+        hideDragImage()
+        dragImage |> Option.iter(fun window -> (window :> IDisposable).Dispose())
         dragImage <- None
     let showDragImage (view:Point) (d:GroupEditorDrag) =
         if form.IsHandleCreated && form.Visible then
-            let window,image =
+            let window =
                 match dragImage with
-                | Some(window,image,hwnd) when hwnd=d.hwnd -> window,image
-                | _ ->
-                    hideDragImage()
+                | Some window -> window
+                | None ->
                     let window = new GroupEditorDragImage(form)
+                    dragImage <- Some window
+                    window
+            let image =
+                match dragPicture with
+                | Some(image,hwnd) when hwnd=d.hwnd -> image
+                | _ ->
+                    dragPicture |> Option.iter(fun (image,_) -> image.Dispose())
                     let image = dragImageFor d.hwnd
-                    dragImage <- Some(window,image,d.hwnd)
-                    window,image
+                    dragPicture <- Some(image,d.hwnd)
+                    image
             window.Show(image,form.PointToScreen(Point(view.X-d.offset.X,view.Y-d.offset.Y)))
 
     let releaseThumbnails() =
@@ -1210,7 +1181,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             slideTimer.Stop()
             scrollTimer.Stop()
             endMorph()
-            hideDragImage()
+            closeDragImage()
             lifted <- false
             menu |> Option.iter(fun each -> each.Dispose())
             menu <- None
