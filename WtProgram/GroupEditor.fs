@@ -21,7 +21,9 @@ module GroupEditorMetrics =
     let fade = 24
     let rowPadding = 10
     let rowGap = 6
-    let stripHeight = 36
+    /// The expanded row's strip is as tall as a tab, so its tabs stay where the folded row had
+    /// them and only the content opens under them.
+    let stripHeight = 30
     let tabHeight = 30
     let tabMaxWidth = 190
     let tabMinWidth = 44

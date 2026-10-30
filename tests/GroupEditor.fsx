@@ -355,6 +355,8 @@ let main() =
             editor.MouseDown(centre l.rows.[1].chevron.Value)
             editor.MouseUp(centre l.rows.[1].chevron.Value)
             check (editor.Expanded=Some 1 && editor.Selected=d && editor.Layout.rows.[1].expanded && not editor.Layout.rows.[0].expanded) "Clicking a row's chevron did not expand its row"
+            // Expanded, the row's tabs stay where the folded row had them: only the content opens under them.
+            check (tabIn editor.Layout.rows.[1] d=tabIn l.rows.[1] d) (sprintf "Expanding moved the row's tabs: %A to %A" (tabIn l.rows.[1] d) (tabIn editor.Layout.rows.[1] d))
             let l = editor.Layout
             editor.MouseDown(centre l.rows.[1].chevron.Value)
             editor.MouseUp(centre l.rows.[1].chevron.Value)
