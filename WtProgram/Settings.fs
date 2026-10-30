@@ -155,6 +155,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         tabSearchScope = settingsJson.getString("tabSearchScope").def(SettingsCatalog.tabSearchScopeDefault) |> SettingsCatalog.normalizeTabSearchScope
                         runAtStartup = settingsJson.getBool("runAtStartup").def(SettingsCatalog.toggleDefault "runAtStartup" hasExistingSettings)
                         hideInactiveTabs = settingsJson.getBool("hideInactiveTabs").def(SettingsCatalog.toggleDefault "hideInactiveTabs" hasExistingSettings)
+                        showIconsOnlyByDefault = settingsJson.getBool("showIconsOnlyByDefault").def(SettingsCatalog.toggleDefault "showIconsOnlyByDefault" hasExistingSettings)
                         enableTabbingByDefault = settingsJson.getBool("enableTabbingByDefault").def(SettingsCatalog.toggleDefault "enableTabbingByDefault" hasExistingSettings)
                         combineIconsInTaskbar = settingsJson.getBool("combineIconsInTaskbar").def(SettingsCatalog.toggleDefault "combineIconsInTaskbar" hasExistingSettings)
                         replaceAltTab = settingsJson.getBool("replaceAltTab").def(SettingsCatalog.toggleDefault "replaceAltTab" hasExistingSettings)
@@ -256,6 +257,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setObject("tabPresetEdits", edits)
             settingsJson.setBool("runAtStartup", settings.runAtStartup)
             settingsJson.setBool("hideInactiveTabs", settings.hideInactiveTabs)
+            settingsJson.setBool("showIconsOnlyByDefault", settings.showIconsOnlyByDefault)
             settingsJson.setBool("enableTabbingByDefault", settings.enableTabbingByDefault)
             settingsJson.setBool("combineIconsInTaskbar", settings.combineIconsInTaskbar)
             settingsJson.setBool("replaceAltTab", settings.replaceAltTab)
