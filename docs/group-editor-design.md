@@ -144,17 +144,20 @@ tab, so the strip starts at the row's top edge, as a real group's does.
   window. The tabs of the panes of one split stand together, a sliver apart, where the
   others keep their gap, so the strip says which windows share the content.
   One tab is selected, drawn in the content's colour and joined to the content below, as
-  the active tab is on the real strip; it starts as the group's active tab. Clicking a tab selects it, and the
+  the active tab is on the real strip; it starts as the group's active tab. With the selected
+  tab in a split, every tab of its panes is drawn so along with it, since the content is all
+  of theirs: the split is one selected piece. Clicking a tab selects it, and the
   content changes to what the group would show with that tab active, so the picture
   behaves as the group does. The selection is for looking: Save does not switch tabs.
 - **The content.** With a tab selected that is in no split, one cell with that window's
   picture filling the content, with no chip over it, since the selected tab names it: the
   whole group is that window. With
   a tab selected that is in a split, the split tree drawn as nested cells at their ratios,
-  each leaf cell with its window's picture and chip, the selected one's cell in the content's
-  colour as its tab is and outlined in the accent, the outline going up and around the tab
-  where the tab stands over the cell, so tab and pane read as one piece, with the split
-  button on it, the others a step lighter; the other panes' tabs are marked in the strip as the real strip marks
+  each leaf cell with its window's picture and chip, all in the content's colour as their
+  tabs are, told apart by a thin line each, the whole content outlined in the accent, the
+  outline going up and around the panes' tabs where they stand together over it, so the
+  tabs and the content read as one selected piece, with the split button on the selected
+  pane's cell; the panes' tabs are marked in the strip as the real strip marks
   them, with the seam mark between neighbours. The cells do not resize here: ratios are
   the divider's job, and **Equal panes** stays on the seam button's menu.
 - No **Add window…** button: every window on this desktop is in some row of the popup, so

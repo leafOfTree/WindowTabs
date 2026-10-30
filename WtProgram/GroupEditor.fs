@@ -267,7 +267,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let selectedFill = if highContrast then SystemColors.Highlight else tint palette.accent surface 0.28
     let accent = if highContrast then SystemColors.Highlight else palette.accent
     let textOn = if highContrast then SystemColors.WindowText else palette.text
-    let cellFill = if highContrast then SystemColors.Window else palette.selection
     let rowFill = if highContrast then SystemColors.Control else palette.surface
     let looseFill = if highContrast then SystemColors.Control else tint palette.surface palette.background 0.5
     let tabFill = if highContrast then SystemColors.Window else palette.selection
@@ -291,12 +290,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         else path.AddRectangle(r)
         path.CloseFigure()
         path
-    /// The selected pane's cell and its tab as one shape: the cell's outline, going up and
-    /// around the tab where the tab stands over the cell's top edge, so the two read as one
-    /// piece, as a tab and its page do.
-    let joinedOutline (tab:Rectangle) (cell:Rectangle) =
+    /// The content and the tabs over it as one shape: the content's outline, going up and
+    /// around the tabs' span where it stands over the content's top edge, so the two read as
+    /// one piece, as a tab and its page do.
+    let joinedOutline (tab:Rectangle) (cell:Rectangle) (radius:int) =
         let path = new Drawing2D.GraphicsPath()
-        let dc,dt = float32(2*scale 4),float32(2*scale 6)
+        let dc,dt = float32(2*radius),float32(2*scale 6)
         let cx,cy,cw,ch = float32 cell.X,float32 cell.Y,float32 cell.Width,float32 cell.Height
         let tx,ty,tw = float32 tab.X,float32 tab.Y,float32 tab.Width
         // From the bottom left, up the left side: a tab flush with the cell's edge carries the
@@ -649,10 +648,14 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             let inPane = GroupDraft.paneWindows g
             let shown = if row.expanded then selected else (infoOf row.index).active
             let ghostHere = match l.ghost with Some(GhostInRow(at,_)) -> at=row.index | _ -> false
-            // Only the expanded row has a selected tab: in a folded row the active one means nothing here.
+            // Only the expanded row has a selected tab: in a folded row the active one means nothing
+            // here. With the shown tab in a split, every tab of its panes is selected along with it:
+            // the split is one piece, the content being all of theirs.
+            let split = List.contains shown inPane
             row.tabs |> List.map(fun (hwnd,r) ->
                 let ghost = ghostHere && inHand hwnd
-                hwnd,{rect=r; selected=row.expanded && hwnd=shown; inPane=List.contains hwnd inPane; onContent=row.expanded; blank=inHand hwnd && not ghost; ghost=ghost; band=rowFill; hot=false})))
+                let selected = row.expanded && (hwnd=shown || (split && List.contains hwnd inPane))
+                hwnd,{rect=r; selected=selected; inPane=List.contains hwnd inPane; onContent=row.expanded; blank=inHand hwnd && not ghost; ghost=ghost; band=rowFill; hot=false})))
         @(l.looseTabs |> List.map(fun (hwnd,r) ->
             let ghost = (match l.ghost with Some(GhostInLoose _) -> true | _ -> false) && inHand hwnd
             hwnd,{rect=r; selected=false; inPane=false; onContent=false; blank=inHand hwnd && not ghost; ghost=ghost; band=looseFill; hot=false}))
@@ -687,21 +690,15 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 use shape = rounded r (scale 4)
                 match pane with
                 | Occupied hwnd ->
-                    // The one cell of a group in no split is the content itself, in its colour, which
-                    // the selected tab above shares; the cells of a split stand out on it, but the
-                    // selected pane's keeps the content's colour, as its tab does, and is outlined
-                    // in the accent, so the two read as one.
-                    let back = if row.cells.Length>1 && row.focused<>Some path then cellFill else contentFill
+                    // The content is the selected piece, in its colour, which the tabs over it share;
+                    // the cells of a split are parts of it, told apart by a thin line each, not
+                    // pieces of their own.
+                    let back = contentFill
                     use fill = new SolidBrush(back)
                     g.FillPath(fill,shape)
-                    if row.cells.Length>1 && row.focused=Some path then
-                        use pen = new Pen(accent,float32(scale 1))
-                        // With its tab standing over it, the outline takes the tab in; else the cell alone.
-                        match row.tabs |> List.tryFind(fun (each,_) -> each=hwnd) with
-                        | Some(_,tab) when hwnd=selected && r.Y=row.picture.Y && (tab.X=r.X || tab.X>=r.X+2*scale 4) && (tab.Right=r.Right || tab.Right<=r.Right-2*scale 4) ->
-                            use joined = joinedOutline tab r
-                            g.DrawPath(pen,joined)
-                        | _ -> g.DrawPath(pen,shape)
+                    if row.cells.Length>1 then
+                        use pen = new Pen(palette.border,float32(scale 1))
+                        g.DrawPath(pen,shape)
                     let chip = (chipOf row r).Height
                     if chip>0 then
                         let iconSize = scale GroupEditorMetrics.iconSize
@@ -728,6 +725,21 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 g.FillPath(fill,shape)
             for tab in row.tabs do drawTab tab
             drawCells row
+            // A split is one selected piece: the content outlined in the accent, the outline going
+            // up and around the panes' tabs, which stand together over it.
+            if row.expanded && row.cells.Length>1 then
+                use pen = new Pen(accent,float32(scale 1))
+                let panes = GroupDraft.paneWindows (groupAt row.index).Value
+                let places = row.tabs |> List.indexed |> List.filter(fun (_,(hwnd,_)) -> List.contains hwnd panes)
+                let together = not places.IsEmpty && fst (List.last places)-fst (List.head places)=places.Length-1
+                let picture = row.picture
+                let span = places |> List.map(fun (_,(_,r)) -> r) |> List.fold (fun (a:Rectangle) b -> if a.IsEmpty then b else Rectangle.Union(a,b)) Rectangle.Empty
+                if together && (span.X=picture.X || span.X>=picture.X+2*scale 6) && (span.Right=picture.Right || span.Right<=picture.Right-2*scale 6) then
+                    use joined = joinedOutline span picture (scale 6)
+                    g.DrawPath(pen,joined)
+                else
+                    use shape = rounded picture (scale 6)
+                    g.DrawPath(pen,shape)
             // The split button on the focused cell, and its flyout of shapes while open.
             row.splitButton |> Option.iter(fun r ->
                 use shape = rounded r (scale 5)

@@ -162,8 +162,9 @@ let main() =
             check (image.Width=editor.Size.Width && image.Height=editor.Layout.height) "The picture is not the popup's size"
             // Under a tab's text: the block's own colour.
             let under (r:Rectangle) = image.GetPixel(r.X+r.Width/2,r.Bottom-3)
-            check (sameColor palette.selection (under (snd l.tabs.[1]))) (sprintf "An unselected tab is not in the %s look's block colour" mode)
-            check (sameColor palette.background (under (snd l.tabs.[0]))) "The selected tab is not in the content's colour"
+            check (sameColor palette.selection (under (snd l.tabs.[2]))) (sprintf "A tab in no pane is not in the %s look's block colour" mode)
+            // The split is one selected piece: every tab of its panes is in the content's colour.
+            check (sameColor palette.background (under (snd l.tabs.[0])) && sameColor palette.background (under (snd l.tabs.[1]))) "The panes' tabs are not in the content's colour"
             check (sameColor palette.background (image.GetPixel(Dpi.scale 6,Dpi.scale 8))) (sprintf "The popup is not in the %s look's background, as Settings is" mode)
             check (sameColor palette.surface (image.GetPixel(l.band.X+Dpi.scale 12,l.band.Y+Dpi.scale 5))) (sprintf "The row's band is not in the %s look's surface colour" mode)
             check (sameColor palette.background (image.GetPixel(l.picture.X+l.picture.Width/2,l.picture.Bottom-2))) "The content is not in the background colour"
