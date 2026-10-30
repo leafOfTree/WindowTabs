@@ -173,8 +173,9 @@ tab, so the strip starts at the row's top edge, as a real group's does.
 ### 2.4 Dragging
 
 One drag model for the overview and the expanded row alike: the tab itself comes along under
-the pointer, held where it was pressed, and its place stays open in the strip as a slot
-dashed in the accent, so where it will land stands out from the tabs around it. The tabs a
+the pointer, held where it was pressed, and its place keeps a faded copy of it, veiled in
+its band's colour as a row in hand leaves one, so where it will land shows among the tabs
+around it. The tabs a
 move shifts slide to their new places over 150ms, eased out, rather than jumping. Carried off
 the rows (to the title, the footer or out of the popup), the tab goes back to where it was
 taken from, so a drop there, or outside, changes nothing. Within a row (its tabs, and its

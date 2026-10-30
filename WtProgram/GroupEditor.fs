@@ -99,8 +99,9 @@ type GroupEditorRowLayout = {
     shapes:(PaneShape * Rectangle) list }
 
 /// How a tab block is drawn: where, in the accent when selected, with the pane mark, standing
-/// on the content in the expanded row, and blank while in hand.
-type GroupEditorTabLook = { rect:Rectangle; selected:bool; inPane:bool; onContent:bool; blank:bool
+/// on the content in the expanded row, and blank while in hand, when it is a faded copy on
+/// its band's colour.
+type GroupEditorTabLook = { rect:Rectangle; selected:bool; inPane:bool; onContent:bool; blank:bool; band:Color
                             /// Under the pointer: a shade lighter, so the tab answers the hover.
                             hot:bool }
 
@@ -494,20 +495,14 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             use pen = new Pen(palette.muted,float32(scale 1))
             g.DrawRectangle(pen,Rectangle.Inflate(bounds,-scale 3,-scale 3))
     /// A tab block: the icon and name, the selected one in the accent, a mark on a tab in a pane.
-    /// While in hand, the tab itself being under the pointer, its place is an open slot: a dashed
-    /// outline in the accent, so where it will land stands out from the tabs around it.
+    /// While in hand, the tab itself being under the pointer, its place keeps a faded copy of
+    /// it, veiled in its band's colour as the row in hand leaves one: where it will land.
     let drawTabOn (g:Graphics) (hwnd:IntPtr) (look:GroupEditorTabLook) =
         let r = look.rect
         // In the expanded row the tabs stand on the content, the selected one joined to it.
         use shape = if look.onContent then roundedTop (if look.selected then Rectangle(r.X,r.Y,r.Width,r.Height+scale 2) else r) (scale 6) else rounded r (scale 6)
         let fill = if look.selected then contentFill elif look.hot then hotFill else tabFill
-        if look.blank then
-            use tintBrush = new SolidBrush(Color.FromArgb(40,accent))
-            g.FillPath(tintBrush,shape)
-            use pen = new Pen(accent,float32(scale 1),DashStyle=Drawing2D.DashStyle.Dash)
-            use inset = if look.onContent then roundedTop (Rectangle.Inflate(r,-scale 1,-scale 1)) (scale 5) else rounded (Rectangle.Inflate(r,-scale 1,-scale 1)) (scale 5)
-            g.DrawPath(pen,inset)
-        else
+        do
             use brush = new SolidBrush(fill)
             g.FillPath(brush,shape)
             let iconSize = scale GroupEditorMetrics.iconSize
@@ -522,6 +517,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 let mark = Rectangle(r.Right-scale 8-side,r.Y+(r.Height-side)/2,side,side)
                 g.DrawRectangle(pen,mark)
                 g.DrawLine(pen,mark.X+side/2,mark.Y,mark.X+side/2,mark.Bottom)
+        if look.blank then
+            use veil = new SolidBrush(Color.FromArgb(170,look.band))
+            g.FillPath(veil,shape)
     /// Every tab of the layout with how it is drawn now.
     let tabLooks (l:GroupEditorLayout) =
         let blank hwnd = drag |> Option.exists(fun d -> d.begun && d.hwnd=hwnd && not d.fromPane)
@@ -530,8 +528,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             let inPane = GroupDraft.paneWindows g
             let shown = if row.expanded then selected else (infoOf row.index).active
             // Only the expanded row has a selected tab: in a folded row the active one means nothing here.
-            row.tabs |> List.map(fun (hwnd,r) -> hwnd,{rect=r; selected=row.expanded && hwnd=shown; inPane=List.contains hwnd inPane; onContent=row.expanded; blank=blank hwnd; hot=false})))
-        @(l.looseTabs |> List.map(fun (hwnd,r) -> hwnd,{rect=r; selected=false; inPane=false; onContent=false; blank=blank hwnd; hot=false}))
+            row.tabs |> List.map(fun (hwnd,r) -> hwnd,{rect=r; selected=row.expanded && hwnd=shown; inPane=List.contains hwnd inPane; onContent=row.expanded; blank=blank hwnd; band=rowFill; hot=false})))
+        @(l.looseTabs |> List.map(fun (hwnd,r) -> hwnd,{rect=r; selected=false; inPane=false; onContent=false; blank=blank hwnd; band=looseFill; hot=false}))
     /// Where a sliding tab is drawn now, on its way from where it was, eased out.
     let slideRect (from:Rectangle) (toward:Rectangle) =
         let t = min 1.0 ((DateTime.UtcNow-slideStart).TotalMilliseconds/GroupEditorMetrics.slideMs)
@@ -712,10 +710,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             use pen = new Pen(accent,float32(scale 2))
             g.DrawPath(pen,band)
         | Some(NewGroupRow | VacatedRow _ as aim) ->
-            // The drop lands here, not in the slot the tab left open where it stands now: the
-            // slot is covered in its row's colour, so one place alone is lit.
+            // The drop lands here, not where the tab's faded copy stands now: the copy is covered
+            // in its band's colour, so one place alone says where.
             tabLooks l |> List.tryFind(fun (hwnd,look) -> hwnd=d.hwnd && look.blank) |> Option.iter(fun (_,look) ->
-                use cover = new SolidBrush(if DesktopDraft.find d.hwnd current=Loose then looseFill else rowFill)
+                use cover = new SolidBrush(look.band)
                 g.FillRectangle(cover,Rectangle.Inflate(look.rect,scale 1,scale 1)))
             let r = match aim with VacatedRow i -> l.vacated.[i] | _ -> l.newGroup
             use band = rounded r (scale 8)
