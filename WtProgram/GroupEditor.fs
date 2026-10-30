@@ -210,7 +210,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let pad = scale GroupEditorMetrics.padding
     let width = min (scale GroupEditorMetrics.width) (area.Width-scale 32)
     let inner = width-2*pad
-    let maxHeight = area.Height*9/10
+    let maxHeight = area.Height*3/4
     let rowPad = scale GroupEditorMetrics.rowPadding
     let groups() = current.groups
     let groupAt index = current.groups |> List.tryItem index
@@ -415,7 +415,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             layoutCached <- Some computed
             computed
 
-    /// What the popup may be tall, in client pixels: the work area's nine tenths, and, once
+    /// What the popup may be tall, in client pixels: three quarters of the work area, and, once
     /// placed, what is left under its top, since growing never moves it up.
     let mutable heightLimit = maxHeight
     /// The popup's height while it is up, set as it opens: the taller of the overview and the
@@ -749,6 +749,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// row or the new group lit, and the chip in hand under the pointer.
     let overlay (g:Graphics) (l:GroupEditorLayout) (d:GroupEditorDrag) =
         g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        // The drop lands elsewhere than the slot the tab stands in now: the slot is covered in its
+        // band's colour, so one place alone says where.
+        let coverSlot() =
+            tabLooks l |> List.tryFind(fun (hwnd,look) -> hwnd=d.hwnd && look.blank) |> Option.iter(fun (_,look) ->
+                use cover = new SolidBrush(look.band)
+                g.FillRectangle(cover,Rectangle.Inflate(look.rect,scale 1,scale 1)))
         match d.aim with
         | Some(StripSlot(index,slot)) ->
             l.rows |> List.tryItem index |> Option.iter(fun row ->
@@ -761,6 +767,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 use pen = new Pen(accent,float32(scale 3))
                 g.DrawLine(pen,x,y,x,y+h))
         | Some(CellMiddle _ | CellEdge _ as aim) ->
+            coverSlot()
             let zone =
                 match aim with
                 | CellMiddle(index,path) -> l.rows |> List.tryItem index |> Option.bind(fun row -> row.cells |> List.tryFind(fun (each,_,_) -> each=path)) |> Option.map(fun (_,_,r) -> r)
@@ -778,11 +785,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             use pen = new Pen(accent,float32(scale 2))
             g.DrawPath(pen,band)
         | Some(NewGroupRow | VacatedRow _ as aim) ->
-            // The drop lands here, not where the tab's faded copy stands now: the copy is covered
-            // in its band's colour, so one place alone says where.
-            tabLooks l |> List.tryFind(fun (hwnd,look) -> hwnd=d.hwnd && look.blank) |> Option.iter(fun (_,look) ->
-                use cover = new SolidBrush(look.band)
-                g.FillRectangle(cover,Rectangle.Inflate(look.rect,scale 1,scale 1)))
+            coverSlot()
             let r = match aim with VacatedRow i -> l.vacated.[i] | _ -> l.newGroup
             use band = rounded r (scale 8)
             use fill = new SolidBrush(selectedFill)
@@ -940,15 +943,19 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         if placed then heightLimit <- max (scale 240) (min heightLimit (area.Bottom-form.Top-frameHeight))
         if not placed then
             // The height holds while the popup is up, so a row expanding or folding resizes
-            // nothing: what the overview needs, or the tallest row expanded, whichever is more.
+            // nothing: what the overview needs and, where that keeps the popup within half the
+            // work area, what the tallest row expanded needs, so on a desktop of a few groups a
+            // row opens without scrolling; with many, the rows take the room and the expanded
+            // row scrolls into view rather than the popup covering the screen for it.
             let withKey key =
                 let was = expandedKey
                 expandedKey <- key
                 let laid = layout()
                 expandedKey <- was
                 laid.height
-            let heights = (None :: (groups() |> List.map(fun g -> Some(g.group,List.head g.tabs)))) |> List.map withKey
-            fixedHeight <- Some(List.max (l.height :: heights))
+            let wanted = max l.height (withKey None)
+            let tallest = groups() |> List.map(fun g -> withKey (Some(g.group,List.head g.tabs))) |> List.fold max 0
+            fixedHeight <- Some(if tallest<=area.Height/2 then max wanted tallest else wanted)
         fixedHeight <- fixedHeight |> Option.map(fun h -> min h heightLimit)
         let height = viewHeight l
         if form.ClientSize<>Size(width,height) then form.ClientSize <- Size(width,height)
@@ -962,21 +969,25 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         thumbs.Clear()
 
     /// Each cell's window drawn live by DWM under the cell's band in the expanded row, at its
-    /// own proportions; a window with no picture keeps its icon. Hidden while a drop is aimed at
-    /// the cell, so the zone shows, and while the flyout is up.
+    /// own proportions; a window with no picture keeps its icon. While a drop is aimed at the
+    /// cell's edge, the picture keeps to the half the cell would keep, so the zone shows beside
+    /// it; aimed at its middle, which takes the pane, it is hidden, as it is while the flyout is up.
     let updateThumbnails (l:GroupEditorLayout) =
         if form.IsHandleCreated && form.Visible then
             let view = Rectangle(0,0,width,(if morph.IsSome then form.ClientSize.Height-(l.height-l.body) else viewBody l))
-            let covered index path =
+            let other side = if side=First then Second else First
+            /// None: the whole picture; Some None: hidden; Some(Some r): the part of the cell kept.
+            let kept index path (r:Rectangle) =
                 match drag with
-                | Some {begun=true; aim=Some(CellMiddle(row,each))} -> row=index && each=path
-                | Some {begun=true; aim=Some(CellEdge(row,each,_,_))} -> row=index && (each=path || each=[])
-                | _ -> false
+                | Some {begun=true; aim=Some(CellMiddle(row,each))} when row=index && each=path -> Some None
+                | Some {begun=true; aim=Some(CellEdge(row,each,axis,side))} when row=index && each=path -> Some(Some(half r axis (other side)))
+                | Some {begun=true; aim=Some(CellEdge(row,[],axis,side))} when row=index -> Some(Some(Rectangle.Intersect(r,half l.rows.[row].picture axis (other side))))
+                | _ -> None
             let wanted =
                 l.rows |> List.collect(fun row ->
                     row.cells |> List.choose(fun (path,pane,r) ->
                         match pane with
-                        | Occupied hwnd when hasPicture hwnd -> Some(hwnd,r,(chipOf row r).Height,row.index,covered row.index path)
+                        | Occupied hwnd when hasPicture hwnd -> Some(hwnd,r,(chipOf row r).Height,row.index,kept row.index path r)
                         | _ -> None))
             for hwnd in List.ofSeq thumbs.Keys do
                 if not(wanted |> List.exists(fun (each,_,_,_,_) -> each=hwnd)) then
@@ -989,7 +1000,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     let b = l.rows.[index].band
                     let y,h = morphLerp t a.Y b.Y,morphLerp t a.Height b.Height
                     y-b.Y,Rectangle(0,y-scroll,width,h))
-            for hwnd,r,chip,index,hidden in wanted do
+            for hwnd,r,chip,index,kept in wanted do
+                let hidden = kept=Some None
                 let thumb =
                     match thumbs.TryGetValue hwnd with
                     | true,thumb -> Some thumb
@@ -1012,8 +1024,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     let shift,within = match placed index with Some(dy,band) -> dy,band | None -> 0,view
                     let dest = Rectangle(dest.X,dest.Y+shift-scroll,dest.Width,dest.Height)
                     let shown = Rectangle.Intersect(Rectangle.Intersect(dest,view),within)
-                    // Cut at the rows' edge while scrolled half out of sight: the part of the window
-                    // shown is the part of its picture in sight.
+                    let shown =
+                        match kept with
+                        | Some(Some k) -> Rectangle.Intersect(shown,Rectangle(k.X,k.Y+shift-scroll,k.Width,k.Height))
+                        | _ -> shown
+                    // Cut at the rows' edge while scrolled half out of sight, or to the half the cell
+                    // keeps: the part of the window shown is the part of its picture in sight.
                     let along (shownEdge:int) (destEdge:int) (destSize:int) (sourceSize:int) =
                         if destSize<=0 then 0 else int(int64 (shownEdge-destEdge)*int64 sourceSize/int64 destSize)
                     let part (shownSize:int) (destSize:int) (sourceSize:int) = if destSize<=0 then 0 else int(int64 shownSize*int64 sourceSize/int64 destSize)

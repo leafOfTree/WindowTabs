@@ -418,20 +418,22 @@ let main() =
             let tab = snd editor.Layout.rows.[0].tabs.Head
             editor.MouseDown(Point(tab.X+tab.Width/2,tab.Y+tab.Height/2))
             editor.MouseUp(Point(tab.X+tab.Width/2,tab.Y+tab.Height/2))
-            // The expanded row fits in the height set as it opened, unless the screen is too short for it.
-            let fits = editor.Layout.height<=editor.Size.Height || editor.Size.Height>=area.Height*9/10-Dpi.scale 60
+            // The expanded row fits in the height set as it opened, where that height keeps within half the screen.
+            let fits = editor.Layout.height<=editor.Size.Height || editor.Layout.height>area.Height/2
             check (editor.Expanded=Some 0 && fits && editor.Size.Height=folded) (sprintf "Expanding a row resized the popup, or did not fit: %d then %d for %d" folded editor.Size.Height editor.Layout.height)
-            // The whole content, unsplit, takes no drop at its middle: a tab carried there is aimed
-            // at nothing, and dropped there stays where it was.
+            // The whole content, unsplit, takes no drop at its middle: a tab carried there from the
+            // strip is aimed at nothing, and dropped there stays where it was.
             let l = editor.Layout
-            let from = snd l.rows.[1].tabs.Head
+            let from = snd l.rows.[0].tabs.[1]
             editor.MouseDown(Point(from.X+from.Width/2,from.Y+from.Height/2))
             let picture = l.rows.[0].picture
-            editor.MouseMove(Point(picture.X+picture.Width/2,picture.Y+picture.Height/2+Dpi.scale 12))
-            editor.MouseMove(Point(picture.X+picture.Width/2,picture.Y+picture.Height/2))
+            // Past the top edge's zone (a fifth of the content), and still within the popup's view.
+            let middle = Point(picture.X+picture.Width/2,picture.Y+picture.Height/4)
+            editor.MouseMove(Point(middle.X,middle.Y+Dpi.scale 12))
+            editor.MouseMove(middle)
             check (editor.Drag |> Option.exists(fun d -> d.begun && d.aim=None)) (sprintf "A tab over the unsplit content's middle was aimed at it: %A" (editor.Drag |> Option.map(fun d -> d.aim)))
-            editor.MouseUp(Point(picture.X+picture.Width/2,picture.Y+picture.Height/2))
-            check (editor.Draft.groups.Length=2 && editor.Draft.groups.[1].tabs=[c]) (sprintf "A tab dropped on the unsplit content's middle moved: %A" editor.Draft)
+            editor.MouseUp(middle)
+            check (editor.Draft.groups.Length=2 && editor.Draft.groups.[0].tabs=[a;b] && editor.Draft.groups.[0].panes=None) (sprintf "A tab dropped on the unsplit content's middle changed the group: %A" editor.Draft)
             editor.Close()
         // The row's menu holds what a drag does less handily with many rows: merging the row into
         // another, named there by its first tab, and ungrouping it.

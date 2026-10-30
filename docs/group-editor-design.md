@@ -41,8 +41,9 @@ picture, and moves the windows once, when the user is done.
   Settings window has them), in the taskbar and Alt+Tab and covered by whatever comes in
   front, since it stays up while the user works; its close button leaves everything as it
   was, as Esc does. Centred on the screen of the window in front, about 1000 logical pixels
-  wide, and as tall as the overview or any one row expanded needs, up to nine tenths of the
-  work area;
+  wide, and as tall as the overview needs (and as any one row expanded needs, where that
+  keeps it within half the work area, so on a desktop of a few groups a row opens without
+  scrolling), up to three quarters of the work area;
   that height holds while it is up, the rows scrolling inside it past it, the wheel easing
   them rather than jumping them: a thin thumb
   over the right margin, taking no room from the rows, shows how far down they are and
@@ -189,7 +190,7 @@ content when expanded):
 | a tab | between two tabs of its own strip | the tab moves there as the pointer goes, the others making room, as on the real strip; pinned tabs stay first. Where a row's tabs wrap, the slot is on the line the pointer is on; in the gap between lines the tab keeps its line, so the lines do not re-wrap under the pointer and flip it back and forth |
 | a tab | an empty cell | the window fills it |
 | a tab | the middle of a cell of a split | the window takes that pane; the pane's old window goes back to being a tab. The whole content, unsplit, takes nothing at its middle: the strip is the way into the group |
-| a tab | a cell's edge (left/right/top/bottom) | that pane splits on that side for the window, as a tab dropped on a pane's edge does; with no split, the single cell splits, so the selected window and the dropped one become the first pair |
+| a tab | a cell's edge (left/right/top/bottom) | that pane splits on that side for the window, as a tab dropped on a pane's edge does; with no split, the single cell splits, so the selected window and the dropped one become the first pair. While aimed, the cell's picture keeps to the half it would keep, the zone lit beside it, and the open slot in the strip is covered, so one place alone says where the drop lands |
 | a tab | the content's outer edge | the whole group splits: a new column or row |
 | a pane chip | another cell's middle | the two panes swap windows |
 | a pane chip | a cell's edge or the outer edge | the pane leaves its place (its neighbour takes the room) and the split is made where it lands |
