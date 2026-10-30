@@ -240,6 +240,10 @@ let main() =
             editor.TakeOut d
             check (tabsNow()=[c;a;b] && editor.Draft.loose=[d]) (sprintf "Taking the tab out did not leave it loose: %A" (tabsNow()))
             // The split button on the focused cell opens the shapes; one cuts the cell, its slots empty.
+            // (The window put in a pane was selected by its drop; another tab first, so the click
+            // on it selects rather than folds.)
+            editor.MouseDown(centre (tabRect b))
+            editor.MouseUp(centre (tabRect b))
             editor.MouseDown(centre (tabRect a))
             editor.MouseUp(centre (tabRect a))
             check (editor.Selected=a && editor.Layout.rows.[0].focused=Some [Second] && editor.Layout.rows.[0].splitButton.IsSome) "Clicking a pane tab did not focus its cell"
@@ -352,17 +356,15 @@ let main() =
             editor.MouseDown(centre l.rows.[1].chevron.Value)
             editor.MouseUp(centre l.rows.[1].chevron.Value)
             check (editor.Expanded=Some 1) "Clicking the chevron did not expand the row again"
-            // The strip's empty room folds the row; a folded row's band's empty room expands it.
+            // Clicking the selected tab folds the row; clicking a folded row's tab expands it on that tab.
             let l = editor.Layout
-            let stripRoom = let r = snd l.rows.[1].tabs.Head in Point(l.rows.[1].band.Right-Dpi.scale 80,r.Y+r.Height/2)
-            editor.MouseDown(stripRoom)
-            editor.MouseUp(stripRoom)
-            check (editor.Expanded=None) "Clicking the strip's empty room did not fold the row"
+            editor.MouseDown(centre (tabIn l.rows.[1] d))
+            editor.MouseUp(centre (tabIn l.rows.[1] d))
+            check (editor.Expanded=None) "Clicking the selected tab did not fold the row"
             let l = editor.Layout
-            let bandRoom = Point(l.rows.[1].band.Right-Dpi.scale 80,l.rows.[1].band.Y+l.rows.[1].band.Height/2)
-            editor.MouseDown(bandRoom)
-            editor.MouseUp(bandRoom)
-            check (editor.Expanded=Some 1) "Clicking a folded row's empty room did not expand it"
+            editor.MouseDown(centre (tabIn l.rows.[1] d))
+            editor.MouseUp(centre (tabIn l.rows.[1] d))
+            check (editor.Expanded=Some 1 && editor.Selected=d) "Clicking a folded row's tab did not expand it on that tab"
             editor.Press Keys.Escape
             check (editor.Expanded=None) "Esc did not go back to the overview"
             // Another row's chevron expands that row in place of the one before.
@@ -399,6 +401,33 @@ let main() =
             editor.MouseMove(slot)
             editor.MouseUp(slot)
             check (editor.Draft.groups.Length=1 && tabsOf 0=[d;e;a] && editor.Layout.vacated.IsEmpty) (sprintf "A lone window carried to the row below did not stay there with its own row gone: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
+            editor.Close()
+        // A whole row taken by its band's empty room: dropped on another row, its windows join that
+        // group; dropped on the loose row, they all go loose.
+        do
+            let shown = List.zip [a;b;c] ["One";"Two";"Three"] |> List.map(fun (hwnd,name) -> {hwnd=hwnd; name=name; icon=None; minimized=true})
+            let frame = Rect(Pt(100,100),Sz(1600,900))
+            let desk = DesktopDraft.ofDesktop [GroupDraft.ofGroup (IntPtr 1) [a;b] Set.empty GroupLayout.Single; GroupDraft.ofGroup (IntPtr 2) [c] Set.empty GroupLayout.Single] []
+            let editor = GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=frame; active=a};{group=Some(IntPtr 2); frame=frame; active=c}],shown,None)
+            let room (r:Rectangle) = Point(r.Right-Dpi.scale 80,r.Y+r.Height/2)
+            let centre (r:Rectangle) = Point(r.X+r.Width/2,r.Y+r.Height/2)
+            let l = editor.Layout
+            editor.MouseDown(room l.rows.[0].band)
+            editor.MouseMove(Point((room l.rows.[0].band).X,(room l.rows.[0].band).Y+Dpi.scale 12))
+            editor.MouseMove(room l.rows.[1].band)
+            editor.MouseUp(room l.rows.[1].band)
+            check (editor.Draft.groups.Length=1 && editor.Draft.groups.[0].tabs=[c;a;b] && editor.Draft.groups.[0].group=Some(IntPtr 2)) (sprintf "A row dropped on another did not join its group: %A" editor.Draft)
+            let l = editor.Layout
+            editor.MouseDown(room l.rows.[0].band)
+            editor.MouseMove(Point((room l.rows.[0].band).X,(room l.rows.[0].band).Y+Dpi.scale 12))
+            editor.MouseMove(centre l.loose)
+            editor.MouseUp(centre l.loose)
+            check (editor.Draft.groups.IsEmpty && editor.Draft.loose=[c;a;b]) (sprintf "A row dropped on the loose row did not dissolve: %A" editor.Draft)
+            // A click on the empty room alone changes nothing.
+            let l = editor.Layout
+            editor.MouseDown(centre l.loose)
+            editor.MouseUp(centre l.loose)
+            check (editor.Draft.loose=[c;a;b] && editor.Expanded=None) "A click on empty room changed something"
             editor.Close()
         // A row whose tabs wrap: a tab carried into the gap between the lines keeps its line, rather
         // than flipping between two layouts as the nearer line changes; on the other line, it moves.

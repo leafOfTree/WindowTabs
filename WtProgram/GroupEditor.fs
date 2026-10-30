@@ -68,6 +68,16 @@ type DragAim =
 
 /// A tab or a pane chip in hand: which window, from a cell or a strip, where the press was and
 /// the pointer is, and what it is aimed at, with whether that drop would fit.
+/// Where a whole row in hand is aimed: another row, whose group takes every window of it,
+/// or the loose row, which dissolves it.
+type RowAim =
+    | IntoRow of int
+    | Dissolve
+
+/// A whole row in hand, taken by its band's empty room: which row, where the press was in
+/// its band, where the pointer is, and what it is aimed at.
+type GroupEditorRowDrag = { index:int; start:Point; at:Point; offset:Point; aim:RowAim option; begun:bool }
+
 type GroupEditorDrag = { hwnd:IntPtr; fromPane:bool; start:Point; at:Point; aim:DragAim option; fits:bool; begun:bool
                          /// Where in the tab the press was, so the tab in hand stays under the pointer as it was.
                          offset:Point
@@ -142,6 +152,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let mutable hovered : IntPtr option = None
     let mutable hoveredCell : PanePath option = None
     let mutable drag : GroupEditorDrag option = None
+    let mutable rowDrag : GroupEditorRowDrag option = None
     let mutable flyout = false
     let mutable scroll = 0
     let mutable closed = false
@@ -759,6 +770,24 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             use shape = rounded (Rectangle(thumb.X,thumb.Y+scale 2,thumb.Width,max 1 (thumb.Height-scale 4))) (thumb.Width/2)
             g.FillPath(fill,shape))
 
+    /// A whole row in hand: the row it is aimed at lit, and a faded copy of its band under the
+    /// pointer, where it was taken.
+    let rowOverlay (g:Graphics) (l:GroupEditorLayout) (d:GroupEditorRowDrag) =
+        g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        let target = match d.aim with Some(IntoRow i) -> l.rows |> List.tryItem i |> Option.map(fun row -> row.band) | Some Dissolve -> Some l.loose | None -> None
+        target |> Option.iter(fun r ->
+            use band = rounded r (scale 8)
+            use fill = new SolidBrush(Color.FromArgb(50,accent))
+            g.FillPath(fill,band)
+            use pen = new Pen(accent,float32(scale 2))
+            g.DrawPath(pen,band))
+        l.rows |> List.tryItem d.index |> Option.iter(fun row ->
+            if not (isNull bitmap) then
+                let r = row.band
+                use faded = new Imaging.ImageAttributes()
+                faded.SetColorMatrix(Imaging.ColorMatrix(Matrix33=0.75f))
+                g.DrawImage(bitmap,Rectangle(d.at.X-d.offset.X,d.at.Y-d.offset.Y,r.Width,r.Height),r.X,r.Y,r.Width,r.Height,GraphicsUnit.Pixel,faded))
+
     let form =
         let f =
             // An ordinary window with the system's title bar, not on top of everything: a tool to
@@ -813,8 +842,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                                 let now = tabLooks l |> Map.ofList
                                 for KeyValue(hwnd,from) in sliding do
                                     now.TryFind hwnd |> Option.iter(fun look -> drawTabOn e.Graphics hwnd {look with rect=slideRect from look.rect})
-                            (match drag with
-                             | Some d when d.begun -> overlay e.Graphics l d
+                            (match drag,rowDrag with
+                             | Some d,_ when d.begun -> overlay e.Graphics l d
+                             | _,Some d when d.begun -> rowOverlay e.Graphics l d
                              | _ -> hoverOverlay e.Graphics l)
                             e.Graphics.ResetTransform() }
         f.FormBorderStyle <- FormBorderStyle.FixedSingle
@@ -1141,9 +1171,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         // place of the panes it is about to be dropped on.
                         take hwnd false r
                     | None ->
-                        // The band's empty room expands a folded row; the strip's folds the expanded one.
-                        if not row.expanded then expand (Some row.index)
-                        elif not(row.picture.Contains pt) then expand None
+                        // The band's empty room takes the whole row in hand.
+                        if not(row.expanded && row.picture.Contains pt) then
+                            rowDrag <- Some {index=row.index; start=pt; at=pt; offset=Point(pt.X-row.band.X,pt.Y-row.band.Y); aim=None; begun=false}
                         else
                             row.cells |> List.tryFind(fun (_,_,r) -> r.Contains pt) |> Option.iter(fun (path,pane,r) ->
                                 match pane with
@@ -1177,7 +1207,33 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             updateThumbnails l
             if form.IsHandleCreated then form.Invalidate()
 
-    let dragMove (view:Point) (pt:Point) =
+    /// Every window of the row into another row's group, or loose: the row goes with its last one.
+    let mergeRow (index:int) (into:RowAim) =
+        let tabs = (groups()).[index].tabs
+        let target = match into with IntoRow t -> Some((groups()).[t].group,List.head (groups()).[t].tabs) | Dissolve -> None
+        let next =
+            tabs |> List.fold (fun (draft:DesktopDraft) hwnd ->
+                match target with
+                | Some(strip,head) ->
+                    let at = draft.groups |> List.findIndex(fun g -> (strip.IsSome && g.group=strip) || (strip.IsNone && List.contains head g.tabs))
+                    DesktopDraft.moveToGroup hwnd at None draft
+                | None -> DesktopDraft.moveToLoose hwnd draft) current
+        slid (fun () -> current <- next; reselect())
+
+    let rowMove (pt:Point) (d:GroupEditorRowDrag) =
+        let threshold = SystemInformation.DragSize
+        let begun = d.begun || abs(pt.X-d.start.X)>threshold.Width/2 || abs(pt.Y-d.start.Y)>threshold.Height/2
+        if begun then
+            let l = layout()
+            let aim =
+                match l.rows |> List.tryFind(fun row -> row.band.Contains pt) with
+                | Some row when row.index<>d.index -> Some(IntoRow row.index)
+                | Some _ -> None
+                | None -> if l.loose.Contains pt then Some Dissolve else None
+            rowDrag <- Some {d with at=pt; aim=aim; begun=true}
+            if form.IsHandleCreated then form.Invalidate()
+
+    let tabMove (view:Point) (pt:Point) =
         match drag with
         | Some d ->
             let threshold = SystemInformation.DragSize
@@ -1247,17 +1303,18 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 hoveredCell <- overEmpty
                 if form.IsHandleCreated then form.Invalidate()
 
+    let dragMove (view:Point) (pt:Point) =
+        match rowDrag with
+        | Some d -> rowMove pt d
+        | None -> tabMove view pt
+
     let mouseMove (pt:Point) =
       if not closed then
         match scrollDrag with
         | Some(fromY,fromScroll) -> thumbMove pt fromY fromScroll
         | None -> dragMove pt (unscroll pt)
 
-    let mouseUp (pt:Point) =
-      if not closed then
-        scrollDrag <- None
-        let view = pt
-        let pt = unscroll pt
+    let tabUp (view:Point) (pt:Point) =
         match drag with
         | Some d ->
             let before = tabsNow()
@@ -1277,16 +1334,36 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     | _ -> ()
                 | None -> ()
             else
-                // A click on a tab of the expanded row selects it.
+                // A click on a tab: in a folded row, the row expands on it; in the expanded row it
+                // is selected, or, selected already, folds the row.
                 match DesktopDraft.find d.hwnd current,expandedRow() with
                 | InGroup index,Some row when index=row && not d.fromPane ->
+                    if selected=d.hwnd then expand None
+                    else
+                        selected <- d.hwnd
+                        cellFocus <- None
+                | InGroup index,_ when not d.fromPane ->
+                    expand (Some index)
                     selected <- d.hwnd
-                    cellFocus <- None
+                    refresh()
                 | _ -> ()
             vacated <- []
             slide before
             refresh()
         | None -> ()
+
+    let mouseUp (pt:Point) =
+      if not closed then
+        scrollDrag <- None
+        let view = pt
+        let pt = unscroll pt
+        match rowDrag with
+        | Some d ->
+            rowDrag <- None
+            (match d.aim with
+             | Some aim when d.begun -> mergeRow d.index aim
+             | _ -> if form.IsHandleCreated then form.Invalidate())
+        | None -> tabUp view pt
 
     /// A right click on a tab or a pane chip of a group: a menu to take the window out of it.
     let menuAt (view:Point) =
