@@ -17,7 +17,7 @@ module GroupEditorMetrics =
     let width = 1000
     let padding = 16
     /// The scroll thumb over the right margin, and the fade of a row cut at the rows' edge.
-    let scrollbar = 6
+    let scrollbar = 4
     let fade = 24
     let rowPadding = 10
     let rowGap = 6
@@ -149,6 +149,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let mutable frameHeight = 0
     /// The scroll thumb in hand: where the pointer took it and the scroll then.
     let mutable scrollDrag : (int * int) option = None
+    /// Where the wheel is taking the rows: the scroll eases there over a few frames.
+    let mutable scrollTarget : int option = None
+    let scrollTimer = new Timer(Interval=15)
     let thumbs = Dictionary<IntPtr,IntPtr>()
     let mutable bitmap : Bitmap = null
     /// Tabs on their way to where the last change put them, by where each was: slid into place
@@ -736,7 +739,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             let bar = scale GroupEditorMetrics.scrollbar
             let h = max (scale 24) (int(int64 track*int64 track/int64 l.body))
             let y = int(int64 (track-h)*int64 scroll/int64 (l.body-track))
-            Some(Rectangle(width-pad+(pad-bar)/2,y,bar,h))
+            Some(Rectangle(width-bar-scale 2,y,bar,h))
     /// Where the rows scroll: a row cut at the top or the bottom fades into the surface rather
     /// than ending at a hard edge, and the thumb shows how far down the rows are.
     let scrollDecor (g:Graphics) (l:GroupEditorLayout) (track:int) =
@@ -951,6 +954,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         if not closed then
             closed <- true
             slideTimer.Stop()
+            scrollTimer.Stop()
             endMorph()
             menu |> Option.iter(fun each -> each.Dispose())
             menu <- None
@@ -962,6 +966,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             let dispose() =
                 form.Dispose()
                 slideTimer.Dispose()
+                scrollTimer.Dispose()
                 morphTimer.Dispose()
                 if not (isNull bitmap) then bitmap.Dispose()
             if form.IsHandleCreated then form.BeginInvoke(Action dispose) |> ignore else dispose()
@@ -1026,6 +1031,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         l.rows |> List.tryItem i |> Option.iter(fun row ->
             let top = pad
             if row.band.Y-scroll<top || row.band.Bottom-scroll>viewBody l then
+                scrollTarget <- None
                 scroll <- row.band.Y-top
                 clampScroll l
                 updateThumbnails l
@@ -1108,6 +1114,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let thumb = match scrollThumb l track with Some thumb when view.Y<track && view.X>=width-pad -> Some thumb | _ -> None
         if thumb.IsSome then
             // On the thumb, the rows follow the pointer; on the track beside it, a page up or down.
+            scrollTarget <- None
             if thumb.Value.Contains view then scrollDrag <- Some(view.Y,scroll)
             else
                 scroll <- scroll+(if view.Y<thumb.Value.Y then -track else track)
@@ -1164,6 +1171,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let track = viewBody l
         let thumbHeight = scrollThumb l track |> Option.map(fun r -> r.Height) |> Option.defaultValue track
         if track>thumbHeight then
+            scrollTarget <- None
             scroll <- fromScroll+int(int64 (view.Y-fromY)*int64 (l.body-track)/int64 (track-thumbHeight))
             clampScroll l
             updateThumbnails l
@@ -1299,14 +1307,27 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             next.Show(form.Handle,at.X,at.Y)
         | _ -> ()
 
-    /// Scrolling moves the picture and the thumbnails together, without drawing the picture again.
+    /// Scrolling moves the picture and the thumbnails together, without drawing the picture again;
+    /// the wheel eases the rows to where it sends them rather than jumping them there.
+    let scrollFrame() =
+        match scrollTarget with
+        | Some target ->
+            let l = layout()
+            let step = target-scroll
+            scroll <- if abs step<=1 then target else scroll+(if step>0 then (step*2+5)/6 else -((-step)*2+5)/6)
+            if scroll=target then
+                scrollTarget <- None
+                scrollTimer.Stop()
+            updateThumbnails l
+            if form.IsHandleCreated then form.Invalidate()
+        | None -> scrollTimer.Stop()
     let wheel (delta:int) =
         let l = layout()
         if l.body>viewBody l then
-            scroll <- scroll-int(float delta/120.0*float(scale 48))
-            clampScroll l
-            updateThumbnails l
-            if form.IsHandleCreated then form.Invalidate()
+            let from = defaultArg scrollTarget scroll
+            scrollTarget <- Some(max 0 (min (l.body-viewBody l) (from-int(float delta/120.0*float(scale 48)))))
+            scrollTimer.Start()
+            scrollFrame()
 
     do
         form.KeyDown.Add(fun e ->
@@ -1320,6 +1341,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         form.MouseWheel.Add(fun e -> wheel e.Delta)
         form.MouseLeave.Add(fun _ -> if hovered.IsSome || hoveredCell.IsSome then (hovered <- None; hoveredCell <- None; form.Invalidate()))
         // The frames of a slide; the last one leaves the tabs in place until the next picture.
+        scrollTimer.Tick.Add(fun _ -> if closed then scrollTimer.Stop() else scrollFrame())
         slideTimer.Tick.Add(fun _ ->
             if closed || slideDone() then slideTimer.Stop()
             if not closed && form.IsHandleCreated then form.Invalidate())

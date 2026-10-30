@@ -42,7 +42,8 @@ picture, and moves the windows once, when the user is done.
   front, since it stays up while the user works; its close button leaves everything as it
   was, as Esc does. Centred on the screen in view, about 1000 logical pixels wide, and as
   tall as the overview or the row it opens on needs, up to nine tenths of the work area;
-  that height holds while it is up, the rows scrolling inside it past it: a thumb
+  that height holds while it is up, the rows scrolling inside it past it, the wheel easing
+  them rather than jumping them: a thin thumb
   over the right margin, taking no room from the rows, shows how far down they are and
   drags, and a row cut at the top or the bottom fades into the surface rather than ending
   at a hard edge. It draws no 1px borders inside: the popup's surface, the rows'
