@@ -208,8 +208,9 @@ content when expanded):
 | a tab | the middle of a cell of a split | the window takes that pane; the pane's old window goes back to being a tab. The whole content, unsplit, takes nothing at its middle: the strip is the way into the group |
 | a tab | a cell's edge (left/right/top/bottom) | that pane splits on that side for the window, as a tab dropped on a pane's edge does; with no split, the single cell splits, so the selected window and the dropped one become the first pair. While aimed, the cell's picture keeps to the half it would keep, the zone lit beside it, and the open slot in the strip is covered, so one place alone says where the drop lands |
 | a tab | the content's outer edge | the whole group splits: a new column or row |
-| a pane's tab | another cell's middle or edge | as any tab: the window takes that cell or splits it, and its old pane closes, its neighbour taking the room |
-| a pane's tab | its own strip | the tab moves, its pane staying; past another pane's tab, the cells change places |
+| a pane's tab | another pane's middle | the two panes swap, their tabs changing places with them: a window in a pane takes no second place |
+| a pane's tab | an empty cell, or a cell's edge | as any tab: the window fills the cell or splits at the edge, and its old pane closes, its neighbour taking the room |
+| a pane's tab | its own strip | the tab moves, its pane staying; past another pane's tab, the cells change places. The other way round too: once a pane is placed, the panes' tabs take the cells' order along the strip, so the strip and the content always read the same way |
 
 Between rows:
 

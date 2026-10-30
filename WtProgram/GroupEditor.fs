@@ -578,6 +578,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             into row (fun _ g ->
                 match g.panes |> Option.bind(SplitTree.node path),GroupDraft.pathOf hwnd g with
                 | Some(Leaf(Occupied other)),_ when other=hwnd -> g
+                // A window in a pane already takes no second place: the two panes change places.
+                | Some(Leaf(Occupied _)),Some own -> GroupDraft.swapPanes own path g
                 | Some(Leaf _),_ -> GroupDraft.putInPane hwnd path g
                 | _ -> g)
         | CellEdge(row,path,axis,side) ->

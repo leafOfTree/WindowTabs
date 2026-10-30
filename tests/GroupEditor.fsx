@@ -67,6 +67,8 @@ let main() =
     check (GroupDraft.paneWindows t=[a;b;c] && t.focused=[Second;Second] && GroupDraft.pathOf c t=Some [Second;Second]) "A tab dropped on a pane's edge did not split that pane"
     let t2 = GroupDraft.splitAt c [] Stacked First g
     check (GroupDraft.paneWindows t2=[c;a;b] && t2.focused=[First]) "A tab dropped on the outer edge did not split the whole group"
+    // The panes' tabs take the cells' order, the pinned one staying first.
+    check (t2.tabs=[a;c;b;d]) (sprintf "The tabs did not take the panes' order once a pane was placed: %A" t2.tabs)
     let t3 = GroupDraft.splitAt a [Second] Stacked Second g
     check (GroupDraft.paneWindows t3=[b;a] && GroupDraft.pathOf a t3=Some [Second] && t3.focused=[Second]) "A pane moved to another edge kept its old place"
     check (GroupDraft.splitAt c [Second;First] SideBySide First g=g) "A split at a path that is not there changed something"
@@ -243,13 +245,11 @@ let main() =
             editor.MouseMove(edgePt)
             editor.MouseUp(edgePt)
             check (editor.Drag.IsNone && panes()=[a;c;b] && editor.Selected=c) (sprintf "Dropping a tab on a cell's edge did not split that cell: %A" (panes()))
-            // A pane's tab dragged onto another cell's middle takes that cell: the window there goes
-            // back to being a tab, and the dragged one's old pane closes.
-            editor.MouseDown(centre (tabRect a))
-            editor.MouseMove(centre (cellRect [Second]))
-            check (editor.Drag |> Option.exists(fun d -> d.begun && d.aim=Some(CellMiddle(0,[Second])))) (sprintf "A pane's tab over another cell's middle was not aimed at it: %A" editor.Drag)
-            editor.MouseUp(centre (cellRect [Second]))
-            check (panes()=[c;a] && tabsNow()=[a;b;c;d]) (sprintf "Dropping a pane's tab on another cell did not move it there: %A %A" (panes()) (tabsNow()))
+            // The pane tabs stand in the order of their cells: the one just split in stands with them.
+            check (tabsNow()=[a;c;b;d]) (sprintf "The tabs did not take the panes' order: %A" (tabsNow()))
+            // A pane's window leaves its pane by its tab's menu, staying a tab.
+            (match List.last (editor.TabMenu b) with CmiRegular r -> r.click() | _ -> failwith "The pane tab's menu did not end with a regular item")
+            check (panes()=[a;c] && tabsNow()=[a;c;b;d]) (sprintf "Taking a pane's window out by its tab's menu went wrong: %A %A" (panes()) (tabsNow()))
             // A pane's tab dragged to the strip's start goes first, its pane staying.
             editor.MouseDown(centre (tabRect c))
             let first = tabRect a
@@ -294,6 +294,13 @@ let main() =
             check (editor.Drag |> Option.exists(fun d -> d.aim=Some(CellMiddle(0,[Second;Second])) && d.fits)) (sprintf "A tab over the empty cell was not aimed at it: %A" editor.Drag)
             editor.MouseUp(centre empty)
             check (panes()=[c;a;b] && GroupDraft.emptyCells editor.Draft.groups.[0]=[]) (sprintf "A tab dropped on the empty cell did not fill it: %A" (panes()))
+            // A pane's tab dropped on another pane's middle swaps the two, their tabs with them:
+            // already in a pane, the window takes no second place, and the split keeps its cells.
+            editor.MouseDown(centre (tabRect b))
+            editor.MouseMove(centre (cellRect [First]))
+            check (editor.Drag |> Option.exists(fun d -> d.begun && d.aim=Some(CellMiddle(0,[First])))) (sprintf "A pane's tab over another pane's middle was not aimed at it: %A" editor.Drag)
+            editor.MouseUp(centre (cellRect [First]))
+            check (panes()=[b;a;c] && tabsNow()=[b;a;c] && editor.Layout.rows.[0].cells.Length=3) (sprintf "Dropping a pane's tab on another pane did not swap the two: %A %A" (panes()) (tabsNow()))
             // Esc closes the shapes, not the editor.
             editor.MouseDown(centre editor.Layout.rows.[0].splitButton.Value)
             editor.Press Keys.Escape

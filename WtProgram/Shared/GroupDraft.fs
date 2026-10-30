@@ -96,6 +96,15 @@ module GroupDraft =
                 normalize {draft with panes=Some node; focused=focused}
         | None -> draft
 
+    /// The pane tabs stand in the order of their cells: the places the pane tabs hold along the
+    /// strip take the pane windows, first cell to last, once a pane is placed.
+    let private tabsInPaneOrder draft =
+        let panes = paneWindows draft
+        if draft.tabs |> List.filter(fun hwnd -> List.contains hwnd panes)=panes then draft
+        else
+            let tabs,_ = draft.tabs |> List.mapFold (fun (remaining:IntPtr list) hwnd -> if List.contains hwnd panes then List.head remaining,List.tail remaining else hwnd,remaining) panes
+            normalize {draft with tabs=tabs}
+
     /// The tab moved to the index along the strip; a pinned tab stays among the pinned ones. A
     /// pane's tab moved past another pane's carries its pane along: the panes stand in the
     /// order of their tabs, so the strip and the content read the same way.
@@ -141,11 +150,11 @@ module GroupDraft =
                 // The target is a leaf replaced in place, so the old pane's path still holds.
                 let placed = SplitTree.update path (fun _ -> Leaf(Occupied hwnd)) node
                 let node = match SplitTree.pathOf hwnd node with Some old -> SplitTree.remove old placed | None -> placed
-                normalize {draft with panes=Some node; focused=defaultArg (SplitTree.pathOf hwnd node) draft.focused}
+                tabsInPaneOrder (normalize {draft with panes=Some node; focused=defaultArg (SplitTree.pathOf hwnd node) draft.focused})
             | _ -> draft
         | None -> draft
 
-    /// The two cells change what they hold.
+    /// The two cells change what they hold; their tabs change places along the strip with them.
     let swapPanes a b draft =
         match draft.panes with
         | Some node when a<>b ->
@@ -153,7 +162,7 @@ module GroupDraft =
             | Some(Leaf x),Some(Leaf y) ->
                 let node = node |> SplitTree.update a (fun _ -> Leaf y) |> SplitTree.update b (fun _ -> Leaf x)
                 let focused = if draft.focused=a then b elif draft.focused=b then a else draft.focused
-                normalize {draft with panes=Some node; focused=focused}
+                tabsInPaneOrder (normalize {draft with panes=Some node; focused=focused})
             | _ -> draft
         | _ -> draft
 
@@ -172,7 +181,7 @@ module GroupDraft =
                         path@[Side.other side]@List.skip (List.length path) old
                     else old)
             let node = match old with Some old -> SplitTree.remove old inserted | None -> inserted
-            normalize {draft with panes=Some node; focused=defaultArg (SplitTree.pathOf hwnd node) draft.focused}
+            tabsInPaneOrder (normalize {draft with panes=Some node; focused=defaultArg (SplitTree.pathOf hwnd node) draft.focused})
         | _ -> draft
 
     /// The window goes beside the anchor, the window shown: with no split yet the two make the
@@ -188,7 +197,7 @@ module GroupDraft =
                     {axis=axis;ratio=0.5;first=Leaf Empty;second=Leaf Empty}
                     |> SplitTree.withChild side (Leaf(Occupied hwnd))
                     |> SplitTree.withChild (Side.other side) (Leaf(Occupied anchor))
-                normalize {draft with panes=Some(Branch tree); focused=[side]}
+                tabsInPaneOrder (normalize {draft with panes=Some(Branch tree); focused=[side]})
 
     let shapes = [SideBySidePair;StackedPair;ThreeColumns;OneBesideTwo;TwoByTwo]
     /// The shape's tree with the pane in its first slot and the other slots empty.
