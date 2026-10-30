@@ -179,8 +179,10 @@ tab, so the strip starts at the row's top edge, as a real group's does.
 ### 2.4 Dragging
 
 One drag model for the overview and the expanded row alike: the tab itself comes along under
-the pointer, held where it was pressed, and the place it stands in is an open slot dashed
-in the accent, so where it will land stands out from the tabs around it. Once it stands in
+the pointer, held where it was pressed, as a see-through window of its own, so it rides over
+the cells' pictures, which DWM draws over the popup; and the place it stands in is an open
+slot dashed in the accent, so where it will land stands out from the tabs around it. Over the
+expanded row's content that slot is covered: the content alone answers the drag there. Once it stands in
 another row, or loose, the place it came from keeps a faded copy of it, veiled in its
 band's colour as a row in hand leaves one, so the row it left does not close up under the
 pointer and where it was stays in view; back in its own row the copy goes, and the tab

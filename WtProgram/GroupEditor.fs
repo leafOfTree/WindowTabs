@@ -2,6 +2,7 @@ namespace Bemo
 open System
 open System.Collections.Generic
 open System.Drawing
+open System.Runtime.InteropServices
 open System.Windows.Forms
 
 /// A window as the group editor shows it: its tab's name, its icon, and whether it has a
@@ -147,6 +148,22 @@ type GroupEditorLayout = {
 /// button cuts the focused cell into a shape with empty slots to fill. Edits change a draft;
 /// Save turns the draft into a plan for `GroupEditorApply`, Esc or clicking elsewhere leaves
 /// everything as it was. Used once.
+/// The tab in hand, shown in a see-through window of its own over the popup: drawn in the
+/// popup itself it went under the pictures DWM draws over the cells.
+type GroupEditorDragImage(owner:Form) =
+    let os = OS()
+    let helper =
+        os.createWindow (fun message -> message.def()) WindowsStyles.WS_POPUP
+            (WindowsExtendedStyles.WS_EX_LAYERED ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW |||
+             WindowsExtendedStyles.WS_EX_NOACTIVATE ||| WindowsExtendedStyles.WS_EX_TRANSPARENT)
+    let window = os.windowFromHwnd(helper.hwnd)
+    do window.setParent(os.windowFromHwnd(owner.Handle))
+    member _.Show(image:Bitmap,at:Point) =
+        Win32Helper.UpdateLayeredWindow(helper.hwnd,at,image,255uy)
+        window.showNoActivate()
+    interface IDisposable with
+        member _.Dispose() = (helper :?> IDisposable).Dispose()
+
 /// `front` is the frame of the window in front as it opens: the popup opens centred on that
 /// window's screen.
 type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:GroupEditorWindow list, expanded:int option, ?front:Rect) =
@@ -816,6 +833,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             tabLooks l |> List.tryFind(fun (hwnd,look) -> hwnd=d.hwnd && look.blank) |> Option.iter(fun (_,look) ->
                 use cover = new SolidBrush(look.band)
                 g.FillRectangle(cover,Rectangle.Inflate(look.rect,scale 1,scale 1)))
+        // Over the expanded row's content, the strip above says nothing: the content alone answers.
+        if l.rows |> List.exists(fun row -> row.expanded && row.picture.Contains d.at) then coverSlot()
         match d.aim with
         | Some(StripSlot(index,slot)) ->
             l.rows |> List.tryItem index |> Option.iter(fun row ->
@@ -858,23 +877,34 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             TextRenderer.DrawText(g,"+ "+tr Strings.GroupEditor.newGroup,bodyFont,r,textOn,selectedFill,
                                   TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.PreserveGraphicsTranslateTransform)
         | None -> ()
-        let w = tabWidth d.hwnd
-        let r = Rectangle(d.at.X-d.offset.X,d.at.Y-d.offset.Y,w,scale GroupEditorMetrics.tabHeight)
-        use shape = rounded r (scale 6)
+        // The tab itself, under the pointer, is a window of its own (the drag image), not drawn here.
+
+    /// The tab in hand as a picture of its own, its corners see-through, for the drag image.
+    let dragImageFor (hwnd:IntPtr) =
+        let w,h = tabWidth hwnd,scale GroupEditorMetrics.tabHeight
+        let image = new Bitmap(w,h,Imaging.PixelFormat.Format32bppArgb)
+        use g = Graphics.FromImage(image)
+        g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        g.Clear(Color.Transparent)
+        use shape = rounded (Rectangle(0,0,w-1,h-1)) (scale 6)
         use fill = new SolidBrush(selectedFill)
         g.FillPath(fill,shape)
         use pen = new Pen(accent,float32(scale 1))
         g.DrawPath(pen,shape)
         let iconSize = scale GroupEditorMetrics.iconSize
-        let iconBounds = Rectangle(r.X+scale 8,r.Y+(r.Height-iconSize)/2,iconSize,iconSize)
-        match iconOf d.hwnd with
-        | Some image -> g.DrawImage(image,iconBounds)
-        | None ->
-            use outline = new Pen(palette.muted,float32(scale 1))
-            g.DrawRectangle(outline,Rectangle.Inflate(iconBounds,-scale 3,-scale 3))
-        // Drawn scrolled with the rest: text keeps the Graphics' translation only when told to.
-        TextRenderer.DrawText(g,nameOf d.hwnd,bodyFont,Rectangle(iconBounds.Right+scale 6,r.Y,max 0 (r.Right-scale 8-iconBounds.Right-scale 6),r.Height),textOn,selectedFill,
-                              textFlags ||| TextFormatFlags.PreserveGraphicsTranslateTransform)
+        let iconBounds = Rectangle(scale 8,(h-iconSize)/2,iconSize,iconSize)
+        drawIconOn g (iconOf hwnd) iconBounds
+        TextRenderer.DrawText(g,nameOf hwnd,bodyFont,Rectangle(iconBounds.Right+scale 6,0,max 0 (w-scale 5-iconBounds.Right-scale 6),h),textOn,selectedFill,textFlags)
+        // GDI text leaves no alpha behind it: every pixel of the block it blanked is made opaque again.
+        use region = new Region(shape)
+        let data = image.LockBits(Rectangle(0,0,w,h),Imaging.ImageLockMode.ReadWrite,Imaging.PixelFormat.Format32bppArgb)
+        try
+            for y in 0..h-1 do
+                for x in 0..w-1 do
+                    let alpha = IntPtr.Add(data.Scan0,y*data.Stride+x*4+3)
+                    if Marshal.ReadByte(alpha)=0uy && region.IsVisible(Point(x,y)) then Marshal.WriteByte(alpha,255uy)
+        finally image.UnlockBits(data)
+        image
 
     /// The thumb at the right edge, over the margin, where the rows scroll: how far down they
     /// are. It takes no room from the rows, so nothing moves when they come to need scrolling.
@@ -1027,6 +1057,26 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             placed <- true
             form.Location <- Point(area.Left+max 0 ((area.Width-size.Width)/2),area.Top+max 0 ((area.Height-size.Height)/2))
 
+    /// The drag image up while a tab is in hand: made as the drag begins, moved with the pointer.
+    let mutable dragImage : (GroupEditorDragImage * Bitmap * IntPtr) option = None
+    let hideDragImage() =
+        dragImage |> Option.iter(fun (window,image,_) ->
+            (window :> IDisposable).Dispose()
+            image.Dispose())
+        dragImage <- None
+    let showDragImage (view:Point) (d:GroupEditorDrag) =
+        if form.IsHandleCreated && form.Visible then
+            let window,image =
+                match dragImage with
+                | Some(window,image,hwnd) when hwnd=d.hwnd -> window,image
+                | _ ->
+                    hideDragImage()
+                    let window = new GroupEditorDragImage(form)
+                    let image = dragImageFor d.hwnd
+                    dragImage <- Some(window,image,d.hwnd)
+                    window,image
+            window.Show(image,form.PointToScreen(Point(view.X-d.offset.X,view.Y-d.offset.Y)))
+
     let releaseThumbnails() =
         for KeyValue(_,thumb) in thumbs do DwmApi.DwmUnregisterThumbnail(thumb) |> ignore
         thumbs.Clear()
@@ -1139,6 +1189,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             slideTimer.Stop()
             scrollTimer.Stop()
             endMorph()
+            hideDragImage()
             menu |> Option.iter(fun each -> each.Dispose())
             menu <- None
             releaseThumbnails()
@@ -1513,7 +1564,11 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let dragMove (view:Point) (pt:Point) =
         match rowDrag with
         | Some d -> rowMove pt d
-        | None -> tabMove view pt
+        | None ->
+            tabMove view pt
+            match drag with
+            | Some d when d.begun -> showDragImage view d
+            | _ -> ()
 
     let mouseMove (pt:Point) =
       if not closed then
@@ -1562,6 +1617,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let mouseUp (pt:Point) =
       if not closed then
         scrollDrag <- None
+        hideDragImage()
         let view = pt
         let pt = unscroll pt
         match rowDrag with
