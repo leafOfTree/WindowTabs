@@ -39,6 +39,7 @@ module SettingsCatalog =
         { id="dim-inactive-groups"; page=GeneralSettings; text=Strings.Settings.dimInactiveGroups; binding=Toggle("hideInactiveTabs",true,false) }
         { id="tab-alignment"; page=GeneralSettings; text=Strings.Settings.tabAlignment; binding=Choice("alignment",["Left";"Center";"Right"],"Center") }
         { id="tab-position"; page=GeneralSettings; text=Strings.Settings.tabPosition; binding=Choice("tabPosition",["Horizontal";"Left";"Right"],"Horizontal") }
+        { id="icons-only-by-default"; page=GeneralSettings; text=Strings.Settings.iconsOnlyByDefault; binding=Toggle("showIconsOnlyByDefault",false,false) }
         { id="tabColumnWidth"; page=AppearanceSettings; text=Strings.Settings.tabColumnWidth; binding=Number(columnWidthRange) }
         // "Maximized" also covers windows whose tabs sit inside them (top snaps); the stored value keeps its original name.
         { id="auto-hide-tabs"; page=GeneralSettings; text=Strings.Settings.autoHide; binding=Choice("autoHideMode",["Never";"Maximized";"Always"],"Maximized") }
@@ -150,7 +151,7 @@ module SettingsCatalog =
     let help id =
         if id="tabHeight" then Some Strings.Settings.tabHeightHint
         elif id="tabColumnWidth" then Some Strings.Settings.tabColumnWidthHint
-        elif List.contains id ["tab-position";"auto-hide-tabs";"tab-alignment";"combine-taskbar-icons"] then Some Strings.General.tabMenuHint
+        elif List.contains id ["tab-position";"icons-only-by-default";"auto-hide-tabs";"tab-alignment";"combine-taskbar-icons"] then Some Strings.General.tabMenuHint
         // A tab's own color, picked from its menu, comes before the automatic one.
         elif id="tab-color-mode" then Some Strings.Settings.tabColorMenuHint
         elif id="switch-tabs-by-number" then Some Strings.Settings.numberShortcutMenuHint
