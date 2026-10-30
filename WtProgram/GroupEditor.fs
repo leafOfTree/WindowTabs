@@ -63,7 +63,7 @@ type DragAim =
     | CellEdge of row:int * PanePath * SplitAxis * Side
     | LooseRow
     | NewGroupRow
-    /// The band a row left empty while the drag lasts; a drop there makes a group as New group does.
+    /// The band a row left empty while the drag lasts: the tab carried back onto it puts the group back.
     | VacatedRow of int
 
 /// A tab or a pane chip in hand: which window, from a cell or a strip, where the press was and
@@ -172,10 +172,11 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let slideTimer = new Timer(Interval=15)
     let slideDone() = (DateTime.UtcNow-slideStart).TotalMilliseconds>=GroupEditorMetrics.slideMs
     let mutable menu : ThemedContextMenu option = None
-    /// Rows the drag in hand emptied, each as where its band stays (before which group, by index)
-    /// and how tall: the rows below would otherwise move up under the pointer, and the next
-    /// move or the drop would land the tab where it was not aimed. Gone with the drag.
-    let mutable vacated : (int * int) list = []
+    /// Rows the drag in hand emptied, each as where its band stays (before which group, by index),
+    /// how tall, and the group it was: the rows below would otherwise move up under the pointer,
+    /// and the next move or the drop would land the tab where it was not aimed; carried back onto
+    /// the band, the tab puts its group back as it was, which undoes the drag. Gone with the drag.
+    let mutable vacated : (int * int * GroupDraft) list = []
     let mutable morph : GroupEditorMorph option = None
     let morphTimer = new Timer(Interval=15)
     /// How far the rows have come from where they were, eased out.
@@ -299,7 +300,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         let mutable y = pad
         let vacatedRects = ResizeArray<Rectangle>()
         let placeholders index =
-            for _,h in vacated |> List.filter(fun (p,_) -> p=index) do
+            for _,h,_ in vacated |> List.filter(fun (p,_,_) -> p=index) do
                 vacatedRects.Add(Rectangle(pad,y,inner,h))
                 y <- y+h+scale GroupEditorMetrics.rowGap
         let rowLayouts =
@@ -362,7 +363,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
 
     /// The layout as last computed for the same state: asked for at every event and paint, it
     /// is measured again only once something it depends on has changed.
-    let mutable layoutKey : (DesktopDraft * IntPtr * (IntPtr option * IntPtr) option * PanePath option * bool * (int * int) list) option = None
+    let mutable layoutKey : (DesktopDraft * IntPtr * (IntPtr option * IntPtr) option * PanePath option * bool * (int * int * GroupDraft) list) option = None
     let mutable layoutCached : GroupEditorLayout option = None
     let layout() =
         match layoutKey,layoutCached with
@@ -639,12 +640,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             if l.looseTabs.IsEmpty then
                 TextRenderer.DrawText(g,tr Strings.GroupEditor.looseEmpty,bodyFont,l.loose,palette.muted,looseFill,
                                       TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis)
-            // The new group's band, and the band of each row the drag emptied, which takes a drop the same way.
-            for r in l.newGroup :: l.vacated do
+            // The new group's band, and the band of each row the drag emptied, which takes its tab back.
+            for r,text in (l.newGroup,"+ "+tr Strings.GroupEditor.newGroup) :: (l.vacated |> List.map(fun r -> r,tr Strings.GroupEditor.putBack)) do
                 use dashed = rounded r (scale 8)
                 use pen = new Pen(palette.muted,float32(scale 1),DashStyle=Drawing2D.DashStyle.Dash)
                 g.DrawPath(pen,dashed)
-                TextRenderer.DrawText(g,"+ "+tr Strings.GroupEditor.newGroup,bodyFont,r,palette.muted,Color.Transparent,
+                TextRenderer.DrawText(g,text,bodyFont,r,palette.muted,Color.Transparent,
                                       TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine)
         // The footer: the keys, or what the empty cells come to, and the buttons.
         let note =
@@ -1255,14 +1256,27 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     selected <- d.originSelected
                     reselect()
                 let d = if off then {d with fromPane=d.originPane} else d
-                // A row the move empties keeps its band while the drag lasts.
+                // A row the move empties keeps its band, and what group it was, while the drag lasts.
                 let leaving (source:DraftPlace) (move:unit -> unit) =
                     let rows = (groups()).Length
+                    let was = match source with InGroup at -> Some (groups()).[at] | _ -> None
                     move()
-                    match source with
-                    | InGroup at when (groups()).Length<rows ->
-                        vacated <- (vacated |> List.map(fun (p,h) -> (if p>at then p-1 else p),h))@[at,l.rows.[at].band.Height]
+                    match source,was with
+                    | InGroup at,Some g when (groups()).Length<rows ->
+                        vacated <- (vacated |> List.map(fun (p,h,g) -> (if p>at then p-1 else p),h,g))@[at,l.rows.[at].band.Height,g] |> List.sortBy(fun (p,_,_) -> p)
                     | _ -> ()
+                // The tab carried back onto the band its row left: the group is back as it was, with
+                // it, where it was, which undoes the drag.
+                let putBack (slot:int) =
+                    vacated |> List.tryItem slot |> Option.iter(fun (_,_,g) ->
+                        leaving (DesktopDraft.find d.hwnd current) (fun () -> moved (DesktopDraft.moveToLoose d.hwnd current) d.hwnd)
+                        vacated |> List.tryFindIndex(fun (_,_,each) -> each=g) |> Option.iter(fun i ->
+                            let p,_,_ = vacated.[i]
+                            vacated <- vacated |> List.indexed |> List.filter(fun (j,_) -> j<>i) |> List.map snd
+                            let back = {g with tabs=[d.hwnd]; panes=None; focused=[]}
+                            current <- {current with groups=(List.take p current.groups)@[back]@(List.skip p current.groups)
+                                                     loose=current.loose |> List.filter((<>) d.hwnd)}
+                            reselect()))
                 // Aimed only where the drop would change something: a tab over its own cell is not.
                 let aim,fits =
                     match (if off then None else aimAt l pt d.hwnd) with
@@ -1288,6 +1302,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         None,true,false
                     | Some LooseRow,source when source<>Loose ->
                         leaving source (fun () -> moved (DesktopDraft.moveToLoose d.hwnd current) d.hwnd)
+                        None,true,false
+                    | Some(VacatedRow slot),_ ->
+                        putBack slot
                         None,true,false
                     | _ -> aim,false,d.fromPane
                 let changed = not d.begun || aim<>d.aim || fits<>d.fits || reordered || restored

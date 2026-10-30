@@ -396,8 +396,9 @@ let main() =
             editor.MouseMove(slot)
             let after = editor.Layout
             check (editor.Draft.groups.Length=1 && tabsOf 0=[d;e;a] && after.vacated=[l.rows.[0].band] && after.rows.[0].band=l.rows.[1].band) (sprintf "The emptied row did not keep its band under the rows: %A %A" after.vacated (after.rows |> List.map(fun row -> row.band)))
+            // Carried back onto the band, the window puts its group back as it was: the drag undone.
             editor.MouseMove(centre after.vacated.Head)
-            check (editor.Drag |> Option.exists(fun d -> d.aim=Some(VacatedRow 0))) (sprintf "The emptied row's band was not aimed at: %A" editor.Drag)
+            check (editor.Draft.groups.Length=2 && tabsOf 0=[a] && editor.Draft.groups.[0].group=Some(IntPtr 1) && tabsOf 1=[d;e] && editor.Layout.vacated.IsEmpty) (sprintf "The window carried back onto its row's band did not put the group back: %A" editor.Draft)
             editor.MouseMove(slot)
             editor.MouseUp(slot)
             check (editor.Draft.groups.Length=1 && tabsOf 0=[d;e;a] && editor.Layout.vacated.IsEmpty) (sprintf "A lone window carried to the row below did not stay there with its own row gone: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
