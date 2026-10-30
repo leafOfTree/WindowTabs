@@ -626,7 +626,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             TextRenderer.DrawText(g,tr Strings.GroupEditor.looseWindows,hintFont,label,palette.muted,looseFill,TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine)
             // Empty, the row says what it is for, as the new group's band does.
             if l.looseTabs.IsEmpty then
-                TextRenderer.DrawText(g,tr Strings.GroupEditor.looseEmpty,bodyFont,Rectangle(l.loose.X,l.loose.Y,label.X-l.loose.X,l.loose.Height),palette.muted,looseFill,
+                TextRenderer.DrawText(g,tr Strings.GroupEditor.looseEmpty,bodyFont,l.loose,palette.muted,looseFill,
                                       TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis)
             // The new group's band, and the band of each row the drag emptied, which takes a drop the same way.
             for r in l.newGroup :: l.vacated do

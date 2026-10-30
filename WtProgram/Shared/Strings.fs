@@ -779,11 +779,8 @@ module Strings =
               ar=sprintf "%d مجموعة، %d نافذة غير مجمّعة" groups loose }
         let looseWindows = { en="Loose windows"; zh="未分组窗口"; ja="未分類のウィンドウ"; ar="نوافذ غير مجمّعة" }
         /// In the loose row while no window is on its own: what the row is for.
-        let looseEmpty = { en="Windows in no group go here: drop a tab to take its window out of its group"
-                           zh="这里放不属于任何分组的窗口：把标签拖到这里，窗口就脱离分组"
-                           ja="どのグループにも属さないウィンドウはここに：タブをドロップするとグループから外れます"
-                           ar="النوافذ التي ليست في أي مجموعة تأتي هنا: أفلت علامة تبويب لإخراج نافذتها من مجموعتها" }
-        let newGroup = { en="Drop a tab here to start a new group with its window"; zh="把标签拖到这里，用它的窗口新建一组"; ja="タブをここにドロップすると、そのウィンドウで新しいグループを作ります"; ar="أفلت علامة تبويب هنا لبدء مجموعة جديدة بنافذتها" }
+        let looseEmpty = { en="Ungroup: drop a tab here"; zh="移出分组：拖到这里"; ja="グループ解除：ここにドロップ"; ar="فك التجميع: أفلت علامة تبويب هنا" }
+        let newGroup = { en="New group: drop a tab here"; zh="新建分组：拖到这里"; ja="新しいグループ：ここにドロップ"; ar="مجموعة جديدة: أفلت علامة تبويب هنا" }
         let overviewHint = { en="Drag tabs between rows to regroup; click a row to expand it and arrange its panes; Esc closes without saving."
                              zh="在行之间拖标签即换组；点一行即展开并可编排窗格；Esc 关闭且不保存。"
                              ja="行の間でタブをドラッグしてグループを変えます。行をクリックで展開してペインを並べ、Esc で保存せずに閉じます。"
