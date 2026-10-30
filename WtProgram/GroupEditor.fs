@@ -770,8 +770,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             use shape = rounded (Rectangle(thumb.X,thumb.Y+scale 2,thumb.Width,max 1 (thumb.Height-scale 4))) (thumb.Width/2)
             g.FillPath(fill,shape))
 
-    /// A whole row in hand: the row it is aimed at lit, and a faded copy of its band under the
-    /// pointer, where it was taken.
+    /// A whole row in hand: the row it is aimed at lit, the band itself under the pointer, where
+    /// it was taken, and its old place faded behind it.
     let rowOverlay (g:Graphics) (l:GroupEditorLayout) (d:GroupEditorRowDrag) =
         g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         let target = match d.aim with Some(IntoRow i) -> l.rows |> List.tryItem i |> Option.map(fun row -> row.band) | Some Dissolve -> Some l.loose | None -> None
@@ -784,9 +784,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         l.rows |> List.tryItem d.index |> Option.iter(fun row ->
             if not (isNull bitmap) then
                 let r = row.band
-                use faded = new Imaging.ImageAttributes()
-                faded.SetColorMatrix(Imaging.ColorMatrix(Matrix33=0.75f))
-                g.DrawImage(bitmap,Rectangle(d.at.X-d.offset.X,d.at.Y-d.offset.Y,r.Width,r.Height),r.X,r.Y,r.Width,r.Height,GraphicsUnit.Pixel,faded))
+                use veil = new SolidBrush(Color.FromArgb(170,palette.surface))
+                g.FillRectangle(veil,r)
+                g.DrawImage(bitmap,Rectangle(d.at.X-d.offset.X,d.at.Y-d.offset.Y,r.Width,r.Height),Rectangle(r.X,r.Y,r.Width,r.Height),GraphicsUnit.Pixel))
 
     let form =
         let f =
@@ -1171,8 +1171,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         // place of the panes it is about to be dropped on.
                         take hwnd false r
                     | None ->
-                        // The band's empty room takes the whole row in hand.
+                        // The band's empty room takes the whole row in hand. Tabs still on their way
+                        // are out of the picture the band is cut from, so they are put back first.
                         if not(row.expanded && row.picture.Contains pt) then
+                            if not sliding.IsEmpty then
+                                sliding <- Map.empty
+                                refresh()
                             rowDrag <- Some {index=row.index; start=pt; at=pt; offset=Point(pt.X-row.band.X,pt.Y-row.band.Y); aim=None; begun=false}
                         else
                             row.cells |> List.tryFind(fun (_,_,r) -> r.Contains pt) |> Option.iter(fun (path,pane,r) ->

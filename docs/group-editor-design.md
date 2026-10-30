@@ -105,8 +105,8 @@ picture, and moves the windows once, when the user is done.
   can be dragged from the expanded group to any other and back. Esc, the chevron at the
   strip's right end, now pointing up, clicking the selected tab again, or clicking the
   chevron of another row, goes back to the overview.
-- **A whole row.** Pressed on its band's empty room, a row comes along as a faded copy
-  under the pointer. Dropped on another row, every window of it joins that group, after the
+- **A whole row.** Pressed on its band's empty room, a row comes along under the pointer
+  as it is, its old place faded behind it. Dropped on another row, every window of it joins that group, after the
   group's own; dropped on the loose row, the group dissolves and its windows stand on their
   own. The row it is over is lit. A click on the empty room alone does nothing.
 
