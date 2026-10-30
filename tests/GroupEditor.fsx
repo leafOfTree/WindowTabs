@@ -283,7 +283,7 @@ let main() =
             narrow.MouseUp(at)
             check (GroupDraft.paneWindows narrow.Draft.groups.[0]=[a;b]) "A refused drop changed the panes"
             narrow.Close()
-        // The overview: every group a row of its tabs with its menu button, the loose row, a new
+        // The overview: every group a row of its tabs, the loose row, a new
         // group's band; rows expand, and tabs drag between rows and from the keys.
         do
             let names = ["Edge – Docs";"Notepad – notes.txt";"Terminal";"Downloads";"report.pdf";"Spotify"]
@@ -293,7 +293,7 @@ let main() =
             let editor = GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=frame; active=a};{group=Some(IntPtr 2); frame=frame; active=d}],shown,None)
             let l = editor.Layout
             check (editor.Expanded=None && l.rows.Length=2 && l.rows |> List.forall(fun row -> not row.expanded) && (l.looseTabs |> List.map fst)=[e;f]) "The overview did not list the rows and the loose windows"
-            check (l.rows |> List.forall(fun row -> row.cells.IsEmpty && row.menuButton |> Option.exists(fun r -> r.Right<=row.band.Right && row.tabs |> List.forall(fun (_,t) -> t.Right<=r.X)))) "A folded row did not keep to its tabs and the menu's button"
+            check (l.rows |> List.forall(fun row -> row.cells.IsEmpty && row.tabs |> List.forall(fun (_,t) -> t.Right<=row.band.Right))) "A folded row did not keep to its tabs"
             check (l.rows.[0].band.Bottom<=l.rows.[1].band.Y && l.rows.[1].band.Bottom<=l.loose.Y && l.loose.Bottom<=l.newGroup.Y && l.newGroup.Bottom<=l.save.Y) "The rows are not stacked in order"
             use image = editor.Render()
             image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","group-editor-overview.png"))

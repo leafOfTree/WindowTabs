@@ -90,10 +90,10 @@ picture, and moves the windows once, when the user is done.
   (the active one means nothing here); tabs in a split have the pane mark. A row has no
   title: the active tab names it, as the
   strip names a group on the taskbar.
-- **The menu's button**, three dots at the row's right end, holds only what a drag does
-  less handily with many rows: merge the row into another, named by its first tab, as
+- **The row's menu**, on a right click of its band's empty room, holds only what a drag
+  does less handily with many rows: merge the row into another, named by its first tab, as
   dropping the row on it does, or ungroup it, its windows going loose, as dropping it on
-  the loose row does. Nothing a click does is in it.
+  the loose row does. Nothing a click does is in it; the row has no button.
   A folded row shows no picture of the group (a thumbnail there was tried and dropped: too
   small to read, and it cost a live DWM picture per row); the tabs say which group is
   which, and the pane mark on a tab says it is split.
@@ -379,7 +379,7 @@ the main STA with the other popups, one at a time.
 2. The popup with one row expanded: the strip, the content with its pictures, Save and
    Cancel, the entry points and strings. Rendering tests.
 3. Dragging within a row, taking a tab out, the split button and its empty cells.
-4. The overview: every group as a row with its menu, the loose row, New group,
+4. The overview: every group as a row of its tabs, the loose row, New group,
    expanding a row, dragging between rows. Rendering and drag tests for the overview.
 5. Polish: the greyed tab and row for what is gone, the notice naming what was done,
    docs (`architecture.md` popups list, this file kept current) and the README's feature
