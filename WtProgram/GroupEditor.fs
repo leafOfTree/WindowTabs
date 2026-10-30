@@ -647,9 +647,11 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 match pane with
                 | Occupied hwnd ->
                     // The one cell of a group in no split is the content itself, in its colour, which
-                    // the selected tab above shares; the cells of a split stand out on it, the
-                    // selected pane's outlined in the accent.
-                    use fill = new SolidBrush(if row.cells.Length>1 then cellFill else contentFill)
+                    // the selected tab above shares; the cells of a split stand out on it, but the
+                    // selected pane's keeps the content's colour, as its tab does, and is outlined
+                    // in the accent, so the two read as one.
+                    let back = if row.cells.Length>1 && row.focused<>Some path then cellFill else contentFill
+                    use fill = new SolidBrush(back)
                     g.FillPath(fill,shape)
                     if row.cells.Length>1 && row.focused=Some path then
                         use pen = new Pen(accent,float32(scale 1))
@@ -659,7 +661,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         let iconSize = scale GroupEditorMetrics.iconSize
                         let iconBounds = Rectangle(r.X+scale 8,r.Y+(chip-iconSize)/2,iconSize,iconSize)
                         drawIcon (iconOf hwnd) iconBounds
-                        TextRenderer.DrawText(g,nameOf hwnd,bodyFont,Rectangle(iconBounds.Right+scale 6,r.Y,max 0 (r.Right-scale 8-iconBounds.Right-scale 6),chip),textOn,cellFill,textFlags)
+                        TextRenderer.DrawText(g,nameOf hwnd,bodyFont,Rectangle(iconBounds.Right+scale 6,r.Y,max 0 (r.Right-scale 8-iconBounds.Right-scale 6),chip),textOn,back,textFlags)
                     if not(thumbs.ContainsKey hwnd) then
                         let picture = Rectangle(r.X,r.Y+chip,r.Width,r.Height-chip)
                         let side = min (scale 48) (min picture.Width picture.Height*2/3)
