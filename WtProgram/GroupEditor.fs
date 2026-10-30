@@ -231,9 +231,19 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// The screen the popup opens on: the one with the window in front, or the first row's.
     let area = Screen.FromRectangle((defaultArg front fallbackFrame).Rectangle).WorkingArea
     let pad = scale GroupEditorMetrics.padding
-    let width = min (scale GroupEditorMetrics.width) (area.Width-scale 32)
-    let inner = width-2*pad
+    /// The popup's width and height follow its window: as it opens, what the rows need within
+    /// the screen; sized by the user, maximized or not, whatever they made it.
+    let mutable width = min (scale GroupEditorMetrics.width) (area.Width-scale 32)
+    let mutable inner = width-2*pad
     let maxHeight = area.Height*3/4
+    /// What the popup may be tall, in client pixels: three quarters of the work area, and, once
+    /// placed, what is left under its top, since growing never moves it up.
+    let mutable heightLimit = maxHeight
+    /// The popup's height while it is up, set as it opens: the taller of the overview and the
+    /// row it opens on, within the limit; then whatever the user sizes the window to. Rows
+    /// growing, folding, coming or going scroll inside it.
+    let mutable fixedHeight : int option = None
+    let viewHeight (l:GroupEditorLayout) = match fixedHeight with Some h -> h | None -> min l.height heightLimit
     let rowPad = scale GroupEditorMetrics.rowPadding
     let groups() = current.groups
     let groupAt index = current.groups |> List.tryItem index
@@ -363,7 +373,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             | _ -> None
         | _ -> None
 
-    let computeLayout() : GroupEditorLayout =
+    /// The layout for the width, the expanded row's content as tall as its frame's shape asks
+    /// within its bounds, the upper one raised by the room the window leaves under the rows.
+    let computeLayout (room:int) : GroupEditorLayout =
         let expandedIndex = expandedRow()
         let mutable y = pad
         // The ghost holds the place the tab in hand came from among the tabs there.
@@ -391,7 +403,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     let contentWidth = inner-2*rowPad
                     let contentHeight =
                         let byFrame = if info.frame.width>0 then int(int64 contentWidth*int64 info.frame.height/int64 info.frame.width) else contentWidth*9/16
-                        max (scale GroupEditorMetrics.contentMin) (min (scale GroupEditorMetrics.contentMax) byFrame)
+                        max (scale GroupEditorMetrics.contentMin) (min (scale GroupEditorMetrics.contentMax+room) byFrame)
                     let content = Rectangle(pad+rowPad,stripTop+scale GroupEditorMetrics.stripHeight,contentWidth,contentHeight)
                     let cells,ownCell = cellsOf g selected content (scale GroupEditorMetrics.cellGap)
                     let focused =
@@ -436,24 +448,22 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
 
     /// The layout as last computed for the same state: asked for at every event and paint, it
     /// is measured again only once something it depends on has changed.
-    let mutable layoutKey : (DesktopDraft * IntPtr * (IntPtr option * IntPtr) option * PanePath option * bool * (int * int * GroupDraft) list * GhostPlace option * bool) option = None
+    let mutable layoutKey : (DesktopDraft * IntPtr * (IntPtr option * IntPtr) option * PanePath option * bool * (int * int * GroupDraft) list * GhostPlace option * bool * int * int option) option = None
     let mutable layoutCached : GroupEditorLayout option = None
     let layout() =
         match layoutKey,layoutCached with
-        | Some(draft,sel,key,focus,fly,gone,ghost,up),Some cached when obj.ReferenceEquals(draft,current) && sel=selected && key=expandedKey && focus=cellFocus && fly=flyout && gone=vacated && ghost=ghostPlace() && up=lifted -> cached
+        | Some(draft,sel,key,focus,fly,gone,ghost,up,w,h),Some cached when obj.ReferenceEquals(draft,current) && sel=selected && key=expandedKey && focus=cellFocus && fly=flyout && gone=vacated && ghost=ghostPlace() && up=lifted && w=width && h=fixedHeight -> cached
         | _ ->
-            let computed = computeLayout()
-            layoutKey <- Some(current,selected,expandedKey,cellFocus,flyout,vacated,computed.ghost,lifted)
+            // A window taller than the rows need gives the room to the expanded row's content.
+            let computed =
+                let natural = computeLayout 0
+                match fixedHeight with
+                | Some h when h>natural.height && expandedRow().IsSome -> computeLayout (h-natural.height)
+                | _ -> natural
+            layoutKey <- Some(current,selected,expandedKey,cellFocus,flyout,vacated,computed.ghost,lifted,width,fixedHeight)
             layoutCached <- Some computed
             computed
 
-    /// What the popup may be tall, in client pixels: three quarters of the work area, and, once
-    /// placed, what is left under its top, since growing never moves it up.
-    let mutable heightLimit = maxHeight
-    /// The popup's height while it is up, set as it opens: the taller of the overview and the
-    /// row it opens on, within the limit. Rows growing, folding, coming or going scroll inside it.
-    let mutable fixedHeight : int option = None
-    let viewHeight (l:GroupEditorLayout) = match fixedHeight with Some h -> h | None -> min l.height heightLimit
     /// How much of the rows is in sight above the footer.
     let viewBody (l:GroupEditorLayout) = viewHeight l-(l.height-l.body)
     let clampScroll (l:GroupEditorLayout) = scroll <- max 0 (min scroll (l.body-viewBody l))
@@ -603,7 +613,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             // The measured name runs a little past its glyphs, so the room kept after it is less
             // than the room before the icon, and the two look alike.
             let textBounds = Rectangle(iconBounds.Right+scale 6,r.Y,max 0 (r.Right-scale 5-trailing-iconBounds.Right-scale 6),r.Height)
-            TextRenderer.DrawText(g,nameOf hwnd,bodyFont,textBounds,textOn,fill,textFlags ||| TextFormatFlags.PreserveGraphicsTranslateTransform)
+            TextRenderer.DrawText(g,nameOf hwnd,bodyFont,textBounds,textOn,fill,textFlags ||| TextFormatFlags.PreserveGraphicsTranslateTransform ||| TextFormatFlags.PreserveGraphicsClipping)
             if look.ghost then
                 use veil = new SolidBrush(Color.FromArgb(170,look.band))
                 g.FillPath(veil,shape)
@@ -647,13 +657,22 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         g.DrawLine(pen,glyph.X+glyph.Width/2,glyph.Y,glyph.X+glyph.Width/2,glyph.Bottom)
         g.DrawLine(pen,glyph.X+glyph.Width/2,glyph.Y+glyph.Height/2,glyph.Right,glyph.Y+glyph.Height/2)
 
-    /// The strip's own seam button between two tabs of the panes of one split standing next
-    /// to each other, over the seam at the tabs' bottom edge, as the real strip marks the
-    /// pair, in a folded row as in the expanded one; not while either is on its way or in
+    /// What the tabs of a split bear, over them: the strip's own seam button between two tabs of
+    /// the panes of one split standing next to each other, over the seam at the tabs' bottom
+    /// edge, as the real strip marks the pair, in a folded row as in the expanded one; and, in
+    /// the expanded row, the accent along the foot of the active pane's tab, the one the split
+    /// button and the keys act on, as its cell is outlined in it. Not on a tab on its way or in
     /// hand, as on the real strip. Always over the tabs: drawn after them, and again over a tab
-    /// drawn again on its own, so no tab ever covers it.
-    let drawSeamsOn (g:Graphics) (looks:(IntPtr * GroupEditorTabLook) list) (row:GroupEditorRowLayout) =
+    /// drawn again on its own, so no tab ever covers them.
+    let drawMarksOn (g:Graphics) (looks:(IntPtr * GroupEditorTabLook) list) (row:GroupEditorRowLayout) =
         let still (hwnd,r) = not(sliding.ContainsKey hwnd) && looks |> List.exists(fun (each,look) -> each=hwnd && look.rect=r && not look.blank && not look.ghost)
+        if row.cells.Length>1 then
+            match row.focused |> Option.bind(fun path -> row.cells |> List.tryFind(fun (each,_,_) -> each=path)) with
+            | Some(_,Occupied hwnd,_) ->
+                for _,r in row.tabs |> List.filter(fun (each,r) -> each=hwnd && still (each,r)) do
+                    use brush = new SolidBrush(accent)
+                    g.FillRectangle(brush,Rectangle(r.X+scale 12,r.Bottom-scale 2,max 0 (r.Width-scale 24),scale 2))
+            | _ -> ()
         groupAt row.index |> Option.iter(fun group ->
             for (a,ra),(b,rb) in List.pairwise row.tabs do
                 match GroupDraft.partingAxis a b group with
@@ -719,7 +738,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 use fill = new SolidBrush(if highContrast then SystemColors.Control else palette.background)
                 g.FillPath(fill,shape)
             for tab in row.tabs do drawTab tab
-            drawSeamsOn g looks row
+            drawMarksOn g looks row
             drawCells row
             // The split button on the focused cell, and its flyout of shapes while open.
             row.splitButton |> Option.iter(fun r -> drawSplitButton g r false)
@@ -810,7 +829,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             looks |> List.tryFind(fun (each,_) -> each=hwnd) |> Option.iter(fun (_,look) ->
                 if not look.selected && not(sliding.ContainsKey hwnd) then
                     drawTabOn g hwnd {look with hot=true}
-                    l.rows |> List.filter(fun row -> row.tabs |> List.exists(fun (each,_) -> each=hwnd)) |> List.iter(drawSeamsOn g looks)))
+                    l.rows |> List.filter(fun row -> row.tabs |> List.exists(fun (each,_) -> each=hwnd)) |> List.iter(drawMarksOn g looks)))
 
     /// What a drag adds over the picture, drawn in place at each move rather than into it: the
     /// slot among the tabs, the zone a drop would take (grey where it would not fit), the loose
@@ -861,7 +880,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             use pen = new Pen(accent,float32(scale 1))
             g.DrawPath(pen,band)
             TextRenderer.DrawText(g,"+ "+tr Strings.GroupEditor.newGroup,bodyFont,r,textOn,selectedFill,
-                                  TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.PreserveGraphicsTranslateTransform)
+                                  TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.PreserveGraphicsTranslateTransform ||| TextFormatFlags.PreserveGraphicsClipping)
         | None -> ()
         // The tab itself, under the pointer, is a window of its own (the drag image), not drawn here.
 
@@ -938,11 +957,75 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 g.FillRectangle(veil,r)
                 g.DrawImage(bitmap,Rectangle(d.at.X-d.offset.X,d.at.Y-d.offset.Y,r.Width,r.Height),Rectangle(r.X,r.Y,r.Width,r.Height),GraphicsUnit.Pixel))
 
+    /// The rows scrolled, the footer in place under them at the window's foot, and the drag over
+    /// it all.
+    let paint (g:Graphics) (clientHeight:int) =
+        if not (isNull bitmap) then
+            let l = layout()
+            match morph with
+            | Some m when m.fromRows.Length=l.rows.Length ->
+                // Each row at its height on the way, cut from whichever picture has
+                // it at the larger, the loose row and the bottom along with them.
+                let t = morphT()
+                let lerp = morphLerp t
+                let body = clientHeight-(l.height-l.body)
+                use back = new SolidBrush(surface)
+                g.FillRectangle(back,Rectangle(0,0,width,body))
+                g.SetClip(Rectangle(0,0,width,body))
+                let blit (src:Bitmap) (srcY:int) (h:int) (y:int) =
+                    if h>0 then g.DrawImage(src,Rectangle(0,y-scroll,width,h),Rectangle(0,srcY,width,h),GraphicsUnit.Pixel)
+                blit bitmap 0 pad 0
+                List.iter2 (fun (a:Rectangle) (row:GroupEditorRowLayout) ->
+                    let b = row.band
+                    let y,h = lerp a.Y b.Y,lerp a.Height b.Height
+                    if b.Height>=a.Height then blit bitmap b.Y h y else blit m.from a.Y h y) m.fromRows l.rows
+                blit bitmap l.loose.Y (l.body-l.loose.Y) (lerp m.fromLoose l.loose.Y)
+                g.ResetClip()
+                g.DrawImage(bitmap,Rectangle(0,body,width,bitmap.Height-l.body),Rectangle(0,l.body,width,bitmap.Height-l.body),GraphicsUnit.Pixel)
+            | _ ->
+                let footer = l.height-l.body
+                let body = clientHeight-footer
+                // Rows shorter than the popup, whose height holds, leave the surface under them.
+                let shown = max 0 (min body (l.body-scroll))
+                if shown<body then
+                    use back = new SolidBrush(surface)
+                    g.FillRectangle(back,Rectangle(0,shown,width,body-shown))
+                if shown>0 then g.DrawImage(bitmap,Rectangle(0,0,width,shown),Rectangle(0,scroll,width,shown),GraphicsUnit.Pixel)
+                g.DrawImage(bitmap,Rectangle(0,body,width,footer),Rectangle(0,bitmap.Height-footer,width,footer),GraphicsUnit.Pixel)
+                scrollDecor g l body
+                // What moves over the rows stays within them: a tab sliding or in hand
+                // past the bottom would otherwise show over the footer.
+                g.SetClip(Rectangle(0,0,width,body))
+                g.TranslateTransform(0.0f,float32 -scroll)
+                if not sliding.IsEmpty then
+                    g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+                    let now = tabLooks l |> Map.ofList
+                    for KeyValue(hwnd,from) in sliding do
+                        now.TryFind hwnd |> Option.iter(fun look -> drawTabOn g hwnd {look with rect=slideRect from look.rect})
+                (match drag,rowDrag with
+                 | Some d,_ when d.begun -> overlay g l d
+                 | _,Some d when d.begun -> rowOverlay g l d
+                 | _ -> hoverOverlay g l)
+                g.ResetTransform()
+                g.ResetClip()
+
+    /// Whether the popup has been placed on its screen; whether its window is being sized here
+    /// rather than by the user; and whether the user has sized it, after which it keeps the size
+    /// they gave it.
+    let mutable placed = false
+    let mutable sizing = false
+    let mutable userSized = false
+    let mutable onResized : Size -> unit = ignore
     let form =
         let f =
             // An ordinary window with the system's title bar, not on top of everything: a tool to
-            // come back to, in the taskbar and Alt+Tab, that other windows may cover.
+            // come back to, in the taskbar and Alt+Tab, that other windows may cover; sized by
+            // dragging its edges or maximizing it, the rows taking the width and the expanded row's
+            // content the height.
             { new Form() with
+                override this.OnResize(e) =
+                    base.OnResize(e)
+                    if placed && not sizing && this.WindowState<>FormWindowState.Minimized then onResized this.ClientSize
                 override this.OnHandleCreated(e) =
                     base.OnHandleCreated(e)
                     this.SetStyle(ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint ||| ControlStyles.UserPaint,true)
@@ -951,58 +1034,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     SettingsUi.apply this
                     this.BackColor <- surface
                 override this.OnPaintBackground(e) = ()
-                // The rows scrolled, the footer in place under them, and the drag over it all.
-                override this.OnPaint(e) =
-                    if not (isNull bitmap) then
-                        let l = layout()
-                        let g = e.Graphics
-                        match morph with
-                        | Some m when m.fromRows.Length=l.rows.Length ->
-                            // Each row at its height on the way, cut from whichever picture has
-                            // it at the larger, the loose row and the bottom along with them.
-                            let t = morphT()
-                            let lerp = morphLerp t
-                            let body = this.ClientSize.Height-(l.height-l.body)
-                            use back = new SolidBrush(surface)
-                            g.FillRectangle(back,Rectangle(0,0,width,body))
-                            g.SetClip(Rectangle(0,0,width,body))
-                            let blit (src:Bitmap) (srcY:int) (h:int) (y:int) =
-                                if h>0 then g.DrawImage(src,Rectangle(0,y-scroll,width,h),Rectangle(0,srcY,width,h),GraphicsUnit.Pixel)
-                            blit bitmap 0 pad 0
-                            List.iter2 (fun (a:Rectangle) (row:GroupEditorRowLayout) ->
-                                let b = row.band
-                                let y,h = lerp a.Y b.Y,lerp a.Height b.Height
-                                if b.Height>=a.Height then blit bitmap b.Y h y else blit m.from a.Y h y) m.fromRows l.rows
-                            blit bitmap l.loose.Y (l.body-l.loose.Y) (lerp m.fromLoose l.loose.Y)
-                            g.ResetClip()
-                            g.DrawImage(bitmap,Rectangle(0,body,width,bitmap.Height-l.body),Rectangle(0,l.body,width,bitmap.Height-l.body),GraphicsUnit.Pixel)
-                        | _ ->
-                            let body = viewBody l
-                            // Rows shorter than the popup, whose height holds, leave the surface under them.
-                            let shown = max 0 (min body (l.body-scroll))
-                            if shown<body then
-                                use back = new SolidBrush(surface)
-                                g.FillRectangle(back,Rectangle(0,shown,width,body-shown))
-                            if shown>0 then g.DrawImage(bitmap,Rectangle(0,0,width,shown),Rectangle(0,scroll,width,shown),GraphicsUnit.Pixel)
-                            e.Graphics.DrawImage(bitmap,Rectangle(0,body,width,bitmap.Height-l.body),Rectangle(0,l.body,width,bitmap.Height-l.body),GraphicsUnit.Pixel)
-                            scrollDecor g l body
-                            // What moves over the rows stays within them: a tab sliding or in hand
-                            // past the bottom would otherwise show over the footer.
-                            g.SetClip(Rectangle(0,0,width,body))
-                            e.Graphics.TranslateTransform(0.0f,float32 -scroll)
-                            if not sliding.IsEmpty then
-                                e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-                                let now = tabLooks l |> Map.ofList
-                                for KeyValue(hwnd,from) in sliding do
-                                    now.TryFind hwnd |> Option.iter(fun look -> drawTabOn e.Graphics hwnd {look with rect=slideRect from look.rect})
-                            (match drag,rowDrag with
-                             | Some d,_ when d.begun -> overlay e.Graphics l d
-                             | _,Some d when d.begun -> rowOverlay e.Graphics l d
-                             | _ -> hoverOverlay e.Graphics l)
-                            e.Graphics.ResetTransform()
-                            g.ResetClip() }
-        f.FormBorderStyle <- FormBorderStyle.FixedSingle
-        f.MaximizeBox <- false
+                override this.OnPaint(e) = paint e.Graphics this.ClientSize.Height }
+        f.FormBorderStyle <- FormBorderStyle.Sizable
+        f.MaximizeBox <- true
+        f.MinimumSize <- Size(scale 480,scale 320)
         f.ShowInTaskbar <- true
         f.StartPosition <- FormStartPosition.Manual
         f.KeyPreview <- true
@@ -1013,9 +1048,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         f
 
     /// The popup's bounds: centred on its screen at first, as tall as the overview or any one
-    /// row expanded needs; moved by the user, it stays where it was put and keeps its height.
-    let mutable placed = false
+    /// row expanded needs; moved by the user, it stays where it was put and keeps its height;
+    /// sized by the user, it keeps the size they gave it.
     let place (l:GroupEditorLayout) =
+      if not userSized then
         // Placed, the popup grows downward only, as far as its screen allows, and never moves up.
         let area = if placed && form.IsHandleCreated then Screen.FromControl(form).WorkingArea else area
         heightLimit <- maxHeight-frameHeight
@@ -1037,7 +1073,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             fixedHeight <- Some(if tallest<=area.Height/2 then max wanted tallest else wanted)
         fixedHeight <- fixedHeight |> Option.map(fun h -> min h heightLimit)
         let height = viewHeight l
-        if form.ClientSize<>Size(width,height) then form.ClientSize <- Size(width,height)
+        if form.ClientSize<>Size(width,height) then
+            sizing <- true
+            form.ClientSize <- Size(width,height)
+            sizing <- false
         let size = form.Size
         if not placed then
             placed <- true
@@ -1159,11 +1198,11 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             if not sliding.IsEmpty && slideDone() then sliding <- Map.empty
             // A change while a row still grows ends that at once: the picture it blends from is stale.
             if morph.IsSome then endMorph()
-            let l = layout()
-            clampScroll l
             let title = tr Strings.GroupEditor.title+" · "+tr (Strings.GroupEditor.summary (groups()).Length current.loose.Length)
             if form.Text<>title then form.Text <- title
-            if form.IsHandleCreated then place l
+            if form.IsHandleCreated then place (layout())
+            let l = layout()
+            clampScroll l
             updateThumbnails l
             let previous = bitmap
             bitmap <- render()
@@ -1179,6 +1218,17 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let edit index (change:GroupDraft -> GroupDraft) =
         current <- DesktopDraft.edit index change current
         reselect()
+
+    /// The window sized by the user: the popup takes its client size, the rows laid out again
+    /// to the width and the expanded row's content to the height.
+    let resized (size:Size) =
+        if size.Width>0 && size.Height>0 && (size.Width<>width || fixedHeight<>Some size.Height) then
+            userSized <- true
+            width <- size.Width
+            inner <- width-2*pad
+            fixedHeight <- Some size.Height
+            refresh()
+    do onResized <- resized
 
     let finish (plan:DesktopPlan option) =
         if not closed then
@@ -1282,7 +1332,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
 
     /// The popup at the height the morph has reached: its bottom follows the rows.
     let resizeTo (height:int) =
-        if form.IsHandleCreated && form.ClientSize.Height<>height then form.ClientSize <- Size(width,height)
+        if form.IsHandleCreated && form.ClientSize.Height<>height then
+            sizing <- true
+            form.ClientSize <- Size(width,height)
+            sizing <- false
     /// A frame of the morph: the popup's height on the way, the pictures along with the rows.
     let morphFrame() =
         match morph with
@@ -1708,6 +1761,19 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         use g = Graphics.FromImage(image)
         hoverOverlay g (layout())
         image
+    /// The popup as its window shows it, scrolled, with the footer at the foot of the image and
+    /// what the pointer or a drag adds, painted into the image.
+    member _.Paint(image:Bitmap) =
+        if isNull bitmap then bitmap <- render()
+        use g = Graphics.FromImage(image)
+        paint g image.Height
+    /// The rows scrolled down by so much, within what they can.
+    member _.ScrollTo(y:int) =
+        scrollTarget <- None
+        scroll <- y
+        clampScroll (layout())
+    /// The window sized, as by the user.
+    member _.Resize(size:Size) = resized size
     /// A key pressed in the popup, as pressing it would.
     member _.Press(keys:Keys) = press keys
     /// The pointer, as the mouse would: pressed, moved and released at points of the popup.

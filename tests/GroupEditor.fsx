@@ -181,6 +181,10 @@ let main() =
             let seam = Point(((snd l.tabs.[0]).Right+(snd l.tabs.[1]).X)/2-Dpi.scale 3,(snd l.tabs.[0]).Bottom-Dpi.scale 6)
             let ink = image.GetPixel(seam.X,seam.Y)
             check (not(sameColor palette.background ink) && not(sameColor palette.surface ink)) (sprintf "No seam button stands between the panes' tabs in the %s look" mode)
+            // The active pane's tab bears the accent along its foot; the other pane's does not.
+            let foot (r:Rectangle) = image.GetPixel(r.X+r.Width/2,r.Bottom-Dpi.scale 1)
+            check (sameColor palette.accent (foot (snd l.tabs.[0]))) (sprintf "The active pane's tab bears no accent along its foot in the %s look" mode)
+            check (not(sameColor palette.accent (foot (snd l.tabs.[1])))) (sprintf "The other pane's tab bears the accent along its foot in the %s look" mode)
             // The seam button stays over the tabs: lit under the pointer, the second pane's tab is
             // drawn again, and the button still shows over it.
             let second = snd l.tabs.[1]
@@ -607,6 +611,36 @@ let main() =
             printfn "PERF group-editor rows=%d layout=%.1fms render=%.1fms layout-cached-x50=%.2fms" l.rows.Length layoutMs renderMs cachedMs
             check (cachedMs<layoutMs+5.0) "The layout was measured again with nothing changed"
             check (renderMs<2000.0) (sprintf "Drawing a desktop of 12 rows took %.0fms" renderMs)
+            editor.Close()
+        // The popup takes the size its window is given: wider, the rows take the width; taller than
+        // the rows need, the expanded row's content grows into the room. A tab lit under the
+        // pointer in a row cut at the rows' foot keeps within them: its name does not show over
+        // the footer.
+        do
+            let many = DesktopDraft.ofDesktop [for i in 1..12 -> GroupDraft.ofGroup (IntPtr(100+i)) [IntPtr(1000+i*3);IntPtr(1001+i*3);IntPtr(1002+i*3)] Set.empty GroupLayout.Single] []
+            let shownMany = many.groups |> List.collect(fun g -> g.tabs) |> List.map(fun h -> {hwnd=h; name=sprintf "Window %d" (int h); icon=None; minimized=true})
+            let rowsMany = many.groups |> List.map(fun g -> {group=g.group; frame=Rect(Pt(),Sz(1600,900)); active=g.tabs.Head})
+            let editor = GroupEditorForm(many,rowsMany,shownMany,Some 0)
+            let palette = SettingsColors.current()
+            let before = editor.Layout
+            let size = editor.Size
+            let wider = Size(size.Width+Dpi.scale 200,before.height+Dpi.scale 300)
+            editor.Resize(wider)
+            let l = editor.Layout
+            check (editor.Size=wider && l.rows.[0].band.Width=before.rows.[0].band.Width+Dpi.scale 200) (sprintf "The rows did not take the window's width: %A %A" editor.Size l.rows.[0].band)
+            check (l.rows.[0].picture.Height>before.rows.[0].picture.Height && l.height<=wider.Height) (sprintf "The expanded row's content did not grow into the taller window: %A -> %A, %d of %d" before.rows.[0].picture l.rows.[0].picture l.height wider.Height)
+            let shorter = Size(size.Width,Dpi.scale 400)
+            editor.Resize(shorter)
+            let l = editor.Layout
+            check (editor.Size=shorter && l.rows.[0].picture.Height=before.rows.[0].picture.Height) (sprintf "The content did not come back as the window shrank: %A" l.rows.[0].picture)
+            let body = shorter.Height-(l.height-l.body)
+            let tab = snd l.rows.[3].tabs.[0]
+            editor.ScrollTo(tab.Y-(body-Dpi.scale 8))
+            editor.MouseMove(Point(tab.X+Dpi.scale 4,body-Dpi.scale 4))
+            use painted = new Bitmap(shorter.Width,shorter.Height)
+            editor.Paint(painted)
+            let under = painted.GetPixel(tab.X+tab.Width/2,body+Dpi.scale 3)
+            check (sameColor palette.background under) (sprintf "The tab lit under the pointer showed over the footer: %A" under)
             editor.Close()
         let mouse = Event<int * IntPtr>()
         let detached = Collections.Generic.List<IntPtr>()

@@ -157,7 +157,8 @@ tab, so the strip starts at the row's top edge, as a real group's does.
   each leaf cell with its window's picture and nothing over it (the panes' tabs name them;
   a title on the cell said the same twice), all in the content's colour as their
   tabs are, told apart by a thin line each, the selected pane's cell outlined in the accent
-  with the split button on it, so the one cell the button and the keys act on stands out
+  with the split button on it and its tab bearing the accent along its foot, so the one cell
+  the button and the keys act on stands out
   (an outline around the whole content, going up around the panes' tabs, was tried and
   dropped: with three or more panes it said little); the panes' tabs stand together in the
   strip with the real strip's own seam
