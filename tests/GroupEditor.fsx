@@ -435,6 +435,16 @@ let main() =
             let editor = GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=frame; active=a};{group=Some(IntPtr 2); frame=frame; active=c}],shown,None)
             let room (r:Rectangle) = Point(r.Right-Dpi.scale 80,r.Y+r.Height/2)
             let centre (r:Rectangle) = Point(r.X+r.Width/2,r.Y+r.Height/2)
+            // A click on the band's empty room, with no drag, expands the row; on the expanded
+            // row's strip, it folds it back.
+            let l = editor.Layout
+            editor.MouseDown(room l.rows.[0].band)
+            editor.MouseUp(room l.rows.[0].band)
+            check (editor.Expanded=Some 0 && editor.Selected=a) "A click on a row's empty room did not expand it"
+            let strip = let t = snd editor.Layout.rows.[0].tabs.Head in Point(editor.Layout.rows.[0].band.Right-Dpi.scale 80,t.Y+t.Height/2)
+            editor.MouseDown(strip)
+            editor.MouseUp(strip)
+            check (editor.Expanded=None) "A click on the expanded row's empty room did not fold it back"
             let l = editor.Layout
             editor.MouseDown(room l.rows.[0].band)
             editor.MouseMove(Point((room l.rows.[0].band).X,(room l.rows.[0].band).Y+Dpi.scale 12))
@@ -447,11 +457,11 @@ let main() =
             editor.MouseMove(centre l.loose)
             editor.MouseUp(centre l.loose)
             check (editor.Draft.groups.IsEmpty && editor.Draft.loose=[c;a;b]) (sprintf "A row dropped on the loose row did not dissolve: %A" editor.Draft)
-            // A click on the empty room alone changes nothing.
+            // A click on the loose row's empty room changes nothing.
             let l = editor.Layout
             editor.MouseDown(centre l.loose)
             editor.MouseUp(centre l.loose)
-            check (editor.Draft.loose=[c;a;b] && editor.Expanded=None) "A click on empty room changed something"
+            check (editor.Draft.loose=[c;a;b] && editor.Expanded=None) "A click on the loose row's empty room changed something"
             editor.Close()
         // A row whose tabs wrap: a tab carried into the gap between the lines keeps its line, rather
         // than flipping between two layouts as the nearer line changes; on the other line, it moves.

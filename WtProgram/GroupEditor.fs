@@ -1427,6 +1427,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             rowDrag <- None
             (match d.aim with
              | Some aim when d.begun -> mergeRow d.index aim
+             // A click on the band's empty room, with no drag: the row expands, or folds back.
+             | _ when not d.begun -> expand (if expandedRow()=Some d.index then None else Some d.index)
              | _ -> if form.IsHandleCreated then form.Invalidate())
         | None -> tabUp view pt
 

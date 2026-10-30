@@ -101,18 +101,20 @@ picture, and moves the windows once, when the user is done.
   group as the same blocks, with "Loose windows" at the right end and, while there is
   none, a line saying that a tab dropped there takes its window out of its group. Under it
   **New group**, a dashed, empty band that takes a drop, saying so in its own words.
-- **Expanding.** Clicking a tab of the row, which is then the selected one, grows that row
+- **Expanding.** Clicking a tab of the row, which is then the selected one, or the band's
+  empty room, grows that row
   in place over 180ms, the rows below sliding down (and folds it back the same way), into
   the view of section 2.3. The popup itself keeps its size and place: nothing above the
   row moves, and what grows past the bottom scrolls. Only opening the popup scrolls, to
   the row it opens on. Expanded, its tabs become the strip and the content with its
   pictures opens below. The other rows stay as they are and still take drops, so a window
   can be dragged from the expanded group to any other and back. Esc, clicking the selected
-  tab again, or expanding another row, goes back to the overview.
+  tab again or the strip's empty room, or expanding another row, goes back to the overview.
 - **A whole row.** Pressed on its band's empty room, a row comes along under the pointer
   as it is, its old place faded behind it. Dropped on another row, every window of it joins that group, after the
   group's own; dropped on the loose row, the group dissolves and its windows stand on their
-  own. The row it is over is lit. A click on the empty room alone does nothing.
+  own. The row it is over is lit. A click on the empty room alone expands the row, or folds
+  it back.
 
 ### 2.3 A group expanded
 

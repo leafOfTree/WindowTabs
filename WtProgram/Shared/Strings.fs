@@ -781,10 +781,10 @@ module Strings =
         /// In the loose row while no window is on its own: what the row is for.
         let looseEmpty = { en="Ungroup: drop a tab here"; zh="移出分组：拖到这里"; ja="グループ解除：ここにドロップ"; ar="فك التجميع: أفلت علامة تبويب هنا" }
         let newGroup = { en="New group: drop a tab here"; zh="新建分组：拖到这里"; ja="新しいグループ：ここにドロップ"; ar="مجموعة جديدة: أفلت علامة تبويب هنا" }
-        let overviewHint = { en="Drag a tab to another row, Ungroup or New group; drag a row by its empty room onto another to merge; click a tab to expand its row."
-                             zh="把标签拖到别的行、“移出分组”或“新建分组”；按住行的空白处拖到别的行即合并；点标签展开该行。"
-                             ja="タブを別の行、グループ解除、新しいグループへドラッグ。行の空きをつかんで別の行へ重ねると統合、タブをクリックで展開。"
-                             ar="اسحب علامة تبويب إلى صف آخر أو فك التجميع أو مجموعة جديدة؛ اسحب صفًا من فراغه إلى صف آخر لدمجهما؛ انقر علامة تبويب لتوسيع صفها." }
+        let overviewHint = { en="Drag a tab to another row, Ungroup or New group; drag a row by its empty room onto another to merge; click a row to expand it."
+                             zh="把标签拖到别的行、“移出分组”或“新建分组”；按住行的空白处拖到别的行即合并；点一行即展开。"
+                             ja="タブを別の行、グループ解除、新しいグループへドラッグ。行の空きをつかんで別の行へ重ねると統合、行をクリックで展開。"
+                             ar="اسحب علامة تبويب إلى صف آخر أو فك التجميع أو مجموعة جديدة؛ اسحب صفًا من فراغه إلى صف آخر لدمجهما؛ انقر صفًا لتوسيعه." }
         let removeTab = { en="Take out of the group"; zh="移出分组"; ja="グループから外す"; ar="إخراج من المجموعة" }
         /// The row's menu, from the button at its right end.
         let mergeInto = { en="Merge into"; zh="合并到"; ja="統合先"; ar="دمج في" }
