@@ -48,8 +48,10 @@ picture, and moves the windows once, when the user is done.
   over the right margin, taking no room from the rows, shows how far down they are and
   drags, and a row cut at the top or the bottom fades into the surface rather than ending
   at a hard edge. It draws no 1px borders inside: the popup's surface, the rows'
-  bands and the tabs' blocks are told apart by tone alone, three steps of
-  the palette's surface colours, with the accent as a tint on what is selected; only the
+  bands and the tabs' blocks are told apart by tone alone: the popup in the palette's
+  background, as the Settings window is, the bands a step lighter in its surface colour and
+  the tabs another step in its selection colour, as the Settings controls are, with the
+  accent as a tint on what is selected; only the
   New group zone is dashed, as a place to drop into. High contrast gets the system's
   outlines through `SettingsColors.current()`, as every settings-style popup does.
 - It lists the groups on the virtual desktop in view, as the split view's window list does,

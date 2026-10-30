@@ -162,8 +162,9 @@ let main() =
             let under (r:Rectangle) = image.GetPixel(r.X+r.Width/2,r.Bottom-3)
             check (sameColor palette.selection (under (snd l.tabs.[1]))) (sprintf "An unselected tab is not in the %s look's block colour" mode)
             check (sameColor palette.background (under (snd l.tabs.[0]))) "The selected tab is not in the content's colour"
-            check (sameColor palette.surface (image.GetPixel(Dpi.scale 6,Dpi.scale 8))) (sprintf "The popup is not on the %s look's surface" mode)
-            check (sameColor palette.background (image.GetPixel(l.picture.X+l.picture.Width/2,l.picture.Bottom-2))) "The content is not darker than the popup"
+            check (sameColor palette.background (image.GetPixel(Dpi.scale 6,Dpi.scale 8))) (sprintf "The popup is not in the %s look's background, as Settings is" mode)
+            check (sameColor palette.surface (image.GetPixel(l.band.X+Dpi.scale 12,l.band.Y+Dpi.scale 5))) (sprintf "The row's band is not in the %s look's surface colour" mode)
+            check (sameColor palette.background (image.GetPixel(l.picture.X+l.picture.Width/2,l.picture.Bottom-2))) "The content is not in the background colour"
             // Clicking a tab selects it; one in no pane fills the content on its own.
             let tabRect hwnd = editor.Layout.rows.[0].tabs |> List.find(fun (each,_) -> each=hwnd) |> snd
             let centre (r:Rectangle) = Point(r.X+r.Width/2,r.Y+r.Height/2)

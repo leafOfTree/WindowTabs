@@ -27,8 +27,8 @@ module GroupEditorMetrics =
     let tabHeight = 30
     let tabMaxWidth = 190
     let tabMinWidth = 44
-    let tabGap = 4
-    let wrapGap = 6
+    let tabGap = 8
+    let wrapGap = 8
     let iconSize = 18
     /// The band at a cell's top with the window's icon and name, clear of its picture.
     let chipHeight = 26
@@ -233,12 +233,15 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let tint (color:Color) (over:Color) (amount:float) =
         let mix (a:byte) (b:byte) = int(float b+(float a-float b)*amount)
         Color.FromArgb(mix color.R over.R,mix color.G over.G,mix color.B over.B)
-    let selectedFill = if highContrast then SystemColors.Highlight else tint palette.accent palette.surface 0.28
+    /// The popup's own colour, the Settings window's: the rows' bands stand on it a step
+    /// lighter, and the tabs on them another step, as the Settings controls do.
+    let surface = if highContrast then SystemColors.Window else palette.background
+    let selectedFill = if highContrast then SystemColors.Highlight else tint palette.accent surface 0.28
     let accent = if highContrast then SystemColors.Highlight else palette.accent
     let textOn = if highContrast then SystemColors.WindowText else palette.text
     let cellFill = if highContrast then SystemColors.Window else palette.selection
-    let rowFill = if highContrast then SystemColors.Control else palette.hover
-    let looseFill = if highContrast then SystemColors.Control else tint palette.background palette.surface 0.5
+    let rowFill = if highContrast then SystemColors.Control else palette.surface
+    let looseFill = if highContrast then SystemColors.Control else tint palette.surface palette.background 0.5
     let tabFill = if highContrast then SystemColors.Window else palette.selection
     /// The content's colour, which the selected tab takes to join it: a tab is lit no other way.
     let contentFill = if highContrast then SystemColors.Control else palette.background
@@ -552,7 +555,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         use g = Graphics.FromImage(image)
         g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBicubic
-        g.Clear(palette.surface)
+        g.Clear(surface)
         let drawIcon = drawIconOn g
         let looks = tabLooks l |> Map.ofList
         // A tab on its way is drawn over the picture, where it is at the moment, not in it.
@@ -597,7 +600,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             // The menu's button: three dots.
             row.menuButton |> Option.iter(fun r ->
                 use shape = rounded r (scale 5)
-                use fill = new SolidBrush(palette.surface)
+                use fill = new SolidBrush(surface)
                 g.FillPath(fill,shape)
                 use dot = new SolidBrush(palette.muted)
                 let cx,cy,d,step = r.X+r.Width/2,r.Y+r.Height/2,scale 3,scale 5
@@ -605,7 +608,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             // The split button on the focused cell, and its flyout of shapes while open.
             row.splitButton |> Option.iter(fun r ->
                 use shape = rounded r (scale 5)
-                use fill = new SolidBrush(if flyout then selectedFill else palette.surface)
+                use fill = new SolidBrush(if flyout then selectedFill else surface)
                 g.FillPath(fill,shape)
                 use pen = new Pen((if flyout then accent else palette.muted),float32(scale 1))
                 let glyph = Rectangle.Inflate(r,-scale 7,-scale 7)
@@ -623,7 +626,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 for shape,r in row.shapes do
                     let pressed = now=Some shape
                     use box = rounded r (scale 4)
-                    use fill = new SolidBrush(if pressed then selectedFill else palette.surface)
+                    use fill = new SolidBrush(if pressed then selectedFill else surface)
                     g.FillPath(fill,box)
                     use pen = new Pen((if pressed then accent else palette.muted),float32(scale 1))
                     g.DrawPath(pen,box)
@@ -661,7 +664,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             match DesktopDraft.emptyCells current with
             | 0 -> if expandedRow().IsSome then tr Strings.GroupEditor.hint else tr Strings.GroupEditor.overviewHint
             | empty -> tr (Strings.GroupEditor.emptyCellsClose empty)
-        TextRenderer.DrawText(g,note,hintFont,Rectangle(pad,l.save.Y,max 0 (l.cancel.X-scale 12-pad),l.save.Height),palette.muted,palette.surface,textFlags)
+        TextRenderer.DrawText(g,note,hintFont,Rectangle(pad,l.save.Y,max 0 (l.cancel.X-scale 12-pad),l.save.Height),palette.muted,surface,textFlags)
         let button (r:Rectangle) (text:string) primary =
             use shape = rounded r (scale 5)
             let back = if primary then accent else palette.hover
@@ -766,14 +769,14 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let scrollDecor (g:Graphics) (l:GroupEditorLayout) (track:int) =
         scrollThumb l track |> Option.iter(fun thumb ->
             let fade = scale GroupEditorMetrics.fade
-            let clear = Color.FromArgb(0,palette.surface)
+            let clear = Color.FromArgb(0,surface)
             if scroll>0 then
                 let r = Rectangle(0,0,width,fade)
-                use brush = new Drawing2D.LinearGradientBrush(r,palette.surface,clear,Drawing2D.LinearGradientMode.Vertical)
+                use brush = new Drawing2D.LinearGradientBrush(r,surface,clear,Drawing2D.LinearGradientMode.Vertical)
                 g.FillRectangle(brush,r)
             if scroll<l.body-track then
                 let r = Rectangle(0,track-fade,width,fade)
-                use brush = new Drawing2D.LinearGradientBrush(r,clear,palette.surface,Drawing2D.LinearGradientMode.Vertical)
+                use brush = new Drawing2D.LinearGradientBrush(r,clear,surface,Drawing2D.LinearGradientMode.Vertical)
                 g.FillRectangle(brush,r)
             g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
             use fill = new SolidBrush(Color.FromArgb(120,palette.muted))
@@ -794,7 +797,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         l.rows |> List.tryItem d.index |> Option.iter(fun row ->
             if not (isNull bitmap) then
                 let r = row.band
-                use veil = new SolidBrush(Color.FromArgb(170,palette.surface))
+                use veil = new SolidBrush(Color.FromArgb(170,surface))
                 g.FillRectangle(veil,r)
                 g.DrawImage(bitmap,Rectangle(d.at.X-d.offset.X,d.at.Y-d.offset.Y,r.Width,r.Height),Rectangle(r.X,r.Y,r.Width,r.Height),GraphicsUnit.Pixel))
 
@@ -809,7 +812,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     frameHeight <- this.Height-this.ClientSize.Height
                     // The title bar in the settings palette's colours, as the Settings window has it.
                     SettingsUi.apply this
-                    this.BackColor <- palette.surface
+                    this.BackColor <- surface
                 override this.OnPaintBackground(e) = ()
                 // The rows scrolled, the footer in place under them, and the drag over it all.
                 override this.OnPaint(e) =
@@ -823,7 +826,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                             let t = morphT()
                             let lerp = morphLerp t
                             let body = this.ClientSize.Height-(l.height-l.body)
-                            use back = new SolidBrush(palette.surface)
+                            use back = new SolidBrush(surface)
                             g.FillRectangle(back,Rectangle(0,0,width,body))
                             g.SetClip(Rectangle(0,0,width,body))
                             let blit (src:Bitmap) (srcY:int) (h:int) (y:int) =
@@ -841,7 +844,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                             // Rows shorter than the popup, whose height holds, leave the surface under them.
                             let shown = max 0 (min body (l.body-scroll))
                             if shown<body then
-                                use back = new SolidBrush(palette.surface)
+                                use back = new SolidBrush(surface)
                                 g.FillRectangle(back,Rectangle(0,shown,width,body-shown))
                             if shown>0 then g.DrawImage(bitmap,Rectangle(0,0,width,shown),Rectangle(0,scroll,width,shown),GraphicsUnit.Pixel)
                             e.Graphics.DrawImage(bitmap,Rectangle(0,body,width,bitmap.Height-l.body),Rectangle(0,l.body,width,bitmap.Height-l.body),GraphicsUnit.Pixel)
@@ -869,7 +872,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         f.Text <- tr Strings.GroupEditor.title
         (try f.Icon <- Icon.ExtractAssociatedIcon(Application.ExecutablePath) with _ -> ())
         f.AccessibleName <- tr Strings.GroupEditor.title
-        f.BackColor <- palette.surface
+        f.BackColor <- surface
         f
 
     /// The popup's bounds: centred on its screen at first, as tall as the overview or any one
