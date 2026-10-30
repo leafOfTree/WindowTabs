@@ -779,7 +779,7 @@ module Strings =
               ar=sprintf "%d مجموعة، %d نافذة غير مجمّعة" groups loose }
         let looseWindows = { en="Loose windows"; zh="未分组窗口"; ja="未分類のウィンドウ"; ar="نوافذ غير مجمّعة" }
         /// In the loose row while no window is on its own: what the row is for.
-        let looseEmpty = { en="Ungroup: drop a tab here"; zh="移出分组：拖到这里"; ja="グループ解除：ここにドロップ"; ar="فك التجميع: أفلت علامة تبويب هنا" }
+        let looseEmpty = { en="Ungroup: drop a tab or a whole row here"; zh="移出分组：把标签或整行拖到这里"; ja="グループ解除：タブや行ごとここにドロップ"; ar="فك التجميع: أفلت علامة تبويب أو صفًا كاملًا هنا" }
         let newGroup = { en="New group: drop a tab here"; zh="新建分组：拖到这里"; ja="新しいグループ：ここにドロップ"; ar="مجموعة جديدة: أفلت علامة تبويب هنا" }
         let overviewHint = { en="Drag a tab to another row, Ungroup or New group; drag a row by its empty room onto another to merge; click a row to expand it."
                              zh="把标签拖到别的行、“移出分组”或“新建分组”；按住行的空白处拖到别的行即合并；点一行即展开。"

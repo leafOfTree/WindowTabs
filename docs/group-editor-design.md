@@ -99,7 +99,7 @@ picture, and moves the windows once, when the user is done.
   which, and the pane mark on a tab says it is split.
 - **Loose windows.** The last row, a shade darker than the group rows: the windows in no
   group as the same blocks, with "Loose windows" at the right end and, while there is
-  none, a line saying that a tab dropped there takes its window out of its group. Under it
+  none, a line saying that a tab or a whole row dropped there leaves its group. Under it
   **New group**, a dashed, empty band that takes a drop, saying so in its own words.
 - **Expanding.** Clicking a tab of the row, which is then the selected one, or the band's
   empty room, grows that row
