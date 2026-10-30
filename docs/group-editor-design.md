@@ -138,7 +138,7 @@ tab, so the strip starts at the row's top edge, as a real group's does.
 - **The strip.** Every window of the group as a tab in strip order, pinned ones first with
   the pin, each the app's icon and the tab's name (the rename where there is one), cut
   with an ellipsis; hovering a tab shows the whole name in the tab title tip's manner, as
-  the real strip does. Right-clicking a tab (or a pane chip) offers **Take out of the group**:
+  the real strip does. Right-clicking a tab offers **Take out of the group**:
   the window goes to the loose windows, to be put elsewhere or left on its own, and is not
   closed; for a window in a pane, **Take out of the pane** as well: the pane goes and the
   window stays a tab. A close cross on the tab was tried and dropped: it read as closing the
@@ -151,10 +151,11 @@ tab, so the strip starts at the row's top edge, as a real group's does.
   content changes to what the group would show with that tab active, so the picture
   behaves as the group does. The selection is for looking: Save does not switch tabs.
 - **The content.** With a tab selected that is in no split, one cell with that window's
-  picture filling the content, with no chip over it, since the selected tab names it: the
+  picture filling the content, with nothing over it, since the selected tab names it: the
   whole group is that window. With
   a tab selected that is in a split, the split tree drawn as nested cells at their ratios,
-  each leaf cell with its window's picture and chip, all in the content's colour as their
+  each leaf cell with its window's picture and nothing over it (the panes' tabs name them;
+  a title on the cell said the same twice), all in the content's colour as their
   tabs are, told apart by a thin line each, the whole content outlined in the accent, the
   outline going up and around the panes' tabs where they stand together over it, so the
   tabs and the content read as one selected piece, with the split button on the selected
@@ -174,8 +175,9 @@ tab, so the strip starts at the row's top edge, as a real group's does.
   the whole content (no split yet) cut this way starts the group's split. The shape whose
   cells the selected cell already shows is drawn pressed.
 - **Empty cells.** An empty slot is drawn dashed, with "Drop a window here" and a small
-  cross that removes it, its neighbour taking the room. A tab, a loose window or a pane
-  chip dropped on it fills it. The arrows and Tab reach empty cells as they reach any. Empty cells are a thing of the
+  cross that removes it, its neighbour taking the room. A tab or a loose window dropped
+  anywhere on it fills it: an empty cell is there to be filled, so none of its edges splits
+  it further. The arrows and Tab reach empty cells as they reach any. Empty cells are a thing of the
   picture only: one still empty at Save is dropped and its neighbour takes the room, which
   the footer says while any is empty ("2 empty cells will close"), so the panes a group
   ends up with are always windows. (The split view's own empty pane, with its frame and
@@ -204,19 +206,18 @@ content when expanded):
 | a tab | the middle of a cell of a split | the window takes that pane; the pane's old window goes back to being a tab. The whole content, unsplit, takes nothing at its middle: the strip is the way into the group |
 | a tab | a cell's edge (left/right/top/bottom) | that pane splits on that side for the window, as a tab dropped on a pane's edge does; with no split, the single cell splits, so the selected window and the dropped one become the first pair. While aimed, the cell's picture keeps to the half it would keep, the zone lit beside it, and the open slot in the strip is covered, so one place alone says where the drop lands |
 | a tab | the content's outer edge | the whole group splits: a new column or row |
-| a pane chip | another cell's middle | the two panes swap windows |
-| a pane chip | a cell's edge or the outer edge | the pane leaves its place (its neighbour takes the room) and the split is made where it lands |
-| a pane chip | the strip, or off the cells anywhere within the popup that takes no other drop | the pane goes; the window stays a tab |
+| a pane's tab | another cell's middle or edge | as any tab: the window takes that cell or splits it, and its old pane closes, its neighbour taking the room |
+| a pane's tab | its own strip | the tab moves, its pane staying; past another pane's tab, the cells change places |
 
 Between rows:
 
 | From | To | Result |
 | --- | --- | --- |
-| any tab or chip of a group | another row's tabs | the window joins that row as the pointer arrives, at the place among its tabs, the others making room; carried on, it moves on with the pointer |
-| any tab or chip of a group | the expanded row's cell or edge | the window leaves its group (its pane closing as above) and joins the expanded one as the table above says |
-| any tab or chip of a group | the loose windows row | the window leaves its group and stands on its own, as the pointer arrives |
+| any tab of a group | another row's tabs | the window joins that row as the pointer arrives, at the place among its tabs, the others making room; carried on, it moves on with the pointer |
+| any tab of a group | the expanded row's cell or edge | the window leaves its group (its pane closing as above) and joins the expanded one as the table above says |
+| any tab of a group | the loose windows row | the window leaves its group and stands on its own, as the pointer arrives |
 | a loose window | a row's tabs, or the expanded row's cell or edge | the window joins that group as above |
-| any tab or chip | New group | a new row with that one window, above the loose row; drop more on it as on any row |
+| any tab | New group | a new row with that one window, above the loose row; drop more on it as on any row |
 
 A row left with no window goes: the group would exit on its own once its last window
 left, and the picture says so first. While the drag that emptied it lasts, its band stays
@@ -244,7 +245,7 @@ the footer line listing them read as something to configure.) The
 popup stays up while the user works elsewhere, unlike the palette: it is a tool to come back
 to, so clicking outside it changes nothing, and it closes only by Save, Cancel, Esc or its
 own command again. Dragging its title, or the footer's free room, moves it, and it stays
-where it was put. Every tab, chip and row has an
+where it was put. Every tab and row has an
 accessible name; the picture is a custom-drawn control, as the switcher's icon view is, not
 a tree of WinForms controls.
 
@@ -253,7 +254,7 @@ a tree of WinForms controls.
 Save applies the picture to the groups and closes. Nothing moves before it, and Cancel or
 Esc leaves everything as it was. Save with no change just closes. While the editor is open
 the desktop goes on living: a window closed meanwhile is dropped from the picture when Save
-runs (its chip is greyed as soon as the desktop reports it gone, through
+runs (its tab is greyed as soon as the desktop reports it gone, through
 `IDesktop.groupChanged` and the window refresh); a group that exits has its row greyed and
 its windows, where still open, counted as loose. Windows are checked again at Save: one gone
 is skipped and said in the notice, the rest go in. The notice names what was done: windows
@@ -356,7 +357,7 @@ the main STA with the other popups, one at a time.
 - `WtProgram/GroupEditor.fs` (new, after `SplitPanePicker.fs`): the popup, its rows, its
   drawing and its drag, the expanded row's pictures through the DWM thumbnail helpers the
   split transition uses. The picture is drawn into a bitmap only when the draft, the selection or the aim of a
-  drag changes (about 60ms for a dozen rows); the chip in hand, the drop zone, the tabs on
+  drag changes (about 60ms for a dozen rows); the drop zone, the tabs on
   their way and the hover cross are drawn over it at each paint, and the layout, with its
   text measured, is kept until something it depends on changes. Nothing is outlined or lit
   but the selected tab, joined to the content. `GroupEditorApply.fs` has the four steps of

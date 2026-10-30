@@ -223,7 +223,6 @@ let main() =
             let centre (r:Rectangle) = Point(r.X+r.Width/2,r.Y+r.Height/2)
             let cellRect path = editor.Layout.rows.[0].cells |> List.find(fun (each,_,_) -> each=path) |> fun (_,_,r) -> r
             let tabRect hwnd = editor.Layout.rows.[0].tabs |> List.find(fun (each,_) -> each=hwnd) |> snd
-            let chipPt path = let r = cellRect path in Point(r.X+r.Width/2,r.Y+Dpi.scale 12)
             let cellCrossPt (r:Rectangle) = Point(r.Right-Dpi.scale 6-Dpi.scale 8,r.Y+Dpi.scale 6+Dpi.scale 8)
             let panes() = GroupDraft.paneWindows editor.Draft.groups.[0]
             let tabsNow() = editor.Draft.groups.[0].tabs
@@ -237,20 +236,20 @@ let main() =
             check (editor.Drag |> Option.exists(fun d -> d.begun && d.aim=Some(CellEdge(0,[First],SideBySide,Second)) && d.fits)) (sprintf "A tab over a cell's right edge was not aimed at it: %A" editor.Drag)
             editor.MouseUp(edgePt)
             check (editor.Drag.IsNone && panes()=[a;c;b] && editor.Selected=c) (sprintf "Dropping a tab on a cell's edge did not split that cell: %A" (panes()))
-            // A pane chip dragged onto another cell's middle swaps the two.
-            editor.MouseDown(chipPt [First;First])
+            // A pane's tab dragged onto another cell's middle takes that cell: the window there goes
+            // back to being a tab, and the dragged one's old pane closes.
+            editor.MouseDown(centre (tabRect a))
             editor.MouseMove(centre (cellRect [Second]))
-            check (editor.Drag |> Option.exists(fun d -> d.fromPane && d.aim=Some(CellMiddle(0,[Second])))) (sprintf "A pane chip over a cell's middle was not aimed at it: %A" editor.Drag)
+            check (editor.Drag |> Option.exists(fun d -> d.begun && d.aim=Some(CellMiddle(0,[Second])))) (sprintf "A pane's tab over another cell's middle was not aimed at it: %A" editor.Drag)
             editor.MouseUp(centre (cellRect [Second]))
-            check (panes()=[b;c;a]) (sprintf "Dropping a pane chip on another cell did not swap them: %A" (panes()))
-            // A pane chip dragged to the strip's start takes its pane out and puts the tab first.
-            editor.MouseDown(chipPt [First;Second])
+            check (panes()=[c;a] && tabsNow()=[a;b;c;d]) (sprintf "Dropping a pane's tab on another cell did not move it there: %A %A" (panes()) (tabsNow()))
+            // A pane's tab dragged to the strip's start goes first, its pane staying.
+            editor.MouseDown(centre (tabRect c))
             let first = tabRect a
             let slotPt = Point(first.X+2,first.Y+first.Height/2)
             editor.MouseMove(slotPt)
-            check (editor.Drag |> Option.exists(fun d -> d.aim=Some(StripSlot(0,0)))) (sprintf "A chip over the strip's start was not aimed at the first slot: %A" editor.Drag)
             editor.MouseUp(slotPt)
-            check (tabsNow()=[c;a;b;d] && panes()=[b;a]) (sprintf "Dropping a pane chip on the strip did not place the tab and close the pane: %A %A" (tabsNow()) (panes()))
+            check (tabsNow()=[c;a;b;d] && panes()=[c;a]) (sprintf "Dropping a pane's tab at the strip's start did not place the tab, its pane staying: %A %A" (tabsNow()) (panes()))
             // The tabs the drop moved slide from where they were; the picture leaves them out meanwhile.
             let slidFrom = editor.Sliding
             check (slidFrom.ContainsKey a && slidFrom.ContainsKey b && slidFrom |> Map.forall(fun hwnd from -> from<>tabRect hwnd)) (sprintf "The tabs the drop moved are not on their way from where they were: %A" slidFrom)
@@ -268,21 +267,26 @@ let main() =
             editor.MouseDown(centre editor.Layout.rows.[0].splitButton.Value)
             check (editor.FlyoutOpen && editor.Layout.rows.[0].shapes.Length=GroupDraft.shapes.Length) "The split button did not open the shapes"
             editor.MouseDown(centre (editor.Layout.rows.[0].shapes |> List.find(fun (shape,_) -> shape=StackedPair) |> snd))
-            check (not editor.FlyoutOpen && GroupDraft.emptyCells editor.Draft.groups.[0]=[[Second;Second]] && panes()=[b;a]) (sprintf "A shape did not cut the cell with an empty slot: %A" editor.Draft.groups.[0].panes)
-            check (editor.Plan.groups.Head.layout=Some(Split {pair b a with focused=[Second]})) "The empty slot did not close in the plan"
+            check (not editor.FlyoutOpen && GroupDraft.emptyCells editor.Draft.groups.[0]=[[Second;Second]] && panes()=[c;a]) (sprintf "A shape did not cut the cell with an empty slot: %A" editor.Draft.groups.[0].panes)
+            check (editor.Plan.groups.Head.layout=Some(Split {pair c a with focused=[Second]})) "The empty slot did not close in the plan"
             // The empty cell's cross removes it; cut again, a tab dropped on it fills it.
             let empty = cellRect [Second;Second]
             editor.MouseMove(centre empty)
             editor.MouseDown(cellCrossPt empty)
             editor.MouseUp(cellCrossPt empty)
-            check (GroupDraft.emptyCells editor.Draft.groups.[0]=[] && panes()=[b;a]) "The empty cell's cross did not remove it"
+            check (GroupDraft.emptyCells editor.Draft.groups.[0]=[] && panes()=[c;a]) "The empty cell's cross did not remove it"
             editor.MouseDown(centre editor.Layout.rows.[0].splitButton.Value)
             editor.MouseDown(centre (editor.Layout.rows.[0].shapes |> List.find(fun (shape,_) -> shape=SideBySidePair) |> snd))
-            editor.MouseDown(centre (tabRect c))
-            editor.MouseMove(centre (cellRect [Second;Second]))
+            // An empty cell is there to be filled: at its edge as at its middle, the tab is aimed
+            // at the cell itself, not at a split of it.
+            editor.MouseDown(centre (tabRect b))
+            let empty = cellRect [Second;Second]
+            editor.MouseMove(Point(empty.Right-Dpi.scale 8,empty.Y+empty.Height/2))
+            check (editor.Drag |> Option.exists(fun d -> d.aim=Some(CellMiddle(0,[Second;Second])))) (sprintf "A tab over the empty cell's edge was not aimed at the cell itself: %A" editor.Drag)
+            editor.MouseMove(centre empty)
             check (editor.Drag |> Option.exists(fun d -> d.aim=Some(CellMiddle(0,[Second;Second])) && d.fits)) (sprintf "A tab over the empty cell was not aimed at it: %A" editor.Drag)
-            editor.MouseUp(centre (cellRect [Second;Second]))
-            check (panes()=[b;a;c] && GroupDraft.emptyCells editor.Draft.groups.[0]=[]) (sprintf "A tab dropped on the empty cell did not fill it: %A" (panes()))
+            editor.MouseUp(centre empty)
+            check (panes()=[c;a;b] && GroupDraft.emptyCells editor.Draft.groups.[0]=[]) (sprintf "A tab dropped on the empty cell did not fill it: %A" (panes()))
             // Esc closes the shapes, not the editor.
             editor.MouseDown(centre editor.Layout.rows.[0].splitButton.Value)
             editor.Press Keys.Escape
@@ -418,8 +422,7 @@ let main() =
             editor.MouseUp(slot)
             check (editor.Draft.groups.Length=1 && tabsOf 0=[d;e;a] && editor.Layout.vacated.IsEmpty) (sprintf "A lone window carried to the row below did not stay there with its own row gone: %A" (editor.Draft.groups |> List.map(fun g -> g.tabs)))
             editor.Close()
-        // A window in a pane leaves it, staying a tab: by its menu, or by its chip carried off the
-        // cells, anywhere within the popup that takes no other drop.
+        // A window in a pane leaves it, staying a tab, by its tab's menu.
         do
             let shown = List.zip [a;b;c] ["One";"Two";"Three"] |> List.map(fun (hwnd,name) -> {hwnd=hwnd; name=name; icon=None; minimized=true})
             let frame = Rect(Pt(100,100),Sz(1600,900))
@@ -431,17 +434,6 @@ let main() =
             check (panes editor=[a;b] && (editor.TabMenu c).Length=1 && (editor.TabMenu a).Length=2) "The menu of a tab in a pane did not offer to take it out of the pane"
             (match List.last (editor.TabMenu a) with CmiRegular r -> r.click() | _ -> failwith "The tab's menu did not end with a regular item")
             check (not(List.contains a (panes editor)) && editor.Draft.groups.[0].tabs=[a;b;c]) (sprintf "Taking a window out of its pane by the menu did not keep it a tab: %A" editor.Draft)
-            editor.Close()
-            let editor = opened()
-            let l = editor.Layout.rows.[0]
-            let cell = l.cells |> List.find(fun (path,_,_) -> path=[First]) |> fun (_,_,r) -> r
-            editor.MouseDown(Point(cell.X+cell.Width/2,cell.Y+Dpi.scale 12))
-            let below = Point(l.band.X+l.band.Width/2,l.band.Bottom+Dpi.scale 3)
-            editor.MouseMove(Point(below.X,below.Y-Dpi.scale 40))
-            editor.MouseMove(below)
-            check (editor.Drag |> Option.exists(fun d -> d.fromPane && d.aim=Some OutOfPane)) (sprintf "A pane chip carried off the cells was not aimed out of its pane: %A" (editor.Drag |> Option.map(fun d -> d.aim)))
-            editor.MouseUp(below)
-            check (not(List.contains a (panes editor)) && editor.Draft.groups.[0].tabs=[a;b;c]) (sprintf "A pane chip dropped off the cells did not leave its pane: %A" editor.Draft)
             editor.Close()
         // Opened as the app opens it: every row folded, centred on the screen of the window in
         // front, and tall enough already for any one row expanded, so expanding resizes nothing.

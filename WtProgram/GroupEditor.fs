@@ -33,8 +33,6 @@ module GroupEditorMetrics =
     /// Between the tabs of the panes of one split, which stand together.
     let paneGap = 2
     let iconSize = 18
-    /// The band at a cell's top with the window's icon and name, clear of its picture.
-    let chipHeight = 26
     let cellGap = 4
     let contentMin = 220
     let contentMax = 420
@@ -64,16 +62,13 @@ type DragAim =
     | StripSlot of row:int * slot:int
     | CellMiddle of row:int * PanePath
     | CellEdge of row:int * PanePath * SplitAxis * Side
-    /// A pane chip carried off the cells, anywhere within the popup that takes no other drop:
-    /// the pane goes, the window stays a tab.
-    | OutOfPane
     | LooseRow
     | NewGroupRow
     /// The band a row left empty while the drag lasts: the tab carried back onto it puts the group back.
     | VacatedRow of int
 
-/// A tab or a pane chip in hand: which window, from a cell or a strip, where the press was and
-/// the pointer is, and what it is aimed at, with whether that drop would fit.
+/// A tab in hand: which window, where the press was and the pointer is, and what it is aimed
+/// at, with whether that drop would fit.
 /// Where a whole row in hand is aimed: another row, whose group takes every window of it,
 /// or the loose row, which dissolves it.
 type RowAim =
@@ -84,12 +79,12 @@ type RowAim =
 /// its band, where the pointer is, and what it is aimed at.
 type GroupEditorRowDrag = { index:int; start:Point; at:Point; offset:Point; aim:RowAim option; begun:bool }
 
-type GroupEditorDrag = { hwnd:IntPtr; fromPane:bool; start:Point; at:Point; aim:DragAim option; fits:bool; begun:bool
+type GroupEditorDrag = { hwnd:IntPtr; start:Point; at:Point; aim:DragAim option; fits:bool; begun:bool
                          /// Where in the tab the press was, so the tab in hand stays under the pointer as it was.
                          offset:Point
-                         /// The draft and the selection as the tab was taken, with where it was taken from: back
-                         /// to them when it is carried off the rows, as if it had not moved.
-                         origin:DesktopDraft; originPane:bool; originSelected:IntPtr }
+                         /// The draft and the selection as the tab was taken: back to them when it is carried
+                         /// off the rows, as if it had not moved.
+                         origin:DesktopDraft; originSelected:IntPtr }
 
 /// One row as drawn: its band, its tabs, and, expanded, its content with the cells in it.
 type GroupEditorRowLayout = {
@@ -144,7 +139,7 @@ type GroupEditorLayout = {
 /// row of their own, and a band to drop a window on for a new group. A row expanded shows the
 /// group large: its tabs along the top as the strip draws
 /// them, and under them what the group shows with the selected tab active, each pane with its
-/// window's live picture. Tabs and pane chips drag within a row and between rows; the split
+/// window's live picture. Tabs drag within a row and between rows; the split
 /// button cuts the focused cell into a shape with empty slots to fill. Edits change a draft;
 /// Save turns the draft into a plan for `GroupEditorApply`, Esc or clicking elsewhere leaves
 /// everything as it was. Used once.
@@ -371,7 +366,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// the pointer and where it was stays in view. None while it stands where it came from.
     let ghostPlace() =
         match drag with
-        | Some d when d.begun && not d.fromPane ->
+        | Some d when d.begun ->
             let same (g:GroupDraft) (h:GroupDraft) =
                 if g.group.IsSome then g.group=h.group
                 else h.group.IsNone && g.tabs |> List.exists(fun t -> t<>d.hwnd && List.contains t h.tabs)
@@ -485,10 +480,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let cellCrossRect (r:Rectangle) =
         let side = scale GroupEditorMetrics.cross
         Rectangle(r.Right-scale 6-side,r.Y+scale 6,side,side)
-    /// The band at the cell's top with its window's name, where the content is split: the one
-    /// cell of a group in no split is named by the selected tab above it already.
-    let chipOf (row:GroupEditorRowLayout) (r:Rectangle) =
-        if row.cells.Length>1 then Rectangle(r.X,r.Y,r.Width,min r.Height (scale GroupEditorMetrics.chipHeight)) else Rectangle.Empty
     /// The rectangle a half of the cell would take, to show where an edge drop goes.
     let half (r:Rectangle) axis side =
         let a,_,b = SplitGeometry.rectangles (scale GroupEditorMetrics.cellGap) (toRect r) {axis=axis;ratio=0.5;first=Leaf Empty;second=Leaf Empty}
@@ -518,23 +509,27 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// What a drag is aimed at from the point: a slot among a row's tabs; in an expanded row's
     /// content, a cell's edge, the whole content's edge or a cell's middle; the loose row; the
     /// new group's band.
-    let aimAt (l:GroupEditorLayout) (pt:Point) (dragged:IntPtr) (fromPane:bool) =
+    let aimAt (l:GroupEditorLayout) (pt:Point) (dragged:IntPtr) =
         let inRow = l.rows |> List.tryFind(fun row -> row.band.Contains pt)
-        let offCells = if fromPane then Some OutOfPane else None
         match inRow with
         | Some row when row.expanded ->
             if pt.Y<row.picture.Y then Some(StripSlot(row.index,slotAt row.tabs pt dragged))
             elif row.picture.Contains pt then
-                let split = groupAt row.index |> Option.bind(fun g -> match g.panes with Some(Branch tree) -> Some {tree=tree;focused=[]} | _ -> None)
-                match SplitGeometry.dropAt (Pt(pt.X,pt.Y)) (scale SplitMetrics.edgeZone) (scale SplitMetrics.outerZone) (scale GroupEditorMetrics.cellGap) (toRect row.picture) split with
-                | Some((path,axis,side),_) -> Some(CellEdge(row.index,path,axis,side))
-                // The middle of a cell of a split takes the window for that pane; the whole content,
-                // unsplit, takes nothing at its middle: the strip is the way into the group.
+                // An empty cell is there to be filled: anywhere on it takes the window, and none
+                // of its edges splits it further.
+                match row.cells |> List.tryFind(fun (_,pane,r) -> pane=Empty && r.Contains pt) with
+                | Some(path,_,_) -> Some(CellMiddle(row.index,path))
                 | None ->
-                    match row.cells |> List.tryFind(fun (path,_,r) -> not path.IsEmpty && r.Contains pt) with
-                    | Some(path,_,_) -> Some(CellMiddle(row.index,path))
-                    | None -> offCells
-            else offCells
+                    let split = groupAt row.index |> Option.bind(fun g -> match g.panes with Some(Branch tree) -> Some {tree=tree;focused=[]} | _ -> None)
+                    match SplitGeometry.dropAt (Pt(pt.X,pt.Y)) (scale SplitMetrics.edgeZone) (scale SplitMetrics.outerZone) (scale GroupEditorMetrics.cellGap) (toRect row.picture) split with
+                    | Some((path,axis,side),_) -> Some(CellEdge(row.index,path,axis,side))
+                    // The middle of a cell of a split takes the window for that pane; the whole content,
+                    // unsplit, takes nothing at its middle: the strip is the way into the group.
+                    | None ->
+                        match row.cells |> List.tryFind(fun (path,_,r) -> not path.IsEmpty && r.Contains pt) with
+                        | Some(path,_,_) -> Some(CellMiddle(row.index,path))
+                        | None -> None
+            else None
         | Some row -> Some(StripSlot(row.index,slotAt row.tabs pt dragged))
         | None ->
             if l.loose.Contains pt then Some LooseRow
@@ -542,10 +537,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             else
                 match l.vacated |> List.tryFindIndex(fun r -> r.Contains pt) with
                 | Some i -> Some(VacatedRow i)
-                | None -> offCells
+                | None -> None
 
     /// The draft after a drop, with the row the window landed in: None where it does nothing.
-    let dropped (hwnd:IntPtr) (fromPane:bool) (aim:DragAim) (draft:DesktopDraft) : (DesktopDraft * int option) option =
+    let dropped (hwnd:IntPtr) (aim:DragAim) (draft:DesktopDraft) : (DesktopDraft * int option) option =
         let source = DesktopDraft.find hwnd draft
         let alone = match source with InGroup i -> draft.groups.[i].tabs=[hwnd] | _ -> false
         /// The window in the row first, from wherever it was, then the row's own edit.
@@ -566,7 +561,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             | InGroup i when i=row ->
                 let g = draft.groups.[row]
                 // The slot counts the other tabs before the point, which is where moveTab puts it.
-                let moved = GroupDraft.moveTab hwnd slot (if fromPane then GroupDraft.removeFromPane hwnd g else g)
+                let moved = GroupDraft.moveTab hwnd slot g
                 if moved=g then None else Some(DesktopDraft.edit row (fun _ -> moved) draft,Some row)
             | _ ->
                 if row>=draft.groups.Length then None
@@ -578,7 +573,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             into row (fun _ g ->
                 match g.panes |> Option.bind(SplitTree.node path),GroupDraft.pathOf hwnd g with
                 | Some(Leaf(Occupied other)),_ when other=hwnd -> g
-                | Some(Leaf(Occupied _)),Some own when fromPane -> GroupDraft.swapPanes own path g
                 | Some(Leaf _),_ -> GroupDraft.putInPane hwnd path g
                 | _ -> g)
         | CellEdge(row,path,axis,side) ->
@@ -592,13 +586,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             else
                 let next = DesktopDraft.newGroup hwnd draft
                 Some(next,(match DesktopDraft.find hwnd next with InGroup at -> Some at | _ -> None))
-        | OutOfPane ->
-            match source with
-            | InGroup i when fromPane ->
-                let g = draft.groups.[i]
-                let next = GroupDraft.removeFromPane hwnd g
-                if next=g then None else Some(DesktopDraft.edit i (fun _ -> next) draft,Some i)
-            | _ -> None
 
     let drawIconOn (g:Graphics) (icon:Image option) (bounds:Rectangle) =
         match icon with
@@ -639,7 +626,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// Every tab of the layout with how it is drawn now.
     let ghostLook (rect:Rectangle) (band:Color) = {rect=rect; selected=false; seamAfter=false; onContent=false; blank=false; ghost=true; band=band; hot=false}
     let tabLooks (l:GroupEditorLayout) =
-        let inHand hwnd = drag |> Option.exists(fun d -> d.begun && d.hwnd=hwnd && not d.fromPane)
+        let inHand hwnd = drag |> Option.exists(fun d -> d.begun && d.hwnd=hwnd)
         (l.rows |> List.collect(fun row ->
             let g = (groupAt row.index).Value
             let inPane = GroupDraft.paneWindows g
@@ -709,8 +696,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         use bitmap = (sprite :> ISprite).image.bitmap
                         g.DrawImage(bitmap,Rectangle((ra.Right+rb.X)/2-size.width/2,ra.Bottom-h,size.width,h))
                     | _ -> ())
-        /// The expanded row's cells: each window's picture, with its chip over it where the content
-        /// is split, or the icon alone where there is no picture to show; an empty cell dashed.
+        /// The expanded row's cells: each window's picture, or the icon alone where there is no
+        /// picture to show, with nothing over it, since the tabs above name the windows; an empty
+        /// cell dashed.
         let drawCells (row:GroupEditorRowLayout) =
             for path,pane,r in row.cells do
                 use shape = rounded r (scale 4)
@@ -725,14 +713,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     if row.cells.Length>1 then
                         use pen = new Pen(palette.border,float32(scale 1))
                         g.DrawPath(pen,shape)
-                    let chip = (chipOf row r).Height
-                    if chip>0 then
-                        let iconSize = scale GroupEditorMetrics.iconSize
-                        let iconBounds = Rectangle(r.X+scale 8,r.Y+(chip-iconSize)/2,iconSize,iconSize)
-                        drawIcon (iconOf hwnd) iconBounds
-                        TextRenderer.DrawText(g,nameOf hwnd,bodyFont,Rectangle(iconBounds.Right+scale 6,r.Y,max 0 (r.Right-scale 8-iconBounds.Right-scale 6),chip),textOn,back,textFlags)
                     if not(thumbs.ContainsKey hwnd) then
-                        let picture = Rectangle(r.X,r.Y+chip,r.Width,r.Height-chip)
+                        let picture = r
                         let side = min (scale 48) (min picture.Width picture.Height*2/3)
                         if side>0 then drawIcon (iconOf hwnd) (Rectangle(picture.X+(picture.Width-side)/2,picture.Y+(picture.Height-side)/2,side,side))
                 | Empty ->
@@ -857,7 +839,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
 
     /// What a drag adds over the picture, drawn in place at each move rather than into it: the
     /// slot among the tabs, the zone a drop would take (grey where it would not fit), the loose
-    /// row or the new group lit, and the chip in hand under the pointer.
+    /// row or the new group lit.
     let overlay (g:Graphics) (l:GroupEditorLayout) (d:GroupEditorDrag) =
         g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         // The drop lands elsewhere than the slot the tab stands in now: the slot is covered in its
@@ -871,7 +853,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         match d.aim with
         | Some(StripSlot(index,slot)) ->
             l.rows |> List.tryItem index |> Option.iter(fun row ->
-                let others = row.tabs |> List.filter(fun (hwnd,_) -> d.fromPane || hwnd<>d.hwnd)
+                let others = row.tabs |> List.filter(fun (hwnd,_) -> hwnd<>d.hwnd)
                 let x,y,h =
                     match List.tryItem slot others,List.tryItem (slot-1) others with
                     | Some(_,r),_ -> r.X-scale GroupEditorMetrics.tabGap/2,r.Y,r.Height
@@ -897,8 +879,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             use band = rounded l.loose (scale 8)
             use pen = new Pen(accent,float32(scale 2))
             g.DrawPath(pen,band)
-        // Off the cells, the chip in hand says it all: its pane goes as it is dropped.
-        | Some OutOfPane -> ()
         | Some(NewGroupRow | VacatedRow _ as aim) ->
             coverSlot()
             let r = match aim with VacatedRow i -> l.vacated.[i] | _ -> l.newGroup
@@ -1133,10 +1113,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 l.rows |> List.collect(fun row ->
                     row.cells |> List.choose(fun (path,pane,r) ->
                         match pane with
-                        | Occupied hwnd when hasPicture hwnd -> Some(hwnd,r,(chipOf row r).Height,row.index,kept row.index path r)
+                        | Occupied hwnd when hasPicture hwnd -> Some(hwnd,r,row.index,kept row.index path r)
                         | _ -> None))
             for hwnd in List.ofSeq thumbs.Keys do
-                if not(wanted |> List.exists(fun (each,_,_,_,_) -> each=hwnd)) then
+                if not(wanted |> List.exists(fun (each,_,_,_) -> each=hwnd)) then
                     DwmApi.DwmUnregisterThumbnail(thumbs.[hwnd]) |> ignore
                     thumbs.Remove hwnd |> ignore
             // While its row grows or folds, the picture follows the row and is cut at its edge.
@@ -1146,7 +1126,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     let b = l.rows.[index].band
                     let y,h = morphLerp t a.Y b.Y,morphLerp t a.Height b.Height
                     y-b.Y,Rectangle(0,y-scroll,width,h))
-            for hwnd,r,chip,index,kept in wanted do
+            for hwnd,r,index,kept in wanted do
                 let hidden = kept=Some None
                 let thumb =
                     match thumbs.TryGetValue hwnd with
@@ -1158,7 +1138,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                             Some thumb
                         else None
                 thumb |> Option.iter(fun thumb ->
-                    let picture = Rectangle(r.X+scale 2,r.Y+chip,r.Width-scale 4,r.Height-chip-scale 2)
+                    let picture = Rectangle(r.X+scale 2,r.Y+scale 2,r.Width-scale 4,r.Height-scale 4)
                     // Fitted inside, at the window's proportions: DWM stretches to the rectangle given.
                     let source = OS().windowFromHwnd(hwnd).bounds
                     let dest =
@@ -1296,7 +1276,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         match DesktopDraft.find hwnd current with
         | InGroup i -> slid (fun () -> edit i (GroupDraft.removeFromPane hwnd))
         | _ -> ()
-    /// A tab's or a pane chip's menu: the window out of its group, and, in a pane, out of that.
+    /// A tab's menu: the window out of its group, and, in a pane, out of that.
     let tabMenuItems hwnd =
         let regular text click = CmiRegular({ text=text; image=None; flags=List2(); click=click })
         let inPane = match DesktopDraft.find hwnd current with InGroup i -> List.contains hwnd (GroupDraft.paneWindows current.groups.[i]) | _ -> false
@@ -1414,15 +1394,15 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         else cancel()
 
     /// A press at the point: the empty cell's cross, the split button and its shapes, the buttons,
-    /// the row's menu button; else a tab or a pane chip taken in hand.
+    /// the row's menu button; else a tab taken in hand.
     let mouseDown (pt:Point) =
       if not closed then
         let l = layout()
         let view = pt
         let pt = unscroll pt
-        let take hwnd fromPane (r:Rectangle) =
-            drag <- Some {hwnd=hwnd; fromPane=fromPane; start=pt; at=pt; aim=None; fits=true; begun=false; offset=Point(pt.X-r.X,pt.Y-r.Y)
-                          origin=current; originPane=fromPane; originSelected=selected}
+        let take hwnd (r:Rectangle) =
+            drag <- Some {hwnd=hwnd; start=pt; at=pt; aim=None; fits=true; begun=false; offset=Point(pt.X-r.X,pt.Y-r.Y)
+                          origin=current; originSelected=selected}
         let expandedIndex = expandedRow()
         let shapes = expandedIndex |> Option.bind(fun i -> l.rows |> List.tryItem i) |> Option.map(fun row -> row.shapes) |> Option.defaultValue []
         let track = viewBody l
@@ -1453,7 +1433,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     | Some(hwnd,r) ->
                         // Selected on release, not here: pressed to drag, the tab would show in
                         // place of the panes it is about to be dropped on.
-                        take hwnd false r
+                        take hwnd r
                     | None ->
                         // The band's empty room takes the whole row in hand. Tabs still on their way
                         // are out of the picture the band is cut from, so they are put back first.
@@ -1465,7 +1445,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                         else
                             row.cells |> List.tryFind(fun (_,_,r) -> r.Contains pt) |> Option.iter(fun (path,pane,r) ->
                                 match pane with
-                                | Occupied hwnd when (chipOf row r).Contains pt -> take hwnd true r
                                 | Empty when (cellCrossRect r).Contains pt ->
                                     edit row.index (GroupDraft.removeCell path)
                                     refresh()
@@ -1474,7 +1453,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                                     refresh())
             | None ->
                 match l.looseTabs |> List.tryFind(fun (_,r) -> r.Contains pt) with
-                | Some(hwnd,r) -> take hwnd false r
+                | Some(hwnd,r) -> take hwnd r
                 | None -> ()
 
     /// Whether the point (as seen, and as the picture has it) is off the rows: on the title, the
@@ -1525,7 +1504,6 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     current <- d.origin
                     selected <- d.originSelected
                     reselect()
-                let d = if off then {d with fromPane=d.originPane} else d
                 // A row the move empties keeps its band, and what group it was, while the drag lasts.
                 let leaving (source:DraftPlace) (move:unit -> unit) =
                     let rows = (groups()).Length
@@ -1549,9 +1527,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                             reselect()))
                 // Aimed only where the drop would change something: a tab over its own cell is not.
                 let aim,fits =
-                    match (if off then None else aimAt l pt d.hwnd d.fromPane) with
+                    match (if off then None else aimAt l pt d.hwnd) with
                     | Some aim ->
-                        match dropped d.hwnd d.fromPane aim current with
+                        match dropped d.hwnd aim current with
                         | Some(next,Some at) -> Some aim,fitsIn at next.groups.[at]
                         | Some(_,None) -> Some aim,true
                         | None -> None,true
@@ -1560,27 +1538,27 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 // dragged along the strip does: within its own row, into another row's tabs, or
                 // among the loose windows; nothing is left to drop then. A new group waits for
                 // the drop, as the band would move under the pointer.
-                let aim,reordered,fromPane =
+                let aim,reordered =
                     match aim,DesktopDraft.find d.hwnd current with
-                    | Some(StripSlot(row,slot)),InGroup at when at=row && not d.fromPane ->
+                    | Some(StripSlot(row,slot)),InGroup at when at=row ->
                         let g = current.groups.[row]
                         let next = GroupDraft.moveTab d.hwnd slot g
                         if next<>g then edit row (fun _ -> next)
-                        None,next<>g,d.fromPane
+                        None,next<>g
                     | Some(StripSlot(row,slot)),source when row<(groups()).Length && source<>InGroup row ->
                         leaving source (fun () -> moved (DesktopDraft.moveToGroup d.hwnd row (Some slot) current) d.hwnd)
-                        None,true,false
+                        None,true
                     | Some LooseRow,source when source<>Loose ->
                         leaving source (fun () -> moved (DesktopDraft.moveToLoose d.hwnd current) d.hwnd)
-                        None,true,false
+                        None,true
                     | Some(VacatedRow slot),_ ->
                         putBack slot
-                        None,true,false
-                    | _ -> aim,false,d.fromPane
+                        None,true
+                    | _ -> aim,false
                 let changed = not d.begun || aim<>d.aim || fits<>d.fits || reordered || restored
-                drag <- Some {d with at=pt; aim=aim; fits=fits; begun=true; fromPane=fromPane}
+                drag <- Some {d with at=pt; aim=aim; fits=fits; begun=true}
                 if reordered || restored then slide before
-                // The picture itself changes only as the aim does; the chip just moves over it.
+                // The picture itself changes only as the aim does; the tab in hand just moves over it.
                 if changed then refresh() elif form.IsHandleCreated then form.Invalidate()
         | None ->
             let l = layout()
@@ -1618,9 +1596,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             drag <- None
             if d.begun then
                 let l = layout()
-                match (if offRows l view pt then None else aimAt l pt d.hwnd d.fromPane) with
+                match (if offRows l view pt then None else aimAt l pt d.hwnd) with
                 | Some aim ->
-                    match dropped d.hwnd d.fromPane aim current with
+                    match dropped d.hwnd aim current with
                     | Some(next,at) when (match at with Some at -> fitsIn at next.groups.[at] | None -> true) ->
                         moved next d.hwnd
                         // A window put in a pane of the expanded row shows its split.
@@ -1634,12 +1612,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 // A click on a tab: in a folded row, the row expands on it; in the expanded row it
                 // is selected, or, selected already, folds the row.
                 match DesktopDraft.find d.hwnd current,expandedRow() with
-                | InGroup index,Some row when index=row && not d.fromPane ->
+                | InGroup index,Some row when index=row ->
                     if selected=d.hwnd then expand None
                     else
                         selected <- d.hwnd
                         cellFocus <- None
-                | InGroup index,_ when not d.fromPane ->
+                | InGroup index,_ ->
                     expand (Some index)
                     selected <- d.hwnd
                     refresh()
@@ -1665,17 +1643,14 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
              | _ -> if form.IsHandleCreated then form.Invalidate())
         | None -> tabUp view pt
 
-    /// A right click on a tab or a pane chip of a group: a menu to take the window out of it; on
-    /// a row's empty room, the row's menu.
+    /// A right click on a tab of a group: a menu to take the window out of it; on a row's empty
+    /// room, the row's menu.
     let menuAt (view:Point) =
       if not closed then
         let l = layout()
         let pt = unscroll view
         let onTab = l.rows |> List.collect(fun row -> row.tabs) |> List.tryFind(fun (_,r) -> r.Contains pt) |> Option.map fst
-        let onChip =
-            l.rows |> List.filter(fun row -> row.expanded) |> List.collect(fun row -> row.cells |> List.map(fun cell -> row,cell))
-            |> List.tryPick(fun (row,(_,pane,r)) -> match pane with Occupied hwnd when (chipOf row r).Contains pt -> Some hwnd | _ -> None)
-        match (match onTab with Some _ -> onTab | None -> onChip) with
+        match onTab with
         | Some hwnd when DesktopDraft.find hwnd current<>Loose ->
             showMenu (tabMenuItems hwnd) view
         | Some _ -> ()
@@ -1743,7 +1718,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     member _.TakeOut(hwnd:IntPtr) = takeOut hwnd
     /// The items of a row's menu, as its button opens it.
     member _.RowMenu(index:int) = (rowMenuItems index).list
-    /// The items of a tab's or a pane chip's menu, as a right click opens it.
+    /// The items of a tab's menu, as a right click opens it.
     member _.TabMenu(hwnd:IntPtr) = (tabMenuItems hwnd).list
     /// The tabs on their way to their places after the last change, by where each was.
     member _.Sliding = sliding
