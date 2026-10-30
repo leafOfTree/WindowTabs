@@ -421,6 +421,17 @@ let main() =
             // The expanded row fits in the height set as it opened, unless the screen is too short for it.
             let fits = editor.Layout.height<=editor.Size.Height || editor.Size.Height>=area.Height*9/10-Dpi.scale 60
             check (editor.Expanded=Some 0 && fits && editor.Size.Height=folded) (sprintf "Expanding a row resized the popup, or did not fit: %d then %d for %d" folded editor.Size.Height editor.Layout.height)
+            // The whole content, unsplit, takes no drop at its middle: a tab carried there is aimed
+            // at nothing, and dropped there stays where it was.
+            let l = editor.Layout
+            let from = snd l.rows.[1].tabs.Head
+            editor.MouseDown(Point(from.X+from.Width/2,from.Y+from.Height/2))
+            let picture = l.rows.[0].picture
+            editor.MouseMove(Point(picture.X+picture.Width/2,picture.Y+picture.Height/2+Dpi.scale 12))
+            editor.MouseMove(Point(picture.X+picture.Width/2,picture.Y+picture.Height/2))
+            check (editor.Drag |> Option.exists(fun d -> d.begun && d.aim=None)) (sprintf "A tab over the unsplit content's middle was aimed at it: %A" (editor.Drag |> Option.map(fun d -> d.aim)))
+            editor.MouseUp(Point(picture.X+picture.Width/2,picture.Y+picture.Height/2))
+            check (editor.Draft.groups.Length=2 && editor.Draft.groups.[1].tabs=[c]) (sprintf "A tab dropped on the unsplit content's middle moved: %A" editor.Draft)
             editor.Close()
         // The row's menu holds what a drag does less handily with many rows: merging the row into
         // another, named there by its first tab, and ungrouping it.

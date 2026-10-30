@@ -472,7 +472,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 let split = groupAt row.index |> Option.bind(fun g -> match g.panes with Some(Branch tree) -> Some {tree=tree;focused=[]} | _ -> None)
                 match SplitGeometry.dropAt (Pt(pt.X,pt.Y)) (scale SplitMetrics.edgeZone) (scale SplitMetrics.outerZone) (scale GroupEditorMetrics.cellGap) (toRect row.picture) split with
                 | Some((path,axis,side),_) -> Some(CellEdge(row.index,path,axis,side))
-                | None -> row.cells |> List.tryFind(fun (_,_,r) -> r.Contains pt) |> Option.map(fun (path,_,_) -> CellMiddle(row.index,path))
+                // The middle of a cell of a split takes the window for that pane; the whole content,
+                // unsplit, takes nothing at its middle: the strip is the way into the group.
+                | None -> row.cells |> List.tryFind(fun (path,_,r) -> not path.IsEmpty && r.Contains pt) |> Option.map(fun (path,_,_) -> CellMiddle(row.index,path))
             else None
         | Some row -> Some(StripSlot(row.index,slotAt row.tabs pt dragged))
         | None ->

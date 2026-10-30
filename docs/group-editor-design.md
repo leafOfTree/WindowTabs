@@ -188,7 +188,7 @@ content when expanded):
 | --- | --- | --- |
 | a tab | between two tabs of its own strip | the tab moves there as the pointer goes, the others making room, as on the real strip; pinned tabs stay first. Where a row's tabs wrap, the slot is on the line the pointer is on; in the gap between lines the tab keeps its line, so the lines do not re-wrap under the pointer and flip it back and forth |
 | a tab | an empty cell | the window fills it |
-| a tab | the middle of a cell | the window takes that pane; the pane's old window goes back to being a tab |
+| a tab | the middle of a cell of a split | the window takes that pane; the pane's old window goes back to being a tab. The whole content, unsplit, takes nothing at its middle: the strip is the way into the group |
 | a tab | a cell's edge (left/right/top/bottom) | that pane splits on that side for the window, as a tab dropped on a pane's edge does; with no split, the single cell splits, so the selected window and the dropped one become the first pair |
 | a tab | the content's outer edge | the whole group splits: a new column or row |
 | a pane chip | another cell's middle | the two panes swap windows |
