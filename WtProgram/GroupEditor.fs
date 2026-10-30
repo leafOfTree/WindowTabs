@@ -728,6 +728,11 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             use pen = new Pen(accent,float32(scale 2))
             g.DrawPath(pen,band)
         | Some(NewGroupRow | VacatedRow _ as aim) ->
+            // The drop lands here, not in the slot the tab left open where it stands now: the
+            // slot is covered in its row's colour, so one place alone is lit.
+            tabLooks l |> List.tryFind(fun (hwnd,look) -> hwnd=d.hwnd && look.blank) |> Option.iter(fun (_,look) ->
+                use cover = new SolidBrush(if DesktopDraft.find d.hwnd current=Loose then looseFill else rowFill)
+                g.FillRectangle(cover,Rectangle.Inflate(look.rect,scale 1,scale 1)))
             let r = match aim with VacatedRow i -> l.vacated.[i] | _ -> l.newGroup
             use band = rounded r (scale 8)
             use fill = new SolidBrush(selectedFill)
