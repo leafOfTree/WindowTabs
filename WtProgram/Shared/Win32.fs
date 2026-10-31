@@ -7,9 +7,10 @@ open System.Text
 open System.Windows.Forms
 
 module FullScreenWindow =
-    /// The window covers its whole monitor, as one in full screen does.
-    let covers (bounds:Rect) (screen:Rectangle) =
-        bounds.x <= screen.X && bounds.y <= screen.Y && bounds.x+bounds.width >= screen.Right && bounds.y+bounds.height >= screen.Bottom
+    /// The window covers its whole monitor, as one in full screen does; by the same rule as the
+    /// full-screen pause, so a maximized window over an auto-hidden taskbar is not taken for one.
+    let covers (bounds:Rect) (screen:Rectangle) (maximized:bool) =
+        FullScreenApps.Covers(bounds.Rectangle, screen, maximized)
 
 /// The bars an app keeps over its own window, as a remote desktop's connection bar over its
 /// full-screen window, that a group's tabs make way for.

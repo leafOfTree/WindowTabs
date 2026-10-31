@@ -55,6 +55,9 @@ type NoticeWindow() =
     let mutable icon : Icon option = None
     let hide = new Timer(Interval=3000)
     let animation = new Timer(Interval=15)
+    /// Runs only while notices wait for a full-screen window on the main monitor, which no event
+    /// of its own tells the end of when it is not in front.
+    let uncovered = new Timer(Interval=2000)
     let clock = Diagnostics.Stopwatch()
     let mutable leaving = false
     /// Windows 10's stand-in for the shadow Windows 11 gives it, following its slide and fade.
@@ -66,14 +69,16 @@ type NoticeWindow() =
     /// Where the notice rests once in.
     let mutable target = Rectangle.Empty
     let mutable wired = false
-    /// Notices waiting their turn: those asked for while the session is locked, or while a
-    /// warning or error is on screen. Warnings and errors wait in order; of the others only the
+    /// Notices waiting their turn: those asked for while the session is locked, a full-screen app
+    /// is in front or on the main monitor, or a warning or error is on screen. Warnings and errors wait in order; of the others only the
     /// latest waits, after them, as anything newer makes it out of date.
     let mutable waiting : (string * string * NoticeKind * NoticeDetail list) list = []
     let mutable switches : Microsoft.Win32.SessionSwitchEventHandler = null
     let mutable pauses : IDisposable option = None
     /// Whether the session is locked; a host checking the notices puts its own.
     static member val isLocked : unit -> bool = SessionLock.IsLocked with get,set
+    /// Whether a full-screen window covers the main monitor; a host checking the notices puts its own.
+    static member val monitorCovered : unit -> bool = FullScreenPause.coversNotices with get,set
     override _.ShowWithoutActivation = true
     /// Over everything by its style rather than TopMost, which WinForms applies by bringing the
     /// window forward and so takes the foreground, closing a palette the notice is about.
@@ -93,6 +98,11 @@ type NoticeWindow() =
                 hide.Stop()
                 this.leave())
             animation.Tick.Add(fun _ -> this.step())
+            uncovered.Tick.Add(fun _ ->
+                if not (NoticeWindow.monitorCovered()) then
+                    uncovered.Stop()
+                    DebugLog.writef "Main monitor clear of full screen; waiting %A" this.waitingTitles
+                    if not (FullScreenPause.isPaused()) && not (NoticeWindow.isLocked()) then this.quietEnded())
         base.OnHandleCreated(e)
     /// How long a kind of notice stays on its own, in milliseconds; None until replaced or closed.
     static member duration = function
@@ -118,10 +128,19 @@ type NoticeWindow() =
     /// The next waiting notice, once the one on screen has gone.
     member private this.next() =
         match waiting with
+        | _ :: _ when this.waitsForMonitor() -> ()
         | (heading,message,noticeKind,lines) :: rest ->
             waiting <- rest
             this.display(heading,message,noticeKind,lines)
         | [] -> ()
+    /// A full-screen window on the main monitor, as a video left there while another monitor is
+    /// used, is not covered either: looked at again until it is gone.
+    member private this.waitsForMonitor() =
+        let covered = NoticeWindow.monitorCovered()
+        if covered && not uncovered.Enabled then
+            DebugLog.writef "Notices wait for a full-screen window on the main monitor"
+            uncovered.Start()
+        covered
     /// Whether it is counting down to going; not while under the pointer.
     member _.isCountingDown = hide.Enabled
     /// Without the system's animations it comes and goes at once.
@@ -331,7 +350,7 @@ type NoticeWindow() =
             noticeKind heading message (String.concat "" (lines |> List.map(fun line -> " | "+line.text))) title this.Visible leaving animation.Enabled replacement.IsSome locked paused
         // Nobody sees the screen while it is locked, a full-screen app is not covered, and a
         // warning or an error is not put away unread: the notice waits its turn.
-        if locked || paused || this.importantShown then this.enqueue(heading,message,noticeKind,lines)
+        if locked || paused || this.importantShown || this.waitsForMonitor() then this.enqueue(heading,message,noticeKind,lines)
         else this.display(heading,message,noticeKind,lines)
     /// Shows it now: in place of the notice on screen, which slides out for it first.
     member private this.display(heading:string, message:string, noticeKind:NoticeKind, lines:NoticeDetail list) =
@@ -509,6 +528,7 @@ type NoticeWindow() =
             pauses |> Option.iter(fun subscription -> subscription.Dispose())
             hide.Dispose()
             animation.Dispose()
+            uncovered.Dispose()
             icon |> Option.iter(fun value -> value.Dispose())
             icon <- None
             font |> Option.iter(fun value -> value.Dispose())

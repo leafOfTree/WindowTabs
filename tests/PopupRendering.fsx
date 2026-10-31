@@ -284,6 +284,18 @@ let main() =
         FullScreenPause.set false
         pumpFor 600L
         check (notice.Visible && notice.waitingTitles.IsEmpty) "The notice held over a full-screen app did not come in after it"
+        // A video left in full screen on the main monitor while another is used: the shortcuts are
+        // not paused, but the notice, which shows there, waits until it is gone.
+        notice.hideNow()
+        let covered = ref true
+        NoticeWindow.monitorCovered <- (fun () -> covered.Value)
+        notice.show("Workspace 1","Saved with 2 windows",Info)
+        pumpFor 400L
+        check (not notice.Visible && notice.waitingTitles=["Workspace 1"]) "A notice came in over a full-screen window on the main monitor"
+        covered.Value <- false
+        pumpFor 2600L
+        check (notice.Visible && notice.waitingTitles.IsEmpty) "The notice held over a full-screen window on the main monitor did not come in after it"
+        NoticeWindow.monitorCovered <- (fun () -> false)
         notice.hideNow()
         notice.show("Last session","Restored 2 windows, 1 not found",Warning,[Entry("Slow.exe","App is not running")])
         pumpFor 600L
