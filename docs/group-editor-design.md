@@ -60,10 +60,11 @@ picture, and moves the windows once, when the user is done.
   and the loose windows there: the windows the window search lists on their own, those
   that are in no group, not a taskbar stand-in, and would be in Alt+Tab. Groups on other
   desktops are left out: Windows will not let a window join a group elsewhere.
-- It is built on the main thread from what the desktop knows (each group's windows in tab
-  order, their names, pins and icons) and from each group's layout, read on its own thread
-  through `GroupInfo.captureLayout` and handed back; the popup shows once every group has
-  answered, or has exited meanwhile, the way the palette reads a group's choices.
+- It is built on the main thread from what the desktop knows (each group's windows, their
+  names, pins and icons) and from what each group reads on its own thread through
+  `GroupInfo.captureLayout` and hands back: its tabs in the strip's order (the desktop's list
+  of a group's windows is in no order of its own) and its layout; the popup shows once every
+  group has answered, or has exited meanwhile, the way the palette reads a group's choices.
 
 ### 2.2 The overview
 

@@ -941,12 +941,18 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 // holds from one opening to the next, where the window search's would shuffle them.
                 let byName (name:'a -> string) (a:'a) (b:'a) = String.Compare(name a,name b,StringComparison.CurrentCultureIgnoreCase)
                 let captured = Dictionary<IntPtr,GroupLayout * Rect>()
+                // The tabs as the strip orders them: the group's windows alone are in no order of its own.
+                let orders = Dictionary<IntPtr,IntPtr list>()
                 let remaining = ref groups.Length
                 let finish() =
                     if groupEditorCell.value.IsNone then
                         let rows =
                             groups |> List.filter(fun info -> not info.isExited && (info :> IGroup).windows.count>0) |> List.map(fun info ->
-                                let members = (info :> IGroup).windows.list
+                                let live = (info :> IGroup).windows.list
+                                let members =
+                                    match orders.TryGetValue info.hwnd with
+                                    | true,order -> (order |> List.filter(fun each -> List.contains each live))@(live |> List.filter(fun each -> not(List.contains each order)))
+                                    | _ -> live
                                 let active = activeOf info
                                 let layout,frame =
                                     match captured.TryGetValue info.hwnd with
@@ -972,8 +978,12 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                         editor.Show()
                 for info in groups do
                     info.captureLayout(fun result ->
-                        (match result |> Option.bind snd with
-                         | Some(_,frame,panes) -> captured.[info.hwnd] <- (SplitPersistence.rebuild panes,frame)
+                        (match result with
+                         | Some(_,order,split) ->
+                             orders.[info.hwnd] <- order
+                             (match split with
+                              | Some(_,frame,panes) -> captured.[info.hwnd] <- (SplitPersistence.rebuild panes,frame)
+                              | None -> ())
                          | None -> ())
                         remaining.Value <- remaining.Value-1
                         if remaining.Value=0 then finish())

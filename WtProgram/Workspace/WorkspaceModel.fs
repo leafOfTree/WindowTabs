@@ -580,7 +580,7 @@ type WorkspaceModel() as this =
             // Group STAs read their own layout; saving never blocks them from reading settings.
             groups.iter(fun (info,saved,toSaved) ->
                 info.captureLayout(fun captured ->
-                    captured |> Option.iter(fun (layout,split) ->
+                    captured |> Option.iter(fun (layout,_,split) ->
                         saved.tabLayout <- Some layout
                         saved.split <- split |> Option.bind toSaved
                         layouts.[info.group.groupToken] <- (saved.tabLayout,split))
