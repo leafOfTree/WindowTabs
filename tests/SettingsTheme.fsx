@@ -28,15 +28,15 @@ let main() =
     try
         use settings = new Settings(true, saveDelay=0)
         let api = settings :> ISettings
-        check (not (api.getValue("showIconsOnlyByDefault") :?> bool)) "Missing icon-only setting did not preserve title visibility"
-        api.setValue("showIconsOnlyByDefault", box true)
+        check (not (api.getValue("showIconsOnly") :?> bool)) "Missing icon-only setting did not preserve title visibility"
+        api.setValue("showIconsOnly", box true)
         settings.Flush() |> ignore
         settings.clearCaches()
-        check (api.getValue("showIconsOnlyByDefault") :?> bool) "Icon-only default did not survive settings reload"
-        api.setValue("showIconsOnlyByDefault", box false)
+        check (api.getValue("showIconsOnly") :?> bool) "Icon-only default did not survive settings reload"
+        api.setValue("showIconsOnly", box false)
         settings.Flush() |> ignore
         settings.clearCaches()
-        check (not (api.getValue("showIconsOnlyByDefault") :?> bool)) "Disabling icon-only default did not persist"
+        check (not (api.getValue("showIconsOnly") :?> bool)) "Disabling icon-only default did not persist"
         let rule = {id="roundtrip";enabled=true;processPath = @"C:\Editor.exe";title="";matchType= -1;groupId="project";groupName="Project"}
         api.setValue("autoGroupingPaths",box(Set2(List2([rule.processPath;@"C:\Other.exe"]))))
         api.setValue("appGroupingRules",box [rule])

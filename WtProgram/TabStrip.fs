@@ -42,8 +42,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let isInAltTabCell = Cell.create(false)
     let numberBadgeKeysCell = Bemo.Cell<string>(Cell, SettingsCatalog.textDefault "numberLeaderKeys", (=))
     let numberBadgesCell = Bemo.Cell<bool>(Cell, false, (=))
-    /// Seeded by the default; the group's own choice then goes with its tab layout.
-    let iconOnlyCell = Cell.create(Services.settings.getValue("showIconsOnlyByDefault").cast<bool>())
+    /// Seeded by the setting; the group's own choice then goes with its tab layout.
+    let iconOnlyCell = Cell.create(Services.settings.getValue("showIconsOnly").cast<bool>())
     let dockCell = Cell.create(
         match Services.settings.getValue("tabPosition") :?> string with
         | "Left" -> TabDockLeft

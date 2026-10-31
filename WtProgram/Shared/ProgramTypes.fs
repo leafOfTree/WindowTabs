@@ -31,8 +31,8 @@ type SettingsRec = {
     appearance: AppearancePreferences
     runAtStartup: bool
     hideInactiveTabs: bool
-    /// Show only icons when a new tab group is created. A group may override this.
-    showIconsOnlyByDefault: bool
+    /// Tabs without titles, in every group until a group's tab menu chooses otherwise.
+    showIconsOnly: bool
     enableTabbingByDefault: bool
     replaceAltTab: bool
     groupWindowsInSwitcher: bool

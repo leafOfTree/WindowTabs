@@ -17,7 +17,6 @@ type GeneralView() =
             alignment.FitToItems()
         updateAlignmentLabels()
         position.SelectedIndexChanged.Add(fun _ -> updateAlignmentLabels())
-        SettingsBindings.toggleRow behaviour "icons-only-by-default"
         let autoHide = SettingsBindings.choiceRow behaviour "auto-hide-tabs"
         let showOnSwitch = SettingsUi.settingRowControl behaviour "show-tabs-on-switch" (SettingsBindings.settingToggle "showTabsOnSwitch")
         SettingsUi.indentDependentRow showOnSwitch
@@ -25,6 +24,8 @@ type GeneralView() =
         let updateShowOnSwitch() = showOnSwitch.Collapsed <- autoHide.SelectedIndex = 0
         updateShowOnSwitch()
         autoHide.SelectedIndexChanged.Add(fun _ -> updateShowOnSwitch())
+        // After auto-hide, as the tab menu lists them.
+        SettingsBindings.toggleRow behaviour "icons-only"
         let taskbar = SettingsUi.sectionCard table (tr Strings.General.taskbar)
         SettingsBindings.toggleRow taskbar "combine-taskbar-icons"
         // Last: its options unfold below it once it is on.
