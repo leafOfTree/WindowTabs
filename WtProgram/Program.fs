@@ -903,9 +903,13 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// loose windows, centred on the screen of the window in front; each group's layout read on
     /// its thread. One at a time, and opened again it closes.
     member this.editGroups(hwnd:IntPtr) =
+        // The key puts the popup away; left open on another desktop, where it cannot be seen from
+        // this one, it goes and one for this desktop opens in its place at once.
+        let elsewhere (editor:GroupEditorForm) = WindowCloaking.IsCloakedByShell editor.Handle
         match groupEditorCell.value with
-        | Some editor -> editor.Close()
-        | None ->
+        | Some editor when not(elsewhere editor) -> editor.Close()
+        | existing ->
+            existing |> Option.iter(fun editor -> editor.Close())
             let nameOverride each = windowNameOverride.tryFind(each).bind(id)
             let live =
                 this.desktop.groups.list |> List.choose(fun group ->

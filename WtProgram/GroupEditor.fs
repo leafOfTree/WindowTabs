@@ -1873,6 +1873,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     member _.Size = let l = layout() in Size(width,viewHeight l)
     /// Where the popup stands on the screen, once shown.
     member _.Bounds = form.Bounds
+    member _.Handle = form.Handle
     /// The draft as edited so far.
     member _.Draft = current
     member _.Selected = selected
