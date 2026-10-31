@@ -65,6 +65,15 @@ let main() =
     let m = GroupDraft.moveTab a 1 g2
     check (m.tabs=[b;a;c;d] && GroupDraft.paneWindows m=[b;a] && m.focused=[Second]) (sprintf "A pane tab moved past the other did not take its pane along: %A" m)
     check ((GroupDraft.moveTab c 1 g2).tabs=[a;b;c;d] && GroupDraft.paneWindows (GroupDraft.moveTab c 1 g2)=[a;b]) (sprintf "A tab in no pane moved among the panes' tabs did not land after them, or changed the panes: %A" (GroupDraft.moveTab c 1 g2).tabs)
+    // A pane's tab moved away from the other panes' tabs leaves its pane, staying a tab where it
+    // was dropped: of two panes, the split ends; of three, the other two remain.
+    let away = GroupDraft.moveTab a 3 g2
+    check (away.tabs=[b;c;d;a] && away.panes.IsNone) (sprintf "A pane tab moved away from the other's did not leave the split: %A" away)
+    let trio = {tree={axis=SideBySide;ratio=0.5;first=Leaf(Occupied a);second=Branch {axis=Stacked;ratio=0.5;first=Leaf(Occupied b);second=Leaf(Occupied c)}};focused=[First]}
+    let g3 = GroupDraft.ofGroup (IntPtr 1) [a;b;c;d] Set.empty (Split trio)
+    let third = GroupDraft.moveTab c 3 g3
+    check (third.tabs=[a;b;d;c] && GroupDraft.paneWindows third=[a;b] && third.focused=[First]) (sprintf "A pane tab moved away from two others' did not leave its pane alone: %A" third)
+    check ((GroupDraft.moveTab c 0 g3).tabs=[c;a;b;d] && GroupDraft.paneWindows (GroupDraft.moveTab c 0 g3)=[c;a;b]) (sprintf "A pane tab moved to the front, still among the panes' tabs, left its pane: %A" (GroupDraft.moveTab c 0 g3))
     // The panes' tabs stand together from the first of them, as on the strip: a window from far
     // along the strip split in beside the one shown brings its tab next to the other's.
     let far = GroupDraft.beside a d SideBySide Second (GroupDraft.ofGroup (IntPtr 1) [a;b;c;d] Set.empty GroupLayout.Single)
@@ -276,6 +285,19 @@ let main() =
             // A pane's window leaves its pane by its tab's menu, staying a tab.
             (match List.last (editor.TabMenu b) with CmiRegular r -> r.click() | _ -> failwith "The pane tab's menu did not end with a regular item")
             check (panes()=[a;c] && tabsNow()=[a;c;b;d]) (sprintf "Taking a pane's window out by its tab's menu went wrong: %A %A" (panes()) (tabsNow()))
+            // A pane's tab carried away from the other pane's tab leaves its pane, the split
+            // ending; carried back among the panes' tabs before the drop, it is in it again.
+            let back = centre (tabRect c)
+            editor.MouseDown(back)
+            let last = tabRect d
+            let awayPt = Point(last.Right-2,last.Y+last.Height/2)
+            editor.MouseMove(Point(awayPt.X-40,awayPt.Y))
+            editor.MouseMove(awayPt)
+            check (tabsNow()=[a;b;d;c] && (panes()).IsEmpty) (sprintf "A pane tab carried away from the other's did not leave the split: %A %A" (tabsNow()) (panes()))
+            editor.MouseMove(back)
+            check (tabsNow()=[a;c;b;d] && panes()=[a;c]) (sprintf "A pane tab carried back among the panes' tabs was not in its pane again: %A %A" (tabsNow()) (panes()))
+            editor.MouseUp(back)
+            check (tabsNow()=[a;c;b;d] && panes()=[a;c] && editor.Drag.IsNone) (sprintf "Dropping the pane tab back where it was changed something: %A %A" (tabsNow()) (panes()))
             // A pane's tab dragged to the strip's start goes first, its pane staying.
             editor.MouseDown(centre (tabRect c))
             let first = tabRect a

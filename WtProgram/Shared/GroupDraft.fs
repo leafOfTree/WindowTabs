@@ -109,16 +109,28 @@ module GroupDraft =
             if tabs=draft.tabs then draft else normalize {draft with tabs=tabs}
         | None -> draft
 
+    /// The pane goes and its neighbour takes the room; the window stays a tab.
+    let removeFromPane hwnd draft =
+        match draft.panes with
+        | Some node -> normalize {draft with panes=Some(SplitTree.removeWindow hwnd node)}
+        | None -> draft
+
     /// The tab moved to the index along the strip; a pinned tab stays among the pinned ones. A
     /// pane's tab moved past another pane's carries its pane along: the panes stand in the
-    /// order of their tabs, so the strip and the content read the same way.
+    /// order of their tabs, so the strip and the content read the same way. Moved away from the
+    /// other panes' tabs, it leaves its pane instead: the window stays a tab, out of the split.
     let moveTab hwnd index draft =
         if not(List.contains hwnd draft.tabs) then draft
         else
             let others = draft.tabs |> List.filter((<>) hwnd)
             let at = max 0 (min others.Length index)
             let moved = normalize {draft with tabs=List.take at others @ [hwnd] @ List.skip at others}
-            if inPane hwnd draft then panesInTabOrder moved else tabsInPaneOrder moved
+            if inPane hwnd draft then
+                let panes = paneWindows moved
+                let places = moved.tabs |> List.indexed |> List.filter(fun (_,each) -> List.contains each panes) |> List.map fst
+                if places.Length>1 && List.last places-List.head places+1>places.Length then removeFromPane hwnd moved
+                else panesInTabOrder moved
+            else tabsInPaneOrder moved
 
     /// A window joining as a tab, at the index or at the end; not between the panes' tabs.
     let addTab hwnd (index:int option) draft =
@@ -130,12 +142,6 @@ module GroupDraft =
     /// The window leaves the group; its pane, if any, closes.
     let removeWindow hwnd draft =
         normalize {draft with tabs=draft.tabs |> List.filter((<>) hwnd); pinned=draft.pinned.Remove hwnd}
-
-    /// The pane goes and its neighbour takes the room; the window stays a tab.
-    let removeFromPane hwnd draft =
-        match draft.panes with
-        | Some node -> normalize {draft with panes=Some(SplitTree.removeWindow hwnd node)}
-        | None -> draft
 
     /// The empty cell at the path goes, its neighbour taking the room.
     let removeCell path draft =

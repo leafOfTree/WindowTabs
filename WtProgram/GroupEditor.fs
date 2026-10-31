@@ -1661,7 +1661,13 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     match aim,DesktopDraft.find d.hwnd current with
                     | Some(StripSlot(row,slot)),InGroup at when at=row ->
                         let g = current.groups.[row]
-                        let next = GroupDraft.moveTab d.hwnd slot g
+                        // From the row as it was when the tab was taken, while only this tab has
+                        // moved in it: a pane's tab carried away from the other panes' leaves its
+                        // pane, and carried back among them, is in it again.
+                        let basis =
+                            d.origin.groups |> List.tryFind(fun og -> og.group.IsSome && og.group=g.group && List.sort og.tabs=List.sort g.tabs)
+                            |> Option.defaultValue g
+                        let next = GroupDraft.moveTab d.hwnd slot basis
                         if next<>g then edit row (fun _ -> next)
                         None,next<>g
                     | Some(StripSlot(row,slot)),source when row<(groups()).Length && source<>InGroup row ->

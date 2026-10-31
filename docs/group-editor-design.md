@@ -212,7 +212,7 @@ content when expanded):
 | a tab | the content's outer edge | the whole group splits: a new column or row |
 | a pane's tab | another pane's middle | the two panes swap, their tabs changing places with them: a window in a pane takes no second place |
 | a pane's tab | an empty cell, or a cell's edge | as any tab: the window fills the cell or splits at the edge, and its old pane closes, its neighbour taking the room |
-| a pane's tab | its own strip | the tab moves, its pane staying; past another pane's tab, the cells change places. The other way round too: once a pane is placed, the panes' tabs stand together in the cells' order, from the first of them along the strip, as the strip keeps them, so the strip and the content always read the same way; a tab in no pane dropped between them lands after them |
+| a pane's tab | its own strip | the tab moves, its pane staying; past another pane's tab, the cells change places; carried away from the other panes' tabs, it leaves its pane and stays a tab (carried back among them before the drop, it is in it again). The other way round too: once a pane is placed, the panes' tabs stand together in the cells' order, from the first of them along the strip, as the strip keeps them, so the strip and the content always read the same way; a tab in no pane dropped between them lands after them |
 
 Between rows:
 
