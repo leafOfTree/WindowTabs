@@ -96,14 +96,18 @@ module GroupDraft =
                 normalize {draft with panes=Some node; focused=focused}
         | None -> draft
 
-    /// The pane tabs stand in the order of their cells: the places the pane tabs hold along the
-    /// strip take the pane windows, first cell to last, once a pane is placed.
+    /// The pane tabs stand together in the order of their cells, from the first of them along
+    /// the strip, as the strip itself keeps them: once a pane is placed, the tab of a window
+    /// split in from far along the strip joins the others' tabs, and a tab in no pane moved
+    /// among them lands after them.
     let private tabsInPaneOrder draft =
         let panes = paneWindows draft
-        if draft.tabs |> List.filter(fun hwnd -> List.contains hwnd panes)=panes then draft
-        else
-            let tabs,_ = draft.tabs |> List.mapFold (fun (remaining:IntPtr list) hwnd -> if List.contains hwnd panes then List.head remaining,List.tail remaining else hwnd,remaining) panes
-            normalize {draft with tabs=tabs}
+        match draft.tabs |> List.tryFindIndex(fun hwnd -> List.contains hwnd panes) with
+        | Some first ->
+            let others = draft.tabs |> List.filter(fun hwnd -> not(List.contains hwnd panes))
+            let tabs = List.take first others @ panes @ List.skip first others
+            if tabs=draft.tabs then draft else normalize {draft with tabs=tabs}
+        | None -> draft
 
     /// The tab moved to the index along the strip; a pinned tab stays among the pinned ones. A
     /// pane's tab moved past another pane's carries its pane along: the panes stand in the
@@ -114,14 +118,14 @@ module GroupDraft =
             let others = draft.tabs |> List.filter((<>) hwnd)
             let at = max 0 (min others.Length index)
             let moved = normalize {draft with tabs=List.take at others @ [hwnd] @ List.skip at others}
-            if inPane hwnd draft then panesInTabOrder moved else moved
+            if inPane hwnd draft then panesInTabOrder moved else tabsInPaneOrder moved
 
-    /// A window joining as a tab, at the index or at the end.
+    /// A window joining as a tab, at the index or at the end; not between the panes' tabs.
     let addTab hwnd (index:int option) draft =
         if List.contains hwnd draft.tabs then draft
         else
             let at = max 0 (min draft.tabs.Length (defaultArg index draft.tabs.Length))
-            normalize {draft with tabs=List.take at draft.tabs @ [hwnd] @ List.skip at draft.tabs}
+            tabsInPaneOrder (normalize {draft with tabs=List.take at draft.tabs @ [hwnd] @ List.skip at draft.tabs})
 
     /// The window leaves the group; its pane, if any, closes.
     let removeWindow hwnd draft =

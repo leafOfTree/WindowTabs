@@ -39,10 +39,13 @@ let main() =
     check ((GroupDraft.ofGroup (IntPtr 1) [a;c] Set.empty (Split(pair a b))).panes.IsNone) "A pane of a window not in the group survived"
     check (GroupDraft.toLayout (GroupDraft.ofGroup (IntPtr 1) [a;c] Set.empty GroupLayout.Single)=GroupLayout.Single) "A group with no split got a layout"
     // Tabs along the strip, pinned ones among themselves.
-    check ((GroupDraft.moveTab c 0 g).tabs=[a;c;b;d]) "A tab moved to the front went before the pinned tab"
+    check ((GroupDraft.moveTab c 0 g).tabs=[a;b;c;d]) (sprintf "A tab moved to the front went before the pinned tab, or between the panes' tabs: %A" (GroupDraft.moveTab c 0 g).tabs)
     check ((GroupDraft.moveTab a 3 g).tabs=[a;b;c;d]) "A pinned tab left the pinned ones"
-    check ((GroupDraft.moveTab d 1 g).tabs=[a;d;b;c]) "A tab did not move to its index"
-    check ((GroupDraft.addTab e (Some 1) g).tabs=[a;e;b;c;d] && (GroupDraft.addTab e None g).tabs=[a;b;c;d;e] && GroupDraft.addTab b None g=g) "Adding a tab went wrong"
+    let plain = GroupDraft.ofGroup (IntPtr 1) [b;a;c;d] (set [a]) GroupLayout.Single
+    check ((GroupDraft.moveTab d 1 plain).tabs=[a;d;b;c]) "A tab did not move to its index"
+    check ((GroupDraft.addTab e (Some 1) plain).tabs=[a;e;b;c;d] && (GroupDraft.addTab e None plain).tabs=[a;b;c;d;e] && GroupDraft.addTab b None plain=plain) "Adding a tab went wrong"
+    // Among the panes' tabs, a tab moved or added lands after them instead.
+    check ((GroupDraft.moveTab d 1 g).tabs=[a;b;d;c] && (GroupDraft.addTab e (Some 1) g).tabs=[a;b;e;c;d]) (sprintf "A tab moved or added between the panes' tabs did not land after them: %A, %A" (GroupDraft.moveTab d 1 g).tabs (GroupDraft.addTab e (Some 1) g).tabs)
     // A window out: its pane closes; a pane out: the window stays a tab.
     let r = GroupDraft.removeWindow b g
     check (r.tabs=[a;c;d] && r.panes.IsNone && r.focused=[]) "Removing a pane window did not end a two-pane split"
@@ -50,18 +53,24 @@ let main() =
     check (r2.tabs=[a;b;c;d] && r2.panes.IsNone) "Taking a pane out of the split took its window out of the group"
     // Into a cell: the occupant goes back to being a tab; a window not a tab yet joins.
     let p = GroupDraft.putInPane c [Second] g
-    check (GroupDraft.paneWindows p=[a;c] && p.focused=[Second] && p.tabs=[a;b;c;d]) "A window put in a cell did not take it"
+    check (GroupDraft.paneWindows p=[a;c] && p.focused=[Second] && p.tabs=[a;c;b;d]) (sprintf "A window put in a cell did not take it, with the one put out after the pane tabs: %A" p.tabs)
     let p2 = GroupDraft.putInPane e [Second] g
     check (List.contains e p2.tabs && GroupDraft.paneWindows p2=[a;e]) "A window from outside put in a cell did not join"
     check (GroupDraft.putInPane a [First] g=g) "A window put in its own cell changed something"
     let s = GroupDraft.swapPanes [First] [Second] g
     check (GroupDraft.paneWindows s=[b;a] && s.focused=[Second]) "Swapping two cells did not keep the focus with its window"
     // A pane's tab moved past the other pane's carries its pane: the panes stand in their tabs'
-    // order; a tab in no pane moved among them changes nothing below.
+    // order; a tab in no pane moved among them lands after them and changes nothing below.
     let g2 = GroupDraft.ofGroup (IntPtr 1) [a;b;c;d] Set.empty (Split(pair a b))
     let m = GroupDraft.moveTab a 1 g2
     check (m.tabs=[b;a;c;d] && GroupDraft.paneWindows m=[b;a] && m.focused=[Second]) (sprintf "A pane tab moved past the other did not take its pane along: %A" m)
-    check ((GroupDraft.moveTab c 1 g2).tabs=[a;c;b;d] && GroupDraft.paneWindows (GroupDraft.moveTab c 1 g2)=[a;b]) "A tab in no pane moved among the panes' tabs changed the panes"
+    check ((GroupDraft.moveTab c 1 g2).tabs=[a;b;c;d] && GroupDraft.paneWindows (GroupDraft.moveTab c 1 g2)=[a;b]) (sprintf "A tab in no pane moved among the panes' tabs did not land after them, or changed the panes: %A" (GroupDraft.moveTab c 1 g2).tabs)
+    // The panes' tabs stand together from the first of them, as on the strip: a window from far
+    // along the strip split in beside the one shown brings its tab next to the other's.
+    let far = GroupDraft.beside a d SideBySide Second (GroupDraft.ofGroup (IntPtr 1) [a;b;c;d] Set.empty GroupLayout.Single)
+    check (far.tabs=[a;d;b;c] && GroupDraft.paneWindows far=[a;d]) (sprintf "The tab of a window split in from along the strip did not join the other pane's tab: %A" far.tabs)
+    let farBack = GroupDraft.beside c b Stacked First (GroupDraft.ofGroup (IntPtr 1) [a;b;c;d] Set.empty GroupLayout.Single)
+    check (farBack.tabs=[a;b;c;d] && GroupDraft.paneWindows farBack=[b;c]) (sprintf "The pane tabs did not stand together from the first of them: %A" farBack.tabs)
     // At an edge: the pane splits, the whole group at the root, and a pane moved leaves its old place.
     let t = GroupDraft.splitAt c [Second] SideBySide Second g
     check (GroupDraft.paneWindows t=[a;b;c] && t.focused=[Second;Second] && GroupDraft.pathOf c t=Some [Second;Second]) "A tab dropped on a pane's edge did not split that pane"
@@ -109,7 +118,7 @@ let main() =
     let m4 = DesktopDraft.moveToLoose b desk
     check (m4.groups.[0].tabs=[a;c] && m4.groups.[0].panes.IsNone && m4.loose=[e;f;b] && DesktopDraft.moveToLoose b m4=m4) "A pane window made loose did not close its pane"
     let m5 = DesktopDraft.moveToGroup e 0 None desk |> DesktopDraft.edit 0 (GroupDraft.putInPane e [Second])
-    check (m5.loose=[f] && GroupDraft.paneWindows m5.groups.[0]=[a;e] && m5.groups.[0].tabs=[a;b;c;e]) "A loose window put in a pane did not join the row"
+    check (m5.loose=[f] && GroupDraft.paneWindows m5.groups.[0]=[a;e] && m5.groups.[0].tabs=[a;e;b;c]) (sprintf "A loose window put in a pane did not join the row next to the other pane tab: %A" m5.groups.[0].tabs)
     let m6 = DesktopDraft.newGroup f desk |> DesktopDraft.newGroup d
     check (m6.loose=[e] && (m6.groups |> List.map(fun g -> g.group,g.tabs))=[Some(IntPtr 1),[a;b;c];None,[f];None,[d]]) "New rows did not come above the loose row, or the row left empty stayed"
     check (DesktopDraft.newGroup (IntPtr 99) desk=desk) "A window from nowhere made a row"
@@ -129,7 +138,7 @@ let main() =
     let expected = Split {tree={axis=SideBySide;ratio=0.5;first=occupied a;second=Branch {axis=Stacked;ratio=0.5;first=occupied b;second=occupied c}};focused=[Second;Second]}
     check ((planSplit.groups |> List.map(fun p -> p.group,p.joining,p.reorder,p.layout))=[Some(IntPtr 1),[],false,Some expected]) "A split alone was not planned as a layout"
     let planPane = DesktopPlan.make desk m5
-    check ((planPane.groups |> List.map(fun p -> p.joining,p.reorder,p.layout))=[[e],false,Some(Split {pair a e with focused=[Second]})]) "A window joining into a pane was not planned as joining with the layout"
+    check ((planPane.groups |> List.map(fun p -> p.joining,p.reorder,p.layout))=[[e],true,Some(Split {pair a e with focused=[Second]})]) "A window joining into a pane was not planned as joining, next to the other pane tab, with the layout"
     check ((DesktopPlan.make desk (DesktopDraft.moveToGroup e 0 None desk |> DesktopDraft.moveToGroup f 0 None)).groups.Head.reorder) "Two windows joining did not set the order"
 
     // ReplaceLayout: the layout itself, pruned by the group; None ends the split.
