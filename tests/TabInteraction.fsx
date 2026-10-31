@@ -250,16 +250,16 @@ let main() =
         check (SettingsCatalog.shortcutDefault "numberLeader"=0x0446) "Tab selection must default to Alt+F"
         check (Theme.leastUsedColor [0;1;2;0;3]=8) "By-window allocation did not balance colours"
         check (Theme.tabColorOrder.Head=1 && List.last Theme.tabColorOrder=0 && (Theme.tabColorOrder |> List.sort)=[0..15]) "Colour menu must start with blue, end with grey and retain every stored index"
-        check ((Theme.tabAllocationOrder |> List.sort)=[0..15] && List.last Theme.tabAllocationOrder=0) "Automatic allocation lost a colour or used grey early"
+        check ((Theme.tabAllocationOrder |> List.sort)=[0..8] && List.last Theme.tabAllocationOrder=0) "Automatic allocation must use the eight most distinct colours, then grey"
         for dark in [false;true] do
             let palette = Theme.tabPalette dark
             for a,b in Theme.tabAllocationOrder |> List.filter((<>) 0) |> List.pairwise do
                 let distance = abs(palette.[a].GetHue()-palette.[b].GetHue())
                 check (min distance (360.0f-distance)>50.0f) "Adjacent automatic colours have similar hues"
         check (Theme.leastUsedColor []=1) "The first window must use blue rather than grey"
-        check (Theme.leastUsedColor (Theme.tabAllocationOrder |> List.take 10)=11) "Colour allocation did not move on to the extra colours"
-        check (Theme.leastUsedColor [1..15]=0) "Grey must only be used after every coloured choice"
-        check (Theme.leastUsedColor [0..15]=1) "The seventeenth window did not start the palette again"
+        check (Theme.leastUsedColor [1..8]=0) "Grey must only be used after every coloured choice"
+        check (Theme.leastUsedColor [0..8]=1) "The tenth window did not start the colours again"
+        check (Theme.leastUsedColor ([0..8] @ [9..15])=1) "Colour allocation moved on to colours too close to the first eight"
         check ([for c in 'a'..'z' -> Theme.appColorIndex (string c + ".exe")] |> List.forall(fun index -> index>=0 && index<Theme.tabPaletteSize)) "App colour fell outside the palette"
         check (([for c in 'a'..'z' -> Theme.appColorIndex (string c + ".exe")] |> List.distinct).Length>8) "App colours did not use the second eight"
         check (Theme.appColorIndex "Editor.exe"=Theme.appColorIndex "EDITOR.EXE") "App colour hash changed with case"
@@ -293,9 +293,9 @@ let main() =
         let transferred = colors.resolve c "editor.exe" "ByWindow" Map.empty (other @ [c])
         check (transferred=existing.[2]) "A transferred tab did not keep its colour"
         let palette = WindowTabColors()
-        let all = [for id in 1..Theme.tabPaletteSize -> IntPtr(id)]
+        let all = [for id in 1..Theme.tabAllocationOrder.Length -> IntPtr(id)]
         let allocated = all |> List.map(fun hwnd -> palette.resolve hwnd "editor.exe" "ByWindow" Map.empty all)
-        check ((allocated |> List.distinct).Length=Theme.tabPaletteSize) "Automatic colours repeat before every palette colour is used"
+        check ((allocated |> List.distinct).Length=Theme.tabAllocationOrder.Length) "Automatic colours repeat before every allocated colour is used"
         palette.remove (IntPtr(2))
         let replacement = all |> List.filter((<>) (IntPtr(2))) |> fun remaining -> remaining @ [IntPtr(100)]
         check (palette.resolve (IntPtr(100)) "editor.exe" "ByWindow" Map.empty replacement=allocated.[1]) "Closed windows do not release their automatic colour"
