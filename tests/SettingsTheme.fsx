@@ -960,6 +960,13 @@ let main() =
         let nowNote = workspaces.nowNote
         check (beside nowNote workspaces.editGroupsButton) (sprintf "The groups now note is not beside its button: %A %A %A %A" (toPage nowNote) nowNote.Size editAt workspaces.editGroupsButton.Size)
         check (beside workspaces.savedNote workspaces.restoreButton) "The saved workspaces note is not beside its buttons"
+        // Every match method but the regular expression stays in full view under a row's overlaid
+        // edit and delete.
+        let _,methodWidth = workspaces.list.ColumnSpans.[2]
+        for kind in [WorkspaceWindowTitleMatchType.ExactMatch;WorkspaceWindowTitleMatchType.StartsWith;WorkspaceWindowTitleMatchType.EndsWith;WorkspaceWindowTitleMatchType.Contains] do
+            let text = MatchTypeText.label kind
+            let width = TextRenderer.MeasureText(text,workspaces.list.Font,Size.Empty,TextFormatFlags.NoPadding).Width
+            check (Dpi.scale 4+width<=methodWidth-Dpi.scale (SettingsTreeList.OverlayReach 2)) (sprintf "%s would hide under a row's edit and delete: %d of %d" text width methodWidth)
         let helpAt = toPage workspaces.helpButton
         check (helpAt.X>savedAt.X && abs(helpAt.Y-savedAt.Y)<Dpi.scale 12) (sprintf "The help is not beside the saved part's heading: %A %A" helpAt savedAt)
         let saveAt = toPage workspaces.newButton

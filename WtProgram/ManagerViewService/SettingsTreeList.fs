@@ -193,6 +193,11 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member _.RowsChanged = rowsChanged.Publish
     /// Buttons drawn in the action column on the row under the pointer, as their glyphs.
     member val RowActions : TreeListGlyph list = [] with get,set
+    /// The room between one column's text and the next one's, in logical pixels, half on each side.
+    member val CellGap = 16 with get,set
+    /// How far from the row's right end overlaid row actions reach, in logical pixels, with the
+    /// fade before them: text that ends before this stays in full view under them.
+    static member OverlayReach(count:int) = 8+count*24+(max 0 (count-1))*2+4+20
     /// Raised when a row action is clicked, after its row is selected: item, index in RowActions.
     member _.ActionInvoked = actionInvoked.Publish
 
@@ -372,7 +377,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         let left = cell.X+this.textLeft level
         let iconBox = Rectangle(left,top+(this.rowHeight-size)/2,size,size)
         let x = if not (isNull item.Icon) || item.Glyph<>NoGlyph || item.Swatch.IsSome then left+size+Dpi.scale 8 else left
-        iconBox,Rectangle(x,top,max 1 (cell.Right-Dpi.scale 8-x),this.rowHeight)
+        iconBox,Rectangle(x,top,max 1 (cell.Right-Dpi.scale (this.CellGap/2)-x),this.rowHeight)
 
     /// Where a row's name ends and its chips go: the name keeps at most a quarter of the cell, and
     /// no more than a short name needs, when the row has chips. The chips, each with its x box when removable, then the "+" box; they
@@ -900,7 +905,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                     if columns.[column].Overlay && not buttons.IsEmpty then
                         let first,last = List.head buttons,List.last buttons
                         let back = if isSelected || Object.ReferenceEquals(item,hovered) then this.highlight(isSelected,p) else this.BackColor
-                        let fade = Dpi.scale 32
+                        let fade = Dpi.scale 20
                         let solid = Rectangle(first.X-Dpi.scale 4,row.Y,last.Right-first.X+Dpi.scale 4,row.Height)
                         let ramp = Rectangle(solid.X-fade,row.Y,fade+1,row.Height)
                         use cover = new SolidBrush(back)
@@ -930,7 +935,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         // The value close to its arrow, as a drop-down's text sits by its own.
                         elif item.Dropdown then arrowWidth+Dpi.scale 4
                         else 0
-                    let bounds = Rectangle(cell.X+Dpi.scale 8,top,max 1 (cell.Width-Dpi.scale 16-reserve),rowHeight)
+                    let half = Dpi.scale (this.CellGap/2)
+                    let bounds = Rectangle(cell.X+half,top,max 1 (cell.Width-2*half-reserve),rowHeight)
                     let font =
                         if column=columns.Length-1 && item.SmallValue then SettingsUi.font this.Font.FontFamily.Name (this.Font.SizeInPoints*0.86f) FontStyle.Regular
                         else this.Font

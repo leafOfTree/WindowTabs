@@ -796,6 +796,7 @@ let main() =
         assertTrue (snd (spans overlaid).[3]=0 && methodEnd overlaid=methodEnd reserved+Dpi.scale 60)
                    (sprintf "An overlaid action column kept room of its own: %A %A" (spans overlaid) (spans reserved))
         overlaid.RowActions <- [EditGlyph;DeleteGlyph]
+        overlaid.CellGap <- 8
         let row = TreeListItem("notepad.exe",Values=[|"";"A title long enough to run under the row's buttons";"Exact match"|],AlwaysShowActions=true)
         overlaid.Roots.Add(row)
         overlaid.Rebuild()

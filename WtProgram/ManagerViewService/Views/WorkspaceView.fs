@@ -204,16 +204,31 @@ type WorkspaceView() as this =
         wm.workspaceAdded.Add this.onWorkspaceAdded
         wm
 
+    /// The match method's column, in logical pixels: wide enough that every method but the regular
+    /// expression, the longest, stays in full view under the row's edit and delete; that one may
+    /// fade under them, and shows in full on the other rows.
+    member this.methodWidth : int =
+        let font = SettingsUi.bodyFont()
+        let logical (text:string) =
+            int(Math.Ceiling(float(TextRenderer.MeasureText(text,font,Size.Empty,TextFormatFlags.NoPadding).Width)*96.0/float(Dpi.value())))
+        let others = [WorkspaceWindowTitleMatchType.ExactMatch;WorkspaceWindowTitleMatchType.StartsWith
+                      WorkspaceWindowTitleMatchType.EndsWith;WorkspaceWindowTitleMatchType.Contains]
+                     |> List.map(MatchTypeText.label >> logical) |> List.max
+        let longest = logical (MatchTypeText.label WorkspaceWindowTitleMatchType.RegEx)
+        4+max (others+SettingsTreeList.OverlayReach 2) (longest+4)
+
     member this.list : SettingsTreeList = Cell.cacheProp this <| fun() ->
         let list =
             // The title next to the name, taking the room left, as the edit dialog has it first;
             // the match method, short and mostly the same, after it.
             new SettingsTreeList([TreeListColumn(tr Strings.Common.name,240,TextColumn)
                                   TreeListColumn(tr Strings.Common.title,0,TextColumn)
-                                  TreeListColumn(tr Strings.Workspaces.matchMethod,130,TextColumn)
+                                  TreeListColumn(tr Strings.Workspaces.matchMethod,this.methodWidth,TextColumn)
                                   // Edit and delete for the row under the pointer, over its right end:
                                   // shown on that row alone, they need no room of their own.
                                   TreeListColumn("",60,ActionColumn,Overlay=true)])
+        // Columns close together: the title and the method each have room enough of their own.
+        list.CellGap <- 8
         list.SelectionChanged.Add(fun _ ->
             this.wm.selected <- (if isNull list.SelectedItem then null else list.SelectedItem.Tag :?> Dynamic))
         // Double-click (or Enter) edits the item, as its edit button does; the arrow expands.
