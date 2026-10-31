@@ -2224,6 +2224,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 let window = this.os.windowFromHwnd(hwnd)
                 if window.isOwned && not window.isMinimized then window.raise()
                 if staleFrames.Remove(hwnd) then this.refreshFrame hwnd
+                // In front, a tab asking for attention has it, however it was brought there: by
+                // its shortcut or the switcher as much as by a click, which clears it on its own.
+                this.flashTab(Tab(hwnd), false)
             this.foreground <- hwnd
             this.followClosedTab(this.os.foreground.hwnd)
             this.saveZorder()

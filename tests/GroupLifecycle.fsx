@@ -405,6 +405,31 @@ let main() =
                 (fixture :> IGroup).destroy()
                 pumpUntil "Maximized fixture did not exit" (fun () -> fixture.isExited)
 
+        // A tab whose window flashes for attention takes the attention colour, and loses it once
+        // its window comes to the front however that happened: by a shortcut or the switcher as
+        // much as by a click on the tab.
+        do
+            use first = new Form(Text="Quiet tab",ShowInTaskbar=false)
+            use second = new Form(Text="Tab asking for attention",ShowInTaskbar=false)
+            let fixture = desktopApi.createGroup(false) :?> GroupInfo
+            try
+                for form in [second;first] do form.Show()
+                for form in [first;second] do (fixture :> IGroup).addWindow(form.Handle,false)
+                pumpUntil "The attention fixture did not form its group" (fun () -> (nativeOrder fixture).Length=2)
+                OS().windowFromHwnd(first.Handle).setForeground(false)
+                onGroup fixture (fun group -> group.main(first.Handle,WinEvent.EVENT_SYSTEM_FOREGROUND))
+                pumpUntil "The attention fixture did not show its first tab" (fun () -> onGroup fixture (fun group -> group.topWindow=first.Handle))
+                let colour() = onGroup fixture (fun group -> group.ts.attentionColor(Tab(second.Handle)))
+                let attention = onGroup fixture (fun group -> group.tabAppearance.tabFlashBgColor)
+                onGroup fixture (fun group -> group.shellEvents(second.Handle,ShellEvent.HSHELL_FLASH))
+                pumpUntil "A flashing window's tab did not take the attention colour" (fun () -> colour()=Some attention)
+                OS().windowFromHwnd(second.Handle).setForeground(false)
+                onGroup fixture (fun group -> group.main(second.Handle,WinEvent.EVENT_SYSTEM_FOREGROUND))
+                pumpUntil "A tab brought to the front kept asking for attention" (fun () -> colour()=None)
+            finally
+                (fixture :> IGroup).destroy()
+                pumpUntil "Attention fixture did not exit" (fun () -> fixture.isExited)
+
         // EXPERIMENTAL (ScaleChangeRefresh): before Windows 26H2, a maximized tab taken behind its
         // tab to a monitor of another scale drew nothing more until its state changed. Marked so,
         // it is minimized and maximized once as it comes in front, and the tab in front stays.
