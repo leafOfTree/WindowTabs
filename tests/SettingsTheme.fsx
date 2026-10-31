@@ -941,13 +941,24 @@ let main() =
         Application.DoEvents()
         check (workspace.control.Width>Dpi.scale 300) "Workspace page failed to initialize or lay out"
         let workspaces = workspace :?> WorkspaceView
-        // A short description shares the buttons' line rather than taking its own.
-        let description = controls workspace.control |> Seq.find(fun control -> control :? Label && control.Text=tr Strings.Workspaces.description)
-        let restoreButton = workspaces.restoreButton
+        // Two parts: the groups now, with the editor's button, over the saved workspaces, whose
+        // heading stands over their own buttons.
+        let label text = controls workspace.control |> Seq.find(fun control -> control :? Label && control.Text=text)
         let toPage (control:Control) = workspace.control.PointToClient(control.Parent.PointToScreen(control.Location))
-        let descriptionAt,restoreAt = toPage description,toPage restoreButton
-        check (descriptionAt.X>restoreAt.X+restoreButton.Width && descriptionAt.Y<restoreAt.Y+restoreButton.Height && descriptionAt.Y+description.Height>restoreAt.Y)
-              (sprintf "Workspace description did not sit beside its buttons: %A %A" descriptionAt restoreAt)
+        let nowAt = toPage (label (tr Strings.Workspaces.groupsNow))
+        let editAt = toPage workspaces.editGroupsButton
+        let savedAt = toPage (label (tr Strings.Workspaces.savedWorkspaces))
+        let restoreAt = toPage workspaces.restoreButton
+        check (nowAt.Y<editAt.Y && editAt.Y+workspaces.editGroupsButton.Height<=savedAt.Y && savedAt.Y<restoreAt.Y)
+              (sprintf "The Workspaces page did not stand its groups now over its saved workspaces: %A %A %A %A" nowAt editAt savedAt restoreAt)
+        check (workspaces.editGroupsButton.Width<workspace.control.Width/2) (sprintf "The editor's button stretched across the page: %d" workspaces.editGroupsButton.Width)
+        let saveAt = toPage workspaces.newButton
+        check (editAt.X=saveAt.X) (sprintf "The two parts' buttons do not line up: %A %A" editAt saveAt)
+        recoveryForm.ClientSize <- Size(Dpi.scale 1000,Dpi.scale 720)
+        Application.DoEvents()
+        use shot = new Bitmap(recoveryForm.ClientSize.Width,recoveryForm.ClientSize.Height)
+        recoveryForm.DrawToBitmap(shot,Rectangle(Point.Empty,recoveryForm.ClientSize))
+        shot.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-workspaces.png"))
         // A newly saved workspace goes below the earlier ones, selected.
         workspaces.wm.create()
         workspaces.wm.create()

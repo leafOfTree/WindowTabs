@@ -233,10 +233,11 @@ type WorkspaceView() as this =
     member this.panel : SettingsListPage = Cell.cacheProp this <| fun() ->
         let panel =
             new SettingsListPage(tr Strings.Pages.workspaces,
-                                 tr Strings.Workspaces.description,
+                                 "",
                                  this.list,
-                                 [this.newButton :> Control;this.restoreButton;this.editGroupsButton],
-                                 helpText=tr Strings.Workspaces.help)
+                                 [this.newButton :> Control;this.restoreButton],
+                                 helpText=tr Strings.Workspaces.help,
+                                 extra=this.groupsNow)
         // In the order ActionInvoked expects them.
         if not this.wm.isReadOnly then this.list.RowActions <- [EditGlyph;DeleteGlyph]
         loaded <- true
@@ -283,6 +284,29 @@ type WorkspaceView() as this =
         btn.Name <- "edit-groups"
         btn.Click.Add <| fun _ -> Services.program.editGroups IntPtr.Zero
         btn
+
+    /// The page's first part, over the saved workspaces and their buttons: the groups as they
+    /// are, with the editor's button, then the saved part's own heading.
+    member this.groupsNow : Control = Cell.cacheProp this <| fun() ->
+        let block = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=1,Margin=Padding.Empty)
+        block.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+        let heading text (first:bool) =
+            new Label(Text=text,AutoSize=true,Font=SettingsUi.subsectionFont(),UseMnemonic=false,
+                      Margin=Padding(0,(if first then 0 else Dpi.scale 24),0,Dpi.scale 4))
+        let note text =
+            new Label(Text=text,AutoSize=true,Tag="muted",UseMnemonic=false,MaximumSize=Size(Dpi.scale 700,0),Margin=Padding(0,0,0,Dpi.scale 8))
+        for control in [ heading (tr Strings.Workspaces.groupsNow) true :> Control
+                         note (tr Strings.Workspaces.groupsNowDescription)
+                         this.editGroupsButton
+                         heading (tr Strings.Workspaces.savedWorkspaces) false
+                         note (tr Strings.Workspaces.savedDescription) ] do
+            SettingsUi.add block control
+        // A button of its own size, as the saved part's are, not one across the page.
+        let button = this.editGroupsButton
+        button.Dock <- DockStyle.None
+        button.Anchor <- AnchorStyles.Left
+        button.Margin <- Padding.Empty
+        block :> Control
 
     member this.restoreButton : Button = Cell.cacheProp this <| fun() ->
         let btn = SettingsUi.button (tr Strings.Workspaces.restoreSelected)

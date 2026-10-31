@@ -2,7 +2,7 @@
 
 Status: design of 2026-10-29; phases 1 to 4 of section 7 are implemented: the model,
 `ReplaceLayout`, `SetTabOrder` and the apply pipeline; the popup (`GroupEditor.fs`, opened by
-**Edit groups…** from the palette, the tab menu or its key) with every group of the desktop as
+**Edit groups…** from the palette, the Workspaces page or its key) with every group of the desktop as
 a row, folded at first, the loose row and the new group's band, and
 dragging within and between rows, the tab menu, the split button and its empty cells, with
 `tests/GroupEditor.fsx`. Phase 5's polish (the greyed tab and row for what is gone, the docs
@@ -30,10 +30,11 @@ picture, and moves the windows once, when the user is done.
 ### 2.1 Opening it
 
 - From the palette: **Edit groups…** among the group commands, with a shortcut of its own,
-  unbound until the user picks a key (`edit-groups`, kept as the split keys are). From the
-  tab menu, beside **Split view**. From the Workspaces page of Settings, beside Save
-  workspace, as what to arrange before saving one. The command line runs it by id as it runs
-  every command.
+  unbound until the user picks a key (`edit-groups`, kept as the split keys are, so the
+  Shortcuts page does not list it). From the Workspaces page of Settings, in its **Groups
+  now** part over the saved workspaces, as what to arrange before saving one (an item in the
+  tab menu beside Split view was tried and dropped). The command line runs it by id as it
+  runs every command.
   Every row starts folded, whatever is in front: the overview first, a row expanded from it
   by a tab (section 2.3).
 - It opens in the settings palette's colours as an ordinary window with the system's title
@@ -70,7 +71,7 @@ picture, and moves the windows once, when the user is done.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  Edit groups · 3 groups, 2 loose windows                                      │
+│  Edit groups · 2 groups, 6 windows                                             │
 │                                                                                │
 │  ▌[🌐 Edge – Docs] 🗗 Notepad – notes.txt ▣  ⬛ Terminal ▣  📁 Downloads         ⌄  │
 │  ▌[📁 Downloads] 📁 Documents  📁 Pictures                                     ⌄  │

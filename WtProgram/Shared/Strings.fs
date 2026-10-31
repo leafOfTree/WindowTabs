@@ -893,7 +893,14 @@ module Strings =
         let scanFailed details = { en="Scan failed: " + details; zh="扫描失败：" + details; ja="スキャンに失敗しました: " + details; ar="فشل الفحص: " + details }
 
     module Workspaces =
-        let description = { en="Save and restore window groups and positions."; zh="保存和恢复窗口分组与位置。"; ja="ウィンドウのグループと位置を保存・復元します。"; ar="حفظ مجموعات النوافذ ومواضعها واستعادتها." }
+        /// The page's two parts: the groups as they are, to rearrange, over the saved workspaces.
+        let groupsNow = { en="Groups now"; zh="当前分组"; ja="今のグループ"; ar="المجموعات الآن" }
+        let groupsNowDescription = { en="Rearrange the groups on this desktop: their tabs, panes and splits. Nothing moves until you save."
+                                     zh="重新安排当前桌面上的分组：标签、窗格和拆分。保存前不会移动任何窗口。"
+                                     ja="このデスクトップのグループを並べ替えます：タブ、ペイン、分割。保存するまで何も動きません。"
+                                     ar="أعد ترتيب المجموعات على سطح المكتب هذا: علاماتها وأجزاؤها وتقسيماتها. لا يتحرك شيء حتى تحفظ." }
+        let savedWorkspaces = { en="Saved workspaces"; zh="已保存的工作区"; ja="保存したワークスペース"; ar="مساحات العمل المحفوظة" }
+        let savedDescription = { en="Save the groups and positions as they are, and restore them later."; zh="把现在的分组和位置保存下来，以后再恢复。"; ja="今のグループと位置を保存し、あとで復元します。"; ar="احفظ المجموعات ومواضعها كما هي، واستعدها لاحقًا." }
         let help = { en="How to use\n1  Group and position your windows, then click Save layout.\n2  Select a workspace and click Restore selected.\n3  To change an item's name or window title matching, double-click it, or point at it and click its edit button.\nA window whose title has changed since it was saved is still matched by its app.\nRestore uses open windows. If an app is not running, the result offers to launch it."
                      zh="使用说明\n1  将窗口分组并调整位置，然后点击“保存布局”。\n2  选中工作区，点击“恢复所选”。\n3  双击任意项，或将鼠标移到该项上点击编辑按钮，可修改名称或窗口标题的匹配方式。\n保存后标题发生变化的窗口，仍会按其所属应用匹配。\n恢复使用已打开的窗口；应用未运行时，可在结果中启动它。"
                      ja="使い方\n1  ウィンドウをグループ化して配置し、「配置を保存」をクリックします。\n2  ワークスペースを選び、「選択したものを復元」をクリックします。\n3  項目をダブルクリックするか、項目にポインターを合わせて編集ボタンをクリックすると、名前やタイトルの一致方法を変更できます。\n保存後にタイトルが変わったウィンドウも、アプリで照合されます。\n復元は開いているウィンドウを使います。アプリが起動していない場合は、結果から起動できます。"
