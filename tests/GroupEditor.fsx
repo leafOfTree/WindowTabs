@@ -530,6 +530,28 @@ let main() =
             check (above=Rectangle(10,20,300,460) && beside=Rectangle(10,480,260,40)) (sprintf "The pieces around the corner did not leave it out: %A, %A" above beside)
             let whole,none = GroupEditorPicture.aroundCorner shown (Rectangle(270,600,40,40))
             check (whole=shown && (none.Width<=0 || none.Height<=0)) (sprintf "A corner below the picture cut it: %A, %A" whole none)
+        // A tab that cuts its name short shows the whole name in a tip once the pointer rests on
+        // it; a tab whose name fits shows none, and a click puts the tip away.
+        do
+            let long = "A very long window title that no tab along the strip can hold in full"
+            let shown = List.zip [a;b] [long;"Short"] |> List.map(fun (hwnd,name) -> {hwnd=hwnd; name=name; icon=None; minimized=true})
+            let frame = Rect(Pt(100,100),Sz(1600,900))
+            let desk = DesktopDraft.ofDesktop [GroupDraft.ofGroup (IntPtr 1) [a;b] Set.empty GroupLayout.Single] []
+            let editor = GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=frame; active=a}],shown,None,frame)
+            editor.Show()
+            let centre hwnd = let r = editor.Layout.rows.[0].tabs |> List.find(fun (each,_) -> each=hwnd) |> snd in Point(r.X+r.Width/2,r.Y+r.Height/2)
+            editor.MouseMove(centre a)
+            check (editor.TitleTipFor=Some a && not editor.TitleTipShown) "Resting on a cut tab did not wait to show its name, or showed it at once"
+            editor.ShowTitleTip()
+            check editor.TitleTipShown "The cut tab's full name was not shown once the pointer had rested"
+            editor.MouseMove(centre b)
+            check (editor.TitleTipFor=None && not editor.TitleTipShown) "A tab whose name fits got a tip, or the last tab's stayed"
+            editor.MouseMove(centre a)
+            editor.ShowTitleTip()
+            editor.ButtonDown(MouseButtons.Left,centre a)
+            check (editor.TitleTipFor=None && not editor.TitleTipShown) "A click did not put the title away"
+            editor.ButtonUp(MouseButtons.Left,centre a)
+            editor.Close()
         // The row's menu holds what a drag does less handily with many rows: merging the row into
         // another, named there by its first tab, and ungrouping it.
         do

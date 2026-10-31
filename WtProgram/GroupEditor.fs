@@ -225,6 +225,15 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let slideTimer = new Timer(Interval=15)
     let slideDone() = (DateTime.UtcNow-slideStart).TotalMilliseconds>=GroupEditorMetrics.slideMs
     let mutable menu : ThemedContextMenu option = None
+    /// The full name of the tab under the pointer, where the tab cuts it short: shown once the
+    /// pointer has rested on it, as on the strip, and moved straight to the next cut tab while
+    /// one shows.
+    let titleTimer = new Timer(Interval=500)
+    let mutable titleTip : TabTitleTip option = None
+    let mutable titleTab : IntPtr option = None
+    let hideTitle() =
+        titleTimer.Stop()
+        titleTip |> Option.iter(fun tip -> tip.hide())
     /// When a click outside the menu last closed it: that click reaches the popup after the menu
     /// has gone, and closing it is all it does.
     let mutable menuClosedAt = DateTime.MinValue
@@ -333,7 +342,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// A tab's width: its name, measured once since the names do not change while the popup is
     /// up, the icon, the same room at either end, and room for the pane mark while it is in one.
     let widths = Dictionary<IntPtr,int>()
-    let tabWidth hwnd =
+    let naturalWidth hwnd =
         let name =
             match widths.TryGetValue hwnd with
             | true,w -> w
@@ -343,7 +352,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 w
         // Room after the name for the seam button, which stands half over the tab's end.
         let seamAfter = current.groups |> List.exists(GroupDraft.seamAfter hwnd)
-        min (scale GroupEditorMetrics.tabMaxWidth) (name+scale GroupEditorMetrics.iconSize+scale 19+(if seamAfter then scale 8 else 0))
+        name+scale GroupEditorMetrics.iconSize+scale 19+(if seamAfter then scale 8 else 0)
+    let tabWidth hwnd = min (scale GroupEditorMetrics.tabMaxWidth) (naturalWidth hwnd)
+    /// Whether the tab, at the width it got, cuts its name short.
+    let nameCut hwnd (r:Rectangle) = r.Width<naturalWidth hwnd
 
     /// The gap after a tab: closed to a sliver between the tabs of the panes of one split, which
     /// stand together, so the strip says which windows share the content.
@@ -1233,6 +1245,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
 
     let refresh() =
         if not closed then
+            // The tabs may move under a resting pointer: the title shown is put away.
+            hideTitle()
             // Once in place, the tabs are drawn in the picture again.
             if not sliding.IsEmpty && slideDone() then sliding <- Map.empty
             // A change while a row still grows ends that at once: the picture it blends from is stale.
@@ -1286,6 +1300,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             // Not inside its own event: on the next turn of the loop.
             let dispose() =
                 form.Dispose()
+                titleTimer.Dispose()
+                titleTip |> Option.iter(fun tip -> tip.Dispose())
+                titleTip <- None
                 slideTimer.Dispose()
                 scrollTimer.Dispose()
                 morphTimer.Dispose()
@@ -1471,6 +1488,30 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         elif (expandedRow()).IsSome then expand None
         else cancel()
 
+    let showTitle() =
+        titleTimer.Stop()
+        match titleTab with
+        | Some hwnd when not closed && form.IsHandleCreated && form.Visible ->
+            let l = layout()
+            (l.rows |> List.collect(fun row -> row.tabs))@l.looseTabs |> List.tryFind(fun (each,_) -> each=hwnd) |> Option.iter(fun (_,r) ->
+                let tip =
+                    match titleTip with
+                    | Some tip -> tip
+                    | None ->
+                        let tip = new TabTitleTip()
+                        titleTip <- Some tip
+                        tip
+                tip.show(nameOf hwnd,bodyFont,form.RectangleToScreen(Rectangle(r.X,r.Y-scroll,r.Width,r.Height)),Control.MousePosition.X))
+        | _ -> ()
+    /// The tab the pointer is on, if its name is cut: from tab to tab, a tip already showing
+    /// moves straight to the next; otherwise it waits for the pointer to rest. None puts it away.
+    let pointTitle (tab:IntPtr option) =
+        if tab<>titleTab then
+            let showing = titleTip |> Option.exists(fun tip -> tip.Visible)
+            titleTab <- tab
+            hideTitle()
+            if tab.IsSome then (if showing then showTitle() else titleTimer.Start())
+
     /// A press at the point: the empty cell's cross, the split button and its shapes, the buttons,
     /// the row's menu button; else a tab taken in hand.
     let mouseDown (pt:Point) =
@@ -1645,8 +1686,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 if changed then refresh() elif form.IsHandleCreated then form.Invalidate()
         | None ->
             let l = layout()
-            let overTab =
-                (l.rows |> List.collect(fun row -> row.tabs))@l.looseTabs |> List.tryFind(fun (_,r) -> r.Contains pt) |> Option.map fst
+            let overTabRect = (l.rows |> List.collect(fun row -> row.tabs))@l.looseTabs |> List.tryFind(fun (_,r) -> r.Contains pt)
+            let overTab = overTabRect |> Option.map fst
+            pointTitle (overTabRect |> Option.filter(fun (hwnd,r) -> nameCut hwnd r) |> Option.map fst)
             let overEmpty =
                 l.rows |> List.filter(fun row -> row.expanded) |> List.collect(fun row -> row.cells)
                 |> List.tryFind(fun (_,pane,r) -> pane=Empty && r.Contains pt) |> Option.map(fun (path,_,_) -> path)
@@ -1746,6 +1788,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// from outside closes it and nothing more, whichever button: the rows fill the popup, so it
     /// lands on them, and would otherwise open the next menu or take a tab in hand.
     let buttonDown (button:MouseButtons) (pt:Point) =
+        // A click puts the title away until the pointer moves on.
+        pointTitle None
         if (DateTime.UtcNow-menuClosedAt).TotalMilliseconds<500.0 then
             menuClosedAt <- DateTime.MinValue
             closingClick <- true
@@ -1772,6 +1816,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let wheel (delta:int) =
         let l = layout()
         if l.body>viewBody l then
+            // The tabs scroll away under the pointer: the title shown is put away.
+            hideTitle()
             let from = defaultArg scrollTarget scroll
             scrollTarget <- Some(max 0 (min (l.body-viewBody l) (from-int(float delta/120.0*float(scale 48)))))
             scrollTimer.Start()
@@ -1787,7 +1833,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         form.MouseMove.Add(fun e -> mouseMove e.Location)
         form.MouseUp.Add(fun e -> buttonUp e.Button e.Location)
         form.MouseWheel.Add(fun e -> wheel e.Delta)
-        form.MouseLeave.Add(fun _ -> if hovered.IsSome || hoveredCell.IsSome || hoveredButton.IsSome then (hovered <- None; hoveredCell <- None; hoveredButton <- None; form.Invalidate()))
+        form.MouseLeave.Add(fun _ ->
+            pointTitle None
+            if hovered.IsSome || hoveredCell.IsSome || hoveredButton.IsSome then (hovered <- None; hoveredCell <- None; hoveredButton <- None; form.Invalidate()))
+        titleTimer.Tick.Add(fun _ -> showTitle())
         // The frames of a slide; the last one leaves the tabs in place until the next picture.
         scrollTimer.Tick.Add(fun _ -> if closed then scrollTimer.Stop() else scrollFrame())
         slideTimer.Tick.Add(fun _ ->
@@ -1842,6 +1891,11 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     member _.Morphing = morph.IsSome
     member _.MouseDown(pt:Point) = mouseDown pt
     member _.MouseMove(pt:Point) = mouseMove pt
+    /// The tab whose full name a tip shows or waits to show, as the pointer rests on it.
+    member _.TitleTipFor = titleTab
+    member _.TitleTipShown = titleTip |> Option.exists(fun tip -> tip.Visible)
+    /// The tip shown now, as it would be once the pointer has rested.
+    member _.ShowTitleTip() = showTitle()
     member _.MouseUp(pt:Point) = mouseUp pt
     /// A button pressed or released at a point of the popup, as the form sees it: a right press
     /// opens the menu there, and the click that closed a menu does nothing more.
