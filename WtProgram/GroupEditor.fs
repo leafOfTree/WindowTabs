@@ -204,6 +204,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let slideTimer = new Timer(Interval=15)
     let slideDone() = (DateTime.UtcNow-slideStart).TotalMilliseconds>=GroupEditorMetrics.slideMs
     let mutable menu : ThemedContextMenu option = None
+    /// When a click outside the menu last closed it: that click reaches the popup after the menu
+    /// has gone, and closing it is all it does.
+    let mutable menuClosedAt = DateTime.MinValue
+    let mutable closingClick = false
     /// Rows the drag in hand emptied, each as where its band stays (before which group, by index),
     /// how tall, and the group it was: the rows below would otherwise move up under the pointer,
     /// and the next move or the drop would land the tab where it was not aimed; carried back onto
@@ -1393,6 +1397,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let showMenu (items:List2<ContextMenuItem>) (view:Point) =
         menu |> Option.iter(fun each -> each.Dispose())
         let next = new ThemedContextMenu(items,ignore)
+        next.Closed.Add(fun e -> if e.CloseReason=ToolStripDropDownCloseReason.AppClicked then menuClosedAt <- DateTime.UtcNow)
         menu <- Some next
         let at = form.PointToScreen view
         next.Show(form.Handle,at.X,at.Y)
@@ -1702,6 +1707,19 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             l.rows |> List.tryFind(fun row -> row.band.Contains pt && not(row.expanded && row.picture.Contains pt))
             |> Option.iter(fun row -> rowMenu row.index view)
 
+    /// A button pressed, then released, at a point of the popup. The click that closed a menu
+    /// from outside closes it and nothing more, whichever button: the rows fill the popup, so it
+    /// lands on them, and would otherwise open the next menu or take a tab in hand.
+    let buttonDown (button:MouseButtons) (pt:Point) =
+        if (DateTime.UtcNow-menuClosedAt).TotalMilliseconds<500.0 then
+            menuClosedAt <- DateTime.MinValue
+            closingClick <- true
+        elif button=MouseButtons.Left then mouseDown pt
+        elif button=MouseButtons.Right then menuAt pt
+    let buttonUp (button:MouseButtons) (pt:Point) =
+        if closingClick then closingClick <- false
+        elif button=MouseButtons.Left then mouseUp pt
+
     /// Scrolling moves the picture and the thumbnails together, without drawing the picture again;
     /// the wheel eases the rows to where it sends them rather than jumping them there.
     let scrollFrame() =
@@ -1730,9 +1748,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 press e.KeyData
                 e.Handled <- true
                 e.SuppressKeyPress <- true)
-        form.MouseDown.Add(fun e -> if e.Button=MouseButtons.Left then mouseDown e.Location elif e.Button=MouseButtons.Right then menuAt e.Location)
+        form.MouseDown.Add(fun e -> buttonDown e.Button e.Location)
         form.MouseMove.Add(fun e -> mouseMove e.Location)
-        form.MouseUp.Add(fun e -> if e.Button=MouseButtons.Left then mouseUp e.Location)
+        form.MouseUp.Add(fun e -> buttonUp e.Button e.Location)
         form.MouseWheel.Add(fun e -> wheel e.Delta)
         form.MouseLeave.Add(fun _ -> if hovered.IsSome || hoveredCell.IsSome || hoveredButton.IsSome then (hovered <- None; hoveredCell <- None; hoveredButton <- None; form.Invalidate()))
         // The frames of a slide; the last one leaves the tabs in place until the next picture.
@@ -1790,6 +1808,13 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     member _.MouseDown(pt:Point) = mouseDown pt
     member _.MouseMove(pt:Point) = mouseMove pt
     member _.MouseUp(pt:Point) = mouseUp pt
+    /// A button pressed or released at a point of the popup, as the form sees it: a right press
+    /// opens the menu there, and the click that closed a menu does nothing more.
+    member _.ButtonDown(button:MouseButtons,pt:Point) = buttonDown button pt
+    member _.ButtonUp(button:MouseButtons,pt:Point) = buttonUp button pt
+    member _.MenuOpen = menu |> Option.exists(fun each -> not each.IsDisposed && each.Visible)
+    /// The menu closed as a click outside it closes it, before that click reaches the popup.
+    member _.DismissMenu() = menu |> Option.iter(fun each -> each.Close(ToolStripDropDownCloseReason.AppClicked))
     /// What is in hand, while something is.
     member _.Drag = drag
     member _.FlyoutOpen = flyout

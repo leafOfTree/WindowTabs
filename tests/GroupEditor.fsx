@@ -510,6 +510,30 @@ let main() =
             let merges index = editor.RowMenu index |> List.tryPick(function CmiPopUp p -> Some p.items.list | _ -> None) |> Option.defaultValue []
             let names index = merges index |> List.choose(function CmiRegular r -> Some r.text | _ -> None)
             check (names 0=["Three"] && (names 1).Head.StartsWith "One" && (names 1).Head<>"One") (sprintf "The merge targets did not name the other rows by their first tab: %A, %A" (names 0) (names 1))
+            // The click that closes a menu from outside closes it and nothing more, with either
+            // button: the rows fill the popup, so it lands on them.
+            let band = editor.Layout.rows.[1].band
+            let room = Point(band.Right-Dpi.scale 6,band.Y+band.Height/2)
+            editor.ButtonDown(MouseButtons.Right,room)
+            check editor.MenuOpen "A right click on the row's empty room opened no menu"
+            editor.DismissMenu()
+            editor.ButtonDown(MouseButtons.Right,room)
+            editor.ButtonUp(MouseButtons.Right,room)
+            check (not editor.MenuOpen) "The right click that closed the menu opened another"
+            editor.ButtonDown(MouseButtons.Right,room)
+            check editor.MenuOpen "The right click after the one that closed the menu opened none"
+            editor.DismissMenu()
+            let tab = editor.Layout.rows.[0].tabs |> List.find(fun (each,_) -> each=b) |> snd
+            let onTab = Point(tab.X+tab.Width/2,tab.Y+tab.Height/2)
+            editor.ButtonDown(MouseButtons.Left,onTab)
+            check editor.Drag.IsNone "The left click that closed the menu took a tab in hand"
+            editor.ButtonUp(MouseButtons.Left,onTab)
+            check (editor.Expanded=None && not editor.MenuOpen) "The left click that closed the menu did more than close it"
+            editor.ButtonDown(MouseButtons.Left,onTab)
+            check editor.Drag.IsSome "The left click after the one that closed the menu took no tab in hand"
+            editor.ButtonUp(MouseButtons.Left,onTab)
+            if editor.Expanded.IsSome then editor.Press Keys.Escape
+            pumpUntil "The row did not settle after the click" (fun () -> not editor.Morphing)
             (match merges 0 with [CmiRegular r] -> r.click() | items -> failwithf "Unexpected merge items: %A" items)
             check (editor.Draft.groups.Length=1 && editor.Draft.groups.[0].tabs=[c;a;b] && editor.Draft.groups.[0].group=Some(IntPtr 2)) (sprintf "Merging by the menu did not join the other group: %A" editor.Draft)
             check ((merges 0).IsEmpty) "A lone row still offered rows to merge into"
