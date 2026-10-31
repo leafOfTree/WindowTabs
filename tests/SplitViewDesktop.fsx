@@ -122,6 +122,7 @@ let main() =
         member _.restoreWorkspace() = ()
         member _.restoreWorkspaceNamed _ = ()
         member _.detachTab _ = ()
+        member _.editGroups _ = ()
         member _.windowShortcuts() = []
         member _.setWindowShortcut _ = true})
     Services.register<IFilterService>({new IFilterService with

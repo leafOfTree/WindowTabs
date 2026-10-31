@@ -865,6 +865,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                 finally bmpTab.Dispose()) |> ignore
             first
 
+    /// The colour set over a tab's own, while it asks for attention.
+    member this.attentionColor tab = tabBgColor.value.tryFind(tab)
     member this.setTabBgColor((tab, color)) =
         if tabBgColor.value.tryFind(tab) <> color then
             match color with

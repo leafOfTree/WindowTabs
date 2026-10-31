@@ -204,13 +204,31 @@ type WorkspaceView() as this =
         wm.workspaceAdded.Add this.onWorkspaceAdded
         wm
 
+    /// The match method's column, in logical pixels: wide enough that every method but the regular
+    /// expression, the longest, stays in full view under the row's edit and delete; that one may
+    /// fade under them, and shows in full on the other rows.
+    member this.methodWidth : int =
+        let font = SettingsUi.bodyFont()
+        let logical (text:string) =
+            int(Math.Ceiling(float(TextRenderer.MeasureText(text,font,Size.Empty,TextFormatFlags.NoPadding).Width)*96.0/float(Dpi.value())))
+        let others = [WorkspaceWindowTitleMatchType.ExactMatch;WorkspaceWindowTitleMatchType.StartsWith
+                      WorkspaceWindowTitleMatchType.EndsWith;WorkspaceWindowTitleMatchType.Contains]
+                     |> List.map(MatchTypeText.label >> logical) |> List.max
+        let longest = logical (MatchTypeText.label WorkspaceWindowTitleMatchType.RegEx)
+        4+max (others+SettingsTreeList.OverlayReach 2) (longest+4)
+
     member this.list : SettingsTreeList = Cell.cacheProp this <| fun() ->
         let list =
-            new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn)
-                                  TreeListColumn(tr Strings.Workspaces.matchMethod,130,TextColumn)
-                                  TreeListColumn(tr Strings.Common.title,240,TextColumn)
-                                  // Edit and delete for the row under the pointer, in one place on every row.
-                                  TreeListColumn("",60,ActionColumn)])
+            // The title next to the name, taking the room left, as the edit dialog has it first;
+            // the match method, short and mostly the same, after it.
+            new SettingsTreeList([TreeListColumn(tr Strings.Common.name,240,TextColumn)
+                                  TreeListColumn(tr Strings.Common.title,0,TextColumn)
+                                  TreeListColumn(tr Strings.Workspaces.matchMethod,this.methodWidth,TextColumn)
+                                  // Edit and delete for the row under the pointer, over its right end:
+                                  // shown on that row alone, they need no room of their own.
+                                  TreeListColumn("",60,ActionColumn,Overlay=true)])
+        // Columns close together: the title and the method each have room enough of their own.
+        list.CellGap <- 8
         list.SelectionChanged.Add(fun _ ->
             this.wm.selected <- (if isNull list.SelectedItem then null else list.SelectedItem.Tag :?> Dynamic))
         // Double-click (or Enter) edits the item, as its edit button does; the arrow expands.
@@ -233,10 +251,10 @@ type WorkspaceView() as this =
     member this.panel : SettingsListPage = Cell.cacheProp this <| fun() ->
         let panel =
             new SettingsListPage(tr Strings.Pages.workspaces,
-                                 tr Strings.Workspaces.description,
+                                 "",
                                  this.list,
-                                 [this.newButton :> Control;this.restoreButton],
-                                 helpText=tr Strings.Workspaces.help)
+                                 [],
+                                 extra=this.parts)
         // In the order ActionInvoked expects them.
         if not this.wm.isReadOnly then this.list.RowActions <- [EditGlyph;DeleteGlyph]
         loaded <- true
@@ -261,7 +279,7 @@ type WorkspaceView() as this =
                 | :? WorkspaceGroup -> GroupGlyph
                 | _ -> WindowGlyph
             let row = TreeListItem(model?name,Glyph=glyph,Tag=model,Expanded=expanded.Contains(model))
-            if showSettings then row.Values <- [|"";MatchTypeText.label (model?matchType);model?title|]
+            if showSettings then row.Values <- [|"";model?title;MatchTypeText.label (model?matchType)|]
             for child in (model?children : List2<Dynamic>).list do row.Add(item child) |> ignore
             row
         list.Roots.Clear()
@@ -277,6 +295,61 @@ type WorkspaceView() as this =
         btn.Click.Add <| fun _ -> this.wm.create()
         btn
 
+    /// The group editor over the desktop as it is now: what to arrange before saving a workspace.
+    member this.editGroupsButton : Button = Cell.cacheProp this <| fun() ->
+        let btn = SettingsUi.button (tr Strings.Settings.editGroups.caption)
+        btn.Name <- "edit-groups"
+        btn.Click.Add <| fun _ -> Services.program.editGroups IntPtr.Zero
+        btn
+
+    /// The page's first part, over the saved workspaces and their buttons: the groups as they
+    /// are, with the editor's button, then the saved part's own heading.
+    /// The saved part's note, to the right of its buttons.
+    member this.savedNote : Label = Cell.cacheProp this <| fun() ->
+        new Label(Text=tr Strings.Workspaces.savedDescription,AutoSize=true,Tag="muted",UseMnemonic=false)
+    member this.nowNote : Label = Cell.cacheProp this <| fun() ->
+        new Label(Text=tr Strings.Workspaces.groupsNowDescription,AutoSize=true,Tag="muted",UseMnemonic=false)
+
+    /// How saving and restoring work, beside the saved part's heading, which it is about.
+    member this.helpButton : SettingsHelpButton = Cell.cacheProp this <| fun() ->
+        new SettingsHelpButton(tr Strings.Workspaces.help,AccessibleName=tr Strings.SettingsWindow.howToUse,Font=SettingsUi.bodyFont())
+
+    /// The page's two parts over the list: the groups as they are, with the editor's button, and
+    /// the saved workspaces, the help beside their heading. Each part's note stands to the right
+    /// of its buttons, wrapping in the room they leave, so it takes no line of its own.
+    member this.parts : Control = Cell.cacheProp this <| fun() ->
+        let block = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=1,Margin=Padding.Empty)
+        block.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+        let heading text (top:int) (beside:Control list) =
+            let row = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
+                                          FlowDirection=FlowDirection.LeftToRight,Margin=Padding(0,top,0,Dpi.scale 8),Padding=Padding.Empty)
+            row.Controls.Add(new Label(Text=text,AutoSize=true,Font=SettingsUi.subsectionFont(),UseMnemonic=false,Margin=Padding.Empty))
+            for control in beside do
+                control.Margin <- Padding(Dpi.scale 8,0,0,0)
+                row.Controls.Add(control)
+            row :> Control
+        let line (buttons:Control list) (note:Label) =
+            let row = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=buttons.Length+1,RowCount=1,
+                                           Margin=Padding.Empty,Padding=Padding.Empty)
+            for _ in buttons do row.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
+            row.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+            buttons |> List.iteri(fun i button ->
+                button.Margin <- Padding(0,0,Dpi.scale 8,0)
+                row.Controls.Add(button,i,0))
+            // Anchored to both sides of its cell, the note wraps to the room the buttons leave.
+            note.Anchor <- AnchorStyles.Left ||| AnchorStyles.Right
+            note.Margin <- Padding(Dpi.scale 4,0,0,0)
+            row.Controls.Add(note,buttons.Length,0)
+            row :> Control
+        for control in [ heading (tr Strings.Workspaces.groupsNow) 0 []
+                         line [this.editGroupsButton] this.nowNote
+                         heading (tr Strings.Workspaces.savedWorkspaces) (Dpi.scale 24) [this.helpButton]
+                         line [this.newButton;this.restoreButton] this.savedNote ] do
+            SettingsUi.add block control
+        // The list stands a little under the saved part's buttons.
+        block.Padding <- Padding(0,0,0,Dpi.scale 8)
+        block :> Control
+
     member this.restoreButton : Button = Cell.cacheProp this <| fun() ->
         let btn = SettingsUi.button (tr Strings.Workspaces.restoreSelected)
         // The accent marks the action on the selected workspace, apart from saving a new one.
@@ -289,8 +362,17 @@ type WorkspaceView() as this =
                     WorkspaceLaunch.start result.launchable (fun failures -> shown (result.Then(this.wm.retry result,failures)))
                 use dialog = new WorkspaceRestoreDialog(result,launch)
                 dialog.ShowDialog(btn.FindForm()) |> ignore)
-        this.wm.canRestoreChanged.Add <| fun(canRestore) ->
-            btn.Enabled <- canRestore
+        // Once the turn's changes are done: deleting a row selects it first, then nothing, and
+        // following each step lit the button for a moment at every delete.
+        let mutable pending = false
+        let settle () =
+            pending <- false
+            if not btn.IsDisposed then btn.Enabled <- this.wm.canRestore
+        this.wm.canRestoreChanged.Add <| fun _ ->
+            if not btn.IsHandleCreated then settle()
+            elif not pending then
+                pending <- true
+                btn.BeginInvoke(Action settle) |> ignore
         btn
 
     member private this.editSelected() =

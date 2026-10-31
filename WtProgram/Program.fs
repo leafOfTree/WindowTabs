@@ -39,6 +39,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let taskSwitchCell = Cell.create(None)
     let mutable initialDiscoveryComplete = false
     let tabSearchCell = Cell.create(None:TabSearchForm option)
+    let groupEditorCell = Cell.create(None:GroupEditorForm option)
     /// What was typed when each box last closed, the window search's and the palette's, offered
     /// again, selected, the next time it opens.
     let mutable lastWindowQuery = ""
@@ -898,6 +899,100 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
 
     member this.foregroundGroup = this.desktop.foregroundGroup
 
+    /// The group editor over the desktop in view: every group there as a folded row, and the
+    /// loose windows, centred on the screen of the window in front; each group's layout read on
+    /// its thread. One at a time, and opened again it closes.
+    member this.editGroups(hwnd:IntPtr) =
+        // The key puts the popup away; left open on another desktop, where it cannot be seen from
+        // this one, it goes and one for this desktop opens in its place at once.
+        let elsewhere (editor:GroupEditorForm) = WindowCloaking.IsCloakedByShell editor.Handle
+        match groupEditorCell.value with
+        | Some editor when not(elsewhere editor) -> editor.Close()
+        | existing ->
+            existing |> Option.iter(fun editor -> editor.Close())
+            let nameOverride each = windowNameOverride.tryFind(each).bind(id)
+            let live =
+                this.desktop.groups.list |> List.choose(fun group ->
+                    match group with
+                    | :? GroupInfo as info when not info.isExited && not info.isRetiring && group.windows.count>0 -> Some info
+                    | _ -> None)
+            // The windows on this desktop, groups first in the window search's order, then the loose ones.
+            let entries =
+                TabSearch.tabs nameOverride (WinUserApi.GetForegroundWindow()) (live |> List.map(fun info -> (info :> IGroup).windows.list))
+                |> List.filter(fun entry -> entry.desktop="")
+            let onDesktop = entries |> List.map(fun entry -> entry.hwnd) |> set
+            let groups = live |> List.filter(fun info -> (info :> IGroup).windows.list |> List.exists onDesktop.Contains)
+            let grouped = groups |> List.collect(fun info -> (info :> IGroup).windows.list) |> set
+            let loose = entries |> List.map(fun entry -> entry.hwnd) |> List.filter(fun each -> not(grouped.Contains each) && Services.filter.isTabbableWindow each)
+            if groups.IsEmpty && loose.IsEmpty then Notice.remind (tr Strings.GroupEditor.title) (tr Strings.GroupEditor.noGroup)
+            else
+                let zorder = this.hwndZorders()
+                let activeOf (info:GroupInfo) = (info :> IGroup).windows.list |> List.minBy(fun each -> zorder.tryFind(each).def(Int32.MaxValue))
+                // The tab's name as the strip shows it: the rename, or the last part of a path; a
+                // window with no title goes by its program.
+                let lastName (text:string) =
+                    let parts = text.Split([|'\\';'/'|],StringSplitOptions.RemoveEmptyEntries)
+                    if parts.Length=0 then text else parts.[parts.Length-1]
+                let nameOf each =
+                    let window = os.windowFromHwnd(each)
+                    match nameOverride each |> Option.defaultValue (lastName window.text) with
+                    | "" -> (try IO.Path.GetFileNameWithoutExtension(window.pid.exeName) with _ -> "")
+                    | name -> name
+                let windowOf each =
+                    let window = os.windowFromHwnd(each)
+                    { hwnd=each; name=nameOf each; icon=ImgHelper.knownWindowIcon window; minimized=window.isMinimized }
+                // Rows by their first tab's name, and the loose windows by name: an order that
+                // holds from one opening to the next, where the window search's would shuffle them.
+                let byName (name:'a -> string) (a:'a) (b:'a) = String.Compare(name a,name b,StringComparison.CurrentCultureIgnoreCase)
+                let captured = Dictionary<IntPtr,GroupLayout * Rect>()
+                // The tabs as the strip orders them: the group's windows alone are in no order of its own.
+                let orders = Dictionary<IntPtr,IntPtr list>()
+                let remaining = ref groups.Length
+                let finish() =
+                    if groupEditorCell.value.IsNone then
+                        let rows =
+                            groups |> List.filter(fun info -> not info.isExited && (info :> IGroup).windows.count>0) |> List.map(fun info ->
+                                let live = (info :> IGroup).windows.list
+                                let members =
+                                    match orders.TryGetValue info.hwnd with
+                                    | true,order -> (order |> List.filter(fun each -> List.contains each live))@(live |> List.filter(fun each -> not(List.contains each order)))
+                                    | _ -> live
+                                let active = activeOf info
+                                let layout,frame =
+                                    match captured.TryGetValue info.hwnd with
+                                    | true,(layout,frame) -> layout,frame
+                                    | _ -> GroupLayout.Single,os.windowFromHwnd(active).visibleBounds
+                                {GroupEditorRow.group=Some info.hwnd; frame=frame; active=active},
+                                GroupDraft.ofGroup info.hwnd members (members |> List.filter PinnedTabs.contains |> set) layout)
+                            |> List.sortWith(byName (fun (_,g:GroupDraft) -> nameOf (List.head g.tabs)))
+                        let loose = loose |> List.sortWith(byName nameOf)
+                        let drafts = rows |> List.map snd
+                        let windows = (drafts |> List.collect(fun g -> g.tabs))@loose |> List.distinct |> List.map windowOf
+                        let draft = DesktopDraft.ofDesktop drafts loose
+                        // Every row folded, the overview first; the popup opens on the screen of the window in front.
+                        let front = if hwnd=IntPtr.Zero then None else Some(os.windowFromHwnd(hwnd).visibleBounds)
+                        let editor = GroupEditorForm(draft,rows |> List.map fst,windows,None,?front=front)
+                        editor.Ended.Add(fun () -> groupEditorCell.set None)
+                        editor.Saved.Add(fun plan ->
+                            if DesktopPlan.isEmpty plan then Notice.show (tr Strings.GroupEditor.title) (tr Strings.GroupEditor.nothingChanged)
+                            else
+                                GroupEditorApply.run plan (fun outcome ->
+                                    Notice.show (tr Strings.GroupEditor.title) (tr (Strings.GroupEditor.applied outcome.moved outcome.detached outcome.made))))
+                        groupEditorCell.set(Some editor)
+                        editor.Show()
+                for info in groups do
+                    info.captureLayout(fun result ->
+                        (match result with
+                         | Some(_,order,split) ->
+                             orders.[info.hwnd] <- order
+                             (match split with
+                              | Some(_,frame,panes) -> captured.[info.hwnd] <- (SplitPersistence.rebuild panes,frame)
+                              | None -> ())
+                         | None -> ())
+                        remaining.Value <- remaining.Value-1
+                        if remaining.Value=0 then finish())
+                if groups.IsEmpty then finish()
+
     /// Opens the palette on a scope, the windows when none is asked for, or closes it when it is
     /// open on that scope already; open on another scope, it goes there instead.
     member this.togglePalette(scope:PaletteScope option) =
@@ -1274,6 +1369,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                     isDroppedAndAwaitingGrouping.map(fun s -> s.add hwnd)
                     group.removeWindow hwnd
                     refreshQueue.RequestAll())
+        member x.editGroups hwnd = this.editGroups hwnd
 
     interface IDesktopNotification with
         member x.dragDrop(hwnd) =

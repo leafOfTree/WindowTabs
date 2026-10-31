@@ -438,6 +438,7 @@ let main() =
         member _.restoreWorkspace() = ()
         member _.restoreWorkspaceNamed _ = ()
         member _.detachTab _ = ()
+        member _.editGroups _ = ()
         member _.windowShortcuts() = windowKeys.Value
         member _.setWindowShortcut shortcut =
             windowKeys.Value <- WindowShortcuts.set windowKeys.Value shortcut
@@ -782,6 +783,32 @@ let main() =
         | Some arrow,Some text -> assertTrue (arrow-text<=Dpi.scale 9) (sprintf "A value sits %d px from its arrow" (arrow-text))
         | _ -> assertTrue false "A value and its arrow could not be told apart"
         rowsForm.Close()
+    // An overlaid action column takes no room: the columns before it reach the row's right end,
+    // its buttons standing over that end, the text fading out before them.
+    do
+        let columns overlay =
+            [TreeListColumn("Name",120,TextColumn);TreeListColumn("Title",0,TextColumn);TreeListColumn("Method",130,TextColumn)
+             TreeListColumn("",60,ActionColumn,Overlay=overlay)]
+        use reserved = new SettingsTreeList(columns false,Size=Size(600,200),Font=SettingsUi.bodyFont())
+        use overlaid = new SettingsTreeList(columns true,Size=Size(600,200),Font=SettingsUi.bodyFont())
+        let spans (list:SettingsTreeList) = list.ColumnSpans
+        let methodEnd (list:SettingsTreeList) = let x,w = (spans list).[2] in x+w
+        assertTrue (snd (spans overlaid).[3]=0 && methodEnd overlaid=methodEnd reserved+Dpi.scale 60)
+                   (sprintf "An overlaid action column kept room of its own: %A %A" (spans overlaid) (spans reserved))
+        overlaid.RowActions <- [EditGlyph;DeleteGlyph]
+        overlaid.CellGap <- 8
+        let row = TreeListItem("notepad.exe",Values=[|"";"A title long enough to run under the row's buttons";"Exact match"|],AlwaysShowActions=true)
+        overlaid.Roots.Add(row)
+        overlaid.Rebuild()
+        use shot = new Bitmap(overlaid.Width,overlaid.Height)
+        overlaid.DrawToBitmap(shot,Rectangle(Point.Empty,overlaid.Size))
+        shot.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug","tree-overlay-actions.png"))
+        // The scroll bar coming in moves no column: its thin room is kept all along.
+        let before = overlaid.ColumnSpans
+        for i in 1..30 do overlaid.Roots.Add(TreeListItem(sprintf "row %d" i,Values=[|"";"";""|]))
+        overlaid.Rebuild()
+        overlaid.PerformLayout()
+        assertTrue (overlaid.ColumnSpans=before) (sprintf "The columns moved as the scroll bar came in: %A %A" before overlaid.ColumnSpans)
     // SettingsTreeList: expansion, keyboard navigation, check boxes and selection events.
     let treeList = new SettingsTreeList([TreeListColumn("Name",0,TextColumn);TreeListColumn("On",80,CheckColumn)])
     treeList.Size <- Size(400,300)

@@ -35,6 +35,9 @@ type TreeListColumn(header:string, width:int, kind:TreeListColumnKind) =
     member val RightAligned = false with get,set
     /// Shown on hover over the column's boxes, for a column without a heading.
     member val Tip = "" with get,set
+    /// An action column that takes no room of its own: its buttons, shown only on the row under
+    /// the pointer, stand over the row's right end, over what the columns show there.
+    member val Overlay = false with get,set
 
 /// A small labelled box after a row's name, such as an app in a group; a removable one has an x.
 type TreeListChip = { Text: string; Icon: Image; Removable: bool }
@@ -141,6 +144,9 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         this.TabStop <- true
         this.AccessibleRole <- AccessibleRole.Outline
         this.Font <- SettingsUi.bodyFont()
+        // The bar's own room: as wide as it grows under the pointer, and no wider, since it is
+        // kept whether there is anything to scroll or not.
+        scroll.Width <- Dpi.scale 10
         this.Controls.Add(scroll)
         scroll.changed.Add(fun value -> smooth.stop(); offset <- value; this.updateEditorBounds(); this.Invalidate())
         tooltip <- SettingsPartHover(this)
@@ -161,9 +167,10 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     /// Said in the muted colour while the list has no rows: what would be listed, and how.
     member val EmptyText = "" with get,set
     member val IconSize = 16 with get,set
-    /// Leaves the scroll bar's room empty when there is nothing to scroll, so a list whose rows
-    /// come and go as a search is typed keeps its right edge where it was.
-    member val KeepScrollRoom = false with get,set
+    /// Leaves the scroll bar's room empty when there is nothing to scroll, so the columns stay
+    /// where they are as the bar comes and goes: a thin strip, the bar standing in it like the
+    /// system's overlay bars rather than pushing the rows aside.
+    member val KeepScrollRoom = true with get,set
     /// The scroll bar's column: narrower where the list runs into its parent's padding.
     member this.ScrollBarWidth
         with get() = scroll.Width
@@ -190,6 +197,11 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member _.RowsChanged = rowsChanged.Publish
     /// Buttons drawn in the action column on the row under the pointer, as their glyphs.
     member val RowActions : TreeListGlyph list = [] with get,set
+    /// The room between one column's text and the next one's, in logical pixels, half on each side.
+    member val CellGap = 16 with get,set
+    /// How far from the row's right end overlaid row actions reach, in logical pixels, with the
+    /// fade before them: text that ends before this stays in full view under them.
+    static member OverlayReach(count:int) = 8+count*24+(max 0 (count-1))*2+2+12
     /// Raised when a row action is clicked, after its row is selected: item, index in RowActions.
     member _.ActionInvoked = actionInvoked.Publish
 
@@ -295,12 +307,16 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             | None -> editor.Visible <- false)
 
     member private this.columnBounds : Rectangle[] =
-        let widths = columns |> Array.map(fun column -> Dpi.scale column.Width)
+        let overlay (column:TreeListColumn) = column.Kind=ActionColumn && column.Overlay
+        let widths = columns |> Array.map(fun column -> if overlay column then 0 else Dpi.scale column.Width)
         let fixedWidth = widths |> Array.sum
         let fill = max (Dpi.scale 80) (this.contentWidth-fixedWidth)
-        let widths = widths |> Array.map(fun width -> if width=0 then fill else width)
+        let widths = Array.map2 (fun (column:TreeListColumn) width -> if width=0 && not(overlay column) then fill else width) columns widths
         let lefts = Array.scan (+) 0 widths
         Array.init columns.Length (fun i -> Rectangle(lefts.[i],0,widths.[i],0))
+
+    /// Each column's left edge and width, as laid out now.
+    member this.ColumnSpans = this.columnBounds |> Array.map(fun cell -> cell.X,cell.Width)
 
     member private this.indexOf(item:TreeListItem) = rows |> Array.tryFindIndex(fun (row,_) -> Object.ReferenceEquals(row,item))
 
@@ -365,7 +381,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         let left = cell.X+this.textLeft level
         let iconBox = Rectangle(left,top+(this.rowHeight-size)/2,size,size)
         let x = if not (isNull item.Icon) || item.Glyph<>NoGlyph || item.Swatch.IsSome then left+size+Dpi.scale 8 else left
-        iconBox,Rectangle(x,top,max 1 (cell.Right-Dpi.scale 8-x),this.rowHeight)
+        iconBox,Rectangle(x,top,max 1 (cell.Right-Dpi.scale (this.CellGap/2)-x),this.rowHeight)
 
     /// Where a row's name ends and its chips go: the name keeps at most a quarter of the cell, and
     /// no more than a short name needs, when the row has chips. The chips, each with its x box when removable, then the "+" box; they
@@ -435,7 +451,10 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         | Some column when Object.ReferenceEquals(item,hovered) || item.AlwaysShowActions ->
             let cell = this.columnBounds.[column]
             let button,gap = Dpi.scale 24,Dpi.scale 2
-            (this.actions item) |> List.mapi(fun i _ -> Rectangle(cell.X+i*(button+gap),top+(this.rowHeight-button)/2,button,button))
+            let count = List.length (this.actions item : TreeListGlyph list)
+            // Over the row's right end, or at the start of a column of their own.
+            let left = if columns.[column].Overlay then this.contentWidth-Dpi.scale 8-(count*button+(count-1)*gap) else cell.X
+            (this.actions item) |> List.mapi(fun i _ -> Rectangle(left+i*(button+gap),top+(this.rowHeight-button)/2,button,button))
         | _ -> []
 
     member private this.actions(item:TreeListItem) = item.Actions |> Option.defaultValue this.RowActions
@@ -884,7 +903,20 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                             let color = if pointed && SystemInformation.HighContrast then SystemColors.HighlightText elif pointed then text else p.muted
                             SettingsTreeList.drawGlyph(g,AddGlyph,Rectangle(box.X+(box.Width-side)/2,box.Y+(box.Height-side)/2,side,side),color))
                 | ActionColumn ->
-                    this.actionButtons(item,top) |> List.iteri(fun index (button:Rectangle) ->
+                    let buttons = this.actionButtons(item,top)
+                    // Over the row's own text, the buttons stand on the row's colour, the text fading
+                    // out into it before them rather than cut off under them.
+                    if columns.[column].Overlay && not buttons.IsEmpty then
+                        let first,last = List.head buttons,List.last buttons
+                        let back = if isSelected || Object.ReferenceEquals(item,hovered) then this.highlight(isSelected,p) else this.BackColor
+                        let fade = Dpi.scale 12
+                        let solid = Rectangle(first.X-Dpi.scale 2,row.Y,last.Right-first.X+Dpi.scale 2,row.Height)
+                        let ramp = Rectangle(solid.X-fade,row.Y,fade+1,row.Height)
+                        use cover = new SolidBrush(back)
+                        use blend = new LinearGradientBrush(ramp,Color.FromArgb(0,back),back,LinearGradientMode.Horizontal)
+                        g.FillRectangle(blend,Rectangle(ramp.X,ramp.Y,fade,ramp.Height))
+                        g.FillRectangle(cover,solid)
+                    buttons |> List.iteri(fun index (button:Rectangle) ->
                         let pointed = Object.ReferenceEquals(item,hovered) && index=hoveredAction
                         let highContrast = SystemInformation.HighContrast
                         // A shade of the text over the row's own highlight, so it shows on either.
@@ -907,7 +939,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         // The value close to its arrow, as a drop-down's text sits by its own.
                         elif item.Dropdown then arrowWidth+Dpi.scale 4
                         else 0
-                    let bounds = Rectangle(cell.X+Dpi.scale 8,top,max 1 (cell.Width-Dpi.scale 16-reserve),rowHeight)
+                    let half = Dpi.scale (this.CellGap/2)
+                    let bounds = Rectangle(cell.X+half,top,max 1 (cell.Width-2*half-reserve),rowHeight)
                     let font =
                         if column=columns.Length-1 && item.SmallValue then SettingsUi.font this.Font.FontFamily.Name (this.Font.SizeInPoints*0.86f) FontStyle.Regular
                         else this.Font

@@ -111,6 +111,7 @@ let main() =
             member _.restoreWorkspace() = calls.Enqueue "restoreWorkspace"
             member _.restoreWorkspaceNamed name = calls.Enqueue("restoreWorkspaceNamed "+name)
             member _.detachTab hwnd = calls.Enqueue(sprintf "detachTab %d" hwnd)
+            member _.editGroups hwnd = calls.Enqueue(sprintf "editGroups %d" hwnd)
             member _.windowShortcuts() = []
             member _.setWindowShortcut _ = true})
         let tabbing = ConcurrentDictionary<string,bool>(StringComparer.OrdinalIgnoreCase)
@@ -272,6 +273,9 @@ let main() =
         attempt "detach-tab" (fun () ->
             runDone "detach-tab" active
             note (called (sprintf "detachTab %d" active)) "Move tab to a new group did not take the tab out")
+        attempt "edit-groups" (fun () ->
+            runDone "edit-groups" active
+            note (called (sprintf "editGroups %d" active)) "Edit groups did not open the editor over the tab in front")
         attempt "ungroup-tabs" (fun () ->
             while not calls.IsEmpty do calls.TryDequeue() |> ignore
             runDone "ungroup-tabs" active

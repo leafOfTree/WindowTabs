@@ -941,13 +941,41 @@ let main() =
         Application.DoEvents()
         check (workspace.control.Width>Dpi.scale 300) "Workspace page failed to initialize or lay out"
         let workspaces = workspace :?> WorkspaceView
-        // A short description shares the buttons' line rather than taking its own.
-        let description = controls workspace.control |> Seq.find(fun control -> control :? Label && control.Text=tr Strings.Workspaces.description)
-        let restoreButton = workspaces.restoreButton
+        // Two parts: the groups now, with the editor's button, over the saved workspaces, whose
+        // heading stands over their own buttons.
+        let label text = controls workspace.control |> Seq.find(fun control -> control :? Label && control.Text=text)
         let toPage (control:Control) = workspace.control.PointToClient(control.Parent.PointToScreen(control.Location))
-        let descriptionAt,restoreAt = toPage description,toPage restoreButton
-        check (descriptionAt.X>restoreAt.X+restoreButton.Width && descriptionAt.Y<restoreAt.Y+restoreButton.Height && descriptionAt.Y+description.Height>restoreAt.Y)
-              (sprintf "Workspace description did not sit beside its buttons: %A %A" descriptionAt restoreAt)
+        let nowAt = toPage (label (tr Strings.Workspaces.groupsNow))
+        let editAt = toPage workspaces.editGroupsButton
+        let savedAt = toPage (label (tr Strings.Workspaces.savedWorkspaces))
+        let restoreAt = toPage workspaces.restoreButton
+        check (nowAt.Y<editAt.Y && editAt.Y+workspaces.editGroupsButton.Height<=savedAt.Y && savedAt.Y<restoreAt.Y)
+              (sprintf "The Workspaces page did not stand its groups now over its saved workspaces: %A %A %A %A" nowAt editAt savedAt restoreAt)
+        check (workspaces.editGroupsButton.Width<workspace.control.Width/2) (sprintf "The editor's button stretched across the page: %d" workspaces.editGroupsButton.Width)
+        // Each part's note stands to the right of its buttons, on their line; the help beside the
+        // saved part's heading, which it is about.
+        let beside (note:Control) (button:Control) =
+            let n,b = toPage note,toPage button
+            n.X>=b.X+button.Width && n.Y<b.Y+button.Height && n.Y+note.Height>b.Y
+        let nowNote = workspaces.nowNote
+        check (beside nowNote workspaces.editGroupsButton) (sprintf "The groups now note is not beside its button: %A %A %A %A" (toPage nowNote) nowNote.Size editAt workspaces.editGroupsButton.Size)
+        check (beside workspaces.savedNote workspaces.restoreButton) "The saved workspaces note is not beside its buttons"
+        // Every match method but the regular expression stays in full view under a row's overlaid
+        // edit and delete.
+        let _,methodWidth = workspaces.list.ColumnSpans.[2]
+        for kind in [WorkspaceWindowTitleMatchType.ExactMatch;WorkspaceWindowTitleMatchType.StartsWith;WorkspaceWindowTitleMatchType.EndsWith;WorkspaceWindowTitleMatchType.Contains] do
+            let text = MatchTypeText.label kind
+            let width = TextRenderer.MeasureText(text,workspaces.list.Font,Size.Empty,TextFormatFlags.NoPadding).Width
+            check (Dpi.scale 4+width<=methodWidth-Dpi.scale (SettingsTreeList.OverlayReach 2)) (sprintf "%s would hide under a row's edit and delete: %d of %d" text width methodWidth)
+        let helpAt = toPage workspaces.helpButton
+        check (helpAt.X>savedAt.X && abs(helpAt.Y-savedAt.Y)<Dpi.scale 12) (sprintf "The help is not beside the saved part's heading: %A %A" helpAt savedAt)
+        let saveAt = toPage workspaces.newButton
+        check (editAt.X=saveAt.X) (sprintf "The two parts' buttons do not line up: %A %A" editAt saveAt)
+        recoveryForm.ClientSize <- Size(Dpi.scale 1000,Dpi.scale 720)
+        Application.DoEvents()
+        use shot = new Bitmap(recoveryForm.ClientSize.Width,recoveryForm.ClientSize.Height)
+        recoveryForm.DrawToBitmap(shot,Rectangle(Point.Empty,recoveryForm.ClientSize))
+        shot.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug","settings-workspaces.png"))
         // A newly saved workspace goes below the earlier ones, selected.
         workspaces.wm.create()
         workspaces.wm.create()
@@ -973,9 +1001,16 @@ let main() =
         let kind (button:Button) = (button :?> SettingsActionButton).Kind
         check (kind reopened.restoreButton=SettingsButtonKind.Primary && kind reopened.newButton<>SettingsButtonKind.Primary)
               "Save and Restore look alike"
+        // Deleting rows one after another selects each, then nothing: Restore takes the last
+        // state alone rather than lighting up at each delete.
+        Application.DoEvents()
+        let mutable flips = 0
+        workspaces.restoreButton.EnabledChanged.Add(fun _ -> flips <- flips+1)
         for _ in 1..3 do
             workspaces.wm.selected <- box (workspaces.wm.workspaces.list |> List.last)
             workspaces.wm.remove()
+            Application.DoEvents()
+        check (flips<=1 && workspaces.restoreButton.Enabled=workspaces.wm.canRestore) (sprintf "Restore flickered while rows were deleted: %d changes" flips)
         recoveryForm.Close()
         use tinyTile = new SettingsThemeTile("system",Size=Size(16,80))
         use tinyImage = new Bitmap(16,80)

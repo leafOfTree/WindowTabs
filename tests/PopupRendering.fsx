@@ -125,6 +125,10 @@ let main() =
                 check (popupPaint.Paints>0) "Dropdown returned from Show without painting"
                 check (not popup.DropShadowEnabled) "Dropdown still uses the heavy directional system shadow"
                 check (composited popup) "Dropdown children are not composited together"
+                // A thin room stays for the scroll bar with rows enough to show at once, so
+                // filtering the rows never moves them sideways.
+                check (frame.List.ClientSize.Width=frame.ClientSize.Width-Dpi.scale 10)
+                      (sprintf "The dropdown's rows did not keep the scroll bar's room: %d of %d" frame.List.ClientSize.Width frame.ClientSize.Width)
                 assertTheme()
                 popup.Refresh()
                 use bitmap = new Bitmap(popup.Width,popup.Height)
@@ -183,24 +187,64 @@ let main() =
         raise "OnMouseUp" (new MouseEventArgs(MouseButtons.Left,1,centre.X,centre.Y,0))
         pumpFor 400L
         check (not notice.Visible) "The close button did not take the notice away"
-        // A warning lists what a restore left out in full: a long line wraps, so it is taller
-        // than one line each, and it stays half a minute to be read.
-        let short = ["Slow.exe — App is not running";"Restored: notepad.exe ×2"]
+        // A warning says what a restore did in its message's order: the apps restored as a
+        // paragraph in the text colour, then each window left out, its title in the text colour
+        // after a bullet and its app and why muted under it, set apart from the paragraph; a long
+        // line wraps, so it is taller than one line each, and it stays half a minute to be read.
+        let short = [Note "Restored: notepad.exe ×2";Entry("Report","Slow.exe · App is not running")]
         notice.show("Last session","Restored 2 windows, 1 not found",Warning,short)
         pumpFor 600L
         let shortHeight = notice.Height
         check (notice.Visible && shortHeight>fixedSize.Height && notice.Width=fixedSize.Width && notice.staysFor=Some 30000)
               (sprintf "A warning listing windows is %A and stays %A" notice.Size notice.staysFor)
+        let rows = notice.listed
+        check ((rows |> List.map(fun row -> row.text,row.muted,row.bullet))=["Restored: notepad.exe ×2",false,false;"Report",false,true;"Slow.exe · App is not running",true,false])
+              (sprintf "The listed lines are not the note, then an entry's title and its muted detail: %A" rows)
+        let note,title,detail = rows.[0].bounds,rows.[1].bounds,rows.[2].bounds
+        check (detail.Top=title.Bottom && title.Left=detail.Left && title.Left>note.Left && title.Top-note.Bottom>Dpi.scale 6)
+              (sprintf "An entry's detail is not right under its title in its column, set apart from the note above: %A" rows)
+        check (detail.Bottom<notice.Height && rows |> List.forall(fun row -> row.bounds.Top>Dpi.scale NoticeWindow.size.Height-Dpi.scale 8))
+              (sprintf "The listed lines are not laid out under the message within the notice: %A in %A" rows notice.Size)
         let long = String.replicate 6 @"C:\Users\someone\repository\dotFile\"+"tmp.txt"
         notice.hideNow()
-        notice.show("Last session","Restored 2 windows, 1 not found",Warning,("neovide.exe · "+long+" — App is not running")::List.tail short)
+        notice.show("Last session","Restored 2 windows, 1 not found",Warning,List.head short::[Entry(long,"neovide.exe · App is not running")])
         pumpFor 600L
         check (notice.Height>shortHeight) (sprintf "A long listed line did not wrap: %d, one line each %d" notice.Height shortHeight)
         check (notice.Bottom<=area.Bottom && notice.Top>=area.Top) (sprintf "A taller notice left the work area: %A" notice.Bounds)
+        // Past its limit the entries that do not fit are cut and counted after those that do,
+        // and the note of the apps restored still opens the list, however long.
+        let failures = [for i in 1..40 -> Entry(sprintf "Window %d" i,"app.exe · App would not start: Access is denied")]
+        let restored = Note("Restored: "+String.concat ", " [for i in 1..12 -> sprintf "program%d.exe ×%d" i i])
         notice.hideNow()
-        notice.show("Last session","Restored 2 windows",Warning,List.replicate 200 long)
+        notice.show("Last session","Restored 78 windows, 40 not found",Warning,restored::failures)
         pumpFor 600L
-        check (notice.Bottom<=area.Bottom && notice.Top>=area.Top) (sprintf "A very long list left the work area: %A" notice.Bounds)
+        check (notice.Height<=Dpi.scale NoticeWindow.maxHeight && notice.Bottom<=area.Bottom && notice.Top>=area.Top)
+              (sprintf "A very long list grew the notice past its limit: %A" notice.Bounds)
+        let rows = notice.listed
+        let shown = rows |> List.filter(fun row -> row.bullet) |> List.length
+        let last = List.last rows
+        check (shown>3 && shown<40 && rows.[0].text=restored.text && not rows.[0].muted && last.text=tr (Strings.Notices.more (40-shown)))
+              (sprintf "The entries were not cut to the limit with a count of the rest after the note and those shown: %d shown, first %A, last %A" shown rows.[0] last)
+        check (last.muted && not last.bullet && last.bounds.Left=rows.[1].bounds.Left && last.bounds.Top>rows.[1].bounds.Bottom)
+              (sprintf "The count of entries cut is out of column or place: %A" last)
+        check (last.bounds.Bottom<=notice.Height-Dpi.scale 4 && (rows |> List.pairwise |> List.forall(fun (above,below) -> below.bounds.Top>=above.bounds.Bottom)))
+              (sprintf "The listed lines overlap or run past the notice: %A" rows)
+        // It draws in either theme, its colours from the theme's palette.
+        for mode in ["light";"dark"] do
+            api.setValue("tabThemeMode",box mode)
+            notice.hideNow()
+            notice.show("Last session","Restored 78 windows, 40 not found",Warning,restored::failures)
+            pumpFor 600L
+            let palette = SettingsColors.current()
+            check (sameColor palette.surface notice.BackColor) (sprintf "A %s notice is not on the theme's surface" mode)
+            use bitmap = new Bitmap(notice.Width,notice.Height)
+            notice.DrawToBitmap(bitmap,Rectangle(Point.Empty,bitmap.Size))
+            check (sameColor palette.surface (bitmap.GetPixel(notice.Width-Dpi.scale 4,notice.Height/2))) (sprintf "A %s notice's margin is not the theme's surface" mode)
+        notice.hideNow()
+        notice.show("Last session","Restored 2 windows",Warning,List.replicate 200 (Entry(long,"")))
+        pumpFor 600L
+        check (notice.Bottom<=area.Bottom && notice.Top>=area.Top && notice.Height<=Dpi.scale NoticeWindow.maxHeight)
+              (sprintf "A very long list left the work area: %A" notice.Bounds)
         // A window kept on top that came up after the notice does not cover the next one.
         use onTop = new Form(TopMost=true,ShowInTaskbar=false,FormBorderStyle=FormBorderStyle.None,StartPosition=FormStartPosition.Manual,
                              Bounds=Rectangle(notice.Left-Dpi.scale 40,notice.Top,Dpi.scale 120,Dpi.scale 120))
@@ -219,7 +263,7 @@ let main() =
         notice.hideNow()
         NoticeWindow.isLocked <- fun () -> true
         notice.show("Last session","Starting 2 apps…",Progress)
-        notice.show("Last session","Restored 2 windows, 1 not found",Warning,["Slow.exe — App is not running"])
+        notice.show("Last session","Restored 2 windows, 1 not found",Warning,[Entry("Slow.exe","App is not running")])
         pumpFor 400L
         check (not notice.Visible) "A notice came in while the session was locked"
         NoticeWindow.isLocked <- SessionLock.IsLocked
@@ -241,7 +285,7 @@ let main() =
         pumpFor 600L
         check (notice.Visible && notice.waitingTitles.IsEmpty) "The notice held over a full-screen app did not come in after it"
         notice.hideNow()
-        notice.show("Last session","Restored 2 windows, 1 not found",Warning,["Slow.exe — App is not running"])
+        notice.show("Last session","Restored 2 windows, 1 not found",Warning,[Entry("Slow.exe","App is not running")])
         pumpFor 600L
         // A later notice waits behind a warning or an error rather than putting it away unread:
         // warnings and errors in order, of the others only the latest, after them.

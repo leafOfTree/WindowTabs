@@ -1686,6 +1686,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 let fitsAll (tree:SplitTree) =
                     SplitGeometry.fits this.splitGap (Dpi.scale SplitMetrics.minPane) frame tree &&
                     SplitGeometry.fitsPanes this.splitGap least frame tree
+                // A layout from the editor may name a window gone meanwhile: members keep their panes.
+                let command =
+                    match command with
+                    | ReplaceLayout(Some s) ->
+                        ReplaceLayout(match SplitView.prune this.windows.contains (Split s) with Split pruned -> Some pruned | _ -> None)
+                    | other -> other
                 let next =
                     match SplitView.apply current command groupLayout with
                     | Split s -> Split {s with tree=SplitGeometry.fitToPanes this.splitGap least frame s.tree}
@@ -1698,7 +1704,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     if not wasSplit then Notice.remind (tr Strings.TabMenu.split) (tr Strings.TabMenu.splitFailed)
                 | _ ->
                     let keep = match command with EndSplit keep -> keep | _ -> None
-                    (match command with EndSplit _ -> splitRestore <- None | _ -> ())
+                    (match command with EndSplit _ | ReplaceLayout None -> splitRestore <- None | _ -> ())
                     // A divider dragged is already where the user put it.
                     (match command with SetRatio _ -> () | _ -> this.beginTransition(groupLayout,next,current,?focus=keep))
                     this.setLayout(next,?focus=keep)
@@ -1764,6 +1770,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     let target = max pinned (if index<at then at else at+1)
                     if target<>index then this.ts.moveTab(Tab(hwnd),target)
                 | _ -> ()
+            | SetTabOrder wanted ->
+                StripOrder.arrange PinnedTabs.contains this.lorder.list wanted
+                |> List.iteri(fun index hwnd -> if this.lorder.list.[index]<>hwnd then this.ts.moveTab(Tab(hwnd),index))
             | ToggleIconsOnly -> this.isIconOnly <- not this.isIconOnly
             | SetTabDock dock -> this.ts.dock <- dock
             // The tabs' direction in view, as the tab menu's alignment items set.
@@ -2215,6 +2224,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 let window = this.os.windowFromHwnd(hwnd)
                 if window.isOwned && not window.isMinimized then window.raise()
                 if staleFrames.Remove(hwnd) then this.refreshFrame hwnd
+                // In front, a tab asking for attention has it, however it was brought there: by
+                // its shortcut or the switcher as much as by a click, which clears it on its own.
+                this.flashTab(Tab(hwnd), false)
             this.foreground <- hwnd
             this.followClosedTab(this.os.foreground.hwnd)
             this.saveZorder()

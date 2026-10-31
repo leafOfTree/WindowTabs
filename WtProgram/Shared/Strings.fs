@@ -265,6 +265,12 @@ module Strings =
                                                ar="يستعيد آخر مساحة عمل تم حفظها أو استعادتها." }
                                  keywords=workspaceWords }
         let private splitWords = { en="split view pane"; zh="分屏 窗格"; ja="分割 ペイン"; ar="عرض مقسّم جزء" }
+        let editGroups = { caption={ en="Edit groups…"; zh="编辑分组…"; ja="グループを編集…"; ar="تحرير المجموعات…" }
+                           description={ en="A picture of the group in front to rearrange its tabs and panes, applied when saved."
+                                         zh="以图示方式编辑当前分组的标签和窗格，保存后一次性生效。"
+                                         ja="手前のグループのタブとペインを図で編集し、保存時にまとめて適用します。"
+                                         ar="صورة للمجموعة الأمامية لإعادة ترتيب علاماتها وأجزائها، تُطبَّق عند الحفظ." }
+                           keywords={ en="group editor layout rearrange organize"; zh="分组编辑器 布局 整理 重排"; ja="グループ エディター レイアウト 整理"; ar="محرر المجموعات تخطيط ترتيب" } }
         let splitPickRight = { caption={ en="Window on the right…"; zh="在右侧放入窗口…"; ja="右側にウィンドウを配置…"; ar="نافذة على اليمين…" }
                                description={ en="Lists the windows to put beside the tab in front."; zh="列出可放到当前标签旁边的窗口。"; ja="前面のタブの隣に置くウィンドウを一覧表示します。"; ar="يعرض النوافذ التي يمكن وضعها بجانب علامة التبويب الأمامية." }
                                keywords=splitWords }
@@ -450,7 +456,8 @@ module Strings =
         let deleted = { en="Deleted"; zh="已删除"; ja="削除しました"; ar="تم الحذف" }
         /// Why a saved window was not found, after its app in the restore notice and log.
         let unknownApp = { en="Saved without its app"; zh="保存时未记录应用"; ja="アプリが記録されていません"; ar="حُفظت دون تطبيقها" }
-        let storeApp = { en="Store app, cannot be started; open it and restore again"; zh="应用商店应用无法自动启动，请手动打开后再恢复"; ja="ストア アプリは起動できません。開いてから再度復元してください"; ar="تطبيق من المتجر لا يمكن تشغيله؛ افتحه ثم استعد مجددًا" }
+        /// The reason, then what to do about it as a sentence of its own, so the two do not read as one.
+        let storeApp = { en="Store app, cannot be started. Please open it and restore again"; zh="应用商店应用无法自动启动。请手动打开后再恢复"; ja="ストア アプリは起動できません。開いてから再度復元してください"; ar="تطبيق من المتجر لا يمكن تشغيله. من فضلك افتحه ثم استعد مجددًا" }
         let noWindowLeft = { en="App is open, but no window of it matches"; zh="应用已打开，但没有可对应的窗口"; ja="アプリは開いていますが、対応するウィンドウがありません"; ar="التطبيق مفتوح، لكن لا نافذة منه تطابقها" }
         let noWindowAfterStart = { en="App started, but showed no window in time"; zh="应用已启动，但未及时出现窗口"; ja="アプリは起動しましたが、時間内にウィンドウが現れません"; ar="بدأ التطبيق، لكن لم تظهر نافذته في الوقت المحدد" }
         let startFailed reason = { en=sprintf "App would not start: %s" reason; zh=sprintf "应用启动失败：%s" reason; ja=sprintf "アプリを起動できません: %s" reason; ar=sprintf "تعذّر تشغيل التطبيق: %s" reason }
@@ -736,6 +743,56 @@ module Strings =
                                keywords={ en="rescan refresh reload"; zh="刷新 重新加载"; ja="更新 再読み込み"; ar="تحديث إعادة تحميل" } }
 
     /// Written to the console a command line was given from.
+    /// The group editor's popup.
+    module GroupEditor =
+        let title = { en="Edit groups"; zh="编辑分组"; ja="グループを編集"; ar="تحرير المجموعات" }
+        let windows count =
+            { en=(if count=1 then "1 window" else sprintf "%d windows" count); zh=sprintf "%d 个窗口" count; ja=sprintf "%d 個のウィンドウ" count; ar=sprintf "%d نافذة" count }
+        let save = { en="Save"; zh="保存"; ja="保存"; ar="حفظ" }
+        let hint = { en="Drag tabs along the strip or onto a pane; the corner button splits a pane; right-click a tab to take it out; Esc goes back."
+                     zh="沿标签条或往窗格里拖标签；窗格角上的按钮可拆分；右键标签可移出分组；Esc 回到全部分组。"
+                     ja="タブをストリップに沿って、またはペインへドラッグ。ペイン隅のボタンで分割、タブの右クリックで外し、Esc で戻ります。"
+                     ar="اسحب علامات التبويب على طول الشريط أو إلى لوحة؛ زر الزاوية يقسم اللوحة؛ انقر بزر الفأرة الأيمن على علامة تبويب لإخراجها؛ وEsc يعود." }
+        let noGroup = { en="The window in front is in no group."; zh="当前窗口不在任何分组里。"; ja="手前のウィンドウはどのグループにもありません。"; ar="النافذة الأمامية ليست في أي مجموعة." }
+        /// What saving did.
+        let applied moved detached made =
+            let parts (en:string list) = System.String.Join(", ",en |> List.filter(fun part -> part<>""))
+            { en=parts [ (if moved=0 then "" elif moved=1 then "1 window moved" else sprintf "%d windows moved" moved)
+                         (if detached=0 then "" elif detached=1 then "1 window taken out" else sprintf "%d windows taken out" detached)
+                         (if made=0 then "" elif made=1 then "1 group made" else sprintf "%d groups made" made) ]
+              zh=parts [ (if moved=0 then "" else sprintf "移动 %d 个窗口" moved); (if detached=0 then "" else sprintf "移出 %d 个窗口" detached); (if made=0 then "" else sprintf "新建 %d 个分组" made) ]
+              ja=parts [ (if moved=0 then "" else sprintf "%d 個のウィンドウを移動" moved); (if detached=0 then "" else sprintf "%d 個のウィンドウを外しました" detached); (if made=0 then "" else sprintf "%d 個のグループを作成" made) ]
+              ar=parts [ (if moved=0 then "" else sprintf "نُقلت %d نافذة" moved); (if detached=0 then "" else sprintf "أُخرجت %d نافذة" detached); (if made=0 then "" else sprintf "أُنشئت %d مجموعة" made) ] }
+        let nothingChanged = { en="Nothing changed."; zh="没有改动。"; ja="変更はありません。"; ar="لم يتغير شيء." }
+        let dropHere = { en="Drop a window here"; zh="拖窗口到这里"; ja="ここにウィンドウをドロップ"; ar="أفلت نافذة هنا" }
+        /// Said in the footer while the split button's slots are still empty.
+        let emptyCellsClose count =
+            { en=(if count=1 then "1 empty cell will close at Save." else sprintf "%d empty cells will close at Save." count)
+              zh=sprintf "%d 个空格子会在保存时合并。" count
+              ja=sprintf "空のセル %d 個は保存時に閉じられます。" count
+              ar=sprintf "ستُغلق %d خلية فارغة عند الحفظ." count }
+        let splitButton = { en="Split this pane"; zh="拆分这个窗格"; ja="このペインを分割"; ar="تقسيم هذا الجزء" }
+        /// The title's count of rows and of windows in all.
+        let summary groups windows =
+            { en=sprintf "%d %s, %d %s" groups (if groups=1 then "group" else "groups") windows (if windows=1 then "window" else "windows")
+              zh=sprintf "%d 个分组，共 %d 个窗口" groups windows
+              ja=sprintf "グループ %d、ウィンドウ %d" groups windows
+              ar=sprintf "%d مجموعة، %d نافذة" groups windows }
+        let looseWindows = { en="Loose windows"; zh="未分组窗口"; ja="未分類のウィンドウ"; ar="نوافذ غير مجمّعة" }
+        /// In the loose row while no window is on its own: what the row is for.
+        let looseEmpty = { en="Ungroup: drop a tab or a whole row here"; zh="移出分组：把标签或整行拖到这里"; ja="グループ解除：タブや行ごとここにドロップ"; ar="فك التجميع: أفلت علامة تبويب أو صفًا كاملًا هنا" }
+        let newGroup = { en="New group: drop a tab here"; zh="新建分组：拖到这里"; ja="新しいグループ：ここにドロップ"; ar="مجموعة جديدة: أفلت علامة تبويب هنا" }
+        let overviewHint = { en="Drag a tab to another row, Ungroup or New group; drag a row by its empty room onto another to merge; click a tab or a row to expand it."
+                             zh="把标签拖到别的行、“移出分组”或“新建分组”；按住行的空白处拖到别的行即合并；点标签或行即展开。"
+                             ja="タブを別の行、グループ解除、新しいグループへドラッグ。行の空きをつかんで別の行へ重ねると統合、タブや行をクリックで展開。"
+                             ar="اسحب علامة تبويب إلى صف آخر أو فك التجميع أو مجموعة جديدة؛ اسحب صفًا من فراغه إلى صف آخر لدمجهما؛ انقر علامة تبويب أو صفًا لتوسيعه." }
+        let removeTab = { en="Take out of the group"; zh="移出分组"; ja="グループから外す"; ar="إخراج من المجموعة" }
+        /// For a window in a pane: it stays a tab of its group, out of the split.
+        let leavePane = { en="Take out of the pane"; zh="移出窗格"; ja="ペインから外す"; ar="إخراج من اللوحة" }
+        /// The row's menu, from a right click on its empty room.
+        let mergeInto = { en="Merge into"; zh="合并到"; ja="統合先"; ar="دمج في" }
+        let ungroup = { en="Ungroup"; zh="解散分组"; ja="グループ解除"; ar="فك التجميع" }
+
     module CommandLine =
         /// Shown for --help: the options, then examples to copy.
         let usage = { en="Usage: WindowTabs [option]\n\nOptions:\n  -c, --command <id> [choice]   Run a command in the running WindowTabs. A command that offers\n                                choices takes the one named, as the palette lists it.\n  -w, --workspace <name>        Restore a saved workspace.\n  -g, --group <program>...      Start the programs and put the windows they open into one group.\n      --commands                List the commands and their ids.\n  -h, --help                    Show this help.\n\nWith no option, WindowTabs starts, replacing a copy already running.\n\nExamples:\n  WindowTabs --commands\n  WindowTabs --command next-tab\n  WindowTabs --command tab-color Blue\n  WindowTabs --command group-tab-position Left\n  WindowTabs --command restore-workspace-named \"Project A\"\n  WindowTabs --workspace \"Project A\"\n  WindowTabs --group notepad.exe \"C:\\Program Files\\App\\app.exe\"\n\nA command acts on the window in front, as its key does: run it from a shortcut or a hotkey\ntool. From a terminal, the terminal is the window in front."
@@ -836,7 +893,14 @@ module Strings =
         let scanFailed details = { en="Scan failed: " + details; zh="扫描失败：" + details; ja="スキャンに失敗しました: " + details; ar="فشل الفحص: " + details }
 
     module Workspaces =
-        let description = { en="Save and restore window groups and positions."; zh="保存和恢复窗口分组与位置。"; ja="ウィンドウのグループと位置を保存・復元します。"; ar="حفظ مجموعات النوافذ ومواضعها واستعادتها." }
+        /// The page's two parts: the groups as they are, to rearrange, over the saved workspaces.
+        let groupsNow = { en="Groups now"; zh="当前分组"; ja="今のグループ"; ar="المجموعات الآن" }
+        let groupsNowDescription = { en="Rearrange this desktop's tabs and panes."
+                                     zh="重新安排当前桌面的标签和窗格。"
+                                     ja="このデスクトップのタブとペインを並べ替えます。"
+                                     ar="أعد ترتيب علامات سطح المكتب هذا وأجزائه." }
+        let savedWorkspaces = { en="Saved workspaces"; zh="已保存的工作区"; ja="保存したワークスペース"; ar="مساحات العمل المحفوظة" }
+        let savedDescription = { en="Save groups and positions to restore later."; zh="保存分组和位置，以后恢复。"; ja="グループと位置を保存し、あとで復元します。"; ar="احفظ المجموعات ومواضعها لاستعادتها لاحقًا." }
         let help = { en="How to use\n1  Group and position your windows, then click Save layout.\n2  Select a workspace and click Restore selected.\n3  To change an item's name or window title matching, double-click it, or point at it and click its edit button.\nA window whose title has changed since it was saved is still matched by its app.\nRestore uses open windows. If an app is not running, the result offers to launch it."
                      zh="使用说明\n1  将窗口分组并调整位置，然后点击“保存布局”。\n2  选中工作区，点击“恢复所选”。\n3  双击任意项，或将鼠标移到该项上点击编辑按钮，可修改名称或窗口标题的匹配方式。\n保存后标题发生变化的窗口，仍会按其所属应用匹配。\n恢复使用已打开的窗口；应用未运行时，可在结果中启动它。"
                      ja="使い方\n1  ウィンドウをグループ化して配置し、「配置を保存」をクリックします。\n2  ワークスペースを選び、「選択したものを復元」をクリックします。\n3  項目をダブルクリックするか、項目にポインターを合わせて編集ボタンをクリックすると、名前やタイトルの一致方法を変更できます。\n保存後にタイトルが変わったウィンドウも、アプリで照合されます。\n復元は開いているウィンドウを使います。アプリが起動していない場合は、結果から起動できます。"

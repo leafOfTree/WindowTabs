@@ -938,18 +938,19 @@ type SettingsChoiceList() as this =
             | _ -> ()
 
 /// Shows a list with the settings scrollbar instead of the system one: the list is widened just
-/// enough for its own scrollbar to fall outside the frame, and the settings bar sits in the
-/// space it leaves, following the list as it scrolls a row at a time.
+/// enough for its own scrollbar to fall outside the frame, and the settings bar sits in a thin
+/// room kept at the right whether the rows overflow or not, so filtering the rows never moves
+/// them sideways; it follows the list as it scrolls a row at a time.
 type SettingsListFrame(list:SettingsChoiceList) as this =
     inherit Panel()
     let bar = new SettingsScrollBar(TabStop=false)
     let visibleRows() = max 1 (this.ClientSize.Height/max 1 list.ItemHeight)
     let sync() =
         bar.configure(max 0 (list.Items.Count-visibleRows()),visibleRows(),list.TopIndex)
+    let content() = max 1 (this.ClientSize.Width-bar.Width)
     let arrange() =
         let size = this.ClientSize
-        let overflows = list.Items.Count*list.ItemHeight > size.Height
-        let content = if overflows then max 1 (size.Width-bar.Width) else size.Width
+        let content = content()
         list.Bounds <- Rectangle(0,0,content,size.Height)
         // Whatever the list's own scrollbar takes is added back, outside the frame.
         let native = list.Width-list.ClientSize.Width
@@ -965,15 +966,16 @@ type SettingsListFrame(list:SettingsChoiceList) as this =
                 IntPtr(style.ToInt64() ||| int64 WindowsExtendedStyles.WS_EX_COMPOSITED)) |> ignore)
         this.BackColor <- list.BackColor
         list.Dock <- DockStyle.None
+        bar.Width <- Dpi.scale 10
         this.Controls.Add(list)
         this.Controls.Add(bar)
         bar.BringToFront()
         list.BackColorChanged.Add(fun _ -> this.BackColor <- list.BackColor; bar.Invalidate())
         list.Scrolled.Add(fun _ ->
             if not this.IsDisposed then
-                // A change in the number of rows can add or remove the scrollbar.
-                let overflows = list.Items.Count*list.ItemHeight > this.ClientSize.Height
-                if overflows<>(list.ClientSize.Width<this.ClientSize.Width) then arrange() else sync())
+                // A change in the number of rows can bring the list's own scrollbar, which goes
+                // outside the frame again.
+                if list.ClientSize.Width<>content() then arrange() else sync())
         bar.changed.Add(fun value -> list.TopIndex <- value; sync())
         this.Resize.Add(fun _ -> arrange())
     member _.List = list

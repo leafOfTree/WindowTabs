@@ -319,14 +319,19 @@ let main() =
     let notFound = both.notFound(fun _ -> true)
     check (notFound=["Slow.exe","Report",NoWindowAfterStart;"Denied.exe","",StartFailed "Access is denied."])
           (sprintf "Windows not found named the wrong reasons: %A" notFound)
-    // The notice lists every window left out with why, in full, then the apps restored.
+    // The notice says the apps restored first, as its message does, then lists every window
+    // left out as an entry: its title over its app and why, or its app alone over why.
     Localization.setPreference "en"
     let lines = { both with windows=both.windows@["notepad.exe","A";"Notepad.exe","B"] }.noticeLines(fun _ -> true)
     Localization.setPreference "system"
-    check (lines=["Slow.exe · Report — App started, but showed no window in time"
-                  "Denied.exe — App would not start: Access is denied."
-                  "Restored: editor.exe, other.exe, notepad.exe ×2"])
+    check (lines=[Note "Restored: editor.exe, other.exe, notepad.exe ×2"
+                  Entry("Report","Slow.exe · App started, but showed no window in time")
+                  Entry("Denied.exe","App would not start: Access is denied.")])
           (sprintf "The restore notice listed the wrong lines: %A" lines)
+    check ((lines |> List.map(fun line -> line.text))=["Restored: editor.exe, other.exe, notepad.exe ×2"
+                                                       "Report — Slow.exe · App started, but showed no window in time"
+                                                       "Denied.exe — App would not start: Access is denied."])
+          (sprintf "The restore notice's lines read wrongly as text: %A" (lines |> List.map(fun line -> line.text)))
     // An app started once that opened fewer windows than were saved is started again, once for
     // each window still missing; not one that would not start, nor one that was never started.
     let again = WorkspaceRestore.startAgain [@"C:\Apps\Neovide.exe";@"C:\Apps\Running.exe";@"C:\Apps\Denied.exe"]
@@ -463,6 +468,14 @@ let main() =
     let crashLog = IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"WindowTabsCrash.log")
     let existingLog = if IO.File.Exists(crashLog) then Some(IO.File.ReadAllText(crashLog)) else None
     try
+        // Starting the handler leaves no file behind; only a logged error writes one.
+        if IO.File.Exists(crashLog) then IO.File.Delete(crashLog)
+        let handler = new ExceptionHandlerPlugin()
+        (handler :> IPlugin).init()
+        check (not (IO.File.Exists(crashLog))) "Crash log was created before any error"
+        handler.log "Test" (box (InvalidOperationException("probe")))
+        (handler :> IDisposable).Dispose()
+        check (IO.File.Exists(crashLog) && IO.File.ReadAllText(crashLog).Contains("probe")) "A logged error was not written to the crash log"
         let entry time kind =
             String.concat "\r\n" ["---------------------------------------------";"Time    : "+time;"Source  : Application.ThreadException"
                                   "Version : 1.2.3";"OS      : Windows 11 Pro 24H2 (26100.1) / .NET 4.8.1"
