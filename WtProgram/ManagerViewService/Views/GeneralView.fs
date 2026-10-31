@@ -11,13 +11,13 @@ type GeneralView() =
         let behaviour = SettingsUi.sectionCard table (tr Strings.General.tabBehavior)
         SettingsBindings.toggleRow behaviour "dim-inactive-groups"
         let position = SettingsBindings.choiceRow behaviour "tab-position"
-        SettingsBindings.toggleRow behaviour "icons-only-by-default"
         let alignment = SettingsBindings.choiceRow behaviour "tab-alignment"
         let updateAlignmentLabels() =
             SettingsCatalog.alignmentLabels (position.SelectedIndex > 0) |> List.iteri(fun index label -> alignment.SetItemText(index,tr label))
             alignment.FitToItems()
         updateAlignmentLabels()
         position.SelectedIndexChanged.Add(fun _ -> updateAlignmentLabels())
+        SettingsBindings.toggleRow behaviour "icons-only-by-default"
         let autoHide = SettingsBindings.choiceRow behaviour "auto-hide-tabs"
         let showOnSwitch = SettingsUi.settingRowControl behaviour "show-tabs-on-switch" (SettingsBindings.settingToggle "showTabsOnSwitch")
         SettingsUi.indentDependentRow showOnSwitch

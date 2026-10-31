@@ -187,7 +187,7 @@ module Strings =
                          description={ en="Show a thin strip until hover."; zh="只显示细栏，悬停展开。"; ja="細いバーだけ表示し、ホバーで展開します。"; ar="يبقى شريط رفيع فقط حتى تمرّر المؤشر فوقه." }
                          keywords={ en="collapse"; zh="收起"; ja="折りたたみ"; ar="طيّ" } }
         let iconsOnlyByDefault = { caption={ en="Show icons only by default"; zh="默认仅显示图标"; ja="既定でアイコンのみ表示"; ar="إظهار الأيقونات فقط افتراضيًا" }
-                                   description={ en="New tab groups show icons without titles. Each group can still show titles from its tab menu."; zh="新标签组仅显示图标，不显示标题。仍可从标签菜单为单个分组显示标题。"; ja="新しいタブグループではタイトルを隠し、アイコンのみ表示します。各グループのメニューからタイトルを再表示できます。"; ar="تعرض مجموعات علامات التبويب الجديدة الأيقونات دون عناوين. ويمكن إظهار عناوين كل مجموعة من قائمة علامات التبويب." }
+                                   description={ en="New groups show their tabs without titles."; zh="新分组的标签不显示标题。"; ja="新しいグループのタブはタイトルなしで表示します。"; ar="تظهر علامات تبويب المجموعات الجديدة بلا عناوين." }
                                    keywords={ en="compact titles groups"; zh="紧凑 标题 分组"; ja="コンパクト タイトル グループ"; ar="مضغوط عناوين مجموعات" } }
         let showTabsOnSwitch = { caption={ en="Show tabs briefly after switching"; zh="切换后短暂显示标签"; ja="切り替え後にタブを一時的に表示"; ar="إظهار علامات التبويب لفترة وجيزة بعد التبديل" }
                                  description={ en="For about a second, so you can see where you are."; zh="显示约一秒，方便确认当前位置。"; ja="約 1 秒間表示して、今いる位置を確認できます。"; ar="لمدة ثانية تقريبًا لتتمكن من معرفة موضعك." }

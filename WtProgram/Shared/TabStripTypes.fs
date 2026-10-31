@@ -90,7 +90,8 @@ type GroupTabLayout = {
     dock: TabDock
     columnWidth: int
     normalAlignment: TabAlignment
-    insideAlignment: TabAlignment }
+    insideAlignment: TabAlignment
+    iconOnly: bool }
 
 /// How the tabs are drawn. Joined: one bar, the active tab told apart by its fill. Folder: the
 /// active tab rises out of the bar like the tab of a paper folder, with curved feet into its
