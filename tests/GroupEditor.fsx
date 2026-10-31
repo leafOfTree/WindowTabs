@@ -210,11 +210,20 @@ let main() =
             use lit = editor.RenderHovered()
             let h = max (Dpi.scale 11) ((snd l.tabs.[0]).Height*38/100)
             let mid = ((snd l.tabs.[0]).Right+second.X)/2
+            // Covered: an ink pixel of the button turned into the lit tab's flat colour (its edge
+            // pixels blend with the tab under them, so a shade off is not a tab over it).
+            let hotBody = lit.GetPixel(second.Right-Dpi.scale 3,second.Bottom-Dpi.scale 6)
             let covered =
                 [ for x in mid-h*3/4 .. mid+h*3/4 do
                     for y in second.Bottom-h .. second.Bottom-1 do
-                        if sameColor ink (image.GetPixel(x,y)) && not(sameColor ink (lit.GetPixel(x,y))) then yield (x,y) ]
+                        if sameColor ink (image.GetPixel(x,y)) && sameColor hotBody (lit.GetPixel(x,y)) then yield (x,y) ]
             check covered.IsEmpty (sprintf "The tab lit under the pointer covered the seam button in the %s look at %A" mode covered)
+            // A selected tab answers the hover too, a shade apart from the content it is joined
+            // to, which keeps its colour under the tab.
+            // At the tab's far corner, clear of its text and of the seam button at its near one.
+            let probe = Point(second.Right-Dpi.scale 3,second.Bottom-Dpi.scale 6)
+            check (not(sameColor (image.GetPixel(probe.X,probe.Y)) (lit.GetPixel(probe.X,probe.Y)))) (sprintf "The selected tab under the pointer is not lit in the %s look" mode)
+            check (sameColor (image.GetPixel(probe.X,second.Bottom+Dpi.scale 3)) (lit.GetPixel(probe.X,second.Bottom+Dpi.scale 3))) (sprintf "The content under the lit tab changed colour in the %s look" mode)
             editor.MouseMove(Point(l.band.X+Dpi.scale 2,l.band.Bottom-Dpi.scale 2))
             // The split button is a block of its own on the content, in the tabs' colour.
             let button = l.splitButton.Value

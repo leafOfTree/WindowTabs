@@ -319,6 +319,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let contentFill = if highContrast then SystemColors.Control else palette.background
     /// A tab under the pointer, a step lighter than the others.
     let hotFill = if highContrast then SystemColors.Highlight else tint palette.text palette.selection 0.1
+    /// A selected tab under the pointer: the content's colour with a wash of the accent over it,
+    /// so it stays near the content it is joined to and apart from the other tabs' hover.
+    let selectedHotFill = if highContrast then SystemColors.Highlight else tint palette.accent contentFill 0.18
     let textFlags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis ||| TextFormatFlags.NoPadding
     let measure (font:Font) (text:string) = TextRenderer.MeasureText(text,font,Size(Int32.MaxValue,Int32.MaxValue),TextFormatFlags.NoPadding ||| TextFormatFlags.SingleLine).Width
     let rounded (r:Rectangle) radius = SettingsShapes.rounded (RectangleF(float32 r.X,float32 r.Y,float32 r.Width,float32 r.Height)) (float32 radius)
@@ -635,8 +638,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let drawTabOn (g:Graphics) (hwnd:IntPtr) (look:GroupEditorTabLook) =
         let r = look.rect
         // In the expanded row the tabs stand on the content, the selected one joined to it.
-        use shape = if look.onContent then roundedTop (if look.selected then Rectangle(r.X,r.Y,r.Width,r.Height+scale 2) else r) (scale 6) else rounded r (scale 6)
-        let fill = if look.selected then contentFill elif look.hot then hotFill else tabFill
+        // Lit under the pointer, the selected tab is drawn within its own height, so the join
+        // below it keeps the content's colour.
+        use shape = if look.onContent then roundedTop (if look.selected && not look.hot then Rectangle(r.X,r.Y,r.Width,r.Height+scale 2) else r) (scale 6) else rounded r (scale 6)
+        // A selected tab under the pointer keeps near the content it is joined to, which keeps
+        // its colour below it.
+        let fill = if look.selected then (if look.hot then selectedHotFill else contentFill) elif look.hot then hotFill else tabFill
         if look.blank then
             use tintBrush = new SolidBrush(Color.FromArgb(40,accent))
             g.FillPath(tintBrush,shape)
@@ -713,7 +720,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     // Short and thick, centred: a mark, not an edge, so it reads at a glance.
                     let w = min (max 0 (r.Width-scale 24)) (max (scale 20) (min (scale 44) (r.Width*2/5)))
                     use brush = new SolidBrush(accent)
-                    g.FillRectangle(brush,Rectangle(r.X+(r.Width-w)/2,r.Bottom-scale 3,w,scale 3))
+                    use bar = rounded (Rectangle(r.X+(r.Width-w)/2,r.Bottom-scale 3,w,scale 3)) (scale 2)
+                    g.FillPath(brush,bar)
             | _ -> ()
         groupAt row.index |> Option.iter(fun group ->
             for (a,ra),(b,rb) in List.pairwise row.tabs do
@@ -869,7 +877,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         hovered |> Option.iter(fun hwnd ->
             let looks = tabLooks l
             looks |> List.tryFind(fun (each,_) -> each=hwnd) |> Option.iter(fun (_,look) ->
-                if not look.selected && not(sliding.ContainsKey hwnd) then
+                if not(sliding.ContainsKey hwnd) then
                     drawTabOn g hwnd {look with hot=true}
                     l.rows |> List.filter(fun row -> row.tabs |> List.exists(fun (each,_) -> each=hwnd)) |> List.iter(drawMarksOn g looks)))
 
