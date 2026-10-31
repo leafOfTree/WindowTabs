@@ -144,6 +144,9 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         this.TabStop <- true
         this.AccessibleRole <- AccessibleRole.Outline
         this.Font <- SettingsUi.bodyFont()
+        // The bar's own room: as wide as it grows under the pointer, and no wider, since it is
+        // kept whether there is anything to scroll or not.
+        scroll.Width <- Dpi.scale 10
         this.Controls.Add(scroll)
         scroll.changed.Add(fun value -> smooth.stop(); offset <- value; this.updateEditorBounds(); this.Invalidate())
         tooltip <- SettingsPartHover(this)
@@ -164,9 +167,10 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     /// Said in the muted colour while the list has no rows: what would be listed, and how.
     member val EmptyText = "" with get,set
     member val IconSize = 16 with get,set
-    /// Leaves the scroll bar's room empty when there is nothing to scroll, so a list whose rows
-    /// come and go as a search is typed keeps its right edge where it was.
-    member val KeepScrollRoom = false with get,set
+    /// Leaves the scroll bar's room empty when there is nothing to scroll, so the columns stay
+    /// where they are as the bar comes and goes: a thin strip, the bar standing in it like the
+    /// system's overlay bars rather than pushing the rows aside.
+    member val KeepScrollRoom = true with get,set
     /// The scroll bar's column: narrower where the list runs into its parent's padding.
     member this.ScrollBarWidth
         with get() = scroll.Width
@@ -197,7 +201,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member val CellGap = 16 with get,set
     /// How far from the row's right end overlaid row actions reach, in logical pixels, with the
     /// fade before them: text that ends before this stays in full view under them.
-    static member OverlayReach(count:int) = 8+count*24+(max 0 (count-1))*2+4+20
+    static member OverlayReach(count:int) = 8+count*24+(max 0 (count-1))*2+2+12
     /// Raised when a row action is clicked, after its row is selected: item, index in RowActions.
     member _.ActionInvoked = actionInvoked.Publish
 
@@ -905,8 +909,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                     if columns.[column].Overlay && not buttons.IsEmpty then
                         let first,last = List.head buttons,List.last buttons
                         let back = if isSelected || Object.ReferenceEquals(item,hovered) then this.highlight(isSelected,p) else this.BackColor
-                        let fade = Dpi.scale 20
-                        let solid = Rectangle(first.X-Dpi.scale 4,row.Y,last.Right-first.X+Dpi.scale 4,row.Height)
+                        let fade = Dpi.scale 12
+                        let solid = Rectangle(first.X-Dpi.scale 2,row.Y,last.Right-first.X+Dpi.scale 2,row.Height)
                         let ramp = Rectangle(solid.X-fade,row.Y,fade+1,row.Height)
                         use cover = new SolidBrush(back)
                         use blend = new LinearGradientBrush(ramp,Color.FromArgb(0,back),back,LinearGradientMode.Horizontal)

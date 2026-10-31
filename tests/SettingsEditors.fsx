@@ -803,6 +803,12 @@ let main() =
         use shot = new Bitmap(overlaid.Width,overlaid.Height)
         overlaid.DrawToBitmap(shot,Rectangle(Point.Empty,overlaid.Size))
         shot.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug","tree-overlay-actions.png"))
+        // The scroll bar coming in moves no column: its thin room is kept all along.
+        let before = overlaid.ColumnSpans
+        for i in 1..30 do overlaid.Roots.Add(TreeListItem(sprintf "row %d" i,Values=[|"";"";""|]))
+        overlaid.Rebuild()
+        overlaid.PerformLayout()
+        assertTrue (overlaid.ColumnSpans=before) (sprintf "The columns moved as the scroll bar came in: %A %A" before overlaid.ColumnSpans)
     // SettingsTreeList: expansion, keyboard navigation, check boxes and selection events.
     let treeList = new SettingsTreeList([TreeListColumn("Name",0,TextColumn);TreeListColumn("On",80,CheckColumn)])
     treeList.Size <- Size(400,300)
