@@ -389,8 +389,11 @@ let main() =
         check (not(TabNavigation.forceOnClose (IntPtr 999) None b)) "A user who chose another window before the close was pulled back"
         // Full-screen Remote Desktop drops its caption buttons; covering its monitor, it stays grouped.
         let monitor = Drawing.Rectangle(0,0,2048,1152)
-        check (FullScreenWindow.covers (Rect(Pt(0,0),Sz(2048,1152))) monitor) "A full-screen window was not seen to cover its monitor"
-        check (not(FullScreenWindow.covers (Rect(Pt(0,0),Sz(2048,1104)) ) monitor)) "A maximized window above the taskbar was taken for full screen"
+        check (FullScreenWindow.covers (Rect(Pt(0,0),Sz(2048,1152))) monitor false) "A full-screen window was not seen to cover its monitor"
+        check (FullScreenWindow.covers (Rect(Pt(0,0),Sz(2048,1152))) monitor true) "A browser in full screen, still maximized, was not seen to cover its monitor"
+        check (not(FullScreenWindow.covers (Rect(Pt(-8,-8),Sz(2064,1120))) monitor true)) "A maximized window above the taskbar was taken for full screen"
+        // Over an auto-hidden taskbar a maximized window's frame sticks out past every edge.
+        check (not(FullScreenWindow.covers (Rect(Pt(-8,-8),Sz(2064,1168))) monitor true)) "A maximized window over an auto-hidden taskbar was taken for full screen"
         // The bars an app shows over its full-screen window: a connection bar at rest is kept, one
         // sliding off the edge or a dialog is not, a bar that hides keeps its place while its window
         // is in the group, and an empty group keeps none.

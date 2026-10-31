@@ -180,6 +180,20 @@ let main() =
     check (keys.Register "split" (2,81) ignore && registered.Count=0) "A shortcut set while the keys were let go took its key at once"
     keys.Resume()
     check (registered.Count=2) (sprintf "A shortcut set while the keys were let go was not taken with the rest: %d" registered.Count)
+    // A key a full-screen game took while it was let go is tried again once the game lets it go.
+    keys.Suspend()
+    allow <- false
+    keys.Resume()
+    check (registered.Count=0) "Keys another program held were taken back"
+    keys.Retry()
+    check (registered.Count=0) "A retry took keys another program still held"
+    check (not(keys.Register "palette" (2,80) ignore)) "A key another program held was said to be set"
+    allow <- true
+    keys.Retry()
+    check (registered.Count=2) (sprintf "Keys another program let go were not taken back: %d" registered.Count)
+    operations.Clear()
+    keys.Retry()
+    check (operations.Count=0) "A retry asked again for keys already held"
     // A box's recording tells the program, once for the first and once for the last.
     let seen = ResizeArray<bool>()
     use watching = ShortcutRecording.Changed.Subscribe(seen.Add)

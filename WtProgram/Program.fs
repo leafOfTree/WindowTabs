@@ -296,11 +296,14 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// the foreground changes, and as the foreground window changes size, for one that goes full
     /// screen in place, as a video does. Off, nothing is watched.
     member private this.watchFullScreen() =
+        FullScreenPause.watching <- this.pausesInFullScreen
         if this.pausesInFullScreen then
             if fullScreenForeground.IsNone then
                 fullScreenForeground <- Some(os.setSingleWinEvent WinEvent.EVENT_SYSTEM_FOREGROUND (fun _ ->
                     this.watchForegroundSize()
-                    this.checkFullScreenSoon "foreground"))
+                    this.checkFullScreenSoon "foreground"
+                    // A game that took a key while it was in front may have let it go on leaving.
+                    hotKeyManager.retry()))
             this.watchForegroundSize()
         else
             fullScreenForeground |> Option.iter(fun hook -> hook.Dispose())
@@ -612,7 +615,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         // screen, which only resizes it: its moves are watched too, or it waited for a full scan.
         let fullScreen =
             not appStyle && isSubscribed.Contains(hwnd).not && window.pid.isCurrentProcess.not && window.isVisible &&
-            FullScreenWindow.covers window.bounds (Screen.FromHandle(hwnd).Bounds)
+            FullScreenWindow.covers window.bounds (Screen.FromHandle(hwnd).Bounds) window.isMaximized
         if fullScreen then subscribedFullScreen.Add hwnd |> ignore
         if appStyle || fullScreen then
             let registerEvent evt =
@@ -721,7 +724,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     member this.keepsFullScreen(window:Window) =
         window.isWindow && window.isVisible &&
         Services.filter.getIsTabbingEnabledForProcess(window.pid.processPath) &&
-        FullScreenWindow.covers window.bounds (Screen.FromHandle(window.hwnd).Bounds) &&
+        FullScreenWindow.covers window.bounds (Screen.FromHandle(window.hwnd).Bounds) window.isMaximized &&
         // Gone to another desktop, it leaves its group as any other window does.
         (TaskbarProxies.ownsWindow window.hwnd || not (WindowCloaking.IsHiddenOnCurrentDesktop window.hwnd))
 
