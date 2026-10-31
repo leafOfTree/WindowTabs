@@ -952,6 +952,16 @@ let main() =
         check (nowAt.Y<editAt.Y && editAt.Y+workspaces.editGroupsButton.Height<=savedAt.Y && savedAt.Y<restoreAt.Y)
               (sprintf "The Workspaces page did not stand its groups now over its saved workspaces: %A %A %A %A" nowAt editAt savedAt restoreAt)
         check (workspaces.editGroupsButton.Width<workspace.control.Width/2) (sprintf "The editor's button stretched across the page: %d" workspaces.editGroupsButton.Width)
+        // Each part's note stands to the right of its buttons, on their line; the help beside the
+        // saved part's heading, which it is about.
+        let beside (note:Control) (button:Control) =
+            let n,b = toPage note,toPage button
+            n.X>=b.X+button.Width && n.Y<b.Y+button.Height && n.Y+note.Height>b.Y
+        let nowNote = workspaces.nowNote
+        check (beside nowNote workspaces.editGroupsButton) (sprintf "The groups now note is not beside its button: %A %A %A %A" (toPage nowNote) nowNote.Size editAt workspaces.editGroupsButton.Size)
+        check (beside workspaces.savedNote workspaces.restoreButton) "The saved workspaces note is not beside its buttons"
+        let helpAt = toPage workspaces.helpButton
+        check (helpAt.X>savedAt.X && abs(helpAt.Y-savedAt.Y)<Dpi.scale 12) (sprintf "The help is not beside the saved part's heading: %A %A" helpAt savedAt)
         let saveAt = toPage workspaces.newButton
         check (editAt.X=saveAt.X) (sprintf "The two parts' buttons do not line up: %A %A" editAt saveAt)
         recoveryForm.ClientSize <- Size(Dpi.scale 1000,Dpi.scale 720)

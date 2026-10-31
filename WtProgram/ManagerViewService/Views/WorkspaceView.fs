@@ -235,9 +235,8 @@ type WorkspaceView() as this =
             new SettingsListPage(tr Strings.Pages.workspaces,
                                  "",
                                  this.list,
-                                 [this.newButton :> Control;this.restoreButton],
-                                 helpText=tr Strings.Workspaces.help,
-                                 extra=this.groupsNow)
+                                 [],
+                                 extra=this.parts)
         // In the order ActionInvoked expects them.
         if not this.wm.isReadOnly then this.list.RowActions <- [EditGlyph;DeleteGlyph]
         loaded <- true
@@ -287,25 +286,50 @@ type WorkspaceView() as this =
 
     /// The page's first part, over the saved workspaces and their buttons: the groups as they
     /// are, with the editor's button, then the saved part's own heading.
-    member this.groupsNow : Control = Cell.cacheProp this <| fun() ->
+    /// The saved part's note, to the right of its buttons.
+    member this.savedNote : Label = Cell.cacheProp this <| fun() ->
+        new Label(Text=tr Strings.Workspaces.savedDescription,AutoSize=true,Tag="muted",UseMnemonic=false)
+    member this.nowNote : Label = Cell.cacheProp this <| fun() ->
+        new Label(Text=tr Strings.Workspaces.groupsNowDescription,AutoSize=true,Tag="muted",UseMnemonic=false)
+
+    /// How saving and restoring work, beside the saved part's heading, which it is about.
+    member this.helpButton : SettingsHelpButton = Cell.cacheProp this <| fun() ->
+        new SettingsHelpButton(tr Strings.Workspaces.help,AccessibleName=tr Strings.SettingsWindow.howToUse,Font=SettingsUi.bodyFont())
+
+    /// The page's two parts over the list: the groups as they are, with the editor's button, and
+    /// the saved workspaces, the help beside their heading. Each part's note stands to the right
+    /// of its buttons, wrapping in the room they leave, so it takes no line of its own.
+    member this.parts : Control = Cell.cacheProp this <| fun() ->
         let block = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=1,Margin=Padding.Empty)
         block.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
-        let heading text (first:bool) =
-            new Label(Text=text,AutoSize=true,Font=SettingsUi.subsectionFont(),UseMnemonic=false,
-                      Margin=Padding(0,(if first then 0 else Dpi.scale 24),0,Dpi.scale 4))
-        let note text =
-            new Label(Text=text,AutoSize=true,Tag="muted",UseMnemonic=false,MaximumSize=Size(Dpi.scale 700,0),Margin=Padding(0,0,0,Dpi.scale 8))
-        for control in [ heading (tr Strings.Workspaces.groupsNow) true :> Control
-                         note (tr Strings.Workspaces.groupsNowDescription)
-                         this.editGroupsButton
-                         heading (tr Strings.Workspaces.savedWorkspaces) false
-                         note (tr Strings.Workspaces.savedDescription) ] do
+        let heading text (top:int) (beside:Control list) =
+            let row = new FlowLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=false,
+                                          FlowDirection=FlowDirection.LeftToRight,Margin=Padding(0,top,0,Dpi.scale 8),Padding=Padding.Empty)
+            row.Controls.Add(new Label(Text=text,AutoSize=true,Font=SettingsUi.subsectionFont(),UseMnemonic=false,Margin=Padding.Empty))
+            for control in beside do
+                control.Margin <- Padding(Dpi.scale 8,0,0,0)
+                row.Controls.Add(control)
+            row :> Control
+        let line (buttons:Control list) (note:Label) =
+            let row = new TableLayoutPanel(AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=buttons.Length+1,RowCount=1,
+                                           Margin=Padding.Empty,Padding=Padding.Empty)
+            for _ in buttons do row.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
+            row.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
+            buttons |> List.iteri(fun i button ->
+                button.Margin <- Padding(0,0,Dpi.scale 8,0)
+                row.Controls.Add(button,i,0))
+            // Anchored to both sides of its cell, the note wraps to the room the buttons leave.
+            note.Anchor <- AnchorStyles.Left ||| AnchorStyles.Right
+            note.Margin <- Padding(Dpi.scale 4,0,0,0)
+            row.Controls.Add(note,buttons.Length,0)
+            row :> Control
+        for control in [ heading (tr Strings.Workspaces.groupsNow) 0 []
+                         line [this.editGroupsButton] this.nowNote
+                         heading (tr Strings.Workspaces.savedWorkspaces) (Dpi.scale 24) [this.helpButton]
+                         line [this.newButton;this.restoreButton] this.savedNote ] do
             SettingsUi.add block control
-        // A button of its own size, as the saved part's are, not one across the page.
-        let button = this.editGroupsButton
-        button.Dock <- DockStyle.None
-        button.Anchor <- AnchorStyles.Left
-        button.Margin <- Padding.Empty
+        // The list stands a little under the saved part's buttons.
+        block.Padding <- Padding(0,0,0,Dpi.scale 8)
         block :> Control
 
     member this.restoreButton : Button = Cell.cacheProp this <| fun() ->

@@ -895,10 +895,10 @@ module Strings =
     module Workspaces =
         /// The page's two parts: the groups as they are, to rearrange, over the saved workspaces.
         let groupsNow = { en="Groups now"; zh="当前分组"; ja="今のグループ"; ar="المجموعات الآن" }
-        let groupsNowDescription = { en="Rearrange the groups on this desktop: their tabs, panes and splits. Nothing moves until you save."
-                                     zh="重新安排当前桌面上的分组：标签、窗格和拆分。保存前不会移动任何窗口。"
-                                     ja="このデスクトップのグループを並べ替えます：タブ、ペイン、分割。保存するまで何も動きません。"
-                                     ar="أعد ترتيب المجموعات على سطح المكتب هذا: علاماتها وأجزاؤها وتقسيماتها. لا يتحرك شيء حتى تحفظ." }
+        let groupsNowDescription = { en="Rearrange this desktop's tabs and panes; nothing moves until you save."
+                                     zh="重新安排当前桌面的标签和窗格，保存前不会移动窗口。"
+                                     ja="このデスクトップのタブとペインを並べ替えます。保存するまで何も動きません。"
+                                     ar="أعد ترتيب علامات سطح المكتب هذا وأجزائه؛ لا يتحرك شيء حتى تحفظ." }
         let savedWorkspaces = { en="Saved workspaces"; zh="已保存的工作区"; ja="保存したワークスペース"; ar="مساحات العمل المحفوظة" }
         let savedDescription = { en="Save the groups and positions as they are, and restore them later."; zh="把现在的分组和位置保存下来，以后再恢复。"; ja="今のグループと位置を保存し、あとで復元します。"; ar="احفظ المجموعات ومواضعها كما هي، واستعدها لاحقًا." }
         let help = { en="How to use\n1  Group and position your windows, then click Save layout.\n2  Select a workspace and click Restore selected.\n3  To change an item's name or window title matching, double-click it, or point at it and click its edit button.\nA window whose title has changed since it was saved is still matched by its app.\nRestore uses open windows. If an app is not running, the result offers to launch it."
