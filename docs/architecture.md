@@ -562,7 +562,9 @@ buttons, foreground changes and timeout cancel the leader. Fresh installs enable
 the leader; existing settings without its toggle leave it disabled.
 
 The palette has 16 colours: seven main colours, eight extra colours, then grey.
-By-window allocation and the menu use this order; stored indices stay unchanged.
+The menu uses this order; stored indices stay unchanged. By-window allocation cycles
+through indices 1-8 and grey only, the most distinct hues, so neighbouring tabs never get two
+similar colours; the rest are picked by hand.
 By-app colours retain their stable hash over all sixteen.
 WindowTabColors is owned by the main STA. By-window indices and per-window overrides
 stay with the HWND across group transfers and are removed when it is destroyed.

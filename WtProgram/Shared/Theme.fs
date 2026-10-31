@@ -38,8 +38,9 @@ module Theme =
     let tabPaletteSize = 16
     /// Keep related colours together in the menu.
     let tabColorOrder = [1;7;14;4;3;8;2;5;11;6;9;10;12;13;15;0]
-    /// Alternate distant hues so neighbouring automatic colours remain easy to distinguish.
-    let tabAllocationOrder = [1;8;4;6;3;13;2;7;5;14;11;10;9;12;15;0]
+    /// Alternate distant hues so neighbouring automatic colours remain easy to distinguish. Only the
+    /// first eight colours and grey: the others sit too close to them, so they stay in the menu.
+    let tabAllocationOrder = [1;8;4;6;3;2;7;5;0]
     /// Whether a bar takes the lighter tints. Decided by the bar rather than the theme: a
     /// custom palette can put a dark bar in the light theme. 0.179 is where black and white
     /// text are equally readable.
@@ -103,14 +104,18 @@ module Theme =
         let distance (x:Color) (y:Color) =
             let (l1,a1,b1),(l2,a2,b2) = ofColor x,ofColor y
             sqrt((l1-l2)*(l1-l2)+(a1-a2)*(a1-a2)+(b1-b2)*(b1-b2))
-    /// The text of every filled tab behind the active one: the darkest neutral grey that reads at
-    /// 4.5:1 on all their shades, the inactive orange the closest.
+    /// The text of every filled tab behind the active one: a neutral grey that reads at 4.5:1 on
+    /// all their shades.
     let inactiveFillText = Color.FromRGB(0xC8C8C8)
     /// A tab behind the active one in its colour: a little darker and with less colour, so the
     /// active tab is the brightest and the rest keep their hue and stay apart.
     let tabShade (darker:float) (colourKept:float) (tint:Color) =
         let L,a,b = OkLab.ofColor tint
         OkLab.ofLch (L-darker) (sqrt(a*a+b*b)*colourKept) (atan2 b a)
+    /// Dark enough that the active tab stands out in any colour. Taking colour away instead would
+    /// bring the inactive shades of neighbouring hues too close together.
+    let inactiveTabShade tint = tabShade 0.2 0.6 tint
+    let hoveredTabShade tint = tabShade 0.06 0.75 tint
     /// How much of each colour an inactive group keeps; the rest comes from its background.
     let dimAmount = 0.4
     /// Soften inactive groups without letting the window underneath show through: towards white

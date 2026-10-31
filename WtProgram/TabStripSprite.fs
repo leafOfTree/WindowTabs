@@ -418,8 +418,8 @@ type TabSprite<'id> = {
             match this.tint with
             | Some tint when this.displayInfo.colorStyle="Fill" ->
                 if this.isTop then tint
-                elif hovered then Theme.tabShade 0.06 0.75 tint
-                else Theme.tabShade 0.12 0.6 tint
+                elif hovered then Theme.hoveredTabShade tint
+                else Theme.inactiveTabShade tint
             | _ -> basis
 
     /// What a raised tab sits on in its slot: the bar, in the shade a filled tab's colour has when
@@ -427,7 +427,7 @@ type TabSprite<'id> = {
     /// rather than breaking to the plain bar round it.
     member this.barColor =
         match this.tint with
-        | Some tint when this.displayInfo.colorStyle="Fill" && this.displayInfo.bgColor.IsNone -> Theme.tabShade 0.12 0.6 tint
+        | Some tint when this.displayInfo.colorStyle="Fill" && this.displayInfo.bgColor.IsNone -> Theme.inactiveTabShade tint
         | _ -> this.appearance.tabNormalBgColor
 
     /// The hairline between two plain tabs. On a filled colour it is drawn from the tab's own text
