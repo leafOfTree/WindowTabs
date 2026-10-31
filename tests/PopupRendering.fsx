@@ -125,6 +125,10 @@ let main() =
                 check (popupPaint.Paints>0) "Dropdown returned from Show without painting"
                 check (not popup.DropShadowEnabled) "Dropdown still uses the heavy directional system shadow"
                 check (composited popup) "Dropdown children are not composited together"
+                // A thin room stays for the scroll bar with rows enough to show at once, so
+                // filtering the rows never moves them sideways.
+                check (frame.List.ClientSize.Width=frame.ClientSize.Width-Dpi.scale 10)
+                      (sprintf "The dropdown's rows did not keep the scroll bar's room: %d of %d" frame.List.ClientSize.Width frame.ClientSize.Width)
                 assertTheme()
                 popup.Refresh()
                 use bitmap = new Bitmap(popup.Width,popup.Height)
