@@ -362,8 +362,17 @@ type WorkspaceView() as this =
                     WorkspaceLaunch.start result.launchable (fun failures -> shown (result.Then(this.wm.retry result,failures)))
                 use dialog = new WorkspaceRestoreDialog(result,launch)
                 dialog.ShowDialog(btn.FindForm()) |> ignore)
-        this.wm.canRestoreChanged.Add <| fun(canRestore) ->
-            btn.Enabled <- canRestore
+        // Once the turn's changes are done: deleting a row selects it first, then nothing, and
+        // following each step lit the button for a moment at every delete.
+        let mutable pending = false
+        let settle () =
+            pending <- false
+            if not btn.IsDisposed then btn.Enabled <- this.wm.canRestore
+        this.wm.canRestoreChanged.Add <| fun _ ->
+            if not btn.IsHandleCreated then settle()
+            elif not pending then
+                pending <- true
+                btn.BeginInvoke(Action settle) |> ignore
         btn
 
     member private this.editSelected() =

@@ -1001,9 +1001,16 @@ let main() =
         let kind (button:Button) = (button :?> SettingsActionButton).Kind
         check (kind reopened.restoreButton=SettingsButtonKind.Primary && kind reopened.newButton<>SettingsButtonKind.Primary)
               "Save and Restore look alike"
+        // Deleting rows one after another selects each, then nothing: Restore takes the last
+        // state alone rather than lighting up at each delete.
+        Application.DoEvents()
+        let mutable flips = 0
+        workspaces.restoreButton.EnabledChanged.Add(fun _ -> flips <- flips+1)
         for _ in 1..3 do
             workspaces.wm.selected <- box (workspaces.wm.workspaces.list |> List.last)
             workspaces.wm.remove()
+            Application.DoEvents()
+        check (flips<=1 && workspaces.restoreButton.Enabled=workspaces.wm.canRestore) (sprintf "Restore flickered while rows were deleted: %d changes" flips)
         recoveryForm.Close()
         use tinyTile = new SettingsThemeTile("system",Size=Size(16,80))
         use tinyImage = new Bitmap(16,80)
