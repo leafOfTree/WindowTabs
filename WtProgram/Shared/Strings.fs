@@ -895,12 +895,12 @@ module Strings =
     module Workspaces =
         /// The page's two parts: the groups as they are, to rearrange, over the saved workspaces.
         let groupsNow = { en="Groups now"; zh="当前分组"; ja="今のグループ"; ar="المجموعات الآن" }
-        let groupsNowDescription = { en="Rearrange this desktop's tabs and panes; nothing moves until you save."
-                                     zh="重新安排当前桌面的标签和窗格，保存前不会移动窗口。"
-                                     ja="このデスクトップのタブとペインを並べ替えます。保存するまで何も動きません。"
-                                     ar="أعد ترتيب علامات سطح المكتب هذا وأجزائه؛ لا يتحرك شيء حتى تحفظ." }
+        let groupsNowDescription = { en="Rearrange this desktop's tabs and panes."
+                                     zh="重新安排当前桌面的标签和窗格。"
+                                     ja="このデスクトップのタブとペインを並べ替えます。"
+                                     ar="أعد ترتيب علامات سطح المكتب هذا وأجزائه." }
         let savedWorkspaces = { en="Saved workspaces"; zh="已保存的工作区"; ja="保存したワークスペース"; ar="مساحات العمل المحفوظة" }
-        let savedDescription = { en="Save the groups and positions as they are, and restore them later."; zh="把现在的分组和位置保存下来，以后再恢复。"; ja="今のグループと位置を保存し、あとで復元します。"; ar="احفظ المجموعات ومواضعها كما هي، واستعدها لاحقًا." }
+        let savedDescription = { en="Save groups and positions to restore later."; zh="保存分组和位置，以后恢复。"; ja="グループと位置を保存し、あとで復元します。"; ar="احفظ المجموعات ومواضعها لاستعادتها لاحقًا." }
         let help = { en="How to use\n1  Group and position your windows, then click Save layout.\n2  Select a workspace and click Restore selected.\n3  To change an item's name or window title matching, double-click it, or point at it and click its edit button.\nA window whose title has changed since it was saved is still matched by its app.\nRestore uses open windows. If an app is not running, the result offers to launch it."
                      zh="使用说明\n1  将窗口分组并调整位置，然后点击“保存布局”。\n2  选中工作区，点击“恢复所选”。\n3  双击任意项，或将鼠标移到该项上点击编辑按钮，可修改名称或窗口标题的匹配方式。\n保存后标题发生变化的窗口，仍会按其所属应用匹配。\n恢复使用已打开的窗口；应用未运行时，可在结果中启动它。"
                      ja="使い方\n1  ウィンドウをグループ化して配置し、「配置を保存」をクリックします。\n2  ワークスペースを選び、「選択したものを復元」をクリックします。\n3  項目をダブルクリックするか、項目にポインターを合わせて編集ボタンをクリックすると、名前やタイトルの一致方法を変更できます。\n保存後にタイトルが変わったウィンドウも、アプリで照合されます。\n復元は開いているウィンドウを使います。アプリが起動していない場合は、結果から起動できます。"
