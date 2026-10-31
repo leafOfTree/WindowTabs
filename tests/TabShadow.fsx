@@ -214,8 +214,8 @@ let main () =
                     let text = appearance.tabTextColor
                     let hovered = {inactive with hover=Some TabBackground}
                     check (active.fillColor=Color.Blue) "A fill changed the colour of the active tab"
-                    check (inactive.fillColor=Theme.tabShade 0.12 0.6 Color.Blue) "An inactive filled tab is not a darker, quieter shade of its colour"
-                    check (hovered.fillColor=Theme.tabShade 0.06 0.75 Color.Blue) "Hovering a filled tab gives no feedback"
+                    check (inactive.fillColor=Theme.inactiveTabShade Color.Blue) "An inactive filled tab is not a darker, quieter shade of its colour"
+                    check (hovered.fillColor=Theme.hoveredTabShade Color.Blue) "Hovering a filled tab gives no feedback"
                     // Raised, the active tab sits on the colour's own bar, as its neighbours are,
                     // so a coloured strip does not break to the plain bar round it.
                     if style<>JoinedTabs then
@@ -284,7 +284,7 @@ let main () =
                 if not System.Windows.Forms.SystemInformation.HighContrast then
                     use image = coloured.render.bitmap
                     image.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "filled-column-%A-%A-%d.png" dock direction dpi))
-                    let shade = Theme.tabShade 0.12 0.6 Color.Blue
+                    let shade = Theme.inactiveTabShade Color.Blue
                     check (image.GetPixel(image.Width/2,image.Height-Dpi.scale 4).ToArgb()=shade.ToArgb())
                           "A column of tabs filled with one colour stands on the plain bar"
                     // Tabs of different colours: each row's band in its tab's own bar colour, so two
@@ -300,11 +300,11 @@ let main () =
                     check (at (mixedImage.Height-Dpi.scale 4)=plain) "A column of tabs in different colours lost the plain bar below them"
                     check (at (below 1)=shade.ToArgb()) "Two tabs of one colour do not join across the gap between them"
                     check (at (below 2)=shade.ToArgb() && at ((mixed.tabLocation 3).y-1)=plain) "A coloured tab's band does not end halfway to a plain tab"
-                    check (at ((mixed.tabLocation 4).y-1)=(Theme.tabShade 0.12 0.6 Color.Red).ToArgb()) "A tab of another colour does not stand on its own band"
+                    check (at ((mixed.tabLocation 4).y-1)=(Theme.inactiveTabShade Color.Red).ToArgb()) "A tab of another colour does not stand on its own band"
                     // At the column's ends the first and last bands take its padding too.
                     let gap = mixed.rowStep-mixed.rowHeight
                     check (at 1=shade.ToArgb()) "The plain bar shows above the first coloured tab"
-                    check (at (below 4+gap-1)=(Theme.tabShade 0.12 0.6 Color.Red).ToArgb()) "The plain bar shows below the last coloured tab"
+                    check (at (below 4+gap-1)=(Theme.inactiveTabShade Color.Red).ToArgb()) "The plain bar shows below the last coloured tab"
                 let inactive = column.tabSprites.list |> List.map snd |> List.find(fun tab -> not tab.isTop)
                 let inactive = {inactive with hover=None;captured=None}
                 if not System.Windows.Forms.SystemInformation.HighContrast then
