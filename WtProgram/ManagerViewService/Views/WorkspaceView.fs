@@ -206,9 +206,11 @@ type WorkspaceView() as this =
 
     member this.list : SettingsTreeList = Cell.cacheProp this <| fun() ->
         let list =
-            new SettingsTreeList([TreeListColumn(tr Strings.Common.name,0,TextColumn)
+            // The title next to the name, taking the room left, as the edit dialog has it first;
+            // the match method, short and mostly the same, after it.
+            new SettingsTreeList([TreeListColumn(tr Strings.Common.name,240,TextColumn)
+                                  TreeListColumn(tr Strings.Common.title,0,TextColumn)
                                   TreeListColumn(tr Strings.Workspaces.matchMethod,130,TextColumn)
-                                  TreeListColumn(tr Strings.Common.title,240,TextColumn)
                                   // Edit and delete for the row under the pointer, in one place on every row.
                                   TreeListColumn("",60,ActionColumn)])
         list.SelectionChanged.Add(fun _ ->
@@ -261,7 +263,7 @@ type WorkspaceView() as this =
                 | :? WorkspaceGroup -> GroupGlyph
                 | _ -> WindowGlyph
             let row = TreeListItem(model?name,Glyph=glyph,Tag=model,Expanded=expanded.Contains(model))
-            if showSettings then row.Values <- [|"";MatchTypeText.label (model?matchType);model?title|]
+            if showSettings then row.Values <- [|"";model?title;MatchTypeText.label (model?matchType)|]
             for child in (model?children : List2<Dynamic>).list do row.Add(item child) |> ignore
             row
         list.Roots.Clear()
