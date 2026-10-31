@@ -120,6 +120,36 @@ let main() =
                 result <- Some(try Choice1Of2(action info.group) with error -> Choice2Of2 error))
             pumpUntil "Group dispatcher did not complete" (fun () -> result.IsSome)
             match result.Value with Choice1Of2 value -> value | Choice2Of2 error -> raise error
+        // The setting reaches every group at once and new ones start with it; a group's menu choice
+        // holds until the setting changes again.
+        let iconOnly info = onGroup info (fun group -> group.ts.isIconOnly)
+        check (not(iconOnly source)) "Missing icons-only setting hid tab titles"
+        api.setValue("showIconsOnly",box true)
+        settings.Flush() |> ignore
+        settings.clearCaches()
+        check (api.getValue("showIconsOnly") :?> bool) "Icons-only setting did not survive reload"
+        pumpUntil "Showing icons only did not reach an existing group" (fun () -> iconOnly source)
+        let iconDefaults = desktopApi.createGroup(false) :?> GroupInfo
+        try
+            check (iconOnly iconDefaults) "New group ignored the icons-only setting"
+            onGroup iconDefaults (fun group -> group.ts.isIconOnly <- false)
+            check (not(iconOnly iconDefaults)) "Group could not show titles over the setting"
+            check (iconOnly source) "One group's menu choice changed another group"
+            api.setValue("showIconsOnly",box false)
+            pumpUntil "Showing titles did not reach every group" (fun () -> not(iconOnly source) && not(iconOnly iconDefaults))
+            onGroup iconDefaults (fun group -> group.ts.isIconOnly <- true)
+            check (iconOnly iconDefaults) "Group could not hide titles over the setting"
+            let titleDefaults = desktopApi.createGroup(false) :?> GroupInfo
+            try
+                check (not(iconOnly titleDefaults)) "New group ignored the restored title setting"
+            finally
+                (titleDefaults :> IGroup).destroy()
+                pumpUntil "Title-default fixture did not exit" (fun () -> titleDefaults.isExited)
+        finally
+            api.setValue("showIconsOnly",box false)
+            pumpUntil "Showing titles did not reach the source group" (fun () -> not(iconOnly source))
+            (iconDefaults :> IGroup).destroy()
+            pumpUntil "Icon-default fixture did not exit" (fun () -> iconDefaults.isExited)
         let nativeOrder info = onGroup info (fun group -> group.lorder.list)
         let publicOrder (info:GroupInfo) = (info :> IGroup).windows.list
         let checkStripOwner info =
@@ -613,6 +643,18 @@ let main() =
         let defaults = desktopApi.createGroup(false) :?> GroupInfo
         check (onGroup defaults (fun group -> group.ts.dock,group.ts.columnWidth)=(TabDockRight,280))
               "New group ignored the saved tab defaults"
+        onGroup defaults (fun group ->
+            let original = group.tabLayout
+            check (not original.iconOnly) "A titled group's layout claimed icons only"
+            group.applyTabLayout {original with dock=TabDockLeft; columnWidth=300; iconOnly=true}
+            check (group.isIconOnly && group.tabLayout.iconOnly) "Restoring a vertical icons-only layout showed titles"
+            group.ts.columnWidth <- 320
+            check group.isIconOnly "Changing column width programmatically discarded icons-only mode"
+            group.applyTabLayout original
+            check (not group.isIconOnly) "Replaying a titled layout kept icons only"
+            group.isIconOnly <- true
+            group.isIconOnly <- false
+            check (not group.isIconOnly) "The group's Show tab titles override stopped working")
         api.setValue("tabPosition",box "Left")
         api.setValue("tabColumnWidth",box 320)
         for info in [source;target;combined;defaults] do
@@ -661,7 +703,7 @@ let main() =
             pumpUntil "Regrouping did not restore its window" (fun () -> nativeOrder source=handles)
             check (onGroup source (fun group -> group.ts.isShrunk)) "A background z-order change opened auto-hidden tabs"
             api.setValue("autoHideMode",box "Never")
-            let localLayout = {dock=TabDockRight;columnWidth=264;normalAlignment=TabRight;insideAlignment=TabCenter}
+            let localLayout = {dock=TabDockRight;columnWidth=264;normalAlignment=TabRight;insideAlignment=TabCenter;iconOnly=false}
             onGroup source (fun group -> group.applyTabLayout localLayout)
             api.setValue("tabPosition",box "Left")
             pumpUntil "Global position did not replace the group's menu choice" (fun () ->
@@ -897,7 +939,8 @@ let main() =
             let remembered = desktopApi.createGroup(false) :?> GroupInfo
             (remembered :> IGroup).addWindow(a,false)
             pumpUntil "Remembered group did not acquire its window" (fun () -> nativeOrder remembered=[a])
-            let rememberedLayout = {dock=TabDockRight;columnWidth=308;normalAlignment=TabRight;insideAlignment=TabLeft}
+            // Icons only too, so a window leaving its group takes that choice to the next one.
+            let rememberedLayout = {dock=TabDockRight;columnWidth=308;normalAlignment=TabRight;insideAlignment=TabLeft;iconOnly=true}
             onGroup remembered (fun group -> group.applyTabLayout rememberedLayout)
             check (WindowTabLayout.read a=Some rememberedLayout) "Menu layout was not saved immediately on its window"
             onGroup remembered (fun group -> group.removeWindow a)
@@ -930,8 +973,8 @@ let main() =
             // Save and restore the production workspace across group STAs, after defaults change.
             let left = desktopApi.createGroup(false) :?> GroupInfo
             let right = desktopApi.createGroup(false) :?> GroupInfo
-            let leftLayout = {dock=TabDockLeft;columnWidth=284;normalAlignment=TabRight;insideAlignment=TabCenter}
-            let rightLayout = {dock=TabDockRight;columnWidth=316;normalAlignment=TabLeft;insideAlignment=TabRight}
+            let leftLayout = {dock=TabDockLeft;columnWidth=284;normalAlignment=TabRight;insideAlignment=TabCenter;iconOnly=true}
+            let rightLayout = {dock=TabDockRight;columnWidth=316;normalAlignment=TabLeft;insideAlignment=TabRight;iconOnly=false}
             for info,hwnd,layout in [left,a,leftLayout;right,b,rightLayout] do
                 onGroup info (fun group -> group.applyTabLayout layout)
                 (info :> IGroup).addWindow(hwnd,false)

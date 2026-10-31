@@ -251,7 +251,7 @@ let main() =
     let roundTrip = WorkspaceGroup.deserialize(savedGroup.serialize())
     check roundTrip.tabLayout.IsNone "Legacy workspace acquired an unintended tab layout"
     for dock in [TabDockTop;TabDockLeft;TabDockRight] do
-        let layout = {dock=dock;columnWidth=284;normalAlignment=TabRight;insideAlignment=TabLeft}
+        let layout = {dock=dock;columnWidth=284;normalAlignment=TabRight;insideAlignment=TabLeft;iconOnly=(dock=TabDockLeft)}
         savedGroup.tabLayout <- Some layout
         let restored = WorkspaceGroup.deserialize(savedGroup.serialize())
         check (restored.tabLayout=Some layout) "Workspace lost tab position, logical width or alignment"
@@ -265,6 +265,7 @@ let main() =
           "Damaged tab layout did not fall back to current defaults"
     let oversized = WorkspaceData.tabLayout (JObject(JProperty("position","Right"),JProperty("columnWidth",10000)))
     check (oversized.columnWidth=snd SettingsCatalog.columnWidthRange) "Workspace width escaped the supported range"
+    check (not oversized.iconOnly) "A workspace saved before icons-only layouts hid its titles"
     for schema in [1;2;3] do
         let compatible = JObject(JProperty("workspaceSchemaVersion",schema),JProperty("workspaces",JArray(savedGroup.serialize() |> fun group -> JObject(JProperty("groups",JArray(group))))))
         let entries,_,blocked = WorkspaceData.read compatible

@@ -162,18 +162,18 @@ module WindowTabLayout =
         let dock = match layout.dock with TabDockTop -> 0 | TabDockBottom -> 1 | TabDockLeft -> 2 | TabDockRight -> 3
         let alignment = function TabLeft -> 0 | TabCenter -> 1 | TabRight -> 2
         let width = between SettingsCatalog.columnWidthRange layout.columnWidth
-        let value = marker ||| width ||| (dock <<< 9) ||| (alignment layout.normalAlignment <<< 11) ||| (alignment layout.insideAlignment <<< 13)
+        let value = marker ||| width ||| (dock <<< 9) ||| (alignment layout.normalAlignment <<< 11) ||| (alignment layout.insideAlignment <<< 13) ||| (if layout.iconOnly then 1 <<< 15 else 0)
         WinUserApi.SetProp(hwnd,key,IntPtr(value)) |> ignore
 
     let read hwnd =
         let value = WinUserApi.GetProp(hwnd,key).ToInt64()
         let width = int(value &&& 511L)
         let normal,inside = int((value >>> 11) &&& 3L),int((value >>> 13) &&& 3L)
-        if value &&& ~~~32767L <> int64 marker || width<fst SettingsCatalog.columnWidthRange || width>snd SettingsCatalog.columnWidthRange || normal>2 || inside>2 then None
+        if value &&& ~~~65535L <> int64 marker || width<fst SettingsCatalog.columnWidthRange || width>snd SettingsCatalog.columnWidthRange || normal>2 || inside>2 then None
         else
             let alignment = function 0 -> TabLeft | 1 -> TabCenter | _ -> TabRight
             let dock = match int((value >>> 9) &&& 3L) with 0 -> TabDockTop | 1 -> TabDockBottom | 2 -> TabDockLeft | _ -> TabDockRight
-            Some {dock=dock;columnWidth=width;normalAlignment=alignment normal;insideAlignment=alignment inside}
+            Some {dock=dock;columnWidth=width;normalAlignment=alignment normal;insideAlignment=alignment inside;iconOnly=value &&& 32768L <> 0L}
 
 /// A pane window's place in its group's split view, kept on the window itself as the group
 /// token is, so a restarted WindowTabs shows the split again as the windows come back.
@@ -1058,13 +1058,15 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.tabLayout : GroupTabLayout = {
         dock=this.ts.dock; columnWidth=this.ts.columnWidth
-        normalAlignment=this.ts.getAlignment TabUp; insideAlignment=this.ts.getAlignment TabDown }
+        normalAlignment=this.ts.getAlignment TabUp; insideAlignment=this.ts.getAlignment TabDown
+        iconOnly=this.isIconOnly }
 
     member this.applyTabLayout(layout:GroupTabLayout) =
         this.ts.dock <- layout.dock
         this.ts.columnWidth <- layout.columnWidth
         this.ts.setAlignment(TabUp,layout.normalAlignment)
         this.ts.setAlignment(TabDown,layout.insideAlignment)
+        this.isIconOnly <- layout.iconOnly
 
     member this.menuChoices = {
         iconOnly = this.isIconOnly

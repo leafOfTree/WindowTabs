@@ -186,6 +186,9 @@ module Strings =
         let autoHide = { caption={ en="Auto-hide tabs"; zh="自动隐藏标签"; ja="タブを自動的に隠す"; ar="إخفاء علامات التبويب تلقائيًا" }
                          description={ en="Show a thin strip until hover."; zh="只显示细栏，悬停展开。"; ja="細いバーだけ表示し、ホバーで展開します。"; ar="يبقى شريط رفيع فقط حتى تمرّر المؤشر فوقه." }
                          keywords={ en="collapse"; zh="收起"; ja="折りたたみ"; ar="طيّ" } }
+        let iconsOnly = { caption={ en="Show icons only"; zh="仅显示图标"; ja="アイコンのみ表示"; ar="إظهار الأيقونات فقط" }
+                          description={ en="Tabs show their icons without titles."; zh="标签只显示图标，不显示标题。"; ja="タブにタイトルを出さず、アイコンだけを表示します。"; ar="تعرض علامات التبويب أيقوناتها دون عناوين." }
+                          keywords={ en="compact titles"; zh="紧凑 标题"; ja="コンパクト タイトル"; ar="مضغوط عناوين" } }
         let showTabsOnSwitch = { caption={ en="Show tabs briefly after switching"; zh="切换后短暂显示标签"; ja="切り替え後にタブを一時的に表示"; ar="إظهار علامات التبويب لفترة وجيزة بعد التبديل" }
                                  description={ en="For about a second, so you can see where you are."; zh="显示约一秒，方便确认当前位置。"; ja="約 1 秒間表示して、今いる位置を確認できます。"; ar="لمدة ثانية تقريبًا لتتمكن من معرفة موضعك." }
                                  keywords={ en="peek"; zh="短暂显示"; ja="一時表示"; ar="معاينة" } }
@@ -707,7 +710,7 @@ module Strings =
         /// and told apart from it.
         let private forThisGroup (setting:LocalizedText) (more:string) =
             { en=setting.en+" for this group"+more; zh=setting.zh+"（此分组）"+more; ja=setting.ja+"（このグループ）"+more; ar=setting.ar+" لهذه المجموعة"+more }
-        let iconsOnly = { caption=TabMenu.showIconsOnly; description={ en="Again, and the titles come back."; zh="再次执行则恢复标题。"; ja="もう一度実行するとタイトルが戻ります。"; ar="مرة أخرى، وتعود العناوين." }; keywords={ en="titles compact"; zh="标题 紧凑"; ja="タイトル コンパクト"; ar="عناوين مضغوط" } }
+        let iconsOnly = { caption=forThisGroup TabMenu.showIconsOnly ""; description={ en="Again, and the titles come back."; zh="再次执行则恢复标题。"; ja="もう一度実行するとタイトルが戻ります。"; ar="مرة أخرى، وتعود العناوين." }; keywords={ en="titles compact"; zh="标题 紧凑"; ja="タイトル コンパクト"; ar="عناوين مضغوط" } }
         let groupTabPosition = { caption=forThisGroup Settings.tabPosition.caption "…"; description=groupNote; keywords={ en="top left right side"; zh="顶部 左侧 右侧"; ja="上 左 右"; ar="أعلى يسار يمين" } }
         let groupTabAlignment = { caption=forThisGroup Settings.tabAlignment.caption "…"; description=groupNote; keywords={ en="alignment center"; zh="对齐 居中"; ja="配置 中央"; ar="محاذاة وسط" } }
         let groupAutoHide = { caption=forThisGroup Settings.autoHide.caption "…"; description=groupNote; keywords={ en="collapse"; zh="收起"; ja="折りたたみ"; ar="طيّ" } }

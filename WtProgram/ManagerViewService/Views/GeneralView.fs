@@ -24,6 +24,8 @@ type GeneralView() =
         let updateShowOnSwitch() = showOnSwitch.Collapsed <- autoHide.SelectedIndex = 0
         updateShowOnSwitch()
         autoHide.SelectedIndexChanged.Add(fun _ -> updateShowOnSwitch())
+        // After auto-hide, as the tab menu lists them.
+        SettingsBindings.toggleRow behaviour "icons-only"
         let taskbar = SettingsUi.sectionCard table (tr Strings.General.taskbar)
         SettingsBindings.toggleRow taskbar "combine-taskbar-icons"
         // Last: its options unfold below it once it is on.

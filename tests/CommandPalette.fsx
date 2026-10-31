@@ -295,10 +295,10 @@ let main() =
                                          (tabTitles (hwndOf "Alpha")) (onGroup groupB (fun group -> group.lorder.list))
                                          ((groupA :> IGroup).windows.list) ((groupB :> IGroup).windows.list))
             | None -> issues.Add(sprintf "Move tab to group… did not offer the other group, only %A" (options |> List.map(fun option -> option.label))))
-        attempt "icons-only" (fun () ->
-            runDone "icons-only" active
+        attempt "group-icons-only" (fun () ->
+            runDone "group-icons-only" active
             note (onGroupOf active (fun group -> group.isIconOnly)) "Show icons only did not take the titles away"
-            runDone "icons-only" active
+            runDone "group-icons-only" active
             note (not (onGroupOf active (fun group -> group.isIconOnly))) "Show icons only run again did not bring them back")
         attempt "group-tab-position" (fun () ->
             let options = choicesOf "group-tab-position" active

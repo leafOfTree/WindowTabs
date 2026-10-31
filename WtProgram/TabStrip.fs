@@ -42,7 +42,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let isInAltTabCell = Cell.create(false)
     let numberBadgeKeysCell = Bemo.Cell<string>(Cell, SettingsCatalog.textDefault "numberLeaderKeys", (=))
     let numberBadgesCell = Bemo.Cell<bool>(Cell, false, (=))
-    let iconOnlyCell = Cell.create(false)
+    /// Seeded by the setting; the group's own choice then goes with its tab layout.
+    let iconOnlyCell = Cell.create(Services.settings.getValue("showIconsOnly").cast<bool>())
     let dockCell = Cell.create(
         match Services.settings.getValue("tabPosition") :?> string with
         | "Left" -> TabDockLeft
@@ -402,7 +403,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             | Some(start,width,growsRight),_ ->
                 let delta = this.window.ptToScreen(pt).x-start
                 let logical = int(Math.Round(float delta*96.0/float(Dpi.value())))
-                this.columnWidth <- width+(if growsRight then logical else -logical)
+                let next = between SettingsCatalog.columnWidthRange (width+(if growsRight then logical else -logical))
+                // Pulling the edge out of an icons-only column shows the titles.
+                this.setColumnWidth(next,next<>width)
             | _,Some(start,offset) ->
                 let travel = this.ts.scrollTrack.height-(this.ts.scrollThumb |> Option.map(fun thumb -> thumb.height) |> Option.defaultValue 0)
                 if travel>0 then this.scrollColumnTo(offset+(pt.y-start)*this.ts.scrollMaximum/travel)
@@ -616,10 +619,12 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.isIconOnly 
         with get() = iconOnlyCell.value || (this.isVertical && columnWidthValue=fst SettingsCatalog.columnWidthRange)
         and set(value) =
-            iconOnlyCell.set(value)
-            if this.isVertical then
-                if not value && columnWidthValue=fst SettingsCatalog.columnWidthRange then this.columnWidth <- SettingsCatalog.columnWidthDefault
-                else dockChangedEvent.Trigger()
+            if value<>this.isIconOnly then
+                iconOnlyCell.set(value)
+                if this.isVertical && not value && columnWidthValue=fst SettingsCatalog.columnWidthRange then this.columnWidth <- SettingsCatalog.columnWidthDefault
+                else
+                    if this.isVertical then dockChangedEvent.Trigger()
+                    layoutChangedEvent.Trigger(true)
 
     member this.dock
         with get() = dockCell.value
@@ -638,14 +643,17 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member this.dockChanged = dockChangedEvent.Publish
     member this.columnWidth
         with get() = columnWidthValue
-        and set(value) =
-            let next = between SettingsCatalog.columnWidthRange value
-            let wasIconOnly = iconOnlyCell.value
-            if this.isVertical then iconOnlyCell.set(false)
-            if next<>columnWidthValue || (this.isVertical && wasIconOnly) then
-                columnWidthValue <- next
-                dockChangedEvent.Trigger()
-                layoutChangedEvent.Trigger(true)
+        and set(value) = this.setColumnWidth(value,false)
+
+    /// Only the column edge reveals titles: a width from a layout or the settings keeps icons only.
+    member private this.setColumnWidth(value,revealTitles) =
+        let next = between SettingsCatalog.columnWidthRange value
+        let reveal = revealTitles && iconOnlyCell.value
+        if reveal then iconOnlyCell.set(false)
+        if next<>columnWidthValue || reveal then
+            columnWidthValue <- next
+            dockChangedEvent.Trigger()
+            layoutChangedEvent.Trigger(true)
 
     member private this.isColumnResizeEdge(pt:Pt) =
         if not this.isVertical || this.isShrunk then false

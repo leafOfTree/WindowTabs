@@ -32,13 +32,20 @@ module WorkspaceData =
             | _ -> invalidArg "position" (tr Strings.Workspaces.invalidTabLayout)
         { dock=dock
           columnWidth=number obj "columnWidth" SettingsCatalog.columnWidthDefault |> between SettingsCatalog.columnWidthRange
-          normalAlignment=alignment "normalAlignment"; insideAlignment=alignment "insideAlignment" }
+          normalAlignment=alignment "normalAlignment"; insideAlignment=alignment "insideAlignment"
+          // Workspaces saved before the choice was kept show their titles.
+          iconOnly=
+            match obj.["iconsOnly"] with
+            | null -> false
+            | value when value.Type=JTokenType.Boolean -> value.Value<bool>()
+            | _ -> invalidArg "iconsOnly" (tr Strings.Workspaces.invalidTabLayout) }
 
     let writeTabLayout (layout:GroupTabLayout) =
         let position = match layout.dock with TabDockTop -> "Horizontal" | TabDockBottom -> "Bottom" | TabDockLeft -> "Left" | TabDockRight -> "Right"
         let alignment = function TabLeft -> "Left" | TabCenter -> "Center" | TabRight -> "Right"
         JObject(JProperty("position",position),JProperty("columnWidth",between SettingsCatalog.columnWidthRange layout.columnWidth),
-                JProperty("normalAlignment",alignment layout.normalAlignment),JProperty("insideAlignment",alignment layout.insideAlignment))
+                JProperty("normalAlignment",alignment layout.normalAlignment),JProperty("insideAlignment",alignment layout.insideAlignment),
+                JProperty("iconsOnly",layout.iconOnly))
 
     /// A rectangle kept inside one of the areas: the one it overlaps most, else the nearest.
     let fitRect (areas:Rect list) (bounds:Rect) =

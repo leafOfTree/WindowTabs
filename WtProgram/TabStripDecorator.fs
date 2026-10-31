@@ -218,6 +218,9 @@ type TabStripDecorator(group:WindowGroup) as this =
         let widthSubscription = Services.settings.notifyValue "tabColumnWidth" (fun value ->
             let width = value.cast<int>()
             group.invokeAsync(fun () -> if not disposed then this.ts.columnWidth <- width))
+        let iconsOnlySubscription = Services.settings.notifyValue "showIconsOnly" (fun value ->
+            let iconsOnly = value.cast<bool>()
+            group.invokeAsync(fun () -> if not disposed then this.ts.isIconOnly <- iconsOnly))
 
         group.exited.Add <| fun() ->
             contextMenu |> Option.iter(fun menu -> menu.Dispose())
@@ -226,6 +229,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             alignmentSubscription.Dispose()
             positionSubscription.Dispose()
             widthSubscription.Dispose()
+            iconsOnlySubscription.Dispose()
             geometrySubscription.Dispose()
             Services.dragDrop.unregisterTarget(this.ts.hwnd)
             let unregister hwnd = Services.dragDrop.unregisterLayoutTarget(hwnd, this:>ILayoutDropTarget)
