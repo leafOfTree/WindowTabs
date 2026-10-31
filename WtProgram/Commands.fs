@@ -403,7 +403,7 @@ module Commands =
                         | _ -> ()))
             | None -> [])
         // The tab menu's commands for the group, and for the app of the window in front.
-        plain "icons-only" Strings.Commands.iconsOnly GroupCommands hasGroup (onGroup(fun g -> g.run ToggleIconsOnly))
+        plain "group-icons-only" Strings.Commands.iconsOnly GroupCommands hasGroup (onGroup(fun g -> g.run ToggleIconsOnly))
         { choosing "group-tab-position" Strings.Commands.groupTabPosition GroupCommands hasGroup (snd positionChoice) with current=fst positionChoice }
         { choosing "group-tab-alignment" Strings.Commands.groupTabAlignment GroupCommands hasGroup (snd alignmentChoice) with current=fst alignmentChoice }
         { choosing "group-auto-hide" Strings.Commands.groupAutoHide GroupCommands hasGroup (snd autoHideChoice) with current=fst autoHideChoice }
