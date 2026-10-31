@@ -211,8 +211,9 @@ type WorkspaceView() as this =
             new SettingsTreeList([TreeListColumn(tr Strings.Common.name,240,TextColumn)
                                   TreeListColumn(tr Strings.Common.title,0,TextColumn)
                                   TreeListColumn(tr Strings.Workspaces.matchMethod,130,TextColumn)
-                                  // Edit and delete for the row under the pointer, in one place on every row.
-                                  TreeListColumn("",60,ActionColumn)])
+                                  // Edit and delete for the row under the pointer, over its right end:
+                                  // shown on that row alone, they need no room of their own.
+                                  TreeListColumn("",60,ActionColumn,Overlay=true)])
         list.SelectionChanged.Add(fun _ ->
             this.wm.selected <- (if isNull list.SelectedItem then null else list.SelectedItem.Tag :?> Dynamic))
         // Double-click (or Enter) edits the item, as its edit button does; the arrow expands.

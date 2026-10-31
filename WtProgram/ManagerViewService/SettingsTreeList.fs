@@ -35,6 +35,9 @@ type TreeListColumn(header:string, width:int, kind:TreeListColumnKind) =
     member val RightAligned = false with get,set
     /// Shown on hover over the column's boxes, for a column without a heading.
     member val Tip = "" with get,set
+    /// An action column that takes no room of its own: its buttons, shown only on the row under
+    /// the pointer, stand over the row's right end, over what the columns show there.
+    member val Overlay = false with get,set
 
 /// A small labelled box after a row's name, such as an app in a group; a removable one has an x.
 type TreeListChip = { Text: string; Icon: Image; Removable: bool }
@@ -295,12 +298,16 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             | None -> editor.Visible <- false)
 
     member private this.columnBounds : Rectangle[] =
-        let widths = columns |> Array.map(fun column -> Dpi.scale column.Width)
+        let overlay (column:TreeListColumn) = column.Kind=ActionColumn && column.Overlay
+        let widths = columns |> Array.map(fun column -> if overlay column then 0 else Dpi.scale column.Width)
         let fixedWidth = widths |> Array.sum
         let fill = max (Dpi.scale 80) (this.contentWidth-fixedWidth)
-        let widths = widths |> Array.map(fun width -> if width=0 then fill else width)
+        let widths = Array.map2 (fun (column:TreeListColumn) width -> if width=0 && not(overlay column) then fill else width) columns widths
         let lefts = Array.scan (+) 0 widths
         Array.init columns.Length (fun i -> Rectangle(lefts.[i],0,widths.[i],0))
+
+    /// Each column's left edge and width, as laid out now.
+    member this.ColumnSpans = this.columnBounds |> Array.map(fun cell -> cell.X,cell.Width)
 
     member private this.indexOf(item:TreeListItem) = rows |> Array.tryFindIndex(fun (row,_) -> Object.ReferenceEquals(row,item))
 
@@ -435,7 +442,10 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         | Some column when Object.ReferenceEquals(item,hovered) || item.AlwaysShowActions ->
             let cell = this.columnBounds.[column]
             let button,gap = Dpi.scale 24,Dpi.scale 2
-            (this.actions item) |> List.mapi(fun i _ -> Rectangle(cell.X+i*(button+gap),top+(this.rowHeight-button)/2,button,button))
+            let count = List.length (this.actions item : TreeListGlyph list)
+            // Over the row's right end, or at the start of a column of their own.
+            let left = if columns.[column].Overlay then this.contentWidth-Dpi.scale 8-(count*button+(count-1)*gap) else cell.X
+            (this.actions item) |> List.mapi(fun i _ -> Rectangle(left+i*(button+gap),top+(this.rowHeight-button)/2,button,button))
         | _ -> []
 
     member private this.actions(item:TreeListItem) = item.Actions |> Option.defaultValue this.RowActions
@@ -884,7 +894,20 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                             let color = if pointed && SystemInformation.HighContrast then SystemColors.HighlightText elif pointed then text else p.muted
                             SettingsTreeList.drawGlyph(g,AddGlyph,Rectangle(box.X+(box.Width-side)/2,box.Y+(box.Height-side)/2,side,side),color))
                 | ActionColumn ->
-                    this.actionButtons(item,top) |> List.iteri(fun index (button:Rectangle) ->
+                    let buttons = this.actionButtons(item,top)
+                    // Over the row's own text, the buttons stand on the row's colour, the text fading
+                    // out into it before them rather than cut off under them.
+                    if columns.[column].Overlay && not buttons.IsEmpty then
+                        let first,last = List.head buttons,List.last buttons
+                        let back = if isSelected || Object.ReferenceEquals(item,hovered) then this.highlight(isSelected,p) else this.BackColor
+                        let fade = Dpi.scale 32
+                        let solid = Rectangle(first.X-Dpi.scale 4,row.Y,last.Right-first.X+Dpi.scale 4,row.Height)
+                        let ramp = Rectangle(solid.X-fade,row.Y,fade+1,row.Height)
+                        use cover = new SolidBrush(back)
+                        use blend = new LinearGradientBrush(ramp,Color.FromArgb(0,back),back,LinearGradientMode.Horizontal)
+                        g.FillRectangle(blend,Rectangle(ramp.X,ramp.Y,fade,ramp.Height))
+                        g.FillRectangle(cover,solid)
+                    buttons |> List.iteri(fun index (button:Rectangle) ->
                         let pointed = Object.ReferenceEquals(item,hovered) && index=hoveredAction
                         let highContrast = SystemInformation.HighContrast
                         // A shade of the text over the row's own highlight, so it shows on either.
