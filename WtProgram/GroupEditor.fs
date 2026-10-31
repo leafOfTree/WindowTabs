@@ -710,8 +710,10 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             match row.focused |> Option.bind(fun path -> row.cells |> List.tryFind(fun (each,_,_) -> each=path)) with
             | Some(_,Occupied hwnd,_) ->
                 for _,r in row.tabs |> List.filter(fun (each,r) -> each=hwnd && still (each,r)) do
+                    // Short and thick, centred: a mark, not an edge, so it reads at a glance.
+                    let w = min (max 0 (r.Width-scale 24)) (max (scale 20) (min (scale 44) (r.Width*2/5)))
                     use brush = new SolidBrush(accent)
-                    g.FillRectangle(brush,Rectangle(r.X+scale 12,r.Bottom-scale 2,max 0 (r.Width-scale 24),scale 2))
+                    g.FillRectangle(brush,Rectangle(r.X+(r.Width-w)/2,r.Bottom-scale 3,w,scale 3))
             | _ -> ()
         groupAt row.index |> Option.iter(fun group ->
             for (a,ra),(b,rb) in List.pairwise row.tabs do
@@ -1849,8 +1851,13 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         // The frames of a slide; the last one leaves the tabs in place until the next picture.
         scrollTimer.Tick.Add(fun _ -> if closed then scrollTimer.Stop() else scrollFrame())
         slideTimer.Tick.Add(fun _ ->
-            if closed || slideDone() then slideTimer.Stop()
-            if not closed && form.IsHandleCreated then form.Invalidate())
+            if closed then slideTimer.Stop()
+            elif slideDone() then
+                // The picture leaves the tabs on their way, and their marks, out: drawn again
+                // once they are in place, so the marks show without waiting for the next change.
+                slideTimer.Stop()
+                refresh()
+            elif form.IsHandleCreated then form.Invalidate())
         morphTimer.Tick.Add(fun _ -> if closed then morphTimer.Stop() else morphFrame())
         // The title bar's close button leaves everything as it was, as Esc does.
         form.FormClosing.Add(fun e -> if not closed then (e.Cancel <- true; cancel()))

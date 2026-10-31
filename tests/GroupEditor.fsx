@@ -187,7 +187,7 @@ let main() =
             image.Save(Path.Combine(__SOURCE_DIRECTORY__,"Debug","group-editor-"+mode+".png"))
             check (image.Width=editor.Size.Width && image.Height=editor.Layout.height) "The picture is not the popup's size"
             // Under a tab's text: the block's own colour.
-            let under (r:Rectangle) = image.GetPixel(r.X+r.Width/2,r.Bottom-3)
+            let under (r:Rectangle) = image.GetPixel(r.X+r.Width/2,r.Bottom-Dpi.scale 6)
             check (sameColor palette.selection (under (snd l.tabs.[2]))) (sprintf "A tab in no pane is not in the %s look's block colour" mode)
             // The split is one selected piece: every tab of its panes is in the content's colour.
             check (sameColor palette.background (under (snd l.tabs.[0])) && sameColor palette.background (under (snd l.tabs.[1]))) "The panes' tabs are not in the content's colour"
@@ -308,6 +308,15 @@ let main() =
             // The tabs the drop moved slide from where they were; the picture leaves them out meanwhile.
             let slidFrom = editor.Sliding
             check (slidFrom.ContainsKey a && slidFrom.ContainsKey b && slidFrom |> Map.forall(fun hwnd from -> from<>tabRect hwnd)) (sprintf "The tabs the drop moved are not on their way from where they were: %A" slidFrom)
+            // Once the slide ends the picture is drawn again with the tabs in place, so the
+            // active pane's tab bears its accent without waiting for the next change.
+            pumpUntil "The tabs' slide did not end" (fun () -> editor.Sliding.IsEmpty)
+            let row = editor.Layout.rows.[0]
+            let active = row.focused |> Option.bind(fun path -> row.cells |> List.tryPick(fun (each,pane,_) -> match pane with Occupied h when each=path -> Some h | _ -> None))
+            check active.IsSome "No cell of the split is the active one"
+            use settled = editor.Render()
+            let activeTab = row.tabs |> List.find(fun (each,_) -> each=active.Value) |> snd
+            check (sameColor (SettingsColors.current().accent) (settled.GetPixel(activeTab.X+activeTab.Width/2,activeTab.Bottom-Dpi.scale 1))) "The active pane's tab bore no accent once its slide had ended"
             // Taking a tab out, as its menu does, leaves it loose.
             editor.TakeOut d
             check (tabsNow()=[c;a;b] && editor.Draft.loose=[d]) (sprintf "Taking the tab out did not leave it loose: %A" (tabsNow()))
