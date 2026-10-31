@@ -361,7 +361,10 @@ the main STA with the other popups, one at a time.
 - `WtProgram/WindowGroup.fs`: `run SetTabOrder`; nothing else, `execute` takes the new case.
 - `WtProgram/GroupEditor.fs` (new, after `SplitPanePicker.fs`): the popup, its rows, its
   drawing and its drag, the expanded row's pictures through the DWM thumbnail helpers the
-  split transition uses. The picture is drawn into a bitmap only when the draft, the selection or the aim of a
+  split transition uses, each whole in its cell at the window's proportions and centred
+  (filling the cell was tried and dropped: a window not of the cell's shape lost its edges);
+  the focused cell's is shown in two pieces around the split button's corner, since DWM draws
+  a thumbnail over whatever the window paints. The picture is drawn into a bitmap only when the draft, the selection or the aim of a
   drag changes (about 60ms for a dozen rows); the drop zone, the tabs on
   their way and the hover cross are drawn over it at each paint, and the layout, with its
   text measured, is kept until something it depends on changes. Nothing is outlined or lit

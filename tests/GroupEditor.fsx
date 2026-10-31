@@ -500,6 +500,27 @@ let main() =
             editor.MouseUp(middle)
             check (editor.Draft.groups.Length=2 && editor.Draft.groups.[0].tabs=[a;b] && editor.Draft.groups.[0].panes=None) (sprintf "A tab dropped on the unsplit content's middle changed the group: %A" editor.Draft)
             editor.Close()
+        // A window's picture is whole in its cell at the window's proportions, centred: a wide
+        // window in a tall cell is as wide as the cell and stands in its middle, a tall one in a
+        // wide cell as tall, and a window of the cell's shape fills it exactly.
+        do
+            let cell = Rectangle(10,20,300,500)
+            let wide = GroupEditorPicture.fit cell (Sz(1600,900))
+            let wideHeight = int(int64 cell.Width*900L/1600L)
+            check (wide=Rectangle(cell.X,cell.Y+(cell.Height-wideHeight)/2,cell.Width,wideHeight)) (sprintf "A wide window was not whole across its tall cell's middle: %A" wide)
+            let tall = GroupEditorPicture.fit (Rectangle(10,20,500,300)) (Sz(900,1600))
+            let tallWidth = int(300L*900L/1600L)
+            check (tall=Rectangle(10+(500-tallWidth)/2,20,tallWidth,300)) (sprintf "A tall window was not whole down its wide cell's middle: %A" tall)
+            let same = GroupEditorPicture.fit cell (Sz(600,1000))
+            check (same=cell) (sprintf "A window of the cell's shape did not fill it exactly: %A" same)
+            check (GroupEditorPicture.fit cell (Sz(0,0))=cell) "A window with no size did not take the cell"
+            // Around the split button's corner the picture is shown in two pieces that leave the
+            // corner out: the whole width above it, and what lies beside it under that.
+            let shown = Rectangle(10,20,300,500)
+            let above,beside = GroupEditorPicture.aroundCorner shown (Rectangle(270,480,40,40))
+            check (above=Rectangle(10,20,300,460) && beside=Rectangle(10,480,260,40)) (sprintf "The pieces around the corner did not leave it out: %A, %A" above beside)
+            let whole,none = GroupEditorPicture.aroundCorner shown (Rectangle(270,600,40,40))
+            check (whole=shown && (none.Width<=0 || none.Height<=0)) (sprintf "A corner below the picture cut it: %A, %A" whole none)
         // The row's menu holds what a drag does less handily with many rows: merging the row into
         // another, named there by its first tab, and ungrouping it.
         do

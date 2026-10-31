@@ -56,6 +56,25 @@ module GroupEditorMetrics =
     let flyoutGap = 6
     let flyoutPadding = 8
 
+/// A window's picture in its cell: whole, at the window's proportions, as large as the cell
+/// allows and centred in it, so the window is seen as it is rather than cut to the cell's shape
+/// (filling the cell was tried: a window not of the cell's shape lost its edges).
+module GroupEditorPicture =
+    let fit (picture:Rectangle) (source:Sz) =
+        if source.width<=0 || source.height<=0 || picture.Width<=0 || picture.Height<=0 then picture
+        else
+            let byWidth = picture.Width,int(int64 picture.Width*int64 source.height/int64 source.width)
+            let w,h = if snd byWidth<=picture.Height then byWidth else int(int64 picture.Height*int64 source.width/int64 source.height),picture.Height
+            Rectangle(picture.X+(picture.Width-w)/2,picture.Y+(picture.Height-h)/2,w,h)
+    /// The picture shown in two pieces around a corner cut out of it, where the split button
+    /// stands: the part above the corner, the whole width, and the part beside it, under that.
+    /// DWM draws a thumbnail over whatever the window paints, so the button shows only through
+    /// a hole in the picture.
+    let aroundCorner (shown:Rectangle) (corner:Rectangle) =
+        let above = Rectangle.Intersect(shown,Rectangle(shown.X,shown.Y,shown.Width,max 0 (corner.Y-shown.Y)))
+        let beside = Rectangle.Intersect(shown,Rectangle(shown.X,corner.Y,max 0 (corner.X-shown.X),max 0 (shown.Bottom-corner.Y)))
+        above,beside
+
 /// What a drag is aimed at: a place among a row's tabs, a cell's middle or edge in a row's
 /// picture (the whole at []), the loose row, or a new group.
 type DragAim =
@@ -196,6 +215,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let mutable scrollTarget : int option = None
     let scrollTimer = new Timer(Interval=15)
     let thumbs = Dictionary<IntPtr,IntPtr>()
+    /// The second piece of the picture of the window in the focused cell, beside the split button.
+    let corners = Dictionary<IntPtr,IntPtr>()
     let mutable bitmap : Bitmap = null
     /// Tabs on their way to where the last change put them, by where each was: slid into place
     /// over a few frames rather than jumping there, drawn over the picture, which leaves them out.
@@ -1119,7 +1140,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
 
     let releaseThumbnails() =
         for KeyValue(_,thumb) in thumbs do DwmApi.DwmUnregisterThumbnail(thumb) |> ignore
+        for KeyValue(_,thumb) in corners do DwmApi.DwmUnregisterThumbnail(thumb) |> ignore
         thumbs.Clear()
+        corners.Clear()
 
     /// Each cell's window drawn live by DWM under the cell's band in the expanded row, at its
     /// own proportions; a window with no picture keeps its icon. While a drop is aimed at the
@@ -1140,12 +1163,20 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 l.rows |> List.collect(fun row ->
                     row.cells |> List.choose(fun (path,pane,r) ->
                         match pane with
-                        | Occupied hwnd when hasPicture hwnd -> Some(hwnd,r,row.index,kept row.index path r)
+                        | Occupied hwnd when hasPicture hwnd ->
+                            // The split button's corner of the focused cell, cut out of its picture.
+                            let corner =
+                                if row.focused=Some path then row.splitButton |> Option.map(fun b -> Rectangle(b.X-scale 4,b.Y-scale 4,r.Right-b.X+scale 4,r.Bottom-b.Y+scale 4))
+                                else None
+                            Some(hwnd,r,row.index,kept row.index path r,corner)
                         | _ -> None))
+            let drop (table:Dictionary<IntPtr,IntPtr>) hwnd =
+                DwmApi.DwmUnregisterThumbnail(table.[hwnd]) |> ignore
+                table.Remove hwnd |> ignore
             for hwnd in List.ofSeq thumbs.Keys do
-                if not(wanted |> List.exists(fun (each,_,_,_) -> each=hwnd)) then
-                    DwmApi.DwmUnregisterThumbnail(thumbs.[hwnd]) |> ignore
-                    thumbs.Remove hwnd |> ignore
+                if not(wanted |> List.exists(fun (each,_,_,_,_) -> each=hwnd)) then drop thumbs hwnd
+            for hwnd in List.ofSeq corners.Keys do
+                if not(wanted |> List.exists(fun (each,_,_,_,corner) -> each=hwnd && corner.IsSome)) then drop corners hwnd
             // While its row grows or folds, the picture follows the row and is cut at its edge.
             let t = morphT()
             let placed index =
@@ -1153,30 +1184,27 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     let b = l.rows.[index].band
                     let y,h = morphLerp t a.Y b.Y,morphLerp t a.Height b.Height
                     y-b.Y,Rectangle(0,y-scroll,width,h))
-            for hwnd,r,index,kept in wanted do
+            for hwnd,r,index,kept,corner in wanted do
                 let hidden = kept=Some None
-                let thumb =
-                    match thumbs.TryGetValue hwnd with
+                let thumbIn (table:Dictionary<IntPtr,IntPtr>) =
+                    match table.TryGetValue hwnd with
                     | true,thumb -> Some thumb
                     | _ ->
                         let mutable thumb = IntPtr.Zero
                         if WinUserApi.IsWindow hwnd && DwmApi.DwmRegisterThumbnail(form.Handle,hwnd,&thumb)=0 then
-                            thumbs.[hwnd] <- thumb
+                            table.[hwnd] <- thumb
                             Some thumb
                         else None
-                thumb |> Option.iter(fun thumb ->
+                thumbIn thumbs |> Option.iter(fun thumb ->
                     let picture = Rectangle(r.X+scale 2,r.Y+scale 2,r.Width-scale 4,r.Height-scale 4)
-                    // Fitted inside, at the window's proportions: DWM stretches to the rectangle given.
+                    // Fitted inside, at the window's proportions: DWM stretches to the rectangle given,
+                    // so the part shown is picked from the source to match.
                     let source = OS().windowFromHwnd(hwnd).bounds
-                    let dest =
-                        if source.width<=0 || source.height<=0 || picture.Width<=0 || picture.Height<=0 then picture
-                        else
-                            let byWidth = picture.Width,int(int64 picture.Width*int64 source.height/int64 source.width)
-                            let w,h = if snd byWidth<=picture.Height then byWidth else int(int64 picture.Height*int64 source.width/int64 source.height),picture.Height
-                            Rectangle(picture.X+(picture.Width-w)/2,picture.Y+(picture.Height-h)/2,w,h)
+                    let dest = GroupEditorPicture.fit picture source.size
                     let shift,within = match placed index with Some(dy,band) -> dy,band | None -> 0,view
                     let dest = Rectangle(dest.X,dest.Y+shift-scroll,dest.Width,dest.Height)
-                    let shown = Rectangle.Intersect(Rectangle.Intersect(dest,view),within)
+                    let cell = Rectangle(picture.X,picture.Y+shift-scroll,picture.Width,picture.Height)
+                    let shown = Rectangle.Intersect(Rectangle.Intersect(Rectangle.Intersect(dest,cell),view),within)
                     let shown =
                         match kept with
                         | Some(Some k) -> Rectangle.Intersect(shown,Rectangle(k.X,k.Y+shift-scroll,k.Width,k.Height))
@@ -1186,15 +1214,22 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     let along (shownEdge:int) (destEdge:int) (destSize:int) (sourceSize:int) =
                         if destSize<=0 then 0 else int(int64 (shownEdge-destEdge)*int64 sourceSize/int64 destSize)
                     let part (shownSize:int) (destSize:int) (sourceSize:int) = if destSize<=0 then 0 else int(int64 shownSize*int64 sourceSize/int64 destSize)
-                    let mutable props = DWM_THUMBNAIL_PROPERTIES()
-                    props.dwFlags <- DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_RECTDESTINATION ||| DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_RECTSOURCE |||
-                                     DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_OPACITY ||| DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_VISIBLE
-                    props.rcDestination <- RECT.FromRectangle(shown)
-                    props.rcSource <- RECT.FromRectangle(Rectangle(along shown.X dest.X dest.Width source.width,along shown.Y dest.Y dest.Height source.height,
-                                                                   part shown.Width dest.Width source.width,part shown.Height dest.Height source.height))
-                    props.opacity <- 255uy
-                    props.fVisible <- if hidden || flyout || shown.Width<=0 || shown.Height<=0 then 0 else 1
-                    DwmApi.DwmUpdateThumbnailProperties(thumb,&props) |> ignore)
+                    let show (thumb:IntPtr) (shown:Rectangle) =
+                        let mutable props = DWM_THUMBNAIL_PROPERTIES()
+                        props.dwFlags <- DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_RECTDESTINATION ||| DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_RECTSOURCE |||
+                                         DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_OPACITY ||| DWM_THUMBNAIL_PROPERTY_FLAGS.DWM_TNP_VISIBLE
+                        props.rcDestination <- RECT.FromRectangle(shown)
+                        props.rcSource <- RECT.FromRectangle(Rectangle(along shown.X dest.X dest.Width source.width,along shown.Y dest.Y dest.Height source.height,
+                                                                       part shown.Width dest.Width source.width,part shown.Height dest.Height source.height))
+                        props.opacity <- 255uy
+                        props.fVisible <- if hidden || flyout || shown.Width<=0 || shown.Height<=0 then 0 else 1
+                        DwmApi.DwmUpdateThumbnailProperties(thumb,&props) |> ignore
+                    match corner with
+                    | Some corner ->
+                        let above,beside = GroupEditorPicture.aroundCorner shown (Rectangle(corner.X,corner.Y+shift-scroll,corner.Width,corner.Height))
+                        show thumb above
+                        thumbIn corners |> Option.iter(fun piece -> show piece beside)
+                    | None -> show thumb shown)
 
     let refresh() =
         if not closed then
