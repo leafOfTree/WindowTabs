@@ -772,12 +772,12 @@ module Strings =
               ja=sprintf "空のセル %d 個は保存時に閉じられます。" count
               ar=sprintf "ستُغلق %d خلية فارغة عند الحفظ." count }
         let splitButton = { en="Split this pane"; zh="拆分这个窗格"; ja="このペインを分割"; ar="تقسيم هذا الجزء" }
-        /// The title's count of rows and loose windows.
-        let summary groups loose =
-            { en=sprintf "%d %s, %d loose" groups (if groups=1 then "group" else "groups") loose
-              zh=sprintf "%d 个分组，%d 个未分组窗口" groups loose
-              ja=sprintf "グループ %d、未分類 %d" groups loose
-              ar=sprintf "%d مجموعة، %d نافذة غير مجمّعة" groups loose }
+        /// The title's count of rows and of windows in all.
+        let summary groups windows =
+            { en=sprintf "%d %s, %d %s" groups (if groups=1 then "group" else "groups") windows (if windows=1 then "window" else "windows")
+              zh=sprintf "%d 个分组，共 %d 个窗口" groups windows
+              ja=sprintf "グループ %d、ウィンドウ %d" groups windows
+              ar=sprintf "%d مجموعة، %d نافذة" groups windows }
         let looseWindows = { en="Loose windows"; zh="未分组窗口"; ja="未分類のウィンドウ"; ar="نوافذ غير مجمّعة" }
         /// In the loose row while no window is on its own: what the row is for.
         let looseEmpty = { en="Ungroup: drop a tab or a whole row here"; zh="移出分组：把标签或整行拖到这里"; ja="グループ解除：タブや行ごとここにドロップ"; ar="فك التجميع: أفلت علامة تبويب أو صفًا كاملًا هنا" }

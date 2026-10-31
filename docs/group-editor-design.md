@@ -37,10 +37,11 @@ picture, and moves the windows once, when the user is done.
   Every row starts folded, whatever is in front: the overview first, a row expanded from it
   by a tab (section 2.3).
 - It opens in the settings palette's colours as an ordinary window with the system's title
-  bar (the title and the groups' count in its caption, in the palette's colours as the
-  Settings window has them), in the taskbar and Alt+Tab and covered by whatever comes in
-  front, since it stays up while the user works; its close button leaves everything as it
-  was, as Esc does. Centred on the screen of the window in front, about 1000 logical pixels
+  bar (the title in its caption with the counts of groups and of windows in all, in the
+  palette's colours as the Settings window has them; a heading inside the popup, and the
+  loose count and the desktop's name in the caption, were tried and dropped), in the
+  taskbar and Alt+Tab and covered by whatever comes in front, since it stays up while the
+  user works; its close button leaves everything as it was, as Esc does. Centred on the screen of the window in front, about 1000 logical pixels
   wide, and as tall as the overview needs (and as any one row expanded needs, where that
   keeps it within half the work area, so on a desktop of a few groups a row opens without
   scrolling), up to three quarters of the work area;

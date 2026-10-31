@@ -505,6 +505,8 @@ let main() =
             let desk = DesktopDraft.ofDesktop [GroupDraft.ofGroup (IntPtr 1) [a;b] Set.empty GroupLayout.Single; GroupDraft.ofGroup (IntPtr 2) [c] Set.empty GroupLayout.Single] []
             let editor = GroupEditorForm(desk,[{group=Some(IntPtr 1); frame=frame; active=a};{group=Some(IntPtr 2); frame=frame; active=c}],shown,None,frame)
             check (editor.Expanded=None && editor.Selected=IntPtr.Zero) "Opened over a group, a row started expanded"
+            // The caption carries the counts of groups and windows after the title.
+            check (editor.Summary=tr (Strings.GroupEditor.summary 2 3)) (sprintf "The caption's counts are wrong: %s" editor.Summary)
             editor.Show()
             let area = Screen.FromRectangle(frame.Rectangle).WorkingArea
             let bounds = editor.Bounds

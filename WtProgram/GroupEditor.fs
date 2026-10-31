@@ -357,6 +357,9 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// Whether the tab, at the width it got, cuts its name short.
     let nameCut hwnd (r:Rectangle) = r.Width<naturalWidth hwnd
 
+    /// The caption after the title: the rows and the windows in all.
+    let summary() = tr (Strings.GroupEditor.summary (groups()).Length ((groups() |> List.sumBy(fun g -> g.tabs.Length))+current.loose.Length))
+
     /// The gap after a tab: closed to a sliver between the tabs of the panes of one split, which
     /// stand together, so the strip says which windows share the content.
     let gapBetween (inPane:IntPtr -> bool) a b = if inPane a && inPane b then scale GroupEditorMetrics.paneGap else scale GroupEditorMetrics.tabGap
@@ -1251,7 +1254,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             if not sliding.IsEmpty && slideDone() then sliding <- Map.empty
             // A change while a row still grows ends that at once: the picture it blends from is stale.
             if morph.IsSome then endMorph()
-            let title = tr Strings.GroupEditor.title+" · "+tr (Strings.GroupEditor.summary (groups()).Length current.loose.Length)
+            let title = tr Strings.GroupEditor.title+" · "+summary()
             if form.Text<>title then form.Text <- title
             if form.IsHandleCreated then place (layout())
             let l = layout()
@@ -1897,6 +1900,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     member _.Morphing = morph.IsSome
     member _.MouseDown(pt:Point) = mouseDown pt
     member _.MouseMove(pt:Point) = mouseMove pt
+    /// The caption after the title.
+    member _.Summary = summary()
     /// The tab whose full name a tip shows or waits to show, as the pointer rests on it.
     member _.TitleTipFor = titleTab
     member _.TitleTipShown = titleTip |> Option.exists(fun tip -> tip.Visible)
