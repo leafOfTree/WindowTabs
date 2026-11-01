@@ -165,7 +165,9 @@ module Theme =
         | LightTheme -> false
         | SystemTheme -> systemDark
     let defaultGeometry = TabGeometry.fromAppearance light
-    let resetLayout (settings:AppearancePreferences) = {settings with geometry=defaultGeometry}
+    /// The rows under Tab layout only: the style is chosen above them, with the colours.
+    let resetLayout (settings:AppearancePreferences) = {settings with geometry={defaultGeometry with style=settings.geometry.style}}
+    let isDefaultLayout (geometry:TabGeometry) = {geometry with style=defaultGeometry.style}=defaultGeometry
     let lightPalette = TabPalette.fromAppearance light
     let darkPalette = TabPalette.fromAppearance dark
     let bluePalette =
