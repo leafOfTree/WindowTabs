@@ -643,6 +643,16 @@ let main() =
                     onGroup(fun group -> invoke "handleWindowEvent" group [|box source;box WinEvent.EVENT_SYSTEM_MOVESIZEEND|] |> ignore)
                     waitSplit()
                     let movedFrame = onGroup(fun group -> group.layoutFrame)
+                    // The command palette in front over the group leaves it the group in front: taken
+                    // as gone to the back, its tabs dimmed, then came back step by step as it closed.
+                    do
+                        let overlay = IntPtr 0x5150
+                        ForegroundOverlays.add overlay
+                        try
+                            let before = onGroup(fun group -> group.foreground)
+                            onGroup(fun group -> invoke "handleWindowEvent" group [|box overlay;box WinEvent.EVENT_SYSTEM_FOREGROUND|] |> ignore)
+                            check (onGroup(fun group -> group.foreground)=before) "The command palette in front took the group's foreground"
+                        finally ForegroundOverlays.remove overlay
                     for hwnd in [source;partner;source] do
                         onGroup(fun group -> group.foreground <- hwnd)
                         waitSplit()

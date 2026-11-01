@@ -583,6 +583,10 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             list.Bounds <- Rectangle(padding,top,max 1 (f.ClientSize.Width-padding-1),max 0 (bottom-top))
         f.Layout.Add(fun _ -> placeList())
         placeList()
+        // In front, it leaves the group it was opened over lit, see ForegroundOverlays.
+        f.HandleCreated.Add(fun _ -> ForegroundOverlays.add f.Handle)
+        f.HandleDestroyed.Add(fun _ -> ForegroundOverlays.remove f.Handle)
+        if f.IsHandleCreated then ForegroundOverlays.add f.Handle
         if not (SystemCorners.keep f (fun () -> palette.border)) then
             use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 size.Width,float32 size.Height)) (float32 radius)
             f.Region <- new Region(shape)

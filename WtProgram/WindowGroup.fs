@@ -2267,6 +2267,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     // Maximized or restored, a window rises over a strip it does not own.
                     this.liftUnownedStrip hwnd
             | _ -> ()
+        // The command palette in front over the group: the group is still the one in front.
+        | WinEvent.EVENT_SYSTEM_FOREGROUND when ForegroundOverlays.contains hwnd -> ()
         | WinEvent.EVENT_SYSTEM_FOREGROUND ->
             // Activated some other way (Alt+Tab, its own window), an owned tab can stay under the
             // others in the same way as one activated from the strip.
