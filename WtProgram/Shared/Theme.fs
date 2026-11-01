@@ -32,14 +32,20 @@ module Theme =
     /// the same everywhere. Each keeps the hue its name says; colours near in hue sit at different
     /// depths (blue and navy, pink and rose, red and coral), so any two remain easy to tell apart.
     let private palette =
-        [|0x5B6167;0x0065DA;0xCF1637;0x836901;0x017031;0xBD197E;0x690CA5;0x08798D
-          0xB35F04;0x6F4DDE;0x5A5503;0xA40044;0x538003;0x0B16A2;0x035E5A;0xAC3802|] |> Array.map Color.FromRGB
+        [|0x5B6167;0x046FEC;0xE9033B;0x836901;0x08884D;0xDE0593;0xA539F7;0x198095
+          0xB35F04;0x6F4DDE;0x5A5503;0xA40044;0x426F00;0x0B16A2;0x035E5A;0xAC3802|] |> Array.map Color.FromRGB
     let tabPalette (_dark:bool) = Array.copy palette
     let tabPaletteSize = 16
-    /// Keep related colours together in the menu.
-    let tabColorOrder = [1;7;14;4;3;8;2;5;11;6;9;10;12;13;15;0]
-    /// Alternate distant hues so neighbouring automatic colours remain easy to distinguish.
-    let tabAllocationOrder = [1;8;4;6;3;13;2;7;5;14;11;10;9;12;15;0]
+    /// The menu lists the automatic colours first, then those only picked by hand, each round the
+    /// hue circle from blue, and grey last.
+    let tabColorOrder = [1;7;4;3;8;2;5;6;13;14;12;10;15;11;9;0]
+    /// How many of `tabColorOrder` are given automatically, so the menu can set the rest apart.
+    let automaticColorCount = 8
+    /// Alternate distant hues so neighbouring automatic colours remain easy to distinguish. Only the
+    /// first eight colours and grey: the others sit too close to them, so they stay in the menu.
+    /// Most groups hold two or three windows, so blue, pink and green come first: the three furthest
+    /// apart, also for red-green colour blindness.
+    let tabAllocationOrder = [1;5;4;2;7;8;6;3;0]
     /// Whether a bar takes the lighter tints. Decided by the bar rather than the theme: a
     /// custom palette can put a dark bar in the light theme. 0.179 is where black and white
     /// text are equally readable.
@@ -103,14 +109,30 @@ module Theme =
         let distance (x:Color) (y:Color) =
             let (l1,a1,b1),(l2,a2,b2) = ofColor x,ofColor y
             sqrt((l1-l2)*(l1-l2)+(a1-a2)*(a1-a2)+(b1-b2)*(b1-b2))
-    /// The text of every filled tab behind the active one: the darkest neutral grey that reads at
-    /// 4.5:1 on all their shades, the inactive orange the closest.
+    /// The text of every filled tab behind the active one: a neutral grey that reads at 4.5:1 on
+    /// all their shades.
     let inactiveFillText = Color.FromRGB(0xC8C8C8)
     /// A tab behind the active one in its colour: a little darker and with less colour, so the
     /// active tab is the brightest and the rest keep their hue and stay apart.
     let tabShade (darker:float) (colourKept:float) (tint:Color) =
         let L,a,b = OkLab.ofColor tint
         OkLab.ofLch (L-darker) (sqrt(a*a+b*b)*colourKept) (atan2 b a)
+    /// Dark enough that the active tab stands out in any colour. Taking colour away instead would
+    /// bring the inactive shades of neighbouring hues too close together.
+    let inactiveTabShade (tint:Color) =
+        // Yellow and orange darkened in place turn olive and mud brown; turned a little towards red,
+        // as painters shade them, they become amber and brick.
+        let L,a,b = OkLab.ofColor tint
+        let hue = atan2 b a
+        let degrees = hue*180.0/Math.PI
+        let warmTurn = if degrees>25.0 && degrees<115.0 then -16.0*sin((degrees-25.0)/90.0*Math.PI) else 0.0
+        OkLab.ofLch (L-0.17) (sqrt(a*a+b*b)*0.68) (hue+warmTurn*Math.PI/180.0)
+    /// A colour as a mark on a dark surface, such as a stripe: the same hue, light and soft like
+    /// browser tab groups. Each colour keeps part of its depth, so navy stays apart from blue.
+    let lightTabShade (tint:Color) =
+        let L,a,b = OkLab.ofColor tint
+        OkLab.ofLch (min 0.92 (0.78+0.8*(L-0.53))) (min (sqrt(a*a+b*b)) 0.12) (atan2 b a)
+    let hoveredTabShade tint = tabShade 0.06 0.75 tint
     /// How much of each colour an inactive group keeps; the rest comes from its background.
     let dimAmount = 0.4
     /// Soften inactive groups without letting the window underneath show through: towards white

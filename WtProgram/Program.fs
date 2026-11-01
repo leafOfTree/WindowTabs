@@ -1425,6 +1425,7 @@ module Bootstrap =
     let main argv =
         Dpi.enableWinFormsRescaling()
         ThemeService.moveSystemEventsOffMainThread()
+        ColorPicker.show <- ColorPickerPopup.show
         Application.SetCompatibleTextRenderingDefault(false)
         use logger = new ExceptionHandlerPlugin()
         (logger :> IPlugin).init()

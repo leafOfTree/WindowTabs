@@ -562,8 +562,11 @@ buttons, foreground changes and timeout cancel the leader. Fresh installs enable
 the leader; existing settings without its toggle leave it disabled.
 
 The palette has 16 colours: seven main colours, eight extra colours, then grey.
-By-window allocation and the menu use this order; stored indices stay unchanged.
-By-app colours retain their stable hash over all sixteen.
+The menu uses this order; stored indices stay unchanged. By-window allocation cycles
+through indices 1-8 and grey only, the most distinct hues, so neighbouring tabs never get two
+similar colours; the rest are picked by hand. Colours ignore icons: on filled tabs `IconRim`
+edges each icon in translucent near-black, so an orange logo stays clear on red or pink
+whichever way the colour was chosen. By-app colours retain their stable hash over all sixteen.
 WindowTabColors is owned by the main STA. By-window indices and per-window overrides
 stay with the HWND across group transfers and are removed when it is destroyed.
 App colours keep their path, match it ignoring case and survive settings reset with
@@ -579,7 +582,11 @@ lighter or darker tints are used depends on the bar's own luminance, not the the
 so a custom palette with a dark bar in the light theme still gets readable tints.
 NativeContextMenu owns copied HBITMAPs until after its menu is destroyed; callers
 retain and dispose their source images. An item image replaces the check mark, so a
-checked item gets a copy with a mark drawn on it. Custom colours use the system ColorDialog.
+checked item gets a copy with a mark drawn on it. Custom tab colours open `ColorPickerWindow`,
+the settings picker with its code under it, centred over the window being coloured. Menus and
+commands compiled before it reach it through `ColorPicker.show`, which `Bootstrap.main` sets.
+It is a window rather than a drop-down so a click in another app closes it: Enter or a click
+elsewhere keeps the colour, Esc gives the previous one back.
 Tab right-click menus use ThemedContextMenu with the shared SettingsColors palette,
 including submenus, check marks and shortcut text. Each menu owns copies of its
 images. Closing releases the auto-hide hold immediately; disposal and the selected

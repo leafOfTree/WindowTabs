@@ -581,15 +581,18 @@ type TabStripDecorator(group:WindowGroup) as this =
                 CmiRegular({text=tr caption;image=Some image
                             flags=List2()
                             click=fun() -> choose (PaletteColor index)}))
-            // The main colours, then the ones used once those are taken.
-            |> List.splitAt 10 |> fun (main,more) -> main @ [CmiSeparator] @ more
+            // The colours tabs are given automatically, then the ones only picked by hand.
+            |> List.splitAt Theme.automaticColorCount |> fun (main,more) -> main @ [CmiSeparator] @ more
         let colorMenu = CmiPopUp({text=tr Strings.Settings.tabColors;image=None;items=List2(colorItems @ [
             CmiSeparator
             CmiRegular({text=tr Strings.Settings.customTabColor;image=None;flags=List2();click=fun() ->
                 let initial = currentColor |> Option.map(Theme.tabColor dark) |> Option.defaultValue Color.SteelBlue
-                use dialog = new ColorDialog(FullOpen=true,Color=initial)
-                let owner = {new IWin32Window with member _.Handle=group.hwnd}
-                if dialog.ShowDialog(owner)=DialogResult.OK then choose (CustomColor dialog.Color)})
+                // The tab takes each colour as it is picked; Cancel or Esc gives it back the one it had.
+                let previous = Services.program.getTabColorOverride hwnd
+                let mutable last = initial
+                ColorPicker.show (Win32Helper.GetVisibleWindowRectangle hwnd) initial
+                    (fun color -> last <- color; group.setTabColor(hwnd,Some(CustomColor color)))
+                    (fun kept -> if kept && last<>initial then choose (CustomColor last) else group.setTabColor(hwnd,previous))})
             CmiRegular({text=tr Strings.Settings.rememberTabColor;image=None
                         flags=checkedFlag remembered |> fun flags -> if not remembered && currentColor.IsNone then flags.append(MenuFlags.MF_GRAYED) else flags
                         click=fun() -> saveAppColor (if remembered then None else currentColor)})
