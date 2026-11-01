@@ -289,6 +289,9 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
                 image |> Option.iter(fun source ->
                     let copy = if entry.Checked then MenuImages.checkedCopy source.bitmap else new Bitmap(source.bitmap)
                     images.Add(copy)
+                    // A wide image, such as a tab colour swatch, is drawn at its own size and the
+                    // gutter widens for it, rather than being squeezed square.
+                    if copy.Width>copy.Height then entry.ImageScaling <- ToolStripItemImageScaling.None
                     entry.Image <- copy)
                 click |> Option.iter(fun run -> entry.Click.Add(fun _ -> action <- Some run))
                 entry.MouseEnter.Add(fun _ -> hovered <- Some entry; hoverOpen.Stop(); hoverOpen.Start())

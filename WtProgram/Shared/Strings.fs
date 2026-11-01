@@ -313,15 +313,19 @@ module Strings =
         let customTabColor = { en="Custom…"; zh="自定义…"; ja="カスタム…"; ar="مخصص…" }
         let clearTabColor = { en="Clear color"; zh="清除颜色"; ja="色を解除"; ar="مسح اللون" }
         let rememberTabColor = { en="Remember color for this app"; zh="为此应用记住颜色"; ja="このアプリの色を記憶"; ar="تذكّر اللون لهذا التطبيق" }
+        /// Named for how they look: every colour is deep enough for white text, so the light hues
+        /// show as their deep versions (mustard, not yellow).
         let tabColorNames = [|
             { en="Grey";zh="灰色";ja="グレー";ar="رمادي" }; { en="Blue";zh="蓝色";ja="青";ar="أزرق" }
-            { en="Red";zh="红色";ja="赤";ar="أحمر" }; { en="Yellow";zh="黄色";ja="黄";ar="أصفر" }
+            { en="Red";zh="红色";ja="赤";ar="أحمر" }; { en="Mustard";zh="芥末黄";ja="マスタード";ar="خردلي" }
             { en="Green";zh="绿色";ja="緑";ar="أخضر" }; { en="Pink";zh="粉色";ja="ピンク";ar="وردي" }
-            { en="Purple";zh="紫色";ja="紫";ar="أرجواني" }; { en="Cyan";zh="青色";ja="シアン";ar="سماوي" }
-            { en="Orange";zh="橙色";ja="オレンジ";ar="برتقالي" }; { en="Lavender";zh="薰衣草色";ja="ラベンダー";ar="خزامي" }
+            { en="Purple";zh="紫色";ja="紫";ar="أرجواني" }; { en="Petrol";zh="孔雀蓝";ja="ピーコックブルー";ar="أزرق بترولي" }
+            { en="Orange";zh="橙色";ja="オレンジ";ar="برتقالي" }; { en="Violet";zh="堇紫";ja="バイオレット";ar="بنفسجي" }
             { en="Olive";zh="橄榄色";ja="オリーブ";ar="زيتي" }; { en="Rose";zh="玫红色";ja="ローズ";ar="وردي داكن" }
-            { en="Lime";zh="青柠色";ja="ライム";ar="ليموني" }; { en="Navy";zh="藏青色";ja="ネイビー";ar="كحلي" }
-            { en="Teal";zh="蓝绿色";ja="ティール";ar="أزرق مخضر" }; { en="Coral";zh="珊瑚色";ja="コーラル";ar="مرجاني" } |]
+            { en="Moss";zh="苔绿";ja="モスグリーン";ar="طحلبي" }; { en="Navy";zh="藏青色";ja="ネイビー";ar="كحلي" }
+            { en="Teal";zh="蓝绿色";ja="ティール";ar="أزرق مخضر" }; { en="Rust";zh="铁锈红";ja="赤錆色";ar="صدئي" } |]
+        /// The sample text on each swatch in the tab colour menu, as a tab would show it.
+        let tabColorSample = { en="Aa"; zh="Aa"; ja="Aa"; ar="Aa" }
         let tabColorMode = { caption={ en="Tab color coding"; zh="标签着色"; ja="タブの色分け"; ar="تلوين علامات التبويب" }
                              description={ en="Auto-assign colors by window or app."
                                            zh="按窗口或应用自动分配颜色。"

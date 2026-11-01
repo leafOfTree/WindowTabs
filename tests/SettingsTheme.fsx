@@ -249,6 +249,10 @@ let main() =
         let beforeReset = {api.appearance with geometry=TabGeometry.fromAppearance geometry; lightPalette={api.appearance.lightPalette with tabActiveBgColor=Color.Purple}}
         let reset = Theme.resetLayout beforeReset
         check (reset.geometry=Theme.defaultGeometry) "Reset did not restore all geometry fields"
+        // Reset tab layout restores the rows under it; the style, chosen above with the colours, stays.
+        let pills = {beforeReset with geometry={beforeReset.geometry with style=PillTabs}}
+        check ((Theme.resetLayout pills).geometry={Theme.defaultGeometry with style=PillTabs}) "Reset tab layout also reset the tab style"
+        check (Theme.isDefaultLayout {Theme.defaultGeometry with style=PillTabs}) "A tab style alone offered a layout reset"
         check (reset.lightPalette=beforeReset.lightPalette && reset.darkPalette=beforeReset.darkPalette && reset.legacyPalette=beforeReset.legacyPalette) "Reset changed palette fields"
         check (TabGeometry.fromAppearance custom = TabGeometry.fromAppearance Theme.light) "Palette-only changes affect geometry notifications"
         let placement appearance y =

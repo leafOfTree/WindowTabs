@@ -242,6 +242,21 @@ module DragOutPlacement =
     let fit (work:Rect) (frame:Rect) =
         let width,height = min frame.width work.width,min frame.height work.height
         Rect(Pt(max work.left (min frame.x (work.right-width)),max work.top (min frame.y (work.bottom-height))),Sz(width,height))
+    /// The visible frame a dropped window lands at, so that the tab stays under the pointer:
+    /// over the window, `rowOffset` from it, for a row of tabs; in its column beside the window
+    /// for a column, which stays in the work area with it and so outside the window's edge.
+    let landing (pt:Pt) (drag:TabDragInfo) (size:Sz) (rowOffset:Pt) (work:Rect option) =
+        match drag.column with
+        | Some column ->
+            let window = pt.sub(drag.tabOffset).sub(column.tabAt size)
+            let extra = column.width-column.seam
+            let left = column.dock=TabDockLeft
+            let both = Rect(Pt((if left then window.x-extra else window.x),window.y),Sz(size.width+extra,size.height))
+            let both = work |> Option.map(fun work -> fit work both) |> Option.defaultValue both
+            Rect(Pt((if left then both.x+extra else both.x),both.y),Sz(max 1 (both.width-extra),both.height))
+        | None ->
+            let frame = Rect(pt.sub(drag.tabOffset).sub(Pt(drag.shiftFor size.width,0)).add(rowOffset),size)
+            work |> Option.map(fun work -> fit work frame) |> Option.defaultValue frame
 
 /// Which group a window was in, kept on the window itself, so a restarted WindowTabs puts
 /// windows back together as they were, however they came to be grouped.

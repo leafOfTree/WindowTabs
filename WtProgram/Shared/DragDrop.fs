@@ -16,6 +16,9 @@ type IDragDropTarget =
     abstract member dragEnter : obj -> Pt -> bool
     abstract member dragMove : Pt -> unit
     abstract member dragExit : unit -> unit
+    /// Whether the tab in the strip stays in with the pointer at this point on the screen, as far
+    /// out as it would be taken in there: past the strip's own window, along a column's side.
+    abstract member holds : Pt -> bool
     /// The source takes a cancelled drag's tab back where it started.
     abstract member dragCancel : obj -> unit
 

@@ -32,7 +32,7 @@ module AutoGroup =
 
 /// What the group's tab menu shows ticked, read on the group's thread for the palette: its tabs'
 /// side and alignment, and its own auto-hide mode, None while it follows the setting.
-type GroupChoicesShown = { dock:TabDock; alignment:Bemo.TabAlignment; autoHide:string option }
+type GroupChoicesShown = { dock:TabDock; alignment:Bemo.TabAlignment; autoHide:string option; iconOnly:bool }
 
 type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher, ?taskbarPlugin:unit -> IPlugin) as this =
     let Cell = CellScope(true, true)
@@ -80,7 +80,8 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
                     let ts : TabStrip = _group.ts
                     Some { dock=ts.dock
                            alignment=ts.getAlignment(if ts.isVertical then TabUp else ts.direction)
-                           autoHide=Option.ofObj(_group.bb.read<string>("autoHideMode",null)) }
+                           autoHide=Option.ofObj(_group.bb.read<string>("autoHideMode",null))
+                           iconOnly=ts.isIconOnly }
                 with _ -> None
             desktopDispatcher.Post(fun () ->
                 if shown.IsSome then this.shownChoices <- shown
@@ -105,6 +106,9 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
         this.captureLayout(fun captured -> callback (captured |> Option.map(fun (layout,_,_) -> layout)))
 
     member this.isSuperBarEnabled = enableSuperBar
+    /// What the palette turned combining to, while the group is rebuilt that way on its own
+    /// thread: the group it replaces still says otherwise until then. Main thread only.
+    member val combiningTurnedTo : bool option = None with get,set
     /// The group's tab menu chose whether to combine its taskbar icons, so the setting leaves it alone. Main thread only.
     member val isTaskbarChosen = false with get, set
     /// Its windows are moving to a group that replaces it. Main thread only.
@@ -370,10 +374,7 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
             // The tab stays under the pointer at the width the window lands at: placed with the
             // shift of the group's width, a window made smaller came out hundreds of pixels to
             // one side, at times off the screen. Then all of it in the work area.
-            let visiblePt = pt.sub(dragInfo.tabOffset).sub(Pt(dragInfo.shiftFor size.width,0)).add(this.windowOffset)
-            let visible =
-                let frame = Rect(visiblePt,size)
-                monitor |> Option.map(fun mon -> DragOutPlacement.fit mon.workRect frame) |> Option.defaultValue frame
+            let visible = DragOutPlacement.landing pt dragInfo size this.windowOffset (monitor |> Option.map(fun mon -> mon.workRect))
             let workspaceOffset = monitor.map(fun mon -> mon.workRect.location.sub(mon.displayRect.location)).def(Pt())
             let windowPt = visible.location.sub(borderLeftTop).sub(workspaceOffset)
             window.setPlacement({

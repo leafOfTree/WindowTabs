@@ -809,47 +809,87 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     
     /// The window capture is full size; release it here rather than waiting for the GC. The
     /// window is drawn at `DragImage.windowScale` of the size it lands at on the desktop, the tab
-    /// at full size at `tabX` over it, where the strip will put it.
+    /// at full size where the strip will put it: over the window in a row, or in a column of its
+    /// own beside the window, as a group with its tabs at the side shows it.
     /// The window's picture takes a while to print, so the image comes back with the tab alone
     /// and `later` gets the whole picture, the same size, from another thread a moment after:
     /// printed first, a large window held the drag at its start.
-    member this.dragImage (tab:Tab, tabX:int, landing:Sz, later:Img -> unit) : Img=
-        if this.isVertical then this.ts.renderTab(tab) else this.horizontalDragImage tab tabX landing later
+    member this.dragImage (tab:Tab, landing:Sz, later:Img -> unit) : Img=
+        this.windowDragImage tab landing later
 
     /// Where the tab sits over the window shown small in the drag image, as the strip's alignment
     /// places a lone tab over that width. Scaled with the window from where it sits over the
     /// full width, a tab drawn at full size sat off the middle.
-    member this.dragTabX(tab:Tab, landing:Sz) =
-        let tabWidth = this.tabSprites.tryFind(fun (_,sprite) -> sprite.id=tab) |> Option.map(fun (_,sprite) -> sprite.size.width) |> Option.defaultValue 0
-        let width = int(float landing.width*DragImage.windowScale)
-        if this.isVertical then 0
+    static member private dragTabX (alignment:Bemo.TabAlignment) (tabWidth:int) (width:int) =
+        let x =
+            match alignment with
+            | TabCenter -> (width-tabWidth)/2
+            | TabRight -> width-tabWidth-int(60.0*DragImage.windowScale)
+            | TabLeft -> 0
+        max 0 (min x (width-tabWidth))
+
+    /// How a lone tab sits over its window once dropped.
+    member this.dragAlignment = this.getAlignment TabUp
+
+    /// The column that holds the tab alone, as wide as this one.
+    member private this.loneColumn(tab:Tab) =
+        { this.ts with lorder=List2([tab]); zorder=List2([tab]); size=Sz(this.ts.size.width,this.ts.rowStep+Dpi.scale 4)
+                       scrollOffset=0; slide=None; held=None; hover=None; captured=None }
+
+    /// The column the tab lands in beside its window; none for a row of tabs.
+    member this.dragColumn(tab:Tab) : DragColumn option =
+        if not this.isVertical then None
         else
-            let x =
-                match this.getAlignment TabUp with
-                | TabCenter -> (width-tabWidth)/2
-                | TabRight -> width-tabWidth-int(60.0*DragImage.windowScale)
-                | TabLeft -> 0
-            max 0 (min x (width-tabWidth))
+            let lone = this.loneColumn tab
+            Some { dock=this.dock; width=lone.size.width; height=lone.size.height; alignment=this.getAlignment TabUp
+                   seam=min lone.size.width (Dpi.scale 1); tabInColumn=lone.tabLocation tab }
 
-    /// How a lone tab sits over its window once dropped: vertical strips keep it at the start.
-    member this.dragAlignment = if this.isVertical then TabLeft else this.getAlignment TabUp
+    /// For the window shown at a size: the drag image's size, the window's place in it, and where
+    /// the tab, or the column holding it, goes. Read from the strip here, on its own thread: the
+    /// window's picture is put in on another, where reading the strip failed and left it out.
+    member private this.dragLayout (tab:Tab) : Sz -> int -> int -> Sz*Pt*Pt =
+        match this.dragColumn tab with
+        | Some column ->
+            fun _ width height ->
+                let at = column.columnAt(Sz(width,height))
+                let shift = if column.dock=TabDockLeft then -at.x else 0
+                Sz(width+column.width-column.seam,max height (at.y+column.height)),Pt(shift,0),Pt(at.x+shift,at.y)
+        | None ->
+            let alignment = this.getAlignment TabUp
+            let tabWidth = this.tabSprites.tryFind(fun (_,sprite) -> sprite.id=tab) |> Option.map(fun (_,sprite) -> sprite.size.width) |> Option.defaultValue 0
+            let offset = this.contentOffset
+            fun (tabSize:Sz) width height ->
+                let tabX = TabStrip.dragTabX alignment tabWidth width
+                let top = tabSize.height - offset
+                Sz(max width (tabX+tabSize.width),height+top),Pt(0,top),Pt(tabX,0)
 
-    member private this.horizontalDragImage (tab:Tab) (tabX:int) (landing:Sz) (later:Img -> unit) : Img=
-        let bmpTab = this.tsBase(TabUp).renderTab(tab).bitmap
-        let top = bmpTab.Height - this.contentOffset
+    /// Where the pointer's tab is in the drag image, for a window landing at this size.
+    member this.dragTabAt(tab:Tab, landing:Sz) =
+        let scaled value = max 1 (int(float value*DragImage.windowScale))
+        let tabSize = this.tabSprites.tryFind(fun (_,sprite) -> sprite.id=tab) |> Option.map(fun (_,sprite) -> sprite.size) |> Option.defaultValue (Sz())
+        let _,_,front = this.dragLayout tab tabSize (scaled landing.width) (scaled landing.height)
+        match this.dragColumn tab with
+        | Some column -> front.add(column.tabInColumn)
+        | None -> front
+
+    member private this.windowDragImage (tab:Tab) (landing:Sz) (later:Img -> unit) : Img=
+        // The tab in a row; in a column, the column holding it alone.
+        let bmpTab = (if this.isVertical then this.loneColumn(tab).render else this.tsBase(TabUp).renderTab(tab)).bitmap
+        let layout = this.dragLayout tab
         let scaled value = max 1 (int(float value*DragImage.windowScale))
         let compose (bmpHwnd:Bitmap option) =
             let width = scaled (if landing.width>0 then landing.width else bmpHwnd |> Option.map(fun b -> b.Width) |> Option.defaultValue 1)
             let height = scaled (if landing.height>0 then landing.height else bmpHwnd |> Option.map(fun b -> b.Height) |> Option.defaultValue 1)
-            let bmpOverlay = Img(Sz(max width (tabX+bmpTab.Width), height + top))
+            let size,window,front = layout (Sz(bmpTab.Width,bmpTab.Height)) width height
+            let bmpOverlay = Img(size)
             try
                 use gCapture = bmpOverlay.graphics
                 gCapture.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBilinear
                 bmpHwnd |> Option.iter(fun bmpHwnd ->
                     use fade = new Imaging.ImageAttributes()
                     fade.SetColorMatrix(Imaging.ColorMatrix(Matrix33=DragImage.windowOpacity))
-                    gCapture.DrawImage(bmpHwnd, Rectangle(0, top, width, height), 0, 0, bmpHwnd.Width, bmpHwnd.Height, GraphicsUnit.Pixel, fade))
-                gCapture.DrawImage(bmpTab, Point(tabX, 0))
+                    gCapture.DrawImage(bmpHwnd, Rectangle(window.x, window.y, width, height), 0, 0, bmpHwnd.Width, bmpHwnd.Height, GraphicsUnit.Pixel, fade))
+                gCapture.DrawImage(bmpTab, Point(front.x, front.y))
                 bmpOverlay
             with _ ->
                 bmpOverlay.bitmap.Dispose()

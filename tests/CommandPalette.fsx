@@ -338,6 +338,17 @@ let main() =
                 let entry = palettePage.entries |> List.find(fun entry -> entry.title=tr command.text.caption)
                 let aside = palettePage.aside "" entry
                 note (aside.detail=expected && aside.dropdown) (sprintf "%s's row shows %A beside it" id aside)
+            // A switch turned in the palette shows its new value as the row is drawn again, at
+            // once, not the value read before; then the group's own read agrees with it.
+            let icons = (Commands.find "group-icons-only").Value
+            let before = icons.state active
+            icons.run active |> ignore
+            note (icons.state active=(before |> Option.map not)) (sprintf "Show icons only for this group shows %A at once after turning from %A" (icons.state active) before)
+            let mutable reread = false
+            info.readShownChoices(fun () -> reread <- true)
+            pumpUntil "The group's choices read again" (fun () -> reread)
+            note (icons.state active=Some(onGroupOf active (fun group -> group.isIconOnly))) "Show icons only for this group disagrees with the group"
+            icons.run active |> ignore
             note ((Commands.find "group-tab-position").Value.current IntPtr.Zero="") "A group's value is shown with no group in front")
         attempt "tabs-for-app" (fun () ->
             let before = Services.filter.getIsTabbingEnabledForProcess path
@@ -355,7 +366,11 @@ let main() =
             note (NumberShortcutRules.enabled path<>before) "Switch tabs by number in this app did not change it"
             runDone "number-shortcut-for-app" active)
         attempt "combine-group-taskbar-icons" (fun () ->
+            let combine = (Commands.find "combine-group-taskbar-icons").Value
+            let before = combine.state active
             runDone "combine-group-taskbar-icons" active
+            // Shown turned at once, as the palette draws the row again, not after the rebuild.
+            note (combine.state active=(before |> Option.map not)) (sprintf "Combine taskbar icons for this group shows %A at once after turning from %A" (combine.state active) before)
             pumpUntil "Combining the group's taskbar icons" (fun () -> groupOf active |> Option.exists(fun info -> info.isSuperBarEnabled))
             note ((Commands.find "change-group-icon").Value.enabled active && (Commands.find "restore-group-icon").Value.enabled active)
                  "The group's taskbar icon commands stay dimmed once its icons are combined"
@@ -515,7 +530,7 @@ let main() =
                 note (not (List.contains (tr item.text.caption) titles)) "The number keys' modifier has a row of its own beside their three values"
             | _ -> note (List.contains (tr item.text.caption) titles) (sprintf "The setting %s is not on the Actions page" item.id)
         // The app's own switches show whether they are on for the app in front.
-        for id in ["tabs-for-app";"auto-group-app";"number-shortcut-for-app";"combine-group-taskbar-icons"] do
+        for id in ["tabs-for-app";"auto-group-app";"number-shortcut-for-app";"combine-group-taskbar-icons";"group-icons-only"] do
             let command = (Commands.find id).Value
             let entry = page.entries |> List.find(fun entry -> entry.title=tr command.text.caption)
             note ((page.aside "" entry).switch=command.state active && (command.state active).IsSome) (sprintf "%s shows no switch" id)

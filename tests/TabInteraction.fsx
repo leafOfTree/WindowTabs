@@ -113,11 +113,16 @@ let main() =
             let mutable selected = 0
             let mutable closed = false
             use dot = MenuImages.colorDot 16 Color.CornflowerBlue
+            use swatch = MenuImages.colorTab (Dpi.scale 28) (Dpi.scale 16) (Theme.tabPalette true).[1] "Aa"
+            check (swatch.GetPixel(swatch.Width/8,swatch.Height/2).ToArgb()=(Theme.tabPalette true).[1].ToArgb() &&
+                   swatch.GetPixel(0,0).A=0uy && swatch.GetPixel(0,swatch.Height-1).A=0uy)
+                  "A tab colour swatch is not a rounded swatch in that colour"
             let command flags image text = CmiRegular({text=text;image=image;flags=List2(flags);click=fun () -> selected <- selected+1})
             let entries = List2([command [] None "Open new tab\tCtrl+Alt+N";
                                  command [MenuFlags.MF_CHECKED] None "Checked";
                                  CmiSection("Section");
-                                 CmiPopUp({text="Tab color";image=None;items=List2([command [MenuFlags.MF_CHECKED] (Some(Img(dot))) "Blue";command [MenuFlags.MF_DISABLED] None "Disabled"])})])
+                                 CmiPopUp({text="Tab color";image=None;items=List2([command [MenuFlags.MF_CHECKED] (Some(Img(dot))) "Blue";command [MenuFlags.MF_DISABLED] None "Disabled"
+                                                                                    command [] (Some(Img(swatch))) "Mustard"])})])
             use menu = new ThemedContextMenu(entries,fun () -> closed <- true)
             let first = menu.Items.[0] :?> ToolStripMenuItem
             let nested = menu.Items.[3] :?> ToolStripMenuItem
@@ -127,6 +132,9 @@ let main() =
             check (first.ShortcutKeyDisplayString="Ctrl+Alt+N" && first.Text="Open new tab") "Themed menu lost its shortcut column"
             check (colour.Checked && not nested.DropDownItems.[1].Enabled) "Themed submenu lost checked or disabled state"
             check (not(Object.ReferenceEquals(colour.Image,dot))) "Themed menu retained a caller-owned image"
+            nested.DropDown.PerformLayout()
+            let gutter = typeof<ToolStripDropDownMenu>.GetField("imageRectangle",Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Instance)
+            check ((gutter.GetValue(nested.DropDown) :?> Rectangle).Width=swatch.Width) "The tab colour menu squeezed its swatches square"
             dot.Dispose()
             menu.Show(Point(40,40))
             Application.DoEvents()
@@ -268,6 +276,10 @@ let main() =
         check (([for c in 'a'..'z' -> Theme.appColorIndex (string c + ".exe")] |> List.distinct).Length>8) "App colours did not use the second eight"
         check (Theme.appColorIndex "Editor.exe"=Theme.appColorIndex "EDITOR.EXE") "App colour hash changed with case"
         check ((Strings.Common.selectedChoice Strings.Settings.tabColorNames.[1]).en="Blue  ✓") "Selected colour is not marked after its name"
+        // Every colour is deep enough for white text, so none may be named after a light colour.
+        let names = Strings.Settings.tabColorNames |> Array.map(fun name -> name.en)
+        check (["Yellow";"Cyan";"Lime";"Coral";"Lavender"] |> List.forall(fun light -> not(Array.contains light names)))
+              "A deep tab colour is named after a light one"
         let colors = WindowTabColors()
         let a,b,c = IntPtr(1),IntPtr(2),IntPtr(3)
         let mutable peers = [a;b;c]
@@ -719,6 +731,42 @@ let main() =
                     for inside in [false;true] do
                         strip.setPlacement(placement start columnSize inside)
                         strip.isShrunk <- false
+                        // A tab dragged from a column carries its window shown small, with the tab in
+                        // a column of its own on the same side, as the window lands; it carried the
+                        // tab alone. Let go, the window lands so that the tab is still under the
+                        // pointer, its column outside the window's edge and in the work area with it.
+                        if not inside then
+                            do
+                                let dragged = strip.lorder.list.Head
+                                let landing = Sz(400,300)
+                                let shown = Sz(200,150)
+                                let column = (strip.dragColumn dragged).Value
+                                // The window's picture comes from another thread, a moment later. Composed
+                                // there from the strip's live state, it failed and never came.
+                                let arrived = ref false
+                                let image = strip.dragImage(dragged,landing,fun later -> arrived.Value <- true; later.bitmap.Dispose())
+                                let until = DateTime.Now.AddSeconds 3.0
+                                while not arrived.Value && DateTime.Now<until do
+                                    Application.DoEvents()
+                                    Threading.Thread.Sleep 20
+                                check arrived.Value (sprintf "A tab dragged from a %A column never got its window's picture" dock)
+                                try
+                                    check (image.width=shown.width+column.width-column.seam && image.height>=shown.height)
+                                          (sprintf "A tab dragged from a %A column carries no window beside its column: %A" dock image.size)
+                                    let at = strip.dragTabAt(dragged,landing)
+                                    check (if dock=TabDockRight then at.x>=shown.width-column.seam else at.x<column.width)
+                                          (sprintf "The dragged tab is not on the %A of its window: %A" dock at)
+                                finally image.bitmap.Dispose()
+                                let drag = { tab=dragged; tabOffset=Pt(12,9); tabSize=Sz(100,30); tabInfo=strip.tabInfo dragged; tabShift=0; tabAlignment=TabLeft; column=Some column }
+                                let pointer = Pt(900,400)
+                                let frame = DragOutPlacement.landing pointer drag landing Pt.empty None
+                                check (frame.location.add(column.tabAt landing).add(drag.tabOffset)=pointer && frame.size=landing)
+                                      (sprintf "A window dropped from a %A column did not keep its tab under the pointer: %A" dock frame)
+                                let work = Rect(Pt(0,0),Sz(1000,800))
+                                let fitted = DragOutPlacement.landing (Pt(990,400)) drag landing Pt.empty (Some work)
+                                let columnLeft = fitted.x+(column.columnAt landing).x
+                                check (fitted.x>=work.left && columnLeft>=work.left && columnLeft+column.width<=work.right && fitted.right<=work.right)
+                                      (sprintf "A window dropped from a %A column near the screen's edge left its column off it: %A" dock fitted)
                         check (strip.bounds.size=columnSize && shadow.isVisible=not SystemInformation.HighContrast)
                               (sprintf "Expanded vertical column lost its shadow or viewport bounds: dock=%A inside=%b actual=%A expected=%A shadow=%b highContrast=%b" dock inside strip.bounds.size columnSize shadow.isVisible SystemInformation.HighContrast)
                         let last = strip.lorder.list |> List.last

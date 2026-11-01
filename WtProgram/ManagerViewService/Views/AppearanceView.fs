@@ -192,7 +192,7 @@ type AppearanceView(?settings:ISettings) =
                 match selection settings with
                 | Some index -> values palette<>values (original index)
                 | None -> true
-            resetLayoutButton.Offered <- geometry<>Theme.defaultGeometry || preview.ColumnWidth<>SettingsCatalog.columnWidthDefault
+            resetLayoutButton.Offered <- not (Theme.isDefaultLayout geometry) || preview.ColumnWidth<>SettingsCatalog.columnWidthDefault
             let frame = Some(SettingsColors.current(),editingDark,settings.geometry,preview.Position,preview.ColumnWidth)
             if frame=previewFrame then preview.Invalidate(previewTabs())
             else

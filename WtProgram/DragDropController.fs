@@ -66,7 +66,9 @@ type DragCapturedState(info:DragCapturedStateInfo) =
         member this.mouseMove(ptScreen) =
             let dragBounds = info.targetWindow.bounds.inflate(dragOutDistance, dragOutDistance)
             let hit,_ = DragRouting.windowsAt ptScreen
-            if dragBounds.containsPoint(ptScreen) && not(DragRouting.movesToStrip info.targets info.targetHwnd hit) then
+            // Or as far out as the strip takes a tab in: along a column's side, another group's tab
+            // went out past the column's own end and came straight back in, on every move.
+            if (dragBounds.containsPoint(ptScreen) || info.target.holds ptScreen) && not(DragRouting.movesToStrip info.targets info.targetHwnd hit) then
                 info.target.dragMove(info.targetWindow.ptToClient(ptScreen))
             else
                 info.target.dragExit()
