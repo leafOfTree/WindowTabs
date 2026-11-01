@@ -910,9 +910,10 @@ type TabStripSprite<'id> when 'id : equality = {
             | Some(top) -> top = tab
             | None -> false
         let isHovered =
-            match this.hover, this.captured with
-            | Some(id, _), _ when id = tab -> true
-            | _, Some(id, _) when id = tab -> true
+            match this.hover, this.captured, this.slide with
+            | Some(id, _), _, _ when id = tab -> true
+            | _, Some(id, _), _ when id = tab -> true
+            | _, _, Some(id, _) when id = tab -> true
             | _ -> false
         isActive.not && isHovered.not
 
@@ -951,9 +952,11 @@ type TabStripSprite<'id> when 'id : equality = {
                 match this.hover with
                 | Some(id, part) when id = tab -> Some(part)
                 | _ -> None
+            // The tab being dragged is held up as a pressed one is, though it may not be the one chosen.
             captured =
-                match this.captured with
-                | Some(id, part) when id = tab -> Some(part)
+                match this.captured,this.slide with
+                | Some(id, part), _ when id = tab -> Some(part)
+                | _, Some(slid, _) when slid = tab -> Some TabBackground
                 | _ -> None
         }
 
@@ -1125,6 +1128,26 @@ type TabStripSprite<'id> when 'id : equality = {
             let x,_ = this.tabSpan tab
             Pt(x, 1)
 
+    /// In a column, the tab whose row takes a point that no tab covers: the gap between two rows,
+    /// half to each, and the column's margins. The gap only parts the tabs to the eye; over no
+    /// tab, the pointer put a tab's tip away and a click there chose nothing. Not on the scroll track.
+    member this.rowAt(pt:Pt) =
+        if not this.isVertical || pt.x<0 || pt.x>=this.size.width || pt.y<0 || pt.y>=this.size.height then None
+        elif this.scrollMaximum>0 && pt.x>=this.scrollTrack.x-Dpi.scale 2 then None
+        else
+            // Rows lie rowStep apart from the column's padding down; a gap goes half to the row
+            // above it and half to the one below, the column's ends wholly to the first and last.
+            let order = this.adjustedLorder
+            let count = order.length
+            let gap = this.rowStep-this.rowHeight
+            let y = pt.y+this.scrollOffset-Dpi.scale 4
+            let row = int(floor(float(y+gap/2)/float this.rowStep))
+            let row =
+                if row<0 && y>= -gap then 0
+                elif row>=count && y<(count-1)*this.rowStep+this.rowHeight+gap then count-1
+                else row
+            if row>=0 && row<count then Some(order.at row) else None
+
     // Tabs start one pixel into the strip. Above a window they then run to the strip's
     // bottom row, which overlaps the window's top edge by tabHeightOffset, so they cover
     // its border line. Inside the title bar the strip starts a pixel above the window and
@@ -1224,10 +1247,19 @@ type TabStripSprite<'id> when 'id : equality = {
         {
             new ISprite with
             member x.image = this.bgImage
-            // The split button and the feet come first so they are drawn over the tabs.
+            // The split button and the feet come first so they are drawn over the tabs; of the tabs,
+            // the one being dragged, over its neighbours whatever its place in the order: not chosen
+            // as it is pressed in a group behind, nor while carried into another strip, it went
+            // under the tabs it passed.
             member x.children =
                 let tabs = this.tabSprites.list |> List.filter(fun (location,tab) ->
                     not this.isVertical || (location.y<this.size.height && location.y+tab.size.height>0))
+                let tabs =
+                    match this.slide with
+                    | Some(slid,_) ->
+                        let dragged,others = tabs |> List.partition(fun (_,tab) -> tab.id=slid)
+                        dragged @ others
+                    | None -> tabs
                 List2(this.junction @ this.feet @ (tabs |> List.map(fun (location,tab) -> location,tab :> ISprite)))
         }
 

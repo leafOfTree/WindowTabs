@@ -269,6 +269,106 @@ module WindowGroupToken =
         match WinUserApi.GetProp(hwnd,key).ToInt64() with
         | value when value>0L && value<=int64 Int32.MaxValue -> Some(int value)
         | _ -> None
+    /// Whether the window's group was made by hand: put back together after a restart, it stays
+    /// so, though no title of it was remembered, and auto grouping keeps out of it.
+    let private madeByHandKey = "WindowTabs.Manual.v1"
+    let saveMadeByHand hwnd value = WindowFlag.set madeByHandKey hwnd value
+    let madeByHand hwnd = WindowFlag.get madeByHandKey hwnd
+
+/// Chromium and Electron windows stop painting while another window covers them, so a tab
+/// behind the active one prints blank, and a minimized one prints only a placeholder. Each
+/// tab's last good capture stands in for it, kept small: thumbnails are a few hundred pixels
+/// and a peek at a hidden tab may be soft. Kept by the group, for every picture of a tab: the
+/// strip's preview on hover, printed off its thread, as much as the taskbar's.
+type TabCaptures() =
+    let gate = obj()
+    let captures = Collections.Generic.Dictionary<IntPtr,Bitmap>()
+    /// Tabs that printed blank while hidden; printing them again before they come to the front
+    /// would only be slow.
+    let blank = Collections.Generic.HashSet<IntPtr>()
+
+    static member maxSide = 800
+
+    /// A window that drew nothing prints one colour across its middle.
+    static member isBlank (bitmap:Bitmap) =
+        let width,height = bitmap.Width,bitmap.Height
+        if width < 8 || height < 8 then true
+        else
+            let first = bitmap.GetPixel(width/2,height/2)
+            seq { for i in 1..8 do
+                    for j in 1..8 -> bitmap.GetPixel(width*i/9,height*(1+j)/10) }
+            |> Seq.forall(fun pixel -> pixel = first)
+
+    static member private scaled (source:Bitmap) (size:Size) =
+        let result = new Bitmap(size.Width,size.Height,PixelFormat.Format32bppArgb)
+        try
+            use g = Graphics.FromImage(result)
+            g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBilinear
+            g.DrawImage(source,Rectangle(Point.Empty,size))
+            result
+        with _ ->
+            result.Dispose()
+            reraise()
+
+    member this.count = lock gate (fun () -> captures.Count)
+
+    /// Keeps a copy of a capture that shows the window.
+    member this.remember (hwnd:IntPtr) (image:Bitmap) =
+        if not(TabCaptures.isBlank image) then
+            let ratio = min 1.0 (float TabCaptures.maxSide / float (max image.Width image.Height))
+            let size = Size(max 1 (int(float image.Width * ratio)),max 1 (int(float image.Height * ratio)))
+            let copy = TabCaptures.scaled image size
+            lock gate (fun () ->
+                blank.Remove hwnd |> ignore
+                match captures.TryGetValue hwnd with
+                | true,previous -> previous.Dispose()
+                | _ -> ()
+                captures.[hwnd] <- copy)
+
+    /// The capture to show for a window of the given size: a live one when it shows the window,
+    /// else the last that did. A hidden tab known to print blank is not printed again. The live
+    /// one is printed outside the lock: a slow window held up every other picture of the group.
+    member this.preview (hwnd:IntPtr) (size:Size) (minimized:bool) (inFront:bool) (capture:unit -> Img) : Img =
+        let fromSaved (size:Size) =
+            match captures.TryGetValue hwnd with
+            | true,saved -> Some(Img(TabCaptures.scaled saved size))
+            | _ -> None
+        let known = lock gate (fun () -> if not minimized && not inFront && blank.Contains hwnd then fromSaved size else None)
+        match known with
+        | Some image -> image
+        | None ->
+            let live = capture()
+            let shows = not minimized && not(TabCaptures.isBlank live.bitmap)
+            if shows then
+                this.remember hwnd live.bitmap
+                live
+            else
+                lock gate (fun () ->
+                    if not minimized then blank.Add hwnd |> ignore
+                    match fromSaved live.bitmap.Size with
+                    | Some image ->
+                        live.bitmap.Dispose()
+                        image
+                    | None -> live)
+
+    /// The tab is in front again and paints, so its next capture is worth taking.
+    member this.shown (hwnd:IntPtr) = lock gate (fun () -> blank.Remove hwnd |> ignore)
+
+    member this.forget (hwnd:IntPtr) =
+        lock gate (fun () ->
+            blank.Remove hwnd |> ignore
+            match captures.TryGetValue hwnd with
+            | true,saved ->
+                saved.Dispose()
+                captures.Remove hwnd |> ignore
+            | _ -> ())
+
+    interface IDisposable with
+        member this.Dispose() =
+            lock gate (fun () ->
+                for saved in captures.Values do saved.Dispose()
+                captures.Clear()
+                blank.Clear())
 
 /// What a group's tab menu chose for that group alone, carried over when the group is rebuilt.
 type GroupMenuChoices = {
@@ -324,6 +424,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// Collapsing to one window: the top window's bounds are not the frame until placement ends.
     let mutable splitMerging = false
     let splitSettleTimer = new System.Windows.Forms.Timer(Interval=100)
+    /// Each tab's last picture that showed it, for when it is behind and its app no longer paints.
+    let captures = new TabCaptures()
+    /// The tab in front, readable off the group's thread, as a tab's picture is printed.
+    let mutable frontWindow = IntPtr.Zero
+    let mutable frontCount = 0
+    /// A tab that comes to the front is pictured once it has painted, for when it is behind again.
+    let captureTimer = new System.Windows.Forms.Timer(Interval=500)
     /// Told of every change in the order of top-level windows, while split or while the strip is
     /// owned by nothing: a window raised over the tabs gives the group no other notice.
     let mutable reorderHook : IDisposable option = None
@@ -396,6 +503,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let _ts = ref None 
     let inMoveSize = Cell.create(false)
     let foregroundCell = Cell.create(_os.foreground.hwnd)
+    /// A tab carried into the strip and not let go yet: its window stays out of sight, last in the
+    /// group's order, until the drop. Placed at once as the tab in front, the window it brought
+    /// raised the group over the windows the drag only passed.
+    let mutable heldByDrag : IntPtr option = None
+    let dragReleasedEvent = Event<IntPtr>()
     let prevForegroundCell = ref None
     let mutable lastActiveTab : IntPtr option = None
     /// A closing tab and the successor already selected for it before discovery removed it.
@@ -459,8 +571,22 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         with get() = isMadeByHand
         and set value =
             let changed = value && not isMadeByHand
+            // Set from the main thread too: the windows are read on the group's own.
+            if value<>isMadeByHand then
+                invoker.asyncInvoke(fun () -> for hwnd in this.windows.items.list do WindowGroupToken.saveMadeByHand hwnd isMadeByHand)
             isMadeByHand <- value
             if changed then madeByHandEvent.Trigger()
+    /// A tab dropped into the group makes it one made by hand, unless the group was automatic and
+    /// still holds only windows of one app that groups itself: auto grouping took no new window
+    /// of the app into it after a tab of its own was dragged in. On the group's thread.
+    member this.joinedByHand() =
+        if not isMadeByHand then
+            let paths = this.windows.items.list |> List.map(fun hwnd -> try this.os.windowFromHwnd(hwnd).pid.processPath with _ -> "")
+            let automatic =
+                match paths |> List.map AppIdentity.key |> List.distinct with
+                | [app] when app<>"" -> Services.program.getAutoGroupingEnabled paths.Head
+                | _ -> false
+            if not automatic then this.isManual <- true
     /// The group became one made by hand, after the tabs that made it so had joined.
     member this.madeByHand = madeByHandEvent.Publish
     /// Saved on each window it holds; a group restored after a restart takes its windows' token.
@@ -527,6 +653,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.init(ts:TabStrip) =
         _ts := Some(ts)
         splitSettleTimer.Tick.Add(fun _ -> this.checkSplitSettled())
+        captureTimer.Tick.Add(fun _ -> this.captureFront())
         splitGuardSoon <- Some(new CoalescedAction(30,fun () -> this.guardSplitStrip()))
         stripLiftSoon <- Some(new CoalescedAction(30,fun () -> if not isDestroyed.value then this.guardUnownedStrip()))
         transitionRelease.Tick.Add(fun _ ->
@@ -593,6 +720,16 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
         Cell.listen <| fun() ->
             this.ts.zorder <- zorderCell.value.map(Tab)
+            // A new tab in front, or a tab joining: the one alone till then was never pictured, and
+            // went behind the newcomer printing blank.
+            let front = zorderCell.value.tryHead |> Option.defaultValue IntPtr.Zero
+            let count = this.windows.count
+            if front<>frontWindow || count<>frontCount then
+                frontWindow <- front
+                frontCount <- count
+                captureTimer.Stop()
+                // Alone, the tab is never behind another to be pictured for.
+                if count>1 then captureTimer.Start()
             
         Cell.listen <| fun() ->
             this.ts.foreground <- this.foregroundTab
@@ -615,9 +752,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.foreground
         with get() = foregroundCell.value
-        and set(value) =
+        // The command palette in front over the group leaves it the group in front, whichever
+        // event read the foreground then.
+        and set(value) = if not (ForegroundOverlays.contains value) then this.takeForeground value
+
+    member private this.takeForeground(value) =
             let value = TabNavigation.currentForeground this.lorder.list value this.os.foreground.hwnd
-            if this.windows.contains(value) && not(isMinimized value) && not reconcileMinimizeState then this.onActivated(value)
+            if this.windows.contains(value) && heldByDrag<>Some value && not(isMinimized value) && not reconcileMinimizeState then this.onActivated(value)
             let active = TabNavigation.rememberActive this.lorder.list isOpen lastActiveTab value
             // Minimizing the active tab activates another tab that the group minimizes next.
             let active =
@@ -718,6 +859,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             match groupLayout with
             | Split s -> match this.paneFront s with Some front -> newZorder.where((<>) front).prepend front | None -> newZorder
             | _ -> newZorder
+        let newZorder =
+            match heldByDrag with
+            | Some held when newZorder.contains((=) held) -> newZorder.where((<>) held).append held
+            | _ -> newZorder
         if zorderCell.value.list <> newZorder.list then
             if not this.isSplit && newZorder.tryHead<>zorderCell.value.tryHead then
                 // In front now, the window no longer goes under another; a placement that leads
@@ -778,14 +923,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.getTabInfo(hwnd) =
         let window = this.os.windowFromHwnd(hwnd)
         let small,big = StartupTrace.measure "group.icons" (fun () -> iconCache.get(hwnd))
-        {
-            text = this.tabName hwnd
-            isRenamed = this.isRenamed hwnd
-            splitTrail = SplitView.trail hwnd groupLayout
-            isPinned = PinnedTabs.contains hwnd
-            iconSmall = small
-            iconBig = big
-            preview = fun() ->
+        let print() =
                 try
                     if window.isMinimized then
                         // A minimized window cannot be printed. It stands in as its app's icon, a
@@ -815,6 +953,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     else
                         StartupTrace.measure "preview.print" (fun () -> Img(Win32Helper.PrintWindow(hwnd)))
                 with ex -> Img(Sz(1, 1))
+        {
+            text = this.tabName hwnd
+            isRenamed = this.isRenamed hwnd
+            splitTrail = SplitView.trail hwnd groupLayout
+            isPinned = PinnedTabs.contains hwnd
+            iconSmall = small
+            iconBig = big
+            // Called off the group's thread too: the tab in front is read from a field, not a cell.
+            preview = fun() ->
+                let bounds = window.bounds
+                captures.preview hwnd (Size(bounds.width,bounds.height)) window.isMinimized (frontWindow=hwnd) print
         }
     
     member private this.tintTab dark hwnd =
@@ -1430,7 +1579,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             splitHost <- host
             // The tabs behind go under the backdrop, once there is one, which is under every pane.
             let behind = if backdropHandle<>IntPtr.Zero then backdropHandle else host
-            for target in SplitView.plan groupLayout frame this.splitGap this.windows.items.list this.topWindow do
+            let placed = this.windows.items.list |> List.filter(fun hwnd -> heldByDrag<>Some hwnd)
+            for target in SplitView.plan groupLayout frame this.splitGap placed this.topWindow do
               if hostChanged && not liveResize && not(pane target.hwnd) && host<>IntPtr.Zero && not(isMinimized target.hwnd) &&
                  FollowerPlacement.queue.isWindowIdle(placementOwner,target.hwnd) &&
                  this.os.windowFromHwnd(target.hwnd).visibleBounds=target.rect then
@@ -1751,7 +1901,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     placement.value
             if not(this.windows.contains hwnd) then
                 this.addWindow(hwnd,false)
-                this.isManual <- true
+                this.joinedByHand()
             frame |> Option.iter(fun saved -> placement.set(Some saved))
             this.execute(SplitView.dropCommand hwnd drop,current=partner,keepFrame=frame.IsSome))
 
@@ -1987,7 +2137,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             match requestedMinimizeStates.TryGetValue(hwnd) with
             | true,expected -> this.os.windowFromHwnd(hwnd).isMinimized<>expected && FollowerPlacement.isChangingMinimizeState placementOwner hwnd
             | _ -> false
-        if this.isSplit then this.applyLayout()
+        // A tab carried in is placed once it is let go.
+        if heldByDrag=Some hwnd then ()
+        elif this.isSplit then this.applyLayout()
         elif placement.value.IsSome && not changingMinimizeState then
             let bounds,wp,visible = placement.value.Value
             let below = zorderCell.value.tryHead |> Option.filter((<>) hwnd)
@@ -2234,12 +2386,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     // Maximized or restored, a window rises over a strip it does not own.
                     this.liftUnownedStrip hwnd
             | _ -> ()
+        // The command palette in front over the group: none of the rest, which would follow a
+        // closed tab or reorder the group for a foreground the group is not leaving.
+        | WinEvent.EVENT_SYSTEM_FOREGROUND when ForegroundOverlays.contains hwnd -> ()
         | WinEvent.EVENT_SYSTEM_FOREGROUND ->
             // Activated some other way (Alt+Tab, its own window), an owned tab can stay under the
-            // others in the same way as one activated from the strip.
+            // others in the same way as one activated from the strip. Not for an event that came
+            // late, its window in front no more: raised over the strip, a pane left a moment ago
+            // came up over the tabs, and they took turns.
             if this.windows.contains(hwnd) then
                 let window = this.os.windowFromHwnd(hwnd)
-                if window.isOwned && not window.isMinimized then window.raise()
+                if window.isOwned && not window.isMinimized && this.os.foreground.hwnd=hwnd then window.raise()
                 if staleFrames.Remove(hwnd) then this.refreshFrame hwnd
                 // In front, a tab asking for attention has it, however it was brought there: by
                 // its shortcut or the switcher as much as by a click, which clears it on its own.
@@ -2277,6 +2434,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if this.windows.isEmpty && not hasSavedTabLayout then WindowTabLayout.read hwnd |> Option.iter this.applyTabLayout
             this.setWindows(this.windows.add hwnd)
             WindowGroupToken.save hwnd this.groupToken
+            WindowGroupToken.saveMadeByHand hwnd isMadeByHand
             FollowerPlacement.queue.claim(placementOwner,hwnd)
             if prevTop.value.IsNone then
                 prevTop.set(Some(hwnd))
@@ -2317,7 +2475,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             // Joining with the focus, as a tab dragged here has from its drag, a window from outside
             // the panes parks them, as choosing it does: placed as a tab behind, it waited under the
             // panes with the focus. A pane coming back with its place saved is put among them.
-            if foreground=hwnd && this.isSplit && (WindowSplitLayout.read hwnd).IsNone then
+            if foreground=hwnd && heldByDrag<>Some hwnd && this.isSplit && (WindowSplitLayout.read hwnd).IsNone then
                 this.onActivated(hwnd)
                 this.setZorder(zorderCell.value.where((<>) hwnd).prepend hwnd)
             StartupTrace.measure "group.add.placement" (fun () -> this.adjustWindowPlacement(hwnd))
@@ -2327,18 +2485,25 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             // A visible window joining a minimized group restores it, as restoring any tab does,
             // so closing that window shows the previous tab instead of minimizing the group again.
             let others = this.windows.items.where((<>) hwnd)
-            if not window.isMinimized && not others.isEmpty && others.all isMinimized then
+            // Not a tab only carried in: the group came up mid-drag over the windows passed.
+            if not window.isMinimized && heldByDrag<>Some hwnd && not others.isEmpty && others.all isMinimized then
                 this.setZorder(zorderCell.value.where((<>) hwnd).prepend hwnd)
                 others.iter(fun other ->
                     requestedMinimizeStates.[other] <- false
                     FollowerPlacement.queue.submit(placementOwner,other,FollowerPlacement.restoreBelowRequest other hwnd))
                 this.watchMinimizeCompletion()
 
-    member this.removeWindow(hwnd) = this.withUpdate <| fun() ->
+    member this.removeWindow(hwnd) = this.removeWindowCore(hwnd,true)
+    /// A tab carried out of the group: the tab behind it shows where the group is, not chosen and
+    /// brought to the front over the windows the drag goes to.
+    member this.removeDraggedWindow(hwnd) = this.removeWindowCore(hwnd,false)
+
+    member private this.removeWindowCore(hwnd, chooseNext:bool) = this.withUpdate <| fun() ->
         inputOwnership.Remove hwnd |> ignore
         if not isDestroyed.value && this.windows.contains(hwnd) then
             this.onRemoved(hwnd)
             WindowSplitLayout.clear hwnd
+            captures.forget hwnd
             this.reclaimLeftTab(hwnd)
             let foreground = this.os.foreground.hwnd
             let next = TabNavigation.closeTarget this.lorder.list isOpen hwnd foreground lastActiveTab opener (this.leftOnClose hwnd)
@@ -2370,7 +2535,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     | Some target -> Some target
                     | None -> if this.windows.contains(foreground) then Some foreground else None
             if followedClose |> Option.exists(fun (closed,_) -> closed=hwnd) then followedClose <- None
-            else next |> Option.iter(fun target -> this.tabActivate(Tab(target),this.forceOnClose hwnd))
+            elif chooseNext then next |> Option.iter(fun target -> this.tabActivate(Tab(target),this.forceOnClose hwnd))
 
     /// The tab shown before `hwnd`, the one the foreground left for it, comes to the front, once
     /// `hwnd` has left the group by a drag. Nothing else is known to have been shown: a tab
@@ -2438,10 +2603,23 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         (iconCache :> IDisposable).Dispose()
         (invoker :> IDisposable).Dispose()
 
+    /// The tab in front, once it has painted: pictured for when it is behind again, its app no
+    /// longer painting it there, as Chromium's and Electron's do not.
+    member private this.captureFront() =
+        captureTimer.Stop()
+        let front = frontWindow
+        if not isDestroyed.value && this.windows.contains front then
+            captures.shown front
+            if not (this.os.windowFromHwnd(front).isMinimized) then
+                let image = this.ts.tabInfo(Tab front).preview()
+                image.bitmap.Dispose()
+
     member this.destroy() =
         if isDestroyed.value.not then
             isDestroyed.set(true)
             splitSettleTimer.Dispose()
+            captureTimer.Dispose()
+            (captures :> IDisposable).Dispose()
             this.unwatchOrder()
             this.unwatchAppBars()
             for soon in [splitGuardSoon;stripLiftSoon] do soon |> Option.iter(fun soon -> (soon :> IDisposable).Dispose())
@@ -2545,6 +2723,19 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     fade.start())
             if shownNow then coversShown <- coversShown+1
 
+    /// A window carried in by its tab joins out of sight; let go, or taken back out, it is not
+    /// held any more. Let go in the strip, it is placed and comes to the front as the tab chosen.
+    member this.holdForDrag(hwnd:IntPtr) = heldByDrag <- Some hwnd
+    member this.isHeldByDrag(hwnd:IntPtr) = heldByDrag=Some hwnd
+    member this.releaseDrag(hwnd:IntPtr, dropped:bool) =
+        if heldByDrag=Some hwnd then
+            heldByDrag <- None
+            if dropped && this.windows.contains hwnd && WinUserApi.IsWindow hwnd then
+                this.adjustWindowPlacement hwnd
+                dragReleasedEvent.Trigger hwnd
+                this.tabActivate(Tab hwnd,true)
+    member this.dragReleased = dragReleasedEvent.Publish
+
     member this.tabActivate(Tab(hwnd), force) =
         let window = this.os.windowFromHwnd(hwnd)
         // The cover goes up before the window comes to the front: raised first, a parked pane
@@ -2600,9 +2791,33 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.onTabMoved(hwnd, index) = movedEvent.Trigger(hwnd, index)
 
+    /// A tab dragged along the strip (`moved`). The panes' tabs stay a run of their own: a pane's
+    /// tab dragged out of it takes its window out of the split, the last but one ending it, as
+    /// dragging it out of the group would; another tab dropped among them goes after them. Parted,
+    /// they still made a split, with nothing in the strip to show it.
+    member this.onTabsReordered(moved:IntPtr) =
+        match SplitView.layoutOf groupLayout with
+        | Some s ->
+            let order = this.lorder.list
+            let panes = SplitView.windows s |> List.filter(fun hwnd -> List.contains hwnd order)
+            let indexOf hwnd = List.findIndex ((=) hwnd) order
+            let together (windows:IntPtr list) =
+                match windows |> List.map indexOf with
+                | [] -> true
+                | indices -> List.max indices-List.min indices+1=indices.Length
+            if not (together panes) then
+                if List.contains moved panes then
+                    SplitView.pathOf moved s |> Option.iter(fun path -> this.execute(ClosePane(Some path)))
+                else
+                    // After the last of the panes' tabs: taken out first, it sat before that one.
+                    let last = panes |> List.map indexOf |> List.max
+                    this.ts.moveTab(Tab moved,last)
+            this.onPaneTabsReordered()
+        | None -> ()
+
     /// The pair's tabs dragged into the other order swap the panes to match. Kept as they were,
     /// the tabs were put back in pane order at the next click, undoing the drag.
-    member this.onTabsReordered() =
+    member private this.onPaneTabsReordered() =
         match SplitView.layoutOf groupLayout with
         | Some s ->
             let order = this.lorder.list

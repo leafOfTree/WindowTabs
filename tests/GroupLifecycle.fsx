@@ -31,12 +31,18 @@ let main() =
     let deskOf (hwnd:IntPtr) =
         match hwnd.ToInt32() with 1 | 2 | 3 -> Some desk1 | 4 -> Some desk2 | _ -> None
     let chromeGroup, explorerGroup = List2([IntPtr(2)]), List2([IntPtr(1)])
-    let pickFrom groups (hwnd:int) =AutoGroup.pick id pathOf deskOf (List2(groups)) (IntPtr(hwnd))
+    let pickFrom groups (hwnd:int) =AutoGroup.pick id (fun _ -> false) pathOf deskOf (List2(groups)) (IntPtr(hwnd))
     let picked expected result = match result with Some g -> obj.ReferenceEquals(g, expected) | None -> false
+    // A group made by hand that holds an Explorer window, in front, is passed over for the
+    // automatic one; with no automatic group the window starts its own.
+    let handMade = List2([IntPtr(1);IntPtr(2)])
+    let handPick groups = AutoGroup.pick id (fun g -> obj.ReferenceEquals(g,handMade)) pathOf deskOf (List2(groups)) (IntPtr(3))
+    check (picked explorerGroup (handPick [handMade; explorerGroup]) && handPick [handMade] = None)
+          "Auto-grouping put a new window into a group made by hand"
     check (pickFrom [chromeGroup; explorerGroup] 4 = None) "Auto-grouping joined a window to a group on another virtual desktop"
     check (picked explorerGroup (pickFrom [chromeGroup; explorerGroup] 3)) "Auto-grouping missed a group on the same virtual desktop"
     let installedPath hwnd = if hwnd=IntPtr(1) then @"C:\Windows\explorer.exe" else @"D:\Updated\EXPLORER.exe"
-    check (picked explorerGroup (AutoGroup.pick id installedPath deskOf (List2([explorerGroup])) (IntPtr(3))))
+    check (picked explorerGroup (AutoGroup.pick id (fun _ -> false) installedPath deskOf (List2([explorerGroup])) (IntPtr(3))))
           "Same-name executables in different directories did not share an automatic group"
     check (pickFrom [chromeGroup; explorerGroup] 5=None) "An unresolved new window joined another desktop's taskbar group"
     let unknownGroup = List2([IntPtr(5)])
@@ -64,6 +70,7 @@ let main() =
         api.setValue("enableCtrlNumberHotKey", box false)
         api.setValue("autoHideMode", box "Never")
         let mouse = Event<int * IntPtr>()
+        let autoGroupingOn = ref false
         let mutable workspaceWindows = List2<IntPtr>()
         Services.register<IProgram>({new IProgram with
             member _.version = "test"
@@ -82,7 +89,7 @@ let main() =
             member _.groupIcon _ = None
             member _.setGroupIcon(_,_) = ()
             member _.appWindows = workspaceWindows
-            member _.getAutoGroupingEnabled _ = false
+            member _.getAutoGroupingEnabled _ = autoGroupingOn.Value
             member _.setAutoGroupingEnabled _ _ = ()
             member _.tabAppearanceInfo = ThemeService.currentAppearance()
             member _.setHotKey _ _ = true
@@ -1186,16 +1193,70 @@ let main() =
                     group.ts.setPlacement({bounds=Rect(Pt(-20000,-20000),size);showInside=false})
                     let target = dragTargetFor group.ts.hwnd
                     check (target.dragEnter (box data) (Pt(1,1))) "Destination rejected a drag"
+                    // Carried in and not let go, the tab's window waits out of sight: the group's
+                    // window in front stays so, and the windows the drag passes stay over it.
+                    check (group.topWindow=d) (sprintf "A tab carried into a strip brought its window to the front before the drop: %A" group.topWindow)
                     target.dragEnd())
                 pumpUntil "Cross-orientation drag lost its insertion order" (fun () -> nativeOrder dragTarget=[b;d] && publicOrder dragTarget=[b;d])
                 check (onGroup dragTarget (fun group -> group.ts.dock)=targetDock) "Drag changed the destination orientation"
                 // Only the group a tab was dropped into is one made by hand, to be remembered.
                 check (onGroup dragTarget (fun group -> group.isManual) && not(onGroup dragSource (fun group -> group.isManual)))
                     "A dropped tab did not mark its new group as made by hand, or a tab dragged out marked its old one"
+                // An automatic group of one app that a tab of that app is dropped into stays one, or
+                // auto grouping started another group for the app's next window; with the app not
+                // grouping itself, the group is made by hand.
+                autoGroupingOn.Value <- true
+                check (not (onGroup dragSource (fun group -> group.joinedByHand(); group.isManual)))
+                    "A tab of an app dropped into its automatic group made the group one made by hand"
+                autoGroupingOn.Value <- false
+                check (onGroup dragSource (fun group -> group.joinedByHand(); group.isManual))
+                    "A tab dropped into a group of an app that does not group itself left the group automatic"
                 for info in [dragSource;dragTarget] do
                     onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
                     (info :> IGroup).destroy()
                 pumpUntil "Drag groups did not exit" (fun () -> dragSource.isExited && dragTarget.isExited)
+            // A tab in front is pictured once it has painted; behind, printing one colour as an app
+            // that stops painting covered windows does (Chromium's, Electron's), its picture shows
+            // what it last showed: the strip's preview on hover was blank.
+            do
+                // On the (test's own) screen, one over the other: printed far off it, a window has
+                // no picture to give.
+                let form text = new Form(Text=text,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(100,100),
+                                         Size=Drawing.Size(320,240),BackColor=Drawing.Color.Black)
+                use pictured = form "Pictured"
+                // Part of the window: one colour all over reads as a window that drew nothing.
+                use stripe = new Panel(BackColor=Drawing.Color.SeaGreen,Bounds=Drawing.Rectangle(40,30,200,120))
+                pictured.Controls.Add(stripe)
+                use other = form "Other"
+                for shown in [pictured;other] do shown.Show()
+                Application.DoEvents()
+                let group = desktopApi.createGroup(false) :?> GroupInfo
+                for hwnd in [pictured.Handle;other.Handle] do (group :> IGroup).addWindow(hwnd,false)
+                pumpUntil "The pictured pair did not form" (fun () -> nativeOrder group |> List.length = 2)
+                let wait (ms:int64) =
+                    let clock = Diagnostics.Stopwatch.StartNew()
+                    while clock.ElapsedMilliseconds<ms do Application.DoEvents(); Thread.Sleep(10)
+                onGroup group (fun g -> g.tabActivate(Tab pictured.Handle,false))
+                pumpUntil "The pictured tab did not come in front" (fun () -> onGroup group (fun g -> g.topWindow=pictured.Handle))
+                wait 900L
+                // It stops painting, and goes behind.
+                stripe.Visible <- false
+                pictured.Refresh()
+                onGroup group (fun g -> g.tabActivate(Tab other.Handle,false))
+                pumpUntil "The other tab did not come in front" (fun () -> onGroup group (fun g -> g.topWindow=other.Handle))
+                let shows =
+                    onGroup group (fun g ->
+                        let image = g.ts.tabInfo(Tab pictured.Handle).preview()
+                        let bitmap = image.bitmap
+                        let green =
+                            seq { for x in 1..7 do for y in 2..7 -> bitmap.GetPixel(bitmap.Width*x/8,bitmap.Height*y/8) }
+                            |> Seq.exists(fun pixel -> pixel.G>100uy && pixel.R<80uy)
+                        bitmap.Dispose()
+                        green)
+                check shows "A tab behind that no longer paints did not show its last picture"
+                for hwnd in [pictured.Handle;other.Handle] do (group :> IGroup).removeWindow hwnd
+                (group :> IGroup).destroy()
+                pumpUntil "The pictured pair did not exit" (fun () -> group.isExited)
             // A split is kept with a workspace by the windows' places in the group, and the session,
             // the same record written on its own, puts the groups and their splits back.
             do

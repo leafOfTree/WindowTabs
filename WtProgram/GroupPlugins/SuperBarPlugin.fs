@@ -207,92 +207,6 @@ module GroupIconFile =
                         Some(fromBitmap shell)
         with _ -> None
 
-/// Chromium and Electron windows stop painting while another window covers them, so a tab
-/// behind the active one prints blank, and a minimized one prints only a placeholder. Each
-/// tab's last good capture stands in for it, kept small: thumbnails are a few hundred pixels
-/// and a peek at a hidden tab may be soft.
-type TabCaptures() =
-    let captures = Collections.Generic.Dictionary<IntPtr,Bitmap>()
-    /// Tabs that printed blank while hidden; printing them again before they come to the front
-    /// would only be slow.
-    let blank = Collections.Generic.HashSet<IntPtr>()
-
-    static member maxSide = 800
-
-    /// A window that drew nothing prints one colour across its middle.
-    static member isBlank (bitmap:Bitmap) =
-        let width,height = bitmap.Width,bitmap.Height
-        if width < 8 || height < 8 then true
-        else
-            let first = bitmap.GetPixel(width/2,height/2)
-            seq { for i in 1..8 do
-                    for j in 1..8 -> bitmap.GetPixel(width*i/9,height*(1+j)/10) }
-            |> Seq.forall(fun pixel -> pixel = first)
-
-    static member private scaled (source:Bitmap) (size:Size) =
-        let result = new Bitmap(size.Width,size.Height,PixelFormat.Format32bppArgb)
-        try
-            use g = Graphics.FromImage(result)
-            g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBilinear
-            g.DrawImage(source,Rectangle(Point.Empty,size))
-            result
-        with _ ->
-            result.Dispose()
-            reraise()
-
-    member this.count = captures.Count
-
-    /// Keeps a copy of a capture that shows the window.
-    member this.remember (hwnd:IntPtr) (image:Bitmap) =
-        if not(TabCaptures.isBlank image) then
-            blank.Remove hwnd |> ignore
-            let ratio = min 1.0 (float TabCaptures.maxSide / float (max image.Width image.Height))
-            let size = Size(max 1 (int(float image.Width * ratio)),max 1 (int(float image.Height * ratio)))
-            let copy = TabCaptures.scaled image size
-            match captures.TryGetValue hwnd with
-            | true,previous -> previous.Dispose()
-            | _ -> ()
-            captures.[hwnd] <- copy
-
-    /// The capture to show for a window of the given size: a live one when it shows the window,
-    /// else the last that did. A hidden tab known to print blank is not printed again.
-    member this.preview (hwnd:IntPtr) (size:Size) (minimized:bool) (inFront:bool) (capture:unit -> Img) : Img =
-        let saved = match captures.TryGetValue hwnd with | true,saved -> Some saved | _ -> None
-        let fromSaved (saved:Bitmap) (size:Size) = Img(TabCaptures.scaled saved size)
-        match saved with
-        | Some saved when not minimized && not inFront && blank.Contains hwnd -> fromSaved saved size
-        | _ ->
-            let live = capture()
-            let shows = not minimized && not(TabCaptures.isBlank live.bitmap)
-            if shows then
-                this.remember hwnd live.bitmap
-                live
-            else
-                if not minimized then blank.Add hwnd |> ignore
-                match saved with
-                | Some saved ->
-                    let result = fromSaved saved live.bitmap.Size
-                    live.bitmap.Dispose()
-                    result
-                | None -> live
-
-    /// The tab is in front again and paints, so its next capture is worth taking.
-    member this.shown (hwnd:IntPtr) = blank.Remove hwnd |> ignore
-
-    member this.forget (hwnd:IntPtr) =
-        blank.Remove hwnd |> ignore
-        match captures.TryGetValue hwnd with
-        | true,saved ->
-            saved.Dispose()
-            captures.Remove hwnd |> ignore
-        | _ -> ()
-
-    interface IDisposable with
-        member this.Dispose() =
-            for saved in captures.Values do saved.Dispose()
-            captures.Clear()
-            blank.Clear()
-
 type TbButton = {
     icon : Icon
     /// The icons of the group's other apps, front-most first.
@@ -769,9 +683,6 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
     /// The preview last shown as active, None while the group is not in front.
     let mutable activePreview : IntPtr option = None
     let flashingTabs = Collections.Generic.HashSet<string>()
-    let captures = new TabCaptures()
-    /// A tab that comes to the front is captured once it has painted, for when it is hidden again.
-    let captureTimer = new System.Windows.Forms.Timer(Interval=500)
     /// The windows the taskbar window owns.
     let adopted = Collections.Generic.HashSet<IntPtr>()
     /// The taskbar window last placed on the group's desktop.
@@ -812,7 +723,9 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
     member this.zorder = this.wtGroup.zorder.value
 
     /// Removal notifies plugins before the deferred z-order refresh has dropped that HWND.
-    member private this.members = this.zorder.where(this.wtGroup.windows.contains)
+    /// A tab carried in and not let go yet is not one: the group's button came up for it, and the
+    /// window in front, now owned by that new button, rose over the windows the drag passed.
+    member private this.members = this.zorder.where(fun hwnd -> this.wtGroup.windows.contains hwnd && not(this.wtGroup.isHeldByDrag hwnd))
 
     /// The proxy must not attach an application's input queue across integrity levels.
     member private this.canCombine = this.members.count > 1 && this.members.all canShareInput
@@ -975,8 +888,8 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
                                     Some(TaskbarPreview.compose previewBounds.size
                                         contentLocation
                                         (this.ts.bounds.location.sub(previewBounds.location).Point)
-                                        (fun () ->
-                                            captures.preview hwnd area.size.Size window.isMinimized (this.zorder.tryHead = Some hwnd) (fun () -> this.ts.tabInfo(tab).preview()))
+                                        // The group stands in its last picture for a tab its app no longer paints.
+                                        (fun () -> this.ts.tabInfo(tab).preview())
                                         (fun () -> if stripShown then this.ts.renderTs(Some(tab)) else Img(Sz(1,1))))
                                 with _ -> None
                             activate = fun() ->
@@ -1049,23 +962,12 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
 
     member this.onRemoved(hwnd) =
         customIconKnown <- false
-        captures.forget hwnd
         apps.Remove hwnd |> ignore
         flashingTabs.Remove(TaskBarButton.key hwnd) |> ignore
         this.updateTaskbar()
         this.showInTaskbar(hwnd, true)
         taskbarVisibility.forget hwnd
 
-    member private this.captureTop() =
-        captureTimer.Stop()
-        if taskbarButton <> null && this.zorder.isEmpty.not then
-            let top = this.zorder.head
-            captures.shown top
-            if not(this.os.windowFromHwnd(top).isMinimized) then
-                let image = this.ts.tabInfo(Tab(top)).preview()
-                try captures.remember top image.bitmap
-                finally image.bitmap.Dispose()
-            
     /// A tab stops flashing when its window redraws, which it also does when printed for a
     /// preview. Invalidating then would make the taskbar print it again, over and over.
     member this.onFlash(Tab(hwnd), flash) =
@@ -1084,9 +986,6 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
 
     member this.onZorderChanged() =
         this.updateTaskbar(refreshDesktop=true)
-        captureTimer.Stop()
-        if this.canCombine then
-            captureTimer.Start()
 
     member this.onTabMoved(tab, index) =
         this.updateTaskbar()
@@ -1094,7 +993,6 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
     /// Explorer registers restored buttons asynchronously; their owners carry the desktop until then.
     member private this.prepareExit(complete:unit -> unit) =
         disposed <- true
-        captureTimer.Stop()
         placementRetry.Stop()
         if taskbarButton=null || adopted.Count=0 then complete()
         else
@@ -1167,9 +1065,7 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
             iconSubscription <- None
             this.wtGroup.windows.items.iter(fun hwnd ->
                 if WinUserApi.IsWindow hwnd then this.showInTaskbar(hwnd,true))
-            captureTimer.Dispose()
             placementRetry.Dispose()
-            (captures :> IDisposable).Dispose()
             this.releaseAll()
             if taskbarButton <> null then
                 (taskbarButton :> IDisposable).Dispose()
@@ -1192,13 +1088,14 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
             this.wtGroup.foregroundChanged.Add this.onForegroundChanged
             this.wtGroup.tabInfoChanged.Add(fun _ -> this.updateTaskbar())
             this.wtGroup.added.Add this.onAdded
+            // A tab carried in is taken over once it is let go.
+            this.wtGroup.dragReleased.Add(fun _ -> this.updateTaskbar())
             this.wtGroup.removed.Add this.onRemoved
             this.wtGroup.flash.Add this.onFlash
             this.wtGroup.bounds.changed.Add this.onBoundsChanged
             this.wtGroup.zorder.changed.Add this.onZorderChanged
             this.ts.tabMoved.Add this.onTabMoved
             this.wtGroup.exited.Add this.onGroupExited
-            captureTimer.Tick.Add(fun _ -> this.captureTop())
             placementRetry.Tick.Add(fun _ ->
                 placementRetry.Stop()
                 this.updateTaskbar())

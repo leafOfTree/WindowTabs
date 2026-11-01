@@ -97,14 +97,20 @@ and TabDock =
     | TabDockLeft
     | TabDockRight
 
+/// A yes or no kept on a window itself, under a name: it goes with the window, and outlasts
+/// WindowTabs starting again.
+module WindowFlag =
+    let get (key:string) hwnd = WinUserApi.GetProp(hwnd,key)<>IntPtr.Zero
+    let set (key:string) hwnd value =
+        if value then WinUserApi.SetProp(hwnd,key,IntPtr(1)) |> ignore
+        else WinUserApi.RemoveProp(hwnd,key) |> ignore
+
 /// Pinned tabs, kept on the window itself as its tab layout is: one stays pinned in whatever
 /// group its window moves to, and once WindowTabs starts again; it goes with the window.
 module PinnedTabs =
     let private key = "WindowTabs.Pinned.v1"
-    let contains hwnd = WinUserApi.GetProp(hwnd,key)<>IntPtr.Zero
-    let set hwnd value =
-        if value then WinUserApi.SetProp(hwnd,key,IntPtr(1)) |> ignore
-        else WinUserApi.RemoveProp(hwnd,key) |> ignore
+    let contains hwnd = WindowFlag.get key hwnd
+    let set hwnd value = WindowFlag.set key hwnd value
     /// The pinned ones first, each part in the order it had.
     let ordered (isPinned:'a -> bool) (items:'a list) = List.filter isPinned items @ List.filter (isPinned >> not) items
 

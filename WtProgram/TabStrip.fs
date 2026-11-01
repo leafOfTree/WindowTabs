@@ -106,6 +106,11 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     let mutable titleTip : TabTitleTip option = None
     /// Counts the tips asked for, so a window's picture printed for one already put away is dropped.
     let mutable tipRequest = 0
+    /// When the pointer last left a tab with its tip up, on `tipClock`: on the next tab soon after,
+    /// the tip follows at once. Between the tabs of a column lies a gap over no tab, and each tab
+    /// waited for the pointer to rest again.
+    let tipClock = Diagnostics.Stopwatch.StartNew()
+    let mutable tipLeftAt = Int64.MinValue / 2L
     /// The full strip and the collapsed bar while an expand or collapse runs, so a frame only
     /// blends them; dropped whenever what they show changes.
     let mutable revealImages : (Img*Img) option = None
@@ -297,15 +302,25 @@ type TabStrip(monitor:ITabStripMonitor) as this =
         tipRequest <- tipRequest+1
         titleTip |> Option.iter(fun tip -> tip.hide())
 
-    /// From tab to tab, a title already showing moves straight to the next cut one; otherwise
-    /// it waits for the pointer to rest. A click puts it away until the pointer moves on.
+    /// From tab to tab, a tip already showing, or put away a moment ago, moves straight to the
+    /// next tab, and stays up until that one's is ready: put away first, it blinked out while the
+    /// next window's picture was printed. Otherwise it waits for the pointer to rest. A click
+    /// puts it away until the pointer moves on.
     member private this.pointTitle(tab:Tab option) =
         if tab<>titleTab then
             titleTab <- tab
-            let showing = titleTip |> Option.exists(fun tip -> tip.Visible)
-            this.hideTitle()
-            if tab.IsSome then
-                if showing then this.showTitle() else titleTimer.Start()
+            let visible = titleTip |> Option.exists(fun tip -> tip.Visible)
+            let following = visible || tipClock.ElapsedMilliseconds-tipLeftAt < 400L
+            match tab with
+            | Some _ when following ->
+                titleTimer.Stop()
+                this.showTitle()
+            | Some _ ->
+                this.hideTitle()
+                titleTimer.Start()
+            | None ->
+                if visible then tipLeftAt <- tipClock.ElapsedMilliseconds
+                this.hideTitle()
 
     /// The tab's sprite while a tip may show for it.
     member private this.tipSprite(tab:Tab) =
@@ -337,7 +352,8 @@ type TabStrip(monitor:ITabStripMonitor) as this =
                             | Some image -> image.Dispose()
                             | None -> if request=tipRequest && titleTab=Some tab then this.showTip(tab,None))) |> ignore
             | Some(_,sprite) when sprite.titleCut -> this.showTip(tab,None)
-            | _ -> ())
+            // Nothing to show for this tab: the last tab's tip, left up to follow, goes.
+            | _ -> this.hideTitle())
 
     member private this.showTip(tab:Tab,picture:Bitmap option) =
         match this.tipSprite tab with
@@ -355,7 +371,9 @@ type TabStrip(monitor:ITabStripMonitor) as this =
             tip.show(sprite.displayInfo.text,sprite.displayInfo.textFont,
                      Rectangle(anchor.x,anchor.y,anchor.width,anchor.height),pointer.X,
                      ?side=(if this.isVertical then Some this.dock else None),?pointerY=Some pointer.Y,?image=picture)
-        | _ -> picture |> Option.iter(fun image -> image.Dispose())
+        | _ ->
+            picture |> Option.iter(fun image -> image.Dispose())
+            titleTip |> Option.iter(fun tip -> tip.hide())
 
     member internal _.titleTipShown = titleTip |> Option.exists(fun tip -> tip.Visible)
 
@@ -1019,7 +1037,10 @@ type TabStrip(monitor:ITabStripMonitor) as this =
     member private this.hitAt(pt:Pt) =
         if this.isVertical && this.isShrunk && Rect(Pt(),this.size).containsPoint(pt) then
             zorderCell.value.tryHead.map(fun tab -> tab,TabBackground)
-        else this.ts.tryHit(pt)
+        else
+            match this.ts.tryHit(pt) with
+            | None when this.isVertical -> this.ts.rowAt(pt) |> Option.map(fun tab -> tab,TabBackground)
+            | hit -> hit
 
     member this.tryHit(pt:Pt) : Option<_> =
         this.hitAt(pt.add(this.renderedShift))

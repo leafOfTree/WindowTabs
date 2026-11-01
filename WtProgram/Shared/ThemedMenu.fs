@@ -189,6 +189,16 @@ module OpenMenus =
     let change delta = lock count (fun () -> count.Value <- count.Value+delta)
     let any () = lock count (fun () -> count.Value>0)
 
+/// Windows of this app opened over the window in front for a moment, as the command palette is:
+/// in front, they leave a group as it was, not gone to the back. Taken as a change of foreground,
+/// a group's tabs dimmed as the palette opened, and on closing it, with a command that chose
+/// another tab, came back step by step: still dim, then the tab, then lit.
+module ForegroundOverlays =
+    let private windows = Collections.Generic.HashSet<IntPtr>()
+    let add (hwnd:IntPtr) = lock windows (fun () -> windows.Add hwnd |> ignore)
+    let remove (hwnd:IntPtr) = lock windows (fun () -> windows.Remove hwnd |> ignore)
+    let contains (hwnd:IntPtr) = lock windows (fun () -> windows.Contains hwnd)
+
 type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsForeground:IntPtr -> bool) as this =
     inherit ContextMenuStrip()
     let palette = SettingsColors.current()

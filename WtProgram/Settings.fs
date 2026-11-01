@@ -112,6 +112,15 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             json.["rememberedGroups"] <- RememberedGroups.write groups
             this.settingsJson <- json
             settingChangedEvent.Trigger("rememberedGroups",null)
+    /// The remembered groups saved with every title their open windows ever had (ids).
+    member this.trailedRememberedGroups = RememberedGroups.trailed (this.readJson.["rememberedGroups"])
+    /// Titles two windows of a program had at once, which no remembered group is matched by.
+    member this.sharedTitles
+        with get() = RememberedGroups.readShared (this.readJson.["sharedTitles"])
+        and set(titles:RememberedMember list) =
+            let json = this.settingsJson
+            json.["sharedTitles"] <- RememberedGroups.writeShared titles
+            this.settingsJson <- json
 
     /// Tells those watching a value that what it stands for changed, though the value did not.
     member this.announce(key:string) = settingChangedEvent.Trigger(key,null)

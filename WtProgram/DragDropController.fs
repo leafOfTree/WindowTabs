@@ -29,8 +29,13 @@ module DragRouting =
     /// title bar, a tab carried to join them was offered that window's top edge instead.
     let stripMargin = 24
 
-    let resolve (strips:Map2<IntPtr,IDragDropTarget>) (layouts:Map2<IntPtr,ILayoutDropTarget>) hit owner =
-        if strips.contains hit then StripHit hit
+    /// Whether the strip window under the pointer takes a tab at that point, near its tabs;
+    /// elsewhere on it, the whole width of the group, the tab is over the group as any window.
+    let takenBy (strips:Map2<IntPtr,IDragDropTarget>) (pt:Pt) (hit:IntPtr) =
+        strips.tryFind hit |> Option.exists(fun strip -> strip.takes pt)
+
+    let resolve (strips:Map2<IntPtr,IDragDropTarget>) (layouts:Map2<IntPtr,ILayoutDropTarget>) (pt:Pt) hit owner =
+        if takenBy strips pt hit then StripHit hit
         elif layouts.contains hit then LayoutHit hit
         elif owner<>IntPtr.Zero && layouts.contains owner then LayoutHit owner
         else FreeHit
@@ -38,8 +43,8 @@ module DragRouting =
     /// Whether a tab held in one strip moves to the strip under the pointer: strips of groups
     /// at the top of the screen lie over one another, and the first one the tab crossed kept it
     /// while the pointer was anywhere in its width, over another group's tabs in sight too.
-    let movesToStrip (strips:Map2<IntPtr,IDragDropTarget>) (current:IntPtr) (hit:IntPtr) =
-        hit<>IntPtr.Zero && hit<>current && strips.contains hit
+    let movesToStrip (strips:Map2<IntPtr,IDragDropTarget>) (pt:Pt) (current:IntPtr) (hit:IntPtr) =
+        hit<>IntPtr.Zero && hit<>current && takenBy strips pt hit
 
     /// The top-level window under a point, and its owner. The point lands on an app's child
     /// window, a browser's page say, which no group knows: over such apps a dragged tab never
@@ -59,16 +64,14 @@ type DragCapturedStateInfo = {
     }
 
 type DragCapturedState(info:DragCapturedStateInfo) =
-    let dragOutDistance = Dpi.scale DragRouting.stripMargin
     member _.target = info.target
     member _.targetHwnd = info.targetHwnd
     interface IDragState with
         member this.mouseMove(ptScreen) =
-            let dragBounds = info.targetWindow.bounds.inflate(dragOutDistance, dragOutDistance)
             let hit,_ = DragRouting.windowsAt ptScreen
-            // Or as far out as the strip takes a tab in: along a column's side, another group's tab
-            // went out past the column's own end and came straight back in, on every move.
-            if (dragBounds.containsPoint(ptScreen) || info.target.holds ptScreen) && not(DragRouting.movesToStrip info.targets info.targetHwnd hit) then
+            // As far out as the strip takes a tab in, around its tabs: anywhere over the strip's
+            // window, the whole width of the group, kept a tab carried along the title bar.
+            if info.target.takes ptScreen && not(DragRouting.movesToStrip info.targets ptScreen info.targetHwnd hit) then
                 info.target.dragMove(info.targetWindow.ptToClient(ptScreen))
             else
                 info.target.dragExit()
@@ -169,7 +172,7 @@ type DragFloatingState(info:DragFloatingStateInfo) =
                 restTimer.Stop()
                 animationWindow.setIsVisible(false)
                 info.onDragIn(strip, ptScreen)
-            match DragRouting.resolve info.targets info.layoutTargets hit owner with
+            match DragRouting.resolve info.targets info.layoutTargets ptScreen hit owner with
             | StripHit target -> joinStrip target
             | LayoutHit key ->
                 let target = info.layoutTargets.find key
@@ -198,6 +201,8 @@ type DragActionInfo = {
     initialPt : Pt
     data: obj
     onCancel : unit -> unit
+    /// The press ended before a drag began.
+    clicked : unit -> unit
     onBegin : unit -> unit
     onDrop : Pt -> unit
     onEnd : unit -> unit
@@ -253,6 +258,8 @@ type DragAction(info:DragActionInfo) =
             | :? DragDetectingState,_ ->
                 this.release()
                 info.onCancel()
+                // Let go before a drag began, a click: cancelled with the button still down, none.
+                if drop.IsSome || not(info.buttonDown()) then info.clicked()
             | :? DragCapturedState,Some _ ->
                 this.release()
                 this.notifyEnd()
@@ -314,9 +321,8 @@ type DragAction(info:DragActionInfo) =
                 targets = info.targets
                 onDragOut = fun(ptScreen) ->
                     let targetHwnd,_ = DragRouting.windowsAt ptScreen
-                    match info.targets.tryFind(targetHwnd) with
-                    | Some(target) -> this.dragEnter(targetHwnd, ptScreen, false)
-                    | None -> this.dragFloat()
+                    if DragRouting.takenBy info.targets ptScreen targetHwnd then this.dragEnter(targetHwnd, ptScreen, false)
+                    else this.dragFloat()
             })
         else
             if isInitial then target.dragExit()
@@ -395,7 +401,7 @@ type DragDropController(parent:IDragDropParent, ?buttonDown:unit -> bool) =
                 match targets.tryFind hwnd with
                 | Some registered when obj.ReferenceEquals(registered,target) -> targets.remove hwnd
                 | _ -> targets)
-        member x.beginDrag((initialHwnd, image, imageOffset, initialPt, data)) = withLock <| fun() ->
+        member x.beginDrag((initialHwnd, image, imageOffset, initialPt, data, clicked)) = withLock <| fun() ->
             if dragActionCell.value.IsNone then
                 let dragAction = DragAction({
                     targets = targetsCell.value
@@ -410,6 +416,7 @@ type DragDropController(parent:IDragDropParent, ?buttonDown:unit -> bool) =
                         withLock(fun () ->
                             dragActionCell.set(None)
                             dragInvoker <- None)
+                    clicked = clicked
                     onBegin = fun() ->
                         parent.dragBegin()
                     onDrop = fun pt ->

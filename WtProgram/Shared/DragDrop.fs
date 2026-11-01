@@ -16,9 +16,10 @@ type IDragDropTarget =
     abstract member dragEnter : obj -> Pt -> bool
     abstract member dragMove : Pt -> unit
     abstract member dragExit : unit -> unit
-    /// Whether the tab in the strip stays in with the pointer at this point on the screen, as far
-    /// out as it would be taken in there: past the strip's own window, along a column's side.
-    abstract member holds : Pt -> bool
+    /// Whether a tab carried to this point on the screen is in the strip: near its tabs, not
+    /// anywhere along the strip's window, which runs the group's whole width. A tab in it stays
+    /// as far out as it is taken in, so that it does not leave and come straight back on every move.
+    abstract member takes : Pt -> bool
     /// The source takes a cancelled drag's tab back where it started.
     abstract member dragCancel : obj -> unit
 
@@ -52,7 +53,9 @@ type IDragDrop =
     /// group's now, and the old group's late removal must not take it from the new one.
     abstract member unregisterLayoutTarget : (IntPtr * ILayoutDropTarget) -> unit
     /// The image function gives the image to show now and may hand a finished one, the same
-    /// size, to the function it is given, from any thread, a moment later.
-    abstract member beginDrag : (IntPtr * ((Img -> unit) -> Img) * Pt * Pt * obj) -> unit
+    /// size, to the function it is given, from any thread, a moment later. `clicked` runs, on
+    /// the thread that began the drag, when the button comes up before the pointer moved far
+    /// enough for a drag: the press was a click.
+    abstract member beginDrag : (IntPtr * ((Img -> unit) -> Img) * Pt * Pt * obj * (unit -> unit)) -> unit
     /// Ends the drag in progress without dropping; true if there was one.
     abstract member cancelDrag : unit -> bool

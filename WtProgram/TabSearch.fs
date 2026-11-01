@@ -330,7 +330,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let scopeHeight = Dpi.scale rowHeight
     let ended = Event<unit>()
     let mutable closed = false
-    /// Out of sight while a command runs, so the window it acts on is in front: not closed.
+    /// Out of sight while a command runs, see-through and still in front (see conceal): not closed.
     let mutable hiding = false
     let mutable shadow : TaskSwitchShadow option = None
     let items =
@@ -583,6 +583,10 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             list.Bounds <- Rectangle(padding,top,max 1 (f.ClientSize.Width-padding-1),max 0 (bottom-top))
         f.Layout.Add(fun _ -> placeList())
         placeList()
+        // In front, it leaves the group it was opened over lit, see ForegroundOverlays.
+        f.HandleCreated.Add(fun _ -> ForegroundOverlays.add f.Handle)
+        f.HandleDestroyed.Add(fun _ -> ForegroundOverlays.remove f.Handle)
+        if f.IsHandleCreated then ForegroundOverlays.add f.Handle
         if not (SystemCorners.keep f (fun () -> palette.border)) then
             use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 size.Width,float32 size.Height)) (float32 radius)
             f.Region <- new Region(shape)
@@ -714,13 +718,28 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             chosen |> Option.iter pick
             shadow |> Option.iter(fun item -> (item :> IDisposable).Dispose())
             shadow <- None
-            form.Hide()
             ended.Trigger()
-            // Not inside the form's own Deactivate or key handler.
-            let dispose() =
-                form.Dispose()
-                ImgHelper.disposeItems (Array.map fst items)
-            if form.IsHandleCreated then form.BeginInvoke(Action dispose) |> ignore else dispose()
+            let close() =
+                form.Hide()
+                // Not inside the form's own Deactivate or key handler.
+                let dispose() =
+                    form.Dispose()
+                    ImgHelper.disposeItems (Array.map fst items)
+                if form.IsHandleCreated then form.BeginInvoke(Action dispose) |> ignore else dispose()
+            // Out of sight but still in front while its command ran: put away only once the command
+            // has taken the foreground, or a moment on if it took none. Put away in front, it gave
+            // the foreground to the window under it, and a command choosing another, as focusing
+            // the next pane does, made Explorer windows hand it back and forth several times.
+            if hiding && form.IsHandleCreated && WinUserApi.GetForegroundWindow()=form.Handle then
+                let waited = Diagnostics.Stopwatch.StartNew()
+                let timer = new Timer(Interval=15)
+                timer.Tick.Add(fun _ ->
+                    if WinUserApi.GetForegroundWindow()<>form.Handle || waited.ElapsedMilliseconds>400L then
+                        timer.Stop()
+                        timer.Dispose()
+                        close())
+                timer.Start()
+            else close()
     /// The choices a command left take the rows' place, under its name, until one is chosen or
     /// Esc goes back.
     let choiceRows (options:CommandChoice list) =
@@ -875,20 +894,23 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let present() =
         // Built while hidden, like the switcher's, so it cannot delay the first paint.
         if shadow.IsNone && not SystemInformation.HighContrast then shadow <- Some(new TaskSwitchShadow(form))
+        if form.Opacity<1.0 then form.Opacity <- 1.0
         form.Show()
         form.Refresh()
         shadow |> Option.iter(fun item -> item.Show())
         OS().windowFromHwnd(form.Handle).setForegroundOrRestore(true)
         form.Activate()
         input.Focus() |> ignore
-    /// Out of sight, the window it was opened over back in front, while a command runs: one
-    /// that puts up a box of its own, such as renaming a tab, would lose it to the palette
-    /// going away after.
+    /// Out of sight while a command runs: one that puts up a box of its own, such as renaming a
+    /// tab, would lose it to the palette going away after, so the palette goes only once the
+    /// foreground has left it, see finish.
     let conceal() =
         hiding <- true
         shadow |> Option.iter(fun item -> (item :> IDisposable).Dispose())
         shadow <- None
-        form.Hide()
+        // See-through rather than hidden, so it stays in front: hidden, it gave the foreground to
+        // the window under it, which the command then took away again at once.
+        form.Opacity <- 0.0
     /// Runs a row's command with the palette out of the way; what it leaves to choose brings
     /// the palette back.
     let outcome caption (concealed:bool) (run:unit -> CommandOutcome) =

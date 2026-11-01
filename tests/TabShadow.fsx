@@ -125,6 +125,16 @@ let main () =
                 let close = first.add(closeLocation).add(Pt(closeImage.Width/2,closeImage.Height/2))
                 check (column.tryHit close=Some(1,TabClose)) "Vertical close button does not match its drawn position"
                 check (({ column with slide=Some(1,column.rowStep) }).movedTab=Some(1,1)) "Vertical dragging still uses horizontal geometry"
+                // A tab dragged along the strip is drawn over the others, held up as a pressed one,
+                // though another is the one chosen: not chosen as it was pressed in a group behind, or
+                // carried into another strip, it went under the tabs it passed.
+                for strip in [column;{ ts with size=Dpi.scaleSize(Sz(420,28)) }] do
+                    let tabsDrawn (s:TabStripSprite<int>) =
+                        s.sprite.children.list |> List.choose(fun (_,sprite) -> match sprite with :? TabSprite<int> as tab -> Some tab | _ -> None)
+                    let dragged = { strip with slide=Some(2,(if strip.isVertical then strip.rowStep/2 else 40)) }
+                    match tabsDrawn dragged with
+                    | top::_ -> check (top.id=2 && top.captured.IsSome) (sprintf "A dragged tab behind the one chosen was drawn under it (%A)" strip.dock)
+                    | [] -> failwith "No tabs drawn"
                 check ((column.tryHit(Pt(-1,second.y))).IsNone) "An off-column tab received pointer input"
                 use image = column.render.bitmap
                 check (image.Width=Dpi.scale 220 && image.Height=Dpi.scale 300) "Vertical rendering ignored the viewport size"
