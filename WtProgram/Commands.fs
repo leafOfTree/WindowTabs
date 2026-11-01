@@ -273,7 +273,10 @@ module Commands =
     /// services only when asked: the commands are listed before any service is there.
     let private appState (read:string -> bool) hwnd = if hasApp hwnd then Some(read (processPath hwnd)) else None
     let private combinesIcons hwnd =
-        groupOf hwnd |> Option.exists(fun group -> match group with :? GroupInfo as info -> info.isSuperBarEnabled | _ -> false)
+        groupOf hwnd |> Option.exists(fun group ->
+            match group with
+            | :? GroupInfo as info -> info.combiningTurnedTo |> Option.defaultValue info.isSuperBarEnabled
+            | _ -> false)
     let private tabName hwnd =
         Services.program.getWindowNameOverride hwnd |> Option.defaultValue (try OS().windowFromHwnd(hwnd).text with _ -> "")
     /// The saved workspaces as last written, each with how many windows it holds.
@@ -410,14 +413,33 @@ module Commands =
                         | _ -> ()))
             | None -> [])
         // The tab menu's commands for the group, and for the app of the window in front.
-        plain "group-icons-only" Strings.Commands.iconsOnly GroupCommands hasGroup (onGroup(fun g -> g.run ToggleIconsOnly))
+        // A switch, as the setting it overrides is, showing the group's own choice. Until the group
+        // has been read: the layout kept on the window, or else the setting the group follows.
+        // Turned here, the palette shows the row again at once, before the group's thread has
+        // turned it: the value kept for it is turned too, and read again to be sure.
+        { plain "group-icons-only" Strings.Commands.iconsOnly GroupCommands hasGroup (onGroup(fun g ->
+              g.run ToggleIconsOnly
+              match g with
+              | :? GroupInfo as info -> info.shownChoices <- info.shownChoices |> Option.map(fun shown -> {shown with iconOnly=not shown.iconOnly})
+              | _ -> ()
+              readAgain g))
+            with state=fun hwnd ->
+                    if not (hasGroup hwnd) then None
+                    else
+                        match shownChoices hwnd,WindowTabLayout.read hwnd with
+                        | Some shown,_ -> Some shown.iconOnly
+                        | None,Some layout -> Some layout.iconOnly
+                        | None,None -> Some(Services.settings.getValue("showIconsOnly") :?> bool) }
         { choosing "group-tab-position" Strings.Commands.groupTabPosition GroupCommands hasGroup (snd positionChoice) with current=fst positionChoice }
         { choosing "group-tab-alignment" Strings.Commands.groupTabAlignment GroupCommands hasGroup (snd alignmentChoice) with current=fst alignmentChoice }
         { choosing "group-auto-hide" Strings.Commands.groupAutoHide GroupCommands hasGroup (snd autoHideChoice) with current=fst autoHideChoice }
         { plain "combine-group-taskbar-icons" Strings.Commands.combineGroupIcons GroupCommands hasGroup (onGroup(fun g ->
               match g with
               // From the group's thread, as its tab menu does: a group just rebuilt has no strip yet.
-              | :? GroupInfo as info -> info.invokeGroup(fun () -> Services.desktop.restartGroup(info.group.hwnd,not info.isSuperBarEnabled))
+              // The palette shows the row again at once, before the rebuilt group is there.
+              | :? GroupInfo as info ->
+                  info.combiningTurnedTo <- Some(not info.isSuperBarEnabled)
+                  info.invokeGroup(fun () -> Services.desktop.restartGroup(info.group.hwnd,not info.isSuperBarEnabled))
               | _ -> ()))
           with state=fun hwnd -> if hasGroup hwnd then Some(combinesIcons hwnd) else None }
         // Only a group with combined icons has a taskbar button of its own to change.
