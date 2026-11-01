@@ -1215,6 +1215,48 @@ let main() =
                     onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
                     (info :> IGroup).destroy()
                 pumpUntil "Drag groups did not exit" (fun () -> dragSource.isExited && dragTarget.isExited)
+            // A tab in front is pictured once it has painted; behind, printing one colour as an app
+            // that stops painting covered windows does (Chromium's, Electron's), its picture shows
+            // what it last showed: the strip's preview on hover was blank.
+            do
+                // On the (test's own) screen, one over the other: printed far off it, a window has
+                // no picture to give.
+                let form text = new Form(Text=text,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(100,100),
+                                         Size=Drawing.Size(320,240),BackColor=Drawing.Color.Black)
+                use pictured = form "Pictured"
+                // Part of the window: one colour all over reads as a window that drew nothing.
+                use stripe = new Panel(BackColor=Drawing.Color.SeaGreen,Bounds=Drawing.Rectangle(40,30,200,120))
+                pictured.Controls.Add(stripe)
+                use other = form "Other"
+                for shown in [pictured;other] do shown.Show()
+                Application.DoEvents()
+                let group = desktopApi.createGroup(false) :?> GroupInfo
+                for hwnd in [pictured.Handle;other.Handle] do (group :> IGroup).addWindow(hwnd,false)
+                pumpUntil "The pictured pair did not form" (fun () -> nativeOrder group |> List.length = 2)
+                let wait (ms:int64) =
+                    let clock = Diagnostics.Stopwatch.StartNew()
+                    while clock.ElapsedMilliseconds<ms do Application.DoEvents(); Thread.Sleep(10)
+                onGroup group (fun g -> g.tabActivate(Tab pictured.Handle,false))
+                pumpUntil "The pictured tab did not come in front" (fun () -> onGroup group (fun g -> g.topWindow=pictured.Handle))
+                wait 900L
+                // It stops painting, and goes behind.
+                stripe.Visible <- false
+                pictured.Refresh()
+                onGroup group (fun g -> g.tabActivate(Tab other.Handle,false))
+                pumpUntil "The other tab did not come in front" (fun () -> onGroup group (fun g -> g.topWindow=other.Handle))
+                let shows =
+                    onGroup group (fun g ->
+                        let image = g.ts.tabInfo(Tab pictured.Handle).preview()
+                        let bitmap = image.bitmap
+                        let green =
+                            seq { for x in 1..7 do for y in 2..7 -> bitmap.GetPixel(bitmap.Width*x/8,bitmap.Height*y/8) }
+                            |> Seq.exists(fun pixel -> pixel.G>100uy && pixel.R<80uy)
+                        bitmap.Dispose()
+                        green)
+                check shows "A tab behind that no longer paints did not show its last picture"
+                for hwnd in [pictured.Handle;other.Handle] do (group :> IGroup).removeWindow hwnd
+                (group :> IGroup).destroy()
+                pumpUntil "The pictured pair did not exit" (fun () -> group.isExited)
             // A split is kept with a workspace by the windows' places in the group, and the session,
             // the same record written on its own, puts the groups and their splits back.
             do

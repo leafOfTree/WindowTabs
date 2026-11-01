@@ -275,6 +275,101 @@ module WindowGroupToken =
     let saveMadeByHand hwnd value = WindowFlag.set madeByHandKey hwnd value
     let madeByHand hwnd = WindowFlag.get madeByHandKey hwnd
 
+/// Chromium and Electron windows stop painting while another window covers them, so a tab
+/// behind the active one prints blank, and a minimized one prints only a placeholder. Each
+/// tab's last good capture stands in for it, kept small: thumbnails are a few hundred pixels
+/// and a peek at a hidden tab may be soft. Kept by the group, for every picture of a tab: the
+/// strip's preview on hover, printed off its thread, as much as the taskbar's.
+type TabCaptures() =
+    let gate = obj()
+    let captures = Collections.Generic.Dictionary<IntPtr,Bitmap>()
+    /// Tabs that printed blank while hidden; printing them again before they come to the front
+    /// would only be slow.
+    let blank = Collections.Generic.HashSet<IntPtr>()
+
+    static member maxSide = 800
+
+    /// A window that drew nothing prints one colour across its middle.
+    static member isBlank (bitmap:Bitmap) =
+        let width,height = bitmap.Width,bitmap.Height
+        if width < 8 || height < 8 then true
+        else
+            let first = bitmap.GetPixel(width/2,height/2)
+            seq { for i in 1..8 do
+                    for j in 1..8 -> bitmap.GetPixel(width*i/9,height*(1+j)/10) }
+            |> Seq.forall(fun pixel -> pixel = first)
+
+    static member private scaled (source:Bitmap) (size:Size) =
+        let result = new Bitmap(size.Width,size.Height,PixelFormat.Format32bppArgb)
+        try
+            use g = Graphics.FromImage(result)
+            g.InterpolationMode <- Drawing2D.InterpolationMode.HighQualityBilinear
+            g.DrawImage(source,Rectangle(Point.Empty,size))
+            result
+        with _ ->
+            result.Dispose()
+            reraise()
+
+    member this.count = lock gate (fun () -> captures.Count)
+
+    /// Keeps a copy of a capture that shows the window.
+    member this.remember (hwnd:IntPtr) (image:Bitmap) =
+        if not(TabCaptures.isBlank image) then
+            let ratio = min 1.0 (float TabCaptures.maxSide / float (max image.Width image.Height))
+            let size = Size(max 1 (int(float image.Width * ratio)),max 1 (int(float image.Height * ratio)))
+            let copy = TabCaptures.scaled image size
+            lock gate (fun () ->
+                blank.Remove hwnd |> ignore
+                match captures.TryGetValue hwnd with
+                | true,previous -> previous.Dispose()
+                | _ -> ()
+                captures.[hwnd] <- copy)
+
+    /// The capture to show for a window of the given size: a live one when it shows the window,
+    /// else the last that did. A hidden tab known to print blank is not printed again. The live
+    /// one is printed outside the lock: a slow window held up every other picture of the group.
+    member this.preview (hwnd:IntPtr) (size:Size) (minimized:bool) (inFront:bool) (capture:unit -> Img) : Img =
+        let fromSaved (size:Size) =
+            match captures.TryGetValue hwnd with
+            | true,saved -> Some(Img(TabCaptures.scaled saved size))
+            | _ -> None
+        let known = lock gate (fun () -> if not minimized && not inFront && blank.Contains hwnd then fromSaved size else None)
+        match known with
+        | Some image -> image
+        | None ->
+            let live = capture()
+            let shows = not minimized && not(TabCaptures.isBlank live.bitmap)
+            if shows then
+                this.remember hwnd live.bitmap
+                live
+            else
+                lock gate (fun () ->
+                    if not minimized then blank.Add hwnd |> ignore
+                    match fromSaved live.bitmap.Size with
+                    | Some image ->
+                        live.bitmap.Dispose()
+                        image
+                    | None -> live)
+
+    /// The tab is in front again and paints, so its next capture is worth taking.
+    member this.shown (hwnd:IntPtr) = lock gate (fun () -> blank.Remove hwnd |> ignore)
+
+    member this.forget (hwnd:IntPtr) =
+        lock gate (fun () ->
+            blank.Remove hwnd |> ignore
+            match captures.TryGetValue hwnd with
+            | true,saved ->
+                saved.Dispose()
+                captures.Remove hwnd |> ignore
+            | _ -> ())
+
+    interface IDisposable with
+        member this.Dispose() =
+            lock gate (fun () ->
+                for saved in captures.Values do saved.Dispose()
+                captures.Clear()
+                blank.Clear())
+
 /// What a group's tab menu chose for that group alone, carried over when the group is rebuilt.
 type GroupMenuChoices = {
     iconOnly: bool
@@ -329,6 +424,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// Collapsing to one window: the top window's bounds are not the frame until placement ends.
     let mutable splitMerging = false
     let splitSettleTimer = new System.Windows.Forms.Timer(Interval=100)
+    /// Each tab's last picture that showed it, for when it is behind and its app no longer paints.
+    let captures = new TabCaptures()
+    /// The tab in front, readable off the group's thread, as a tab's picture is printed.
+    let mutable frontWindow = IntPtr.Zero
+    let mutable frontCount = 0
+    /// A tab that comes to the front is pictured once it has painted, for when it is behind again.
+    let captureTimer = new System.Windows.Forms.Timer(Interval=500)
     /// Told of every change in the order of top-level windows, while split or while the strip is
     /// owned by nothing: a window raised over the tabs gives the group no other notice.
     let mutable reorderHook : IDisposable option = None
@@ -551,6 +653,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.init(ts:TabStrip) =
         _ts := Some(ts)
         splitSettleTimer.Tick.Add(fun _ -> this.checkSplitSettled())
+        captureTimer.Tick.Add(fun _ -> this.captureFront())
         splitGuardSoon <- Some(new CoalescedAction(30,fun () -> this.guardSplitStrip()))
         stripLiftSoon <- Some(new CoalescedAction(30,fun () -> if not isDestroyed.value then this.guardUnownedStrip()))
         transitionRelease.Tick.Add(fun _ ->
@@ -617,6 +720,16 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
         Cell.listen <| fun() ->
             this.ts.zorder <- zorderCell.value.map(Tab)
+            // A new tab in front, or a tab joining: the one alone till then was never pictured, and
+            // went behind the newcomer printing blank.
+            let front = zorderCell.value.tryHead |> Option.defaultValue IntPtr.Zero
+            let count = this.windows.count
+            if front<>frontWindow || count<>frontCount then
+                frontWindow <- front
+                frontCount <- count
+                captureTimer.Stop()
+                // Alone, the tab is never behind another to be pictured for.
+                if count>1 then captureTimer.Start()
             
         Cell.listen <| fun() ->
             this.ts.foreground <- this.foregroundTab
@@ -810,14 +923,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.getTabInfo(hwnd) =
         let window = this.os.windowFromHwnd(hwnd)
         let small,big = StartupTrace.measure "group.icons" (fun () -> iconCache.get(hwnd))
-        {
-            text = this.tabName hwnd
-            isRenamed = this.isRenamed hwnd
-            splitTrail = SplitView.trail hwnd groupLayout
-            isPinned = PinnedTabs.contains hwnd
-            iconSmall = small
-            iconBig = big
-            preview = fun() ->
+        let print() =
                 try
                     if window.isMinimized then
                         // A minimized window cannot be printed. It stands in as its app's icon, a
@@ -847,6 +953,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     else
                         StartupTrace.measure "preview.print" (fun () -> Img(Win32Helper.PrintWindow(hwnd)))
                 with ex -> Img(Sz(1, 1))
+        {
+            text = this.tabName hwnd
+            isRenamed = this.isRenamed hwnd
+            splitTrail = SplitView.trail hwnd groupLayout
+            isPinned = PinnedTabs.contains hwnd
+            iconSmall = small
+            iconBig = big
+            // Called off the group's thread too: the tab in front is read from a field, not a cell.
+            preview = fun() ->
+                let bounds = window.bounds
+                captures.preview hwnd (Size(bounds.width,bounds.height)) window.isMinimized (frontWindow=hwnd) print
         }
     
     member private this.tintTab dark hwnd =
@@ -2386,6 +2503,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         if not isDestroyed.value && this.windows.contains(hwnd) then
             this.onRemoved(hwnd)
             WindowSplitLayout.clear hwnd
+            captures.forget hwnd
             this.reclaimLeftTab(hwnd)
             let foreground = this.os.foreground.hwnd
             let next = TabNavigation.closeTarget this.lorder.list isOpen hwnd foreground lastActiveTab opener (this.leftOnClose hwnd)
@@ -2485,10 +2603,23 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         (iconCache :> IDisposable).Dispose()
         (invoker :> IDisposable).Dispose()
 
+    /// The tab in front, once it has painted: pictured for when it is behind again, its app no
+    /// longer painting it there, as Chromium's and Electron's do not.
+    member private this.captureFront() =
+        captureTimer.Stop()
+        let front = frontWindow
+        if not isDestroyed.value && this.windows.contains front then
+            captures.shown front
+            if not (this.os.windowFromHwnd(front).isMinimized) then
+                let image = this.ts.tabInfo(Tab front).preview()
+                image.bitmap.Dispose()
+
     member this.destroy() =
         if isDestroyed.value.not then
             isDestroyed.set(true)
             splitSettleTimer.Dispose()
+            captureTimer.Dispose()
+            (captures :> IDisposable).Dispose()
             this.unwatchOrder()
             this.unwatchAppBars()
             for soon in [splitGuardSoon;stripLiftSoon] do soon |> Option.iter(fun soon -> (soon :> IDisposable).Dispose())
