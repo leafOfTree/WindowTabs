@@ -269,6 +269,13 @@ module WindowGroupToken =
         match WinUserApi.GetProp(hwnd,key).ToInt64() with
         | value when value>0L && value<=int64 Int32.MaxValue -> Some(int value)
         | _ -> None
+    /// Whether the window's group was made by hand: put back together after a restart, it stays
+    /// so, though no title of it was remembered, and auto grouping keeps out of it.
+    let private madeByHandKey = "WindowTabs.Manual.v1"
+    let saveMadeByHand hwnd value =
+        if value then WinUserApi.SetProp(hwnd,madeByHandKey,IntPtr(1)) |> ignore
+        else WinUserApi.RemoveProp(hwnd,madeByHandKey) |> ignore
+    let madeByHand hwnd = WinUserApi.GetProp(hwnd,madeByHandKey)<>IntPtr.Zero
 
 /// What a group's tab menu chose for that group alone, carried over when the group is rebuilt.
 type GroupMenuChoices = {
@@ -459,6 +466,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         with get() = isMadeByHand
         and set value =
             let changed = value && not isMadeByHand
+            // Set from the main thread too: the windows are read on the group's own.
+            if value<>isMadeByHand then
+                invoker.asyncInvoke(fun () -> for hwnd in this.windows.items.list do WindowGroupToken.saveMadeByHand hwnd isMadeByHand)
             isMadeByHand <- value
             if changed then madeByHandEvent.Trigger()
     /// The group became one made by hand, after the tabs that made it so had joined.
@@ -2277,6 +2287,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if this.windows.isEmpty && not hasSavedTabLayout then WindowTabLayout.read hwnd |> Option.iter this.applyTabLayout
             this.setWindows(this.windows.add hwnd)
             WindowGroupToken.save hwnd this.groupToken
+            WindowGroupToken.saveMadeByHand hwnd isMadeByHand
             FollowerPlacement.queue.claim(placementOwner,hwnd)
             if prevTop.value.IsNone then
                 prevTop.set(Some(hwnd))

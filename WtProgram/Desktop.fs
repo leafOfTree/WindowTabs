@@ -8,8 +8,9 @@ module AutoGroup =
     /// The first group, in the order given, that holds a window of the same program and a
     /// window on the same virtual desktop as `hwnd`, so a window opened on another desktop
     /// starts its own group rather than pulling the group across desktops. Unknown membership
-    /// cannot establish that two windows share a desktop.
-    let pick (windowsOf:'g -> List2<IntPtr>) (processPath:IntPtr -> string) (desktopOf:IntPtr -> Guid option) (groups:List2<'g>) (hwnd:IntPtr) =
+    /// cannot establish that two windows share a desktop. A group made by hand is never picked: one
+    /// that held a window of the program took in every new window of it, of each of its programs.
+    let pick (windowsOf:'g -> List2<IntPtr>) (isHandMade:'g -> bool) (processPath:IntPtr -> string) (desktopOf:IntPtr -> Guid option) (groups:List2<'g>) (hwnd:IntPtr) =
         let path = processPath hwnd
         let desktop = desktopOf hwnd
         let sameDesktop other =
@@ -18,7 +19,7 @@ module AutoGroup =
             | _ -> false
         groups.tryFind(fun g ->
             let windows = windowsOf g
-            windows.any(fun w -> AppIdentity.same (processPath w) path) && windows.any sameDesktop)
+            not (isHandMade g) && windows.any(fun w -> AppIdentity.same (processPath w) path) && windows.any sameDesktop)
 
     /// Two automatic groups of one program that have come to share a virtual desktop, as (the one
     /// kept, the one that joins it): the smaller joins the larger. A group whose program or desktop

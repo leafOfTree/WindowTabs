@@ -7,6 +7,7 @@ open System.IO
 open System.Threading
 open System.Windows.Forms
 open Bemo
+open Bemo.Json
 
 let check condition message = if not condition then failwith message
 let pumpUntil description predicate =
@@ -42,6 +43,23 @@ let rememberedGroupUpdates() =
     check (paths 1 = Map.ofList ["APP.EXE",@"C:\Apps\App.exe"] && paths 3 = Map.empty) "A group did not keep where its programs ran"
     let reread = RememberedGroups.read (RememberedGroups.write located)
     check (reread = located) "Where a group's programs ran was not saved and read back"
+    // Groups saved with every title their windows had are cut back once to the windows open; a
+    // group saved since is not.
+    check (RememberedGroups.trailed (RememberedGroups.write located) = Set.empty) "A group saved by its last titles was taken for one with a trail"
+    let legacy = RememberedGroups.write located
+    for group in legacy do (group :?> JObject).Remove("lastTitles") |> ignore
+    check (RememberedGroups.trailed legacy = Set.ofList [1;3]) "A group saved with a trail of titles was not found"
+    let saved = [{ id=1; seen=now; members=[m "a";m "x";m "c"]; paths=Map.empty }
+                 { id=3; seen=now; members=[m "y";m "z"]; paths=Map.empty }
+                 { id=4; seen=now; members=[m "b";m "w"]; paths=Map.empty }]
+    let cut = RememberedGroups.dropClosed (Set.ofList [1]) (Set.ofList [m "a";m "c";m "b"]) saved
+    check (cut |> List.map(fun group -> group.id,group.members) = [1,[m "a";m "c"];3,[m "y";m "z"];4,[m "b";m "w"]])
+          "Cutting back a trailed group kept a closed title, or touched another group"
+    check (RememberedGroups.dropClosed (Set.ofList [3]) (Set.ofList [m "y"]) cut |> List.forall(fun group -> group.id<>3))
+          "A trailed group left with one open window was kept"
+    check (RememberedGroups.shared [m "a";m "b";m "a";{ app="OTHER.EXE"; title="b" }] = [m "a"]) "Titles two windows had at once were not found"
+    check (RememberedGroups.without (Set.ofList [m "a";m "x"]) saved |> List.map(fun group -> group.id) = [3;4]) "A shared title was kept, or its group kept with one window"
+    check (RememberedGroups.readShared (RememberedGroups.writeShared [m "a";m "b"]) = [m "a";m "b"]) "Shared titles were not saved and read back"
     let moved = RememberedGroups.update now [1,[{ app="NEW.EXE"; title="n" };{ app="NEW.EXE"; title="o" }]] [m "a";m "c"] located
     check ((moved |> List.find(fun group -> group.id=1)).paths = Map.empty) "A group kept the path of a program it no longer has"
     // The taskbar picture of a group made by hand goes once the group is neither remembered nor
@@ -157,22 +175,28 @@ let main() =
         WindowGroupToken.save keptA.Handle 4242
         WindowGroupToken.save keptB.Handle 4242
         WindowGroupToken.save apart.Handle 4343
+        // Their group was made by hand; the other one's was not.
+        WindowGroupToken.saveMadeByHand keptA.Handle true
+        WindowGroupToken.saveMadeByHand keptB.Handle true
         // Windows opened again with a remembered program and title go back into that group; a
         // window whose title only settles once open follows them, and another stays apart.
         use reopenedA = new Form(ShowInTaskbar=false,Text="Remembered A")
         use reopenedB = new Form(ShowInTaskbar=false,Text="Remembered B")
         use late = new Form(ShowInTaskbar=false,Text="Loading")
         use stranger = new Form(ShowInTaskbar=false,Text="Something else")
+        // Made, and so listed, only once the others are in their groups.
+        use twin = new Form(ShowInTaskbar=false,Text="Remembered B")
+        let twinHandles = ref []
         let reopenedHandles = [reopenedA.Handle;reopenedB.Handle;late.Handle;stranger.Handle]
         let mutable restoring = true
         let mutable discovering = true
         let filter = FilterService() :> IFilterService
         Services.registerLocal<IFilterService>({new IFilterService with
-            member _.isAppWindow hwnd = List.contains hwnd handles || List.contains hwnd restoredHandles || List.contains hwnd reopenedHandles
-            member _.isAppWindowStyle hwnd = List.contains hwnd handles || List.contains hwnd restoredHandles || List.contains hwnd reopenedHandles
+            member _.isAppWindow hwnd = List.contains hwnd handles || List.contains hwnd restoredHandles || List.contains hwnd (reopenedHandles @ twinHandles.Value)
+            member _.isAppWindowStyle hwnd = List.contains hwnd handles || List.contains hwnd restoredHandles || List.contains hwnd (reopenedHandles @ twinHandles.Value)
             member _.isTabbableWindow hwnd =
                 (discovering && List.contains hwnd handles || restoring && List.contains hwnd restoredHandles ||
-                 restoring && List.contains hwnd reopenedHandles) &&
+                 restoring && List.contains hwnd (reopenedHandles @ twinHandles.Value)) &&
                 filter.getIsTabbingEnabledForProcess path
             member _.isTabbingEnabledForAllProcessesByDefault with get()=false and set _=()
             member _.setIsTabbingEnabledForProcess value enabled = filter.setIsTabbingEnabledForProcess value enabled
@@ -194,6 +218,15 @@ let main() =
             | Some a,Some b,Some c -> obj.ReferenceEquals(a,b) && not(obj.ReferenceEquals(c,a))
             | _ -> false)
         check (((groupOf keptA.Handle).Value :?> GroupInfo).group.groupToken=4242) "A restored group did not keep its windows' saved group"
+        // A group made by hand is one still when put back together, or auto grouping took new
+        // windows into it; one that was not stays automatic.
+        let keptGroup = (groupOf keptA.Handle).Value :?> GroupInfo
+        let apartGroup = (groupOf apart.Handle).Value :?> GroupInfo
+        check (keptGroup.group.isManual && not apartGroup.group.isManual) "A group made by hand was not one after a restart, or an automatic one became one"
+        apartGroup.group.isManual <- true
+        pumpUntil "A group made by hand did not mark its windows so" (fun () -> WindowGroupToken.madeByHand apart.Handle)
+        apartGroup.group.isManual <- false
+        pumpUntil "A group no longer made by hand left its windows marked" (fun () -> not (WindowGroupToken.madeByHand apart.Handle))
         for form in [reopenedA;reopenedB;late;stranger] do form.Show()
         program.refresh()
         let tokenOf hwnd = groupOf hwnd |> Option.map(fun group -> (group :?> GroupInfo).group.groupToken)
@@ -206,9 +239,12 @@ let main() =
         check (tokenOf stranger.Handle<>Some 5151) "A window with no remembered title joined a remembered group"
         // A restored group is recorded when it changes, not on a timer: a new title is saved.
         reopenedA.Text <- "Renamed A"
-        pumpUntil "A title change in a remembered group was not recorded" (fun () ->
+        // The old title goes with it: a window still open is not known by every title it had, or
+        // a browser's new tab went back into the group.
+        pumpUntil "A title change in a remembered group was not recorded, or the old title was kept" (fun () ->
             runtimeSettings.rememberedGroups |> List.exists(fun group ->
-                group.id=5151 && List.contains { app=app; title="Renamed A" } group.members))
+                group.id=5151 && List.contains { app=app; title="Renamed A" } group.members
+                && not (List.contains { app=app; title="Remembered A" } group.members)))
         // A window of a group made by hand that closes stays in the group's record, to come back to
         // it, and App rules is told so it shows the window as closed.
         let announced = ref 0
@@ -219,6 +255,19 @@ let main() =
             announced.Value>0 &&
             (program :> IProgram).handMadeGroups() |> List.exists(fun (id,members) ->
                 id=5151 && members |> List.exists(fun (_,title,hwnd) -> title="Remembered C" && hwnd=IntPtr.Zero)))
+        // A new window with the title a window of the group has now is a new one, as every Neovide
+        // opens showing its install folder: it stays out, and the title is no longer one to match by.
+        twinHandles.Value <- [twin.Handle]
+        twin.Show()
+        program.refresh()
+        pumpUntil "A window with a title another window had was not grouped" (fun () -> (tokenOf twin.Handle).IsSome)
+        let settleTwin = Diagnostics.Stopwatch.StartNew()
+        while settleTwin.ElapsedMilliseconds<1500L do Application.DoEvents(); Threading.Thread.Sleep(20)
+        let twinTitle = { app=app; title="Remembered B" }
+        check (tokenOf twin.Handle<>Some 5151) "A new window joined a group made by hand by a title another window had"
+        pumpUntil "A title two windows had at once was kept or matched by" (fun () ->
+            List.contains twinTitle runtimeSettings.sharedTitles &&
+            runtimeSettings.rememberedGroups |> List.forall(fun group -> not (List.contains twinTitle group.members)))
         // A picture for a group's taskbar button is kept for that group, whichever of its windows
         // it was chosen from, and the default comes back on request.
         (program :> IProgram).setGroupIcon(reopenedA.Handle,Some @"C:\icons\work.ico")
@@ -247,7 +296,7 @@ let main() =
         restoring <- false
         program.refresh()
         pumpUntil "Restored fixture windows did not leave their groups" (fun () ->
-            restoredHandles @ reopenedHandles |> List.forall(fun hwnd -> (groupOf hwnd).IsNone))
+            restoredHandles @ reopenedHandles @ twinHandles.Value |> List.forall(fun hwnd -> (groupOf hwnd).IsNone))
         let manual = Services.desktop.createGroup(false) :?> GroupInfo
         for hwnd in handles do (manual :> IGroup).addWindow(hwnd,false)
         pumpUntil "Runtime manual group did not settle" (fun () -> nativeWindows manual |> List.length = 2)

@@ -31,12 +31,18 @@ let main() =
     let deskOf (hwnd:IntPtr) =
         match hwnd.ToInt32() with 1 | 2 | 3 -> Some desk1 | 4 -> Some desk2 | _ -> None
     let chromeGroup, explorerGroup = List2([IntPtr(2)]), List2([IntPtr(1)])
-    let pickFrom groups (hwnd:int) =AutoGroup.pick id pathOf deskOf (List2(groups)) (IntPtr(hwnd))
+    let pickFrom groups (hwnd:int) =AutoGroup.pick id (fun _ -> false) pathOf deskOf (List2(groups)) (IntPtr(hwnd))
     let picked expected result = match result with Some g -> obj.ReferenceEquals(g, expected) | None -> false
+    // A group made by hand that holds an Explorer window, in front, is passed over for the
+    // automatic one; with no automatic group the window starts its own.
+    let handMade = List2([IntPtr(1);IntPtr(2)])
+    let handPick groups = AutoGroup.pick id (fun g -> obj.ReferenceEquals(g,handMade)) pathOf deskOf (List2(groups)) (IntPtr(3))
+    check (picked explorerGroup (handPick [handMade; explorerGroup]) && handPick [handMade] = None)
+          "Auto-grouping put a new window into a group made by hand"
     check (pickFrom [chromeGroup; explorerGroup] 4 = None) "Auto-grouping joined a window to a group on another virtual desktop"
     check (picked explorerGroup (pickFrom [chromeGroup; explorerGroup] 3)) "Auto-grouping missed a group on the same virtual desktop"
     let installedPath hwnd = if hwnd=IntPtr(1) then @"C:\Windows\explorer.exe" else @"D:\Updated\EXPLORER.exe"
-    check (picked explorerGroup (AutoGroup.pick id installedPath deskOf (List2([explorerGroup])) (IntPtr(3))))
+    check (picked explorerGroup (AutoGroup.pick id (fun _ -> false) installedPath deskOf (List2([explorerGroup])) (IntPtr(3))))
           "Same-name executables in different directories did not share an automatic group"
     check (pickFrom [chromeGroup; explorerGroup] 5=None) "An unresolved new window joined another desktop's taskbar group"
     let unknownGroup = List2([IntPtr(5)])

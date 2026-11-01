@@ -109,6 +109,11 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let groupedThisRun = HashSet<IntPtr>()
     /// Groups made by hand, kept after their windows close.
     let mutable remembered = settingsManager.rememberedGroups
+    /// Groups saved with a trail of titles, cut back to their open windows once they are found.
+    let mutable trailed = settingsManager.trailedRememberedGroups
+    /// Titles two windows of a program had at once, newest first: neither recorded nor matched.
+    let mutable sharedTitles = settingsManager.sharedTitles
+    let mutable sharedSet = Set.ofList sharedTitles
     /// The open windows of each group made by hand when App rules was last told.
     let mutable shownOpen : (int * RememberedMember list) list = []
     /// Each window's program, looked up once.
@@ -116,6 +121,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// New windows of an app with remembered windows whose title may still settle into a
     /// remembered one: when each was first seen and the group it was put in.
     let settling = Dictionary<IntPtr,DateTime * GroupInfo>()
+    /// The program and title each grouped window was last recorded with: a window still open whose
+    /// title changed is no longer known by the old one.
+    let recordedAs = Dictionary<IntPtr,RememberedMember>()
     /// Checks settling titles once a second, only while there are any.
     let settleTimer = lifetime.Own(new System.Windows.Forms.Timer(Interval=1000))
     /// Groups are recorded a moment after they change, once for a burst of changes.
@@ -272,7 +280,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 not (g :?> GroupInfo).awaitsGroupingDesktop)
             let groups = groups.sortBy(fun g -> g.windows.map(fun hwnd -> hwndZorders.tryFind(hwnd).def(Int32.MaxValue)).minBy(id))
             let processPath hwnd = os.windowFromHwnd(hwnd).pid.processPath
-            Some(AutoGroup.pick (fun (g:IGroup) -> g.windows) processPath VirtualDesktop.groupingDesktopId groups window.hwnd)
+            Some(AutoGroup.pick (fun (g:IGroup) -> g.windows) (fun g -> this.isHandMade(g :?> GroupInfo)) processPath VirtualDesktop.groupingDesktopId groups window.hwnd)
         else None
 
     /// A window that was in a group before WindowTabs restarted goes back to it, ahead of rules
@@ -443,6 +451,25 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 | Some known -> known=desktop
                 | None -> true)
 
+    /// Titles found shared are no longer kept: the groups remembered by them leave them out.
+    member private this.learnShared(found:RememberedMember list) =
+        let fresh = found |> List.distinct |> List.filter(sharedSet.Contains >> not)
+        if not fresh.IsEmpty then
+            sharedTitles <- List.truncate RememberedGroups.maxShared (fresh @ sharedTitles)
+            sharedSet <- Set.ofList sharedTitles
+            settingsManager.sharedTitles <- sharedTitles
+            remembered <- RememberedGroups.without sharedSet remembered
+            settingsManager.rememberedGroups <- remembered
+
+    /// Whether a window's program and title tell it apart: not when another window has them now,
+    /// as each new Neovide shows its install folder, or a program's windows had them at once.
+    member private this.identifies (hwnd:IntPtr) (m:RememberedMember) =
+        let others =
+            this.desktop.groups.list |> List.exists(fun group ->
+                group.windows.list |> List.exists(fun other -> other<>hwnd && this.rememberedMember other=Some m))
+        if others then this.learnShared [m]
+        not others && not (sharedSet.Contains m)
+
     /// The group a window seen for the first time this run belongs back in: the one it was in
     /// before WindowTabs restarted, else the one a window with its program and title was last in.
     member this.savedPlacement(window:Window) =
@@ -451,6 +478,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         | None when groupedThisRun.Contains window.hwnd || remembered.IsEmpty -> None
         | None ->
             this.rememberedMember window.hwnd
+            |> Option.filter(this.identifies window.hwnd)
             |> Option.bind(RememberedGroups.find remembered)
             |> Option.filter(fun token ->
                 match this.liveGroupWithToken token with
@@ -466,30 +494,47 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// Records the groups made by hand that are in view, and drops windows now in other groups
     /// from them. Windows whose title may still change are left as they were.
     member this.rememberGroups() =
-        let inView =
+        let renamed = ResizeArray<RememberedMember>()
+        let recorded hwnd =
+            let current = this.rememberedMember hwnd
+            match recordedAs.TryGetValue hwnd,current with
+            | (true,before),Some now when before<>now -> renamed.Add before
+            | _ -> ()
+            current |> Option.iter(fun now -> recordedAs.[hwnd] <- now)
+            current
+        let seen =
             this.desktop.groups.list |> List.choose(fun group ->
                 match group with
                 | :? GroupInfo as info when not info.isExited && not info.isRetiring ->
-                    let members =
-                        group.windows.list |> List.filter(fun hwnd -> not(settling.ContainsKey hwnd))
-                        |> List.choose this.rememberedMember
-                    if members.IsEmpty then None else Some(info,members)
+                    Some(info,group.windows.list |> List.filter(fun hwnd -> not(settling.ContainsKey hwnd)) |> List.choose recorded)
                 | _ -> None)
+        this.learnShared (RememberedGroups.shared (seen |> List.collect snd))
+        let inView =
+            seen |> List.choose(fun (info,members) ->
+                let members = members |> List.filter(sharedSet.Contains >> not)
+                if members.IsEmpty then None else Some(info,members))
         // A group restored from memory was made by hand, though this run did not see it made.
         let manual (info:GroupInfo) =
             info.group.isManual || remembered |> List.exists(fun group -> group.id=info.group.groupToken)
+        // Once the windows open at start are in their groups.
+        let trimmed = initialDiscoveryComplete && not trailed.IsEmpty
+        if trimmed then
+            remembered <- RememberedGroups.dropClosed trailed (inView |> List.collect snd |> Set.ofList) remembered
+            trailed <- Set.empty
         let live,elsewhere = inView |> List.partition(fst >> manual)
         let running =
             live |> List.map(fun (info,_) ->
                 info.group.groupToken,
                 (info :> IGroup).windows.list |> List.map this.appKey |> List.filter(String.IsNullOrEmpty >> not))
+        // A title a window still open has left is not one to come back by: each page a browser
+        // showed was kept, and a new tab of it went into the group.
         let next =
             RememberedGroups.update DateTime.UtcNow
                 (live |> List.map(fun (info,members) -> info.group.groupToken,members))
-                (elsewhere |> List.collect snd) remembered
+                ((elsewhere |> List.collect snd) @ List.ofSeq renamed) remembered
             |> RememberedGroups.withPaths running
         let shape (groups:RememberedGroup list) = groups |> List.map(fun group -> group.id,group.members,group.paths)
-        let changed = shape next <> shape remembered
+        let changed = trimmed || shape next <> shape remembered
         remembered <- next
         if changed then
             settingsManager.rememberedGroups <- next
@@ -525,7 +570,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             if not(WinUserApi.IsWindow hwnd) || now-since > TimeSpan.FromSeconds(10.0) || moved || placed.isRetiring then
                 settling.Remove hwnd |> ignore
             elif not this.desktop.isDragging then
-                match this.rememberedMember hwnd |> Option.bind(RememberedGroups.find remembered) with
+                match this.rememberedMember hwnd |> Option.filter(this.identifies hwnd) |> Option.bind(RememberedGroups.find remembered) with
                 | Some token when token<>placed.group.groupToken ->
                     settling.Remove hwnd |> ignore
                     match this.liveGroupWithToken token |> Option.filter(fun target -> this.sameDesktop target hwnd) with
@@ -825,6 +870,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         let restored = this.savedPlacement window
         groupedThisRun.Add hwnd |> ignore
         if isNewGroup then restored |> Option.iter(fun token -> (group :?> GroupInfo).group.groupToken <- token)
+        // Made by hand before a restart, it still is, though too few of its titles were kept to
+        // remember it by: auto grouping took new windows into it again.
+        if isNewGroup && restored.IsSome && WindowGroupToken.madeByHand hwnd then (group :?> GroupInfo).group.isManual <- true
         // A tab dragged out onto the desktop starts a group by hand.
         if isNewGroup && isDropped then (group :?> GroupInfo).group.isManual <- true
         // A restored group is where the window was put, so it does not wait to join another.
@@ -865,6 +913,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 appKeys.Remove hwnd |> ignore
                 newTabAnchors.Remove hwnd |> ignore
                 settling.Remove hwnd |> ignore
+                recordedAs.Remove hwnd |> ignore
                 isDroppedAndAwaitingGrouping.map(fun s -> s.remove hwnd)
                 windowNameOverride <- windowNameOverride.remove hwnd
                 windowColors.remove hwnd
@@ -1397,6 +1446,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         StartupPlugins.initialize plugins.list (fun () ->
             this.refresh()
             initialDiscoveryComplete <- true
+            if not trailed.IsEmpty then rememberSoon.Request()
             settleTimer.Tick.Add(fun _ -> this.settleTick())
             if settling.Count>0 then settleTimer.Start()
             Services.desktop.groupChanged.Add this.onGroupChanged
