@@ -2271,10 +2271,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         | WinEvent.EVENT_SYSTEM_FOREGROUND when ForegroundOverlays.contains hwnd -> ()
         | WinEvent.EVENT_SYSTEM_FOREGROUND ->
             // Activated some other way (Alt+Tab, its own window), an owned tab can stay under the
-            // others in the same way as one activated from the strip.
+            // others in the same way as one activated from the strip. Not for an event that came
+            // late, its window in front no more: raised over the strip, a pane left a moment ago
+            // came up over the tabs, and they took turns.
             if this.windows.contains(hwnd) then
                 let window = this.os.windowFromHwnd(hwnd)
-                if window.isOwned && not window.isMinimized then window.raise()
+                if window.isOwned && not window.isMinimized && this.os.foreground.hwnd=hwnd then window.raise()
                 if staleFrames.Remove(hwnd) then this.refreshFrame hwnd
                 // In front, a tab asking for attention has it, however it was brought there: by
                 // its shortcut or the switcher as much as by a click, which clears it on its own.

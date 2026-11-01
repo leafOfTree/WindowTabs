@@ -978,6 +978,17 @@ let main() =
         let shown = style()
         trial.Accept()
         note (style()=shown && style()<>before && trial.IsClosed) "Enter on a value shown did not keep it"
+        // Done, the palette is out of sight at once, but stays in front, see-through, until the
+        // command has taken the foreground or a moment has passed: put away in front, it handed the
+        // foreground to the window under it, which a command choosing another took back at once.
+        do
+            let paletteForms() =
+                Application.OpenForms |> Seq.cast<Form>
+                |> Seq.filter(fun form -> not form.IsDisposed && form.Controls |> Seq.cast<Control> |> Seq.exists(fun control -> control :? SettingsSearchBox))
+                |> List.ofSeq
+            note (paletteForms() |> List.forall(fun form -> not form.Visible || form.Opacity=0.0)) "The palette stayed in sight after its command"
+            attempt "palette put away after its command" (fun () ->
+                pumpUntil "The palette was never put away after its command" (fun () -> paletteForms() |> List.forall(fun form -> not form.Visible)))
         api.setValue("tabStyle",box before)
         pump 100
         let search = TabSearchForm(entries,[active],settings=api)
