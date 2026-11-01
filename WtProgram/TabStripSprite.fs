@@ -1125,6 +1125,22 @@ type TabStripSprite<'id> when 'id : equality = {
             let x,_ = this.tabSpan tab
             Pt(x, 1)
 
+    /// In a column, the tab whose row takes a point that no tab covers: the gap between two rows,
+    /// half to each, and the column's margins. The gap only parts the tabs to the eye; over no
+    /// tab, the pointer put a tab's tip away and a click there chose nothing. Not on the scroll track.
+    member this.rowAt(pt:Pt) =
+        if not this.isVertical || pt.x<0 || pt.x>=this.size.width || pt.y<0 || pt.y>=this.size.height then None
+        elif this.scrollMaximum>0 && pt.x>=this.scrollTrack.x-Dpi.scale 2 then None
+        else
+            let gap = this.rowStep-this.rowHeight
+            let half = gap/2
+            let ids = this.lorder.list
+            ids |> List.tryFind(fun id ->
+                let top = (this.tabLocation id).y
+                let above = if id=List.head ids then gap else half
+                let below = if id=List.last ids then gap else gap-half
+                pt.y>=top-above && pt.y<top+this.rowHeight+below)
+
     // Tabs start one pixel into the strip. Above a window they then run to the strip's
     // bottom row, which overlaps the window's top edge by tabHeightOffset, so they cover
     // its border line. Inside the title bar the strip starts a pixel above the window and

@@ -636,6 +636,15 @@ let main() =
                     rest()
                     send WindowMessages.WM_MOUSELEAVE Pt.empty
                     check (not (shown()) && not (waiting())) "The tip stayed after the pointer left the strip"
+                    // Between a column's tabs lies a gap over no tab: the tip put away there comes
+                    // back at once on the next tab, as it does from tab to tab.
+                    hover 60
+                    rest()
+                    typeof<TabStrip>.GetMethod("pointTitle",flags).Invoke(strip,[|box (None:Tab option)|]) |> ignore
+                    check (not (shown())) "A tip stayed up over no tab"
+                    hover 460
+                    check (shown() && not (waiting())) "A tip put away over the gap between tabs waited for the pointer to rest on the next one"
+                    send WindowMessages.WM_MOUSELEAVE Pt.empty
                     // A tab behind, with the preview on, waits for its window's picture, printed off
                     // the strip's thread; the tip then shows it under the whole title.
                     api.setValue("tabHoverPreview",box true)
@@ -912,6 +921,19 @@ let main() =
                 strip.dock <- TabDockLeft
                 strip.isShrunk <- false
                 strip.setPlacement(placement (Pt(40,40)) (Dpi.scaleSize(Sz(220,300))) true)
+                // In a column the gap between two rows, and the column's margins, are their tabs'
+                // own: over them the pointer was over no tab, and a tab's preview went away on the
+                // way to the next one.
+                do
+                    let rows = strip.tabSprites.list |> List.sortBy(fun (location:Pt,_) -> location.y)
+                    match rows with
+                    | (first,firstSprite)::(second,secondSprite)::_ ->
+                        let gapY = (first.y+firstSprite.size.height+second.y)/2
+                        check (second.y>first.y+firstSprite.size.height) (sprintf "The column fixture has no gap between rows: %A %A" first second)
+                        let hitIn pt = strip.tryHit(pt) |> Option.map fst
+                        check ((hitIn (Pt(first.x+firstSprite.size.width/2,gapY))).IsSome) "The gap between two rows of a column was over no tab"
+                        check (hitIn (Pt(1,first.y+firstSprite.size.height/2))=Some firstSprite.id) "The column's margin beside a tab was over no tab"
+                    | _ -> failwith "The column fixture has fewer than two tabs"
                 let item = CmiRegular({text="Command";image=None;flags=List2();click=ignore})
                 let popup = CmiPopUp({text="Options";image=None;items=List2([item])})
                 use overlay = new ThemedContextMenu(List2([item;popup]),ignore)
