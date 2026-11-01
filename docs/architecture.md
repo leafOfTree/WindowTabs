@@ -582,7 +582,11 @@ lighter or darker tints are used depends on the bar's own luminance, not the the
 so a custom palette with a dark bar in the light theme still gets readable tints.
 NativeContextMenu owns copied HBITMAPs until after its menu is destroyed; callers
 retain and dispose their source images. An item image replaces the check mark, so a
-checked item gets a copy with a mark drawn on it. Custom colours use the system ColorDialog.
+checked item gets a copy with a mark drawn on it. Custom tab colours open `ColorPickerWindow`,
+the settings picker with its code under it, centred over the window being coloured. Menus and
+commands compiled before it reach it through `ColorPicker.show`, which `Bootstrap.main` sets.
+It is a window rather than a drop-down so a click in another app closes it: Enter or a click
+elsewhere keeps the colour, Esc gives the previous one back.
 Tab right-click menus use ThemedContextMenu with the shared SettingsColors palette,
 including submenus, check marks and shortcut text. Each menu owns copies of its
 images. Closing releases the auto-hide hold immediately; disposal and the selected

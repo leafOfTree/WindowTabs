@@ -248,14 +248,14 @@ module Commands =
         onTab (fun g hwnd -> g.run(SetTabColor(hwnd,Some color))) hwnd
         AppTabColors.chosen (processPath hwnd) color
     /// A colour of one's own, picked in the app's colour picker as the tab menu does: the tab
-    /// takes each colour as it is picked, and Esc gives it back the one it had.
+    /// takes each colour as it is picked, and Cancel or Esc gives it back the one it had.
     let private customTabColor hwnd =
         let dark = Theme.darkBar (ThemeService.currentAppearance().tabNormalBgColor)
         let initial = currentTabColor hwnd |> Option.map(Theme.tabColor dark) |> Option.defaultValue Drawing.Color.SteelBlue
         let previous = Services.program.getTabColorOverride hwnd
         let show color = onTab (fun g hwnd -> g.run(SetTabColor(hwnd,color))) hwnd
         let mutable last = initial
-        ColorPicker.show System.Windows.Forms.Cursor.Position initial
+        ColorPicker.show (Win32Helper.GetVisibleWindowRectangle hwnd) initial
             (fun color -> last <- color; show (Some(CustomColor color)))
             (fun kept -> if kept && last<>initial then setTabColor hwnd (CustomColor last) else show previous)
     /// Something to remember or forget: a colour on the tab, or one the app keeps.

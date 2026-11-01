@@ -225,6 +225,65 @@ let main() =
     assertTrue ((SettingsHsv.color 120.0 1.0 1.0).ToArgb()=Color.Lime.ToArgb()) "HSV green"
     assertTrue ((SettingsHsv.color 240.0 1.0 1.0).ToArgb()=Color.Blue.ToArgb()) "HSV blue"
     input.Dispose()
+    // A custom tab colour is picked in a window centred over the window being coloured. As a
+    // drop-down it never heard of a click in another app and stayed open; now going to another
+    // window keeps the colour, and Esc gives back the old one.
+    do
+        let screen = Screen.PrimaryScreen.WorkingArea
+        let area = Rectangle(screen.Left+40,screen.Top+30,min 700 (screen.Width-80),min 560 (screen.Height-60))
+        let open' () =
+            let picked = ResizeArray<Color>()
+            let results = ResizeArray<bool>()
+            let window = new ColorPickerWindow(Color.Red,Area=area)
+            window.Changed.Add(picked.Add)
+            window.Finished.Add(results.Add)
+            window.Show()
+            Application.DoEvents()
+            window,picked,results
+        let window,picked,results = open'()
+        let centre (r:Rectangle) = r.Left+r.Width/2,r.Top+r.Height/2
+        assertTrue (centre window.Bounds |> fun (x,y) -> abs(x-fst(centre area))<=1 && abs(y-snd(centre area))<=1)
+                   (sprintf "The colour picker at %A is not centred over %A" window.Bounds area)
+        let code = window.Picker.CodeBox.Value
+        // The code spans the swatch rows above it. Cancel sat 5px from it and read as part of it;
+        // no other colour box has buttons, so the window has none.
+        let swatches = window.Picker.Controls |> Seq.cast<Control> |> Seq.filter(fun c -> c.GetType()=typeof<Button>) |> Seq.toList
+        let field = code.Parent
+        assertTrue (field.Left=(swatches |> List.map(fun c -> c.Left) |> List.min) && field.Right=(swatches |> List.map(fun c -> c.Right) |> List.max))
+                   (sprintf "The colour picker's code does not line up with its swatches: %A" field.Bounds)
+        assertTrue (window.Picker.Controls |> Seq.cast<Control> |> Seq.forall(fun c -> not (c :? SettingsActionButton))) "The colour picker shows buttons"
+        assertTrue ((new SettingsColorPicker()).CodeBox.IsNone) "The picker dropping from a colour field shows buttons"
+        // The square's top row is full brightness and its left column grey; wrapping gradients
+        // drew a black line along the top and a line of the hue down the left.
+        do
+            use square = new SettingsColorPicker(Color=Color.Cyan)
+            use image = new Bitmap(square.Width,square.Height)
+            square.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+            let inset = Dpi.scale 6
+            let top,left = image.GetPixel(square.Width/2,inset),image.GetPixel(inset,square.Height/3)
+            assertTrue (max top.R (max top.G top.B)>200uy) (sprintf "The colour square's top edge is dark: %A" top)
+            assertTrue (abs(int left.R-int left.G)<16 && abs(int left.G-int left.B)<16) (sprintf "The colour square's left edge is not grey: %A" left)
+        code.Text <- "#00AB0F"
+        assertTrue (picked |> Seq.exists(fun c -> c.ToArgb()=Color.FromArgb(0,171,15).ToArgb())) "A typed colour was not previewed"
+        code.Text <- "#00A"
+        assertTrue (picked.Count=1) "A code still being typed was taken as a colour"
+        // A short code is a colour once the picker closes on it: #EEE typed then OK was dropped.
+        code.Text <- "#EEE"
+        use other = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000))
+        other.Show()
+        other.Activate()
+        Application.DoEvents()
+        assertTrue (List.ofSeq results=[true] && window.IsDisposed) (sprintf "Going to another window did not close the colour picker keeping its colour: %A" (List.ofSeq results))
+        assertTrue (picked.[picked.Count-1].ToArgb()=Color.FromArgb(0xEE,0xEE,0xEE).ToArgb()) (sprintf "A short code typed before closing was not kept: %A" (Seq.last picked))
+        let window,_,results = open'()
+        let esc = typeof<Form>.GetMethod("ProcessCmdKey",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic)
+        esc.Invoke(window,[|box(Message());box Keys.Escape|]) |> ignore
+        Application.DoEvents()
+        assertTrue (List.ofSeq results=[false] && window.IsDisposed) "Esc did not close the colour picker giving the colour back"
+        let window,_,results = open'()
+        esc.Invoke(window,[|box(Message());box Keys.Enter|]) |> ignore
+        Application.DoEvents()
+        assertTrue (List.ofSeq results=[true] && window.IsDisposed) "Enter did not close the colour picker keeping its colour"
 
     for mode,name in [DarkTheme,"dark";LightTheme,"light"] do
         preferences <- { preferences with mode=mode }

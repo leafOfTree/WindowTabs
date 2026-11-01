@@ -587,10 +587,10 @@ type TabStripDecorator(group:WindowGroup) as this =
             CmiSeparator
             CmiRegular({text=tr Strings.Settings.customTabColor;image=None;flags=List2();click=fun() ->
                 let initial = currentColor |> Option.map(Theme.tabColor dark) |> Option.defaultValue Color.SteelBlue
-                // The tab takes each colour as it is picked; Esc gives it back the one it had.
+                // The tab takes each colour as it is picked; Cancel or Esc gives it back the one it had.
                 let previous = Services.program.getTabColorOverride hwnd
                 let mutable last = initial
-                ColorPicker.show Cursor.Position initial
+                ColorPicker.show (Win32Helper.GetVisibleWindowRectangle hwnd) initial
                     (fun color -> last <- color; group.setTabColor(hwnd,Some(CustomColor color)))
                     (fun kept -> if kept && last<>initial then choose (CustomColor last) else group.setTabColor(hwnd,previous))})
             CmiRegular({text=tr Strings.Settings.rememberTabColor;image=None

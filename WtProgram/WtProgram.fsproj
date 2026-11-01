@@ -122,6 +122,7 @@
     <Compile Include="ManagerViewService\SettingsPage.fs" />
     <Compile Include="ManagerViewService\SettingsUi.fs" />
     <Compile Include="ManagerViewService\SettingsAlert.fs" />
+    <Compile Include="ManagerViewService\ColorPickerWindow.fs" />
     <Compile Include="ManagerViewService\SettingsTreeList.fs" />
     <Compile Include="ManagerViewService\SettingsBindings.fs" />
     <Compile Include="ManagerViewService\SettingsListPage.fs" />

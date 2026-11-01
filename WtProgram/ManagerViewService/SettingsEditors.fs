@@ -517,6 +517,16 @@ module SettingsHsv =
         let channel v = int(Math.Round((v+value-c)*255.0)) |> max 0 |> min 255
         Color.FromArgb(channel r,channel g,channel b)
 
+module SettingsHex =
+    let format (color:Color) = sprintf "#%06X" (color.ToArgb() &&& 0xFFFFFF)
+    /// Six digits, with or without #; the short form doubles each digit, as in CSS: #3A7 is #33AA77.
+    let parse (text:string) =
+        let hex = text.Trim().TrimStart('#')
+        let hex = if hex.Length=3 then String(hex.ToCharArray() |> Array.collect(fun c -> [|c;c|])) else hex
+        match Int32.TryParse(hex,NumberStyles.HexNumber,CultureInfo.InvariantCulture) with
+        | true,value when hex.Length=6 -> Some(Color.FromArgb((value >>> 16) &&& 255,(value >>> 8) &&& 255,value &&& 255))
+        | _ -> None
+
 type SettingsColorPicker() as this =
     inherit Control()
     let changed = Event<Color>()
@@ -548,10 +558,35 @@ type SettingsColorPicker() as this =
         this.Controls.Add(button)
         button)
     let applySwatchTheme() = for button in swatches do button.FlatAppearance.BorderColor <- (SettingsColors.current()).muted
+    /// The colour's code under the swatches, when the picker stands alone rather than dropping
+    /// from a field that shows the code itself.
+    let mutable code : (SettingsTextInput * TextBox) option = None
+    let footer() = if code.IsSome then Dpi.scale 42 else 0
+    let bottom() = this.Height-footer()
     /// Two rows of quick colours under the hue bar, eight to a row.
     let perRow = 8
-    let svRect() = Rectangle(Dpi.scale 6,Dpi.scale 6,this.Width-Dpi.scale 12,this.Height-Dpi.scale 102)
-    let hueRect() = Rectangle(Dpi.scale 6,this.Height-Dpi.scale 88,this.Width-Dpi.scale 12,Dpi.scale 20)
+    let svRect() = Rectangle(Dpi.scale 6,Dpi.scale 6,this.Width-Dpi.scale 12,bottom()-Dpi.scale 102)
+    let hueRect() = Rectangle(Dpi.scale 6,bottom()-Dpi.scale 88,this.Width-Dpi.scale 12,Dpi.scale 20)
+    /// The left of a column of swatches, and the right of the one before plus the gap: gaps sit
+    /// only between swatches, so each row spans the hue bar exactly.
+    let edge index =
+        let hue = hueRect()
+        hue.Left+index*(hue.Width+Dpi.scale 5)/perRow
+    let layoutSwatches() =
+        let gap = Dpi.scale 5
+        swatches |> Array.iteri(fun index button ->
+            let column,row = index%perRow,index/perRow
+            button.SetBounds(edge column,bottom()-Dpi.scale 56+row*Dpi.scale 28,edge(column+1)-gap-edge column,Dpi.scale 22))
+        // 12px under the swatches, as wide as their rows.
+        code |> Option.iter(fun (field,_) ->
+            field.SetBounds(edge 0,bottom()+Dpi.scale 6,edge perRow-gap-edge 0,Dpi.scale 30))
+    /// While the code shows a colour picked another way, so it is not taken as typed.
+    let mutable showingCode = false
+    let showCode (color:Color) =
+        code |> Option.iter(fun (_,hex) ->
+            showingCode <- true
+            hex.Text <- SettingsHex.format color
+            showingCode <- false)
     let flush() =
         if pending then pending <- false; changed.Trigger(SettingsHsv.color hue saturation brightness)
     let changeAt (point:Point) =
@@ -571,19 +606,39 @@ type SettingsColorPicker() as this =
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
         timer.Tick.Add(fun _ -> flush())
         this.Disposed.Add(fun _ -> timer.Dispose(); swatchTips.Dispose())
-        let layoutSwatches() =
-            let hue,gap = hueRect(),Dpi.scale 5
-            // Gaps sit only between swatches, so each row spans the hue bar exactly.
-            let edge index = hue.Left+index*(hue.Width+gap)/perRow
-            swatches |> Array.iteri(fun index button ->
-                let column,row = index%perRow,index/perRow
-                button.SetBounds(edge column,this.Height-Dpi.scale 56+row*Dpi.scale 28,edge(column+1)-gap-edge column,Dpi.scale 22))
         this.SizeChanged.Add(fun _ -> layoutSwatches())
+        changed.Publish.Add(showCode)
         layoutSwatches()
         applySwatchTheme()
     member _.Changed = changed.Publish
+    /// Adds the colour's code under the swatches, to read or type. No buttons, as no other colour
+    /// box has them: the host closes it as it does those.
+    member this.ShowCode() =
+        if code.IsNone then
+            let hex = new TextBox(MaxLength=7,CharacterCasing=CharacterCasing.Upper,Text=SettingsHex.format this.Color)
+            let field = new SettingsTextInput(hex,AccessibleName=tr Strings.Appearance.chooseColor)
+            code <- Some(field,hex)
+            this.Controls.Add(field)
+            // A whole code previews as it is typed; anything else waits and is put right on leaving.
+            hex.TextChanged.Add(fun _ ->
+                if not showingCode && hex.Text.TrimStart('#').Length=6 then
+                    SettingsHex.parse hex.Text |> Option.iter(fun color -> this.Color <- color; changed.Trigger color))
+            hex.LostFocus.Add(fun _ -> this.CommitCode())
+            field.ApplyTheme()
+            this.Height <- this.Height+footer()
+            layoutSwatches()
+    /// Takes the code as typed, the short form too, which is not previewed: #EEE is a step on the
+    /// way to #EEEEEE. A code that is not a colour gives way to the colour picked.
+    member this.CommitCode() =
+        code |> Option.iter(fun (_,hex) ->
+            match SettingsHex.parse hex.Text with
+            | Some color when color.ToArgb()<>this.Color.ToArgb() -> this.Color <- color; changed.Trigger color
+            | _ -> showCode this.Color)
+    member _.CodeBox = code |> Option.map snd
     /// The picker outlives theme switches; refresh the swatch rims before each showing.
-    member _.ApplyTheme() = applySwatchTheme()
+    member _.ApplyTheme() =
+        applySwatchTheme()
+        code |> Option.iter(fun (field,_) -> field.ApplyTheme())
     member _.Flush() = timer.Stop(); flush()
     member _.Color
         with get() = SettingsHsv.color hue saturation brightness
@@ -598,9 +653,12 @@ type SettingsColorPicker() as this =
     override this.OnPaint(e) =
         e.Graphics.Clear(this.BackColor)
         let rect = svRect()
-        use spectrum = new LinearGradientBrush(rect,Color.White,SettingsHsv.color hue 1.0 1.0,LinearGradientMode.Horizontal)
+        // Gradients wrap round at their own edges, which drew the first row black and the first
+        // column in the hue; spanning a pixel more each side keeps the wrap outside the square.
+        let span = Rectangle.Inflate(rect,1,1)
+        use spectrum = new LinearGradientBrush(span,Color.White,SettingsHsv.color hue 1.0 1.0,LinearGradientMode.Horizontal)
         e.Graphics.FillRectangle(spectrum,rect)
-        use shade = new LinearGradientBrush(rect,Color.FromArgb(0,0,0,0),Color.Black,LinearGradientMode.Vertical)
+        use shade = new LinearGradientBrush(span,Color.FromArgb(0,0,0,0),Color.Black,LinearGradientMode.Vertical)
         e.Graphics.FillRectangle(shade,rect)
         let hueBounds = hueRect()
         use rainbow = new LinearGradientBrush(hueBounds,Color.Red,Color.Red,LinearGradientMode.Horizontal)
@@ -661,7 +719,7 @@ type SettingsColorInput() as this =
     let pickerKey = Event<Keys>()
     let mutable suppressClick = false
     let sync() =
-        text.Text <- sprintf "#%06X" (color.ToArgb() &&& 0xFFFFFF)
+        text.Text <- SettingsHex.format color
         swatch.Invalidate()
     let commit (next:Color) =
         let different = next.ToArgb()<>color.ToArgb()
@@ -669,12 +727,9 @@ type SettingsColorInput() as this =
         sync()
         if different then changed.Trigger()
     let commitText() =
-        let hex = text.Text.Trim().TrimStart('#')
-        // The short form doubles each digit, as in CSS: #3A7 is #33AA77.
-        let hex = if hex.Length=3 then String(hex.ToCharArray() |> Array.collect(fun c -> [|c;c|])) else hex
-        match Int32.TryParse(hex,NumberStyles.HexNumber,CultureInfo.InvariantCulture) with
-        | true,value when hex.Length=6 -> commit(Color.FromArgb((value >>> 16) &&& 255,(value >>> 8) &&& 255,value &&& 255))
-        | _ -> sync()
+        match SettingsHex.parse text.Text with
+        | Some next -> commit next
+        | None -> sync()
     do
         // A pill with a colour dot and its hex code, the colour itself kept to the dot.
         this.Width <- Dpi.scale 120
@@ -753,33 +808,3 @@ type SettingsColorInput() as this =
                 sync()
         member _.control = this :> Control
         member _.changed = changed.Publish
-
-/// The settings colour picker on its own, for a Custom… choice in a menu or the palette, so every
-/// place a colour is picked looks the same rather than opening the system's colour box.
-module ColorPickerPopup =
-    let show (location:Point) (initial:Color) (changed:Color -> unit) (closed:bool -> unit) =
-        let picker = new SettingsColorPicker()
-        let popup = new SettingsChoicePopup(AutoSize=true)
-        picker.Color <- initial
-        picker.ApplyTheme()
-        popup.BackColor <- (SettingsColors.current()).surface
-        picker.BackColor <- popup.BackColor
-        popup.Items.Add(new ToolStripControlHost(picker,Margin=Padding.Empty,Padding=Padding.Empty)) |> ignore
-        let mutable kept = true
-        picker.Changed.Add(changed)
-        picker.KeyDown.Add(fun e ->
-            if e.KeyCode=Keys.Enter then popup.Close(); e.SuppressKeyPress <- true)
-        popup.Closed.Add(fun e ->
-            picker.Flush()
-            // The drop-down takes Esc itself, before the picker sees the key.
-            if e.CloseReason=ToolStripDropDownCloseReason.Keyboard then kept <- false
-            closed kept
-            // Retired on the next UI turn, once the drop-down has finished closing.
-            let timer = new Timer(Interval=1)
-            timer.Tick.Add(fun _ ->
-                timer.Stop()
-                timer.Dispose()
-                if not popup.IsDisposed then popup.Dispose())
-            timer.Start())
-        popup.Show(location)
-        picker.Focus() |> ignore
