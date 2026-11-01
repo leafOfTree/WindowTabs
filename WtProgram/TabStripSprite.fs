@@ -887,6 +887,8 @@ type TabStripSprite<'id> when 'id : equality = {
                 | Some(top) -> top = tab
                 | None -> false 
             displayInfo = this.tabs.find(tab)
+            // A column always raises its tabs as pills, as browsers' vertical tabs do: folder tabs
+            // have no edge to stand on there, and joined rows read as one block until coloured.
             appearance = if this.isVertical then { this.appearance with tabStyle=PillTabs; tabHeight=this.rowHeight } else this.appearance
             size = this.tabSizeOf tab
             onlyIcon = this.isCompact

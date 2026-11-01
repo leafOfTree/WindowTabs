@@ -35,6 +35,31 @@ module MenuImages =
         g.FillEllipse(brush,inset,inset,float32 side-inset*2.0f,float32 side-inset*2.0f)
         bitmap
 
+    /// A tab colour as a rounded swatch with white sample text, as a tab in that colour reads; a dot
+    /// that small hid how deep the colours are and how close some of them sit.
+    let colorTab (width:int) (height:int) (color:Color) (text:string) =
+        let bitmap = new Bitmap(width,height)
+        use g = Graphics.FromImage(bitmap)
+        g.Clear(Color.Transparent)
+        g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        g.PixelOffsetMode <- Drawing2D.PixelOffsetMode.HighQuality
+        let w,h = float32 width,float32 height
+        let corner = max 2.0f (h/2.0f)
+        use path = new Drawing2D.GraphicsPath()
+        path.AddArc(0.0f,0.0f,corner,corner,180.0f,90.0f)
+        path.AddArc(w-corner,0.0f,corner,corner,270.0f,90.0f)
+        path.AddArc(w-corner,h-corner,corner,corner,0.0f,90.0f)
+        path.AddArc(0.0f,h-corner,corner,corner,90.0f,90.0f)
+        path.CloseFigure()
+        use brush = new SolidBrush(color)
+        g.FillPath(brush,path)
+        // Grey-scale smoothing: ClearType fringes on a transparent bitmap.
+        g.TextRenderingHint <- Text.TextRenderingHint.AntiAliasGridFit
+        use font = new Font(SystemFonts.MenuFont.FontFamily,h*0.62f,GraphicsUnit.Pixel)
+        use format = new StringFormat(Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center)
+        g.DrawString(text,font,Brushes.White,RectangleF(0.0f,h*0.06f,w,h),format)
+        bitmap
+
     /// A menu item's image takes the place of its check mark, so a checked item needs a mark
     /// of its own: drawn over a copy, in black or white, whichever stands out from the image.
     let checkedCopy (source:Bitmap) =

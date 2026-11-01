@@ -113,11 +113,16 @@ let main() =
             let mutable selected = 0
             let mutable closed = false
             use dot = MenuImages.colorDot 16 Color.CornflowerBlue
+            use swatch = MenuImages.colorTab (Dpi.scale 28) (Dpi.scale 16) (Theme.tabPalette true).[1] "Aa"
+            check (swatch.GetPixel(swatch.Width/8,swatch.Height/2).ToArgb()=(Theme.tabPalette true).[1].ToArgb() &&
+                   swatch.GetPixel(0,0).A=0uy && swatch.GetPixel(0,swatch.Height-1).A=0uy)
+                  "A tab colour swatch is not a rounded swatch in that colour"
             let command flags image text = CmiRegular({text=text;image=image;flags=List2(flags);click=fun () -> selected <- selected+1})
             let entries = List2([command [] None "Open new tab\tCtrl+Alt+N";
                                  command [MenuFlags.MF_CHECKED] None "Checked";
                                  CmiSection("Section");
-                                 CmiPopUp({text="Tab color";image=None;items=List2([command [MenuFlags.MF_CHECKED] (Some(Img(dot))) "Blue";command [MenuFlags.MF_DISABLED] None "Disabled"])})])
+                                 CmiPopUp({text="Tab color";image=None;items=List2([command [MenuFlags.MF_CHECKED] (Some(Img(dot))) "Blue";command [MenuFlags.MF_DISABLED] None "Disabled"
+                                                                                    command [] (Some(Img(swatch))) "Mustard"])})])
             use menu = new ThemedContextMenu(entries,fun () -> closed <- true)
             let first = menu.Items.[0] :?> ToolStripMenuItem
             let nested = menu.Items.[3] :?> ToolStripMenuItem
@@ -127,6 +132,9 @@ let main() =
             check (first.ShortcutKeyDisplayString="Ctrl+Alt+N" && first.Text="Open new tab") "Themed menu lost its shortcut column"
             check (colour.Checked && not nested.DropDownItems.[1].Enabled) "Themed submenu lost checked or disabled state"
             check (not(Object.ReferenceEquals(colour.Image,dot))) "Themed menu retained a caller-owned image"
+            nested.DropDown.PerformLayout()
+            let gutter = typeof<ToolStripDropDownMenu>.GetField("imageRectangle",Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Instance)
+            check ((gutter.GetValue(nested.DropDown) :?> Rectangle).Width=swatch.Width) "The tab colour menu squeezed its swatches square"
             dot.Dispose()
             menu.Show(Point(40,40))
             Application.DoEvents()
@@ -268,6 +276,10 @@ let main() =
         check (([for c in 'a'..'z' -> Theme.appColorIndex (string c + ".exe")] |> List.distinct).Length>8) "App colours did not use the second eight"
         check (Theme.appColorIndex "Editor.exe"=Theme.appColorIndex "EDITOR.EXE") "App colour hash changed with case"
         check ((Strings.Common.selectedChoice Strings.Settings.tabColorNames.[1]).en="Blue  ✓") "Selected colour is not marked after its name"
+        // Every colour is deep enough for white text, so none may be named after a light colour.
+        let names = Strings.Settings.tabColorNames |> Array.map(fun name -> name.en)
+        check (["Yellow";"Cyan";"Lime";"Coral";"Lavender"] |> List.forall(fun light -> not(Array.contains light names)))
+              "A deep tab colour is named after a light one"
         let colors = WindowTabColors()
         let a,b,c = IntPtr(1),IntPtr(2),IntPtr(3)
         let mutable peers = [a;b;c]

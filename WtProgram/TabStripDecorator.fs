@@ -574,7 +574,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             let palette = Theme.tabPalette dark
             Theme.tabColorOrder |> List.map(fun index ->
                 let color = palette.[index]
-                let image = Img(MenuImages.colorDot (Dpi.scale 16) color)
+                let image = Img(MenuImages.colorTab (Dpi.scale 28) (Dpi.scale 16) color (tr Strings.Settings.tabColorSample))
                 images.Add(image)
                 let name = Strings.Settings.tabColorNames.[index]
                 let caption = if currentColor=Some(PaletteColor index) then Strings.Common.selectedChoice name else name
