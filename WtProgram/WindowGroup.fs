@@ -471,6 +471,17 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 invoker.asyncInvoke(fun () -> for hwnd in this.windows.items.list do WindowGroupToken.saveMadeByHand hwnd isMadeByHand)
             isMadeByHand <- value
             if changed then madeByHandEvent.Trigger()
+    /// A tab dropped into the group makes it one made by hand, unless the group was automatic and
+    /// still holds only windows of one app that groups itself: auto grouping took no new window
+    /// of the app into it after a tab of its own was dragged in. On the group's thread.
+    member this.joinedByHand() =
+        if not isMadeByHand then
+            let paths = this.windows.items.list |> List.map(fun hwnd -> try this.os.windowFromHwnd(hwnd).pid.processPath with _ -> "")
+            let automatic =
+                match paths |> List.map AppIdentity.key |> List.distinct with
+                | [app] when app<>"" -> Services.program.getAutoGroupingEnabled paths.Head
+                | _ -> false
+            if not automatic then this.isManual <- true
     /// The group became one made by hand, after the tabs that made it so had joined.
     member this.madeByHand = madeByHandEvent.Publish
     /// Saved on each window it holds; a group restored after a restart takes its windows' token.
@@ -1761,7 +1772,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     placement.value
             if not(this.windows.contains hwnd) then
                 this.addWindow(hwnd,false)
-                this.isManual <- true
+                this.joinedByHand()
             frame |> Option.iter(fun saved -> placement.set(Some saved))
             this.execute(SplitView.dropCommand hwnd drop,current=partner,keepFrame=frame.IsSome))
 

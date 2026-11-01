@@ -1079,7 +1079,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                     this.ts.moveTab(tab, index)
                     group.onTabsReordered()
                 | None -> ()
-                if joinedByDrag && dragInfoCell.value.IsSome then group.isManual <- true
+                if joinedByDrag && dragInfoCell.value.IsSome then group.joinedByHand()
                 joinedByDrag <- false
                 dragInfoCell.set(None)
                 this.updateTsSlide()

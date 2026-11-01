@@ -335,7 +335,7 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
     member private this.handToPane(group:GroupInfo,hwnd,fill:unit -> unit) =
         if WinUserApi.IsWindow hwnd && not group.isExited && not group.isRetiring then
             let finish() =
-                group.group.isManual <- true
+                group.group.joinedByHand()
                 fill()
             match this.groups.tryFind(fun source -> (source :> IGroup).windows.contains((=) hwnd)) with
             | Some source when source.hwnd=group.hwnd -> group.invokeGroup finish

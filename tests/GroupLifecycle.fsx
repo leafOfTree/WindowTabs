@@ -70,6 +70,7 @@ let main() =
         api.setValue("enableCtrlNumberHotKey", box false)
         api.setValue("autoHideMode", box "Never")
         let mouse = Event<int * IntPtr>()
+        let autoGroupingOn = ref false
         let mutable workspaceWindows = List2<IntPtr>()
         Services.register<IProgram>({new IProgram with
             member _.version = "test"
@@ -88,7 +89,7 @@ let main() =
             member _.groupIcon _ = None
             member _.setGroupIcon(_,_) = ()
             member _.appWindows = workspaceWindows
-            member _.getAutoGroupingEnabled _ = false
+            member _.getAutoGroupingEnabled _ = autoGroupingOn.Value
             member _.setAutoGroupingEnabled _ _ = ()
             member _.tabAppearanceInfo = ThemeService.currentAppearance()
             member _.setHotKey _ _ = true
@@ -1198,6 +1199,15 @@ let main() =
                 // Only the group a tab was dropped into is one made by hand, to be remembered.
                 check (onGroup dragTarget (fun group -> group.isManual) && not(onGroup dragSource (fun group -> group.isManual)))
                     "A dropped tab did not mark its new group as made by hand, or a tab dragged out marked its old one"
+                // An automatic group of one app that a tab of that app is dropped into stays one, or
+                // auto grouping started another group for the app's next window; with the app not
+                // grouping itself, the group is made by hand.
+                autoGroupingOn.Value <- true
+                check (not (onGroup dragSource (fun group -> group.joinedByHand(); group.isManual)))
+                    "A tab of an app dropped into its automatic group made the group one made by hand"
+                autoGroupingOn.Value <- false
+                check (onGroup dragSource (fun group -> group.joinedByHand(); group.isManual))
+                    "A tab dropped into a group of an app that does not group itself left the group automatic"
                 for info in [dragSource;dragTarget] do
                     onGroup info (fun group -> for hwnd in group.windows.items.list do group.removeWindow hwnd)
                     (info :> IGroup).destroy()
