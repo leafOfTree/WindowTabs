@@ -106,34 +106,50 @@ module TabMetrics =
         let fit = if height>0 && full.Height>height then float32 height/float32 full.Height else 1.0f
         new Font(SystemFonts.MenuFont.FontFamily,max 1.0f (points*fit),style)
 
+/// A soft dark edge round an icon, so a logo stays clear on a tab of its own colour without the
+/// colours being chosen around icons. Every icon on a filled tab has it, so they all look alike.
 module IconRim =
-    /// Edges an icon in translucent near-black, so a logo stays clear on a tab of its own colour
-    /// without the colours being chosen around icons.
-    let add (bitmap:Bitmap) =
+    /// How far the edge reaches past the icon: a pixel on a 16px icon, more on larger ones.
+    let reach (side:int) = max 1 (side/16)
+    /// Room left round the icon for its edge, so the edge shows on every side, not only where
+    /// the icon happens to leave transparent pixels.
+    let padding (side:int) = reach side + 1
+    let private alpha (pixel:int) = (pixel >>> 24) &&& 0xFF
+
+    /// Lays the edge under an icon drawn `padding` in from the bitmap's sides: round, fading out
+    /// over its last pixel, and a little over half opaque, so it reads as a soft shadow round the
+    /// shape rather than a drawn line.
+    let add (bitmap:Bitmap) (iconSide:int) =
         let w,h = bitmap.Width,bitmap.Height
-        let radius = max 1 (w/16)
-        let data = bitmap.LockBits(Rectangle(0,0,w,h),ImageLockMode.ReadWrite,PixelFormat.Format32bppArgb)
-        try
-            let pixels : int[] = Array.zeroCreate (w*h)
-            Runtime.InteropServices.Marshal.Copy(data.Scan0,pixels,0,pixels.Length)
-            let alpha (pixel:int) = (pixel >>> 24) &&& 0xFF
-            let result = Array.copy pixels
-            for y in 0..h-1 do
-                for x in 0..w-1 do
-                    let mutable near = 0
-                    for ny in max 0 (y-radius)..min (h-1) (y+radius) do
-                        for nx in max 0 (x-radius)..min (w-1) (x+radius) do
-                            near <- max near (alpha pixels.[ny*w+nx])
-                    let pixel = pixels.[y*w+x]
-                    let a = alpha pixel
-                    let rimA = near*190/255
-                    if rimA>a then
-                        // The icon over the rim.
-                        let under = rimA*(255-a)/255
-                        let out = a+under
-                        let channel shift = (((pixel >>> shift) &&& 0xFF)*a+10*under)/out
-                        result.[y*w+x] <- (out <<< 24) ||| (channel 16 <<< 16) ||| (channel 8 <<< 8) ||| channel 0
-            Runtime.InteropServices.Marshal.Copy(result,0,data.Scan0,result.Length)
+        let reach = float(reach iconSide)
+        let span = int(ceil reach)+1
+        let peak = 145.0
+        let pixels : int[] = Array.zeroCreate (w*h)
+        do
+            let data = bitmap.LockBits(Rectangle(0,0,w,h),ImageLockMode.ReadOnly,PixelFormat.Format32bppArgb)
+            try Runtime.InteropServices.Marshal.Copy(data.Scan0,pixels,0,pixels.Length)
+            finally bitmap.UnlockBits(data)
+        let result = Array.copy pixels
+        for y in 0..h-1 do
+            for x in 0..w-1 do
+                let mutable near = 0.0
+                for ny in max 0 (y-span)..min (h-1) (y+span) do
+                    for nx in max 0 (x-span)..min (w-1) (x+span) do
+                        let a = alpha pixels.[ny*w+nx]
+                        if a>0 then
+                            let distance = sqrt(float((nx-x)*(nx-x)+(ny-y)*(ny-y)))
+                            near <- max near (float a*max 0.0 (min 1.0 (reach+1.0-distance)))
+                let pixel = pixels.[y*w+x]
+                let a = alpha pixel
+                let rimA = int(near*peak/255.0)
+                if rimA>a then
+                    // The icon over the rim.
+                    let under = rimA*(255-a)/255
+                    let out = a+under
+                    let channel shift = (((pixel >>> shift) &&& 0xFF)*a+10*under)/out
+                    result.[y*w+x] <- (out <<< 24) ||| (channel 16 <<< 16) ||| (channel 8 <<< 8) ||| channel 0
+        let data = bitmap.LockBits(Rectangle(0,0,w,h),ImageLockMode.WriteOnly,PixelFormat.Format32bppArgb)
+        try Runtime.InteropServices.Marshal.Copy(result,0,data.Scan0,result.Length)
         finally bitmap.UnlockBits(data)
 
 type IconSprite = {
@@ -142,19 +158,23 @@ type IconSprite = {
     opacity: float32
     rim: bool
     } with
+    /// Room round the icon for its edge; the tab places the image that much further out.
+    member this.padding = if this.rim then IconRim.padding (min this.size.width this.size.height) else 0
     interface ISprite with
         member this.image =
-            let bitmap = Img(this.size)
+            let pad = this.padding
+            let bitmap = Img(Sz(this.size.width+2*pad,this.size.height+2*pad))
             use g = bitmap.graphics
             try
                 // WM_GETICON can return a 32/40px icon even for ICON_SMALL.
                 // Scale the whole icon; drawing at its native size clips it.
-                let bounds = Rectangle(0,0,this.size.width,this.size.height)
+                let bounds = Rectangle(pad,pad,this.size.width,this.size.height)
                 if this.opacity>=1.0f && not this.rim then g.DrawIcon(this.icon,bounds)
                 else
-                    use source = new Bitmap(this.size.width,this.size.height,PixelFormat.Format32bppArgb)
+                    use source = new Bitmap(this.size.width+2*pad,this.size.height+2*pad,PixelFormat.Format32bppArgb)
                     using (Graphics.FromImage(source)) (fun ink -> ink.DrawIcon(this.icon,bounds))
-                    if this.rim then IconRim.add source
+                    if this.rim then IconRim.add source (min this.size.width this.size.height)
+                    let bounds = Rectangle(0,0,source.Width,source.Height)
                     use attributes = new System.Drawing.Imaging.ImageAttributes()
                     let matrix = new System.Drawing.Imaging.ColorMatrix()
                     matrix.Matrix33 <- this.opacity
@@ -399,9 +419,18 @@ type TabSprite<'id> = {
             captured = this.captured = Some(TabClose)
         } :> ISprite
        
+    member private this.inColumn = this.dock=TabDockLeft || this.dock=TabDockRight
+
+    /// The gap beside a floating tab, between it and the tabs either side: 8 pixels at 125%.
+    /// A column's rows stand apart already and keep a narrower one.
+    member private this.pillSideGap = Dpi.scale (if this.inColumn then 5 else 6)
+
     // Horizontal padding inside the tab. The old bezier edges needed 18px of
     // run-up on each side; rounded corners need only enough room to breathe.
-    member private this.edgeWidth = TabMetrics.scaled this.appearance.tabHeight 10
+    // A floating tab in a row keeps its contents a little in from its shape's edge.
+    member private this.edgeWidth =
+        if this.style=PillTabs && not this.inColumn then this.pillSideGap+Dpi.scale 6
+        else TabMetrics.scaled this.appearance.tabHeight 10
 
     // Proportional to the tab, the way a browser draws it: Edge measures about
     // 9px of corner on a 42px tab. A fixed radius looks tight on a tall tab and
@@ -535,8 +564,13 @@ type TabSprite<'id> = {
         let path = new GraphicsPath()
         match this.style with
         | PillTabs ->
-            let inset = this.raisedInset
-            let side = float32(TabMetrics.scaled this.appearance.tabHeight 2)
+            // A clear gap all round, in screen pixels rather than shrunk with the icon, so it shows
+            // at any scale. Half as much above and below as at the sides: the same in both looked
+            // wider above and below, on a shape far longer than it is tall.
+            let sideGap = this.pillSideGap
+            let iconRoom = (this.size.height - TabMetrics.iconSide this.appearance.tabHeight)/2
+            let inset = max 1 (min ((sideGap+1)/2) (min iconRoom (this.size.height/4)))
+            let side = float32 sideGap
             let l,t,r,b = side,float32 inset,w - side,h - float32 inset
             let d = 2.0f * float32(this.raisedRadius (this.size.height - 2 * inset) 6)
             path.AddArc(l,t,d,d,180.0f,90.0f)
@@ -763,7 +797,10 @@ type TabSprite<'id> = {
                      let background = if Theme.darkBar this.fillColor then Color.White else Color.Black
                      let foreground = if background=Color.White then Color.Black else Color.White
                      Some(point,({label=label;size=Sz(side,side);background=background;foreground=foreground} : NumberBadgeSprite) :> ISprite)
-                 | _ -> Some(this.iconLocation,this.iconSprite))
+                 | _ ->
+                     let icon = this.iconSprite
+                     let pad = (icon :?> IconSprite).padding
+                     Some(this.iconLocation.add(Pt(-pad,-pad)),icon))
                 (if this.showCloseButton then Some(this.closeButtonLocation, this.closeButtonSprite)
                  // A row of icons stays a row of icons.
                  elif this.displayInfo.isPinned && not this.onlyIcon then

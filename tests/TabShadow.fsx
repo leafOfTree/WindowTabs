@@ -352,8 +352,9 @@ let main () =
                               tabs=Map2(List2([1,info "Active tab"; 2,info "Another window"])) }
         for _,tab in strip.sprite.children.list do
             for location,child in tab.children.list do
-                let size = match child with :? IconSprite as icon -> icon.size | :? CloseButtonSprite as close -> close.size | _ -> Sz(0,0)
-                check (location.y >= 0 && location.y+size.height <= h) (sprintf "Icon or close button overflows a %dpx tab" h)
+                // An edged icon's image takes in the room for its edge round the icon itself.
+                let size,pad = match child with :? IconSprite as icon -> icon.size,icon.padding | :? CloseButtonSprite as close -> close.size,0 | _ -> Sz(0,0),0
+                check (location.y+pad >= 0 && location.y+pad+size.height <= h) (sprintf "Icon or close button overflows a %dpx tab" h)
     // A logo the colour of its tab, such as an orange browser on red, stays clear behind a dark
     // edge; a stripe leaves the bar as it was, so its icons need none.
     do
@@ -366,11 +367,27 @@ let main () =
         check (rims "Stripe" |> List.forall not) "An icon on a striped tab has a dark edge"
         use logo = new Bitmap(16,16,PixelFormat.Format32bppArgb)
         using (Graphics.FromImage logo) (fun g -> g.FillRectangle(Brushes.Red,4,4,8,8))
-        IconRim.add logo
-        let edge,inside,away = logo.GetPixel(3,8),logo.GetPixel(8,8),logo.GetPixel(0,0)
-        check (edge.A>150uy && edge.R<30uy && edge.G<30uy) (sprintf "The icon's edge is not dark: %A" edge)
+        IconRim.add logo 16
+        let edge,corner,inside,away = logo.GetPixel(3,8),logo.GetPixel(3,3),logo.GetPixel(8,8),logo.GetPixel(0,0)
+        check (edge.A>110uy && edge.A<170uy && edge.R<30uy && edge.G<30uy) (sprintf "The icon's edge is not a soft dark one: %A" edge)
+        check (corner.A>0uy && corner.A<edge.A) (sprintf "The edge's corners are square: %A" corner)
         check (inside.ToArgb()=Color.Red.ToArgb()) (sprintf "The edge changed the icon: %A" inside)
         check (away.A=0uy) "The edge spread away from the icon"
+        // An icon that fills its square, as a folder does from side to side, is edged on every
+        // side: its image leaves room for the edge and sits that much further out.
+        use square = new Bitmap(16,16,PixelFormat.Format32bppArgb)
+        using (Graphics.FromImage square) (fun g -> g.Clear(Color.Gold))
+        let handle = square.GetHicon()
+        try
+            use icon = Icon.FromHandle(handle)
+            let sprite : IconSprite = { icon=icon; size=Sz(16,16); opacity=1.0f; rim=true }
+            use edged = (sprite :> ISprite).image.bitmap
+            let pad = sprite.padding
+            check (pad>0 && edged.Width=16+2*pad) "An edged icon has no room for its edge"
+            for x,y in [pad-1,8+pad;pad+16,8+pad;8+pad,pad-1;8+pad,pad+16] do
+                check (edged.GetPixel(x,y).A>100uy) (sprintf "An icon filling its square lost its edge at %d,%d" x y)
+            check (edged.GetPixel(pad+8,pad+8).ToArgb()=Color.Gold.ToArgb()) "The edged icon moved within its image"
+        finally WinUserApi.DestroyIcon(handle) |> ignore
     // Icons only: the icon is centred; a smaller close button shows beside it on the pointed-at
     // tab only, and not at all when the tab is too narrow for both.
     do
@@ -378,7 +395,7 @@ let main () =
             strip.sprite.children.list |> List.map(fun (_,tab) ->
                 let tab = tab :?> TabSprite<int>
                 let find kind = (tab :> ISprite).children.list |> List.tryPick(fun (location,child:ISprite) -> kind location child)
-                let icon = find (fun location child -> match child with :? IconSprite as icon -> Some(location,icon.size) | _ -> None)
+                let icon = find (fun location child -> match child with :? IconSprite as icon -> Some(location.add(Pt(icon.padding,icon.padding)),icon.size) | _ -> None)
                 let close = find (fun location child -> match child with :? CloseButtonSprite as close -> Some(location,close.size) | _ -> None)
                 tab.id,tab.size,icon.Value,close)
         // As TabStrip sizes icon-only tabs.
