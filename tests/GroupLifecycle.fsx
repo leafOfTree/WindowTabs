@@ -1193,6 +1193,9 @@ let main() =
                     group.ts.setPlacement({bounds=Rect(Pt(-20000,-20000),size);showInside=false})
                     let target = dragTargetFor group.ts.hwnd
                     check (target.dragEnter (box data) (Pt(1,1))) "Destination rejected a drag"
+                    // Carried in and not let go, the tab's window waits out of sight: the group's
+                    // window in front stays so, and the windows the drag passes stay over it.
+                    check (group.topWindow=d) (sprintf "A tab carried into a strip brought its window to the front before the drop: %A" group.topWindow)
                     target.dragEnd())
                 pumpUntil "Cross-orientation drag lost its insertion order" (fun () -> nativeOrder dragTarget=[b;d] && publicOrder dragTarget=[b;d])
                 check (onGroup dragTarget (fun group -> group.ts.dock)=targetDock) "Drag changed the destination orientation"

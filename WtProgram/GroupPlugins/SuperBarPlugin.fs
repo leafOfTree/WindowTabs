@@ -812,7 +812,9 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
     member this.zorder = this.wtGroup.zorder.value
 
     /// Removal notifies plugins before the deferred z-order refresh has dropped that HWND.
-    member private this.members = this.zorder.where(this.wtGroup.windows.contains)
+    /// A tab carried in and not let go yet is not one: the group's button came up for it, and the
+    /// window in front, now owned by that new button, rose over the windows the drag passed.
+    member private this.members = this.zorder.where(fun hwnd -> this.wtGroup.windows.contains hwnd && not(this.wtGroup.isHeldByDrag hwnd))
 
     /// The proxy must not attach an application's input queue across integrity levels.
     member private this.canCombine = this.members.count > 1 && this.members.all canShareInput
@@ -1192,6 +1194,8 @@ type SuperBarPlugin(canShareInput:IntPtr -> bool, ?desktopOf:IntPtr -> Guid opti
             this.wtGroup.foregroundChanged.Add this.onForegroundChanged
             this.wtGroup.tabInfoChanged.Add(fun _ -> this.updateTaskbar())
             this.wtGroup.added.Add this.onAdded
+            // A tab carried in is taken over once it is let go.
+            this.wtGroup.dragReleased.Add(fun _ -> this.updateTaskbar())
             this.wtGroup.removed.Add this.onRemoved
             this.wtGroup.flash.Add this.onFlash
             this.wtGroup.bounds.changed.Add this.onBoundsChanged

@@ -845,19 +845,8 @@ type TabStripDecorator(group:WindowGroup) as this =
     /// What a drag at this point meets, on this thread: the strip's row first; else what a drop
     /// would do (an empty pane, or one at an empty pane's edge, is filled; anything else
     /// splits), the place shown when `show` says so or at once for an empty pane.
-    /// Whether the dragged tab is one of this strip's own. A tab only taken in by this drag is
-    /// still another group's: counted as the strip's own, a column let it out below its last tab,
-    /// then, another's again, took it back in, on every move.
-    member private this.ownsDrag(data:obj) =
-        match data with
-        | :? TabDragInfo as drag ->
-            let (Tab hwnd) = drag.tab
-            dragSource=Some hwnd || (group.windows.contains hwnd && not joinedByDrag)
-        | _ -> false
-
     member private this.probeLayout(data:obj,pt:Pt,show:bool) =
-        let own = this.ownsDrag data
-        match this.nearTabs(pt,own) with
+        match this.nearTabs pt with
         | Some strip -> NearStrip strip
         | None ->
             let proposal = this.layoutProposal(data,pt)
@@ -918,30 +907,20 @@ type TabStripDecorator(group:WindowGroup) as this =
         layoutDrop <- None
         layoutPreview |> Option.iter(fun window -> window.fadeOut())
 
-    /// The strip, when the point lies within `DragRouting.stripMargin` of its row of tabs in
-    /// sight. The row runs the group's whole width (a column of tabs its whole height): a tab
-    /// carried to the top of the window joins the group anywhere along it, and the window's
-    /// top edge offers a split only below that. Around the tabs alone, the rest of the row
-    /// offered the edge, and a tab meant for the group split it.
-    /// own: a tab of this group. Along a column it stays in only as far as the tabs go, so one
-    /// dragged down past the last tab comes out; another group's tab joins anywhere along the side.
-    member private this.nearTabs(pt:Pt,own:bool) =
+    /// The strip, when the point lies within `DragRouting.stripMargin` of its tabs in sight, and
+    /// only there: running the group's whole width, or a column's whole height, the strip took in
+    /// a tab carried anywhere over the window's title bar or along its side. The rest of the
+    /// window's edge offers a split, once the pointer rests there.
+    member private this.nearTabs(pt:Pt) =
         let sprites = this.ts.tabSprites.list
-        match group.bounds.value with
-        | Some frame when not sprites.IsEmpty && this.ts.visible && WinUserApi.IsWindowVisible this.ts.hwnd ->
+        if not sprites.IsEmpty && this.ts.visible && WinUserApi.IsWindowVisible this.ts.hwnd then
             let strip = os.windowFromHwnd(this.ts.hwnd)
             let rects = sprites |> List.map(fun (location:Pt,sprite) -> Rect(strip.ptToScreen(location),sprite.size))
             let margin = Dpi.scale DragRouting.stripMargin
-            let tabsLeft,tabsRight = (rects |> List.map(fun r -> r.left) |> List.min),(rects |> List.map(fun r -> r.right) |> List.max)
-            let tabsTop,tabsBottom = (rects |> List.map(fun r -> r.top) |> List.min),(rects |> List.map(fun r -> r.bottom) |> List.max)
-            let left,right =
-                if this.ts.isVertical then tabsLeft-margin,tabsRight+margin
-                else (min frame.left tabsLeft)-margin,(max frame.right tabsRight)+margin
-            let top,bottom =
-                if this.ts.isVertical && not own then (min frame.top tabsTop)-margin,(max frame.bottom tabsBottom)+margin
-                else tabsTop-margin,tabsBottom+margin
+            let left,right = (rects |> List.map(fun r -> r.left) |> List.min)-margin,(rects |> List.map(fun r -> r.right) |> List.max)+margin
+            let top,bottom = (rects |> List.map(fun r -> r.top) |> List.min)-margin,(rects |> List.map(fun r -> r.bottom) |> List.max)+margin
             if pt.x>=left && pt.x<right && pt.y>=top && pt.y<bottom then Some this.ts.hwnd else None
-        | _ -> None
+        else None
 
     interface ILayoutDropTarget with
         member this.probe(data,pt,show) =
@@ -1004,6 +983,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                         this.ts.addTab dragInfo.tab
                         // The destination group owns its cached icons. Drag data
                         // can outlive the source group's membership and cache.
+                        if not(group.windows.contains hwnd) then group.holdForDrag hwnd
                         group.addWindow(hwnd, false)
                         joinedByDrag <- true
                         true
@@ -1017,13 +997,12 @@ type TabStripDecorator(group:WindowGroup) as this =
                 this.updateTsSlide()
                 this.ts.dragScrollPoint <- Some pt
 
-        // Out as far as it came in: another group's tab came into a column anywhere along the
-        // window's side, then went out again past the column's own end, and back in, on every move.
         member this.holds(pt) =
             WinUserApi.IsWindow(this.ts.hwnd) && this.invokeSync(fun () ->
-                match dragInfoCell.value with
-                | Some drag -> (this.nearTabs(pt,this.ownsDrag (box drag))).IsSome
-                | None -> false)
+                dragInfoCell.value.IsSome && (this.nearTabs pt).IsSome)
+
+        member this.takes(pt) =
+            WinUserApi.IsWindow(this.ts.hwnd) && this.invokeSync(fun () -> (this.nearTabs pt).IsSome)
 
         member this.dragExit() =
             this.invokeSync <| fun() ->
@@ -1036,6 +1015,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                         dragInfoCell.set(None)       
                         let (Tab(hwnd)) = tab
                         let window = os.windowFromHwnd(hwnd)
+                        group.releaseDrag(hwnd,false)
                         group.removeWindow(hwnd)
                         window.hideOffScreen(None)
                         // Out on its drag, the tab is no longer the one shown. Panes its press
@@ -1059,6 +1039,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 let (Tab hwnd) = drag.tab
                 dragInfoCell.set(None)
                 this.ts.dragScrollPoint <- None
+                group.releaseDrag(hwnd,true)
                 if WinUserApi.IsWindow hwnd then
                     if not(group.windows.contains hwnd) then group.addWindow(hwnd,false)
                     dragStartIndex |> Option.iter(fun index -> this.ts.moveTab(drag.tab,index))
@@ -1080,6 +1061,8 @@ type TabStripDecorator(group:WindowGroup) as this =
                     group.onTabsReordered()
                 | None -> ()
                 if joinedByDrag && dragInfoCell.value.IsSome then group.joinedByHand()
+                // Let go in this strip: the window it carried in comes into place, in front.
+                dragInfoCell.value |> Option.iter(fun drag -> let (Tab hwnd) = drag.tab in group.releaseDrag(hwnd,true))
                 joinedByDrag <- false
                 dragInfoCell.set(None)
                 this.updateTsSlide()

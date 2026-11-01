@@ -403,6 +403,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let _ts = ref None 
     let inMoveSize = Cell.create(false)
     let foregroundCell = Cell.create(_os.foreground.hwnd)
+    /// A tab carried into the strip and not let go yet: its window stays out of sight, last in the
+    /// group's order, until the drop. Placed at once as the tab in front, the window it brought
+    /// raised the group over the windows the drag only passed.
+    let mutable heldByDrag : IntPtr option = None
+    let dragReleasedEvent = Event<IntPtr>()
     let prevForegroundCell = ref None
     let mutable lastActiveTab : IntPtr option = None
     /// A closing tab and the successor already selected for it before discovery removed it.
@@ -638,7 +643,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         with get() = foregroundCell.value
         and set(value) =
             let value = TabNavigation.currentForeground this.lorder.list value this.os.foreground.hwnd
-            if this.windows.contains(value) && not(isMinimized value) && not reconcileMinimizeState then this.onActivated(value)
+            if this.windows.contains(value) && heldByDrag<>Some value && not(isMinimized value) && not reconcileMinimizeState then this.onActivated(value)
             let active = TabNavigation.rememberActive this.lorder.list isOpen lastActiveTab value
             // Minimizing the active tab activates another tab that the group minimizes next.
             let active =
@@ -738,6 +743,10 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         let newZorder =
             match groupLayout with
             | Split s -> match this.paneFront s with Some front -> newZorder.where((<>) front).prepend front | None -> newZorder
+            | _ -> newZorder
+        let newZorder =
+            match heldByDrag with
+            | Some held when newZorder.contains((=) held) -> newZorder.where((<>) held).append held
             | _ -> newZorder
         if zorderCell.value.list <> newZorder.list then
             if not this.isSplit && newZorder.tryHead<>zorderCell.value.tryHead then
@@ -1451,7 +1460,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             splitHost <- host
             // The tabs behind go under the backdrop, once there is one, which is under every pane.
             let behind = if backdropHandle<>IntPtr.Zero then backdropHandle else host
-            for target in SplitView.plan groupLayout frame this.splitGap this.windows.items.list this.topWindow do
+            let placed = this.windows.items.list |> List.filter(fun hwnd -> heldByDrag<>Some hwnd)
+            for target in SplitView.plan groupLayout frame this.splitGap placed this.topWindow do
               if hostChanged && not liveResize && not(pane target.hwnd) && host<>IntPtr.Zero && not(isMinimized target.hwnd) &&
                  FollowerPlacement.queue.isWindowIdle(placementOwner,target.hwnd) &&
                  this.os.windowFromHwnd(target.hwnd).visibleBounds=target.rect then
@@ -2008,7 +2018,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             match requestedMinimizeStates.TryGetValue(hwnd) with
             | true,expected -> this.os.windowFromHwnd(hwnd).isMinimized<>expected && FollowerPlacement.isChangingMinimizeState placementOwner hwnd
             | _ -> false
-        if this.isSplit then this.applyLayout()
+        // A tab carried in is placed once it is let go.
+        if heldByDrag=Some hwnd then ()
+        elif this.isSplit then this.applyLayout()
         elif placement.value.IsSome && not changingMinimizeState then
             let bounds,wp,visible = placement.value.Value
             let below = zorderCell.value.tryHead |> Option.filter((<>) hwnd)
@@ -2339,7 +2351,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             // Joining with the focus, as a tab dragged here has from its drag, a window from outside
             // the panes parks them, as choosing it does: placed as a tab behind, it waited under the
             // panes with the focus. A pane coming back with its place saved is put among them.
-            if foreground=hwnd && this.isSplit && (WindowSplitLayout.read hwnd).IsNone then
+            if foreground=hwnd && heldByDrag<>Some hwnd && this.isSplit && (WindowSplitLayout.read hwnd).IsNone then
                 this.onActivated(hwnd)
                 this.setZorder(zorderCell.value.where((<>) hwnd).prepend hwnd)
             StartupTrace.measure "group.add.placement" (fun () -> this.adjustWindowPlacement(hwnd))
@@ -2566,6 +2578,19 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     let fade = new SplitTransition(frame,[move],durationMs=SplitTransition.CrossFadeMs,crossFade=true,strip=strip)
                     fade.start())
             if shownNow then coversShown <- coversShown+1
+
+    /// A window carried in by its tab joins out of sight; let go, or taken back out, it is not
+    /// held any more. Let go in the strip, it is placed and comes to the front as the tab chosen.
+    member this.holdForDrag(hwnd:IntPtr) = heldByDrag <- Some hwnd
+    member this.isHeldByDrag(hwnd:IntPtr) = heldByDrag=Some hwnd
+    member this.releaseDrag(hwnd:IntPtr, dropped:bool) =
+        if heldByDrag=Some hwnd then
+            heldByDrag <- None
+            if dropped && this.windows.contains hwnd && WinUserApi.IsWindow hwnd then
+                this.adjustWindowPlacement hwnd
+                dragReleasedEvent.Trigger hwnd
+                this.tabActivate(Tab hwnd,true)
+    member this.dragReleased = dragReleasedEvent.Publish
 
     member this.tabActivate(Tab(hwnd), force) =
         let window = this.os.windowFromHwnd(hwnd)

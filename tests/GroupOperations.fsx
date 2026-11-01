@@ -112,6 +112,7 @@ let main() =
             member _.dragMove _ = ()
             member _.dragExit() = ()
             member _.holds _ = false
+            member _.takes _ = true
             member _.dragCancel _ = ()}
     let surface = {new ILayoutDropTarget with
                     member _.probe(_,_,_) = Aimed(SplitAim,true)
@@ -119,20 +120,26 @@ let main() =
                     member _.commit(_,_) = true}
     let strips = Map2(List2([IntPtr 1,strip]))
     let surfaces = Map2(List2([IntPtr 1,surface;IntPtr 2,surface]))
-    check (DragRouting.resolve strips surfaces (IntPtr 1) IntPtr.Zero=StripHit(IntPtr 1)) "The strip itself did not join the dragged tab"
-    check (DragRouting.resolve strips surfaces (IntPtr 2) IntPtr.Zero=LayoutHit(IntPtr 2)) "A group window did not offer a pane"
-    check (DragRouting.resolve strips surfaces (IntPtr 9) (IntPtr 1)=LayoutHit(IntPtr 1)) "A helper window owned by the strip did not offer its group's panes"
-    check (DragRouting.resolve strips surfaces (IntPtr 9) (IntPtr 8)=FreeHit) "An unrelated window took the drag"
-    check (DragRouting.resolve strips surfaces IntPtr.Zero IntPtr.Zero=FreeHit) "The desktop took the drag"
+    let near _ = true
+    check (DragRouting.resolve strips surfaces near (IntPtr 1) IntPtr.Zero=StripHit(IntPtr 1)) "The strip itself did not join the dragged tab"
+    // Over the strip's window away from its tabs, which runs the group's whole width, the tab is
+    // over the group's window, not joining it.
+    check (DragRouting.resolve strips surfaces (fun _ -> false) (IntPtr 1) IntPtr.Zero=LayoutHit(IntPtr 1)) "A strip took a tab far from its tabs"
+    check (DragRouting.resolve strips surfaces near (IntPtr 2) IntPtr.Zero=LayoutHit(IntPtr 2)) "A group window did not offer a pane"
+    check (DragRouting.resolve strips surfaces near (IntPtr 9) (IntPtr 1)=LayoutHit(IntPtr 1)) "A helper window owned by the strip did not offer its group's panes"
+    check (DragRouting.resolve strips surfaces near (IntPtr 9) (IntPtr 8)=FreeHit) "An unrelated window took the drag"
+    check (DragRouting.resolve strips surfaces near IntPtr.Zero IntPtr.Zero=FreeHit) "The desktop took the drag"
     // A tab held in one strip goes to another group's strip in sight under the pointer, though
     // still within the first strip's width: strips at the top of the screen lie over one another,
     // and the first one crossed kept the tab, which then joined a group out of sight.
     do
         let twoStrips = Map2(List2([IntPtr 1,strip;IntPtr 3,strip]))
-        check (DragRouting.movesToStrip twoStrips (IntPtr 1) (IntPtr 3)) "A tab held in one strip did not move to another group's strip under the pointer"
-        check (not(DragRouting.movesToStrip twoStrips (IntPtr 1) (IntPtr 1))) "A tab left the strip it is in"
-        check (not(DragRouting.movesToStrip twoStrips (IntPtr 1) (IntPtr 9))) "A tab left its strip for a window that is no strip"
-        check (not(DragRouting.movesToStrip twoStrips (IntPtr 1) IntPtr.Zero)) "A tab left its strip for nothing"
+        let near _ = true
+        check (DragRouting.movesToStrip twoStrips near (IntPtr 1) (IntPtr 3)) "A tab held in one strip did not move to another group's strip under the pointer"
+        check (not(DragRouting.movesToStrip twoStrips (fun _ -> false) (IntPtr 1) (IntPtr 3))) "A tab moved to another strip far from its tabs"
+        check (not(DragRouting.movesToStrip twoStrips near (IntPtr 1) (IntPtr 1))) "A tab left the strip it is in"
+        check (not(DragRouting.movesToStrip twoStrips near (IntPtr 1) (IntPtr 9))) "A tab left its strip for a window that is no strip"
+        check (not(DragRouting.movesToStrip twoStrips near (IntPtr 1) IntPtr.Zero)) "A tab left its strip for nothing"
     // A split is offered once the pointer rests in a drop zone, not as it passes: let go on the
     // way, the tab comes out as a window of its own. An empty pane takes a drop at once.
     do
@@ -169,7 +176,7 @@ let main() =
         let hit,owner = DragRouting.windowsAt centre
         check (hit=app.Handle) (sprintf "A drag over an app's child window found %A, not its window %A" hit app.Handle)
         let appSurfaces = Map2(List2([app.Handle,surface]))
-        check (DragRouting.resolve strips appSurfaces hit owner=LayoutHit app.Handle) "A drag over an app's child window did not offer a pane"
+        check (DragRouting.resolve strips appSurfaces (fun _ -> true) hit owner=LayoutHit app.Handle) "A drag over an app's child window did not offer a pane"
     // A tab dragged from its strip, as the drag's capture window sees the pointer: it starts once
     // the pointer has moved, moves in its strip, goes over to another strip, floats away from any,
     // lands or is cancelled back to its strip.
@@ -177,6 +184,9 @@ let main() =
         let events = ResizeArray<string>()
         // Whether the source strip says it still holds a tab that left its own window.
         let sourceHolds = ref false
+        // Each strip's window, set once shown: a strip holds a tab within reach of its window and
+        // takes one only near its tabs, its first 200 pixels here.
+        let windows = Collections.Generic.Dictionary<string,Rectangle>()
         let stripTarget name =
             {new IDragDropTarget with
                 member _.dragBegin() = events.Add(name+" begin")
@@ -184,7 +194,9 @@ let main() =
                 member _.dragEnter _ _ = events.Add(name+" enter"); true
                 member _.dragMove _ = if not(events.Contains(name+" move")) then events.Add(name+" move")
                 member _.dragExit() = events.Add(name+" exit")
-                member _.holds _ = name="source" && sourceHolds.Value
+                member _.holds pt =
+                    (let r = windows.[name] in Rectangle.Inflate(r,24,24).Contains(pt.x,pt.y)) || (name="source" && sourceHolds.Value)
+                member _.takes pt = let r = windows.[name] in pt.x>=r.Left && pt.x<r.Left+200 && pt.y>=r.Top && pt.y<r.Bottom
                 member _.dragCancel _ = events.Add(name+" cancel")}
         let parent =
             {new IDragDropParent with
@@ -197,6 +209,8 @@ let main() =
         use other = stripAt 600
         source.Show(); other.Show()
         for _ in 1..5 do Application.DoEvents()
+        windows.["source"] <- source.Bounds
+        windows.["other"] <- other.Bounds
         let controller = DragDropController(parent,fun () -> true)
         let api = controller :> IDragDrop
         api.registerTarget(source.Handle,stripTarget "source")
@@ -241,6 +255,16 @@ let main() =
         check (events.Contains "source exit") "A tab dragged away from its strip stayed in it"
         release capture empty
         check (events.Contains "parent drop float" && events.Contains "parent end" && ended()) (sprintf "A tab let go away from the strips was not dropped: %A" (List.ofSeq events))
+        // Over another strip's window far from its tabs, as over a title bar the strip runs along,
+        // the tab is not taken in; near its tabs it is.
+        let capture = startDrag "far"
+        move capture (Pt(230,615))
+        move capture (Pt(880,615))
+        check (events.Contains "source exit" && not(events.Contains "other enter")) (sprintf "A strip took a tab far from its tabs: %A" (List.ofSeq events))
+        move capture (Pt(750,615))
+        check (events.Contains "other enter") (sprintf "A strip did not take a tab near its tabs: %A" (List.ofSeq events))
+        release capture (Pt(750,615))
+        check (ended()) "A drag taken in near a strip's tabs did not end"
         // Past its strip's own window but where the strip still holds it, as a column holds another
         // group's tab along the window's side, the tab stays in; it came out and went back in there.
         let capture = startDrag "held"
@@ -971,16 +995,17 @@ let main() =
                         let first = group.ts.tabSprites.list |> List.head |> fun (location,sprite) -> Rect(strip.ptToScreen(location),sprite.size)
                         let below = Pt(first.x+first.width/2,first.bottom+Dpi.scale 10)
                         let away = Pt(first.x+first.width/2,first.bottom+Dpi.scale 60)
-                        // The row runs the group's whole width: at its far end, beside the tabs, too.
+                        // Only around the tabs: at the far end of the title bar, well beside them, a
+                        // tab carried along it was taken into the group.
                         let frame = group.layoutFrame
+                        let tabsRight = group.ts.tabSprites.list |> List.map(fun (location,sprite) -> strip.ptToScreen(location).x+sprite.size.width) |> List.max
                         let along = Pt(frame.right-Dpi.scale 10,first.y+first.height/2)
                         let near pt = match decorator.probe(dragOf group foreign,pt,false) with NearStrip strip -> Some strip | Aimed _ -> None
                         check (near below=Some group.ts.hwnd) (sprintf "A point just below a group's tabs was not taken as its strip: %A below %A" below first)
-                        check (near along=Some group.ts.hwnd) (sprintf "A point at the far end of a group's row of tabs was not taken as its strip: %A beside %A in %A" along first frame)
+                        check (along.x-tabsRight<=Dpi.scale 40 || near along=None) (sprintf "A point far beside a group's tabs was taken as its strip: %A, tabs end at %d" along tabsRight)
                         check (near away=None) (sprintf "A point well below a group's tabs was taken as its strip: %A below %A" away first))
-                    // Tabs at the side: a tab of the group dragged down past the last of its column
-                    // comes out, rather than going back into the column; another group's tab still
-                    // joins anywhere along the side.
+                    // Tabs at the side: a tab dragged down past the last of the column comes out,
+                    // its own or another group's; along the rest of the side it was taken in.
                     onGroup(fun group -> group.ts.dock <- TabDockRight)
                     waitOperation()
                     try
@@ -991,16 +1016,11 @@ let main() =
                             let frame = group.layoutFrame
                             let below = Pt(last.x+last.width/2,last.bottom+Dpi.scale 40)
                             check (below.y<frame.bottom) (sprintf "No room below the column's last tab to test: %A in %A" last frame)
-                            let near hwnd = match decorator.probe(dragOf group hwnd,below,false) with NearStrip _ -> true | Aimed _ -> false
-                            check (group.windows.contains source && not (near source)) "A tab dragged down past its column's last tab went back into the column"
-                            check (near foreign) "Another group's tab was not taken in along the column's side"
-                            // A tab in the column only because this drag took it in is still another
-                            // group's: below the last tab it stays in. Counted as the column's own,
-                            // it came out, was another's again and went back in, on every move.
-                            let joined = decorator.GetType().GetField("joinedByDrag",flags)
-                            joined.SetValue(decorator,true)
-                            try check (near source) "A tab taken into the column by its drag came out again below its last tab"
-                            finally joined.SetValue(decorator,false))
+                            let nearAt pt hwnd = match decorator.probe(dragOf group hwnd,pt,false) with NearStrip _ -> true | Aimed _ -> false
+                            check (group.windows.contains source && not (nearAt below source)) "A tab dragged down past its column's last tab went back into the column"
+                            check (not (nearAt below foreign)) "Another group's tab was taken in along the column's side, far below its tabs"
+                            let beside = Pt(last.x+last.width/2,last.bottom+Dpi.scale 10)
+                            check (nearAt beside foreign) "Another group's tab was not taken in just below the column's last tab")
                     finally
                         onGroup(fun group -> group.ts.dock <- TabDockTop)
                         waitOperation()

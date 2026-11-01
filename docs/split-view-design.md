@@ -99,11 +99,16 @@ the tree's simplest case and keep their behaviour.
   it out of the group, the panes come back, so the drop aims at what is seen. A tab held in one
   strip moves to another group's strip in sight under the pointer: strips of groups at the top
   of the screen lie over one another, and the first strip crossed kept the tab across its whole
-  width, so it joined a group out of sight. Within 24px of a group's row of tabs in sight
-  (`DragRouting.stripMargin`), across the group's whole width, a tab counts as in their strip,
-  joining it there and leaving it only beyond: just below another group's tabs, over its title
-  bar, a tab carried to join them was offered that window's top edge instead, and so was one
-  carried to the top of the window beside the tabs.
+  width, so it joined a group out of sight. Within 24px of a group's tabs in sight
+  (`DragRouting.stripMargin`), and only there, a tab counts as in their strip, joining it there
+  and leaving it only beyond: just below another group's tabs, over its title bar, a tab carried
+  to join them was offered that window's top edge instead. Across the group's whole width, or a
+  column's whole height, a tab carried along the title bar or the side was taken in far from
+  the tabs; the rest of the edge offers a split once the pointer rests there.
+- A tab carried into a strip and not let go yet keeps its window out of sight
+  (`WindowGroup.holdForDrag`): the group's window in front stays where it is in the order, and
+  the taskbar button takes the window over only at the drop. Placed at once, the dragged window,
+  the foreground one, raised the group over the windows the drag only passed.
 - A tab dragged out onto the desktop becomes a window of its own at the size its group has
   now. Where a side spans most of the screen, a maximized group's or the height of one snapped
   to half the screen, the whole window is scaled down, its proportions kept, until that side
