@@ -1066,7 +1066,8 @@ type TabStripDecorator(group:WindowGroup) as this =
                 match this.ts.movedTab with
                 | Some(tab, index) ->
                     this.ts.moveTab(tab, index)
-                    group.onTabsReordered()
+                    let (Tab moved) = tab
+                    group.onTabsReordered(moved)
                 | None -> ()
                 if joinedByDrag && dragInfoCell.value.IsSome then group.joinedByHand()
                 // Let go in this strip: the window it carried in comes into place, in front.

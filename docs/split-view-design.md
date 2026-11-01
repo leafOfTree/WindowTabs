@@ -131,7 +131,12 @@ the tree's simplest case and keep their behaviour.
   once the button is up before a drag began: a tab pressed to be dragged leaves its group where
   it is in the order. The tab behind the one carried out shows in place, not chosen: chosen, the
   group came up over the group the tab was carried to.
-  A pane window dropped elsewhere leaves its pane, whose neighbour takes the room. There is no
+  A pane window dropped elsewhere leaves its pane, whose neighbour takes the room. The panes'
+  tabs stay a run of their own in the strip: a pane's tab dragged out of it, past another tab,
+  takes its window out of the split the same way (the window stays in the group), the last but
+  one ending the split; another tab dropped among them goes after them
+  (`WindowGroup.onTabsReordered`). Parted, they still made a split, with nothing in the strip to
+  show it. There is no
   fixed number of panes. Each pane is at least 120px and at least what its window lets itself
   be sized to (its `WM_GETMINMAXINFO` least track size, read with a 100ms timeout, less the
   invisible borders): every command's ratios move as little as that takes

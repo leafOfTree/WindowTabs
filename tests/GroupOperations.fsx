@@ -907,7 +907,7 @@ let main() =
                         let first,second = onGroup(fun group -> let s = group.splitLayout.Value in (SplitView.window [First] s).Value,(SplitView.window [Second] s).Value)
                         onGroup(fun group ->
                             group.ts.moveTab(Tab(second),group.lorder.list |> List.findIndex((=) first))
-                            group.onTabsReordered())
+                            group.onTabsReordered(second))
                         waitSplit()
                         onGroup(fun group -> group.tabActivate(Tab(first),false))
                         waitOperation()
@@ -1110,6 +1110,30 @@ let main() =
                               (sprintf "A tab behind chosen after swaps did not fill the group: frame %A then %A, tab at %A" frameBefore frameAfter shown)
                         onGroup(fun group -> group.tabActivate(Tab(source),false))
                         waitSplit()
+                    // The panes' tabs stay a run of their own: another tab dropped among them goes
+                    // after them, and a pane's tab dragged out of it ends a split of two. Parted, they
+                    // still made a split, with nothing in the strip to show it.
+                    do
+                        let panes = onGroup(fun group -> SplitView.windows group.splitLayout.Value)
+                        let behind = onGroup(fun group -> group.lorder.list |> List.find(fun hwnd -> not (List.contains hwnd panes)))
+                        let indexIn (order:IntPtr list) hwnd = List.findIndex ((=) hwnd) order
+                        onGroup(fun group ->
+                            let others = group.lorder.list |> List.filter((<>) behind)
+                            let firstPane = others |> List.find(fun hwnd -> List.contains hwnd panes)
+                            group.ts.moveTab(Tab behind,indexIn others firstPane+1)
+                            group.onTabsReordered(behind))
+                        waitOperation()
+                        let order,kept = onGroup(fun group -> group.lorder.list,group.splitLayout |> Option.map SplitView.windows)
+                        let paneIndices = panes |> List.map (indexIn order) |> List.sort
+                        check (kept=Some panes && List.last paneIndices-List.head paneIndices=1 && indexIn order behind>List.last paneIndices)
+                              (sprintf "A tab dropped among the panes' tabs parted them or ended the split: %A, panes %A, behind %A, split %A" order panes behind kept)
+                        let leaving = order |> List.find(fun hwnd -> List.contains hwnd panes)
+                        onGroup(fun group ->
+                            group.ts.moveTab(Tab leaving,group.lorder.list.Length-1)
+                            group.onTabsReordered(leaving))
+                        waitOperation()
+                        check (onGroup(fun group -> group.layout=GroupLayout.Single && group.windows.count=3))
+                              (sprintf "A pane's tab dragged away from the other's did not end the split, or took a window out of the group: %A" (onGroup(fun group -> group.layout)))
                     onGroup(fun group -> group.execute(EndSplit(Some source)))
                     waitOperation()
                     onGroup(fun group -> group.removeWindow foreign)

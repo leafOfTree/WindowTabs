@@ -2656,9 +2656,33 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.onTabMoved(hwnd, index) = movedEvent.Trigger(hwnd, index)
 
+    /// A tab dragged along the strip (`moved`). The panes' tabs stay a run of their own: a pane's
+    /// tab dragged out of it takes its window out of the split, the last but one ending it, as
+    /// dragging it out of the group would; another tab dropped among them goes after them. Parted,
+    /// they still made a split, with nothing in the strip to show it.
     /// The pair's tabs dragged into the other order swap the panes to match. Kept as they were,
     /// the tabs were put back in pane order at the next click, undoing the drag.
-    member this.onTabsReordered() =
+    member this.onTabsReordered(moved:IntPtr) =
+        match SplitView.layoutOf groupLayout with
+        | Some s ->
+            let order = this.lorder.list
+            let panes = SplitView.windows s |> List.filter(fun hwnd -> List.contains hwnd order)
+            let indexOf hwnd = List.findIndex ((=) hwnd) order
+            let together (windows:IntPtr list) =
+                match windows |> List.map indexOf with
+                | [] -> true
+                | indices -> List.max indices-List.min indices+1=indices.Length
+            if not (together panes) then
+                if List.contains moved panes then
+                    SplitView.pathOf moved s |> Option.iter(fun path -> this.execute(ClosePane(Some path)))
+                else
+                    // After the last of the panes' tabs: taken out first, it sat before that one.
+                    let last = panes |> List.map indexOf |> List.max
+                    this.ts.moveTab(Tab moved,last)
+            this.onPaneTabsReordered()
+        | None -> ()
+
+    member private this.onPaneTabsReordered() =
         match SplitView.layoutOf groupLayout with
         | Some s ->
             let order = this.lorder.list
