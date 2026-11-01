@@ -910,9 +910,10 @@ type TabStripSprite<'id> when 'id : equality = {
             | Some(top) -> top = tab
             | None -> false
         let isHovered =
-            match this.hover, this.captured with
-            | Some(id, _), _ when id = tab -> true
-            | _, Some(id, _) when id = tab -> true
+            match this.hover, this.captured, this.slide with
+            | Some(id, _), _, _ when id = tab -> true
+            | _, Some(id, _), _ when id = tab -> true
+            | _, _, Some(id, _) when id = tab -> true
             | _ -> false
         isActive.not && isHovered.not
 
@@ -951,9 +952,11 @@ type TabStripSprite<'id> when 'id : equality = {
                 match this.hover with
                 | Some(id, part) when id = tab -> Some(part)
                 | _ -> None
+            // The tab being dragged is held up as a pressed one is, though it may not be the one chosen.
             captured =
-                match this.captured with
-                | Some(id, part) when id = tab -> Some(part)
+                match this.captured,this.slide with
+                | Some(id, part), _ when id = tab -> Some(part)
+                | _, Some(slid, _) when slid = tab -> Some TabBackground
                 | _ -> None
         }
 
@@ -1240,10 +1243,19 @@ type TabStripSprite<'id> when 'id : equality = {
         {
             new ISprite with
             member x.image = this.bgImage
-            // The split button and the feet come first so they are drawn over the tabs.
+            // The split button and the feet come first so they are drawn over the tabs; of the tabs,
+            // the one being dragged, over its neighbours whatever its place in the order: not chosen
+            // as it is pressed in a group behind, nor while carried into another strip, it went
+            // under the tabs it passed.
             member x.children =
                 let tabs = this.tabSprites.list |> List.filter(fun (location,tab) ->
                     not this.isVertical || (location.y<this.size.height && location.y+tab.size.height>0))
+                let tabs =
+                    match this.slide with
+                    | Some(slid,_) ->
+                        let dragged,others = tabs |> List.partition(fun (_,tab) -> tab.id=slid)
+                        dragged @ others
+                    | None -> tabs
                 List2(this.junction @ this.feet @ (tabs |> List.map(fun (location,tab) -> location,tab :> ISprite)))
         }
 
