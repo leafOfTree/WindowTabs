@@ -330,10 +330,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let scopeHeight = Dpi.scale rowHeight
     let ended = Event<unit>()
     let mutable closed = false
-    /// Out of sight while a command runs: not closed.
+    /// Out of sight while a command runs, see-through and still in front (see conceal): not closed.
     let mutable hiding = false
-    /// Out of sight by being see-through, still in front, see conceal.
-    let mutable vanished = false
     let mutable shadow : TaskSwitchShadow option = None
     let items =
         tabs |> List.map(fun entry ->
@@ -732,7 +730,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             // has taken the foreground, or a moment on if it took none. Put away in front, it gave
             // the foreground to the window under it, and a command choosing another, as focusing
             // the next pane does, made Explorer windows hand it back and forth several times.
-            if vanished && form.IsHandleCreated && WinUserApi.GetForegroundWindow()=form.Handle then
+            if hiding && form.IsHandleCreated && WinUserApi.GetForegroundWindow()=form.Handle then
                 let waited = Diagnostics.Stopwatch.StartNew()
                 let timer = new Timer(Interval=15)
                 timer.Tick.Add(fun _ ->
@@ -896,9 +894,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     let present() =
         // Built while hidden, like the switcher's, so it cannot delay the first paint.
         if shadow.IsNone && not SystemInformation.HighContrast then shadow <- Some(new TaskSwitchShadow(form))
-        if vanished then
-            vanished <- false
-            form.Opacity <- 1.0
+        if form.Opacity<1.0 then form.Opacity <- 1.0
         form.Show()
         form.Refresh()
         shadow |> Option.iter(fun item -> item.Show())
@@ -915,7 +911,6 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
         // See-through rather than hidden, so it stays in front: hidden, it gave the foreground to
         // the window under it, which the command then took away again at once.
         form.Opacity <- 0.0
-        vanished <- true
     /// Runs a row's command with the palette out of the way; what it leaves to choose brings
     /// the palette back.
     let outcome caption (concealed:bool) (run:unit -> CommandOutcome) =

@@ -111,8 +111,7 @@ let main() =
             member _.dragEnter _ _ = true
             member _.dragMove _ = ()
             member _.dragExit() = ()
-            member _.holds _ = false
-            member _.takes _ = true
+            member _.takes pt = pt.x<100
             member _.dragCancel _ = ()}
     let surface = {new ILayoutDropTarget with
                     member _.probe(_,_,_) = Aimed(SplitAim,true)
@@ -120,11 +119,12 @@ let main() =
                     member _.commit(_,_) = true}
     let strips = Map2(List2([IntPtr 1,strip]))
     let surfaces = Map2(List2([IntPtr 1,surface;IntPtr 2,surface]))
-    let near _ = true
+    // The stub strip takes a tab left of x=100: near its tabs.
+    let near,far = Pt(10,10),Pt(500,10)
     check (DragRouting.resolve strips surfaces near (IntPtr 1) IntPtr.Zero=StripHit(IntPtr 1)) "The strip itself did not join the dragged tab"
     // Over the strip's window away from its tabs, which runs the group's whole width, the tab is
     // over the group's window, not joining it.
-    check (DragRouting.resolve strips surfaces (fun _ -> false) (IntPtr 1) IntPtr.Zero=LayoutHit(IntPtr 1)) "A strip took a tab far from its tabs"
+    check (DragRouting.resolve strips surfaces far (IntPtr 1) IntPtr.Zero=LayoutHit(IntPtr 1)) "A strip took a tab far from its tabs"
     check (DragRouting.resolve strips surfaces near (IntPtr 2) IntPtr.Zero=LayoutHit(IntPtr 2)) "A group window did not offer a pane"
     check (DragRouting.resolve strips surfaces near (IntPtr 9) (IntPtr 1)=LayoutHit(IntPtr 1)) "A helper window owned by the strip did not offer its group's panes"
     check (DragRouting.resolve strips surfaces near (IntPtr 9) (IntPtr 8)=FreeHit) "An unrelated window took the drag"
@@ -134,9 +134,8 @@ let main() =
     // and the first one crossed kept the tab, which then joined a group out of sight.
     do
         let twoStrips = Map2(List2([IntPtr 1,strip;IntPtr 3,strip]))
-        let near _ = true
         check (DragRouting.movesToStrip twoStrips near (IntPtr 1) (IntPtr 3)) "A tab held in one strip did not move to another group's strip under the pointer"
-        check (not(DragRouting.movesToStrip twoStrips (fun _ -> false) (IntPtr 1) (IntPtr 3))) "A tab moved to another strip far from its tabs"
+        check (not(DragRouting.movesToStrip twoStrips far (IntPtr 1) (IntPtr 3))) "A tab moved to another strip far from its tabs"
         check (not(DragRouting.movesToStrip twoStrips near (IntPtr 1) (IntPtr 1))) "A tab left the strip it is in"
         check (not(DragRouting.movesToStrip twoStrips near (IntPtr 1) (IntPtr 9))) "A tab left its strip for a window that is no strip"
         check (not(DragRouting.movesToStrip twoStrips near (IntPtr 1) IntPtr.Zero)) "A tab left its strip for nothing"
@@ -176,16 +175,16 @@ let main() =
         let hit,owner = DragRouting.windowsAt centre
         check (hit=app.Handle) (sprintf "A drag over an app's child window found %A, not its window %A" hit app.Handle)
         let appSurfaces = Map2(List2([app.Handle,surface]))
-        check (DragRouting.resolve strips appSurfaces (fun _ -> true) hit owner=LayoutHit app.Handle) "A drag over an app's child window did not offer a pane"
+        check (DragRouting.resolve strips appSurfaces centre hit owner=LayoutHit app.Handle) "A drag over an app's child window did not offer a pane"
     // A tab dragged from its strip, as the drag's capture window sees the pointer: it starts once
     // the pointer has moved, moves in its strip, goes over to another strip, floats away from any,
     // lands or is cancelled back to its strip.
     do
         let events = ResizeArray<string>()
-        // Whether the source strip says it still holds a tab that left its own window.
+        // Whether the source strip says it still takes a tab that left its own window.
         let sourceHolds = ref false
-        // Each strip's window, set once shown: a strip holds a tab within reach of its window and
-        // takes one only near its tabs, its first 200 pixels here.
+        // Each strip's window, set once shown: a strip takes a tab near its tabs, the first 200
+        // pixels of its window here, within 24 of it above and below.
         let windows = Collections.Generic.Dictionary<string,Rectangle>()
         let stripTarget name =
             {new IDragDropTarget with
@@ -194,9 +193,9 @@ let main() =
                 member _.dragEnter _ _ = events.Add(name+" enter"); true
                 member _.dragMove _ = if not(events.Contains(name+" move")) then events.Add(name+" move")
                 member _.dragExit() = events.Add(name+" exit")
-                member _.holds pt =
-                    (let r = windows.[name] in Rectangle.Inflate(r,24,24).Contains(pt.x,pt.y)) || (name="source" && sourceHolds.Value)
-                member _.takes pt = let r = windows.[name] in pt.x>=r.Left && pt.x<r.Left+200 && pt.y>=r.Top && pt.y<r.Bottom
+                member _.takes pt =
+                    (let r = windows.[name] in pt.x>=r.Left && pt.x<r.Left+200 && pt.y>=r.Top-24 && pt.y<r.Bottom+24)
+                    || (name="source" && sourceHolds.Value)
                 member _.dragCancel _ = events.Add(name+" cancel")}
         let parent =
             {new IDragDropParent with
@@ -267,8 +266,8 @@ let main() =
         check (events.Contains "other enter") (sprintf "A strip did not take a tab near its tabs: %A" (List.ofSeq events))
         release capture (Pt(750,615))
         check (ended()) "A drag taken in near a strip's tabs did not end"
-        // Past its strip's own window but where the strip still holds it, as a column holds another
-        // group's tab along the window's side, the tab stays in; it came out and went back in there.
+        // Past its strip's own window but where the strip still takes it, the tab stays in, as far
+        // out as it is taken in; it came out and went back in there on every move.
         let capture = startDrag "held"
         move capture (Pt(230,615))
         sourceHolds.Value <- true

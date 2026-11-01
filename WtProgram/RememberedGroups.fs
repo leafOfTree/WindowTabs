@@ -21,6 +21,13 @@ module RememberedGroups =
         let app = AppIdentity.key path
         if app="" || String.IsNullOrWhiteSpace title then None else Some { app=app; title=title }
 
+    /// A group of fewer than two windows, open or closed, groups nothing: dropped.
+    let private grouping (groups:RememberedGroup list) = groups |> List.filter(fun group -> group.members.Length >= 2)
+
+    /// Each group with only the members `keep` keeps of it.
+    let private keepMembers (keep:RememberedGroup -> RememberedMember -> bool) (groups:RememberedGroup list) =
+        groups |> List.map(fun group -> { group with members = group.members |> List.filter (keep group) }) |> grouping
+
     /// Folds the groups made by hand that are in view into the remembered ones. A window in view
     /// belongs to its group now, wherever it was before, and one in any other group (elsewhere)
     /// no longer belongs to a remembered one; a window that has closed stays where it was last
@@ -41,7 +48,7 @@ module RememberedGroups =
             saved |> List.filter(fun group -> not(liveIds.Contains group.id) && now-group.seen < maxAge)
             |> List.map(fun group -> { group with members = group.members |> List.filter(fun m -> not(inView.Contains m)) })
         current @ earlier
-        |> List.filter(fun group -> group.members.Length >= 2)
+        |> grouping
         |> List.truncate maxGroups
         |> List.map(fun group ->
             let apps = group.members |> List.map(fun m -> m.app) |> Set.ofList
@@ -87,11 +94,7 @@ module RememberedGroups =
 
     /// The groups with those titles left out: a group left with fewer than two windows is dropped.
     let without (titles:Set<RememberedMember>) (saved:RememberedGroup list) =
-        if titles.IsEmpty then saved
-        else
-            saved
-            |> List.map(fun group -> { group with members = group.members |> List.filter(titles.Contains >> not) })
-            |> List.filter(fun group -> group.members.Length >= 2)
+        if titles.IsEmpty then saved else keepMembers (fun _ m -> not (titles.Contains m)) saved
 
     let private readMember (item:JToken) =
         let app,title = item.Value<string>("app"),item.Value<string>("title")
@@ -121,20 +124,14 @@ module RememberedGroups =
 
     /// The trailed groups (ids) keep only their windows open now: a title kept is one to come back by.
     let dropClosed (ids:Set<int>) (openNow:Set<RememberedMember>) (saved:RememberedGroup list) =
-        saved
-        |> List.map(fun group -> if ids.Contains group.id then { group with members = group.members |> List.filter openNow.Contains } else group)
-        |> List.filter(fun group -> group.members.Length >= 2)
+        keepMembers (fun group m -> not (ids.Contains group.id) || openNow.Contains m) saved
 
     let read (token:JToken) =
         match token with
         | :? JArray as groups ->
             groups |> Seq.choose(fun group ->
                 try
-                    let members =
-                        group.["members"] :?> JArray |> Seq.choose(fun item ->
-                            let app,title = item.Value<string>("app"),item.Value<string>("title")
-                            if String.IsNullOrEmpty app || String.IsNullOrEmpty title then None
-                            else Some { app=app; title=title }) |> List.ofSeq
+                    let members = group.["members"] :?> JArray |> Seq.choose readMember |> List.ofSeq
                     let paths =
                         match group.["paths"] with
                         | :? JObject as paths ->
@@ -150,7 +147,7 @@ module RememberedGroups =
 
     let write (groups:RememberedGroup list) =
         JArray(groups |> List.map(fun group ->
-            let members = group.members |> List.map(fun m -> JObject(JProperty("app",m.app),JProperty("title",m.title)))
+            let members = group.members |> List.map writeMember
             let paths = group.paths |> Map.toList |> List.map(fun (app,path) -> JProperty(app,path))
             JObject(JProperty("id",group.id),JProperty("seen",group.seen),JProperty("lastTitles",true),
                     JProperty("members",JArray(members)),JProperty("paths",JObject(paths)))))

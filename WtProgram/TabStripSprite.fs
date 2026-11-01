@@ -1135,14 +1135,18 @@ type TabStripSprite<'id> when 'id : equality = {
         if not this.isVertical || pt.x<0 || pt.x>=this.size.width || pt.y<0 || pt.y>=this.size.height then None
         elif this.scrollMaximum>0 && pt.x>=this.scrollTrack.x-Dpi.scale 2 then None
         else
+            // Rows lie rowStep apart from the column's padding down; a gap goes half to the row
+            // above it and half to the one below, the column's ends wholly to the first and last.
+            let order = this.adjustedLorder
+            let count = order.length
             let gap = this.rowStep-this.rowHeight
-            let half = gap/2
-            let ids = this.lorder.list
-            ids |> List.tryFind(fun id ->
-                let top = (this.tabLocation id).y
-                let above = if id=List.head ids then gap else half
-                let below = if id=List.last ids then gap else gap-half
-                pt.y>=top-above && pt.y<top+this.rowHeight+below)
+            let y = pt.y+this.scrollOffset-Dpi.scale 4
+            let row = int(floor(float(y+gap/2)/float this.rowStep))
+            let row =
+                if row<0 && y>= -gap then 0
+                elif row>=count && y<(count-1)*this.rowStep+this.rowHeight+gap then count-1
+                else row
+            if row>=0 && row<count then Some(order.at row) else None
 
     // Tabs start one pixel into the strip. Above a window they then run to the strip's
     // bottom row, which overlaps the window's top edge by tabHeightOffset, so they cover

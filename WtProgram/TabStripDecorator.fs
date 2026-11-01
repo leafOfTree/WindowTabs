@@ -1003,10 +1003,6 @@ type TabStripDecorator(group:WindowGroup) as this =
                 this.updateTsSlide()
                 this.ts.dragScrollPoint <- Some pt
 
-        member this.holds(pt) =
-            WinUserApi.IsWindow(this.ts.hwnd) && this.invokeSync(fun () ->
-                dragInfoCell.value.IsSome && (this.nearTabs pt).IsSome)
-
         member this.takes(pt) =
             WinUserApi.IsWindow(this.ts.hwnd) && this.invokeSync(fun () -> (this.nearTabs pt).IsSome)
 

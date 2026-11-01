@@ -272,10 +272,8 @@ module WindowGroupToken =
     /// Whether the window's group was made by hand: put back together after a restart, it stays
     /// so, though no title of it was remembered, and auto grouping keeps out of it.
     let private madeByHandKey = "WindowTabs.Manual.v1"
-    let saveMadeByHand hwnd value =
-        if value then WinUserApi.SetProp(hwnd,madeByHandKey,IntPtr(1)) |> ignore
-        else WinUserApi.RemoveProp(hwnd,madeByHandKey) |> ignore
-    let madeByHand hwnd = WinUserApi.GetProp(hwnd,madeByHandKey)<>IntPtr.Zero
+    let saveMadeByHand hwnd value = WindowFlag.set madeByHandKey hwnd value
+    let madeByHand hwnd = WindowFlag.get madeByHandKey hwnd
 
 /// What a group's tab menu chose for that group alone, carried over when the group is rebuilt.
 type GroupMenuChoices = {
@@ -641,7 +639,11 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.foreground
         with get() = foregroundCell.value
-        and set(value) =
+        // The command palette in front over the group leaves it the group in front, whichever
+        // event read the foreground then.
+        and set(value) = if not (ForegroundOverlays.contains value) then this.takeForeground value
+
+    member private this.takeForeground(value) =
             let value = TabNavigation.currentForeground this.lorder.list value this.os.foreground.hwnd
             if this.windows.contains(value) && heldByDrag<>Some value && not(isMinimized value) && not reconcileMinimizeState then this.onActivated(value)
             let active = TabNavigation.rememberActive this.lorder.list isOpen lastActiveTab value
@@ -2267,7 +2269,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     // Maximized or restored, a window rises over a strip it does not own.
                     this.liftUnownedStrip hwnd
             | _ -> ()
-        // The command palette in front over the group: the group is still the one in front.
+        // The command palette in front over the group: none of the rest, which would follow a
+        // closed tab or reorder the group for a foreground the group is not leaving.
         | WinEvent.EVENT_SYSTEM_FOREGROUND when ForegroundOverlays.contains hwnd -> ()
         | WinEvent.EVENT_SYSTEM_FOREGROUND ->
             // Activated some other way (Alt+Tab, its own window), an owned tab can stay under the
@@ -2365,7 +2368,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             // A visible window joining a minimized group restores it, as restoring any tab does,
             // so closing that window shows the previous tab instead of minimizing the group again.
             let others = this.windows.items.where((<>) hwnd)
-            if not window.isMinimized && not others.isEmpty && others.all isMinimized then
+            // Not a tab only carried in: the group came up mid-drag over the windows passed.
+            if not window.isMinimized && heldByDrag<>Some hwnd && not others.isEmpty && others.all isMinimized then
                 this.setZorder(zorderCell.value.where((<>) hwnd).prepend hwnd)
                 others.iter(fun other ->
                     requestedMinimizeStates.[other] <- false
@@ -2660,8 +2664,6 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// tab dragged out of it takes its window out of the split, the last but one ending it, as
     /// dragging it out of the group would; another tab dropped among them goes after them. Parted,
     /// they still made a split, with nothing in the strip to show it.
-    /// The pair's tabs dragged into the other order swap the panes to match. Kept as they were,
-    /// the tabs were put back in pane order at the next click, undoing the drag.
     member this.onTabsReordered(moved:IntPtr) =
         match SplitView.layoutOf groupLayout with
         | Some s ->
@@ -2682,6 +2684,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             this.onPaneTabsReordered()
         | None -> ()
 
+    /// The pair's tabs dragged into the other order swap the panes to match. Kept as they were,
+    /// the tabs were put back in pane order at the next click, undoing the drag.
     member private this.onPaneTabsReordered() =
         match SplitView.layoutOf groupLayout with
         | Some s ->

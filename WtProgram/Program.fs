@@ -113,7 +113,8 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let mutable trailed = settingsManager.trailedRememberedGroups
     /// Titles two windows of a program had at once, newest first: neither recorded nor matched.
     let mutable sharedTitles = settingsManager.sharedTitles
-    let mutable sharedSet = Set.ofList sharedTitles
+    /// Shared titles found as a window opened, saved with the next record of the groups.
+    let mutable sharedUnsaved = false
     /// The open windows of each group made by hand when App rules was last told.
     let mutable shownOpen : (int * RememberedMember list) list = []
     /// Each window's program, looked up once.
@@ -452,23 +453,28 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 | None -> true)
 
     /// Titles found shared are no longer kept: the groups remembered by them leave them out.
+    /// Titles found shared are no longer kept: the groups remembered by them leave them out. Saved
+    /// by the caller, with the groups; true when there were new ones.
     member private this.learnShared(found:RememberedMember list) =
-        let fresh = found |> List.distinct |> List.filter(sharedSet.Contains >> not)
+        let fresh = found |> List.distinct |> List.filter(fun m -> not (List.contains m sharedTitles))
         if not fresh.IsEmpty then
             sharedTitles <- List.truncate RememberedGroups.maxShared (fresh @ sharedTitles)
-            sharedSet <- Set.ofList sharedTitles
-            settingsManager.sharedTitles <- sharedTitles
-            remembered <- RememberedGroups.without sharedSet remembered
-            settingsManager.rememberedGroups <- remembered
+            remembered <- RememberedGroups.without (Set.ofList sharedTitles) remembered
+        not fresh.IsEmpty
 
     /// Whether a window's program and title tell it apart: not when another window has them now,
     /// as each new Neovide shows its install folder, or a program's windows had them at once.
+    /// Only the program's own windows' titles are read: every window's, for each new window.
     member private this.identifies (hwnd:IntPtr) (m:RememberedMember) =
         let others =
             this.desktop.groups.list |> List.exists(fun group ->
-                group.windows.list |> List.exists(fun other -> other<>hwnd && this.rememberedMember other=Some m))
-        if others then this.learnShared [m]
-        not others && not (sharedSet.Contains m)
+                group.windows.list |> List.exists(fun other ->
+                    other<>hwnd && AppIdentity.key (this.appKey other)=m.app && this.rememberedMember other=Some m))
+        // Kept now, saved with the groups' next record.
+        if others && this.learnShared [m] then
+            sharedUnsaved <- true
+            rememberSoon.Request()
+        not others && not (List.contains m sharedTitles)
 
     /// The group a window seen for the first time this run belongs back in: the one it was in
     /// before WindowTabs restarted, else the one a window with its program and title was last in.
@@ -508,10 +514,12 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 | :? GroupInfo as info when not info.isExited && not info.isRetiring ->
                     Some(info,group.windows.list |> List.filter(fun hwnd -> not(settling.ContainsKey hwnd)) |> List.choose recorded)
                 | _ -> None)
-        this.learnShared (RememberedGroups.shared (seen |> List.collect snd))
+        let learned = this.learnShared (RememberedGroups.shared (seen |> List.collect snd)) || sharedUnsaved
+        sharedUnsaved <- false
+        if learned then settingsManager.sharedTitles <- sharedTitles
         let inView =
             seen |> List.choose(fun (info,members) ->
-                let members = members |> List.filter(sharedSet.Contains >> not)
+                let members = members |> List.filter(fun m -> not (List.contains m sharedTitles))
                 if members.IsEmpty then None else Some(info,members))
         // A group restored from memory was made by hand, though this run did not see it made.
         let manual (info:GroupInfo) =
@@ -534,7 +542,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 ((elsewhere |> List.collect snd) @ List.ofSeq renamed) remembered
             |> RememberedGroups.withPaths running
         let shape (groups:RememberedGroup list) = groups |> List.map(fun group -> group.id,group.members,group.paths)
-        let changed = trimmed || shape next <> shape remembered
+        let changed = trimmed || learned || shape next <> shape remembered
         remembered <- next
         if changed then
             settingsManager.rememberedGroups <- next
