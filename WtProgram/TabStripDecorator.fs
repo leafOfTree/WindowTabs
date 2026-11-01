@@ -115,6 +115,9 @@ type TabStripDecorator(group:WindowGroup) as this =
     let mutable layoutDrop : LayoutDrop option = None
     /// The tab on top when a drag began here, its tab and where in the strip it sat.
     let mutable dragPartner = IntPtr.Zero
+    /// Whether the press that began the drag parked the panes, in a group in front: shown before
+    /// it, they come back as the tab leaves; parked earlier, the tab shown before comes back instead.
+    let mutable dragParked = false
     let mutable dragSource : IntPtr option = None
     let mutable dragStartIndex : int option = None
 
@@ -803,11 +806,14 @@ type TabStripDecorator(group:WindowGroup) as this =
                     dragPartner <- group.topWindow
                     dragSource <- Some hwnd
                     dragStartIndex <- group.lorder.list |> List.tryFindIndex ((=) hwnd)
-                    // The tab is chosen once the press turns out a click, not as it goes down: a
-                    // tab pressed to be dragged to another group brought its own group up over
-                    // the one it was taken to.
-                    if part = TabClose then group.tabActivate(tab, false)
-                    else
+                    // In a group in front the tab is chosen as it goes down, as a browser's is: the
+                    // group covers nothing it did not already. Behind, only once the press turns
+                    // out a click: a tab pressed to be dragged to another group brought its own
+                    // group up over the one it was taken to.
+                    let inFront = group.windows.contains(os.foreground.hwnd)
+                    dragParked <- inFront && (match group.layout with Split _ -> true | _ -> false)
+                    if part = TabClose || inFront then group.tabActivate(tab, false)
+                    if part <> TabClose then
                         let dragOffset = pt.sub(this.ts.tabLocation tab)
                         let _,sprite = this.ts.tabSprites.pick(fun (location,sprite) -> if sprite.id=tab then Some(location,sprite) else None)
                         // The image shows the window at the size it lands at on this monitor, and the
@@ -824,7 +830,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                         // point of the tab it pressed.
                         let dragImage = fun later -> this.ts.dragImage(tab,landing,later)
                         let dragInfo = box({ info with tabShift = shift })
-                        let clicked() = this.invokeAsync(fun () -> if group.windows.contains hwnd then group.tabActivate(tab, false))
+                        let clicked() = if not inFront then this.invokeAsync(fun () -> if group.windows.contains hwnd then group.tabActivate(tab, false))
                         Services.dragDrop.beginDrag(this.ts.hwnd, dragImage, dragOffset.add(this.ts.dragTabAt(tab,landing)), ptScreen, dragInfo, clicked)
                 | MouseMiddle ->
                     group.tabActivate(tab, false)
@@ -1020,12 +1026,16 @@ type TabStripDecorator(group:WindowGroup) as this =
                         // it brought the group up over the one the tab was carried to.
                         group.removeDraggedWindow(hwnd)
                         window.hideOffScreen(None)
-                        // Out on its drag, the tab is no longer the one shown. Over parked panes,
-                        // the tab shown before this one comes back: brought back, their focused
-                        // pane took the place of the tab the user had left for this one.
+                        // Out on its drag, the tab is no longer the one shown. Panes its press
+                        // parked come back, so a drop can aim at them; panes parked before it, by
+                        // another tab chosen over them, stay parked, and the tab shown before this
+                        // one comes back: brought back, their focused pane took the place of the
+                        // tab the user had left for this one.
                         (match group.layout with
+                         | Parked _ when dragParked -> group.execute FocusOther
                          | Parked _ -> group.showTabBefore hwnd
                          | _ -> ())
+                        dragParked <- false
                         joinedByDrag <- false
                 | None -> ()
                 this.updateTsSlide()
