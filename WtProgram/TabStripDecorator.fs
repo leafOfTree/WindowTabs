@@ -818,14 +818,14 @@ type TabStripDecorator(group:WindowGroup) as this =
                             DragOutPlacement.monitorAt ptScreen
                             |> Option.map(fun mon -> DragOutPlacement.size window.visibleBounds.size mon.workRect)
                             |> Option.defaultValue window.visibleBounds.size
-                        let info = { tab = tab; tabOffset = dragOffset; tabSize=sprite.size; tabInfo = this.ts.tabInfo(tab); tabShift = 0; tabAlignment = this.ts.dragAlignment }
+                        let info = { tab = tab; tabOffset = dragOffset; tabSize=sprite.size; tabInfo = this.ts.tabInfo(tab); tabShift = 0
+                                     tabAlignment = this.ts.dragAlignment; column = this.ts.dragColumn tab }
                         let shift = info.shiftFor landing.width
-                        // The tab at full size over its window shown small: the pointer keeps the
+                        // The tab at full size by its window shown small: the pointer keeps the
                         // point of the tab it pressed.
-                        let tabX = this.ts.dragTabX(tab,landing)
-                        let dragImage = fun later -> this.ts.dragImage(tab,tabX,landing,later)
+                        let dragImage = fun later -> this.ts.dragImage(tab,landing,later)
                         let dragInfo = box({ info with tabShift = shift })
-                        Services.dragDrop.beginDrag(this.ts.hwnd, dragImage, dragOffset.add(Pt(tabX,0)), ptScreen, dragInfo)
+                        Services.dragDrop.beginDrag(this.ts.hwnd, dragImage, dragOffset.add(this.ts.dragTabAt(tab,landing)), ptScreen, dragInfo)
                 | MouseMiddle ->
                     group.tabActivate(tab, false)
             | _ -> ()
@@ -845,11 +845,18 @@ type TabStripDecorator(group:WindowGroup) as this =
     /// What a drag at this point meets, on this thread: the strip's row first; else what a drop
     /// would do (an empty pane, or one at an empty pane's edge, is filled; anything else
     /// splits), the place shown when `show` says so or at once for an empty pane.
+    /// Whether the dragged tab is one of this strip's own. A tab only taken in by this drag is
+    /// still another group's: counted as the strip's own, a column let it out below its last tab,
+    /// then, another's again, took it back in, on every move.
+    member private this.ownsDrag(data:obj) =
+        match data with
+        | :? TabDragInfo as drag ->
+            let (Tab hwnd) = drag.tab
+            dragSource=Some hwnd || (group.windows.contains hwnd && not joinedByDrag)
+        | _ -> false
+
     member private this.probeLayout(data:obj,pt:Pt,show:bool) =
-        let own =
-            match data with
-            | :? TabDragInfo as drag -> let (Tab hwnd) = drag.tab in dragSource=Some hwnd || group.windows.contains hwnd
-            | _ -> false
+        let own = this.ownsDrag data
         match this.nearTabs(pt,own) with
         | Some strip -> NearStrip strip
         | None ->
@@ -1009,6 +1016,14 @@ type TabStripDecorator(group:WindowGroup) as this =
                 dragPtCell.set(pt)
                 this.updateTsSlide()
                 this.ts.dragScrollPoint <- Some pt
+
+        // Out as far as it came in: another group's tab came into a column anywhere along the
+        // window's side, then went out again past the column's own end, and back in, on every move.
+        member this.holds(pt) =
+            WinUserApi.IsWindow(this.ts.hwnd) && this.invokeSync(fun () ->
+                match dragInfoCell.value with
+                | Some drag -> (this.nearTabs(pt,this.ownsDrag (box drag))).IsSome
+                | None -> false)
 
         member this.dragExit() =
             this.invokeSync <| fun() ->

@@ -1171,7 +1171,7 @@ let main() =
                     group.ts.setPlacement({bounds=Rect(Pt(-20000,-20000),size);showInside=false})
                     let tab = Tab b
                     let _,sprite = group.ts.tabSprites.pick(fun (location,sprite) -> if sprite.id=tab then Some(location,sprite) else None)
-                    let data = {tab=tab;tabSize=sprite.size;tabOffset=Pt(sprite.size.width/2,sprite.size.height/2);tabInfo=group.ts.tabInfo tab;tabShift=0;tabAlignment=TabLeft}
+                    let data = {tab=tab;tabSize=sprite.size;tabOffset=Pt(sprite.size.width/2,sprite.size.height/2);tabInfo=group.ts.tabInfo tab;tabShift=0;tabAlignment=TabLeft;column=None}
                     let proportional = {data with tabSize=Sz(200,32);tabOffset=Pt(100,16)}
                     check (proportional.offsetIn(Sz(300,48))=Pt(150,24)) "Cross-DPI drag lost its grabbed point"
                     check (proportional.offsetIn(Sz(120,64))=Pt(60,32)) "Cross-orientation drag lost its grabbed point"
@@ -1300,7 +1300,7 @@ let main() =
                 let work = Screen.PrimaryScreen.WorkingArea
                 let workRect = Rect(Pt(work.X,work.Y),Sz(work.Width,work.Height))
                 let tabSize = Sz(100,24)
-                let centred = {tab=Tab hwnd;tabSize=tabSize;tabOffset=Pt(10,10);tabInfo=onGroup alone (fun group -> group.ts.tabInfo(Tab hwnd));tabShift=0;tabAlignment=TabCenter}
+                let centred = {tab=Tab hwnd;tabSize=tabSize;tabOffset=Pt(10,10);tabInfo=onGroup alone (fun group -> group.ts.tabInfo(Tab hwnd));tabShift=0;tabAlignment=TabCenter;column=None}
                 let dropAt (pt:Pt) (size:Sz) =
                     OS().windowFromHwnd(hwnd).move(Rect(Pt(-20000,-20000),size))
                     // The image's shift, as the strip computed it for the group's width.

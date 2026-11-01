@@ -731,6 +731,42 @@ let main() =
                     for inside in [false;true] do
                         strip.setPlacement(placement start columnSize inside)
                         strip.isShrunk <- false
+                        // A tab dragged from a column carries its window shown small, with the tab in
+                        // a column of its own on the same side, as the window lands; it carried the
+                        // tab alone. Let go, the window lands so that the tab is still under the
+                        // pointer, its column outside the window's edge and in the work area with it.
+                        if not inside then
+                            do
+                                let dragged = strip.lorder.list.Head
+                                let landing = Sz(400,300)
+                                let shown = Sz(200,150)
+                                let column = (strip.dragColumn dragged).Value
+                                // The window's picture comes from another thread, a moment later. Composed
+                                // there from the strip's live state, it failed and never came.
+                                let arrived = ref false
+                                let image = strip.dragImage(dragged,landing,fun later -> arrived.Value <- true; later.bitmap.Dispose())
+                                let until = DateTime.Now.AddSeconds 3.0
+                                while not arrived.Value && DateTime.Now<until do
+                                    Application.DoEvents()
+                                    Threading.Thread.Sleep 20
+                                check arrived.Value (sprintf "A tab dragged from a %A column never got its window's picture" dock)
+                                try
+                                    check (image.width=shown.width+column.width-column.seam && image.height>=shown.height)
+                                          (sprintf "A tab dragged from a %A column carries no window beside its column: %A" dock image.size)
+                                    let at = strip.dragTabAt(dragged,landing)
+                                    check (if dock=TabDockRight then at.x>=shown.width-column.seam else at.x<column.width)
+                                          (sprintf "The dragged tab is not on the %A of its window: %A" dock at)
+                                finally image.bitmap.Dispose()
+                                let drag = { tab=dragged; tabOffset=Pt(12,9); tabSize=Sz(100,30); tabInfo=strip.tabInfo dragged; tabShift=0; tabAlignment=TabLeft; column=Some column }
+                                let pointer = Pt(900,400)
+                                let frame = DragOutPlacement.landing pointer drag landing Pt.empty None
+                                check (frame.location.add(column.tabAt landing).add(drag.tabOffset)=pointer && frame.size=landing)
+                                      (sprintf "A window dropped from a %A column did not keep its tab under the pointer: %A" dock frame)
+                                let work = Rect(Pt(0,0),Sz(1000,800))
+                                let fitted = DragOutPlacement.landing (Pt(990,400)) drag landing Pt.empty (Some work)
+                                let columnLeft = fitted.x+(column.columnAt landing).x
+                                check (fitted.x>=work.left && columnLeft>=work.left && columnLeft+column.width<=work.right && fitted.right<=work.right)
+                                      (sprintf "A window dropped from a %A column near the screen's edge left its column off it: %A" dock fitted)
                         check (strip.bounds.size=columnSize && shadow.isVisible=not SystemInformation.HighContrast)
                               (sprintf "Expanded vertical column lost its shadow or viewport bounds: dock=%A inside=%b actual=%A expected=%A shadow=%b highContrast=%b" dock inside strip.bounds.size columnSize shadow.isVisible SystemInformation.HighContrast)
                         let last = strip.lorder.list |> List.last

@@ -27,6 +27,8 @@ and TabDragInfo = {
     tabShift: int
     /// The strip's alignment, which places a lone tab again over whatever width the window lands at.
     tabAlignment: TabAlignment
+    /// From a column at the side: the column the dropped window has its tab in, beside it.
+    column: DragColumn option
     } with
     /// Where a lone tab sits over a window of this width.
     member this.shiftFor(windowWidth:int) =
@@ -39,6 +41,27 @@ and TabDragInfo = {
         let fit offset source target =
             int(Math.Round(float(between (0,max 1 source) offset)*float target/float(max 1 source)))
         Pt(fit this.tabOffset.x this.tabSize.width size.width,fit this.tabOffset.y this.tabSize.height size.height)
+
+/// A column of tabs holding one tab, beside the window it lands with, as a group with its tabs
+/// at the side puts it outside the window's edge.
+and DragColumn = {
+    dock: TabDock
+    width: int
+    height: int
+    /// Top, centre or bottom of the window's side.
+    alignment: TabAlignment
+    /// How far the column runs over the window's frame, so that no seam shows.
+    seam: int
+    /// Where the tab sits in the column.
+    tabInColumn: Pt
+    } with
+    /// The column's top-left from the window's, for a window of this size.
+    member this.columnAt(window:Sz) =
+        let spare = max 0 (window.height-this.height)
+        let y = match this.alignment with TabLeft -> 0 | TabRight -> spare | TabCenter -> spare/2
+        Pt((if this.dock=TabDockLeft then this.seam-this.width else window.width-this.seam),y)
+    /// The tab's top-left from the window's.
+    member this.tabAt(window:Sz) = this.columnAt(window).add(this.tabInColumn)
 
 /// The image a dragged tab carries: its window at this scale, the tab itself at full size, so
 /// the tab stays readable over a window shown small.

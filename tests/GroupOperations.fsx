@@ -111,6 +111,7 @@ let main() =
             member _.dragEnter _ _ = true
             member _.dragMove _ = ()
             member _.dragExit() = ()
+            member _.holds _ = false
             member _.dragCancel _ = ()}
     let surface = {new ILayoutDropTarget with
                     member _.probe(_,_,_) = Aimed(SplitAim,true)
@@ -174,6 +175,8 @@ let main() =
     // lands or is cancelled back to its strip.
     do
         let events = ResizeArray<string>()
+        // Whether the source strip says it still holds a tab that left its own window.
+        let sourceHolds = ref false
         let stripTarget name =
             {new IDragDropTarget with
                 member _.dragBegin() = events.Add(name+" begin")
@@ -181,6 +184,7 @@ let main() =
                 member _.dragEnter _ _ = events.Add(name+" enter"); true
                 member _.dragMove _ = if not(events.Contains(name+" move")) then events.Add(name+" move")
                 member _.dragExit() = events.Add(name+" exit")
+                member _.holds _ = name="source" && sourceHolds.Value
                 member _.dragCancel _ = events.Add(name+" cancel")}
         let parent =
             {new IDragDropParent with
@@ -237,6 +241,18 @@ let main() =
         check (events.Contains "source exit") "A tab dragged away from its strip stayed in it"
         release capture empty
         check (events.Contains "parent drop float" && events.Contains "parent end" && ended()) (sprintf "A tab let go away from the strips was not dropped: %A" (List.ofSeq events))
+        // Past its strip's own window but where the strip still holds it, as a column holds another
+        // group's tab along the window's side, the tab stays in; it came out and went back in there.
+        let capture = startDrag "held"
+        move capture (Pt(230,615))
+        sourceHolds.Value <- true
+        move capture (Pt(230,700))
+        check (not(events.Contains "source exit")) (sprintf "A tab its strip still held came out of it: %A" (List.ofSeq events))
+        sourceHolds.Value <- false
+        move capture (Pt(230,702))
+        check (events.Contains "source exit") "A tab its strip no longer held stayed in it"
+        release capture (Pt(230,702))
+        check (ended()) "A drag held by its strip did not end"
         // Cancelled while floating, as Escape does, it goes back to its strip.
         let capture = startDrag "cancel"
         move capture (Pt(230,615))
@@ -478,7 +494,7 @@ let main() =
                         let a = paneRect group First
                         let point = Pt(a.x+a.width/2,a.y+a.height/2)
                         let decorator = decoratorOf group
-                        let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft}
+                        let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft;column=None}
                         check (previewed decorator (drag,point)) "The centre of an empty pane rejected a tab"
                         decorator.clearPreview()
                         check (group.splitLayout=Some s) "Cancelling an empty-pane preview changed the layout"
@@ -703,7 +719,7 @@ let main() =
                         let decorator = decoratorOf group
                         let before = group.splitLayout.Value
                         let order = group.lorder.list
-                        let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft}
+                        let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft;column=None}
                         let frame = group.layoutFrame
                         let point = Pt(frame.left+2,frame.y+frame.height/2)
                         check (previewed decorator (drag,point)) "Own edge did not accept a split preview"
@@ -724,7 +740,7 @@ let main() =
                             | null -> false
                             | value -> (value.GetType().GetProperty("Value").GetValue(value) :?> Form).Visible)
                         onGroup(fun group ->
-                            let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft}
+                            let drag = box {tab=Tab(partner);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(partner));tabShift=0;tabAlignment=TabLeft;column=None}
                             let frame = group.layoutFrame
                             check (previewed (decoratorOf group) (drag,Pt(frame.left+2,frame.y+frame.height/2))) "A drop preview did not show")
                         check (previewShown()) "A drop preview was not visible"
@@ -942,7 +958,7 @@ let main() =
                             onHelper(fun () -> form.MinimumSize <- Size(0,0))
                             onGroup(fun group -> if group.splitLayout.IsSome then group.execute(EndSplit(Some shown)))
                             waitOperation()
-                    let dragOf (group:WindowGroup) hwnd = box {tab=Tab(hwnd);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(source));tabShift=0;tabAlignment=TabLeft}
+                    let dragOf (group:WindowGroup) hwnd = box {tab=Tab(hwnd);tabOffset=Pt();tabSize=Sz(100,24);tabInfo=group.ts.tabInfo(Tab(source));tabShift=0;tabAlignment=TabLeft;column=None}
                     // A tab from another group splits at an edge too, beside the tab shown.
                     let foreign = handles.[2]
                     onHelper(fun () -> forms.[2].Pinned <- false; forms.[2].Show())
@@ -977,7 +993,14 @@ let main() =
                             check (below.y<frame.bottom) (sprintf "No room below the column's last tab to test: %A in %A" last frame)
                             let near hwnd = match decorator.probe(dragOf group hwnd,below,false) with NearStrip _ -> true | Aimed _ -> false
                             check (group.windows.contains source && not (near source)) "A tab dragged down past its column's last tab went back into the column"
-                            check (near foreign) "Another group's tab was not taken in along the column's side")
+                            check (near foreign) "Another group's tab was not taken in along the column's side"
+                            // A tab in the column only because this drag took it in is still another
+                            // group's: below the last tab it stays in. Counted as the column's own,
+                            // it came out, was another's again and went back in, on every move.
+                            let joined = decorator.GetType().GetField("joinedByDrag",flags)
+                            joined.SetValue(decorator,true)
+                            try check (near source) "A tab taken into the column by its drag came out again below its last tab"
+                            finally joined.SetValue(decorator,false))
                     finally
                         onGroup(fun group -> group.ts.dock <- TabDockTop)
                         waitOperation()

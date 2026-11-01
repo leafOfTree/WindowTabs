@@ -374,10 +374,7 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
             // The tab stays under the pointer at the width the window lands at: placed with the
             // shift of the group's width, a window made smaller came out hundreds of pixels to
             // one side, at times off the screen. Then all of it in the work area.
-            let visiblePt = pt.sub(dragInfo.tabOffset).sub(Pt(dragInfo.shiftFor size.width,0)).add(this.windowOffset)
-            let visible =
-                let frame = Rect(visiblePt,size)
-                monitor |> Option.map(fun mon -> DragOutPlacement.fit mon.workRect frame) |> Option.defaultValue frame
+            let visible = DragOutPlacement.landing pt dragInfo size this.windowOffset (monitor |> Option.map(fun mon -> mon.workRect))
             let workspaceOffset = monitor.map(fun mon -> mon.workRect.location.sub(mon.displayRect.location)).def(Pt())
             let windowPt = visible.location.sub(borderLeftTop).sub(workspaceOffset)
             window.setPlacement({
