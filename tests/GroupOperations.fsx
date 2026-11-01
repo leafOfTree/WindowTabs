@@ -218,7 +218,7 @@ let main() =
         let start = Pt(200,615)
         let startDrag data =
             events.Clear()
-            api.beginDrag(source.Handle,(fun _ -> failwith "no drag image here"),Pt(),start,box data)
+            api.beginDrag(source.Handle,(fun _ -> failwith "no drag image here"),Pt(),start,box data,(fun () -> events.Add "clicked"))
             let capture = WinUserApi.GetCapture()
             check (capture<>IntPtr.Zero) "A drag began without taking the mouse capture"
             capture
@@ -235,7 +235,8 @@ let main() =
         let capture = startDrag "click"
         move capture (Pt(202,616))
         release capture (Pt(202,616))
-        check (events.Count=0 && ended()) (sprintf "A click on a tab began a drag: %A" (List.ofSeq events))
+        // The click is told as one: the tab is chosen then, not as it is pressed.
+        check (List.ofSeq events=["clicked"] && ended()) (sprintf "A click on a tab began a drag, or was not told as a click: %A" (List.ofSeq events))
         // Moved past the threshold, the tab is dragged in its strip, joins the other strip and lands there.
         let capture = startDrag "join"
         move capture (Pt(230,615))
@@ -255,6 +256,7 @@ let main() =
         check (events.Contains "source exit") "A tab dragged away from its strip stayed in it"
         release capture empty
         check (events.Contains "parent drop float" && events.Contains "parent end" && ended()) (sprintf "A tab let go away from the strips was not dropped: %A" (List.ofSeq events))
+        check (not(events.Contains "clicked")) "A dragged tab was told as clicked, and chosen, bringing its group up"
         // Over another strip's window far from its tabs, as over a title bar the strip runs along,
         // the tab is not taken in; near its tabs it is.
         let capture = startDrag "far"
@@ -292,7 +294,7 @@ let main() =
         check (events.Count=0 && ended()) (sprintf "Cancelling a drag before it began did something: %A" (List.ofSeq events))
         // One drag at a time: a second press while one is on is not another drag.
         let capture = startDrag "first"
-        api.beginDrag(other.Handle,(fun _ -> failwith "no drag image here"),Pt(),Pt(700,615),box "second")
+        api.beginDrag(other.Handle,(fun _ -> failwith "no drag image here"),Pt(),Pt(700,615),box "second",ignore)
         move capture (Pt(230,615))
         check (events.Contains "source enter" && not(events.Contains "other enter")) "A second drag took over the one already on"
         release capture (Pt(230,615))
@@ -546,9 +548,11 @@ let main() =
                         check (not(surfaces.isLayoutTarget hwnd)) "The new group's removal left the window a drop surface"
                         // A click released before its tab finished activating: the drag it began
                         // holds no capture to swallow the next click as its drop.
-                        api.beginDrag(source,(fun _ -> failwith "no drag image for a released click"),Pt(),Pt(),box "released")
+                        let clicked = ref false
+                        api.beginDrag(source,(fun _ -> failwith "no drag image for a released click"),Pt(),Pt(),box "released",(fun () -> clicked.Value <- true))
                         check (WinUserApi.GetCapture()=IntPtr.Zero) "A drag begun after its button was released kept the mouse capture"
                         check (not(api.cancelDrag())) "A drag begun after its button was released stayed open"
+                        check clicked.Value "A click released before its drag began was not told as a click"
                     check (onGroup(fun group -> group.ts.tabInfo(Tab(partner)).splitTrail=Some [SideBySide,First] && group.ts.tabInfo(Tab(source)).splitTrail=Some [SideBySide,Second])) "Pane tabs carry no badge"
                     check (onGroup(fun group -> group.ts.tabInfo(Tab(partner)).text=group.tabName partner)) "The badge leaked into the tab's name"
                     onGroup(fun group -> group.execute(EndSplit(Some source)))

@@ -2368,7 +2368,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     FollowerPlacement.queue.submit(placementOwner,other,FollowerPlacement.restoreBelowRequest other hwnd))
                 this.watchMinimizeCompletion()
 
-    member this.removeWindow(hwnd) = this.withUpdate <| fun() ->
+    member this.removeWindow(hwnd) = this.removeWindowCore(hwnd,true)
+    /// A tab carried out of the group: the tab behind it shows where the group is, not chosen and
+    /// brought to the front over the windows the drag goes to.
+    member this.removeDraggedWindow(hwnd) = this.removeWindowCore(hwnd,false)
+
+    member private this.removeWindowCore(hwnd, chooseNext:bool) = this.withUpdate <| fun() ->
         inputOwnership.Remove hwnd |> ignore
         if not isDestroyed.value && this.windows.contains(hwnd) then
             this.onRemoved(hwnd)
@@ -2404,7 +2409,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     | Some target -> Some target
                     | None -> if this.windows.contains(foreground) then Some foreground else None
             if followedClose |> Option.exists(fun (closed,_) -> closed=hwnd) then followedClose <- None
-            else next |> Option.iter(fun target -> this.tabActivate(Tab(target),this.forceOnClose hwnd))
+            elif chooseNext then next |> Option.iter(fun target -> this.tabActivate(Tab(target),this.forceOnClose hwnd))
 
     /// The tab shown before `hwnd`, the one the foreground left for it, comes to the front, once
     /// `hwnd` has left the group by a drag. Nothing else is known to have been shown: a tab

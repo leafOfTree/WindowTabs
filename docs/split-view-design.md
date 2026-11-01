@@ -125,8 +125,11 @@ the tree's simplest case and keep their behaviour.
   a pane's edge splits that pane (as VS Code does), and at the group's own edge (`outerZone`:
   36px at an edge's ends, up to 72px at its middle) a new column or row for the whole group.
   With another tab shown over parked panes, the drop goes beside that window, the
-  one in sight, and the parked panes are let go as by any new split; panes parked by the
-  dragged tab's own press come back as the tab leaves the strip, so they are aimed at.
+  one in sight, and the parked panes are let go as by any new split. Pressing a tab does not
+  choose it; only a click does, once the button is up before a drag began, so a tab pressed to
+  be dragged parks nothing and leaves its group where it is in the order. The tab behind the
+  one carried out shows in place, not chosen: chosen, the group came up over the group the tab
+  was carried to.
   A pane window dropped elsewhere leaves its pane, whose neighbour takes the room. There is no
   fixed number of panes. Each pane is at least 120px and at least what its window lets itself
   be sized to (its `WM_GETMINMAXINFO` least track size, read with a 100ms timeout, less the

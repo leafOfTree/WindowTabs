@@ -199,6 +199,8 @@ type DragActionInfo = {
     initialPt : Pt
     data: obj
     onCancel : unit -> unit
+    /// The press ended before a drag began.
+    clicked : unit -> unit
     onBegin : unit -> unit
     onDrop : Pt -> unit
     onEnd : unit -> unit
@@ -254,6 +256,8 @@ type DragAction(info:DragActionInfo) =
             | :? DragDetectingState,_ ->
                 this.release()
                 info.onCancel()
+                // Let go before a drag began, a click: cancelled with the button still down, none.
+                if drop.IsSome || not(info.buttonDown()) then info.clicked()
             | :? DragCapturedState,Some _ ->
                 this.release()
                 this.notifyEnd()
@@ -396,7 +400,7 @@ type DragDropController(parent:IDragDropParent, ?buttonDown:unit -> bool) =
                 match targets.tryFind hwnd with
                 | Some registered when obj.ReferenceEquals(registered,target) -> targets.remove hwnd
                 | _ -> targets)
-        member x.beginDrag((initialHwnd, image, imageOffset, initialPt, data)) = withLock <| fun() ->
+        member x.beginDrag((initialHwnd, image, imageOffset, initialPt, data, clicked)) = withLock <| fun() ->
             if dragActionCell.value.IsNone then
                 let dragAction = DragAction({
                     targets = targetsCell.value
@@ -411,6 +415,7 @@ type DragDropController(parent:IDragDropParent, ?buttonDown:unit -> bool) =
                         withLock(fun () ->
                             dragActionCell.set(None)
                             dragInvoker <- None)
+                    clicked = clicked
                     onBegin = fun() ->
                         parent.dragBegin()
                     onDrop = fun pt ->
