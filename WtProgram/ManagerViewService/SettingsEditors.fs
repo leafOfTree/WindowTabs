@@ -531,7 +531,7 @@ type SettingsColorPicker() as this =
         [0x000000;0x242424;0x494949;0x6D6D6D;0x929292;0xB6B6B6;0xDBDBDB;0xFFFFFF]
         |> List.map(fun rgb -> Color.FromRGB rgb,sprintf "#%06X" rgb)
     let tabColors =
-        Theme.tabColorOrder |> List.truncate 8 |> List.map(fun index ->
+        Theme.tabColorOrder |> List.truncate Theme.automaticColorCount |> List.map(fun index ->
             (Theme.tabPalette false).[index],tr Strings.Settings.tabColorNames.[index])
     let colors = Array.ofList (greys @ tabColors)
     let swatches = colors |> Array.mapi(fun index (color,name) ->
@@ -753,3 +753,33 @@ type SettingsColorInput() as this =
                 sync()
         member _.control = this :> Control
         member _.changed = changed.Publish
+
+/// The settings colour picker on its own, for a Custom… choice in a menu or the palette, so every
+/// place a colour is picked looks the same rather than opening the system's colour box.
+module ColorPickerPopup =
+    let show (location:Point) (initial:Color) (changed:Color -> unit) (closed:bool -> unit) =
+        let picker = new SettingsColorPicker()
+        let popup = new SettingsChoicePopup(AutoSize=true)
+        picker.Color <- initial
+        picker.ApplyTheme()
+        popup.BackColor <- (SettingsColors.current()).surface
+        picker.BackColor <- popup.BackColor
+        popup.Items.Add(new ToolStripControlHost(picker,Margin=Padding.Empty,Padding=Padding.Empty)) |> ignore
+        let mutable kept = true
+        picker.Changed.Add(changed)
+        picker.KeyDown.Add(fun e ->
+            if e.KeyCode=Keys.Enter then popup.Close(); e.SuppressKeyPress <- true)
+        popup.Closed.Add(fun e ->
+            picker.Flush()
+            // The drop-down takes Esc itself, before the picker sees the key.
+            if e.CloseReason=ToolStripDropDownCloseReason.Keyboard then kept <- false
+            closed kept
+            // Retired on the next UI turn, once the drop-down has finished closing.
+            let timer = new Timer(Interval=1)
+            timer.Tick.Add(fun _ ->
+                timer.Stop()
+                timer.Dispose()
+                if not popup.IsDisposed then popup.Dispose())
+            timer.Start())
+        popup.Show(location)
+        picker.Focus() |> ignore

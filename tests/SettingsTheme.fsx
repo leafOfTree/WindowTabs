@@ -134,6 +134,9 @@ let main() =
             [for i in 0..colors.Length-1 do for j in i+1..colors.Length-1 -> Theme.OkLab.distance colors.[i] colors.[j]] |> List.min
         check (closest palette>=0.08) (sprintf "Two tab colours are hard to tell apart (%.3f)" (closest palette))
         let inactive = palette |> Array.map Theme.inactiveTabShade
+        // Shaded in place yellow turned olive; behind the active tab it leans towards amber.
+        let hue (c:Color) = let _,a,b = Theme.OkLab.ofColor c in atan2 b a
+        check (hue inactive.[3]<hue palette.[3]-0.15 && abs(hue inactive.[1]-hue palette.[1])<0.01) "Inactive yellow did not turn towards amber, or a cool colour changed hue"
         // One grey for the text of every tab behind, readable on all their shades.
         check (inactive |> Array.forall(fun shade -> TextContrast.ratio Theme.inactiveFillText shade>=TextContrast.minimum)) "The inactive tab text grey is hard to read on a tab colour"
         check (closest inactive>=0.05) (sprintf "Two inactive tab colours are hard to tell apart (%.3f)" (closest inactive))
@@ -142,6 +145,15 @@ let main() =
         let presetNames = ThemePresets.names |> Array.map(fun name -> name.en)
         check (presetNames=[|"Default";"Blue";"Teal";"Green";"Sand";"Amber";"Rose";"Purple";"Slate"|])
               "Theme presets do not use colour names in the shared colour order"
+        // A preset named after a tab colour is a quiet version of the same hue: Rose sat 14° off.
+        let hueDegrees (c:Color) = let _,a,b = Theme.OkLab.ofColor c in atan2 b a*180.0/Math.PI
+        let tabNames = Strings.Settings.tabColorNames |> Array.map(fun name -> name.en)
+        for index,name in Array.indexed presetNames do
+            match Array.tryFindIndex ((=) name) tabNames with
+            | Some colour ->
+                let gap = abs(hueDegrees (ThemePresets.palettes true).[index].tabNormalBgColor-hueDegrees (Theme.tabPalette true).[colour])
+                check (min gap (360.0-gap)<10.0) (sprintf "The %s theme is %.0f° from the %s tab colour" name (min gap (360.0-gap)) name)
+            | None -> ()
         for key,name in ["Ocean","Blue";"Forest","Green";"Slate","Slate";"Plum","Purple"] do
             let index = ThemePresets.keys |> Array.findIndex ((=) key)
             check (ThemePresets.names.[index].en=name) "Renaming a preset changed its stored identity"

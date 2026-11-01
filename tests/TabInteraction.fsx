@@ -248,9 +248,13 @@ let main() =
                 Application.DoEvents()
         api.updateAppearance(fun _ -> savedAppearance)
         check (SettingsCatalog.shortcutDefault "numberLeader"=0x0446) "Tab selection must default to Alt+F"
-        check (Theme.leastUsedColor [0;1;2;0;3]=8) "By-window allocation did not balance colours"
+        check (Theme.leastUsedColor [0;1;2;0;3]=5) "By-window allocation did not balance colours"
         check (Theme.tabColorOrder.Head=1 && List.last Theme.tabColorOrder=0 && (Theme.tabColorOrder |> List.sort)=[0..15]) "Colour menu must start with blue, end with grey and retain every stored index"
         check ((Theme.tabAllocationOrder |> List.sort)=[0..8] && List.last Theme.tabAllocationOrder=0) "Automatic allocation must use the eight most distinct colours, then grey"
+        check (Theme.tabAllocationOrder |> List.take 3=[1;5;4]) "The first automatic colours are not blue, pink and green"
+        // The menu's first group was ten colours, two of them never given automatically.
+        check ((Theme.tabColorOrder |> List.take Theme.automaticColorCount |> List.sort)=(Theme.tabAllocationOrder |> List.filter((<>) 0) |> List.sort))
+              "The colour menu's first group is not the automatic colours"
         for dark in [false;true] do
             let palette = Theme.tabPalette dark
             for a,b in Theme.tabAllocationOrder |> List.filter((<>) 0) |> List.pairwise do

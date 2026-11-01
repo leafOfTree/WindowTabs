@@ -155,7 +155,7 @@ module Strings =
     module Settings =
         let private colorWords = { en="tab color colour"; zh="标签 颜色 配色"; ja="タブ 色 カラー"; ar="علامة تبويب اللون الألوان" }
         /// The tabs' text, found as such: the settings name it by what it colours.
-        let private tabTextWords = { en="tab text title font color colour"; zh="标签文本 标签文字 标签 文本 文字 标题 字体 颜色"; ja="タブの文字 タブ テキスト 文字 タイトル フォント 色"; ar="نص علامة التبويب علامة تبويب نص عنوان خط اللون" }
+        let private tabTextWords = { en="tab text title font color colour close button"; zh="标签文本 标签文字 标签 文本 文字 标题 字体 颜色 关闭按钮"; ja="タブの文字 タブ テキスト 文字 タイトル フォント 色 閉じるボタン"; ar="نص علامة التبويب علامة تبويب نص عنوان خط اللون زر الإغلاق" }
         let private sizeWords = { en="size"; zh="尺寸 大小"; ja="サイズ 大きさ"; ar="الحجم" }
         let private hotkeyWords = { en="hotkey"; zh="热键"; ja="ホットキー"; ar="مفتاح الاختصار" }
         let theme = { caption={ en="Theme"; zh="主题"; ja="テーマ"; ar="السمة" }
@@ -309,7 +309,7 @@ module Strings =
         let leaderKeyPresets = [| {en="123456789";zh="123456789";ja="123456789";ar="123456789"}; {en="QWERTYUIOP";zh="QWERTYUIOP";ja="QWERTYUIOP";ar="QWERTYUIOP"}; {en="ASDFGHJKL;";zh="ASDFGHJKL;";ja="ASDFGHJKL;";ar="ASDFGHJKL;"} |]
         let invalidLeaderKeys = {en="Use at least one unique letter, digit or unshifted punctuation key.";zh="请使用至少一个不重复的字母、数字或无需 Shift 的标点键。";ja="重複しない英字、数字、Shift 不要の記号を 1 つ以上指定してください。";ar="استخدم حرفًا أو رقمًا أو علامة ترقيم واحدة على الأقل، غير مكررة ولا تحتاج إلى Shift."}
         let numberLeader = { caption={ en="Leader key"; zh="引导键"; ja="リーダーキー"; ar="المفتاح التمهيدي" }; description=none; keywords=none }
-        let tabColors = { en="Color"; zh="颜色"; ja="色"; ar="اللون" }
+        let tabColors = { en="Tab color"; zh="标签颜色"; ja="タブの色"; ar="لون علامة التبويب" }
         let customTabColor = { en="Custom…"; zh="自定义…"; ja="カスタム…"; ar="مخصص…" }
         let clearTabColor = { en="Clear color"; zh="清除颜色"; ja="色を解除"; ar="مسح اللون" }
         let rememberTabColor = { en="Remember color for this app"; zh="为此应用记住颜色"; ja="このアプリの色を記憶"; ar="تذكّر اللون لهذا التطبيق" }
@@ -374,7 +374,7 @@ module Strings =
                                                ja="タブ上でホイールを押すと、そのウィンドウを閉じます。"
                                                ar="اضغط بعجلة الفأرة على علامة التبويب لإغلاق نافذتها." }
                                  keywords={ en="wheel click"; zh="中键 滚轮"; ja="ホイール クリック"; ar="النقر بعجلة الفأرة" } }
-        let tabTextColor = { caption={ en="Text and close button"; zh="文字与关闭按钮"; ja="文字と閉じるボタン"; ar="النص وزر الإغلاق" }; description=none; keywords=tabTextWords }
+        let tabTextColor = { caption={ en="Text"; zh="文字"; ja="文字"; ar="النص" }; description=none; keywords=tabTextWords }
         let tabOpacity = { caption={ en="Tab opacity (%)"; zh="标签不透明度（%）"; ja="タブの不透明度 (%)"; ar="عتامة علامات التبويب (%)" }
                            description={ en="Below 100 the tabs are see-through, and solid under the pointer."; zh="低于 100 时标签半透明，鼠标指向时不透明。"; ja="100 未満でタブが半透明になり、ポインターを重ねると不透明になります。"; ar="أقل من 100 تصبح علامات التبويب شفافة، ومعتمة تحت المؤشر." }
                            keywords={ en="transparency transparent see-through alpha"; zh="透明度 透明 半透明"; ja="透明度 透明 半透明"; ar="شفافية شفاف" } }

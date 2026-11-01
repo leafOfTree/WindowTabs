@@ -158,3 +158,11 @@ type WtServiceProvider() =
 [<AutoOpen>]
 module GS =
     let Services = WtServiceProvider()
+
+/// The app's own colour picker, which the settings editors draw: menus and commands compiled
+/// before them open it through here. The program sets it at start.
+module ColorPicker =
+    /// At a screen point, from a colour: each colour as it is picked, then whether the last was
+    /// kept (Esc gives false).
+    let mutable show : Point -> Color -> (Color -> unit) -> (bool -> unit) -> unit =
+        fun _ _ _ closed -> closed false

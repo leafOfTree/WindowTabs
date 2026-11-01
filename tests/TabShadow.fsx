@@ -264,19 +264,24 @@ let main () =
                 let column = {ts with dock=dock;direction=direction;appearance=Theme.dark.scaled;size=Dpi.scaleSize(Sz(220,160))
                                       tabs=Map2(List2([1,{info "One" with tint=Some Color.Red;colorStyle="Stripe"};2,{info "Two" with tint=Some Color.Red;colorStyle="Stripe"}]))}
                 let tab = column.tabSprites.list |> List.map snd |> List.find(fun tab -> tab.isTop)
+                // On the dark bar a stripe takes the light shade of its colour: deep red as a thin
+                // line all but vanished there.
+                let mark = Theme.lightTabShade Color.Red
+                check (TextContrast.ratio mark tab.fillColor>=3.0 && TextContrast.ratio mark tab.fillColor>TextContrast.ratio Color.Red tab.fillColor)
+                      "A stripe on the dark bar is no easier to see than its deep colour"
                 use image = (tab :> ISprite).render.bitmap
                 let inset = Dpi.scale 2 + Dpi.scale 3/2
                 let opensLeft = (dock=TabDockRight) <> (direction=TabUp)
                 let x = if opensLeft then image.Width-Dpi.scale 2-Dpi.scale 3+Dpi.scale 3/2 else inset
                 let opposite = if opensLeft then inset else image.Width-inset-1
                 if not System.Windows.Forms.SystemInformation.HighContrast then
-                    check (image.GetPixel(x,image.Height/2).ToArgb()=Color.Red.ToArgb()) "Vertical stripe is not on the anchored edge for its expansion direction"
-                    check (image.GetPixel(opposite,image.Height/2).ToArgb()<>Color.Red.ToArgb()) "Vertical stripe also appears on the rounded edge"
-                    check (image.GetPixel(x,Dpi.scale 3).ToArgb()<>Color.Red.ToArgb() &&
-                           image.GetPixel(x,image.Height-Dpi.scale 3-1).ToArgb()<>Color.Red.ToArgb()) "Vertical color mark is not shortened and centered"
+                    check (image.GetPixel(x,image.Height/2).ToArgb()=mark.ToArgb()) "Vertical stripe is not on the anchored edge for its expansion direction"
+                    check (image.GetPixel(opposite,image.Height/2).ToArgb()<>mark.ToArgb()) "Vertical stripe also appears on the rounded edge"
+                    check (image.GetPixel(x,Dpi.scale 3).ToArgb()<>mark.ToArgb() &&
+                           image.GetPixel(x,image.Height-Dpi.scale 3-1).ToArgb()<>mark.ToArgb()) "Vertical color mark is not shortened and centered"
                     use collapsed = column.renderCollapsed.bitmap
                     let location = column.tabLocation tab.id
-                    check (collapsed.GetPixel(1,location.y+tab.size.height/2).ToArgb()=Color.Red.ToArgb()) "Collapsed vertical strip lost its color mark"
+                    check (collapsed.GetPixel(1,location.y+tab.size.height/2).ToArgb()=mark.ToArgb()) "Collapsed vertical strip lost its color mark"
                 // Filled with one colour, floating tabs in a column stand on that colour's bar, as in
                 // a row: the plain bar's grey between and round them broke it into pieces.
                 let filled tint = {info "Tab" with tint=Some tint;colorStyle="Fill"}
@@ -311,20 +316,20 @@ let main () =
                     use quiet = (inactive :> ISprite).render.bitmap
                     let quietX = x
                     let color = quiet.GetPixel(quietX,quiet.Height/2)
-                    check (color.ToArgb()=(Theme.blend 0.30 Color.Red inactive.fillColor).ToArgb()) "Inactive stripe is not faint"
+                    check (color.ToArgb()=(Theme.blend 0.5 mark inactive.fillColor).ToArgb()) "Inactive stripe is not faint"
                     let hovered = {inactive with hover=Some TabBackground}
                     use highlighted = (hovered :> ISprite).render.bitmap
                     check (highlighted.GetPixel(quietX,highlighted.Height/2).R>color.R &&
-                           highlighted.GetPixel(quietX,highlighted.Height/2).ToArgb()<>Color.Red.ToArgb())
+                           highlighted.GetPixel(quietX,highlighted.Height/2).ToArgb()<>mark.ToArgb())
                           "Hovered stripe does not stay between the inactive and active colors"
-                    check (highlighted.GetPixel(quietX,highlighted.Height/2).ToArgb()=(Theme.blend 0.85 Color.Red hovered.fillColor).ToArgb())
+                    check (highlighted.GetPixel(quietX,highlighted.Height/2).ToArgb()=(Theme.blend 0.85 mark hovered.fillColor).ToArgb())
                           "Hovered stripe is not close to the active color"
                 if dpi=96 && direction=TabUp then
                     use preview = column.render.bitmap
                     preview.Save(IO.Path.Combine(__SOURCE_DIRECTORY__,"Debug",sprintf "vertical-stripe-%A.png" dock),ImageFormat.Png)
                 let flash = {tab with displayInfo={tab.displayInfo with bgColor=Some Color.Orange}}
                 use flashing = (flash :> ISprite).render.bitmap
-                check (flashing.GetPixel(x,flashing.Height/2).ToArgb()<>Color.Red.ToArgb()) "Vertical stripe overrode an attention color"
+                check (flashing.GetPixel(x,flashing.Height/2).ToArgb()<>mark.ToArgb()) "Vertical stripe overrode an attention color"
     check (Theme.tabTint true (Some Color.Red)=None) "High contrast retained tint"
     let tabImage = ts.render
     // GDI already sizes points at the system DPI: tab text matches the menu font there and
@@ -349,6 +354,23 @@ let main () =
             for location,child in tab.children.list do
                 let size = match child with :? IconSprite as icon -> icon.size | :? CloseButtonSprite as close -> close.size | _ -> Sz(0,0)
                 check (location.y >= 0 && location.y+size.height <= h) (sprintf "Icon or close button overflows a %dpx tab" h)
+    // A logo the colour of its tab, such as an orange browser on red, stays clear behind a dark
+    // edge; a stripe leaves the bar as it was, so its icons need none.
+    do
+        let rims style =
+            let info : TabDisplayInfo = { tint=Some Color.Red; colorStyle=style; numberBadge=None; bgColor=None; text="Tab"; icon=SystemIcons.Application; textFont=SystemFonts.MenuFont; textBrush=Brushes.White; splitTrail=None; isPinned=false; closeButton="ActiveAndHover" }
+            let strip = { ts with size=Sz(420,28); tabs=Map2(List2([1,info; 2,info])) }
+            strip.sprite.children.list |> List.collect(fun (_,tab) ->
+                tab.children.list |> List.choose(fun (_,child) -> match child with :? IconSprite as icon -> Some icon.rim | _ -> None))
+        check (rims "Fill" |> List.forall id) "An icon on a filled tab has no dark edge"
+        check (rims "Stripe" |> List.forall not) "An icon on a striped tab has a dark edge"
+        use logo = new Bitmap(16,16,PixelFormat.Format32bppArgb)
+        using (Graphics.FromImage logo) (fun g -> g.FillRectangle(Brushes.Red,4,4,8,8))
+        IconRim.add logo
+        let edge,inside,away = logo.GetPixel(3,8),logo.GetPixel(8,8),logo.GetPixel(0,0)
+        check (edge.A>150uy && edge.R<30uy && edge.G<30uy) (sprintf "The icon's edge is not dark: %A" edge)
+        check (inside.ToArgb()=Color.Red.ToArgb()) (sprintf "The edge changed the icon: %A" inside)
+        check (away.A=0uy) "The edge spread away from the icon"
     // Icons only: the icon is centred; a smaller close button shows beside it on the pointed-at
     // tab only, and not at all when the tab is too narrow for both.
     do

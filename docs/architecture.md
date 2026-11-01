@@ -564,8 +564,9 @@ the leader; existing settings without its toggle leave it disabled.
 The palette has 16 colours: seven main colours, eight extra colours, then grey.
 The menu uses this order; stored indices stay unchanged. By-window allocation cycles
 through indices 1-8 and grey only, the most distinct hues, so neighbouring tabs never get two
-similar colours; the rest are picked by hand.
-By-app colours retain their stable hash over all sixteen.
+similar colours; the rest are picked by hand. Colours ignore icons: on filled tabs `IconRim`
+edges each icon in translucent near-black, so an orange logo stays clear on red or pink
+whichever way the colour was chosen. By-app colours retain their stable hash over all sixteen.
 WindowTabColors is owned by the main STA. By-window indices and per-window overrides
 stay with the HWND across group transfers and are removed when it is destroyed.
 App colours keep their path, match it ignoring case and survive settings reset with

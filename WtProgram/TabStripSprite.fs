@@ -106,24 +106,55 @@ module TabMetrics =
         let fit = if height>0 && full.Height>height then float32 height/float32 full.Height else 1.0f
         new Font(SystemFonts.MenuFont.FontFamily,max 1.0f (points*fit),style)
 
+module IconRim =
+    /// Edges an icon in translucent near-black, so a logo stays clear on a tab of its own colour
+    /// without the colours being chosen around icons.
+    let add (bitmap:Bitmap) =
+        let w,h = bitmap.Width,bitmap.Height
+        let radius = max 1 (w/16)
+        let data = bitmap.LockBits(Rectangle(0,0,w,h),ImageLockMode.ReadWrite,PixelFormat.Format32bppArgb)
+        try
+            let pixels : int[] = Array.zeroCreate (w*h)
+            Runtime.InteropServices.Marshal.Copy(data.Scan0,pixels,0,pixels.Length)
+            let alpha (pixel:int) = (pixel >>> 24) &&& 0xFF
+            let result = Array.copy pixels
+            for y in 0..h-1 do
+                for x in 0..w-1 do
+                    let mutable near = 0
+                    for ny in max 0 (y-radius)..min (h-1) (y+radius) do
+                        for nx in max 0 (x-radius)..min (w-1) (x+radius) do
+                            near <- max near (alpha pixels.[ny*w+nx])
+                    let pixel = pixels.[y*w+x]
+                    let a = alpha pixel
+                    let rimA = near*190/255
+                    if rimA>a then
+                        // The icon over the rim.
+                        let under = rimA*(255-a)/255
+                        let out = a+under
+                        let channel shift = (((pixel >>> shift) &&& 0xFF)*a+10*under)/out
+                        result.[y*w+x] <- (out <<< 24) ||| (channel 16 <<< 16) ||| (channel 8 <<< 8) ||| channel 0
+            Runtime.InteropServices.Marshal.Copy(result,0,data.Scan0,result.Length)
+        finally bitmap.UnlockBits(data)
+
 type IconSprite = {
     icon: Icon
     size: Sz
     opacity: float32
+    rim: bool
     } with
     interface ISprite with
-        member this.image = 
+        member this.image =
             let bitmap = Img(this.size)
             use g = bitmap.graphics
             try
                 // WM_GETICON can return a 32/40px icon even for ICON_SMALL.
                 // Scale the whole icon; drawing at its native size clips it.
                 let bounds = Rectangle(0,0,this.size.width,this.size.height)
-                if this.opacity>=1.0f then g.DrawIcon(this.icon,bounds)
+                if this.opacity>=1.0f && not this.rim then g.DrawIcon(this.icon,bounds)
                 else
-                    use source = new Bitmap(this.size.width,this.size.height)
-                    use ink = Graphics.FromImage(source)
-                    ink.DrawIcon(this.icon,bounds)
+                    use source = new Bitmap(this.size.width,this.size.height,PixelFormat.Format32bppArgb)
+                    using (Graphics.FromImage(source)) (fun ink -> ink.DrawIcon(this.icon,bounds))
+                    if this.rim then IconRim.add source
                     use attributes = new System.Drawing.Imaging.ImageAttributes()
                     let matrix = new System.Drawing.Imaging.ColorMatrix()
                     matrix.Matrix33 <- this.opacity
@@ -357,6 +388,7 @@ type TabSprite<'id> = {
             IconSprite.icon = this.displayInfo.icon
             size = this.iconSize
             opacity = if SystemInformation.HighContrast || this.isTop || this.hover.IsSome || this.captured.IsSome then 1.0f else 0.68f
+            rim = this.filled && not SystemInformation.HighContrast
         } :> ISprite
     
     member private this.closeButtonSprite = 
@@ -390,7 +422,11 @@ type TabSprite<'id> = {
     member this.stripeColor =
         match this.tint with
         | Some tint when this.displayInfo.colorStyle="Stripe" && this.displayInfo.bgColor.IsNone ->
-            let strength = if this.isTop then 1.0 elif this.hover.IsSome || this.captured.IsSome then 0.85 else 0.30
+            // A colour deep enough for white text all but vanishes as a thin line on a dark bar;
+            // there the stripe takes the light shade of the same hue, and more of it.
+            let dark = Theme.darkBar this.fillColor
+            let tint = if dark then Theme.lightTabShade tint else tint
+            let strength = if this.isTop then 1.0 elif this.hover.IsSome || this.captured.IsSome then 0.85 elif dark then 0.5 else 0.30
             Some(Theme.blend strength tint this.fillColor)
         | _ -> None
 
@@ -433,6 +469,9 @@ type TabSprite<'id> = {
     /// The hairline between two plain tabs. On a filled colour it is drawn from the tab's own text
     /// and fill, as the plain bar's follows its text and bar colours: the bar's grey cut a coloured
     /// bar in two.
+    /// Whether the tab is painted in its colour rather than marked with a stripe.
+    member this.filled = this.displayInfo.colorStyle="Fill" && this.tint.IsSome && this.displayInfo.bgColor.IsNone
+
     member this.separatorColor =
         match this.tint with
         | Some _ when this.displayInfo.colorStyle="Fill" && this.displayInfo.bgColor.IsNone -> Theme.blend 0.25 this.textColor this.fillColor
@@ -442,7 +481,7 @@ type TabSprite<'id> = {
     /// contrast. Hover, capture, attention and high contrast keep the full text colour.
     member this.textColor =
         let chosen = this.appearance.tabTextColor
-        let filled = this.displayInfo.colorStyle="Fill" && this.tint.IsSome && this.displayInfo.bgColor.IsNone
+        let filled = this.filled
         let fade amount =
             let bar = this.fillColor
             let mix (a:byte) (b:byte) = int(Math.Round(float a+(float b-float a)*amount))
