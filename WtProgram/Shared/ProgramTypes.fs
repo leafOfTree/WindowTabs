@@ -241,6 +241,9 @@ type IGroup =
     abstract member addWindow: IntPtr * bool -> unit
     abstract member removeWindow: IntPtr -> unit
     abstract member switchWindow: bool * bool -> unit
+    /// Brings one of its windows to the front as clicking its tab does: a split's panes come up
+    /// together under a cover, rather than the other pane catching up unpainted.
+    abstract member activate: IntPtr -> unit
     /// Split-view commands from outside the group, such as program hotkeys.
     abstract member executeSplit: SplitCommand -> unit
     /// Lists the windows to put on that side of the tab in front, as the tab menu does.

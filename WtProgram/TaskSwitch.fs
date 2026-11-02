@@ -93,6 +93,8 @@ type ITaskSwitchGroup =
     
 type ITaskSwitchDesktop =
     abstract member groups : List2<ITaskSwitchGroup>
+    /// The window chosen comes to the front, a tab as its click brings it.
+    abstract member activate : IntPtr -> unit
 
 /// How a group listed as one item draws its icon: as its taskbar button does.
 type TaskWindowGroup =
@@ -496,8 +498,9 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
         member this.hovered = hovered.Publish
         member this.clicked = clicked.Publish
 
-type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string, ?backward:bool, ?view:ITaskSwitchView) as this =
+type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string, ?backward:bool, ?view:ITaskSwitchView, ?activate:IntPtr -> unit) as this =
     let os = OS()
+    let activate = defaultArg activate (fun hwnd -> os.windowFromHwnd(hwnd).setForegroundOrRestore(false))
     let Cell = CellScope()
     let switchIndex = Cell.create(0)
     let form : ITaskSwitchView =
@@ -556,7 +559,7 @@ type TaskSwitchAction(windows:List2<TaskWindowItem>, style:string, ?backward:boo
             finished <- true
             if cancel.not && windows.length > 0 then
                 let (TaskWindowItem(hwnd,_)) = windows.at(switchIndex.value)
-                os.windowFromHwnd(hwnd).setForegroundOrRestore(false)
+                activate hwnd
             form.hide()
             endedEvent.Trigger()
 
@@ -574,7 +577,7 @@ type TaskSwitcher(settings:Settings, desktop:ITaskSwitchDesktop) as this=
     let doTaskSwitch forward =
         match switcherCell.value with
         | None ->
-            let switcher = TaskSwitchAction(this.windows,settings.settings.switcherStyle,backward=not forward)
+            let switcher = TaskSwitchAction(this.windows,settings.settings.switcherStyle,backward=not forward,activate=desktop.activate)
             switcher.ended.Add <| fun() ->
                 switcherCell.set(None)
             switcherCell.set(Some(switcher))

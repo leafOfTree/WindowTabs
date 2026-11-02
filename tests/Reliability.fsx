@@ -683,7 +683,9 @@ let main() =
                 let group = {new ITaskSwitchGroup with
                     member _.hwnd = proxy.Handle
                     member _.windows = Set2(List2([current.Handle;other.Handle]))}
-                let desktop = {new ITaskSwitchDesktop with member _.groups = List2([group])}
+                let desktop = {new ITaskSwitchDesktop with
+                    member _.groups = List2([group])
+                    member _.activate hwnd = OS().windowFromHwnd(hwnd).setForegroundOrRestore(false)}
                 use switcher = new TaskSwitcher(settings,desktop)
                 for grouped in [false;true] do
                     (settings :> ISettings).setValue("groupWindowsInSwitcher",box grouped)

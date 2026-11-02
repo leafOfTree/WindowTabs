@@ -952,6 +952,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                                 member y.hwnd = gi.hwnd
                                 member y.windows = Set2(gi.windows)
                             }
+                        member x.activate hwnd = this.activateWindow hwnd
                 }
                 taskSwitchCell.set(Some(new TaskSwitcher(settingsManager, tsDesktop)))
         else
@@ -1135,11 +1136,11 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                         match windowShortcutText entry with
                         | "" -> entry
                         | key -> { entry with keys=[key.ToLowerInvariant()] })
-                TabSearchForm(entries,group,settings=(settingsManager :> ISettings),
+                TabSearchForm(entries,group,settings=(settingsManager :> ISettings),pick=this.activateWindow,
                               windowShortcut=windowShortcut,windowShortcutText=windowShortcutText)
             | Some wanted ->
                 let pages = [CommandPalette.actionsPage active]
-                let palette = TabSearchForm([],[],settings=(settingsManager :> ISettings),pages=pages,scope=wanted,windows=false)
+                let palette = TabSearchForm([],[],settings=(settingsManager :> ISettings),pick=this.activateWindow,pages=pages,scope=wanted,windows=false)
                 // The group's own choices, read on its thread, shown beside their commands once in.
                 match this.desktop.groups.tryFind(fun group -> group.windows.contains((=)active)) with
                 | Some(:? GroupInfo as info) -> info.readShownChoices(fun () -> palette.Refresh())
@@ -1282,10 +1283,17 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         |> List.filter(fun window -> window.isAltTabWindow || this.isInGroup window.hwnd)
         |> List.map(fun window -> window.hwnd,(try window.pid.processPath with _ -> ""),(nameOverride window.hwnd |> Option.defaultValue window.text))
 
+    /// A window brought to the front from outside its strip: a tab through its group, as its click
+    /// does, so a split's other pane comes up with it rather than flashing unpainted after.
+    member this.activateWindow(hwnd:IntPtr) =
+        match this.desktop.groups.tryFind(fun group -> group.windows.contains((=)hwnd)) with
+        | Some group -> group.activate hwnd
+        | None -> os.windowFromHwnd(hwnd).setForegroundOrRestore(false)
+
     /// The window a key names comes to the front; with none of its program open, the program starts.
     member private this.switchToWindow(shortcut:WindowShortcut) =
         match WindowShortcuts.target this.boundWindow (this.shortcutWindows()) shortcut with
-        | Some hwnd -> os.windowFromHwnd(hwnd).setForegroundOrRestore(false)
+        | Some hwnd -> this.activateWindow hwnd
         | None ->
             try Process.Start(ProcessStartInfo(shortcut.path,UseShellExecute=true)) |> ignore
             with error -> Notice.error (IO.Path.GetFileName shortcut.path) error.Message

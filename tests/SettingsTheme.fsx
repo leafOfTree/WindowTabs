@@ -598,6 +598,22 @@ let main() =
                                 action.switchNext()
                                 check (action.selectedHwnd=handles.[expected.Value]) "Reverse switching did not return to the initial choice"
                         finally action.switchEnd(true)
+            // The window chosen is brought up by the desktop, so a split's tab comes up as its
+            // click brings it, its other pane with it, rather than being set in front on its own.
+            do
+                use input = new Control()
+                let view = {new ITaskSwitchView with
+                    member _.show() = ()
+                    member _.hide() = ()
+                    member _.select _ = ()
+                    member _.inputControl = input
+                    member _.deactivated = Event<unit>().Publish
+                    member _.hovered = Event<int>().Publish
+                    member _.clicked = Event<int>().Publish}
+                let activated = ResizeArray<IntPtr>()
+                let action = TaskSwitchAction(List2([TaskWindowItem(IntPtr 1,None);TaskWindowItem(IntPtr 2,None)]),"List",view=view,activate=activated.Add)
+                action.switchEnd(false)
+                check (Seq.toList activated=[IntPtr 2]) (sprintf "The switcher did not hand the window chosen to the desktop: %A" (Seq.toList activated))
             do
                 let control = TaskSwitchListControl(List2())
                 let tree = (control :> ITaskSwitchListControl).control :?> SettingsTreeList
