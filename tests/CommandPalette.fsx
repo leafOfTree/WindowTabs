@@ -368,9 +368,9 @@ let main() =
         attempt "tab-shortcuts-for-app" (fun () ->
             let before = ShortcutRules.enabled path
             runDone "tab-shortcuts-for-app" active
-            note (ShortcutRules.enabled path<>before) "Tab shortcuts in this app did not change it"
+            note (ShortcutRules.enabled path<>before) "Use tab shortcuts in this app did not change it"
             runDone "tab-shortcuts-for-app" active
-            note (ShortcutRules.enabled path=before) "Tab shortcuts in this app run again did not turn it back")
+            note (ShortcutRules.enabled path=before) "Use tab shortcuts in this app run again did not turn it back")
         attempt "combine-group-taskbar-icons" (fun () ->
             let combine = (Commands.find "combine-group-taskbar-icons").Value
             let before = combine.state active
