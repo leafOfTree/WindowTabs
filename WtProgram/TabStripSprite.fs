@@ -568,11 +568,18 @@ type TabSprite<'id> = {
             // at any scale. Half as much above and below as at the sides: the same in both looked
             // wider above and below, on a shape far longer than it is tall.
             let sideGap = this.pillSideGap
-            let iconRoom = (this.size.height - TabMetrics.iconSide this.appearance.tabHeight)/2
-            let inset = max 1 (min ((sideGap+1)/2) (min iconRoom (this.size.height/4)))
+            // Above a window the tab runs to the strip's bottom row, a pixel lower than its top is
+            // from the strip's top: the gap below takes that pixel, so the pill sits in the middle
+            // of the strip, the same size as inside the window.
+            let below = if this.direction=TabUp && not this.inColumn then 1 else 0
+            let height = this.size.height - below
+            let iconRoom = (height - TabMetrics.iconSide this.appearance.tabHeight)/2
+            let inset = max 1 (min ((sideGap+1)/2) (min iconRoom (height/4)))
             let side = float32 sideGap
-            let l,t,r,b = side,float32 inset,w - side,h - float32 inset
-            let d = 2.0f * float32(this.raisedRadius (this.size.height - 2 * inset) 6)
+            // Pixel k spans k-0.5 to k+0.5 here: the shape runs half a pixel up and left to sit in
+            // the middle with crisp edges.
+            let l,t,r,b = side - 0.5f,float32 inset - 0.5f,w - side - 0.5f,float32 (height - inset) - 0.5f
+            let d = 2.0f * float32(this.raisedRadius (height - 2 * inset) 6)
             path.AddArc(l,t,d,d,180.0f,90.0f)
             path.AddArc(r - d,t,d,d,270.0f,90.0f)
             path.AddArc(r - d,b - d,d,d,0.0f,90.0f)

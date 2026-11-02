@@ -493,6 +493,30 @@ let main () =
                 let left,right = spans |> List.map fst |> List.min,spans |> List.map snd |> List.max
                 check (right-left>=636 && [left..right-1] |> List.forall(fun x -> bitmap.GetPixel(x,14).A=255uy))
                     (sprintf "A column between %A tabs facing %A is left uncovered" style direction)
+        // The active pill sits in the middle of the strip, as much bar above it as below, with no
+        // half-covered row at its edges, facing either way.
+        let heights =
+            [ for direction in [TabUp;TabDown] ->
+                let pills = { strip PillTabs with size=Sz(420,28); direction=direction }
+                use bitmap = pills.render.bitmap
+                let location,tab = pills.tabSprites.list |> List.find(fun (_,tab) -> tab.id=2)
+                let fill = appearance.tabActiveBgColor.ToArgb()
+                let column x = [ for y in 0..bitmap.Height-1 -> bitmap.GetPixel(x,y) ]
+                let isFill (pixel:Color) = pixel.ToArgb()=fill
+                let isBar (pixel:Color) = pixel.A=0uy || pixel.ToArgb()=appearance.tabNormalBgColor.ToArgb()
+                // A column clear of the icon, title and close button: only the pill and the bar.
+                let x =
+                    [location.x+tab.size.width/2..location.x+tab.size.width-1]
+                    |> List.tryFind(fun x -> column x |> List.forall(fun pixel -> isFill pixel || isBar pixel) && column x |> List.exists isFill)
+                match x with
+                | None -> failwithf "No plain column in the active pill facing %A" direction
+                | Some x ->
+                    let pixels = column x
+                    let above = pixels |> List.takeWhile isBar |> List.length
+                    let below = pixels |> List.rev |> List.takeWhile isBar |> List.length
+                    check (above=below) (sprintf "The pill facing %A is off the middle: %d rows above, %d below" direction above below)
+                    bitmap.Height-above-below ]
+        check (List.distinct heights |> List.length=1) (sprintf "The pill is not the same height facing up and down: %A" heights)
         let folder = strip FolderTabs
         check (match folder.tryHit(Pt(138,26)) with Some(1,_) -> true | _ -> false) "A folder tab's foot takes the pointer from the tab beneath it"
         // Spaced tabs stand apart: each is rounded at both ends and no hairline divides them.
