@@ -698,6 +698,9 @@ let main() =
             check (not (command.enabled IntPtr.Zero)) (sprintf "%s holds its key only on windows with tabs but can run without one" command.id)
         check (Commands.scopeOf "searchTabs"=Everywhere && Commands.scopeOf "commandPalette"=Everywhere && Commands.scopeOf "saveWorkspace"=Everywhere)
               "A command that opens over any window does not hold its key everywhere"
+        // The group editor lists loose windows too, and its key puts it away again while it is in front.
+        check (Commands.scopeOf "editGroups"=Everywhere && (Commands.find "edit-groups").Value.enabled IntPtr.Zero)
+              "Edit groups could not be opened, or put away by its key, without a tab in front"
         check (Commands.scopeOf "nextTab"=TabbedWindow && Commands.scopeOf "numberLeader"=TabbedWindow && Commands.scopeOf "splitEnd"=TabbedWindow)
               "A tab command holds its key where it has no tab to act on"
         check (Commands.scopeOf "window:x|y|1"=Everywhere) "A window shortcut does not hold its key everywhere"

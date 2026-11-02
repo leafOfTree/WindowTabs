@@ -189,8 +189,8 @@ let main() =
         // 1. With a tab in front every command can act; with nothing in front, the ones that need a
         // tab say so by being dimmed, and none of them may throw or put up a message when run.
         let needsTab = set [TabCommands;GroupCommands;SplitCommands]
-        // Listed with the tab commands, but open a box wherever the user is.
-        let anywhere = set ["search-tabs";"command-palette"]
+        // Listed with the tab and group commands, but open a box wherever the user is.
+        let anywhere = set ["search-tabs";"command-palette";"edit-groups"]
         // Dimmed while there is no workspace to choose.
         let needsWorkspace = set ["restore-workspace-named";"delete-workspace"]
         // Open a system dialog and wait on the user: listed, but not run unattended.

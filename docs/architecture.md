@@ -341,8 +341,8 @@ again as the last recording ends, before the recorded key is taken.
 Each command has a scope (`CommandScope`): a tab, group or split command's key is held only
 while the command is `enabled` for the window in front, one with tabs, and more than one for
 Next tab, since the command could do nothing with it elsewhere and the key would only be kept
-from the application (Ctrl+Tab from a browser, say); the search, the palette, the workspace
-commands, the app switches and the window shortcuts are held everywhere.
+from the application (Ctrl+Tab from a browser, say); the search, the palette, the group
+editor, the workspace commands, the app switches and the window shortcuts are held everywhere.
 `HotKeyBindings.Hold` takes a predicate over registration names and registers or releases each
 key to match; `Program.holdHotKeys` recomputes it on every foreground change, group change and
 rule change, on top of the recording and full-screen suspension. An application can keep its

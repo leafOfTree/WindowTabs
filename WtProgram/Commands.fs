@@ -419,7 +419,10 @@ module Commands =
                           | _ -> ()
                   | _ -> ())
         // The group editor: the group in front as a picture to rearrange, applied when saved.
-        fromCatalog "edit-groups" GroupCommands hasGroup (fun hwnd -> Services.program.editGroups hwnd)
+        // Over the desktop in view, with its groups and loose windows alike, and the same key puts
+        // it away: asked only with a tab in front, it could not be opened from a window without
+        // tabs, nor closed by its key while it was in front itself.
+        { fromCatalog "edit-groups" GroupCommands always (fun hwnd -> Services.program.editGroups hwnd) with scope=Everywhere }
         choosing "move-tab-to-group" Strings.Commands.moveTabToGroup TabCommands hasGroup (fun hwnd ->
             match groupOf hwnd with
             | Some source ->
