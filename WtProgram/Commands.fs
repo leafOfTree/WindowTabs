@@ -187,6 +187,8 @@ module SettingRows =
 module Commands =
     let private groupOf (hwnd:IntPtr) = Services.desktop.groups.tryFind(fun group -> group.windows.contains((=)hwnd))
     let private hasGroup hwnd = (groupOf hwnd).IsSome
+    /// A tab among others: a group of one has no next tab, nothing to sort or move along.
+    let private hasOtherTabs hwnd = groupOf hwnd |> Option.exists(fun g -> g.windows.count>1)
     let private always (_:IntPtr) = true
     let private onGroup (action:IGroup -> unit) hwnd = groupOf hwnd |> Option.iter action
     let private finished action = fun hwnd -> action hwnd; Done
@@ -331,16 +333,16 @@ module Commands =
               Services.settings.setValue(key,box (not current)))
           with listed=false }
     let all : Command list = [
-        fromCatalog "next-tab" TabCommands hasGroup (onGroup(fun g -> g.switchWindow(true,false)))
-        fromCatalog "previous-tab" TabCommands hasGroup (onGroup(fun g -> g.switchWindow(false,false)))
+        fromCatalog "next-tab" TabCommands hasOtherTabs (onGroup(fun g -> g.switchWindow(true,false)))
+        fromCatalog "previous-tab" TabCommands hasOtherTabs (onGroup(fun g -> g.switchWindow(false,false)))
         // Opened over any window, so their keys are held everywhere.
         { fromCatalog "search-tabs" TabCommands always (fun _ -> Services.program.toggleSearch None) with scope=Everywhere }
         { fromCatalog "command-palette" TabCommands always (fun _ -> Services.program.toggleSearch (Some ActionScope)) with scope=Everywhere }
         fromCatalog "new-tab" TabCommands hasGroup (fun hwnd -> Services.program.newTab hwnd)
         // As the tab menu's Close: the window of the tab in front, and only a tab's.
         fromCatalog "close-tab" TabCommands hasGroup (fun hwnd -> if hasGroup hwnd then OS().windowFromHwnd(hwnd).close())
-        // Arms the group in front, so only with one.
-        { fromCatalog "number-leader" TabCommands hasGroup (fun _ ->
+        // Arms the group in front, so only with one that has tabs to pick from.
+        { fromCatalog "number-leader" TabCommands hasOtherTabs (fun _ ->
               if Services.settings.getValue "enableNumberLeader" :?> bool then NumberLeaderRequest.toggle.Trigger())
           with listed=false }
         // The tab menu's commands for the tab in front.
@@ -388,16 +390,16 @@ module Commands =
         plain "custom-tab-color" Strings.Commands.customTabColor TabCommands hasGroup customTabColor
         plain "remember-tab-color" Strings.Commands.rememberTabColor TabCommands canRememberTabColor rememberTabColor
         plain "clear-tab-color" Strings.Commands.clearTabColor TabCommands hasGroup clearTabColor
-        plain "move-tab-left" Strings.Commands.moveTabLeft TabCommands hasGroup (onTab(fun g hwnd -> g.run(MoveTab(hwnd,-1))))
-        plain "move-tab-right" Strings.Commands.moveTabRight TabCommands hasGroup (onTab(fun g hwnd -> g.run(MoveTab(hwnd,1))))
-        plain "sort-tabs" Strings.Commands.sortTabs TabCommands hasGroup (onGroup(fun g -> g.run SortTabs))
-        plain "close-other-tabs" Strings.Commands.closeOtherTabs TabCommands hasGroup (onTab(fun g hwnd -> g.run(CloseOtherTabs hwnd)))
+        plain "move-tab-left" Strings.Commands.moveTabLeft TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(MoveTab(hwnd,-1))))
+        plain "move-tab-right" Strings.Commands.moveTabRight TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(MoveTab(hwnd,1))))
+        plain "sort-tabs" Strings.Commands.sortTabs TabCommands hasOtherTabs (onGroup(fun g -> g.run SortTabs))
+        plain "close-other-tabs" Strings.Commands.closeOtherTabs TabCommands hasOtherTabs (onTab(fun g hwnd -> g.run(CloseOtherTabs hwnd)))
         plain "close-app-tabs" Strings.Commands.closeAppTabs TabCommands hasGroup (onTab(fun g hwnd -> g.run(CloseAppTabs hwnd)))
         plain "close-all-tabs" Strings.Commands.closeAllTabs TabCommands hasGroup (onGroup(fun g -> g.run CloseAllTabs))
-        plain "detach-tab" Strings.Commands.detachTab TabCommands (fun hwnd -> groupOf hwnd |> Option.exists(fun g -> g.windows.count>1))
+        plain "detach-tab" Strings.Commands.detachTab TabCommands hasOtherTabs
               (fun hwnd -> Services.program.detachTab hwnd)
         // Palette only, not in the tab menu: every tab but the one in front is taken out on its own.
-        plain "ungroup-tabs" Strings.Commands.ungroupTabs GroupCommands (fun hwnd -> groupOf hwnd |> Option.exists(fun g -> g.windows.count>1))
+        plain "ungroup-tabs" Strings.Commands.ungroupTabs GroupCommands hasOtherTabs
               (fun hwnd ->
                   groupOf hwnd |> Option.iter(fun g ->
                       for other in g.windows.list do

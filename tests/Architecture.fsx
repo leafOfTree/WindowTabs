@@ -878,6 +878,11 @@ let main() =
             group.addWindow(form.Handle,false)
             form)
         try
+            // Alone in its group, the window has no next tab: Next tab is dimmed, and its key is the
+            // app's, as on a window with no tabs; Close tab still has a tab to close.
+            pumpUntil "The test window did not join its group" (fun () -> (Commands.find "close-tab").Value.enabled testWindow.Handle)
+            check (not ((Commands.find "next-tab").Value.enabled testWindow.Handle)) "Next tab is offered, and its key held, on a tab alone in its group"
+            check (not ((Commands.find "number-leader").Value.enabled testWindow.Handle)) "The number leader is offered on a tab alone in its group"
             check (not(onGroup(fun group -> group.ts.isShrunk))) "Disabled auto-hide collapsed tabs"
             api.setValue("autoHideMode",box "Maximized")
             pumpUntil "Auto-hide did not enable on an existing maximized group" (fun () -> onGroup(fun group -> group.ts.isShrunk))

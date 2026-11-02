@@ -306,14 +306,18 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     member private this.sessionMode = string(Services.settings.getValue("sessionRestore"))
 
     /// The shortcuts let go of their keys while one is being recorded or a full-screen app runs.
-    /// The tab commands' keys, besides, are the app's while the window in front has no tabs or
-    /// its app keeps them (`ShortcutRules`); the keys held everywhere stay.
+    /// The tab commands' keys, besides, are the app's while the command could do nothing for the
+    /// window in front: one with no tabs, or alone in its group for Next tab, or one whose app
+    /// keeps its keys (`ShortcutRules`). The keys held everywhere stay.
     member private this.holdHotKeys() =
         if recordingShortcut || FullScreenPause.isPaused() then hotKeyManager.suspend()
         else
             let foreground = WinUserApi.GetForegroundWindow()
-            let tabbed = this.isInGroup foreground && ShortcutRules.enabled (try os.windowFromHwnd(foreground).pid.processPath with _ -> "")
-            hotKeyManager.hold (fun name -> tabbed || Commands.scopeOf name=CommandScope.Everywhere)
+            let keepsKeys = lazy (not (ShortcutRules.enabled (try os.windowFromHwnd(foreground).pid.processPath with _ -> "")))
+            hotKeyManager.hold (fun name ->
+                match Commands.byShortcut name with
+                | Some command when command.scope=CommandScope.TabbedWindow -> command.enabled foreground && not keepsKeys.Value
+                | _ -> true)
             hotKeyManager.resume()
 
     member private this.pausesInFullScreen = unbox<bool>(Services.settings.getValue("pauseInFullScreen"))
