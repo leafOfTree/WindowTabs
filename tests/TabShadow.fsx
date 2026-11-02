@@ -202,7 +202,7 @@ let main () =
             let drawn = badges.sprite.children.list |> List.collect(fun (_,tab) -> tab.children.list) |> List.choose(fun (_,child) -> match child with :? NumberBadgeSprite as badge -> Some badge | _ -> None)
             check (drawn.Length=1 && drawn.Head.label="A") "Active tab hint was shown or inactive letter hint was missing"
     for appearance in [Theme.light;Theme.dark] do
-        for style in [JoinedTabs;FolderTabs;PillTabs] do
+        for style in [JoinedTabs;FolderTabs;FloatingTabs] do
             let plain = { ts with appearance={appearance with tabStyle=style} }
             let active = plain.tabSprites.list |> List.map snd |> List.find(fun tab -> tab.isTop)
             let inactive = plain.tabSprites.list |> List.map snd |> List.find(fun tab -> not tab.isTop)
@@ -476,7 +476,7 @@ let main () =
         check (barRight<=300 || barLeft>=500) (sprintf "A centred tab stayed under the app's bar: %d-%d" barLeft barRight)
         check (span { wide 1 with blocked=[(0.0,100.0)] } = span (wide 1)) "A tab moved for a bar that did not cover it"
         check (span { wide 2 with blocked=[(300.0,500.0)] } = (plainLeft,plainRight)) "Tabs too wide for either side of a bar left their alignment"
-    // Folder and pill styles: the inactive tabs are the bar, the active tab a shape raised on it.
+    // Folder and floating styles: the inactive tabs are the bar, the active tab a shape raised on it.
     // Three 140px tabs, the middle one active, each 27px tall from y=1.
     do
         let strip style = { ts with appearance={ appearance with tabStyle=style }
@@ -485,7 +485,7 @@ let main () =
         // Tabs a fraction of a pixel wide, up and down: every column from the first tab to the last
         // is covered, or the window behind shows through as a dark line beside the active tab.
         for direction in [TabUp;TabDown] do
-            for style in [JoinedTabs;PillTabs;FolderTabs] do
+            for style in [JoinedTabs;FloatingTabs;FolderTabs] do
                 let uneven = { strip style with size=Sz(637,28); direction=direction
                                                 appearance={ appearance with tabStyle=style; tabMaxWidth=400 } }
                 use bitmap = uneven.render.bitmap
@@ -493,30 +493,30 @@ let main () =
                 let left,right = spans |> List.map fst |> List.min,spans |> List.map snd |> List.max
                 check (right-left>=636 && [left..right-1] |> List.forall(fun x -> bitmap.GetPixel(x,14).A=255uy))
                     (sprintf "A column between %A tabs facing %A is left uncovered" style direction)
-        // The active pill sits in the middle of the strip, as much bar above it as below, with no
-        // half-covered row at its edges, facing either way.
+        // The active floating tab sits in the middle of the strip, as much bar above it as below,
+        // with no half-covered row at its edges, facing either way.
         let heights =
             [ for direction in [TabUp;TabDown] ->
-                let pills = { strip PillTabs with size=Sz(420,28); direction=direction }
-                use bitmap = pills.render.bitmap
-                let location,tab = pills.tabSprites.list |> List.find(fun (_,tab) -> tab.id=2)
+                let floating = { strip FloatingTabs with size=Sz(420,28); direction=direction }
+                use bitmap = floating.render.bitmap
+                let location,tab = floating.tabSprites.list |> List.find(fun (_,tab) -> tab.id=2)
                 let fill = appearance.tabActiveBgColor.ToArgb()
                 let column x = [ for y in 0..bitmap.Height-1 -> bitmap.GetPixel(x,y) ]
                 let isFill (pixel:Color) = pixel.ToArgb()=fill
                 let isBar (pixel:Color) = pixel.A=0uy || pixel.ToArgb()=appearance.tabNormalBgColor.ToArgb()
-                // A column clear of the icon, title and close button: only the pill and the bar.
+                // A column clear of the icon, title and close button: only the raised tab and the bar.
                 let x =
                     [location.x+tab.size.width/2..location.x+tab.size.width-1]
                     |> List.tryFind(fun x -> column x |> List.forall(fun pixel -> isFill pixel || isBar pixel) && column x |> List.exists isFill)
                 match x with
-                | None -> failwithf "No plain column in the active pill facing %A" direction
+                | None -> failwithf "No plain column in the active floating tab facing %A" direction
                 | Some x ->
                     let pixels = column x
                     let above = pixels |> List.takeWhile isBar |> List.length
                     let below = pixels |> List.rev |> List.takeWhile isBar |> List.length
-                    check (above=below) (sprintf "The pill facing %A is off the middle: %d rows above, %d below" direction above below)
+                    check (above=below) (sprintf "The floating tab facing %A is off the middle: %d rows above, %d below" direction above below)
                     bitmap.Height-above-below ]
-        check (List.distinct heights |> List.length=1) (sprintf "The pill is not the same height facing up and down: %A" heights)
+        check (List.distinct heights |> List.length=1) (sprintf "The floating tab is not the same height facing up and down: %A" heights)
         // A raised folder tab's edge over the bar is crisp, as much bar showing facing either way,
         // and at an end of the strip as much bar beside it at the left end as at the right.
         let isBar (pixel:Color) = pixel.A=0uy || pixel.ToArgb()=appearance.tabNormalBgColor.ToArgb()

@@ -402,7 +402,7 @@ module Strings =
                                 keywords={ en="tab flash attention alert danger notify blink color colour"; zh="标签 闪烁 提醒 警示 注意 危险 颜色"; ja="タブ 点滅 注意 警告 通知 色"; ar="علامة تبويب وميض انتباه تنبيه خطر لون" } }
         let tabStyle = { caption={ en="Tab style"; zh="标签样式"; ja="タブのスタイル"; ar="نمط علامة التبويب" }
                          description={ en="How the active tab stands out from the rest."; zh="活动标签以何种方式与其他标签区分。"; ja="アクティブなタブをほかのタブとどう見分けるかを選びます。"; ar="كيفية تمييز علامة التبويب النشطة عن البقية." }
-                         keywords={ en="shape folder pill"; zh="形状 文件夹 胶囊"; ja="形 フォルダー ピル"; ar="شكل مجلد كبسولة" } }
+                         keywords={ en="shape folder floating pill"; zh="形状 文件夹 悬浮 胶囊"; ja="形 フォルダー フローティング ピル"; ar="شكل مجلد عائم كبسولة" } }
         let tabHeightHint = { en="Left/right tabs have a minimum height of 32 px."; zh="左／右标签的实际高度最低为 32px。"; ja="左・右のタブの最小高さは 32px です。"; ar="يبلغ الحد الأدنى لارتفاع علامات التبويب الجانبية 32 بكسل." }
         let tabHeight = { caption={ en="Tab height"; zh="标签高度"; ja="タブの高さ"; ar="ارتفاع علامة التبويب" }; description=none; keywords=sizeWords }
         let tabMaxWidth = { caption={ en="Maximum tab width"; zh="标签最大宽度"; ja="タブの最大幅"; ar="أقصى عرض لعلامة التبويب" }; description=none; keywords=sizeWords }

@@ -252,8 +252,8 @@ module RuntimeDiagnostics =
                 | :? JValue as value when value.Type=JTokenType.Integer -> tabs.[name] <- value.DeepClone()
                 | _ -> ()
             match appearance.["tabStyle"] with
-            | :? JValue as value when value.Type=JTokenType.String && List.contains (string value.Value) TabStyle.names ->
-                tabs.["style"] <- value.DeepClone()
+            | :? JValue as value when value.Type=JTokenType.String && List.contains (TabStyle.renamed (string value.Value)) TabStyle.names ->
+                tabs.["style"] <- JValue(TabStyle.renamed (string value.Value))
             | _ -> ()
             result.["tabs"] <- tabs
         | _ -> ()

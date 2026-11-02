@@ -33,7 +33,7 @@ module AppearanceJson =
         let fallback =
             match json.["tabStyle"] with
             | :? JValue as value when value.Type=JTokenType.String ->
-                {fallback with style=SettingsCatalog.normalizeChoice "tabStyle" (string value.Value) |> TabStyle.parse}
+                {fallback with style=SettingsCatalog.normalizeChoice "tabStyle" (TabStyle.renamed (string value.Value)) |> TabStyle.parse}
             | _ -> fallback
         geometryFields |> List.fold(fun geometry (key,_,set) ->
             try

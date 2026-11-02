@@ -423,13 +423,13 @@ type TabSprite<'id> = {
 
     /// The gap beside a floating tab, between it and the tabs either side: 8 pixels at 125%.
     /// A column's rows stand apart already and keep a narrower one.
-    member private this.pillSideGap = Dpi.scale (if this.inColumn then 5 else 6)
+    member private this.floatingSideGap = Dpi.scale (if this.inColumn then 5 else 6)
 
     // Horizontal padding inside the tab. The old bezier edges needed 18px of
     // run-up on each side; rounded corners need only enough room to breathe.
     // A floating tab in a row keeps its contents a little in from its shape's edge.
     member private this.edgeWidth =
-        if this.style=PillTabs && not this.inColumn then this.pillSideGap+Dpi.scale 6
+        if this.style=FloatingTabs && not this.inColumn then this.floatingSideGap+Dpi.scale 6
         else TabMetrics.scaled this.appearance.tabHeight 10
 
     // Proportional to the tab, the way a browser draws it: Edge measures about
@@ -439,7 +439,7 @@ type TabSprite<'id> = {
 
     member private this.style = this.appearance.tabStyle
 
-    /// Folder and pill tabs set the active, hovered or flashing tab off as a shape raised on the
+    /// Folder and floating tabs set the active, hovered or flashing tab off as a shape raised on the
     /// bar; the other tabs are the bar itself.
     member this.isRaised =
         this.displayInfo.bgColor.IsSome || this.isTop || this.hover.IsSome || this.captured.IsSome
@@ -563,13 +563,13 @@ type TabSprite<'id> = {
         let w,h = float32 this.size.width,float32 this.size.height
         let path = new GraphicsPath()
         match this.style with
-        | PillTabs ->
+        | FloatingTabs ->
             // A clear gap all round, in screen pixels rather than shrunk with the icon, so it shows
             // at any scale. Half as much above and below as at the sides: the same in both looked
             // wider above and below, on a shape far longer than it is tall.
-            let sideGap = this.pillSideGap
+            let sideGap = this.floatingSideGap
             // Above a window the tab runs to the strip's bottom row, a pixel lower than its top is
-            // from the strip's top: the gap below takes that pixel, so the pill sits in the middle
+            // from the strip's top: the gap below takes that pixel, so the shape sits in the middle
             // of the strip, the same size as inside the window.
             let below = if this.direction=TabUp && not this.inColumn then 1 else 0
             let height = this.size.height - below
@@ -734,7 +734,7 @@ type TabSprite<'id> = {
             | JoinedTabs ->
                 use background = new SolidBrush(this.fillColor)
                 g.FillPath(background, path)
-            | FolderTabs | PillTabs ->
+            | FolderTabs | FloatingTabs ->
                 use bar = new SolidBrush(if this.isRaised then this.barColor else this.fillColor)
                 g.FillPath(bar, path)
                 if this.isRaised then
@@ -931,9 +931,9 @@ type TabStripSprite<'id> when 'id : equality = {
                 | Some(top) -> top = tab
                 | None -> false 
             displayInfo = this.tabs.find(tab)
-            // A column always raises its tabs as pills, as browsers' vertical tabs do: folder tabs
-            // have no edge to stand on there, and joined rows read as one block until coloured.
-            appearance = if this.isVertical then { this.appearance with tabStyle=PillTabs; tabHeight=this.rowHeight } else this.appearance
+            // A column always raises its tabs as floating ones, as browsers' vertical tabs do: folder
+            // tabs have no edge to stand on there, and joined rows read as one block until coloured.
+            appearance = if this.isVertical then { this.appearance with tabStyle=FloatingTabs; tabHeight=this.rowHeight } else this.appearance
             size = this.tabSizeOf tab
             onlyIcon = this.isCompact
             dock = this.dock
