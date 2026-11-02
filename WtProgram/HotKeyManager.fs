@@ -74,8 +74,8 @@ type HotKeyBindings(register:int * int * int -> bool, unregister:int -> unit) =
     /// Takes the keys back once recording ends, but for those the window in front has. One
     /// another program took meanwhile is kept for `Retry`.
     member _.Resume() =
-        DebugLog.writef "Shortcuts taken back, were let go %b" suspended
         if suspended then
+            DebugLog.writef "Shortcuts taken back after being let go"
             suspended <- false
             for KeyValue(name,(id,modifiers,key,_)) in List.ofSeq bindings do
                 if holds name then
@@ -90,13 +90,19 @@ type HotKeyBindings(register:int * int * int -> bool, unregister:int -> unit) =
     member _.Hold(wanted:string -> bool) =
         holds <- wanted
         if not suspended then
+            let taken,letGo = ResizeArray<string>(),ResizeArray<string>()
             for KeyValue(name,(id,modifiers,key,_)) in List.ofSeq bindings do
                 if holds name then
-                    if released.Remove name then take name (id,modifiers,key)
+                    if released.Remove name then
+                        take name (id,modifiers,key)
+                        taken.Add name
                 elif not (released.Contains name) then
                     if not (lost.Contains name) then unregister id
                     lost.Remove name |> ignore
                     released.Add name |> ignore
+                    letGo.Add name
+            if taken.Count>0 || letGo.Count>0 then
+                DebugLog.writef "Shortcuts for the window in front: taken %A, let go %A" (List.ofSeq taken) (List.ofSeq letGo)
     /// Tries again for the keys another program held when they were taken back, as it may have
     /// let them go since.
     member _.Retry() =
