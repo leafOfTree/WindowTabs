@@ -342,8 +342,11 @@ puts it up in the other's place. Each box offers what was typed when it last clo
 so typing starts afresh; the actions chosen last from the palette (`recentActions` in the
 settings file, eight at most) come first while nothing is typed and win ties after. Alt+Enter on a window in the search gives it a key
 (`WindowShortcut`, kept by program path and name in `windowShortcuts`, registered as
-`window:<app>|<name>`): pressed, it brings the program's window with that name to the front,
-else its most recent window, and starts the program when none is open. They are seen and
+`window:<app>|<name>|<code>`): pressed, it brings the window it was given to while that is open
+(remembered in memory only, so windows with the same name can hold a key each), else the
+program's window with that name, else its most recent window, and starts the program when none
+is open. A window shows only the keys that would bring it, so of several windows with the same
+name and no key given, as after a restart, only the most recent shows it. They are seen and
 changed in the window search alone, beside each window's name. The actions page is one list: the commands (`Commands.all`,
 those listed, in their categories, dimmed when they can do nothing for the window that was in
 front, with their shortcuts beside them), then the settings by page, leaving out the catalog's

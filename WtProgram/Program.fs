@@ -98,6 +98,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     // Each hotkey runs the command its shortcut key belongs to; the commands and their default
     // shortcuts live in Commands and SettingsCatalog.
     let hotKeyManager = lifetime.Own(new HotKeyManager())
+    /// The window each key was given to in the window search, by its code: the key goes there while
+    /// it is open, whatever its name has become or however many share it.
+    let boundWindows = Dictionary<int,IntPtr>()
     // Native events can pump during startup, before the filter is registered in run.
     // The initial full refresh processes those windows once the services are ready.
     let refreshQueue = lifetime.Own(new WindowRefreshQueue(30, this.updateChangedWindows, this.updateAppWindows,
@@ -990,12 +993,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 let activeOf (info:GroupInfo) = (info :> IGroup).windows.list |> List.minBy(fun each -> zorder.tryFind(each).def(Int32.MaxValue))
                 // The tab's name as the strip shows it: the rename, or the last part of a path; a
                 // window with no title goes by its program.
-                let lastName (text:string) =
-                    let parts = text.Split([|'\\';'/'|],StringSplitOptions.RemoveEmptyEntries)
-                    if parts.Length=0 then text else parts.[parts.Length-1]
                 let nameOf each =
                     let window = os.windowFromHwnd(each)
-                    match nameOverride each |> Option.defaultValue (lastName window.text) with
+                    match nameOverride each |> Option.defaultValue (WindowTitle.tabName window.text) with
                     | "" -> (try IO.Path.GetFileNameWithoutExtension(window.pid.exeName) with _ -> "")
                     | name -> name
                 let windowOf each =
@@ -1086,35 +1086,49 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                         let saved = this.windowShortcuts()
                         known.Value <- Some saved
                         saved
-                // Alt+Enter on a window gives it a key, kept by its program and name.
+                let windows = lazy (this.shortcutWindows())
+                let bound shortcut = this.boundWindow shortcut
+                let shortcutOf (entry:TabSearchEntry) path = WindowShortcuts.shownOn bound windows (shortcuts()) entry.hwnd path entry.title
+                // Alt+Enter on a window gives it a key, kept by its program and name, and going to
+                // this very window while it is open.
                 let windowShortcut (entry:TabSearchEntry) =
                     let path = try os.windowFromHwnd(entry.hwnd).pid.processPath with _ -> ""
                     if path="" then None
                     else
+                        let program = this :> IProgram
                         let saved() : WindowShortcut list = shortcuts()
-                        let current() = WindowShortcuts.find (saved()) path entry.title |> Option.map(fun s -> s.code) |> Option.defaultValue 0
+                        let current() = shortcutOf entry path |> Option.map(fun s -> s.code) |> Option.defaultValue 0
+                        // A row's keys go together: one left over from a window gone, that brings this
+                        // one, is not shown in place of the key just moved or replaced.
+                        let landing hwnd = WindowShortcuts.landingOn bound windows.Value (saved()) hwnd |> List.map(fun key -> key,bound key)
+                        let replace removed added =
+                            let done' = this.replaceWindowShortcuts removed added
+                            known.Value <- None
+                            done'
                         Some { current=current()
                                usedBy=fun code ->
                                    if code=0 then None
                                    else
-                                       let program = this :> IProgram
                                        let settings = settingsManager :> ISettings
                                        match Commands.holderOf program.getHotKey program.setHotKey (fun key code -> settings.setHotKey key code) "" code with
                                        | Some holder -> Some holder
                                        | None ->
                                            // Another window's key moves to this one, as a command's does.
-                                           saved() |> List.tryFind(fun other -> other.code=code && not (AppIdentity.same other.path path && other.title=entry.title))
+                                           let lands = landing entry.hwnd |> List.map fst
+                                           saved() |> List.tryFind(fun other -> other.code=code && not (List.contains other lands))
                                            |> Option.map(fun other ->
-                                               { name=other.title; key=""
-                                                 release=(fun () -> known.Value <- None; program.setWindowShortcut { other with code=0 } |> ignore)
-                                                 restore=(fun () -> known.Value <- None; program.setWindowShortcut other |> ignore) })
-                               set=fun code ->
-                                   known.Value <- None
-                                   (this :> IProgram).setWindowShortcut { path=path; title=entry.title; code=code }
+                                               let window = WindowShortcuts.target bound windows.Value other
+                                               let keys = match window with Some hwnd -> landing hwnd | None -> [other,bound other]
+                                               let name = windows.Value |> List.tryPick(fun (hwnd,_,title) -> if Some hwnd=window then Some title else None)
+                                               { name=defaultArg name other.title; key=""
+                                                 release=(fun () -> replace keys [] |> ignore)
+                                                 restore=(fun () -> replace [] keys |> ignore) })
+                               // The row's keys give way to this one, which goes to this window.
+                               set=fun code -> replace (landing entry.hwnd) [{ path=path; title=entry.title; code=code },Some entry.hwnd]
                                inList=false }
                 let windowShortcutText (entry:TabSearchEntry) =
                     let path = try os.windowFromHwnd(entry.hwnd).pid.processPath with _ -> ""
-                    WindowShortcuts.find (shortcuts()) path entry.title |> Option.map(fun s -> SettingsShortcut.text s.code) |> Option.defaultValue ""
+                    shortcutOf entry path |> Option.map(fun s -> SettingsShortcut.text s.code) |> Option.defaultValue ""
                 // A window's key finds it, as a command's does in the palette.
                 let entries =
                     TabSearch.tabs nameOverride active groups |> List.map(fun entry ->
@@ -1238,14 +1252,39 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         let chord = HotKeyShortcut(HotKeyControlCode=int16 shortcut.code)
         hotKeyManager.register (WindowShortcuts.key shortcut) (chord.RegisterHotKeyModifierFlags,chord.RegisterHotKeyVirtualKeyCode) (fun () -> this.switchToWindow shortcut)
 
+    member private this.boundWindow(shortcut:WindowShortcut) =
+        match boundWindows.TryGetValue shortcut.code with
+        | true,hwnd -> Some hwnd
+        | _ -> None
+
+    /// Takes these keys out and puts those in, each given to its window if it has one; the keys
+    /// taken out come back if one put in cannot be had.
+    member private this.replaceWindowShortcuts (removed:(WindowShortcut * IntPtr option) list) (added:(WindowShortcut * IntPtr option) list) =
+        for shortcut,_ in removed do
+            hotKeyManager.unregister (WindowShortcuts.key shortcut)
+            boundWindows.Remove shortcut.code |> ignore
+        let registered = added |> List.forall(fun (shortcut,_) -> this.registerWindowShortcut shortcut)
+        let kept,taken = if registered then added,removed else removed,added
+        if not registered then
+            for shortcut,_ in added do hotKeyManager.unregister (WindowShortcuts.key shortcut)
+            for shortcut,_ in removed do this.registerWindowShortcut shortcut |> ignore
+        for shortcut,hwnd in kept do
+            if shortcut.code<>0 then hwnd |> Option.iter(fun hwnd -> boundWindows.[shortcut.code] <- hwnd)
+        let root = Services.settings.root
+        root.["windowShortcuts"] <- WindowShortcuts.write (WindowShortcuts.replace (this.windowShortcuts()) (List.map fst taken) (List.map fst kept))
+        Services.settings.root <- root
+        registered
+
+    /// The windows a key can go to, most recent first, with their program and name.
+    member private this.shortcutWindows() =
+        let nameOverride hwnd = windowNameOverride.tryFind(hwnd).bind(id)
+        os.windowsInZorder.list
+        |> List.filter(fun window -> window.isAltTabWindow || this.isInGroup window.hwnd)
+        |> List.map(fun window -> window.hwnd,(try window.pid.processPath with _ -> ""),(nameOverride window.hwnd |> Option.defaultValue window.text))
+
     /// The window a key names comes to the front; with none of its program open, the program starts.
     member private this.switchToWindow(shortcut:WindowShortcut) =
-        let nameOverride hwnd = windowNameOverride.tryFind(hwnd).bind(id)
-        let windows =
-            os.windowsInZorder.list
-            |> List.filter(fun window -> window.isAltTabWindow || this.isInGroup window.hwnd)
-            |> List.map(fun window -> window.hwnd,(try window.pid.processPath with _ -> ""),(nameOverride window.hwnd |> Option.defaultValue window.text))
-        match WindowShortcuts.target windows shortcut with
+        match WindowShortcuts.target this.boundWindow (this.shortcutWindows()) shortcut with
         | Some hwnd -> os.windowFromHwnd(hwnd).setForegroundOrRestore(false)
         | None ->
             try Process.Start(ProcessStartInfo(shortcut.path,UseShellExecute=true)) |> ignore
@@ -1412,14 +1451,11 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         member x.restoreWorkspace() = this.restoreWorkspace()
         member x.restoreWorkspaceNamed name = this.restoreWorkspaceNamed name
         member x.windowShortcuts() = this.windowShortcuts()
+        // By program and name: every key of windows with that name gives way to this one.
         member x.setWindowShortcut shortcut =
-            let registered = shortcut.code=0 || this.registerWindowShortcut shortcut
-            if registered then
-                if shortcut.code=0 then hotKeyManager.unregister (WindowShortcuts.key shortcut)
-                let root = Services.settings.root
-                root.["windowShortcuts"] <- WindowShortcuts.write (WindowShortcuts.set (this.windowShortcuts()) shortcut)
-                Services.settings.root <- root
-            registered
+            let old = this.windowShortcuts() |> List.filter(fun other -> WindowShortcuts.same other shortcut || (shortcut.code<>0 && other.code=shortcut.code))
+            this.replaceWindowShortcuts (old |> List.map(fun other -> other,this.boundWindow other))
+                                        (if shortcut.code=0 then [] else [shortcut,None])
 
         // As a tab dragged out onto the desktop: marked as dropped, it starts a group by hand when
         // the next scan finds it on its own.
