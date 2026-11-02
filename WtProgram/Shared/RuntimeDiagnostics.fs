@@ -263,7 +263,7 @@ module RuntimeDiagnostics =
         // How many apps each rule lists, never which ones.
         let count key = match settings.[key] with :? JArray as values -> values.Count | _ -> 0
         result.["appRules"] <- JObject(JProperty("tabsOn",count "includedPaths"),JProperty("tabsOff",count "excludedPaths"),
-                                       JProperty("autoGroup",count "autoGroupingPaths"),JProperty("numberShortcuts",count "disabledNumberShortcutPaths"),JProperty("tabColors",match settings.["appTabColors"] with :? JObject as colors -> colors.Count | _ -> 0))
+                                       JProperty("autoGroup",count "autoGroupingPaths"),JProperty("numberShortcuts",count "disabledNumberShortcutPaths"),JProperty("tabShortcuts",count "disabledShortcutPaths"),JProperty("tabColors",match settings.["appTabColors"] with :? JObject as colors -> colors.Count | _ -> 0))
         match settings.["workspaces"] with
         | :? JArray as values -> result.["workspaceCount"] <- JValue(values.Count)
         | _ -> ()

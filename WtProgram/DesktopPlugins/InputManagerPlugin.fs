@@ -227,6 +227,7 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
             // this key. Preserve the modifier state belonging to this input event.
             let foreground = this.foregroundGroup
             let foregroundHwnd = WinUserApi.GetForegroundWindow()
+            let path = pathFor foregroundHwnd
             let outcome =
                 keys.handle { msg=int key
                               vk=data.vkCode
@@ -238,7 +239,8 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
                               foreground=foregroundHwnd
                               tabs=foreground |> Option.map(fun group -> group.windows.list)
                               numberModifier=Services.settings.getValue("numberHotKeyModifier").cast<string>()
-                              numberShortcutsEnabled=NumberShortcutRules.enabled (pathFor foregroundHwnd)
+                              // Off for the app by either rule: its own number keys, or all its tab keys.
+                              numberShortcutsEnabled=NumberShortcutRules.enabled path && ShortcutRules.enabled path
                               leaderEnabled=leaderEnabled
                               leaderCode=leaderCode
                               leaderKeys=leaderKeys

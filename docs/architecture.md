@@ -78,10 +78,12 @@ membership updates retain the remaining order throughout the transition. This
 policy applies to every application and both shared and separate preview owners.
 
 `WindowRefreshQueue` batches events for 30 ms without continually resetting its
-deadline. Repeated events for an HWND collapse to one update. Ordinary show/hide and
-shell events reconcile dirty windows; explicit refresh, group removal/exit and drag
-completion retain full reconciliation. A queued full refresh supersedes dirty HWNDs.
-No periodic desktop polling was added.
+deadline. Repeated events for an HWND collapse to one update. Ordinary show/hide,
+uncloak and shell events reconcile dirty windows; explicit refresh, group removal/exit
+and drag completion retain full reconciliation. A queued full refresh supersedes dirty
+HWNDs. No periodic desktop polling was added. Uncloaking is watched because Chromium
+browsers cloak a new window themselves for a moment as it starts: looked at then, the
+window is hidden and not grouped, and nothing else says when it is shown.
 
 ## Virtual desktops
 
@@ -284,10 +286,21 @@ A tab counts as closed once its HWND is hidden or destroyed. When the active tab
 closes, Windows activates the previously used window, not the window below it in
 z-order, before discovery removes the closed tab. That is the opener in the case
 above, so it needs no correction. Otherwise the group selects the successor on the
-first of the closed tab's hide or destroy event or the next foreground event inside
-the group, which keeps the wrong tab on screen as briefly as possible. Selection
-preserves the closed active tab across those early foreground events and does not
-activate a background group. The previously used window can be outside the group,
+first of the closed tab's destroy event or the next foreground event inside the
+group, which keeps the wrong tab on screen as briefly as possible. A tab hidden
+while its window still exists waits for the window's destruction, or 250 ms if the
+app keeps it: Chromium browsers hide the window they close and destroy it a moment
+later, and a successor activated between the two was undone at the destruction, the
+tab that took the foreground at the hide getting it back, so the tabs flickered and
+the wrong one stayed in front. Discovery lets the hidden tab go, often before the
+window is destroyed; the successor then waits the same way, the group looking every
+16 ms whether the window it no longer hears from has gone. Whether the successor may
+take the foreground by force is decided at the hide, as the foreground has moved on
+by the destruction. The
+successor comes up without the cross-fade a tab switch has: the window it would fade
+from is the one Windows chose, not one the user was looking at. Selection preserves
+the closed active tab across those early foreground events and does not activate a
+background group. The previously used window can be outside the group,
 such as the window that was active before a launcher opened the closed tab. A group
 whose last foreground was the closed tab, or which lost the foreground to another
 application within 500 ms of the close, is not in the background and still selects
@@ -324,6 +337,22 @@ preserves the working shortcut and does not persist the rejected value. While an
 records (`ShortcutRecording`), every hotkey is released, as Windows would otherwise hand a
 registered key to the program before the box saw it and run its command; they are registered
 again as the last recording ends, before the recorded key is taken.
+
+Each command has a scope (`CommandScope`): a tab, group or split command's key is held only
+while the command is `enabled` for the window in front, one with tabs, and more than one for
+Next tab, since the command could do nothing with it elsewhere and the key would only be kept
+from the application (Ctrl+Tab from a browser, say); the search, the palette, the group
+editor, the workspace commands, the app switches and the window shortcuts are held everywhere.
+`HotKeyBindings.Hold` takes a predicate over registration names and registers or releases each
+key to match; `Program.holdHotKeys` recomputes it on every foreground change, group change and
+rule change, on top of the recording and full-screen suspension. An application can keep its
+tab keys (`ShortcutRules`, `disabledShortcutPaths`, toggled from the tab menu or the palette):
+with its window in front the tab commands' keys and the number keys are its own, as on a
+window with no tabs, and so is Shift+scroll over its windows, whichever window is in front;
+scrolling over the strip still switches tabs (`TabNavigation.wheelAction`). The rule is read
+for the window under the pointer, as a group behind is scrolled too and can hold several apps.
+A key set while let go is still registered once to be sure it is
+free, then released again.
 
 Window search includes grouped tabs and switchable application windows without
 tabs, keeping each HWND only once. Ungrouped windows act as individual entries in
@@ -552,7 +581,8 @@ soak testing; those environmental scenarios still need manual validation.
 Direct number shortcuts retain Ctrl as their installation/reset default. They pass
 through when the target is absent or already foreground. Alt selections inject a
 marked menu-mask key; the keyboard hook ignores that marker. Per-app rules apply
-only to direct shortcuts. Global numeric shortcuts retain their enabled default.
+only to direct shortcuts; an app that keeps all its tab keys (`ShortcutRules`) keeps
+these too. Global numeric shortcuts retain their enabled default.
 Per-app rules also default to enabled; the tab context menu toggles a
 case-insensitive set of disabled application paths. The settings pages do not expose
 these rules. The independent leader (Alt+backtick by default) arms the

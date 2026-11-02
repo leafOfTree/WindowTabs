@@ -345,6 +345,15 @@ let main() =
         check (notches [-30;-30;-30;-30]= -1 && notches [-120;-120]= -2 && notches [40;40;40;40;40;40]=2) "A notch in parts switched more or fewer than one tab"
         check (fst (TabNavigation.wheelNotches -90 60 false)=0 && snd (TabNavigation.wheelNotches -90 60 false)=60) "Turning back kept the other way's part notch"
         check (TabNavigation.wheelNotches -90 -60 true=(-0,-60)) "A pause did not start the notch afresh"
+        // Shift+scroll is the app's over a window whose app keeps its tab keys, never over the strip,
+        // and that is asked of the window under the pointer only when it matters.
+        let wheel overStrip overWindow keeps = TabNavigation.wheelAction true true false true (fun () -> overStrip) (fun () -> overWindow) keeps
+        check (wheel false true (fun () -> false)="switch") "Shift+scroll over a tab's window did not switch tabs"
+        check (wheel false true (fun () -> true)="") "Shift+scroll switched tabs over a window whose app keeps its tab keys"
+        check (wheel true false (fun () -> failwith "asked")="switch") "Shift+scroll over the strip was given to the app of a window"
+        check (wheel false false (fun () -> failwith "asked")="") "Shift+scroll away from the group switched its tabs"
+        check (TabNavigation.wheelAction true true false false (fun () -> true) (fun () -> false) (fun () -> true)="switch") "Scrolling over the strip stopped switching tabs for an app that keeps its keys"
+        check (TabNavigation.wheelAction true true true false (fun () -> true) (fun () -> false) (fun () -> false)="move") "Ctrl+scroll over the strip did not move the tab"
         // Notches step on from where scrolling got to, wrapping like switching.
         check (TabNavigation.stepTarget [a;b;c] a None 1 true=Some b && TabNavigation.stepTarget [a;b;c] a None 4 true=Some b
                && TabNavigation.stepTarget [a;b;c] a None 1 false=Some c && TabNavigation.stepTarget [a;b;c] IntPtr.Zero (Some c) 2 true=Some b) "Scrolling stepped to the wrong tab"
@@ -431,6 +440,15 @@ let main() =
         check (not(TabNavigation.leftJustBefore left b (Some c) 1300L)) "A tab hidden after a later selection was treated as closed"
         check (not(TabNavigation.leftJustBefore left c (Some a) 1300L)) "Another tab's hide was treated as the left tab closing"
         check (not(TabNavigation.leftJustBefore None b (Some a) 1300L)) "A hide with no recent switch was treated as a close"
+        // Chromium browsers hide the window they close and destroy it a moment later; a successor
+        // activated in between is undone at the destruction.
+        check (TabNavigation.closeSettling (Some 1000L) true 1100L) "A hidden tab whose window still existed had its successor selected at once"
+        check (not(TabNavigation.closeSettling (Some 1000L) false 1100L)) "A destroyed tab waited for the hide grace"
+        check (not(TabNavigation.closeSettling (Some 1000L) true (1000L+TabNavigation.HideGraceMs))) "A tab whose app kept its hidden window waited past the grace"
+        check (not(TabNavigation.closeSettling None true 1100L)) "A tab closed without a hide event waited for the grace"
+        // A Chromium window looked at while it cloaks itself at start is grouped once it uncloaks,
+        // not at the next full scan, behind the tab in front.
+        check (List.contains WinEvent.EVENT_OBJECT_UNCLOAKED (Program.DiscoveryEvents.forWindow false)) "Discovery did not look again at a window uncloaked after it opened"
         // As the input hook decides: the key must match and the app's rule allow it.
         let allowed() = NumberShortcutRules.enabled @"C:\Apps\Unlisted.exe"
         let target msg key ctrl = onGroup(fun _ -> numeric.targetIndex(msg,key,ctrl) |> Option.filter(fun _ -> allowed()))
@@ -666,6 +684,26 @@ let main() =
         check (not (NumberShortcutRules.enabled @"C:\Apps\Editor.exe")) "Disabled number shortcut rules failed to round trip"
         check (not ((SettingsCatalog.resetRoot api.root true false).ContainsKey("disabledNumberShortcutPaths"))) "Clearing app rules retained number shortcut exclusions"
         api.setValue("disabledNumberShortcutPaths",box(Set2<string>()))
+        // An app that keeps its tab keys: set by executable name, kept by a reset, cleared with the app rules.
+        check (ShortcutRules.enabled @"C:\Apps\Browser.exe") "Tab shortcuts must be on for an app by default"
+        ShortcutRules.setEnabled @"C:\Apps\Browser.exe" false
+        check (not (ShortcutRules.enabled @"d:\other\BROWSER.EXE") && ShortcutRules.enabled @"C:\Other.exe") "An app set to keep its tab keys was not found by its executable name"
+        check ((SettingsCatalog.resetRoot api.root false false).["disabledShortcutPaths"].HasValues) "Reset lost the apps that keep their tab keys"
+        check (not ((SettingsCatalog.resetRoot api.root true false).ContainsKey("disabledShortcutPaths"))) "Clearing app rules kept the apps that keep their tab keys"
+        ShortcutRules.setEnabled @"c:\apps\BROWSER.exe" true
+        check ((api.getValue("disabledShortcutPaths") :?> Set2<string>).items.list.IsEmpty) "Turning an app's tab keys back on with different path case kept it excluded"
+        // A key is held only where its command could do something: a command that needs a window
+        // with tabs has its key only on one, and the rest, the search and the palette first, everywhere.
+        for command in Commands.all |> List.filter(fun command -> command.shortcut.IsSome && command.scope=TabbedWindow) do
+            check (not (command.enabled IntPtr.Zero)) (sprintf "%s holds its key only on windows with tabs but can run without one" command.id)
+        check (Commands.scopeOf "searchTabs"=Everywhere && Commands.scopeOf "commandPalette"=Everywhere && Commands.scopeOf "saveWorkspace"=Everywhere)
+              "A command that opens over any window does not hold its key everywhere"
+        // The group editor lists loose windows too, and its key puts it away again while it is in front.
+        check (Commands.scopeOf "editGroups"=Everywhere && (Commands.find "edit-groups").Value.enabled IntPtr.Zero)
+              "Edit groups could not be opened, or put away by its key, without a tab in front"
+        check (Commands.scopeOf "nextTab"=TabbedWindow && Commands.scopeOf "numberLeader"=TabbedWindow && Commands.scopeOf "splitEnd"=TabbedWindow)
+              "A tab command holds its key where it has no tab to act on"
+        check (Commands.scopeOf "window:x|y|1"=Everywhere) "A window shortcut does not hold its key everywhere"
         let capture = NumericShortcutCapture()
         check (not (NumericShortcutTarget.available [IntPtr(1)] (IntPtr(1)) 0)) "Current/only tab must pass through"
         check (NumericShortcutTarget.available [IntPtr(1);IntPtr(2)] (IntPtr(1)) 1) "Other tab must remain available"
@@ -861,6 +899,11 @@ let main() =
             group.addWindow(form.Handle,false)
             form)
         try
+            // Alone in its group, the window has no next tab: Next tab is dimmed, and its key is the
+            // app's, as on a window with no tabs; Close tab still has a tab to close.
+            pumpUntil "The test window did not join its group" (fun () -> (Commands.find "close-tab").Value.enabled testWindow.Handle)
+            check (not ((Commands.find "next-tab").Value.enabled testWindow.Handle)) "Next tab is offered, and its key held, on a tab alone in its group"
+            check (not ((Commands.find "number-leader").Value.enabled testWindow.Handle)) "The number leader is offered on a tab alone in its group"
             check (not(onGroup(fun group -> group.ts.isShrunk))) "Disabled auto-hide collapsed tabs"
             api.setValue("autoHideMode",box "Maximized")
             pumpUntil "Auto-hide did not enable on an existing maximized group" (fun () -> onGroup(fun group -> group.ts.isShrunk))
@@ -880,6 +923,32 @@ let main() =
             onGroup(fun group -> group.removeWindow(testWindow.Handle); testWindow.Dispose())
             (live :> IGroup).destroy()
             pumpUntil "Live settings group did not exit" (fun () -> desktop.retainedGroupCount=0)
+        // A tab whose window is hidden or closed stops counting at once, before discovery takes it
+        // out of the group: Next tab, and its key, go back to the app with the tab left alone.
+        let spare = apiDesktop.createGroup(false) :?> GroupInfo
+        let onSpare action =
+            let mutable result = None
+            spare.invokeGroup(fun () -> result <- Some(try Choice1Of2(action spare.group) with error -> Choice2Of2 error))
+            pumpUntil "Spare group deadlocked" (fun () -> result.IsSome)
+            match result.Value with Choice1Of2 value -> value | Choice2Of2 error -> raise error
+        let shown text =
+            let form = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-20000,-20000),Text=text)
+            form.Show()
+            form
+        let first,second = shown "Open tab",shown "Closing tab"
+        try
+            onSpare(fun group -> group.addWindow(first.Handle,false); group.addWindow(second.Handle,false))
+            pumpUntil "The spare group's tabs did not join it" (fun () -> (Commands.find "next-tab").Value.enabled first.Handle)
+            second.Hide()
+            check (not ((Commands.find "next-tab").Value.enabled first.Handle)) "Next tab still counted a tab whose window is hidden"
+            second.Show()
+            check ((Commands.find "next-tab").Value.enabled first.Handle) "Next tab did not count a tab shown again"
+        finally
+            onSpare(fun group -> group.removeWindow(first.Handle); group.removeWindow(second.Handle))
+            first.Dispose()
+            second.Dispose()
+            (spare :> IGroup).destroy()
+            pumpUntil "Spare group did not exit" (fun () -> desktop.retainedGroupCount=0)
         // Disposed groups must no longer receive settings callbacks.
         api.setValue("alignment",box "Left")
         api.setValue("autoHideMode",box "Never")

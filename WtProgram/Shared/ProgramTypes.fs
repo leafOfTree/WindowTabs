@@ -45,6 +45,8 @@ type SettingsRec = {
     numberHotKeyModifier: string
     disabledNumberShortcutPaths: Set2<string>
     enabledNumberShortcutPaths: Set2<string>
+    /// Apps that keep their tab keys (`ShortcutRules`).
+    disabledShortcutPaths: Set2<string>
     combineIconsInTaskbar: bool
     enableHoverActivate: bool
     /// Which tab titles are bold: "Never", "Active" or "All".

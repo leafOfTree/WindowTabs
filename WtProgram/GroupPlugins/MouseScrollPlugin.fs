@@ -57,13 +57,16 @@ type MouseScrollPlugin() as this =
         | WindowMessages.WM_MOUSEWHEEL ->
             let enableShiftScroll = this.settings.getValue("enableShiftScroll") :?> bool
             let enableCtrlScroll = this.settings.getValue("enableCtrlScroll") :?> bool
+            // The app of the window under the pointer, not the one in front: a group behind is
+            // scrolled too, and its tabs can be of several apps.
+            let under = lazy (Win32Helper.GetTopLevelWindowFromPoint((pt:Pt).Point))
+            let keepsKeys() =
+                not (ShortcutRules.enabled (try OS().windowFromHwnd(under.Value).pid.processPath with _ -> ""))
             let action =
-                if enableCtrlScroll && Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_CONTROL) then
-                    if this.wtGroup.isPointInTs(pt) then "move" else ""
-                elif enableShiftScroll && Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_SHIFT) then
-                    if this.wtGroup.isPointInGroup(pt) then "switch" else ""
-                elif this.wtGroup.isPointInTs(pt) then "switch"
-                else ""
+                TabNavigation.wheelAction enableCtrlScroll enableShiftScroll
+                    (enableCtrlScroll && Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_CONTROL))
+                    (enableShiftScroll && Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_SHIFT))
+                    (fun () -> this.wtGroup.isPointInTs(pt)) (fun () -> this.wtGroup.windows.contains under.Value) keepsKeys
             if action<>"" then
                 let now = clock.ElapsedMilliseconds
                 let fresh = now-lastWheel > 400L || action<>lastAction

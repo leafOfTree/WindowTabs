@@ -28,6 +28,16 @@ type ProgramInput =
     | WinEvent of (IntPtr * WinEvent)
     | ShellEvent of (IntPtr * ShellEvent)
 
+/// What discovery watches on each app window, besides the shell's notices.
+module DiscoveryEvents =
+    /// Shown and hidden; uncloaked too, as Chromium browsers cloak a new window themselves for a
+    /// moment as it starts. Looked at then it is hidden and not grouped, and its uncloaking is the
+    /// only sign it is shown: missed, the window joined at the next full scan, behind the tab in
+    /// front and last in the strip. Moves only while the window is full screen.
+    let forWindow fullScreen =
+        [WinEvent.EVENT_OBJECT_SHOW;WinEvent.EVENT_OBJECT_HIDE;WinEvent.EVENT_OBJECT_UNCLOAKED] @
+        (if fullScreen then [WinEvent.EVENT_OBJECT_LOCATIONCHANGE] else [])
+
 type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let version = AssemblyInfo.informationalVersion
     let isStandAlone = System.Diagnostics.Debugger.IsAttached 
@@ -181,10 +191,17 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         lifetime.Own({new IDisposable with
             member _.Dispose() = tabSearchCell.value.iter(fun search -> search.Close())}) |> ignore
         this.registerHotKeys()
+        this.holdHotKeys()
         // While a shortcut is recorded, the keys go to the box rather than to what they run.
         lifetime.Own(ShortcutRecording.Changed.Subscribe(fun recording ->
             recordingShortcut <- recording
             this.holdHotKeys())) |> ignore
+        // The tab commands' keys follow the window in front: as it changes, as a window gets or
+        // loses its tabs, and as an app is set to keep its keys.
+        lifetime.Own(os.setSingleWinEvent WinEvent.EVENT_SYSTEM_FOREGROUND (fun _ -> this.holdHotKeys())) |> ignore
+        lifetime.Own(Services.settings.notifyValue "disabledShortcutPaths" (fun _ -> this.holdHotKeys())) |> ignore
+        Services.desktop.groupChanged.Add <| fun _ -> invoker.asyncInvoke(fun() -> this.holdHotKeys())
+        Services.desktop.groupExited.Add <| fun _ -> invoker.asyncInvoke(fun() -> this.holdHotKeys())
         lifetime.Own({new IDisposable with
             member _.Dispose() = for hook in [fullScreenForeground;fullScreenResize] do hook |> Option.iter(fun hook -> hook.Dispose())}) |> ignore
         fullScreenFollowUp.Tick.Add(fun _ ->
@@ -299,8 +316,25 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     member private this.sessionMode = string(Services.settings.getValue("sessionRestore"))
 
     /// The shortcuts let go of their keys while one is being recorded or a full-screen app runs.
+    /// The tab commands' keys, besides, are the app's while the command could do nothing for the
+    /// window in front: one with no tabs, or alone in its group for Next tab, or one whose app
+    /// keeps its keys (`ShortcutRules`). The keys held everywhere stay.
     member private this.holdHotKeys() =
-        if recordingShortcut || FullScreenPause.isPaused() then hotKeyManager.suspend() else hotKeyManager.resume()
+        if recordingShortcut || FullScreenPause.isPaused() then hotKeyManager.suspend()
+        else
+            let foreground = WinUserApi.GetForegroundWindow()
+            let path = try os.windowFromHwnd(foreground).pid.processPath with _ -> ""
+            let keepsKeys = lazy (not (ShortcutRules.enabled path))
+            let changed =
+                hotKeyManager.hold (fun name ->
+                    match Commands.byShortcut name with
+                    | Some command when command.scope=CommandScope.TabbedWindow -> command.enabled foreground && not keepsKeys.Value
+                    | _ -> true)
+            // Only when a key was taken or let go: formatted on every foreground change, the line
+            // cost each one even in a Release build, which writes nothing.
+            if changed then
+                DebugLog.writef "Shortcuts follow %A (%s), keeps keys %b" foreground (IO.Path.GetFileName path) keepsKeys.Value
+            hotKeyManager.resume()
 
     member private this.pausesInFullScreen = unbox<bool>(Services.settings.getValue("pauseInFullScreen"))
 
@@ -676,7 +710,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         if appStyle || fullScreen then
             let registerEvent evt =
                 window.setWinEventHook evt (fun() -> this.receive(WinEvent(hwnd, evt)))
-            let events = [WinEvent.EVENT_OBJECT_SHOW;WinEvent.EVENT_OBJECT_HIDE] @ (if fullScreen then [WinEvent.EVENT_OBJECT_LOCATIONCHANGE] else [])
+            let events = DiscoveryEvents.forWindow fullScreen
             let hooks = List2(events).map(registerEvent)
             let dispose = {
                 new IDisposable with

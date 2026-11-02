@@ -189,8 +189,8 @@ let main() =
         // 1. With a tab in front every command can act; with nothing in front, the ones that need a
         // tab say so by being dimmed, and none of them may throw or put up a message when run.
         let needsTab = set [TabCommands;GroupCommands;SplitCommands]
-        // Listed with the tab commands, but open a box or wait for a number wherever the user is.
-        let anywhere = set ["search-tabs";"command-palette";"number-leader"]
+        // Listed with the tab and group commands, but open a box wherever the user is.
+        let anywhere = set ["search-tabs";"command-palette";"edit-groups"]
         // Dimmed while there is no workspace to choose.
         let needsWorkspace = set ["restore-workspace-named";"delete-workspace"]
         // Open a system dialog and wait on the user: listed, but not run unattended.
@@ -365,6 +365,12 @@ let main() =
             runDone "number-shortcut-for-app" active
             note (NumberShortcutRules.enabled path<>before) "Switch tabs by number in this app did not change it"
             runDone "number-shortcut-for-app" active)
+        attempt "tab-shortcuts-for-app" (fun () ->
+            let before = ShortcutRules.enabled path
+            runDone "tab-shortcuts-for-app" active
+            note (ShortcutRules.enabled path<>before) "Use tab shortcuts in this app did not change it"
+            runDone "tab-shortcuts-for-app" active
+            note (ShortcutRules.enabled path=before) "Use tab shortcuts in this app run again did not turn it back")
         attempt "combine-group-taskbar-icons" (fun () ->
             let combine = (Commands.find "combine-group-taskbar-icons").Value
             let before = combine.state active
@@ -530,7 +536,7 @@ let main() =
                 note (not (List.contains (tr item.text.caption) titles)) "The number keys' modifier has a row of its own beside their three values"
             | _ -> note (List.contains (tr item.text.caption) titles) (sprintf "The setting %s is not on the Actions page" item.id)
         // The app's own switches show whether they are on for the app in front.
-        for id in ["tabs-for-app";"auto-group-app";"number-shortcut-for-app";"combine-group-taskbar-icons";"group-icons-only"] do
+        for id in ["tabs-for-app";"auto-group-app";"number-shortcut-for-app";"tab-shortcuts-for-app";"combine-group-taskbar-icons";"group-icons-only"] do
             let command = (Commands.find id).Value
             let entry = page.entries |> List.find(fun entry -> entry.title=tr command.text.caption)
             note ((page.aside "" entry).switch=command.state active && (command.state active).IsSome) (sprintf "%s shows no switch" id)

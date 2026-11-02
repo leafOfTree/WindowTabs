@@ -194,6 +194,28 @@ let main() =
     operations.Clear()
     keys.Retry()
     check (operations.Count=0) "A retry asked again for keys already held"
+    // A tab command's key is held only while a window with tabs is in front: let go as the window
+    // in front changes and taken back after, while a key held everywhere stays.
+    keys.Hold(fun name -> name<>"split")
+    check (registered.Count=1 && registered.Contains paletteId) "A key let go for the window in front was kept, or one held everywhere let go with it"
+    check (keys.Register "split" (2,81) ignore && registered.Count=1) "A key set again while let go was taken"
+    keys.Hold(fun _ -> true)
+    check (registered.Count=2) "A key let go was not taken back as a window with tabs came to the front"
+    // Set while let go, the key is still tried, so one another program holds is refused.
+    keys.Hold(fun name -> name<>"split")
+    operations.Clear()
+    check (keys.Register "split" (2,82) ignore && registered.Count=1 && Seq.toList operations=["register";"release"]) "A key set while let go was not tried for being free"
+    allow <- false
+    check (not (keys.Register "split" (2,83) ignore)) "A key another program holds was said to be set while let go"
+    allow <- true
+    // Recorded over and taken back, the keys stay let go where the window in front has them.
+    keys.Suspend()
+    keys.Resume()
+    check (registered.Count=1 && registered.Contains paletteId) "Taking the keys back after recording took one the window in front has"
+    keys.Hold(fun _ -> true)
+    check (registered.Count=2) "A key let go through a recording was not taken back after"
+    keys.Register "split" (0,0) ignore |> ignore
+    check (registered.Count=1) "Disabling a key held again leaked its registration"
     // A box's recording tells the program, once for the first and once for the last.
     let seen = ResizeArray<bool>()
     use watching = ShortcutRecording.Changed.Subscribe(seen.Add)

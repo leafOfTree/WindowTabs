@@ -180,6 +180,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         tabColorStyle = settingsJson.getString("tabColorStyle").def(SettingsCatalog.choiceDefault "tabColorStyle") |> SettingsCatalog.normalizeChoice "tabColorStyle"
                         disabledNumberShortcutPaths = Set2(settingsJson.getStringArray("disabledNumberShortcutPaths").def(List2()))
                         enabledNumberShortcutPaths = Set2(settingsJson.getStringArray("enabledNumberShortcutPaths").def(List2()))
+                        disabledShortcutPaths = Set2(settingsJson.getStringArray("disabledShortcutPaths").def(List2()))
                         numberLeaderKeys = settingsJson.getString("numberLeaderKeys").def(SettingsCatalog.textDefault "numberLeaderKeys") |> NumberLeaderKeys.normalize
                         numberHotKeyModifier = settingsJson.getString("numberHotKeyModifier").def(SettingsCatalog.choiceDefault "numberHotKeyModifier") |> SettingsCatalog.normalizeChoice "numberHotKeyModifier"
                         sessionRestore = settingsJson.getString("sessionRestore").def(SettingsCatalog.choiceDefault "sessionRestore") |> SettingsCatalog.normalizeChoice "sessionRestore"
@@ -282,6 +283,7 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setString("tabColorStyle",settings.tabColorStyle)
             settingsJson.setStringArray("disabledNumberShortcutPaths", settings.disabledNumberShortcutPaths.items)
             settingsJson.setStringArray("enabledNumberShortcutPaths", settings.enabledNumberShortcutPaths.items)
+            settingsJson.setStringArray("disabledShortcutPaths", settings.disabledShortcutPaths.items)
             settingsJson.setString("numberLeaderKeys",settings.numberLeaderKeys)
             settingsJson.setString("numberHotKeyModifier", settings.numberHotKeyModifier)
             settingsJson.setString("sessionRestore", settings.sessionRestore)

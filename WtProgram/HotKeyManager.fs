@@ -7,9 +7,19 @@ type HotKeyBindings(register:int * int * int -> bool, unregister:int -> unit) =
     let bindings = Dictionary<string,int * int * int * (unit -> unit)>()
     let mutable nextId = 1
     let mutable suspended = false
+    /// Which keys are held just now: a tab command's only while a window with tabs is in front.
+    let mutable holds : string -> bool = fun _ -> true
+    /// Keys let go by `holds`, the app in front having them.
+    let released = HashSet<string>()
     /// Keys another program took while they were let go, as a full-screen game may: tried again
     /// later rather than lost until restart.
     let lost = HashSet<string>()
+    let registered name = not suspended && not (lost.Contains name) && not (released.Contains name)
+    let take name (id,modifiers,key) =
+        if register(id,modifiers,key) then lost.Remove name |> ignore
+        else
+            lost.Add name |> ignore
+            DebugLog.writef "Shortcut %s held by another program" name
     member _.Register name (modifiers,key) handler =
         let old = match bindings.TryGetValue(name) with true,value -> Some value | _ -> None
         match old with
@@ -21,9 +31,10 @@ type HotKeyBindings(register:int * int * int -> bool, unregister:int -> unit) =
                 bindings.[name] <- (id,m,k,handler)
             held
         | _ when key=0 ->
-            old |> Option.iter(fun (id,_,_,_) -> unregister id)
+            old |> Option.iter(fun (id,_,_,_) -> if registered name then unregister id)
             bindings.Remove(name) |> ignore
             lost.Remove name |> ignore
+            released.Remove name |> ignore
             true
         | _ ->
             let used = bindings.Values |> Seq.map(fun (id,_,_,_) -> id) |> Set.ofSeq
@@ -34,10 +45,17 @@ type HotKeyBindings(register:int * int * int -> bool, unregister:int -> unit) =
             if suspended then
                 bindings.[name] <- (id,modifiers,key,handler)
                 true
+            // Taken even where the app in front has it, so one another program holds is refused;
+            // then let go again.
             elif register(id,modifiers,key) then
+                let wasRegistered = registered name
                 bindings.[name] <- (id,modifiers,key,handler)
-                old |> Option.iter(fun (previous,_,_,_) -> unregister previous)
+                old |> Option.iter(fun (previous,_,_,_) -> if wasRegistered then unregister previous)
                 lost.Remove name |> ignore
+                if holds name then released.Remove name |> ignore
+                else
+                    unregister id
+                    released.Add name |> ignore
                 true
             else false
     member _.Invoke id =
@@ -50,38 +68,69 @@ type HotKeyBindings(register:int * int * int -> bool, unregister:int -> unit) =
     member _.Suspend() =
         DebugLog.writef "Shortcuts let go: %d keys, already %b" bindings.Count suspended
         if not suspended then
+            let held = [for KeyValue(name,(id,_,_,_)) in bindings do if registered name then yield id]
             suspended <- true
-            for id,_,_,_ in bindings.Values do unregister id
-    /// Takes the keys back once recording ends. One another program took meanwhile is kept for
-    /// `Retry`.
+            for id in held do unregister id
+    /// Takes the keys back once recording ends, but for those the window in front has. One
+    /// another program took meanwhile is kept for `Retry`.
     member _.Resume() =
-        DebugLog.writef "Shortcuts taken back, were let go %b" suspended
         if suspended then
+            DebugLog.writef "Shortcuts taken back after being let go"
             suspended <- false
             for KeyValue(name,(id,modifiers,key,_)) in List.ofSeq bindings do
-                if register(id,modifiers,key) then lost.Remove name |> ignore
-                else lost.Add name |> ignore
+                if holds name then
+                    released.Remove name |> ignore
+                    take name (id,modifiers,key)
+                else
+                    released.Add name |> ignore
+                    lost.Remove name |> ignore
             if lost.Count>0 then DebugLog.writef "Shortcuts held by another program: %A" (List.ofSeq lost)
+    /// Holds the keys `wanted` says to and lets the rest go, as the window in front changes: a tab
+    /// command's key is the app's while a window with no tabs is in front.
+    member _.Hold(wanted:string -> bool) =
+        holds <- wanted
+        if not suspended then
+            let taken,letGo = ResizeArray<string>(),ResizeArray<string>()
+            for KeyValue(name,(id,modifiers,key,_)) in List.ofSeq bindings do
+                if holds name then
+                    if released.Remove name then
+                        take name (id,modifiers,key)
+                        taken.Add name
+                elif not (released.Contains name) then
+                    if not (lost.Contains name) then unregister id
+                    lost.Remove name |> ignore
+                    released.Add name |> ignore
+                    letGo.Add name
+            if taken.Count>0 || letGo.Count>0 then
+                DebugLog.writef "Shortcuts for the window in front: taken %A, let go %A" (List.ofSeq taken) (List.ofSeq letGo)
+            taken.Count>0 || letGo.Count>0
+        else false
     /// Tries again for the keys another program held when they were taken back, as it may have
     /// let them go since.
     member _.Retry() =
         if not suspended && lost.Count>0 then
             for name in List.ofSeq lost do
                 match bindings.TryGetValue(name) with
-                | true,(id,modifiers,key,_) ->
+                | true,(id,modifiers,key,_) when holds name ->
                     if register(id,modifiers,key) then
                         lost.Remove name |> ignore
                         DebugLog.writef "Shortcut %s taken back after another program let it go" name
+                | true,_ ->
+                    lost.Remove name |> ignore
+                    released.Add name |> ignore
                 | _ -> lost.Remove name |> ignore
     member _.IsSuspended = suspended
     member _.Unregister name =
         match bindings.TryGetValue(name) with
-        | true,(id,_,_,_) -> unregister id; bindings.Remove(name) |> ignore
+        | true,(id,_,_,_) ->
+            if registered name then unregister id
+            bindings.Remove(name) |> ignore
         | _ -> ()
         lost.Remove name |> ignore
+        released.Remove name |> ignore
     interface IDisposable with
         member _.Dispose() =
-            for id,_,_,_ in bindings.Values do unregister id
+            for KeyValue(name,(id,_,_,_)) in bindings do if registered name then unregister id
             bindings.Clear()
 
 type HotKeyManager() =
@@ -98,6 +147,7 @@ type HotKeyManager() =
     member _.unregister name = bindings.Unregister name
     member _.suspend() = bindings.Suspend()
     member _.resume() = bindings.Resume()
+    member _.hold wanted = bindings.Hold wanted
     member _.retry() = bindings.Retry()
     interface IDisposable with
         member _.Dispose() =
