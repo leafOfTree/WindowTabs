@@ -105,6 +105,7 @@ module Strings =
                                  ja="アイコン ファイル (*.ico, *.png, *.jpg, *.bmp, *.gif, *.exe, *.dll)|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|すべてのファイル (*.*)|*.*"
                                  ar="ملفات الأيقونات (*.ico, *.png, *.jpg, *.bmp, *.gif, *.exe, *.dll)|*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.exe;*.dll|كل الملفات (*.*)|*.*" }
         let numberShortcut = { en="Switch tabs by number"; zh="按数字切换标签"; ja="番号でタブを切り替え"; ar="التبديل بين علامات التبويب باستخدام الأرقام" }
+        let tabShortcuts = { en="Tab shortcuts"; zh="标签快捷键"; ja="タブのショートカット"; ar="اختصارات علامات التبويب" }
         let enableTabs = { en="Use tabs"; zh="使用标签"; ja="タブを使う"; ar="استخدام علامات التبويب" }
         let autoGroupWindows = { en="Auto-group windows"; zh="自动分组"; ja="ウィンドウを自動グループ化"; ar="تجميع النوافذ تلقائيًا" }
         let close = { en="Close"; zh="关闭"; ja="閉じる"; ar="إغلاق" }
@@ -345,6 +346,7 @@ module Strings =
         let stripe = { en="Stripe"; zh="色条"; ja="色のライン"; ar="شريط" }
         let fill = { en="Fill"; zh="填充"; ja="塗りつぶし"; ar="تعبئة" }
         let numberShortcutMenuHint = { en="Enable or disable it for one app from the tab menu."; zh="可在标签右键菜单中为单个应用启用或禁用数字快捷键。"; ja="タブメニューでアプリごとに番号ショートカットを有効・無効にできます。"; ar="يمكن تمكينه أو تعطيله لتطبيق واحد من قائمة علامة التبويب." }
+        let tabShortcutsHint = { en="Tab keys work only on windows with tabs; turn them off for one app from the tab menu."; zh="标签快捷键只在有标签的窗口上生效，可在标签右键菜单中为单个应用关闭。"; ja="タブのキーはタブのあるウィンドウでのみ働き、タブメニューでアプリごとにオフにできます。"; ar="تعمل مفاتيح علامات التبويب فقط في النوافذ التي بها علامات تبويب، ويمكن إيقافها لتطبيق واحد من قائمة علامة التبويب." }
         let numberShortcutFor name = { en=sprintf "Switch tabs by number in %s" name; zh=sprintf "在 %s 中按数字切换标签" name; ja=sprintf "%s のタブを番号で切り替え" name; ar=sprintf "التبديل بين علامات التبويب بالأرقام في %s" name }
         /// The choices of Switch tabs by number: off, or the key held with 1–9.
         let numberShortcutOff = { en="Off"; zh="关闭"; ja="オフ"; ar="إيقاف" }
@@ -728,6 +730,9 @@ module Strings =
         let numberShortcutForApp = { caption={ en="Switch tabs by number in this app"; zh="在此应用中按数字切换标签"; ja="このアプリのタブを番号で切り替え"; ar="التبديل بين علامات التبويب باستخدام الأرقام في هذا التطبيق" }
                                      description={ en="On or off for the app of the window in front."; zh="为当前窗口所属的应用开启或关闭。"; ja="前面のウィンドウのアプリでオン／オフにします。"; ar="تشغيل أو إيقاف لتطبيق النافذة الأمامية." }
                                      keywords={ en="digit application"; zh="数字 应用"; ja="数字 アプリ"; ar="رقم تطبيق" } }
+        let tabShortcutsForApp = { caption={ en="Tab shortcuts in this app"; zh="在此应用中使用标签快捷键"; ja="このアプリでタブのショートカットを使う"; ar="اختصارات علامات التبويب في هذا التطبيق" }
+                                   description={ en="Off, the app keeps keys such as Ctrl+Tab for itself."; zh="关闭后，Ctrl+Tab 这类按键留给应用自己。"; ja="オフにすると Ctrl+Tab などのキーはアプリに渡されます。"; ar="عند الإيقاف يحتفظ التطبيق بمفاتيح مثل Ctrl+Tab لنفسه." }
+                                   keywords={ en="exclude blacklist application keys"; zh="排除 黑名单 应用 按键"; ja="除外 ブラックリスト アプリ キー"; ar="استبعاد قائمة سوداء تطبيق مفاتيح" } }
         let restoreWorkspaceNamed = { caption={ en="Restore workspace…"; zh="恢复工作区…"; ja="ワークスペースを復元…"; ar="استعادة مساحة عمل…" }
                                       description={ en="Lists the saved workspaces."; zh="列出已保存的工作区。"; ja="保存済みのワークスペースを一覧表示します。"; ar="يعرض مساحات العمل المحفوظة." }
                                       keywords={ en="layout"; zh="布局"; ja="配置"; ar="تخطيط" } }

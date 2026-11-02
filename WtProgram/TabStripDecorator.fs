@@ -624,6 +624,9 @@ type TabStripDecorator(group:WindowGroup) as this =
                 flags = checkedFlag(isTabbingEnabled)
             })
 
+        let shortcutsEnabled = ShortcutRules.enabled processPath
+        let shortcutsItem = CmiRegular({ text=tr Strings.TabMenu.tabShortcuts; image=None; flags=checkedFlag shortcutsEnabled
+                                         click=fun() -> ShortcutRules.setEnabled processPath (not shortcutsEnabled) })
         let numberEnabled = NumberShortcutRules.enabled processPath
         let numberItem = CmiRegular({ text=tr Strings.TabMenu.numberShortcut; image=None; flags=checkedFlag numberEnabled
                                       click=fun() -> NumberShortcutRules.setEnabled processPath (not numberEnabled) })
@@ -706,6 +709,7 @@ type TabStripDecorator(group:WindowGroup) as this =
             Some(CmiSection(pid.appName))
             Some(enableTabsItem)
             Some(groupTabsItem)
+            Some(shortcutsItem)
             Some(numberItem)
             Some(CmiSeparator)
             Some(managerItem)

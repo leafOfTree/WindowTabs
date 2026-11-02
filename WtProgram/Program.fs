@@ -181,10 +181,17 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         lifetime.Own({new IDisposable with
             member _.Dispose() = tabSearchCell.value.iter(fun search -> search.Close())}) |> ignore
         this.registerHotKeys()
+        this.holdHotKeys()
         // While a shortcut is recorded, the keys go to the box rather than to what they run.
         lifetime.Own(ShortcutRecording.Changed.Subscribe(fun recording ->
             recordingShortcut <- recording
             this.holdHotKeys())) |> ignore
+        // The tab commands' keys follow the window in front: as it changes, as a window gets or
+        // loses its tabs, and as an app is set to keep its keys.
+        lifetime.Own(os.setSingleWinEvent WinEvent.EVENT_SYSTEM_FOREGROUND (fun _ -> this.holdHotKeys())) |> ignore
+        lifetime.Own(Services.settings.notifyValue "disabledShortcutPaths" (fun _ -> this.holdHotKeys())) |> ignore
+        Services.desktop.groupChanged.Add <| fun _ -> invoker.asyncInvoke(fun() -> this.holdHotKeys())
+        Services.desktop.groupExited.Add <| fun _ -> invoker.asyncInvoke(fun() -> this.holdHotKeys())
         lifetime.Own({new IDisposable with
             member _.Dispose() = for hook in [fullScreenForeground;fullScreenResize] do hook |> Option.iter(fun hook -> hook.Dispose())}) |> ignore
         fullScreenFollowUp.Tick.Add(fun _ ->
@@ -299,8 +306,15 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     member private this.sessionMode = string(Services.settings.getValue("sessionRestore"))
 
     /// The shortcuts let go of their keys while one is being recorded or a full-screen app runs.
+    /// The tab commands' keys, besides, are the app's while the window in front has no tabs or
+    /// its app keeps them (`ShortcutRules`); the keys held everywhere stay.
     member private this.holdHotKeys() =
-        if recordingShortcut || FullScreenPause.isPaused() then hotKeyManager.suspend() else hotKeyManager.resume()
+        if recordingShortcut || FullScreenPause.isPaused() then hotKeyManager.suspend()
+        else
+            let foreground = WinUserApi.GetForegroundWindow()
+            let tabbed = this.isInGroup foreground && ShortcutRules.enabled (try os.windowFromHwnd(foreground).pid.processPath with _ -> "")
+            hotKeyManager.hold (fun name -> tabbed || Commands.scopeOf name=CommandScope.Everywhere)
+            hotKeyManager.resume()
 
     member private this.pausesInFullScreen = unbox<bool>(Services.settings.getValue("pauseInFullScreen"))
 

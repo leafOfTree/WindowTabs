@@ -156,6 +156,8 @@ module SettingsCatalog =
         // A tab's own color, picked from its menu, comes before the automatic one.
         elif id="tab-color-mode" then Some Strings.Settings.tabColorMenuHint
         elif id="switch-tabs-by-number" then Some Strings.Settings.numberShortcutMenuHint
+        // Said once, on the first of the tab commands' keys, for all of them.
+        elif id="next-tab" then Some Strings.Settings.tabShortcutsHint
         else None
     /// A setting shown only while the one it depends on makes it meaningful.
     let parent id =
@@ -174,7 +176,7 @@ module SettingsCatalog =
     let appRulePathKeys = ["includedPaths";"excludedPaths";"autoGroupingPaths"]
     let appGroupingMatchTypes = [-1]
     let appGroupingMatchDefault = -1
-    let appRuleKeys = appRulePathKeys @ ["disabledNumberShortcutPaths";"enabledNumberShortcutPaths";"appTabColors";"appGroupingRules";"appGroupingTargets"]
+    let appRuleKeys = appRulePathKeys @ ["disabledNumberShortcutPaths";"enabledNumberShortcutPaths";"disabledShortcutPaths";"appTabColors";"appGroupingRules";"appGroupingTargets"]
     let workspaceKeys = ["workspaces";"workspaceSchemaVersion";"workspaceRecovery";"session"]
     /// The settings a reset leaves: fresh-install toggles, the version (so the next start does
     /// not take the reset for an upgrade) and, unless cleared, app rules and saved workspaces.

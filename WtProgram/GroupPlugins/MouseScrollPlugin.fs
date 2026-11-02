@@ -57,11 +57,14 @@ type MouseScrollPlugin() as this =
         | WindowMessages.WM_MOUSEWHEEL ->
             let enableShiftScroll = this.settings.getValue("enableShiftScroll") :?> bool
             let enableCtrlScroll = this.settings.getValue("enableCtrlScroll") :?> bool
+            // Over the window itself, Shift+scroll is the app's, as its tab keys are, when it keeps them.
+            let appKeepsKeys() =
+                not (ShortcutRules.enabled (try OS().windowFromHwnd(OS().foreground.hwnd).pid.processPath with _ -> ""))
             let action =
                 if enableCtrlScroll && Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_CONTROL) then
                     if this.wtGroup.isPointInTs(pt) then "move" else ""
                 elif enableShiftScroll && Win32Helper.IsKeyPressed(VirtualKeyCodes.VK_SHIFT) then
-                    if this.wtGroup.isPointInGroup(pt) then "switch" else ""
+                    if this.wtGroup.isPointInGroup(pt) && not (appKeepsKeys()) then "switch" else ""
                 elif this.wtGroup.isPointInTs(pt) then "switch"
                 else ""
             if action<>"" then

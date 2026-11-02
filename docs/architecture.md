@@ -325,6 +325,18 @@ records (`ShortcutRecording`), every hotkey is released, as Windows would otherw
 registered key to the program before the box saw it and run its command; they are registered
 again as the last recording ends, before the recorded key is taken.
 
+Each command has a scope (`CommandScope`): a tab, group or split command's key is held only
+while a window with tabs is in front, since the command could do nothing with it elsewhere and
+the key would only be kept from the application (Ctrl+Tab from a browser, say); the search, the
+palette, the workspace commands, the app switches and the window shortcuts are held everywhere.
+`HotKeyBindings.Hold` takes a predicate over registration names and registers or releases each
+key to match; `Program.holdHotKeys` recomputes it on every foreground change, group change and
+rule change, on top of the recording and full-screen suspension. An application can keep its
+tab keys (`ShortcutRules`, `disabledShortcutPaths`, toggled from the tab menu or the palette):
+with its window in front the tab commands' keys, the number keys and Shift+scroll are its own,
+as on a window with no tabs. A key set while let go is still registered once to be sure it is
+free, then released again.
+
 Window search includes grouped tabs and switchable application windows without
 tabs, keeping each HWND only once. Ungrouped windows act as individual entries in
 the existing group/recency ordering; helper windows and taskbar proxies are excluded.
@@ -552,7 +564,8 @@ soak testing; those environmental scenarios still need manual validation.
 Direct number shortcuts retain Ctrl as their installation/reset default. They pass
 through when the target is absent or already foreground. Alt selections inject a
 marked menu-mask key; the keyboard hook ignores that marker. Per-app rules apply
-only to direct shortcuts. Global numeric shortcuts retain their enabled default.
+only to direct shortcuts; an app that keeps all its tab keys (`ShortcutRules`) keeps
+these too. Global numeric shortcuts retain their enabled default.
 Per-app rules also default to enabled; the tab context menu toggles a
 case-insensitive set of disabled application paths. The settings pages do not expose
 these rules. The independent leader (Alt+backtick by default) arms the

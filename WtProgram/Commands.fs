@@ -41,6 +41,12 @@ type CommandCategory =
     | SettingsCommands
     | AppCommands
 
+/// Where a command's key is held: everywhere, or only while a window with tabs is in front,
+/// as a key the command could do nothing with would only be kept from the app.
+type CommandScope =
+    | Everywhere
+    | TabbedWindow
+
 /// An action run by name: from the palette, by its shortcut, or from the command line. It is
 /// given the window that was in front when it was asked for: the palette, in front itself by
 /// then, remembers the one it opened over.
@@ -49,6 +55,7 @@ type Command = {
     id:string
     text:SettingText
     category:CommandCategory
+    scope:CommandScope
     /// The settings-file key its shortcut is kept under, for a command that can have one.
     shortcut:string option
     /// In the palette; off for one that only a key makes sense for.
@@ -183,18 +190,23 @@ module Commands =
     let private always (_:IntPtr) = true
     let private onGroup (action:IGroup -> unit) hwnd = groupOf hwnd |> Option.iter action
     let private finished action = fun hwnd -> action hwnd; Done
+    /// A tab, group or split command does something only for a window with tabs; the rest run anywhere.
+    let private categoryScope category =
+        match category with
+        | TabCommands | GroupCommands | SplitCommands -> TabbedWindow
+        | WorkspaceCommands | SettingsCommands | AppCommands -> Everywhere
     /// A command the Shortcuts page lists: its text and shortcut key are the catalog's.
     let private fromCatalog id category enabled action =
         let item = SettingsCatalog.find id
-        { id=id; text=item.text; category=category
+        { id=id; text=item.text; category=category; scope=categoryScope category
           shortcut=(match item.binding with Shortcut(key,_) -> Some key | _ -> None)
           listed=true; enabled=enabled; current=(fun _ -> ""); state=(fun _ -> None); chooses=false; run=finished action }
     /// A command of its own, its shortcut kept under its id; unbound until the user picks a key.
     let private plain id text category enabled action =
-        { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); state=(fun _ -> None); chooses=false; run=finished action }
+        { id=id; text=text; category=category; scope=categoryScope category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); state=(fun _ -> None); chooses=false; run=finished action }
     /// A command that leaves a choice: what it offers for the window, each doing its part.
     let private choosing id text category enabled (options:IntPtr -> CommandChoice list) =
-        { id=id; text=text; category=category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); state=(fun _ -> None); chooses=true; run=fun hwnd -> Choose(options hwnd) }
+        { id=id; text=text; category=category; scope=categoryScope category; shortcut=Some id; listed=true; enabled=enabled; current=(fun _ -> ""); state=(fun _ -> None); chooses=true; run=fun hwnd -> Choose(options hwnd) }
     let private choice label detail action = { label=label; detail=detail; swatch=None; run=(fun () -> action(); Done); preview=None; undo=None; concealed=true }
     /// The group's side, alignment and auto-hide mode as last read, and reading them again once a
     /// command has changed one, so the palette shows the value now the next time.
@@ -321,12 +333,14 @@ module Commands =
     let all : Command list = [
         fromCatalog "next-tab" TabCommands hasGroup (onGroup(fun g -> g.switchWindow(true,false)))
         fromCatalog "previous-tab" TabCommands hasGroup (onGroup(fun g -> g.switchWindow(false,false)))
-        fromCatalog "search-tabs" TabCommands always (fun _ -> Services.program.toggleSearch None)
-        fromCatalog "command-palette" TabCommands always (fun _ -> Services.program.toggleSearch (Some ActionScope))
+        // Opened over any window, so their keys are held everywhere.
+        { fromCatalog "search-tabs" TabCommands always (fun _ -> Services.program.toggleSearch None) with scope=Everywhere }
+        { fromCatalog "command-palette" TabCommands always (fun _ -> Services.program.toggleSearch (Some ActionScope)) with scope=Everywhere }
         fromCatalog "new-tab" TabCommands hasGroup (fun hwnd -> Services.program.newTab hwnd)
         // As the tab menu's Close: the window of the tab in front, and only a tab's.
         fromCatalog "close-tab" TabCommands hasGroup (fun hwnd -> if hasGroup hwnd then OS().windowFromHwnd(hwnd).close())
-        { fromCatalog "number-leader" TabCommands always (fun _ ->
+        // Arms the group in front, so only with one.
+        { fromCatalog "number-leader" TabCommands hasGroup (fun _ ->
               if Services.settings.getValue "enableNumberLeader" :?> bool then NumberLeaderRequest.toggle.Trigger())
           with listed=false }
         // The tab menu's commands for the tab in front.
@@ -448,19 +462,24 @@ module Commands =
                                                                  Filter=Localization.plain Strings.TabMenu.taskbarIconFiles,CheckFileExists=true)
             if dialog.ShowDialog()=System.Windows.Forms.DialogResult.OK then Services.program.setGroupIcon(hwnd,Some dialog.FileName))
         plain "restore-group-icon" Strings.Commands.restoreGroupIcon GroupCommands combinesIcons (fun hwnd -> Services.program.setGroupIcon(hwnd,None))
-        // The app's own switches: each shows whether it is on for the app in front.
+        // The app's own switches: each shows whether it is on for the app in front, with or
+        // without tabs, so their keys are held everywhere.
         { plain "tabs-for-app" Strings.Commands.tabsForApp GroupCommands hasApp (fun hwnd ->
               let path = processPath hwnd
               Services.filter.setIsTabbingEnabledForProcess path (not (Services.filter.getIsTabbingEnabledForProcess path)))
-          with state=appState (fun path -> Services.filter.getIsTabbingEnabledForProcess path) }
+          with scope=Everywhere; state=appState (fun path -> Services.filter.getIsTabbingEnabledForProcess path) }
         { plain "auto-group-app" Strings.Commands.autoGroupApp GroupCommands hasApp (fun hwnd ->
               let path = processPath hwnd
               Services.program.setAutoGroupingEnabled path (not (Services.program.getAutoGroupingEnabled path)))
-          with state=appState (fun path -> Services.program.getAutoGroupingEnabled path) }
+          with scope=Everywhere; state=appState (fun path -> Services.program.getAutoGroupingEnabled path) }
         { plain "number-shortcut-for-app" Strings.Commands.numberShortcutForApp GroupCommands hasApp (fun hwnd ->
               let path = processPath hwnd
               NumberShortcutRules.setEnabled path (not (NumberShortcutRules.enabled path)))
-          with state=appState NumberShortcutRules.enabled }
+          with scope=Everywhere; state=appState NumberShortcutRules.enabled }
+        { plain "tab-shortcuts-for-app" Strings.Commands.tabShortcutsForApp GroupCommands hasApp (fun hwnd ->
+              let path = processPath hwnd
+              ShortcutRules.setEnabled path (not (ShortcutRules.enabled path)))
+          with scope=Everywhere; state=appState ShortcutRules.enabled }
         // A window chosen from a list goes beside the tab in front, as from the tab menu.
         fromCatalog "split-pick-right" SplitCommands hasGroup (onGroup(fun g -> g.pickPane(SideBySide,Second)))
         fromCatalog "split-pick-below" SplitCommands hasGroup (onGroup(fun g -> g.pickPane(Stacked,Second)))
@@ -508,6 +527,9 @@ module Commands =
     /// The command a shortcut key belongs to.
     let byShortcut key = all |> List.tryFind(fun command -> command.shortcut=Some key)
     let categoryOf key = byShortcut key |> Option.map(fun command -> command.category)
+    /// Where a key is held, by its registration's name: a window shortcut's, which brings a window
+    /// from anywhere, everywhere.
+    let scopeOf key = byShortcut key |> Option.map(fun command -> command.scope) |> Option.defaultValue Everywhere
     /// Where a category's commands are listed, in the palette's order.
     let categories = [TabCommands;GroupCommands;SplitCommands;WorkspaceCommands;SettingsCommands;AppCommands]
     /// The command, other than the one on `key`, whose shortcut is `code`.

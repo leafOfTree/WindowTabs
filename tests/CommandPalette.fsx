@@ -365,6 +365,12 @@ let main() =
             runDone "number-shortcut-for-app" active
             note (NumberShortcutRules.enabled path<>before) "Switch tabs by number in this app did not change it"
             runDone "number-shortcut-for-app" active)
+        attempt "tab-shortcuts-for-app" (fun () ->
+            let before = ShortcutRules.enabled path
+            runDone "tab-shortcuts-for-app" active
+            note (ShortcutRules.enabled path<>before) "Tab shortcuts in this app did not change it"
+            runDone "tab-shortcuts-for-app" active
+            note (ShortcutRules.enabled path=before) "Tab shortcuts in this app run again did not turn it back")
         attempt "combine-group-taskbar-icons" (fun () ->
             let combine = (Commands.find "combine-group-taskbar-icons").Value
             let before = combine.state active
@@ -530,7 +536,7 @@ let main() =
                 note (not (List.contains (tr item.text.caption) titles)) "The number keys' modifier has a row of its own beside their three values"
             | _ -> note (List.contains (tr item.text.caption) titles) (sprintf "The setting %s is not on the Actions page" item.id)
         // The app's own switches show whether they are on for the app in front.
-        for id in ["tabs-for-app";"auto-group-app";"number-shortcut-for-app";"combine-group-taskbar-icons";"group-icons-only"] do
+        for id in ["tabs-for-app";"auto-group-app";"number-shortcut-for-app";"tab-shortcuts-for-app";"combine-group-taskbar-icons";"group-icons-only"] do
             let command = (Commands.find id).Value
             let entry = page.entries |> List.find(fun entry -> entry.title=tr command.text.caption)
             note ((page.aside "" entry).switch=command.state active && (command.state active).IsSome) (sprintf "%s shows no switch" id)

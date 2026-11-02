@@ -76,6 +76,7 @@
     <Compile Include="Shared\Win32Menu.fs" />
     <Compile Include="Shared\Services.fs" />
     <Compile Include="Shared\NumberShortcutRules.fs" />
+    <Compile Include="Shared\ShortcutRules.fs" />
     <Compile Include="Shared\AppGroupingRules.fs" />
     <Compile Include="Shared\RuntimeDiagnostics.fs" />
     <Compile Include="Shared\Theme.fs" />

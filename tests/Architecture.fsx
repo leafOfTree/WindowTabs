@@ -666,6 +666,23 @@ let main() =
         check (not (NumberShortcutRules.enabled @"C:\Apps\Editor.exe")) "Disabled number shortcut rules failed to round trip"
         check (not ((SettingsCatalog.resetRoot api.root true false).ContainsKey("disabledNumberShortcutPaths"))) "Clearing app rules retained number shortcut exclusions"
         api.setValue("disabledNumberShortcutPaths",box(Set2<string>()))
+        // An app that keeps its tab keys: set by executable name, kept by a reset, cleared with the app rules.
+        check (ShortcutRules.enabled @"C:\Apps\Browser.exe") "Tab shortcuts must be on for an app by default"
+        ShortcutRules.setEnabled @"C:\Apps\Browser.exe" false
+        check (not (ShortcutRules.enabled @"d:\other\BROWSER.EXE") && ShortcutRules.enabled @"C:\Other.exe") "An app set to keep its tab keys was not found by its executable name"
+        check ((SettingsCatalog.resetRoot api.root false false).["disabledShortcutPaths"].HasValues) "Reset lost the apps that keep their tab keys"
+        check (not ((SettingsCatalog.resetRoot api.root true false).ContainsKey("disabledShortcutPaths"))) "Clearing app rules kept the apps that keep their tab keys"
+        ShortcutRules.setEnabled @"c:\apps\BROWSER.exe" true
+        check ((api.getValue("disabledShortcutPaths") :?> Set2<string>).items.list.IsEmpty) "Turning an app's tab keys back on with different path case kept it excluded"
+        // A key is held only where its command could do something: a command that needs a window
+        // with tabs has its key only on one, and the rest, the search and the palette first, everywhere.
+        for command in Commands.all |> List.filter(fun command -> command.shortcut.IsSome && command.scope=TabbedWindow) do
+            check (not (command.enabled IntPtr.Zero)) (sprintf "%s holds its key only on windows with tabs but can run without one" command.id)
+        check (Commands.scopeOf "searchTabs"=Everywhere && Commands.scopeOf "commandPalette"=Everywhere && Commands.scopeOf "saveWorkspace"=Everywhere)
+              "A command that opens over any window does not hold its key everywhere"
+        check (Commands.scopeOf "nextTab"=TabbedWindow && Commands.scopeOf "numberLeader"=TabbedWindow && Commands.scopeOf "splitEnd"=TabbedWindow)
+              "A tab command holds its key where it has no tab to act on"
+        check (Commands.scopeOf "window:x|y|1"=Everywhere) "A window shortcut does not hold its key everywhere"
         let capture = NumericShortcutCapture()
         check (not (NumericShortcutTarget.available [IntPtr(1)] (IntPtr(1)) 0)) "Current/only tab must pass through"
         check (NumericShortcutTarget.available [IntPtr(1);IntPtr(2)] (IntPtr(1)) 1) "Other tab must remain available"
