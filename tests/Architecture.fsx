@@ -345,6 +345,15 @@ let main() =
         check (notches [-30;-30;-30;-30]= -1 && notches [-120;-120]= -2 && notches [40;40;40;40;40;40]=2) "A notch in parts switched more or fewer than one tab"
         check (fst (TabNavigation.wheelNotches -90 60 false)=0 && snd (TabNavigation.wheelNotches -90 60 false)=60) "Turning back kept the other way's part notch"
         check (TabNavigation.wheelNotches -90 -60 true=(-0,-60)) "A pause did not start the notch afresh"
+        // Shift+scroll is the app's over a window whose app keeps its tab keys, never over the strip,
+        // and that is asked of the window under the pointer only when it matters.
+        let wheel overStrip overWindow keeps = TabNavigation.wheelAction true true false true (fun () -> overStrip) (fun () -> overWindow) keeps
+        check (wheel false true (fun () -> false)="switch") "Shift+scroll over a tab's window did not switch tabs"
+        check (wheel false true (fun () -> true)="") "Shift+scroll switched tabs over a window whose app keeps its tab keys"
+        check (wheel true false (fun () -> failwith "asked")="switch") "Shift+scroll over the strip was given to the app of a window"
+        check (wheel false false (fun () -> failwith "asked")="") "Shift+scroll away from the group switched its tabs"
+        check (TabNavigation.wheelAction true true false false (fun () -> true) (fun () -> false) (fun () -> true)="switch") "Scrolling over the strip stopped switching tabs for an app that keeps its keys"
+        check (TabNavigation.wheelAction true true true false (fun () -> true) (fun () -> false) (fun () -> false)="move") "Ctrl+scroll over the strip did not move the tab"
         // Notches step on from where scrolling got to, wrapping like switching.
         check (TabNavigation.stepTarget [a;b;c] a None 1 true=Some b && TabNavigation.stepTarget [a;b;c] a None 4 true=Some b
                && TabNavigation.stepTarget [a;b;c] a None 1 false=Some c && TabNavigation.stepTarget [a;b;c] IntPtr.Zero (Some c) 2 true=Some b) "Scrolling stepped to the wrong tab"

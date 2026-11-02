@@ -347,8 +347,11 @@ commands, the app switches and the window shortcuts are held everywhere.
 key to match; `Program.holdHotKeys` recomputes it on every foreground change, group change and
 rule change, on top of the recording and full-screen suspension. An application can keep its
 tab keys (`ShortcutRules`, `disabledShortcutPaths`, toggled from the tab menu or the palette):
-with its window in front the tab commands' keys, the number keys and Shift+scroll are its own,
-as on a window with no tabs. A key set while let go is still registered once to be sure it is
+with its window in front the tab commands' keys and the number keys are its own, as on a
+window with no tabs, and so is Shift+scroll over its windows, whichever window is in front;
+scrolling over the strip still switches tabs (`TabNavigation.wheelAction`). The rule is read
+for the window under the pointer, as a group behind is scrolled too and can hold several apps.
+A key set while let go is still registered once to be sure it is
 free, then released again.
 
 Window search includes grouped tabs and switchable application windows without

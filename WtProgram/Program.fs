@@ -330,13 +330,10 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                     match Commands.byShortcut name with
                     | Some command when command.scope=CommandScope.TabbedWindow -> command.enabled foreground && not keepsKeys.Value
                     | _ -> true)
-            let group = this.desktop.groups.tryFind(fun group -> group.windows.contains((=)foreground))
-            if changed || group.IsSome then
-                // Each window of the group with whether it still exists and is shown: a closed one
-                // the group has not let go of yet shows as not.
-                let state hwnd = sprintf "%A%s" hwnd (if not (WinUserApi.IsWindow hwnd) then " gone" elif not (WinUserApi.IsWindowVisible hwnd) then " hidden" else "")
-                DebugLog.writef "Shortcuts recomputed for %A (%s), changed %b, keeps keys %b, group %A" foreground (IO.Path.GetFileName path) changed keepsKeys.Value
-                    (group |> Option.map(fun group -> group.windows.list |> List.map state))
+            // Only when a key was taken or let go: formatted on every foreground change, the line
+            // cost each one even in a Release build, which writes nothing.
+            if changed then
+                DebugLog.writef "Shortcuts follow %A (%s), keeps keys %b" foreground (IO.Path.GetFileName path) keepsKeys.Value
             hotKeyManager.resume()
 
     member private this.pausesInFullScreen = unbox<bool>(Services.settings.getValue("pauseInFullScreen"))

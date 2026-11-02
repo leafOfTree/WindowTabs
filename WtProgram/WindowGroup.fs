@@ -139,6 +139,15 @@ module TabNavigation =
         let total = rest + delta
         total / 120, total % 120
 
+    /// What a wheel turn does over a group: "move" the tab with Ctrl over the strip, "switch" tabs
+    /// over the strip or with Shift over one of the group's windows, else nothing. With Shift over
+    /// a window whose app keeps its tab keys, the turn is that app's; over the strip, the tabs'.
+    let wheelAction ctrlScroll shiftScroll ctrl shift (overStrip:unit -> bool) (overWindow:unit -> bool) (keepsKeys:unit -> bool) =
+        if ctrlScroll && ctrl then (if overStrip() then "move" else "")
+        elif shiftScroll && shift then (if overStrip() || (overWindow() && not (keepsKeys())) then "switch" else "")
+        elif overStrip() then "switch"
+        else ""
+
     /// Notches still to be stepped through, negative towards the user. Each notch counts;
     /// turning the other way drops the steps still waiting and goes that way instead.
     let addSteps pending notches =

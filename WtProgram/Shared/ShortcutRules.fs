@@ -1,8 +1,8 @@
 namespace Bemo
 
-/// An app that keeps its tab keys: with one of its windows in front, the tab commands' keys,
-/// the number keys and Shift+scroll are the app's, as on a window with no tabs. Kept by
-/// executable name in `disabledShortcutPaths`; the global keys are held regardless.
+/// An app that keeps its tab keys: with one of its windows in front, the tab commands' keys and
+/// the number keys are the app's, as on a window with no tabs, and Shift+scroll over its windows
+/// is too. Kept by executable name in `disabledShortcutPaths`; the global keys are held regardless.
 module ShortcutRules =
     let private paths() = Services.settings.getValue("disabledShortcutPaths") :?> Set2<string>
     let enabled path = not (AppIdentity.contains (paths()) path)
