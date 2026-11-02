@@ -86,6 +86,16 @@ module TabNavigation =
         | Some(tab,time) -> tab=gone && now-time <= 500L
         | None -> false
 
+    /// Chromium browsers hide the window they close and destroy it a moment later. A successor
+    /// activated between the two was undone at the destruction: the tab that took the foreground
+    /// at the hide got it back. A hidden tab whose window still exists is settling until the
+    /// window is destroyed, or until its app has kept it this long.
+    let HideGraceMs = 250L
+    let closeSettling (hiddenAt:int64 option) exists now =
+        match hiddenAt with
+        | Some at when exists -> now-at < HideGraceMs
+        | _ -> false
+
     /// The successor of a closed tab may take the foreground by force only while the group had
     /// it: the closed tab was still in front, or the foreground left it once it was already
     /// closing. A user who chose another window first is not pulled back.
@@ -514,6 +524,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let mutable lastActiveTab : IntPtr option = None
     /// A closing tab and the successor already selected for it before discovery removed it.
     let mutable followedClose : (IntPtr * IntPtr) option = None
+    /// When each tab was last hidden (`TabNavigation.closeSettling`), and whether its successor may
+    /// then take the foreground by force, kept until the tab leaves the group: the foreground has
+    /// usually moved on by the time the successor is selected.
+    let hiddenAt = Collections.Generic.Dictionary<IntPtr,int64 * bool>()
+    /// Selects the successor of a hidden tab whose window its app has kept past the grace.
+    let hiddenCloseTimer = new System.Windows.Forms.Timer(Interval=int TabNavigation.HideGraceMs)
     /// The active tab that joined the group in the foreground, and the tab active before it.
     let mutable opener : (IntPtr * IntPtr) option = None
     /// The last switch between tabs not made by WindowTabs: from, to and when, with the opener before it.
@@ -656,6 +672,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         _ts := Some(ts)
         splitSettleTimer.Tick.Add(fun _ -> this.checkSplitSettled())
         captureTimer.Tick.Add(fun _ -> this.captureFront())
+        hiddenCloseTimer.Tick.Add(fun _ ->
+            hiddenCloseTimer.Stop()
+            if not isDestroyed.value then this.withUpdate(fun () -> this.followClosedTab(this.os.foreground.hwnd)))
         splitGuardSoon <- Some(new CoalescedAction(30,fun () -> this.guardSplitStrip()))
         stripLiftSoon <- Some(new CoalescedAction(30,fun () -> if not isDestroyed.value then this.guardUnownedStrip()))
         transitionRelease.Tick.Add(fun _ ->
@@ -2416,6 +2435,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 this.keepPanesBelowStrip(this.topWindow)
             this.ts.refreshShadow()
         | WinEvent.EVENT_OBJECT_HIDE | WinEvent.EVENT_OBJECT_DESTROY ->
+            if evt=WinEvent.EVENT_OBJECT_HIDE && this.windows.contains hwnd then
+                hiddenAt.[hwnd] <- transitionClock.ElapsedMilliseconds,this.forceOnCloseNow hwnd
             if evt=WinEvent.EVENT_OBJECT_DESTROY || not(isMinimized hwnd) then
                 this.onRemoved(hwnd)
                 closingEvent.Trigger hwnd
@@ -2534,7 +2555,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     | Some target -> Some target
                     | None -> if this.windows.contains(foreground) then Some foreground else None
             if followedClose |> Option.exists(fun (closed,_) -> closed=hwnd) then followedClose <- None
-            elif chooseNext then next |> Option.iter(fun target -> this.tabActivate(Tab(target),this.forceOnClose hwnd))
+            elif chooseNext then next |> Option.iter(fun target -> this.activateSuccessor(target,this.forceOnClose hwnd))
+            hiddenAt.Remove hwnd |> ignore
 
     /// The tab shown before `hwnd`, the one the foreground left for it, comes to the front, once
     /// `hwnd` has left the group by a drag. Nothing else is known to have been shown: a tab
@@ -2559,21 +2581,30 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member private this.leftOnClose(hwnd) =
         foregroundCell.value=hwnd || TabNavigation.leftGroupJustBefore leftGroup hwnd transitionClock.ElapsedMilliseconds
 
-    /// Refused, the successor's taskbar button only flashes and the tab stays behind.
+    /// Refused, the successor's taskbar button only flashes and the tab stays behind. As decided
+    /// when the tab was hidden, too, since the foreground has moved on by its destruction.
     member private this.forceOnClose(hwnd) =
+        (match hiddenAt.TryGetValue hwnd with | true,(_,force) -> force && not (isOpen hwnd) | _ -> false) || this.forceOnCloseNow hwnd
+
+    member private this.forceOnCloseNow(hwnd) =
         this.leftOnClose hwnd && TabNavigation.forceOnClose foregroundCell.value leftGroupClosing hwnd
 
     /// Windows activates the previously used window when a tab closes, before discovery
-    /// removes it. Select the successor as soon as the active tab is hidden, destroyed or
-    /// loses the foreground, so the wrong tab shows as briefly as possible.
+    /// removes it. Select the successor as soon as the active tab is destroyed or loses the
+    /// foreground, so the wrong tab shows as briefly as possible; hidden with its window still
+    /// there, once the window is destroyed or the app has kept it for the grace.
     member private this.followClosedTab(foreground) =
         match lastActiveTab with
         | Some closed when followedClose |> Option.forall(fun (followed,_) -> followed<>closed) ->
             TabNavigation.closeTarget this.lorder.list isOpen closed foreground lastActiveTab opener (this.leftOnClose closed)
             |> Option.iter(fun target ->
-                if target<>foreground then this.tabActivate(Tab(target),this.forceOnClose closed)
-                // Activation can be refused; a later foreground event or removal retries.
-                if this.os.foreground.hwnd=target then followedClose <- Some(closed,target))
+                let hidden = match hiddenAt.TryGetValue closed with | true,(at,_) -> Some at | _ -> None
+                if TabNavigation.closeSettling hidden (WinUserApi.IsWindow closed) transitionClock.ElapsedMilliseconds then
+                    if not hiddenCloseTimer.Enabled then hiddenCloseTimer.Start()
+                else
+                    if target<>foreground then this.activateSuccessor(target,this.forceOnClose closed)
+                    // Activation can be refused; a later foreground event or removal retries.
+                    if this.os.foreground.hwnd=target then followedClose <- Some(closed,target))
         | _ -> ()
 
     member this.activateIndex(index, force) =
@@ -2618,6 +2649,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             isDestroyed.set(true)
             splitSettleTimer.Dispose()
             captureTimer.Dispose()
+            hiddenCloseTimer.Dispose()
             (captures :> IDisposable).Dispose()
             this.unwatchOrder()
             this.unwatchAppBars()
@@ -2735,7 +2767,16 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 this.tabActivate(Tab hwnd,true)
     member this.dragReleased = dragReleasedEvent.Publish
 
-    member this.tabActivate(Tab(hwnd), force) =
+    /// The tab after a closed one. No fade: the window shown is the one Windows brought up for
+    /// the close, not a tab the user was looking at, and it faded out over the successor for an
+    /// eighth of a second, a second wrong tab after the first.
+    member private this.activateSuccessor(hwnd, force) =
+        DebugLog.writef "Closed tab followed by %A (force %b), %A in front" hwnd force this.os.foreground.hwnd
+        this.activate(hwnd,force,false)
+
+    member this.tabActivate(Tab(hwnd), force) = this.activate(hwnd,force,true)
+
+    member private this.activate(hwnd, force, fade) =
         let window = this.os.windowFromHwnd(hwnd)
         // The cover goes up before the window comes to the front: raised first, a parked pane
         // showed at the group's size over the tab shown for a frame, and a tab clicked over the
@@ -2745,7 +2786,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             if next<>groupLayout then
                 this.beginTransition(groupLayout,next,hwnd,focus=hwnd,durationMs=SplitTransition.ClickMs)
                 coverAhead <- true
-            elif groupLayout=GroupLayout.Single then this.crossFadeTo hwnd
+            elif groupLayout=GroupLayout.Single && fade then this.crossFadeTo hwnd
         // The strip is owned by the top window and only follows a new top window once the
         // foreground event comes back through the group. Until then the activated window
         // covers it, which flashes whenever the tabs sit inside the title bar. Owned windows

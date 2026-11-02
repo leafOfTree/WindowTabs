@@ -28,6 +28,16 @@ type ProgramInput =
     | WinEvent of (IntPtr * WinEvent)
     | ShellEvent of (IntPtr * ShellEvent)
 
+/// What discovery watches on each app window, besides the shell's notices.
+module DiscoveryEvents =
+    /// Shown and hidden; uncloaked too, as Chromium browsers cloak a new window themselves for a
+    /// moment as it starts. Looked at then it is hidden and not grouped, and its uncloaking is the
+    /// only sign it is shown: missed, the window joined at the next full scan, behind the tab in
+    /// front and last in the strip. Moves only while the window is full screen.
+    let forWindow fullScreen =
+        [WinEvent.EVENT_OBJECT_SHOW;WinEvent.EVENT_OBJECT_HIDE;WinEvent.EVENT_OBJECT_UNCLOAKED] @
+        (if fullScreen then [WinEvent.EVENT_OBJECT_LOCATIONCHANGE] else [])
+
 type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let version = AssemblyInfo.informationalVersion
     let isStandAlone = System.Diagnostics.Debugger.IsAttached 
@@ -703,7 +713,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         if appStyle || fullScreen then
             let registerEvent evt =
                 window.setWinEventHook evt (fun() -> this.receive(WinEvent(hwnd, evt)))
-            let events = [WinEvent.EVENT_OBJECT_SHOW;WinEvent.EVENT_OBJECT_HIDE] @ (if fullScreen then [WinEvent.EVENT_OBJECT_LOCATIONCHANGE] else [])
+            let events = DiscoveryEvents.forWindow fullScreen
             let hooks = List2(events).map(registerEvent)
             let dispose = {
                 new IDisposable with

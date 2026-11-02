@@ -78,10 +78,12 @@ membership updates retain the remaining order throughout the transition. This
 policy applies to every application and both shared and separate preview owners.
 
 `WindowRefreshQueue` batches events for 30 ms without continually resetting its
-deadline. Repeated events for an HWND collapse to one update. Ordinary show/hide and
-shell events reconcile dirty windows; explicit refresh, group removal/exit and drag
-completion retain full reconciliation. A queued full refresh supersedes dirty HWNDs.
-No periodic desktop polling was added.
+deadline. Repeated events for an HWND collapse to one update. Ordinary show/hide,
+uncloak and shell events reconcile dirty windows; explicit refresh, group removal/exit
+and drag completion retain full reconciliation. A queued full refresh supersedes dirty
+HWNDs. No periodic desktop polling was added. Uncloaking is watched because Chromium
+browsers cloak a new window themselves for a moment as it starts: looked at then, the
+window is hidden and not grouped, and nothing else says when it is shown.
 
 ## Virtual desktops
 
@@ -284,10 +286,18 @@ A tab counts as closed once its HWND is hidden or destroyed. When the active tab
 closes, Windows activates the previously used window, not the window below it in
 z-order, before discovery removes the closed tab. That is the opener in the case
 above, so it needs no correction. Otherwise the group selects the successor on the
-first of the closed tab's hide or destroy event or the next foreground event inside
-the group, which keeps the wrong tab on screen as briefly as possible. Selection
-preserves the closed active tab across those early foreground events and does not
-activate a background group. The previously used window can be outside the group,
+first of the closed tab's destroy event or the next foreground event inside the
+group, which keeps the wrong tab on screen as briefly as possible. A tab hidden
+while its window still exists waits for the window's destruction, or 250 ms if the
+app keeps it: Chromium browsers hide the window they close and destroy it a moment
+later, and a successor activated between the two was undone at the destruction, the
+tab that took the foreground at the hide getting it back, so the tabs flickered and
+the wrong one stayed in front. Whether the successor may take the foreground by force
+is decided at the hide, as the foreground has moved on by the destruction. The
+successor comes up without the cross-fade a tab switch has: the window it would fade
+from is the one Windows chose, not one the user was looking at. Selection preserves
+the closed active tab across those early foreground events and does not activate a
+background group. The previously used window can be outside the group,
 such as the window that was active before a launcher opened the closed tab. A group
 whose last foreground was the closed tab, or which lost the foreground to another
 application within 500 ms of the close, is not in the background and still selects

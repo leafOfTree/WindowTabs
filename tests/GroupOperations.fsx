@@ -1415,9 +1415,30 @@ let main() =
                         group.foreground <- other
                         check ((field "lastActiveTab").GetValue(group) :?> IntPtr option=Some other) "Activating another tab while the old one was open did not select it")
                     onHelper(fun () -> OS().windowFromHwnd(added).hide())
+                    // Chromium browsers hide the window they close and destroy it a moment later, and a
+                    // successor activated in between was undone at the destruction: a hidden tab whose
+                    // window still exists keeps its place until the window goes or the grace has passed.
+                    let top (group:WindowGroup) = (invoke "inZorder" group [|box group.windows.items|] :?> List2<IntPtr>).list |> List.find((<>) added)
+                    let closeTimer group = (field "hiddenCloseTimer").GetValue(group) :?> System.Windows.Forms.Timer
+                    let expected,shown =
+                        onGroup(fun group ->
+                            let opener = (field "opener").GetValue(group) :?> (IntPtr*IntPtr) option
+                            let expected = (TabNavigation.successor group.lorder.list (fun hwnd -> hwnd<>added) added opener).Value
+                            // As if Windows had brought up another tab at the hide.
+                            let shown = group.lorder.list |> List.find(fun hwnd -> hwnd<>added && hwnd<>expected)
+                            OS().windowFromHwnd(shown).bringToTop()
+                            invoke "handleWindowEvent" group [|box added; box WinEvent.EVENT_OBJECT_HIDE|] |> ignore
+                            check ((field "lastActiveTab").GetValue(group) :?> IntPtr option=Some added) "A tab hidden right after losing the foreground was not treated as closing"
+                            invoke "followClosedTab" group [|box shown|] |> ignore
+                            check (top group=shown && (field "followedClose").GetValue(group) :?> (IntPtr*IntPtr) option=None) "A hidden tab's successor was selected before its window was destroyed"
+                            check (closeTimer group).Enabled "A hidden tab whose window stayed was left without its successor"
+                            expected,shown)
+                    pumpUntil(fun () -> onGroup(fun group -> not (closeTimer group).Enabled))
                     onGroup(fun group ->
-                        invoke "handleWindowEvent" group [|box added; box WinEvent.EVENT_OBJECT_HIDE|] |> ignore
-                        check ((field "lastActiveTab").GetValue(group) :?> IntPtr option=Some added) "A tab hidden right after losing the foreground was not treated as closing"
+                        // Past the grace the successor is selected; the real foreground may be outside
+                        // the test's windows, so the tab Windows showed stands in for it.
+                        invoke "followClosedTab" group [|box shown|] |> ignore
+                        check (top group=expected) "A hidden tab whose app kept its window never had its successor selected"
                         group.removeWindow added)
                     onHelper(fun () -> OS().windowFromHwnd(added).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
                     // Minimizing the active tab makes Windows activate another tab before the group

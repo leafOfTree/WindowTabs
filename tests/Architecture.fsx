@@ -431,6 +431,15 @@ let main() =
         check (not(TabNavigation.leftJustBefore left b (Some c) 1300L)) "A tab hidden after a later selection was treated as closed"
         check (not(TabNavigation.leftJustBefore left c (Some a) 1300L)) "Another tab's hide was treated as the left tab closing"
         check (not(TabNavigation.leftJustBefore None b (Some a) 1300L)) "A hide with no recent switch was treated as a close"
+        // Chromium browsers hide the window they close and destroy it a moment later; a successor
+        // activated in between is undone at the destruction.
+        check (TabNavigation.closeSettling (Some 1000L) true 1100L) "A hidden tab whose window still existed had its successor selected at once"
+        check (not(TabNavigation.closeSettling (Some 1000L) false 1100L)) "A destroyed tab waited for the hide grace"
+        check (not(TabNavigation.closeSettling (Some 1000L) true (1000L+TabNavigation.HideGraceMs))) "A tab whose app kept its hidden window waited past the grace"
+        check (not(TabNavigation.closeSettling None true 1100L)) "A tab closed without a hide event waited for the grace"
+        // A Chromium window looked at while it cloaks itself at start is grouped once it uncloaks,
+        // not at the next full scan, behind the tab in front.
+        check (List.contains WinEvent.EVENT_OBJECT_UNCLOAKED (Program.DiscoveryEvents.forWindow false)) "Discovery did not look again at a window uncloaked after it opened"
         // As the input hook decides: the key must match and the app's rule allow it.
         let allowed() = NumberShortcutRules.enabled @"C:\Apps\Unlisted.exe"
         let target msg key ctrl = onGroup(fun _ -> numeric.targetIndex(msg,key,ctrl) |> Option.filter(fun _ -> allowed()))
