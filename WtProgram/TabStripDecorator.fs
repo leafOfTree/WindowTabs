@@ -186,7 +186,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                             group.bb.write("contextMenuVisible", false)
                         let menu = new ThemedContextMenu(this.contextMenu(hwnd,images),menuClosed,group.windows.contains)
                         contextMenu <- Some menu
-                        menu.Show(this.ts.hwnd,ptScreen.x,ptScreen.y)
+                        menu.Show(this.ts.hwnd,ptScreen.x,ptScreen.y,os.windowFromHwnd(this.ts.hwnd).bounds.Rectangle)
                     with _ ->
                         contextMenu |> Option.iter(fun menu -> menu.Dispose())
                         group.bb.write("contextMenuVisible", false)
@@ -415,7 +415,7 @@ type TabStripDecorator(group:WindowGroup) as this =
                 group.bb.write("contextMenuVisible", false)
             let menu = new ThemedContextMenu(items,menuClosed,group.windows.contains)
             contextMenu <- Some menu
-            menu.Show(this.ts.hwnd,ptScreen.x,ptScreen.y)
+            menu.Show(this.ts.hwnd,ptScreen.x,ptScreen.y,os.windowFromHwnd(this.ts.hwnd).bounds.Rectangle)
 
     member private this.contextMenu(hwnd,images:ResizeArray<Img>) =
         let checkedFlag(isChecked) = if isChecked then List2([MenuFlags.MF_CHECKED]) else List2()

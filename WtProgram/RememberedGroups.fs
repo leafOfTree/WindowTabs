@@ -96,6 +96,14 @@ module RememberedGroups =
     let without (titles:Set<RememberedMember>) (saved:RememberedGroup list) =
         if titles.IsEmpty then saved else keepMembers (fun _ m -> not (titles.Contains m)) saved
 
+    /// How long a window closed by hand waits before it leaves its group: Windows signing out or
+    /// restarting closes the apps one by one, some before WindowTabs is told.
+    let closeGrace = TimeSpan.FromSeconds(5.0)
+
+    /// The windows closed (each with when) that have waited out the grace, and those still waiting.
+    let dueClosed (now:DateTime) (closed:(RememberedMember * DateTime) list) =
+        closed |> List.partition(fun (_,at) -> now-at >= closeGrace)
+
     let private readMember (item:JToken) =
         let app,title = item.Value<string>("app"),item.Value<string>("title")
         if String.IsNullOrEmpty app || String.IsNullOrEmpty title then None else Some { app=app; title=title }

@@ -59,6 +59,10 @@ let rememberedGroupUpdates() =
           "A trailed group left with one open window was kept"
     check (RememberedGroups.shared [m "a";m "b";m "a";{ app="OTHER.EXE"; title="b" }] = [m "a"]) "Titles two windows had at once were not found"
     check (RememberedGroups.without (Set.ofList [m "a";m "x"]) saved |> List.map(fun group -> group.id) = [3;4]) "A shared title was kept, or its group kept with one window"
+    // A window closed by hand leaves its group once Windows has had time to say it is signing out.
+    let closedAt = now.AddSeconds(-1.0)
+    let due,waiting = RememberedGroups.dueClosed now [m "a",now-RememberedGroups.closeGrace;m "b",closedAt]
+    check (due=[m "a",now-RememberedGroups.closeGrace] && waiting=[m "b",closedAt]) "A window closed by hand left its group at once, or never"
     check (RememberedGroups.readShared (RememberedGroups.writeShared [m "a";m "b"]) = [m "a";m "b"]) "Shared titles were not saved and read back"
     let moved = RememberedGroups.update now [1,[{ app="NEW.EXE"; title="n" };{ app="NEW.EXE"; title="o" }]] [m "a";m "c"] located
     check ((moved |> List.find(fun group -> group.id=1)).paths = Map.empty) "A group kept the path of a program it no longer has"
@@ -255,6 +259,11 @@ let main() =
             announced.Value>0 &&
             (program :> IProgram).handMadeGroups() |> List.exists(fun (id,members) ->
                 id=5151 && members |> List.exists(fun (_,title,hwnd) -> title="Remembered C" && hwnd=IntPtr.Zero)))
+        // Closed by hand rather than by Windows signing out, it leaves the group once the grace is
+        // over, as a tab dragged out does.
+        pumpUntil "A window closed by hand stayed in its group's record" (fun () ->
+            runtimeSettings.rememberedGroups |> List.exists(fun group ->
+                group.id=5151 && not (List.contains { app=app; title="Remembered C" } group.members)))
         // A new window with the title a window of the group has now is a new one, as every Neovide
         // opens showing its install folder: it stays out, and the title is no longer one to match by.
         twinHandles.Value <- [twin.Handle]

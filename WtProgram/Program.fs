@@ -142,6 +142,10 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     let settleTimer = lifetime.Own(new System.Windows.Forms.Timer(Interval=1000))
     /// Groups are recorded a moment after they change, once for a burst of changes.
     let rememberSoon = lifetime.Own(new CoalescedAction(500, fun () -> this.rememberGroups()))
+    /// Remembered windows that closed while Windows was not signing out, each with when: closed
+    /// by hand, they leave their group as a tab dragged out does, once the grace is over.
+    let closedByHand = ResizeArray<RememberedMember * DateTime>()
+    let forgetSoon = lifetime.Own(new CoalescedAction(1000, fun () -> this.forgetClosed()))
     /// The session, written as the groups change, as Windows signs out and at exit, so a
     /// sign-in finds the last state; a window moved or retitled since is kept by the last two.
     /// A window carrying a group token at start means WindowTabs alone restarted: the tokens
@@ -537,6 +541,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// Records the groups made by hand that are in view, and drops windows now in other groups
     /// from them. Windows whose title may still change are left as they were.
     member this.rememberGroups() =
+        // A group drops a window that closed on its own thread, with no word from the shell.
+        for hwnd in List.ofSeq recordedAs.Keys do
+            if not (WinUserApi.IsWindow hwnd) then this.noteClosed hwnd
         let renamed = ResizeArray<RememberedMember>()
         let recorded hwnd =
             let current = this.rememberedMember hwnd
@@ -590,6 +597,29 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         if openNow<>shownOpen then
             shownOpen <- openNow
             if not changed then settingsManager.announce "rememberedGroups"
+
+    /// A grouped window is gone: one a remembered group holds waits to leave it, unless Windows is
+    /// signing out or restarting, which closes the apps without anyone closing them.
+    member private this.noteClosed(hwnd:IntPtr) =
+        match recordedAs.TryGetValue hwnd with
+        | true,m when not sessionEnding && not inShutdown.value && (RememberedGroups.find remembered m).IsSome ->
+            closedByHand.Add((m,DateTime.UtcNow))
+            forgetSoon.Request()
+        | _ -> ()
+        recordedAs.Remove hwnd |> ignore
+
+    member private this.forgetClosed() =
+        if sessionEnding || inShutdown.value then closedByHand.Clear()
+        else
+            let due,waiting = RememberedGroups.dueClosed DateTime.UtcNow (List.ofSeq closedByHand)
+            closedByHand.Clear()
+            closedByHand.AddRange waiting
+            if not waiting.IsEmpty then forgetSoon.Request()
+            let next = RememberedGroups.without (due |> List.map fst |> Set.ofList) remembered
+            if next<>remembered then
+                remembered <- next
+                settingsManager.rememberedGroups <- next
+                this.pruneGroupIcons()
 
     /// Forgets the taskbar pictures of groups made by hand that are gone for good.
     member private this.pruneGroupIcons() =
@@ -916,8 +946,11 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         groupedThisRun.Add hwnd |> ignore
         if isNewGroup then restored |> Option.iter(fun token -> (group :?> GroupInfo).group.groupToken <- token)
         // Made by hand before a restart, it still is, though too few of its titles were kept to
-        // remember it by: auto grouping took new windows into it again.
-        if isNewGroup && restored.IsSome && WindowGroupToken.madeByHand hwnd then (group :?> GroupInfo).group.isManual <- true
+        // remember it by: auto grouping took new windows into it again. So is one put back from its
+        // record, which a window closed by hand can leave too short to keep.
+        let fromRecord token = remembered |> List.exists(fun saved -> saved.id=token)
+        if isNewGroup && restored |> Option.exists(fun token -> WindowGroupToken.madeByHand hwnd || fromRecord token) then
+            (group :?> GroupInfo).group.isManual <- true
         // A tab dragged out onto the desktop starts a group by hand.
         if isNewGroup && isDropped then (group :?> GroupInfo).group.isManual <- true
         // A restored group is where the window was put, so it does not wait to join another.
@@ -958,7 +991,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                 appKeys.Remove hwnd |> ignore
                 newTabAnchors.Remove hwnd |> ignore
                 settling.Remove hwnd |> ignore
-                recordedAs.Remove hwnd |> ignore
+                this.noteClosed hwnd
                 isDroppedAndAwaitingGrouping.map(fun s -> s.remove hwnd)
                 windowNameOverride <- windowNameOverride.remove hwnd
                 windowColors.remove hwnd

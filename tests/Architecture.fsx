@@ -1057,6 +1057,15 @@ let main() =
     check (TabSearch.highlights "ctrl+]" "Ctrl+]" = [0,6]) "A key typed did not light up in the shortcut"
     let downTitled = TabSearch.create (IntPtr 9) "Download movedown.zip" "" ""
     check (TabSearch.shown "movedown" [1,moveDown;2,downTitled] |> List.map fst = [2;1]) "A row found without spaces came before one with the word itself"
+    // A name with the words as typed comes first, then one with them all, then one that has some
+    // only in its hidden words.
+    let command (index:int) (title:string) words = { TabSearch.create (IntPtr index) title "" "" with keywords=[title.ToLowerInvariant();words] }
+    let listNext = command 12 "Move down the list" "next down select move palette search"
+    let nextPane = command 13 "Focus the next pane" "pane split"
+    let nextTab = command 14 "Switch to next tab" "tab"
+    check (TabSearch.shown "next t" [1,listNext;2,nextPane;3,nextTab] |> List.map fst = [3;2;1]
+           && TabSearch.shown "next" [1,listNext;2,nextPane;3,nextTab] |> List.map fst = [2;3;1])
+          (sprintf "Rows named with the words typed did not come first: %A" (TabSearch.shown "next t" [1,listNext;2,nextPane;3,nextTab] |> List.map fst))
     // Choosing: word-start quality, earlier positions, then recency.
     check (TabSearch.quality "set" "windowtabs settings" = 2) "A match at a word start was not ranked best"
     check (TabSearch.quality "tabs" "windowtabs settings" = 1) "A match inside a word did not count"

@@ -354,12 +354,31 @@ type ThemedContextMenu(items:List2<ContextMenuItem>,closed:unit -> unit,?ownsFor
     /// often another tab's window behind the current one. Showing the menu raised that window
     /// over the current one and covered its tabs. Owned by the strip, the menu raises nothing
     /// but the strip and the window it belongs to.
-    member this.Show(owner:IntPtr, x:int, y:int) =
+    member this.Show(owner:IntPtr, x:int, y:int) = this.Show(owner,x,y,Rectangle.Empty)
+    /// As Show, kept off `avoid`, the strip it was opened from, when it has no room at the point:
+    /// pushed back onto the screen it covered the tab clicked at the screen's edge.
+    member this.Show(owner:IntPtr, x:int, y:int, avoid:Rectangle) =
         let filter = ThemedContextMenu.menuFilter()
         filter |> Option.iter(fun (instance,property:Reflection.PropertyInfo) ->
             restoreOwner <- Some(property.GetValue(instance))
             property.SetValue(instance,HandleRef(null,owner)))
-        this.Show(x,y)
+        let at : Point = ThemedContextMenu.placement (Screen.FromPoint(Point(x,y)).WorkingArea) this.PreferredSize (Point(x,y)) avoid
+        this.Show(at.X,at.Y)
+    /// Where a menu of the size opens for the point: there when it fits the area. Else it keeps a
+    /// corner at the pointer, turned left or up as a Windows menu does, so it reads as the menu of
+    /// the tab clicked: a row's menu below or above the row rather than over its tabs, a column's
+    /// beside the pointer; failing that, beside `avoid`.
+    static member placement (area:Rectangle) (size:Size) (point:Point) (avoid:Rectangle) : Point =
+        let fits (at:Point) = area.Contains(Rectangle(at,size))
+        if avoid.IsEmpty || fits point then point
+        else
+            let turned start length low high = if start+length<=high then start else max low (start-length)
+            let alongX = turned point.X size.Width area.Left area.Right
+            let alongY = turned point.Y size.Height area.Top area.Bottom
+            let below,above = Point(alongX,avoid.Bottom),Point(alongX,avoid.Top-size.Height)
+            let left,right = Point(avoid.Left-size.Width,alongY),Point(avoid.Right,alongY)
+            let order = if avoid.Width>=avoid.Height then [below;above;left;right] else [Point(alongX,alongY);left;right]
+            order |> List.tryFind fits |> Option.defaultValue point
     /// WinForms' per-thread menu state and the window it owns menus by; None if it ever changes.
     static member private menuFilter() =
         try
