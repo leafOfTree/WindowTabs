@@ -55,7 +55,8 @@ module MenuImages =
         g.FillPath(brush,path)
         // Grey-scale smoothing: ClearType fringes on a transparent bitmap.
         g.TextRenderingHint <- Text.TextRenderingHint.AntiAliasGridFit
-        use font = new Font(SystemFonts.MenuFont.FontFamily,h*0.62f,GraphicsUnit.Pixel)
+        // Bold: at this size a regular stroke falls between pixels and smooths to a faint grey.
+        use font = new Font(SystemFonts.MenuFont.FontFamily,h*0.62f,FontStyle.Bold,GraphicsUnit.Pixel)
         use format = new StringFormat(Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center)
         g.DrawString(text,font,Brushes.White,RectangleF(0.0f,h*0.06f,w,h),format)
         bitmap

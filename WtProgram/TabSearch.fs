@@ -482,13 +482,16 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     key |> Option.iter(fun cap -> drawKey cap "Tab") }
     /// Under the rows, at the right: the key that sets a row's shortcut, named, as editors put it.
     let footerHeight = if pages.IsEmpty && (tabs |> List.forall(fun entry -> (windowShortcut entry).IsNone)) then 0 else Dpi.scale 28
+    /// A note on a key being set, and whether it is a refusal: at the footer's left.
+    let mutable footerNote : (string * bool) option = None
     let footer =
         { new Panel(Dock=DockStyle.Bottom,Height=footerHeight,BackColor=palette.surface) with
             override this.OnPaint(e) =
                 base.OnPaint(e)
+                let p = palette
+                let g = e.Graphics
+                let mutable hintLeft = this.ClientSize.Width
                 if canAssign() then
-                    let p = palette
-                    let g = e.Graphics
                     g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
                     let label = tr Strings.TabSearch.setShortcut
                     let labelWidth = TextRenderer.MeasureText(label,keyFont,Size.Empty,TextFormatFlags.NoPadding).Width
@@ -496,9 +499,24 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     let width = KeyCaps.width keyFont height "Alt+Enter"
                     let left = this.ClientSize.Width-Dpi.scale 4-width
                     KeyCaps.draw g keyFont left ((this.ClientSize.Height-height)/2) height "Alt+Enter" p |> ignore
-                    TextRenderer.DrawText(g,label,keyFont,Rectangle(left-Dpi.scale 8-labelWidth,0,labelWidth+Dpi.scale 4,this.ClientSize.Height),
+                    hintLeft <- left-Dpi.scale 8-labelWidth
+                    TextRenderer.DrawText(g,label,keyFont,Rectangle(hintLeft,0,labelWidth+Dpi.scale 4,this.ClientSize.Height),
                                           (if SystemInformation.HighContrast then SystemColors.WindowText else p.accent),
-                                          TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter) }
+                                          TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter)
+                match footerNote with
+                | Some(text,refused) ->
+                    // Red only for a refusal; where a key came from is just news.
+                    let color =
+                        if SystemInformation.HighContrast then SystemColors.WindowText
+                        elif not refused then p.muted
+                        elif ThemeService.currentIsDark() then Color.FromRGB(0xFF99A4) else Color.FromRGB(0xC42B1C)
+                    let left = Dpi.scale 4
+                    TextRenderer.DrawText(g,text,keyFont,Rectangle(left,0,max 0 (hintLeft-Dpi.scale 16-left),this.ClientSize.Height),color,
+                                          TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
+                | None -> () }
+    let setFooterNote note =
+        footerNote <- note
+        footer.Invalidate()
     let programColumn = TreeListColumn("",160,TextColumn,RightAligned=true)
     /// Each right-end text's width, measured once: the rows are measured again at every keystroke.
     let asideWidths = Collections.Generic.Dictionary<string,int>()
@@ -977,24 +995,30 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     place()
                     editor.BringToFront()
                     editor.SizeChanged.Add(fun _ -> place())
-                    // Why a key was refused, on a line under the box rather than cut short in it.
+                    // What the key met, at the footer's left rather than cut short in the box or over the rows.
                     editor.ShowsMessage <- false
-                    let note = new Label(AutoSize=true,Font=editor.Font,UseMnemonic=false,Visible=false,BackColor=palette.surface,
-                                         ForeColor=(if SystemInformation.HighContrast then SystemColors.WindowText
-                                                    elif ThemeService.currentIsDark() then Color.FromRGB(0xFF99A4) else Color.FromRGB(0xC42B1C)))
-                    list.Controls.Add(note)
-                    let showNote (text:string option) =
+                    let showNoteAs refused (text:string option) =
                         match text with
                         | Some text ->
                             // The key pressed, then what is wrong with it.
                             let key = SettingsShortcut.text editor.LastPressed
-                            note.Text <- if key="" then text else tr (Strings.Shortcuts.keySays key text)
-                            note.Location <- Point(editor.Right-note.PreferredWidth,editor.Bottom+Dpi.scale 2)
-                            note.Visible <- true
-                            note.BringToFront()
-                        | None -> note.Visible <- false
-                    editor.MessageChanged.Add showNote
-                    editor.Disposed.Add(fun _ -> list.Controls.Remove note; note.Dispose())
+                            setFooterNote (Some((if key="" then text else tr (Strings.Shortcuts.keySays key text)),refused))
+                        | None -> setFooterNote None
+                    let showNote = showNoteAs true
+                    editor.MessageChanged.Add(fun text -> showNoteAs editor.MessageIsError text)
+                    // Where a key came from stays a while after the box has gone, so the list is free at once.
+                    let lingering = ref false
+                    editor.Disposed.Add(fun _ ->
+                        if lingering.Value then
+                            let shown = footerNote
+                            let drop = new System.Windows.Forms.Timer(Interval=4000)
+                            drop.Tick.Add(fun _ ->
+                                drop.Stop()
+                                drop.Dispose()
+                                // Unless another note has taken its place since.
+                                if not closed && obj.ReferenceEquals(footerNote,shown) then setFooterNote None)
+                            drop.Start()
+                        elif not closed then setFooterNote None)
                     // The box a moment longer, its key seen, then the row as it now is.
                     let leaveAfter (ms:int) (taken:string option) =
                         let pause = new System.Windows.Forms.Timer(Interval=ms)
@@ -1021,9 +1045,13 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                         | Some holder ->
                             holder.release()
                             if assignment.set code then
+                                // The rows show where the key now is at once, and the box goes; only
+                                // the note stays, long enough to read where the key came from.
+                                reapply()
+                                target.Suffix <- SettingsShortcut.text code
                                 editor.Notice(tr (Strings.Shortcuts.takenFrom holder.name))
-                                // Long enough to read where the key came from.
-                                leaveAfter 1500 (Some(SettingsShortcut.text code))
+                                lingering.Value <- true
+                                leaveAfter 1 (Some(SettingsShortcut.text code))
                             else
                                 holder.restore()
                                 refuse previous (tr Strings.Shortcuts.inUse)
@@ -1181,6 +1209,8 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     member _.SwitchScope() = switchScope()
     /// The rows the search shows, in order.
     member _.Results = list.Roots |> Seq.map entryOf |> List.ofSeq
+    /// The note at the footer's left on a key being set.
+    member _.FooterNote = footerNote |> Option.map fst
     /// What each shown row has beside its name, and at its right end.
     member _.RowNotes = list.Roots |> Seq.map(fun item -> item.Suffix,item.value 1) |> List.ofSeq
     member _.Selected =

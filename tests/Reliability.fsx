@@ -535,11 +535,15 @@ let main() =
     let gap = AppearanceJson.readGeometry (JObject.Parse("""{"tabOverlap":-30}""")) Theme.defaultGeometry
     check (gap.overlap= -30 && (AppearanceJson.normalizeGeometry {gap with overlap= -500}).overlap= -100) "Tab gap lost its stored sign or bounds"
     check (Theme.defaultGeometry.style=JoinedTabs) "Tabs no longer join into one bar by default"
-    for style in [JoinedTabs;FolderTabs;PillTabs] do
+    for style in [JoinedTabs;FolderTabs;FloatingTabs] do
         let stored = AppearanceJson.writeLegacy {Theme.defaultGeometry with style=style} Theme.lightPalette
         check ((AppearanceJson.readGeometry stored Theme.defaultGeometry).style=style) (sprintf "Tab style %A was not kept" style)
-    check ((AppearanceJson.readGeometry (JObject.Parse("""{"tabStyle":"zigzag"}""")) {Theme.defaultGeometry with style=PillTabs}).style=JoinedTabs)
+    check ((AppearanceJson.readGeometry (JObject.Parse("""{"tabStyle":"zigzag"}""")) {Theme.defaultGeometry with style=FloatingTabs}).style=JoinedTabs)
         "An unknown tab style was not read as the joined style"
+    // Floating tabs are stored by their name, and the name earlier betas saved them under still reads as them.
+    check ((AppearanceJson.readGeometry (JObject.Parse("""{"tabStyle":"pill"}""")) Theme.defaultGeometry).style=FloatingTabs
+           && TabStyle.serialize FloatingTabs="floating")
+        "Floating tabs are not stored as floating, or an earlier beta's choice of them was lost"
     check (SettingsCatalog.normalizeChoice "alignment" "invalid"="Center") "Invalid choice was not normalized"
     check (SettingsCatalog.normalizeChoice "language" "fr"="system") "Unknown language was not normalized"
     // File icons must resolve for paths outside the ANSI code page (SHGetFileInfo is called as Unicode).
@@ -683,7 +687,9 @@ let main() =
                 let group = {new ITaskSwitchGroup with
                     member _.hwnd = proxy.Handle
                     member _.windows = Set2(List2([current.Handle;other.Handle]))}
-                let desktop = {new ITaskSwitchDesktop with member _.groups = List2([group])}
+                let desktop = {new ITaskSwitchDesktop with
+                    member _.groups = List2([group])
+                    member _.activate hwnd = OS().windowFromHwnd(hwnd).setForegroundOrRestore(false)}
                 use switcher = new TaskSwitcher(settings,desktop)
                 for grouped in [false;true] do
                     (settings :> ISettings).setValue("groupWindowsInSwitcher",box grouped)

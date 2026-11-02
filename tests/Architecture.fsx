@@ -1311,9 +1311,8 @@ let main() =
         let mutable msg = Message()
         let processKey = control.GetType().GetMethod("ProcessCmdKey",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Public,null,[|typeof<Message>.MakeByRefType();typeof<Keys>|],null)
         processKey.Invoke(control,[|box msg;box keys|]) |> ignore
-    // A refusal is said on a line under the box, which listens again for another key at once.
-    let noteUnder (text:string) =
-        editor.Parent.Controls |> Seq.cast<Control> |> Seq.exists(fun control -> control :? Label && control.Text=text && control.Top>=editor.Bottom)
+    // A refusal is said at the footer's left, and the box listens again for another key at once.
+    let noteUnder (text:string) = recorder.FooterNote=Some text
     press editor (Keys.Control ||| Keys.Alt ||| Keys.P)
     check (recorder.ShortcutEditor.IsSome && editor.Shortcut=1623 && editor.IsRecording && noteUnder (tr (Strings.Shortcuts.keySays (SettingsShortcut.text (SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.P))) (tr Strings.Shortcuts.inUse)))) "A key another program holds was not refused under the box"
     press editor (Keys.Control ||| Keys.Alt ||| Keys.K)
@@ -1326,8 +1325,8 @@ let main() =
     check (recorder.ShortcutEditor.IsNone && boxClock.ElapsedMilliseconds>=400L) (sprintf "A taken key's box went after %d ms" boxClock.ElapsedMilliseconds)
     // The key shows beside the name, where shortcuts are, not cut short at the right end.
     check (recorder.RowNotes |> List.exists(fun (suffix,right) -> suffix="Ctrl+Alt+K" && right<>"Ctrl+Alt+K")) "A key set in the palette was not shown beside the name"
-    // A key another command holds moves to this one: that command gives it up, and the box says
-    // where it came from, staying up long enough to read it.
+    // A key another command holds moves to this one: that command gives it up, and the box goes at
+    // once, leaving a note of where the key came from long enough to read it.
     recorder.BeginAssign()
     let taking = recorder.ShortcutEditor.Value
     let nextTabKey = SettingsShortcut.encode (Keys.Control ||| Keys.Alt ||| Keys.Right)
@@ -1335,10 +1334,16 @@ let main() =
     check (released && assigned=nextTabKey && taking.Message=Some(tr (Strings.Shortcuts.takenFrom "Next tab")) && not taking.MessageIsError)
           (sprintf "A key another command holds was not taken over: released %b, assigned %d, said %A" released assigned taking.Message)
     let takenClock = Diagnostics.Stopwatch.StartNew()
-    while recorder.ShortcutEditor.IsSome && takenClock.ElapsedMilliseconds<4000L do
+    while recorder.ShortcutEditor.IsSome && takenClock.ElapsedMilliseconds<3000L do
         Application.DoEvents()
         Thread.Sleep 10
-    check (recorder.ShortcutEditor.IsNone && takenClock.ElapsedMilliseconds>=1200L) (sprintf "A key taken over left its box after %d ms" takenClock.ElapsedMilliseconds)
+    check (recorder.ShortcutEditor.IsNone && takenClock.ElapsedMilliseconds<500L) (sprintf "A key taken over kept its box for %d ms" takenClock.ElapsedMilliseconds)
+    let takenNote() = recorder.FooterNote=Some(tr (Strings.Shortcuts.keySays (SettingsShortcut.text nextTabKey) (tr (Strings.Shortcuts.takenFrom "Next tab"))))
+    check (takenNote()) "Where a taken key came from was not left in a note after the box went"
+    while takenNote() && takenClock.ElapsedMilliseconds<7000L do
+        Application.DoEvents()
+        Thread.Sleep 10
+    check (not (takenNote()) && takenClock.ElapsedMilliseconds>=3000L) (sprintf "The note of where a key came from went after %d ms" takenClock.ElapsedMilliseconds)
     // The key it has already: said, then the box goes as after a key taken, rather than waiting.
     recorder.BeginAssign()
     let same = recorder.ShortcutEditor.Value
@@ -1372,9 +1377,46 @@ let main() =
     check (kept=[chrome]) "A window's key did not survive the settings file"
     check (WindowShortcuts.set [chrome] { chrome with code=0 }=[] && (WindowShortcuts.set [chrome] { chrome with code=1620 }).Head.code=1620) "Setting or clearing a window's key did not replace it"
     let open' = [IntPtr 1,@"D:\Other\CHROME.EXE","News";IntPtr 2,@"D:\Other\chrome.exe","Inbox";IntPtr 3,@"C:\Apps\notepad.exe","Inbox"]
-    check (WindowShortcuts.target open' chrome=Some(IntPtr 2)) "The window with the name was not chosen"
-    check (WindowShortcuts.target open' { chrome with title="Gone" }=Some(IntPtr 1)) "The program's most recent window was not chosen"
-    check (WindowShortcuts.target open' { chrome with path="word.exe" }).IsNone "A window of another program was chosen"
+    let unbound (_:WindowShortcut) : IntPtr option = None
+    check (WindowShortcuts.target unbound open' chrome=Some(IntPtr 2)) "The window with the name was not chosen"
+    check (WindowShortcuts.target unbound open' { chrome with title="Gone" }=Some(IntPtr 1)) "The program's most recent window was not chosen"
+    check (WindowShortcuts.target unbound open' { chrome with path="word.exe" }).IsNone "A window of another program was chosen"
+    // A tab is named after the last part of a path in its title, and keeps any other title whole.
+    for title,expected in [ @"C:\Program Files\Neovide -", "Neovide -"
+                            "MINGW64:/c/Users/me/src", "src"
+                            "me@host: ~/src/app", "app"
+                            @"\\server\share\docs", "docs"
+                            "Pull Request #109 · leafOfTree/WindowTabs - Brave", "Pull Request #109 · leafOfTree/WindowTabs - Brave"
+                            "https://example.com/a/b - Brave", "https://example.com/a/b - Brave"
+                            "A/B test 1/2 - Notes", "A/B test 1/2 - Notes" ] do
+        check (WindowTitle.tabName title=expected) (sprintf "The tab for %s was named %s" title (WindowTitle.tabName title))
+    // A key whose window closed shows on the window it now goes to, and on no other.
+    let gone = { chrome with title="Gone" }
+    check (WindowShortcuts.shownOn unbound (lazy open') [gone] (IntPtr 1) @"D:\Other\CHROME.EXE" "News"=Some gone) "A closed window's key was not shown on the window it goes to"
+    check (WindowShortcuts.shownOn unbound (lazy open') [gone] (IntPtr 2) @"D:\Other\chrome.exe" "Inbox").IsNone "A closed window's key showed on a window it does not go to"
+    // Given to no window, as after a restart, a key shows where it goes: of two windows with its
+    // name, on the most recent alone.
+    let twins = open' @ [IntPtr 4,@"D:\Other\chrome.exe","Inbox"]
+    check ((WindowShortcuts.shownOn unbound (lazy twins) [chrome] (IntPtr 2) @"D:\Other\chrome.exe" "Inbox")=Some chrome
+           && (WindowShortcuts.shownOn unbound (lazy twins) [chrome] (IntPtr 4) @"D:\Other\chrome.exe" "Inbox").IsNone)
+          "A key given to no window did not show on the window it goes to alone"
+    // Given to one window, a key goes there while it is open, whatever its name or how many share it;
+    // a twin keeps a key of its own, and once the window closes the name decides again.
+    let second = { chrome with code=1618 }
+    let bound (shortcut:WindowShortcut) = if shortcut.code=second.code then Some(IntPtr 4) else None
+    check (WindowShortcuts.target bound twins second=Some(IntPtr 4) && WindowShortcuts.target bound twins chrome=Some(IntPtr 2))
+          "Two windows with the same name did not keep a key each"
+    check (WindowShortcuts.shownOn bound (lazy twins) [chrome;second] (IntPtr 4) @"D:\Other\chrome.exe" "Inbox"=Some second
+           && WindowShortcuts.shownOn bound (lazy twins) [chrome;second] (IntPtr 2) @"D:\Other\chrome.exe" "Inbox"=Some chrome)
+          "Each of two windows with the same name did not show its own key"
+    // A key given to another open window is not shown on this one for sharing its name.
+    check (WindowShortcuts.shownOn bound (lazy twins) [second] (IntPtr 2) @"D:\Other\chrome.exe" "Inbox").IsNone "A key given to one twin showed on the other"
+    check (WindowShortcuts.target bound (twins |> List.map(fun (hwnd,path,_) -> hwnd,path,"Renamed")) second=Some(IntPtr 4)) "A key given to a window lost it when its name changed"
+    check (WindowShortcuts.target bound open' second=Some(IntPtr 2)) "A key whose window closed did not go by its name"
+    check (WindowShortcuts.replace [chrome;second] [chrome] [{ chrome with code=1619 }]=[second;{ chrome with code=1619 }]) "Replacing one twin's key changed the other's"
+    // Moving or replacing a window's key takes with it the keys left over from closed windows that bring it.
+    let news = { chrome with title="News"; code=1617 }
+    check (WindowShortcuts.landingOn unbound open' [chrome;gone;news] (IntPtr 1)=[news;gone]) "The keys a window holds were not all found"
     let mutable givenKey = 0
     let keyed = TabSearchForm([mail;notes],[],windowShortcut=(fun entry -> if entry.hwnd=mail.hwnd then Some { current=0; usedBy=(fun _ -> None); set=(fun code -> givenKey <- code; true); inList=false } else None))
     keyed.Query <- "inbox"
@@ -1388,6 +1430,30 @@ let main() =
         Thread.Sleep 10
     check keyed.ShortcutEditor.IsNone "A window's key box stayed after its key was set"
     keyed.Close()
+    pump 100
+    // A key taken from another window's row leaves that row once the box goes.
+    let moved = SettingsShortcut.encode (Keys.Alt ||| Keys.E)
+    let mutable windowKeys = Map.ofList [notes.hwnd,moved]
+    let windowKey (entry:TabSearchEntry) =
+        Some { current=windowKeys.TryFind entry.hwnd |> Option.defaultValue 0
+               usedBy=(fun code ->
+                   windowKeys |> Map.tryFindKey(fun hwnd held -> held=code && hwnd<>entry.hwnd)
+                   |> Option.map(fun hwnd ->
+                       { name=String.replicate 20 "Untitled - Notepad "; key=""
+                         release=(fun () -> windowKeys <- windowKeys.Remove hwnd)
+                         restore=(fun () -> windowKeys <- windowKeys.Add(hwnd,code)) }))
+               set=(fun code -> windowKeys <- windowKeys.Add(entry.hwnd,code); true)
+               inList=false }
+    let keyText (entry:TabSearchEntry) = windowKeys.TryFind entry.hwnd |> Option.map SettingsShortcut.text |> Option.defaultValue ""
+    let both = TabSearchForm([mail;notes],[],windowShortcut=windowKey,windowShortcutText=keyText)
+    both.ChooseRow mail.hwnd
+    both.BeginAssign()
+    press both.ShortcutEditor.Value (Keys.Alt ||| Keys.E)
+    // At once, not after the note of where it came from.
+    let altE = SettingsShortcut.text moved
+    check (both.RowNotes |> List.filter(fun (suffix,_) -> suffix=altE)=[altE,"outlook"])
+          (sprintf "A key moved to another window did not show at once on its row alone: %A" both.RowNotes)
+    both.Close()
     pump 100
     printfn "PASS: atomic/deferred saves, failure retry and backup recovery, subscriptions, temporary state, coalesced scans, dispatch, group cleanup, popup disposal and tab search."
 TestInit.run main

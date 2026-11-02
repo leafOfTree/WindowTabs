@@ -63,6 +63,7 @@
     <Compile Include="Shared\WindowPlacementQueue.fs" />
     <Compile Include="Shared\AppearanceModel.fs" />
     <Compile Include="Shared\AppIdentity.fs" />
+    <Compile Include="Shared\WindowTitle.fs" />
     <Compile Include="Shared\WindowShortcuts.fs" />
     <Compile Include="Shared\ProgramTypes.fs" />
     <Compile Include="Shared\Localization.fs" />

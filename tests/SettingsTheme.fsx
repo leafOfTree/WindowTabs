@@ -250,9 +250,9 @@ let main() =
         let reset = Theme.resetLayout beforeReset
         check (reset.geometry=Theme.defaultGeometry) "Reset did not restore all geometry fields"
         // Reset tab layout restores the rows under it; the style, chosen above with the colours, stays.
-        let pills = {beforeReset with geometry={beforeReset.geometry with style=PillTabs}}
-        check ((Theme.resetLayout pills).geometry={Theme.defaultGeometry with style=PillTabs}) "Reset tab layout also reset the tab style"
-        check (Theme.isDefaultLayout {Theme.defaultGeometry with style=PillTabs}) "A tab style alone offered a layout reset"
+        let floating = {beforeReset with geometry={beforeReset.geometry with style=FloatingTabs}}
+        check ((Theme.resetLayout floating).geometry={Theme.defaultGeometry with style=FloatingTabs}) "Reset tab layout also reset the tab style"
+        check (Theme.isDefaultLayout {Theme.defaultGeometry with style=FloatingTabs}) "A tab style alone offered a layout reset"
         check (reset.lightPalette=beforeReset.lightPalette && reset.darkPalette=beforeReset.darkPalette && reset.legacyPalette=beforeReset.legacyPalette) "Reset changed palette fields"
         check (TabGeometry.fromAppearance custom = TabGeometry.fromAppearance Theme.light) "Palette-only changes affect geometry notifications"
         let placement appearance y =
@@ -598,6 +598,22 @@ let main() =
                                 action.switchNext()
                                 check (action.selectedHwnd=handles.[expected.Value]) "Reverse switching did not return to the initial choice"
                         finally action.switchEnd(true)
+            // The window chosen is brought up by the desktop, so a split's tab comes up as its
+            // click brings it, its other pane with it, rather than being set in front on its own.
+            do
+                use input = new Control()
+                let view = {new ITaskSwitchView with
+                    member _.show() = ()
+                    member _.hide() = ()
+                    member _.select _ = ()
+                    member _.inputControl = input
+                    member _.deactivated = Event<unit>().Publish
+                    member _.hovered = Event<int>().Publish
+                    member _.clicked = Event<int>().Publish}
+                let activated = ResizeArray<IntPtr>()
+                let action = TaskSwitchAction(List2([TaskWindowItem(IntPtr 1,None);TaskWindowItem(IntPtr 2,None)]),"List",view=view,activate=activated.Add)
+                action.switchEnd(false)
+                check (Seq.toList activated=[IntPtr 2]) (sprintf "The switcher did not hand the window chosen to the desktop: %A" (Seq.toList activated))
             do
                 let control = TaskSwitchListControl(List2())
                 let tree = (control :> ITaskSwitchListControl).control :?> SettingsTreeList

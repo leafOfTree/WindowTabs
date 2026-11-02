@@ -909,13 +909,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
 
     member this.isRenamed hwnd = Services.program.getWindowNameOverride(hwnd).IsSome
 
-    member private this.getLastName (text: string) = 
-        let separators = [| '\\'; '/' |]
-        let parts = text.Split(separators, System.StringSplitOptions.RemoveEmptyEntries)
-        if parts.Length > 0 then parts.[parts.Length - 1] else text
-    
-    /// The name the window itself gives the tab: the last part of its title.
-    member this.windowName hwnd = this.getLastName(this.os.windowFromHwnd(hwnd).text)
+    /// The name the window itself gives the tab: its title, or the last part of a path in it.
+    member this.windowName hwnd = WindowTitle.tabName(this.os.windowFromHwnd(hwnd).text)
 
     /// The tab's name as the user reads and edits it: their own, else the window's.
     member this.tabName hwnd = Services.program.getWindowNameOverride(hwnd).def(this.windowName hwnd)

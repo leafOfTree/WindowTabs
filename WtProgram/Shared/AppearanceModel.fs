@@ -20,9 +20,12 @@ module TabGeometry =
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module TabStyle =
     /// Stored names, in the order the settings page lists them.
-    let names = ["joined";"folder";"pill"]
-    let parse = function "folder" -> FolderTabs | "pill" -> PillTabs | _ -> JoinedTabs
-    let serialize = function FolderTabs -> "folder" | PillTabs -> "pill" | JoinedTabs -> "joined"
+    let names = ["joined";"folder";"floating"]
+    let parse = function "folder" -> FolderTabs | "floating" -> FloatingTabs | _ -> JoinedTabs
+    let serialize = function FolderTabs -> "folder" | FloatingTabs -> "floating" | JoinedTabs -> "joined"
+    /// The name floating tabs were saved under in earlier betas, read as theirs until the next
+    /// release, which drops it.
+    let renamed (stored:string) = if stored="pill" then "floating" else stored
 type TabPalette = {
     tabTextColor:Color; tabNormalBgColor:Color; tabHighlightBgColor:Color
     tabActiveBgColor:Color; tabBorderColor:Color; tabFlashBgColor:Color }
