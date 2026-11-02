@@ -81,14 +81,17 @@ module TabSearch =
         ["ctrl";"alt";"shift";"win"] |> List.exists(fun name -> typed.StartsWith name)
         || (typed.Length>=2 && typed.[0]='f' && Char.IsDigit typed.[1])
 
-    /// None when a term is missing; otherwise higher for better matches. Terms are separated by
-    /// spaces and may come in any order; case is ignored.
+    /// None when a term is missing; otherwise higher for better matches, with how many terms only
+    /// the row's hidden words hold, not its name, app or key. Terms are separated by spaces and may
+    /// come in any order; case is ignored.
     let private wordRank (query:string) (entry:TabSearchEntry) =
         let title = entry.title.ToLowerInvariant()
-        let words = if looksLikeKey query then entry.keywords @ entry.keys else entry.keywords
+        let keyed = looksLikeKey query
+        let words = if keyed then entry.keywords @ entry.keys else entry.keywords
+        let shown = title :: entry.program.ToLowerInvariant() :: (if keyed then entry.keys |> List.map(fun key -> key.ToLowerInvariant()) else [])
         query.ToLowerInvariant().Split([|' ';'\t'|],StringSplitOptions.RemoveEmptyEntries)
         |> Array.fold (fun total term ->
-            total |> Option.bind(fun (sum,position) ->
+            total |> Option.bind(fun (sum,position,hidden) ->
                 let best =
                     words |> List.choose (termMatch term)
                     |> List.sortBy(fun (quality,at) -> -quality,at)
@@ -99,7 +102,8 @@ module TabSearch =
                     match best,termMatch term title with
                     | Some(quality,_),Some(inName,at) when inName=quality -> Some(quality,at)
                     | _ -> best
-                best |> Option.map(fun (quality,at) -> sum+quality,position+at))) (Some(0,0))
+                let unseen = if shown |> List.exists(fun text -> (termMatch term text).IsSome) then 0 else 1
+                best |> Option.map(fun (quality,at) -> sum+quality,position+at,hidden+unseen))) (Some(0,0,0))
 
     /// As wordRank, or, when the words are not there, typed without spaces or as initials: such a
     /// row comes after every row with the words, the name before the other keywords.
@@ -108,28 +112,32 @@ module TabSearch =
         | Some found -> Some found
         | None ->
             match looseMatch query entry.title |> Option.bind List.tryHead with
-            | Some at -> Some(0,at)
+            | Some at -> Some(0,at,0)
             | None ->
                 entry.keywords |> List.tryPick(fun keyword -> looseMatch query keyword |> Option.bind List.tryHead)
-                |> Option.map(fun at -> 0,1000+at)
+                |> Option.map(fun at -> 0,1000+at,1)
 
-    let score query entry = rank query entry |> Option.map fst
+    let score query entry = rank query entry |> Option.map(fun (quality,_,_) -> quality)
 
     let matches query entry = (score query entry).IsSome
 
-    /// 0 for a row named just what was typed, 1 for one whose name starts with it: the whole name
-    /// of a command finds that command before a longer one, or a description, that mentions it.
+    /// 0 for a row named just what was typed, 1 for one whose name starts with it, 2 for one whose
+    /// name or app has it as typed from the start of a word: the whole name of a command finds that
+    /// command before a longer one, or a description, that mentions it, and "next t" finds
+    /// "Switch to next tab" before "Focus the next pane".
     let private named (query:string) (entry:TabSearchEntry) =
-        let typed = query.Trim()
-        if typed="" then 2
+        let typed = String.Join(" ",query.Split([|' ';'\t'|],StringSplitOptions.RemoveEmptyEntries))
+        let phrase (text:string) = termMatch (typed.ToLowerInvariant()) (text.ToLowerInvariant()) |> Option.exists(fun (quality,_) -> quality=2)
+        if typed="" then 3
         elif entry.title.Equals(typed,StringComparison.CurrentCultureIgnoreCase) then 0
         elif entry.title.StartsWith(typed,StringComparison.CurrentCultureIgnoreCase) then 1
-        else 2
+        elif phrase entry.title || phrase entry.program then 2
+        else 3
 
-    /// How well an entry matches, best first: its name, match quality, earlier positions, a window
-    /// on the desktop in view, then recency. None when it does not match.
+    /// How well an entry matches, best first: its name, match quality, terms its name shows, earlier
+    /// positions, a window on the desktop in view, then recency. None when it does not match.
     let order query (entry:TabSearchEntry) =
-        rank query entry |> Option.map(fun (quality,position) -> named query entry,-quality,position,(if entry.desktop="" then 0 else 1),entry.recency)
+        rank query entry |> Option.map(fun (quality,position,hidden) -> named query entry,-quality,hidden,position,(if entry.desktop="" then 0 else 1),entry.recency)
 
     /// The best match. With nothing typed that is the previous tab, so Enter goes back to it as
     /// Alt+Tab does.

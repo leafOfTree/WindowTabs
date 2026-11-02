@@ -275,7 +275,7 @@ type AppGroupingRulesView() as this =
                     { Text=ApplicationNames.label rule.processPath; Icon=addMenu.Icon rule.processPath; Removable=true })
                 chipRules.[group.id] <- members
                 tree.Roots.Add(row)
-            // Groups made by dragging tabs, kept after their windows close: shown, not edited here,
+            // Groups made by dragging tabs, kept after a restart closes their windows: shown, not edited here,
             // and taken apart in one go. A row is only its apps, which a name of its own (they cannot
             // be renamed) would leave less room for; its icon says on hover what it is.
             Services.program.handMadeGroups() |> List.iteri(fun index (id,members) ->

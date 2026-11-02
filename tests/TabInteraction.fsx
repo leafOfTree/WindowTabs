@@ -180,6 +180,14 @@ let main() =
                 Application.DoEvents()
                 Threading.Thread.Sleep(5)
             check (menu.IsDisposed && selected=1) "Themed menu did not retire and dispatch its command once"
+            // A tab menu with no room at the pointer turns left at it: below a row at the screen's
+            // right edge rather than over its tabs, its top right corner at the pointer in a column.
+            let area,size = Rectangle(0,0,1000,800),Size(250,600)
+            check (ThemedContextMenu.placement area size (Point(100,20)) (Rectangle(0,0,1000,30))=Point(100,20)
+                   && ThemedContextMenu.placement area size (Point(950,20)) (Rectangle(0,0,1000,30))=Point(700,30)
+                   && ThemedContextMenu.placement area size (Point(950,100)) (Rectangle(900,0,100,800))=Point(700,100)
+                   && ThemedContextMenu.placement area size (Point(950,700)) (Rectangle(900,0,100,800))=Point(700,100))
+                  "A tab menu with no room at the pointer covered the strip's tabs or lost the pointer"
             use dismissed = new ThemedContextMenu(List2([command [] None "Cancel test"]),ignore)
             dismissed.Show(Point(40,40))
             Application.DoEvents()

@@ -565,7 +565,7 @@ type TabSprite<'id> = {
         match this.style with
         | FloatingTabs ->
             // A clear gap all round, in screen pixels rather than shrunk with the icon, so it shows
-            // at any scale. Half as much above and below as at the sides: the same in both looked
+            // at any scale. A third as much above and below as at the sides: the same in both looked
             // wider above and below, on a shape far longer than it is tall.
             let sideGap = this.floatingSideGap
             // Above a window the tab runs to the strip's bottom row, a pixel lower than its top is
@@ -574,7 +574,7 @@ type TabSprite<'id> = {
             let below = if this.direction=TabUp && not this.inColumn then 1 else 0
             let height = this.size.height - below
             let iconRoom = (height - TabMetrics.iconSide this.appearance.tabHeight)/2
-            let inset = max 1 (min ((sideGap+1)/2) (min iconRoom (height/4)))
+            let inset = max 1 (min ((sideGap+1)/3) (min iconRoom (height/4)))
             let side = float32 sideGap
             // Pixel k spans k-0.5 to k+0.5 here: the shape runs half a pixel up and left to sit in
             // the middle with crisp edges.
