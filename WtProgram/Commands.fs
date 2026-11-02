@@ -187,8 +187,11 @@ module SettingRows =
 module Commands =
     let private groupOf (hwnd:IntPtr) = Services.desktop.groups.tryFind(fun group -> group.windows.contains((=)hwnd))
     let private hasGroup hwnd = (groupOf hwnd).IsSome
-    /// A tab among others: a group of one has no next tab, nothing to sort or move along.
-    let private hasOtherTabs hwnd = groupOf hwnd |> Option.exists(fun g -> g.windows.count>1)
+    /// A tab among others: a group of one has no next tab, nothing to sort or move along. A window
+    /// hidden or destroyed no longer counts, though the group keeps it until discovery lets it go.
+    let private hasOtherTabs hwnd =
+        groupOf hwnd |> Option.exists(fun g ->
+            g.windows.list |> List.filter(fun other -> WinUserApi.IsWindow other && WinUserApi.IsWindowVisible other) |> List.length>1)
     let private always (_:IntPtr) = true
     let private onGroup (action:IGroup -> unit) hwnd = groupOf hwnd |> Option.iter action
     let private finished action = fun hwnd -> action hwnd; Done

@@ -103,6 +103,8 @@ type HotKeyBindings(register:int * int * int -> bool, unregister:int -> unit) =
                     letGo.Add name
             if taken.Count>0 || letGo.Count>0 then
                 DebugLog.writef "Shortcuts for the window in front: taken %A, let go %A" (List.ofSeq taken) (List.ofSeq letGo)
+            taken.Count>0 || letGo.Count>0
+        else false
     /// Tries again for the keys another program held when they were taken back, as it may have
     /// let them go since.
     member _.Retry() =

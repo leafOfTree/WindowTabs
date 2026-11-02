@@ -397,6 +397,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let foregroundEvent = Event<_>()
     let geometryChangedEvent = Event<unit>()
     let tabInfoChangedEvent = Event<IntPtr>()
+    /// A window of the group hidden or destroyed, before discovery takes it out of the group.
+    let closingEvent = Event<IntPtr>()
     let madeByHandEvent = Event<unit>()
     let mutable isMadeByHand = false
     // Supplied by the caller: the main thread waits while this constructor runs.
@@ -2414,7 +2416,9 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                 this.keepPanesBelowStrip(this.topWindow)
             this.ts.refreshShadow()
         | WinEvent.EVENT_OBJECT_HIDE | WinEvent.EVENT_OBJECT_DESTROY ->
-            if evt=WinEvent.EVENT_OBJECT_DESTROY || not(isMinimized hwnd) then this.onRemoved(hwnd)
+            if evt=WinEvent.EVENT_OBJECT_DESTROY || not(isMinimized hwnd) then
+                this.onRemoved(hwnd)
+                closingEvent.Trigger hwnd
             this.reclaimLeftTab(hwnd)
             if lastActiveTab=Some hwnd then this.followClosedTab(this.os.foreground.hwnd)
         | WinEvent.EVENT_OBJECT_CLOAKED | WinEvent.EVENT_OBJECT_UNCLOAKED ->
@@ -2835,6 +2839,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     member this.moved = movedEvent.Publish
     member this.foregroundChanged = foregroundEvent.Publish
     member this.tabInfoChanged = tabInfoChangedEvent.Publish
+    member this.closing = closingEvent.Publish
     member this.flash = flashEvent.Publish
     member this.removed = removedEvent.Publish
     member this.lorder : List2<IntPtr> = this.ts.lorder.map(fun(Tab(hwnd)) -> hwnd)

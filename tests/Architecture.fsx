@@ -902,6 +902,32 @@ let main() =
             onGroup(fun group -> group.removeWindow(testWindow.Handle); testWindow.Dispose())
             (live :> IGroup).destroy()
             pumpUntil "Live settings group did not exit" (fun () -> desktop.retainedGroupCount=0)
+        // A tab whose window is hidden or closed stops counting at once, before discovery takes it
+        // out of the group: Next tab, and its key, go back to the app with the tab left alone.
+        let spare = apiDesktop.createGroup(false) :?> GroupInfo
+        let onSpare action =
+            let mutable result = None
+            spare.invokeGroup(fun () -> result <- Some(try Choice1Of2(action spare.group) with error -> Choice2Of2 error))
+            pumpUntil "Spare group deadlocked" (fun () -> result.IsSome)
+            match result.Value with Choice1Of2 value -> value | Choice2Of2 error -> raise error
+        let shown text =
+            let form = new Form(ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=Drawing.Point(-20000,-20000),Text=text)
+            form.Show()
+            form
+        let first,second = shown "Open tab",shown "Closing tab"
+        try
+            onSpare(fun group -> group.addWindow(first.Handle,false); group.addWindow(second.Handle,false))
+            pumpUntil "The spare group's tabs did not join it" (fun () -> (Commands.find "next-tab").Value.enabled first.Handle)
+            second.Hide()
+            check (not ((Commands.find "next-tab").Value.enabled first.Handle)) "Next tab still counted a tab whose window is hidden"
+            second.Show()
+            check ((Commands.find "next-tab").Value.enabled first.Handle) "Next tab did not count a tab shown again"
+        finally
+            onSpare(fun group -> group.removeWindow(first.Handle); group.removeWindow(second.Handle))
+            first.Dispose()
+            second.Dispose()
+            (spare :> IGroup).destroy()
+            pumpUntil "Spare group did not exit" (fun () -> desktop.retainedGroupCount=0)
         // Disposed groups must no longer receive settings callbacks.
         api.setValue("alignment",box "Left")
         api.setValue("autoHideMode",box "Never")

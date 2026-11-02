@@ -233,6 +233,8 @@ type Desktop(notify:IDesktopNotification, settings:ISettings, dispatcher:IDispat
             group.group.added.Add(fun _ -> changed())
             group.group.removed.Add(fun _ -> changed())
             group.group.tabInfoChanged.Add(fun _ -> changed())
+            // A tab closing changes what the keys can do before discovery takes it out of the group.
+            group.group.closing.Add(fun _ -> changed())
             group.group.madeByHand.Add changed
             TabStripDecorator(group.group).ignore
         group
