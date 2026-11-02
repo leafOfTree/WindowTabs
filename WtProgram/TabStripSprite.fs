@@ -590,21 +590,20 @@ type TabSprite<'id> = {
             // Each side as its inset and corner radius. At an end of the strip the bar wraps the
             // tab's side as it does its top, with a corner that follows the bar's own; elsewhere
             // the side meets the next tab. A hovered tab fills its slot just as the active one does.
-            let edge atEnd =
-                if atEnd then inset,max 1.0f (this.endRadius - inset)
-                else side,rad
-            let l,rl = edge this.roundLeft
-            let rightInset,rr = edge this.roundRight
-            let r = w - rightInset
+            // Pixel k spans k-0.5 to k+0.5 here: where the bar shows, the edge runs half a pixel up
+            // and left onto a pixel's border, so it is crisp and the bar as wide at either end.
+            let endRadius = max 1.0f (this.endRadius - inset)
+            let l,rl = if this.roundLeft then inset - 0.5f,endRadius else side,rad
+            let r,rr = if this.roundRight then w - inset - 0.5f,endRadius else w - side,rad
             match this.direction with
             | TabUp ->
-                let t,b = inset,h + 1.0f
+                let t,b = inset - 0.5f,h + 1.0f
                 path.AddLine(l,b,l,t + rl)
                 path.AddArc(l,t,rl * 2.0f,rl * 2.0f,180.0f,90.0f)
                 path.AddArc(r - rr * 2.0f,t,rr * 2.0f,rr * 2.0f,270.0f,90.0f)
                 path.AddLine(r,t + rr,r,b)
             | TabDown ->
-                let t,b = -1.0f,h - inset
+                let t,b = -1.0f,h - inset - 0.5f
                 path.AddLine(l,t,l,b - rl)
                 path.AddArc(l,b - rl * 2.0f,rl * 2.0f,rl * 2.0f,180.0f,-90.0f)
                 path.AddArc(r - rr * 2.0f,b - rr * 2.0f,rr * 2.0f,rr * 2.0f,90.0f,-90.0f)

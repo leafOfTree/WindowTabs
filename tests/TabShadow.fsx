@@ -517,6 +517,32 @@ let main () =
                     check (above=below) (sprintf "The pill facing %A is off the middle: %d rows above, %d below" direction above below)
                     bitmap.Height-above-below ]
         check (List.distinct heights |> List.length=1) (sprintf "The pill is not the same height facing up and down: %A" heights)
+        // A raised folder tab's edge over the bar is crisp, as much bar showing facing either way,
+        // and at an end of the strip as much bar beside it at the left end as at the right.
+        let isBar (pixel:Color) = pixel.A=0uy || pixel.ToArgb()=appearance.tabNormalBgColor.ToArgb()
+        let isFill (pixel:Color) = pixel.ToArgb()=appearance.tabActiveBgColor.ToArgb()
+        let showing =
+            [ for direction in [TabUp;TabDown] ->
+                let folders = { strip FolderTabs with size=Sz(420,28); direction=direction }
+                use bitmap = folders.render.bitmap
+                let location,tab = folders.tabSprites.list |> List.find(fun (_,tab) -> tab.id=2)
+                let column x = [ for y in 0..bitmap.Height-1 -> bitmap.GetPixel(x,y) ]
+                let plain x = column x |> List.forall(fun pixel -> isFill pixel || isBar pixel) && column x |> List.exists isFill
+                match [location.x+tab.size.width/2..location.x+tab.size.width-1] |> List.tryFind plain with
+                | None -> failwithf "The raised folder tab facing %A has a half-covered edge" direction
+                | Some x ->
+                    let pixels = column x
+                    if direction=TabUp then pixels |> List.takeWhile isBar |> List.length
+                    else pixels |> List.rev |> List.takeWhile isBar |> List.length ]
+        check (List.distinct showing |> List.length=1) (sprintf "A folder tab shows a different amount of bar facing up and down: %A" showing)
+        let beside front =
+            let folders = { strip FolderTabs with size=Sz(420,28); zorder=List2(front :: ([1;2;3] |> List.filter((<>) front))) }
+            use bitmap = folders.render.bitmap
+            let location,tab = folders.tabSprites.list |> List.find(fun (_,tab) -> tab.id=front)
+            let row = [ for x in location.x..location.x+tab.size.width-1 -> bitmap.GetPixel(x,bitmap.Height-4) ]
+            check (row |> List.forall(fun pixel -> isFill pixel || isBar pixel)) (sprintf "Folder tab %d at an end of the strip has a half-covered side" front)
+            if front=1 then row |> List.takeWhile isBar |> List.length else row |> List.rev |> List.takeWhile isBar |> List.length
+        check (beside 1=beside 3) (sprintf "Folder tabs at the two ends of the strip show different bar beside them: %d and %d" (beside 1) (beside 3))
         let folder = strip FolderTabs
         check (match folder.tryHit(Pt(138,26)) with Some(1,_) -> true | _ -> false) "A folder tab's foot takes the pointer from the tab beneath it"
         // Spaced tabs stand apart: each is rounded at both ends and no hairline divides them.
