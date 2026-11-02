@@ -1441,6 +1441,30 @@ let main() =
                         check (top group=expected) "A hidden tab whose app kept its window never had its successor selected"
                         group.removeWindow added)
                     onHelper(fun () -> OS().windowFromHwnd(added).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
+                    // Discovery lets a hidden tab go, often before the browser has destroyed its window.
+                    // The tab after it waits for the window there too, or it lost the foreground again.
+                    let settling group = (field "settlingSuccessor").GetValue(group) :?> (IntPtr*IntPtr*bool) option
+                    onGroup(fun group -> group.addWindow(added,false))
+                    pumpUntil(fun () -> onGroup(fun group -> group.windows.contains added))
+                    onHelper(fun () -> OS().windowFromHwnd(added).hide())
+                    let expected =
+                        onGroup(fun group ->
+                            let opener = (field "opener").GetValue(group) :?> (IntPtr*IntPtr) option
+                            let expected = (TabNavigation.successor group.lorder.list (fun hwnd -> hwnd<>added) added opener).Value
+                            let shown = group.lorder.list |> List.find(fun hwnd -> hwnd<>added && hwnd<>expected)
+                            OS().windowFromHwnd(shown).bringToTop()
+                            // As if the foreground had just left the closing tab for the window Windows chose.
+                            let now = (field "transitionClock").GetValue(group) :?> Stopwatch
+                            (field "lastActiveTab").SetValue(group,box (Some added))
+                            (field "leftGroup").SetValue(group,box (Some(added,now.ElapsedMilliseconds)))
+                            invoke "handleWindowEvent" group [|box added; box WinEvent.EVENT_OBJECT_HIDE|] |> ignore
+                            group.removeWindow added
+                            check (top group=shown) "A tab let go before its hidden window was destroyed brought up its successor at once"
+                            check (settling group |> Option.map(fun (closed,target,_) -> closed,target)=Some(added,expected)) "A tab let go before its hidden window was destroyed kept no successor"
+                            expected)
+                    pumpUntil(fun () -> onGroup(fun group -> (settling group).IsNone))
+                    onGroup(fun group -> check (top group=expected) "A tab let go before its hidden window was destroyed never had its successor brought up")
+                    onHelper(fun () -> OS().windowFromHwnd(added).showWindow(ShowWindowCommands.SW_SHOWNOACTIVATE))
                     // Minimizing the active tab makes Windows activate another tab before the group
                     // minimizes that one too. Neither activation is a selection: a window opened
                     // into the minimized group must still have the minimized tab as its opener.

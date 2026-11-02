@@ -528,8 +528,12 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     /// then take the foreground by force, kept until the tab leaves the group: the foreground has
     /// usually moved on by the time the successor is selected.
     let hiddenAt = Collections.Generic.Dictionary<IntPtr,int64 * bool>()
-    /// Selects the successor of a hidden tab whose window its app has kept past the grace.
-    let hiddenCloseTimer = new System.Windows.Forms.Timer(Interval=int TabNavigation.HideGraceMs)
+    /// A closed tab let go while its hidden window still existed, as discovery lets a hidden tab
+    /// go, with the tab chosen to follow it and whether that may take the foreground by force.
+    let mutable settlingSuccessor : (IntPtr * IntPtr * bool) option = None
+    /// Looks again, a frame at a time, whether a closed tab's hidden window has gone or been kept
+    /// past the grace; the group hears nothing of a window it has let go.
+    let hiddenCloseTimer = new System.Windows.Forms.Timer(Interval=16)
     /// The active tab that joined the group in the foreground, and the tab active before it.
     let mutable opener : (IntPtr * IntPtr) option = None
     /// The last switch between tabs not made by WindowTabs: from, to and when, with the opener before it.
@@ -674,7 +678,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         captureTimer.Tick.Add(fun _ -> this.captureFront())
         hiddenCloseTimer.Tick.Add(fun _ ->
             hiddenCloseTimer.Stop()
-            if not isDestroyed.value then this.withUpdate(fun () -> this.followClosedTab(this.os.foreground.hwnd)))
+            if not isDestroyed.value then this.withUpdate(fun () -> this.settleClosedTab()))
         splitGuardSoon <- Some(new CoalescedAction(30,fun () -> this.guardSplitStrip()))
         stripLiftSoon <- Some(new CoalescedAction(30,fun () -> if not isDestroyed.value then this.guardUnownedStrip()))
         transitionRelease.Tick.Add(fun _ ->
@@ -2555,8 +2559,18 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     | Some target -> Some target
                     | None -> if this.windows.contains(foreground) then Some foreground else None
             if followedClose |> Option.exists(fun (closed,_) -> closed=hwnd) then followedClose <- None
-            elif chooseNext then next |> Option.iter(fun target -> this.activateSuccessor(target,this.forceOnClose hwnd))
-            hiddenAt.Remove hwnd |> ignore
+            elif chooseNext then
+                next |> Option.iter(fun target ->
+                    let force = this.forceOnClose hwnd
+                    // Let go before its window was destroyed, the tab was hidden by a Chromium
+                    // browser closing it: brought up now, its successor lost the foreground again
+                    // at the destruction, as it did when selected at the hide.
+                    if this.isSettling hwnd then
+                        settlingSuccessor |> Option.iter(fun (previous,_,_) -> if previous<>hwnd then hiddenAt.Remove previous |> ignore)
+                        settlingSuccessor <- Some(hwnd,target,force)
+                        hiddenCloseTimer.Start()
+                    else this.activateSuccessor(target,force))
+            if settlingSuccessor |> Option.forall(fun (closed,_,_) -> closed<>hwnd) then hiddenAt.Remove hwnd |> ignore
 
     /// The tab shown before `hwnd`, the one the foreground left for it, comes to the front, once
     /// `hwnd` has left the group by a drag. Nothing else is known to have been shown: a tab
@@ -2598,14 +2612,30 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
         | Some closed when followedClose |> Option.forall(fun (followed,_) -> followed<>closed) ->
             TabNavigation.closeTarget this.lorder.list isOpen closed foreground lastActiveTab opener (this.leftOnClose closed)
             |> Option.iter(fun target ->
-                let hidden = match hiddenAt.TryGetValue closed with | true,(at,_) -> Some at | _ -> None
-                if TabNavigation.closeSettling hidden (WinUserApi.IsWindow closed) transitionClock.ElapsedMilliseconds then
-                    if not hiddenCloseTimer.Enabled then hiddenCloseTimer.Start()
+                if this.isSettling closed then hiddenCloseTimer.Start()
                 else
                     if target<>foreground then this.activateSuccessor(target,this.forceOnClose closed)
                     // Activation can be refused; a later foreground event or removal retries.
                     if this.os.foreground.hwnd=target then followedClose <- Some(closed,target))
         | _ -> ()
+
+    /// Hidden with its window still there, and not kept past the grace (`TabNavigation.closeSettling`).
+    member private this.isSettling(hwnd) =
+        let hidden = match hiddenAt.TryGetValue hwnd with | true,(at,_) -> Some at | _ -> None
+        TabNavigation.closeSettling hidden (WinUserApi.IsWindow hwnd) transitionClock.ElapsedMilliseconds
+
+    /// A closed tab's window gone, or kept past the grace: the tab chosen to follow it comes up,
+    /// whether the group still has the closed tab or has let it go already.
+    member private this.settleClosedTab() =
+        match settlingSuccessor with
+        | Some(closed,target,force) when not (this.isSettling closed) ->
+            settlingSuccessor <- None
+            hiddenAt.Remove closed |> ignore
+            if this.windows.contains target && isOpen target && this.os.foreground.hwnd<>target then
+                this.activateSuccessor(target,force)
+        | Some _ -> hiddenCloseTimer.Start()
+        | None -> ()
+        this.followClosedTab(this.os.foreground.hwnd)
 
     member this.activateIndex(index, force) =
         let nextTab = this.ts.lorder.tryAt(index)

@@ -292,8 +292,11 @@ while its window still exists waits for the window's destruction, or 250 ms if t
 app keeps it: Chromium browsers hide the window they close and destroy it a moment
 later, and a successor activated between the two was undone at the destruction, the
 tab that took the foreground at the hide getting it back, so the tabs flickered and
-the wrong one stayed in front. Whether the successor may take the foreground by force
-is decided at the hide, as the foreground has moved on by the destruction. The
+the wrong one stayed in front. Discovery lets the hidden tab go, often before the
+window is destroyed; the successor then waits the same way, the group looking every
+16 ms whether the window it no longer hears from has gone. Whether the successor may
+take the foreground by force is decided at the hide, as the foreground has moved on
+by the destruction. The
 successor comes up without the cross-fade a tab switch has: the window it would fade
 from is the one Windows chose, not one the user was looking at. Selection preserves
 the closed active tab across those early foreground events and does not activate a
