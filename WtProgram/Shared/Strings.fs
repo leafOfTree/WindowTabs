@@ -183,7 +183,9 @@ module Strings =
         let dimInactiveGroups = { caption={ en="Dim tabs in inactive groups"; zh="淡化非活动分组的标签"; ja="非アクティブなグループのタブの色を薄くする"; ar="تخفيف لون علامات التبويب في المجموعات غير النشطة" }
                                   description={ en="Make the active group easier to spot."; zh="让当前活动的分组更容易辨认。"; ja="アクティブなグループを見分けやすくします。"; ar="يسهّل تمييز المجموعة النشطة." }
                                   keywords={ en="fade"; zh="变暗"; ja="薄く 暗く"; ar="تعتيم" } }
-        let mouseGestures = { caption=Pages.mouseGestures
+        /// Said as what it does, in the page's own word for them, as its per-app command is; a
+        /// search for mouse gestures finds it by its keywords.
+        let mouseGestures = { caption={ en="Use gestures"; zh="使用手势"; ja="ジェスチャーを使う"; ar="استخدام الإيماءات" }
                               description={ en="Hold the right button and drag to run a command or send a shortcut."; zh="按住右键划动，执行命令或发送快捷键。"; ja="右ボタンを押したままドラッグして、コマンドを実行したりショートカットを送ったりします。"; ar="اضغط مع الاستمرار على الزر الأيمن واسحب لتشغيل أمر أو إرسال اختصار." }
                               keywords={ en="mouse gestures stroke drag right click right-drag"; zh="鼠标手势 划动 右键 拖动"; ja="マウスジェスチャー ストローク ドラッグ 右クリック"; ar="إيماءات الماوس خط سحب نقرة يمين" } }
         let gestureHint = { caption={ en="Show a hint while drawing"; zh="划动时显示提示"; ja="描いている間ヒントを表示"; ar="إظهار تلميح أثناء الرسم" }
@@ -741,9 +743,9 @@ module Strings =
         let tabShortcutsForApp = { caption={ en="Use tab shortcuts in this app"; zh="在此应用中使用标签快捷键"; ja="このアプリでタブのショートカットを使う"; ar="استخدام اختصارات علامات التبويب في هذا التطبيق" }
                                    description={ en="Off, the app keeps keys such as Ctrl+Tab for itself."; zh="关闭后，Ctrl+Tab 这类按键留给应用自己。"; ja="オフにすると Ctrl+Tab などのキーはアプリに渡されます。"; ar="عند الإيقاف يحتفظ التطبيق بمفاتيح مثل Ctrl+Tab لنفسه." }
                                    keywords={ en="exclude blacklist application keys"; zh="排除 黑名单 应用 按键"; ja="除外 ブラックリスト アプリ キー"; ar="استبعاد قائمة سوداء تطبيق مفاتيح" } }
-        let mouseGesturesForApp = { caption={ en="Use mouse gestures in this app"; zh="在此应用中使用鼠标手势"; ja="このアプリでマウスジェスチャーを使う"; ar="استخدام إيماءات الماوس في هذا التطبيق" }
+        let mouseGesturesForApp = { caption={ en="Use gestures in this app"; zh="在此应用中使用手势"; ja="このアプリでジェスチャーを使う"; ar="استخدام الإيماءات في هذا التطبيق" }
                                     description={ en="Off, the app keeps the right button, the gestures for all apps included."; zh="关闭后，右键留给应用自己，全局手势也不生效。"; ja="オフにすると右ボタンはアプリに渡され、全体のジェスチャーも使われません。"; ar="عند الإيقاف يحتفظ التطبيق بالزر الأيمن، بما في ذلك إيماءات كل التطبيقات." }
-                                    keywords={ en="exclude right click"; zh="排除 右键"; ja="除外 右クリック"; ar="استبعاد نقرة يمين" } }
+                                    keywords={ en="mouse gestures exclude right click"; zh="鼠标手势 排除 右键"; ja="マウスジェスチャー 除外 右クリック"; ar="إيماءات الماوس استبعاد نقرة يمين" } }
         let restoreWorkspaceNamed = { caption={ en="Restore workspace…"; zh="恢复工作区…"; ja="ワークスペースを復元…"; ar="استعادة مساحة عمل…" }
                                       description={ en="Lists the saved workspaces."; zh="列出已保存的工作区。"; ja="保存済みのワークスペースを一覧表示します。"; ar="يعرض مساحات العمل المحفوظة." }
                                       keywords={ en="layout"; zh="布局"; ja="配置"; ar="تخطيط" } }

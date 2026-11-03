@@ -374,9 +374,9 @@ let main() =
         attempt "mouse-gestures-for-app" (fun () ->
             let before = MouseGestureRules.enabled path
             runDone "mouse-gestures-for-app" active
-            note (MouseGestureRules.enabled path<>before) "Use mouse gestures in this app did not change it"
+            note (MouseGestureRules.enabled path<>before) "Use gestures in this app did not change it"
             runDone "mouse-gestures-for-app" active
-            note (MouseGestureRules.enabled path=before) "Use mouse gestures in this app run again did not turn it back")
+            note (MouseGestureRules.enabled path=before) "Use gestures in this app run again did not turn it back")
         attempt "combine-group-taskbar-icons" (fun () ->
             let combine = (Commands.find "combine-group-taskbar-icons").Value
             let before = combine.state active

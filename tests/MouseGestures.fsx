@@ -148,6 +148,9 @@ let main() =
         let kept = MouseGestureRules.table()
         check (kept.apps.Length=1 && not kept.apps.Head.enabled && kept.apps.Head.bindings=MouseGesturePresets.browser) "Switching an app off did not keep it, with its preset, across a reload"
         check (not (MouseGestureRules.enabled "firefox.exe")) "The app's switch did not read back off"
+        // The page's switch says what it does rather than repeat the page's name above it.
+        check (Localization.all Strings.Settings.mouseGestures.caption |> List.forall(fun text -> not (Localization.all Strings.Pages.mouseGestures |> List.contains text)))
+              "The gestures switch is called what its page is"
         check ((Commands.find "mouse-gestures-for-app").IsSome && (Commands.find "toggle-mouse-gestures").IsSome && (Commands.find "open-settings-mouse-gestures").IsSome)
               "The palette cannot reach the gestures, their switch or their page"
         // A reset keeps the gestures, as the user's own records, unless app rules are cleared.
