@@ -84,6 +84,8 @@ let table() =
     check ((MouseGestures.addApp removed @"C:\Edge\msedge.exe" []).dismissed.IsEmpty) "Adding an app back by hand kept it dismissed"
     check ((MouseGestures.seen MouseGestures.empty editor None).IsNone) "An app without a preset joined the list on its own"
     check (MouseGesturePresets.bindings "explorer.exe"=Some MouseGesturePresets.explorer && (MouseGesturePresets.bindings "notepad.exe").IsNone) "Presets went to the wrong apps"
+    // File Explorer refreshes as a browser does: up and back down sends F5.
+    check (MouseGesturePresets.explorer |> List.exists(fun binding -> binding.gesture="UD" && binding.action=GestureKeys(MouseGesturePresets.f5,""))) "File Explorer's preset has no refresh"
     // Keys are named by the preset, the user's name, or else the keys.
     check (MouseGesturePresets.keysName MouseGesturePresets.altLeft ""=tr Strings.MouseGestures.back) "Alt+Left was not called Back"
     check (MouseGesturePresets.keysName MouseGesturePresets.altLeft "Mine"="Mine") "A name of the user's was not kept"

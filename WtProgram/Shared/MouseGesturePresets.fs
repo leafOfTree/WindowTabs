@@ -8,7 +8,8 @@ module MouseGesturePresets =
     let altLeft,altRight,altUp,ctrlW,f5 = 0x0C25,0x0C27,0x0C26,0x0257,0x74
     let private keys gesture code = { gesture=gesture; action=GestureKeys(code,"") }
     let browser = [keys "L" altLeft; keys "R" altRight; keys "DR" ctrlW; keys "UD" f5]
-    let explorer = [keys "L" altLeft; keys "R" altRight; keys "U" altUp]
+    /// Refresh as in a browser: up and back down.
+    let explorer = [keys "L" altLeft; keys "R" altRight; keys "U" altUp; keys "UD" f5]
     /// Chromium's browsers share Chrome's keys.
     let private browsers = ["chrome.exe";"msedge.exe";"firefox.exe";"brave.exe";"vivaldi.exe";"opera.exe"]
     /// An app's preset with what it is called, if it has one.
