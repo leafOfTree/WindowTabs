@@ -250,7 +250,8 @@ type WorkspaceView() as this =
 
     member this.panel : SettingsListPage = Cell.cacheProp this <| fun() ->
         let panel =
-            new SettingsListPage(tr Strings.Pages.workspaces,
+            // No title: the sidebar already names the page, and its sections start it.
+            new SettingsListPage("",
                                  "",
                                  this.list,
                                  [],

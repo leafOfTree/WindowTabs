@@ -993,6 +993,9 @@ let main() =
         check (nowAt.Y<editAt.Y && editAt.Y+workspaces.editGroupsButton.Height<=savedAt.Y && savedAt.Y<restoreAt.Y)
               (sprintf "The Workspaces page did not stand its groups now over its saved workspaces: %A %A %A %A" nowAt editAt savedAt restoreAt)
         check (workspaces.editGroupsButton.Width<workspace.control.Width/2) (sprintf "The editor's button stretched across the page: %d" workspaces.editGroupsButton.Width)
+        // The sidebar names the page; it starts with its first part, not its name again.
+        check (controls workspace.control |> Seq.forall(fun control -> not (control :? Label && control.Visible && control.Text=tr Strings.Pages.workspaces)))
+              "The Workspaces page repeated its name over its parts"
         // Each part's note stands to the right of its buttons, on their line; the help beside the
         // saved part's heading, which it is about.
         let beside (note:Control) (button:Control) =
