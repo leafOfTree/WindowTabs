@@ -112,14 +112,38 @@ type SettingsActionButton() as this =
             TextRenderer.DrawText(e.Graphics,this.Text,this.Font,this.ClientRectangle,textColor,
                 TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
 
+/// The caret drawn at once, its blink begun again. Windows does that only when the caret moves,
+/// so a click where it already was, as anywhere in an empty box, left it blinked off for a
+/// moment; moved a pixel and back, it shows. Hiding and showing it again waits for a blink.
+module SettingsCaret =
+    [<System.Runtime.InteropServices.DllImport("user32.dll")>]
+    extern bool private GetCaretPos(POINT& point)
+    [<System.Runtime.InteropServices.DllImport("user32.dll")>]
+    extern bool private SetCaretPos(int x, int y)
+    let restart (text:TextBoxBase) =
+        let mutable point = POINT()
+        if text.Focused && text.IsHandleCreated && GetCaretPos(&point) then
+            SetCaretPos(point.X+1,point.Y) |> ignore
+            SetCaretPos(point.X,point.Y) |> ignore
+
 type SettingsInputFrame() as this =
     inherit Panel()
     let mutable pill = false
+    /// Its text box has the keys: typed into, it is outlined in the accent, as a native box is.
+    let typing() = this.Controls |> Seq.cast<Control> |> Seq.exists(fun child -> child :? TextBoxBase && child.Focused)
     do
         this.Size <- Size(Dpi.scale 180,Dpi.scale 34)
         this.Margin <- Padding.Empty
         this.DoubleBuffered <- true
         this.ResizeRedraw <- true
+        this.ControlAdded.Add(fun e ->
+            match e.Control with
+            | :? TextBoxBase as text ->
+                text.GotFocus.Add(fun _ -> this.Invalidate())
+                text.LostFocus.Add(fun _ -> this.Invalidate())
+                // After the box has placed its caret for the click.
+                text.MouseDown.Add(fun _ -> SettingsCaret.restart text)
+            | _ -> ())
     /// Fully rounded ends instead of the usual corners.
     member this.Pill with get() = pill and set value = pill <- value; this.Invalidate()
     /// What shows round the rounded corners, when the field sits on something other than its
@@ -153,7 +177,9 @@ type SettingsInputFrame() as this =
             let radius = if pill then float32 this.Height/2.0f else float32(Dpi.scale 8)
             use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) radius
             use fill = new SolidBrush(this.BackColor)
-            use border = new Pen(if this.Border.IsEmpty then p.border else this.Border)
+            use border =
+                if typing() then new Pen(p.accent,float32(Dpi.scaleF 1.5))
+                else new Pen(if this.Border.IsEmpty then p.border else this.Border)
             e.Graphics.FillPath(fill,shape)
             e.Graphics.DrawPath(border,shape)
 
@@ -170,6 +196,21 @@ type SettingsTextInput(editor:Control) as this =
         editor.HandleCreated.Add(fun _ -> this.PerformLayout())
         this.Layout.Add(fun _ ->
             editor.SetBounds(Dpi.scale 12,max 0 ((this.Height-editor.Height)/2),max 1 (this.Width-Dpi.scale 24),editor.Height))
+    /// A press on the frame round the text lands in the text, as on a native box's own margin:
+    /// it takes the focus, the caret goes to the nearest place and shows at once, and a drag
+    /// selects from there. Missed, the press left the caret mid-blink, hidden for a moment.
+    override this.OnMouseDown(e) =
+        base.OnMouseDown(e)
+        match editor with
+        | :? TextBoxBase as text when e.Button=MouseButtons.Left && text.Enabled && text.IsHandleCreated ->
+            let inside = text.PointToClient(this.PointToScreen(e.Location))
+            let x = max 0 (min (text.ClientSize.Width-1) inside.X)
+            let y = max 0 (min (text.ClientSize.Height-1) inside.Y)
+            // The box takes the pointer from here, so the release and any drag reach it.
+            this.Capture <- false
+            let message = if e.Clicks>=2 then 0x203 else 0x201 // WM_LBUTTONDBLCLK, WM_LBUTTONDOWN
+            WinUserApi.SendMessage(text.Handle,message,IntPtr(1),IntPtr((y <<< 16) ||| (x &&& 0xFFFF))) |> ignore
+        | _ -> ()
 
 type SettingsNumberInput() as this =
     inherit SettingsInputFrame()
@@ -293,7 +334,8 @@ module KeyCaps =
         right-x
 
 /// Click (or Enter/Space) to record, press the combination, Esc to cancel.
-/// The × button, or Backspace/Delete while recording, removes the shortcut (0).
+/// The × button, or Backspace/Delete while recording, removes the shortcut (0); see AnyKey for
+/// keys to send, where those are keys like any other.
 type SettingsShortcutInput() as this =
     inherit SettingsInputFrame()
     let changed = Event<EventArgs>()
@@ -386,6 +428,10 @@ type SettingsShortcutInput() as this =
     member val ShowsMessage = true with get,set
     /// For a key of the lists, used only in the palette and the window search: Tab may be one.
     member val InList = false with get,set
+    /// For keys sent to a window, as a gesture's, rather than caught across the desktop: any key
+    /// is taken, with or without Ctrl or Alt, Esc, Enter, Backspace and Delete among them. Tab
+    /// alone still moves on, a click elsewhere stops the recording, and the × removes the keys.
+    member val AnyKey = false with get,set
     /// Whether the accent outline is drawn: while recording, or on fresh keyboard focus.
     member this.IsHighlighted = recording || (this.Focused && focusCue)
     /// The notice or error currently shown in place of the shortcut, if any.
@@ -422,6 +468,11 @@ type SettingsShortcutInput() as this =
         if not recording then
             if (key=Keys.Enter || key=Keys.Space) && keyData=key then this.StartRecording(); true
             else base.ProcessCmdKey(&msg,keyData)
+        elif this.AnyKey && key=Keys.Tab && keyData=key then stopRecording(); base.ProcessCmdKey(&msg,keyData)
+        elif this.AnyKey && not (SettingsShortcut.isModifier key) then
+            lastPressed <- SettingsShortcut.encode keyData
+            commit lastPressed
+            true
         elif key=Keys.Escape && keyData=key then stopRecording(); true
         elif (key=Keys.Back || key=Keys.Delete) && keyData=key then commit 0; true
         // Enter alone while nothing is held: no shortcut, as Backspace.

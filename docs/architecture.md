@@ -576,6 +576,43 @@ USER and process handles across 100 native group cycles after warmup. These test
 replace physical mixed-monitor dragging, sleep/resume, Explorer restart or multi-hour
 soak testing; those environmental scenarios still need manual validation.
 
+## Mouse gestures
+
+Holding the right button and drawing one or two strokes along the four directions runs what the
+stroke is bound to (`MouseGestures`, kept as `mouseGestures` with the switches
+`enableMouseGestures`, off until asked for, and `showGestureHint`). A binding runs a command of
+`Commands.all` that runs at once, or sends a key in the hotkey control's encoding to the window
+the stroke was drawn over, brought to the front first since its press was kept from it. The
+gestures every app has (`everywhere`) apply unless an app has its own for the same stroke; an
+app's switch off leaves it the right button and every gesture. An app with a preset
+(`MouseGesturePresets`: browsers and File Explorer) joins the list the first time a window of it
+comes to the front while gestures are on; one removed by hand is remembered in `dismissed` and
+does not come back. Reset keeps the table with the other app rules.
+
+`MouseGestureInput` reads the low-level mouse hook's events first, on the main thread, and does
+nothing slow there: only the right button's press, release, the other buttons and, while a
+press is pending, the moves. A press over another program's window, not the taskbar or the
+desktop, with gestures on for its app and nothing full screen, is kept from the app. Released
+within 10 logical pixels of where it went down, the click is sent again; held there for 300 ms,
+or another button pressed meanwhile, the press is sent again and the rest goes to the app, as a
+right-drag in File Explorer needs. Further, it is a stroke: the release is kept too and the stroke
+read (`MouseGestures.read`, steps of 8 logical pixels at the monitor's scale; strokes shorter than
+24 pixels dropped as wobble and the rest joined, then those under 18% of the whole dropped as the
+small detour of a turn; a path with less than 70% left is a scribble and not read). Another button
+pressed while the stroke is drawn gives it up: that button's press and release and the right
+button's release are kept from the app, and nothing runs. What it does runs posted after the hook
+returns. Presses and keys sent again carry their own `dwExtraInfo` marks so
+the hooks let them by. Windows run as administrator do not see a gesture from a WindowTabs that is
+not, nor get its keys: Windows keeps input from crossing that boundary.
+
+`GestureHint` is the note by the pointer while drawing, updated from a 16 ms timer, never from the
+hook. `GestureGlyph` draws a gesture as a dashed line from the circle where the button goes down
+to an arrowhead, whole or part way for an animation; the page, its dialog and the note share it.
+The Gestures page draws its app list and table itself (`MouseGestureEditor`): each row's
+picture plays once as the page or another app is shown and loops under the pointer, and stands
+still with the system's animations off. Its dialog (`MouseGestureDialog`) offers the 16 gestures
+to pick from, keyboard and screen reader included, and a box to draw one in with either button.
+
 ## Number shortcuts and tab colours
 
 Direct number shortcuts retain Ctrl as their installation/reset default. They pass

@@ -43,6 +43,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
             SettingsPageRegistration(GeneralSettings,tr Strings.Pages.general,fun () -> GeneralView() :> ISettingsView)
             SettingsPageRegistration(AppearanceSettings,tr Strings.Pages.appearance,fun () -> AppearanceView() :> ISettingsView)
             SettingsPageRegistration(HotKeySettings,tr Strings.Pages.shortcuts,fun () -> HotKeyView() :> ISettingsView)
+            SettingsPageRegistration(MouseGestureSettings,tr Strings.Pages.mouseGestures,fun () -> MouseGestureView() :> ISettingsView)
             SettingsPageRegistration(ProgramSettings,tr Strings.Pages.appRules,fun () -> ProgramView() :> ISettingsView)
             SettingsPageRegistration(SettingsViewType.LayoutSettings,tr Strings.Pages.workspaces,fun () -> WorkspaceView() :> ISettingsView)
             SettingsPageRegistration(DiagnosticsSettings,tr Strings.Pages.diagnostics,fun () -> DiagnosticsView() :> ISettingsView) ]

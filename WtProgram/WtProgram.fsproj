@@ -65,12 +65,14 @@
     <Compile Include="Shared\AppIdentity.fs" />
     <Compile Include="Shared\WindowTitle.fs" />
     <Compile Include="Shared\WindowShortcuts.fs" />
+    <Compile Include="Shared\MouseGestures.fs" />
     <Compile Include="Shared\ProgramTypes.fs" />
     <Compile Include="Shared\Localization.fs" />
     <Compile Include="Shared\Strings.fs" />
     <Compile Include="Shared\Alert.fs" />
     <Compile Include="Shared\SettingsCatalog.fs" />
     <Compile Include="Shared\SettingsShortcut.fs" />
+    <Compile Include="Shared\MouseGesturePresets.fs" />
     <Compile Include="Shared\DragDrop.fs" />
     <Compile Include="Shared\Serialize.fs" />
     <Compile Include="Shared\Win32Menu.fs" />
@@ -84,6 +86,7 @@
     <Compile Include="Shared\ThemeService.fs" />
     <Compile Include="Shared\AppearanceEditing.fs" />
     <Compile Include="Shared\SettingsColors.fs" />
+    <Compile Include="Shared\GestureGlyph.fs" />
     <Compile Include="Shared\ThemedMenu.fs" />
     <Compile Include="Shared\AnimationWindow.fs" />
     <Compile Include="Shared\Forms.fs" />
@@ -96,6 +99,7 @@
     <Compile Include="TabStripSprite.fs" />
     <Compile Include="TabShadow.fs" />
     <Compile Include="TabTitleTip.fs" />
+    <Compile Include="GestureHint.fs" />
     <Compile Include="TabStrip.fs" />
     <Compile Include="AppearanceJson.fs" />
     <Compile Include="SettingsFileStore.fs" />
@@ -132,12 +136,14 @@
     <Compile Include="ManagerViewService\Views\AppGroupingRulesView.fs" />
     <Compile Include="ManagerViewService\Views\AppearanceView.fs" />
     <Compile Include="ManagerViewService\Views\HotKeyView.fs" />
+    <Compile Include="ManagerViewService\Views\MouseGestureView.fs" />
     <Compile Include="ManagerViewService\Views\DiagnosticsView.fs" />
     <Compile Include="ManagerViewService\Views\ProgramView.fs" />
     <Compile Include="ManagerViewService\Views\WorkspaceView.fs" />
     <Compile Include="ManagerViewService\DesktopManagerForm.fs" />
     <Compile Include="ManagerViewService\ManagerViewService.fs" />
     <Compile Include="FilterService.fs" />
+    <Compile Include="DesktopPlugins\MouseGestureInput.fs" />
     <Compile Include="DesktopPlugins\InputManagerPlugin.fs" />
     <Compile Include="DesktopPlugins\NotifyIconPlugin.fs" />
     <Compile Include="DesktopPlugins\ExceptionHandlerPlugin.fs" />

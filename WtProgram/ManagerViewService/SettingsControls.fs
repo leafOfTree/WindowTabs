@@ -596,6 +596,15 @@ module SettingsPageIcons =
             g.DrawLine(pen,5.0f,11.0f,13.0f,11.0f)
         | ProgramSettings ->
             for x,y in [2,2;11,2;2,11;11,11] do g.DrawRectangle(pen,x,y,5,5)
+        // A stroke up and to the right, from the circle where the button goes down.
+        | MouseGestureSettings ->
+            g.DrawEllipse(pen,2.5f,12.5f,4.0f,4.0f)
+            use path = new Drawing2D.GraphicsPath()
+            path.AddLine(4.5f,12.0f,4.5f,7.0f)
+            path.AddArc(4.5f,3.0f,8.0f,8.0f,180.0f,90.0f)
+            path.AddLine(8.5f,3.0f,14.0f,3.0f)
+            g.DrawPath(pen,path)
+            g.DrawLines(pen,[|PointF(11.5f,0.5f);PointF(14.5f,3.0f);PointF(11.5f,5.5f)|])
         | LayoutSettings ->
             g.DrawRectangle(pen,1,1,12,11)
             g.DrawRectangle(pen,5,6,12,11)
@@ -907,12 +916,15 @@ type SettingsScrollBar() as this =
 type SettingsChoiceList() as this =
     inherit ListBox()
     let scrolled = Event<EventArgs>()
+    let wheel = Event<int>()
     do
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.AllPaintingInWmPaint |||
                       ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.ResizeRedraw,true)
         this.SelectedIndexChanged.Add(fun _ -> scrolled.Trigger(EventArgs.Empty))
     /// The first shown row or the rows themselves may have changed.
     member _.Scrolled = scrolled.Publish
+    /// A wheel turned over the rows, its signed delta, for the frame that scrolls them.
+    member _.Wheel = wheel.Publish
     override this.OnPaint(e) =
         e.Graphics.Clear(this.BackColor)
         if this.Items.Count>0 then
@@ -927,6 +939,8 @@ type SettingsChoiceList() as this =
         if message.Msg=0x202B then // OCM_DRAWITEM: defer native row paints to WM_PAINT.
             this.Invalidate()
             message.Result <- IntPtr(1)
+        elif message.Msg=0x20A then // WM_MOUSEWHEEL: the frame scrolls, by pixels.
+            wheel.Trigger(int (int16 ((message.WParam.ToInt64() >>> 16) &&& 0xFFFFL)))
         else
             base.WndProc(&message)
             match message.Msg with
@@ -937,26 +951,40 @@ type SettingsChoiceList() as this =
             | 0x180 | 0x181 | 0x182 | 0x184 | 0x197 -> scrolled.Trigger(EventArgs.Empty)
             | _ -> ()
 
-/// Shows a list with the settings scrollbar instead of the system one: the list is widened just
-/// enough for its own scrollbar to fall outside the frame, and the settings bar sits in a thin
-/// room kept at the right whether the rows overflow or not, so filtering the rows never moves
-/// them sideways; it follows the list as it scrolls a row at a time.
+/// Shows a list with the settings scrollbar instead of the system one, scrolling smoothly as
+/// settings pages do: the list is as tall as all its rows, so it never scrolls itself, and moves
+/// inside the frame by pixels, eased for the wheel. The settings bar sits in a thin room kept at
+/// the right whether the rows overflow or not, so filtering the rows never moves them sideways.
 type SettingsListFrame(list:SettingsChoiceList) as this =
     inherit Panel()
     let bar = new SettingsScrollBar(TabStop=false)
-    let visibleRows() = max 1 (this.ClientSize.Height/max 1 list.ItemHeight)
-    let sync() =
-        bar.configure(max 0 (list.Items.Count-visibleRows()),visibleRows(),list.TopIndex)
+    let mutable offset = 0
+    let rowsHeight() = list.Items.Count*list.ItemHeight
+    let maximum() = max 0 (rowsHeight()-this.ClientSize.Height)
+    let clamp value = max 0 (min (maximum()) value)
+    let apply value =
+        offset <- clamp value
+        if list.Top<> -offset then list.Top <- -offset
+        bar.configure(maximum(),this.ClientSize.Height,offset)
+    let smooth = new SmoothScroller((fun () -> offset),clamp,apply)
     let content() = max 1 (this.ClientSize.Width-bar.Width)
     let arrange() =
         let size = this.ClientSize
         let content = content()
-        list.Bounds <- Rectangle(0,0,content,size.Height)
+        list.Bounds <- Rectangle(0,-(clamp offset),content,max size.Height (rowsHeight()))
         // Whatever the list's own scrollbar takes is added back, outside the frame.
         let native = list.Width-list.ClientSize.Width
         if native>0 then list.Width <- content+native
         bar.Bounds <- Rectangle(size.Width-bar.Width,0,bar.Width,size.Height)
-        sync()
+        apply offset
+    /// Brings the selected row into view, as a list that scrolls itself would for the keys.
+    let reveal() =
+        let index = list.SelectedIndex
+        if index>=0 then
+            let top = index*list.ItemHeight
+            if top<offset then smooth.jump top
+            elif top+list.ItemHeight>offset+this.ClientSize.Height then smooth.jump(top+list.ItemHeight-this.ClientSize.Height)
+    let sync() = if list.Height<>max this.ClientSize.Height (rowsHeight()) then arrange() else apply offset
     do
         // Resizing the list briefly exposes its native scrollbar before the custom
         // bar repaints. Present both child HWNDs together, including during filtering.
@@ -973,13 +1001,19 @@ type SettingsListFrame(list:SettingsChoiceList) as this =
         list.BackColorChanged.Add(fun _ -> this.BackColor <- list.BackColor; bar.Invalidate())
         list.Scrolled.Add(fun _ ->
             if not this.IsDisposed then
-                // A change in the number of rows can bring the list's own scrollbar, which goes
-                // outside the frame again.
-                if list.ClientSize.Width<>content() then arrange() else sync())
-        bar.changed.Add(fun value -> list.TopIndex <- value; sync())
+                // A change in the number of rows changes the list's height; the list's own
+                // scrollbar, should it come, goes outside the frame again.
+                if list.ClientSize.Width<>content() then arrange() else sync()
+                reveal())
+        list.Wheel.Add(fun delta -> smooth.by(SmoothScroller.wheelStep delta this.ClientSize.Height))
+        bar.changed.Add(fun value -> smooth.jump value)
         this.Resize.Add(fun _ -> arrange())
+        this.Disposed.Add(fun _ -> (smooth :> IDisposable).Dispose())
     member _.List = list
     override this.OnGotFocus(e) = base.OnGotFocus(e); list.Focus() |> ignore
+    override this.OnMouseWheel(e) =
+        base.OnMouseWheel(e)
+        smooth.by(SmoothScroller.wheelStep e.Delta this.ClientSize.Height)
 
 /// A menu-style popup keeps the settings window active when dismissed outside.
 type SettingsChoicePopup() as this =
@@ -1153,6 +1187,13 @@ type SettingsCombo(items:string[]) as this =
     /// Where on screen the choices open from, left-aligned below it, when the control itself is
     /// not shown: a button drawn by a list, say.
     member val DropDownAnchor : Rectangle option = None with get,set
+    /// Set, the choices open under a search box with this cue, which narrows them as one types.
+    member val SearchCue : string option = None with get,set
+    /// The most rows shown at once; more scroll.
+    member val MaxRows : int option = None with get,set
+    /// The first choice is a prompt, as "Choose a command…": shown closed, muted, while nothing
+    /// is chosen, and left out of the list.
+    member val PromptFirst = false with get,set
     member _.ItemColors
         with get() = Array.copy itemColors
         and set(value:Color array) =
@@ -1173,14 +1214,21 @@ type SettingsCombo(items:string[]) as this =
                                    DrawMode=DrawMode.OwnerDrawFixed,ItemHeight=Dpi.scale 34,
                                    BackColor=p.hover,ForeColor=p.text,Font=this.Font,
                                    AccessibleName=this.AccessibleName)
-            list.Items.AddRange(items |> Array.map box)
+            /// The first choice listed: past a prompt, which is said only while nothing is chosen.
+            let first = if this.PromptFirst && items.Length>1 then 1 else 0
+            /// The choice each row shows: all of them, or those a search leaves.
+            let shown = ResizeArray<int>(seq { first..items.Length-1 })
+            list.Items.AddRange(shown |> Seq.map(fun index -> box items.[index]) |> Array.ofSeq)
+            /// What the search box holds, marked in the rows it finds.
+            let mutable words = ""
             let mutable hovered = -1
             let mutable keyboardNavigation = false
             let invalidateRow index =
                 if index>=0 && index<list.Items.Count then
                     list.Invalidate(list.GetItemRectangle(index))
             list.DrawItem.Add(fun e ->
-                if e.Index>=0 then
+                if e.Index>=0 && e.Index<shown.Count then
+                    let item = shown.[e.Index]
                     use background = new SolidBrush(p.hover)
                     e.Graphics.FillRectangle(background,e.Bounds)
                     let active = e.Index=hovered ||
@@ -1191,13 +1239,28 @@ type SettingsCombo(items:string[]) as this =
                         use brush = new SolidBrush(p.selection)
                         e.Graphics.FillPath(brush,shape)
                     let foreground = if active && SystemInformation.HighContrast then SystemColors.HighlightText else p.text
-                    let offset = drawDot e.Graphics e.Bounds e.Index
+                    let offset = drawDot e.Graphics e.Bounds item
                     let rect = Rectangle(e.Bounds.X+Dpi.scale 12+offset,e.Bounds.Y,e.Bounds.Width-Dpi.scale 42-offset,e.Bounds.Height)
-                    TextRenderer.DrawText(e.Graphics,items.[e.Index],this.Font,rect,foreground,TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
-                    if e.Index=selected then
+                    let text = items.[item]
+                    let found = if words="" then -1 else text.IndexOf(words,StringComparison.CurrentCultureIgnoreCase)
+                    if found<0 then
+                        TextRenderer.DrawText(e.Graphics,text,this.Font,rect,foreground,TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
+                    else
+                        // The words searched for, in the accent, between the rest of the text: each
+                        // part drawn where the one before it ends.
+                        let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPadding ||| TextFormatFlags.SingleLine
+                        let lead = TextRenderer.MeasureText(e.Graphics,"x",this.Font,Size.Empty,TextFormatFlags.NoPrefix).Width-TextRenderer.MeasureText(e.Graphics,"x",this.Font,Size.Empty,flags).Width
+                        let mutable x = rect.X+lead/2
+                        let mark = if SystemInformation.HighContrast then foreground else p.accent
+                        let length = min words.Length (text.Length-found)
+                        for part,color in [text.Substring(0,found),foreground; text.Substring(found,length),mark; text.Substring(found+length),foreground] do
+                            if part<>"" && x<rect.Right then
+                                TextRenderer.DrawText(e.Graphics,part,this.Font,Rectangle(x,rect.Y,rect.Right-x,rect.Height),color,flags ||| TextFormatFlags.EndEllipsis)
+                                x <- x+TextRenderer.MeasureText(e.Graphics,part,this.Font,Size.Empty,flags).Width
+                    if item=selected then
                         TextRenderer.DrawText(e.Graphics,"✓",this.Font,Rectangle(e.Bounds.Right-Dpi.scale 28,e.Bounds.Y,Dpi.scale 24,e.Bounds.Height),foreground,TextFormatFlags.VerticalCenter ||| TextFormatFlags.HorizontalCenter))
             let finish commit =
-                let value = list.SelectedIndex
+                let value = if list.SelectedIndex>=0 && list.SelectedIndex<shown.Count then shown.[list.SelectedIndex] else -1
                 window.Close()
                 if commit && value>=0 then this.SelectedIndex <- value
                 if commit && not this.IsDisposed then this.Focus() |> ignore
@@ -1229,6 +1292,40 @@ type SettingsCombo(items:string[]) as this =
                     finish false
                     this.Parent.SelectNextControl(this,not e.Shift,true,true,true) |> ignore
                     e.SuppressKeyPress <- true)
+            // A long list opens under a box that narrows it as one types; the keys that move
+            // through the rows work from the box too.
+            let search =
+                this.SearchCue |> Option.map(fun cue ->
+                    let input = new TextBox(Font=this.Font,BorderStyle=BorderStyle.None,BackColor=p.hover,ForeColor=p.text,AccessibleName=cue)
+                    input.HandleCreated.Add(fun _ -> WinUserApi.SendMessage(input.Handle,0x1501,IntPtr(1),cue) |> ignore) // EM_SETCUEBANNER
+                    let field = new SettingsSearchBox(input,Height=Dpi.scale 36,Underlined=true,BackColor=p.hover)
+                    input.TextChanged.Add(fun _ ->
+                        words <- input.Text.Trim()
+                        shown.Clear()
+                        for index in first..items.Length-1 do
+                            if words="" || items.[index].IndexOf(words,StringComparison.CurrentCultureIgnoreCase)>=0 then shown.Add index
+                        hovered <- -1
+                        list.BeginUpdate()
+                        list.Items.Clear()
+                        list.Items.AddRange(shown |> Seq.map(fun index -> box items.[index]) |> Array.ofSeq)
+                        list.EndUpdate()
+                        if shown.Count>0 then list.SelectedIndex <- 0
+                        list.Invalidate())
+                    input.KeyDown.Add(fun e ->
+                        match e.KeyCode with
+                        | Keys.Down | Keys.Up ->
+                            keyboardNavigation <- true
+                            hovered <- -1
+                            if list.Items.Count>0 then
+                                list.SelectedIndex <- max 0 (min (list.Items.Count-1) (list.SelectedIndex+(if e.KeyCode=Keys.Down then 1 else -1)))
+                            list.Invalidate()
+                            e.SuppressKeyPress <- true
+                        | Keys.Enter -> finish true; e.SuppressKeyPress <- true
+                        | Keys.Escape -> finish false; e.SuppressKeyPress <- true
+                        | _ -> ())
+                    let host = new ToolStripControlHost(field,AutoSize=false,Margin=Padding(0,0,0,Dpi.scale 4),Padding=Padding.Empty,BackColor=p.hover)
+                    window.Items.Add(host) |> ignore
+                    host)
             // A screen too short for every choice scrolls them with the settings scrollbar.
             let frame = new SettingsListFrame(list)
             let listHost = new ToolStripControlHost(frame,AutoSize=false,Margin=Padding.Empty,Padding=Padding.Empty,BackColor=p.hover)
@@ -1240,11 +1337,15 @@ type SettingsCombo(items:string[]) as this =
             // Realize the list first, then size the client area using its final row height.
             list.Handle |> ignore
             list.ItemHeight <- max (Dpi.scale 34) (list.Font.Height+Dpi.scale 12)
+            // As tall as all the choices, or as MaxRows of them, whatever a search leaves.
+            let rows = match this.MaxRows with Some most -> min most shown.Count | None -> shown.Count
+            let boxHeight = match search with Some host -> host.Control.Height+Dpi.scale 4 | None -> 0
             window.Size <- Size(min area.Width (max anchorBox.Width (labelWidth+Dpi.scale (if itemImages.Length>0 then 82 elif itemColors.Length>0 then 80 else 58))),
-                                min (area.Height-Dpi.scale 12) (items.Length*list.ItemHeight+window.Padding.Vertical+2))
-            listHost.Size <- Size(window.Width-window.Padding.Horizontal,window.Height-window.Padding.Vertical)
+                                min (area.Height-Dpi.scale 12) (rows*list.ItemHeight+boxHeight+window.Padding.Vertical+2))
+            search |> Option.iter(fun host -> host.Size <- Size(window.Width-window.Padding.Horizontal,host.Control.Height))
+            listHost.Size <- Size(window.Width-window.Padding.Horizontal,window.Height-window.Padding.Vertical-boxHeight)
             frame.Size <- listHost.Size
-            list.SelectedIndex <- max 0 selected
+            list.SelectedIndex <- max 0 (shown.IndexOf selected)
             list.TopIndex <- 0
             let anchor = Point(anchorBox.X,anchorBox.Bottom+Dpi.scale 4)
             let y = if anchor.Y+window.Height<=area.Bottom then anchor.Y else anchorBox.Y-window.Height-Dpi.scale 4
@@ -1263,8 +1364,11 @@ type SettingsCombo(items:string[]) as this =
         match this.CreateDropDown() with
         | Some window ->
             window.Show(window.Location)
-            let frame = (window.Items.[0] :?> ToolStripControlHost).Control :?> SettingsListFrame
-            frame.List.Focus() |> ignore
+            // The search box has the keys where there is one, else the list.
+            match (window.Items.[0] :?> ToolStripControlHost).Control with
+            | :? SettingsSearchBox as field -> field.Controls.[0].Focus() |> ignore
+            | :? SettingsListFrame as frame -> frame.List.Focus() |> ignore
+            | _ -> ()
         | None -> ()
     override this.OnMouseDown(e) =
         match popup with
@@ -1307,8 +1411,10 @@ type SettingsCombo(items:string[]) as this =
             graphics.FillPath(tint,shape)
         graphics.DrawPath(border,shape)
         let foreground = if this.Enabled then p.text else p.muted
+        // The prompt, while nothing is chosen, muted as a text box's cue is: not a choice made.
+        let label = if this.PromptFirst && selected<=0 then p.muted else foreground
         let offset = drawDot graphics this.ClientRectangle selected
-        TextRenderer.DrawText(graphics,this.Text,this.Font,Rectangle(Dpi.scale 12+offset,0,this.Width-Dpi.scale 40-offset,this.Height),foreground,
+        TextRenderer.DrawText(graphics,this.Text,this.Font,Rectangle(Dpi.scale 12+offset,0,this.Width-Dpi.scale 40-offset,this.Height),label,
             TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
         let x,y = this.Width-Dpi.scale 17,this.Height/2
         use arrow = new Pen(foreground,1.3f)

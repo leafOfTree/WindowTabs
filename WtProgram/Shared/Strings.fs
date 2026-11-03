@@ -143,11 +143,13 @@ module Strings =
         let appRules = { en="App rules"; zh="应用规则"; ja="アプリのルール"; ar="قواعد التطبيقات" }
         let workspaces = { en="Workspaces"; zh="工作区"; ja="ワークスペース"; ar="مساحات العمل" }
         let diagnostics = { en="Support"; zh="支持"; ja="サポート"; ar="الدعم" }
+        let mouseGestures = { en="Gestures"; zh="手势"; ja="ジェスチャー"; ar="الإيماءات" }
         let title page =
             match page with
             | GeneralSettings -> general
             | AppearanceSettings -> appearance
             | HotKeySettings -> shortcuts
+            | MouseGestureSettings -> mouseGestures
             | ProgramSettings -> appRules
             | LayoutSettings -> workspaces
             | DiagnosticsSettings -> diagnostics
@@ -181,6 +183,12 @@ module Strings =
         let dimInactiveGroups = { caption={ en="Dim tabs in inactive groups"; zh="淡化非活动分组的标签"; ja="非アクティブなグループのタブの色を薄くする"; ar="تخفيف لون علامات التبويب في المجموعات غير النشطة" }
                                   description={ en="Make the active group easier to spot."; zh="让当前活动的分组更容易辨认。"; ja="アクティブなグループを見分けやすくします。"; ar="يسهّل تمييز المجموعة النشطة." }
                                   keywords={ en="fade"; zh="变暗"; ja="薄く 暗く"; ar="تعتيم" } }
+        let mouseGestures = { caption=Pages.mouseGestures
+                              description={ en="Hold the right button and drag to run a command or send a shortcut."; zh="按住右键划动，执行命令或发送快捷键。"; ja="右ボタンを押したままドラッグして、コマンドを実行したりショートカットを送ったりします。"; ar="اضغط مع الاستمرار على الزر الأيمن واسحب لتشغيل أمر أو إرسال اختصار." }
+                              keywords={ en="mouse gestures stroke drag right click right-drag"; zh="鼠标手势 划动 右键 拖动"; ja="マウスジェスチャー ストローク ドラッグ 右クリック"; ar="إيماءات الماوس خط سحب نقرة يمين" } }
+        let gestureHint = { caption={ en="Show a hint while drawing"; zh="划动时显示提示"; ja="描いている間ヒントを表示"; ar="إظهار تلميح أثناء الرسم" }
+                            description={ en="Says by the pointer what the stroke will do."; zh="在指针旁显示这一笔会做什么。"; ja="そのストロークで何をするかをポインターの横に表示します。"; ar="يعرض بجوار المؤشر ما سيفعله الخط." }
+                            keywords={ en="tooltip mouse gesture feedback"; zh="提示 鼠标手势 反馈"; ja="ツールチップ マウスジェスチャー"; ar="تلميح إيماءة الماوس" } }
         let pauseInFullScreen = { caption={ en="Pause while a full-screen app runs"; zh="全屏应用运行时暂停"; ja="全画面アプリの実行中は一時停止"; ar="الإيقاف المؤقت أثناء تشغيل تطبيق بملء الشاشة" }
                                   description={ en="Shortcuts leave their keys to the app; notices wait until it closes or leaves full screen."; zh="快捷键暂不生效，通知等退出全屏后再显示。"; ja="ショートカットはアプリにキーを譲り、通知は全画面が終わってから表示します。"; ar="تترك الاختصارات مفاتيحها للتطبيق، وتنتظر الإشعارات حتى يخرج من ملء الشاشة." }
                                   keywords={ en="fullscreen do not disturb"; zh="全屏 勿扰"; ja="フルスクリーン 応答不可"; ar="ملء الشاشة عدم الإزعاج" } }
@@ -733,6 +741,9 @@ module Strings =
         let tabShortcutsForApp = { caption={ en="Use tab shortcuts in this app"; zh="在此应用中使用标签快捷键"; ja="このアプリでタブのショートカットを使う"; ar="استخدام اختصارات علامات التبويب في هذا التطبيق" }
                                    description={ en="Off, the app keeps keys such as Ctrl+Tab for itself."; zh="关闭后，Ctrl+Tab 这类按键留给应用自己。"; ja="オフにすると Ctrl+Tab などのキーはアプリに渡されます。"; ar="عند الإيقاف يحتفظ التطبيق بمفاتيح مثل Ctrl+Tab لنفسه." }
                                    keywords={ en="exclude blacklist application keys"; zh="排除 黑名单 应用 按键"; ja="除外 ブラックリスト アプリ キー"; ar="استبعاد قائمة سوداء تطبيق مفاتيح" } }
+        let mouseGesturesForApp = { caption={ en="Use mouse gestures in this app"; zh="在此应用中使用鼠标手势"; ja="このアプリでマウスジェスチャーを使う"; ar="استخدام إيماءات الماوس في هذا التطبيق" }
+                                    description={ en="Off, the app keeps the right button, the gestures for all apps included."; zh="关闭后，右键留给应用自己，全局手势也不生效。"; ja="オフにすると右ボタンはアプリに渡され、全体のジェスチャーも使われません。"; ar="عند الإيقاف يحتفظ التطبيق بالزر الأيمن، بما في ذلك إيماءات كل التطبيقات." }
+                                    keywords={ en="exclude right click"; zh="排除 右键"; ja="除外 右クリック"; ar="استبعاد نقرة يمين" } }
         let restoreWorkspaceNamed = { caption={ en="Restore workspace…"; zh="恢复工作区…"; ja="ワークスペースを復元…"; ar="استعادة مساحة عمل…" }
                                       description={ en="Lists the saved workspaces."; zh="列出已保存的工作区。"; ja="保存済みのワークスペースを一覧表示します。"; ar="يعرض مساحات العمل المحفوظة." }
                                       keywords={ en="layout"; zh="布局"; ja="配置"; ar="تخطيط" } }
@@ -750,7 +761,7 @@ module Strings =
         let exit = { caption=Tray.exit
                      description={ en="Every window gets its own frame back."; zh="所有窗口恢复各自的边框。"; ja="すべてのウィンドウが元の枠に戻ります。"; ar="تستعيد كل نافذة إطارها الخاص." }
                      keywords={ en="quit close"; zh="退出 关闭"; ja="終了"; ar="إنهاء إغلاق" } }
-        let refreshWindows = { caption={ en="Look for windows again"; zh="重新扫描窗口"; ja="ウィンドウを再スキャン"; ar="إعادة فحص النوافذ" }
+        let refreshWindows = { caption={ en="Rescan windows"; zh="重新扫描窗口"; ja="ウィンドウを再スキャン"; ar="إعادة فحص النوافذ" }
                                description={ en="Groups any window that was missed."; zh="把漏掉的窗口加入分组。"; ja="見落とされたウィンドウをグループに入れます。"; ar="يضيف أي نافذة فاتها البرنامج إلى مجموعة." }
                                keywords={ en="rescan refresh reload"; zh="刷新 重新加载"; ja="更新 再読み込み"; ar="تحديث إعادة تحميل" } }
 
@@ -851,8 +862,82 @@ module Strings =
         let on = { en="On"; zh="开"; ja="オン"; ar="مفعّل" }
         let off = { en="Off"; zh="关"; ja="オフ"; ar="معطّل" }
 
+    /// The Gestures page, its add-gesture dialog and the note by the pointer.
+    module MouseGestures =
+        let scopes = { en="Applies to"; zh="作用于"; ja="適用先"; ar="ينطبق على" }
+        let everywhere = { en="Everywhere"; zh="全局"; ja="全体"; ar="في كل مكان" }
+        let allApps = { en="All apps"; zh="所有程序"; ja="すべてのアプリ"; ar="كل التطبيقات" }
+        let addApp = { en="Add app"; zh="添加程序"; ja="アプリを追加"; ar="إضافة تطبيق" }
+        let addGesture = { en="Add gesture"; zh="添加手势"; ja="ジェスチャーを追加"; ar="إضافة إيماءة" }
+        let gesture = { en="Gesture"; zh="手势"; ja="ジェスチャー"; ar="الإيماءة" }
+        let action = { en="Action"; zh="动作"; ja="動作"; ar="الإجراء" }
+        let does = { en="Does"; zh="执行"; ja="実行内容"; ar="ينفّذ" }
+        let commandKind = { en="Command"; zh="命令"; ja="コマンド"; ar="أمر" }
+        let keysKind = { en="Shortcut"; zh="快捷键"; ja="ショートカット"; ar="اختصار" }
+        let overridesEverywhere arrows (action:string) =
+            { en=sprintf "Overrides %s for all apps: %s" arrows action; zh=sprintf "覆盖了全局的 %s：%s" arrows action
+              ja=sprintf "全体の %s を上書きします: %s" arrows action; ar=sprintf "يتجاوز %s لكل التطبيقات: %s" arrows action }
+        let useIn (app:string) = { en=sprintf "Use gestures in %s" app; zh=sprintf "在 %s 中使用手势" app; ja=sprintf "%s でジェスチャーを使う" app; ar=sprintf "استخدام الإيماءات في %s" app }
+        let resetEverywhere = { en="Restore the default gestures for all apps"; zh="恢复默认的全局手势"; ja="全体のジェスチャーを既定に戻す"; ar="استعادة الإيماءات الافتراضية لكل التطبيقات" }
+        let resetApp = { en="Restore this app's default gestures"; zh="恢复这个程序的默认手势"; ja="このアプリのジェスチャーを既定に戻す"; ar="استعادة الإيماءات الافتراضية لهذا التطبيق" }
+        let legend = { en="Press the right button at the circle, release at the arrow"; zh="圆圈处按下右键，到箭头处松开"; ja="円で右ボタンを押し、矢印で離します"; ar="اضغط الزر الأيمن عند الدائرة وحرّره عند السهم" }
+        let browserPreset = { en="browser preset"; zh="浏览器预设"; ja="ブラウザーのプリセット"; ar="الإعداد المسبق للمتصفح" }
+        let explorerPreset = { en="File Explorer preset"; zh="资源管理器预设"; ja="エクスプローラーのプリセット"; ar="الإعداد المسبق لمستكشف الملفات" }
+        let presetFilled (preset:LocalizedText) =
+            { en=sprintf "Filled in the %s." preset.en; zh=sprintf "已填入%s。" preset.zh; ja=sprintf "%sを入れました。" preset.ja; ar=sprintf "تمت تعبئة %s." preset.ar }
+        let startEmpty = { en="Start empty"; zh="改为空白"; ja="空にする"; ar="البدء فارغًا" }
+        let noOwnGestures = { en="This app has no gestures of its own; the ones for all apps work here."; zh="这个程序还没有单独的手势，全局手势照常生效。"; ja="このアプリ独自のジェスチャーはありません。全体のジェスチャーが使えます。"; ar="ليس لهذا التطبيق إيماءات خاصة به؛ تعمل هنا إيماءات كل التطبيقات." }
+        let offIn (app:string) =
+            { en=sprintf "Gestures are off in %s, those for all apps included. Turn its switch on to use them again." app
+              zh=sprintf "已在 %s 中关闭手势，包括全局手势。打开左边的开关即可恢复。" app
+              ja=sprintf "%s ではジェスチャーがオフです (全体のものも含む)。左のスイッチをオンにすると戻ります。" app
+              ar=sprintf "الإيماءات متوقفة في %s، بما فيها إيماءات كل التطبيقات. شغّل مفتاحه لاستخدامها مجددًا." app }
+        /// The note by the pointer for a stroke that is no gesture, and for one bound to nothing.
+        let notAGesture = { en="Not a gesture"; zh="无效手势"; ja="ジェスチャーではありません"; ar="ليست إيماءة" }
+        let nothingSet = { en="Nothing set"; zh="未设置"; ja="未設定"; ar="غير معيّن" }
+        /// A gesture's strokes in words, as a screen reader says it and the dialog names it.
+        let drawn (gesture:string) =
+            let word index (en:string[]) (zh:string[]) (ja:string[]) (ar:string[]) =
+                let i = match gesture.[index] with 'U' -> 0 | 'D' -> 1 | 'L' -> 2 | _ -> 3
+                en.[i],zh.[i],ja.[i],ar.[i]
+            let words index = word index [|"up";"down";"left";"right"|] [|"向上";"向下";"向左";"向右"|] [|"上";"下";"左";"右"|] [|"لأعلى";"لأسفل";"لليسار";"لليمين"|]
+            let capital (text:string) = string (System.Char.ToUpperInvariant text.[0])+text.Substring(1)
+            let en1,zh1,ja1,ar1 = words 0
+            if gesture.Length=1 then { en=capital en1; zh=zh1; ja=ja1; ar=ar1 }
+            else
+                let en2,zh2,ja2,ar2 = words 1
+                { en=capital en1+", then "+en2; zh=zh1+"再"+zh2; ja=ja1+"、次に"+ja2; ar=ar1+"، ثم "+ar2 }
+        /// What a key sent by a preset is called, where it has no name of the user's.
+        let back = { en="Back"; zh="后退"; ja="戻る"; ar="رجوع" }
+        let forward = { en="Forward"; zh="前进"; ja="進む"; ar="تقدّم" }
+        let closeWebTab = { en="Close web tab"; zh="关闭网页标签"; ja="Web タブを閉じる"; ar="إغلاق علامة تبويب الويب" }
+        let upOneFolder = { en="Up one folder"; zh="上一级"; ja="1 つ上のフォルダー"; ar="المجلد الأعلى" }
+        // The add-gesture dialog.
+        let appliesTo (scope:string) = { en="For "+scope; zh="作用于 "+scope; ja=scope+" に適用"; ar="لـ "+scope }
+        let pickOne = { en="Gesture · pick one"; zh="手势 · 选一个"; ja="ジェスチャー · 1 つ選ぶ"; ar="الإيماءة · اختر واحدة" }
+        let orDraw = { en="Pick one above, or draw it here with the mouse"; zh="在上面选一个，或在这里按住鼠标划出来"; ja="上で選ぶか、ここにマウスで描きます"; ar="اختر واحدة أعلاه، أو ارسمها هنا بالماوس" }
+        let thisApp = { en="This app"; zh="本程序"; ja="このアプリ"; ar="هذا التطبيق" }
+        let findCommand = { en="Search commands"; zh="搜索命令"; ja="コマンドを検索"; ar="ابحث في الأوامر" }
+        let keepGoing = { en="Keep going…"; zh="继续划…"; ja="続けて描いて…"; ar="تابع الرسم…" }
+        let tooShort = { en="Too short, try again"; zh="划得太短了，再试一次"; ja="短すぎます。もう一度描いてください"; ar="قصيرة جدًا، حاول مرة أخرى" }
+        let tooMany = { en="More than two strokes"; zh="超过两段了"; ja="2 画を超えています"; ar="أكثر من خطين" }
+        let notRecognized = { en="Not recognized: two strokes at most, up, down, left or right"; zh="认不出：最多两段，只认上下左右"; ja="認識できません: 上下左右に 2 画までです"; ar="غير معروفة: خطان على الأكثر، لأعلى أو لأسفل أو لليسار أو لليمين" }
+        let usedEverywhere = { en="Used for all apps"; zh="全局已用"; ja="全体で使用中"; ar="مستخدمة لكل التطبيقات" }
+        let used = { en="Used"; zh="已用"; ja="使用中"; ar="مستخدمة" }
+        let replaces (action:string) =
+            { en=sprintf "replaces “%s”" action; zh=sprintf "将替换“%s”" action
+              ja=sprintf "「%s」を置き換えます" action; ar=sprintf "تستبدل «%s»" action }
+        let runCommand = { en="Run a WindowTabs command"; zh="执行 WindowTabs 命令"; ja="WindowTabs のコマンドを実行する"; ar="تشغيل أمر WindowTabs" }
+        let sendKeys = { en="Send a shortcut"; zh="发送快捷键"; ja="ショートカットを送る"; ar="إرسال اختصار" }
+        let chooseCommand = { en="Choose a command…"; zh="选择命令…"; ja="コマンドを選択…"; ar="اختر أمرًا…" }
+        let name = { en="Name (optional)"; zh="名称（可选）"; ja="名前 (省略可)"; ar="الاسم (اختياري)" }
+        let add = { en="Add"; zh="添加"; ja="追加"; ar="إضافة" }
+        let needGesture = { en="Pick a gesture above, or draw one in the box."; zh="先在上面选一个手势，或者在框里划一个。"; ja="上でジェスチャーを選ぶか、枠内に描いてください。"; ar="اختر إيماءة أعلاه، أو ارسم واحدة داخل المربع." }
+        let needCommand = { en="Choose the command to run."; zh="选择要执行的命令。"; ja="実行するコマンドを選んでください。"; ar="اختر الأمر المطلوب تشغيله." }
+        let needKeys = { en="Click the shortcut box and press the keys to send."; zh="点快捷键框，按下要发送的快捷键。"; ja="ショートカット欄をクリックして、送るキーを押してください。"; ar="انقر مربع الاختصار واضغط المفاتيح المطلوب إرسالها." }
+
     module AppRules =
-        let addApplication = { en="Add application"; zh="添加应用"; ja="アプリを追加"; ar="إضافة تطبيق" }
+        let addApplication ={ en="Add application"; zh="添加应用"; ja="アプリを追加"; ar="إضافة تطبيق" }
         let deleteRule = { en="Delete"; zh="删除"; ja="削除"; ar="حذف" }
         let applicationRuleExists = { en="This application already has a grouping rule."; zh="这个应用已有分组规则，请编辑已有行。"; ja="このアプリには既にグループ化ルールがあります。既存の行を編集してください。"; ar="لدى هذا التطبيق قاعدة تجميع بالفعل." }
         /// Several apps sharing one named group, as opposed to each app's windows grouping by themselves.

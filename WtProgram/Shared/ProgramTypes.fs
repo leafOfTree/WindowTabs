@@ -47,6 +47,11 @@ type SettingsRec = {
     enabledNumberShortcutPaths: Set2<string>
     /// Apps that keep their tab keys (`ShortcutRules`).
     disabledShortcutPaths: Set2<string>
+    /// Holding the right button and drawing a stroke runs what the stroke is bound to.
+    enableMouseGestures: bool
+    /// A small note by the pointer while drawing says what the stroke will do.
+    showGestureHint: bool
+    mouseGestures: MouseGestureTable
     combineIconsInTaskbar: bool
     enableHoverActivate: bool
     /// Which tab titles are bold: "Never", "Active" or "All".
@@ -108,6 +113,7 @@ type SettingsViewType =
     | DiagnosticsSettings
     | LayoutSettings
     | HotKeySettings
+    | MouseGestureSettings
 
 type ISettingsView =
     abstract key : SettingsViewType

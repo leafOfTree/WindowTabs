@@ -43,7 +43,7 @@ module CommandPalette =
     /// as a switch, turned in place; the settings catalog's shortcut entries are commands already.
     let private actions() =
         let commands = Commands.all |> List.filter(fun command -> command.listed) |> List.map ACommand
-        let pages = [GeneralSettings;AppearanceSettings;HotKeySettings;ProgramSettings;LayoutSettings;DiagnosticsSettings]
+        let pages = [GeneralSettings;AppearanceSettings;HotKeySettings;MouseGestureSettings;ProgramSettings;LayoutSettings;DiagnosticsSettings]
         let settings =
             pages |> List.collect(fun page ->
                 SettingsCatalog.all |> List.filter(fun item -> item.page=page) |> List.choose(fun item ->
@@ -87,7 +87,7 @@ module CommandPalette =
         let group action =
             match action with
             | ACommand command -> List.findIndex ((=) command.category) Commands.categories
-            | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item | ANumberKeys item -> Commands.categories.Length+(match item.page with GeneralSettings -> 0 | AppearanceSettings -> 1 | HotKeySettings -> 2 | ProgramSettings -> 3 | LayoutSettings -> 4 | DiagnosticsSettings -> 5)
+            | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item | ANumberKeys item -> Commands.categories.Length+(match item.page with GeneralSettings -> 0 | AppearanceSettings -> 1 | HotKeySettings -> 2 | MouseGestureSettings -> 3 | ProgramSettings -> 4 | LayoutSettings -> 5 | DiagnosticsSettings -> 6)
         let text action = match action with ACommand command -> Commands.textFor command active | ASwitch(item,_,_) | AChoice(item,_,_) | ASetting item | ANumberKeys item -> item.text
         // The value it shows at the right is found as its name is: a style, a size, a colour's code.
         let shownValue action =

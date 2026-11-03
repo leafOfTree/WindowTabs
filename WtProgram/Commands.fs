@@ -325,6 +325,7 @@ module Commands =
         | GeneralSettings -> "general"
         | AppearanceSettings -> "appearance"
         | HotKeySettings -> "shortcuts"
+        | MouseGestureSettings -> "mouse-gestures"
         | ProgramSettings -> "app-rules"
         | LayoutSettings -> "workspaces"
         | DiagnosticsSettings -> "support"
@@ -488,6 +489,10 @@ module Commands =
               let path = processPath hwnd
               ShortcutRules.setEnabled path (not (ShortcutRules.enabled path)))
           with scope=Everywhere; state=appState ShortcutRules.enabled }
+        { plain "mouse-gestures-for-app" Strings.Commands.mouseGesturesForApp GroupCommands hasApp (fun hwnd ->
+              let path = processPath hwnd
+              MouseGestureRules.setEnabled path (not (MouseGestureRules.enabled path)))
+          with scope=Everywhere; state=appState MouseGestureRules.enabled }
         // A window chosen from a list goes beside the tab in front, as from the tab menu.
         fromCatalog "split-pick-right" SplitCommands hasGroup (onGroup(fun g -> g.pickPane(SideBySide,Second)))
         fromCatalog "split-pick-below" SplitCommands hasGroup (onGroup(fun g -> g.pickPane(Stacked,Second)))
@@ -511,7 +516,7 @@ module Commands =
         choosing "delete-workspace" Strings.Commands.deleteWorkspace WorkspaceCommands anyWorkspace (fun _ -> deleteChoices())
         plain "open-settings" Strings.Commands.openSettings SettingsCommands always (fun _ -> Services.managerView.show())
         // The pages are reached from the palette's settings page; these are for keys and the command line.
-        for page in [GeneralSettings;AppearanceSettings;HotKeySettings;ProgramSettings;LayoutSettings;DiagnosticsSettings] do
+        for page in [GeneralSettings;AppearanceSettings;HotKeySettings;MouseGestureSettings;ProgramSettings;LayoutSettings;DiagnosticsSettings] do
             { plain ("open-settings-"+pageId page) (Strings.Commands.settingsPage (Strings.Pages.title page)) SettingsCommands always
                     (fun _ -> Services.managerView.show page)
               with listed=false }
@@ -529,6 +534,13 @@ module Commands =
         plain "refresh-windows" Strings.Commands.refreshWindows AppCommands always (fun _ -> Services.program.refresh())
         plain "exit" Strings.Commands.exit AppCommands always (fun _ -> Services.program.shutdown()) ]
     let find id = all |> List.tryFind(fun command -> command.id=id)
+    /// What a mouse gesture does, in words: the command's name, or the key's.
+    let gestureAction (binding:GestureBinding) =
+        match binding.action with
+        | GestureCommand id -> find id |> Option.map(fun command -> tr command.text.caption) |> Option.defaultValue id
+        | GestureKeys(code,name) -> MouseGesturePresets.keysName code name
+    /// The commands a mouse gesture can run: those listed that run at once, as a key would.
+    let forGestures() = all |> List.filter(fun command -> command.listed && not command.chooses)
     /// What a command is called for the window in front: pinning says which way it goes.
     let textFor (command:Command) (hwnd:IntPtr) =
         if command.id="pin-tab" && PinnedTabs.contains hwnd then Strings.Commands.unpinTab else command.text

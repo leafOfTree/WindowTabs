@@ -93,6 +93,8 @@ type SettingsPage() as this =
         wire table
         this.Disposed.Add(fun _ -> (smooth :> IDisposable).Dispose())
     member _.contentTable = table
+    /// The height the content table has before the page scrolls.
+    member _.room = this.ClientSize.Height-topInset()-inset()
     member _.reveal(control:Control) =
         this.PerformLayout()
         let location = this.PointToClient(control.PointToScreen(Point.Empty))

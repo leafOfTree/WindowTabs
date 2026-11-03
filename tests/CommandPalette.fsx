@@ -371,6 +371,12 @@ let main() =
             note (ShortcutRules.enabled path<>before) "Use tab shortcuts in this app did not change it"
             runDone "tab-shortcuts-for-app" active
             note (ShortcutRules.enabled path=before) "Use tab shortcuts in this app run again did not turn it back")
+        attempt "mouse-gestures-for-app" (fun () ->
+            let before = MouseGestureRules.enabled path
+            runDone "mouse-gestures-for-app" active
+            note (MouseGestureRules.enabled path<>before) "Use mouse gestures in this app did not change it"
+            runDone "mouse-gestures-for-app" active
+            note (MouseGestureRules.enabled path=before) "Use mouse gestures in this app run again did not turn it back")
         attempt "combine-group-taskbar-icons" (fun () ->
             let combine = (Commands.find "combine-group-taskbar-icons").Value
             let before = combine.state active
@@ -454,7 +460,7 @@ let main() =
             pumpUntil "Tab opacity reaching the group" (fun () -> onGroupOf active (fun group -> group.ts.opacity)=fst SettingsCatalog.opacityRange)
             api.setValue("tabOpacity",box SettingsCatalog.opacityDefault)
             pumpUntil "Full tab opacity reaching the group" (fun () -> onGroupOf active (fun group -> group.ts.opacity)=SettingsCatalog.opacityDefault))
-        attempt "refresh-windows" (fun () -> runDone "refresh-windows" active; note (called "refresh") "Look for windows again did not refresh")
+        attempt "refresh-windows" (fun () -> runDone "refresh-windows" active; note (called "refresh") "Rescan windows did not refresh")
         attempt "exit" (fun () -> runDone "exit" active; note (called "shutdown") "Exit WindowTabs did not exit")
         // A pinned tab goes first and stays among the pinned ones; closing tabs together leaves it.
         let three = hwndOf "Close three"
@@ -536,7 +542,7 @@ let main() =
                 note (not (List.contains (tr item.text.caption) titles)) "The number keys' modifier has a row of its own beside their three values"
             | _ -> note (List.contains (tr item.text.caption) titles) (sprintf "The setting %s is not on the Actions page" item.id)
         // The app's own switches show whether they are on for the app in front.
-        for id in ["tabs-for-app";"auto-group-app";"number-shortcut-for-app";"tab-shortcuts-for-app";"combine-group-taskbar-icons";"group-icons-only"] do
+        for id in ["tabs-for-app";"auto-group-app";"number-shortcut-for-app";"tab-shortcuts-for-app";"mouse-gestures-for-app";"combine-group-taskbar-icons";"group-icons-only"] do
             let command = (Commands.find id).Value
             let entry = page.entries |> List.find(fun entry -> entry.title=tr command.text.caption)
             note ((page.aside "" entry).switch=command.state active && (command.state active).IsSome) (sprintf "%s shows no switch" id)

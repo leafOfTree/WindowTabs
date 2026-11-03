@@ -89,6 +89,9 @@ module SettingsCatalog =
         { id="shift-scroll"; page=HotKeySettings; text=Strings.Settings.shiftScroll; binding=Toggle("enableShiftScroll",true,true) }
         { id="ctrl-scroll"; page=HotKeySettings; text=Strings.Settings.ctrlScroll; binding=Toggle("enableCtrlScroll",true,true) }
         { id="middle-click-close"; page=HotKeySettings; text=Strings.Settings.middleClickClose; binding=Toggle("enableMiddleClickClose",true,true) }
+        // Off until asked for: on, every right-drag over any app is taken for a gesture.
+        { id="mouse-gestures"; page=MouseGestureSettings; text=Strings.Settings.mouseGestures; binding=Toggle("enableMouseGestures",false,false) }
+        { id="gesture-hint"; page=MouseGestureSettings; text=Strings.Settings.gestureHint; binding=Toggle("showGestureHint",true,true) }
         { id="tabTextColor"; page=AppearanceSettings; text=Strings.Settings.tabTextColor; binding=Colour }
         { id="tabNormalBgColor"; page=AppearanceSettings; text=Strings.Settings.tabNormalBgColor; binding=Colour }
         { id="tabActiveBgColor"; page=AppearanceSettings; text=Strings.Settings.tabActiveBgColor; binding=Colour }
@@ -176,7 +179,7 @@ module SettingsCatalog =
     let appRulePathKeys = ["includedPaths";"excludedPaths";"autoGroupingPaths"]
     let appGroupingMatchTypes = [-1]
     let appGroupingMatchDefault = -1
-    let appRuleKeys = appRulePathKeys @ ["disabledNumberShortcutPaths";"enabledNumberShortcutPaths";"disabledShortcutPaths";"appTabColors";"appGroupingRules";"appGroupingTargets"]
+    let appRuleKeys = appRulePathKeys @ ["disabledNumberShortcutPaths";"enabledNumberShortcutPaths";"disabledShortcutPaths";"appTabColors";"appGroupingRules";"appGroupingTargets";"mouseGestures"]
     let workspaceKeys = ["workspaces";"workspaceSchemaVersion";"workspaceRecovery";"session"]
     /// The settings a reset leaves: fresh-install toggles, the version (so the next start does
     /// not take the reset for an upgrade) and, unless cleared, app rules and saved workspaces.
