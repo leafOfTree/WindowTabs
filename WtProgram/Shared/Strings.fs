@@ -879,7 +879,8 @@ module Strings =
         let overridesEverywhere arrows (action:string) =
             { en=sprintf "Overrides %s for all apps: %s" arrows action; zh=sprintf "覆盖了全局的 %s：%s" arrows action
               ja=sprintf "全体の %s を上書きします: %s" arrows action; ar=sprintf "يتجاوز %s لكل التطبيقات: %s" arrows action }
-        let useIn (app:string) = { en=sprintf "Use gestures in %s" app; zh=sprintf "在 %s 中使用手势" app; ja=sprintf "%s でジェスチャーを使う" app; ar=sprintf "استخدام الإيماءات في %s" app }
+        let removeApp (app:string) = { en=sprintf "Remove %s and its gestures" app; zh=sprintf "移除 %s 及其手势" app; ja=sprintf "%s とそのジェスチャーを削除" app; ar=sprintf "إزالة %s وإيماءاته" app }
+        let useIn (app:string) ={ en=sprintf "Use gestures in %s" app; zh=sprintf "在 %s 中使用手势" app; ja=sprintf "%s でジェスチャーを使う" app; ar=sprintf "استخدام الإيماءات في %s" app }
         let resetEverywhere = { en="Restore the default gestures for all apps"; zh="恢复默认的全局手势"; ja="全体のジェスチャーを既定に戻す"; ar="استعادة الإيماءات الافتراضية لكل التطبيقات" }
         let resetApp = { en="Restore this app's default gestures"; zh="恢复这个程序的默认手势"; ja="このアプリのジェスチャーを既定に戻す"; ar="استعادة الإيماءات الافتراضية لهذا التطبيق" }
         let legend = { en="Press the right button at the circle, release at the arrow"; zh="圆圈处按下右键，到箭头处松开"; ja="円で右ボタンを押し、矢印で離します"; ar="اضغط الزر الأيمن عند الدائرة وحرّره عند السهم" }

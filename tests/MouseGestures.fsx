@@ -289,6 +289,20 @@ let main() =
                 input.Text <- ""
                 check (list.Items.Count=all) "Clearing the search did not bring every command back"
             dialog.Close()
+            // An app is taken off the list from over its gestures, away from its switch: a press
+            // beside the switch only picks the app.
+            do
+                let firefox = @"C:\Program Files\Mozilla Firefox\firefox.exe"
+                let press (point:Point) = WinUserApi.SendMessage(editor.Handle,0x201,IntPtr(1),IntPtr((point.Y <<< 16) ||| point.X)) |> ignore
+                let listed() = (MouseGestures.appFor (MouseGestureRules.table()) firefox).IsSome
+                let entry = (MouseGestureRules.table()).apps |> List.findIndex(fun app -> AppIdentity.same app.path firefox)
+                let item = Rectangle(0,Dpi.scale 26+(entry+1)*Dpi.scale 46,max (Dpi.scale 200) (min (Dpi.scale 300) (editor.Width*32/100)),Dpi.scale 44)
+                press (Point(item.Right-Dpi.scale 52,item.Top+item.Height/2))
+                check (listed() && editor.Scope=Some firefox) "A press beside an app's switch took the app off the list"
+                let button = editor.RemoveAppBounds
+                press (Point(button.X+button.Width/2,button.Y+button.Height/2))
+                check (not (listed()) && editor.Scope=None) "The button over an app's gestures did not take the app off the list"
+                MouseGestureRules.save (MouseGestures.addApp (MouseGestureRules.table()) firefox MouseGesturePresets.browser)
             form.Close()
             api.setValue("enableMouseGestures",box false)
         // Picking a gesture over one the app has and adding it replaces that one.

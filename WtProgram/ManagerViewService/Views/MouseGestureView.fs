@@ -492,7 +492,19 @@ type MouseGestureEditor() as this =
     let itemRect index = Rectangle(0,m 26+index*itemHeight(),listWidth(),itemHeight()-m 2)
     let rowRect index = Rectangle(tableLeft(),rowsTop()+index*rowHeight(),this.Width-tableLeft(),rowHeight())
     let toggleRect (item:Rectangle) = Rectangle(item.Right-m 38,item.Top+(item.Height-m 16)/2,m 30,m 16)
-    let removeRect (item:Rectangle) = Rectangle(item.Right-m 64,item.Top+(item.Height-m 20)/2,m 20,m 20)
+    /// Taking an app off the list, over its gestures beside their reset: away from the app's
+    /// switch, where a press meant for the switch took the app away.
+    let removeAppRect() = Rectangle(resetApp.Left-m 28,resetApp.Top+(resetApp.Height-m 24)/2,m 24,m 24)
+    /// An action button as the settings' lists draw theirs: the shared glyph, shaded under the pointer.
+    let drawAction (g:Graphics) (p:SettingsPalette) glyph (button:Rectangle) pointed =
+        let highContrast = SystemInformation.HighContrast
+        if pointed then
+            use shape = SettingsShapes.rounded (RectangleF(float32 button.X,float32 button.Y,float32 button.Width,float32 button.Height)) (float32(m 4))
+            use fill = new SolidBrush(if highContrast then SystemColors.Highlight else Color.FromArgb(36,p.text))
+            g.FillPath(fill,shape)
+        let color = if pointed && highContrast then SystemColors.HighlightText elif pointed || highContrast then p.text else p.muted
+        let side = m 16
+        SettingsTreeList.drawGlyph(g,glyph,Rectangle(button.X+(button.Width-side)/2,button.Y+(button.Height-side)/2,side,side),color)
     let deleteRect (row:Rectangle) = Rectangle(row.Right-m 30,row.Top+(row.Height-m 24)/2,m 24,m 24)
     /// Where each row's mark of a gesture that takes the place of everything's was last drawn,
     /// after the row's name.
@@ -662,7 +674,7 @@ type MouseGestureEditor() as this =
                 g.DrawEllipse(pen,iconBounds)
                 g.DrawEllipse(pen,RectangleF(float32 iconBounds.X+float32 iconSize*0.28f,float32 iconBounds.Y,float32 iconSize*0.44f,float32 iconSize))
                 g.DrawLine(pen,iconBounds.X,iconBounds.Y+iconSize/2,iconBounds.Right,iconBounds.Y+iconSize/2)
-            let textRight = match entry with None -> bounds.Right-m 8 | Some _ -> (if index=hoverItem then (removeRect bounds).Left else (toggleRect bounds).Left)-m 4
+            let textRight = match entry with None -> bounds.Right-m 8 | Some _ -> (toggleRect bounds).Left-m 4
             let name = match entry with None -> tr Strings.MouseGestures.everywhere | Some path -> GestureUi.appName path
             let sub = match entry with None -> tr Strings.MouseGestures.allApps | Some path -> IO.Path.GetFileName path
             let nameFont = if isSelected then SettingsUi.subsectionFont() else body
@@ -682,13 +694,7 @@ type MouseGestureEditor() as this =
                 g.FillPath(track,path)
                 let knob = h-float32(m 6)
                 use knobBrush = new SolidBrush(if on then (if SystemInformation.HighContrast then SystemColors.HighlightText else Color.White) elif ThemeService.currentIsDark() then Color.FromRGB(0xA0A0A0) else Color.FromRGB(0x686868))
-                g.FillEllipse(knobBrush,(if on then float32 switch.Right-knob-float32(m 3) else float32 switch.X+float32(m 3)),float32 switch.Y+float32(m 3),knob,knob)
-                if index=hoverItem then
-                    let remove = removeRect bounds
-                    use pen = new Pen((if hoverPart="remove" then p.text else p.muted),float32(Dpi.scaleF 1.4))
-                    let inset = m 6
-                    g.DrawLine(pen,remove.X+inset,remove.Y+inset,remove.Right-inset,remove.Bottom-inset)
-                    g.DrawLine(pen,remove.Right-inset,remove.Y+inset,remove.X+inset,remove.Bottom-inset)))
+                g.FillEllipse(knobBrush,(if on then float32 switch.Right-knob-float32(m 3) else float32 switch.X+float32(m 3)),float32 switch.Y+float32(m 3),knob,knob)))
         // The table: its heading, then a row for each gesture.
         let left = tableLeft()
         GestureUi.text g (tr Strings.MouseGestures.gesture) small (Rectangle(left+m 8,0,m 60,rowsTop())) p.muted
@@ -762,18 +768,10 @@ type MouseGestureEditor() as this =
                 use front = SettingsShapes.rounded (RectangleF(float32 r.X+1.0f,float32 r.Bottom-card-1.0f,card,card)) (float32(Dpi.scaleF 2.0))
                 use fill = new SolidBrush(color)
                 g.FillPath(fill,front))
-            if index=hoverRow then
-                let delete = deleteRect row
-                let color = if hoverPart="delete" then p.text else p.muted
-                use pen = new Pen(color,float32(Dpi.scaleF 1.3))
-                // A bin: lid, body and two slats.
-                let x0,y0,w,h = float32 delete.X+float32(m 6),float32 delete.Y+float32(m 5),float32(m 12),float32(m 14)
-                g.DrawLine(pen,x0-1.0f,y0+2.0f,x0+w+1.0f,y0+2.0f)
-                g.DrawLine(pen,x0+w*0.35f,y0,x0+w*0.65f,y0)
-                g.DrawRectangle(pen,x0+1.0f,y0+3.5f,w-2.0f,h-4.0f)
-                g.DrawLine(pen,x0+w*0.4f,y0+6.0f,x0+w*0.4f,y0+h-3.0f)
-                g.DrawLine(pen,x0+w*0.6f,y0+6.0f,x0+w*0.6f,y0+h-3.0f)
+            if index=hoverRow then drawAction g p DeleteGlyph (deleteRect row) (hoverPart="delete")
             g.DrawLine(rule,row.X,row.Bottom-1,row.Right,row.Bottom-1))
+        // An app picked: taking it off the list, beside its gestures' reset.
+        if scope.IsSome then drawAction g p DeleteGlyph (removeAppRect()) (hoverPart="remove")
         if off then
             // Switched off: the rows show through, dimmed, and the reason is said under them.
             use veil = new SolidBrush(Color.FromArgb(150,background))
@@ -819,9 +817,9 @@ type MouseGestureEditor() as this =
             let part =
                 match items.[index] with
                 | Some _ when (toggleRect bounds).Contains(point) -> "toggle"
-                | Some _ when (removeRect bounds).Contains(point) -> "remove"
                 | _ -> "item"
             index,-1,part
+        | None when scope.IsSome && (removeAppRect()).Contains(point) -> -1,-1,"remove"
         | None ->
             let rows = List.length (bindings())
             match [0..rows-1] |> List.tryFind(fun index -> (rowRect index).Contains(point)) with
@@ -852,13 +850,14 @@ type MouseGestureEditor() as this =
             hoverPart <- part
             this.Cursor <- if part="toggle" || part="remove" || part="delete" || part="blank" || part="item" then Cursors.Hand else Cursors.Default
             this.Invalidate()
-            // Only parts whose meaning is not plain from their look: the remove marks and the
-            // drawn gestures say what they are already.
+            // Only parts whose meaning is not plain from their look: a row's bin and the drawn
+            // gestures say what they are already; the bin over the table names the app it takes off.
             let tip =
                 match part with
                 | "toggle" ->
                     let entry = (entries()).[item]
                     Some(tr (Strings.MouseGestures.useIn (GestureUi.scopeName entry)),toggleRect (itemRect item))
+                | "remove" -> Some(tr (Strings.MouseGestures.removeApp (GestureUi.scopeName scope)),removeAppRect())
                 | "override" ->
                     let binding = (bindings()).[row]
                     MouseGestures.overrides (table()) binding |> Option.map(fun other ->
@@ -885,9 +884,9 @@ type MouseGestureEditor() as this =
             | "toggle" ->
                 items.[item] |> Option.iter(fun path -> MouseGestureRules.setEnabled path (not (MouseGestureRules.enabled path)))
             | "remove" ->
-                items.[item] |> Option.iter(fun path ->
+                scope |> Option.iter(fun path ->
                     notices.Remove path |> ignore
-                    if scope |> Option.exists(AppIdentity.same path) then scope <- None
+                    scope <- None
                     save (MouseGestures.removeApp (table()) path (MouseGesturePresets.forApp path).IsSome))
             | "item" -> select items.[item]
             | "delete" ->
@@ -923,6 +922,8 @@ type MouseGestureEditor() as this =
     member _.Menu = menu
     /// Where the Action and Does columns start.
     member _.Columns = columns()
+    /// Where the button that takes the app picked off the list is.
+    member _.RemoveAppBounds = removeAppRect()
     /// The height to stretch to, so the footer meets the bottom of the page.
     member _.Fill
         with get() = fill
