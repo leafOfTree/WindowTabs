@@ -1213,10 +1213,13 @@ type SettingsCombo(items:string[]) as this =
             if index=selected then this.Text <- text
             this.Invalidate()
     member _.ItemText(index) = items.[index]
-    /// Narrowest width that shows every choice untrimmed, matching the insets used by paintFull.
-    member this.FitToItems() =
-        let textWidth = items |> Array.map(fun text -> TextRenderer.MeasureText(text,this.Font).Width) |> Array.fold max 0
-        let dot = if itemImages.Length>0 then Dpi.scale 24 elif itemColors.Length>0 then Dpi.scale 22 else 0
+    /// Narrowest width that shows every choice untrimmed, matching the insets used by paintFull:
+    /// with a colour dot before each, where the colours come later, and with what the choices
+    /// may yet have added to their names, such as the * of an edited preset.
+    member this.FitToItems(?withDots:bool, ?suffix:string) =
+        let suffix = defaultArg suffix ""
+        let textWidth = items |> Array.map(fun text -> TextRenderer.MeasureText(text+suffix,this.Font).Width) |> Array.fold max 0
+        let dot = if itemImages.Length>0 then Dpi.scale 24 elif itemColors.Length>0 || defaultArg withDots false then Dpi.scale 22 else 0
         // One width for lists of short words, so stacked rows line up their left edges too.
         this.Width <- max (Dpi.scale SettingsShapes.editorWidth) (textWidth+dot+Dpi.scale 60)
     member _.CompactLabel with set(label:unit -> string) = compactLabel <- Some label; this.Invalidate()

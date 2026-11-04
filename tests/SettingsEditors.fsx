@@ -303,6 +303,14 @@ let main() =
         assertTrue (layoutRows |> List.forall(fun row -> row.Parent=layoutCard)) "Tab layout settings are split across cards"
         assertTrue (layoutRows |> List.map layoutCard.GetRow = [0..4]) "Vertical tab width is not last in tab layout"
         let preset = view.control.Controls.Find("palette-preset",true).[0] :?> SettingsCombo
+        // The preset list shows every name in full, its dot and an edit's * too, where it cut
+        // "Windows accent" short at a fixed width, and lines up with the text lists below it.
+        do
+            let rec combos (c:Control) = seq { match c with :? SettingsCombo as combo -> yield combo | _ -> (); for child in c.Controls do yield! combos child }
+            let bold = combos view.control |> Seq.find(fun combo -> combo.ItemText(0)=(SettingsBindings.labels "tab-text-bold").[0])
+            let longest = ThemePresets.names |> Array.map(fun name -> TextRenderer.MeasureText(tr name+"*",preset.Font).Width) |> Array.max
+            assertTrue (preset.Width>=longest+Dpi.scale 22+Dpi.scale 60) (sprintf "The preset list is %dpx, too narrow for its names" preset.Width)
+            assertTrue (preset.Width=bold.Width) (sprintf "The preset list is %dpx, the lists below it %dpx" preset.Width bold.Width)
         // Filled by automatic colours, tabs ignore the background rows: hide them, and judge
         // readability on the automatic colours, which give way to the text.
         let comboNamed name = view.control.Controls.Find(name,true).[0] :?> SettingsCombo

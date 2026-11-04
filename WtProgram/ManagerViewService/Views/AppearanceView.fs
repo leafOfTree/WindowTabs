@@ -290,7 +290,8 @@ type AppearanceView(?settings:ISettings) =
         for choice in [colorMode;colorStyle] do choice.SelectedIndexChanged.Add(fun _ -> preview.Invalidate(); updateFilled())
         preset.Name <- "palette-preset"
         preset.AccessibleName <- tr Strings.Appearance.colorPreset
-        preset.Width <- Dpi.scale 140
+        // Every name in full, Windows accent among them, with its dot and the * an edit adds.
+        preset.FitToItems(withDots=true,suffix="*")
         resetColorsButton.Margin <- Padding(0,0,Dpi.scale 6,0)
         // The theme tiles above show which theme's colours these are.
         swapColorsButton.Margin <- Padding(0,0,Dpi.scale 6,0)
@@ -325,9 +326,10 @@ type AppearanceView(?settings:ISettings) =
         let closeButton = SettingsBindings.choice "tab-close-button"
         closeButton.SelectedIndexChanged.Add(fun _ -> preview.Invalidate())
         SettingsUi.settingRow textCard "tab-close-button" closeButton
-        // The two lists offer the same kind of choice, so they line up at one width.
-        let listWidth = max textBold.Width closeButton.Width
-        for list in [textBold;closeButton] do list.Width <- listWidth
+        // The two lists offer the same kind of choice, so they line up at one width, and the preset
+        // list in the heading above them does too.
+        let listWidth = [textBold;closeButton;preset] |> List.map(fun list -> list.Width) |> List.max
+        for list in [textBold;closeButton;preset] do list.Width <- listWidth
         let opacityLow,opacityHigh = SettingsCatalog.opacityRange
         let opacity = new SettingsNumberInput(Minimum=decimal opacityLow,Maximum=decimal opacityHigh,Font=SettingsUi.bodyFont(),
                                               Value=decimal (match settings.getValue("tabOpacity") with :? int as value -> value | _ -> SettingsCatalog.opacityDefault))
