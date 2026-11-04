@@ -1404,17 +1404,32 @@ type SettingsCombo(items:string[]) as this =
             // What a row keeps beside its label, as the rows are drawn: the inset before it, the dot or
             // image, the room for the tick, and the scrollbar the frame keeps whether rows overflow or not.
             let chrome = Dpi.scale 42+(if itemImages.Length>0 then Dpi.scale 24 elif itemColors.Length>0 then Dpi.scale 22 else 0)+frame.BarWidth+window.Padding.Horizontal
-            window.Size <- Size(min area.Width (max anchorBox.Width (labelWidth+chrome)),
+            let chosenRow = shown.IndexOf selected
+            // As WinUI opens a ComboBox: over the box, the chosen row where the box was and its text
+            // where the box's text was, so the eye stays on the choice; then the list reaches past
+            // the box by its own padding on each side. Lists that scroll or search open below,
+            // where the rows and the box stay apart.
+            let fits = rows*list.ItemHeight+window.Padding.Vertical+2<=area.Height-Dpi.scale 12
+            let overBox = this.DropDownAnchor.IsNone && search.IsNone && rows=shown.Count && fits && chosenRow>=0
+            let boxWidth = anchorBox.Width+(if overBox then window.Padding.Horizontal else 0)
+            window.Size <- Size(min area.Width (max boxWidth (labelWidth+chrome)),
                                 min (area.Height-Dpi.scale 12) (rows*list.ItemHeight+boxHeight+window.Padding.Vertical+2))
             search |> Option.iter(fun host -> host.Size <- Size(window.Width-window.Padding.Horizontal,host.Control.Height))
             listHost.Size <- Size(window.Width-window.Padding.Horizontal,window.Height-window.Padding.Vertical-boxHeight)
             frame.Size <- listHost.Size
             list.SelectedIndex <- max 0 (shown.IndexOf selected)
             list.TopIndex <- 0
-            let anchor = Point(anchorBox.X,anchorBox.Bottom+Dpi.scale 4)
-            let y = if anchor.Y+window.Height<=area.Bottom then anchor.Y else anchorBox.Y-window.Height-Dpi.scale 4
-            let x = if this.DropDownAnchor.IsSome then anchor.X else anchor.X+anchorBox.Width-window.Width
-            window.Location <- Point(max area.Left (min (area.Right-window.Width) x),max area.Top y)
+            let x,y =
+                if overBox then
+                    window.PerformLayout()
+                    let host = listHost.Bounds
+                    let y = anchorBox.Y+(anchorBox.Height-list.ItemHeight)/2-host.Y-chosenRow*list.ItemHeight
+                    anchorBox.X-host.X,max area.Top (min (area.Bottom-window.Height) y)
+                else
+                    let anchor = Point(anchorBox.X,anchorBox.Bottom+Dpi.scale 4)
+                    let y = if anchor.Y+window.Height<=area.Bottom then anchor.Y else anchorBox.Y-window.Height-Dpi.scale 4
+                    (if this.DropDownAnchor.IsSome then anchor.X else anchor.X+anchorBox.Width-window.Width),max area.Top y
+            window.Location <- Point(max area.Left (min (area.Right-window.Width) x),y)
             popup <- Some window
             this.Invalidate()
             window.Closed.Add(fun e ->
