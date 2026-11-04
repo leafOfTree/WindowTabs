@@ -583,9 +583,14 @@ let main() =
                 image
             do
                 use rest = snap field
+                // At rest no edge is stronger than another: a darker foot read as a stray rule.
                 let foot,top = rest.GetPixel(field.Width/2,field.Height-1),rest.GetPixel(field.Width/2,0)
-                check (distance foot p.surface>distance top p.surface+30)
-                      (sprintf "A field's foot is not a strong line in the %s theme: foot %A, top %A" mode foot top)
+                check (distance foot top<12)
+                      (sprintf "A field at rest has a line along one edge in the %s theme: foot %A, top %A" mode foot top)
+                use resting = snap button
+                let bottom,upper = resting.GetPixel(button.Width/2,button.Height-1),resting.GetPixel(button.Width/2,0)
+                check (distance bottom upper<12)
+                      (sprintf "A button at rest has a line along one edge in the %s theme: foot %A, top %A" mode bottom upper)
             host.Show()
             host.Activate()
             // Keyboard cues on, as after a Tab press: WM_UPDATEUISTATE, UIS_CLEAR of UISF_HIDEFOCUS.

@@ -25,10 +25,10 @@ module SettingsShapes =
     /// WinUI's two corners: controls round off by 4px, what floats over them and cards by 8px.
     let controlRadius() = float32(Dpi.scale 4)
     let overlayRadius() = float32(Dpi.scale 8)
-    /// The edge WinUI draws round a control, as faint ink over whatever is behind it: darker
-    /// along the foot on light pages and lighter along the top on dark ones, so the control seems
-    /// to stand off the page. A text field's foot is a strong line, and the accent two pixels deep
-    /// while it is typed in. outline replaces the faint ink where that would not show.
+    /// The edge round a control: a faint outline in ink over whatever is behind it, and along a
+    /// text field's foot the accent, two pixels deep, while it is typed in, as WinUI marks it. At
+    /// rest no line is stronger than the rest: WinUI's darker foot read as a stray rule under
+    /// every field. outline replaces the faint ink where that would not show.
     let drawControlEdge (g:Graphics) (shape:Drawing2D.GraphicsPath) (bounds:RectangleF) (field:bool) (typing:bool) (outline:Color) (p:SettingsPalette) =
         let state = g.Save()
         g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
@@ -40,20 +40,14 @@ module SettingsShapes =
             let ink alpha = if dark then Color.FromArgb(alpha,255,255,255) else Color.FromArgb(alpha,0,0,0)
             use pen = new Pen(if outline.IsEmpty then ink (if dark then 18 else 15) else outline)
             g.DrawPath(pen,shape)
-            // A strip of the edge in another colour: the shape filled within it, and its outline.
-            let strip (color:Color) (depth:float32) (top:bool) =
-                g.SetClip(if top then RectangleF(bounds.X-1.0f,bounds.Y-1.0f,bounds.Width+2.0f,depth+0.5f)
-                          else RectangleF(bounds.X-1.0f,bounds.Bottom-depth+0.5f,bounds.Width+2.0f,depth+1.0f))
-                use fill = new SolidBrush(color)
-                use line = new Pen(color)
-                if depth>1.0f then g.FillPath(fill,shape)
+            if field && typing then
+                // The shape filled within a strip along its foot, following the rounded corners.
+                let depth = float32(Dpi.scaleF 2.0)
+                g.SetClip(RectangleF(bounds.X-1.0f,bounds.Bottom-depth+0.5f,bounds.Width+2.0f,depth+1.0f),Drawing2D.CombineMode.Intersect)
+                use fill = new SolidBrush(p.accent)
+                use line = new Pen(p.accent)
+                g.FillPath(fill,shape)
                 g.DrawPath(line,shape)
-                g.ResetClip()
-            if field then
-                if typing then strip p.accent (float32(Dpi.scaleF 2.0)) false
-                else strip (ink (if dark then 139 else 114)) 1.0f false
-            elif dark then strip (ink 24) 1.0f true
-            else strip (ink 41) 1.0f false
         g.Restore(state)
     /// WinUI's keyboard focus: a two-pixel ring in the text colour round a one-pixel one in the
     /// page's, so it shows on any fill. Drawn within bounds, as nothing may be drawn outside.
