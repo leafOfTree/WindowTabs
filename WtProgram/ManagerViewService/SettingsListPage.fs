@@ -83,7 +83,7 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
                     this.BeginInvoke(Action(fun () -> relayoutPending <- false; this.PerformLayout())) |> ignore))
         ThemeBinding.watch this (fun () ->
             let p = SettingsColors.current()
-            for link in allLinks() do link.LinkColor <- p.accent
+            for link in allLinks() do link.LinkColor <- p.accentText
             list.Invalidate()
             card.Invalidate())
     /// Short note above the list (scan progress, counts, errors).

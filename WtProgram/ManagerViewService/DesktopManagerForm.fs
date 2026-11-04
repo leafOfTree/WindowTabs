@@ -249,7 +249,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                     let part = text.Substring(start,finish-start)
                     let size = TextRenderer.MeasureText(graphics,part,font,Size(Int32.MaxValue,bounds.Height),flags)
                     TextRenderer.DrawText(graphics,part,font,Point(x,bounds.Top),
-                        (if active then (SettingsColors.current()).accent else color),flags)
+                        (if active then (SettingsColors.current()).accentText else color),flags)
                     x <- x+size.Width
                     start <- finish
             finally graphics.Restore(state)

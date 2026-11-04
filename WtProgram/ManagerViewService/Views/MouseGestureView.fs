@@ -19,6 +19,7 @@ module GestureUi =
         if SystemInformation.HighContrast then p.surface
         elif ThemeService.currentIsDark() then p.surface else Color.FromRGB(0xF7F7F6)
     let accent (p:SettingsPalette) = if SystemInformation.HighContrast then SystemColors.Highlight else p.accent
+    let accentText (p:SettingsPalette) = if SystemInformation.HighContrast then SystemColors.Highlight else p.accentText
     /// With the system's animations off, the pictures stand still, whole.
     let animate() = SystemInformation.UIEffectsEnabled
     let private names = Collections.Generic.Dictionary<string,string>(StringComparer.OrdinalIgnoreCase)
@@ -148,7 +149,7 @@ type GestureGrid(scope:string option, table:MouseGestureTable) as this =
                 let mark = Rectangle(bounds.Right-size+Dpi.scale 4,bounds.Bottom-size+Dpi.scale 4,size,size)
                 use badge = new SolidBrush(accent)
                 g.FillEllipse(badge,mark)
-                use tick = new Pen((if SystemInformation.HighContrast then SystemColors.HighlightText else Color.White),float32(Dpi.scale 2))
+                use tick = new Pen(p.onAccent,float32(Dpi.scale 2))
                 g.DrawLines(tick,[|PointF(float32 mark.X+float32 size*0.28f,float32 mark.Y+float32 size*0.52f)
                                    PointF(float32 mark.X+float32 size*0.44f,float32 mark.Y+float32 size*0.68f)
                                    PointF(float32 mark.X+float32 size*0.72f,float32 mark.Y+float32 size*0.36f)|]))
@@ -491,7 +492,7 @@ type MouseGestureEditor() as this =
     let rowsTop() = m 34
     let itemRect index = Rectangle(0,m 26+index*itemHeight(),listWidth(),itemHeight()-m 2)
     let rowRect index = Rectangle(tableLeft(),rowsTop()+index*rowHeight(),this.Width-tableLeft(),rowHeight())
-    let toggleRect (item:Rectangle) = Rectangle(item.Right-m 38,item.Top+(item.Height-m 16)/2,m 30,m 16)
+    let toggleRect (item:Rectangle) = Rectangle(item.Right-m 48,item.Top+(item.Height-m 20)/2,m 40,m 20)
     /// Taking an app off the list, over its gestures beside their reset: away from the app's
     /// switch, where a press meant for the switch took the app away.
     let removeAppRect() = Rectangle(resetApp.Left-m 28,resetApp.Top+(resetApp.Height-m 24)/2,m 24,m 24)
@@ -683,18 +684,7 @@ type MouseGestureEditor() as this =
             listed |> Option.iter(fun app ->
                 // The app's own switch, as the settings' switches look.
                 let switch = toggleRect bounds
-                let on = app.enabled
-                use path = new GraphicsPath()
-                let h = float32 switch.Height
-                path.AddArc(float32 switch.X,float32 switch.Y,h,h,90.0f,180.0f)
-                path.AddArc(float32 switch.Right-h,float32 switch.Y,h,h,270.0f,180.0f)
-                path.CloseFigure()
-                let offColor = if SystemInformation.HighContrast then SystemColors.Control elif ThemeService.currentIsDark() then Color.FromRGB(0x424242) else Color.FromRGB(0xD8D8D8)
-                use track = new SolidBrush(if on then accent else offColor)
-                g.FillPath(track,path)
-                let knob = h-float32(m 6)
-                use knobBrush = new SolidBrush(if on then (if SystemInformation.HighContrast then SystemColors.HighlightText else Color.White) elif ThemeService.currentIsDark() then Color.FromRGB(0xA0A0A0) else Color.FromRGB(0x686868))
-                g.FillEllipse(knobBrush,(if on then float32 switch.Right-knob-float32(m 3) else float32 switch.X+float32(m 3)),float32 switch.Y+float32(m 3),knob,knob)))
+                SettingsShapes.drawSwitch g (RectangleF.op_Implicit switch) (if app.enabled then 1.0f else 0.0f) (index=hoverItem && hoverPart="toggle") true p))
         // The table: its heading, then a row for each gesture.
         let left = tableLeft()
         GestureUi.text g (tr Strings.MouseGestures.gesture) small (Rectangle(left+m 8,0,m 60,rowsTop())) p.muted
@@ -734,7 +724,7 @@ type MouseGestureEditor() as this =
                 if SystemInformation.HighContrast then SystemColors.Control,SystemColors.ControlText
                 else
                     match binding.action with
-                    | GestureCommand _ -> Color.FromArgb(36,accent),accent
+                    | GestureCommand _ -> Color.FromArgb(36,accent),p.accentText
                     | GestureKeys _ -> Color.FromArgb(24,p.text),p.text
             GestureUi.pill g tag tagFill
             GestureUi.text g kindText small (Rectangle(tag.X+m 6,tag.Y,tag.Width-m 6,tag.Height)) tagText
@@ -792,11 +782,11 @@ type MouseGestureEditor() as this =
             GestureUi.pill g bounds (Color.FromArgb(36,accent))
             let said = tr (Strings.MouseGestures.presetFilled notices.[path])+"  ·  "
             let saidWidth = GestureUi.measure said small
-            GestureUi.text g said small (Rectangle(bounds.X+m 10,bounds.Y,saidWidth+m 4,bounds.Height)) accent
+            GestureUi.text g said small (Rectangle(bounds.X+m 10,bounds.Y,saidWidth+m 4,bounds.Height)) (GestureUi.accentText p)
             let link = tr Strings.MouseGestures.startEmpty
             let linkFont = SettingsUi.font "Segoe UI" 9.0f (if hoverPart="blank" then FontStyle.Underline else FontStyle.Regular)
             let linkBounds = Rectangle(bounds.X+m 10+saidWidth,bounds.Y,GestureUi.measure link linkFont+m 4,bounds.Height)
-            GestureUi.text g link linkFont linkBounds accent
+            GestureUi.text g link linkFont linkBounds (GestureUi.accentText p)
             blankRect.Value <- linkBounds
         | _ -> ()
         let footer = footerTop()

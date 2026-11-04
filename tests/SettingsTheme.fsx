@@ -511,6 +511,48 @@ let main() =
                 use image = new Bitmap(form.Width,form.Height)
                 let painted = try form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size)); true with _ -> false
                 check painted (sprintf "The %s page failed to paint in the %s theme" (tr page) mode)
+        // The accent and switches as WinUI draws them: Windows' own shade of the accent for the
+        // page, an off switch as an outline the page shows through, a click sliding the knob over.
+        for mode in ["light";"dark"] do
+            api.setValue("tabThemeMode",box mode)
+            Application.DoEvents()
+            let dark = mode="dark"
+            let p = SettingsColors.current()
+            check (p.accent=ThemeService.accent dark && p.accentText=ThemeService.accentText dark) (sprintf "The %s accent does not follow Windows" mode)
+            ThemeService.systemAccentShades() |> Option.iter(fun shades ->
+                check (p.accent.ToArgb()=shades.[if dark then 1 else 4].ToArgb() && p.accentText.ToArgb()=shades.[if dark then 0 else 5].ToArgb())
+                      (sprintf "The %s accent is not Windows' shade for the page: %A" mode p.accent))
+            check (p.onAccent.ToArgb()=(if dark then Color.Black else Color.White).ToArgb()) (sprintf "What sits on the %s accent is not in a colour that reads on it" mode)
+            use host = new Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,
+                                Location=Point(-12000,-12000),Size=Size(Dpi.scale 80,Dpi.scale 50),BackColor=p.background)
+            let toggle = new SettingsToggle(Location=Point(Dpi.scale 10,Dpi.scale 10),BackColor=p.background)
+            host.Controls.Add toggle
+            WinUserApi.ShowWindow(host.Handle,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
+            Application.DoEvents()
+            let shot () =
+                let image = new Bitmap(toggle.Width,toggle.Height)
+                toggle.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                image
+            let distance (a:Color) (b:Color) = max (abs(int a.R-int b.R)) (max (abs(int a.G-int b.G)) (abs(int a.B-int b.B)))
+            do
+                use off = shot()
+                let inside = off.GetPixel(toggle.Width*3/4,toggle.Height/2)
+                // The outline's top edge, drawn across a pixel row or two.
+                let edge = [0..2] |> List.map(fun dy -> off.GetPixel(toggle.Width/2,(toggle.Height-Dpi.scale 20)/2+dy)) |> List.maxBy(fun c -> distance c p.background)
+                check (distance inside p.background<16 && distance edge p.background>40)
+                      (sprintf "The off switch is not an outline in the %s theme: inside %A, edge %A" mode inside edge)
+            toggle.Checked <- true
+            if SystemInformation.UIEffectsEnabled then
+                check (toggle.KnobPosition<1.0f) (sprintf "The %s switch's knob jumped across instead of sliding" mode)
+            let clock = Diagnostics.Stopwatch.StartNew()
+            while toggle.KnobPosition<1.0f && clock.ElapsedMilliseconds<2000L do
+                Threading.Thread.Sleep(10)
+                Application.DoEvents()
+            check (toggle.KnobPosition=1.0f) (sprintf "The %s switch's knob did not come to rest on" mode)
+            do
+                use on = shot()
+                let fill = on.GetPixel(toggle.Width/4,toggle.Height/2)
+                check (distance fill p.accent<24) (sprintf "The on switch is not filled in the %s accent: %A" mode fill)
         (controls form |> Seq.find(fun c -> c :? Button && c.Text=tr Strings.Pages.general) :?> Button).PerformClick()
         api.setValue("tabThemeMode",box "dark")
         Application.DoEvents()

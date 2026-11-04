@@ -14,7 +14,7 @@ type private AlertGlyph(kind:AlertKind) as this =
         let dark = ThemeService.currentIsDark() && not SystemInformation.HighContrast
         let fill,ink =
             match kind with
-            | AlertKind.Info -> p.accent,Color.White
+            | AlertKind.Info -> p.accent,p.onAccent
             | AlertKind.Warning -> if dark then Color.FromRGB(0xFCE100),Color.Black else Color.FromRGB(0x9D5D00),Color.White
             | AlertKind.Error -> if dark then Color.FromRGB(0xFF99A4),Color.Black else Color.FromRGB(0xC42B1C),Color.White
         let g = e.Graphics

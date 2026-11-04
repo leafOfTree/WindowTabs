@@ -79,7 +79,7 @@ type SettingsActionButton() as this =
                 (if pressed then p.selection elif hot then p.hover else background),p.border,(if hot || this.Focused then p.text else p.muted)
             | SettingsButtonKind.Primary ->
                 let accent = if highContrast then SystemColors.Highlight else hoverShade p.accent
-                accent,accent,(if highContrast then SystemColors.HighlightText else Color.White)
+                accent,accent,p.onAccent
             | SettingsButtonKind.Danger when not highContrast ->
                 if hot || pressed then
                     let red = Color.FromRGB(if pressed then 0xA52314 else 0xC42B1C)

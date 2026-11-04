@@ -685,6 +685,11 @@ type SettingsEllipsisLabel() as this =
 type SettingsToggle() as this =
     inherit CheckBox()
     let mutable hovering = false
+    /// Where the knob is, from 0 off to 1 on. A click slides it there over WinUI's 167 ms.
+    let mutable position = 0.0f
+    let mutable start = 0.0f
+    let clock = Diagnostics.Stopwatch()
+    let timer = new Timer(Interval=10)
     do
         this.AutoSize <- false
         this.Size <- Size(Dpi.scale 42,Dpi.scale 28)
@@ -694,37 +699,34 @@ type SettingsToggle() as this =
         this.FlatAppearance.BorderSize <- 0
         this.AccessibleRole <- AccessibleRole.CheckButton
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
-    override this.OnCheckedChanged(e) = base.OnCheckedChanged(e); this.Invalidate()
+        timer.Tick.Add(fun _ ->
+            let target = if this.Checked then 1.0f else 0.0f
+            let t = min 1.0 (clock.Elapsed.TotalMilliseconds/167.0)
+            position <- if t>=1.0 then target else start+(target-start)*float32(1.0-Math.Pow(1.0-t,3.0))
+            if t>=1.0 then timer.Stop()
+            this.Invalidate())
+    /// Where the knob is drawn: 0 off, 1 on, between while it slides.
+    member _.KnobPosition = position
+    override this.OnCheckedChanged(e) =
+        base.OnCheckedChanged(e)
+        // A switch not on screen yet, or with animations off in Windows, is drawn in place at once.
+        if SystemInformation.UIEffectsEnabled && this.IsHandleCreated && this.Visible then
+            start <- position
+            clock.Restart()
+            timer.Start()
+        else
+            timer.Stop()
+            position <- if this.Checked then 1.0f else 0.0f
+        this.Invalidate()
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); hovering <- true; this.Invalidate()
     override this.OnMouseLeave(e) = base.OnMouseLeave(e); hovering <- false; this.Invalidate()
     override this.OnPaint(e) =
         e.Graphics.Clear(this.BackColor)
-        let dark = ThemeService.currentIsDark()
-        let palette = SettingsColors.current()
-        let accent = palette.accent
-        let neutral = if dark then Color.FromRGB(0xA0A0A0) else Color.FromRGB(0x686868)
-        let x,y,w,h = float32(Dpi.scale 2),float32(Dpi.scale 5),float32(this.Width-Dpi.scale 4),float32(this.Height-Dpi.scale 10)
-        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-        use path = new Drawing2D.GraphicsPath()
-        path.AddArc(x,y,h,h,90.0f,180.0f)
-        path.AddArc(x+w-h,y,h,h,270.0f,180.0f)
-        path.CloseFigure()
-        let checkedColor = if SystemInformation.HighContrast then SystemColors.Highlight else accent
-        let offColor =
-            if SystemInformation.HighContrast then SystemColors.Control
-            elif dark then Color.FromRGB(if hovering then 0x555555 else 0x424242)
-            else Color.FromRGB(if hovering then 0xC7C7C7 else 0xD8D8D8)
-        let disabledColor =
-            if SystemInformation.HighContrast then SystemColors.Control
-            elif dark then Color.FromRGB(0x272726)
-            else Color.FromRGB(0xECECEA)
-        use fill = new SolidBrush(if not this.Enabled then disabledColor elif this.Checked then checkedColor else offColor)
-        e.Graphics.FillPath(fill,path)
-        let inset = float32(Dpi.scale 3)
-        let diameter = h-inset*2.0f
-        let left = if this.Checked then x+w-diameter-inset else x+inset
-        use knob = new SolidBrush(if not this.Enabled then palette.disabledText elif SystemInformation.HighContrast then (if this.Checked then SystemColors.HighlightText else SystemColors.WindowText) elif this.Checked then Color.White else neutral)
-        e.Graphics.FillEllipse(knob,left,y+inset,diameter,diameter)
+        let track = RectangleF(float32(Dpi.scale 1),float32((this.Height-Dpi.scale 20)/2),float32(this.Width-Dpi.scale 2),float32(Dpi.scale 20))
+        SettingsShapes.drawSwitch e.Graphics track position hovering this.Enabled (SettingsColors.current())
+    override this.Dispose(disposing) =
+        if disposing then timer.Dispose()
+        base.Dispose(disposing)
 
 type SettingsThemeTile(mode:string) as this =
     inherit RadioButton()
@@ -1251,7 +1253,7 @@ type SettingsCombo(items:string[]) as this =
                         let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPadding ||| TextFormatFlags.SingleLine
                         let lead = TextRenderer.MeasureText(e.Graphics,"x",this.Font,Size.Empty,TextFormatFlags.NoPrefix).Width-TextRenderer.MeasureText(e.Graphics,"x",this.Font,Size.Empty,flags).Width
                         let mutable x = rect.X+lead/2
-                        let mark = if SystemInformation.HighContrast then foreground else p.accent
+                        let mark = if SystemInformation.HighContrast then foreground else p.accentText
                         let length = min words.Length (text.Length-found)
                         for part,color in [text.Substring(0,found),foreground; text.Substring(found,length),mark; text.Substring(found+length),foreground] do
                             if part<>"" && x<rect.Right then

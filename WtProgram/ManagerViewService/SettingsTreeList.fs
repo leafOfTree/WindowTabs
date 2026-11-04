@@ -479,32 +479,11 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             checkChanged.Trigger((item,column,not value))
         | _ -> ()
 
-    /// Draws a glyph on a 16-unit grid scaled to the box.
-    /// A switch as the settings pages' toggles look: a pill, filled in the accent colour when on,
-    /// with its knob at that end.
+    /// A switch as the settings pages' toggles look, at rest.
     static member drawSwitch(g:Graphics, box:Rectangle, isOn:bool, p:SettingsPalette) =
-        let dark = ThemeService.currentIsDark()
-        let x,y,w,h = float32 box.X,float32 box.Y,float32 box.Width,float32 box.Height
-        use path = new GraphicsPath()
-        path.AddArc(x,y,h,h,90.0f,180.0f)
-        path.AddArc(x+w-h,y,h,h,270.0f,180.0f)
-        path.CloseFigure()
-        let onColor = if SystemInformation.HighContrast then SystemColors.Highlight else p.accent
-        let offColor =
-            if SystemInformation.HighContrast then SystemColors.Control
-            elif dark then Color.FromRGB(0x424242) else Color.FromRGB(0xD8D8D8)
-        use fill = new SolidBrush(if isOn then onColor else offColor)
-        g.FillPath(fill,path)
-        let inset = float32(Dpi.scale 3)
-        let diameter = h-inset*2.0f
-        let left = if isOn then x+w-diameter-inset else x+inset
-        let knobColor =
-            if SystemInformation.HighContrast then (if isOn then SystemColors.HighlightText else SystemColors.WindowText)
-            elif isOn then Color.White
-            elif dark then Color.FromRGB(0xA0A0A0) else Color.FromRGB(0x686868)
-        use knob = new SolidBrush(knobColor)
-        g.FillEllipse(knob,left,y+inset,diameter,diameter)
+        SettingsShapes.drawSwitch g (RectangleF.op_Implicit box) (if isOn then 1.0f else 0.0f) false true p
 
+    /// Draws a glyph on a 16-unit grid scaled to the box.
     static member drawGlyph(g:Graphics, glyph:TreeListGlyph, box:Rectangle, color:Color) =
         let state = g.Save()
         g.SmoothingMode <- SmoothingMode.AntiAlias
@@ -931,7 +910,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                 | TextColumn ->
                     // The row's switch, if any, takes the right end of the last column; the text
                     // sits before it.
-                    let switchWidth,switchHeight = Dpi.scale 36,Dpi.scale 18
+                    let switchWidth,switchHeight = Dpi.scale 40,Dpi.scale 20
                     let arrowWidth = Dpi.scale 10
                     let reserve =
                         if column<>columns.Length-1 then 0
@@ -983,12 +962,12 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         if item.mixed column then
                             use fill = new SolidBrush(if enabled then p.accent else Color.FromArgb(90,p.muted))
                             g.FillPath(fill,shape)
-                            use mark = new Pen(Color.White,1.8f)
+                            use mark = new Pen((if enabled then p.onAccent else Color.White),1.8f)
                             g.DrawLine(mark,r.X+r.Width*0.28f,r.Y+r.Height*0.5f,r.X+r.Width*0.72f,r.Y+r.Height*0.5f)
                         elif isChecked then
                             use fill = new SolidBrush(if enabled then p.accent else Color.FromArgb(90,p.muted))
                             g.FillPath(fill,shape)
-                            use mark = new Pen(Color.White,1.8f)
+                            use mark = new Pen((if enabled then p.onAccent else Color.White),1.8f)
                             g.DrawLines(mark,[|PointF(r.X+r.Width*0.25f,r.Y+r.Height*0.52f);PointF(r.X+r.Width*0.43f,r.Y+r.Height*0.70f)
                                                PointF(r.X+r.Width*0.76f,r.Y+r.Height*0.32f)|])
                         else

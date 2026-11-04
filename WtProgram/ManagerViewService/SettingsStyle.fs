@@ -39,6 +39,52 @@ module SettingsShapes =
             elif hot then p.hover
             else p.surface
         fill,(if light then fill else p.border)
+    /// A switch in a pill-shaped track, as WinUI draws its ToggleSwitch: off, an outline with a
+    /// grey knob; on, the accent with the knob in the colour that reads on it. position runs from
+    /// 0 (off) to 1 (on) while the knob slides; under the pointer the knob grows a little.
+    let drawSwitch (g:Graphics) (track:RectangleF) (position:float32) (hot:bool) (enabled:bool) (p:SettingsPalette) =
+        let highContrast = SystemInformation.HighContrast
+        let dark = ThemeService.currentIsDark() && not highContrast
+        // WinUI's colours are translucent ink over whatever is behind the switch.
+        let ink alpha = if dark then Color.FromArgb(alpha,255,255,255) else Color.FromArgb(alpha,0,0,0)
+        let mix (a:Color) (b:Color) (t:float32) =
+            let step (x:byte) (y:byte) = int(float32 x+(float32 y-float32 x)*t)
+            Color.FromArgb(step a.A b.A,step a.R b.R,step a.G b.G,step a.B b.B)
+        let stroke,offFill,offKnob =
+            if highContrast then SystemColors.WindowText,Color.Transparent,SystemColors.WindowText
+            elif not enabled then ink (if dark then 40 else 55),Color.Transparent,ink (if dark then 93 else 92)
+            elif dark then ink 139,(if hot then ink 11 else Color.FromArgb(26,0,0,0)),ink 200
+            else ink 114,(if hot then ink 15 else ink 6),ink 155
+        let onFill,onKnob =
+            if highContrast then SystemColors.Highlight,SystemColors.HighlightText
+            elif not enabled then ink (if dark then 40 else 55),(if dark then ink 135 else Color.White)
+            elif hot then Color.FromArgb(230,p.accent),p.onAccent
+            else p.accent,p.onAccent
+        let state = g.Save()
+        g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+        let pill (r:RectangleF) =
+            let path = new Drawing2D.GraphicsPath()
+            path.AddArc(r.X,r.Y,r.Height,r.Height,90.0f,180.0f)
+            path.AddArc(r.Right-r.Height,r.Y,r.Height,r.Height,270.0f,180.0f)
+            path.CloseFigure()
+            path
+        use shape = pill track
+        use fill = new SolidBrush(offFill)
+        g.FillPath(fill,shape)
+        let width = max 1.0f (float32(Dpi.scaleF 1.0))
+        use outline = pill (RectangleF.Inflate(track,-width/2.0f,-width/2.0f))
+        use pen = new Pen(stroke,width)
+        g.DrawPath(pen,outline)
+        // The on look fades in over the off one as the knob slides across.
+        if position>0.0f then
+            use on = new SolidBrush(Color.FromArgb(int(float32 onFill.A*position),onFill))
+            g.FillPath(on,shape)
+        let h = track.Height
+        let diameter = h*(if hot && enabled then 0.7f else 0.6f)
+        let cx = track.X+h/2.0f+(track.Width-h)*position
+        use knob = new SolidBrush(mix offKnob onKnob position)
+        g.FillEllipse(knob,cx-diameter/2.0f,track.Y+(h-diameter)/2.0f,diameter,diameter)
+        g.Restore(state)
 
 /// Eases wheel scrolling toward a target offset. Anything else that moves the view (scrollbar,
 /// focus, search) calls jump or stop, so it lands at once and no animation fights it.

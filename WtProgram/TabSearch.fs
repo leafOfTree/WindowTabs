@@ -509,7 +509,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     KeyCaps.draw g keyFont left ((this.ClientSize.Height-height)/2) height "Alt+Enter" p |> ignore
                     hintLeft <- left-Dpi.scale 8-labelWidth
                     TextRenderer.DrawText(g,label,keyFont,Rectangle(hintLeft,0,labelWidth+Dpi.scale 4,this.ClientSize.Height),
-                                          (if SystemInformation.HighContrast then SystemColors.WindowText else p.accent),
+                                          (if SystemInformation.HighContrast then SystemColors.WindowText else p.accentText),
                                           TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter)
                 match footerNote with
                 | Some(text,refused) ->

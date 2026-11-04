@@ -20,11 +20,36 @@ module ThemeService =
     /// The logo's dark outline keeps its light front tab clear on light and dark taskbars alike.
     let appIconName = "Bemo.ico"
 
+    /// The shades Windows derives from the accent colour chosen in Settings, lightest first:
+    /// Light3, Light2, Light1, the accent, Dark1, Dark2, Dark3. None when Windows has none saved.
+    let systemAccentShades() =
+        try
+            use key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\Accent")
+            match (if isNull key then null else key.GetValue("AccentPalette")) with
+            | :? (byte[]) as bytes when bytes.Length>=28 ->
+                Some(Array.init 7 (fun index -> System.Drawing.Color.FromArgb(int bytes.[index*4],int bytes.[index*4+1],int bytes.[index*4+2])))
+            | _ -> None
+        with _ -> None
+
     // Read the registry on system notifications, never from a control's paint callback.
     let mutable private systemDark = if systemIsDark() then 1 else 0
+    let mutable private accentShades = systemAccentShades()
     let private cachedSystemDark() = System.Threading.Volatile.Read(&systemDark)=1
     let private refreshSystemTheme() =
         System.Threading.Volatile.Write(&systemDark,if systemIsDark() then 1 else 0)
+        System.Threading.Volatile.Write(&accentShades,systemAccentShades())
+    /// The accent as WinUI fills with it: Dark1 on light pages, Light2 on dark ones, which keep
+    /// text and marks on it readable. Windows' default blue when no accent is saved.
+    let accent dark =
+        match System.Threading.Volatile.Read(&accentShades) with
+        | Some shades -> if dark then shades.[1] else shades.[4]
+        | None -> System.Drawing.Color.FromRGB(if dark then 0x60CDFF else 0x005FB8)
+    /// The accent as WinUI writes text in it: Dark2 on light pages, Light3 on dark ones, a step
+    /// further from the page than the fill, so a light accent such as gold stays legible.
+    let accentText dark =
+        match System.Threading.Volatile.Read(&accentShades) with
+        | Some shades -> if dark then shades.[0] else shades.[5]
+        | None -> System.Drawing.Color.FromRGB(if dark then 0x99EBFF else 0x003E92)
 
     // Tab groups run on their own UI threads and read the appearance while handling a
     // theme change. Reading it through Services.settings waits on the main thread, which
