@@ -158,11 +158,21 @@ let main() =
             let index = ThemePresets.keys |> Array.findIndex ((=) key)
             check (ThemePresets.names.[index].en=name) "Renaming a preset changed its stored identity"
         if not SystemInformation.HighContrast then
-            for palette in ThemePresets.palettes true do
-                let color = palette.tabNormalBgColor
-                let preview = ThemePresets.previewColor true color
-                check (max preview.R (max preview.G preview.B)>=174uy) "Dark preset preview is too dim to distinguish"
-                check (ThemePresets.previewColor false color=color) "Light preset preview changed its colour"
+            // A preset's dot keeps its hue with more colour than the muted tab, where only
+            // brightened the dark ones came out grey-white; a grey preset stays grey.
+            for dark in [true;false] do
+                for palette in ThemePresets.palettes dark do
+                    let color = palette.tabNormalBgColor
+                    let preview = ThemePresets.previewColor dark color
+                    if dark then check (max preview.R (max preview.G preview.B)>=174uy) "Dark preset preview is too dim to distinguish"
+                    let _,a,b = Theme.OkLab.ofColor color
+                    let _,pa,pb = Theme.OkLab.ofColor preview
+                    let chroma,shown = sqrt(a*a+b*b),sqrt(pa*pa+pb*pb)
+                    if chroma<0.01 then check (shown<0.01) (sprintf "A grey preset's dot took on a colour: %A" preview)
+                    else
+                        let gap = abs(hueDegrees color-hueDegrees preview)
+                        check (min gap (360.0-gap)<6.0 && shown>=min 0.06 (chroma*2.0))
+                              (sprintf "The dot of %A is %A: %.0f° off its hue, chroma %.3f from %.3f" color preview (min gap (360.0-gap)) shown chroma)
         let optionalKeys = ["combineIconsInTaskbar";"replaceAltTab";"groupWindowsInSwitcher";"enableNumberLeader";"enableHoverActivate";"tabHoverPreview";"pauseInFullScreen"]
         let checkMinimalDefaults() =
             for key in optionalKeys do check (api.getValue(key)=box false) (sprintf "%s must be opt-in" key)

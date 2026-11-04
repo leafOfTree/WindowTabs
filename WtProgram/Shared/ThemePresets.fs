@@ -56,14 +56,16 @@ module ThemePresets =
             { Theme.lightPalette with tabTextColor=mix Color.Black 0.30;tabActiveBgColor=mix Color.White 0.04
                                       tabHighlightBgColor=mix Color.White 0.12;tabNormalBgColor=mix Color.White 0.28;tabBorderColor=mix Color.White 0.50 }
     let private accentPalette dark = accentTints dark (SystemAccent.chosen())
-    /// Small preview dots need more contrast than a full tab background.
+    /// A preset's dot in the list: its hue, at a lightness that shows on the list, with about three
+    /// times the colour of the muted tab it stands for. Only brightened, the dots of dark presets
+    /// came out grey-white and hard to tell apart. A grey preset stays grey.
     let previewColor dark (color:Color) =
-        if not dark || System.Windows.Forms.SystemInformation.HighContrast then color
+        if System.Windows.Forms.SystemInformation.HighContrast then color
         else
-            let peak = float (max color.R (max color.G color.B))
-            let factor = max 1.0 (175.0/max 1.0 peak)
-            let channel value = min 255 (int(Math.Round(float value*factor)))
-            Color.FromArgb(channel color.R,channel color.G,channel color.B)
+            let _,a,b = Theme.OkLab.ofColor color
+            let chroma = sqrt(a*a+b*b)
+            let shown = if chroma<0.01 then 0.0 else min 0.13 (max 0.07 (chroma*3.0))
+            Theme.OkLab.ofLch (if dark then 0.76 else 0.70) shown (atan2 b a)
     let palettes dark =
         let make (basis:TabPalette) text active hover inactive border =
             { basis with tabTextColor=Color.FromRGB(text);tabActiveBgColor=Color.FromRGB(active)
