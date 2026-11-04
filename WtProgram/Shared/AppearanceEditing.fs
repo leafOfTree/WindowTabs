@@ -9,7 +9,7 @@ module PaletteEditing =
     let paletteForProfile dark (s:AppearancePreferences) = if dark then s.darkPalette else s.lightPalette
     let customForProfile dark (s:AppearancePreferences) = if dark then s.darkCustomPalette else s.lightCustomPalette
     let activePalette dark (s:AppearancePreferences) =
-        if s.useCustomColors then paletteForProfile dark s
+        if s.useCustomColors then ThemePresets.following dark s (paletteForProfile dark s)
         elif dark then Theme.darkPalette else Theme.lightPalette
     let setActive dark palette (s:AppearancePreferences) =
         if dark then {s with darkPalette=palette;useCustomColors=true}

@@ -568,7 +568,8 @@ module Strings =
                { en="Sand"; zh="沙色"; ja="サンド"; ar="رملي" }
                { en="Amber"; zh="琥珀橙"; ja="アンバー"; ar="كهرماني" }
                Settings.tabColorNames.[11]
-               Settings.tabColorNames.[6] |]
+               Settings.tabColorNames.[6]
+               { en="Windows accent"; zh="Windows 强调色"; ja="Windows のアクセント"; ar="لون تمييز Windows" } |]
         let pickerHelp = { en="Color picker: arrow keys adjust saturation and brightness; Shift + arrow keys adjust hue"
                            zh="颜色选择器：方向键调整饱和度和亮度；Shift + 方向键调整色相"
                            ja="色の選択：方向キーで彩度と明るさを調整し、Shift + 方向キーで色相を調整します"

@@ -143,7 +143,7 @@ let main() =
         // Nor may one sink into the dark bar behind it.
         check (inactive |> Array.forall(fun shade -> Theme.OkLab.distance shade Theme.dark.tabNormalBgColor>=0.02)) "An inactive tab colour disappears into the dark bar"
         let presetNames = ThemePresets.names |> Array.map(fun name -> name.en)
-        check (presetNames=[|"Default";"Blue";"Teal";"Green";"Sand";"Amber";"Rose";"Purple";"Slate"|])
+        check (presetNames=[|"Default";"Windows accent";"Blue";"Teal";"Green";"Sand";"Amber";"Rose";"Purple";"Slate"|])
               "Theme presets do not use colour names in the shared colour order"
         // A preset named after a tab colour is a quiet version of the same hue: Rose sat 14° off.
         let hueDegrees (c:Color) = let _,a,b = Theme.OkLab.ofColor c in atan2 b a*180.0/Math.PI
@@ -219,6 +219,25 @@ let main() =
             check (reloaded.lightPreset=ThemePresets.keys.[1] && reloaded.darkPreset=""
                    && reloaded.presetEdits.[key].tabTextColor.ToArgb()=edited.tabTextColor.ToArgb()) "Preset choice or edits were not saved"
             api.updateAppearance(fun s -> {s with lightPreset="";presetEdits=Map.empty})
+        // The Windows accent preset is worked out afresh each time the tabs read it, so they follow
+        // Windows when its accent changes; once edited it keeps its colours, as any preset does.
+        do
+            let index = ThemePresets.keys |> Array.findIndex ((=) ThemePresets.accentKey)
+            check (index=1) "The Windows accent preset is not listed after Default"
+            let live = (ThemePresets.palettes false).[index]
+            let stale = {live with tabNormalBgColor=Color.FromArgb(1,2,3)}
+            let chosen = {settings.settings.appearance with useCustomColors=true;lightPreset=ThemePresets.accentKey;lightPalette=stale;presetEdits=Map.empty}
+            check ((ThemePresets.following false chosen stale).tabNormalBgColor=live.tabNormalBgColor && (PaletteEditing.activePalette false chosen).tabNormalBgColor=live.tabNormalBgColor)
+                  "The Windows accent preset kept colours from before the accent changed"
+            let edited = {chosen with presetEdits=Map.ofList ["light:"+ThemePresets.accentKey,stale]}
+            check (ThemePresets.following false edited stale=stale) "An edited Windows accent preset did not keep its colours"
+            // Tints of the accent: the tabs behind in its hue, the front one paler.
+            let _,a,b = Theme.OkLab.ofColor (SystemAccent.chosen())
+            if sqrt(a*a+b*b)>0.03 then
+                let gap = abs(hueDegrees live.tabNormalBgColor-hueDegrees (SystemAccent.chosen()))
+                check (min gap (360.0-gap)<15.0) (sprintf "The Windows accent preset is %.0f° from the accent" (min gap (360.0-gap)))
+            let lightness (c:Color) = let l,_,_ = Theme.OkLab.ofColor c in l
+            check (lightness live.tabActiveBgColor>lightness live.tabNormalBgColor) "The Windows accent preset's front tab is not paler than the rest"
         // The old paid version's license key and activation ticket go on the next save.
         do
             let json = api.root
