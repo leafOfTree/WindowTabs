@@ -468,8 +468,10 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     // A chevron a little shorter than the text's capitals, in the margin before the names.
                     let s = float32(Dpi.scaleF 3.5)
                     let cx,cy = float32(Dpi.scale 3)+s/2.0f,float32 scopeHeight/2.0f
-                    use pen = new Pen(p.text,float32(Dpi.scaleF 1.4),StartCap=Drawing2D.LineCap.Round,EndCap=Drawing2D.LineCap.Round,LineJoin=Drawing2D.LineJoin.Round)
-                    g.DrawLines(pen,[|PointF(cx+s/2.0f,cy-s);PointF(cx-s/2.0f,cy);PointF(cx+s/2.0f,cy+s)|])
+                    let em = float32(Dpi.scale 12)
+                    if not (UiFace.glyph g 0xE76B (RectangleF(cx-em/2.0f,cy-em/2.0f,em,em)) p.text) then
+                        use pen = new Pen(p.text,float32(Dpi.scaleF 1.4),StartCap=Drawing2D.LineCap.Round,EndCap=Drawing2D.LineCap.Round,LineJoin=Drawing2D.LineJoin.Round)
+                        g.DrawLines(pen,[|PointF(cx+s/2.0f,cy-s);PointF(cx-s/2.0f,cy);PointF(cx+s/2.0f,cy+s)|])
                     drawKey key "Esc"
                 | [] ->
                     let placed,outline,key = segments()

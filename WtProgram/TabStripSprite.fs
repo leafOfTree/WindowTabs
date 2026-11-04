@@ -267,11 +267,7 @@ type CloseButtonSprite = {
 module PinGlyph =
     /// The filled pin Explorer shows by a pinned folder, from the icon font of Windows 11, or of
     /// Windows 10; none on a system with neither, where the pin is drawn by hand.
-    let font =
-        lazy(
-            use installed = new Text.InstalledFontCollection()
-            let names = installed.Families |> Array.map(fun family -> family.Name)
-            ["Segoe Fluent Icons";"Segoe MDL2 Assets"] |> List.tryFind(fun name -> Array.contains name names))
+    let font = UiFace.icons
 
 /// A pinned tab's pushpin, where its close button would be, in the quiet colour of that button.
 type PinMarkSprite = {

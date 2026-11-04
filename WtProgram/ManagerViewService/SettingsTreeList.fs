@@ -485,54 +485,61 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
 
     /// Draws a glyph on a 16-unit grid scaled to the box.
     static member drawGlyph(g:Graphics, glyph:TreeListGlyph, box:Rectangle, color:Color) =
-        let state = g.Save()
-        g.SmoothingMode <- SmoothingMode.AntiAlias
-        g.TranslateTransform(float32 box.X,float32 box.Y)
-        g.ScaleTransform(float32 box.Width/16.0f,float32 box.Height/16.0f)
-        use pen = new Pen(color,1.2f)
-        match glyph with
-        | AddGlyph ->
-            g.DrawLine(pen,3.0f,8.0f,13.0f,8.0f)
-            g.DrawLine(pen,8.0f,3.0f,8.0f,13.0f)
-        | WindowGlyph ->
-            use frame = SettingsShapes.rounded (RectangleF(1.5f,2.5f,13.0f,11.0f)) 2.0f
-            g.DrawPath(pen,frame)
-            g.DrawLine(pen,1.5f,5.5f,14.5f,5.5f)
-        | GroupGlyph ->
-            use frame = SettingsShapes.rounded (RectangleF(1.5f,5.0f,13.0f,9.0f)) 2.0f
-            g.DrawPath(pen,frame)
-            g.DrawLines(pen,[|PointF(2.5f,5.0f);PointF(2.5f,2.5f);PointF(7.0f,2.5f);PointF(8.5f,5.0f)|])
-        | WorkspaceGlyph ->
-            use back = SettingsShapes.rounded (RectangleF(1.5f,1.5f,9.5f,8.5f)) 1.5f
-            use front = SettingsShapes.rounded (RectangleF(5.0f,6.0f,9.5f,8.5f)) 1.5f
-            g.DrawPath(pen,back)
-            g.DrawPath(pen,front)
-        | EditGlyph ->
-            use pencil = new GraphicsPath()
-            pencil.AddLines([|PointF(2.5f,13.5f);PointF(3.2f,10.6f);PointF(10.8f,3.0f);PointF(13.0f,5.2f);PointF(5.4f,12.8f)|])
-            pencil.CloseFigure()
-            g.DrawPath(pen,pencil)
-            g.DrawLine(pen,9.2f,4.6f,11.4f,6.8f)
-        | TabsGlyph ->
-            // Fuller than the other glyphs: it stands alone where a name would be.
-            use body = SettingsShapes.rounded (RectangleF(1.5f,2.0f,13.0f,12.0f)) 2.0f
-            g.DrawPath(pen,body)
-            g.DrawLine(pen,8.0f,2.0f,8.0f,14.0f)
-        | UngroupGlyph ->
-            use left = SettingsShapes.rounded (RectangleF(1.5f,4.0f,5.0f,8.0f)) 1.5f
-            use right = SettingsShapes.rounded (RectangleF(9.5f,4.0f,5.0f,8.0f)) 1.5f
-            g.DrawPath(pen,left)
-            g.DrawPath(pen,right)
-            g.DrawLines(pen,[|PointF(7.0f,2.0f);PointF(8.0f,4.5f);PointF(9.0f,2.0f)|])
-            g.DrawLines(pen,[|PointF(7.0f,14.0f);PointF(8.0f,11.5f);PointF(9.0f,14.0f)|])
-        | DeleteGlyph ->
-            g.DrawLine(pen,2.5f,4.5f,13.5f,4.5f)
-            g.DrawLines(pen,[|PointF(6.0f,4.5f);PointF(6.0f,2.5f);PointF(10.0f,2.5f);PointF(10.0f,4.5f)|])
-            g.DrawLines(pen,[|PointF(3.8f,4.5f);PointF(4.6f,13.5f);PointF(11.4f,13.5f);PointF(12.2f,4.5f)|])
-            g.DrawLine(pen,6.8f,7.0f,6.8f,11.0f)
-            g.DrawLine(pen,9.2f,7.0f,9.2f,11.0f)
-        | NoGlyph -> ()
-        g.Restore(state)
+        // Windows' icon font, as WinUI's lists; Ungroup, which it has no mark for, drawn by hand
+        // in a stroke as fine as the font's beside its glyphs.
+        let code =
+            match glyph with
+            | AddGlyph -> Some 0xE710 | EditGlyph -> Some 0xE70F | DeleteGlyph -> Some 0xE74D | WindowGlyph -> Some 0xE737
+            | GroupGlyph -> Some 0xE8B7 | WorkspaceGlyph -> Some 0xE7C4 | TabsGlyph -> Some 0xE736 | UngroupGlyph | NoGlyph -> None
+        if not (code |> Option.exists(fun code -> UiFace.glyph g code (RectangleF.op_Implicit box) color)) then
+            let state = g.Save()
+            g.SmoothingMode <- SmoothingMode.AntiAlias
+            g.TranslateTransform(float32 box.X,float32 box.Y)
+            g.ScaleTransform(float32 box.Width/16.0f,float32 box.Height/16.0f)
+            use pen = new Pen(color,(if UiFace.icons.Force().IsSome then 1.0f else 1.2f))
+            match glyph with
+            | AddGlyph ->
+                g.DrawLine(pen,3.0f,8.0f,13.0f,8.0f)
+                g.DrawLine(pen,8.0f,3.0f,8.0f,13.0f)
+            | WindowGlyph ->
+                use frame = SettingsShapes.rounded (RectangleF(1.5f,2.5f,13.0f,11.0f)) 2.0f
+                g.DrawPath(pen,frame)
+                g.DrawLine(pen,1.5f,5.5f,14.5f,5.5f)
+            | GroupGlyph ->
+                use frame = SettingsShapes.rounded (RectangleF(1.5f,5.0f,13.0f,9.0f)) 2.0f
+                g.DrawPath(pen,frame)
+                g.DrawLines(pen,[|PointF(2.5f,5.0f);PointF(2.5f,2.5f);PointF(7.0f,2.5f);PointF(8.5f,5.0f)|])
+            | WorkspaceGlyph ->
+                use back = SettingsShapes.rounded (RectangleF(1.5f,1.5f,9.5f,8.5f)) 1.5f
+                use front = SettingsShapes.rounded (RectangleF(5.0f,6.0f,9.5f,8.5f)) 1.5f
+                g.DrawPath(pen,back)
+                g.DrawPath(pen,front)
+            | EditGlyph ->
+                use pencil = new GraphicsPath()
+                pencil.AddLines([|PointF(2.5f,13.5f);PointF(3.2f,10.6f);PointF(10.8f,3.0f);PointF(13.0f,5.2f);PointF(5.4f,12.8f)|])
+                pencil.CloseFigure()
+                g.DrawPath(pen,pencil)
+                g.DrawLine(pen,9.2f,4.6f,11.4f,6.8f)
+            | TabsGlyph ->
+                // Fuller than the other glyphs: it stands alone where a name would be.
+                use body = SettingsShapes.rounded (RectangleF(1.5f,2.0f,13.0f,12.0f)) 2.0f
+                g.DrawPath(pen,body)
+                g.DrawLine(pen,8.0f,2.0f,8.0f,14.0f)
+            | UngroupGlyph ->
+                use left = SettingsShapes.rounded (RectangleF(1.5f,4.0f,5.0f,8.0f)) 1.5f
+                use right = SettingsShapes.rounded (RectangleF(9.5f,4.0f,5.0f,8.0f)) 1.5f
+                g.DrawPath(pen,left)
+                g.DrawPath(pen,right)
+                g.DrawLines(pen,[|PointF(7.0f,2.0f);PointF(8.0f,4.5f);PointF(9.0f,2.0f)|])
+                g.DrawLines(pen,[|PointF(7.0f,14.0f);PointF(8.0f,11.5f);PointF(9.0f,14.0f)|])
+            | DeleteGlyph ->
+                g.DrawLine(pen,2.5f,4.5f,13.5f,4.5f)
+                g.DrawLines(pen,[|PointF(6.0f,4.5f);PointF(6.0f,2.5f);PointF(10.0f,2.5f);PointF(10.0f,4.5f)|])
+                g.DrawLines(pen,[|PointF(3.8f,4.5f);PointF(4.6f,13.5f);PointF(11.4f,13.5f);PointF(12.2f,4.5f)|])
+                g.DrawLine(pen,6.8f,7.0f,6.8f,11.0f)
+                g.DrawLine(pen,9.2f,7.0f,9.2f,11.0f)
+            | NoGlyph -> ()
+            g.Restore(state)
 
     /// A text with its matching runs in the accent colour, as the settings search shows them,
     /// the colour changing mid-word; cut with an ellipsis where it does not fit.
@@ -789,11 +796,13 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                     if this.ShowExpanders && item.Children.Count>0 then
                         let box = this.expanderBounds(level,top)
                         let cx,cy,s = float32 box.X+float32 box.Width/2.0f,float32 box.Y+float32 box.Height/2.0f,float32(Dpi.scale 3)
-                        let points =
-                            if item.Expanded then [|PointF(cx-s,cy-s/2.0f);PointF(cx,cy+s/2.0f);PointF(cx+s,cy-s/2.0f)|]
-                            else [|PointF(cx-s/2.0f,cy-s);PointF(cx+s/2.0f,cy);PointF(cx-s/2.0f,cy+s)|]
-                        use pen = new Pen(p.muted,1.5f)
-                        g.DrawLines(pen,points)
+                        let em = float32(Dpi.scale 12)
+                        if not (UiFace.glyph g (if item.Expanded then 0xE70D else 0xE76C) (RectangleF(cx-em/2.0f,cy-em/2.0f,em,em)) p.muted) then
+                            let points =
+                                if item.Expanded then [|PointF(cx-s,cy-s/2.0f);PointF(cx,cy+s/2.0f);PointF(cx+s,cy-s/2.0f)|]
+                                else [|PointF(cx-s/2.0f,cy-s);PointF(cx+s/2.0f,cy);PointF(cx-s/2.0f,cy+s)|]
+                            use pen = new Pen(p.muted,1.5f)
+                            g.DrawLines(pen,points)
                     let iconBox,bounds = this.nameLayout(item,level,top)
                     let editing = rowEditor |> Option.exists(fun (row,_,_) -> Object.ReferenceEquals(row,item))
                     let hidesIcon = rowEditor |> Option.exists(fun (row,_,includeIcon) -> includeIcon && Object.ReferenceEquals(row,item))
@@ -950,8 +959,11 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         // A chevron as the settings pages' drop-downs draw theirs.
                         let cx,cy = float32(cell.Right-Dpi.scale 8-arrowWidth/2),float32(top+rowHeight/2)
                         let s = float32(Dpi.scale 4)
-                        use pen = new Pen((if isSelected && SystemInformation.HighContrast then SystemColors.HighlightText else p.muted),1.5f)
-                        g.DrawLines(pen,[|PointF(cx-s,cy-s/2.0f);PointF(cx,cy+s/2.0f);PointF(cx+s,cy-s/2.0f)|])
+                        let color = if isSelected && SystemInformation.HighContrast then SystemColors.HighlightText else p.muted
+                        let em = float32(Dpi.scale 12)
+                        if not (UiFace.glyph g 0xE70D (RectangleF(cx-em/2.0f,cy-em/2.0f,em,em)) color) then
+                            use pen = new Pen(color,1.5f)
+                            g.DrawLines(pen,[|PointF(cx-s,cy-s/2.0f);PointF(cx,cy+s/2.0f);PointF(cx+s,cy-s/2.0f)|])
                 | CheckColumn ->
                     match item.check column with
                     | Some isChecked ->
@@ -962,14 +974,19 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         if item.mixed column then
                             use fill = new SolidBrush(if enabled then p.accent else Color.FromArgb(90,p.muted))
                             g.FillPath(fill,shape)
-                            use mark = new Pen((if enabled then p.onAccent else Color.White),1.8f)
-                            g.DrawLine(mark,r.X+r.Width*0.28f,r.Y+r.Height*0.5f,r.X+r.Width*0.72f,r.Y+r.Height*0.5f)
+                            let ink = if enabled then p.onAccent else Color.White
+                            if not (UiFace.glyph g 0xE738 (RectangleF.Inflate(r,-r.Width*0.15f,-r.Height*0.15f)) ink) then
+                                use mark = new Pen(ink,1.8f)
+                                g.DrawLine(mark,r.X+r.Width*0.28f,r.Y+r.Height*0.5f,r.X+r.Width*0.72f,r.Y+r.Height*0.5f)
                         elif isChecked then
                             use fill = new SolidBrush(if enabled then p.accent else Color.FromArgb(90,p.muted))
                             g.FillPath(fill,shape)
-                            use mark = new Pen((if enabled then p.onAccent else Color.White),1.8f)
-                            g.DrawLines(mark,[|PointF(r.X+r.Width*0.25f,r.Y+r.Height*0.52f);PointF(r.X+r.Width*0.43f,r.Y+r.Height*0.70f)
-                                               PointF(r.X+r.Width*0.76f,r.Y+r.Height*0.32f)|])
+                            let ink = if enabled then p.onAccent else Color.White
+                            // WinUI's tick, a little inside the box as a CheckBox has it.
+                            if not (UiFace.glyph g 0xE73E (RectangleF.Inflate(r,-r.Width*0.15f,-r.Height*0.15f)) ink) then
+                                use mark = new Pen(ink,1.8f)
+                                g.DrawLines(mark,[|PointF(r.X+r.Width*0.25f,r.Y+r.Height*0.52f);PointF(r.X+r.Width*0.43f,r.Y+r.Height*0.70f)
+                                                   PointF(r.X+r.Width*0.76f,r.Y+r.Height*0.32f)|])
                         else
                             use border = new Pen((if enabled then p.muted else Color.FromArgb(90,p.muted)),1.3f)
                             g.DrawPath(border,shape)

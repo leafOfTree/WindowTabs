@@ -51,16 +51,23 @@ type SettingsSearchBox(search:TextBox) as this =
         base.OnPaint(e)
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         let glyph = if search.Focused && not (ThemeService.currentIsDark()) then (SettingsColors.current()).accent else (SettingsColors.current()).muted
-        use pen = new Pen(glyph,float32(Dpi.scaleF 1.4))
         let x,y = Dpi.scale 11,this.Height/2-Dpi.scale 7
-        e.Graphics.DrawEllipse(pen,x,y,Dpi.scale 12,Dpi.scale 12)
-        e.Graphics.DrawLine(pen,x+Dpi.scale 10,y+Dpi.scale 10,x+Dpi.scale 16,y+Dpi.scale 16)
+        // Where the drawn lens and handle were, so the text keeps its place.
+        let em = float32(Dpi.scale 16)
+        let lens = RectangleF(float32 x+float32(Dpi.scale 8)-em/2.0f,float32 y+float32(Dpi.scale 8)-em/2.0f,em,em)
+        if not (UiFace.glyph e.Graphics 0xE721 lens glyph) then
+            use pen = new Pen(glyph,float32(Dpi.scaleF 1.4))
+            e.Graphics.DrawEllipse(pen,x,y,Dpi.scale 12,Dpi.scale 12)
+            e.Graphics.DrawLine(pen,x+Dpi.scale 10,y+Dpi.scale 10,x+Dpi.scale 16,y+Dpi.scale 16)
         if search.TextLength>0 then
             let x = this.Width-Dpi.scale 24
             let y = this.Height/2
-            use clearPen = new Pen((SettingsColors.current()).muted,float32(Dpi.scaleF 1.4))
-            e.Graphics.DrawLine(clearPen,x-Dpi.scale 4,y-Dpi.scale 4,x+Dpi.scale 4,y+Dpi.scale 4)
-            e.Graphics.DrawLine(clearPen,x+Dpi.scale 4,y-Dpi.scale 4,x-Dpi.scale 4,y+Dpi.scale 4)
+            let muted = (SettingsColors.current()).muted
+            let em = float32(Dpi.scale 12)
+            if not (UiFace.glyph e.Graphics 0xE711 (RectangleF(float32 x-em/2.0f,float32 y-em/2.0f,em,em)) muted) then
+                use clearPen = new Pen(muted,float32(Dpi.scaleF 1.4))
+                e.Graphics.DrawLine(clearPen,x-Dpi.scale 4,y-Dpi.scale 4,x+Dpi.scale 4,y+Dpi.scale 4)
+                e.Graphics.DrawLine(clearPen,x+Dpi.scale 4,y-Dpi.scale 4,x-Dpi.scale 4,y+Dpi.scale 4)
 
 type SettingsInfoButton() as this =
     inherit Button()
@@ -74,23 +81,26 @@ type SettingsInfoButton() as this =
         e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         let color = if this.Focused || this.ClientRectangle.Contains(this.PointToClient(Control.MousePosition)) then p.text else p.muted
-        // Keep the "i" on whole pixels so it stays sharp: pixel edges on whole coordinates, a whole-pixel
-        // stroke, and a circle whose size differs from the stroke by an even amount so the stem is centred.
-        e.Graphics.PixelOffsetMode <- Drawing2D.PixelOffsetMode.Half
-        let stroke = max 1 (int(Math.Round(Dpi.scaleF 1.2)))
-        let size = let s = Dpi.scale 16 in if (s-stroke)%2=0 then s else s+1
-        let left,top = (this.Width-size)/2,(this.Height-size)/2
-        let half = float32 stroke/2.0f
-        use pen = new Pen(color,float32 stroke)
-        e.Graphics.DrawEllipse(pen,float32 left+half,float32 top+half,float32(size-stroke),float32(size-stroke))
-        use brush = new SolidBrush(color)
-        let x = left+(size-stroke)/2
-        let at fraction = top+int(Math.Round(float size*fraction))
-        let stemTop,stemBottom = at 0.44,at 0.75
-        // The dot sits a clear gap above the stem, so at 100% the two never merge into a bar.
-        let dot,gap = max 2 stroke,max 2 stroke
-        e.Graphics.FillRectangle(brush,x,stemTop-gap-dot,stroke,dot)
-        e.Graphics.FillRectangle(brush,x,stemTop,stroke,stemBottom-stemTop)
+        let side = float32(Dpi.scale 16)
+        let box = RectangleF((float32 this.Width-side)/2.0f,(float32 this.Height-side)/2.0f,side,side)
+        if not (UiFace.glyph e.Graphics 0xE946 box color) then
+            // Keep the "i" on whole pixels so it stays sharp: pixel edges on whole coordinates, a whole-pixel
+            // stroke, and a circle whose size differs from the stroke by an even amount so the stem is centred.
+            e.Graphics.PixelOffsetMode <- Drawing2D.PixelOffsetMode.Half
+            let stroke = max 1 (int(Math.Round(Dpi.scaleF 1.2)))
+            let size = let s = Dpi.scale 16 in if (s-stroke)%2=0 then s else s+1
+            let left,top = (this.Width-size)/2,(this.Height-size)/2
+            let half = float32 stroke/2.0f
+            use pen = new Pen(color,float32 stroke)
+            e.Graphics.DrawEllipse(pen,float32 left+half,float32 top+half,float32(size-stroke),float32(size-stroke))
+            use brush = new SolidBrush(color)
+            let x = left+(size-stroke)/2
+            let at fraction = top+int(Math.Round(float size*fraction))
+            let stemTop,stemBottom = at 0.44,at 0.75
+            // The dot sits a clear gap above the stem, so at 100% the two never merge into a bar.
+            let dot,gap = max 2 stroke,max 2 stroke
+            e.Graphics.FillRectangle(brush,x,stemTop-gap-dot,stroke,dot)
+            e.Graphics.FillRectangle(brush,x,stemTop,stroke,stemBottom-stemTop)
         if this.Focused && this.ShowFocusCues then SettingsShapes.drawFocusRing e.Graphics (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (float32 this.Height/2.0f) (SettingsColors.current())
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); this.Invalidate()
     override this.OnMouseLeave(e) = base.OnMouseLeave(e); this.Invalidate()
@@ -346,12 +356,17 @@ type SettingsLink(text:string, kind:SettingsLinkKind) as this =
         let x = float32(textWidth+gap())
         let y = float32(baseline())-s
         let at (fx:float32) (fy:float32) = PointF(x+s*fx,y+s*fy)
-        match kind with
-        | FileLink ->
-            g.DrawLines(pen,[|at 0.0f 0.95f;at 0.0f 0.1f;at 0.38f 0.1f;at 0.5f 0.25f;at 1.0f 0.25f;at 1.0f 0.95f;at 0.0f 0.95f|])
-        | WebLink ->
-            g.DrawLine(pen,at 0.1f 0.95f,at 0.9f 0.15f)
-            g.DrawLines(pen,[|at 0.35f 0.15f;at 0.9f 0.15f;at 0.9f 0.7f|])
+        // A folder or a window opening out, from Windows' icon font, the glyph's em a little over
+        // the capitals so its ink stands as tall as they do.
+        let em = s*1.3f
+        let box = RectangleF(x+s/2.0f-em/2.0f,y+s/2.0f-em/2.0f,em,em)
+        if not (UiFace.glyph g (match kind with FileLink -> 0xE8B7 | WebLink -> 0xE8A7) box linkColor) then
+            match kind with
+            | FileLink ->
+                g.DrawLines(pen,[|at 0.0f 0.95f;at 0.0f 0.1f;at 0.38f 0.1f;at 0.5f 0.25f;at 1.0f 0.25f;at 1.0f 0.95f;at 0.0f 0.95f|])
+            | WebLink ->
+                g.DrawLine(pen,at 0.1f 0.95f,at 0.9f 0.15f)
+                g.DrawLines(pen,[|at 0.35f 0.15f;at 0.9f 0.15f;at 0.9f 0.7f|])
         if hovering || (this.Focused && this.ShowFocusCues) then
             // One underline under text and mark together.
             g.SmoothingMode <- Drawing2D.SmoothingMode.None
@@ -409,39 +424,42 @@ type SettingsIconButton(icon:SettingsIcon, help:string, ?toggle:bool) as this =
         let s = float32(Dpi.scale 16)
         let x0,y0 = (float32 this.Width-s)/2.0f,(float32 this.Height-s)/2.0f
         let at (fx:float32) (fy:float32) = PointF(x0+s*fx,y0+s*fy)
-        match icon with
-        | RefreshIcon ->
-            // A near-full clockwise circle, the arrowhead at its open end pointing along it.
-            let cx,cy,r = x0+s*0.5f,y0+s*0.5f,s*0.36f
-            let start,sweep = 20.0,300.0
-            g.DrawArc(pen,cx-r,cy-r,r*2.0f,r*2.0f,float32 start,float32 sweep)
-            let theta = (start+sweep)*Math.PI/180.0
-            let ex,ey = cx+r*float32(cos theta),cy+r*float32(sin theta)
-            let dx,dy = float32(-(sin theta)),float32(cos theta)
-            let length = s*0.24f
-            let tip = PointF(ex+dx*length*0.35f,ey+dy*length*0.35f)
-            let wing side = PointF(tip.X-dx*length-dy*length*0.75f*side,tip.Y-dy*length+dx*length*0.75f*side)
-            g.DrawLines(pen,[|wing 1.0f;tip;wing -1.0f|])
-        | CopyIcon ->
-            use back = SettingsShapes.rounded (RectangleF(x0+s*0.06f,y0+s*0.06f,s*0.56f,s*0.62f)) (s*0.1f)
-            use front = SettingsShapes.rounded (RectangleF(x0+s*0.34f,y0+s*0.3f,s*0.58f,s*0.64f)) (s*0.1f)
-            g.DrawPath(pen,back)
-            use cover = new SolidBrush(if hovering || isChecked then (if isChecked then Color.FromArgb(56,p.accent) else p.hover) else (if isNull this.Parent then p.surface else this.Parent.BackColor))
-            g.FillPath(cover,front)
-            g.DrawPath(pen,front)
-        | WindowListIcon ->
-            // A window frame with rows: the report's per-window details.
-            use frame = SettingsShapes.rounded (RectangleF(x0+s*0.06f,y0+s*0.12f,s*0.88f,s*0.76f)) (s*0.1f)
-            g.DrawPath(pen,frame)
-            g.DrawLine(pen,at 0.06f 0.34f,at 0.94f 0.34f)
-            for fy in [0.52f;0.7f] do g.DrawLine(pen,at 0.24f fy,at 0.76f fy)
-        | SwapIcon ->
-            // Two arrows passing each other: one right along the top, one left along the bottom.
-            // Small heads and a gap between the rows keep it as light as the arrow beside it.
-            g.DrawLine(pen,at 0.16f 0.3f,at 0.84f 0.3f)
-            g.DrawLines(pen,[|at 0.7f 0.18f;at 0.84f 0.3f;at 0.7f 0.42f|])
-            g.DrawLine(pen,at 0.84f 0.7f,at 0.16f 0.7f)
-            g.DrawLines(pen,[|at 0.3f 0.58f;at 0.16f 0.7f;at 0.3f 0.82f|])
+        // Windows' icon font where there is one, as WinUI's buttons; else drawn by hand.
+        let code = match icon with RefreshIcon -> 0xE72C | CopyIcon -> 0xE8C8 | WindowListIcon -> 0xE8FD | SwapIcon -> 0xE8AB
+        if not (UiFace.glyph g code (RectangleF(x0,y0,s,s)) color) then
+            match icon with
+            | RefreshIcon ->
+                // A near-full clockwise circle, the arrowhead at its open end pointing along it.
+                let cx,cy,r = x0+s*0.5f,y0+s*0.5f,s*0.36f
+                let start,sweep = 20.0,300.0
+                g.DrawArc(pen,cx-r,cy-r,r*2.0f,r*2.0f,float32 start,float32 sweep)
+                let theta = (start+sweep)*Math.PI/180.0
+                let ex,ey = cx+r*float32(cos theta),cy+r*float32(sin theta)
+                let dx,dy = float32(-(sin theta)),float32(cos theta)
+                let length = s*0.24f
+                let tip = PointF(ex+dx*length*0.35f,ey+dy*length*0.35f)
+                let wing side = PointF(tip.X-dx*length-dy*length*0.75f*side,tip.Y-dy*length+dx*length*0.75f*side)
+                g.DrawLines(pen,[|wing 1.0f;tip;wing -1.0f|])
+            | CopyIcon ->
+                use back = SettingsShapes.rounded (RectangleF(x0+s*0.06f,y0+s*0.06f,s*0.56f,s*0.62f)) (s*0.1f)
+                use front = SettingsShapes.rounded (RectangleF(x0+s*0.34f,y0+s*0.3f,s*0.58f,s*0.64f)) (s*0.1f)
+                g.DrawPath(pen,back)
+                use cover = new SolidBrush(if hovering || isChecked then (if isChecked then Color.FromArgb(56,p.accent) else p.hover) else (if isNull this.Parent then p.surface else this.Parent.BackColor))
+                g.FillPath(cover,front)
+                g.DrawPath(pen,front)
+            | WindowListIcon ->
+                // A window frame with rows: the report's per-window details.
+                use frame = SettingsShapes.rounded (RectangleF(x0+s*0.06f,y0+s*0.12f,s*0.88f,s*0.76f)) (s*0.1f)
+                g.DrawPath(pen,frame)
+                g.DrawLine(pen,at 0.06f 0.34f,at 0.94f 0.34f)
+                for fy in [0.52f;0.7f] do g.DrawLine(pen,at 0.24f fy,at 0.76f fy)
+            | SwapIcon ->
+                // Two arrows passing each other: one right along the top, one left along the bottom.
+                // Small heads and a gap between the rows keep it as light as the arrow beside it.
+                g.DrawLine(pen,at 0.16f 0.3f,at 0.84f 0.3f)
+                g.DrawLines(pen,[|at 0.7f 0.18f;at 0.84f 0.3f;at 0.7f 0.42f|])
+                g.DrawLine(pen,at 0.84f 0.7f,at 0.16f 0.7f)
+                g.DrawLines(pen,[|at 0.3f 0.58f;at 0.16f 0.7f;at 0.3f 0.82f|])
         if this.Focused && this.ShowFocusCues then SettingsShapes.drawFocusRing g (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.controlRadius()) (SettingsColors.current())
 
 /// An (i) button that explains something on hover, focus or click.
@@ -478,20 +496,23 @@ type SettingsResetButton(text:string, ?help:string) as this =
                 if not this.Enabled then Color.FromArgb(110,p.muted)
                 elif hot then p.text
                 else p.muted
-            let radius = Dpi.scaleF 6.5
-            let cx,cy = float this.Width/2.0,float this.Height/2.0
-            use pen = new Pen(color,float32(max 1.0 (Dpi.scaleF 1.5)))
-            // Most of a circle, open at the top right, where the arrow points back the way it came.
-            let start = 300.0
-            e.Graphics.DrawArc(pen,float32(cx-radius),float32(cy-radius),float32(radius*2.0),float32(radius*2.0),float32 start,290.0f)
-            let angle = start*Math.PI/180.0
-            let x,y = cx+radius*cos angle,cy+radius*sin angle
-            let along,across = (sin angle,-(cos angle)),(cos angle,sin angle)
-            let length,width = radius*0.75,radius*0.5
-            use brush = new SolidBrush(color)
-            e.Graphics.FillPolygon(brush,[|PointF(float32(x+fst along*length),float32(y+snd along*length))
-                                           PointF(float32(x+fst across*width),float32(y+snd across*width))
-                                           PointF(float32(x-fst across*width),float32(y-snd across*width))|])
+            let side = float32(Dpi.scale 16)
+            let box = RectangleF((float32 this.Width-side)/2.0f,(float32 this.Height-side)/2.0f,side,side)
+            if not (UiFace.glyph e.Graphics 0xE777 box color) then
+                let radius = Dpi.scaleF 6.5
+                let cx,cy = float this.Width/2.0,float this.Height/2.0
+                use pen = new Pen(color,float32(max 1.0 (Dpi.scaleF 1.5)))
+                // Most of a circle, open at the top right, where the arrow points back the way it came.
+                let start = 300.0
+                e.Graphics.DrawArc(pen,float32(cx-radius),float32(cy-radius),float32(radius*2.0),float32(radius*2.0),float32 start,290.0f)
+                let angle = start*Math.PI/180.0
+                let x,y = cx+radius*cos angle,cy+radius*sin angle
+                let along,across = (sin angle,-(cos angle)),(cos angle,sin angle)
+                let length,width = radius*0.75,radius*0.5
+                use brush = new SolidBrush(color)
+                e.Graphics.FillPolygon(brush,[|PointF(float32(x+fst along*length),float32(y+snd along*length))
+                                               PointF(float32(x+fst across*width),float32(y+snd across*width))
+                                               PointF(float32(x-fst across*width),float32(y-snd across*width))|])
             if this.Focused && this.ShowFocusCues then SettingsShapes.drawFocusRing e.Graphics (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.controlRadius()) (SettingsColors.current())
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); this.Invalidate()
     override this.OnMouseLeave(e) = base.OnMouseLeave(e); this.Invalidate()
@@ -567,9 +588,16 @@ type SettingsCard() as this =
 
 /// The sidebar's page icons, drawn on an 18 x 18 grid, so other places can show the same mark.
 module SettingsPageIcons =
-    /// Draws the icon for a page with its top-left corner at the given point.
-    let draw (g:Graphics) (key:SettingsViewType) (x:int) (y:int) (foreground:Color) (background:Color) =
-        use pen = new Pen(foreground, max 1.0f (float32(Dpi.scaleF 1.2)))
+    /// Each page's glyph in Windows' icon font, as Windows 11's Settings marks its pages.
+    /// None for Gestures: the font's mouse says less than the drawn stroke, which shows what a
+    /// gesture is.
+    let glyph key =
+        match key with
+        | GeneralSettings -> Some 0xE9E9 | AppearanceSettings -> Some 0xE790 | HotKeySettings -> Some 0xE765 | MouseGestureSettings -> None
+        | ProgramSettings -> Some 0xE8A9 | LayoutSettings -> Some 0xE7C4 | DiagnosticsSettings -> Some 0xE946
+    /// The page's icon drawn by hand, in a stroke as fine as the font's beside its glyphs.
+    let private drawn (g:Graphics) (key:SettingsViewType) (x:int) (y:int) (foreground:Color) (background:Color) =
+        use pen = new Pen(foreground, max 1.0f (float32(Dpi.scaleF (if UiFace.icons.Force().IsSome then 1.0 else 1.2))))
         let state = g.Save()
         g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         g.TranslateTransform(float32 x,float32 y)
@@ -608,6 +636,11 @@ module SettingsPageIcons =
             g.DrawLine(pen,9,8,9,13)
             g.DrawLine(pen,9,5,9,6)
         g.Restore(state)
+    /// Draws the icon for a page with its top-left corner at the given point: the glyph at 16px,
+    /// the size WinUI's navigation gives its icons, in the middle of the 18px square.
+    let draw (g:Graphics) (key:SettingsViewType) (x:int) (y:int) (foreground:Color) (background:Color) =
+        let box = RectangleF(float32 x+float32(Dpi.scale 1),float32 y+float32(Dpi.scale 1),float32(Dpi.scale 16),float32(Dpi.scale 16))
+        if not (glyph key |> Option.exists(fun code -> UiFace.glyph g code box foreground)) then drawn g key x y foreground background
 
 /// A page's sidebar icon on its own, beside text that names the page.
 type SettingsPageIcon(key:SettingsViewType) as this =
@@ -1261,7 +1294,11 @@ type SettingsCombo(items:string[]) as this =
                                 TextRenderer.DrawText(e.Graphics,part,this.Font,Rectangle(x,rect.Y,rect.Right-x,rect.Height),color,flags ||| TextFormatFlags.EndEllipsis)
                                 x <- x+TextRenderer.MeasureText(e.Graphics,part,this.Font,Size.Empty,flags).Width
                     if item=selected then
-                        TextRenderer.DrawText(e.Graphics,"✓",this.Font,Rectangle(e.Bounds.Right-Dpi.scale 28,e.Bounds.Y,Dpi.scale 24,e.Bounds.Height),foreground,TextFormatFlags.VerticalCenter ||| TextFormatFlags.HorizontalCenter))
+                        let tick = Rectangle(e.Bounds.Right-Dpi.scale 28,e.Bounds.Y,Dpi.scale 24,e.Bounds.Height)
+                        let em = float32(Dpi.scale 12)
+                        let box = RectangleF(float32 tick.X+(float32 tick.Width-em)/2.0f,float32 tick.Y+(float32 tick.Height-em)/2.0f,em,em)
+                        if not (UiFace.glyph e.Graphics 0xE73E box foreground) then
+                            TextRenderer.DrawText(e.Graphics,"✓",this.Font,tick,foreground,TextFormatFlags.VerticalCenter ||| TextFormatFlags.HorizontalCenter))
             let finish commit =
                 let value = if list.SelectedIndex>=0 && list.SelectedIndex<shown.Count then shown.[list.SelectedIndex] else -1
                 window.Close()
@@ -1426,8 +1463,11 @@ type SettingsCombo(items:string[]) as this =
         TextRenderer.DrawText(graphics,this.Text,this.Font,Rectangle(Dpi.scale 12+offset,0,this.Width-Dpi.scale 40-offset,this.Height),label,
             TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
         let x,y = this.Width-Dpi.scale 17,this.Height/2
-        use arrow = new Pen(foreground,1.3f)
-        graphics.DrawLines(arrow,[|Point(x-Dpi.scale 4,y-Dpi.scale 2);Point(x,y+Dpi.scale 2);Point(x+Dpi.scale 4,y-Dpi.scale 2)|])
+        // WinUI's chevron, at the 12px it gives a ComboBox's.
+        let em = float32(Dpi.scale 12)
+        if not (UiFace.glyph graphics 0xE70D (RectangleF(float32 x-em/2.0f,float32 y-em/2.0f,em,em)) foreground) then
+            use arrow = new Pen(foreground,1.3f)
+            graphics.DrawLines(arrow,[|Point(x-Dpi.scale 4,y-Dpi.scale 2);Point(x,y+Dpi.scale 2);Point(x+Dpi.scale 4,y-Dpi.scale 2)|])
     /// Borderless: a globe and a short label; a subtle fill on hover or while the list is open.
     member private this.paintCompact(graphics:Graphics,p:SettingsPalette,label:string) =
         use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (SettingsShapes.controlRadius())
@@ -1440,10 +1480,11 @@ type SettingsCombo(items:string[]) as this =
         let foreground = if hovering || popup.IsSome || flash > 0.0 then p.text else p.muted
         let size = float32(Dpi.scale 14)
         let globe = RectangleF(float32(Dpi.scale 8),float32(this.Height)/2.0f-size/2.0f,size,size)
-        use pen = new Pen(foreground,1.2f)
-        graphics.DrawEllipse(pen,globe)
-        graphics.DrawEllipse(pen,RectangleF(globe.X+globe.Width*0.28f,globe.Y,globe.Width*0.44f,globe.Height))
-        graphics.DrawLine(pen,globe.Left,globe.Y+globe.Height/2.0f,globe.Right,globe.Y+globe.Height/2.0f)
+        if not (UiFace.glyph graphics 0xE774 (RectangleF.Inflate(globe,float32(Dpi.scale 1),float32(Dpi.scale 1))) foreground) then
+            use pen = new Pen(foreground,1.2f)
+            graphics.DrawEllipse(pen,globe)
+            graphics.DrawEllipse(pen,RectangleF(globe.X+globe.Width*0.28f,globe.Y,globe.Width*0.44f,globe.Height))
+            graphics.DrawLine(pen,globe.Left,globe.Y+globe.Height/2.0f,globe.Right,globe.Y+globe.Height/2.0f)
         let textLeft = int globe.Right+Dpi.scale 5
         TextRenderer.DrawText(graphics,label,this.Font,Rectangle(textLeft,0,this.Width-textLeft,this.Height),foreground,
             TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter)

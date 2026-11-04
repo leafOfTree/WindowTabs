@@ -257,3 +257,33 @@ module UiFace =
     /// other family, such as a menu font the user chose, stays as it is. Windows 10 keeps Segoe UI.
     let text (family:string) = if family="Segoe UI" && variable.Value then "Segoe UI Variable Text" else family
     let semibold() = if variable.Value then "Segoe UI Variable Text Semibold" else "Segoe UI Semibold"
+    /// The icon font of Windows 11, or of Windows 10; None on a system with neither.
+    let icons =
+        lazy(
+            use installed = new Text.InstalledFontCollection()
+            let names = installed.Families |> Array.map(fun family -> family.Name)
+            ["Segoe Fluent Icons";"Segoe MDL2 Assets"] |> List.tryFind(fun name -> Array.contains name names))
+    let private iconFonts = Collections.Concurrent.ConcurrentDictionary<struct(string*float32),Font>()    /// Draws an icon font's glyph with its ink centred in box, its em the box's height, in
+    /// grey-scale antialiasing: ClearType fringes a glyph in colour. False where there is no icon
+    /// font, so the caller draws its own.
+    let glyph (g:Graphics) (code:int) (box:RectangleF) (color:Color) =
+        match icons.Force() with
+        | None -> false
+        | Some name ->
+            let font = iconFonts.GetOrAdd(struct(name,box.Height),fun _ -> new Font(name,box.Height,GraphicsUnit.Pixel))
+            let text = string(char code)
+            // Centred by its outline: laid out as a line of text the glyph sat a tenth of an em high
+            // and a little left of the text beside it. Whole pixels keep its hinted edges sharp.
+            use outline = new Drawing2D.GraphicsPath()
+            outline.AddString(text,font.FontFamily,int font.Style,font.Size,PointF.Empty,StringFormat.GenericTypographic)
+            let ink = outline.GetBounds()
+            let x = Math.Round(float(box.X+(box.Width-ink.Width)/2.0f-ink.X))
+            let y = Math.Round(float(box.Y+(box.Height-ink.Height)/2.0f-ink.Y))
+            let state = g.Save()
+            g.TextRenderingHint <- Text.TextRenderingHint.AntiAliasGridFit
+            use brush = new SolidBrush(color)
+            // At a point, not in the box: a layout box drops a line taller than itself, and the
+            // icon font's line comes out a hair over its em at nearly every size.
+            g.DrawString(text,font,brush,PointF(float32 x,float32 y),StringFormat.GenericTypographic)
+            g.Restore(state)
+            true

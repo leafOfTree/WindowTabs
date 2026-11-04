@@ -521,6 +521,49 @@ let main() =
             use tabFont = TabMetrics.font 0 FontStyle.Regular
             let expected = if variable && SystemFonts.MenuFont.Name="Segoe UI" then "Segoe UI Variable Text" else SystemFonts.MenuFont.Name
             check (tabFont.Name=expected) (sprintf "Tabs are set in %s, not %s" tabFont.Name expected)
+        // Page icons from Windows' icon font where there is one: the sidebar draws the very glyph.
+        UiFace.icons.Force() |> Option.iter(fun _ ->
+            let render (draw:Graphics -> unit) =
+                use image = new Bitmap(Dpi.scale 20,Dpi.scale 20)
+                use g = Graphics.FromImage(image)
+                g.Clear(Color.White)
+                draw g
+                [for y in 0..image.Height-1 do for x in 0..image.Width-1 -> image.GetPixel(x,y).ToArgb()]
+            for key in [GeneralSettings;AppearanceSettings;HotKeySettings;MouseGestureSettings;ProgramSettings;LayoutSettings;DiagnosticsSettings] do
+                let page = render (fun g -> SettingsPageIcons.draw g key 0 0 Color.Black Color.White)
+                check (page |> List.exists((<>) (Color.White.ToArgb()))) (sprintf "The %A icon is blank" key)
+                match SettingsPageIcons.glyph key with
+                | Some code ->
+                    let glyph = render (fun g -> UiFace.glyph g code (RectangleF(float32(Dpi.scale 1),float32(Dpi.scale 1),float32(Dpi.scale 16),float32(Dpi.scale 16))) Color.Black |> ignore)
+                    check (page=glyph) (sprintf "The %A icon is not Windows' glyph" key)
+                // Gestures keeps its drawn stroke, which says more than the font's mouse.
+                | None -> check (key=MouseGestureSettings) (sprintf "The %A icon has no glyph" key)
+            // The lists' marks too, all but Ungroup, which the font has no mark for.
+            for glyph,code in [AddGlyph,0xE710;EditGlyph,0xE70F;DeleteGlyph,0xE74D;WindowGlyph,0xE737;GroupGlyph,0xE8B7;WorkspaceGlyph,0xE7C4;TabsGlyph,0xE736] do
+                let box = Rectangle(Dpi.scale 2,Dpi.scale 2,Dpi.scale 16,Dpi.scale 16)
+                let drawn = render (fun g -> SettingsTreeList.drawGlyph(g,glyph,box,Color.Black))
+                let font = render (fun g -> UiFace.glyph g code (RectangleF.op_Implicit box) Color.Black |> ignore)
+                check (drawn=font && drawn |> List.exists((<>) (Color.White.ToArgb()))) (sprintf "The list's %A is not Windows' glyph" glyph)
+            // At every size: in a box one em tall the font's line is a hair taller, and a format
+            // that drops lines that do not fit drew nothing at all but the one size tried here.
+            let blank =
+                [for quarter in 40..120 ->
+                    let side = float32 quarter/4.0f
+                    side, render (fun g -> UiFace.glyph g 0xE946 (RectangleF(1.0f,1.0f,side,side)) Color.Black |> ignore)]
+                |> List.filter(fun (_,pixels) -> pixels |> List.forall((=) (Color.White.ToArgb())))
+                |> List.map fst
+            check blank.IsEmpty (sprintf "An icon glyph drew nothing at %d sizes, such as %A" blank.Length (List.truncate 5 blank))
+            // Its ink in the middle of the box, level with the text beside it: laid out as a line of
+            // text the round (i) sat a tenth of an em high and a pixel left.
+            for side in [16;20;25;30;40] do
+                use image = new Bitmap(side+20,side+20)
+                use g = Graphics.FromImage(image)
+                g.Clear(Color.White)
+                UiFace.glyph g 0xE946 (RectangleF(10.0f,10.0f,float32 side,float32 side)) Color.Black |> ignore
+                let inked = [for y in 0..image.Height-1 do for x in 0..image.Width-1 do if image.GetPixel(x,y).R<200uy then yield x,y]
+                let middle values = float(List.min values+List.max values+1)/2.0
+                let dx,dy = middle (List.map fst inked)-(10.0+float side/2.0),middle (List.map snd inked)-(10.0+float side/2.0)
+                check (abs dx<=1.0 && abs dy<=1.0) (sprintf "An icon glyph at %dpx sits %.1f,%.1f off the middle of its box" side dx dy))
         // A drop-down list is wide enough for its longest choice beside a colour dot, the tick and
         // the scrollbar it keeps: "Default" and "Custom" were cut short.
         do

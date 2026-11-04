@@ -149,10 +149,13 @@ type GestureGrid(scope:string option, table:MouseGestureTable) as this =
                 let mark = Rectangle(bounds.Right-size+Dpi.scale 4,bounds.Bottom-size+Dpi.scale 4,size,size)
                 use badge = new SolidBrush(accent)
                 g.FillEllipse(badge,mark)
-                use tick = new Pen(p.onAccent,float32(Dpi.scale 2))
-                g.DrawLines(tick,[|PointF(float32 mark.X+float32 size*0.28f,float32 mark.Y+float32 size*0.52f)
-                                   PointF(float32 mark.X+float32 size*0.44f,float32 mark.Y+float32 size*0.68f)
-                                   PointF(float32 mark.X+float32 size*0.72f,float32 mark.Y+float32 size*0.36f)|]))
+                let em = float32 size*0.62f
+                let box = RectangleF(float32 mark.X+(float32 size-em)/2.0f,float32 mark.Y+(float32 size-em)/2.0f,em,em)
+                if not (UiFace.glyph g 0xE73E box p.onAccent) then
+                    use tick = new Pen(p.onAccent,float32(Dpi.scale 2))
+                    g.DrawLines(tick,[|PointF(float32 mark.X+float32 size*0.28f,float32 mark.Y+float32 size*0.52f)
+                                       PointF(float32 mark.X+float32 size*0.44f,float32 mark.Y+float32 size*0.68f)
+                                       PointF(float32 mark.X+float32 size*0.72f,float32 mark.Y+float32 size*0.36f)|]))
     member private this.indexAt(point:Point) = [0..15] |> List.tryFind(fun index -> (tileRect index).Contains(point))
     /// Focus shown only once the keys are in use: the grid takes it as the dialog opens, and a
     /// ring and a playing tile there would look like a choice already made.
@@ -674,10 +677,12 @@ type MouseGestureEditor() as this =
             | Some image -> g.DrawImage(image,iconBounds)
             | None ->
                 // A globe for everywhere.
-                use pen = new Pen((if off then p.muted else p.text),float32(Dpi.scaleF 1.2))
-                g.DrawEllipse(pen,iconBounds)
-                g.DrawEllipse(pen,RectangleF(float32 iconBounds.X+float32 iconSize*0.28f,float32 iconBounds.Y,float32 iconSize*0.44f,float32 iconSize))
-                g.DrawLine(pen,iconBounds.X,iconBounds.Y+iconSize/2,iconBounds.Right,iconBounds.Y+iconSize/2)
+                let color = if off then p.muted else p.text
+                if not (UiFace.glyph g 0xE774 (RectangleF.op_Implicit iconBounds) color) then
+                    use pen = new Pen(color,float32(Dpi.scaleF 1.2))
+                    g.DrawEllipse(pen,iconBounds)
+                    g.DrawEllipse(pen,RectangleF(float32 iconBounds.X+float32 iconSize*0.28f,float32 iconBounds.Y,float32 iconSize*0.44f,float32 iconSize))
+                    g.DrawLine(pen,iconBounds.X,iconBounds.Y+iconSize/2,iconBounds.Right,iconBounds.Y+iconSize/2)
             let textRight = match entry with None -> bounds.Right-m 8 | Some _ -> (toggleRect bounds).Left-m 4
             let name = match entry with None -> tr Strings.MouseGestures.everywhere | Some path -> GestureUi.appName path
             let sub = match entry with None -> tr Strings.MouseGestures.allApps | Some path -> IO.Path.GetFileName path

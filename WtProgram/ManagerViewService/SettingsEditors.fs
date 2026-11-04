@@ -101,19 +101,22 @@ type SettingsActionButton() as this =
                 (if borderColor=plain then Color.Empty else borderColor) p
         match sign with
         | Some symbol ->
-            // Whole pixels, so each stroke is as crisp as the text beside it; a length of the
-            // button's own parity sits exactly in its middle.
             let w,h = this.Width,this.Height
-            // About the size the font drew them: 10px across on a 26px button.
-            let arm = max 2 (min w h*5/26)
-            let stroke = max 1 (Dpi.scale 1)
-            use ink = new SolidBrush(textColor)
-            e.Graphics.SmoothingMode <- SmoothingMode.None
-            let across = 2*arm+w%2
-            e.Graphics.FillRectangle(ink,(w-across)/2,(h-stroke)/2,across,stroke)
-            if symbol='+' then
-                let down = 2*arm+h%2
-                e.Graphics.FillRectangle(ink,(w-stroke)/2,(h-down)/2,stroke,down)
+            // Windows' icon font's − and +, as its other icons; 10px across on a 26px button.
+            let em = float32(min w h)*12.0f/26.0f
+            let box = RectangleF((float32 w-em)/2.0f,(float32 h-em)/2.0f,em,em)
+            if not (UiFace.glyph e.Graphics (if symbol='+' then 0xE710 else 0xE738) box textColor) then
+                // Whole pixels, so each stroke is as crisp as the text beside it; a length of the
+                // button's own parity sits exactly in its middle.
+                let arm = max 2 (min w h*5/26)
+                let stroke = max 1 (Dpi.scale 1)
+                use ink = new SolidBrush(textColor)
+                e.Graphics.SmoothingMode <- SmoothingMode.None
+                let across = 2*arm+w%2
+                e.Graphics.FillRectangle(ink,(w-across)/2,(h-stroke)/2,across,stroke)
+                if symbol='+' then
+                    let down = 2*arm+h%2
+                    e.Graphics.FillRectangle(ink,(w-stroke)/2,(h-down)/2,stroke,down)
         | None ->
             TextRenderer.DrawText(e.Graphics,this.Text,this.Font,this.ClientRectangle,textColor,
                 TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
@@ -613,8 +616,12 @@ type SettingsShortcutInput() as this =
                 use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X,float32 bounds.Y,float32 bounds.Width,float32 bounds.Height)) (SettingsShapes.controlRadius())
                 use fill = new SolidBrush(p.hover)
                 g.FillPath(fill,shape)
-            TextRenderer.DrawText(g,"✕",this.Font,bounds,(if hoveringClear then p.text else p.muted),
-                TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter)
+            let color = if hoveringClear then p.text else p.muted
+            let em = float32(Dpi.scale 10)
+            let mark = RectangleF(float32 bounds.X+(float32 bounds.Width-em)/2.0f,float32 bounds.Y+(float32 bounds.Height-em)/2.0f,em,em)
+            if not (UiFace.glyph g 0xE711 mark color) then
+                TextRenderer.DrawText(g,"✕",this.Font,bounds,color,
+                    TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter)
 
 module SettingsHsv =
     let color hue saturation value =
