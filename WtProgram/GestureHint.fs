@@ -5,12 +5,14 @@ open System.Drawing.Drawing2D
 open System.Windows.Forms
 
 /// The note by the pointer while a gesture is drawn: the gesture read so far, as the settings
-/// page draws it, and what releasing the button will do. It never takes focus or the pointer.
+/// page draws it, and what releasing the button will do; under it, after one stroke, the
+/// gestures a second stroke would make and what they do. It never takes focus or the pointer.
 type GestureHint() =
     inherit Form()
     let mutable gesture : GestureRoute option = None
     let mutable text = ""
     let mutable muted = false
+    let mutable next : (GestureRoute * string) list = []
     let mutable font : Font = null
     let mutable fontDpi = 0
     let mutable scale = 1.0f
@@ -28,6 +30,13 @@ type GestureHint() =
         path.AddArc(rect.Left,rect.Bottom-d,d,d,90.0f,90.0f)
         path.CloseFigure()
         path
+    /// The first row, the gap under its rule, and each row after it, in logical pixels.
+    let first,gap,row = 36.0f,4.0f,32.0f
+    /// The picture's square, and where text starts after it.
+    let glyphSize,textLeft = 26.0f,44.0f
+    let rowTop index = px (first+gap+row*float32 index)
+    /// A pill on one row; with rows under it, a card.
+    let corner height = if next.IsEmpty then float32 height/2.0f else float32(px 10.0f)
 
     override _.CreateParams =
         let cp = base.CreateParams
@@ -41,7 +50,7 @@ type GestureHint() =
         let p = SettingsColors.current()
         if not SystemCorners.supported.Value then
             e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
-            use outline = rounded (RectangleF(0.0f,0.0f,float32(this.Width-1),float32(this.Height-1))) (float32(this.Height)/2.0f)
+            use outline = rounded (RectangleF(0.0f,0.0f,float32(this.Width-1),float32(this.Height-1))) (corner this.Height)
             use pen = new Pen(p.border)
             e.Graphics.DrawPath(pen,outline)
         let left =
@@ -49,13 +58,22 @@ type GestureHint() =
             | Some route ->
                 let accent = if SystemInformation.HighContrast then SystemColors.Highlight else p.accent
                 GestureGlyph.draw e.Graphics route GestureGlyph.small scale 1.0 0.0 accent p.surface
-                px 34.0f
+                px textLeft
             | None -> px 12.0f
-        TextRenderer.DrawText(e.Graphics,text,font,Rectangle(left,0,this.Width-left-px 12.0f,this.Height),(if muted then p.muted else p.text),format)
+        TextRenderer.DrawText(e.Graphics,text,font,Rectangle(left,0,this.Width-left-px 12.0f,px first),(if muted then p.muted else p.text),format)
+        if not next.IsEmpty then
+            use rule = new Pen(p.border)
+            e.Graphics.DrawLine(rule,px 12.0f,px first,this.Width-px 12.0f,px first)
+            // In the muted colour: where the stroke could go, not what it is.
+            let ink = if SystemInformation.HighContrast then SystemColors.GrayText else p.muted
+            next |> List.iteri(fun index (route,caption) ->
+                GestureGlyph.draw e.Graphics route GestureGlyph.small scale 1.0 0.0 ink p.surface
+                TextRenderer.DrawText(e.Graphics,caption,font,Rectangle(px textLeft,rowTop index,this.Width-px (textLeft+12.0f),px row),p.text,format))
 
     /// Shown below and to the right of the pointer, kept on its screen, at the scale of the monitor
-    /// it is on; `quiet` greys the text, for a stroke that is no gesture or does nothing.
-    member this.show(reading:string option,caption:string,quiet:bool,pointer:Point) =
+    /// it is on; `quiet` greys the text, for a stroke that is no gesture or does nothing. `following`
+    /// are the gestures a further stroke would make, with what each does.
+    member this.show(reading:string option,caption:string,quiet:bool,following:(string * string) list,pointer:Point) =
         let dpi = Dpi.forPoint pointer.X pointer.Y
         scale <- float32 dpi/96.0f
         if not styled then
@@ -69,13 +87,16 @@ type GestureHint() =
             font <- new Font("Segoe UI",10.0f*float32 dpi/float32(Dpi.system()),FontStyle.Regular)
             fontDpi <- dpi
             if not (isNull previous) then previous.Dispose()
-        let height = px 30.0f
-        // The picture sits in a 20 pixel square at the left, centred on the height.
-        gesture <- reading |> Option.map(fun drawn -> GestureGlyph.route drawn (20.0f*scale) (float32(px 20.0f)) (float32 height/2.0f))
+        // The picture sits in its square at the left, centred on its row.
+        let glyph drawn (middle:int) = GestureGlyph.route drawn (glyphSize*scale) (float32(px (12.0f+glyphSize/2.0f))) (float32 middle)
+        gesture <- reading |> Option.map(fun drawn -> glyph drawn (px first/2))
         text <- caption
         muted <- quiet
-        let left = if gesture.IsSome then px 34.0f else px 12.0f
-        let width = left+TextRenderer.MeasureText(caption,font,Size(Int32.MaxValue,height),format).Width+px 14.0f
+        next <- following |> List.mapi(fun index (drawn,caption) -> glyph drawn (rowTop index+px row/2),caption)
+        let height = if next.IsEmpty then px first else rowTop next.Length+px gap
+        let left = if gesture.IsSome then px textLeft else px 12.0f
+        let measure text = TextRenderer.MeasureText(text,font,Size(Int32.MaxValue,px first),format).Width
+        let width = List.max ((left+measure caption+px 14.0f)::(next |> List.map(fun (_,caption) -> px textLeft+measure caption+px 14.0f)))
         let area = Screen.FromPoint(pointer).WorkingArea
         let x = min (pointer.X+px 16.0f) (area.Right-width)
         let y = if pointer.Y+px 22.0f+height<=area.Bottom then pointer.Y+px 22.0f else pointer.Y-px 12.0f-height
@@ -83,7 +104,7 @@ type GestureHint() =
         if this.Bounds<>bounds then
             this.Bounds <- bounds
             if not (SystemCorners.round this.Handle (SettingsColors.current()).border) then
-                use shape = rounded (RectangleF(0.0f,0.0f,float32 width,float32 height)) (float32 height/2.0f)
+                use shape = rounded (RectangleF(0.0f,0.0f,float32 width,float32 height)) (corner height)
                 let previous = this.Region
                 this.Region <- new Region(shape)
                 if not (isNull previous) then previous.Dispose()

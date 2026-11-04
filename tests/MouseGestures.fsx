@@ -81,6 +81,10 @@ let table() =
     let again = MouseGestures.readTable (MouseGestures.writeTable added)
     check (again=added) (sprintf "The gesture table did not survive being written and read: %A" again)
     check (MouseGestures.readTable null=MouseGestures.empty) "A settings file without gestures did not start with the defaults"
+    // After one stroke, what a second would do there: everything's up-left and up-right.
+    check (MouseGestures.continuations MouseGestures.empty @"C:\other.exe" "U" |> List.map(fun binding -> binding.gesture)=["UL";"UR"]) "The strokes that could follow up were not up-left and up-right"
+    check (MouseGestures.continuations MouseGestures.empty @"C:\other.exe" "UL"=[]) "A gesture of two strokes had strokes to follow"
+    check (MouseGestures.continuations start editor "U"=[]) "An app switched off had strokes to follow"
     // Binding a gesture already there replaces it in place.
     let replaced = MouseGestures.bind [back;close] { back with action=GestureCommand "next-tab" }
     check (replaced.Length=2 && replaced.Head.action=GestureCommand "next-tab") "Binding a gesture again added a second one"
@@ -188,6 +192,18 @@ let main() =
             pump 100
             check (editor.AddGestureButton.Enabled && editor.AddAppButton.Enabled) "Turning gestures on left the page greyed"
             render form ("mouse-gestures-"+name)
+            // After one stroke, the hint lists where a second would lead, a row each, under it.
+            do
+                use hint = new GestureHint()
+                let pointer = Screen.PrimaryScreen.WorkingArea.Location
+                hint.show(Some "U",tr Strings.MouseGestures.nothingSet,true,[],pointer)
+                let alone = hint.Height
+                hint.show(Some "U",tr Strings.MouseGestures.nothingSet,true,["UL","Previous tab";"UR","A much longer action name"],pointer)
+                check (hint.Height>=alone+Dpi.scale 52) (sprintf "Two strokes to follow made the hint %d high, from %d" hint.Height alone)
+                use font = new Font("Segoe UI",10.0f)
+                check (hint.Width>=TextRenderer.MeasureText("A much longer action name",font).Width+Dpi.scale 34) "A stroke to follow did not fit in the hint"
+                render hint ("mouse-gestures-hint-"+name)
+                hint.hide()
             let everywhereColumns = editor.Columns
             editor.Scope <- Some @"C:\Program Files\Mozilla Firefox\firefox.exe"
             check (editor.Columns=everywhereColumns) (sprintf "The columns moved from %A to %A when another app was picked" everywhereColumns editor.Columns)

@@ -17,7 +17,7 @@ type GlyphStyle = { line:float32; head:float32; headWidth:float32; ring:float32 
 module GestureGlyph =
     /// For a 40 pixel cell, a note by the pointer, and the dialog's drawing box.
     let cell = { line=2.0f; head=6.5f; headWidth=4.3f; ring=3.4f }
-    let small = { line=1.5f; head=4.6f; headWidth=3.2f; ring=2.6f }
+    let small = { line=1.7f; head=5.4f; headWidth=3.7f; ring=2.9f }
     let large = { line=2.5f; head=11.0f; headWidth=7.0f; ring=6.0f }
 
     let private chaikin (points:PointF list) =

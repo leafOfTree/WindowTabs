@@ -94,6 +94,11 @@ module MouseGestures =
         | found ->
             found |> Option.bind(fun app -> app.bindings |> List.tryFind(fun binding -> binding.gesture=gesture))
             |> Option.orElse (table.everywhere |> List.tryFind(fun binding -> binding.gesture=gesture))
+    /// Where a stroke drawn so far can still go over an app: the gestures of two strokes that start
+    /// with it and do something there.
+    let continuations table path (gesture:string) =
+        if gesture.Length<>1 then []
+        else all |> List.filter(fun other -> other.Length=2 && other.[0]=gesture.[0]) |> List.choose(resolve table path)
     /// An app's binding that takes the place of the one every app has for its gesture.
     let overrides table (binding:GestureBinding) = table.everywhere |> List.tryFind(fun other -> other.gesture=binding.gesture)
     /// The bindings with this one in, replacing one for the same gesture where it was.
