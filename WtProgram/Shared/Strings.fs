@@ -611,6 +611,8 @@ module Strings =
         /// A key of the lists may also be Tab or a function key alone.
         let includeCtrlAltOrTab = { en="Use Tab, a function key, or Ctrl or Alt"; zh="请使用 Tab、功能键，或包含 Ctrl 或 Alt"; ja="Tab、ファンクション キー、または Ctrl か Alt を使ってください"; ar="استخدم Tab أو مفتاح وظيفة أو Ctrl أو Alt" }
         let pressShortcut = { en="Press a shortcut…"; zh="按下组合键…"; ja="キーを押してください…"; ar="اضغط اختصارًا…" }
+        /// For keys sent one after another, as a gesture's may be.
+        let pressKeys = { en="Press keys, one after another…"; zh="依次按下按键…"; ja="キーを順に押してください…"; ar="اضغط المفاتيح واحدًا تلو الآخر…" }
         let notSet = { en="Not set"; zh="未设置"; ja="未設定"; ar="غير معيّن" }
 
     /// Commands run by name, from the palette or the command line, that no setting names already.

@@ -2,11 +2,12 @@ namespace Bemo
 open System
 open Bemo.Json
 
-/// What a gesture does: a WindowTabs command by id, or a key sent to the window it was drawn over,
-/// in the hotkey control's encoding, under a name of the user's (empty for the key's own name).
+/// What a gesture does: a WindowTabs command by id, or keys sent to the window it was drawn over,
+/// one after another in the hotkey control's encoding, under a name of the user's (empty for the
+/// keys' own names).
 type GestureAction =
     | GestureCommand of string
-    | GestureKeys of code:int * name:string
+    | GestureKeys of codes:int list * name:string
 
 /// A gesture, written as the directions it is drawn in ("U", "D", "L", "R"; one or two), and what
 /// it does.
@@ -132,7 +133,14 @@ module MouseGestures =
                 match item.Value<string>("command") with
                 | null ->
                     let name = item.Value<string>("name")
-                    Some { gesture=gesture; action=GestureKeys(item.Value<int>("keys"),(if isNull name then "" else name)) }
+                    // One key as a number, as before there could be more; several as a list.
+                    let codes =
+                        match item.["keys"] with
+                        | :? JArray as codes -> codes |> Seq.map(fun code -> code.ToObject<int>()) |> List.ofSeq
+                        | null -> []
+                        | code -> [code.ToObject<int>()]
+                    if codes.IsEmpty || List.contains 0 codes then None
+                    else Some { gesture=gesture; action=GestureKeys(codes,(if isNull name then "" else name)) }
                 | command -> Some { gesture=gesture; action=GestureCommand command }
         with _ -> None
     let private readBindings (token:JToken) =
@@ -142,7 +150,9 @@ module MouseGestures =
     let private writeBinding (binding:GestureBinding) =
         match binding.action with
         | GestureCommand command -> JObject(JProperty("gesture",binding.gesture),JProperty("command",command))
-        | GestureKeys(code,name) -> JObject(JProperty("gesture",binding.gesture),JProperty("keys",code),JProperty("name",name))
+        | GestureKeys(codes,name) ->
+            let keys = match codes with [code] -> box code | _ -> box (JArray(codes |> List.map(fun code -> box (JValue(int64 code))) |> Array.ofList))
+            JObject(JProperty("gesture",binding.gesture),JProperty("keys",keys),JProperty("name",name))
     /// The table as kept in the settings file; missing, the gestures every app starts with.
     let readTable (token:JToken) =
         match token with

@@ -340,7 +340,15 @@ type SettingsShortcutInput() as this =
     inherit SettingsInputFrame()
     let changed = Event<EventArgs>()
     let mutable shortcut = 0
+    /// In a sequence, the keys pressed after the first.
+    let mutable following : int list = []
     let mutable recording = false
+    /// In a sequence, whether a key was taken in this recording, so the next adds to it.
+    let mutable takenThisTime = false
+    /// In a sequence, a pause after a key ends the recording.
+    let pauseTimer = new Timer(Interval=1200)
+    let mutable sequential = false
+    let prompt() = if sequential then Strings.Shortcuts.pressKeys else Strings.Shortcuts.pressShortcut
     let mutable hovering = false
     let mutable hoveringClear = false
     /// Off once a recording ends, so a focused but idle box does not look like it is listening.
@@ -364,6 +372,8 @@ type SettingsShortcutInput() as this =
     let setRecording value =
         if value<>recording then
             recording <- value
+            takenThisTime <- false
+            pauseTimer.Stop()
             if value then ShortcutRecording.start() else ShortcutRecording.stop()
     let stopRecording() = if recording then setRecording false; focusCue <- false; this.Invalidate()
     /// The × shows while the pointer is on the box, or it has the keyboard focus, so it takes no
@@ -383,7 +393,13 @@ type SettingsShortcutInput() as this =
     /// Key caps padded tightly, so three keys and the clear button fit the editors' width.
     let capHeight() = this.Height-Dpi.scale 14
     let capWidth (label:string) = max (capHeight()) (TextRenderer.MeasureText(label,this.Font,Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 8)
-    let capsEnd() = Dpi.scale 8+(SettingsShortcut.parts shortcut |> List.sumBy(fun label -> capWidth label+Dpi.scale 2))
+    /// The room for the comma between the keys of a sequence.
+    let commaWidth() = TextRenderer.MeasureText(",",this.Font,Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 6
+    let codes() = if shortcut=0 then [] else shortcut::following
+    let capsEnd() =
+        let combos = codes()
+        let caps = combos |> List.sumBy(fun code -> SettingsShortcut.parts code |> List.sumBy(fun label -> capWidth label+Dpi.scale 2))
+        Dpi.scale 8+caps+commaWidth()*(max 0 (combos.Length-1))
     /// At the right edge, shown only while the pointer is on the box or it has the focus.
     let clearBounds() =
         let size = Dpi.scale 18
@@ -393,7 +409,7 @@ type SettingsShortcutInput() as this =
     let fitWidth() =
         let measure (text:string) = TextRenderer.MeasureText(text,this.Font,Size.Empty,TextFormatFlags.NoPadding).Width
         let clear = if shortcut<>0 then Dpi.scale 18+Dpi.scale 3 else Dpi.scale 8
-        let prompts = [Strings.Shortcuts.pressShortcut;Strings.Shortcuts.notSet] |> List.map(fun text -> Dpi.scale 12+measure (tr text)+Dpi.scale 12)
+        let prompts = [prompt();Strings.Shortcuts.notSet] |> List.map(fun text -> Dpi.scale 12+measure (tr text)+Dpi.scale 12)
         let wanted = List.max ((capsEnd()+clear)::prompts)
         let width = max (Dpi.scale SettingsShapes.editorWidth) wanted
         if this.Width<>width then this.Width <- width
@@ -404,15 +420,26 @@ type SettingsShortcutInput() as this =
         this.SetStyle(ControlStyles.Selectable ||| ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer,true)
         this.AccessibleRole <- AccessibleRole.HotkeyField
         messageTimer.Tick.Add(fun _ -> clearMessage(); this.Invalidate())
+        pauseTimer.Tick.Add(fun _ -> stopRecording())
         // Closed while recording, as the palette's box can be: the keys come back all the same.
-        this.Disposed.Add(fun _ -> setRecording false; messageTimer.Dispose())
-    member _.Shortcut
+        this.Disposed.Add(fun _ -> setRecording false; messageTimer.Dispose(); pauseTimer.Dispose())
+    /// The keys, the first of a sequence; set, the only ones.
+    member this.Shortcut
         with get() = shortcut
-        and set(value) =
-            shortcut <- value
-            this.AccessibleDescription <- String.Join(" + ",SettingsShortcut.parts value)
+        and set(value) = this.Sequence <- (if value=0 then [] else [value])
+    /// The keys pressed one after another, empty for none.
+    member _.Sequence
+        with get() = codes()
+        and set(value:int list) =
+            match value with
+            | first::rest -> shortcut <- first; following <- rest
+            | [] -> shortcut <- 0; following <- []
+            this.AccessibleDescription <- String.Join(", ",codes() |> List.map(fun code -> String.Join(" + ",SettingsShortcut.parts code)))
             fitWidth()
             this.Invalidate()
+    /// For keys sent to a window one after another: while recording, each one pressed is added,
+    /// up to three, and a pause ends it. Only with AnyKey.
+    member _.Sequential with get() = sequential and set(value) = sequential <- value; fitWidth()
     override this.OnFontChanged(e) = base.OnFontChanged(e); fitWidth()
     member _.Changed = changed.Publish
     member _.IsRecording = recording
@@ -444,6 +471,9 @@ type SettingsShortcutInput() as this =
         clearMessage()
         heldAtStart <- Control.ModifierKeys
         setRecording true
+        // Started again while recording, a sequence starts again too.
+        takenThisTime <- false
+        pauseTimer.Stop()
         if not this.Focused then this.Focus() |> ignore
         this.Invalidate()
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); hovering <- true; this.Invalidate()
@@ -471,7 +501,15 @@ type SettingsShortcutInput() as this =
         elif this.AnyKey && key=Keys.Tab && keyData=key then stopRecording(); base.ProcessCmdKey(&msg,keyData)
         elif this.AnyKey && not (SettingsShortcut.isModifier key) then
             lastPressed <- SettingsShortcut.encode keyData
-            commit lastPressed
+            if sequential then
+                // The first keys of a recording start the sequence again; the next are added.
+                let keys = if takenThisTime then codes() @ [lastPressed] else [lastPressed]
+                takenThisTime <- true
+                this.Sequence <- keys
+                changed.Trigger(EventArgs.Empty)
+                pauseTimer.Stop()
+                if keys.Length>=3 then stopRecording() else pauseTimer.Start()
+            else commit lastPressed
             true
         elif key=Keys.Escape && keyData=key then stopRecording(); true
         elif (key=Keys.Back || key=Keys.Delete) && keyData=key then commit 0; true
@@ -506,7 +544,7 @@ type SettingsShortcutInput() as this =
         let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis
         let textArea x = Rectangle(x,0,max 1 (this.Width-x-Dpi.scale 8),this.Height)
         let error = if ThemeService.currentIsDark() then Color.FromRGB(0xFF99A4) else Color.FromRGB(0xC42B1C)
-        let chips (labels:string list) =
+        let chipsFrom start (labels:string list) =
             let height = capHeight()
             let top = (this.Height-height)/2
             labels |> List.fold(fun x label ->
@@ -534,19 +572,30 @@ type SettingsShortcutInput() as this =
                     if tall then bounds.Y+int(Math.Round(float bounds.Height/2.0-float(ink.Y+ink.Height/2.0f)))
                     else bounds.Y+(bounds.Height-line.Height)/2
                 TextRenderer.DrawText(g,label,this.Font,Rectangle(textX,textY,line.Width+Dpi.scale 2,line.Height),p.text,flags)
-                x+bounds.Width+Dpi.scale 2) left
+                x+bounds.Width+Dpi.scale 2) start
+        let chips labels = chipsFrom left labels
+        let comma x =
+            TextRenderer.DrawText(g,",",this.Font,Rectangle(x,0,commaWidth(),this.Height),p.muted,TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter)
+            x+commaWidth()
+        // The keys of a sequence, a comma between them; where they end.
+        let sequence () =
+            codes() |> List.fold(fun (x,first) code -> chipsFrom (if first then x else comma x) (SettingsShortcut.parts code),false) (left,true) |> fst
         match (if this.ShowsMessage then message else None) with
         | Some(text,isError) -> TextRenderer.DrawText(g,text,this.Font,textArea (Dpi.scale 12),(if isError then error else p.muted),flags)
         | None when recording ->
             let held = SettingsShortcut.heldParts (Control.ModifierKeys &&& ~~~heldAtStart)
-            if held.IsEmpty then TextRenderer.DrawText(g,tr Strings.Shortcuts.pressShortcut,this.Font,textArea (Dpi.scale 12),p.muted,flags)
+            // Keys already taken in a sequence stay, with room for the next after them.
+            if takenThisTime then
+                let x = comma (sequence())
+                let x = if held.IsEmpty then x else chipsFrom x held
+                TextRenderer.DrawText(g,(if held.IsEmpty then "…" else "+ …"),this.Font,textArea x,p.muted,flags)
+            elif held.IsEmpty then TextRenderer.DrawText(g,tr (prompt()),this.Font,textArea (Dpi.scale 12),p.muted,flags)
             else
                 let x = chips held
                 TextRenderer.DrawText(g,"+ …",this.Font,textArea x,p.muted,flags)
         | None ->
-            match SettingsShortcut.parts shortcut with
-            | [] -> TextRenderer.DrawText(g,tr Strings.Shortcuts.notSet,this.Font,textArea (Dpi.scale 12),p.muted,flags)
-            | labels -> chips labels |> ignore
+            if shortcut=0 then TextRenderer.DrawText(g,tr Strings.Shortcuts.notSet,this.Font,textArea (Dpi.scale 12),p.muted,flags)
+            else sequence() |> ignore
         if canClear() then
             let bounds = clearBounds()
             if hoveringClear then

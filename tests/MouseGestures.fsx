@@ -65,9 +65,11 @@ let recognizer() =
 let table() =
     let chrome = @"C:\Program Files\Google\Chrome\Application\chrome.exe"
     let editor = @"C:\Tools\editor.exe"
-    let back = { gesture="L"; action=GestureKeys(MouseGesturePresets.altLeft,"") }
-    let close = { gesture="DR"; action=GestureKeys(MouseGesturePresets.ctrlW,"") }
-    let mine = { gesture="RD"; action=GestureKeys(0x0274,"Mine") }
+    let back = { gesture="L"; action=GestureKeys([MouseGesturePresets.altLeft],"") }
+    let close = { gesture="DR"; action=GestureKeys([MouseGesturePresets.ctrlW],"") }
+    let mine = { gesture="RD"; action=GestureKeys([0x0274],"Mine") }
+    // Ctrl+K, Ctrl+C, one after another.
+    let comment = { gesture="RU"; action=GestureKeys([0x024B;0x0243],"") }
     let start = { MouseGestures.empty with apps=[{ path=chrome; enabled=true; bindings=[back;close] }; { path=editor; enabled=false; bindings=[] }] }
     // An app's own binding wins; others fall back to everything's; an app switched off has none.
     check (MouseGestures.resolve start chrome "L"=Some back) "Chrome's own gesture was not used"
@@ -77,9 +79,15 @@ let table() =
     check (MouseGestures.resolve start @"C:\other.exe" "U"=Some { gesture="U"; action=GestureCommand "search-tabs" }) "An unlisted app lacked everything's gestures"
     check ((MouseGestures.overrides start close).IsSome && (MouseGestures.overrides start back).IsNone) "Overrides were not told apart"
     // Kept and read back, field for field.
-    let added = MouseGestures.updateApp start chrome (fun app -> { app with bindings=MouseGestures.bind app.bindings mine })
+    let added = MouseGestures.updateApp start chrome (fun app -> { app with bindings=MouseGestures.bind (MouseGestures.bind app.bindings mine) comment })
     let again = MouseGestures.readTable (MouseGestures.writeTable added)
     check (again=added) (sprintf "The gesture table did not survive being written and read: %A" again)
+    // One key is kept as a number, as before sequences, so an older version still reads it.
+    let written = MouseGestures.writeTable added
+    check (written.ToString().Contains("\"keys\":628") || written.ToString().Contains("\"keys\": 628")) (sprintf "One key was not kept as a number: %s" (written.ToString()))
+    let legacy = MouseGestures.readTable (JToken.Parse """{"global":[{"gesture":"UD","keys":116,"name":""}],"apps":[],"dismissed":[]}""")
+    check (legacy.everywhere=[{ gesture="UD"; action=GestureKeys([0x74],"") }]) (sprintf "A key kept as a number was read as %A" legacy.everywhere)
+    check (MouseGesturePresets.keysName [0x024B;0x0243] ""="Ctrl+K, Ctrl+C") "Keys one after another were not named in order"
     check (MouseGestures.readTable null=MouseGestures.empty) "A settings file without gestures did not start with the defaults"
     // After one stroke, what a second would do there: everything's up-left and up-right.
     check (MouseGestures.continuations MouseGestures.empty @"C:\other.exe" "U" |> List.map(fun binding -> binding.gesture)=["UL";"UR"]) "The strokes that could follow up were not up-left and up-right"
@@ -98,11 +106,11 @@ let table() =
     check ((MouseGestures.seen MouseGestures.empty editor None).IsNone) "An app without a preset joined the list on its own"
     check (MouseGesturePresets.bindings "explorer.exe"=Some MouseGesturePresets.explorer && (MouseGesturePresets.bindings "notepad.exe").IsNone) "Presets went to the wrong apps"
     // File Explorer refreshes as a browser does: up and back down sends F5.
-    check (MouseGesturePresets.explorer |> List.exists(fun binding -> binding.gesture="UD" && binding.action=GestureKeys(MouseGesturePresets.f5,""))) "File Explorer's preset has no refresh"
+    check (MouseGesturePresets.explorer |> List.exists(fun binding -> binding.gesture="UD" && binding.action=GestureKeys([MouseGesturePresets.f5],""))) "File Explorer's preset has no refresh"
     // Keys are named by the preset, the user's name, or else the keys.
-    check (MouseGesturePresets.keysName MouseGesturePresets.altLeft ""=tr Strings.MouseGestures.back) "Alt+Left was not called Back"
-    check (MouseGesturePresets.keysName MouseGesturePresets.altLeft "Mine"="Mine") "A name of the user's was not kept"
-    check (MouseGesturePresets.keysName 0x0274 ""=SettingsShortcut.text 0x0274) "Keys without a name did not show as keys"
+    check (MouseGesturePresets.keysName [MouseGesturePresets.altLeft] ""=tr Strings.MouseGestures.back) "Alt+Left was not called Back"
+    check (MouseGesturePresets.keysName [MouseGesturePresets.altLeft] "Mine"="Mine") "A name of the user's was not kept"
+    check (MouseGesturePresets.keysName [0x0274] ""=SettingsShortcut.text 0x0274) "Keys without a name did not show as keys"
     check (tr (Strings.MouseGestures.drawn "UR")<>"" && Localization.all (Strings.MouseGestures.drawn "LD") |> List.forall(fun text -> text<>"")) "A gesture had no words"
 
 /// A key as the box gets it before the window does, while it records.
@@ -261,8 +269,20 @@ let main() =
             // cancel, clear or refused for lacking Ctrl or Alt, and Esc leaves the dialog open.
             for key in [Keys.Escape;Keys.Delete;Keys.Home;Keys.Enter;Keys.Back] do
                 dialog.Keys.StartRecording()
-                check (pressKey dialog.Keys key && dialog.Keys.Shortcut=SettingsShortcut.encode key && not dialog.Keys.IsRecording && dialog.Visible)
-                      (sprintf "%A alone was not taken as a key to send: %d" key dialog.Keys.Shortcut)
+                check (pressKey dialog.Keys key && dialog.Keys.Sequence=[SettingsShortcut.encode key] && dialog.Visible)
+                      (sprintf "%A alone was not taken as a key to send: %A" key dialog.Keys.Sequence)
+            // Keys pressed one after another make a sequence, up to three; a pause ends it, and
+            // recording again starts it afresh.
+            dialog.Keys.StartRecording()
+            for key in [Keys.Control ||| Keys.K;Keys.Control ||| Keys.C] do pressKey dialog.Keys key |> ignore
+            check (dialog.Keys.Sequence=[0x024B;0x0243] && dialog.Keys.IsRecording) (sprintf "Two keys in a row were taken as %A" dialog.Keys.Sequence)
+            render dialog ("mouse-gestures-dialog-sequence-"+name)
+            pump 1400
+            check (not dialog.Keys.IsRecording) "A pause after the keys did not end the recording"
+            dialog.Keys.StartRecording()
+            for key in [Keys.A;Keys.B;Keys.C;Keys.D] do pressKey dialog.Keys key |> ignore
+            check (dialog.Keys.Sequence=[0x41;0x42;0x43] && not dialog.Keys.IsRecording) (sprintf "Keys past three were taken, or kept it recording: %A" dialog.Keys.Sequence)
+            check (placed()=first) (sprintf "Three keys moved the dialog from %A to %A" first (placed()))
             dialog.Keys.Clear()
             // A press on the name field's frame, round its text, puts the caret in the text there,
             // at its start on the left and its end on the right, as a native box's margin does.

@@ -52,8 +52,9 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
         input.mkhi <- union
         input
     let send (inputs:INPUT[]) = WinUserApi.SendInput(inputs.Length,inputs,Marshal.SizeOf(typeof<INPUT>)) |> ignore
-    /// Keys in the hotkey control's encoding, pressed and let go with their modifiers.
-    let sendKeys code =
+    /// Keys in the hotkey control's encoding, each pressed and let go with its modifiers, one
+    /// after another.
+    let sendKeys (codes:int list) =
         let key vk up extended =
             let mutable keyboard = KEYBDINPUT()
             keyboard.wVk <- int16 vk
@@ -66,16 +67,19 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
             input.``type`` <- 1
             input.mkhi <- union
             input
-        let flags = (code >>> 8) &&& 0xFF
-        let modifiers = [ if flags &&& 2<>0 then yield 0x11
-                          if flags &&& 4<>0 then yield 0x12
-                          if flags &&& 1<>0 then yield 0x10 ]
-        let vk = code &&& 0xFF
-        if vk<>0 then
-            send [| for modifier in modifiers do yield key modifier false false
-                    yield key vk false (flags &&& 8<>0)
-                    yield key vk true (flags &&& 8<>0)
-                    for modifier in List.rev modifiers do yield key modifier true false |]
+        let press code =
+            let flags = (code >>> 8) &&& 0xFF
+            let modifiers = [ if flags &&& 2<>0 then yield 0x11
+                              if flags &&& 4<>0 then yield 0x12
+                              if flags &&& 1<>0 then yield 0x10 ]
+            let vk = code &&& 0xFF
+            [| if vk<>0 then
+                for modifier in modifiers do yield key modifier false false
+                yield key vk false (flags &&& 8<>0)
+                yield key vk true (flags &&& 8<>0)
+                for modifier in List.rev modifiers do yield key modifier true false |]
+        let inputs = codes |> Seq.collect press |> Array.ofSeq
+        if inputs.Length>0 then send inputs
     /// The window a press lands on, and its app, where gestures are on for it: not one of this
     /// app's own windows, nor the taskbar or the desktop, whose menus belong to Windows.
     let target (x:int) (y:int) =
@@ -107,13 +111,13 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
                 Commands.find id |> Option.iter(fun command ->
                     activate hwnd |> ignore
                     if command.enabled hwnd then command.run hwnd |> ignore)
-            | GestureKeys(code,_) ->
+            | GestureKeys(codes,_) ->
                 // Keys go to the window in front, which it may take a moment to be.
                 if activate hwnd then
                     let wait = new Timer(Interval=40)
-                    wait.Tick.Add(fun _ -> wait.Stop(); wait.Dispose(); sendKeys code)
+                    wait.Tick.Add(fun _ -> wait.Stop(); wait.Dispose(); sendKeys codes)
                     wait.Start()
-                else sendKeys code
+                else sendKeys codes
         | _ -> ()
     do
         holdTimer.Tick.Add(fun _ ->

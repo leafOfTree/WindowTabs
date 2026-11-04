@@ -295,8 +295,9 @@ type MouseGestureDialog(scope:string option, table:MouseGestureTable) as this =
     /// a list with no headings does not show, so it reads as no order at all.
     let commands = Commands.forGestures() |> List.sortWith(fun a b -> String.Compare(tr a.text.caption,tr b.text.caption,StringComparison.CurrentCultureIgnoreCase))
     let command = SettingsUi.choice (Array.append [|tr Strings.MouseGestures.chooseCommand|] (commands |> List.map(fun c -> tr c.text.caption) |> Array.ofList))
-    /// Any key may be sent, Esc or Delete alone among them, as it is not caught desktop-wide.
-    let keys = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Name="gesture-keys",AnyKey=true)
+    /// Any key may be sent, Esc or Delete alone among them, as it is not caught desktop-wide, and
+    /// several one after another, as Ctrl+K, Ctrl+C.
+    let keys = new SettingsShortcutInput(Font=SettingsUi.bodyFont(),Name="gesture-keys",AnyKey=true,Sequential=true)
     let nameBox = new TextBox(Font=SettingsUi.bodyFont(),AccessibleName=tr Strings.MouseGestures.name)
     let nameInput = new SettingsTextInput(nameBox,Width=Dpi.scale 200)
     let keysRow = new TableLayoutPanel(ColumnCount=2,RowCount=2,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Margin=Padding.Empty)
@@ -373,6 +374,8 @@ type MouseGestureDialog(scope:string option, table:MouseGestureTable) as this =
         // As wide as the lists above, the name taking what the keys leave, so both rows end
         // at the same right edge.
         keysRow.MinimumSize <- Size(width,0)
+        // Keys added one after another widen their box; the name gives up the room.
+        keysRow.MaximumSize <- Size(width,0)
         keysRow.ColumnStyles.Add(ColumnStyle(SizeType.AutoSize)) |> ignore
         keysRow.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
         nameInput.Anchor <- AnchorStyles.Left ||| AnchorStyles.Right
@@ -423,7 +426,7 @@ type MouseGestureDialog(scope:string option, table:MouseGestureTable) as this =
                         this.DialogResult <- DialogResult.OK
                 elif keys.Shortcut=0 then fail Strings.MouseGestures.needKeys
                 else
-                    result <- Some { gesture=gesture; action=GestureKeys(keys.Shortcut,nameBox.Text.Trim()) }
+                    result <- Some { gesture=gesture; action=GestureKeys(keys.Sequence,nameBox.Text.Trim()) }
                     this.DialogResult <- DialogResult.OK)
         fitAction()
         this.HandleCreated.Add(fun _ -> SettingsUi.apply this; fitAction())
@@ -524,7 +527,7 @@ type MouseGestureEditor() as this =
         let rows = (current.everywhere |> List.map(fun binding -> binding,false)) @ (current.apps |> List.collect(fun app -> app.bindings |> List.map(fun binding -> binding,true)))
         let widest =
             rows |> List.fold (fun widest (binding,inApp) ->
-                let key = match binding.action with GestureKeys(code,_) -> GestureUi.measure (SettingsShortcut.text code) mono+m 20 | GestureCommand _ -> 0
+                let key = match binding.action with GestureKeys(codes,_) -> GestureUi.measure (SettingsShortcut.sequenceText codes) mono+m 20 | GestureCommand _ -> 0
                 let mark = if inApp && (MouseGestures.overrides current binding).IsSome then m 24 else 0
                 max widest (key+GestureUi.measure (Commands.gestureAction binding) body+mark)) 0
         let spare = max 0 (this.Width-tableLeft()-m 140-widest-m 36-m 24)
@@ -735,8 +738,8 @@ type MouseGestureEditor() as this =
             let name = Commands.gestureAction binding
             match binding.action with
             | GestureCommand _ -> ()
-            | GestureKeys(code,_) ->
-                let keyText = SettingsShortcut.text code
+            | GestureKeys(codes,_) ->
+                let keyText = SettingsShortcut.sequenceText codes
                 let mono = GestureUi.monoFont()
                 let key = Rectangle(x,row.Y+(row.Height-m 22)/2,GestureUi.measure keyText mono+m 12,m 22)
                 use keyShape = SettingsShapes.rounded (RectangleF(float32 key.X,float32 key.Y,float32(key.Width-1),float32(key.Height-1))) (float32(m 4))

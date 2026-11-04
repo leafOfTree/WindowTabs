@@ -538,7 +538,7 @@ module Commands =
     let gestureAction (binding:GestureBinding) =
         match binding.action with
         | GestureCommand id -> find id |> Option.map(fun command -> tr command.text.caption) |> Option.defaultValue id
-        | GestureKeys(code,name) -> MouseGesturePresets.keysName code name
+        | GestureKeys(codes,name) -> MouseGesturePresets.keysName codes name
     /// The commands a mouse gesture can run: those listed that run at once, as a key would.
     let forGestures() = all |> List.filter(fun command -> command.listed && not command.chooses)
     /// What a command is called for the window in front: pinning says which way it goes.
