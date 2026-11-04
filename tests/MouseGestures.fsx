@@ -41,6 +41,15 @@ let recognizer() =
     check (read [0,0;100,6] 0=Gesture "R") "A slightly slanted line was not read as one stroke"
     check (read [0,0;10,4] 0=NoGesture) "A twitch was read as a gesture"
     check (read [0,0;0,-100;100,-100;100,0] 0=Unrecognized) "Three strokes were read as a gesture"
+    // Up, the wrong way left, then back right past where it turned: the left was a slip.
+    check (read [0,0;0,-100;-80,-100;70,-100] 2=Gesture "UR") (sprintf "Up, left, then back right was read as %A" (read [0,0;0,-100;-80,-100;70,-100] 2))
+    check (read [0,0;-100,0;-100,90;-100,-80] 2=Gesture "LU") "Left, down, then back up was not read as left, up"
+    // Turned back only part of the way, short of where it turned, the slip is not put right.
+    check (read [0,0;0,-100;-100,-100;-40,-100] 0=Unrecognized) (sprintf "Up, left, then back right part of the way was read as %A" (read [0,0;0,-100;-100,-100;-40,-100] 0))
+    check (read [0,0;0,-100;-100,-100;0,-100] 0=Unrecognized) "Up, left, then back right just to the turn was read as a gesture"
+    // Back to the first stroke's way is a zigzag, and a wrong first stroke is not put right.
+    check (read [0,0;0,-100;8,0;16,-100] 0=Unrecognized) "Up, down, up was read as a gesture"
+    check (read [0,0;0,-100;0,0;100,0] 0=Unrecognized) "Up, back down, then right was read as a gesture"
     // A scribble of loops back and forth is not a gesture, however much of it points one way.
     let scribble = [228,74;85,48;75,80;90,110;280,110;430,78;435,98;280,112;200,104;175,60;228,74]
     check (read scribble 3=Unrecognized) (sprintf "A scribble was read as %A" (read scribble 3))

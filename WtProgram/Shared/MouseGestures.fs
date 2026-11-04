@@ -55,7 +55,9 @@ module MouseGestures =
     /// shorter than 24 pixels are dropped as the wobble of a hand, and what that leaves the same
     /// way joins up, so a curved line stays one stroke; then those under a fifth of the whole go
     /// too, as the small detour of a turn. A path mostly dropped that way is a scribble, not a
-    /// gesture with some wobble, and nothing is read from it.
+    /// gesture with some wobble, and nothing is read from it. A second stroke turned straight
+    /// back by a longer third, past where it turned, was the wrong way: up, left, then further
+    /// right reads as up, right. Back to the first stroke's way, it is a zigzag, and nothing is read.
     let read (scale:float) (points:(int * int) list) =
         let step,shortest,least = 8.0*scale,24.0*scale,30.0*scale
         let strokes = ResizeArray<char * float>()
@@ -75,9 +77,11 @@ module MouseGestures =
             let firm = strokes |> Seq.filter(fun (_,length) -> length>=shortest) |> join
             let kept = firm |> List.filter(fun (_,length) -> length>=total*0.18) |> join
             let covered = kept |> List.sumBy snd
+            let back a b = List.contains (String([|a;b|])) ["UD";"DU";"LR";"RL"]
             match kept with
             | _ when covered<total*0.7 -> Unrecognized
             | strokes when strokes.Length<=2 -> Gesture(String(strokes |> List.map fst |> Array.ofList))
+            | [(first,_);(wrong,slip);(last,length)] when back wrong last && first<>last && length>slip -> Gesture(String([|first;last|]))
             | _ -> Unrecognized
 
     let appFor (table:MouseGestureTable) path = table.apps |> List.tryFind(fun app -> AppIdentity.same app.path path)
