@@ -166,9 +166,12 @@ let main() =
                     |> Seq.filter(fun c -> c.Visible && c.Font.Style=FontStyle.Regular) |> List.ofSeq
         // Headings are in the Semibold face: sections a step larger than the body, parts at its size.
         let isHeading (c:Control) = c.Font.Name=SettingsUi.sectionFont().Name
+        // Descriptions a step smaller than the body, as WinUI's captions.
+        let described = 9.0f*float32 target/float32(Dpi.system())
         let sizes = shown |> List.filter(isHeading >> not) |> List.map(fun c -> c.Font.Size) |> List.distinct
-        check (not sizes.IsEmpty && sizes |> List.forall(fun size -> abs(size-expected)<0.05f))
-              (sprintf "Page created after the DPI change has fonts %A, expected %.2f" sizes expected)
+        check (not sizes.IsEmpty && sizes |> List.exists(fun size -> abs(size-expected)<0.05f)
+               && sizes |> List.forall(fun size -> abs(size-expected)<0.05f || abs(size-described)<0.05f))
+              (sprintf "Page created after the DPI change has fonts %A, expected %.2f and %.2f" sizes expected described)
         let heading = 11.0f*float32 target/float32(Dpi.system())
         let headings = shown |> List.filter isHeading |> List.map(fun c -> c.Text,c.Font.Size)
         check (not headings.IsEmpty && headings |> List.forall(fun (_,size) -> abs(size-heading)<0.05f || abs(size-expected)<0.05f))

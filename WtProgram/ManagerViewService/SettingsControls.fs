@@ -695,7 +695,7 @@ type SettingsNavigationButton(key:SettingsViewType) as this =
             use path = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32(this.Width-1),float32(this.Height-1))) (SettingsShapes.controlRadius())
             use brush = new SolidBrush(color)
             e.Graphics.FillPath(brush,path))
-        let foreground = if not this.Enabled then p.muted elif selected && highContrast then SystemColors.HighlightText else p.text
+        let foreground = if not this.Enabled then p.disabledText elif selected && highContrast then SystemColors.HighlightText else p.text
         let background = fill |> Option.defaultValue sidebar
         SettingsPageIcons.draw e.Graphics key (Dpi.scale 12) ((this.Height-Dpi.scale 18)/2) foreground background
         TextRenderer.DrawText(e.Graphics,this.Text,this.Font,
@@ -1477,7 +1477,9 @@ type SettingsCombo(items:string[]) as this =
         else SettingsShapes.drawControlEdge graphics shape (SettingsShapes.outlineRect this.Width this.Height) false false Color.Empty p
         if this.Focused && this.ShowFocusCues then
             SettingsShapes.drawFocusRing graphics (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.controlRadius()) p
-        let foreground = if this.Enabled then p.text else p.muted
+        // Disabled in the disabled grey, as buttons are: the secondary grey is nearly as light as the
+        // text, so a disabled list looked as if it would open.
+        let foreground = if this.Enabled then p.text else p.disabledText
         // The prompt, while nothing is chosen, muted as a text box's cue is: not a choice made.
         let label = if this.PromptFirst && selected<=0 then p.muted else foreground
         let offset = drawDot graphics this.ClientRectangle selected

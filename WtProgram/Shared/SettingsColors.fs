@@ -15,16 +15,16 @@ module SettingsColors =
               muted=SystemColors.WindowText; disabledText=SystemColors.GrayText; border=SystemColors.WindowText; hover=SystemColors.Control
               accent=SystemColors.Highlight; onAccent=SystemColors.HighlightText; accentText=SystemColors.Highlight; selection=SystemColors.Highlight }
         // The accent follows Windows; on dark pages it is a light shade, so what sits on it is black.
-        // Secondary text reads clearly on the page yet stays a step from the main text: it is set at
-        // the body size, unlike WinUI's smaller captions, so only its colour tells the two apart.
+        // Secondary text in WinUI's own colours: descriptions are a size smaller than the names
+        // above them, so they can be as light as Windows Settings' and still stay apart.
         // The greys are Windows Settings' own, neutral: a warm tint read as yellowed beside it.
         elif ThemeService.currentIsDark() then
             { background=Color.FromRGB(0x202020); surface=Color.FromRGB(0x2B2B2B); text=Color.White
-              muted=Color.FromRGB(0x9D9D9D); disabledText=Color.FromRGB(0x5C5C5C); border=Color.FromRGB(0x353535); hover=Color.FromRGB(0x323232)
+              muted=Color.FromRGB(0xCFCFCF); disabledText=Color.FromRGB(0x5C5C5C); border=Color.FromRGB(0x353535); hover=Color.FromRGB(0x323232)
               accent=ThemeService.accent true; onAccent=Color.Black; accentText=ThemeService.accentText true; selection=Color.FromRGB(0x383838) }
         else
             { background=Color.White; surface=Color.White; text=Color.FromRGB(0x1B1B1B)
-              muted=Color.FromRGB(0x6B6B6B); disabledText=Color.FromRGB(0xBDBDBD); border=Color.FromRGB(0xE5E5E5); hover=Color.FromRGB(0xF3F3F3)
+              muted=Color.FromRGB(0x646464); disabledText=Color.FromRGB(0xBDBDBD); border=Color.FromRGB(0xE5E5E5); hover=Color.FromRGB(0xF3F3F3)
               accent=ThemeService.accent false; onAccent=Color.White; accentText=ThemeService.accentText false; selection=Color.FromRGB(0xE3E3E3) }
 
 module SettingsTextWrap =

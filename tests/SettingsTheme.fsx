@@ -622,15 +622,19 @@ let main() =
                       (sprintf "The %s accent is not Windows' shade for the page: %A" mode p.accent))
             check (p.onAccent.ToArgb()=(if dark then Color.Black else Color.White).ToArgb()) (sprintf "What sits on the %s accent is not in a colour that reads on it" mode)
             // Secondary text reads clearly: at least 4.5:1 on the page, where the old grey stood at
-            // 3.5:1 on white; and at least 2.2:1 from the main text, which a brighter grey brought to
-            // 1.5:1 on dark pages.
+            // 3.5:1 on white. It may come as close to the main text as WinUI's does, as descriptions
+            // are a size smaller than the names above them, which once at one size needed 2.2:1.
             let luminance (c:Color) =
                 let channel (v:byte) = let x = float v/255.0 in if x<=0.03928 then x/12.92 else Math.Pow((x+0.055)/1.055,2.4)
                 0.2126*channel c.R+0.7152*channel c.G+0.0722*channel c.B
             let contrast (a:Color) (b:Color) = let la,lb = luminance a,luminance b in (max la lb+0.05)/(min la lb+0.05)
             check (contrast p.muted p.background>=4.5 && contrast p.muted p.surface>=4.5)
                   (sprintf "Secondary text is too faint in the %s theme: %.2f:1" mode (contrast p.muted p.background))
-            check (contrast p.muted p.text>=2.2) (sprintf "Secondary text is too close to the main text in the %s theme: %.2f:1" mode (contrast p.muted p.text))
+            check (SettingsUi.descriptionFont().Size<SettingsUi.rowFont().Size && contrast p.muted p.text>=1.4)
+                  (sprintf "Descriptions are not a size smaller than names, or too close to them, in the %s theme: %.2f:1" mode (contrast p.muted p.text))
+            let described = controls form |> Seq.filter(fun c -> c :? SettingsEllipsisLabel && string c.Tag="muted" && c.Text<>"") |> List.ofSeq
+            check (not described.IsEmpty && described |> List.forall(fun c -> c.Font.Size=SettingsUi.descriptionFont().Size))
+                  (sprintf "Setting descriptions are not in the description font: %A" (described |> List.map(fun c -> c.Text,c.Font.Size) |> List.truncate 3))
             // Windows Settings' neutral greys, not warm ones that read as yellowed beside it, and its
             // navigation in the page's own colour, with no rule between them.
             for name,c in ["background",p.background;"surface",p.surface;"text",p.text;"muted",p.muted;"border",p.border;"hover",p.hover;"selection",p.selection] do
@@ -941,6 +945,17 @@ let main() =
         dismissPopup.Dispose()
         choice.Enabled <- false
         check (choice.CreateDropDown().IsNone) "Disabled choice opens a menu"
+        // Its text in the disabled grey, as a disabled button's: the secondary grey is nearly as
+        // light as the text, so a disabled list looked as if it would open.
+        do
+            let p = SettingsColors.current()
+            use image = new Bitmap(choice.Width,choice.Height)
+            choice.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+            let brightness (c:Color) = (int c.R+int c.G+int c.B)/3
+            let ink = [for y in 0..image.Height-1 do for x in Dpi.scale 12..image.Width-Dpi.scale 40 -> image.GetPixel(x,y)]
+            let strongest = if ThemeService.currentIsDark() then ink |> List.maxBy brightness else ink |> List.minBy brightness
+            check (abs(brightness strongest-brightness p.disabledText)<24)
+                  (sprintf "A disabled list's text is %A, not the disabled grey %A" strongest p.disabledText)
         choice.Enabled <- true
         api.setValue("tabThemeMode",box "dark")
         Application.DoEvents()

@@ -35,6 +35,9 @@ module SettingsUi =
     let sectionFont() = font (uiSemiboldFamily()) 11.0f FontStyle.Regular
     /// A part of a page's section: the body size, a step smaller than the section heading.
     let subsectionFont() = font (uiSemiboldFamily()) 10.5f FontStyle.Regular
+    /// A setting's description under its name: a step smaller, 12px as WinUI's captions, so size
+    /// as well as colour tells the two apart.
+    let descriptionFont() = font (uiFamily()) 9.0f FontStyle.Regular
 
     let palette() = SettingsColors.current()
 
@@ -199,13 +202,13 @@ module SettingsUi =
         labels.SuspendLayout()
         labels.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
         let name = new Label(Text=caption,AutoSize=true,Dock=DockStyle.Fill,Font=rowFont(),UseMnemonic=false,Margin=Padding.Empty)
-        let detail = new SettingsEllipsisLabel(Text=description,AutoSize=false,Font=rowFont(),Height=rowFont().Height,
-                               MinimumSize=Size(0,rowFont().Height),Dock=DockStyle.Fill,Tag="muted",
+        let detail = new SettingsEllipsisLabel(Text=description,AutoSize=false,Font=descriptionFont(),Height=descriptionFont().Height,
+                               MinimumSize=Size(0,descriptionFont().Height),Dock=DockStyle.Fill,Tag="muted",
                                Margin=Padding(0,Dpi.scale 4,0,0))
         labels.RowCount <- if String.IsNullOrWhiteSpace(description) then 1 else 2
         labels.RowStyles.Add(RowStyle(SizeType.AutoSize)) |> ignore
         if labels.RowCount=2 then
-            let style = RowStyle(SizeType.Absolute,float32(rowFont().Height+detail.Margin.Vertical))
+            let style = RowStyle(SizeType.Absolute,float32(descriptionFont().Height+detail.Margin.Vertical))
             labels.RowStyles.Add(style) |> ignore
             // The description wraps to as many lines as the column's width needs. Its height is set
             // here, on every layout, rather than by auto-size: an auto-size row collapses around
@@ -215,7 +218,7 @@ module SettingsUi =
             let mutable measured = struct(0,(null:Font),0)
             labels.Layout.Add(fun _ ->
                 let width = max 40 (labels.ClientSize.Width-Dpi.scale 8)
-                let font = rowFont()
+                let font = descriptionFont()
                 let textHeight =
                     match measured with
                     | struct(w,f,h) when w=width && obj.ReferenceEquals(f,font) -> h
