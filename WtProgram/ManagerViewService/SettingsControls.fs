@@ -1011,6 +1011,8 @@ type SettingsListFrame(list:SettingsChoiceList) as this =
         this.Resize.Add(fun _ -> arrange())
         this.Disposed.Add(fun _ -> (smooth :> IDisposable).Dispose())
     member _.List = list
+    /// The width the scrollbar takes at the right, kept whether the rows overflow or not.
+    member _.BarWidth = bar.Width
     override this.OnGotFocus(e) = base.OnGotFocus(e); list.Focus() |> ignore
     override this.OnMouseWheel(e) =
         base.OnMouseWheel(e)
@@ -1341,7 +1343,10 @@ type SettingsCombo(items:string[]) as this =
             // As tall as all the choices, or as MaxRows of them, whatever a search leaves.
             let rows = match this.MaxRows with Some most -> min most shown.Count | None -> shown.Count
             let boxHeight = match search with Some host -> host.Control.Height+Dpi.scale 4 | None -> 0
-            window.Size <- Size(min area.Width (max anchorBox.Width (labelWidth+Dpi.scale (if itemImages.Length>0 then 82 elif itemColors.Length>0 then 80 else 58))),
+            // What a row keeps beside its label, as the rows are drawn: the inset before it, the dot or
+            // image, the room for the tick, and the scrollbar the frame keeps whether rows overflow or not.
+            let chrome = Dpi.scale 42+(if itemImages.Length>0 then Dpi.scale 24 elif itemColors.Length>0 then Dpi.scale 22 else 0)+frame.BarWidth+window.Padding.Horizontal
+            window.Size <- Size(min area.Width (max anchorBox.Width (labelWidth+chrome)),
                                 min (area.Height-Dpi.scale 12) (rows*list.ItemHeight+boxHeight+window.Padding.Vertical+2))
             search |> Option.iter(fun host -> host.Size <- Size(window.Width-window.Padding.Horizontal,host.Control.Height))
             listHost.Size <- Size(window.Width-window.Padding.Horizontal,window.Height-window.Padding.Vertical-boxHeight)

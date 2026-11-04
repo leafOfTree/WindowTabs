@@ -516,6 +516,22 @@ let main() =
         check (SettingsUi.bodyFont().Name=(if variable then "Segoe UI Variable Text" else "Segoe UI")) (sprintf "Settings text is set in %s" (SettingsUi.bodyFont().Name))
         check (not (SettingsUi.sectionFont().Bold) && SettingsUi.sectionFont().Name.EndsWith("Semibold")) (sprintf "Section headings are set in %A" (SettingsUi.sectionFont()))
         check (form.Font.Name=SettingsUi.bodyFont().Name) (sprintf "The settings window's text is set in %s" form.Font.Name)
+        // A drop-down list is wide enough for its longest choice beside a colour dot, the tick and
+        // the scrollbar it keeps: "Default" and "Custom" were cut short.
+        do
+            let names = [|"Default";"Windows accent";"Blue";"Custom"|]
+            use combo = new SettingsCombo(names,Font=SettingsUi.bodyFont(),Size=Size(Dpi.scale 120,Dpi.scale 32))
+            combo.ItemColors <- [|Color.Gray;Color.Blue;Color.Navy;Color.Silver|]
+            form.Controls.Add combo
+            match combo.CreateDropDown() with
+            | Some window ->
+                let frame = (window.Items.[0] :?> ToolStripControlHost).Control :?> SettingsListFrame
+                let room = frame.List.ClientSize.Width-Dpi.scale 42-Dpi.scale 22
+                let longest = names |> Array.map(fun name -> TextRenderer.MeasureText(name,combo.Font).Width) |> Array.max
+                check (room>=longest) (sprintf "The longest choice has %dpx of the %dpx it needs" room longest)
+                window.Dispose()
+            | None -> failwith "The drop-down did not open its list"
+            form.Controls.Remove combo
         // The accent and switches as WinUI draws them: Windows' own shade of the accent for the
         // page, an off switch as an outline the page shows through, a click sliding the knob over.
         for mode in ["light";"dark"] do
