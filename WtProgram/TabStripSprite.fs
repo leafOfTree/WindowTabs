@@ -100,11 +100,13 @@ module TabMetrics =
     let scaled (height:int) (logical:int) = max 1 (int(Math.Round(float(Dpi.scale logical) * scale height)))
     /// The menu font, made smaller only when its line would not fit the tab. 0 means any height.
     /// GDI already sizes points at the system DPI, so only another monitor's scale is applied.
+    /// Windows 11's default menu face, Segoe UI, gives way to Segoe UI Variable, as in its own tabs.
     let font (height:int) (style:FontStyle) =
         let points = SystemFonts.MenuFont.SizeInPoints*float32(Dpi.value())/float32(Dpi.system())
-        use full = new Font(SystemFonts.MenuFont.FontFamily,points,style)
+        let family = UiFace.text SystemFonts.MenuFont.Name
+        use full = new Font(family,points,style)
         let fit = if height>0 && full.Height>height then float32 height/float32 full.Height else 1.0f
-        new Font(SystemFonts.MenuFont.FontFamily,max 1.0f (points*fit),style)
+        new Font(family,max 1.0f (points*fit),style)
 
 /// A soft dark edge round an icon, so a logo stays clear on a tab of its own colour without the
 /// colours being chosen around icons. Every icon on a filled tab has it, so they all look alike.

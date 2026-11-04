@@ -516,6 +516,11 @@ let main() =
         check (SettingsUi.bodyFont().Name=(if variable then "Segoe UI Variable Text" else "Segoe UI")) (sprintf "Settings text is set in %s" (SettingsUi.bodyFont().Name))
         check (not (SettingsUi.sectionFont().Bold) && SettingsUi.sectionFont().Name.EndsWith("Semibold")) (sprintf "Section headings are set in %A" (SettingsUi.sectionFont()))
         check (form.Font.Name=SettingsUi.bodyFont().Name) (sprintf "The settings window's text is set in %s" form.Font.Name)
+        // Tabs too, while the menu font is Windows' own; a menu font the user chose stays.
+        do
+            use tabFont = TabMetrics.font 0 FontStyle.Regular
+            let expected = if variable && SystemFonts.MenuFont.Name="Segoe UI" then "Segoe UI Variable Text" else SystemFonts.MenuFont.Name
+            check (tabFont.Name=expected) (sprintf "Tabs are set in %s, not %s" tabFont.Name expected)
         // A drop-down list is wide enough for its longest choice beside a colour dot, the tick and
         // the scrollbar it keeps: "Default" and "Custom" were cut short.
         do

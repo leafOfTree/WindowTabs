@@ -249,3 +249,11 @@ type Ico(icon:Icon) =
 module BitmapExtensions =
     type System.Drawing.Bitmap with
         member this.img = Img(this)
+
+/// Windows 11's face for its own text, Segoe UI Variable, where it is installed.
+module UiFace =
+    let private variable = lazy (FontFamily.Families |> Array.exists(fun family -> family.Name="Segoe UI Variable Text"))
+    /// Segoe UI Variable Text in place of Segoe UI, as Windows 11 sets its own text and tabs; any
+    /// other family, such as a menu font the user chose, stays as it is. Windows 10 keeps Segoe UI.
+    let text (family:string) = if family="Segoe UI" && variable.Value then "Segoe UI Variable Text" else family
+    let semibold() = if variable.Value then "Segoe UI Variable Text Semibold" else "Segoe UI Semibold"
