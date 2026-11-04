@@ -26,11 +26,16 @@ module SettingsUi =
         let dpi = Dpi.value()
         fonts.GetOrAdd(struct(family,points,style,dpi),fun _ ->
             new Font(family,points*float32 dpi/float32(Dpi.system()),style))
-    let bodyFont() = font "Segoe UI" 10.5f FontStyle.Regular
+    let private variable = lazy (FontFamily.Families |> Array.exists(fun family -> family.Name="Segoe UI Variable Text"))
+    /// Windows 11's face, as WinUI sets its text; Segoe UI where it is missing, as on Windows 10.
+    let uiFamily() = if variable.Value then "Segoe UI Variable Text" else "Segoe UI"
+    let uiSemiboldFamily() = if variable.Value then "Segoe UI Variable Text Semibold" else "Segoe UI Semibold"
+    let bodyFont() = font (uiFamily()) 10.5f FontStyle.Regular
     let rowFont() = bodyFont()
-    let sectionFont() = font "Segoe UI" 11.0f FontStyle.Bold
-    /// A part of a page's section: the body size, a step lighter than the section heading.
-    let subsectionFont() = font "Segoe UI Semibold" 10.5f FontStyle.Regular
+    /// Semibold, as WinUI heads its sections, not Bold.
+    let sectionFont() = font (uiSemiboldFamily()) 11.0f FontStyle.Regular
+    /// A part of a page's section: the body size, a step smaller than the section heading.
+    let subsectionFont() = font (uiSemiboldFamily()) 10.5f FontStyle.Regular
 
     let palette() = SettingsColors.current()
 

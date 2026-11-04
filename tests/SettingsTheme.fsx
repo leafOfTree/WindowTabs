@@ -511,6 +511,11 @@ let main() =
                 use image = new Bitmap(form.Width,form.Height)
                 let painted = try form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size)); true with _ -> false
                 check painted (sprintf "The %s page failed to paint in the %s theme" (tr page) mode)
+        // Text in Windows 11's face where it is installed, sections headed in Semibold, not Bold.
+        let variable = FontFamily.Families |> Array.exists(fun family -> family.Name="Segoe UI Variable Text")
+        check (SettingsUi.bodyFont().Name=(if variable then "Segoe UI Variable Text" else "Segoe UI")) (sprintf "Settings text is set in %s" (SettingsUi.bodyFont().Name))
+        check (not (SettingsUi.sectionFont().Bold) && SettingsUi.sectionFont().Name.EndsWith("Semibold")) (sprintf "Section headings are set in %A" (SettingsUi.sectionFont()))
+        check (form.Font.Name=SettingsUi.bodyFont().Name) (sprintf "The settings window's text is set in %s" form.Font.Name)
         // The accent and switches as WinUI draws them: Windows' own shade of the accent for the
         // page, an off switch as an outline the page shows through, a click sliding the knob over.
         for mode in ["light";"dark"] do
@@ -523,6 +528,16 @@ let main() =
                 check (p.accent.ToArgb()=shades.[if dark then 1 else 4].ToArgb() && p.accentText.ToArgb()=shades.[if dark then 0 else 5].ToArgb())
                       (sprintf "The %s accent is not Windows' shade for the page: %A" mode p.accent))
             check (p.onAccent.ToArgb()=(if dark then Color.Black else Color.White).ToArgb()) (sprintf "What sits on the %s accent is not in a colour that reads on it" mode)
+            // Secondary text reads clearly: at least 4.5:1 on the page, where the old grey stood at
+            // 3.5:1 on white; and at least 2.2:1 from the main text, which a brighter grey brought to
+            // 1.5:1 on dark pages.
+            let luminance (c:Color) =
+                let channel (v:byte) = let x = float v/255.0 in if x<=0.03928 then x/12.92 else Math.Pow((x+0.055)/1.055,2.4)
+                0.2126*channel c.R+0.7152*channel c.G+0.0722*channel c.B
+            let contrast (a:Color) (b:Color) = let la,lb = luminance a,luminance b in (max la lb+0.05)/(min la lb+0.05)
+            check (contrast p.muted p.background>=4.5 && contrast p.muted p.surface>=4.5)
+                  (sprintf "Secondary text is too faint in the %s theme: %.2f:1" mode (contrast p.muted p.background))
+            check (contrast p.muted p.text>=2.2) (sprintf "Secondary text is too close to the main text in the %s theme: %.2f:1" mode (contrast p.muted p.text))
             use host = new Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,
                                 Location=Point(-12000,-12000),Size=Size(Dpi.scale 80,Dpi.scale 50),BackColor=p.background)
             let toggle = new SettingsToggle(Location=Point(Dpi.scale 10,Dpi.scale 10),BackColor=p.background)

@@ -186,7 +186,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let highContrast = SystemInformation.HighContrast
     let scale = Dpi.scale
     let bodyFont = SettingsUi.bodyFont()
-    let hintFont = SettingsUi.font "Segoe UI" 9.0f FontStyle.Regular
+    let hintFont = SettingsUi.font (SettingsUi.uiFamily()) 9.0f FontStyle.Regular
     let before = draft
     let mutable current = draft
     /// The group of the row expanded, by its strip, or by its first tab for a group made here.

@@ -185,7 +185,7 @@ type HotKeyView() =
             let button = SettingsUi.button (tr label)
             button.Name <- sprintf "leader-keys-preset-%d" index
             button.Kind <- SettingsButtonKind.Subtle
-            button.Font <- SettingsUi.font "Segoe UI" 9.0f System.Drawing.FontStyle.Regular
+            button.Font <- SettingsUi.font (SettingsUi.uiFamily()) 9.0f System.Drawing.FontStyle.Regular
             button.AutoSize <- false
             button.MinimumSize <- System.Drawing.Size.Empty
             let width = TextRenderer.MeasureText(button.Text,button.Font,System.Drawing.Size.Empty,TextFormatFlags.NoPadding).Width

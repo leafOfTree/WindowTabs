@@ -400,7 +400,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     /// Room between that line and the first row's highlight.
     let underGap = Dpi.scale 6
     /// Smaller than the segments' text, as key caps are.
-    let keyFont = SettingsUi.font "Segoe UI" 8.5f FontStyle.Regular
+    let keyFont = SettingsUi.font (SettingsUi.uiFamily()) 8.5f FontStyle.Regular
     let caption target =
         match target with
         | GroupTabs -> tr (Strings.TabSearch.groupTabs groupItems.Length)
@@ -987,7 +987,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     assignment |> Option.map(fun assignment -> entry,assignment))
                 |> Option.iter(fun (entry,assignment) ->
                     // A size under the rows' text, as the shortcuts beside the names are.
-                    let editor = new SettingsShortcutInput(Font=SettingsUi.font "Segoe UI" 9.0f FontStyle.Regular,Shortcut=assignment.current,ForeColor=palette.text,InList=assignment.inList)
+                    let editor = new SettingsShortcutInput(Font=SettingsUi.font (SettingsUi.uiFamily()) 9.0f FontStyle.Regular,Shortcut=assignment.current,ForeColor=palette.text,InList=assignment.inList)
                     // On the chosen row: round its corners the row's highlight shows, not the
                     // list's surface, which showed as dark corners.
                     editor.PlaceOn(if SystemInformation.HighContrast then SystemColors.Highlight else palette.selection)

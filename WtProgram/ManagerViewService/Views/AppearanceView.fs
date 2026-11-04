@@ -9,7 +9,7 @@ type ContrastComparison() as this =
     inherit Control()
     let mutable samples : (string*Color*Color*Color) list = []
     let chipWidth,chipHeight,gap = Dpi.scale 168,Dpi.scale 32,Dpi.scale 10
-    let captionFont = SettingsUi.font "Segoe UI" 9.0f FontStyle.Regular
+    let captionFont = SettingsUi.font (SettingsUi.uiFamily()) 9.0f FontStyle.Regular
     let columns () = max 1 ((this.Width+gap)/(chipWidth+gap))
     let rowHeight () = chipHeight+Dpi.scale 4+captionFont.Height+gap
     let fit () =

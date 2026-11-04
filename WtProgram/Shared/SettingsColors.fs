@@ -15,13 +15,15 @@ module SettingsColors =
               muted=SystemColors.WindowText; disabledText=SystemColors.GrayText; border=SystemColors.WindowText; hover=SystemColors.Control
               accent=SystemColors.Highlight; onAccent=SystemColors.HighlightText; accentText=SystemColors.Highlight; selection=SystemColors.Highlight }
         // The accent follows Windows; on dark pages it is a light shade, so what sits on it is black.
+        // Secondary text reads clearly on the page yet stays a step from the main text: it is set at
+        // the body size, unlike WinUI's smaller captions, so only its colour tells the two apart.
         elif ThemeService.currentIsDark() then
             { background=Color.FromRGB(0x1A1A19); surface=Color.FromRGB(0x252524); text=Color.FromRGB(0xF0EFEC)
-              muted=Color.FromRGB(0x8C8A84); disabledText=Color.FromRGB(0x55544F); border=Color.FromRGB(0x30302E); hover=Color.FromRGB(0x30302F)
+              muted=Color.FromRGB(0x9C9A94); disabledText=Color.FromRGB(0x55544F); border=Color.FromRGB(0x30302E); hover=Color.FromRGB(0x30302F)
               accent=ThemeService.accent true; onAccent=Color.Black; accentText=ThemeService.accentText true; selection=Color.FromRGB(0x373735) }
         else
             { background=Color.White; surface=Color.White; text=Color.FromRGB(0x191919)
-              muted=Color.FromRGB(0x898883); disabledText=Color.FromRGB(0xBDBCB8); border=Color.FromRGB(0xE5E5E5); hover=Color.FromRGB(0xF3F3F3)
+              muted=Color.FromRGB(0x6B6A65); disabledText=Color.FromRGB(0xBDBCB8); border=Color.FromRGB(0xE5E5E5); hover=Color.FromRGB(0xF3F3F3)
               accent=ThemeService.accent false; onAccent=Color.White; accentText=ThemeService.accentText false; selection=Color.FromRGB(0xE3E3E3) }
 
 module SettingsTextWrap =
