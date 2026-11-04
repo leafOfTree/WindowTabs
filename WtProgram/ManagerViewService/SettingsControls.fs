@@ -120,6 +120,8 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
     /// target (the arrow on its top edge) or above it.
     let mutable tip = 0
     let mutable below = true
+    /// A soft shadow round the bubble, so it stands off the page as the drop-down lists do.
+    let mutable halo : SettingsPopupShadow option = None
     /// The bubble and its arrow as one outline, so the border runs round both.
     let outline (inset:float32) =
         let a = float32(arrow())
@@ -153,6 +155,19 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
         this.ClientSize <- Size(width,textSize.Height+2*padY+arrow())
         // Windows widens a window to its minimum width when it is created; a one-word tip then
         // sat in a wide, empty bubble.
+        this.Disposed.Add(fun _ ->
+            halo |> Option.iter(fun shadow -> (shadow :> IDisposable).Dispose())
+            halo <- None)
+    /// The bubble without its arrow: what the shadow goes round.
+    member this.Body = Rectangle(0,(if below then arrow() else 0),this.Width,this.Height-arrow())
+    member private this.showHalo() =
+        if this.Visible && not SystemInformation.HighContrast then
+            if halo.IsNone then halo <- Some(new SettingsPopupShadow(this,corner=8,body=(fun () -> this.Body)))
+            halo |> Option.iter(fun shadow -> shadow.Show())
+        else halo |> Option.iter(fun shadow -> shadow.Hide())
+    override this.OnVisibleChanged(e) =
+        base.OnVisibleChanged(e)
+        this.showHalo()
     override _.ShowWithoutActivation = true
     override this.WndProc(m) =
         base.WndProc(&m)
@@ -177,12 +192,15 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
         this.Region <- new Region(shape)
         if not (isNull old) then old.Dispose()
         this.Invalidate()
-    override this.OnPaintBackground(e) = e.Graphics.Clear((SettingsColors.current()).surface)
+        this.showHalo()
+    /// Filled as the drop-down lists are, a shade off the cards beneath: in the cards' own colour
+    /// the bubble ran into them.
+    override this.OnPaintBackground(e) = e.Graphics.Clear((SettingsColors.current()).hover)
     override this.OnPaint(e) =
         let p = SettingsColors.current()
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         use shape = outline 1.0f
-        use border = new Pen(p.border)
+        use border = new Pen(SettingsSearchBox.Outline())
         e.Graphics.DrawPath(border,shape)
         let top = padY+(if below then arrow() else 0)
         TextRenderer.DrawText(e.Graphics,wrapped,this.Font,

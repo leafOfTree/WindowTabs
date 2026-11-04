@@ -726,6 +726,19 @@ let main() =
                 let edge = if below then 1 else popup.Value.Height-2
                 check (popup.Value.Region.IsVisible(Point(middle,edge))) (sprintf "The hover popup for %A has no arrow at it" target)
                 check (not (popup.Value.Region.IsVisible(Point(middle+Dpi.scale 20,edge)))) (sprintf "The hover popup's arrow misses %A" target)
+            // Filled as the drop-down lists are, a shade off the cards beneath it, which in their
+            // own colour it ran into; in either theme.
+            for mode in ["light";"dark"] do
+                api.setValue("tabThemeMode",box mode)
+                Application.DoEvents()
+                popup.Value.Invalidate()
+                use image = new Bitmap(popup.Value.Width,popup.Value.Height)
+                popup.Value.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                let body = popup.Value.GetType().GetProperty("Body",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.Public ||| Reflection.BindingFlags.NonPublic).GetValue(popup.Value) :?> Rectangle
+                let fill = image.GetPixel(body.Left+Dpi.scale 4,body.Top+body.Height/2)
+                let p = SettingsColors.current()
+                check (fill.ToArgb()=p.hover.ToArgb() && p.hover.ToArgb()<>p.surface.ToArgb())
+                      (sprintf "The hover popup is filled %A in the %s theme, not the drop-downs' %A" fill mode p.hover)
             api.setValue("tabThemeMode",box "dark")
             Application.DoEvents()
             for f in Application.OpenForms |> Seq.cast<Form> |> Seq.filter(fun f -> f.GetType().Name="SettingsHelpPopup") |> Seq.toList do f.Hide()

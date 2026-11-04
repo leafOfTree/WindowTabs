@@ -73,9 +73,12 @@ module SettingsPopupShadowPixels =
 /// A click-through halo with no directional offset; owned by the popup's lifetime. The settings
 /// popups use it, and the tab menu where Windows 10 has no soft shadow of its own for menus.
 /// `corner` is the popup's corner radius in logical pixels, 10 as the settings dropdowns'.
-type SettingsPopupShadow(owner:Control, ?corner:int) =
+/// `body` is the part of the owner it surrounds, where that is not all of it, such as a bubble's
+/// body without its arrow.
+type SettingsPopupShadow(owner:Control, ?corner:int, ?body:unit -> Rectangle) =
     let os = OS()
     let corner = defaultArg corner 10
+    let body() = match body with Some part -> part() | None -> Rectangle(Point.Empty,owner.Size)
     let padding = Dpi.scale 6
     let helper = os.createWindow (fun message -> message.def()) WindowsStyles.WS_POPUP
                     (WindowsExtendedStyles.WS_EX_LAYERED ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW |||
@@ -102,7 +105,8 @@ type SettingsPopupShadow(owner:Control, ?corner:int) =
     /// Around the owner where it is now, as see-through as the owner while it fades.
     member _.Show(?opacity:float) =
         let alpha = byte(Math.Round(255.0*max 0.0 (min 1.0 (defaultArg opacity 1.0))))
-        Win32Helper.UpdateLayeredWindow(helper.hwnd,Point(owner.Left-padding,owner.Top-padding),bitmapFor owner.Width owner.Height,alpha)
+        let part = body()
+        Win32Helper.UpdateLayeredWindow(helper.hwnd,Point(owner.Left+part.X-padding,owner.Top+part.Y-padding),bitmapFor part.Width part.Height,alpha)
         window.showNoActivate()
     member _.Hide() = window.hide()
     interface IDisposable with
