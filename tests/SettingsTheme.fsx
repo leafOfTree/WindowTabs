@@ -641,6 +641,14 @@ let main() =
                 check (c.R=c.G && c.G=c.B) (sprintf "The %s theme's %s grey is tinted: %A" mode name c)
             let sidebar = controls form |> Seq.find(fun c -> string c.Tag="sidebar")
             check (sidebar.BackColor.ToArgb()=p.background.ToArgb()) (sprintf "The sidebar is %A in the %s theme, not the page's %A" sidebar.BackColor mode p.background)
+            // The open page in the selection fill alone, edge to edge: no accent bar beside it.
+            let openPage = controls form |> Seq.find(fun c -> c :? Button && string c.Tag="nav-active")
+            do
+                use image = new Bitmap(openPage.Width,openPage.Height)
+                openPage.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                let edge,shade = image.GetPixel(Dpi.scale 1,openPage.Height/2),image.GetPixel(openPage.Width-Dpi.scale 6,openPage.Height/2)
+                check (edge.ToArgb()=p.selection.ToArgb() && shade.ToArgb()=p.selection.ToArgb())
+                      (sprintf "The open page is %A at its edge and %A inside in the %s theme, not the selection fill" edge shade mode)
             use host = new Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,
                                 Location=Point(-12000,-12000),Size=Size(Dpi.scale 260,Dpi.scale 100),BackColor=p.background)
             let toggle = new SettingsToggle(Location=Point(Dpi.scale 10,Dpi.scale 10),BackColor=p.background)
