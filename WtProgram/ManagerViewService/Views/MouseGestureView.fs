@@ -291,9 +291,9 @@ type MouseGestureDialog(scope:string option, table:MouseGestureTable) as this =
     let caption = new Label(AutoSize=false,TextAlign=ContentAlignment.MiddleCenter,UseMnemonic=false,Tag="muted",Margin=Padding(0,Dpi.scale 4,0,0))
     /// Sending a shortcut first, as it is what is picked unless changed.
     let kind = SettingsUi.choice [|tr Strings.MouseGestures.sendKeys;tr Strings.MouseGestures.runCommand|]
-    /// By name, in the language shown: the order they are defined in groups them by kind, which
-    /// a list with no headings does not show, so it reads as no order at all.
-    let commands = Commands.forGestures() |> List.sortWith(fun a b -> String.Compare(tr a.text.caption,tr b.text.caption,StringComparison.CurrentCultureIgnoreCase))
+    /// As the palette lists them, the ones used last first, so they are where the palette taught
+    /// them to be, related ones side by side.
+    let commands = Commands.forGestures() |> Commands.inPaletteOrder
     let command = SettingsUi.choice (Array.append [|tr Strings.MouseGestures.chooseCommand|] (commands |> List.map(fun c -> tr c.text.caption) |> Array.ofList))
     /// Any key may be sent, Esc or Delete alone among them, as it is not caught desktop-wide, and
     /// several one after another, as Ctrl+K, Ctrl+C.

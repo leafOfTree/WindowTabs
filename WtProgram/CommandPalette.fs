@@ -65,11 +65,7 @@ module CommandPalette =
         | ASwitch(_,_,command) -> command.id
         | AChoice(item,_,_) | ASetting item | ANumberKeys item -> "setting:"+item.id
     let private recentLimit = 8
-    /// The actions chosen last from the palette, the latest first, kept in the settings file.
-    let recent() =
-        match Services.settings.root.["recentActions"] with
-        | :? Bemo.Json.JArray as items -> items |> Seq.choose(fun item -> match item with :? Bemo.Json.JValue as value -> Some(string value) | _ -> None) |> List.ofSeq
-        | _ -> []
+    let recent() = Commands.recentActions()
     let remember (key:string) =
         let next = key :: (recent() |> List.filter((<>) key)) |> List.truncate recentLimit
         let root = Services.settings.root

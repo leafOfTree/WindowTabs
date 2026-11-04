@@ -552,6 +552,20 @@ module Commands =
     let scopeOf key = byShortcut key |> Option.map(fun command -> command.scope) |> Option.defaultValue Everywhere
     /// Where a category's commands are listed, in the palette's order.
     let categories = [TabCommands;GroupCommands;SplitCommands;WorkspaceCommands;SettingsCommands;AppCommands]
+    /// The actions chosen last from the palette, the latest first, kept in the settings file: a
+    /// command by its id, a setting as "setting:" and its id.
+    let recentActions() =
+        match Services.settings.root.["recentActions"] with
+        | :? Bemo.Json.JArray as items -> items |> Seq.choose(fun item -> match item with :? Bemo.Json.JValue as value -> Some(string value) | _ -> None) |> List.ofSeq
+        | _ -> []
+    /// As the palette lists commands while nothing is typed: the ones chosen last first, the latest
+    /// first, then by category, each in the order defined.
+    let inPaletteOrder (commands:Command list) =
+        let recents = recentActions()
+        commands |> List.sortBy(fun command ->
+            match List.tryFindIndex ((=) command.id) recents with
+            | Some index -> index,0
+            | None -> recents.Length,List.findIndex ((=) command.category) categories)
     /// The command, other than the one on `key`, whose shortcut is `code`.
     let holder (getHotKey:string -> int) key code =
         if code=0 then None

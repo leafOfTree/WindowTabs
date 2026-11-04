@@ -180,6 +180,16 @@ let main() =
         MouseGestureRules.setEnabled "firefox.exe" true
         MouseGestureRules.save (MouseGestures.addApp (MouseGestureRules.table()) @"C:\Windows\explorer.exe" MouseGesturePresets.explorer)
         cancelling()
+        // The commands a gesture can run are listed as the palette lists them: the one used last
+        // first, then by category, each in the order defined.
+        CommandPalette.remember "close-tab"
+        let listed = Commands.inPaletteOrder (Commands.forGestures()) |> List.map(fun command -> command.id)
+        let byCategory =
+            Commands.forGestures() |> List.filter(fun command -> command.id<>"close-tab")
+            |> List.sortBy(fun command -> List.findIndex ((=) command.category) Commands.categories) |> List.map(fun command -> command.id)
+        check (listed.Head="close-tab" && listed.Tail=byCategory) (sprintf "The gesture commands were not in the palette's order: %A" listed)
+        check (List.findIndex ((=) "previous-tab") listed+1=List.findIndex ((=) "next-tab") listed || List.findIndex ((=) "next-tab") listed+1=List.findIndex ((=) "previous-tab") listed)
+              "The next and previous tab commands were not side by side"
         for mode,name in [DarkTheme,"dark";LightTheme,"light"] do
             api.updateAppearance(fun appearance -> { appearance with mode=mode })
             use form = new Form(ClientSize=Size(900,720),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false,Font=SettingsUi.bodyFont())
@@ -321,8 +331,9 @@ let main() =
                 check (all>10 && popup.Height<=10*list.ItemHeight+Dpi.scale 60) (sprintf "The command list is %d px tall for %d commands" popup.Height all)
                 check (string list.Items.[0]<>tr Strings.MouseGestures.chooseCommand) "The command list offered its prompt as a choice"
                 let names = [ for item in list.Items -> string item ]
-                check (names |> List.pairwise |> List.forall(fun (a,b) -> String.Compare(a,b,StringComparison.CurrentCultureIgnoreCase)<=0))
-                      (sprintf "The commands are not in order of their names: %A" (List.truncate 5 names))                // A wheel notch moves the rows by pixels, eased, not a row at a time.
+                let expected = Commands.inPaletteOrder (Commands.forGestures()) |> List.map(fun command -> tr command.text.caption)
+                check (names=expected) (sprintf "The commands are not in the palette's order: %A" (List.truncate 5 names))
+                // A wheel notch moves the rows by pixels, eased, not a row at a time.
                 WinUserApi.SendMessage(list.Handle,0x20A,IntPtr(-120 <<< 16),IntPtr.Zero) |> ignore
                 pump 300
                 check (list.Top<0 && list.TopIndex=0) (sprintf "A wheel notch left the rows at %d (top row %d)" list.Top list.TopIndex)
