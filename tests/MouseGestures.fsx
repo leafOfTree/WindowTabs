@@ -214,9 +214,9 @@ let main() =
             do
                 use hint = new GestureHint()
                 let pointer = Screen.PrimaryScreen.WorkingArea.Location
-                hint.show(Some "U",tr Strings.MouseGestures.nothingSet,true,[],pointer)
+                hint.show(Some "U",tr Strings.MouseGestures.noAction,true,[],pointer)
                 let alone = hint.Height
-                hint.show(Some "U",tr Strings.MouseGestures.nothingSet,true,["UL","Previous tab";"UR","A much longer action name"],pointer)
+                hint.show(Some "U",tr Strings.MouseGestures.noAction,true,["UL","Previous tab";"UR","A much longer action name"],pointer)
                 check (hint.Height>=alone+Dpi.scale 52) (sprintf "Two strokes to follow made the hint %d high, from %d" hint.Height alone)
                 use font = new Font("Segoe UI",10.0f)
                 check (hint.Width>=TextRenderer.MeasureText("A much longer action name",font).Width+Dpi.scale 34) "A stroke to follow did not fit in the hint"

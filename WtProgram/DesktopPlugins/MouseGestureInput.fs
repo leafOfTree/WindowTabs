@@ -133,14 +133,14 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
                 let window = match hint with Some window -> window | None -> (let window = new GestureHint() in hint <- Some window; window)
                 match reading() with
                 | NoGesture -> window.hide()
-                | Unrecognized -> window.show(None,tr Strings.MouseGestures.notAGesture,true,[],Cursor.Position)
+                | Unrecognized -> window.show(None,tr Strings.MouseGestures.unrecognized,true,[],Cursor.Position)
                 | Gesture gesture ->
                     // After one stroke, where a second one would lead, so the gestures can be
                     // found by drawing rather than looked up.
                     let next = MouseGestures.continuations table path gesture |> List.map(fun binding -> binding.gesture,Commands.gestureAction binding)
                     match MouseGestures.resolve table path gesture with
                     | Some binding -> window.show(Some gesture,Commands.gestureAction binding,false,next,Cursor.Position)
-                    | None -> window.show(Some gesture,tr Strings.MouseGestures.nothingSet,true,next,Cursor.Position)
+                    | None -> window.show(Some gesture,tr Strings.MouseGestures.noAction,true,next,Cursor.Position)
             | _ -> hideHint())
 
     /// Whether the hook takes the event from the app.
