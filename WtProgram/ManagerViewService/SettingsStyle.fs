@@ -69,7 +69,7 @@ module SettingsShapes =
         let mix (a:Color) (b:Color) (t:float32) =
             Color.FromArgb(int(float32 a.R*(1.0f-t)+float32 b.R*t),int(float32 a.G*(1.0f-t)+float32 b.G*t),int(float32 a.B*(1.0f-t)+float32 b.B*t))
         let fill =
-            if light then Color.FromRGB(if pressed then 0xE0E0DE elif hot then 0xEAEAE8 else 0xF3F3F1)
+            if light then Color.FromRGB(if pressed then 0xE0E0E0 elif hot then 0xEAEAEA else 0xF3F3F3)
             // Dark buttons dim when pressed rather than brighten further, as Windows' do.
             elif pressed && not SystemInformation.HighContrast then p.background
             elif pressed then mix p.hover p.surface 0.5f

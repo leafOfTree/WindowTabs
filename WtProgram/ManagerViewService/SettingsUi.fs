@@ -38,9 +38,9 @@ module SettingsUi =
 
     let palette() = SettingsColors.current()
 
-    let private sidebarColor (p:SettingsPalette) darkMode =
-        if SystemInformation.HighContrast then p.background
-        elif darkMode then Color.FromRGB(0x151514) else Color.FromRGB(0xFCFCFB)
+    /// The page's own colour, as Windows Settings has its navigation: a darker or warmer panel set
+    /// the sidebar apart from everything Windows draws.
+    let private sidebarColor (p:SettingsPalette) (_darkMode:bool) = p.background
 
     let rec private applyPalette p darkMode (control:Control) =
         let tag = if isNull control.Tag then "" else string control.Tag

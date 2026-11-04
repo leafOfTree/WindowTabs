@@ -206,11 +206,9 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         footer.Controls.Add(version)
         footer.Controls.Add(brandRow)
         navigation.Controls.Add(links)
+        // No rule between the sidebar and the page: in the page's own colour, as in Windows
+        // Settings, the sidebar is set apart by its place alone.
         navigation.Controls.Add(footer)
-        navigation.Paint.Add(fun e ->
-            use border = new Pen((SettingsColors.current()).border)
-            e.Graphics.DrawLine(border,navigation.ClientSize.Width-1,0,
-                                navigation.ClientSize.Width-1,navigation.ClientSize.Height))
         body.Controls.Add(host)
         form.Controls.Add(body)
         form.Controls.Add(navigation)

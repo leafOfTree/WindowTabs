@@ -23,8 +23,8 @@ type SettingsSearchBox(search:TextBox) as this =
     /// on a surface the box's own colour, as the palette's is.
     static member Outline() =
         if SystemInformation.HighContrast then (SettingsColors.current()).border
-        elif ThemeService.currentIsDark() then Color.FromRGB(0x4A4A48)
-        else Color.FromRGB(0xD6D6D3)
+        elif ThemeService.currentIsDark() then Color.FromRGB(0x4A4A4A)
+        else Color.FromRGB(0xD6D6D6)
     /// No outline, only a line along its foot, as a search box over its own results draws it.
     member this.Underlined
         with get() = underlined

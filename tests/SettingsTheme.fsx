@@ -621,6 +621,12 @@ let main() =
             check (contrast p.muted p.background>=4.5 && contrast p.muted p.surface>=4.5)
                   (sprintf "Secondary text is too faint in the %s theme: %.2f:1" mode (contrast p.muted p.background))
             check (contrast p.muted p.text>=2.2) (sprintf "Secondary text is too close to the main text in the %s theme: %.2f:1" mode (contrast p.muted p.text))
+            // Windows Settings' neutral greys, not warm ones that read as yellowed beside it, and its
+            // navigation in the page's own colour, with no rule between them.
+            for name,c in ["background",p.background;"surface",p.surface;"text",p.text;"muted",p.muted;"border",p.border;"hover",p.hover;"selection",p.selection] do
+                check (c.R=c.G && c.G=c.B) (sprintf "The %s theme's %s grey is tinted: %A" mode name c)
+            let sidebar = controls form |> Seq.find(fun c -> string c.Tag="sidebar")
+            check (sidebar.BackColor.ToArgb()=p.background.ToArgb()) (sprintf "The sidebar is %A in the %s theme, not the page's %A" sidebar.BackColor mode p.background)
             use host = new Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,
                                 Location=Point(-12000,-12000),Size=Size(Dpi.scale 260,Dpi.scale 100),BackColor=p.background)
             let toggle = new SettingsToggle(Location=Point(Dpi.scale 10,Dpi.scale 10),BackColor=p.background)
