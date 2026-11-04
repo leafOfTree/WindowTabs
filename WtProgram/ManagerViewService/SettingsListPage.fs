@@ -61,7 +61,7 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
             let p = SettingsColors.current()
             e.Graphics.Clear(this.BackColor)
             e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect card.Width card.Height) (float32(Dpi.scale 10))
+            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect card.Width card.Height) (SettingsShapes.overlayRadius())
             use fill = new SolidBrush(p.surface)
             use border = new Pen(p.border)
             e.Graphics.FillPath(fill,shape)

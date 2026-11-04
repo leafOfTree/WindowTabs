@@ -42,16 +42,11 @@ type SettingsSearchBox(search:TextBox) as this =
             e.Graphics.DrawLine(line,0,this.Height-1,this.Width,this.Height-1)
         elif this.Width>2 && this.Height>2 then
             e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-            use path = SettingsShapes.rounded (RectangleF(1.0f,1.0f,float32(this.Width-3),float32(this.Height-3))) (float32(Dpi.scale 10))
+            let bounds = RectangleF(1.0f,1.0f,float32(this.Width-3),float32(this.Height-3))
+            use path = SettingsShapes.rounded bounds (SettingsShapes.controlRadius())
             use fill = new SolidBrush(p.surface)
-            let border =
-                if SystemInformation.HighContrast then p.border
-                elif search.Focused && ThemeService.currentIsDark() then Color.FromRGB(0x777773)
-                elif search.Focused then p.accent
-                else SettingsSearchBox.Outline()
-            use pen = new Pen(border,if search.Focused && not (ThemeService.currentIsDark()) then float32(Dpi.scaleF 1.5) else 1.0f)
             e.Graphics.FillPath(fill,path)
-            e.Graphics.DrawPath(pen,path)
+            SettingsShapes.drawControlEdge e.Graphics path bounds true search.Focused Color.Empty p
     override this.OnPaint(e) =
         base.OnPaint(e)
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
@@ -96,7 +91,7 @@ type SettingsInfoButton() as this =
         let dot,gap = max 2 stroke,max 2 stroke
         e.Graphics.FillRectangle(brush,x,stemTop-gap-dot,stroke,dot)
         e.Graphics.FillRectangle(brush,x,stemTop,stroke,stemBottom-stemTop)
-        if this.Focused then ControlPaint.DrawFocusRectangle(e.Graphics,this.ClientRectangle)
+        if this.Focused && this.ShowFocusCues then SettingsShapes.drawFocusRing e.Graphics (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (float32 this.Height/2.0f) (SettingsColors.current())
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); this.Invalidate()
     override this.OnMouseLeave(e) = base.OnMouseLeave(e); this.Invalidate()
 
@@ -403,7 +398,7 @@ type SettingsIconButton(icon:SettingsIcon, help:string, ?toggle:bool) as this =
         g.Clear(if isNull this.Parent then p.surface else this.Parent.BackColor)
         g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         if hovering || isChecked then
-            use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (float32(Dpi.scale 6))
+            use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.controlRadius())
             use fill = new SolidBrush(if isChecked then Color.FromArgb(56,p.accent) else p.hover)
             g.FillPath(fill,shape)
         let color = if isChecked then p.accent elif hovering then p.text else p.muted
@@ -447,7 +442,7 @@ type SettingsIconButton(icon:SettingsIcon, help:string, ?toggle:bool) as this =
             g.DrawLines(pen,[|at 0.7f 0.18f;at 0.84f 0.3f;at 0.7f 0.42f|])
             g.DrawLine(pen,at 0.84f 0.7f,at 0.16f 0.7f)
             g.DrawLines(pen,[|at 0.3f 0.58f;at 0.16f 0.7f;at 0.3f 0.82f|])
-        if this.Focused && this.ShowFocusCues then ControlPaint.DrawFocusRectangle(g,Rectangle(2,2,this.Width-4,this.Height-4))
+        if this.Focused && this.ShowFocusCues then SettingsShapes.drawFocusRing g (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.controlRadius()) (SettingsColors.current())
 
 /// An (i) button that explains something on hover, focus or click.
 type SettingsHelpButton(text:string) as this =
@@ -497,7 +492,7 @@ type SettingsResetButton(text:string, ?help:string) as this =
             e.Graphics.FillPolygon(brush,[|PointF(float32(x+fst along*length),float32(y+snd along*length))
                                            PointF(float32(x+fst across*width),float32(y+snd across*width))
                                            PointF(float32(x-fst across*width),float32(y-snd across*width))|])
-            if this.Focused && this.ShowFocusCues then ControlPaint.DrawFocusRectangle(e.Graphics,this.ClientRectangle)
+            if this.Focused && this.ShowFocusCues then SettingsShapes.drawFocusRing e.Graphics (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.controlRadius()) (SettingsColors.current())
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); this.Invalidate()
     override this.OnMouseLeave(e) = base.OnMouseLeave(e); this.Invalidate()
     override this.OnEnabledChanged(e) = base.OnEnabledChanged(e); this.Invalidate()
@@ -524,7 +519,7 @@ type SettingsSearchResults() as this =
     override this.OnSizeChanged(e) =
         base.OnSizeChanged(e)
         if this.Width>2 && this.Height>2 then
-            use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (float32(Dpi.scale 10))
+            use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.overlayRadius())
             let previous = this.Region
             this.Region <- new Region(shape)
             if not (isNull previous) then previous.Dispose()
@@ -532,7 +527,7 @@ type SettingsSearchResults() as this =
     override this.OnPaint(e) =
         base.OnPaint(e)
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 10))
+        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (SettingsShapes.overlayRadius())
         use pen = new Pen((SettingsColors.current()).border)
         e.Graphics.DrawPath(pen,shape)
 
@@ -646,7 +641,7 @@ type SettingsNavigationButton(key:SettingsViewType) as this =
         // so the two stay apart without an accent bar that could be taken for Windows' own.
         let fill = if selected then Some p.selection elif hovering then Some p.hover else None
         fill |> Option.iter(fun color ->
-            use path = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 8))
+            use path = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32(this.Width-1),float32(this.Height-1))) (SettingsShapes.controlRadius())
             use brush = new SolidBrush(color)
             e.Graphics.FillPath(brush,path))
         let foreground = if not this.Enabled then p.muted elif selected && highContrast then SystemColors.HighlightText else p.text
@@ -656,7 +651,7 @@ type SettingsNavigationButton(key:SettingsViewType) as this =
             Rectangle(Dpi.scale 40,0,this.Width-Dpi.scale 48,this.Height),foreground,
             TextFormatFlags.NoPrefix ||| TextFormatFlags.Left ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
         if this.Focused && this.ShowFocusCues then
-            ControlPaint.DrawFocusRectangle(e.Graphics,Rectangle(3,3,this.Width-6,this.Height-6),foreground,this.BackColor)
+            SettingsShapes.drawFocusRing e.Graphics (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.controlRadius()) p
 
 /// A label that wraps at spaces and trims with an ellipsis only what cannot wrap, such as a long
 /// path; it shows the full text on hover only when trimmed.
@@ -724,6 +719,9 @@ type SettingsToggle() as this =
         e.Graphics.Clear(this.BackColor)
         let track = RectangleF(float32(Dpi.scale 1),float32((this.Height-Dpi.scale 20)/2),float32(this.Width-Dpi.scale 2),float32(Dpi.scale 20))
         SettingsShapes.drawSwitch e.Graphics track position hovering this.Enabled (SettingsColors.current())
+        if this.Focused && this.ShowFocusCues then
+            let ring = RectangleF.Inflate(track,float32(Dpi.scale 1),float32(Dpi.scale 3))
+            SettingsShapes.drawFocusRing e.Graphics ring (ring.Height/2.0f) (SettingsColors.current())
     override this.Dispose(disposing) =
         if disposing then timer.Dispose()
         base.Dispose(disposing)
@@ -746,7 +744,7 @@ type SettingsThemeTile(mode:string) as this =
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         let bounds = RectangleF(2.0f,2.0f,float32(this.Width-5),float32(this.Height-Dpi.scale 34))
         if bounds.Width>0.0f && bounds.Height>0.0f then
-            use shape = SettingsShapes.rounded bounds (float32(Dpi.scale 10))
+            use shape = SettingsShapes.rounded bounds (SettingsShapes.overlayRadius())
             let drawMini dark =
                 let mini value = float32(Dpi.scale value) * bounds.Height / float32(Dpi.scale 124)
                 let colors = if dark then Theme.dark else Theme.light
@@ -757,7 +755,7 @@ type SettingsThemeTile(mode:string) as this =
                 let top = bounds.Top + bounds.Height*0.34f
                 let width = bounds.Width*0.82f
                 let height = bounds.Height*0.8f
-                use window = SettingsShapes.rounded (RectangleF(left,top,width,height)) (float32(Dpi.scale 7))
+                use window = SettingsShapes.rounded (RectangleF(left,top,width,height)) (SettingsShapes.controlRadius())
                 use body = new SolidBrush(if dark then Color.FromRGB(0x242424) else Color.White)
                 e.Graphics.FillPath(body,window)
                 let tabY = top + mini 8
@@ -789,7 +787,8 @@ type SettingsThemeTile(mode:string) as this =
             let label = Rectangle(0,this.Height-Dpi.scale 28,this.Width,Dpi.scale 26)
             TextRenderer.DrawText(e.Graphics,this.Text,this.Font,label,(if this.Checked && this.Enabled then p.text else p.muted),
                 TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter)
-            if this.Focused && this.ShowFocusCues then ControlPaint.DrawFocusRectangle(e.Graphics,label,p.text,this.BackColor)
+            if this.Focused && this.ShowFocusCues then
+                SettingsShapes.drawFocusRing e.Graphics (RectangleF(float32 label.X,float32 label.Y,float32 label.Width,float32 label.Height)) (SettingsShapes.controlRadius()) p
 /// A themed overlay-style scrollbar like Windows 11: a thin rounded line that widens into
 /// a pill on a faint track while pointed at, dragged or focused. The whole control width
 /// stays clickable.
@@ -1056,7 +1055,7 @@ type SettingsChoicePopup() as this =
     override this.OnSizeChanged(e) =
         base.OnSizeChanged(e)
         if this.Width>0 && this.Height>0 && not (SystemCorners.round this.Handle this.outlineColor) then
-            use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (float32(Dpi.scale 10))
+            use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.overlayRadius())
             let old = this.Region
             this.Region <- new Region(shape)
             if not(isNull old) then old.Dispose()
@@ -1068,7 +1067,7 @@ type SettingsChoicePopup() as this =
         // Windows 11 outlines it with its own rounded corners.
         if not SystemCorners.supported.Value then
             e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 10))
+            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (SettingsShapes.overlayRadius())
             use pen = new Pen(this.outlineColor)
             e.Graphics.DrawPath(pen,shape)
 
@@ -1237,7 +1236,7 @@ type SettingsCombo(items:string[]) as this =
                                  (keyboardNavigation && hovered<0 && (e.State &&& DrawItemState.Selected)<>enum 0)
                     if active then
                         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-                        use shape = SettingsShapes.rounded (RectangleF(float32 e.Bounds.X,float32 e.Bounds.Y,float32 e.Bounds.Width,float32 e.Bounds.Height)) (float32(Dpi.scale 6))
+                        use shape = SettingsShapes.rounded (RectangleF(float32 e.Bounds.X,float32 e.Bounds.Y,float32 e.Bounds.Width,float32 e.Bounds.Height)) (SettingsShapes.controlRadius())
                         use brush = new SolidBrush(p.selection)
                         e.Graphics.FillPath(brush,shape)
                     let foreground = if active && SystemInformation.HighContrast then SystemColors.HighlightText else p.text
@@ -1401,7 +1400,7 @@ type SettingsCombo(items:string[]) as this =
         | Some label -> this.paintCompact(e.Graphics,p,label())
         | None -> this.paintFull(e.Graphics,p)
     member private this.paintFull(graphics:Graphics,p:SettingsPalette) =
-        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 8))
+        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (SettingsShapes.controlRadius())
         // Coloured as a button: the old hover fill was the colour of a selected row, so a
         // drop-down in an edited row vanished into it under the pointer.
         let fillColor,borderColor = SettingsShapes.neutralColors p (hovering && this.Enabled) (popup.IsSome && this.Enabled)
@@ -1411,7 +1410,10 @@ type SettingsCombo(items:string[]) as this =
         if flash > 0.0 then
             use tint = new SolidBrush(Color.FromArgb(int(90.0*flash),p.accent))
             graphics.FillPath(tint,shape)
-        graphics.DrawPath(border,shape)
+        if SystemInformation.HighContrast then graphics.DrawPath(border,shape)
+        else SettingsShapes.drawControlEdge graphics shape (SettingsShapes.outlineRect this.Width this.Height) false false Color.Empty p
+        if this.Focused && this.ShowFocusCues then
+            SettingsShapes.drawFocusRing graphics (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.controlRadius()) p
         let foreground = if this.Enabled then p.text else p.muted
         // The prompt, while nothing is chosen, muted as a text box's cue is: not a choice made.
         let label = if this.PromptFirst && selected<=0 then p.muted else foreground
@@ -1423,7 +1425,7 @@ type SettingsCombo(items:string[]) as this =
         graphics.DrawLines(arrow,[|Point(x-Dpi.scale 4,y-Dpi.scale 2);Point(x,y+Dpi.scale 2);Point(x+Dpi.scale 4,y-Dpi.scale 2)|])
     /// Borderless: a globe and a short label; a subtle fill on hover or while the list is open.
     member private this.paintCompact(graphics:Graphics,p:SettingsPalette,label:string) =
-        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 6))
+        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (SettingsShapes.controlRadius())
         if (hovering || popup.IsSome || this.Focused) && this.Enabled then
             use fill = new SolidBrush(p.selection)
             graphics.FillPath(fill,shape)

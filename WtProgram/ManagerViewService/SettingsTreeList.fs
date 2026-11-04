@@ -769,7 +769,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             let row = Rectangle(Dpi.scale 2,top+1,this.contentWidth-Dpi.scale 4,this.rowSpan index-2)
             let isSelected = Object.ReferenceEquals(item,selected)
             if isSelected || Object.ReferenceEquals(item,hovered) then
-                use shape = SettingsShapes.rounded (RectangleF(float32 row.X,float32 row.Y,float32 row.Width,float32 row.Height)) (float32(Dpi.scale 6))
+                use shape = SettingsShapes.rounded (RectangleF(float32 row.X,float32 row.Y,float32 row.Width,float32 row.Height)) (SettingsShapes.controlRadius())
                 use fill = new SolidBrush(this.highlight(isSelected,p))
                 g.FillPath(fill,shape)
             // After the highlight, and one crisp pixel: smoothed, it would blur into the rows around it.
@@ -833,7 +833,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         let chipFill = if SystemInformation.HighContrast then SystemColors.Window else Color.FromArgb(26,p.text)
                         for chipIndex,box,closeBox in laid do
                             let chip = item.Chips.[chipIndex]
-                            use shape = SettingsShapes.rounded (RectangleF(float32 box.X,float32 box.Y,float32 box.Width,float32 box.Height)) (float32(Dpi.scale 6))
+                            use shape = SettingsShapes.rounded (RectangleF(float32 box.X,float32 box.Y,float32 box.Width,float32 box.Height)) (SettingsShapes.controlRadius())
                             use fill = new SolidBrush(chipFill)
                             g.FillPath(fill,shape)
                             if SystemInformation.HighContrast then
@@ -870,7 +870,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                                 g.DrawLine(pen,float32 close.Right-inset,float32 close.Y+inset,float32 close.X+inset,float32 close.Bottom-inset))
                         add |> Option.iter(fun box ->
                             let pointed = Object.ReferenceEquals(item,hoveredChipAdd)
-                            use shape = SettingsShapes.rounded (RectangleF(float32 box.X,float32 box.Y,float32 box.Width,float32 box.Height)) (float32(Dpi.scale 6))
+                            use shape = SettingsShapes.rounded (RectangleF(float32 box.X,float32 box.Y,float32 box.Width,float32 box.Height)) (SettingsShapes.controlRadius())
                             if pointed then
                                 use fill = new SolidBrush(if SystemInformation.HighContrast then SystemColors.Highlight else Color.FromArgb(46,p.text))
                                 g.FillPath(fill,shape)
@@ -992,4 +992,4 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
         // Only for the keyboard: after a row under the pointer is deleted the list keeps the focus,
         // and a box round the first row would look like something left behind.
         if this.Focused && this.ShowFocusCues && isNull selected && rows.Length>0 then
-            ControlPaint.DrawFocusRectangle(g,Rectangle(0,this.headerHeight,this.contentWidth,rowHeight))
+            SettingsShapes.drawFocusRing g (RectangleF(0.0f,float32 this.headerHeight,float32 this.contentWidth,float32 rowHeight)) (SettingsShapes.controlRadius()) p

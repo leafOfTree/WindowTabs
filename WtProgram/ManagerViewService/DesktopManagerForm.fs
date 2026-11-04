@@ -187,7 +187,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                     graphics.Clear(if isNull this.Parent then palette.background else this.Parent.BackColor)
                     graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
                     if (versionHovered || this.Focused) && this.Enabled then
-                        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 6))
+                        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (SettingsShapes.controlRadius())
                         use fill = new SolidBrush(palette.selection)
                         graphics.FillPath(fill,shape)
                     TextRenderer.DrawText(graphics,this.Text,this.Font,this.ClientRectangle,

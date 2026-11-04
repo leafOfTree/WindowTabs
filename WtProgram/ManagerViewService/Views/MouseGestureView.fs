@@ -132,7 +132,7 @@ type GestureGrid(scope:string option, table:MouseGestureTable) as this =
             let bounds = tileRect index
             let isSelected = selected=Some gesture
             let rect = RectangleF(float32 bounds.X,float32 bounds.Y,float32(bounds.Width-1),float32(bounds.Height-1))
-            use shape = SettingsShapes.rounded rect (float32(Dpi.scale 6))
+            use shape = SettingsShapes.rounded rect (SettingsShapes.controlRadius())
             use fill = new SolidBrush(if isSelected then Color.FromArgb(48,accent) elif index=hovered then p.hover else GestureUi.cellFill p)
             g.FillPath(fill,shape)
             use border = new Pen((if isSelected then accent elif index=hovered || (this.keyed && index=focused) then p.muted else p.border),(if isSelected then float32(Dpi.scale 2) else 1.0f))
@@ -236,7 +236,7 @@ type GesturePad() as this =
         g.Clear(GestureUi.cellFill p)
         g.SmoothingMode <- SmoothingMode.AntiAlias
         use frame = new Pen(p.muted,1.0f,DashStyle=DashStyle.Dash)
-        use outline = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 8))
+        use outline = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (SettingsShapes.overlayRadius())
         g.DrawPath(frame,outline)
         let accent = GestureUi.accent p
         if points.Count>0 then
@@ -663,11 +663,11 @@ type MouseGestureEditor() as this =
             let off = listed |> Option.exists(fun app -> not app.enabled)
             let isSelected = entry=scope
             if isSelected || index=hoverItem then
-                use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X,float32 bounds.Y,float32 bounds.Width,float32 bounds.Height)) (float32(m 6))
+                use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X,float32 bounds.Y,float32 bounds.Width,float32 bounds.Height)) (SettingsShapes.controlRadius())
                 use fill = new SolidBrush(if isSelected then p.selection else p.hover)
                 g.FillPath(fill,shape)
             if isSelected && focusCue then
-                ControlPaint.DrawFocusRectangle(g,Rectangle(bounds.X+1,bounds.Y+1,bounds.Width-2,bounds.Height-2))
+                SettingsShapes.drawFocusRing g (RectangleF(float32 bounds.X,float32 bounds.Y,float32 bounds.Width,float32 bounds.Height)) (SettingsShapes.controlRadius()) p
             let iconSize = m 16
             let iconBounds = Rectangle(bounds.X+m 10,bounds.Y+(bounds.Height-iconSize)/2,iconSize,iconSize)
             match icon entry with
@@ -710,7 +710,7 @@ type MouseGestureEditor() as this =
                 use fill = new SolidBrush(p.hover)
                 g.FillRectangle(fill,row)
             let cell = Rectangle(row.X+m 8,row.Y+(row.Height-m 40)/2,m 40,m 40)
-            use cellShape = SettingsShapes.rounded (RectangleF(float32 cell.X,float32 cell.Y,float32(cell.Width-1),float32(cell.Height-1))) (float32(m 6))
+            use cellShape = SettingsShapes.rounded (RectangleF(float32 cell.X,float32 cell.Y,float32(cell.Width-1),float32(cell.Height-1))) (SettingsShapes.controlRadius())
             use cellFill = new SolidBrush(GestureUi.cellFill p)
             g.FillPath(cellFill,cellShape)
             g.DrawPath(rule,cellShape)

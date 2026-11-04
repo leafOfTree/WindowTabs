@@ -307,11 +307,11 @@ let main() =
                 check (press (frame.Width-Dpi.scale 3)=(3,0)) (sprintf "A press on the frame's right margin left the caret at %A" (box.SelectionStart,box.SelectionLength))
                 check (press (Dpi.scale 3)=(0,0)) (sprintf "A press on the frame's left margin left the caret at %A" (box.SelectionStart,box.SelectionLength))
                 box.Text <- ""
-                // Typed into, the field is outlined in the accent; left, in the plain border.
+                // Typed into, the field's foot is the accent, as WinUI marks it; left, a plain line.
                 let edge() =
                     use image = new Bitmap(frame.Width,frame.Height)
                     frame.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
-                    image.GetPixel(frame.Width/2,0)
+                    image.GetPixel(frame.Width/2,frame.Height-2)
                 box.Focus() |> ignore
                 pump 50
                 if box.Focused then

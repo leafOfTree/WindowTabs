@@ -539,7 +539,7 @@ let main() =
                   (sprintf "Secondary text is too faint in the %s theme: %.2f:1" mode (contrast p.muted p.background))
             check (contrast p.muted p.text>=2.2) (sprintf "Secondary text is too close to the main text in the %s theme: %.2f:1" mode (contrast p.muted p.text))
             use host = new Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,
-                                Location=Point(-12000,-12000),Size=Size(Dpi.scale 80,Dpi.scale 50),BackColor=p.background)
+                                Location=Point(-12000,-12000),Size=Size(Dpi.scale 260,Dpi.scale 100),BackColor=p.background)
             let toggle = new SettingsToggle(Location=Point(Dpi.scale 10,Dpi.scale 10),BackColor=p.background)
             host.Controls.Add toggle
             WinUserApi.ShowWindow(host.Handle,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
@@ -568,6 +568,41 @@ let main() =
                 use on = shot()
                 let fill = on.GetPixel(toggle.Width/4,toggle.Height/2)
                 check (distance fill p.accent<24) (sprintf "The on switch is not filled in the %s accent: %A" mode fill)
+            // Fields and buttons edged as WinUI's: a field's foot a strong line, the accent two
+            // pixels deep while typed in; keyboard focus a ring in the text colour.
+            let box = new TextBox(Text="Notepad")
+            let field = new SettingsTextInput(box,Location=Point(Dpi.scale 10,Dpi.scale 50),Size=Size(Dpi.scale 120,Dpi.scale 32))
+            let button = new SettingsActionButton(Text="OK",Location=Point(Dpi.scale 150,Dpi.scale 50),Size=Size(Dpi.scale 80,Dpi.scale 32))
+            host.Controls.Add field
+            host.Controls.Add button
+            field.ApplyTheme()
+            Application.DoEvents()
+            let snap (c:Control) =
+                let image = new Bitmap(c.Width,c.Height)
+                c.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                image
+            do
+                use rest = snap field
+                let foot,top = rest.GetPixel(field.Width/2,field.Height-1),rest.GetPixel(field.Width/2,0)
+                check (distance foot p.surface>distance top p.surface+30)
+                      (sprintf "A field's foot is not a strong line in the %s theme: foot %A, top %A" mode foot top)
+            host.Show()
+            host.Activate()
+            // Keyboard cues on, as after a Tab press: WM_UPDATEUISTATE, UIS_CLEAR of UISF_HIDEFOCUS.
+            WinUserApi.SendMessage(host.Handle,0x0128,IntPtr((1 <<< 16) ||| 2),IntPtr.Zero) |> ignore
+            box.Focus() |> ignore
+            Application.DoEvents()
+            check box.Focused (sprintf "The field did not take the keys in the %s theme" mode)
+            do
+                use typing = snap field
+                let foot = typing.GetPixel(field.Width/2,field.Height-2)
+                check (distance foot p.accent<40) (sprintf "A field typed in has no accent along its foot in the %s theme: %A" mode foot)
+            button.Focus() |> ignore
+            Application.DoEvents()
+            do
+                use focused = snap button
+                let ring = focused.GetPixel(Dpi.scale 1,button.Height/2)
+                check (distance ring p.text<60) (sprintf "A button with keyboard focus has no ring in the %s theme: %A" mode ring)
         (controls form |> Seq.find(fun c -> c :? Button && c.Text=tr Strings.Pages.general) :?> Button).PerformClick()
         api.setValue("tabThemeMode",box "dark")
         Application.DoEvents()

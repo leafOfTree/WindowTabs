@@ -56,7 +56,7 @@ type SettingsActionButton() as this =
         let p = SettingsColors.current()
         e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
         e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
-        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale (if kind=SettingsButtonKind.Subtle then 3 else 8)))
+        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (SettingsShapes.controlRadius())
         let highContrast = SystemInformation.HighContrast
         let light = not highContrast && not (ThemeService.currentIsDark())
         let hot = hovering && this.Enabled
@@ -90,9 +90,15 @@ type SettingsActionButton() as this =
             // The label softens while held, the way a Windows button acknowledges the press.
             | _ -> let fill,border = neutral() in fill,border,(if pressed then p.muted else p.text)
         use fill = new SolidBrush(fillColor)
-        use border = new Pen(borderColor)
         e.Graphics.FillPath(fill,shape)
-        e.Graphics.DrawPath(border,shape)
+        if kind=SettingsButtonKind.Subtle || highContrast then
+            use border = new Pen(borderColor)
+            e.Graphics.DrawPath(border,shape)
+        else
+            // A filled button keeps its own colour round the edge; a plain one has WinUI's.
+            let _,plain = neutral()
+            SettingsShapes.drawControlEdge e.Graphics shape (SettingsShapes.outlineRect this.Width this.Height) false false
+                (if borderColor=plain then Color.Empty else borderColor) p
         match sign with
         | Some symbol ->
             // Whole pixels, so each stroke is as crisp as the text beside it; a length of the
@@ -111,6 +117,8 @@ type SettingsActionButton() as this =
         | None ->
             TextRenderer.DrawText(e.Graphics,this.Text,this.Font,this.ClientRectangle,textColor,
                 TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
+        if this.Focused && this.ShowFocusCues then
+            SettingsShapes.drawFocusRing e.Graphics (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.controlRadius()) p
 
 /// The caret drawn at once, its blink begun again. Windows does that only when the caret moves,
 /// so a click where it already was, as anywhere in an empty box, left it blinked off for a
@@ -174,14 +182,17 @@ type SettingsInputFrame() as this =
                          elif isNull this.Parent then p.background else this.Parent.BackColor)
         e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
         if this.Width>2 && this.Height>2 then
-            let radius = if pill then float32 this.Height/2.0f else float32(Dpi.scale 8)
+            let radius = if pill then float32 this.Height/2.0f else SettingsShapes.controlRadius()
             use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) radius
             use fill = new SolidBrush(this.BackColor)
-            use border =
-                if typing() then new Pen(p.accent,float32(Dpi.scaleF 1.5))
-                else new Pen(if this.Border.IsEmpty then p.border else this.Border)
             e.Graphics.FillPath(fill,shape)
-            e.Graphics.DrawPath(border,shape)
+            if pill then
+                use border =
+                    if typing() then new Pen(p.accent,float32(Dpi.scaleF 1.5))
+                    else new Pen(if this.Border.IsEmpty then p.border else this.Border)
+                e.Graphics.DrawPath(border,shape)
+            // A field as WinUI draws one: a line along its foot, the accent while typed in.
+            else SettingsShapes.drawControlEdge e.Graphics shape (SettingsShapes.outlineRect this.Width this.Height) true (typing()) this.Border p
 
 type SettingsTextInput(editor:Control) as this =
     inherit SettingsInputFrame()
@@ -537,7 +548,7 @@ type SettingsShortcutInput() as this =
         if active || hovering then
             // A 2px pen needs its centre half a pixel in to cover the two edge rows; a 1px pen none.
             let inset = if recording then 0.5f else 0.0f
-            use shape = SettingsShapes.rounded (RectangleF(inset,inset,float32(this.Width-1)-2.0f*inset,float32(this.Height-1)-2.0f*inset)) (float32(Dpi.scale 8))
+            use shape = SettingsShapes.rounded (RectangleF(inset,inset,float32(this.Width-1)-2.0f*inset,float32(this.Height-1)-2.0f*inset)) (SettingsShapes.controlRadius())
             use pen = new Pen((if active then p.accent else p.muted),(if recording then 2.0f else 1.0f))
             g.DrawPath(pen,shape)
         let left = Dpi.scale 8
@@ -599,7 +610,7 @@ type SettingsShortcutInput() as this =
         if canClear() then
             let bounds = clearBounds()
             if hoveringClear then
-                use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X,float32 bounds.Y,float32 bounds.Width,float32 bounds.Height)) (float32(Dpi.scale 5))
+                use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X,float32 bounds.Y,float32 bounds.Width,float32 bounds.Height)) (SettingsShapes.controlRadius())
                 use fill = new SolidBrush(p.hover)
                 g.FillPath(fill,shape)
             TextRenderer.DrawText(g,"✕",this.Font,bounds,(if hoveringClear then p.text else p.muted),

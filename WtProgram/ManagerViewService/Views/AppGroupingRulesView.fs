@@ -507,7 +507,7 @@ type AppGroupingRulesView() as this =
             let palette = SettingsColors.current()
             e.Graphics.Clear(this.BackColor)
             e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect card.Width card.Height) (float32(Dpi.scale 10))
+            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect card.Width card.Height) (SettingsShapes.overlayRadius())
             use fill = new SolidBrush(palette.surface)
             use border = new Pen(palette.border)
             e.Graphics.FillPath(fill,shape)
