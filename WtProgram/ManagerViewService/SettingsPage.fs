@@ -48,12 +48,15 @@ type SettingsPage() as this =
         if not arranging then
             arranging <- true
             try
-                let width = max 120 (min (Dpi.scale 760) (this.ClientSize.Width-(inset())*2-Dpi.scale 14))
+                // The same margin each side: the scroll bar, narrower than the margin, stands in
+                // the right one, as WinUI's does over its page, rather than widening it beside the
+                // content, which left the right margin wider than the left on every page.
+                let width = max 120 (min (Dpi.scale 760) (this.ClientSize.Width-(inset())*2))
                 table.MinimumSize <- Size(width,0)
                 table.MaximumSize <- Size(width,0)
                 table.Width <- width
                 table.Height <- table.GetPreferredSize(Size(width,0)).Height
-                table.Left <- max (inset()) ((this.ClientSize.Width-Dpi.scale 14-width)/2)
+                table.Left <- max (inset()) ((this.ClientSize.Width-width)/2)
                 maximum <- max 0 (table.Height+topInset()+inset()-this.ClientSize.Height)
                 scroll.Bounds <- Rectangle(this.ClientSize.Width-scroll.Width,0,scroll.Width,this.ClientSize.Height)
                 apply offset

@@ -681,6 +681,12 @@ let main() =
                 check (c.R=c.G && c.G=c.B) (sprintf "The %s theme's %s grey is tinted: %A" mode name c)
             let sidebar = controls form |> Seq.find(fun c -> string c.Tag="sidebar")
             check (sidebar.BackColor.ToArgb()=p.background.ToArgb()) (sprintf "The sidebar is %A in the %s theme, not the page's %A" sidebar.BackColor mode p.background)
+            // The page's content has the same margin each side: the scroll bar stands in the right
+            // one, where room kept for it beside the content made that margin the wider.
+            controls form |> Seq.tryPick(function :? SettingsPage as page when page.Visible -> Some page | _ -> None) |> Option.iter(fun page ->
+                let content = page.Controls |> Seq.cast<Control> |> Seq.find(fun c -> c :? TableLayoutPanel)
+                let left,right = content.Left,page.ClientSize.Width-content.Right
+                check (abs(left-right)<=1) (sprintf "The page's margins differ: %d on the left, %d on the right" left right))
             do
                 use image = new Bitmap(sidebar.Width,sidebar.Height)
                 sidebar.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
