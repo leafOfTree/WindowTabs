@@ -40,7 +40,8 @@ type TreeListColumn(header:string, width:int, kind:TreeListColumnKind) =
     member val Overlay = false with get,set
 
 /// A small labelled box after a row's name, such as an app in a group; a removable one has an x.
-type TreeListChip = { Text: string; Icon: Image; Removable: bool }
+/// Faded: drawn greyed, as a window closed for now. Note: said on hover, after the text.
+type TreeListChip = { Text: string; Icon: Image; Removable: bool; Faded: bool; Note: string }
 
 /// One row. Values.[i] is the text of text column i (i >= 1); Checks.[i] is the state of
 /// check column i, or None for no box on this row.
@@ -706,8 +707,12 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                     let left = box.X+Dpi.scale 8+(if isNull chip.Icon then 0 else Dpi.scale 16+Dpi.scale 5)
                     let right = match close with Some(close:Rectangle) -> close.X-Dpi.scale 4 | None -> box.Right-Dpi.scale 8
                     let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine
-                    if TextRenderer.MeasureText(chip.Text,this.Font,Size(Int32.MaxValue,box.Height),flags).Width > right-left
-                    then Some(chip.Text,box) else None)
+                    let cut = TextRenderer.MeasureText(chip.Text,this.Font,Size(Int32.MaxValue,box.Height),flags).Width > right-left
+                    match cut,chip.Note with
+                    | true,"" -> Some(chip.Text,box)
+                    | true,note -> Some(chip.Text+Environment.NewLine+note,box)
+                    | false,"" -> None
+                    | false,note -> Some(note,box))
                 |> Option.defaultValue ("",around)
             | None,Some(index,(item,level)) when e.X < (this.columnBounds).[0].Right ->
                 let _,bounds = this.nameLayout(item,level,this.rowTop index)
@@ -850,10 +855,15 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         for chipIndex,box,closeBox in laid do
                             let chip = item.Chips.[chipIndex]
                             use shape = SettingsShapes.rounded (RectangleF(float32 box.X,float32 box.Y,float32 box.Width,float32 box.Height)) (SettingsShapes.controlRadius())
-                            use fill = new SolidBrush(chipFill)
+                            // Faded, only a trace of the fill; with a note, a dashed edge to say there
+                            // is more to it, told on hover.
+                            use fill = new SolidBrush(if chip.Faded && not SystemInformation.HighContrast then Color.FromArgb(10,p.text) else chipFill)
                             g.FillPath(fill,shape)
                             if SystemInformation.HighContrast then
                                 use edge = new Pen(SystemColors.WindowText)
+                                g.DrawPath(edge,shape)
+                            elif chip.Note<>"" then
+                                use edge = new Pen(Color.FromArgb(110,p.text),DashStyle=DashStyle.Dash)
                                 g.DrawPath(edge,shape)
                             let mutable x = box.X+Dpi.scale 8
                             if not (isNull chip.Icon) then
@@ -872,8 +882,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                                 x <- x+side+Dpi.scale 5
                             let textRight = match closeBox with Some(close:Rectangle) -> close.X-Dpi.scale 4 | None -> box.Right-Dpi.scale 8
                             let chipText =
-                                if SystemInformation.HighContrast then (if item.ChipsDimmed then SystemColors.GrayText else SystemColors.WindowText)
-                                elif item.ChipsDimmed then p.muted else p.text
+                                if SystemInformation.HighContrast then (if item.ChipsDimmed || chip.Faded then SystemColors.GrayText else SystemColors.WindowText)
+                                elif item.ChipsDimmed || chip.Faded then p.muted else p.text
                             TextRenderer.DrawText(g,chip.Text,this.Font,Rectangle(x,box.Y,max 1 (textRight-x),box.Height),chipText,flags)
                             closeBox |> Option.iter(fun close ->
                                 let pointed = hoveredChip |> Option.exists(fun (row,i) -> Object.ReferenceEquals(row,item) && i=chipIndex)

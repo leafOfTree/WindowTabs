@@ -1003,6 +1003,11 @@ module Strings =
         let windowsApps = { en="Windows apps"; zh="Windows 应用"; ja="Windows アプリ"; ar="تطبيقات Windows" }
         /// Said on hover over the icon of a group made by dragging tabs together, shown read-only
         /// after the named groups.
+        /// An open window of a group made by hand that will not be put back in it after a restart.
+        let notKept = { en="Won't come back to this group after a restart: another window has had the same title"
+                        zh="重启后不会回到这个分组：有其他窗口用过同样的标题"
+                        ja="再起動後はこのグループに戻りません：同じタイトルのウィンドウが他にもありました"
+                        ar="لن تعود إلى هذه المجموعة بعد إعادة التشغيل: نافذة أخرى حملت العنوان نفسه" }
         let handMadeGroups = { en="Windows grouped by dragging"; zh="拖拽形成的窗口分组"; ja="ドラッグでまとめたウィンドウのグループ"; ar="النوافذ المجمّعة بالسحب" }
         let scanning = { en="Scanning…"; zh="正在扫描…"; ja="スキャン中…"; ar="جارٍ الفحص…" }
         let scanFailed details = { en="Scan failed: " + details; zh="扫描失败：" + details; ja="スキャンに失敗しました: " + details; ar="فشل الفحص: " + details }

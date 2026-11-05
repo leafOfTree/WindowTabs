@@ -129,7 +129,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
     /// Shared titles found as a window opened, saved with the next record of the groups.
     let mutable sharedUnsaved = false
     /// The open windows of each group made by hand when App rules was last told.
-    let mutable shownOpen : (int * RememberedMember list) list = []
+    let mutable shownOpen : (int * IntPtr list) list = []
     /// Each window's program, looked up once.
     let appKeys = Dictionary<IntPtr,string>()
     /// New windows of an app with remembered windows whose title may still settle into a
@@ -593,7 +593,15 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             this.pruneGroupIcons()
         // A closed window stays in its group's record, to come back to it; the record is the
         // same, but App rules shows which windows are open, so it is told.
-        let openNow = live |> List.map(fun (info,members) -> info.group.groupToken,members) |> List.sort
+        // Every window of each group made by hand, kept or not: App rules shows them all, so one
+        // that joins with a title that cannot be kept, as Explorer's Home, is news to it as well.
+        let openNow =
+            this.desktop.groups.list |> List.choose(fun group ->
+                match group with
+                // A window gone is no longer open, though its group drops it only on its next scan.
+                | :? GroupInfo as info when not info.isExited && not info.isRetiring && manual info -> Some(info.group.groupToken,group.windows.list |> List.filter WinUserApi.IsWindow)
+                | _ -> None)
+            |> List.sort
         if openNow<>shownOpen then
             shownOpen <- openNow
             if not changed then settingsManager.announce "rememberedGroups"
@@ -1446,8 +1454,29 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
                     this.rememberedMember hwnd |> Option.iter(fun m -> if not(open'.ContainsKey m) then open'.[m] <- hwnd)
             let hwndOf m = match open'.TryGetValue m with | true,hwnd -> hwnd | _ -> IntPtr.Zero
             // Where the app was last seen running, when known, which finds its icon while closed.
-            let appOf (group:RememberedGroup) (m:RememberedMember) = group.paths.TryFind m.app |> Option.defaultValue m.app
-            remembered |> List.map(fun group -> group.id,group.members |> List.map(fun m -> appOf group m,m.title,hwndOf m))
+            let appOf (paths:Map<string,string>) (m:RememberedMember) = paths.TryFind m.app |> Option.defaultValue m.app
+            // Kept by its program and title: not a title shared with another window, such as
+            // Home in Explorer, which could not tell it apart after a restart.
+            let kept hwnd = this.rememberedMember hwnd |> Option.exists(fun m -> not (List.contains m sharedTitles))
+            // The group as it is: its open windows in the strip's order, every one of them, kept
+            // or not; then the closed ones it waits for.
+            let members (token:int) (saved:RememberedMember list) (paths:Map<string,string>) =
+                let live = this.liveGroupWithToken token |> Option.map(fun info -> (info :> IGroup).windows.list) |> Option.defaultValue []
+                let liveMembers = live |> List.choose this.rememberedMember |> Set.ofList
+                (live |> List.map(fun hwnd ->
+                    let app = match this.rememberedMember hwnd with Some m -> appOf paths m | None -> this.appKey hwnd
+                    app,os.windowFromHwnd(hwnd).text,hwnd,kept hwnd))
+                @ (saved |> List.filter(fun m -> not (liveMembers.Contains m)) |> List.map(fun m -> appOf paths m,m.title,hwndOf m,true))
+            let recorded = remembered |> List.map(fun group -> group.id,members group.id group.members group.paths)
+            // A group made by hand whose windows are not kept, or not yet: shown all the same.
+            let unrecorded =
+                this.desktop.groups.list |> List.choose(fun group ->
+                    match group with
+                    | :? GroupInfo as info when info.group.isManual && not info.isExited && not info.isRetiring && group.windows.count>1
+                                                && not (remembered |> List.exists(fun saved -> saved.id=info.group.groupToken)) ->
+                        Some(info.group.groupToken,members info.group.groupToken [] Map.empty)
+                    | _ -> None)
+            recorded @ unrecorded
 
         member x.ungroupHandMade id =
             remembered <- remembered |> List.filter(fun group -> group.id<>id)

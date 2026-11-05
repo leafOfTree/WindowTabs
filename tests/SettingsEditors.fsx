@@ -465,7 +465,7 @@ let main() =
     // An open window with an icon of its own stands for the Downloads folder.
     let openWindow = new Form(ShowInTaskbar=false,Icon=SystemIcons.Information)
     openWindow.CreateControl()
-    let draggedTogether() = [4711,["NOTEPAD.EXE","Notes - Notepad",IntPtr.Zero;"EXPLORER.EXE","Downloads",openWindow.Handle]]
+    let draggedTogether() = [4711,["NOTEPAD.EXE","Notes - Notepad",IntPtr.Zero,true;"EXPLORER.EXE","Downloads",openWindow.Handle,false]]
     let handMade = ref (draggedTogether())
     let windowKeys : WindowShortcut list ref = ref []
     let ungrouped = Collections.Generic.List<int>()
@@ -1467,8 +1467,8 @@ otepad.exe"]},
         do
             let dragged = handMade.Value
             menu.UpdateApplications []
-            handMade.Value <- [4712,[Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,"notepad.exe"),"Closed notes",IntPtr.Zero
-                                     "NOT-RUNNING-APP.EXE","",IntPtr.Zero]]
+            handMade.Value <- [4712,[Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,"notepad.exe"),"Closed notes",IntPtr.Zero,true
+                                     "NOT-RUNNING-APP.EXE","",IntPtr.Zero,true]]
             groupView.Reload()
             let row = tree.Roots |> Seq.find(fun row -> row.Glyph=TabsGlyph)
             assertTrue (row.Chips |> List.map(fun chip -> chip.Text)=["Closed notes";"NOT-RUNNING-APP.EXE"]
@@ -1487,10 +1487,15 @@ otepad.exe"]},
                     && handMadeRow.Actions=Some [NoGlyph;UngroupGlyph])
                    "A group made by dragging tabs is missing, editable, without icons, or cannot be taken apart"
         assertTrue (isGrey handMadeRow.Chips.Head.Icon) "A closed window's chip icon is not grey"
+        // As the group is: a closed window greyed all over; an open one it cannot take back after
+        // a restart, its title shared with another window's, says so on hover.
+        let closedChip,openChip = handMadeRow.Chips.[0],handMadeRow.Chips.[1]
+        assertTrue (closedChip.Faded && closedChip.Note="") "A closed window's chip is not greyed"
+        assertTrue (not openChip.Faded && openChip.Note=tr Strings.AppRules.notKept) "An open window that will not come back after a restart does not say so"
         // A chip cut short shows its whole text on hover.
         let longTitle = String.replicate 12 "Long window title "
         let kept = handMadeRow.Chips
-        handMadeRow.Chips <- [{ Text=longTitle; Icon=null; Removable=false }]
+        handMadeRow.Chips <- [{ Text=longTitle; Icon=null; Removable=false; Faded=false; Note="" }]
         tree.Rebuild()
         tree.EnsureVisible(handMadeRow)
         let rowY = [0..tree.Height-1] |> List.find(fun y -> tree.ItemAt(Point(Dpi.scale 20,y)) |> Option.exists(fun row -> obj.ReferenceEquals(row,handMadeRow)))
@@ -1525,7 +1530,7 @@ otepad.exe"]},
             let _,first,_ = laid.Head
             assertTrue (first.X=named.X) (sprintf "A dragged group's chips start at %d, names at %d" first.X named.X)
             // Three to a line, one width, filling it, however short their titles.
-            handMadeRow.Chips <- [for i in 1..6 -> { Text=string i; Icon=null; Removable=false }]
+            handMadeRow.Chips <- [for i in 1..6 -> { Text=string i; Icon=null; Removable=false; Faded=false; Note="" }]
             let _,laid,_,lines = layout.Invoke(tree,[|box handMadeRow;box 0;box 0|]) :?> (Rectangle * (int * Rectangle * Rectangle option) list * Rectangle option * int)
             let boxes = laid |> List.map(fun (_,box,_) -> box)
             let widths = boxes |> List.map(fun box -> box.Width) |> List.distinct
@@ -1538,7 +1543,7 @@ otepad.exe"]},
         // Chips that do not fit wrap onto more lines and the row grows; none are hidden behind a count.
         let oneLine = tree.ContentHeight
         let shown = handMadeRow.Chips
-        handMadeRow.Chips <- [for i in 1..12 -> { Text=sprintf "Window title %d" i; Icon=null; Removable=false }]
+        handMadeRow.Chips <- [for i in 1..12 -> { Text=sprintf "Window title %d" i; Icon=null; Removable=false; Faded=false; Note="" }]
         tree.Rebuild()
         let wrapped = tree.ContentHeight
         handMadeRow.Chips <- shown
