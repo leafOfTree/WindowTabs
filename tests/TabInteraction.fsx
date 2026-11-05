@@ -151,7 +151,10 @@ let main() =
                 // Within the gutter alone: the item's text starts right after it.
                 let mark = gutter.GetValue(menu) :?> Rectangle
                 let ink = [for y in ticked.Top+2..ticked.Bottom-3 do for x in mark.Left..mark.Right-1 -> screenshot.GetPixel(x,y)] |> List.maxBy (distance p.surface)
-                check (distance ink p.accentText<60) (sprintf "A checked menu item's tick is %A in the %s theme, not the accent %A" ink name p.accentText)
+                // Its fullest pixel, blended with the menu at small sizes where the glyph is thin:
+                // nearer the accent than the text, and well off the menu's own colour.
+                check (distance ink p.accentText<distance ink p.text && distance ink p.surface>60)
+                      (sprintf "A checked menu item's tick is %A in the %s theme, not the accent %A" ink name p.accentText)
             // Pointing at an item with a submenu opens it after a short pause of our own, not the
             // Windows menu delay through WinForms' timer, which a menu of an app behind could lose.
             // The pointer entering an item, as WinForms reports it: HandleMouseEnter raises MouseEnter.
