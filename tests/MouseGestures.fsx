@@ -96,6 +96,11 @@ let table() =
     // Binding a gesture already there replaces it in place.
     let replaced = MouseGestures.bind [back;close] { back with action=GestureCommand "next-tab" }
     check (replaced.Length=2 && replaced.Head.action=GestureCommand "next-tab") "Binding a gesture again added a second one"
+    // Changing a gesture keeps its place; changed to another's gesture, that one gives way.
+    let moved = MouseGestures.rebind [back;close] back.gesture { back with gesture="UR" }
+    check (moved=[{ back with gesture="UR" };close]) (sprintf "A changed gesture did not keep its place: %A" moved)
+    let taken = MouseGestures.rebind [back;close] back.gesture { back with gesture=close.gesture }
+    check (taken=[{ back with gesture=close.gesture }]) (sprintf "A gesture changed to another's did not replace it: %A" taken)
     // Seen running, a browser joins with its preset; taken off, it stays off.
     let seen = MouseGestures.seen MouseGestures.empty @"D:\Edge\msedge.exe" (MouseGesturePresets.bindings "msedge.exe")
     check (seen |> Option.exists(fun t -> t.apps.Length=1 && t.apps.Head.bindings=MouseGesturePresets.browser)) "A browser seen running did not get its preset"
@@ -252,6 +257,20 @@ let main() =
                   (sprintf "The override tip at %A is not under its mark at %A" tip markOnScreen)
             WinUserApi.SendMessage(editor.Handle,0x2A3,IntPtr.Zero,IntPtr.Zero) |> ignore
             pump 50
+            // A gesture of the list opens in the same dialog, filled in: its gesture picked, what it
+            // does set, saved rather than added, and not said to replace itself.
+            do
+                let table = MouseGestureRules.table()
+                let command = Commands.forGestures() |> List.head
+                let byCommand = { gesture="DR"; action=GestureCommand command.id }
+                use changing = new MouseGestureDialog(None,{ table with everywhere=[byCommand] },byCommand)
+                check (changing.Text=tr Strings.MouseGestures.editGesture && changing.AddButton.Text=tr Strings.Common.save) "Changing a gesture did not say so"
+                check (changing.Grid.Selected=Some "DR" && changing.Kind.SelectedIndex=1 && changing.Command.Text=tr command.text.caption)
+                      (sprintf "The gesture opened to change was not filled in: %A, %d, %s" changing.Grid.Selected changing.Kind.SelectedIndex changing.Command.Text)
+                let byKeys = { gesture="UL"; action=GestureKeys([0x254],"Find") }
+                use keyed = new MouseGestureDialog(None,{ table with everywhere=[byKeys] },byKeys)
+                check (keyed.Kind.SelectedIndex=0 && keyed.Keys.Sequence=[0x254] && keyed.NameBox.Text="Find")
+                      (sprintf "The keys of the gesture opened to change were not filled in: %A %s" keyed.Keys.Sequence keyed.NameBox.Text)
             use dialog = new MouseGestureDialog(editor.Scope,MouseGestureRules.table())
             dialog.StartPosition <- FormStartPosition.Manual
             dialog.Location <- Point(-20000,-20000)

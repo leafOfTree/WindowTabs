@@ -283,10 +283,14 @@ type GesturePad() as this =
 
 /// Adds a gesture to everything or to one app: chosen among the 16, or drawn in the box, and
 /// what it does, a WindowTabs command or a key sent to the window.
-type MouseGestureDialog(scope:string option, table:MouseGestureTable) as this =
+/// Adds a gesture, or, given one of the list, opens filled in with it to change it.
+type MouseGestureDialog(scope:string option, table:MouseGestureTable, ?editing:GestureBinding) as this =
     inherit Form()
     let mutable result : GestureBinding option = None
-    let own = match scope with None -> table.everywhere | Some path -> MouseGestures.appFor table path |> Option.map(fun app -> app.bindings) |> Option.defaultValue []
+    /// The gestures a choice would replace: the one being changed is not among them.
+    let own =
+        (match scope with None -> table.everywhere | Some path -> MouseGestures.appFor table path |> Option.map(fun app -> app.bindings) |> Option.defaultValue [])
+        |> List.filter(fun binding -> editing |> Option.forall(fun edited -> binding.gesture<>edited.gesture))
     let layout = new TableLayoutPanel(ColumnCount=1,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Padding=Padding(Dpi.scale 20,Dpi.scale 14,Dpi.scale 20,Dpi.scale 16))
     let label text muted = new Label(Text=text,AutoSize=true,UseMnemonic=false,Tag=(if muted then "muted" else null),Margin=Padding(0,Dpi.scale 10,0,Dpi.scale 4))
     let grid = new GestureGrid(scope,table,Name="gesture-grid",Margin=Padding(0,Dpi.scale 4,0,0))
@@ -308,7 +312,7 @@ type MouseGestureDialog(scope:string option, table:MouseGestureTable) as this =
     /// put as the kind changes.
     let actionArea = new Panel(Margin=Padding(0,Dpi.scale 8,0,0))
     let problem = new Label(AutoSize=false,UseMnemonic=false,Margin=Padding(0,Dpi.scale 8,0,0))
-    let add = SettingsUi.button (tr Strings.MouseGestures.add)
+    let add = SettingsUi.button (tr (if editing.IsSome then Strings.Common.save else Strings.MouseGestures.add))
     let cancel = SettingsUi.button (tr Strings.Common.cancel)
     let chosen gesture (drawn:bool) =
         grid.Select(Some gesture)
@@ -335,7 +339,7 @@ type MouseGestureDialog(scope:string option, table:MouseGestureTable) as this =
         let row = keysRow.GetPreferredSize(Size.Empty)
         actionArea.Size <- Size(max command.Width row.Width,max command.Height row.Height)
     do
-        this.Text <- tr Strings.MouseGestures.addGesture
+        this.Text <- tr (if editing.IsSome then Strings.MouseGestures.editGesture else Strings.MouseGestures.addGesture)
         this.Font <- SettingsUi.bodyFont()
         this.FormBorderStyle <- FormBorderStyle.FixedDialog
         this.MaximizeBox <- false
@@ -431,6 +435,18 @@ type MouseGestureDialog(scope:string option, table:MouseGestureTable) as this =
                 else
                     result <- Some { gesture=gesture; action=GestureKeys(keys.Sequence,nameBox.Text.Trim()) }
                     this.DialogResult <- DialogResult.OK)
+        // Changing one: its gesture picked, what it does set as it is, as adding would leave them.
+        editing |> Option.iter(fun binding ->
+            chosen binding.gesture false
+            match binding.action with
+            | GestureCommand id ->
+                kind.SelectedIndex <- 1
+                commands |> List.tryFindIndex(fun each -> each.id=id) |> Option.iter(fun index -> command.SelectedIndex <- index+1)
+            | GestureKeys(codes,name) ->
+                kind.SelectedIndex <- 0
+                keys.Sequence <- codes
+                nameBox.Text <- name
+            showKind())
         fitAction()
         this.HandleCreated.Add(fun _ -> SettingsUi.apply this; fitAction())
         ThemeBinding.watch this (fun () -> SettingsUi.apply this; fitAction())
@@ -846,7 +862,7 @@ type MouseGestureEditor() as this =
             hoverItem <- item
             hoverRow <- row
             hoverPart <- part
-            this.Cursor <- if part="toggle" || part="remove" || part="delete" || part="blank" || part="item" then Cursors.Hand else Cursors.Default
+            this.Cursor <- if part="toggle" || part="remove" || part="delete" || part="blank" || part="item" || part="row" || part="cell" then Cursors.Hand else Cursors.Default
             this.Invalidate()
             // Only parts whose meaning is not plain from their look: a row's bin and the drawn
             // gestures say what they are already; the bin over the table names the app it takes off.
@@ -894,7 +910,19 @@ type MouseGestureEditor() as this =
             | "blank" ->
                 scope |> Option.iter(fun path -> notices.Remove path |> ignore)
                 saveBindings (fun _ -> [])
+            // Anywhere else on a row opens it, filled in, to change it.
+            | "row" | "cell" | "override" -> this.Edit row
             | _ -> ()
+    /// The row's gesture in the dialog that adds one, filled in; saved where it was in the list.
+    member this.Edit(row:int) =
+        match bindings() |> List.tryItem row with
+        | Some binding ->
+            use dialog = new MouseGestureDialog(scope,table(),binding)
+            if dialog.ShowDialog(this.FindForm())=DialogResult.OK then
+                dialog.Result |> Option.iter(fun next ->
+                    scope |> Option.iter(fun path -> notices.Remove path |> ignore)
+                    saveBindings (fun bindings -> MouseGestures.rebind bindings binding.gesture next))
+        | None -> ()
     override this.IsInputKey(key) =
         match key &&& Keys.KeyCode with
         | Keys.Up | Keys.Down -> true

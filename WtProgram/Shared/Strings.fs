@@ -883,6 +883,8 @@ module Strings =
         let allApps = { en="All apps"; zh="所有程序"; ja="すべてのアプリ"; ar="كل التطبيقات" }
         let addApp = { en="Add app"; zh="添加程序"; ja="アプリを追加"; ar="إضافة تطبيق" }
         let addGesture = { en="Add gesture"; zh="添加手势"; ja="ジェスチャーを追加"; ar="إضافة إيماءة" }
+        /// The dialog's title when a gesture of the list is opened in it, filled in.
+        let editGesture = { en="Edit gesture"; zh="编辑手势"; ja="ジェスチャーを編集"; ar="تعديل الإيماءة" }
         let gesture = { en="Gesture"; zh="手势"; ja="ジェスチャー"; ar="الإيماءة" }
         let action = { en="Action"; zh="动作"; ja="動作"; ar="الإجراء" }
         let does = { en="Does"; zh="执行"; ja="実行内容"; ar="ينفّذ" }

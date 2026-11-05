@@ -108,6 +108,13 @@ module MouseGestures =
             bindings |> List.map(fun other -> if other.gesture=binding.gesture then binding else other)
         else bindings @ [binding]
     let unbind (bindings:GestureBinding list) gesture = bindings |> List.filter(fun binding -> binding.gesture<>gesture)
+    /// The binding for `old` changed into this one, where it was in the list; another binding for
+    /// the gesture it now has gives way to it, as adding does.
+    let rebind (bindings:GestureBinding list) (old:string) (binding:GestureBinding) =
+        let others = bindings |> List.filter(fun other -> other.gesture=old || other.gesture<>binding.gesture)
+        if others |> List.exists(fun other -> other.gesture=old) then
+            others |> List.map(fun other -> if other.gesture=old then binding else other)
+        else bind others binding
     let updateApp (table:MouseGestureTable) path (update:AppGestures -> AppGestures) =
         { table with apps=table.apps |> List.map(fun app -> if AppIdentity.same app.path path then update app else app) }
     /// An app on the list, its preset in when it has one, the preset no longer kept off.
