@@ -199,6 +199,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let mutable hoveredCell : PanePath option = None
     /// The row whose split button is under the pointer.
     let mutable hoveredButton : int option = None
+    /// Save (true) or Cancel (false) under the pointer.
+    let mutable hoveredAction : bool option = None
     let mutable drag : GroupEditorDrag option = None
     /// The tab in hand is out of its strip while it is over the expanded row's content: the drop
     /// lands in a cell, so the strip closes up, as the real strip does when a tab is dragged off.
@@ -735,6 +737,29 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                     g.DrawImage(bitmap,Rectangle((ra.Right+rb.X)/2-size.width/2,ra.Bottom-h,size.width,h))
                 | _ -> ())
 
+    /// Save or Cancel as the settings' buttons draw theirs, the Workspaces page's beside it: their
+    /// corners, fill and edge, a shade off under the pointer, and on the accent the colour that
+    /// reads on it, where white sat on a light accent.
+    let drawAction (g:Graphics) (r:Rectangle) primary hot =
+        let text = if primary then tr Strings.GroupEditor.save else tr Strings.Common.cancel
+        let bounds = RectangleF(float32 r.X,float32 r.Y,float32(r.Width-1),float32(r.Height-1))
+        use shape = SettingsShapes.rounded bounds (SettingsShapes.controlRadius())
+        let plain,_ = SettingsShapes.neutralColors palette hot false
+        // Under the pointer the accent moves a little towards the page, as an accent button's does.
+        let toward (a:Color) (b:Color) (t:float32) =
+            Color.FromArgb(int(float32 a.R+(float32 b.R-float32 a.R)*t),int(float32 a.G+(float32 b.G-float32 a.G)*t),int(float32 a.B+(float32 b.B-float32 a.B)*t))
+        let back =
+            if primary then (if hot && not highContrast then toward accent palette.background 0.1f else accent)
+            elif highContrast then palette.hover else plain
+        use fill = new SolidBrush(back)
+        g.FillPath(fill,shape)
+        if highContrast then
+            use pen = new Pen(if primary then accent else palette.border)
+            g.DrawPath(pen,shape)
+        else SettingsShapes.drawControlEdge g shape bounds false false (if primary then back else Color.Empty) palette
+        let color = if primary then palette.onAccent else textOn
+        TextRenderer.DrawText(g,text,bodyFont,r,color,back,TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine)
+
     /// The picture, opaque: the window's rounded region trims the corners, and opaque text gets
     /// ClearType as everywhere else.
     let render() =
@@ -847,23 +872,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             | 0 -> if expandedRow().IsSome then tr Strings.GroupEditor.hint else tr Strings.GroupEditor.overviewHint
             | empty -> tr (Strings.GroupEditor.emptyCellsClose empty)
         TextRenderer.DrawText(g,note,hintFont,Rectangle(pad,l.save.Y,max 0 (l.cancel.X-scale 12-pad),l.save.Height),palette.muted,surface,textFlags)
-        // As the settings' buttons draw theirs, the Workspaces page's beside it: their corners, fill
-        // and edge, and on the accent the colour that reads on it, where white sat on a light accent.
-        let button (r:Rectangle) (text:string) primary =
-            let bounds = RectangleF(float32 r.X,float32 r.Y,float32(r.Width-1),float32(r.Height-1))
-            use shape = SettingsShapes.rounded bounds (SettingsShapes.controlRadius())
-            let plain,_ = SettingsShapes.neutralColors palette false false
-            let back = if primary then accent elif highContrast then palette.hover else plain
-            use fill = new SolidBrush(back)
-            g.FillPath(fill,shape)
-            if highContrast then
-                use pen = new Pen(if primary then accent else palette.border)
-                g.DrawPath(pen,shape)
-            else SettingsShapes.drawControlEdge g shape bounds false false (if primary then accent else Color.Empty) palette
-            let color = if primary then palette.onAccent else textOn
-            TextRenderer.DrawText(g,text,bodyFont,r,color,back,TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine)
-        button l.cancel (tr Strings.Common.cancel) false
-        button l.save (tr Strings.GroupEditor.save) true
+        drawAction g l.cancel false false
+        drawAction g l.save true false
         image
 
     /// The cross on the empty cell under the pointer, the tab or the split button lit under it,
@@ -1066,6 +1076,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                  | _ -> hoverOverlay g l)
                 g.ResetTransform()
                 g.ResetClip()
+                // The footer stays at the foot of the view: the button under the pointer is drawn
+                // lit there, where the picture's footer was copied.
+                hoveredAction |> Option.iter(fun primary ->
+                    let r = if primary then l.save else l.cancel
+                    g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+                    drawAction g (Rectangle(r.X,r.Y-l.body+body,r.Width,r.Height)) primary true)
 
     /// Whether the popup has been placed on its screen; whether its window is being sized here
     /// rather than by the user; and whether the user has sized it, after which it keeps the size
@@ -1720,10 +1736,12 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 l.rows |> List.filter(fun row -> row.expanded) |> List.collect(fun row -> row.cells)
                 |> List.tryFind(fun (_,pane,r) -> pane=Empty && r.Contains pt) |> Option.map(fun (path,_,_) -> path)
             let overButton = l.rows |> List.tryPick(fun row -> row.splitButton |> Option.filter(fun r -> r.Contains pt) |> Option.map(fun _ -> row.index))
-            if overTab<>hovered || overEmpty<>hoveredCell || overButton<>hoveredButton then
+            let overAction = if l.save.Contains pt then Some true elif l.cancel.Contains pt then Some false else None
+            if overTab<>hovered || overEmpty<>hoveredCell || overButton<>hoveredButton || overAction<>hoveredAction then
                 hovered <- overTab
                 hoveredCell <- overEmpty
                 hoveredButton <- overButton
+                hoveredAction <- overAction
                 if form.IsHandleCreated then form.Invalidate()
 
     let dragMove (view:Point) (pt:Point) =
@@ -1862,7 +1880,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         form.MouseWheel.Add(fun e -> wheel e.Delta)
         form.MouseLeave.Add(fun _ ->
             pointTitle None
-            if hovered.IsSome || hoveredCell.IsSome || hoveredButton.IsSome then (hovered <- None; hoveredCell <- None; hoveredButton <- None; form.Invalidate()))
+            if hovered.IsSome || hoveredCell.IsSome || hoveredButton.IsSome || hoveredAction.IsSome then
+                hovered <- None; hoveredCell <- None; hoveredButton <- None; hoveredAction <- None; form.Invalidate())
         titleTimer.Tick.Add(fun _ -> showTitle())
         // The frames of a slide; the last one leaves the tabs in place until the next picture.
         scrollTimer.Tick.Add(fun _ -> if closed then scrollTimer.Stop() else scrollFrame())

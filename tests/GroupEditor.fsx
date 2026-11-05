@@ -770,6 +770,20 @@ let main() =
             editor.Paint(painted)
             let under = painted.GetPixel(tab.X+tab.Width/2,body+Dpi.scale 3)
             check (sameColor palette.background under) (sprintf "The tab lit under the pointer showed over the footer: %A" under)
+            // Save and Cancel light under the pointer, as the settings' buttons do, where the footer
+            // stands in the view.
+            if not SystemInformation.HighContrast then
+                let inView (r:Rectangle) = Point(r.X+Dpi.scale 6,r.Y-l.body+body+r.Height/2)
+                let litAt (r:Rectangle) =
+                    editor.MouseMove(inView r)
+                    use shown = new Bitmap(shorter.Width,shorter.Height)
+                    editor.Paint(shown)
+                    let p = inView r in shown.GetPixel(p.X,p.Y)
+                let save = litAt l.save
+                check (not(sameColor palette.accent save)) (sprintf "Save did not light under the pointer: %A" save)
+                let hot,_ = SettingsShapes.neutralColors palette true false
+                let cancel = litAt l.cancel
+                check (sameColor hot cancel) (sprintf "Cancel is %A under the pointer, not the plain buttons' hover %A" cancel hot)
             editor.Close()
         let mouse = Event<int * IntPtr>()
         let detached = Collections.Generic.List<IntPtr>()
