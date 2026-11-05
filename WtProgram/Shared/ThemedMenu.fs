@@ -74,8 +74,10 @@ module SettingsPopupShadowPixels =
 /// popups use it, and the tab menu where Windows 10 has no soft shadow of its own for menus.
 /// `corner` is the popup's corner radius in logical pixels, 10 as the settings dropdowns'.
 /// `body` is the part of the owner it surrounds, where that is not all of it, such as a bubble's
-/// body without its arrow.
-type SettingsPopupShadow(owner:Control, ?corner:int, ?body:unit -> Rectangle) =
+/// body without its arrow. `shape` is the owner's own outline, in its coordinates, where it
+/// reaches past the body: the halo sits over the owner, so none of it is painted there, or a
+/// bubble's arrow came out shaded by it.
+type SettingsPopupShadow(owner:Control, ?corner:int, ?body:unit -> Rectangle, ?shape:unit -> Drawing2D.GraphicsPath) =
     let os = OS()
     let corner = defaultArg corner 10
     let body() = match body with Some part -> part() | None -> Rectangle(Point.Empty,owner.Size)
@@ -84,16 +86,27 @@ type SettingsPopupShadow(owner:Control, ?corner:int, ?body:unit -> Rectangle) =
                     (WindowsExtendedStyles.WS_EX_LAYERED ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW |||
                      WindowsExtendedStyles.WS_EX_NOACTIVATE ||| WindowsExtendedStyles.WS_EX_TRANSPARENT)
     let window = os.windowFromHwnd(helper.hwnd)
-    /// The halo of the last size, kept: a notice moves it on every frame of its slide.
+    /// The halo of the last size, kept: a notice moves it on every frame of its slide. Not with
+    /// a shape, which may move within the same size, as a bubble's arrow does.
     let mutable cached : (int * int * int * Bitmap) option = None
     let bitmapFor width height =
         let dpi = Dpi.value()
         match cached with
-        | Some(w,h,d,bitmap) when w=width && h=height && d=dpi -> bitmap
+        | Some(w,h,d,bitmap) when w=width && h=height && d=dpi && shape.IsNone -> bitmap
         | _ ->
             cached |> Option.iter(fun (_,_,_,old) -> old.Dispose())
             let w,h = width+padding*2,height+padding*2
             let pixels = SettingsPopupShadowPixels.createRounded dpi width height corner
+            shape |> Option.iter(fun shape ->
+                use path = shape()
+                use region = new Region(path)
+                let part = body()
+                use toHalo = new Drawing2D.Matrix()
+                toHalo.Translate(float32(padding-part.X),float32(padding-part.Y))
+                for scan in region.GetRegionScans(toHalo) do
+                    for y in max 0 (int scan.Top)..min (h-1) (int scan.Bottom-1) do
+                        for x in max 0 (int scan.Left)..min (w-1) (int scan.Right-1) do
+                            pixels.[(y*w+x)*4+3] <- 0uy)
             let bitmap = new Bitmap(w,h,Imaging.PixelFormat.Format32bppArgb)
             let data = bitmap.LockBits(Rectangle(0,0,w,h),Imaging.ImageLockMode.WriteOnly,Imaging.PixelFormat.Format32bppArgb)
             try
@@ -109,6 +122,14 @@ type SettingsPopupShadow(owner:Control, ?corner:int, ?body:unit -> Rectangle) =
         Win32Helper.UpdateLayeredWindow(helper.hwnd,Point(owner.Left+part.X-padding,owner.Top+part.Y-padding),bitmapFor part.Width part.Height,alpha)
         window.showNoActivate()
     member _.Hide() = window.hide()
+    /// Whether the halo last shown paints anything at a point in the owner's coordinates.
+    member _.Covers(point:Point) =
+        match cached with
+        | Some(_,_,_,bitmap) ->
+            let part = body()
+            let x,y = point.X-part.X+padding,point.Y-part.Y+padding
+            x>=0 && y>=0 && x<bitmap.Width && y<bitmap.Height && bitmap.GetPixel(x,y).A>0uy
+        | None -> false
     interface IDisposable with
         member _.Dispose() =
             cached |> Option.iter(fun (_,_,_,bitmap) -> bitmap.Dispose())

@@ -811,6 +811,14 @@ let main() =
                 let edge = if below then 1 else popup.Value.Height-2
                 check (popup.Value.Region.IsVisible(Point(middle,edge))) (sprintf "The hover popup for %A has no arrow at it" target)
                 check (not (popup.Value.Region.IsVisible(Point(middle+Dpi.scale 20,edge)))) (sprintf "The hover popup's arrow misses %A" target)
+                // The shadow sits over the popup and goes round its body: none of it over the
+                // arrow, which it shaded, while it shows beside the arrow and outside the body.
+                let halo = popup.Value.GetType().GetField("halo",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).GetValue(popup.Value) :?> SettingsPopupShadow option
+                check halo.IsSome "The hover popup has no shadow"
+                let body = popup.Value.GetType().GetProperty("Body",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.Public ||| Reflection.BindingFlags.NonPublic).GetValue(popup.Value) :?> Rectangle
+                let arrowRow = if below then body.Top-2 else body.Bottom+1
+                check (not (halo.Value.Covers(Point(middle,arrowRow))) && halo.Value.Covers(Point(middle+Dpi.scale 20,arrowRow)) && halo.Value.Covers(Point(-1,body.Top+body.Height/2)))
+                      (sprintf "The hover popup's shadow is over its arrow, or missing beside it, for %A" target)
             // Filled as the drop-down lists are, a shade off the cards beneath it, which in their
             // own colour it ran into; in either theme.
             for mode in ["light";"dark"] do

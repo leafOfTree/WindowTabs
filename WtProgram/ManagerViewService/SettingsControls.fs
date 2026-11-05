@@ -165,7 +165,7 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
     member this.Body = Rectangle(0,(if below then arrow() else 0),this.Width-1,this.Height-arrow()-1)
     member private this.showHalo() =
         if this.Visible && not SystemInformation.HighContrast then
-            if halo.IsNone then halo <- Some(new SettingsPopupShadow(this,corner=8,body=(fun () -> this.Body)))
+            if halo.IsNone then halo <- Some(new SettingsPopupShadow(this,corner=8,body=(fun () -> this.Body),shape=(fun () -> outline 0.0f)))
             halo |> Option.iter(fun shadow -> shadow.Show())
         else halo |> Option.iter(fun shadow -> shadow.Hide())
     override this.OnVisibleChanged(e) =
