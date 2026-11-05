@@ -95,6 +95,8 @@ type TreeListItem(text:string) =
     member val ChipsDimmed = false with get,set
     /// Chips laid out this many to a line, all one width, filling it; 0 sizes each to its text.
     member val ChipColumns = 0 with get,set
+    /// Said on hover over a chip of this row that has no note of its own, for chips a press opens.
+    member val ChipTip = "" with get,set
     member val AlwaysShowActions = false with get,set
     member _.Children = children :> IReadOnlyList<TreeListItem>
     member this.Add(child:TreeListItem) = child.Parent <- this; children.Add(child); child
@@ -119,6 +121,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     let chipAddInvoked = Event<TreeListItem>()
     let rowsChanged = Event<EventArgs>()
     let actionInvoked = Event<TreeListItem * int>()
+    let chipInvoked = Event<TreeListItem * int>()
     let mutable rows : (TreeListItem * int)[] = [||]
     let mutable offset = 0
     let mutable selected : TreeListItem = null
@@ -194,6 +197,8 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
     member _.ChipRemoved = chipRemoved.Publish
     /// The "+" after a row's chips was pressed.
     member _.ChipAddInvoked = chipAddInvoked.Publish
+    /// A chip was pressed, not on its x: the row and the chip's index.
+    member _.ChipInvoked = chipInvoked.Publish
     /// Rows were added, removed, expanded or collapsed: a list sized to its rows grows or shrinks.
     member _.RowsChanged = rowsChanged.Publish
     /// Buttons drawn in the action column on the row under the pointer, as their glyphs.
@@ -434,6 +439,11 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                 closeBox |> Option.filter(fun (box:Rectangle) -> Rectangle.Inflate(box,Dpi.scale 2,Dpi.scale 2).Contains(point))
                          |> Option.map(fun _ -> item,chip)))
 
+    /// The chip under a point, with its row.
+    member private this.chipAt(point:Point) =
+        this.chipsAt point |> Option.bind(fun (item,laid,_) ->
+            laid |> List.tryPick(fun (chip,box:Rectangle,_) -> if box.Contains point then Some(item,chip) else None))
+
     /// Where a shown row's "+" is, in client coordinates.
     member this.ChipAddBounds(item:TreeListItem) =
         this.indexOf item |> Option.bind(fun index ->
@@ -631,6 +641,10 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
             let item = (this.chipAddAt e.Location).Value
             this.SelectedItem <- item
             chipAddInvoked.Trigger(item)
+        | _,_ when e.Button=MouseButtons.Left && (this.chipAt e.Location).IsSome ->
+            let item,chip = (this.chipAt e.Location).Value
+            this.SelectedItem <- item
+            chipInvoked.Trigger((item,chip))
         | _,Some(item,action) when e.Button=MouseButtons.Left ->
             this.SelectedItem <- item
             actionInvoked.Trigger((item,action))
@@ -711,7 +725,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                     match cut,chip.Note with
                     | true,"" -> Some(chip.Text,box)
                     | true,note -> Some(chip.Text+Environment.NewLine+note,box)
-                    | false,"" -> None
+                    | false,"" -> if item.ChipTip="" then None else Some(item.ChipTip,box)
                     | false,note -> Some(note,box))
                 |> Option.defaultValue ("",around)
             | None,Some(index,(item,level)) when e.X < (this.columnBounds).[0].Right ->

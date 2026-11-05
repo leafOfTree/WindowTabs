@@ -690,8 +690,14 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             rememberSoon.Request()
         | _ -> ()
 
+    /// The group a window goes to by the rules across apps. Its command line is read only for a
+    /// rule that asks for it.
+    member private this.groupingRule(window:Window) =
+        AppGroupingRules.resolve settingsManager.settings.appGroupingRules
+            { path=window.pid.processPath; title=window.text; className=window.className; commandLine=(fun () -> window.pid.commandLine) }
+
     member this.tryGroupingRule(window:Window) =
-        match AppGroupingRules.resolve settingsManager.settings.appGroupingRules window.pid.processPath "" with
+        match this.groupingRule window with
         | NoGroupingRule -> None
         | GroupingTarget target ->
             let groups = this.desktop.groups.list |> List.choose(fun group ->
@@ -830,7 +836,7 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         let waiting =
             (this.savedPlacement window).IsNone &&
             ((this :> IProgram).getAutoGroupingEnabled(window.pid.processPath) ||
-             AppGroupingRules.resolve settingsManager.settings.appGroupingRules window.pid.processPath "" <> NoGroupingRule) &&
+             this.groupingRule window <> NoGroupingRule) &&
             not (VirtualDesktop.isPlacedForGrouping hwnd) &&
             (match awaitingDesktop.TryGetValue hwnd with
              | true, first -> DateTime.UtcNow - first < TimeSpan.FromSeconds(1.0)
@@ -966,9 +972,9 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
             (group :?> GroupInfo).awaitsGroupingDesktop <-
                 (VirtualDesktop.groupingDesktopId hwnd).IsNone &&
                 ((this :> IProgram).getAutoGroupingEnabled(window.pid.processPath) ||
-                 AppGroupingRules.resolve settingsManager.settings.appGroupingRules window.pid.processPath "" <> NoGroupingRule)
+                 this.groupingRule window <> NoGroupingRule)
         if isNewGroup && not isDropped then
-            match AppGroupingRules.resolve settingsManager.settings.appGroupingRules window.pid.processPath "" with
+            match this.groupingRule window with
             | GroupingTarget target -> (group :?> GroupInfo).ruleGroupId <- Some target
             | _ -> ()
         //need to add this now so we don't end up creating another group for it while waiting for the WgnWindowAdded notification

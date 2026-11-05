@@ -240,7 +240,21 @@ type AppGroupingRulesView() as this =
     let mutable editing : GroupApplicationNode option = None
     /// The group whose "+" opened the app list.
     let mutable pickingFor : string option = None
-    let status = new Label(Tag="muted",UseMnemonic=false,AutoEllipsis=true)
+    let status = new Label(Tag="muted",UseMnemonic=false,AutoEllipsis=true,Name="grouping-status")
+    /// Which of an app's windows its chip takes, edited below the list: the rule's id, the app
+    /// and group it is for, what the rule looks at, how, and the pattern.
+    let mutable conditionRule : string option = None
+    let condition = new Panel(Name="rule-condition",Visible=false)
+    let conditionCaption = new Label(Tag="muted",UseMnemonic=false,AutoEllipsis=true,TextAlign=ContentAlignment.MiddleLeft,Name="rule-caption")
+    let fields = [|AppOnly;WindowTitle;WindowClass;CommandLine|]
+    let fieldChoice = SettingsUi.choice (fields |> Array.map(fun field -> tr (RuleField.label field)))
+    let methodChoice = SettingsUi.choice (WindowTitleMatcher.labels |> Array.map tr)
+    let pattern = new TextBox(Name="rule-pattern")
+    let patternInput = new SettingsTextInput(pattern)
+    /// A chip's note: the condition it takes its windows by, or nothing for the app's every window.
+    let describe (rule:AppGroupingRule) =
+        if not (AppGroupingRules.isConditioned rule) then ""
+        else tr (Strings.AppRules.conditionNote (tr (RuleField.label rule.field)) (tr WindowTitleMatcher.labels.[max 0 (min 4 rule.matchType)]) rule.title)
     let selected() = if isNull tree.SelectedItem then None else Some(tree.SelectedItem.Tag :?> GroupApplicationNode)
     let selectedGroup() =
         let id =
@@ -270,9 +284,9 @@ type AppGroupingRulesView() as this =
                                        Checks=[|None;if members.IsEmpty then None else Some(enabled=members.Length)|],
                                        Mixed=[|false;enabled>0 && enabled<members.Length|],
                                        ChipAdd=true,Actions=Some [EditGlyph;DeleteGlyph],AlwaysShowActions=true,
-                                       ChipsDimmed=(not members.IsEmpty && enabled=0))
+                                       ChipsDimmed=(not members.IsEmpty && enabled=0),ChipTip=tr Strings.AppRules.chipTip)
                 row.Chips <- members |> List.map(fun rule ->
-                    { Faded=false; Note=""; Text=ApplicationNames.label rule.processPath; Icon=addMenu.Icon rule.processPath; Removable=true })
+                    { Faded=false; Note=describe rule; Text=ApplicationNames.label rule.processPath; Icon=addMenu.Icon rule.processPath; Removable=true })
                 chipRules.[group.id] <- members
                 tree.Roots.Add(row)
             // Groups made by dragging tabs, kept after a restart closes their windows: shown, not edited here,
@@ -314,6 +328,10 @@ type AppGroupingRulesView() as this =
             tree.SelectedItem <- tree.Roots
                                  |> Seq.tryFind(fun row -> selection=Some(row.Tag :?> GroupApplicationNode)) |> Option.toObj
             updateEditor()
+            // A condition shown for a rule that is gone closes with it.
+            if conditionRule |> Option.exists(fun id -> rules |> List.forall(fun rule -> rule.id<>id)) then
+                conditionRule <- None
+                condition.Visible <- false
         finally rebuilding <- false
         this.PerformLayout()
     let save (previous:AppGroupingRule list option) =
@@ -327,8 +345,11 @@ type AppGroupingRulesView() as this =
         root.["autoGroupingPaths"] <- JArray(AppGroupingRules.withoutAutoGrouping rules automatic)
         Services.settings.root <- root
         previous |> Option.iter(fun before ->
-            rules |> List.filter(fun rule ->
-                rule.enabled && not(before |> List.exists(fun old -> old.id=rule.id && old.enabled && old.processPath=rule.processPath && old.groupId=rule.groupId)))
+            // An app whose rule changed, in what it takes or where to, has its windows grouped again.
+            let same (old:AppGroupingRule) (rule:AppGroupingRule) =
+                old.id=rule.id && old.enabled && old.processPath=rule.processPath && old.groupId=rule.groupId
+                && old.field=rule.field && old.title=rule.title && old.matchType=rule.matchType
+            rules |> List.filter(fun rule -> rule.enabled && not(before |> List.exists(fun old -> same old rule)))
             |> List.map(fun rule -> rule.processPath)
             |> Services.program.regroupApplications)
         Services.program.refresh()
@@ -361,11 +382,60 @@ type AppGroupingRulesView() as this =
             name.Focus() |> ignore
             name.SelectAll()
         | Some(HandMadeNode _) | None -> ()
+    let editedRule() = conditionRule |> Option.bind(fun id -> rules |> List.tryFind(fun rule -> rule.id=id))
+    let closeCondition() =
+        conditionRule <- None
+        condition.Visible <- false
+        status.Text <- ""
+        this.PerformLayout()
+    let indexOfField field = fields |> Array.findIndex ((=) field)
+    /// Opens a chip's condition below the list, set to what its rule says.
+    let showCondition (rule:AppGroupingRule) =
+        rebuilding <- true
+        try
+            conditionRule <- Some rule.id
+            conditionCaption.Text <- tr (Strings.AppRules.conditionFor (ApplicationNames.label rule.processPath) rule.groupName)
+            let conditioned = AppGroupingRules.isConditioned rule
+            fieldChoice.SelectedIndex <- indexOfField rule.field
+            methodChoice.SelectedIndex <- (if conditioned then max 0 (min 4 rule.matchType) else 3)
+            pattern.Text <- (if conditioned then rule.title else "")
+            methodChoice.Visible <- conditioned
+            patternInput.Visible <- conditioned
+            condition.Visible <- true
+            status.Text <- ""
+        finally rebuilding <- false
+        this.PerformLayout()
+        if AppGroupingRules.isConditioned rule then
+            pattern.Focus() |> ignore
+            pattern.SelectAll()
+    /// Keeps what the condition's controls say, or says why not; true when the rule is as shown.
+    let commitCondition() =
+        if rebuilding then true else
+        match editedRule() with
+        | None -> true
+        | Some rule ->
+            let field = fields.[max 0 fieldChoice.SelectedIndex]
+            let changed =
+                if field=AppOnly then {rule with field=AppOnly;title="";matchType= -1}
+                else {rule with field=field;title=pattern.Text.Trim();matchType=max 0 methodChoice.SelectedIndex}
+            match AppGroupingRules.problem changed with
+            | Some problem ->
+                status.Text <- problem
+                false
+            | None ->
+                status.Text <- ""
+                if changed<>rule then
+                    let previous = rules
+                    rules <- rules |> List.map(fun other -> if other.id=rule.id then changed else other)
+                    save (Some previous)
+                    reload (Some(GroupNode rule.groupId))
+                true
     let delete() =
         match selected() with
         | Some(GroupNode id) ->
             groups <- groups |> List.filter(fun group -> group.id<>id)
             rules <- rules |> List.filter(fun rule -> rule.groupId<>id)
+            closeCondition()
             save None
             reload None
         | Some(HandMadeNode _) | None -> ()
@@ -374,9 +444,11 @@ type AppGroupingRulesView() as this =
         addToGroup <- fun (groupId,path) ->
             groups |> List.tryFind(fun group -> group.id=groupId) |> Option.iter(fun group ->
                 let previous = rules
-                let existing = rules |> List.tryFind(fun rule -> AppIdentity.same rule.processPath path)
-                let rule = {id=existing |> Option.map(fun rule -> rule.id) |> Option.defaultWith(fun () -> Guid.NewGuid().ToString("N"));enabled=true;processPath=path;title="";matchType= -1;groupId=group.id;groupName=group.name}
-                rules <- (rules |> List.filter(fun other -> not(AppIdentity.same other.processPath path))) @ [rule]
+                // The app's rule for its every window moves here; rules for some of its windows stay.
+                let forApp (rule:AppGroupingRule) = not (AppGroupingRules.isConditioned rule) && AppIdentity.same rule.processPath path
+                let existing = rules |> List.tryFind forApp
+                let rule = {id=existing |> Option.map(fun rule -> rule.id) |> Option.defaultWith(fun () -> Guid.NewGuid().ToString("N"));enabled=true;processPath=path;title="";matchType= -1;field=AppOnly;groupId=group.id;groupName=group.name}
+                rules <- (rules |> List.filter(forApp >> not)) @ [rule]
                 // A group only gathers windows with tabs; the app leaves App rules, where its tabs
                 // could be turned off.
                 if not (Services.filter.getIsTabbingEnabledForProcess path) then Services.filter.setIsTabbingEnabledForProcess path true
@@ -403,7 +475,7 @@ type AppGroupingRulesView() as this =
             if not rebuilding then
                 editing <- None
                 tree.ClearRowEditor()
-                status.Text<-""
+                closeCondition()
                 rebuilding <- true
                 try updateEditor() finally rebuilding <- false)
         tree.ItemActivated.Add(fun _ -> beginEdit())
@@ -420,7 +492,8 @@ type AppGroupingRulesView() as this =
         tree.ChipAddInvoked.Add(fun item ->
             match item.Tag :?> GroupApplicationNode,tree.ChipAddBounds item with
             | GroupNode id,Some box ->
-                let members = rules |> List.filter(fun rule -> rule.groupId=id) |> List.map(fun rule -> rule.processPath)
+                // An app with a rule here for some of its windows can be added for all of them too.
+                let members = rules |> List.filter(fun rule -> rule.groupId=id && not (AppGroupingRules.isConditioned rule)) |> List.map(fun rule -> rule.processPath)
                 pickingFor <- Some id
                 addMenu.Open(tree.RectangleToScreen(box),members)
             | _ -> ())
@@ -432,10 +505,57 @@ type AppGroupingRulesView() as this =
                 | true,members when index<members.Length ->
                     let removed = members.[index]
                     rules <- rules |> List.filter(fun rule -> rule.id<>removed.id)
+                    if conditionRule=Some removed.id then closeCondition()
                     save None
                     reload (Some(GroupNode id))
                 | _ -> ()
             | _ -> ())
+        // A chip opens which of its app's windows the group takes.
+        tree.ChipInvoked.Add(fun (item,index) ->
+            match item.Tag :?> GroupApplicationNode with
+            | GroupNode id ->
+                match chipRules.TryGetValue id with
+                | true,members when index<members.Length -> showCondition members.[index]
+                | _ -> ()
+            | _ -> ())
+        fieldChoice.SelectedIndexChanged.Add(fun _ ->
+            if not rebuilding then
+                let conditioned = fields.[max 0 fieldChoice.SelectedIndex]<>AppOnly
+                methodChoice.Visible <- conditioned
+                patternInput.Visible <- conditioned
+                condition.PerformLayout()
+                if commitCondition() && conditioned then pattern.Focus() |> ignore
+                elif conditioned then pattern.Focus() |> ignore)
+        methodChoice.SelectedIndexChanged.Add(fun _ -> commitCondition() |> ignore)
+        pattern.Leave.Add(fun _ -> commitCondition() |> ignore)
+        pattern.KeyDown.Add(fun e ->
+            if e.KeyCode=Keys.Enter then
+                e.Handled<-true
+                e.SuppressKeyPress<-true
+                if commitCondition() then
+                    closeCondition()
+                    tree.Focus() |> ignore
+            elif e.KeyCode=Keys.Escape then
+                e.Handled<-true
+                e.SuppressKeyPress<-true
+                closeCondition()
+                tree.Focus() |> ignore)
+        condition.Layout.Add(fun _ ->
+            let gap = Dpi.scale 8
+            let height = Dpi.scale 30
+            let y = max 0 ((condition.Height-height)/2)
+            let captionWidth = min (condition.Width/3) (TextRenderer.MeasureText(conditionCaption.Text,conditionCaption.Font).Width+Dpi.scale 8)
+            conditionCaption.SetBounds(Dpi.scale 6,y,captionWidth,height)
+            let mutable x = conditionCaption.Right+gap
+            fieldChoice.SetBounds(x,y,fieldChoice.Width,height)
+            x <- fieldChoice.Right+gap
+            if methodChoice.Visible then
+                methodChoice.SetBounds(x,y,methodChoice.Width,height)
+                x <- methodChoice.Right+gap
+            if patternInput.Visible then patternInput.SetBounds(x,y,max (Dpi.scale 80) (condition.Width-x),height))
+        fieldChoice.Name <- "rule-field"
+        methodChoice.Name <- "rule-method"
+        condition.Controls.AddRange([|conditionCaption :> Control;fieldChoice;methodChoice;patternInput|])
         // Groups made by hand change as tabs are dragged: shown again, the list catches up.
         this.VisibleChanged.Add(fun _ ->
             if this.Visible then
@@ -515,8 +635,9 @@ type AppGroupingRulesView() as this =
             e.Graphics.FillPath(fill,shape)
             e.Graphics.DrawPath(border,shape))
         card.Resize.Add(fun _ -> card.Invalidate())
-        this.Controls.AddRange([|header :> Control;card;status;nameInput|])
+        this.Controls.AddRange([|header :> Control;card;condition;status;nameInput|])
         status.TextChanged.Add(fun _ -> this.PerformLayout())
+        condition.VisibleChanged.Add(fun _ -> this.fitToRows(); this.PerformLayout())
         this.Disposed.Add(fun _ ->
             nameInput.Dispose()
             (addMenu :> IDisposable).Dispose()
@@ -533,7 +654,7 @@ type AppGroupingRulesView() as this =
     member private this.fitToRows() =
         if not(isNull header) then
             let rows = Dpi.scale tree.RowHeight
-            let around = Dpi.scale 36+Dpi.scale 8+2*Dpi.scale 6+(if status.Text="" then 0 else Dpi.scale 28)
+            let around = Dpi.scale 36+Dpi.scale 8+2*Dpi.scale 6+(if status.Text="" then 0 else Dpi.scale 28)+(if condition.Visible then Dpi.scale 40 else 0)
             let wanted = around+tree.ContentHeight
             let height = max (around+rows) (min (Dpi.scale 244) wanted)
             if this.Height<>height then this.Height <- height
@@ -551,7 +672,9 @@ type AppGroupingRulesView() as this =
             let gap = Dpi.scale 8
             let top = header.Bottom+gap
             let statusHeight = if status.Text="" then 0 else Dpi.scale 28
+            let conditionHeight = if condition.Visible then Dpi.scale 40 else 0
             // As tall as the section leaves it: a fixed minimum ran past a one-row section's bottom
             // and cut off its rounded corners there.
-            card.Bounds<-Rectangle(0,top,width,max 1 (this.Height-top-statusHeight))
-            status.Bounds<-Rectangle(0,card.Bottom,width,statusHeight)
+            card.Bounds<-Rectangle(0,top,width,max 1 (this.Height-top-statusHeight-conditionHeight))
+            condition.Bounds<-Rectangle(0,card.Bottom,width,conditionHeight)
+            status.Bounds<-Rectangle(0,condition.Bottom,width,statusHeight)

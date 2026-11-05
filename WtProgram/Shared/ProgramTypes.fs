@@ -10,13 +10,24 @@ type TabColorChoice =
 
 type AppGroupingTarget = { id:string; name:string }
 
+/// What a grouping rule looks at beside the app: nothing, so the app's every window; or a window's
+/// title, its class name, or the command line its process was started with, for apps that run
+/// under a shared host such as pythonw.exe or java.exe.
+type RuleField =
+    | AppOnly
+    | WindowTitle
+    | WindowClass
+    | CommandLine
+
 type AppGroupingRule = {
     id: string
     enabled: bool
     processPath: string
+    /// The pattern a window's `field` is matched against; empty for the app's every window.
     title: string
-    /// Retained for reading older exports; application mappings normalize this to -1.
+    /// How `title` is matched (`WindowTitleMatcher` kinds); -1 for the app's every window.
     matchType: int
+    field: RuleField
     groupId: string
     groupName: string
 }

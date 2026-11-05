@@ -37,7 +37,7 @@ let main() =
         settings.Flush() |> ignore
         settings.clearCaches()
         check (not (api.getValue("showIconsOnly") :?> bool)) "Disabling icon-only default did not persist"
-        let rule = {id="roundtrip";enabled=true;processPath = @"C:\Editor.exe";title="";matchType= -1;groupId="project";groupName="Project"}
+        let rule = {id="roundtrip";enabled=true;processPath = @"C:\Editor.exe";title="";matchType= -1;field=AppOnly;groupId="project";groupName="Project"}
         api.setValue("autoGroupingPaths",box(Set2(List2([rule.processPath;@"C:\Other.exe"]))))
         api.setValue("appGroupingRules",box [rule])
         settings.Flush() |> ignore
