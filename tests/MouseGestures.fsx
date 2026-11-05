@@ -275,6 +275,33 @@ let main() =
                 let one = blank.Keys.Width
                 blank.Keys.Sequence <- [0x241;0x242;0x243]
                 check (empty=one && one=blank.Keys.Width) (sprintf "The keys box changed width as keys were added: %d, %d, %d" empty one blank.Keys.Width)
+                // The box to draw in is put away until its link asks for it, and goes again.
+                check (not blank.DrawingShown && blank.DrawToggle.Text=tr Strings.MouseGestures.drawInstead) "The drawing box is out as the dialog opens"
+                let click = typeof<LinkLabel>.GetMethod("OnLinkClicked",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic)
+                click.Invoke(blank.DrawToggle,[|box (LinkLabelLinkClickedEventArgs(blank.DrawToggle.Links.[0]))|]) |> ignore
+                check (blank.DrawingShown && blank.DrawToggle.Text=tr Strings.MouseGestures.hideDrawing) "The link did not put out the drawing box"
+                click.Invoke(blank.DrawToggle,[|box (LinkLabelLinkClickedEventArgs(blank.DrawToggle.Links.[0]))|]) |> ignore
+                check (not blank.DrawingShown) "The link did not put the drawing box away again"
+                // A gesture an app has of its own that every app has too shows both dots: the app's
+                // in its colour, every app's grey beside it.
+                do
+                    let app = @"C:\Apps\both.exe"
+                    let both = { table with everywhere=[{ gesture="U"; action=GestureCommand "next-tab" }]
+                                            apps=[{ path=app; enabled=true; bindings=[{ gesture="U"; action=GestureCommand "close-tab" }] }] }
+                    use grid = new GestureGrid(Some app,both)
+                    use image = new Bitmap(grid.Width,grid.Height)
+                    grid.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                    let index = MouseGestures.all |> List.findIndex ((=) "U")
+                    let tileSize,gap,header = Dpi.scale 48,Dpi.scale 6,Dpi.scale 26
+                    let tileRight = (index % 8)*(tileSize+gap)+tileSize
+                    let tileTop = header+(index/8)*(tileSize+gap)
+                    let dot = Dpi.scale 6
+                    let y = tileTop+Dpi.scale 4+dot/2
+                    let near (c:Color) (x:Color) = abs(int c.R-int x.R)+abs(int c.G-int x.G)+abs(int c.B-int x.B)<60
+                    let own = image.GetPixel(tileRight-Dpi.scale 5-dot/2,y)
+                    let every = image.GetPixel(tileRight-Dpi.scale 5-dot-Dpi.scale 3-dot/2,y)
+                    check (near own (GestureUi.warning()) && near every (SettingsColors.current()).muted)
+                          (sprintf "A gesture of the app and of every app does not show both dots: %A, %A" own every)
                 let byKeys = { gesture="UL"; action=GestureKeys([0x254],"Find") }
                 use keyed = new MouseGestureDialog(None,{ table with everywhere=[byKeys] },byKeys)
                 check (keyed.Kind.SelectedIndex=0 && keyed.Keys.Sequence=[0x254] && keyed.NameBox.Text="Find")

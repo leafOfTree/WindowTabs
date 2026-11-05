@@ -883,6 +883,9 @@ module Strings =
         let allApps = { en="All apps"; zh="所有程序"; ja="すべてのアプリ"; ar="كل التطبيقات" }
         let addApp = { en="Add app"; zh="添加程序"; ja="アプリを追加"; ar="إضافة تطبيق" }
         let addGesture = { en="Add gesture"; zh="添加手势"; ja="ジェスチャーを追加"; ar="إضافة إيماءة" }
+        /// The link under the tiles that puts out the box to draw a gesture in, and away again.
+        let drawInstead = { en="Draw it with the mouse"; zh="用鼠标画出手势"; ja="マウスで描く"; ar="ارسمها بالفأرة" }
+        let hideDrawing = { en="Hide the drawing box"; zh="收起手绘区域"; ja="描画エリアを閉じる"; ar="إخفاء مربع الرسم" }
         /// The dialog's title when a gesture of the list is opened in it, filled in.
         let editGesture = { en="Edit gesture"; zh="编辑手势"; ja="ジェスチャーを編集"; ar="تعديل الإيماءة" }
         let gesture = { en="Gesture"; zh="手势"; ja="ジェスチャー"; ar="الإيماءة" }

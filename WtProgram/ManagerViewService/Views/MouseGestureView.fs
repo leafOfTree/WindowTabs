@@ -73,6 +73,8 @@ type GestureGrid(scope:string option, table:MouseGestureTable) as this =
         | Some binding -> Some(true,binding)
         | None when scope.IsSome -> table.everywhere |> List.tryFind(fun binding -> binding.gesture=gesture) |> Option.map(fun binding -> false,binding)
         | None -> None
+    /// An app's own gesture that every app has too: it takes that one's place in the app.
+    let alsoEverywhere gesture = scope.IsSome && table.everywhere |> List.exists(fun binding -> binding.gesture=gesture)
     let tile = 48
     let gap = 6
     let header = 26
@@ -88,7 +90,11 @@ type GestureGrid(scope:string option, table:MouseGestureTable) as this =
     let describe gesture =
         let words = tr (Strings.MouseGestures.drawn gesture)
         match used gesture with
-        | Some(true,binding) -> words+"; "+GestureUi.scopeName scope+": "+Commands.gestureAction binding
+        | Some(true,binding) ->
+            let everywhere =
+                table.everywhere |> List.tryFind(fun other -> scope.IsSome && other.gesture=gesture)
+                |> Option.map(fun other -> "; "+tr Strings.MouseGestures.usedEverywhere+": "+Commands.gestureAction other) |> Option.defaultValue ""
+            words+"; "+GestureUi.scopeName scope+": "+Commands.gestureAction binding+everywhere
         | Some(false,binding) -> words+"; "+tr Strings.MouseGestures.usedEverywhere+": "+Commands.gestureAction binding
         | None -> words
     do
@@ -143,7 +149,13 @@ type GestureGrid(scope:string option, table:MouseGestureTable) as this =
             used gesture |> Option.iter(fun (mine,_) ->
                 use dot = new SolidBrush(if mine then GestureUi.warning() else p.muted)
                 let size = Dpi.scale 6
-                g.FillEllipse(dot,bounds.Right-Dpi.scale 5-size,bounds.Top+Dpi.scale 4,size,size))
+                let x = bounds.Right-Dpi.scale 5-size
+                g.FillEllipse(dot,x,bounds.Top+Dpi.scale 4,size,size)
+                // The app's own and every app's: both dots, the app's in front, as the legend
+                // lists them, since the app's is the one that runs there.
+                if mine && alsoEverywhere gesture then
+                    use other = new SolidBrush(p.muted)
+                    g.FillEllipse(other,x-size-Dpi.scale 3,bounds.Top+Dpi.scale 4,size,size))
             if isSelected then
                 let size = Dpi.scale 16
                 let mark = Rectangle(bounds.Right-size+Dpi.scale 4,bounds.Bottom-size+Dpi.scale 4,size,size)
@@ -313,6 +325,21 @@ type MouseGestureDialog(scope:string option, table:MouseGestureTable, ?editing:G
     let actionArea = new Panel(Margin=Padding(0,Dpi.scale 8,0,0))
     let problem = new Label(AutoSize=false,UseMnemonic=false,Margin=Padding(0,Dpi.scale 8,0,0))
     let add = SettingsUi.button (tr (if editing.IsSome then Strings.Common.save else Strings.MouseGestures.add))
+    /// The box to draw in, put away until asked for: the tiles pick any gesture, and the box took
+    /// most of the dialog.
+    let drawToggle = new LinkLabel(AutoSize=true,UseMnemonic=false,Name="gesture-draw-toggle",Margin=Padding(0,Dpi.scale 2,0,0),LinkBehavior=LinkBehavior.HoverUnderline)
+    let mutable drawing = false
+    let showDrawing shown =
+        drawing <- shown
+        pad.Visible <- shown
+        drawToggle.Text <- tr (if shown then Strings.MouseGestures.hideDrawing else Strings.MouseGestures.drawInstead)
+    /// In the accent, as the settings' other links, for the theme in use.
+    let colorLink() =
+        let p = SettingsColors.current()
+        let ink = if SystemInformation.HighContrast then SystemColors.HotTrack else p.accentText
+        drawToggle.LinkColor <- ink
+        drawToggle.ActiveLinkColor <- ink
+        drawToggle.VisitedLinkColor <- ink
     let cancel = SettingsUi.button (tr Strings.Common.cancel)
     let chosen gesture (drawn:bool) =
         grid.Select(Some gesture)
@@ -360,9 +387,11 @@ type MouseGestureDialog(scope:string option, table:MouseGestureTable, ?editing:G
         let heading = label (tr (Strings.MouseGestures.appliesTo (GestureUi.scopeName scope))) true
         heading.Margin <- Padding.Empty
         pad.Margin <- Padding(0,Dpi.scale 10,0,0)
-        for control in [heading :> Control; grid :> Control; pad :> Control; caption :> Control
+        for control in [heading :> Control; grid :> Control; pad :> Control; caption :> Control; drawToggle :> Control
                         label (tr Strings.MouseGestures.action) true :> Control; kind :> Control; actionArea :> Control; problem :> Control] do
             layout.Controls.Add(control)
+        showDrawing false
+        drawToggle.LinkClicked.Add(fun _ -> showDrawing (not drawing))
         kind.SelectedIndex <- 0
         kind.Margin <- Padding.Empty
         // As wide as the dialog, so the choices and the commands' names show in full.
@@ -448,12 +477,15 @@ type MouseGestureDialog(scope:string option, table:MouseGestureTable, ?editing:G
                 nameBox.Text <- name
             showKind())
         fitAction()
-        this.HandleCreated.Add(fun _ -> SettingsUi.apply this; fitAction())
-        ThemeBinding.watch this (fun () -> SettingsUi.apply this; fitAction())
+        this.HandleCreated.Add(fun _ -> SettingsUi.apply this; colorLink(); fitAction())
+        ThemeBinding.watch this (fun () -> SettingsUi.apply this; colorLink(); fitAction())
     /// The gesture added, once Add is chosen.
     member _.Result = result
     member _.Grid = grid
     member _.Pad = pad
+    /// Whether the box to draw in is out, as the link under the tiles puts it.
+    member _.DrawingShown = drawing
+    member _.DrawToggle = drawToggle
     member _.Kind = kind
     member _.Command = command
     member _.Keys = keys
