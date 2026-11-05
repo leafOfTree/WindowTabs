@@ -194,6 +194,17 @@ let main() =
             check (sameColor palette.background (image.GetPixel(Dpi.scale 6,Dpi.scale 8))) (sprintf "The popup is not in the %s look's background, as Settings is" mode)
             check (sameColor palette.surface (image.GetPixel(l.band.X+Dpi.scale 12,l.band.Y+Dpi.scale 5))) (sprintf "The row's band is not in the %s look's surface colour" mode)
             check (sameColor palette.background (image.GetPixel(l.picture.X+l.picture.Width/2,l.picture.Bottom-2))) "The content is not in the background colour"
+            // Save and Cancel as the settings' buttons beside them: the accent with the colour that
+            // reads on it, where white sat on a light accent, and the plain buttons' fill.
+            if not SystemInformation.HighContrast then
+                let save,cancel = editor.Layout.save,editor.Layout.cancel
+                check (sameColor palette.accent (image.GetPixel(save.X+Dpi.scale 6,save.Y+save.Height/2))) (sprintf "Save is not filled in the %s look's accent" mode)
+                let plain,_ = SettingsShapes.neutralColors palette false false
+                check (sameColor plain (image.GetPixel(cancel.X+Dpi.scale 6,cancel.Y+cancel.Height/2))) (sprintf "Cancel is not a plain button in the %s look" mode)
+                let light (c:Color) = int c.R+int c.G+int c.B
+                let text = [for y in save.Top+2..save.Bottom-3 do for x in save.Left+Dpi.scale 8..save.Right-Dpi.scale 8 -> image.GetPixel(x,y)]
+                let strongest = if light palette.onAccent<light palette.accent then text |> List.minBy light else text |> List.maxBy light
+                check (abs(light strongest-light palette.onAccent)<90) (sprintf "Save's text is %A in the %s look, not %A, the colour that reads on the accent" strongest mode palette.onAccent)
             // The strip's seam button stands over the seam between the panes' tabs, at their bottom
             // edge: its glyph's ink is there, where the band showed through the gap.
             let seam = Point(((snd l.tabs.[0]).Right+(snd l.tabs.[1]).X)/2-Dpi.scale 3,(snd l.tabs.[0]).Bottom-Dpi.scale 6)

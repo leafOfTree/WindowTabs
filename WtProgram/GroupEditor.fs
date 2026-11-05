@@ -847,12 +847,20 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             | 0 -> if expandedRow().IsSome then tr Strings.GroupEditor.hint else tr Strings.GroupEditor.overviewHint
             | empty -> tr (Strings.GroupEditor.emptyCellsClose empty)
         TextRenderer.DrawText(g,note,hintFont,Rectangle(pad,l.save.Y,max 0 (l.cancel.X-scale 12-pad),l.save.Height),palette.muted,surface,textFlags)
+        // As the settings' buttons draw theirs, the Workspaces page's beside it: their corners, fill
+        // and edge, and on the accent the colour that reads on it, where white sat on a light accent.
         let button (r:Rectangle) (text:string) primary =
-            use shape = rounded r (scale 5)
-            let back = if primary then accent else palette.hover
+            let bounds = RectangleF(float32 r.X,float32 r.Y,float32(r.Width-1),float32(r.Height-1))
+            use shape = SettingsShapes.rounded bounds (SettingsShapes.controlRadius())
+            let plain,_ = SettingsShapes.neutralColors palette false false
+            let back = if primary then accent elif highContrast then palette.hover else plain
             use fill = new SolidBrush(back)
             g.FillPath(fill,shape)
-            let color = if primary then (if highContrast then SystemColors.HighlightText else Color.White) else textOn
+            if highContrast then
+                use pen = new Pen(if primary then accent else palette.border)
+                g.DrawPath(pen,shape)
+            else SettingsShapes.drawControlEdge g shape bounds false false (if primary then accent else Color.Empty) palette
+            let color = if primary then palette.onAccent else textOn
             TextRenderer.DrawText(g,text,bodyFont,r,color,back,TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine)
         button l.cancel (tr Strings.Common.cancel) false
         button l.save (tr Strings.GroupEditor.save) true
