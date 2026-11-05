@@ -94,7 +94,7 @@ type AppearanceView(?settings:ISettings) =
     let resetColors() =
         update(fun s ->
             let index = selection s |> Option.defaultValue 0
-            {(setActive (original index) s) with presetEdits=s.presetEdits.Remove(editKey index)} |> setPreset ThemePresets.keys.[index])
+            {(setActive (original index) s) with presetEdits=PaletteEditing.withoutEdit editingDark index s.presetEdits} |> setPreset ThemePresets.keys.[index])
     let preview = new TabPreview(Name="tab-preview",Height=Dpi.scale 145,Margin=Padding(0,Dpi.scale 4,0,0),
                                  AccessibleName=tr Strings.Appearance.explorerPreview)
     /// Where the preview draws its tabs: all that a colour edit changes.

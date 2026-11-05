@@ -94,11 +94,34 @@ module ThemePresets =
                   make Theme.lightPalette 0x402B52 0xFCF8FF 0xEEE2F6 0xD8C4E6 0xA28BB4
                   accentPalette false|]
         order |> Array.map(fun index -> stored.[index])
-    /// The colours a look's tabs take: the accent preset's worked out afresh, so the tabs follow
-    /// Windows when its accent changes; any other choice, or the accent preset once its colours
-    /// are edited, as stored.
+    let private side dark = if dark then "dark:" else "light:"
+    /// Beside an edit of the accent preset, the tints it was made on.
+    let accentBaseKey dark = side dark+accentKey+"@base"
+    /// The accent preset as edited, carried over to the accent of now: a colour the edit took from
+    /// the preset's own tints, as swapping the active and inactive colours does, becomes that tint
+    /// of the current accent, and a derived separator is derived again; a colour picked stays.
+    /// An edit saved without its tints keeps its colours.
+    let editedAccent dark (edits:Map<string,TabPalette>) =
+        edits.TryFind(side dark+accentKey) |> Option.map(fun edit ->
+            match edits.TryFind(accentBaseKey dark) with
+            | None -> edit
+            | Some basis ->
+                let now = accentPalette dark
+                let slots (p:TabPalette) = [p.tabTextColor;p.tabActiveBgColor;p.tabHighlightBgColor;p.tabNormalBgColor;p.tabBorderColor;p.tabFlashBgColor]
+                let same (a:Color) (b:Color) = a.ToArgb()=b.ToArgb()
+                let carry (c:Color) =
+                    match slots basis |> List.tryFindIndex (same c) with
+                    | Some index -> (slots now).[index]
+                    | None -> c
+                let text,normal = carry edit.tabTextColor,carry edit.tabNormalBgColor
+                let border =
+                    if same edit.tabBorderColor (Theme.blend 0.25 edit.tabTextColor edit.tabNormalBgColor) then Theme.blend 0.25 text normal
+                    else carry edit.tabBorderColor
+                { tabTextColor=text;tabNormalBgColor=normal;tabHighlightBgColor=carry edit.tabHighlightBgColor
+                  tabActiveBgColor=carry edit.tabActiveBgColor;tabBorderColor=border;tabFlashBgColor=carry edit.tabFlashBgColor })
+    /// The colours a look's tabs take: the accent preset's worked out afresh, with its edit carried
+    /// over, so the tabs follow Windows when its accent changes; any other choice as stored.
     let following dark (s:AppearancePreferences) (stored:TabPalette) =
         let key = if dark then s.darkPreset else s.lightPreset
-        if s.useCustomColors && key=accentKey && not (s.presetEdits.ContainsKey((if dark then "dark:" else "light:")+accentKey))
-        then accentPalette dark
+        if s.useCustomColors && key=accentKey then editedAccent dark s.presetEdits |> Option.defaultWith(fun () -> accentPalette dark)
         else stored

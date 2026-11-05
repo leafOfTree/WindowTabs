@@ -240,7 +240,21 @@ let main() =
             check ((ThemePresets.following false chosen stale).tabNormalBgColor=live.tabNormalBgColor && (PaletteEditing.activePalette false chosen).tabNormalBgColor=live.tabNormalBgColor)
                   "The Windows accent preset kept colours from before the accent changed"
             let edited = {chosen with presetEdits=Map.ofList ["light:"+ThemePresets.accentKey,stale]}
-            check (ThemePresets.following false edited stale=stale) "An edited Windows accent preset did not keep its colours"
+            check (ThemePresets.following false edited stale=stale) "An edited Windows accent preset saved without its tints did not keep its colours"
+            // Swapped, it still follows the accent: the swap made on an older accent's tints comes
+            // out as the swap of the current accent's, its picked colours kept.
+            let swap (p:TabPalette) = {p with tabActiveBgColor=p.tabNormalBgColor;tabNormalBgColor=p.tabActiveBgColor}
+            let swapped = PaletteEditing.edit false swap chosen
+            check (swapped.presetEdits.ContainsKey(ThemePresets.accentBaseKey false)) "A swap of the Windows accent preset was saved without the tints it was made on"
+            let old = ThemePresets.accentTints false (Color.FromArgb(0x88,0x44,0xCC))
+            let picked = Color.FromArgb(0x12,0x34,0x56)
+            let madeOnOld = {(Theme.followSeparator (Some old) old (swap old)) with tabHighlightBgColor=picked}
+            let earlier = {chosen with presetEdits=Map.ofList ["light:"+ThemePresets.accentKey,madeOnOld; ThemePresets.accentBaseKey false,old]}
+            let expected = {(Theme.followSeparator (Some live) live (swap live)) with tabHighlightBgColor=picked}
+            let shown = PaletteEditing.activePalette false earlier
+            check (PaletteEditing.values shown=PaletteEditing.values expected) (sprintf "A swapped Windows accent preset did not follow the accent: %A, not %A" shown expected)
+            check (PaletteEditing.values (PaletteEditing.presetPalette false earlier index)=PaletteEditing.values expected) "The Windows accent preset's dot kept the colours of an earlier accent"
+            check ((PaletteEditing.withoutEdit false index earlier.presetEdits).IsEmpty) "Resetting the Windows accent preset left its tints behind"
             // Tints of the accent: the tabs behind in its hue, the front one paler.
             let _,a,b = Theme.OkLab.ofColor (SystemAccent.chosen())
             if sqrt(a*a+b*b)>0.03 then
