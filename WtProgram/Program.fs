@@ -1517,8 +1517,10 @@ type Program(lifetime:LifetimeScope, ?settings:Settings) as this =
         member x.paneCandidates() =
             let nameOverride hwnd = windowNameOverride.tryFind(hwnd).bind(id)
             let groups = this.desktop.groups.list |> List.map(fun group -> group.windows.list)
+            // The most recently used first, as Switch windows lists them.
             TabSearch.tabs nameOverride (WinUserApi.GetForegroundWindow()) groups
             |> List.filter(fun entry -> entry.desktop="")
+            |> List.sortBy(fun entry -> entry.recency)
             |> List.map(fun entry -> entry.hwnd,entry.title,entry.program)
 
         member x.toggleSearch scope = this.togglePalette scope
