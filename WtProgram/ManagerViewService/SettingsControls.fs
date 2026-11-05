@@ -122,13 +122,16 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
     let mutable below = true
     /// A soft shadow round the bubble, so it stands off the page as the drop-down lists do.
     let mutable halo : SettingsPopupShadow option = None
-    /// The bubble and its arrow as one outline, so the border runs round both.
-    let outline (inset:float32) =
+    /// The bubble and its arrow as one outline, so the border runs round both. As the window's
+    /// shape, it covers the pixels up to a pixel short of its right and bottom; the pen that draws
+    /// the border runs along the shape's outermost pixels, `trim` a pixel in on those two sides,
+    /// so no strip of fill shows outside the line and no gap opens between it and the shadow.
+    let outline (trim:float32) =
         let a = float32(arrow())
         let r = radius()
         let d = r*2.0f
-        let top = (if below then a else 0.0f)+inset
-        let rect = RectangleF(inset,top,float32 this.Width-1.0f-inset*2.0f,float32 this.Height-1.0f-a-inset*2.0f)
+        let top = if below then a else 0.0f
+        let rect = RectangleF(0.0f,top,float32 this.Width-1.0f-trim,float32 this.Height-1.0f-a-trim)
         // The arrow stays on the straight part of its edge, clear of the rounded corners.
         let x = max (rect.Left+r+a) (min (rect.Right-r-a) (float32 tip))
         let path = new Drawing2D.GraphicsPath()
@@ -158,8 +161,8 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
         this.Disposed.Add(fun _ ->
             halo |> Option.iter(fun shadow -> (shadow :> IDisposable).Dispose())
             halo <- None)
-    /// The bubble without its arrow: what the shadow goes round.
-    member this.Body = Rectangle(0,(if below then arrow() else 0),this.Width,this.Height-arrow())
+    /// The bubble without its arrow, as far as its shape reaches: what the shadow goes round.
+    member this.Body = Rectangle(0,(if below then arrow() else 0),this.Width-1,this.Height-arrow()-1)
     member private this.showHalo() =
         if this.Visible && not SystemInformation.HighContrast then
             if halo.IsNone then halo <- Some(new SettingsPopupShadow(this,corner=8,body=(fun () -> this.Body)))

@@ -824,6 +824,15 @@ let main() =
                 let p = SettingsColors.current()
                 check (fill.ToArgb()=p.hover.ToArgb() && p.hover.ToArgb()<>p.surface.ToArgb())
                       (sprintf "The hover popup is filled %A in the %s theme, not the drop-downs' %A" fill mode p.hover)
+                // One line round it: the border on the shape's outermost pixels, the fill right
+                // inside it, and the shadow starting where the shape ends, so the edge is not doubled.
+                let y = body.Top+body.Height/2
+                let edge,inside = image.GetPixel(0,y),image.GetPixel(1,y)
+                check (edge.ToArgb()=SettingsSearchBox.Outline().ToArgb() && inside.ToArgb()=p.hover.ToArgb())
+                      (sprintf "The hover popup's left edge is %A then %A in the %s theme, not its outline then its fill" edge inside mode)
+                let right = image.GetPixel(body.Right-1,y)
+                check (right.ToArgb()=SettingsSearchBox.Outline().ToArgb() && popup.Value.Region.IsVisible(Point(body.Right-1,y)) && not (popup.Value.Region.IsVisible(Point(body.Right,y))))
+                      (sprintf "The hover popup's right edge is %A at %d in the %s theme, not its outline where its shape ends" right (body.Right-1) mode)
             api.setValue("tabThemeMode",box "dark")
             Application.DoEvents()
             for f in Application.OpenForms |> Seq.cast<Form> |> Seq.filter(fun f -> f.GetType().Name="SettingsHelpPopup") |> Seq.toList do f.Hide()
