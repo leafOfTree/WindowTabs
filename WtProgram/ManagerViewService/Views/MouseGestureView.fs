@@ -327,7 +327,9 @@ type MouseGestureDialog(scope:string option, table:MouseGestureTable, ?editing:G
     let add = SettingsUi.button (tr (if editing.IsSome then Strings.Common.save else Strings.MouseGestures.add))
     /// The box to draw in, put away until asked for: the tiles pick any gesture, and the box took
     /// most of the dialog.
-    let drawToggle = new LinkLabel(AutoSize=true,UseMnemonic=false,Name="gesture-draw-toggle",Margin=Padding(0,Dpi.scale 2,0,0),LinkBehavior=LinkBehavior.HoverUnderline)
+    /// At the right, under the tiles' corner, as an aside to the caption centred over it.
+    let drawToggle = new LinkLabel(AutoSize=true,UseMnemonic=false,Name="gesture-draw-toggle",Margin=Padding(0,Dpi.scale 2,0,0),
+                                   LinkBehavior=LinkBehavior.HoverUnderline,Anchor=AnchorStyles.Right)
     let mutable drawing = false
     let showDrawing shown =
         drawing <- shown

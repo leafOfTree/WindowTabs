@@ -277,6 +277,10 @@ let main() =
                 check (changing.Text=tr Strings.MouseGestures.editGesture && changing.AddButton.Text=tr Strings.Common.save) "Changing a gesture did not say so"
                 check (changing.Grid.Selected=Some "DR" && changing.Kind.SelectedIndex=1 && changing.Command.Text=tr command.text.caption)
                       (sprintf "The gesture opened to change was not filled in: %A, %d, %s" changing.Grid.Selected changing.Kind.SelectedIndex changing.Command.Text)
+                // The link to the drawing box sits at the right, under the tiles' corner.
+                changing.PerformLayout()
+                let toggle = changing.Controls.Find("gesture-draw-toggle",true).[0]
+                check (toggle.Right=changing.Grid.Right && toggle.Left>changing.Grid.Left) "The link to draw a gesture is not at the right edge of the tiles"
                 // The keys box is as wide from the start as three combinations need, so it and the
                 // name beside it stay put as keys are added.
                 use blank = new MouseGestureDialog(None,table)
