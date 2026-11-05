@@ -953,6 +953,20 @@ let main() =
         dismissPopup.Dispose()
         choice.Enabled <- false
         check (choice.CreateDropDown().IsNone) "Disabled choice opens a menu"
+        // A list opens below its box, leaving the box in sight, not over it as WinUI's do.
+        do
+            let area = Screen.PrimaryScreen.WorkingArea
+            use owner = new Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,
+                                 Location=Point(area.Left+Dpi.scale 200,area.Top+Dpi.scale 300),Size=Size(Dpi.scale 300,Dpi.scale 80))
+            use combo = new SettingsCombo([|"Left";"Center";"Right"|],Location=Point(Dpi.scale 20,Dpi.scale 20),Size=Size(Dpi.scale 160,Dpi.scale 32))
+            owner.Controls.Add combo
+            WinUserApi.ShowWindow(owner.Handle,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
+            Application.DoEvents()
+            combo.SelectedIndex <- 1
+            use list = combo.CreateDropDown().Value
+            let box = combo.RectangleToScreen(combo.ClientRectangle)
+            check (list.Top>=box.Bottom) (sprintf "The list %A opens over its box %A" list.Bounds box)
+            owner.Close()
         // Its text in the disabled grey, as a disabled button's: the secondary grey is nearly as
         // light as the text, so a disabled list looked as if it would open.
         do
@@ -964,29 +978,6 @@ let main() =
             let strongest = if ThemeService.currentIsDark() then ink |> List.maxBy brightness else ink |> List.minBy brightness
             check (abs(brightness strongest-brightness p.disabledText)<24)
                   (sprintf "A disabled list's text is %A, not the disabled grey %A" strongest p.disabledText)
-        // A short list opens over its box, as WinUI's do: the chosen row where the box was, its
-        // text where the box's text was, rather than below the box, lined up with its right edge.
-        do
-            let area = Screen.PrimaryScreen.WorkingArea
-            use owner = new Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,
-                                 Location=Point(area.Left+Dpi.scale 200,area.Top+Dpi.scale 300),Size=Size(Dpi.scale 300,Dpi.scale 80))
-            WinUserApi.ShowWindow(owner.Handle,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
-            for chosen in [0;2] do
-                // One combo each: a combo opens no second list while it holds its first.
-                use combo = new SettingsCombo([|"Left";"Center";"Right"|],Location=Point(Dpi.scale 20,Dpi.scale 20),Size=Size(Dpi.scale 160,Dpi.scale 32))
-                owner.Controls.Add combo
-                Application.DoEvents()
-                combo.SelectedIndex <- chosen
-                use list = combo.CreateDropDown().Value
-                let host = (list.Items.[0] :?> ToolStripControlHost).Bounds
-                let rows = ((list.Items.[0] :?> ToolStripControlHost).Control :?> SettingsListFrame).List
-                let box = combo.RectangleToScreen(combo.ClientRectangle)
-                let rowMiddle = list.Top+host.Y+chosen*rows.ItemHeight+rows.ItemHeight/2
-                check (list.Left+host.X=box.X && abs(rowMiddle-(box.Y+box.Height/2))<=1)
-                      (sprintf "The list for choice %d opens at %A, its row %d's middle at %d, not over the box %A" chosen list.Location chosen rowMiddle box)
-                // All of the box under it: the box's right edge showed past a list as wide as the box.
-                check (list.Left<=box.Left && list.Right>=box.Right) (sprintf "The list %A leaves part of its box %A showing" list.Bounds box)
-            owner.Close()
         choice.Enabled <- true
         api.setValue("tabThemeMode",box "dark")
         Application.DoEvents()
