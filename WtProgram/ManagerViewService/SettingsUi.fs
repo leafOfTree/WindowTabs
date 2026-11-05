@@ -58,7 +58,7 @@ module SettingsUi =
             else p.background
         if tag <> "color-swatch" then
             control.BackColor <- background
-            control.ForeColor <- if tag = "muted" then p.muted else p.text
+            control.ForeColor <- if tag = "muted" then p.description else p.text
         match control with
         | :? Button as button when tag <> "color-swatch" ->
             // Even the same style lays an auto-size button's parent out again.

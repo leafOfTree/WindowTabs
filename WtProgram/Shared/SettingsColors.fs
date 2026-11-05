@@ -4,27 +4,31 @@ open System.Drawing
 open System.Windows.Forms
 open System.Runtime.InteropServices
 
+/// muted: secondary text and marks beside the main text, as a palette row's program or a list's
+/// column heading. description: a setting's description and the other explanations on a page,
+/// a shade further from the names, so colour as well as size tells the two apart.
 type SettingsPalette = {
-    background:Color; surface:Color; text:Color; muted:Color; disabledText:Color
+    background:Color; surface:Color; text:Color; muted:Color; description:Color; disabledText:Color
     border:Color; hover:Color; accent:Color; onAccent:Color; accentText:Color; selection:Color }
 
 module SettingsColors =
     let current() =
         if SystemInformation.HighContrast then
             { background=SystemColors.Window; surface=SystemColors.Window; text=SystemColors.WindowText
-              muted=SystemColors.WindowText; disabledText=SystemColors.GrayText; border=SystemColors.WindowText; hover=SystemColors.Control
+              muted=SystemColors.WindowText; description=SystemColors.WindowText; disabledText=SystemColors.GrayText; border=SystemColors.WindowText; hover=SystemColors.Control
               accent=SystemColors.Highlight; onAccent=SystemColors.HighlightText; accentText=SystemColors.Highlight; selection=SystemColors.Highlight }
         // The accent follows Windows; on dark pages it is a light shade, so what sits on it is black.
         // Secondary and disabled text in WinUI's own greys over the page, light enough to read on
-        // the dark layers the popups are; a description is told from its name by its smaller size.
+        // the dark layers the popups are. Descriptions a shade darker: in the secondary grey they
+        // read as nearly the names' own colour on dark pages.
         // The greys are Windows Settings' own, neutral: a warm tint read as yellowed beside it.
         elif ThemeService.currentIsDark() then
             { background=Color.FromRGB(0x202020); surface=Color.FromRGB(0x2B2B2B); text=Color.White
-              muted=Color.FromRGB(0xCCCCCC); disabledText=Color.FromRGB(0x757575); border=Color.FromRGB(0x353535); hover=Color.FromRGB(0x323232)
+              muted=Color.FromRGB(0xCCCCCC); description=Color.FromRGB(0x9D9D9D); disabledText=Color.FromRGB(0x757575); border=Color.FromRGB(0x353535); hover=Color.FromRGB(0x323232)
               accent=ThemeService.accent true; onAccent=Color.Black; accentText=ThemeService.accentText true; selection=Color.FromRGB(0x383838) }
         else
             { background=Color.White; surface=Color.White; text=Color.FromRGB(0x1B1B1B)
-              muted=Color.FromRGB(0x6B6B6B); disabledText=Color.FromRGB(0xBDBDBD); border=Color.FromRGB(0xE5E5E5); hover=Color.FromRGB(0xF3F3F3)
+              muted=Color.FromRGB(0x6B6B6B); description=Color.FromRGB(0x6B6B6B); disabledText=Color.FromRGB(0xBDBDBD); border=Color.FromRGB(0xE5E5E5); hover=Color.FromRGB(0xF3F3F3)
               accent=ThemeService.accent false; onAccent=Color.White; accentText=ThemeService.accentText false; selection=Color.FromRGB(0xE3E3E3) }
 
 module SettingsTextWrap =

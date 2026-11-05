@@ -672,16 +672,18 @@ let main() =
             let contrast (a:Color) (b:Color) = let la,lb = luminance a,luminance b in (max la lb+0.05)/(min la lb+0.05)
             check (contrast p.muted p.background>=4.5 && contrast p.muted p.surface>=4.5)
                   (sprintf "Secondary text is too faint in the %s theme: %.2f:1" mode (contrast p.muted p.background))
-            // A size smaller than the names, and apart from them in colour by at least WinUI's own
-            // margin: its secondary grey stands 1.6:1 from the text on dark pages.
-            check (SettingsUi.descriptionFont().Size<SettingsUi.rowFont().Size && contrast p.muted p.text>=1.5)
-                  (sprintf "Descriptions are not a size smaller than names, or too close to them, in the %s theme: %.2f:1" mode (contrast p.muted p.text))
+            // Descriptions a size smaller than the names and well apart from them in colour too, in
+            // their own grey: the secondary grey reads as nearly the names' own on dark pages.
+            check (contrast p.description p.background>=4.5 && contrast p.description p.surface>=4.5)
+                  (sprintf "Descriptions are too faint in the %s theme: %.2f:1" mode (contrast p.description p.background))
+            check (SettingsUi.descriptionFont().Size<SettingsUi.rowFont().Size && contrast p.description p.text>=2.2)
+                  (sprintf "Descriptions are not a size smaller than names, or too close to them, in the %s theme: %.2f:1" mode (contrast p.description p.text))
             let described = controls form |> Seq.filter(fun c -> c :? SettingsEllipsisLabel && string c.Tag="muted" && c.Text<>"") |> List.ofSeq
-            check (not described.IsEmpty && described |> List.forall(fun c -> c.Font.Size=SettingsUi.descriptionFont().Size))
-                  (sprintf "Setting descriptions are not in the description font: %A" (described |> List.map(fun c -> c.Text,c.Font.Size) |> List.truncate 3))
+            check (not described.IsEmpty && described |> List.forall(fun c -> c.Font.Size=SettingsUi.descriptionFont().Size && c.ForeColor.ToArgb()=p.description.ToArgb()))
+                  (sprintf "Setting descriptions are not in the description font and colour: %A" (described |> List.map(fun c -> c.Text,c.Font.Size,c.ForeColor) |> List.truncate 3))
             // Windows Settings' neutral greys, not warm ones that read as yellowed beside it, and its
             // navigation in the page's own colour, with a rule between them.
-            for name,c in ["background",p.background;"surface",p.surface;"text",p.text;"muted",p.muted;"border",p.border;"hover",p.hover;"selection",p.selection] do
+            for name,c in ["background",p.background;"surface",p.surface;"text",p.text;"muted",p.muted;"description",p.description;"border",p.border;"hover",p.hover;"selection",p.selection] do
                 check (c.R=c.G && c.G=c.B) (sprintf "The %s theme's %s grey is tinted: %A" mode name c)
             let sidebar = controls form |> Seq.find(fun c -> string c.Tag="sidebar")
             check (sidebar.BackColor.ToArgb()=p.background.ToArgb()) (sprintf "The sidebar is %A in the %s theme, not the page's %A" sidebar.BackColor mode p.background)
