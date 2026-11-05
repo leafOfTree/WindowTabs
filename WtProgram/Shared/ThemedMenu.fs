@@ -178,11 +178,17 @@ type ThemeMenuRenderer(p:SettingsPalette) =
             if right+inset<e.Item.Width-inset then e.Graphics.DrawLine(pen,right+inset,y,e.Item.Width-inset,y)
             TextRenderer.DrawText(e.Graphics,e.Item.Text,e.Item.Font,Rectangle(Point.Empty,e.Item.Size),
                                   (if SystemInformation.HighContrast then p.text else p.muted),flags)
-    /// The same font glyph as the trailing mark on a selected tab colour, so both checks match.
+    /// The tick the settings' drop-down lists give their chosen item: the icon font's check, at
+    /// its size and in the accent; greyed on an item that cannot be taken.
     override _.OnRenderItemCheck(e) =
         if isNull e.Item.Image then
-            TextRenderer.DrawText(e.Graphics,"✓",e.Item.Font,e.ImageRectangle,textColor e.Item,
-                                  TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPadding ||| TextFormatFlags.NoClipping)
+            let ink = if not e.Item.Enabled || SystemInformation.HighContrast then textColor e.Item else p.accentText
+            let r = e.ImageRectangle
+            let em = float32(Dpi.scale 12)
+            let box = RectangleF(float32 r.X+(float32 r.Width-em)/2.0f,float32 r.Y+(float32 r.Height-em)/2.0f,em,em)
+            if not (UiFace.glyph e.Graphics 0xE73E box ink) then
+                TextRenderer.DrawText(e.Graphics,"✓",e.Item.Font,r,ink,
+                                      TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPadding ||| TextFormatFlags.NoClipping)
 
 /// Own image copies until the menu loop has finished closing, then dispatch the command.
 /// ownsForeground: windows whose activation must not close the menu, such as the tab's own
