@@ -649,25 +649,30 @@ let main() =
                       (sprintf "The %s accent is not Windows' shade for the page: %A" mode p.accent))
             check (p.onAccent.ToArgb()=(if dark then Color.Black else Color.White).ToArgb()) (sprintf "What sits on the %s accent is not in a colour that reads on it" mode)
             // Secondary text reads clearly: at least 4.5:1 on the page, where the old grey stood at
-            // 3.5:1 on white. It may come as close to the main text as WinUI's does, as descriptions
-            // are a size smaller than the names above them, which once at one size needed 2.2:1.
+            // 3.5:1 on white; and at least 2.2:1 from the main text, which WinUI's lighter grey
+            // brought to 1.5:1 on dark pages, too close to tell descriptions from names.
             let luminance (c:Color) =
                 let channel (v:byte) = let x = float v/255.0 in if x<=0.03928 then x/12.92 else Math.Pow((x+0.055)/1.055,2.4)
                 0.2126*channel c.R+0.7152*channel c.G+0.0722*channel c.B
             let contrast (a:Color) (b:Color) = let la,lb = luminance a,luminance b in (max la lb+0.05)/(min la lb+0.05)
             check (contrast p.muted p.background>=4.5 && contrast p.muted p.surface>=4.5)
                   (sprintf "Secondary text is too faint in the %s theme: %.2f:1" mode (contrast p.muted p.background))
-            check (SettingsUi.descriptionFont().Size<SettingsUi.rowFont().Size && contrast p.muted p.text>=1.4)
+            check (SettingsUi.descriptionFont().Size<SettingsUi.rowFont().Size && contrast p.muted p.text>=2.2)
                   (sprintf "Descriptions are not a size smaller than names, or too close to them, in the %s theme: %.2f:1" mode (contrast p.muted p.text))
             let described = controls form |> Seq.filter(fun c -> c :? SettingsEllipsisLabel && string c.Tag="muted" && c.Text<>"") |> List.ofSeq
             check (not described.IsEmpty && described |> List.forall(fun c -> c.Font.Size=SettingsUi.descriptionFont().Size))
                   (sprintf "Setting descriptions are not in the description font: %A" (described |> List.map(fun c -> c.Text,c.Font.Size) |> List.truncate 3))
             // Windows Settings' neutral greys, not warm ones that read as yellowed beside it, and its
-            // navigation in the page's own colour, with no rule between them.
+            // navigation in the page's own colour, with a rule between them.
             for name,c in ["background",p.background;"surface",p.surface;"text",p.text;"muted",p.muted;"border",p.border;"hover",p.hover;"selection",p.selection] do
                 check (c.R=c.G && c.G=c.B) (sprintf "The %s theme's %s grey is tinted: %A" mode name c)
             let sidebar = controls form |> Seq.find(fun c -> string c.Tag="sidebar")
             check (sidebar.BackColor.ToArgb()=p.background.ToArgb()) (sprintf "The sidebar is %A in the %s theme, not the page's %A" sidebar.BackColor mode p.background)
+            do
+                use image = new Bitmap(sidebar.Width,sidebar.Height)
+                sidebar.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                let rule = image.GetPixel(sidebar.Width-1,sidebar.Height/2)
+                check (SystemInformation.HighContrast || rule.ToArgb()=p.border.ToArgb()) (sprintf "No rule stands between the sidebar and the page in the %s theme: %A" mode rule)
             // The open page in the selection fill alone, edge to edge: no accent bar beside it.
             let openPage = controls form |> Seq.find(fun c -> c :? Button && string c.Tag="nav-active")
             do
