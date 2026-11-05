@@ -267,6 +267,14 @@ let main() =
                 check (changing.Text=tr Strings.MouseGestures.editGesture && changing.AddButton.Text=tr Strings.Common.save) "Changing a gesture did not say so"
                 check (changing.Grid.Selected=Some "DR" && changing.Kind.SelectedIndex=1 && changing.Command.Text=tr command.text.caption)
                       (sprintf "The gesture opened to change was not filled in: %A, %d, %s" changing.Grid.Selected changing.Kind.SelectedIndex changing.Command.Text)
+                // The keys box is as wide from the start as three combinations need, so it and the
+                // name beside it stay put as keys are added.
+                use blank = new MouseGestureDialog(None,table)
+                let empty = blank.Keys.Width
+                blank.Keys.Sequence <- [0x241]
+                let one = blank.Keys.Width
+                blank.Keys.Sequence <- [0x241;0x242;0x243]
+                check (empty=one && one=blank.Keys.Width) (sprintf "The keys box changed width as keys were added: %d, %d, %d" empty one blank.Keys.Width)
                 let byKeys = { gesture="UL"; action=GestureKeys([0x254],"Find") }
                 use keyed = new MouseGestureDialog(None,{ table with everywhere=[byKeys] },byKeys)
                 check (keyed.Kind.SelectedIndex=0 && keyed.Keys.Sequence=[0x254] && keyed.NameBox.Text="Find")

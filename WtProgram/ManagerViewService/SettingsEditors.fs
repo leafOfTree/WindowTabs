@@ -410,10 +410,10 @@ type SettingsShortcutInput() as this =
     /// The room for the comma between the keys of a sequence.
     let commaWidth() = TextRenderer.MeasureText(",",this.Font,Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 6
     let codes() = if shortcut=0 then [] else shortcut::following
-    let capsEnd() =
-        let combos = codes()
+    let capsFor (combos:int list) =
         let caps = combos |> List.sumBy(fun code -> SettingsShortcut.parts code |> List.sumBy(fun label -> capWidth label+Dpi.scale 2))
         Dpi.scale 8+caps+commaWidth()*(max 0 (combos.Length-1))
+    let capsEnd() = capsFor (codes())
     /// At the right edge, shown only while the pointer is on the box or it has the focus.
     let clearBounds() =
         let size = Dpi.scale 18
@@ -424,7 +424,10 @@ type SettingsShortcutInput() as this =
         let measure (text:string) = TextRenderer.MeasureText(text,this.Font,Size.Empty,TextFormatFlags.NoPadding).Width
         let clear = if shortcut<>0 then Dpi.scale 18+Dpi.scale 3 else Dpi.scale 8
         let prompts = [prompt();Strings.Shortcuts.notSet] |> List.map(fun text -> Dpi.scale 12+measure (tr text)+Dpi.scale 12)
-        let wanted = List.max ((capsEnd()+clear)::prompts)
+        // Keys one after another: as wide from the start as three of them, Ctrl+A, Ctrl+B, Ctrl+C,
+        // with the clear button, so the box and the one beside it stay put as keys are added.
+        let room = if sequential then [capsFor [0x241;0x242;0x243]+Dpi.scale 18+Dpi.scale 3] else []
+        let wanted = List.max ((capsEnd()+clear)::prompts@room)
         let width = max (Dpi.scale SettingsShapes.editorWidth) wanted
         if this.Width<>width then this.Width <- width
     do
