@@ -122,7 +122,7 @@ let main() =
                                  command [MenuFlags.MF_CHECKED] None "Checked";
                                  CmiSection("Section");
                                  CmiPopUp({text="Tab color";image=None;items=List2([command [MenuFlags.MF_CHECKED] (Some(Img(dot))) "Blue";command [MenuFlags.MF_DISABLED] None "Disabled"
-                                                                                    command [] (Some(Img(swatch))) "Mustard"])})])
+                                                                                    command [MenuFlags.MF_CHECKED] (Some(Img(swatch))) "Mustard"])})])
             use menu = new ThemedContextMenu(entries,fun () -> closed <- true)
             let first = menu.Items.[0] :?> ToolStripMenuItem
             let nested = menu.Items.[3] :?> ToolStripMenuItem
@@ -135,6 +135,22 @@ let main() =
             nested.DropDown.PerformLayout()
             let gutter = typeof<ToolStripDropDownMenu>.GetField("imageRectangle",Reflection.BindingFlags.NonPublic ||| Reflection.BindingFlags.Instance)
             check ((gutter.GetValue(nested.DropDown) :?> Rectangle).Width=swatch.Width) "The tab colour menu squeezed its swatches square"
+            // The chosen colour's swatch keeps its sample; its tick goes after the name, with room kept for it.
+            let mustard = nested.DropDownItems.[2] :?> ToolStripMenuItem
+            // Inside the swatch's edge, whose blended pixels a copy may round.
+            let same = seq { for x in 0..swatch.Width-1 do for y in 0..swatch.Height-1 -> swatch.GetPixel(x,y).A<255uy || (mustard.Image :?> Bitmap).GetPixel(x,y)=swatch.GetPixel(x,y) } |> Seq.forall id
+            check (mustard.Checked && same) "The chosen colour's swatch was drawn over"
+            check (mustard.Padding.Right>=Dpi.scale 12 && mustard.Padding.Right>colour.Padding.Right) "The chosen colour's item keeps no room for its tick after the name"
+            check (colour.Image.Width=colour.Image.Height && (colour.Image :?> Bitmap).GetPixel(colour.Image.Width/2,colour.Image.Height/2)<>dot.GetPixel(dot.Width/2,dot.Height/2))
+                  "A chosen item's square image lost its mark"
+            // A menu's tick is a stroke heavier than the icon font's hairline.
+            do
+                let em = MenuTick.size()
+                use tick = new Bitmap(em+4,em+4)
+                using (Graphics.FromImage(tick)) (fun g -> g.Clear(Color.White); MenuTick.draw g (RectangleF(2.0f,2.0f,float32 em,float32 em)) Color.Black)
+                let rows = [for y in 0..tick.Height-1 -> [for x in 0..tick.Width-1 do if tick.GetPixel(x,y).R<128uy then yield x]]
+                let thickest = rows |> List.map List.length |> List.max
+                check (thickest>=Dpi.scale 2) "The menu tick is a hairline"
             dot.Dispose()
             menu.Show(Point(40,40))
             Application.DoEvents()
@@ -295,7 +311,6 @@ let main() =
         check ([for c in 'a'..'z' -> Theme.appColorIndex (string c + ".exe")] |> List.forall(fun index -> index>=0 && index<Theme.tabPaletteSize)) "App colour fell outside the palette"
         check (([for c in 'a'..'z' -> Theme.appColorIndex (string c + ".exe")] |> List.distinct).Length>8) "App colours did not use the second eight"
         check (Theme.appColorIndex "Editor.exe"=Theme.appColorIndex "EDITOR.EXE") "App colour hash changed with case"
-        check ((Strings.Common.selectedChoice Strings.Settings.tabColorNames.[1]).en="Blue  ✓") "Selected colour is not marked after its name"
         // Every colour is deep enough for white text, so none may be named after a light colour.
         let names = Strings.Settings.tabColorNames |> Array.map(fun name -> name.en)
         check (["Yellow";"Cyan";"Lime";"Coral";"Lavender"] |> List.forall(fun light -> not(Array.contains light names)))

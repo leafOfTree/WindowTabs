@@ -576,10 +576,8 @@ type TabStripDecorator(group:WindowGroup) as this =
                 let color = palette.[index]
                 let image = Img(MenuImages.colorTab (Dpi.scale 28) (Dpi.scale 16) color (tr Strings.Settings.tabColorSample))
                 images.Add(image)
-                let name = Strings.Settings.tabColorNames.[index]
-                let caption = if currentColor=Some(PaletteColor index) then Strings.Common.selectedChoice name else name
-                CmiRegular({text=tr caption;image=Some image
-                            flags=List2()
+                CmiRegular({text=tr Strings.Settings.tabColorNames.[index];image=Some image
+                            flags=checkedFlag(currentColor=Some(PaletteColor index))
                             click=fun() -> choose (PaletteColor index)}))
             // The colours tabs are given automatically, then the ones only picked by hand.
             |> List.splitAt Theme.automaticColorCount |> fun (main,more) -> main @ [CmiSeparator] @ more
