@@ -1,5 +1,101 @@
 # Changelog
 
+## v2026.11.05-beta.1 — 2026-11-05 (preview)
+
+Changes since v2026.10.25-beta.1. This remains a preview release.
+
+### Mouse gestures
+
+- Hold the right button and draw one or two strokes, up, down, left or right, to run a
+  WindowTabs command or send a shortcut to the window under the pointer. Off until turned on
+  under Settings → Gestures. A hint by the pointer says what the stroke will do.
+- Gestures for all apps, and an app's own over them. Browsers and File Explorer start with
+  back, forward, refresh and close tab, or up one folder, and an app can have gestures off.
+- A right click without a stroke still opens the app's menu, and a press held still goes to
+  the app, so right-drags in File Explorer work.
+
+### Group editor
+
+- Edit groups… (palette or shortcut) shows every group on the desktop as a row of tabs, with
+  the loose windows and a New group band below. Drag tabs between rows, onto a window's edge
+  to split it, or onto New group; drag a whole row onto another to merge them. Nothing moves
+  until Save, which says what it did.
+
+### Tabs
+
+- Show close buttons on the active tab and on hover, on the active tab only, or never.
+- Bold tab text is Never, Active tab only (the default) or All tabs. Dim tabs in inactive
+  groups softens the front tab only half as much, so it stays recognisable.
+- Show icons only, under Settings → General, starts new groups with icons only and
+  reaches the open ones; a group's own choice is saved with its layout and goes with a tab
+  dragged out. Contributed by @hawdgeal.
+- New tab (Ctrl + Alt + N or the tab menu) opens its window in the same group, right after
+  the tab it came from.
+- A window closed by hand leaves the group it was dragged into; windows closed by a sign-out
+  or restart are kept, so the group comes back with them.
+- The tab after a closed one comes to the front instead of flashing its taskbar button,
+  also as browser windows open and close.
+- A full-screen window keeps its tabs, clear of the bars its app shows over it, such as
+  Remote Desktop's connection bar.
+- Tab names take the last part of a path only when the title holds a path.
+
+### Tab colours
+
+- Automatic colours cycle through eight distinct hues, then grey; neighbouring tabs always
+  differ clearly, also for red-green colour blindness. Inactive filled tabs are a darker
+  shade, and every icon on a filled tab gets a soft dark edge, so it stays clear on any colour.
+- Colours are named for how they look: Yellow, Cyan, Lime, Coral and Lavender are now
+  Mustard, Petrol, Moss, Rust and Violet. The tab colour menu shows each as a swatch with
+  "Aa", and Custom… opens the app's own picker over the window, with the code to read or type.
+- Floating tabs stand further apart, with the icon and title as far inside their edge.
+
+### Grouping and dragging
+
+- New windows stay out of groups made by hand: auto grouping joins or starts the app's own
+  group. A group made by hand stays so after a restart, and remembered groups keep each
+  window's last title only.
+- A dragged tab joins a strip only near its tabs; the rest of the edge offers a split.
+  Carrying a tab over a group no longer raises it, and a tab dragged from a side column
+  carries its window shown small and lands under the pointer.
+- A covered tab's hover preview shows its last picture, for Chromium and Electron apps that
+  stop painting covered windows. A column's preview stays up from tab to tab.
+- A tab menu with no room at the pointer turns left or up at it, as a Windows menu does.
+
+### Shortcuts and the palette
+
+- A tab, group or split command's key is held only while it can act on the window in
+  front, so Ctrl + Tab works in a browser with no tabs from WindowTabs. Use tab shortcuts in
+  the tab menu leaves an app its tab keys. Keys another program took while full screen
+  are asked for again.
+- A key set in the window search goes to the window it was given, even after its title
+  changes; windows with the same title can each hold one. A window key, the window search
+  and Alt + Tab bring a split's panes up together.
+- Ungroup this group and Group this app are in the palette. Rows whose name holds the words
+  as typed come first; names typed without spaces or as initials (`md`) and shortcuts typed
+  as keys (`ctrl+alt+t`) are found. Ctrl + U clears the search, Ctrl + Backspace deletes a word.
+- Any key Windows uses can be a shortcut; only Alt + Enter stays reserved. A key given to a
+  command moves over from whatever had it.
+- Pause while a full-screen app runs, off by default: shortcuts and notices leave a
+  full-screen app alone until it leaves full screen.
+
+### Sessions, notices and looks
+
+- Restoring the last session starts an app again for each window still missing, and the
+  notice lists every window left out, with the reason. The session is saved as groups change
+  and at exit, not every two minutes.
+- Notices stay above other apps' topmost windows, wait while the session is locked, and a
+  warning is not replaced by a later notice. Confirmations stay three seconds.
+- The tab menu, the palette, the task switcher, the settings lists and notices take Windows
+  11's rounded corners and shadow; on Windows 10 they get a soft, even shadow.
+- Settings pages follow changes made in the palette while open. Tab colors has a button that
+  swaps the active and inactive colours. Holding − or + on a number field keeps stepping it.
+
+### Fixes
+
+- A maximized window over an auto-hidden taskbar is no longer taken for a full-screen one.
+- Floating tabs sit in the middle of the strip with crisp edges, facing up or down alike.
+- The floating tab style is stored as `floating`; `pill` from an earlier beta still reads.
+
 ## v2026.10.25-beta.1 — 2026-10-25 (preview)
 
 Changes since v2026.10.17-beta.1. This remains a preview release.

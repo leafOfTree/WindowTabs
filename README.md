@@ -9,9 +9,9 @@ between them with a click or a shortcut.
 [![Build](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml/badge.svg)](https://github.com/leafOfTree/WindowTabs/actions/workflows/build.yml)
 
 > [!IMPORTANT]
-> **v2026.10.25-beta.1 preview**: a command palette (Ctrl + Alt + P) for every command and
-> setting, split views within a group, pinned tabs, a tab hover preview, a command line and
-> Arabic. [What's changed →](CHANGELOG.md)
+> **v2026.11.05-beta.1 preview**: mouse gestures, a group editor, clearer tab colours, close
+> buttons on the active tab only or never, icons-only groups by default, and tab shortcuts
+> that step aside where they cannot act. [What's changed →](CHANGELOG.md)
 
 <a href="docs/images/light.png"><img src="docs/images/light-rounded.svg" width="600" alt="Light tabs grouping three File Explorer windows" /></a>
 
@@ -70,6 +70,9 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
   it to swap, equalize, switch direction or end the split. Shortcuts for a window on the right
   or below and for moving the focus between panes are under **Settings → Shortcuts**, unset by
   default.
+- **Group editor:** **Edit groups…** in the palette shows every group as a row of tabs, with
+  the loose windows below. Drag tabs between rows, onto a window to split it, or onto **New
+  group**; nothing moves until **Save**.
 - **Workspaces:** save groups and window positions, then restore them onto open windows;
   apps that are not running can be launched and their windows restored. Shortcuts to save
   one and to restore the last saved or restored one are under **Settings → Shortcuts**,
@@ -81,7 +84,7 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
   menu.
 - **Taskbar:** optionally combine each group into one taskbar button, which shows every
   app in the group.
-- **Languages:** English, 中文, 日本語.
+- **Languages:** English, 中文, 日本語, العربية.
 
 <a href="docs/images/settings.png"><img src="docs/images/settings.png" width="600" alt="WindowTabs settings" /></a>
 
