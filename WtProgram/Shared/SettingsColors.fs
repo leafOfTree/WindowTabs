@@ -6,7 +6,7 @@ open System.Runtime.InteropServices
 
 /// muted: secondary text and marks beside the main text, as a palette row's program or a list's
 /// column heading. description: a setting's description and the other explanations on a page,
-/// a shade further from the names, so colour as well as size tells the two apart.
+/// a shade further from the names, which tells the two apart at the same size.
 type SettingsPalette = {
     background:Color; surface:Color; text:Color; muted:Color; description:Color; disabledText:Color
     border:Color; hover:Color; accent:Color; onAccent:Color; accentText:Color; selection:Color }

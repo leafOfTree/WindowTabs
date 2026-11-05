@@ -558,7 +558,7 @@ let main() =
         let variable = FontFamily.Families |> Array.exists(fun family -> family.Name="Segoe UI Variable Text")
         check (SettingsUi.bodyFont().Name=(if variable then "Segoe UI Variable Text" else "Segoe UI")) (sprintf "Settings text is set in %s" (SettingsUi.bodyFont().Name))
         // Small text in the face's small optical size, as Windows sets its captions, so it stays clear.
-        check (SettingsUi.descriptionFont().Name=(if variable then "Segoe UI Variable Small" else "Segoe UI")) (sprintf "Descriptions are set in %s" (SettingsUi.descriptionFont().Name))
+        check (SettingsUi.smallFamily()=(if variable then "Segoe UI Variable Small" else "Segoe UI")) (sprintf "Small text is set in %s" (SettingsUi.smallFamily()))
         check (not (SettingsUi.sectionFont().Bold) && SettingsUi.sectionFont().Name.EndsWith("Semibold")) (sprintf "Section headings are set in %A" (SettingsUi.sectionFont()))
         check (form.Font.Name=SettingsUi.bodyFont().Name) (sprintf "The settings window's text is set in %s" form.Font.Name)
         // Tabs too, while the menu font is Windows' own; a menu font the user chose stays.
@@ -672,12 +672,12 @@ let main() =
             let contrast (a:Color) (b:Color) = let la,lb = luminance a,luminance b in (max la lb+0.05)/(min la lb+0.05)
             check (contrast p.muted p.background>=4.5 && contrast p.muted p.surface>=4.5)
                   (sprintf "Secondary text is too faint in the %s theme: %.2f:1" mode (contrast p.muted p.background))
-            // Descriptions a size smaller than the names and well apart from them in colour too, in
-            // their own grey: the secondary grey reads as nearly the names' own on dark pages.
+            // Descriptions the names' size, well apart from them in their own grey: the secondary
+            // grey reads as nearly the names' own on dark pages.
             check (contrast p.description p.background>=4.5 && contrast p.description p.surface>=4.5)
                   (sprintf "Descriptions are too faint in the %s theme: %.2f:1" mode (contrast p.description p.background))
-            check (SettingsUi.descriptionFont().Size<SettingsUi.rowFont().Size && contrast p.description p.text>=2.2)
-                  (sprintf "Descriptions are not a size smaller than names, or too close to them, in the %s theme: %.2f:1" mode (contrast p.description p.text))
+            check (SettingsUi.descriptionFont().Size=SettingsUi.rowFont().Size && contrast p.description p.text>=2.2)
+                  (sprintf "Descriptions are not the names' size, or too close to them in colour, in the %s theme: %.2f:1" mode (contrast p.description p.text))
             let described = controls form |> Seq.filter(fun c -> c :? SettingsEllipsisLabel && string c.Tag="muted" && c.Text<>"") |> List.ofSeq
             check (not described.IsEmpty && described |> List.forall(fun c -> c.Font.Size=SettingsUi.descriptionFont().Size && c.ForeColor.ToArgb()=p.description.ToArgb()))
                   (sprintf "Setting descriptions are not in the description font and colour: %A" (described |> List.map(fun c -> c.Text,c.Font.Size,c.ForeColor) |> List.truncate 3))

@@ -37,9 +37,8 @@ module SettingsUi =
     let sectionFont() = font (uiSemiboldFamily()) 11.0f FontStyle.Regular
     /// A part of a page's section: the body size, a step smaller than the section heading.
     let subsectionFont() = font (uiSemiboldFamily()) 10.5f FontStyle.Regular
-    /// A setting's description under its name: a step smaller, 12px as WinUI's captions, so size
-    /// as well as colour tells the two apart.
-    let descriptionFont() = font (smallFamily()) 9.0f FontStyle.Regular
+    /// A setting's description under its name: the name's own size, told apart by its grey.
+    let descriptionFont() = rowFont()
 
     let palette() = SettingsColors.current()
 
