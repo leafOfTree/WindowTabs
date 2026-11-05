@@ -54,6 +54,11 @@ module TabNavigation =
             | Some hwnd when isClosing order isOpen hwnd -> previous
             | _ -> Some foreground
 
+    /// The tab in front before the one there now, to go back to: still a tab of the group, open,
+    /// and not the one in front already.
+    let lastActive (order:IntPtr list) isOpen previous foreground =
+        previous |> Option.filter(fun hwnd -> hwnd<>foreground && List.contains hwnd order && isOpen hwnd)
+
     /// As in a browser, a tab closed before another tab was selected returns to the
     /// tab it was opened from; otherwise to its neighbour.
     let successor (order:IntPtr list) isOpen closed opener =
@@ -531,6 +536,8 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
     let dragReleasedEvent = Event<IntPtr>()
     let prevForegroundCell = ref None
     let mutable lastActiveTab : IntPtr option = None
+    /// The tab that was in front before `lastActiveTab`, for the command that goes back to it.
+    let mutable previousActiveTab : IntPtr option = None
     /// A closing tab and the successor already selected for it before discovery removed it.
     let mutable followedClose : (IntPtr * IntPtr) option = None
     /// When each tab was last hidden (`TabNavigation.closeSettling`), and whether its successor may
@@ -803,6 +810,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             | Some left,Some next when left<>next ->
                 leftTab <- Some(left,next,transitionClock.ElapsedMilliseconds)
                 leftOpener <- opener
+                previousActiveTab <- Some left
             | _ -> ()
             lastActiveTab <- active
             let prev = foregroundCell.value
@@ -2583,6 +2591,7 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
                     match successor with
                     | Some target -> Some target
                     | None -> if this.windows.contains(foreground) then Some foreground else None
+            if previousActiveTab=Some hwnd then previousActiveTab <- None
             if followedClose |> Option.exists(fun (closed,_) -> closed=hwnd) then followedClose <- None
             elif chooseNext then
                 next |> Option.iter(fun target ->
@@ -2676,7 +2685,13 @@ type WindowGroup(enableSuperBar:bool, plugins:List2<IPlugin>, initialAppearance:
             let order = this.ts.lorder.list |> List.map(fun(Tab(hwnd)) -> hwnd)
             TabNavigation.targetIndex order foreground zorderCell.value.tryHead next
             |> Option.iter(fun index -> this.activateIndex(index, force))
-                        
+
+    /// Back to the tab that was in front before this one; from there, the same key returns.
+    member this.switchToLastActive(force) =
+        let order = this.ts.lorder.list |> List.map(fun(Tab(hwnd)) -> hwnd)
+        TabNavigation.lastActive order isOpen previousActiveTab this.os.foreground.hwnd
+        |> Option.iter(fun target -> this.tabActivate(Tab target, force))
+
     /// A plugin can retain its native owners until asynchronous shell registration finishes.
     member _.addExitPreparation(action:(unit -> unit) -> unit) = exitPreparations.Add action
 

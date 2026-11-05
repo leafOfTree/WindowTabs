@@ -220,6 +220,7 @@ let main() =
         // 2. Every command with a tab in front, its effect checked where one can be seen.
         attempt "next-tab" (fun () -> runDone "next-tab" active; settle active)
         attempt "previous-tab" (fun () -> runDone "previous-tab" active; settle active)
+        attempt "last-used-tab" (fun () -> runDone "last-used-tab" active; settle active)
         attempt "search-tabs" (fun () -> runDone "search-tabs" active; note (called "toggleSearch None") "Switch windows did not open the window search")
         attempt "command-palette" (fun () -> runDone "command-palette" active; note (called (sprintf "toggleSearch %A" (Some ActionScope))) "Command palette did not open the palette")
         attempt "new-tab" (fun () -> runDone "new-tab" active; note (called (sprintf "newTab %d" active)) "New tab did not start the app again")

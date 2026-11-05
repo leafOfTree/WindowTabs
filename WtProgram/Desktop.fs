@@ -176,6 +176,7 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
         member x.addWindow(hwnd, delay) = this.addWindow(hwnd, delay)
         member x.removeWindow hwnd = this.removeWindow hwnd
         member x.switchWindow(next,force) = this.switchWindow(next, force)
+        member x.switchToLastActive force = this.invokeGroup <| fun() -> this.group.switchToLastActive force
         member x.activate hwnd = this.invokeGroup <| fun() -> if this.group.windows.contains hwnd then this.group.tabActivate(Tab hwnd, false)
         member x.executeSplit command = this.invokeGroup <| fun() -> this.group.execute command
         member x.pickPane(axis,side) = this.invokeGroup <| fun() -> this.group.requestPick(axis,side)

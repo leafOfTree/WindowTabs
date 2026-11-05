@@ -229,6 +229,9 @@ module Strings =
         let previousTab = { caption={ en="Switch to previous tab"; zh="切换到上一个标签"; ja="前のタブに切り替え"; ar="الانتقال إلى علامة التبويب السابقة" }
                             description=none
                             keywords=hotkeyWords }
+        let lastUsedTab = { caption={ en="Switch to last used tab"; zh="切换到上次使用的标签"; ja="最後に使ったタブに切り替え"; ar="الانتقال إلى آخر علامة تبويب مستخدمة" }
+                            description={ en="The tab that was in front before this one; again, and back."; zh="回到此标签之前所在的标签；再按一次则返回。"; ja="このタブの前に表示していたタブへ。もう一度押すと戻ります。"; ar="علامة التبويب التي كانت في المقدمة قبل هذه؛ مرة أخرى وتعود." }
+                            keywords={ en="hotkey recent back toggle alternate"; zh="热键 最近 返回 来回"; ja="ホットキー 最近 戻る 交互"; ar="مفتاح الاختصار الأخيرة رجوع تبديل" } }
         let searchTabs = { caption={ en="Switch windows"; zh="切换窗口"; ja="ウィンドウを切り替え"; ar="التبديل بين النوافذ" }
                            description={ en="Switch to a window by title or app name."; zh="按标题或应用名查找并切换窗口。"; ja="タイトルやアプリ名でウィンドウを探して切り替えます。"; ar="الانتقال إلى نافذة باستخدام عنوانها أو اسم التطبيق." }
                            keywords={ en="find"; zh="查找"; ja="検索"; ar="بحث" } }

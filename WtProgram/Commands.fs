@@ -339,6 +339,7 @@ module Commands =
     let all : Command list = [
         fromCatalog "next-tab" TabCommands hasOtherTabs (onGroup(fun g -> g.switchWindow(true,false)))
         fromCatalog "previous-tab" TabCommands hasOtherTabs (onGroup(fun g -> g.switchWindow(false,false)))
+        fromCatalog "last-used-tab" TabCommands hasOtherTabs (onGroup(fun g -> g.switchToLastActive false))
         // Opened over any window, so their keys are held everywhere.
         { fromCatalog "search-tabs" TabCommands always (fun _ -> Services.program.toggleSearch None) with scope=Everywhere }
         { fromCatalog "command-palette" TabCommands always (fun _ -> Services.program.toggleSearch (Some ActionScope)) with scope=Everywhere }
