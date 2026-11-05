@@ -303,6 +303,14 @@ let main() =
         assertTrue (layoutRows |> List.forall(fun row -> row.Parent=layoutCard)) "Tab layout settings are split across cards"
         assertTrue (layoutRows |> List.map layoutCard.GetRow = [0..4]) "Vertical tab width is not last in tab layout"
         let preset = view.control.Controls.Find("palette-preset",true).[0] :?> SettingsCombo
+        // The preset list shows every name in full, its dot and an edit's * too, where it cut
+        // "Windows accent" short at a fixed width, and lines up with the text lists below it.
+        do
+            let rec combos (c:Control) = seq { match c with :? SettingsCombo as combo -> yield combo | _ -> (); for child in c.Controls do yield! combos child }
+            let bold = combos view.control |> Seq.find(fun combo -> combo.ItemText(0)=(SettingsBindings.labels "tab-text-bold").[0])
+            let longest = ThemePresets.names |> Array.map(fun name -> TextRenderer.MeasureText(tr name+"*",preset.Font).Width) |> Array.max
+            assertTrue (preset.Width>=longest+Dpi.scale 22+Dpi.scale 60) (sprintf "The preset list is %dpx, too narrow for its names" preset.Width)
+            assertTrue (preset.Width=bold.Width) (sprintf "The preset list is %dpx, the lists below it %dpx" preset.Width bold.Width)
         // Filled by automatic colours, tabs ignore the background rows: hide them, and judge
         // readability on the automatic colours, which give way to the text.
         let comboNamed name = view.control.Controls.Find(name,true).[0] :?> SettingsCombo
@@ -457,7 +465,7 @@ let main() =
     // An open window with an icon of its own stands for the Downloads folder.
     let openWindow = new Form(ShowInTaskbar=false,Icon=SystemIcons.Information)
     openWindow.CreateControl()
-    let draggedTogether() = [4711,["NOTEPAD.EXE","Notes - Notepad",IntPtr.Zero;"EXPLORER.EXE","Downloads",openWindow.Handle]]
+    let draggedTogether() = [4711,["NOTEPAD.EXE","Notes - Notepad",IntPtr.Zero,true;"EXPLORER.EXE","Downloads",openWindow.Handle,false]]
     let handMade = ref (draggedTogether())
     let windowKeys : WindowShortcut list ref = ref []
     let ungrouped = Collections.Generic.List<int>()
@@ -793,6 +801,37 @@ let main() =
         assertTrue (plainLeft>0 && abs(plainLeft-litLeft)<=1) (sprintf "A lit match moved its name: %d against %d" litLeft plainLeft)
         let wholeRight,cutRight = lastInk whole,lastInk cut
         assertTrue (wholeRight>0 && wholeRight=cutRight) (sprintf "A lit letter moved the text after it: it ends at %d, not %d" cutRight wholeRight)
+        rowsForm.Close()
+    // A row that does nothing now is all in the disabled grey, its match too, as a menu's disabled
+    // item: in the secondary grey it stood nearly as bright as the rows that can act.
+    if not SystemInformation.HighContrast then
+        use rowsForm = new Form(ClientSize=Size(400,120),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false)
+        let rows = new SettingsTreeList([TreeListColumn("",0,TextColumn)],ShowHeader=false,ShowExpanders=false,RowHeight=36,Dock=DockStyle.Fill,Font=SettingsUi.bodyFont())
+        let live = TreeListItem("Focus the next pane",Highlights=[|[10,4]|])
+        let dimmed = TreeListItem("Focus the next pane",Highlights=[|[10,4]|],Dimmed=true)
+        rows.Roots.AddRange([live;dimmed])
+        rows.Rebuild()
+        rowsForm.Controls.Add(rows)
+        SettingsUi.apply rowsForm
+        rowsForm.Show()
+        Application.DoEvents()
+        use image = new Bitmap(rowsForm.ClientSize.Width,rowsForm.ClientSize.Height)
+        rows.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+        let p = SettingsColors.current()
+        let background = image.GetPixel(image.Width-2,10)
+        let distance (a:Color) (b:Color) = abs(int a.R-int b.R)+abs(int a.G-int b.G)+abs(int a.B-int b.B)
+        /// The pixel furthest from the background in a stretch of the row: the ink at its fullest.
+        let strongest (item:TreeListItem) fromX toX =
+            let row = rows.RowBounds(item).Value
+            [for y in row.Top+2..row.Bottom-3 do for x in fromX..toX -> image.GetPixel(x,y)] |> List.maxBy (distance background)
+        let lead (item:TreeListItem) = strongest item 0 (TextRenderer.MeasureText("Focus the",rows.Font).Width)
+        let text = lead dimmed
+        assertTrue (distance text p.disabledText<40) (sprintf "A dimmed row's text is %A, not the disabled grey %A" text p.disabledText)
+        assertTrue (distance (lead live) background>distance text background*2) "A dimmed row reads as strongly as a row that can act"
+        let matchFrom = TextRenderer.MeasureText("Focus the ",rows.Font).Width
+        let matchTo = TextRenderer.MeasureText("Focus the next",rows.Font).Width
+        let liveMark,dimMark = strongest live matchFrom matchTo,strongest dimmed matchFrom matchTo
+        assertTrue (distance dimMark p.disabledText<40 && distance liveMark p.disabledText>=40) (sprintf "A dimmed row's match is %A, not the disabled grey %A as the rest of it (a live row's is %A)" dimMark p.disabledText liveMark)
         rowsForm.Close()
     // The palette's search box: no outline round it, only a line along its foot.
     do
@@ -1428,8 +1467,8 @@ otepad.exe"]},
         do
             let dragged = handMade.Value
             menu.UpdateApplications []
-            handMade.Value <- [4712,[Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,"notepad.exe"),"Closed notes",IntPtr.Zero
-                                     "NOT-RUNNING-APP.EXE","",IntPtr.Zero]]
+            handMade.Value <- [4712,[Path.Combine(Environment.GetFolderPath Environment.SpecialFolder.Windows,"notepad.exe"),"Closed notes",IntPtr.Zero,true
+                                     "NOT-RUNNING-APP.EXE","",IntPtr.Zero,true]]
             groupView.Reload()
             let row = tree.Roots |> Seq.find(fun row -> row.Glyph=TabsGlyph)
             assertTrue (row.Chips |> List.map(fun chip -> chip.Text)=["Closed notes";"NOT-RUNNING-APP.EXE"]
@@ -1448,10 +1487,15 @@ otepad.exe"]},
                     && handMadeRow.Actions=Some [NoGlyph;UngroupGlyph])
                    "A group made by dragging tabs is missing, editable, without icons, or cannot be taken apart"
         assertTrue (isGrey handMadeRow.Chips.Head.Icon) "A closed window's chip icon is not grey"
+        // As the group is: a closed window greyed all over; an open one it cannot take back after
+        // a restart, its title shared with another window's, says so on hover.
+        let closedChip,openChip = handMadeRow.Chips.[0],handMadeRow.Chips.[1]
+        assertTrue (closedChip.Faded && closedChip.Note="") "A closed window's chip is not greyed"
+        assertTrue (not openChip.Faded && openChip.Note=tr Strings.AppRules.notKept) "An open window that will not come back after a restart does not say so"
         // A chip cut short shows its whole text on hover.
         let longTitle = String.replicate 12 "Long window title "
         let kept = handMadeRow.Chips
-        handMadeRow.Chips <- [{ Text=longTitle; Icon=null; Removable=false }]
+        handMadeRow.Chips <- [{ Text=longTitle; Icon=null; Removable=false; Faded=false; Note="" }]
         tree.Rebuild()
         tree.EnsureVisible(handMadeRow)
         let rowY = [0..tree.Height-1] |> List.find(fun y -> tree.ItemAt(Point(Dpi.scale 20,y)) |> Option.exists(fun row -> obj.ReferenceEquals(row,handMadeRow)))
@@ -1486,7 +1530,7 @@ otepad.exe"]},
             let _,first,_ = laid.Head
             assertTrue (first.X=named.X) (sprintf "A dragged group's chips start at %d, names at %d" first.X named.X)
             // Three to a line, one width, filling it, however short their titles.
-            handMadeRow.Chips <- [for i in 1..6 -> { Text=string i; Icon=null; Removable=false }]
+            handMadeRow.Chips <- [for i in 1..6 -> { Text=string i; Icon=null; Removable=false; Faded=false; Note="" }]
             let _,laid,_,lines = layout.Invoke(tree,[|box handMadeRow;box 0;box 0|]) :?> (Rectangle * (int * Rectangle * Rectangle option) list * Rectangle option * int)
             let boxes = laid |> List.map(fun (_,box,_) -> box)
             let widths = boxes |> List.map(fun box -> box.Width) |> List.distinct
@@ -1499,7 +1543,7 @@ otepad.exe"]},
         // Chips that do not fit wrap onto more lines and the row grows; none are hidden behind a count.
         let oneLine = tree.ContentHeight
         let shown = handMadeRow.Chips
-        handMadeRow.Chips <- [for i in 1..12 -> { Text=sprintf "Window title %d" i; Icon=null; Removable=false }]
+        handMadeRow.Chips <- [for i in 1..12 -> { Text=sprintf "Window title %d" i; Icon=null; Removable=false; Faded=false; Note="" }]
         tree.Rebuild()
         let wrapped = tree.ContentHeight
         handMadeRow.Chips <- shown

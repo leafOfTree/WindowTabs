@@ -47,6 +47,11 @@ type SettingsRec = {
     enabledNumberShortcutPaths: Set2<string>
     /// Apps that keep their tab keys (`ShortcutRules`).
     disabledShortcutPaths: Set2<string>
+    /// Holding the right button and drawing a stroke runs what the stroke is bound to.
+    enableMouseGestures: bool
+    /// A small note by the pointer while drawing says what the stroke will do.
+    showGestureHint: bool
+    mouseGestures: MouseGestureTable
     combineIconsInTaskbar: bool
     enableHoverActivate: bool
     /// Which tab titles are bold: "Never", "Active" or "All".
@@ -108,6 +113,7 @@ type SettingsViewType =
     | DiagnosticsSettings
     | LayoutSettings
     | HotKeySettings
+    | MouseGestureSettings
 
 type ISettingsView =
     abstract key : SettingsViewType
@@ -151,7 +157,10 @@ type IProgram =
     /// Groups made by dragging tabs, as remembered: each one's id and its windows' programs (the
     /// path last seen running, else the executable name), titles and, for a window that is open,
     /// its handle (zero when closed).
-    abstract member handMadeGroups : unit -> (int * (string * string * IntPtr) list) list
+    /// Each group made by hand: its open windows as the strip has them, then the closed ones
+    /// it keeps to take back, as (app, title, window or zero when closed, whether it comes back
+    /// after a restart).
+    abstract member handMadeGroups : unit -> (int * (string * string * IntPtr * bool) list) list
     /// Forgets a group made by hand and takes its open windows apart, to be grouped as rules say.
     abstract member ungroupHandMade : int -> unit
     /// The picture chosen for the taskbar button of the group a window is in, if any.
@@ -250,6 +259,8 @@ type IGroup =
     abstract member executeSplit: SplitCommand -> unit
     /// Lists the windows to put on that side of the tab in front, as the tab menu does.
     abstract member pickPane: SplitAxis * Side -> unit
+    /// Puts the tab after the one in front beside it, on its right.
+    abstract member splitWithNext: unit -> unit
     abstract member windows: List2<IntPtr>
     abstract member destroy: unit -> unit
 

@@ -74,6 +74,11 @@ right-drag asks, and **Ctrl + Z** in Explorer undoes it.
   apps that are not running can be launched and their windows restored. Shortcuts to save
   one and to restore the last saved or restored one are under **Settings → Shortcuts**,
   unset by default.
+- **Mouse gestures:** turn them on under **Settings → Gestures**, then hold the right
+  button and drag, such as up then right for the next tab. A gesture runs a WindowTabs command
+  or sends a shortcut to the window, and an app can have its own: browsers and File Explorer
+  start with back, forward and the like. A right click without dragging still opens the app's
+  menu.
 - **Taskbar:** optionally combine each group into one taskbar button, which shows every
   app in the group.
 - **Languages:** English, 中文, 日本語.

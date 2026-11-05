@@ -143,7 +143,7 @@ let main() =
         // Nor may one sink into the dark bar behind it.
         check (inactive |> Array.forall(fun shade -> Theme.OkLab.distance shade Theme.dark.tabNormalBgColor>=0.02)) "An inactive tab colour disappears into the dark bar"
         let presetNames = ThemePresets.names |> Array.map(fun name -> name.en)
-        check (presetNames=[|"Default";"Blue";"Teal";"Green";"Sand";"Amber";"Rose";"Purple";"Slate"|])
+        check (presetNames=[|"Default";"Windows accent";"Blue";"Teal";"Green";"Sand";"Amber";"Rose";"Purple";"Slate"|])
               "Theme presets do not use colour names in the shared colour order"
         // A preset named after a tab colour is a quiet version of the same hue: Rose sat 14° off.
         let hueDegrees (c:Color) = let _,a,b = Theme.OkLab.ofColor c in atan2 b a*180.0/Math.PI
@@ -158,11 +158,21 @@ let main() =
             let index = ThemePresets.keys |> Array.findIndex ((=) key)
             check (ThemePresets.names.[index].en=name) "Renaming a preset changed its stored identity"
         if not SystemInformation.HighContrast then
-            for palette in ThemePresets.palettes true do
-                let color = palette.tabNormalBgColor
-                let preview = ThemePresets.previewColor true color
-                check (max preview.R (max preview.G preview.B)>=174uy) "Dark preset preview is too dim to distinguish"
-                check (ThemePresets.previewColor false color=color) "Light preset preview changed its colour"
+            // A preset's dot keeps its hue with more colour than the muted tab, where only
+            // brightened the dark ones came out grey-white; a grey preset stays grey.
+            for dark in [true;false] do
+                for palette in ThemePresets.palettes dark do
+                    let color = palette.tabNormalBgColor
+                    let preview = ThemePresets.previewColor dark color
+                    if dark then check (max preview.R (max preview.G preview.B)>=174uy) "Dark preset preview is too dim to distinguish"
+                    let _,a,b = Theme.OkLab.ofColor color
+                    let _,pa,pb = Theme.OkLab.ofColor preview
+                    let chroma,shown = sqrt(a*a+b*b),sqrt(pa*pa+pb*pb)
+                    if chroma<0.01 then check (shown<0.01) (sprintf "A grey preset's dot took on a colour: %A" preview)
+                    else
+                        let gap = abs(hueDegrees color-hueDegrees preview)
+                        check (min gap (360.0-gap)<6.0 && shown>=min 0.06 (chroma*2.0))
+                              (sprintf "The dot of %A is %A: %.0f° off its hue, chroma %.3f from %.3f" color preview (min gap (360.0-gap)) shown chroma)
         let optionalKeys = ["combineIconsInTaskbar";"replaceAltTab";"groupWindowsInSwitcher";"enableNumberLeader";"enableHoverActivate";"tabHoverPreview";"pauseInFullScreen"]
         let checkMinimalDefaults() =
             for key in optionalKeys do check (api.getValue(key)=box false) (sprintf "%s must be opt-in" key)
@@ -219,6 +229,39 @@ let main() =
             check (reloaded.lightPreset=ThemePresets.keys.[1] && reloaded.darkPreset=""
                    && reloaded.presetEdits.[key].tabTextColor.ToArgb()=edited.tabTextColor.ToArgb()) "Preset choice or edits were not saved"
             api.updateAppearance(fun s -> {s with lightPreset="";presetEdits=Map.empty})
+        // The Windows accent preset is worked out afresh each time the tabs read it, so they follow
+        // Windows when its accent changes; once edited it keeps its colours, as any preset does.
+        do
+            let index = ThemePresets.keys |> Array.findIndex ((=) ThemePresets.accentKey)
+            check (index=1) "The Windows accent preset is not listed after Default"
+            let live = (ThemePresets.palettes false).[index]
+            let stale = {live with tabNormalBgColor=Color.FromArgb(1,2,3)}
+            let chosen = {settings.settings.appearance with useCustomColors=true;lightPreset=ThemePresets.accentKey;lightPalette=stale;presetEdits=Map.empty}
+            check ((ThemePresets.following false chosen stale).tabNormalBgColor=live.tabNormalBgColor && (PaletteEditing.activePalette false chosen).tabNormalBgColor=live.tabNormalBgColor)
+                  "The Windows accent preset kept colours from before the accent changed"
+            let edited = {chosen with presetEdits=Map.ofList ["light:"+ThemePresets.accentKey,stale]}
+            check (ThemePresets.following false edited stale=stale) "An edited Windows accent preset saved without its tints did not keep its colours"
+            // Swapped, it still follows the accent: the swap made on an older accent's tints comes
+            // out as the swap of the current accent's, its picked colours kept.
+            let swap (p:TabPalette) = {p with tabActiveBgColor=p.tabNormalBgColor;tabNormalBgColor=p.tabActiveBgColor}
+            let swapped = PaletteEditing.edit false swap chosen
+            check (swapped.presetEdits.ContainsKey(ThemePresets.accentBaseKey false)) "A swap of the Windows accent preset was saved without the tints it was made on"
+            let old = ThemePresets.accentTints false (Color.FromArgb(0x88,0x44,0xCC))
+            let picked = Color.FromArgb(0x12,0x34,0x56)
+            let madeOnOld = {(Theme.followSeparator (Some old) old (swap old)) with tabHighlightBgColor=picked}
+            let earlier = {chosen with presetEdits=Map.ofList ["light:"+ThemePresets.accentKey,madeOnOld; ThemePresets.accentBaseKey false,old]}
+            let expected = {(Theme.followSeparator (Some live) live (swap live)) with tabHighlightBgColor=picked}
+            let shown = PaletteEditing.activePalette false earlier
+            check (PaletteEditing.values shown=PaletteEditing.values expected) (sprintf "A swapped Windows accent preset did not follow the accent: %A, not %A" shown expected)
+            check (PaletteEditing.values (PaletteEditing.presetPalette false earlier index)=PaletteEditing.values expected) "The Windows accent preset's dot kept the colours of an earlier accent"
+            check ((PaletteEditing.withoutEdit false index earlier.presetEdits).IsEmpty) "Resetting the Windows accent preset left its tints behind"
+            // Tints of the accent: the tabs behind in its hue, the front one paler.
+            let _,a,b = Theme.OkLab.ofColor (SystemAccent.chosen())
+            if sqrt(a*a+b*b)>0.03 then
+                let gap = abs(hueDegrees live.tabNormalBgColor-hueDegrees (SystemAccent.chosen()))
+                check (min gap (360.0-gap)<15.0) (sprintf "The Windows accent preset is %.0f° from the accent" (min gap (360.0-gap)))
+            let lightness (c:Color) = let l,_,_ = Theme.OkLab.ofColor c in l
+            check (lightness live.tabActiveBgColor>lightness live.tabNormalBgColor) "The Windows accent preset's front tab is not paler than the rest"
         // The old paid version's license key and activation ticket go on the next save.
         do
             let json = api.root
@@ -511,6 +554,228 @@ let main() =
                 use image = new Bitmap(form.Width,form.Height)
                 let painted = try form.DrawToBitmap(image,Rectangle(Point.Empty,image.Size)); true with _ -> false
                 check painted (sprintf "The %s page failed to paint in the %s theme" (tr page) mode)
+        // Text in Windows 11's face where it is installed, sections headed in Semibold, not Bold.
+        let variable = FontFamily.Families |> Array.exists(fun family -> family.Name="Segoe UI Variable Text")
+        check (SettingsUi.bodyFont().Name=(if variable then "Segoe UI Variable Text" else "Segoe UI")) (sprintf "Settings text is set in %s" (SettingsUi.bodyFont().Name))
+        // Small text in the face's small optical size, as Windows sets its captions, so it stays clear.
+        check (SettingsUi.smallFamily()=(if variable then "Segoe UI Variable Small" else "Segoe UI")) (sprintf "Small text is set in %s" (SettingsUi.smallFamily()))
+        check (not (SettingsUi.sectionFont().Bold) && SettingsUi.sectionFont().Name.EndsWith("Semibold")) (sprintf "Section headings are set in %A" (SettingsUi.sectionFont()))
+        check (form.Font.Name=SettingsUi.bodyFont().Name) (sprintf "The settings window's text is set in %s" form.Font.Name)
+        // Tabs too, while the menu font is Windows' own; a menu font the user chose stays.
+        do
+            use tabFont = TabMetrics.font 0 FontStyle.Regular
+            let expected = if variable && SystemFonts.MenuFont.Name="Segoe UI" then "Segoe UI Variable Text" else SystemFonts.MenuFont.Name
+            check (tabFont.Name=expected) (sprintf "Tabs are set in %s, not %s" tabFont.Name expected)
+        // Page icons from Windows' icon font where there is one: the sidebar draws the very glyph.
+        UiFace.icons.Force() |> Option.iter(fun _ ->
+            let render (draw:Graphics -> unit) =
+                use image = new Bitmap(Dpi.scale 20,Dpi.scale 20)
+                use g = Graphics.FromImage(image)
+                g.Clear(Color.White)
+                draw g
+                [for y in 0..image.Height-1 do for x in 0..image.Width-1 -> image.GetPixel(x,y).ToArgb()]
+            for key in [GeneralSettings;AppearanceSettings;HotKeySettings;MouseGestureSettings;ProgramSettings;LayoutSettings;DiagnosticsSettings] do
+                let page = render (fun g -> SettingsPageIcons.draw g key 0 0 Color.Black Color.White)
+                check (page |> List.exists((<>) (Color.White.ToArgb()))) (sprintf "The %A icon is blank" key)
+                match SettingsPageIcons.glyph key with
+                | Some code ->
+                    let glyph = render (fun g -> UiFace.glyph g code (RectangleF(float32(Dpi.scale 1),float32(Dpi.scale 1),float32(Dpi.scale 16),float32(Dpi.scale 16))) Color.Black |> ignore)
+                    check (page=glyph) (sprintf "The %A icon is not Windows' glyph" key)
+                // Gestures keeps its drawn stroke, which says more than the font's mouse.
+                | None -> check (key=MouseGestureSettings) (sprintf "The %A icon has no glyph" key)
+            // The lists' marks too, all but Ungroup, which the font has no mark for.
+            for glyph,code in [AddGlyph,0xE710;EditGlyph,0xE70F;DeleteGlyph,0xE74D;WindowGlyph,0xE737;GroupGlyph,0xE8B7;WorkspaceGlyph,0xE7C4;TabsGlyph,0xE736] do
+                let box = Rectangle(Dpi.scale 2,Dpi.scale 2,Dpi.scale 16,Dpi.scale 16)
+                let drawn = render (fun g -> SettingsTreeList.drawGlyph(g,glyph,box,Color.Black))
+                let font = render (fun g -> UiFace.glyph g code (RectangleF.op_Implicit box) Color.Black |> ignore)
+                check (drawn=font && drawn |> List.exists((<>) (Color.White.ToArgb()))) (sprintf "The list's %A is not Windows' glyph" glyph)
+            // At every size: in a box one em tall the font's line is a hair taller, and a format
+            // that drops lines that do not fit drew nothing at all but the one size tried here.
+            let blank =
+                [for quarter in 40..120 ->
+                    let side = float32 quarter/4.0f
+                    side, render (fun g -> UiFace.glyph g 0xE946 (RectangleF(1.0f,1.0f,side,side)) Color.Black |> ignore)]
+                |> List.filter(fun (_,pixels) -> pixels |> List.forall((=) (Color.White.ToArgb())))
+                |> List.map fst
+            check blank.IsEmpty (sprintf "An icon glyph drew nothing at %d sizes, such as %A" blank.Length (List.truncate 5 blank))
+            // Its ink in the middle of the box, level with the text beside it: laid out as a line of
+            // text the round (i) sat a tenth of an em high and a pixel left.
+            for side in [16;20;25;30;40] do
+                use image = new Bitmap(side+20,side+20)
+                use g = Graphics.FromImage(image)
+                g.Clear(Color.White)
+                UiFace.glyph g 0xE946 (RectangleF(10.0f,10.0f,float32 side,float32 side)) Color.Black |> ignore
+                let inked = [for y in 0..image.Height-1 do for x in 0..image.Width-1 do if image.GetPixel(x,y).R<200uy then yield x,y]
+                let middle values = float(List.min values+List.max values+1)/2.0
+                let dx,dy = middle (List.map fst inked)-(10.0+float side/2.0),middle (List.map snd inked)-(10.0+float side/2.0)
+                check (abs dx<=1.0 && abs dy<=1.0) (sprintf "An icon glyph at %dpx sits %.1f,%.1f off the middle of its box" side dx dy))
+        // A drop-down list is wide enough for its longest choice beside a colour dot, the tick and
+        // the scrollbar it keeps: "Default" and "Custom" were cut short.
+        do
+            let names = [|"Default";"Windows accent";"Blue";"Custom"|]
+            use combo = new SettingsCombo(names,Font=SettingsUi.bodyFont(),Size=Size(Dpi.scale 120,Dpi.scale 32))
+            combo.ItemColors <- [|Color.Gray;Color.Blue;Color.Navy;Color.Silver|]
+            form.Controls.Add combo
+            combo.SelectedIndex <- 1
+            match combo.CreateDropDown() with
+            | Some window ->
+                let frame = (window.Items.[0] :?> ToolStripControlHost).Control :?> SettingsListFrame
+                let room = frame.List.ClientSize.Width-Dpi.scale 42-Dpi.scale 22
+                let longest = names |> Array.map(fun name -> TextRenderer.MeasureText(name,combo.Font).Width) |> Array.max
+                check (room>=longest) (sprintf "The longest choice has %dpx of the %dpx it needs" room longest)
+                // The chosen one marked as WinUI's list marks it: a bar in the accent at its left
+                // edge, no tick at its right; the rows not chosen have neither.
+                if not SystemInformation.HighContrast then
+                    let list = frame.List :> ListBox
+                    let p = SettingsColors.current()
+                    let distance (a:Color) (b:Color) = abs(int a.R-int b.R)+abs(int a.G-int b.G)+abs(int a.B-int b.B)
+                    let drawn index =
+                        let row = list.GetItemRectangle(index)
+                        let image = new Bitmap(row.Right,row.Bottom)
+                        use g = Graphics.FromImage(image)
+                        let draw = typeof<ListBox>.GetMethod("OnDrawItem",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic)
+                        draw.Invoke(list,[|box (DrawItemEventArgs(g,combo.Font,row,index,DrawItemState.None))|]) |> ignore
+                        row,image
+                    let nearest (image:Bitmap) (row:Rectangle) fromX toX (color:Color) =
+                        [for y in row.Top..row.Bottom-1 do for x in fromX..toX -> image.GetPixel(x,y)] |> List.minBy (distance color)
+                    let row,chosen = drawn 1
+                    use chosen = chosen
+                    let bar = nearest chosen row row.Left (row.Left+Dpi.scale 8) p.accent
+                    check (distance bar p.accent<40) (sprintf "The chosen choice has no bar in the accent at its left: %A, not %A" bar p.accent)
+                    let tick = nearest chosen row (row.Right-Dpi.scale 28) (row.Right-1) p.accentText
+                    check (distance tick p.accentText>=60) (sprintf "The chosen choice still has a tick at its right: %A" tick)
+                    let other,plain = drawn 2
+                    use plain = plain
+                    let none = nearest plain other other.Left (other.Left+Dpi.scale 8) p.accent
+                    check (distance none p.accent>=60) (sprintf "A choice not chosen has the accent bar: %A" none)
+                window.Dispose()
+            | None -> failwith "The drop-down did not open its list"
+            form.Controls.Remove combo
+        // The accent and switches as WinUI draws them: Windows' own shade of the accent for the
+        // page, an off switch as an outline the page shows through, a click sliding the knob over.
+        for mode in ["light";"dark"] do
+            api.setValue("tabThemeMode",box mode)
+            Application.DoEvents()
+            let dark = mode="dark"
+            let p = SettingsColors.current()
+            check (p.accent=ThemeService.accent dark && p.accentText=ThemeService.accentText dark) (sprintf "The %s accent does not follow Windows" mode)
+            ThemeService.systemAccentShades() |> Option.iter(fun shades ->
+                check (p.accent.ToArgb()=shades.[if dark then 1 else 4].ToArgb() && p.accentText.ToArgb()=shades.[if dark then 0 else 5].ToArgb())
+                      (sprintf "The %s accent is not Windows' shade for the page: %A" mode p.accent))
+            check (p.onAccent.ToArgb()=(if dark then Color.Black else Color.White).ToArgb()) (sprintf "What sits on the %s accent is not in a colour that reads on it" mode)
+            // Secondary text reads clearly: at least 4.5:1 on the page, where the old grey stood at
+            // 3.5:1 on white; and at least 2.2:1 from the main text, which WinUI's lighter grey
+            // brought to 1.5:1 on dark pages, too close to tell descriptions from names.
+            let luminance (c:Color) =
+                let channel (v:byte) = let x = float v/255.0 in if x<=0.03928 then x/12.92 else Math.Pow((x+0.055)/1.055,2.4)
+                0.2126*channel c.R+0.7152*channel c.G+0.0722*channel c.B
+            let contrast (a:Color) (b:Color) = let la,lb = luminance a,luminance b in (max la lb+0.05)/(min la lb+0.05)
+            check (contrast p.muted p.background>=4.5 && contrast p.muted p.surface>=4.5)
+                  (sprintf "Secondary text is too faint in the %s theme: %.2f:1" mode (contrast p.muted p.background))
+            // Descriptions the names' size, well apart from them in their own grey: the secondary
+            // grey reads as nearly the names' own on dark pages.
+            check (contrast p.description p.background>=4.5 && contrast p.description p.surface>=4.5)
+                  (sprintf "Descriptions are too faint in the %s theme: %.2f:1" mode (contrast p.description p.background))
+            check (SettingsUi.descriptionFont().Size=SettingsUi.rowFont().Size && contrast p.description p.text>=2.2)
+                  (sprintf "Descriptions are not the names' size, or too close to them in colour, in the %s theme: %.2f:1" mode (contrast p.description p.text))
+            let described = controls form |> Seq.filter(fun c -> c :? SettingsEllipsisLabel && string c.Tag="muted" && c.Text<>"") |> List.ofSeq
+            check (not described.IsEmpty && described |> List.forall(fun c -> c.Font.Size=SettingsUi.descriptionFont().Size && c.ForeColor.ToArgb()=p.description.ToArgb()))
+                  (sprintf "Setting descriptions are not in the description font and colour: %A" (described |> List.map(fun c -> c.Text,c.Font.Size,c.ForeColor) |> List.truncate 3))
+            // Windows Settings' neutral greys, not warm ones that read as yellowed beside it, and its
+            // navigation in the page's own colour, with a rule between them.
+            for name,c in ["background",p.background;"surface",p.surface;"text",p.text;"muted",p.muted;"description",p.description;"border",p.border;"hover",p.hover;"selection",p.selection] do
+                check (c.R=c.G && c.G=c.B) (sprintf "The %s theme's %s grey is tinted: %A" mode name c)
+            let sidebar = controls form |> Seq.find(fun c -> string c.Tag="sidebar")
+            check (sidebar.BackColor.ToArgb()=p.background.ToArgb()) (sprintf "The sidebar is %A in the %s theme, not the page's %A" sidebar.BackColor mode p.background)
+            // The page's content has the same margin each side: the scroll bar stands in the right
+            // one, where room kept for it beside the content made that margin the wider.
+            controls form |> Seq.tryPick(function :? SettingsPage as page when page.Visible -> Some page | _ -> None) |> Option.iter(fun page ->
+                let content = page.Controls |> Seq.cast<Control> |> Seq.find(fun c -> c :? TableLayoutPanel)
+                let left,right = content.Left,page.ClientSize.Width-content.Right
+                check (abs(left-right)<=1) (sprintf "The page's margins differ: %d on the left, %d on the right" left right))
+            do
+                use image = new Bitmap(sidebar.Width,sidebar.Height)
+                sidebar.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                let rule = image.GetPixel(sidebar.Width-1,sidebar.Height/2)
+                check (SystemInformation.HighContrast || rule.ToArgb()=p.border.ToArgb()) (sprintf "No rule stands between the sidebar and the page in the %s theme: %A" mode rule)
+            // The open page in the selection fill alone, edge to edge: no accent bar beside it.
+            let openPage = controls form |> Seq.find(fun c -> c :? Button && string c.Tag="nav-active")
+            do
+                use image = new Bitmap(openPage.Width,openPage.Height)
+                openPage.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                let edge,shade = image.GetPixel(Dpi.scale 1,openPage.Height/2),image.GetPixel(openPage.Width-Dpi.scale 6,openPage.Height/2)
+                check (edge.ToArgb()=p.selection.ToArgb() && shade.ToArgb()=p.selection.ToArgb())
+                      (sprintf "The open page is %A at its edge and %A inside in the %s theme, not the selection fill" edge shade mode)
+            use host = new Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,
+                                Location=Point(-12000,-12000),Size=Size(Dpi.scale 260,Dpi.scale 100),BackColor=p.background)
+            let toggle = new SettingsToggle(Location=Point(Dpi.scale 10,Dpi.scale 10),BackColor=p.background)
+            host.Controls.Add toggle
+            WinUserApi.ShowWindow(host.Handle,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
+            Application.DoEvents()
+            let shot () =
+                let image = new Bitmap(toggle.Width,toggle.Height)
+                toggle.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                image
+            let distance (a:Color) (b:Color) = max (abs(int a.R-int b.R)) (max (abs(int a.G-int b.G)) (abs(int a.B-int b.B)))
+            do
+                use off = shot()
+                let inside = off.GetPixel(toggle.Width*3/4,toggle.Height/2)
+                // The outline's top edge, drawn across a pixel row or two.
+                let edge = [0..2] |> List.map(fun dy -> off.GetPixel(toggle.Width/2,(toggle.Height-Dpi.scale 20)/2+dy)) |> List.maxBy(fun c -> distance c p.background)
+                check (distance inside p.background<16 && distance edge p.background>40)
+                      (sprintf "The off switch is not an outline in the %s theme: inside %A, edge %A" mode inside edge)
+            toggle.Checked <- true
+            if SystemInformation.UIEffectsEnabled then
+                check (toggle.KnobPosition<1.0f) (sprintf "The %s switch's knob jumped across instead of sliding" mode)
+            let clock = Diagnostics.Stopwatch.StartNew()
+            while toggle.KnobPosition<1.0f && clock.ElapsedMilliseconds<2000L do
+                Threading.Thread.Sleep(10)
+                Application.DoEvents()
+            check (toggle.KnobPosition=1.0f) (sprintf "The %s switch's knob did not come to rest on" mode)
+            do
+                use on = shot()
+                let fill = on.GetPixel(toggle.Width/4,toggle.Height/2)
+                check (distance fill p.accent<24) (sprintf "The on switch is not filled in the %s accent: %A" mode fill)
+            // Fields and buttons edged as WinUI's: a field's foot a strong line, the accent two
+            // pixels deep while typed in; keyboard focus a ring in the text colour.
+            let box = new TextBox(Text="Notepad")
+            let field = new SettingsTextInput(box,Location=Point(Dpi.scale 10,Dpi.scale 50),Size=Size(Dpi.scale 120,Dpi.scale 32))
+            let button = new SettingsActionButton(Text="OK",Location=Point(Dpi.scale 150,Dpi.scale 50),Size=Size(Dpi.scale 80,Dpi.scale 32))
+            host.Controls.Add field
+            host.Controls.Add button
+            field.ApplyTheme()
+            Application.DoEvents()
+            let snap (c:Control) =
+                let image = new Bitmap(c.Width,c.Height)
+                c.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                image
+            do
+                use rest = snap field
+                // At rest no edge is stronger than another: a darker foot read as a stray rule.
+                let foot,top = rest.GetPixel(field.Width/2,field.Height-1),rest.GetPixel(field.Width/2,0)
+                check (distance foot top<12)
+                      (sprintf "A field at rest has a line along one edge in the %s theme: foot %A, top %A" mode foot top)
+                use resting = snap button
+                let bottom,upper = resting.GetPixel(button.Width/2,button.Height-1),resting.GetPixel(button.Width/2,0)
+                check (distance bottom upper<12)
+                      (sprintf "A button at rest has a line along one edge in the %s theme: foot %A, top %A" mode bottom upper)
+            host.Show()
+            host.Activate()
+            // Keyboard cues on, as after a Tab press: WM_UPDATEUISTATE, UIS_CLEAR of UISF_HIDEFOCUS.
+            WinUserApi.SendMessage(host.Handle,0x0128,IntPtr((1 <<< 16) ||| 2),IntPtr.Zero) |> ignore
+            box.Focus() |> ignore
+            Application.DoEvents()
+            check box.Focused (sprintf "The field did not take the keys in the %s theme" mode)
+            do
+                use typing = snap field
+                let foot = typing.GetPixel(field.Width/2,field.Height-2)
+                check (distance foot p.accent<40) (sprintf "A field typed in has no accent along its foot in the %s theme: %A" mode foot)
+            button.Focus() |> ignore
+            Application.DoEvents()
+            do
+                use focused = snap button
+                let ring = focused.GetPixel(Dpi.scale 1,button.Height/2)
+                check (distance ring p.text<60) (sprintf "A button with keyboard focus has no ring in the %s theme: %A" mode ring)
         (controls form |> Seq.find(fun c -> c :? Button && c.Text=tr Strings.Pages.general) :?> Button).PerformClick()
         api.setValue("tabThemeMode",box "dark")
         Application.DoEvents()
@@ -546,6 +811,36 @@ let main() =
                 let edge = if below then 1 else popup.Value.Height-2
                 check (popup.Value.Region.IsVisible(Point(middle,edge))) (sprintf "The hover popup for %A has no arrow at it" target)
                 check (not (popup.Value.Region.IsVisible(Point(middle+Dpi.scale 20,edge)))) (sprintf "The hover popup's arrow misses %A" target)
+                // The shadow sits over the popup and goes round its body: none of it over the
+                // arrow, which it shaded, while it shows beside the arrow and outside the body.
+                let halo = popup.Value.GetType().GetField("halo",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).GetValue(popup.Value) :?> SettingsPopupShadow option
+                check halo.IsSome "The hover popup has no shadow"
+                let body = popup.Value.GetType().GetProperty("Body",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.Public ||| Reflection.BindingFlags.NonPublic).GetValue(popup.Value) :?> Rectangle
+                let arrowRow = if below then body.Top-2 else body.Bottom+1
+                check (not (halo.Value.Covers(Point(middle,arrowRow))) && halo.Value.Covers(Point(middle+Dpi.scale 20,arrowRow)) && halo.Value.Covers(Point(-1,body.Top+body.Height/2)))
+                      (sprintf "The hover popup's shadow is over its arrow, or missing beside it, for %A" target)
+            // Filled as the drop-down lists are, a shade off the cards beneath it, which in their
+            // own colour it ran into; in either theme.
+            for mode in ["light";"dark"] do
+                api.setValue("tabThemeMode",box mode)
+                Application.DoEvents()
+                popup.Value.Invalidate()
+                use image = new Bitmap(popup.Value.Width,popup.Value.Height)
+                popup.Value.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+                let body = popup.Value.GetType().GetProperty("Body",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.Public ||| Reflection.BindingFlags.NonPublic).GetValue(popup.Value) :?> Rectangle
+                let fill = image.GetPixel(body.Left+Dpi.scale 4,body.Top+body.Height/2)
+                let p = SettingsColors.current()
+                check (fill.ToArgb()=p.hover.ToArgb() && p.hover.ToArgb()<>p.surface.ToArgb())
+                      (sprintf "The hover popup is filled %A in the %s theme, not the drop-downs' %A" fill mode p.hover)
+                // One line round it: the border on the shape's outermost pixels, the fill right
+                // inside it, and the shadow starting where the shape ends, so the edge is not doubled.
+                let y = body.Top+body.Height/2
+                let edge,inside = image.GetPixel(0,y),image.GetPixel(1,y)
+                check (edge.ToArgb()=SettingsSearchBox.Outline().ToArgb() && inside.ToArgb()=p.hover.ToArgb())
+                      (sprintf "The hover popup's left edge is %A then %A in the %s theme, not its outline then its fill" edge inside mode)
+                let right = image.GetPixel(body.Right-1,y)
+                check (right.ToArgb()=SettingsSearchBox.Outline().ToArgb() && popup.Value.Region.IsVisible(Point(body.Right-1,y)) && not (popup.Value.Region.IsVisible(Point(body.Right,y))))
+                      (sprintf "The hover popup's right edge is %A at %d in the %s theme, not its outline where its shape ends" right (body.Right-1) mode)
             api.setValue("tabThemeMode",box "dark")
             Application.DoEvents()
             for f in Application.OpenForms |> Seq.cast<Form> |> Seq.filter(fun f -> f.GetType().Name="SettingsHelpPopup") |> Seq.toList do f.Hide()
@@ -732,6 +1027,48 @@ let main() =
         dismissPopup.Dispose()
         choice.Enabled <- false
         check (choice.CreateDropDown().IsNone) "Disabled choice opens a menu"
+        // A short list opens over its box, as WinUI's do: the chosen row where the box was, its
+        // text where the box's text was, unfolding from that row to the list's ends.
+        do
+            let area = Screen.PrimaryScreen.WorkingArea
+            use owner = new Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,
+                                 Location=Point(area.Left+Dpi.scale 200,area.Top+Dpi.scale 300),Size=Size(Dpi.scale 300,Dpi.scale 80))
+            WinUserApi.ShowWindow(owner.Handle,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
+            for chosen in [0;2] do
+                // One combo each: a combo opens no second list while it holds its first.
+                use combo = new SettingsCombo([|"Left";"Center";"Right"|],Location=Point(Dpi.scale 20,Dpi.scale 20),Size=Size(Dpi.scale 160,Dpi.scale 32))
+                owner.Controls.Add combo
+                Application.DoEvents()
+                combo.SelectedIndex <- chosen
+                use list = combo.CreateDropDown().Value
+                let host = (list.Items.[0] :?> ToolStripControlHost).Bounds
+                let rows = ((list.Items.[0] :?> ToolStripControlHost).Control :?> SettingsListFrame).List
+                let box = combo.RectangleToScreen(combo.ClientRectangle)
+                let rowMiddle = list.Top+host.Y+chosen*rows.ItemHeight+rows.ItemHeight/2
+                check (list.Left+host.X=box.X && abs(rowMiddle-(box.Y+box.Height/2))<=1)
+                      (sprintf "The list for choice %d opens at %A, its row %d's middle at %d, not over the box %A" chosen list.Location chosen rowMiddle box)
+                // All of the box under it: the box's right edge showed past a list as wide as the box.
+                check (list.Left<=box.Left && list.Right>=box.Right) (sprintf "The list %A leaves part of its box %A showing" list.Bounds box)
+                // It unfolds from the chosen row: shown at first as that row's band alone.
+                if SystemInformation.UIEffectsEnabled && not SystemInformation.HighContrast then
+                    let band = host.Y+chosen*rows.ItemHeight,host.Y+(chosen+1)*rows.ItemHeight
+                    check (list.Unfolding=Some band) (sprintf "The list for choice %d does not unfold from its row %A: %A" chosen band list.Unfolding)
+                    use g = list.CreateGraphics()
+                    let shown = list.Region.GetBounds(g)
+                    check (int(Math.Round(float shown.Top))=fst band && int(Math.Round(float shown.Bottom))=snd band) (sprintf "The list for choice %d shows %A before it unfolds, not its row %A" chosen shown band)
+                owner.Controls.Remove combo
+            owner.Close()
+        // Its text in the disabled grey, as a disabled button's: the secondary grey is nearly as
+        // light as the text, so a disabled list looked as if it would open.
+        do
+            let p = SettingsColors.current()
+            use image = new Bitmap(choice.Width,choice.Height)
+            choice.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+            let brightness (c:Color) = (int c.R+int c.G+int c.B)/3
+            let ink = [for y in 0..image.Height-1 do for x in Dpi.scale 12..image.Width-Dpi.scale 40 -> image.GetPixel(x,y)]
+            let strongest = if ThemeService.currentIsDark() then ink |> List.maxBy brightness else ink |> List.minBy brightness
+            check (abs(brightness strongest-brightness p.disabledText)<24)
+                  (sprintf "A disabled list's text is %A, not the disabled grey %A" strongest p.disabledText)
         choice.Enabled <- true
         api.setValue("tabThemeMode",box "dark")
         Application.DoEvents()
@@ -993,6 +1330,9 @@ let main() =
         check (nowAt.Y<editAt.Y && editAt.Y+workspaces.editGroupsButton.Height<=savedAt.Y && savedAt.Y<restoreAt.Y)
               (sprintf "The Workspaces page did not stand its groups now over its saved workspaces: %A %A %A %A" nowAt editAt savedAt restoreAt)
         check (workspaces.editGroupsButton.Width<workspace.control.Width/2) (sprintf "The editor's button stretched across the page: %d" workspaces.editGroupsButton.Width)
+        // The sidebar names the page; it starts with its first part, not its name again.
+        check (controls workspace.control |> Seq.forall(fun control -> not (control :? Label && control.Visible && control.Text=tr Strings.Pages.workspaces)))
+              "The Workspaces page repeated its name over its parts"
         // Each part's note stands to the right of its buttons, on their line; the help beside the
         // saved part's heading, which it is about.
         let beside (note:Control) (button:Control) =

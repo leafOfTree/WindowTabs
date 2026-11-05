@@ -20,11 +20,16 @@ module ThemeService =
     /// The logo's dark outline keeps its light front tab clear on light and dark taskbars alike.
     let appIconName = "Bemo.ico"
 
+    let systemAccentShades() = SystemAccent.read()
+
     // Read the registry on system notifications, never from a control's paint callback.
     let mutable private systemDark = if systemIsDark() then 1 else 0
     let private cachedSystemDark() = System.Threading.Volatile.Read(&systemDark)=1
     let private refreshSystemTheme() =
         System.Threading.Volatile.Write(&systemDark,if systemIsDark() then 1 else 0)
+        SystemAccent.refresh()
+    let accent dark = SystemAccent.fill dark
+    let accentText dark = SystemAccent.text dark
 
     // Tab groups run on their own UI threads and read the appearance while handling a
     // theme change. Reading it through Services.settings waits on the main thread, which
@@ -44,7 +49,8 @@ module ThemeService =
     let currentAppearance() =
         let settings = currentPreferences()
         Theme.resolve settings.mode (cachedSystemDark()) SystemInformation.HighContrast
-            settings.useCustomColors settings.geometry settings.lightPalette settings.darkPalette
+            settings.useCustomColors settings.geometry
+            (ThemePresets.following false settings settings.lightPalette) (ThemePresets.following true settings settings.darkPalette)
 
     /// SystemEvents raises each notification from the thread that owns its hidden window and
     /// waits while every subscribing thread handles it - WinForms controls on the tab group

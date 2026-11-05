@@ -9,7 +9,7 @@ type ContrastComparison() as this =
     inherit Control()
     let mutable samples : (string*Color*Color*Color) list = []
     let chipWidth,chipHeight,gap = Dpi.scale 168,Dpi.scale 32,Dpi.scale 10
-    let captionFont = SettingsUi.font "Segoe UI" 9.0f FontStyle.Regular
+    let captionFont = SettingsUi.font (SettingsUi.smallFamily()) 9.0f FontStyle.Regular
     let columns () = max 1 ((this.Width+gap)/(chipWidth+gap))
     let rowHeight () = chipHeight+Dpi.scale 4+captionFont.Height+gap
     let fit () =
@@ -94,7 +94,7 @@ type AppearanceView(?settings:ISettings) =
     let resetColors() =
         update(fun s ->
             let index = selection s |> Option.defaultValue 0
-            {(setActive (original index) s) with presetEdits=s.presetEdits.Remove(editKey index)} |> setPreset ThemePresets.keys.[index])
+            {(setActive (original index) s) with presetEdits=PaletteEditing.withoutEdit editingDark index s.presetEdits} |> setPreset ThemePresets.keys.[index])
     let preview = new TabPreview(Name="tab-preview",Height=Dpi.scale 145,Margin=Padding(0,Dpi.scale 4,0,0),
                                  AccessibleName=tr Strings.Appearance.explorerPreview)
     /// Where the preview draws its tabs: all that a colour edit changes.
@@ -208,7 +208,7 @@ type AppearanceView(?settings:ISettings) =
             let p = SettingsColors.current()
             let dark = ThemeService.currentIsDark()
             e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-            use frame = SettingsShapes.rounded (SettingsShapes.outlineRect preview.Width preview.Height) (float32(Dpi.scale 10))
+            use frame = SettingsShapes.rounded (SettingsShapes.outlineRect preview.Width preview.Height) (SettingsShapes.overlayRadius())
             use frameFill = new SolidBrush(if dark then Color.FromRGB(0x343432) else Color.FromRGB(0xE8E8E5))
             use border = new Pen(p.border)
             e.Graphics.FillPath(frameFill,frame)
@@ -290,7 +290,8 @@ type AppearanceView(?settings:ISettings) =
         for choice in [colorMode;colorStyle] do choice.SelectedIndexChanged.Add(fun _ -> preview.Invalidate(); updateFilled())
         preset.Name <- "palette-preset"
         preset.AccessibleName <- tr Strings.Appearance.colorPreset
-        preset.Width <- Dpi.scale 140
+        // Every name in full, Windows accent among them, with its dot and the * an edit adds.
+        preset.FitToItems(withDots=true,suffix="*")
         resetColorsButton.Margin <- Padding(0,0,Dpi.scale 6,0)
         // The theme tiles above show which theme's colours these are.
         swapColorsButton.Margin <- Padding(0,0,Dpi.scale 6,0)
@@ -325,9 +326,10 @@ type AppearanceView(?settings:ISettings) =
         let closeButton = SettingsBindings.choice "tab-close-button"
         closeButton.SelectedIndexChanged.Add(fun _ -> preview.Invalidate())
         SettingsUi.settingRow textCard "tab-close-button" closeButton
-        // The two lists offer the same kind of choice, so they line up at one width.
-        let listWidth = max textBold.Width closeButton.Width
-        for list in [textBold;closeButton] do list.Width <- listWidth
+        // The two lists offer the same kind of choice, so they line up at one width, and the preset
+        // list in the heading above them does too.
+        let listWidth = [textBold;closeButton;preset] |> List.map(fun list -> list.Width) |> List.max
+        for list in [textBold;closeButton;preset] do list.Width <- listWidth
         let opacityLow,opacityHigh = SettingsCatalog.opacityRange
         let opacity = new SettingsNumberInput(Minimum=decimal opacityLow,Maximum=decimal opacityHigh,Font=SettingsUi.bodyFont(),
                                               Value=decimal (match settings.getValue("tabOpacity") with :? int as value -> value | _ -> SettingsCatalog.opacityDefault))

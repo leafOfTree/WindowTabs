@@ -131,6 +131,18 @@ let main() =
     let m6 = DesktopDraft.newGroup f desk |> DesktopDraft.newGroup d
     check (m6.loose=[e] && (m6.groups |> List.map(fun g -> g.group,g.tabs))=[Some(IntPtr 1),[a;b;c];None,[f];None,[d]]) "New rows did not come above the loose row, or the row left empty stayed"
     check (DesktopDraft.newGroup (IntPtr 99) desk=desk) "A window from nowhere made a row"
+    // The bin: a window put in it leaves its group and its pane, closes on Save, and comes back
+    // out as any window moves.
+    let binned = DesktopDraft.moveToClosing b desk |> DesktopDraft.moveToClosing e
+    check (binned.closing=[b;e] && binned.loose=[f] && binned.groups.[0].tabs=[a;c] && binned.groups.[0].panes.IsNone && DesktopDraft.find b binned=Closing)
+          (sprintf "A window put in the bin did not leave its row and pane: %A" binned)
+    check (DesktopDraft.moveToClosing b binned=binned && DesktopDraft.moveToClosing (IntPtr 99) desk=desk) "The bin took a window twice, or one from nowhere"
+    let back = DesktopDraft.moveToLoose b binned |> DesktopDraft.moveToGroup e 1 None
+    check (back.closing.IsEmpty && back.loose=[f;b] && back.groups.[1].tabs=[d;e]) (sprintf "A window taken out of the bin stayed in it: %A" back)
+    let planClose = DesktopPlan.make desk binned
+    check (planClose.closing=[b;e] && planClose.detached.IsEmpty && not (DesktopPlan.isEmpty planClose)
+           && planClose.groups |> List.forall(fun step -> not (List.contains b step.tabs)))
+          (sprintf "Save did not plan to close the bin's windows, or kept one in its group: %A" planClose)
     check (DesktopDraft.emptyCells (DesktopDraft.edit 0 (GroupDraft.cut a [First] ThreeColumns) desk)=2) "The desktop did not count its empty cells"
 
     // The plan: only what changed, per group.
@@ -194,6 +206,17 @@ let main() =
             check (sameColor palette.background (image.GetPixel(Dpi.scale 6,Dpi.scale 8))) (sprintf "The popup is not in the %s look's background, as Settings is" mode)
             check (sameColor palette.surface (image.GetPixel(l.band.X+Dpi.scale 12,l.band.Y+Dpi.scale 5))) (sprintf "The row's band is not in the %s look's surface colour" mode)
             check (sameColor palette.background (image.GetPixel(l.picture.X+l.picture.Width/2,l.picture.Bottom-2))) "The content is not in the background colour"
+            // Save and Cancel as the settings' buttons beside them: the accent with the colour that
+            // reads on it, where white sat on a light accent, and the plain buttons' fill.
+            if not SystemInformation.HighContrast then
+                let save,cancel = editor.Layout.save,editor.Layout.cancel
+                check (sameColor palette.accent (image.GetPixel(save.X+Dpi.scale 6,save.Y+save.Height/2))) (sprintf "Save is not filled in the %s look's accent" mode)
+                let plain,_ = SettingsShapes.neutralColors palette false false
+                check (sameColor plain (image.GetPixel(cancel.X+Dpi.scale 6,cancel.Y+cancel.Height/2))) (sprintf "Cancel is not a plain button in the %s look" mode)
+                let light (c:Color) = int c.R+int c.G+int c.B
+                let text = [for y in save.Top+2..save.Bottom-3 do for x in save.Left+Dpi.scale 8..save.Right-Dpi.scale 8 -> image.GetPixel(x,y)]
+                let strongest = if light palette.onAccent<light palette.accent then text |> List.minBy light else text |> List.maxBy light
+                check (abs(light strongest-light palette.onAccent)<90) (sprintf "Save's text is %A in the %s look, not %A, the colour that reads on the accent" strongest mode palette.onAccent)
             // The strip's seam button stands over the seam between the panes' tabs, at their bottom
             // edge: its glyph's ink is there, where the band showed through the gap.
             let seam = Point(((snd l.tabs.[0]).Right+(snd l.tabs.[1]).X)/2-Dpi.scale 3,(snd l.tabs.[0]).Bottom-Dpi.scale 6)
@@ -442,6 +465,20 @@ let main() =
             check (editor.Draft.loose=[e;f;b] && editor.Drag |> Option.exists(fun d -> d.aim=None)) "A tab over the loose row did not go loose there"
             editor.MouseUp(centre l.loose)
             check (editor.Draft.loose=[e;f;b] && tabsOf 0=[a] && editor.Draft.groups.[0].panes.IsNone) "A tab dropped on the loose row did not leave its group"
+            // Into the bin and out again: over it the tab is in it, closing on Save; taken back
+            // to the loose row it stays open.
+            do
+                let l = editor.Layout
+                editor.MouseDown(centre (l.looseTabs |> List.find(fun (hwnd,_) -> hwnd=b) |> snd))
+                editor.MouseMove(centre l.closing)
+                editor.MouseUp(centre l.closing)
+                check (editor.Draft.closing=[b] && editor.Draft.loose=[e;f]) (sprintf "A tab dropped on the bin did not go in it: %A" editor.Draft)
+                let l = editor.Layout
+                check (l.closingTabs |> List.exists(fun (hwnd,_) -> hwnd=b)) "The bin does not show the tab put in it"
+                editor.MouseDown(centre (l.closingTabs |> List.find(fun (hwnd,_) -> hwnd=b) |> snd))
+                editor.MouseMove(centre l.loose)
+                editor.MouseUp(centre l.loose)
+                check (editor.Draft.closing.IsEmpty && editor.Draft.loose=[e;f;b]) (sprintf "A tab taken out of the bin stayed in it: %A" editor.Draft)
             let l = editor.Layout
             editor.MouseDown(centre (tabIn l.rows.[1] c))
             editor.MouseMove(centre l.newGroup)
@@ -631,7 +668,13 @@ let main() =
             (match merges 0 with [CmiRegular r] -> r.click() | items -> failwithf "Unexpected merge items: %A" items)
             check (editor.Draft.groups.Length=1 && editor.Draft.groups.[0].tabs=[c;a;b] && editor.Draft.groups.[0].group=Some(IntPtr 2)) (sprintf "Merging by the menu did not join the other group: %A" editor.Draft)
             check ((merges 0).IsEmpty) "A lone row still offered rows to merge into"
-            (match List.last (editor.RowMenu 0) with CmiRegular r -> r.click() | _ -> failwith "The row's menu did not end with Ungroup")
+            // Ungroup, then the bin's item last: what closes windows stands apart at the end.
+            (match List.last (editor.RowMenu 0) with
+             | CmiRegular r -> check (r.text=tr Strings.GroupEditor.closeRow) (sprintf "The row's menu did not end with putting it in the bin: %s" r.text)
+             | _ -> failwith "The row's menu did not end with an item")
+            (match editor.RowMenu 0 |> List.tryPick(function CmiRegular r when r.text=tr Strings.GroupEditor.ungroup -> Some r | _ -> None) with
+             | Some r -> r.click()
+             | None -> failwith "The row's menu offered no Ungroup")
             check (editor.Draft.groups.IsEmpty && editor.Draft.loose=[c;a;b]) (sprintf "Ungroup by the menu did not set the windows loose: %A" editor.Draft)
             editor.Close()
         // A whole row taken by its band's empty room: dropped on another row, its windows join that
@@ -670,6 +713,27 @@ let main() =
             editor.MouseDown(centre l.loose)
             editor.MouseUp(centre l.loose)
             check (editor.Draft.loose=[c;a;b] && editor.Expanded=None) "A click on the loose row's empty room changed something"
+            // A whole row dropped on the bin puts every window of it there, to close on Save.
+            do
+                let l = editor.Layout
+                editor.MouseDown(centre (l.looseTabs |> List.find(fun (hwnd,_) -> hwnd=c) |> snd))
+                editor.MouseMove(centre l.newGroup)
+                editor.MouseUp(centre l.newGroup)
+                check (editor.Draft.groups.Length=1 && editor.Draft.groups.[0].tabs=[c]) (sprintf "A tab on the new group's band made no row: %A" editor.Draft)
+                let l = editor.Layout
+                editor.MouseDown(room l.rows.[0].band)
+                editor.MouseMove(Point((room l.rows.[0].band).X,(room l.rows.[0].band).Y+Dpi.scale 12))
+                editor.MouseMove(centre l.closing)
+                editor.MouseUp(centre l.closing)
+                check (editor.Draft.groups.IsEmpty && editor.Draft.closing=[c] && editor.Draft.loose=[a;b]) (sprintf "A row dropped on the bin did not put its windows in it: %A" editor.Draft)
+            // The bin's edge is in the red Windows warns in, so it reads as where windows close.
+            if not SystemInformation.HighContrast then
+                let l = editor.Layout
+                use image = editor.RenderHovered()
+                let warning = if ThemeService.currentIsDark() then Color.FromRGB(0xFF99A4) else Color.FromRGB(0xC42B1C)
+                let distance (x:Color) (y:Color) = abs(int x.R-int y.R)+abs(int x.G-int y.G)+abs(int x.B-int y.B)
+                let edge = [for x in l.closing.X-1..l.closing.X+2 -> image.GetPixel(x,l.closing.Y+l.closing.Height/2)] |> List.minBy (distance warning)
+                check (distance edge warning<120) (sprintf "The bin's edge is %A, not the warning red %A" edge warning)
             editor.Close()
         // A row whose tabs wrap: a tab carried into the gap between the lines keeps its line, rather
         // than flipping between two layouts as the nearer line changes; on the other line, it moves.
@@ -759,6 +823,20 @@ let main() =
             editor.Paint(painted)
             let under = painted.GetPixel(tab.X+tab.Width/2,body+Dpi.scale 3)
             check (sameColor palette.background under) (sprintf "The tab lit under the pointer showed over the footer: %A" under)
+            // Save and Cancel light under the pointer, as the settings' buttons do, where the footer
+            // stands in the view.
+            if not SystemInformation.HighContrast then
+                let inView (r:Rectangle) = Point(r.X+Dpi.scale 6,r.Y-l.body+body+r.Height/2)
+                let litAt (r:Rectangle) =
+                    editor.MouseMove(inView r)
+                    use shown = new Bitmap(shorter.Width,shorter.Height)
+                    editor.Paint(shown)
+                    let p = inView r in shown.GetPixel(p.X,p.Y)
+                let save = litAt l.save
+                check (not(sameColor palette.accent save)) (sprintf "Save did not light under the pointer: %A" save)
+                let hot,_ = SettingsShapes.neutralColors palette true false
+                let cancel = litAt l.cancel
+                check (sameColor hot cancel) (sprintf "Cancel is %A under the pointer, not the plain buttons' hover %A" cancel hot)
             editor.Close()
         let mouse = Event<int * IntPtr>()
         let detached = Collections.Generic.List<IntPtr>()
@@ -873,13 +951,13 @@ let main() =
             check (order groupA=[w1;w4]) (sprintf "The pane tabs did not take layout order: %A" (order groupA))
             // A window gone before Save is skipped, and no group is made for it alone.
             let skipped = ref None
-            GroupEditorApply.run {detached=[];groups=[{group=None;tabs=[IntPtr 0x5555];joining=[IntPtr 0x5555];reorder=false;layout=None}]} (fun result -> skipped.Value <- Some result)
+            GroupEditorApply.run {detached=[];groups=[{group=None;tabs=[IntPtr 0x5555];joining=[IntPtr 0x5555];reorder=false;layout=None}];closing=[IntPtr 0x5556]} (fun result -> skipped.Value <- Some result)
             pumpUntil "The plan for a window that is gone did not finish" (fun () -> skipped.Value.IsSome)
             let gone = skipped.Value.Value
-            check (gone.made=0 && gone.skipped=[IntPtr 0x5555] && gone.moved=0) (sprintf "A window gone was not skipped: %A" gone)
+            check (gone.made=0 && gone.skipped=[IntPtr 0x5555] && gone.moved=0 && gone.closed=0) (sprintf "A window gone was not skipped, or one gone from the bin counted as closed: %A" gone)
             // Nothing to do finishes at once.
             let nothing = ref None
-            GroupEditorApply.run {detached=[];groups=[]} (fun result -> nothing.Value <- Some result)
+            GroupEditorApply.run {detached=[];groups=[];closing=[]} (fun result -> nothing.Value <- Some result)
             check (nothing.Value.IsSome && nothing.Value.Value.moved=0) "An empty plan did not finish at once"
             printfn "PASS: group editor model, plan and apply pipeline."
         finally

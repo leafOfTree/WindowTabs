@@ -400,7 +400,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
     /// Room between that line and the first row's highlight.
     let underGap = Dpi.scale 6
     /// Smaller than the segments' text, as key caps are.
-    let keyFont = SettingsUi.font "Segoe UI" 8.5f FontStyle.Regular
+    let keyFont = SettingsUi.font (SettingsUi.uiFamily()) 8.5f FontStyle.Regular
     let caption target =
         match target with
         | GroupTabs -> tr (Strings.TabSearch.groupTabs groupItems.Length)
@@ -468,8 +468,10 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     // A chevron a little shorter than the text's capitals, in the margin before the names.
                     let s = float32(Dpi.scaleF 3.5)
                     let cx,cy = float32(Dpi.scale 3)+s/2.0f,float32 scopeHeight/2.0f
-                    use pen = new Pen(p.text,float32(Dpi.scaleF 1.4),StartCap=Drawing2D.LineCap.Round,EndCap=Drawing2D.LineCap.Round,LineJoin=Drawing2D.LineJoin.Round)
-                    g.DrawLines(pen,[|PointF(cx+s/2.0f,cy-s);PointF(cx-s/2.0f,cy);PointF(cx+s/2.0f,cy+s)|])
+                    let em = float32(Dpi.scale 12)
+                    if not (UiFace.glyph g 0xE76B (RectangleF(cx-em/2.0f,cy-em/2.0f,em,em)) p.text) then
+                        use pen = new Pen(p.text,float32(Dpi.scaleF 1.4),StartCap=Drawing2D.LineCap.Round,EndCap=Drawing2D.LineCap.Round,LineJoin=Drawing2D.LineJoin.Round)
+                        g.DrawLines(pen,[|PointF(cx+s/2.0f,cy-s);PointF(cx-s/2.0f,cy);PointF(cx+s/2.0f,cy+s)|])
                     drawKey key "Esc"
                 | [] ->
                     let placed,outline,key = segments()
@@ -509,7 +511,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     KeyCaps.draw g keyFont left ((this.ClientSize.Height-height)/2) height "Alt+Enter" p |> ignore
                     hintLeft <- left-Dpi.scale 8-labelWidth
                     TextRenderer.DrawText(g,label,keyFont,Rectangle(hintLeft,0,labelWidth+Dpi.scale 4,this.ClientSize.Height),
-                                          (if SystemInformation.HighContrast then SystemColors.WindowText else p.accent),
+                                          (if SystemInformation.HighContrast then SystemColors.WindowText else p.accentText),
                                           TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine ||| TextFormatFlags.VerticalCenter)
                 match footerNote with
                 | Some(text,refused) ->
@@ -668,7 +670,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
             match asideWidths.TryGetValue key with
             | true,width -> width
             | _ ->
-                let font = if aside.small then SettingsUi.font list.Font.FontFamily.Name (list.Font.SizeInPoints*0.86f) FontStyle.Regular else list.Font
+                let font = if aside.small then SettingsUi.font (UiFace.small list.Font.FontFamily.Name) (list.Font.SizeInPoints*0.86f) FontStyle.Regular else list.Font
                 let width = TextRenderer.MeasureText(value,font,Size(Int32.MaxValue,Dpi.scale rowHeight),TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine).Width
                 asideWidths.[key] <- width
                 width
@@ -987,7 +989,7 @@ type TabSearchForm(tabs:TabSearchEntry list, group:IntPtr list, ?settings:ISetti
                     assignment |> Option.map(fun assignment -> entry,assignment))
                 |> Option.iter(fun (entry,assignment) ->
                     // A size under the rows' text, as the shortcuts beside the names are.
-                    let editor = new SettingsShortcutInput(Font=SettingsUi.font "Segoe UI" 9.0f FontStyle.Regular,Shortcut=assignment.current,ForeColor=palette.text,InList=assignment.inList)
+                    let editor = new SettingsShortcutInput(Font=SettingsUi.font (SettingsUi.smallFamily()) 9.0f FontStyle.Regular,Shortcut=assignment.current,ForeColor=palette.text,InList=assignment.inList)
                     // On the chosen row: round its corners the row's highlight shows, not the
                     // list's surface, which showed as dark corners.
                     editor.PlaceOn(if SystemInformation.HighContrast then SystemColors.Highlight else palette.selection)

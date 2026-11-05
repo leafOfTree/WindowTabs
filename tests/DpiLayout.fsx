@@ -162,10 +162,20 @@ let main() =
         frame.showView(AppearanceSettings)
         Application.DoEvents()
         let expected = 10.5f*float32 target/float32(Dpi.system())
-        let sizes = Seq.append (labels settingsForm) (settingsForm.Controls.Find("tabStyle",true) |> Seq.cast<Control>)
-                    |> Seq.filter(fun c -> c.Visible && c.Font.Style=FontStyle.Regular) |> Seq.map(fun c -> c.Font.Size) |> Seq.distinct |> List.ofSeq
-        check (not sizes.IsEmpty && sizes |> List.forall(fun size -> abs(size-expected)<0.05f))
-              (sprintf "Page created after the DPI change has fonts %A, expected %.2f" sizes expected)
+        let shown = Seq.append (labels settingsForm) (settingsForm.Controls.Find("tabStyle",true) |> Seq.cast<Control>)
+                    |> Seq.filter(fun c -> c.Visible && c.Font.Style=FontStyle.Regular) |> List.ofSeq
+        // Headings are in the Semibold face: sections a step larger than the body, parts at its size.
+        let isHeading (c:Control) = c.Font.Name=SettingsUi.sectionFont().Name
+        // Descriptions a step smaller than the body, as WinUI's captions.
+        let described = 9.0f*float32 target/float32(Dpi.system())
+        let sizes = shown |> List.filter(isHeading >> not) |> List.map(fun c -> c.Font.Size) |> List.distinct
+        check (not sizes.IsEmpty && sizes |> List.exists(fun size -> abs(size-expected)<0.05f)
+               && sizes |> List.forall(fun size -> abs(size-expected)<0.05f || abs(size-described)<0.05f))
+              (sprintf "Page created after the DPI change has fonts %A, expected %.2f and %.2f" sizes expected described)
+        let heading = 11.0f*float32 target/float32(Dpi.system())
+        let headings = shown |> List.filter isHeading |> List.map(fun c -> c.Text,c.Font.Size)
+        check (not headings.IsEmpty && headings |> List.forall(fun (_,size) -> abs(size-heading)<0.05f || abs(size-expected)<0.05f))
+              (sprintf "Headings after the DPI change are %A, expected %.2f or %.2f" headings heading expected)
         settingsForm.Close()
         // A settings page lays each panel out a few times when first shown, instead of again for
         // every row added; not at all when shown again; and not while hidden as the window moves

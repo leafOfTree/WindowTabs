@@ -61,7 +61,7 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
             let p = SettingsColors.current()
             e.Graphics.Clear(this.BackColor)
             e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect card.Width card.Height) (float32(Dpi.scale 10))
+            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect card.Width card.Height) (SettingsShapes.overlayRadius())
             use fill = new SolidBrush(p.surface)
             use border = new Pen(p.border)
             e.Graphics.FillPath(fill,shape)
@@ -83,7 +83,7 @@ type SettingsListPage(title:string, description:string, list:Control, actions:Co
                     this.BeginInvoke(Action(fun () -> relayoutPending <- false; this.PerformLayout())) |> ignore))
         ThemeBinding.watch this (fun () ->
             let p = SettingsColors.current()
-            for link in allLinks() do link.LinkColor <- p.accent
+            for link in allLinks() do link.LinkColor <- p.accentText
             list.Invalidate()
             card.Invalidate())
     /// Short note above the list (scan progress, counts, errors).

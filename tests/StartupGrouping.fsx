@@ -258,7 +258,7 @@ let main() =
         pumpUntil "Closing a window of a group made by hand did not tell App rules" (fun () ->
             announced.Value>0 &&
             (program :> IProgram).handMadeGroups() |> List.exists(fun (id,members) ->
-                id=5151 && members |> List.exists(fun (_,title,hwnd) -> title="Remembered C" && hwnd=IntPtr.Zero)))
+                id=5151 && members |> List.exists(fun (_,title,hwnd,_) -> title="Remembered C" && hwnd=IntPtr.Zero)))
         // Closed by hand rather than by Windows signing out, it leaves the group once the grace is
         // over, as a tab dragged out does.
         pumpUntil "A window closed by hand stayed in its group's record" (fun () ->
@@ -277,6 +277,19 @@ let main() =
         pumpUntil "A title two windows had at once was kept or matched by" (fun () ->
             List.contains twinTitle runtimeSettings.sharedTitles &&
             runtimeSettings.rememberedGroups |> List.forall(fun group -> not (List.contains twinTitle group.members)))
+        // App rules shows the group as it is: its open windows, the one whose title is no longer
+        // kept among them, said not to come back after a restart; its closed ones after them.
+        do
+            let shown = (program :> IProgram).handMadeGroups() |> List.tryFind(fun (id,_) -> id=5151) |> Option.map snd |> Option.defaultValue []
+            let openOnes = shown |> List.filter(fun (_,_,hwnd,_) -> hwnd<>IntPtr.Zero)
+            check (openOnes |> List.exists(fun (_,_,hwnd,kept) -> hwnd=reopenedB.Handle && not kept))
+                  (sprintf "An open window of the group whose title is no longer kept is missing or said to come back: %A" shown)
+            check (openOnes |> List.exists(fun (_,_,hwnd,kept) -> hwnd=reopenedA.Handle && kept))
+                  (sprintf "An open window of the group that is kept is missing or said not to come back: %A" shown)
+            let firstClosed = shown |> List.tryFindIndex(fun (_,_,hwnd,_) -> hwnd=IntPtr.Zero)
+            let lastOpen = shown |> List.tryFindIndexBack(fun (_,_,hwnd,_) -> hwnd<>IntPtr.Zero)
+            check (match firstClosed,lastOpen with Some closed,Some opened -> opened<closed | _ -> true)
+                  (sprintf "The group's closed windows are not after its open ones: %A" shown)
         // A picture for a group's taskbar button is kept for that group, whichever of its windows
         // it was chosen from, and the default comes back on request.
         (program :> IProgram).setGroupIcon(reopenedA.Handle,Some @"C:\icons\work.ico")

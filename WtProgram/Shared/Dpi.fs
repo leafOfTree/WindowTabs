@@ -10,6 +10,8 @@ module Dpi =
     extern IntPtr private MonitorFromWindow(IntPtr hwnd, uint32 flags)
     [<System.Runtime.InteropServices.DllImport("shcore.dll")>]
     extern int private GetDpiForMonitor(IntPtr monitor, int kind, uint32& x, uint32& y)
+    [<System.Runtime.InteropServices.DllImport("user32.dll")>]
+    extern IntPtr private MonitorFromPoint(int64 point, uint32 flags)
     let private systemDpi = lazy (
         try
             use graphics = Graphics.FromHwnd(IntPtr.Zero)
@@ -38,6 +40,14 @@ module Dpi =
             if GetDpiForMonitor(MonitorFromWindow(hwnd,2u),0,&x,&y)=0 && x>0u then int x
             else forWindow hwnd
         with _ -> forWindow hwnd
+    /// The scale of the monitor a point on screen is on, as the pointer is drawn there.
+    let forPoint (x:int) (y:int) =
+        try
+            let mutable dx,dy = 0u,0u
+            // POINT passed by value: x in the low half, y in the high.
+            let packed = (int64 y <<< 32) ||| (int64 (uint32 x))
+            if GetDpiForMonitor(MonitorFromPoint(packed,2u),0,&dx,&dy)=0 && dx>0u then int dx else systemDpi.Value
+        with _ -> systemDpi.Value
     /// WinForms rescales forms moved to a monitor with another scale only when the
     /// DpiAwareness option is PerMonitorV2. It reads the option from the exe's .config file
     /// into ConfigurationOptions.applicationConfigOptions; the single exe ships without that

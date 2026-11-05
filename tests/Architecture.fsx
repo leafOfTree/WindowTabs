@@ -1198,6 +1198,13 @@ let main() =
     check (ran=["close"] && not greyed.IsClosed && greyed.Results.Length=1) "A dimmed command ran, or was left out"
     greyed.Close()
     pump 100
+    // The split's window list keeps the order it is given, the most recently used first, as Switch
+    // windows lists them: sorted by app, the window last used sat wherever its name fell.
+    do
+        let given = [IntPtr 31,"Zeta report","zeta";IntPtr 32,"Alpha notes","alpha";IntPtr 33,"Beta mail",""]
+        let entries = SplitPaneList.entries given
+        let listed = entries |> List.sortBy(fun entry -> TabSearch.order "" entry) |> List.map(fun entry -> entry.hwnd)
+        check (listed=(given |> List.map(fun (hwnd,_,_) -> hwnd))) (sprintf "The split's window list is not in the order given, most recent first: %A" listed)
     // A setting turned in place: the palette stays up and its switch shows the new state.
     let mutable lamp = false
     let switchPage = { commandsPage with choose=(fun _ -> lamp <- not lamp; Stay); aside=(fun _ _ -> { detail=""; switch=Some lamp; swatch=None; shortcut=""; dropdown=false; small=false }); concealed=fun _ -> false }

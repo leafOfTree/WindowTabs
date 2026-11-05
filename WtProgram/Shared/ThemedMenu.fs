@@ -73,24 +73,40 @@ module SettingsPopupShadowPixels =
 /// A click-through halo with no directional offset; owned by the popup's lifetime. The settings
 /// popups use it, and the tab menu where Windows 10 has no soft shadow of its own for menus.
 /// `corner` is the popup's corner radius in logical pixels, 10 as the settings dropdowns'.
-type SettingsPopupShadow(owner:Control, ?corner:int) =
+/// `body` is the part of the owner it surrounds, where that is not all of it, such as a bubble's
+/// body without its arrow. `shape` is the owner's own outline, in its coordinates, where it
+/// reaches past the body: the halo sits over the owner, so none of it is painted there, or a
+/// bubble's arrow came out shaded by it.
+type SettingsPopupShadow(owner:Control, ?corner:int, ?body:unit -> Rectangle, ?shape:unit -> Drawing2D.GraphicsPath) =
     let os = OS()
     let corner = defaultArg corner 10
+    let body() = match body with Some part -> part() | None -> Rectangle(Point.Empty,owner.Size)
     let padding = Dpi.scale 6
     let helper = os.createWindow (fun message -> message.def()) WindowsStyles.WS_POPUP
                     (WindowsExtendedStyles.WS_EX_LAYERED ||| WindowsExtendedStyles.WS_EX_TOOLWINDOW |||
                      WindowsExtendedStyles.WS_EX_NOACTIVATE ||| WindowsExtendedStyles.WS_EX_TRANSPARENT)
     let window = os.windowFromHwnd(helper.hwnd)
-    /// The halo of the last size, kept: a notice moves it on every frame of its slide.
+    /// The halo of the last size, kept: a notice moves it on every frame of its slide. Not with
+    /// a shape, which may move within the same size, as a bubble's arrow does.
     let mutable cached : (int * int * int * Bitmap) option = None
     let bitmapFor width height =
         let dpi = Dpi.value()
         match cached with
-        | Some(w,h,d,bitmap) when w=width && h=height && d=dpi -> bitmap
+        | Some(w,h,d,bitmap) when w=width && h=height && d=dpi && shape.IsNone -> bitmap
         | _ ->
             cached |> Option.iter(fun (_,_,_,old) -> old.Dispose())
             let w,h = width+padding*2,height+padding*2
             let pixels = SettingsPopupShadowPixels.createRounded dpi width height corner
+            shape |> Option.iter(fun shape ->
+                use path = shape()
+                use region = new Region(path)
+                let part = body()
+                use toHalo = new Drawing2D.Matrix()
+                toHalo.Translate(float32(padding-part.X),float32(padding-part.Y))
+                for scan in region.GetRegionScans(toHalo) do
+                    for y in max 0 (int scan.Top)..min (h-1) (int scan.Bottom-1) do
+                        for x in max 0 (int scan.Left)..min (w-1) (int scan.Right-1) do
+                            pixels.[(y*w+x)*4+3] <- 0uy)
             let bitmap = new Bitmap(w,h,Imaging.PixelFormat.Format32bppArgb)
             let data = bitmap.LockBits(Rectangle(0,0,w,h),Imaging.ImageLockMode.WriteOnly,Imaging.PixelFormat.Format32bppArgb)
             try
@@ -102,9 +118,18 @@ type SettingsPopupShadow(owner:Control, ?corner:int) =
     /// Around the owner where it is now, as see-through as the owner while it fades.
     member _.Show(?opacity:float) =
         let alpha = byte(Math.Round(255.0*max 0.0 (min 1.0 (defaultArg opacity 1.0))))
-        Win32Helper.UpdateLayeredWindow(helper.hwnd,Point(owner.Left-padding,owner.Top-padding),bitmapFor owner.Width owner.Height,alpha)
+        let part = body()
+        Win32Helper.UpdateLayeredWindow(helper.hwnd,Point(owner.Left+part.X-padding,owner.Top+part.Y-padding),bitmapFor part.Width part.Height,alpha)
         window.showNoActivate()
     member _.Hide() = window.hide()
+    /// Whether the halo last shown paints anything at a point in the owner's coordinates.
+    member _.Covers(point:Point) =
+        match cached with
+        | Some(_,_,_,bitmap) ->
+            let part = body()
+            let x,y = point.X-part.X+padding,point.Y-part.Y+padding
+            x>=0 && y>=0 && x<bitmap.Width && y<bitmap.Height && bitmap.GetPixel(x,y).A>0uy
+        | None -> false
     interface IDisposable with
         member _.Dispose() =
             cached |> Option.iter(fun (_,_,_,bitmap) -> bitmap.Dispose())
@@ -174,11 +199,17 @@ type ThemeMenuRenderer(p:SettingsPalette) =
             if right+inset<e.Item.Width-inset then e.Graphics.DrawLine(pen,right+inset,y,e.Item.Width-inset,y)
             TextRenderer.DrawText(e.Graphics,e.Item.Text,e.Item.Font,Rectangle(Point.Empty,e.Item.Size),
                                   (if SystemInformation.HighContrast then p.text else p.muted),flags)
-    /// The same font glyph as the trailing mark on a selected tab colour, so both checks match.
+    /// The tick the settings' drop-down lists give their chosen item: the icon font's check, at
+    /// its size and in the accent; greyed on an item that cannot be taken.
     override _.OnRenderItemCheck(e) =
         if isNull e.Item.Image then
-            TextRenderer.DrawText(e.Graphics,"✓",e.Item.Font,e.ImageRectangle,textColor e.Item,
-                                  TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPadding ||| TextFormatFlags.NoClipping)
+            let ink = if not e.Item.Enabled || SystemInformation.HighContrast then textColor e.Item else p.accentText
+            let r = e.ImageRectangle
+            let em = float32(Dpi.scale 12)
+            let box = RectangleF(float32 r.X+(float32 r.Width-em)/2.0f,float32 r.Y+(float32 r.Height-em)/2.0f,em,em)
+            if not (UiFace.glyph e.Graphics 0xE73E box ink) then
+                TextRenderer.DrawText(e.Graphics,"✓",e.Item.Font,r,ink,
+                                      TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPadding ||| TextFormatFlags.NoClipping)
 
 /// Own image copies until the menu loop has finished closing, then dispatch the command.
 /// ownsForeground: windows whose activation must not close the menu, such as the tab's own

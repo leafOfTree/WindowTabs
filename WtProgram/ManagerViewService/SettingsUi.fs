@@ -26,17 +26,25 @@ module SettingsUi =
         let dpi = Dpi.value()
         fonts.GetOrAdd(struct(family,points,style,dpi),fun _ ->
             new Font(family,points*float32 dpi/float32(Dpi.system()),style))
-    let bodyFont() = font "Segoe UI" 10.5f FontStyle.Regular
+    /// Windows 11's face, as WinUI sets its text; Segoe UI where it is missing, as on Windows 10.
+    let uiFamily() = UiFace.text "Segoe UI"
+    let uiSemiboldFamily() = UiFace.semibold()
+    /// The face for captions and other small text, in the optical size Windows sets them in.
+    let smallFamily() = UiFace.small (uiFamily())
+    let bodyFont() = font (uiFamily()) 10.5f FontStyle.Regular
     let rowFont() = bodyFont()
-    let sectionFont() = font "Segoe UI" 11.0f FontStyle.Bold
-    /// A part of a page's section: the body size, a step lighter than the section heading.
-    let subsectionFont() = font "Segoe UI Semibold" 10.5f FontStyle.Regular
+    /// Semibold, as WinUI heads its sections, not Bold.
+    let sectionFont() = font (uiSemiboldFamily()) 11.0f FontStyle.Regular
+    /// A part of a page's section: the body size, a step smaller than the section heading.
+    let subsectionFont() = font (uiSemiboldFamily()) 10.5f FontStyle.Regular
+    /// A setting's description under its name: the name's own size, told apart by its grey.
+    let descriptionFont() = rowFont()
 
     let palette() = SettingsColors.current()
 
-    let private sidebarColor (p:SettingsPalette) darkMode =
-        if SystemInformation.HighContrast then p.background
-        elif darkMode then Color.FromRGB(0x151514) else Color.FromRGB(0xFCFCFB)
+    /// The page's own colour, as Windows Settings has its navigation: a darker or warmer panel set
+    /// the sidebar apart from everything Windows draws.
+    let private sidebarColor (p:SettingsPalette) (_darkMode:bool) = p.background
 
     let rec private applyPalette p darkMode (control:Control) =
         let tag = if isNull control.Tag then "" else string control.Tag
@@ -49,7 +57,7 @@ module SettingsUi =
             else p.background
         if tag <> "color-swatch" then
             control.BackColor <- background
-            control.ForeColor <- if tag = "muted" then p.muted else p.text
+            control.ForeColor <- if tag = "muted" then p.description else p.text
         match control with
         | :? Button as button when tag <> "color-swatch" ->
             // Even the same style lays an auto-size button's parent out again.
@@ -195,13 +203,13 @@ module SettingsUi =
         labels.SuspendLayout()
         labels.ColumnStyles.Add(ColumnStyle(SizeType.Percent,100.0f)) |> ignore
         let name = new Label(Text=caption,AutoSize=true,Dock=DockStyle.Fill,Font=rowFont(),UseMnemonic=false,Margin=Padding.Empty)
-        let detail = new SettingsEllipsisLabel(Text=description,AutoSize=false,Font=rowFont(),Height=rowFont().Height,
-                               MinimumSize=Size(0,rowFont().Height),Dock=DockStyle.Fill,Tag="muted",
+        let detail = new SettingsEllipsisLabel(Text=description,AutoSize=false,Font=descriptionFont(),Height=descriptionFont().Height,
+                               MinimumSize=Size(0,descriptionFont().Height),Dock=DockStyle.Fill,Tag="muted",
                                Margin=Padding(0,Dpi.scale 4,0,0))
         labels.RowCount <- if String.IsNullOrWhiteSpace(description) then 1 else 2
         labels.RowStyles.Add(RowStyle(SizeType.AutoSize)) |> ignore
         if labels.RowCount=2 then
-            let style = RowStyle(SizeType.Absolute,float32(rowFont().Height+detail.Margin.Vertical))
+            let style = RowStyle(SizeType.Absolute,float32(descriptionFont().Height+detail.Margin.Vertical))
             labels.RowStyles.Add(style) |> ignore
             // The description wraps to as many lines as the column's width needs. Its height is set
             // here, on every layout, rather than by auto-size: an auto-size row collapses around
@@ -211,7 +219,7 @@ module SettingsUi =
             let mutable measured = struct(0,(null:Font),0)
             labels.Layout.Add(fun _ ->
                 let width = max 40 (labels.ClientSize.Width-Dpi.scale 8)
-                let font = rowFont()
+                let font = descriptionFont()
                 let textHeight =
                     match measured with
                     | struct(w,f,h) when w=width && obj.ReferenceEquals(f,font) -> h

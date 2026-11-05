@@ -380,7 +380,7 @@ type TaskSwitchIconView(windows:List2<TaskWindowItem>) =
     // Wide enough for a readable title even with one or two windows.
     let width = max (Dpi.scale 360) (columns*cell+(columns-1)*gap+padding*2)
     let height = padding+rows*cell+(rows-1)*gap+titleHeight+padding/2
-    let titleFont = SettingsUi.font "Segoe UI" 11.0f FontStyle.Regular
+    let titleFont = SettingsUi.font (SettingsUi.uiFamily()) 11.0f FontStyle.Regular
     let mutable selected = 0
     let mutable closed = false
     let mutable shadow : TaskSwitchShadow option = None

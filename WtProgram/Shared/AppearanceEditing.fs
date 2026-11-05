@@ -9,7 +9,7 @@ module PaletteEditing =
     let paletteForProfile dark (s:AppearancePreferences) = if dark then s.darkPalette else s.lightPalette
     let customForProfile dark (s:AppearancePreferences) = if dark then s.darkCustomPalette else s.lightCustomPalette
     let activePalette dark (s:AppearancePreferences) =
-        if s.useCustomColors then paletteForProfile dark s
+        if s.useCustomColors then ThemePresets.following dark s (paletteForProfile dark s)
         elif dark then Theme.darkPalette else Theme.lightPalette
     let setActive dark palette (s:AppearancePreferences) =
         if dark then {s with darkPalette=palette;useCustomColors=true}
@@ -22,7 +22,18 @@ module PaletteEditing =
     let original dark index = (ThemePresets.palettes dark).[index]
     let editKey dark index = (if dark then "dark:" else "light:")+ThemePresets.keys.[index]
     /// A preset as the user left it: its own colours with their edits.
-    let presetPalette dark (s:AppearancePreferences) index = s.presetEdits.TryFind(editKey dark index) |> Option.defaultValue (original dark index)
+    let presetPalette dark (s:AppearancePreferences) index =
+        let edit = if ThemePresets.keys.[index]=ThemePresets.accentKey then ThemePresets.editedAccent dark s.presetEdits else s.presetEdits.TryFind(editKey dark index)
+        edit |> Option.defaultValue (original dark index)
+    /// A preset's edit gone, with the accent tints an edit of the accent preset was made on.
+    let withoutEdit dark index (edits:Map<string,TabPalette>) =
+        let edits = edits.Remove(editKey dark index)
+        if ThemePresets.keys.[index]=ThemePresets.accentKey then edits.Remove(ThemePresets.accentBaseKey dark) else edits
+    /// A preset's edit kept; an edit of the accent preset with the tints it was made on, so it can
+    /// be carried over when Windows' accent changes.
+    let withEdit dark index palette (edits:Map<string,TabPalette>) =
+        let edits = edits.Add(editKey dark index,palette)
+        if ThemePresets.keys.[index]=ThemePresets.accentKey then edits.Add(ThemePresets.accentBaseKey dark,original dark index) else edits
     let setPreset dark key (s:AppearancePreferences) = if dark then {s with darkPreset=key} else {s with lightPreset=key}
     /// The chosen entry: Some preset, or None for Custom. Settings from before the choice was
     /// stored are matched by their colours.
@@ -41,7 +52,7 @@ module PaletteEditing =
             match selection dark s with
             | None -> s |> setActive dark next |> setCustom dark next |> setPreset dark ThemePresets.customKey
             | Some index ->
-                let edits = if values next=values (original dark index) then s.presetEdits.Remove(editKey dark index) else s.presetEdits.Add(editKey dark index,next)
+                let edits = if values next=values (original dark index) then withoutEdit dark index s.presetEdits else withEdit dark index next s.presetEdits
                 {(setActive dark next s) with presetEdits=edits} |> setPreset dark ThemePresets.keys.[index]
     /// The colours a setting names, read and written on a palette. The separator follows the text
     /// and inactive tab colours, so it has no setting of its own.

@@ -272,7 +272,7 @@ type AppGroupingRulesView() as this =
                                        ChipAdd=true,Actions=Some [EditGlyph;DeleteGlyph],AlwaysShowActions=true,
                                        ChipsDimmed=(not members.IsEmpty && enabled=0))
                 row.Chips <- members |> List.map(fun rule ->
-                    { Text=ApplicationNames.label rule.processPath; Icon=addMenu.Icon rule.processPath; Removable=true })
+                    { Faded=false; Note=""; Text=ApplicationNames.label rule.processPath; Icon=addMenu.Icon rule.processPath; Removable=true })
                 chipRules.[group.id] <- members
                 tree.Roots.Add(row)
             // Groups made by dragging tabs, kept after a restart closes their windows: shown, not edited here,
@@ -281,7 +281,7 @@ type AppGroupingRulesView() as this =
             Services.program.handMadeGroups() |> List.iteri(fun index (id,members) ->
                 let row = TreeListItem("",Tag=HandMadeNode id,Glyph=TabsGlyph,SeparatorAbove=(index=0),IconTip=tr Strings.AppRules.handMadeGroups,
                                        Checks=[|None;None|],Actions=Some [NoGlyph;UngroupGlyph],AlwaysShowActions=true,ChipColumns=3)
-                row.Chips <- members |> List.map(fun (app,title,hwnd) ->
+                row.Chips <- members |> List.map(fun (app,title,hwnd,kept) ->
                     // An open window's own icon; a closed one's app icon in grey, as another of its
                     // windows shows it, else from where the app last ran or the settings know it to
                     // be, else a grey window.
@@ -306,7 +306,9 @@ type AppGroupingRulesView() as this =
                                     | None,None -> known()
                                 with _ -> None
                             Some(found |> Option.defaultWith(fun () -> ApplicationNames.glyphIcon WindowGlyph) |> ApplicationNames.grey)
-                    { Text=(if String.IsNullOrWhiteSpace title then key else title); Icon=Option.toObj icon; Removable=false })
+                    // A closed window greyed; an open one it cannot take back after a restart says so.
+                    { Faded=(hwnd=IntPtr.Zero); Note=(if hwnd<>IntPtr.Zero && not kept then tr Strings.AppRules.notKept else "")
+                      Text=(if String.IsNullOrWhiteSpace title then key else title); Icon=Option.toObj icon; Removable=false })
                 tree.Roots.Add(row))
             tree.Rebuild()
             tree.SelectedItem <- tree.Roots
@@ -507,7 +509,7 @@ type AppGroupingRulesView() as this =
             let palette = SettingsColors.current()
             e.Graphics.Clear(this.BackColor)
             e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect card.Width card.Height) (float32(Dpi.scale 10))
+            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect card.Width card.Height) (SettingsShapes.overlayRadius())
             use fill = new SolidBrush(palette.surface)
             use border = new Pen(palette.border)
             e.Graphics.FillPath(fill,shape)

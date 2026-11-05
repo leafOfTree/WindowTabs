@@ -64,6 +64,8 @@ module SettingsShortcut =
         else modifierNames (flags &&& controlFlag<>0,flags &&& altFlag<>0,flags &&& shiftFlag<>0) @ [keyName key]
     /// As menus show shortcuts, e.g. "Ctrl+Alt+T"; empty for none.
     let text code = String.Join("+",parts code)
+    /// Keys pressed one after another, as "Ctrl+K, Ctrl+C".
+    let sequenceText (codes:int list) = String.Join(", ",codes |> List.map text)
     let heldParts (modifiers:Keys) =
         modifierNames (modifiers.HasFlag(Keys.Control),modifiers.HasFlag(Keys.Alt),modifiers.HasFlag(Keys.Shift))
     /// Kept by the palette for setting a shortcut: taken, it could not set one any more. Keys

@@ -3,21 +3,17 @@ open System
 open System.Drawing
 open System.Windows.Forms
 
-/// The window list for a pane: the tab search's box, over the pane or the group about to split,
-/// sorted by app and then title with a divider between apps; type to filter, and Enter or a
-/// click puts the window there.
+module SplitPaneList =
+    /// The windows in the order given, the most recently used first, as Switch windows lists
+    /// them: the one to put beside the tab is most often among the first.
+    let entries (windows:(IntPtr * string * string) list) =
+        windows |> List.mapi(fun index (hwnd,title,program) -> { TabSearch.create hwnd title title program with recency=index })
+
+/// The window list for a pane: the tab search's box, over the pane or the group about to split;
+/// type to filter, and Enter or a click puts the window there.
 type SplitPanePicker() =
     let open' (within:Rectangle) windows choose =
-        let key (text:string) = text.ToLowerInvariant()
-        let sorted =
-            windows
-            |> List.map(fun (hwnd,title,program) -> TabSearch.create hwnd title title program)
-            // Windows whose program cannot be read, elevated system tools such as Task Manager
-            // or hosts of Store apps, go last: they are seldom the ones to put beside another.
-            |> List.sortBy(fun entry -> entry.program="",key entry.program,key entry.title)
-        let apps = sorted |> List.map(fun entry -> key entry.program) |> List.distinct
-        let entries = sorted |> List.mapi(fun index entry ->
-                        { entry with group=List.findIndex ((=) (key entry.program)) apps; recency=index })
+        let entries = SplitPaneList.entries windows
         // Half the screen wide and most of its height, so most windows can be picked without
         // scrolling; the box and scope line above the rows take about two rows.
         let area = Screen.FromRectangle(within).WorkingArea

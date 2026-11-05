@@ -23,8 +23,8 @@ type SettingsSearchBox(search:TextBox) as this =
     /// on a surface the box's own colour, as the palette's is.
     static member Outline() =
         if SystemInformation.HighContrast then (SettingsColors.current()).border
-        elif ThemeService.currentIsDark() then Color.FromRGB(0x4A4A48)
-        else Color.FromRGB(0xD6D6D3)
+        elif ThemeService.currentIsDark() then Color.FromRGB(0x4A4A4A)
+        else Color.FromRGB(0xD6D6D6)
     /// No outline, only a line along its foot, as a search box over its own results draws it.
     member this.Underlined
         with get() = underlined
@@ -42,30 +42,32 @@ type SettingsSearchBox(search:TextBox) as this =
             e.Graphics.DrawLine(line,0,this.Height-1,this.Width,this.Height-1)
         elif this.Width>2 && this.Height>2 then
             e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-            use path = SettingsShapes.rounded (RectangleF(1.0f,1.0f,float32(this.Width-3),float32(this.Height-3))) (float32(Dpi.scale 10))
+            let bounds = RectangleF(1.0f,1.0f,float32(this.Width-3),float32(this.Height-3))
+            use path = SettingsShapes.rounded bounds (SettingsShapes.controlRadius())
             use fill = new SolidBrush(p.surface)
-            let border =
-                if SystemInformation.HighContrast then p.border
-                elif search.Focused && ThemeService.currentIsDark() then Color.FromRGB(0x777773)
-                elif search.Focused then p.accent
-                else SettingsSearchBox.Outline()
-            use pen = new Pen(border,if search.Focused && not (ThemeService.currentIsDark()) then float32(Dpi.scaleF 1.5) else 1.0f)
             e.Graphics.FillPath(fill,path)
-            e.Graphics.DrawPath(pen,path)
+            SettingsShapes.drawControlEdge e.Graphics path bounds true search.Focused Color.Empty p
     override this.OnPaint(e) =
         base.OnPaint(e)
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         let glyph = if search.Focused && not (ThemeService.currentIsDark()) then (SettingsColors.current()).accent else (SettingsColors.current()).muted
-        use pen = new Pen(glyph,float32(Dpi.scaleF 1.4))
         let x,y = Dpi.scale 11,this.Height/2-Dpi.scale 7
-        e.Graphics.DrawEllipse(pen,x,y,Dpi.scale 12,Dpi.scale 12)
-        e.Graphics.DrawLine(pen,x+Dpi.scale 10,y+Dpi.scale 10,x+Dpi.scale 16,y+Dpi.scale 16)
+        // Where the drawn lens and handle were, so the text keeps its place.
+        let em = float32(Dpi.scale 16)
+        let lens = RectangleF(float32 x+float32(Dpi.scale 8)-em/2.0f,float32 y+float32(Dpi.scale 8)-em/2.0f,em,em)
+        if not (UiFace.glyph e.Graphics 0xE721 lens glyph) then
+            use pen = new Pen(glyph,float32(Dpi.scaleF 1.4))
+            e.Graphics.DrawEllipse(pen,x,y,Dpi.scale 12,Dpi.scale 12)
+            e.Graphics.DrawLine(pen,x+Dpi.scale 10,y+Dpi.scale 10,x+Dpi.scale 16,y+Dpi.scale 16)
         if search.TextLength>0 then
             let x = this.Width-Dpi.scale 24
             let y = this.Height/2
-            use clearPen = new Pen((SettingsColors.current()).muted,float32(Dpi.scaleF 1.4))
-            e.Graphics.DrawLine(clearPen,x-Dpi.scale 4,y-Dpi.scale 4,x+Dpi.scale 4,y+Dpi.scale 4)
-            e.Graphics.DrawLine(clearPen,x+Dpi.scale 4,y-Dpi.scale 4,x-Dpi.scale 4,y+Dpi.scale 4)
+            let muted = (SettingsColors.current()).muted
+            let em = float32(Dpi.scale 12)
+            if not (UiFace.glyph e.Graphics 0xE711 (RectangleF(float32 x-em/2.0f,float32 y-em/2.0f,em,em)) muted) then
+                use clearPen = new Pen(muted,float32(Dpi.scaleF 1.4))
+                e.Graphics.DrawLine(clearPen,x-Dpi.scale 4,y-Dpi.scale 4,x+Dpi.scale 4,y+Dpi.scale 4)
+                e.Graphics.DrawLine(clearPen,x+Dpi.scale 4,y-Dpi.scale 4,x-Dpi.scale 4,y+Dpi.scale 4)
 
 type SettingsInfoButton() as this =
     inherit Button()
@@ -79,24 +81,27 @@ type SettingsInfoButton() as this =
         e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         let color = if this.Focused || this.ClientRectangle.Contains(this.PointToClient(Control.MousePosition)) then p.text else p.muted
-        // Keep the "i" on whole pixels so it stays sharp: pixel edges on whole coordinates, a whole-pixel
-        // stroke, and a circle whose size differs from the stroke by an even amount so the stem is centred.
-        e.Graphics.PixelOffsetMode <- Drawing2D.PixelOffsetMode.Half
-        let stroke = max 1 (int(Math.Round(Dpi.scaleF 1.2)))
-        let size = let s = Dpi.scale 16 in if (s-stroke)%2=0 then s else s+1
-        let left,top = (this.Width-size)/2,(this.Height-size)/2
-        let half = float32 stroke/2.0f
-        use pen = new Pen(color,float32 stroke)
-        e.Graphics.DrawEllipse(pen,float32 left+half,float32 top+half,float32(size-stroke),float32(size-stroke))
-        use brush = new SolidBrush(color)
-        let x = left+(size-stroke)/2
-        let at fraction = top+int(Math.Round(float size*fraction))
-        let stemTop,stemBottom = at 0.44,at 0.75
-        // The dot sits a clear gap above the stem, so at 100% the two never merge into a bar.
-        let dot,gap = max 2 stroke,max 2 stroke
-        e.Graphics.FillRectangle(brush,x,stemTop-gap-dot,stroke,dot)
-        e.Graphics.FillRectangle(brush,x,stemTop,stroke,stemBottom-stemTop)
-        if this.Focused then ControlPaint.DrawFocusRectangle(e.Graphics,this.ClientRectangle)
+        let side = float32(Dpi.scale 16)
+        let box = RectangleF((float32 this.Width-side)/2.0f,(float32 this.Height-side)/2.0f,side,side)
+        if not (UiFace.glyph e.Graphics 0xE946 box color) then
+            // Keep the "i" on whole pixels so it stays sharp: pixel edges on whole coordinates, a whole-pixel
+            // stroke, and a circle whose size differs from the stroke by an even amount so the stem is centred.
+            e.Graphics.PixelOffsetMode <- Drawing2D.PixelOffsetMode.Half
+            let stroke = max 1 (int(Math.Round(Dpi.scaleF 1.2)))
+            let size = let s = Dpi.scale 16 in if (s-stroke)%2=0 then s else s+1
+            let left,top = (this.Width-size)/2,(this.Height-size)/2
+            let half = float32 stroke/2.0f
+            use pen = new Pen(color,float32 stroke)
+            e.Graphics.DrawEllipse(pen,float32 left+half,float32 top+half,float32(size-stroke),float32(size-stroke))
+            use brush = new SolidBrush(color)
+            let x = left+(size-stroke)/2
+            let at fraction = top+int(Math.Round(float size*fraction))
+            let stemTop,stemBottom = at 0.44,at 0.75
+            // The dot sits a clear gap above the stem, so at 100% the two never merge into a bar.
+            let dot,gap = max 2 stroke,max 2 stroke
+            e.Graphics.FillRectangle(brush,x,stemTop-gap-dot,stroke,dot)
+            e.Graphics.FillRectangle(brush,x,stemTop,stroke,stemBottom-stemTop)
+        if this.Focused && this.ShowFocusCues then SettingsShapes.drawFocusRing e.Graphics (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (float32 this.Height/2.0f) (SettingsColors.current())
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); this.Invalidate()
     override this.OnMouseLeave(e) = base.OnMouseLeave(e); this.Invalidate()
 
@@ -115,13 +120,18 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
     /// target (the arrow on its top edge) or above it.
     let mutable tip = 0
     let mutable below = true
-    /// The bubble and its arrow as one outline, so the border runs round both.
-    let outline (inset:float32) =
+    /// A soft shadow round the bubble, so it stands off the page as the drop-down lists do.
+    let mutable halo : SettingsPopupShadow option = None
+    /// The bubble and its arrow as one outline, so the border runs round both. As the window's
+    /// shape, it covers the pixels up to a pixel short of its right and bottom; the pen that draws
+    /// the border runs along the shape's outermost pixels, `trim` a pixel in on those two sides,
+    /// so no strip of fill shows outside the line and no gap opens between it and the shadow.
+    let outline (trim:float32) =
         let a = float32(arrow())
         let r = radius()
         let d = r*2.0f
-        let top = (if below then a else 0.0f)+inset
-        let rect = RectangleF(inset,top,float32 this.Width-1.0f-inset*2.0f,float32 this.Height-1.0f-a-inset*2.0f)
+        let top = if below then a else 0.0f
+        let rect = RectangleF(0.0f,top,float32 this.Width-1.0f-trim,float32 this.Height-1.0f-a-trim)
         // The arrow stays on the straight part of its edge, clear of the rounded corners.
         let x = max (rect.Left+r+a) (min (rect.Right-r-a) (float32 tip))
         let path = new Drawing2D.GraphicsPath()
@@ -148,6 +158,19 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
         this.ClientSize <- Size(width,textSize.Height+2*padY+arrow())
         // Windows widens a window to its minimum width when it is created; a one-word tip then
         // sat in a wide, empty bubble.
+        this.Disposed.Add(fun _ ->
+            halo |> Option.iter(fun shadow -> (shadow :> IDisposable).Dispose())
+            halo <- None)
+    /// The bubble without its arrow, as far as its shape reaches: what the shadow goes round.
+    member this.Body = Rectangle(0,(if below then arrow() else 0),this.Width-1,this.Height-arrow()-1)
+    member private this.showHalo() =
+        if this.Visible && not SystemInformation.HighContrast then
+            if halo.IsNone then halo <- Some(new SettingsPopupShadow(this,corner=8,body=(fun () -> this.Body),shape=(fun () -> outline 0.0f)))
+            halo |> Option.iter(fun shadow -> shadow.Show())
+        else halo |> Option.iter(fun shadow -> shadow.Hide())
+    override this.OnVisibleChanged(e) =
+        base.OnVisibleChanged(e)
+        this.showHalo()
     override _.ShowWithoutActivation = true
     override this.WndProc(m) =
         base.WndProc(&m)
@@ -172,12 +195,15 @@ type private SettingsHelpPopup(message:string,font:Font) as this =
         this.Region <- new Region(shape)
         if not (isNull old) then old.Dispose()
         this.Invalidate()
-    override this.OnPaintBackground(e) = e.Graphics.Clear((SettingsColors.current()).surface)
+        this.showHalo()
+    /// Filled as the drop-down lists are, a shade off the cards beneath: in the cards' own colour
+    /// the bubble ran into them.
+    override this.OnPaintBackground(e) = e.Graphics.Clear((SettingsColors.current()).hover)
     override this.OnPaint(e) =
         let p = SettingsColors.current()
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         use shape = outline 1.0f
-        use border = new Pen(p.border)
+        use border = new Pen(SettingsSearchBox.Outline())
         e.Graphics.DrawPath(border,shape)
         let top = padY+(if below then arrow() else 0)
         TextRenderer.DrawText(e.Graphics,wrapped,this.Font,
@@ -351,12 +377,17 @@ type SettingsLink(text:string, kind:SettingsLinkKind) as this =
         let x = float32(textWidth+gap())
         let y = float32(baseline())-s
         let at (fx:float32) (fy:float32) = PointF(x+s*fx,y+s*fy)
-        match kind with
-        | FileLink ->
-            g.DrawLines(pen,[|at 0.0f 0.95f;at 0.0f 0.1f;at 0.38f 0.1f;at 0.5f 0.25f;at 1.0f 0.25f;at 1.0f 0.95f;at 0.0f 0.95f|])
-        | WebLink ->
-            g.DrawLine(pen,at 0.1f 0.95f,at 0.9f 0.15f)
-            g.DrawLines(pen,[|at 0.35f 0.15f;at 0.9f 0.15f;at 0.9f 0.7f|])
+        // A folder or a window opening out, from Windows' icon font, the glyph's em a little over
+        // the capitals so its ink stands as tall as they do.
+        let em = s*1.3f
+        let box = RectangleF(x+s/2.0f-em/2.0f,y+s/2.0f-em/2.0f,em,em)
+        if not (UiFace.glyph g (match kind with FileLink -> 0xE8B7 | WebLink -> 0xE8A7) box linkColor) then
+            match kind with
+            | FileLink ->
+                g.DrawLines(pen,[|at 0.0f 0.95f;at 0.0f 0.1f;at 0.38f 0.1f;at 0.5f 0.25f;at 1.0f 0.25f;at 1.0f 0.95f;at 0.0f 0.95f|])
+            | WebLink ->
+                g.DrawLine(pen,at 0.1f 0.95f,at 0.9f 0.15f)
+                g.DrawLines(pen,[|at 0.35f 0.15f;at 0.9f 0.15f;at 0.9f 0.7f|])
         if hovering || (this.Focused && this.ShowFocusCues) then
             // One underline under text and mark together.
             g.SmoothingMode <- Drawing2D.SmoothingMode.None
@@ -403,7 +434,7 @@ type SettingsIconButton(icon:SettingsIcon, help:string, ?toggle:bool) as this =
         g.Clear(if isNull this.Parent then p.surface else this.Parent.BackColor)
         g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         if hovering || isChecked then
-            use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (float32(Dpi.scale 6))
+            use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.controlRadius())
             use fill = new SolidBrush(if isChecked then Color.FromArgb(56,p.accent) else p.hover)
             g.FillPath(fill,shape)
         let color = if isChecked then p.accent elif hovering then p.text else p.muted
@@ -414,40 +445,43 @@ type SettingsIconButton(icon:SettingsIcon, help:string, ?toggle:bool) as this =
         let s = float32(Dpi.scale 16)
         let x0,y0 = (float32 this.Width-s)/2.0f,(float32 this.Height-s)/2.0f
         let at (fx:float32) (fy:float32) = PointF(x0+s*fx,y0+s*fy)
-        match icon with
-        | RefreshIcon ->
-            // A near-full clockwise circle, the arrowhead at its open end pointing along it.
-            let cx,cy,r = x0+s*0.5f,y0+s*0.5f,s*0.36f
-            let start,sweep = 20.0,300.0
-            g.DrawArc(pen,cx-r,cy-r,r*2.0f,r*2.0f,float32 start,float32 sweep)
-            let theta = (start+sweep)*Math.PI/180.0
-            let ex,ey = cx+r*float32(cos theta),cy+r*float32(sin theta)
-            let dx,dy = float32(-(sin theta)),float32(cos theta)
-            let length = s*0.24f
-            let tip = PointF(ex+dx*length*0.35f,ey+dy*length*0.35f)
-            let wing side = PointF(tip.X-dx*length-dy*length*0.75f*side,tip.Y-dy*length+dx*length*0.75f*side)
-            g.DrawLines(pen,[|wing 1.0f;tip;wing -1.0f|])
-        | CopyIcon ->
-            use back = SettingsShapes.rounded (RectangleF(x0+s*0.06f,y0+s*0.06f,s*0.56f,s*0.62f)) (s*0.1f)
-            use front = SettingsShapes.rounded (RectangleF(x0+s*0.34f,y0+s*0.3f,s*0.58f,s*0.64f)) (s*0.1f)
-            g.DrawPath(pen,back)
-            use cover = new SolidBrush(if hovering || isChecked then (if isChecked then Color.FromArgb(56,p.accent) else p.hover) else (if isNull this.Parent then p.surface else this.Parent.BackColor))
-            g.FillPath(cover,front)
-            g.DrawPath(pen,front)
-        | WindowListIcon ->
-            // A window frame with rows: the report's per-window details.
-            use frame = SettingsShapes.rounded (RectangleF(x0+s*0.06f,y0+s*0.12f,s*0.88f,s*0.76f)) (s*0.1f)
-            g.DrawPath(pen,frame)
-            g.DrawLine(pen,at 0.06f 0.34f,at 0.94f 0.34f)
-            for fy in [0.52f;0.7f] do g.DrawLine(pen,at 0.24f fy,at 0.76f fy)
-        | SwapIcon ->
-            // Two arrows passing each other: one right along the top, one left along the bottom.
-            // Small heads and a gap between the rows keep it as light as the arrow beside it.
-            g.DrawLine(pen,at 0.16f 0.3f,at 0.84f 0.3f)
-            g.DrawLines(pen,[|at 0.7f 0.18f;at 0.84f 0.3f;at 0.7f 0.42f|])
-            g.DrawLine(pen,at 0.84f 0.7f,at 0.16f 0.7f)
-            g.DrawLines(pen,[|at 0.3f 0.58f;at 0.16f 0.7f;at 0.3f 0.82f|])
-        if this.Focused && this.ShowFocusCues then ControlPaint.DrawFocusRectangle(g,Rectangle(2,2,this.Width-4,this.Height-4))
+        // Windows' icon font where there is one, as WinUI's buttons; else drawn by hand.
+        let code = match icon with RefreshIcon -> 0xE72C | CopyIcon -> 0xE8C8 | WindowListIcon -> 0xE8FD | SwapIcon -> 0xE8AB
+        if not (UiFace.glyph g code (RectangleF(x0,y0,s,s)) color) then
+            match icon with
+            | RefreshIcon ->
+                // A near-full clockwise circle, the arrowhead at its open end pointing along it.
+                let cx,cy,r = x0+s*0.5f,y0+s*0.5f,s*0.36f
+                let start,sweep = 20.0,300.0
+                g.DrawArc(pen,cx-r,cy-r,r*2.0f,r*2.0f,float32 start,float32 sweep)
+                let theta = (start+sweep)*Math.PI/180.0
+                let ex,ey = cx+r*float32(cos theta),cy+r*float32(sin theta)
+                let dx,dy = float32(-(sin theta)),float32(cos theta)
+                let length = s*0.24f
+                let tip = PointF(ex+dx*length*0.35f,ey+dy*length*0.35f)
+                let wing side = PointF(tip.X-dx*length-dy*length*0.75f*side,tip.Y-dy*length+dx*length*0.75f*side)
+                g.DrawLines(pen,[|wing 1.0f;tip;wing -1.0f|])
+            | CopyIcon ->
+                use back = SettingsShapes.rounded (RectangleF(x0+s*0.06f,y0+s*0.06f,s*0.56f,s*0.62f)) (s*0.1f)
+                use front = SettingsShapes.rounded (RectangleF(x0+s*0.34f,y0+s*0.3f,s*0.58f,s*0.64f)) (s*0.1f)
+                g.DrawPath(pen,back)
+                use cover = new SolidBrush(if hovering || isChecked then (if isChecked then Color.FromArgb(56,p.accent) else p.hover) else (if isNull this.Parent then p.surface else this.Parent.BackColor))
+                g.FillPath(cover,front)
+                g.DrawPath(pen,front)
+            | WindowListIcon ->
+                // A window frame with rows: the report's per-window details.
+                use frame = SettingsShapes.rounded (RectangleF(x0+s*0.06f,y0+s*0.12f,s*0.88f,s*0.76f)) (s*0.1f)
+                g.DrawPath(pen,frame)
+                g.DrawLine(pen,at 0.06f 0.34f,at 0.94f 0.34f)
+                for fy in [0.52f;0.7f] do g.DrawLine(pen,at 0.24f fy,at 0.76f fy)
+            | SwapIcon ->
+                // Two arrows passing each other: one right along the top, one left along the bottom.
+                // Small heads and a gap between the rows keep it as light as the arrow beside it.
+                g.DrawLine(pen,at 0.16f 0.3f,at 0.84f 0.3f)
+                g.DrawLines(pen,[|at 0.7f 0.18f;at 0.84f 0.3f;at 0.7f 0.42f|])
+                g.DrawLine(pen,at 0.84f 0.7f,at 0.16f 0.7f)
+                g.DrawLines(pen,[|at 0.3f 0.58f;at 0.16f 0.7f;at 0.3f 0.82f|])
+        if this.Focused && this.ShowFocusCues then SettingsShapes.drawFocusRing g (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.controlRadius()) (SettingsColors.current())
 
 /// An (i) button that explains something on hover, focus or click.
 type SettingsHelpButton(text:string) as this =
@@ -483,21 +517,24 @@ type SettingsResetButton(text:string, ?help:string) as this =
                 if not this.Enabled then Color.FromArgb(110,p.muted)
                 elif hot then p.text
                 else p.muted
-            let radius = Dpi.scaleF 6.5
-            let cx,cy = float this.Width/2.0,float this.Height/2.0
-            use pen = new Pen(color,float32(max 1.0 (Dpi.scaleF 1.5)))
-            // Most of a circle, open at the top right, where the arrow points back the way it came.
-            let start = 300.0
-            e.Graphics.DrawArc(pen,float32(cx-radius),float32(cy-radius),float32(radius*2.0),float32(radius*2.0),float32 start,290.0f)
-            let angle = start*Math.PI/180.0
-            let x,y = cx+radius*cos angle,cy+radius*sin angle
-            let along,across = (sin angle,-(cos angle)),(cos angle,sin angle)
-            let length,width = radius*0.75,radius*0.5
-            use brush = new SolidBrush(color)
-            e.Graphics.FillPolygon(brush,[|PointF(float32(x+fst along*length),float32(y+snd along*length))
-                                           PointF(float32(x+fst across*width),float32(y+snd across*width))
-                                           PointF(float32(x-fst across*width),float32(y-snd across*width))|])
-            if this.Focused && this.ShowFocusCues then ControlPaint.DrawFocusRectangle(e.Graphics,this.ClientRectangle)
+            let side = float32(Dpi.scale 16)
+            let box = RectangleF((float32 this.Width-side)/2.0f,(float32 this.Height-side)/2.0f,side,side)
+            if not (UiFace.glyph e.Graphics 0xE777 box color) then
+                let radius = Dpi.scaleF 6.5
+                let cx,cy = float this.Width/2.0,float this.Height/2.0
+                use pen = new Pen(color,float32(max 1.0 (Dpi.scaleF 1.5)))
+                // Most of a circle, open at the top right, where the arrow points back the way it came.
+                let start = 300.0
+                e.Graphics.DrawArc(pen,float32(cx-radius),float32(cy-radius),float32(radius*2.0),float32(radius*2.0),float32 start,290.0f)
+                let angle = start*Math.PI/180.0
+                let x,y = cx+radius*cos angle,cy+radius*sin angle
+                let along,across = (sin angle,-(cos angle)),(cos angle,sin angle)
+                let length,width = radius*0.75,radius*0.5
+                use brush = new SolidBrush(color)
+                e.Graphics.FillPolygon(brush,[|PointF(float32(x+fst along*length),float32(y+snd along*length))
+                                               PointF(float32(x+fst across*width),float32(y+snd across*width))
+                                               PointF(float32(x-fst across*width),float32(y-snd across*width))|])
+            if this.Focused && this.ShowFocusCues then SettingsShapes.drawFocusRing e.Graphics (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.controlRadius()) (SettingsColors.current())
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); this.Invalidate()
     override this.OnMouseLeave(e) = base.OnMouseLeave(e); this.Invalidate()
     override this.OnEnabledChanged(e) = base.OnEnabledChanged(e); this.Invalidate()
@@ -524,7 +561,7 @@ type SettingsSearchResults() as this =
     override this.OnSizeChanged(e) =
         base.OnSizeChanged(e)
         if this.Width>2 && this.Height>2 then
-            use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (float32(Dpi.scale 10))
+            use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.overlayRadius())
             let previous = this.Region
             this.Region <- new Region(shape)
             if not (isNull previous) then previous.Dispose()
@@ -532,7 +569,7 @@ type SettingsSearchResults() as this =
     override this.OnPaint(e) =
         base.OnPaint(e)
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 10))
+        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (SettingsShapes.overlayRadius())
         use pen = new Pen((SettingsColors.current()).border)
         e.Graphics.DrawPath(pen,shape)
 
@@ -572,9 +609,16 @@ type SettingsCard() as this =
 
 /// The sidebar's page icons, drawn on an 18 x 18 grid, so other places can show the same mark.
 module SettingsPageIcons =
-    /// Draws the icon for a page with its top-left corner at the given point.
-    let draw (g:Graphics) (key:SettingsViewType) (x:int) (y:int) (foreground:Color) (background:Color) =
-        use pen = new Pen(foreground, max 1.0f (float32(Dpi.scaleF 1.2)))
+    /// Each page's glyph in Windows' icon font, as Windows 11's Settings marks its pages.
+    /// None for Gestures: the font's mouse says less than the drawn stroke, which shows what a
+    /// gesture is.
+    let glyph key =
+        match key with
+        | GeneralSettings -> Some 0xE9E9 | AppearanceSettings -> Some 0xE790 | HotKeySettings -> Some 0xE765 | MouseGestureSettings -> None
+        | ProgramSettings -> Some 0xE8A9 | LayoutSettings -> Some 0xE7C4 | DiagnosticsSettings -> Some 0xE946
+    /// The page's icon drawn by hand, in a stroke as fine as the font's beside its glyphs.
+    let private drawn (g:Graphics) (key:SettingsViewType) (x:int) (y:int) (foreground:Color) (background:Color) =
+        use pen = new Pen(foreground, max 1.0f (float32(Dpi.scaleF (if UiFace.icons.Force().IsSome then 1.0 else 1.2))))
         let state = g.Save()
         g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         g.TranslateTransform(float32 x,float32 y)
@@ -596,6 +640,15 @@ module SettingsPageIcons =
             g.DrawLine(pen,5.0f,11.0f,13.0f,11.0f)
         | ProgramSettings ->
             for x,y in [2,2;11,2;2,11;11,11] do g.DrawRectangle(pen,x,y,5,5)
+        // A stroke up and to the right, from the circle where the button goes down.
+        | MouseGestureSettings ->
+            g.DrawEllipse(pen,2.5f,12.5f,4.0f,4.0f)
+            use path = new Drawing2D.GraphicsPath()
+            path.AddLine(4.5f,12.0f,4.5f,7.0f)
+            path.AddArc(4.5f,3.0f,8.0f,8.0f,180.0f,90.0f)
+            path.AddLine(8.5f,3.0f,14.0f,3.0f)
+            g.DrawPath(pen,path)
+            g.DrawLines(pen,[|PointF(11.5f,0.5f);PointF(14.5f,3.0f);PointF(11.5f,5.5f)|])
         | LayoutSettings ->
             g.DrawRectangle(pen,1,1,12,11)
             g.DrawRectangle(pen,5,6,12,11)
@@ -604,6 +657,11 @@ module SettingsPageIcons =
             g.DrawLine(pen,9,8,9,13)
             g.DrawLine(pen,9,5,9,6)
         g.Restore(state)
+    /// Draws the icon for a page with its top-left corner at the given point: the glyph at 16px,
+    /// the size WinUI's navigation gives its icons, in the middle of the 18px square.
+    let draw (g:Graphics) (key:SettingsViewType) (x:int) (y:int) (foreground:Color) (background:Color) =
+        let box = RectangleF(float32 x+float32(Dpi.scale 1),float32 y+float32(Dpi.scale 1),float32(Dpi.scale 16),float32(Dpi.scale 16))
+        if not (glyph key |> Option.exists(fun code -> UiFace.glyph g code box foreground)) then drawn g key x y foreground background
 
 /// A page's sidebar icon on its own, beside text that names the page.
 type SettingsPageIcon(key:SettingsViewType) as this =
@@ -637,17 +695,17 @@ type SettingsNavigationButton(key:SettingsViewType) as this =
         // so the two stay apart without an accent bar that could be taken for Windows' own.
         let fill = if selected then Some p.selection elif hovering then Some p.hover else None
         fill |> Option.iter(fun color ->
-            use path = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32(this.Width-1),float32(this.Height-1))) (float32(Dpi.scale 8))
+            use path = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32(this.Width-1),float32(this.Height-1))) (SettingsShapes.controlRadius())
             use brush = new SolidBrush(color)
             e.Graphics.FillPath(brush,path))
-        let foreground = if not this.Enabled then p.muted elif selected && highContrast then SystemColors.HighlightText else p.text
+        let foreground = if not this.Enabled then p.disabledText elif selected && highContrast then SystemColors.HighlightText else p.text
         let background = fill |> Option.defaultValue sidebar
         SettingsPageIcons.draw e.Graphics key (Dpi.scale 12) ((this.Height-Dpi.scale 18)/2) foreground background
         TextRenderer.DrawText(e.Graphics,this.Text,this.Font,
             Rectangle(Dpi.scale 40,0,this.Width-Dpi.scale 48,this.Height),foreground,
             TextFormatFlags.NoPrefix ||| TextFormatFlags.Left ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
         if this.Focused && this.ShowFocusCues then
-            ControlPaint.DrawFocusRectangle(e.Graphics,Rectangle(3,3,this.Width-6,this.Height-6),foreground,this.BackColor)
+            SettingsShapes.drawFocusRing e.Graphics (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.controlRadius()) p
 
 /// A label that wraps at spaces and trims with an ellipsis only what cannot wrap, such as a long
 /// path; it shows the full text on hover only when trimmed.
@@ -676,6 +734,11 @@ type SettingsEllipsisLabel() as this =
 type SettingsToggle() as this =
     inherit CheckBox()
     let mutable hovering = false
+    /// Where the knob is, from 0 off to 1 on. A click slides it there over WinUI's 167 ms.
+    let mutable position = 0.0f
+    let mutable start = 0.0f
+    let clock = Diagnostics.Stopwatch()
+    let timer = new Timer(Interval=10)
     do
         this.AutoSize <- false
         this.Size <- Size(Dpi.scale 42,Dpi.scale 28)
@@ -685,37 +748,37 @@ type SettingsToggle() as this =
         this.FlatAppearance.BorderSize <- 0
         this.AccessibleRole <- AccessibleRole.CheckButton
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.AllPaintingInWmPaint,true)
-    override this.OnCheckedChanged(e) = base.OnCheckedChanged(e); this.Invalidate()
+        timer.Tick.Add(fun _ ->
+            let target = if this.Checked then 1.0f else 0.0f
+            let t = min 1.0 (clock.Elapsed.TotalMilliseconds/167.0)
+            position <- if t>=1.0 then target else start+(target-start)*float32(1.0-Math.Pow(1.0-t,3.0))
+            if t>=1.0 then timer.Stop()
+            this.Invalidate())
+    /// Where the knob is drawn: 0 off, 1 on, between while it slides.
+    member _.KnobPosition = position
+    override this.OnCheckedChanged(e) =
+        base.OnCheckedChanged(e)
+        // A switch not on screen yet, or with animations off in Windows, is drawn in place at once.
+        if SystemInformation.UIEffectsEnabled && this.IsHandleCreated && this.Visible then
+            start <- position
+            clock.Restart()
+            timer.Start()
+        else
+            timer.Stop()
+            position <- if this.Checked then 1.0f else 0.0f
+        this.Invalidate()
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); hovering <- true; this.Invalidate()
     override this.OnMouseLeave(e) = base.OnMouseLeave(e); hovering <- false; this.Invalidate()
     override this.OnPaint(e) =
         e.Graphics.Clear(this.BackColor)
-        let dark = ThemeService.currentIsDark()
-        let palette = SettingsColors.current()
-        let accent = palette.accent
-        let neutral = if dark then Color.FromRGB(0xA0A0A0) else Color.FromRGB(0x686868)
-        let x,y,w,h = float32(Dpi.scale 2),float32(Dpi.scale 5),float32(this.Width-Dpi.scale 4),float32(this.Height-Dpi.scale 10)
-        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-        use path = new Drawing2D.GraphicsPath()
-        path.AddArc(x,y,h,h,90.0f,180.0f)
-        path.AddArc(x+w-h,y,h,h,270.0f,180.0f)
-        path.CloseFigure()
-        let checkedColor = if SystemInformation.HighContrast then SystemColors.Highlight else accent
-        let offColor =
-            if SystemInformation.HighContrast then SystemColors.Control
-            elif dark then Color.FromRGB(if hovering then 0x555555 else 0x424242)
-            else Color.FromRGB(if hovering then 0xC7C7C7 else 0xD8D8D8)
-        let disabledColor =
-            if SystemInformation.HighContrast then SystemColors.Control
-            elif dark then Color.FromRGB(0x272726)
-            else Color.FromRGB(0xECECEA)
-        use fill = new SolidBrush(if not this.Enabled then disabledColor elif this.Checked then checkedColor else offColor)
-        e.Graphics.FillPath(fill,path)
-        let inset = float32(Dpi.scale 3)
-        let diameter = h-inset*2.0f
-        let left = if this.Checked then x+w-diameter-inset else x+inset
-        use knob = new SolidBrush(if not this.Enabled then palette.disabledText elif SystemInformation.HighContrast then (if this.Checked then SystemColors.HighlightText else SystemColors.WindowText) elif this.Checked then Color.White else neutral)
-        e.Graphics.FillEllipse(knob,left,y+inset,diameter,diameter)
+        let track = RectangleF(float32(Dpi.scale 1),float32((this.Height-Dpi.scale 20)/2),float32(this.Width-Dpi.scale 2),float32(Dpi.scale 20))
+        SettingsShapes.drawSwitch e.Graphics track position hovering this.Enabled (SettingsColors.current())
+        if this.Focused && this.ShowFocusCues then
+            let ring = RectangleF.Inflate(track,float32(Dpi.scale 1),float32(Dpi.scale 3))
+            SettingsShapes.drawFocusRing e.Graphics ring (ring.Height/2.0f) (SettingsColors.current())
+    override this.Dispose(disposing) =
+        if disposing then timer.Dispose()
+        base.Dispose(disposing)
 
 type SettingsThemeTile(mode:string) as this =
     inherit RadioButton()
@@ -735,7 +798,7 @@ type SettingsThemeTile(mode:string) as this =
         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
         let bounds = RectangleF(2.0f,2.0f,float32(this.Width-5),float32(this.Height-Dpi.scale 34))
         if bounds.Width>0.0f && bounds.Height>0.0f then
-            use shape = SettingsShapes.rounded bounds (float32(Dpi.scale 10))
+            use shape = SettingsShapes.rounded bounds (SettingsShapes.overlayRadius())
             let drawMini dark =
                 let mini value = float32(Dpi.scale value) * bounds.Height / float32(Dpi.scale 124)
                 let colors = if dark then Theme.dark else Theme.light
@@ -746,7 +809,7 @@ type SettingsThemeTile(mode:string) as this =
                 let top = bounds.Top + bounds.Height*0.34f
                 let width = bounds.Width*0.82f
                 let height = bounds.Height*0.8f
-                use window = SettingsShapes.rounded (RectangleF(left,top,width,height)) (float32(Dpi.scale 7))
+                use window = SettingsShapes.rounded (RectangleF(left,top,width,height)) (SettingsShapes.controlRadius())
                 use body = new SolidBrush(if dark then Color.FromRGB(0x242424) else Color.White)
                 e.Graphics.FillPath(body,window)
                 let tabY = top + mini 8
@@ -778,7 +841,8 @@ type SettingsThemeTile(mode:string) as this =
             let label = Rectangle(0,this.Height-Dpi.scale 28,this.Width,Dpi.scale 26)
             TextRenderer.DrawText(e.Graphics,this.Text,this.Font,label,(if this.Checked && this.Enabled then p.text else p.muted),
                 TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter)
-            if this.Focused && this.ShowFocusCues then ControlPaint.DrawFocusRectangle(e.Graphics,label,p.text,this.BackColor)
+            if this.Focused && this.ShowFocusCues then
+                SettingsShapes.drawFocusRing e.Graphics (RectangleF(float32 label.X,float32 label.Y,float32 label.Width,float32 label.Height)) (SettingsShapes.controlRadius()) p
 /// A themed overlay-style scrollbar like Windows 11: a thin rounded line that widens into
 /// a pill on a faint track while pointed at, dragged or focused. The whole control width
 /// stays clickable.
@@ -907,12 +971,15 @@ type SettingsScrollBar() as this =
 type SettingsChoiceList() as this =
     inherit ListBox()
     let scrolled = Event<EventArgs>()
+    let wheel = Event<int>()
     do
         this.SetStyle(ControlStyles.UserPaint ||| ControlStyles.AllPaintingInWmPaint |||
                       ControlStyles.OptimizedDoubleBuffer ||| ControlStyles.ResizeRedraw,true)
         this.SelectedIndexChanged.Add(fun _ -> scrolled.Trigger(EventArgs.Empty))
     /// The first shown row or the rows themselves may have changed.
     member _.Scrolled = scrolled.Publish
+    /// A wheel turned over the rows, its signed delta, for the frame that scrolls them.
+    member _.Wheel = wheel.Publish
     override this.OnPaint(e) =
         e.Graphics.Clear(this.BackColor)
         if this.Items.Count>0 then
@@ -927,6 +994,8 @@ type SettingsChoiceList() as this =
         if message.Msg=0x202B then // OCM_DRAWITEM: defer native row paints to WM_PAINT.
             this.Invalidate()
             message.Result <- IntPtr(1)
+        elif message.Msg=0x20A then // WM_MOUSEWHEEL: the frame scrolls, by pixels.
+            wheel.Trigger(int (int16 ((message.WParam.ToInt64() >>> 16) &&& 0xFFFFL)))
         else
             base.WndProc(&message)
             match message.Msg with
@@ -937,26 +1006,40 @@ type SettingsChoiceList() as this =
             | 0x180 | 0x181 | 0x182 | 0x184 | 0x197 -> scrolled.Trigger(EventArgs.Empty)
             | _ -> ()
 
-/// Shows a list with the settings scrollbar instead of the system one: the list is widened just
-/// enough for its own scrollbar to fall outside the frame, and the settings bar sits in a thin
-/// room kept at the right whether the rows overflow or not, so filtering the rows never moves
-/// them sideways; it follows the list as it scrolls a row at a time.
+/// Shows a list with the settings scrollbar instead of the system one, scrolling smoothly as
+/// settings pages do: the list is as tall as all its rows, so it never scrolls itself, and moves
+/// inside the frame by pixels, eased for the wheel. The settings bar sits in a thin room kept at
+/// the right whether the rows overflow or not, so filtering the rows never moves them sideways.
 type SettingsListFrame(list:SettingsChoiceList) as this =
     inherit Panel()
     let bar = new SettingsScrollBar(TabStop=false)
-    let visibleRows() = max 1 (this.ClientSize.Height/max 1 list.ItemHeight)
-    let sync() =
-        bar.configure(max 0 (list.Items.Count-visibleRows()),visibleRows(),list.TopIndex)
+    let mutable offset = 0
+    let rowsHeight() = list.Items.Count*list.ItemHeight
+    let maximum() = max 0 (rowsHeight()-this.ClientSize.Height)
+    let clamp value = max 0 (min (maximum()) value)
+    let apply value =
+        offset <- clamp value
+        if list.Top<> -offset then list.Top <- -offset
+        bar.configure(maximum(),this.ClientSize.Height,offset)
+    let smooth = new SmoothScroller((fun () -> offset),clamp,apply)
     let content() = max 1 (this.ClientSize.Width-bar.Width)
     let arrange() =
         let size = this.ClientSize
         let content = content()
-        list.Bounds <- Rectangle(0,0,content,size.Height)
+        list.Bounds <- Rectangle(0,-(clamp offset),content,max size.Height (rowsHeight()))
         // Whatever the list's own scrollbar takes is added back, outside the frame.
         let native = list.Width-list.ClientSize.Width
         if native>0 then list.Width <- content+native
         bar.Bounds <- Rectangle(size.Width-bar.Width,0,bar.Width,size.Height)
-        sync()
+        apply offset
+    /// Brings the selected row into view, as a list that scrolls itself would for the keys.
+    let reveal() =
+        let index = list.SelectedIndex
+        if index>=0 then
+            let top = index*list.ItemHeight
+            if top<offset then smooth.jump top
+            elif top+list.ItemHeight>offset+this.ClientSize.Height then smooth.jump(top+list.ItemHeight-this.ClientSize.Height)
+    let sync() = if list.Height<>max this.ClientSize.Height (rowsHeight()) then arrange() else apply offset
     do
         // Resizing the list briefly exposes its native scrollbar before the custom
         // bar repaints. Present both child HWNDs together, including during filtering.
@@ -973,18 +1056,34 @@ type SettingsListFrame(list:SettingsChoiceList) as this =
         list.BackColorChanged.Add(fun _ -> this.BackColor <- list.BackColor; bar.Invalidate())
         list.Scrolled.Add(fun _ ->
             if not this.IsDisposed then
-                // A change in the number of rows can bring the list's own scrollbar, which goes
-                // outside the frame again.
-                if list.ClientSize.Width<>content() then arrange() else sync())
-        bar.changed.Add(fun value -> list.TopIndex <- value; sync())
+                // A change in the number of rows changes the list's height; the list's own
+                // scrollbar, should it come, goes outside the frame again.
+                if list.ClientSize.Width<>content() then arrange() else sync()
+                reveal())
+        list.Wheel.Add(fun delta -> smooth.by(SmoothScroller.wheelStep delta this.ClientSize.Height))
+        bar.changed.Add(fun value -> smooth.jump value)
         this.Resize.Add(fun _ -> arrange())
+        this.Disposed.Add(fun _ -> (smooth :> IDisposable).Dispose())
     member _.List = list
+    /// The width the scrollbar takes at the right, kept whether the rows overflow or not.
+    member _.BarWidth = bar.Width
     override this.OnGotFocus(e) = base.OnGotFocus(e); list.Focus() |> ignore
+    override this.OnMouseWheel(e) =
+        base.OnMouseWheel(e)
+        smooth.by(SmoothScroller.wheelStep e.Delta this.ClientSize.Height)
 
 /// A menu-style popup keeps the settings window active when dismissed outside.
 type SettingsChoicePopup() as this =
     inherit ToolStripDropDown()
     let mutable shadow : SettingsPopupShadow option = None
+    /// The band it unfolds from, the chosen row's, while it opens over its box as WinUI's lists do.
+    let mutable unfold : (int * int) option = None
+    let clock = Diagnostics.Stopwatch()
+    let timer = new Timer(Interval=15)
+    let showShadow (popup:ToolStripDropDown) =
+        if not SystemInformation.HighContrast then
+            if shadow.IsNone then shadow <- Some(new SettingsPopupShadow(popup))
+            shadow |> Option.iter(fun halo -> halo.Show())
     do
         // DoubleBuffered covers this ToolStrip only; the hosted frame/list have
         // their own HWNDs. Composite the entire subtree before it becomes visible.
@@ -1000,14 +1099,51 @@ type SettingsChoicePopup() as this =
         this.AutoSize <- false
         this.Padding <- Padding(Dpi.scale 6)
         this.DropShadowEnabled <- false
+        // Unfolding, it grows from the chosen row to its whole height, eased out; the shadow comes
+        // once it is open, as a shadow the full size around a list still opening stood apart from it.
         this.Opened.Add(fun _ ->
-            if not SystemInformation.HighContrast then
-                if shadow.IsNone then shadow <- Some(new SettingsPopupShadow(this))
-                shadow |> Option.iter(fun halo -> halo.Show()))
-        this.Closed.Add(fun _ -> shadow |> Option.iter(fun halo -> halo.Hide()))
+            if unfold.IsSome then
+                clock.Restart()
+                timer.Start()
+            else showShadow this)
+        timer.Tick.Add(fun _ ->
+            match unfold with
+            | Some(top,bottom) when not this.IsDisposed ->
+                let t = min 1.0 (float clock.ElapsedMilliseconds/170.0)
+                let eased = 1.0-(1.0-t)*(1.0-t)*(1.0-t)
+                let along (a:int) (b:int) = a+int(Math.Round(float(b-a)*eased))
+                if t<1.0 then this.ClipTo(along top 0,along bottom this.Height)
+                else
+                    timer.Stop()
+                    unfold <- None
+                    this.ClipTo(0,this.Height)
+                    showShadow this
+            | _ -> timer.Stop())
+        this.Closed.Add(fun _ ->
+            timer.Stop()
+            shadow |> Option.iter(fun halo -> halo.Hide()))
         this.Disposed.Add(fun _ ->
+            timer.Dispose()
             shadow |> Option.iter(fun halo -> (halo :> IDisposable).Dispose())
             shadow <- None)
+    /// Shows only the band from top to bottom, with the popup's rounded corners; the whole of it
+    /// takes Windows' own corners again where it draws them.
+    member this.ClipTo(top:int,bottom:int) =
+        let old = this.Region
+        if top<=0 && bottom>=this.Height && SystemCorners.supported.Value then
+            this.Region <- null
+            SystemCorners.round this.Handle this.outlineColor |> ignore
+        else
+            use shape = SettingsShapes.rounded (RectangleF(0.0f,float32 top,float32 this.Width,float32(max 1 (bottom-top)))) (SettingsShapes.overlayRadius())
+            this.Region <- new Region(shape)
+        if not(isNull old) then old.Dispose()
+    /// Opens unfolding from the band of the chosen row, in its own coordinates, when Windows
+    /// animates its controls; at once otherwise.
+    member this.UnfoldFrom(top:int,bottom:int) =
+        if SystemInformation.UIEffectsEnabled && not SystemInformation.HighContrast then
+            unfold <- Some(top,bottom)
+            this.ClipTo(top,bottom)
+    member _.Unfolding = unfold
     /// Its outline when it opens from a field outlined in a colour of its own, as on the palette.
     member val Outline = Color.Empty with get,set
     member private this.outlineColor = if (this.Outline:Color).IsEmpty then (SettingsColors.current()).border else this.Outline
@@ -1020,7 +1156,7 @@ type SettingsChoicePopup() as this =
     override this.OnSizeChanged(e) =
         base.OnSizeChanged(e)
         if this.Width>0 && this.Height>0 && not (SystemCorners.round this.Handle this.outlineColor) then
-            use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (float32(Dpi.scale 10))
+            use shape = SettingsShapes.rounded (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.overlayRadius())
             let old = this.Region
             this.Region <- new Region(shape)
             if not(isNull old) then old.Dispose()
@@ -1032,7 +1168,7 @@ type SettingsChoicePopup() as this =
         // Windows 11 outlines it with its own rounded corners.
         if not SystemCorners.supported.Value then
             e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 10))
+            use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (SettingsShapes.overlayRadius())
             use pen = new Pen(this.outlineColor)
             e.Graphics.DrawPath(pen,shape)
 
@@ -1143,16 +1279,26 @@ type SettingsCombo(items:string[]) as this =
             if index=selected then this.Text <- text
             this.Invalidate()
     member _.ItemText(index) = items.[index]
-    /// Narrowest width that shows every choice untrimmed, matching the insets used by paintFull.
-    member this.FitToItems() =
-        let textWidth = items |> Array.map(fun text -> TextRenderer.MeasureText(text,this.Font).Width) |> Array.fold max 0
-        let dot = if itemImages.Length>0 then Dpi.scale 24 elif itemColors.Length>0 then Dpi.scale 22 else 0
+    /// Narrowest width that shows every choice untrimmed, matching the insets used by paintFull:
+    /// with a colour dot before each, where the colours come later, and with what the choices
+    /// may yet have added to their names, such as the * of an edited preset.
+    member this.FitToItems(?withDots:bool, ?suffix:string) =
+        let suffix = defaultArg suffix ""
+        let textWidth = items |> Array.map(fun text -> TextRenderer.MeasureText(text+suffix,this.Font).Width) |> Array.fold max 0
+        let dot = if itemImages.Length>0 then Dpi.scale 24 elif itemColors.Length>0 || defaultArg withDots false then Dpi.scale 22 else 0
         // One width for lists of short words, so stacked rows line up their left edges too.
         this.Width <- max (Dpi.scale SettingsShapes.editorWidth) (textWidth+dot+Dpi.scale 60)
     member _.CompactLabel with set(label:unit -> string) = compactLabel <- Some label; this.Invalidate()
     /// Where on screen the choices open from, left-aligned below it, when the control itself is
     /// not shown: a button drawn by a list, say.
     member val DropDownAnchor : Rectangle option = None with get,set
+    /// Set, the choices open under a search box with this cue, which narrows them as one types.
+    member val SearchCue : string option = None with get,set
+    /// The most rows shown at once; more scroll.
+    member val MaxRows : int option = None with get,set
+    /// The first choice is a prompt, as "Choose a command…": shown closed, muted, while nothing
+    /// is chosen, and left out of the list.
+    member val PromptFirst = false with get,set
     member _.ItemColors
         with get() = Array.copy itemColors
         and set(value:Color array) =
@@ -1173,31 +1319,61 @@ type SettingsCombo(items:string[]) as this =
                                    DrawMode=DrawMode.OwnerDrawFixed,ItemHeight=Dpi.scale 34,
                                    BackColor=p.hover,ForeColor=p.text,Font=this.Font,
                                    AccessibleName=this.AccessibleName)
-            list.Items.AddRange(items |> Array.map box)
+            /// The first choice listed: past a prompt, which is said only while nothing is chosen.
+            let first = if this.PromptFirst && items.Length>1 then 1 else 0
+            /// The choice each row shows: all of them, or those a search leaves.
+            let shown = ResizeArray<int>(seq { first..items.Length-1 })
+            list.Items.AddRange(shown |> Seq.map(fun index -> box items.[index]) |> Array.ofSeq)
+            /// What the search box holds, marked in the rows it finds.
+            let mutable words = ""
             let mutable hovered = -1
             let mutable keyboardNavigation = false
             let invalidateRow index =
                 if index>=0 && index<list.Items.Count then
                     list.Invalidate(list.GetItemRectangle(index))
             list.DrawItem.Add(fun e ->
-                if e.Index>=0 then
+                if e.Index>=0 && e.Index<shown.Count then
+                    let item = shown.[e.Index]
                     use background = new SolidBrush(p.hover)
                     e.Graphics.FillRectangle(background,e.Bounds)
                     let active = e.Index=hovered ||
                                  (keyboardNavigation && hovered<0 && (e.State &&& DrawItemState.Selected)<>enum 0)
-                    if active then
+                    // The chosen one keeps the fill too, as WinUI's list does, its bar beside it.
+                    if active || item=selected then
                         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-                        use shape = SettingsShapes.rounded (RectangleF(float32 e.Bounds.X,float32 e.Bounds.Y,float32 e.Bounds.Width,float32 e.Bounds.Height)) (float32(Dpi.scale 6))
-                        use brush = new SolidBrush(p.selection)
+                        use shape = SettingsShapes.rounded (RectangleF(float32 e.Bounds.X,float32 e.Bounds.Y,float32 e.Bounds.Width,float32 e.Bounds.Height)) (SettingsShapes.controlRadius())
+                        use brush = new SolidBrush(if active || SystemInformation.HighContrast then p.selection else Color.FromArgb(170,p.selection))
                         e.Graphics.FillPath(brush,shape)
                     let foreground = if active && SystemInformation.HighContrast then SystemColors.HighlightText else p.text
-                    let offset = drawDot e.Graphics e.Bounds e.Index
+                    let offset = drawDot e.Graphics e.Bounds item
                     let rect = Rectangle(e.Bounds.X+Dpi.scale 12+offset,e.Bounds.Y,e.Bounds.Width-Dpi.scale 42-offset,e.Bounds.Height)
-                    TextRenderer.DrawText(e.Graphics,items.[e.Index],this.Font,rect,foreground,TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
-                    if e.Index=selected then
-                        TextRenderer.DrawText(e.Graphics,"✓",this.Font,Rectangle(e.Bounds.Right-Dpi.scale 28,e.Bounds.Y,Dpi.scale 24,e.Bounds.Height),foreground,TextFormatFlags.VerticalCenter ||| TextFormatFlags.HorizontalCenter))
+                    let text = items.[item]
+                    let found = if words="" then -1 else text.IndexOf(words,StringComparison.CurrentCultureIgnoreCase)
+                    if found<0 then
+                        TextRenderer.DrawText(e.Graphics,text,this.Font,rect,foreground,TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
+                    else
+                        // The words searched for, in the accent, between the rest of the text: each
+                        // part drawn where the one before it ends.
+                        let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPadding ||| TextFormatFlags.SingleLine
+                        let lead = TextRenderer.MeasureText(e.Graphics,"x",this.Font,Size.Empty,TextFormatFlags.NoPrefix).Width-TextRenderer.MeasureText(e.Graphics,"x",this.Font,Size.Empty,flags).Width
+                        let mutable x = rect.X+lead/2
+                        let mark = if SystemInformation.HighContrast then foreground else p.accentText
+                        let length = min words.Length (text.Length-found)
+                        for part,color in [text.Substring(0,found),foreground; text.Substring(found,length),mark; text.Substring(found+length),foreground] do
+                            if part<>"" && x<rect.Right then
+                                TextRenderer.DrawText(e.Graphics,part,this.Font,Rectangle(x,rect.Y,rect.Right-x,rect.Height),color,flags ||| TextFormatFlags.EndEllipsis)
+                                x <- x+TextRenderer.MeasureText(e.Graphics,part,this.Font,Size.Empty,flags).Width
+                    if item=selected then
+                        // The chosen one marked as WinUI's list marks it: a short bar in the accent at
+                        // its left edge, a pill as tall as the text; the system's colours in high contrast.
+                        let barHeight = Dpi.scale 16
+                        let bar = RectangleF(float32(e.Bounds.X+Dpi.scale 3),float32(e.Bounds.Y+(e.Bounds.Height-barHeight)/2),float32(Dpi.scale 3),float32 barHeight)
+                        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+                        use pill = SettingsShapes.rounded bar (bar.Width/2.0f)
+                        use ink = new SolidBrush(if SystemInformation.HighContrast then SystemColors.Highlight else p.accent)
+                        e.Graphics.FillPath(ink,pill))
             let finish commit =
-                let value = list.SelectedIndex
+                let value = if list.SelectedIndex>=0 && list.SelectedIndex<shown.Count then shown.[list.SelectedIndex] else -1
                 window.Close()
                 if commit && value>=0 then this.SelectedIndex <- value
                 if commit && not this.IsDisposed then this.Focus() |> ignore
@@ -1229,6 +1405,40 @@ type SettingsCombo(items:string[]) as this =
                     finish false
                     this.Parent.SelectNextControl(this,not e.Shift,true,true,true) |> ignore
                     e.SuppressKeyPress <- true)
+            // A long list opens under a box that narrows it as one types; the keys that move
+            // through the rows work from the box too.
+            let search =
+                this.SearchCue |> Option.map(fun cue ->
+                    let input = new TextBox(Font=this.Font,BorderStyle=BorderStyle.None,BackColor=p.hover,ForeColor=p.text,AccessibleName=cue)
+                    input.HandleCreated.Add(fun _ -> WinUserApi.SendMessage(input.Handle,0x1501,IntPtr(1),cue) |> ignore) // EM_SETCUEBANNER
+                    let field = new SettingsSearchBox(input,Height=Dpi.scale 36,Underlined=true,BackColor=p.hover)
+                    input.TextChanged.Add(fun _ ->
+                        words <- input.Text.Trim()
+                        shown.Clear()
+                        for index in first..items.Length-1 do
+                            if words="" || items.[index].IndexOf(words,StringComparison.CurrentCultureIgnoreCase)>=0 then shown.Add index
+                        hovered <- -1
+                        list.BeginUpdate()
+                        list.Items.Clear()
+                        list.Items.AddRange(shown |> Seq.map(fun index -> box items.[index]) |> Array.ofSeq)
+                        list.EndUpdate()
+                        if shown.Count>0 then list.SelectedIndex <- 0
+                        list.Invalidate())
+                    input.KeyDown.Add(fun e ->
+                        match e.KeyCode with
+                        | Keys.Down | Keys.Up ->
+                            keyboardNavigation <- true
+                            hovered <- -1
+                            if list.Items.Count>0 then
+                                list.SelectedIndex <- max 0 (min (list.Items.Count-1) (list.SelectedIndex+(if e.KeyCode=Keys.Down then 1 else -1)))
+                            list.Invalidate()
+                            e.SuppressKeyPress <- true
+                        | Keys.Enter -> finish true; e.SuppressKeyPress <- true
+                        | Keys.Escape -> finish false; e.SuppressKeyPress <- true
+                        | _ -> ())
+                    let host = new ToolStripControlHost(field,AutoSize=false,Margin=Padding(0,0,0,Dpi.scale 4),Padding=Padding.Empty,BackColor=p.hover)
+                    window.Items.Add(host) |> ignore
+                    host)
             // A screen too short for every choice scrolls them with the settings scrollbar.
             let frame = new SettingsListFrame(list)
             let listHost = new ToolStripControlHost(frame,AutoSize=false,Margin=Padding.Empty,Padding=Padding.Empty,BackColor=p.hover)
@@ -1240,16 +1450,40 @@ type SettingsCombo(items:string[]) as this =
             // Realize the list first, then size the client area using its final row height.
             list.Handle |> ignore
             list.ItemHeight <- max (Dpi.scale 34) (list.Font.Height+Dpi.scale 12)
-            window.Size <- Size(min area.Width (max anchorBox.Width (labelWidth+Dpi.scale (if itemImages.Length>0 then 82 elif itemColors.Length>0 then 80 else 58))),
-                                min (area.Height-Dpi.scale 12) (items.Length*list.ItemHeight+window.Padding.Vertical+2))
-            listHost.Size <- Size(window.Width-window.Padding.Horizontal,window.Height-window.Padding.Vertical)
+            // As tall as all the choices, or as MaxRows of them, whatever a search leaves.
+            let rows = match this.MaxRows with Some most -> min most shown.Count | None -> shown.Count
+            let boxHeight = match search with Some host -> host.Control.Height+Dpi.scale 4 | None -> 0
+            // What a row keeps beside its label, as the rows are drawn: the inset before it, the dot or
+            // image, the room for the tick, and the scrollbar the frame keeps whether rows overflow or not.
+            let chrome = Dpi.scale 42+(if itemImages.Length>0 then Dpi.scale 24 elif itemColors.Length>0 then Dpi.scale 22 else 0)+frame.BarWidth+window.Padding.Horizontal
+            let chosenRow = shown.IndexOf selected
+            // As WinUI opens a ComboBox: over the box, the chosen row where the box was and its text
+            // where the box's text was, so the eye stays on the choice; then the list reaches past
+            // the box by its own padding on each side. Lists that scroll or search open below,
+            // where the rows and the box stay apart.
+            let fits = rows*list.ItemHeight+window.Padding.Vertical+2<=area.Height-Dpi.scale 12
+            let overBox = this.DropDownAnchor.IsNone && search.IsNone && rows=shown.Count && fits && chosenRow>=0
+            let boxWidth = anchorBox.Width+(if overBox then window.Padding.Horizontal else 0)
+            window.Size <- Size(min area.Width (max boxWidth (labelWidth+chrome)),
+                                min (area.Height-Dpi.scale 12) (rows*list.ItemHeight+boxHeight+window.Padding.Vertical+2))
+            search |> Option.iter(fun host -> host.Size <- Size(window.Width-window.Padding.Horizontal,host.Control.Height))
+            listHost.Size <- Size(window.Width-window.Padding.Horizontal,window.Height-window.Padding.Vertical-boxHeight)
             frame.Size <- listHost.Size
-            list.SelectedIndex <- max 0 selected
+            list.SelectedIndex <- max 0 (shown.IndexOf selected)
             list.TopIndex <- 0
-            let anchor = Point(anchorBox.X,anchorBox.Bottom+Dpi.scale 4)
-            let y = if anchor.Y+window.Height<=area.Bottom then anchor.Y else anchorBox.Y-window.Height-Dpi.scale 4
-            let x = if this.DropDownAnchor.IsSome then anchor.X else anchor.X+anchorBox.Width-window.Width
-            window.Location <- Point(max area.Left (min (area.Right-window.Width) x),max area.Top y)
+            let x,y =
+                if overBox then
+                    window.PerformLayout()
+                    let host = listHost.Bounds
+                    let y = anchorBox.Y+(anchorBox.Height-list.ItemHeight)/2-host.Y-chosenRow*list.ItemHeight
+                    // It unfolds from the chosen row, where the box was, up and down to its ends.
+                    window.UnfoldFrom(host.Y+chosenRow*list.ItemHeight,host.Y+(chosenRow+1)*list.ItemHeight)
+                    anchorBox.X-host.X,max area.Top (min (area.Bottom-window.Height) y)
+                else
+                    let anchor = Point(anchorBox.X,anchorBox.Bottom+Dpi.scale 4)
+                    let y = if anchor.Y+window.Height<=area.Bottom then anchor.Y else anchorBox.Y-window.Height-Dpi.scale 4
+                    (if this.DropDownAnchor.IsSome then anchor.X else anchor.X+anchorBox.Width-window.Width),max area.Top y
+            window.Location <- Point(max area.Left (min (area.Right-window.Width) x),y)
             popup <- Some window
             this.Invalidate()
             window.Closed.Add(fun e ->
@@ -1263,8 +1497,11 @@ type SettingsCombo(items:string[]) as this =
         match this.CreateDropDown() with
         | Some window ->
             window.Show(window.Location)
-            let frame = (window.Items.[0] :?> ToolStripControlHost).Control :?> SettingsListFrame
-            frame.List.Focus() |> ignore
+            // The search box has the keys where there is one, else the list.
+            match (window.Items.[0] :?> ToolStripControlHost).Control with
+            | :? SettingsSearchBox as field -> field.Controls.[0].Focus() |> ignore
+            | :? SettingsListFrame as frame -> frame.List.Focus() |> ignore
+            | _ -> ()
         | None -> ()
     override this.OnMouseDown(e) =
         match popup with
@@ -1295,7 +1532,7 @@ type SettingsCombo(items:string[]) as this =
         | Some label -> this.paintCompact(e.Graphics,p,label())
         | None -> this.paintFull(e.Graphics,p)
     member private this.paintFull(graphics:Graphics,p:SettingsPalette) =
-        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 8))
+        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (SettingsShapes.controlRadius())
         // Coloured as a button: the old hover fill was the colour of a selected row, so a
         // drop-down in an edited row vanished into it under the pointer.
         let fillColor,borderColor = SettingsShapes.neutralColors p (hovering && this.Enabled) (popup.IsSome && this.Enabled)
@@ -1305,17 +1542,27 @@ type SettingsCombo(items:string[]) as this =
         if flash > 0.0 then
             use tint = new SolidBrush(Color.FromArgb(int(90.0*flash),p.accent))
             graphics.FillPath(tint,shape)
-        graphics.DrawPath(border,shape)
-        let foreground = if this.Enabled then p.text else p.muted
+        if SystemInformation.HighContrast then graphics.DrawPath(border,shape)
+        else SettingsShapes.drawControlEdge graphics shape (SettingsShapes.outlineRect this.Width this.Height) false false Color.Empty p
+        if this.Focused && this.ShowFocusCues then
+            SettingsShapes.drawFocusRing graphics (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.controlRadius()) p
+        // Disabled in the disabled grey, as buttons are: the secondary grey is nearly as light as the
+        // text, so a disabled list looked as if it would open.
+        let foreground = if this.Enabled then p.text else p.disabledText
+        // The prompt, while nothing is chosen, muted as a text box's cue is: not a choice made.
+        let label = if this.PromptFirst && selected<=0 then p.muted else foreground
         let offset = drawDot graphics this.ClientRectangle selected
-        TextRenderer.DrawText(graphics,this.Text,this.Font,Rectangle(Dpi.scale 12+offset,0,this.Width-Dpi.scale 40-offset,this.Height),foreground,
+        TextRenderer.DrawText(graphics,this.Text,this.Font,Rectangle(Dpi.scale 12+offset,0,this.Width-Dpi.scale 40-offset,this.Height),label,
             TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
         let x,y = this.Width-Dpi.scale 17,this.Height/2
-        use arrow = new Pen(foreground,1.3f)
-        graphics.DrawLines(arrow,[|Point(x-Dpi.scale 4,y-Dpi.scale 2);Point(x,y+Dpi.scale 2);Point(x+Dpi.scale 4,y-Dpi.scale 2)|])
+        // WinUI's chevron, at the 12px it gives a ComboBox's.
+        let em = float32(Dpi.scale 12)
+        if not (UiFace.glyph graphics 0xE70D (RectangleF(float32 x-em/2.0f,float32 y-em/2.0f,em,em)) foreground) then
+            use arrow = new Pen(foreground,1.3f)
+            graphics.DrawLines(arrow,[|Point(x-Dpi.scale 4,y-Dpi.scale 2);Point(x,y+Dpi.scale 2);Point(x+Dpi.scale 4,y-Dpi.scale 2)|])
     /// Borderless: a globe and a short label; a subtle fill on hover or while the list is open.
     member private this.paintCompact(graphics:Graphics,p:SettingsPalette,label:string) =
-        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 6))
+        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (SettingsShapes.controlRadius())
         if (hovering || popup.IsSome || this.Focused) && this.Enabled then
             use fill = new SolidBrush(p.selection)
             graphics.FillPath(fill,shape)
@@ -1325,10 +1572,11 @@ type SettingsCombo(items:string[]) as this =
         let foreground = if hovering || popup.IsSome || flash > 0.0 then p.text else p.muted
         let size = float32(Dpi.scale 14)
         let globe = RectangleF(float32(Dpi.scale 8),float32(this.Height)/2.0f-size/2.0f,size,size)
-        use pen = new Pen(foreground,1.2f)
-        graphics.DrawEllipse(pen,globe)
-        graphics.DrawEllipse(pen,RectangleF(globe.X+globe.Width*0.28f,globe.Y,globe.Width*0.44f,globe.Height))
-        graphics.DrawLine(pen,globe.Left,globe.Y+globe.Height/2.0f,globe.Right,globe.Y+globe.Height/2.0f)
+        if not (UiFace.glyph graphics 0xE774 (RectangleF.Inflate(globe,float32(Dpi.scale 1),float32(Dpi.scale 1))) foreground) then
+            use pen = new Pen(foreground,1.2f)
+            graphics.DrawEllipse(pen,globe)
+            graphics.DrawEllipse(pen,RectangleF(globe.X+globe.Width*0.28f,globe.Y,globe.Width*0.44f,globe.Height))
+            graphics.DrawLine(pen,globe.Left,globe.Y+globe.Height/2.0f,globe.Right,globe.Y+globe.Height/2.0f)
         let textLeft = int globe.Right+Dpi.scale 5
         TextRenderer.DrawText(graphics,label,this.Font,Rectangle(textLeft,0,this.Width-textLeft,this.Height),foreground,
             TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter)

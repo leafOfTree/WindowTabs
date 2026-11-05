@@ -181,6 +181,9 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
                         disabledNumberShortcutPaths = Set2(settingsJson.getStringArray("disabledNumberShortcutPaths").def(List2()))
                         enabledNumberShortcutPaths = Set2(settingsJson.getStringArray("enabledNumberShortcutPaths").def(List2()))
                         disabledShortcutPaths = Set2(settingsJson.getStringArray("disabledShortcutPaths").def(List2()))
+                        enableMouseGestures = settingsJson.getBool("enableMouseGestures").def(SettingsCatalog.toggleDefault "enableMouseGestures" hasExistingSettings)
+                        showGestureHint = settingsJson.getBool("showGestureHint").def(SettingsCatalog.toggleDefault "showGestureHint" hasExistingSettings)
+                        mouseGestures = MouseGestures.readTable settingsJson.["mouseGestures"]
                         numberLeaderKeys = settingsJson.getString("numberLeaderKeys").def(SettingsCatalog.textDefault "numberLeaderKeys") |> NumberLeaderKeys.normalize
                         numberHotKeyModifier = settingsJson.getString("numberHotKeyModifier").def(SettingsCatalog.choiceDefault "numberHotKeyModifier") |> SettingsCatalog.normalizeChoice "numberHotKeyModifier"
                         sessionRestore = settingsJson.getString("sessionRestore").def(SettingsCatalog.choiceDefault "sessionRestore") |> SettingsCatalog.normalizeChoice "sessionRestore"
@@ -284,6 +287,9 @@ type Settings(isStandAlone, ?saveDelay:int) as this =
             settingsJson.setStringArray("disabledNumberShortcutPaths", settings.disabledNumberShortcutPaths.items)
             settingsJson.setStringArray("enabledNumberShortcutPaths", settings.enabledNumberShortcutPaths.items)
             settingsJson.setStringArray("disabledShortcutPaths", settings.disabledShortcutPaths.items)
+            settingsJson.setBool("enableMouseGestures", settings.enableMouseGestures)
+            settingsJson.setBool("showGestureHint", settings.showGestureHint)
+            settingsJson.["mouseGestures"] <- MouseGestures.writeTable settings.mouseGestures
             settingsJson.setString("numberLeaderKeys",settings.numberLeaderKeys)
             settingsJson.setString("numberHotKeyModifier", settings.numberHotKeyModifier)
             settingsJson.setString("sessionRestore", settings.sessionRestore)

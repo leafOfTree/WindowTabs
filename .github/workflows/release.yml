@@ -77,7 +77,7 @@ jobs:
           - group: architecture
             suites: 'Architecture,WindowIcon'
           - group: operations
-            suites: 'GroupOperations,SettingsEditors'
+            suites: 'GroupOperations,SettingsEditors,MouseGestures'
           - group: ui
             suites: 'Reliability,DpiLayout,SettingsTheme,TabShadow,GroupLifecycle,PopupRendering,TabInteraction,TaskbarPreview,PrintWindowProbe'
 

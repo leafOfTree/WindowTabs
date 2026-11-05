@@ -179,6 +179,7 @@ type GroupInfo(enableSuperBar, settings:ISettings, desktopDispatcher:IDispatcher
         member x.activate hwnd = this.invokeGroup <| fun() -> if this.group.windows.contains hwnd then this.group.tabActivate(Tab hwnd, false)
         member x.executeSplit command = this.invokeGroup <| fun() -> this.group.execute command
         member x.pickPane(axis,side) = this.invokeGroup <| fun() -> this.group.requestPick(axis,side)
+        member x.splitWithNext() = this.invokeGroup <| fun() -> this.group.splitWithNext()
         member x.run command = this.invokeGroup <| fun() -> this.group.run command
         
 type IDesktopNotification =

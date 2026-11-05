@@ -56,7 +56,7 @@ type SettingsActionButton() as this =
         let p = SettingsColors.current()
         e.Graphics.Clear(if isNull this.Parent then p.background else this.Parent.BackColor)
         e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
-        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale (if kind=SettingsButtonKind.Subtle then 3 else 8)))
+        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (SettingsShapes.controlRadius())
         let highContrast = SystemInformation.HighContrast
         let light = not highContrast && not (ThemeService.currentIsDark())
         let hot = hovering && this.Enabled
@@ -79,7 +79,7 @@ type SettingsActionButton() as this =
                 (if pressed then p.selection elif hot then p.hover else background),p.border,(if hot || this.Focused then p.text else p.muted)
             | SettingsButtonKind.Primary ->
                 let accent = if highContrast then SystemColors.Highlight else hoverShade p.accent
-                accent,accent,(if highContrast then SystemColors.HighlightText else Color.White)
+                accent,accent,p.onAccent
             | SettingsButtonKind.Danger when not highContrast ->
                 if hot || pressed then
                     let red = Color.FromRGB(if pressed then 0xA52314 else 0xC42B1C)
@@ -90,36 +90,71 @@ type SettingsActionButton() as this =
             // The label softens while held, the way a Windows button acknowledges the press.
             | _ -> let fill,border = neutral() in fill,border,(if pressed then p.muted else p.text)
         use fill = new SolidBrush(fillColor)
-        use border = new Pen(borderColor)
         e.Graphics.FillPath(fill,shape)
-        e.Graphics.DrawPath(border,shape)
+        if kind=SettingsButtonKind.Subtle || highContrast then
+            use border = new Pen(borderColor)
+            e.Graphics.DrawPath(border,shape)
+        else
+            // A filled button keeps its own colour round the edge; a plain one has WinUI's.
+            let _,plain = neutral()
+            SettingsShapes.drawControlEdge e.Graphics shape (SettingsShapes.outlineRect this.Width this.Height) false false
+                (if borderColor=plain then Color.Empty else borderColor) p
         match sign with
         | Some symbol ->
-            // Whole pixels, so each stroke is as crisp as the text beside it; a length of the
-            // button's own parity sits exactly in its middle.
             let w,h = this.Width,this.Height
-            // About the size the font drew them: 10px across on a 26px button.
-            let arm = max 2 (min w h*5/26)
-            let stroke = max 1 (Dpi.scale 1)
-            use ink = new SolidBrush(textColor)
-            e.Graphics.SmoothingMode <- SmoothingMode.None
-            let across = 2*arm+w%2
-            e.Graphics.FillRectangle(ink,(w-across)/2,(h-stroke)/2,across,stroke)
-            if symbol='+' then
-                let down = 2*arm+h%2
-                e.Graphics.FillRectangle(ink,(w-stroke)/2,(h-down)/2,stroke,down)
+            // Windows' icon font's − and +, as its other icons; 10px across on a 26px button.
+            let em = float32(min w h)*12.0f/26.0f
+            let box = RectangleF((float32 w-em)/2.0f,(float32 h-em)/2.0f,em,em)
+            if not (UiFace.glyph e.Graphics (if symbol='+' then 0xE710 else 0xE738) box textColor) then
+                // Whole pixels, so each stroke is as crisp as the text beside it; a length of the
+                // button's own parity sits exactly in its middle.
+                let arm = max 2 (min w h*5/26)
+                let stroke = max 1 (Dpi.scale 1)
+                use ink = new SolidBrush(textColor)
+                e.Graphics.SmoothingMode <- SmoothingMode.None
+                let across = 2*arm+w%2
+                e.Graphics.FillRectangle(ink,(w-across)/2,(h-stroke)/2,across,stroke)
+                if symbol='+' then
+                    let down = 2*arm+h%2
+                    e.Graphics.FillRectangle(ink,(w-stroke)/2,(h-down)/2,stroke,down)
         | None ->
             TextRenderer.DrawText(e.Graphics,this.Text,this.Font,this.ClientRectangle,textColor,
                 TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.EndEllipsis)
+        if this.Focused && this.ShowFocusCues then
+            SettingsShapes.drawFocusRing e.Graphics (RectangleF(0.0f,0.0f,float32 this.Width,float32 this.Height)) (SettingsShapes.controlRadius()) p
+
+/// The caret drawn at once, its blink begun again. Windows does that only when the caret moves,
+/// so a click where it already was, as anywhere in an empty box, left it blinked off for a
+/// moment; moved a pixel and back, it shows. Hiding and showing it again waits for a blink.
+module SettingsCaret =
+    [<System.Runtime.InteropServices.DllImport("user32.dll")>]
+    extern bool private GetCaretPos(POINT& point)
+    [<System.Runtime.InteropServices.DllImport("user32.dll")>]
+    extern bool private SetCaretPos(int x, int y)
+    let restart (text:TextBoxBase) =
+        let mutable point = POINT()
+        if text.Focused && text.IsHandleCreated && GetCaretPos(&point) then
+            SetCaretPos(point.X+1,point.Y) |> ignore
+            SetCaretPos(point.X,point.Y) |> ignore
 
 type SettingsInputFrame() as this =
     inherit Panel()
     let mutable pill = false
+    /// Its text box has the keys: typed into, it is outlined in the accent, as a native box is.
+    let typing() = this.Controls |> Seq.cast<Control> |> Seq.exists(fun child -> child :? TextBoxBase && child.Focused)
     do
         this.Size <- Size(Dpi.scale 180,Dpi.scale 34)
         this.Margin <- Padding.Empty
         this.DoubleBuffered <- true
         this.ResizeRedraw <- true
+        this.ControlAdded.Add(fun e ->
+            match e.Control with
+            | :? TextBoxBase as text ->
+                text.GotFocus.Add(fun _ -> this.Invalidate())
+                text.LostFocus.Add(fun _ -> this.Invalidate())
+                // After the box has placed its caret for the click.
+                text.MouseDown.Add(fun _ -> SettingsCaret.restart text)
+            | _ -> ())
     /// Fully rounded ends instead of the usual corners.
     member this.Pill with get() = pill and set value = pill <- value; this.Invalidate()
     /// What shows round the rounded corners, when the field sits on something other than its
@@ -150,12 +185,17 @@ type SettingsInputFrame() as this =
                          elif isNull this.Parent then p.background else this.Parent.BackColor)
         e.Graphics.SmoothingMode <- SmoothingMode.AntiAlias
         if this.Width>2 && this.Height>2 then
-            let radius = if pill then float32 this.Height/2.0f else float32(Dpi.scale 8)
+            let radius = if pill then float32 this.Height/2.0f else SettingsShapes.controlRadius()
             use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) radius
             use fill = new SolidBrush(this.BackColor)
-            use border = new Pen(if this.Border.IsEmpty then p.border else this.Border)
             e.Graphics.FillPath(fill,shape)
-            e.Graphics.DrawPath(border,shape)
+            if pill then
+                use border =
+                    if typing() then new Pen(p.accent,float32(Dpi.scaleF 1.5))
+                    else new Pen(if this.Border.IsEmpty then p.border else this.Border)
+                e.Graphics.DrawPath(border,shape)
+            // A field as WinUI draws one: a line along its foot, the accent while typed in.
+            else SettingsShapes.drawControlEdge e.Graphics shape (SettingsShapes.outlineRect this.Width this.Height) true (typing()) this.Border p
 
 type SettingsTextInput(editor:Control) as this =
     inherit SettingsInputFrame()
@@ -170,6 +210,21 @@ type SettingsTextInput(editor:Control) as this =
         editor.HandleCreated.Add(fun _ -> this.PerformLayout())
         this.Layout.Add(fun _ ->
             editor.SetBounds(Dpi.scale 12,max 0 ((this.Height-editor.Height)/2),max 1 (this.Width-Dpi.scale 24),editor.Height))
+    /// A press on the frame round the text lands in the text, as on a native box's own margin:
+    /// it takes the focus, the caret goes to the nearest place and shows at once, and a drag
+    /// selects from there. Missed, the press left the caret mid-blink, hidden for a moment.
+    override this.OnMouseDown(e) =
+        base.OnMouseDown(e)
+        match editor with
+        | :? TextBoxBase as text when e.Button=MouseButtons.Left && text.Enabled && text.IsHandleCreated ->
+            let inside = text.PointToClient(this.PointToScreen(e.Location))
+            let x = max 0 (min (text.ClientSize.Width-1) inside.X)
+            let y = max 0 (min (text.ClientSize.Height-1) inside.Y)
+            // The box takes the pointer from here, so the release and any drag reach it.
+            this.Capture <- false
+            let message = if e.Clicks>=2 then 0x203 else 0x201 // WM_LBUTTONDBLCLK, WM_LBUTTONDOWN
+            WinUserApi.SendMessage(text.Handle,message,IntPtr(1),IntPtr((y <<< 16) ||| (x &&& 0xFFFF))) |> ignore
+        | _ -> ()
 
 type SettingsNumberInput() as this =
     inherit SettingsInputFrame()
@@ -293,12 +348,21 @@ module KeyCaps =
         right-x
 
 /// Click (or Enter/Space) to record, press the combination, Esc to cancel.
-/// The × button, or Backspace/Delete while recording, removes the shortcut (0).
+/// The × button, or Backspace/Delete while recording, removes the shortcut (0); see AnyKey for
+/// keys to send, where those are keys like any other.
 type SettingsShortcutInput() as this =
     inherit SettingsInputFrame()
     let changed = Event<EventArgs>()
     let mutable shortcut = 0
+    /// In a sequence, the keys pressed after the first.
+    let mutable following : int list = []
     let mutable recording = false
+    /// In a sequence, whether a key was taken in this recording, so the next adds to it.
+    let mutable takenThisTime = false
+    /// In a sequence, a pause after a key ends the recording.
+    let pauseTimer = new Timer(Interval=1200)
+    let mutable sequential = false
+    let prompt() = if sequential then Strings.Shortcuts.pressKeys else Strings.Shortcuts.pressShortcut
     let mutable hovering = false
     let mutable hoveringClear = false
     /// Off once a recording ends, so a focused but idle box does not look like it is listening.
@@ -322,6 +386,8 @@ type SettingsShortcutInput() as this =
     let setRecording value =
         if value<>recording then
             recording <- value
+            takenThisTime <- false
+            pauseTimer.Stop()
             if value then ShortcutRecording.start() else ShortcutRecording.stop()
     let stopRecording() = if recording then setRecording false; focusCue <- false; this.Invalidate()
     /// The × shows while the pointer is on the box, or it has the keyboard focus, so it takes no
@@ -341,7 +407,13 @@ type SettingsShortcutInput() as this =
     /// Key caps padded tightly, so three keys and the clear button fit the editors' width.
     let capHeight() = this.Height-Dpi.scale 14
     let capWidth (label:string) = max (capHeight()) (TextRenderer.MeasureText(label,this.Font,Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 8)
-    let capsEnd() = Dpi.scale 8+(SettingsShortcut.parts shortcut |> List.sumBy(fun label -> capWidth label+Dpi.scale 2))
+    /// The room for the comma between the keys of a sequence.
+    let commaWidth() = TextRenderer.MeasureText(",",this.Font,Size.Empty,TextFormatFlags.NoPadding).Width+Dpi.scale 6
+    let codes() = if shortcut=0 then [] else shortcut::following
+    let capsFor (combos:int list) =
+        let caps = combos |> List.sumBy(fun code -> SettingsShortcut.parts code |> List.sumBy(fun label -> capWidth label+Dpi.scale 2))
+        Dpi.scale 8+caps+commaWidth()*(max 0 (combos.Length-1))
+    let capsEnd() = capsFor (codes())
     /// At the right edge, shown only while the pointer is on the box or it has the focus.
     let clearBounds() =
         let size = Dpi.scale 18
@@ -351,8 +423,11 @@ type SettingsShortcutInput() as this =
     let fitWidth() =
         let measure (text:string) = TextRenderer.MeasureText(text,this.Font,Size.Empty,TextFormatFlags.NoPadding).Width
         let clear = if shortcut<>0 then Dpi.scale 18+Dpi.scale 3 else Dpi.scale 8
-        let prompts = [Strings.Shortcuts.pressShortcut;Strings.Shortcuts.notSet] |> List.map(fun text -> Dpi.scale 12+measure (tr text)+Dpi.scale 12)
-        let wanted = List.max ((capsEnd()+clear)::prompts)
+        let prompts = [prompt();Strings.Shortcuts.notSet] |> List.map(fun text -> Dpi.scale 12+measure (tr text)+Dpi.scale 12)
+        // Keys one after another: as wide from the start as three of them, Ctrl+A, Ctrl+B, Ctrl+C,
+        // with the clear button, so the box and the one beside it stay put as keys are added.
+        let room = if sequential then [capsFor [0x241;0x242;0x243]+Dpi.scale 18+Dpi.scale 3] else []
+        let wanted = List.max ((capsEnd()+clear)::prompts@room)
         let width = max (Dpi.scale SettingsShapes.editorWidth) wanted
         if this.Width<>width then this.Width <- width
     do
@@ -362,15 +437,26 @@ type SettingsShortcutInput() as this =
         this.SetStyle(ControlStyles.Selectable ||| ControlStyles.UserPaint ||| ControlStyles.OptimizedDoubleBuffer,true)
         this.AccessibleRole <- AccessibleRole.HotkeyField
         messageTimer.Tick.Add(fun _ -> clearMessage(); this.Invalidate())
+        pauseTimer.Tick.Add(fun _ -> stopRecording())
         // Closed while recording, as the palette's box can be: the keys come back all the same.
-        this.Disposed.Add(fun _ -> setRecording false; messageTimer.Dispose())
-    member _.Shortcut
+        this.Disposed.Add(fun _ -> setRecording false; messageTimer.Dispose(); pauseTimer.Dispose())
+    /// The keys, the first of a sequence; set, the only ones.
+    member this.Shortcut
         with get() = shortcut
-        and set(value) =
-            shortcut <- value
-            this.AccessibleDescription <- String.Join(" + ",SettingsShortcut.parts value)
+        and set(value) = this.Sequence <- (if value=0 then [] else [value])
+    /// The keys pressed one after another, empty for none.
+    member _.Sequence
+        with get() = codes()
+        and set(value:int list) =
+            match value with
+            | first::rest -> shortcut <- first; following <- rest
+            | [] -> shortcut <- 0; following <- []
+            this.AccessibleDescription <- String.Join(", ",codes() |> List.map(fun code -> String.Join(" + ",SettingsShortcut.parts code)))
             fitWidth()
             this.Invalidate()
+    /// For keys sent to a window one after another: while recording, each one pressed is added,
+    /// up to three, and a pause ends it. Only with AnyKey.
+    member _.Sequential with get() = sequential and set(value) = sequential <- value; fitWidth()
     override this.OnFontChanged(e) = base.OnFontChanged(e); fitWidth()
     member _.Changed = changed.Publish
     member _.IsRecording = recording
@@ -386,6 +472,10 @@ type SettingsShortcutInput() as this =
     member val ShowsMessage = true with get,set
     /// For a key of the lists, used only in the palette and the window search: Tab may be one.
     member val InList = false with get,set
+    /// For keys sent to a window, as a gesture's, rather than caught across the desktop: any key
+    /// is taken, with or without Ctrl or Alt, Esc, Enter, Backspace and Delete among them. Tab
+    /// alone still moves on, a click elsewhere stops the recording, and the × removes the keys.
+    member val AnyKey = false with get,set
     /// Whether the accent outline is drawn: while recording, or on fresh keyboard focus.
     member this.IsHighlighted = recording || (this.Focused && focusCue)
     /// The notice or error currently shown in place of the shortcut, if any.
@@ -398,6 +488,9 @@ type SettingsShortcutInput() as this =
         clearMessage()
         heldAtStart <- Control.ModifierKeys
         setRecording true
+        // Started again while recording, a sequence starts again too.
+        takenThisTime <- false
+        pauseTimer.Stop()
         if not this.Focused then this.Focus() |> ignore
         this.Invalidate()
     override this.OnMouseEnter(e) = base.OnMouseEnter(e); hovering <- true; this.Invalidate()
@@ -422,6 +515,19 @@ type SettingsShortcutInput() as this =
         if not recording then
             if (key=Keys.Enter || key=Keys.Space) && keyData=key then this.StartRecording(); true
             else base.ProcessCmdKey(&msg,keyData)
+        elif this.AnyKey && key=Keys.Tab && keyData=key then stopRecording(); base.ProcessCmdKey(&msg,keyData)
+        elif this.AnyKey && not (SettingsShortcut.isModifier key) then
+            lastPressed <- SettingsShortcut.encode keyData
+            if sequential then
+                // The first keys of a recording start the sequence again; the next are added.
+                let keys = if takenThisTime then codes() @ [lastPressed] else [lastPressed]
+                takenThisTime <- true
+                this.Sequence <- keys
+                changed.Trigger(EventArgs.Empty)
+                pauseTimer.Stop()
+                if keys.Length>=3 then stopRecording() else pauseTimer.Start()
+            else commit lastPressed
+            true
         elif key=Keys.Escape && keyData=key then stopRecording(); true
         elif (key=Keys.Back || key=Keys.Delete) && keyData=key then commit 0; true
         // Enter alone while nothing is held: no shortcut, as Backspace.
@@ -448,14 +554,14 @@ type SettingsShortcutInput() as this =
         if active || hovering then
             // A 2px pen needs its centre half a pixel in to cover the two edge rows; a 1px pen none.
             let inset = if recording then 0.5f else 0.0f
-            use shape = SettingsShapes.rounded (RectangleF(inset,inset,float32(this.Width-1)-2.0f*inset,float32(this.Height-1)-2.0f*inset)) (float32(Dpi.scale 8))
+            use shape = SettingsShapes.rounded (RectangleF(inset,inset,float32(this.Width-1)-2.0f*inset,float32(this.Height-1)-2.0f*inset)) (SettingsShapes.controlRadius())
             use pen = new Pen((if active then p.accent else p.muted),(if recording then 2.0f else 1.0f))
             g.DrawPath(pen,shape)
         let left = Dpi.scale 8
         let flags = TextFormatFlags.NoPrefix ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.SingleLine ||| TextFormatFlags.EndEllipsis
         let textArea x = Rectangle(x,0,max 1 (this.Width-x-Dpi.scale 8),this.Height)
         let error = if ThemeService.currentIsDark() then Color.FromRGB(0xFF99A4) else Color.FromRGB(0xC42B1C)
-        let chips (labels:string list) =
+        let chipsFrom start (labels:string list) =
             let height = capHeight()
             let top = (this.Height-height)/2
             labels |> List.fold(fun x label ->
@@ -483,27 +589,42 @@ type SettingsShortcutInput() as this =
                     if tall then bounds.Y+int(Math.Round(float bounds.Height/2.0-float(ink.Y+ink.Height/2.0f)))
                     else bounds.Y+(bounds.Height-line.Height)/2
                 TextRenderer.DrawText(g,label,this.Font,Rectangle(textX,textY,line.Width+Dpi.scale 2,line.Height),p.text,flags)
-                x+bounds.Width+Dpi.scale 2) left
+                x+bounds.Width+Dpi.scale 2) start
+        let chips labels = chipsFrom left labels
+        let comma x =
+            TextRenderer.DrawText(g,",",this.Font,Rectangle(x,0,commaWidth(),this.Height),p.muted,TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter)
+            x+commaWidth()
+        // The keys of a sequence, a comma between them; where they end.
+        let sequence () =
+            codes() |> List.fold(fun (x,first) code -> chipsFrom (if first then x else comma x) (SettingsShortcut.parts code),false) (left,true) |> fst
         match (if this.ShowsMessage then message else None) with
         | Some(text,isError) -> TextRenderer.DrawText(g,text,this.Font,textArea (Dpi.scale 12),(if isError then error else p.muted),flags)
         | None when recording ->
             let held = SettingsShortcut.heldParts (Control.ModifierKeys &&& ~~~heldAtStart)
-            if held.IsEmpty then TextRenderer.DrawText(g,tr Strings.Shortcuts.pressShortcut,this.Font,textArea (Dpi.scale 12),p.muted,flags)
+            // Keys already taken in a sequence stay, with room for the next after them.
+            if takenThisTime then
+                let x = comma (sequence())
+                let x = if held.IsEmpty then x else chipsFrom x held
+                TextRenderer.DrawText(g,(if held.IsEmpty then "…" else "+ …"),this.Font,textArea x,p.muted,flags)
+            elif held.IsEmpty then TextRenderer.DrawText(g,tr (prompt()),this.Font,textArea (Dpi.scale 12),p.muted,flags)
             else
                 let x = chips held
                 TextRenderer.DrawText(g,"+ …",this.Font,textArea x,p.muted,flags)
         | None ->
-            match SettingsShortcut.parts shortcut with
-            | [] -> TextRenderer.DrawText(g,tr Strings.Shortcuts.notSet,this.Font,textArea (Dpi.scale 12),p.muted,flags)
-            | labels -> chips labels |> ignore
+            if shortcut=0 then TextRenderer.DrawText(g,tr Strings.Shortcuts.notSet,this.Font,textArea (Dpi.scale 12),p.muted,flags)
+            else sequence() |> ignore
         if canClear() then
             let bounds = clearBounds()
             if hoveringClear then
-                use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X,float32 bounds.Y,float32 bounds.Width,float32 bounds.Height)) (float32(Dpi.scale 5))
+                use shape = SettingsShapes.rounded (RectangleF(float32 bounds.X,float32 bounds.Y,float32 bounds.Width,float32 bounds.Height)) (SettingsShapes.controlRadius())
                 use fill = new SolidBrush(p.hover)
                 g.FillPath(fill,shape)
-            TextRenderer.DrawText(g,"✕",this.Font,bounds,(if hoveringClear then p.text else p.muted),
-                TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter)
+            let color = if hoveringClear then p.text else p.muted
+            let em = float32(Dpi.scale 10)
+            let mark = RectangleF(float32 bounds.X+(float32 bounds.Width-em)/2.0f,float32 bounds.Y+(float32 bounds.Height-em)/2.0f,em,em)
+            if not (UiFace.glyph g 0xE711 mark color) then
+                TextRenderer.DrawText(g,"✕",this.Font,bounds,color,
+                    TextFormatFlags.NoPrefix ||| TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter)
 
 module SettingsHsv =
     let color hue saturation value =

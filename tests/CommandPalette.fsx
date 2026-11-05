@@ -371,6 +371,12 @@ let main() =
             note (ShortcutRules.enabled path<>before) "Use tab shortcuts in this app did not change it"
             runDone "tab-shortcuts-for-app" active
             note (ShortcutRules.enabled path=before) "Use tab shortcuts in this app run again did not turn it back")
+        attempt "mouse-gestures-for-app" (fun () ->
+            let before = MouseGestureRules.enabled path
+            runDone "mouse-gestures-for-app" active
+            note (MouseGestureRules.enabled path<>before) "Use gestures in this app did not change it"
+            runDone "mouse-gestures-for-app" active
+            note (MouseGestureRules.enabled path=before) "Use gestures in this app run again did not turn it back")
         attempt "combine-group-taskbar-icons" (fun () ->
             let combine = (Commands.find "combine-group-taskbar-icons").Value
             let before = combine.state active
@@ -404,6 +410,28 @@ let main() =
             let frame = Rect(Pt(60,60),Sz(900,600))
             helper.asyncInvoke(fun () -> for hwnd in [splitOne;splitTwo] do OS().windowFromHwnd(hwnd).move(frame))
             pumpUntil "The split group's windows on screen" (fun () -> [splitOne;splitTwo] |> List.forall(fun hwnd -> OS().windowFromHwnd(hwnd).bounds=frame))
+            // Split with the next tab: the tab in front on the left, the other on its right,
+            // with no list to choose from; End split view takes them back to tabs.
+            let shown = onGroupOf splitOne (fun group -> group.topWindow)
+            let other = if shown=splitOne then splitTwo else splitOne
+            let before = picks.Count
+            runDone "split-next" splitOne
+            pumpUntil "Split with the next tab" isSplit
+            let pair = onGroupOf splitOne (fun group -> group.splitLayout |> Option.map(fun s -> s.tree.axis,s.tree.first,s.tree.second))
+            note (pair=Some(SideBySide,Leaf(Occupied shown),Leaf(Occupied other)) && picks.Count=before)
+                 (sprintf "Split with the next tab did not put the next tab on the right of the one in front: %A" pair)
+            onGroupOf splitOne (fun group -> group.execute(EndSplit None))
+            pumpUntil "Ending the split" (isSplit >> not)
+            // With the other tab in front, the pair comes the other way round: each time the tab
+            // in front on the left, whether its partner is after it in the strip or before it.
+            onGroupOf splitOne (fun group -> group.tabActivate(Tab other,false))
+            pumpUntil "The other tab in front" (fun () -> onGroupOf splitOne (fun group -> group.topWindow)=other)
+            runDone "split-next" splitOne
+            pumpUntil "Split with the next tab again" isSplit
+            let again = onGroupOf splitOne (fun group -> group.splitLayout |> Option.map(fun s -> s.tree.first,s.tree.second))
+            note (again=Some(Leaf(Occupied other),Leaf(Occupied shown))) (sprintf "Split with the next tab did not keep the tab in front on the left: %A" again)
+            onGroupOf splitOne (fun group -> group.execute(EndSplit None))
+            pumpUntil "Ending the split again" (isSplit >> not)
             onGroupOf splitOne (fun group -> group.execute(SplitWith(splitTwo,SideBySide),current=splitOne))
             pumpUntil "Splitting" isSplit
             for id in ["split-focus-left";"split-focus-right";"split-focus-up";"split-focus-down";"split-focus-other";"split-swap";"split-equalize";"split-turn"] do
@@ -454,7 +482,7 @@ let main() =
             pumpUntil "Tab opacity reaching the group" (fun () -> onGroupOf active (fun group -> group.ts.opacity)=fst SettingsCatalog.opacityRange)
             api.setValue("tabOpacity",box SettingsCatalog.opacityDefault)
             pumpUntil "Full tab opacity reaching the group" (fun () -> onGroupOf active (fun group -> group.ts.opacity)=SettingsCatalog.opacityDefault))
-        attempt "refresh-windows" (fun () -> runDone "refresh-windows" active; note (called "refresh") "Look for windows again did not refresh")
+        attempt "refresh-windows" (fun () -> runDone "refresh-windows" active; note (called "refresh") "Rescan windows did not refresh")
         attempt "exit" (fun () -> runDone "exit" active; note (called "shutdown") "Exit WindowTabs did not exit")
         // A pinned tab goes first and stays among the pinned ones; closing tabs together leaves it.
         let three = hwndOf "Close three"
@@ -536,7 +564,7 @@ let main() =
                 note (not (List.contains (tr item.text.caption) titles)) "The number keys' modifier has a row of its own beside their three values"
             | _ -> note (List.contains (tr item.text.caption) titles) (sprintf "The setting %s is not on the Actions page" item.id)
         // The app's own switches show whether they are on for the app in front.
-        for id in ["tabs-for-app";"auto-group-app";"number-shortcut-for-app";"tab-shortcuts-for-app";"combine-group-taskbar-icons";"group-icons-only"] do
+        for id in ["tabs-for-app";"auto-group-app";"number-shortcut-for-app";"tab-shortcuts-for-app";"mouse-gestures-for-app";"combine-group-taskbar-icons";"group-icons-only"] do
             let command = (Commands.find id).Value
             let entry = page.entries |> List.find(fun entry -> entry.title=tr command.text.caption)
             note ((page.aside "" entry).switch=command.state active && (command.state active).IsSome) (sprintf "%s shows no switch" id)

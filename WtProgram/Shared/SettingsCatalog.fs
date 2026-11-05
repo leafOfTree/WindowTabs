@@ -61,6 +61,7 @@ module SettingsCatalog =
         // Ctrl+Alt+W beside New tab's Ctrl+Alt+N; Ctrl+W alone belongs to the apps.
         { id="close-tab"; page=HotKeySettings; text=Strings.Settings.closeTab; binding=Shortcut("closeTab",1623) }
         // Split view keys ship unbound: nothing global is taken until the user picks a key.
+        { id="split-next"; page=HotKeySettings; text=Strings.Commands.splitWithNext; binding=Shortcut("splitWithNext",0) }
         { id="split-pick-right"; page=HotKeySettings; text=Strings.Settings.splitPickRight; binding=Shortcut("splitPickRight",0) }
         { id="split-pick-below"; page=HotKeySettings; text=Strings.Settings.splitPickBelow; binding=Shortcut("splitPickBelow",0) }
         { id="split-pick-left"; page=HotKeySettings; text=Strings.Settings.splitPickLeft; binding=Shortcut("splitPickLeft",0) }
@@ -89,6 +90,9 @@ module SettingsCatalog =
         { id="shift-scroll"; page=HotKeySettings; text=Strings.Settings.shiftScroll; binding=Toggle("enableShiftScroll",true,true) }
         { id="ctrl-scroll"; page=HotKeySettings; text=Strings.Settings.ctrlScroll; binding=Toggle("enableCtrlScroll",true,true) }
         { id="middle-click-close"; page=HotKeySettings; text=Strings.Settings.middleClickClose; binding=Toggle("enableMiddleClickClose",true,true) }
+        // Off until asked for: on, every right-drag over any app is taken for a gesture.
+        { id="mouse-gestures"; page=MouseGestureSettings; text=Strings.Settings.mouseGestures; binding=Toggle("enableMouseGestures",false,false) }
+        { id="gesture-hint"; page=MouseGestureSettings; text=Strings.Settings.gestureHint; binding=Toggle("showGestureHint",true,true) }
         { id="tabTextColor"; page=AppearanceSettings; text=Strings.Settings.tabTextColor; binding=Colour }
         { id="tabNormalBgColor"; page=AppearanceSettings; text=Strings.Settings.tabNormalBgColor; binding=Colour }
         { id="tabActiveBgColor"; page=AppearanceSettings; text=Strings.Settings.tabActiveBgColor; binding=Colour }
@@ -176,7 +180,7 @@ module SettingsCatalog =
     let appRulePathKeys = ["includedPaths";"excludedPaths";"autoGroupingPaths"]
     let appGroupingMatchTypes = [-1]
     let appGroupingMatchDefault = -1
-    let appRuleKeys = appRulePathKeys @ ["disabledNumberShortcutPaths";"enabledNumberShortcutPaths";"disabledShortcutPaths";"appTabColors";"appGroupingRules";"appGroupingTargets"]
+    let appRuleKeys = appRulePathKeys @ ["disabledNumberShortcutPaths";"enabledNumberShortcutPaths";"disabledShortcutPaths";"appTabColors";"appGroupingRules";"appGroupingTargets";"mouseGestures"]
     let workspaceKeys = ["workspaces";"workspaceSchemaVersion";"workspaceRecovery";"session"]
     /// The settings a reset leaves: fresh-install toggles, the version (so the next start does
     /// not take the reset for an upgrade) and, unless cleared, app rules and saved workspaces.

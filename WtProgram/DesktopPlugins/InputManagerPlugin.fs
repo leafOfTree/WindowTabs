@@ -152,6 +152,7 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
     let mutable leaderEnabled = false
     let mutable leaderKeys = SettingsCatalog.textDefault "numberLeaderKeys"
     let mutable mouseHook = IntPtr.Zero
+    let mutable gestures : MouseGestureInput option = None
     let mutable cachedPath = (IntPtr.Zero, "")
     let pathFor hwnd =
         if fst cachedPath <> hwnd then
@@ -190,9 +191,20 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
                     info.group.bb.write("numberBadges",true))
                 timer.Start())
 
-    member this.llHook nCode (wParam:IntPtr) lParam = 
+    member this.llHook nCode (wParam:IntPtr) lParam =
         let msg = wParam.ToInt32()
-        if nCode>=0 && List.contains msg [WindowMessages.WM_LBUTTONDOWN;WindowMessages.WM_RBUTTONDOWN;WindowMessages.WM_MBUTTONDOWN;WindowMessages.WM_XBUTTONDOWN] then this.cancelLeader()
+        let button = List.contains msg [WindowMessages.WM_LBUTTONDOWN;WindowMessages.WM_RBUTTONDOWN;WindowMessages.WM_MBUTTONDOWN;WindowMessages.WM_XBUTTONDOWN]
+        // Moves, and other buttons' releases, are read only while a press is on its way to being a
+        // gesture, or one given up still has a release to keep.
+        let released = msg=WindowMessages.WM_LBUTTONUP || msg=WindowMessages.WM_MBUTTONUP || msg=WindowMessages.WM_XBUTTONUP
+        let gesture =
+            match gestures with
+            | Some input when nCode>=0 && (button || msg=WindowMessages.WM_RBUTTONUP || ((msg=WindowMessages.WM_MOUSEMOVE || released) && input.busy)) ->
+                let hookStruct = unbox<MSLLHOOKSTRUCT>(Marshal.PtrToStructure(lParam, typeof<MSLLHOOKSTRUCT>))
+                input.handle(msg,hookStruct.pt.X,hookStruct.pt.Y,hookStruct.dwExtraInfo)
+            | _ -> false
+        if gesture then 1 else
+        if nCode>=0 && button then this.cancelLeader()
         if nCode>=0 && msgSet.contains(msg) then
             this.foregroundGroup.iter <| fun group ->
                 let hookStruct = unbox<MSLLHOOKSTRUCT>(Marshal.PtrToStructure(lParam, typeof<MSLLHOOKSTRUCT>))
@@ -265,12 +277,20 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
             leaderKeys <- Services.settings.getValue("numberLeaderKeys") :?> string
             owned.Own(Services.settings.notifyValue "numberLeaderKeys" (fun value -> leaderKeys <- unbox value; this.cancelLeader())) |> ignore
             owned.Own(Services.settings.notifyValue "hotKeys" (fun _ -> leaderCode <- Services.program.getHotKey "numberLeader"; this.cancelLeader())) |> ignore
+            // Its own path lookups: the keyboard hook's is for the window in front, these for the
+            // window under the pointer.
+            let gesturePath = ref (IntPtr.Zero, "")
+            let pathUnder hwnd =
+                if fst gesturePath.Value <> hwnd then gesturePath.Value <- (hwnd,(try OS.windowFromHwnd(hwnd).pid.processPath with _ -> ""))
+                snd gesturePath.Value
+            gestures <- Some(new MouseGestureInput(pathUnder))
             this.registerMouseLLHook()
             this.registerKeyboardLLHook()
             owned.Own(NumberLeaderRequest.toggle.Publish.Subscribe(fun() -> this.toggleLeader())) |> ignore
             owned.Own(Services.settings.notifyValue "enableNumberLeader" (fun _ -> leaderEnabled <- Services.settings.getValue("enableNumberLeader") :?> bool; this.cancelLeader())) |> ignore
             owned.Own(OS.setSingleWinEvent WinEvent.EVENT_SYSTEM_FOREGROUND (fun _ ->
                 cachedPath <- (IntPtr.Zero, "")
+                gestures |> Option.iter(fun input -> input.seen(WinUserApi.GetAncestor(WinUserApi.GetForegroundWindow(),GetAncestorConstants.GA_ROOT)))
                 if leader.active && not (this.validateLeader()) then this.cancelLeader())) |> ignore
             timer.Tick.Add(fun _ -> if not (this.validateLeader()) then this.cancelLeader())
 
@@ -281,3 +301,4 @@ type InputManagerPlugin(msgSet:Set2<Int32>) as this =
             (owned :> IDisposable).Dispose()
             if mouseHook<>IntPtr.Zero then WinUserApi.UnhookWindowsHookEx(mouseHook) |> ignore
             if not (isNull kbHook) then kbHook.Dispose()
+            gestures |> Option.iter(fun input -> (input :> IDisposable).Dispose())

@@ -43,6 +43,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
             SettingsPageRegistration(GeneralSettings,tr Strings.Pages.general,fun () -> GeneralView() :> ISettingsView)
             SettingsPageRegistration(AppearanceSettings,tr Strings.Pages.appearance,fun () -> AppearanceView() :> ISettingsView)
             SettingsPageRegistration(HotKeySettings,tr Strings.Pages.shortcuts,fun () -> HotKeyView() :> ISettingsView)
+            SettingsPageRegistration(MouseGestureSettings,tr Strings.Pages.mouseGestures,fun () -> MouseGestureView() :> ISettingsView)
             SettingsPageRegistration(ProgramSettings,tr Strings.Pages.appRules,fun () -> ProgramView() :> ISettingsView)
             SettingsPageRegistration(SettingsViewType.LayoutSettings,tr Strings.Pages.workspaces,fun () -> WorkspaceView() :> ISettingsView)
             SettingsPageRegistration(DiagnosticsSettings,tr Strings.Pages.diagnostics,fun () -> DiagnosticsView() :> ISettingsView) ]
@@ -166,6 +167,8 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                                Padding=Padding(Dpi.scale 12,Dpi.scale 12,Dpi.scale 8,Dpi.scale 8))
         let brand = new Label(Text="WindowTabs",Font=SettingsUi.sectionFont(),AutoSize=false,
                               Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,UseMnemonic=false)
+        // WinForms leaves a font set on the label at the old scale; it takes the new one's.
+        form.Rescaled.Add(fun _ -> brand.Font <- SettingsUi.sectionFont())
         let releasesUrl = "https://github.com/leafOfTree/WindowTabs/releases"
         let mutable versionHovered = false
         let version =
@@ -184,7 +187,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                     graphics.Clear(if isNull this.Parent then palette.background else this.Parent.BackColor)
                     graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
                     if (versionHovered || this.Focused) && this.Enabled then
-                        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (float32(Dpi.scale 6))
+                        use shape = SettingsShapes.rounded (SettingsShapes.outlineRect this.Width this.Height) (SettingsShapes.controlRadius())
                         use fill = new SolidBrush(palette.selection)
                         graphics.FillPath(fill,shape)
                     TextRenderer.DrawText(graphics,this.Text,this.Font,this.ClientRectangle,
@@ -204,6 +207,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
         footer.Controls.Add(brandRow)
         navigation.Controls.Add(links)
         navigation.Controls.Add(footer)
+        // A rule between the sidebar and the page: both in the page's colour, it keeps them apart.
         navigation.Paint.Add(fun e ->
             use border = new Pen((SettingsColors.current()).border)
             e.Graphics.DrawLine(border,navigation.ClientSize.Width-1,0,
@@ -248,7 +252,7 @@ type DesktopManagerForm(?views:ISettingsView list, ?viewFactories:(SettingsViewT
                     let part = text.Substring(start,finish-start)
                     let size = TextRenderer.MeasureText(graphics,part,font,Size(Int32.MaxValue,bounds.Height),flags)
                     TextRenderer.DrawText(graphics,part,font,Point(x,bounds.Top),
-                        (if active then (SettingsColors.current()).accent else color),flags)
+                        (if active then (SettingsColors.current()).accentText else color),flags)
                     x <- x+size.Width
                     start <- finish
             finally graphics.Restore(state)
