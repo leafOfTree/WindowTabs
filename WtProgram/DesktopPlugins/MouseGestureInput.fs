@@ -26,8 +26,9 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
     static let marker = IntPtr(0x57544E)
     let points = ResizeArray<int * int>()
     let mutable state = Idle
-    /// The release still to keep from the app of a button that gave a gesture up: its press was.
-    let mutable heldUp : int option = None
+    /// The releases still to keep from the app of the buttons that gave a gesture up: their
+    /// presses were.
+    let heldUp = Collections.Generic.HashSet<int>()
     let mutable scale = 1.0
     let mutable enabled = Services.settings.getValue("enableMouseGestures") :?> bool
     let mutable showHint = Services.settings.getValue("showGestureHint") :?> bool
@@ -35,6 +36,9 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
     let holdTimer = new Timer(Interval=300)
     let hintTimer = new Timer(Interval=16)
     let mutable hint : GestureHint option = None
+    /// The stroke and pointer the hint was last shown for: with the pointer at rest, the reading
+    /// and the hint's place are as they were, so there is nothing to measure or paint again.
+    let mutable hinted = (-1,Point.Empty)
     let currentProcess = Diagnostics.Process.GetCurrentProcess().Id
     let subscriptions = [
         Services.settings.notifyValue "enableMouseGestures" (fun value -> enabled <- unbox value)
@@ -94,6 +98,7 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
     let reading() = MouseGestures.read scale (List.ofSeq points)
     let hideHint() =
         hintTimer.Stop()
+        hinted <- (-1,Point.Empty)
         hint |> Option.iter(fun window -> window.hide())
     /// The window the stroke was drawn over goes to the front first: its press was kept from it.
     let activate (hwnd:IntPtr) =
@@ -130,25 +135,26 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
         hintTimer.Tick.Add(fun _ ->
             match state with
             | Drawing(_,path) when showHint ->
-                let window = match hint with Some window -> window | None -> (let window = new GestureHint() in hint <- Some window; window)
-                match reading() with
-                | NoGesture -> window.hide()
-                | Unrecognized -> window.show(None,tr Strings.MouseGestures.unrecognized,true,[],Cursor.Position)
-                | Gesture gesture ->
-                    // After one stroke, where a second one would lead, so the gestures can be
-                    // found by drawing rather than looked up.
-                    let next = MouseGestures.continuations table path gesture |> List.map(fun binding -> binding.gesture,Commands.gestureAction binding)
-                    match MouseGestures.resolve table path gesture with
-                    | Some binding -> window.show(Some gesture,Commands.gestureAction binding,false,next,Cursor.Position)
-                    | None -> window.show(Some gesture,tr Strings.MouseGestures.noAction,true,next,Cursor.Position)
+                let now = points.Count,Cursor.Position
+                if now<>hinted then
+                    hinted <- now
+                    let window = match hint with Some window -> window | None -> (let window = new GestureHint() in hint <- Some window; window)
+                    match reading() with
+                    | NoGesture -> window.hide()
+                    | Unrecognized -> window.show(None,tr Strings.MouseGestures.unrecognized,true,[],snd now)
+                    | Gesture gesture ->
+                        // After one stroke, where a second one would lead, so the gestures can be
+                        // found by drawing rather than looked up.
+                        let next = MouseGestures.continuations table path gesture |> List.map(fun binding -> binding.gesture,Commands.gestureAction binding)
+                        match MouseGestures.resolve table path gesture with
+                        | Some binding -> window.show(Some gesture,Commands.gestureAction binding,false,next,snd now)
+                        | None -> window.show(Some gesture,tr Strings.MouseGestures.noAction,true,next,snd now)
             | _ -> hideHint())
 
     /// Whether the hook takes the event from the app.
     member _.handle(msg:int, x:int, y:int, extra:IntPtr) =
         if extra=marker then false
-        elif heldUp=Some msg then
-            heldUp <- None
-            true
+        elif heldUp.Remove msg then true
         elif msg=WindowMessages.WM_RBUTTONDOWN then
             // A press whose release never came, as when the hook was held up: start again.
             if state<>Idle then
@@ -200,20 +206,21 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
                      elif msg=WindowMessages.WM_MBUTTONDOWN then WindowMessages.WM_MBUTTONUP
                      else WindowMessages.WM_XBUTTONUP
             // Pressed again, the button's release kept for it was missed: this one is the app's.
-            if heldUp=Some up then heldUp <- None
+            heldUp.Remove up |> ignore
             match state with
-            // Another button while the right one is still held back: the app gets both.
+            // Another button while the right one is still held back: the app gets both, in the
+            // order they came, so the right press is sent before this one goes on.
             | Pressed _ ->
                 holdTimer.Stop()
                 state <- Passed
-                post(fun () -> send [|mouse SendInputConstants.MOUSEEVENTF_RIGHTDOWN|])
+                send [|mouse SendInputConstants.MOUSEEVENTF_RIGHTDOWN|]
                 false
             // While drawing, it gives the gesture up, and clicks nothing: its press and release
             // are kept from the app.
             | Drawing _ | Cancelled ->
                 hideHint()
                 state <- Cancelled
-                heldUp <- Some up
+                heldUp.Add up |> ignore
                 true
             | _ -> false
         else false
@@ -226,7 +233,7 @@ type MouseGestureInput(pathFor:IntPtr -> string) =
                 MouseGestures.seen table path (MouseGesturePresets.bindings path) |> Option.iter MouseGestureRules.save
 
     /// A press under way, or a release still to keep: the hook hands moves and releases here.
-    member _.busy = state<>Idle || heldUp.IsSome
+    member _.busy = state<>Idle || heldUp.Count>0
 
     interface IDisposable with
         member _.Dispose() =

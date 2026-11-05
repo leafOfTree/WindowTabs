@@ -263,7 +263,8 @@ module UiFace =
             use installed = new Text.InstalledFontCollection()
             let names = installed.Families |> Array.map(fun family -> family.Name)
             ["Segoe Fluent Icons";"Segoe MDL2 Assets"] |> List.tryFind(fun name -> Array.contains name names))
-    let private iconFonts = Collections.Concurrent.ConcurrentDictionary<struct(string*float32),Font>()    /// Draws an icon font's glyph with its ink centred in box, its em the box's height, in
+    let private iconFonts = Collections.Concurrent.ConcurrentDictionary<struct(string*float32),Font>()
+    /// Draws an icon font's glyph with its ink centred in box, its em the box's height, in
     /// grey-scale antialiasing: ClearType fringes a glyph in colour. False where there is no icon
     /// font, so the caller draws its own.
     let glyph (g:Graphics) (code:int) (box:RectangleF) (color:Color) =

@@ -140,6 +140,13 @@ let cancelling() =
     input.handle(WindowMessages.WM_LBUTTONDOWN,0,0,IntPtr.Zero) |> ignore
     check (input.handle(WindowMessages.WM_RBUTTONUP,0,0,IntPtr.Zero) && input.busy) "Letting the right button go first forgot the left release"
     check (input.handle(WindowMessages.WM_LBUTTONUP,0,0,IntPtr.Zero) && not input.busy) "The left release after the right one reached the app"
+    // Two buttons pressed while drawing: each one's release is kept, not only the last one's.
+    field.SetValue(input,box (Drawing(IntPtr(1),"app.exe")))
+    input.handle(WindowMessages.WM_LBUTTONDOWN,0,0,IntPtr.Zero) |> ignore
+    input.handle(WindowMessages.WM_MBUTTONDOWN,0,0,IntPtr.Zero) |> ignore
+    check (input.handle(WindowMessages.WM_LBUTTONUP,0,0,IntPtr.Zero) && input.busy) "The first of two buttons pressed while drawing let its release through"
+    check (input.handle(WindowMessages.WM_RBUTTONUP,0,0,IntPtr.Zero) && input.busy) "The right release forgot the second button's"
+    check (input.handle(WindowMessages.WM_MBUTTONUP,0,0,IntPtr.Zero) && not input.busy) "The second button's release reached the app, or was left waiting"
 
 let render (control:Control) name =
     use image = new Bitmap(max 1 control.Width,max 1 control.Height)
@@ -223,8 +230,11 @@ let main() =
                 let alone = hint.Height
                 hint.show(Some "U",tr Strings.MouseGestures.noAction,true,["UL","Previous tab";"UR","A much longer action name"],pointer)
                 check (hint.Height>=alone+Dpi.scale 52) (sprintf "Two strokes to follow made the hint %d high, from %d" hint.Height alone)
-                use font = new Font("Segoe UI",10.0f)
+                use font = new Font(UiFace.text "Segoe UI",10.0f)
                 check (hint.Width>=TextRenderer.MeasureText("A much longer action name",font).Width+Dpi.scale 34) "A stroke to follow did not fit in the hint"
+                // In the settings' face, Segoe UI Variable where Windows has it, as the page beside it.
+                let hintFont = typeof<GestureHint>.GetField("font",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic).GetValue(hint) :?> Font
+                check (hintFont.Name=font.Name) (sprintf "The hint is set in %s, not %s" hintFont.Name font.Name)
                 render hint ("mouse-gestures-hint-"+name)
                 hint.hide()
             let everywhereColumns = editor.Columns

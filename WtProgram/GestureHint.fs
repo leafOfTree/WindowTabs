@@ -84,7 +84,7 @@ type GestureHint() =
             this.DoubleBuffered <- true
         if isNull font || fontDpi<>dpi then
             let previous = font
-            font <- new Font("Segoe UI",10.0f*float32 dpi/float32(Dpi.system()),FontStyle.Regular)
+            font <- new Font(UiFace.text "Segoe UI",10.0f*float32 dpi/float32(Dpi.system()),FontStyle.Regular)
             fontDpi <- dpi
             if not (isNull previous) then previous.Dispose()
         // The picture sits in its square at the left, centred on its row.

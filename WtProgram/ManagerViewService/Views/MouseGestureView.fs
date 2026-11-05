@@ -570,17 +570,21 @@ type MouseGestureEditor() as this =
     let blankRect = ref Rectangle.Empty
     /// Where the Action and Does columns start in a row: close together while the widest row needs
     /// the room, spread out by the width it leaves over, so the rows do not crowd to the left.
-    /// Measured over every app's rows, so the columns stay put when another app is picked.
+    /// Measured over every app's rows, so the columns stay put when another app is picked, and
+    /// once between layouts: a row's picture plays at many frames a second.
+    let mutable widestRow = -1
     let columns() =
-        let body = SettingsUi.bodyFont()
-        let mono = GestureUi.monoFont()
-        let current = table()
-        let rows = (current.everywhere |> List.map(fun binding -> binding,false)) @ (current.apps |> List.collect(fun app -> app.bindings |> List.map(fun binding -> binding,true)))
-        let widest =
-            rows |> List.fold (fun widest (binding,inApp) ->
-                let key = match binding.action with GestureKeys(codes,_) -> GestureUi.measure (SettingsShortcut.sequenceText codes) mono+m 20 | GestureCommand _ -> 0
-                let mark = if inApp && (MouseGestures.overrides current binding).IsSome then m 24 else 0
-                max widest (key+GestureUi.measure (Commands.gestureAction binding) body+mark)) 0
+        if widestRow<0 then
+            let body = SettingsUi.bodyFont()
+            let mono = GestureUi.monoFont()
+            let current = table()
+            let rows = (current.everywhere |> List.map(fun binding -> binding,false)) @ (current.apps |> List.collect(fun app -> app.bindings |> List.map(fun binding -> binding,true)))
+            widestRow <-
+                rows |> List.fold (fun widest (binding,inApp) ->
+                    let key = match binding.action with GestureKeys(codes,_) -> GestureUi.measure (SettingsShortcut.sequenceText codes) mono+m 20 | GestureCommand _ -> 0
+                    let mark = if inApp && (MouseGestures.overrides current binding).IsSome then m 24 else 0
+                    max widest (key+GestureUi.measure (Commands.gestureAction binding) body+mark)) 0
+        let widest = widestRow
         let spare = max 0 (this.Width-tableLeft()-m 140-widest-m 36-m 24)
         m 62+min (m 50) (spare/3),m 140+min (m 120) (spare*2/3)
     let contentBottom() =
@@ -608,6 +612,7 @@ type MouseGestureEditor() as this =
         plays <- Array.create (List.length (bindings())) (Double.PositiveInfinity,false)
         timer.Stop()
     let relayout() =
+        widestRow <- -1
         if scope.IsSome && (app()).IsNone then scope <- None
         let count = List.length (entries())
         addApp.Location <- Point(0,(itemRect count).Top+m 8)
