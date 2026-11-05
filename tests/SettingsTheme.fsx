@@ -621,18 +621,31 @@ let main() =
                 let room = frame.List.ClientSize.Width-Dpi.scale 42-Dpi.scale 22
                 let longest = names |> Array.map(fun name -> TextRenderer.MeasureText(name,combo.Font).Width) |> Array.max
                 check (room>=longest) (sprintf "The longest choice has %dpx of the %dpx it needs" room longest)
-                // The chosen one's tick is in the accent, as a search's match is.
+                // The chosen one marked as WinUI's list marks it: a bar in the accent at its left
+                // edge, no tick at its right; the rows not chosen have neither.
                 if not SystemInformation.HighContrast then
                     let list = frame.List :> ListBox
-                    let row = list.GetItemRectangle(1)
-                    use image = new Bitmap(row.Right,row.Bottom)
-                    use g = Graphics.FromImage(image)
-                    let draw = typeof<ListBox>.GetMethod("OnDrawItem",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic)
-                    draw.Invoke(list,[|box (DrawItemEventArgs(g,combo.Font,row,1,DrawItemState.None))|]) |> ignore
                     let p = SettingsColors.current()
                     let distance (a:Color) (b:Color) = abs(int a.R-int b.R)+abs(int a.G-int b.G)+abs(int a.B-int b.B)
-                    let ink = [for y in row.Top..row.Bottom-1 do for x in row.Right-Dpi.scale 28..row.Right-1 -> image.GetPixel(x,y)] |> List.maxBy (distance p.hover)
-                    check (distance ink p.accentText<60) (sprintf "The chosen choice's tick is %A, not the accent %A" ink p.accentText)
+                    let drawn index =
+                        let row = list.GetItemRectangle(index)
+                        let image = new Bitmap(row.Right,row.Bottom)
+                        use g = Graphics.FromImage(image)
+                        let draw = typeof<ListBox>.GetMethod("OnDrawItem",Reflection.BindingFlags.Instance ||| Reflection.BindingFlags.NonPublic)
+                        draw.Invoke(list,[|box (DrawItemEventArgs(g,combo.Font,row,index,DrawItemState.None))|]) |> ignore
+                        row,image
+                    let nearest (image:Bitmap) (row:Rectangle) fromX toX (color:Color) =
+                        [for y in row.Top..row.Bottom-1 do for x in fromX..toX -> image.GetPixel(x,y)] |> List.minBy (distance color)
+                    let row,chosen = drawn 1
+                    use chosen = chosen
+                    let bar = nearest chosen row row.Left (row.Left+Dpi.scale 8) p.accent
+                    check (distance bar p.accent<40) (sprintf "The chosen choice has no bar in the accent at its left: %A, not %A" bar p.accent)
+                    let tick = nearest chosen row (row.Right-Dpi.scale 28) (row.Right-1) p.accentText
+                    check (distance tick p.accentText>=60) (sprintf "The chosen choice still has a tick at its right: %A" tick)
+                    let other,plain = drawn 2
+                    use plain = plain
+                    let none = nearest plain other other.Left (other.Left+Dpi.scale 8) p.accent
+                    check (distance none p.accent>=60) (sprintf "A choice not chosen has the accent bar: %A" none)
                 window.Dispose()
             | None -> failwith "The drop-down did not open its list"
             form.Controls.Remove combo
@@ -985,19 +998,36 @@ let main() =
         dismissPopup.Dispose()
         choice.Enabled <- false
         check (choice.CreateDropDown().IsNone) "Disabled choice opens a menu"
-        // A list opens below its box, leaving the box in sight, not over it as WinUI's do.
+        // A short list opens over its box, as WinUI's do: the chosen row where the box was, its
+        // text where the box's text was, unfolding from that row to the list's ends.
         do
             let area = Screen.PrimaryScreen.WorkingArea
             use owner = new Form(FormBorderStyle=FormBorderStyle.None,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,
                                  Location=Point(area.Left+Dpi.scale 200,area.Top+Dpi.scale 300),Size=Size(Dpi.scale 300,Dpi.scale 80))
-            use combo = new SettingsCombo([|"Left";"Center";"Right"|],Location=Point(Dpi.scale 20,Dpi.scale 20),Size=Size(Dpi.scale 160,Dpi.scale 32))
-            owner.Controls.Add combo
             WinUserApi.ShowWindow(owner.Handle,ShowWindowCommands.SW_SHOWNOACTIVATE) |> ignore
-            Application.DoEvents()
-            combo.SelectedIndex <- 1
-            use list = combo.CreateDropDown().Value
-            let box = combo.RectangleToScreen(combo.ClientRectangle)
-            check (list.Top>=box.Bottom) (sprintf "The list %A opens over its box %A" list.Bounds box)
+            for chosen in [0;2] do
+                // One combo each: a combo opens no second list while it holds its first.
+                use combo = new SettingsCombo([|"Left";"Center";"Right"|],Location=Point(Dpi.scale 20,Dpi.scale 20),Size=Size(Dpi.scale 160,Dpi.scale 32))
+                owner.Controls.Add combo
+                Application.DoEvents()
+                combo.SelectedIndex <- chosen
+                use list = combo.CreateDropDown().Value
+                let host = (list.Items.[0] :?> ToolStripControlHost).Bounds
+                let rows = ((list.Items.[0] :?> ToolStripControlHost).Control :?> SettingsListFrame).List
+                let box = combo.RectangleToScreen(combo.ClientRectangle)
+                let rowMiddle = list.Top+host.Y+chosen*rows.ItemHeight+rows.ItemHeight/2
+                check (list.Left+host.X=box.X && abs(rowMiddle-(box.Y+box.Height/2))<=1)
+                      (sprintf "The list for choice %d opens at %A, its row %d's middle at %d, not over the box %A" chosen list.Location chosen rowMiddle box)
+                // All of the box under it: the box's right edge showed past a list as wide as the box.
+                check (list.Left<=box.Left && list.Right>=box.Right) (sprintf "The list %A leaves part of its box %A showing" list.Bounds box)
+                // It unfolds from the chosen row: shown at first as that row's band alone.
+                if SystemInformation.UIEffectsEnabled && not SystemInformation.HighContrast then
+                    let band = host.Y+chosen*rows.ItemHeight,host.Y+(chosen+1)*rows.ItemHeight
+                    check (list.Unfolding=Some band) (sprintf "The list for choice %d does not unfold from its row %A: %A" chosen band list.Unfolding)
+                    use g = list.CreateGraphics()
+                    let shown = list.Region.GetBounds(g)
+                    check (int(Math.Round(float shown.Top))=fst band && int(Math.Round(float shown.Bottom))=snd band) (sprintf "The list for choice %d shows %A before it unfolds, not its row %A" chosen shown band)
+                owner.Controls.Remove combo
             owner.Close()
         // Its text in the disabled grey, as a disabled button's: the secondary grey is nearly as
         // light as the text, so a disabled list looked as if it would open.

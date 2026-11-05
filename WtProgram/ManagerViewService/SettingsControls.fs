@@ -1073,6 +1073,14 @@ type SettingsListFrame(list:SettingsChoiceList) as this =
 type SettingsChoicePopup() as this =
     inherit ToolStripDropDown()
     let mutable shadow : SettingsPopupShadow option = None
+    /// The band it unfolds from, the chosen row's, while it opens over its box as WinUI's lists do.
+    let mutable unfold : (int * int) option = None
+    let clock = Diagnostics.Stopwatch()
+    let timer = new Timer(Interval=15)
+    let showShadow (popup:ToolStripDropDown) =
+        if not SystemInformation.HighContrast then
+            if shadow.IsNone then shadow <- Some(new SettingsPopupShadow(popup))
+            shadow |> Option.iter(fun halo -> halo.Show())
     do
         // DoubleBuffered covers this ToolStrip only; the hosted frame/list have
         // their own HWNDs. Composite the entire subtree before it becomes visible.
@@ -1088,14 +1096,51 @@ type SettingsChoicePopup() as this =
         this.AutoSize <- false
         this.Padding <- Padding(Dpi.scale 6)
         this.DropShadowEnabled <- false
+        // Unfolding, it grows from the chosen row to its whole height, eased out; the shadow comes
+        // once it is open, as a shadow the full size around a list still opening stood apart from it.
         this.Opened.Add(fun _ ->
-            if not SystemInformation.HighContrast then
-                if shadow.IsNone then shadow <- Some(new SettingsPopupShadow(this))
-                shadow |> Option.iter(fun halo -> halo.Show()))
-        this.Closed.Add(fun _ -> shadow |> Option.iter(fun halo -> halo.Hide()))
+            if unfold.IsSome then
+                clock.Restart()
+                timer.Start()
+            else showShadow this)
+        timer.Tick.Add(fun _ ->
+            match unfold with
+            | Some(top,bottom) when not this.IsDisposed ->
+                let t = min 1.0 (float clock.ElapsedMilliseconds/170.0)
+                let eased = 1.0-(1.0-t)*(1.0-t)*(1.0-t)
+                let along (a:int) (b:int) = a+int(Math.Round(float(b-a)*eased))
+                if t<1.0 then this.ClipTo(along top 0,along bottom this.Height)
+                else
+                    timer.Stop()
+                    unfold <- None
+                    this.ClipTo(0,this.Height)
+                    showShadow this
+            | _ -> timer.Stop())
+        this.Closed.Add(fun _ ->
+            timer.Stop()
+            shadow |> Option.iter(fun halo -> halo.Hide()))
         this.Disposed.Add(fun _ ->
+            timer.Dispose()
             shadow |> Option.iter(fun halo -> (halo :> IDisposable).Dispose())
             shadow <- None)
+    /// Shows only the band from top to bottom, with the popup's rounded corners; the whole of it
+    /// takes Windows' own corners again where it draws them.
+    member this.ClipTo(top:int,bottom:int) =
+        let old = this.Region
+        if top<=0 && bottom>=this.Height && SystemCorners.supported.Value then
+            this.Region <- null
+            SystemCorners.round this.Handle this.outlineColor |> ignore
+        else
+            use shape = SettingsShapes.rounded (RectangleF(0.0f,float32 top,float32 this.Width,float32(max 1 (bottom-top)))) (SettingsShapes.overlayRadius())
+            this.Region <- new Region(shape)
+        if not(isNull old) then old.Dispose()
+    /// Opens unfolding from the band of the chosen row, in its own coordinates, when Windows
+    /// animates its controls; at once otherwise.
+    member this.UnfoldFrom(top:int,bottom:int) =
+        if SystemInformation.UIEffectsEnabled && not SystemInformation.HighContrast then
+            unfold <- Some(top,bottom)
+            this.ClipTo(top,bottom)
+    member _.Unfolding = unfold
     /// Its outline when it opens from a field outlined in a colour of its own, as on the palette.
     member val Outline = Color.Empty with get,set
     member private this.outlineColor = if (this.Outline:Color).IsEmpty then (SettingsColors.current()).border else this.Outline
@@ -1290,10 +1335,11 @@ type SettingsCombo(items:string[]) as this =
                     e.Graphics.FillRectangle(background,e.Bounds)
                     let active = e.Index=hovered ||
                                  (keyboardNavigation && hovered<0 && (e.State &&& DrawItemState.Selected)<>enum 0)
-                    if active then
+                    // The chosen one keeps the fill too, as WinUI's list does, its bar beside it.
+                    if active || item=selected then
                         e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
                         use shape = SettingsShapes.rounded (RectangleF(float32 e.Bounds.X,float32 e.Bounds.Y,float32 e.Bounds.Width,float32 e.Bounds.Height)) (SettingsShapes.controlRadius())
-                        use brush = new SolidBrush(p.selection)
+                        use brush = new SolidBrush(if active || SystemInformation.HighContrast then p.selection else Color.FromArgb(170,p.selection))
                         e.Graphics.FillPath(brush,shape)
                     let foreground = if active && SystemInformation.HighContrast then SystemColors.HighlightText else p.text
                     let offset = drawDot e.Graphics e.Bounds item
@@ -1315,14 +1361,14 @@ type SettingsCombo(items:string[]) as this =
                                 TextRenderer.DrawText(e.Graphics,part,this.Font,Rectangle(x,rect.Y,rect.Right-x,rect.Height),color,flags ||| TextFormatFlags.EndEllipsis)
                                 x <- x+TextRenderer.MeasureText(e.Graphics,part,this.Font,Size.Empty,flags).Width
                     if item=selected then
-                        let tick = Rectangle(e.Bounds.Right-Dpi.scale 28,e.Bounds.Y,Dpi.scale 24,e.Bounds.Height)
-                        let em = float32(Dpi.scale 12)
-                        let box = RectangleF(float32 tick.X+(float32 tick.Width-em)/2.0f,float32 tick.Y+(float32 tick.Height-em)/2.0f,em,em)
-                        // The chosen one's tick in the accent, as the search's match is: the
-                        // system's colours in high contrast.
-                        let ink = if SystemInformation.HighContrast then foreground else p.accentText
-                        if not (UiFace.glyph e.Graphics 0xE73E box ink) then
-                            TextRenderer.DrawText(e.Graphics,"✓",this.Font,tick,ink,TextFormatFlags.VerticalCenter ||| TextFormatFlags.HorizontalCenter))
+                        // The chosen one marked as WinUI's list marks it: a short bar in the accent at
+                        // its left edge, a pill as tall as the text; the system's colours in high contrast.
+                        let barHeight = Dpi.scale 16
+                        let bar = RectangleF(float32(e.Bounds.X+Dpi.scale 3),float32(e.Bounds.Y+(e.Bounds.Height-barHeight)/2),float32(Dpi.scale 3),float32 barHeight)
+                        e.Graphics.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
+                        use pill = SettingsShapes.rounded bar (bar.Width/2.0f)
+                        use ink = new SolidBrush(if SystemInformation.HighContrast then SystemColors.Highlight else p.accent)
+                        e.Graphics.FillPath(ink,pill))
             let finish commit =
                 let value = if list.SelectedIndex>=0 && list.SelectedIndex<shown.Count then shown.[list.SelectedIndex] else -1
                 window.Close()
@@ -1407,17 +1453,34 @@ type SettingsCombo(items:string[]) as this =
             // What a row keeps beside its label, as the rows are drawn: the inset before it, the dot or
             // image, the room for the tick, and the scrollbar the frame keeps whether rows overflow or not.
             let chrome = Dpi.scale 42+(if itemImages.Length>0 then Dpi.scale 24 elif itemColors.Length>0 then Dpi.scale 22 else 0)+frame.BarWidth+window.Padding.Horizontal
-            window.Size <- Size(min area.Width (max anchorBox.Width (labelWidth+chrome)),
+            let chosenRow = shown.IndexOf selected
+            // As WinUI opens a ComboBox: over the box, the chosen row where the box was and its text
+            // where the box's text was, so the eye stays on the choice; then the list reaches past
+            // the box by its own padding on each side. Lists that scroll or search open below,
+            // where the rows and the box stay apart.
+            let fits = rows*list.ItemHeight+window.Padding.Vertical+2<=area.Height-Dpi.scale 12
+            let overBox = this.DropDownAnchor.IsNone && search.IsNone && rows=shown.Count && fits && chosenRow>=0
+            let boxWidth = anchorBox.Width+(if overBox then window.Padding.Horizontal else 0)
+            window.Size <- Size(min area.Width (max boxWidth (labelWidth+chrome)),
                                 min (area.Height-Dpi.scale 12) (rows*list.ItemHeight+boxHeight+window.Padding.Vertical+2))
             search |> Option.iter(fun host -> host.Size <- Size(window.Width-window.Padding.Horizontal,host.Control.Height))
             listHost.Size <- Size(window.Width-window.Padding.Horizontal,window.Height-window.Padding.Vertical-boxHeight)
             frame.Size <- listHost.Size
             list.SelectedIndex <- max 0 (shown.IndexOf selected)
             list.TopIndex <- 0
-            let anchor = Point(anchorBox.X,anchorBox.Bottom+Dpi.scale 4)
-            let y = if anchor.Y+window.Height<=area.Bottom then anchor.Y else anchorBox.Y-window.Height-Dpi.scale 4
-            let x = if this.DropDownAnchor.IsSome then anchor.X else anchor.X+anchorBox.Width-window.Width
-            window.Location <- Point(max area.Left (min (area.Right-window.Width) x),max area.Top y)
+            let x,y =
+                if overBox then
+                    window.PerformLayout()
+                    let host = listHost.Bounds
+                    let y = anchorBox.Y+(anchorBox.Height-list.ItemHeight)/2-host.Y-chosenRow*list.ItemHeight
+                    // It unfolds from the chosen row, where the box was, up and down to its ends.
+                    window.UnfoldFrom(host.Y+chosenRow*list.ItemHeight,host.Y+(chosenRow+1)*list.ItemHeight)
+                    anchorBox.X-host.X,max area.Top (min (area.Bottom-window.Height) y)
+                else
+                    let anchor = Point(anchorBox.X,anchorBox.Bottom+Dpi.scale 4)
+                    let y = if anchor.Y+window.Height<=area.Bottom then anchor.Y else anchorBox.Y-window.Height-Dpi.scale 4
+                    (if this.DropDownAnchor.IsSome then anchor.X else anchor.X+anchorBox.Width-window.Width),max area.Top y
+            window.Location <- Point(max area.Left (min (area.Right-window.Width) x),y)
             popup <- Some window
             this.Invalidate()
             window.Closed.Add(fun e ->
