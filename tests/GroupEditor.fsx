@@ -668,7 +668,13 @@ let main() =
             (match merges 0 with [CmiRegular r] -> r.click() | items -> failwithf "Unexpected merge items: %A" items)
             check (editor.Draft.groups.Length=1 && editor.Draft.groups.[0].tabs=[c;a;b] && editor.Draft.groups.[0].group=Some(IntPtr 2)) (sprintf "Merging by the menu did not join the other group: %A" editor.Draft)
             check ((merges 0).IsEmpty) "A lone row still offered rows to merge into"
-            (match List.last (editor.RowMenu 0) with CmiRegular r -> r.click() | _ -> failwith "The row's menu did not end with Ungroup")
+            // Ungroup, then the bin's item last: what closes windows stands apart at the end.
+            (match List.last (editor.RowMenu 0) with
+             | CmiRegular r -> check (r.text=tr Strings.GroupEditor.closeRow) (sprintf "The row's menu did not end with putting it in the bin: %s" r.text)
+             | _ -> failwith "The row's menu did not end with an item")
+            (match editor.RowMenu 0 |> List.tryPick(function CmiRegular r when r.text=tr Strings.GroupEditor.ungroup -> Some r | _ -> None) with
+             | Some r -> r.click()
+             | None -> failwith "The row's menu offered no Ungroup")
             check (editor.Draft.groups.IsEmpty && editor.Draft.loose=[c;a;b]) (sprintf "Ungroup by the menu did not set the windows loose: %A" editor.Draft)
             editor.Close()
         // A whole row taken by its band's empty room: dropped on another row, its windows join that
@@ -707,6 +713,27 @@ let main() =
             editor.MouseDown(centre l.loose)
             editor.MouseUp(centre l.loose)
             check (editor.Draft.loose=[c;a;b] && editor.Expanded=None) "A click on the loose row's empty room changed something"
+            // A whole row dropped on the bin puts every window of it there, to close on Save.
+            do
+                let l = editor.Layout
+                editor.MouseDown(centre (l.looseTabs |> List.find(fun (hwnd,_) -> hwnd=c) |> snd))
+                editor.MouseMove(centre l.newGroup)
+                editor.MouseUp(centre l.newGroup)
+                check (editor.Draft.groups.Length=1 && editor.Draft.groups.[0].tabs=[c]) (sprintf "A tab on the new group's band made no row: %A" editor.Draft)
+                let l = editor.Layout
+                editor.MouseDown(room l.rows.[0].band)
+                editor.MouseMove(Point((room l.rows.[0].band).X,(room l.rows.[0].band).Y+Dpi.scale 12))
+                editor.MouseMove(centre l.closing)
+                editor.MouseUp(centre l.closing)
+                check (editor.Draft.groups.IsEmpty && editor.Draft.closing=[c] && editor.Draft.loose=[a;b]) (sprintf "A row dropped on the bin did not put its windows in it: %A" editor.Draft)
+            // The bin's edge is in the red Windows warns in, so it reads as where windows close.
+            if not SystemInformation.HighContrast then
+                let l = editor.Layout
+                use image = editor.RenderHovered()
+                let warning = if ThemeService.currentIsDark() then Color.FromRGB(0xFF99A4) else Color.FromRGB(0xC42B1C)
+                let distance (x:Color) (y:Color) = abs(int x.R-int y.R)+abs(int x.G-int y.G)+abs(int x.B-int y.B)
+                let edge = [for x in l.closing.X-1..l.closing.X+2 -> image.GetPixel(x,l.closing.Y+l.closing.Height/2)] |> List.minBy (distance warning)
+                check (distance edge warning<120) (sprintf "The bin's edge is %A, not the warning red %A" edge warning)
             editor.Close()
         // A row whose tabs wrap: a tab carried into the gap between the lines keeps its line, rather
         // than flipping between two layouts as the nearer line changes; on the other line, it moves.

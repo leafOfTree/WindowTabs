@@ -95,6 +95,8 @@ type DragAim =
 type RowAim =
     | IntoRow of int
     | Dissolve
+    /// The bin: every window of the row closes on Save.
+    | CloseAll
 
 /// A whole row in hand, taken by its band's empty room: which row, where the press was in
 /// its band, where the pointer is, and what it is aimed at.
@@ -321,6 +323,11 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     let textOn = if highContrast then SystemColors.WindowText else palette.text
     let rowFill = if highContrast then SystemColors.Control else palette.surface
     let looseFill = if highContrast then SystemColors.Control else tint palette.surface palette.background 0.5
+    /// The bin's edge, and what lights it under a drag: the red Windows warns in, as a refusal is
+    /// said in the palette, since what goes in it closes.
+    let warning =
+        if highContrast then SystemColors.WindowText
+        elif ThemeService.currentIsDark() then Color.FromRGB(0xFF99A4) else Color.FromRGB(0xC42B1C)
     let tabFill = if highContrast then SystemColors.Window else palette.selection
     /// The content's colour, which the selected tab takes to join it: a tab is lit no other way.
     let contentFill = if highContrast then SystemColors.Control else palette.background
@@ -875,6 +882,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 use band = rounded l.closing (scale 8)
                 use fill = new SolidBrush(looseFill)
                 g.FillPath(fill,band)
+                use edge = new Pen(warning,float32(scale 1))
+                g.DrawPath(edge,band)
                 for tab in l.closingTabs do drawTab tab
                 let label = Rectangle(l.closing.Right-rowPad-scale GroupEditorMetrics.labelWidth,l.closing.Y,scale GroupEditorMetrics.labelWidth,l.closing.Height)
                 TextRenderer.DrawText(g,tr Strings.GroupEditor.closeBin,hintFont,label,palette.muted,looseFill,TextFormatFlags.HorizontalCenter ||| TextFormatFlags.VerticalCenter ||| TextFormatFlags.NoPrefix ||| TextFormatFlags.SingleLine)
@@ -962,7 +971,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 g.DrawPath(pen,shape))
         | Some(LooseRow | CloseRow as aim) ->
             use band = rounded (if aim=CloseRow then l.closing else l.loose) (scale 8)
-            use pen = new Pen(accent,float32(scale 2))
+            use pen = new Pen((if aim=CloseRow then warning else accent),float32(scale 2))
             g.DrawPath(pen,band)
         | Some(NewGroupRow | VacatedRow _ as aim) ->
             coverSlot()
@@ -1036,12 +1045,13 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
     /// it was taken, and its old place faded behind it.
     let rowOverlay (g:Graphics) (l:GroupEditorLayout) (d:GroupEditorRowDrag) =
         g.SmoothingMode <- Drawing2D.SmoothingMode.AntiAlias
-        let target = match d.aim with Some(IntoRow i) -> l.rows |> List.tryItem i |> Option.map(fun row -> row.band) | Some Dissolve -> Some l.loose | None -> None
+        let target = match d.aim with Some(IntoRow i) -> l.rows |> List.tryItem i |> Option.map(fun row -> row.band) | Some Dissolve -> Some l.loose | Some CloseAll -> Some l.closing | None -> None
+        let lit = if d.aim=Some CloseAll then warning else accent
         target |> Option.iter(fun r ->
             use band = rounded r (scale 8)
-            use fill = new SolidBrush(Color.FromArgb(50,accent))
+            use fill = new SolidBrush(Color.FromArgb(50,lit))
             g.FillPath(fill,band)
-            use pen = new Pen(accent,float32(scale 2))
+            use pen = new Pen(lit,float32(scale 2))
             g.DrawPath(pen,band))
         l.rows |> List.tryItem d.index |> Option.iter(fun row ->
             if not (isNull bitmap) then
@@ -1494,16 +1504,18 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
         refresh()
         startMorph fromL from
 
-    /// Every window of the row into another row's group, or loose: the row goes with its last one.
+    /// Every window of the row into another row's group, loose, or into the bin: the row goes with
+    /// its last one.
     let mergeRow (index:int) (into:RowAim) =
         let tabs = (groups()).[index].tabs
-        let target = match into with IntoRow t -> Some((groups()).[t].group,List.head (groups()).[t].tabs) | Dissolve -> None
+        let target = match into with IntoRow t -> Some((groups()).[t].group,List.head (groups()).[t].tabs) | Dissolve | CloseAll -> None
         let next =
             tabs |> List.fold (fun (draft:DesktopDraft) hwnd ->
                 match target with
                 | Some(strip,head) ->
                     let at = draft.groups |> List.findIndex(fun g -> (strip.IsSome && g.group=strip) || (strip.IsNone && List.contains head g.tabs))
                     DesktopDraft.moveToGroup hwnd at None draft
+                | None when into=CloseAll -> DesktopDraft.moveToClosing hwnd draft
                 | None -> DesktopDraft.moveToLoose hwnd draft) current
         slid (fun () -> current <- next; reselect())
 
@@ -1529,7 +1541,8 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
             |> List.map(fun (i,g) -> regular (rowName g) (fun () -> mergeRow index (IntoRow i)))
         List2(
             (if others.IsEmpty then [] else [ CmiPopUp({ text=tr Strings.GroupEditor.mergeInto; image=None; items=List2(others) }) ])
-            @ [ regular (tr Strings.GroupEditor.ungroup) (fun () -> mergeRow index Dissolve) ])
+            @ [ regular (tr Strings.GroupEditor.ungroup) (fun () -> mergeRow index Dissolve)
+                regular (tr Strings.GroupEditor.closeRow) (fun () -> mergeRow index CloseAll) ])
     let rowMenu (index:int) (view:Point) = showMenu (rowMenuItems index) view
 
     /// The focused cell cut into the shape; its window, or the selected tab for the whole content.
@@ -1664,7 +1677,7 @@ type GroupEditorForm(draft:DesktopDraft, rows:GroupEditorRow list, windows:Group
                 match l.rows |> List.tryFind(fun row -> row.band.Contains pt) with
                 | Some row when row.index<>d.index -> Some(IntoRow row.index)
                 | Some _ -> None
-                | None -> if l.loose.Contains pt then Some Dissolve else None
+                | None -> if l.loose.Contains pt then Some Dissolve elif l.closing.Contains pt then Some CloseAll else None
             rowDrag <- Some {d with at=pt; aim=aim; begun=true}
             if form.IsHandleCreated then form.Invalidate()
 

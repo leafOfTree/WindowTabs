@@ -812,7 +812,9 @@ module Strings =
               ar=sprintf "%d مجموعة، %d نافذة" groups windows }
         /// The bin's label, and what it says while empty.
         let closeBin = { en="Close on save"; zh="保存时关闭"; ja="保存時に閉じる"; ar="تُغلق عند الحفظ" }
-        let closeBinEmpty = { en="Drop tabs here to close their windows when you save"; zh="把标签拖到这里，保存时关闭这些窗口"; ja="ここにタブをドロップすると、保存時にそのウィンドウを閉じます"; ar="أفلت علامات التبويب هنا لإغلاق نوافذها عند الحفظ" }
+        let closeBinEmpty = { en="Drop tabs or a whole row here to close their windows when you save"; zh="把标签或整行拖到这里，保存时关闭这些窗口"; ja="タブや行ごとここにドロップすると、保存時にそのウィンドウを閉じます"; ar="أفلت علامات التبويب أو صفًا كاملًا هنا لإغلاق نوافذها عند الحفظ" }
+        /// The row menu's item that puts every window of the row in the bin.
+        let closeRow = { en="Close its windows on save"; zh="保存时关闭这些窗口"; ja="保存時にこれらのウィンドウを閉じる"; ar="إغلاق نوافذه عند الحفظ" }
         let looseWindows = { en="Loose windows"; zh="未分组窗口"; ja="未分類のウィンドウ"; ar="نوافذ غير مجمّعة" }
         /// In the loose row while no window is on its own: what the row is for.
         let looseEmpty = { en="Ungroup: drop a tab or a whole row here"; zh="移出分组：把标签或整行拖到这里"; ja="グループ解除：タブや行ごとここにドロップ"; ar="فك التجميع: أفلت علامة تبويب أو صفًا كاملًا هنا" }
