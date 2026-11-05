@@ -543,7 +543,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
 
     /// A text with its matching runs in the accent colour, as the settings search shows them,
     /// the colour changing mid-word; cut with an ellipsis where it does not fit.
-    member private this.drawMarked(g:Graphics, text:string, runs:(int * int) list, bounds:Rectangle, flags:TextFormatFlags, font:Font, color:Color, p:SettingsPalette) =
+    member private this.drawMarked(g:Graphics, text:string, runs:(int * int) list, bounds:Rectangle, flags:TextFormatFlags, font:Font, color:Color, p:SettingsPalette, ?dimmed:bool) =
         if runs.IsEmpty || text="" then TextRenderer.DrawText(g,text,font,bounds,color,flags)
         else
             let pieces = flags &&& ~~~(TextFormatFlags.EndEllipsis ||| TextFormatFlags.HorizontalCenter) ||| TextFormatFlags.NoPadding
@@ -564,7 +564,12 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                             let middle = (fits+tooLong)/2
                             if width (text.Substring(0,middle)+"…")<=room then fit middle tooLong else fit fits middle
                     text.Substring(0,fit 0 text.Length).TrimEnd()+"…"
-            let marked = if SystemInformation.HighContrast then SystemColors.Highlight else p.accent
+            // On a row that does nothing now, the match faded as its text is, so it leads no more
+            // than the rest of the row.
+            let marked =
+                if SystemInformation.HighContrast then SystemColors.Highlight
+                elif defaultArg dimmed false then Theme.blend 0.45 p.accent this.BackColor
+                else p.accent
             let inRun i = runs |> List.exists(fun (start,length) -> i>=start && i<start+length)
             let state = g.Save()
             g.SetClip(bounds,CombineMode.Intersect)
@@ -786,7 +791,9 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                 g.DrawLine(divider,Dpi.scale 10,top,this.contentWidth-Dpi.scale 10,top)
                 g.SmoothingMode <- SmoothingMode.AntiAlias
             let text =
-                if item.Dimmed then (if SystemInformation.HighContrast then SystemColors.GrayText else p.muted)
+                // In the disabled grey, as a disabled button's text: the secondary grey stood nearly
+                // as bright as the text on dark pages, and the row looked as if it could be taken.
+                if item.Dimmed then (if SystemInformation.HighContrast then SystemColors.GrayText else p.disabledText)
                 elif isSelected && SystemInformation.HighContrast then SystemColors.HighlightText
                 else p.text
             for column in 0..columns.Length-1 do
@@ -821,7 +828,7 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                         g.DrawEllipse(edge,dot)
                     if not editing then
                         let nameBounds,laid,add,_ = if item.Chips.IsEmpty && not item.ChipAdd then bounds,[],None,1 else this.chipLayout(item,level,top)
-                        if item.Suffix="" then this.drawMarked(g,item.Text,item.highlights 0,nameBounds,flags,this.Font,text,p)
+                        if item.Suffix="" then this.drawMarked(g,item.Text,item.highlights 0,nameBounds,flags,this.Font,text,p,item.Dimmed)
                         else
                             // The note right after the name, which gives way to it when room is short.
                             // Measured as drawn, with the padding the text is drawn with.
@@ -832,12 +839,12 @@ type SettingsTreeList(columns:TreeListColumn list) as this =
                             let gap = Dpi.scale 6
                             let suffixWidth = measureIn suffixFont item.Suffix
                             let nameWidth = min (measure item.Text+Dpi.scale 2) (max 0 (nameBounds.Width-suffixWidth-gap))
-                            this.drawMarked(g,item.Text,item.highlights 0,Rectangle(nameBounds.X,nameBounds.Y,max 1 nameWidth,nameBounds.Height),flags,this.Font,text,p)
+                            this.drawMarked(g,item.Text,item.highlights 0,Rectangle(nameBounds.X,nameBounds.Y,max 1 nameWidth,nameBounds.Height),flags,this.Font,text,p,item.Dimmed)
                             let left = nameBounds.X+nameWidth+gap
                             // On the chosen row in the name's own colour, as the value at its right
                             // end is: the muted grey sank into the highlight. Smaller, it still leads less.
-                            let muted = if isSelected then text else p.muted
-                            this.drawMarked(g,item.Suffix,item.SuffixHighlights,Rectangle(left,nameBounds.Y,max 1 (nameBounds.Right-left),nameBounds.Height),flags,suffixFont,muted,p)
+                            let muted = if isSelected || item.Dimmed then text else p.muted
+                            this.drawMarked(g,item.Suffix,item.SuffixHighlights,Rectangle(left,nameBounds.Y,max 1 (nameBounds.Right-left),nameBounds.Height),flags,suffixFont,muted,p,item.Dimmed)
                         // Chips: a shade of the text over the row, so they show on any highlight.
                         let chipFill = if SystemInformation.HighContrast then SystemColors.Window else Color.FromArgb(26,p.text)
                         for chipIndex,box,closeBox in laid do

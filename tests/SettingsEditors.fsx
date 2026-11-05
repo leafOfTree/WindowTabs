@@ -802,6 +802,37 @@ let main() =
         let wholeRight,cutRight = lastInk whole,lastInk cut
         assertTrue (wholeRight>0 && wholeRight=cutRight) (sprintf "A lit letter moved the text after it: it ends at %d, not %d" cutRight wholeRight)
         rowsForm.Close()
+    // A row that does nothing now is in the disabled grey, its match faded with it: in the
+    // secondary grey it stood nearly as bright as the rows that can act.
+    if not SystemInformation.HighContrast then
+        use rowsForm = new Form(ClientSize=Size(400,120),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false)
+        let rows = new SettingsTreeList([TreeListColumn("",0,TextColumn)],ShowHeader=false,ShowExpanders=false,RowHeight=36,Dock=DockStyle.Fill,Font=SettingsUi.bodyFont())
+        let live = TreeListItem("Focus the next pane",Highlights=[|[10,4]|])
+        let dimmed = TreeListItem("Focus the next pane",Highlights=[|[10,4]|],Dimmed=true)
+        rows.Roots.AddRange([live;dimmed])
+        rows.Rebuild()
+        rowsForm.Controls.Add(rows)
+        SettingsUi.apply rowsForm
+        rowsForm.Show()
+        Application.DoEvents()
+        use image = new Bitmap(rowsForm.ClientSize.Width,rowsForm.ClientSize.Height)
+        rows.DrawToBitmap(image,Rectangle(Point.Empty,image.Size))
+        let p = SettingsColors.current()
+        let background = image.GetPixel(image.Width-2,10)
+        let distance (a:Color) (b:Color) = abs(int a.R-int b.R)+abs(int a.G-int b.G)+abs(int a.B-int b.B)
+        /// The pixel furthest from the background in a stretch of the row: the ink at its fullest.
+        let strongest (item:TreeListItem) fromX toX =
+            let row = rows.RowBounds(item).Value
+            [for y in row.Top+2..row.Bottom-3 do for x in fromX..toX -> image.GetPixel(x,y)] |> List.maxBy (distance background)
+        let lead (item:TreeListItem) = strongest item 0 (TextRenderer.MeasureText("Focus the",rows.Font).Width)
+        let text = lead dimmed
+        assertTrue (distance text p.disabledText<40) (sprintf "A dimmed row's text is %A, not the disabled grey %A" text p.disabledText)
+        assertTrue (distance (lead live) background>distance text background*2) "A dimmed row reads as strongly as a row that can act"
+        let matchFrom = TextRenderer.MeasureText("Focus the ",rows.Font).Width
+        let matchTo = TextRenderer.MeasureText("Focus the next",rows.Font).Width
+        let liveMark,dimMark = strongest live matchFrom matchTo,strongest dimmed matchFrom matchTo
+        assertTrue (distance dimMark background<distance liveMark background) (sprintf "A dimmed row's match %A is as strong as a live row's %A" dimMark liveMark)
+        rowsForm.Close()
     // The palette's search box: no outline round it, only a line along its foot.
     do
         use boxForm = new Form(ClientSize=Size(300,60),StartPosition=FormStartPosition.Manual,Location=Point(-20000,-20000),ShowInTaskbar=false)
